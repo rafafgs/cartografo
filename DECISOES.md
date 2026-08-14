@@ -120,3 +120,22 @@ topógrafo cruza versão×telemetria por join; propostas exigem diff semântico
 qualquer versão exporta como bundle em arquivos (atlas, backup, espelho em
 repo do usuário; futura superfície de aprovação via PR, sem dependência do
 core).
+
+## D16 (2026-08-14) — Critério de aceite e fronteira da PoC
+
+A PoC está aceita quando um projeto de software real atravessa o grafo
+portado de ponta a ponta com: grafo vivendo como dado no banco (não como
+código), sessões despachadas pelo EngineAdapter do Claude Code, perguntas
+humanas fluindo pela API, telemetria completa consultável e tela mínima de
+observabilidade. Sintetizador e topógrafo ficam explicitamente fora da PoC
+(marcos seguintes, ordem da D6). A PoC prova paridade com o flowpilot sobre
+a arquitetura nova; superar o flowpilot é o marco seguinte (primeira
+proposta do topógrafo com evidência).
+
+## D17 (2026-08-14) — Relação com o flowpilot e stack
+
+O porte é reimplementação: o flowpilot (Python) é referência de
+comportamento e fonte do grafo de fábrica 1, sem dependência de código;
+migração/substituição do flowpilot é decisão futura, fora de escopo. Stack
+cravado: TypeScript, API REST/JSON, SQLite (D1), tela como pacote separado
+(D11).

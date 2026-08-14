@@ -516,15 +516,20 @@ Registrado para quem ler depois não presumir esquecimento:
 
 1. **D4 × ausência de política de permissão no `SessionSpec`.** As duas CLIs
    têm controle de permissão de primeira classe — `codex exec` traz
-   `-s, --sandbox <read-only|workspace-write|danger-full-access>` e
-   `-a, --ask-for-approval`; o `claude` traz `--permission-mode` com
-   `acceptEdits|auto|bypassPermissions|manual|dontAsk|plan`. O `SessionSpec`
-   v0 **não tem onde expressar isso**: hoje a política só pode vir de default
-   codificado no adapter ou de `envOverrides`, que é opaco por definição e
-   portanto inauditável. Quando a D4 sair do papel — permissões declaradas no
-   manifesto da skill, com pin por hash — vai faltar exatamente este campo, e
-   ele é aditivo mas não é neutro (define quem responde pela política: o
-   manifesto ou o adapter). Fica para a ticket de D4.
+   `-s, --sandbox <read-only|workspace-write|danger-full-access>`,
+   `--approve-for-me` e `--dangerously-bypass-approvals-and-sandbox`; o
+   `claude` traz `--permission-mode` com
+   `acceptEdits|auto|bypassPermissions|manual|dontAsk|plan`. Cuidado com o
+   `-a, --ask-for-approval`: ele é do `codex` **interativo** (nível superior)
+   e não existe no subcomando `exec`, que morre com
+   `error: unexpected argument '-a' found` — a aprovação não-interativa do
+   exec são os dois flags acima. O `SessionSpec` v0 **não tem onde expressar
+   isso**: hoje a política só pode vir de default codificado no adapter ou de
+   `envOverrides`, que é opaco por definição e portanto inauditável. Quando a
+   D4 sair do papel — permissões declaradas no manifesto da skill, com pin por
+   hash — vai faltar exatamente este campo, e ele é aditivo mas não é neutro
+   (define quem responde pela política: o manifesto ou o adapter). Fica para a
+   ticket de D4.
 2. **D9 × a forma deste contrato.** A D9 manda contrato ser JSON Schema de
    entrada/saída mais checks tipados. Esta especificação é tipo TS mais uma
    tabela de conformidade em prosa. A leitura adotada aqui é que a D9 governa

@@ -1,5 +1,5 @@
 /**
- * Acceptance tests for the reason field of Rejeitar and Reverter (t128, FR7).
+ * Acceptance tests for the reason field of `Rejeitar` and `Reverter` (t128, FR7).
  *
  * The alpha round on `t111` found the field with a placeholder and nothing
  * else: no `<label>`, no `aria-label`. A placeholder is a hint, not a name —
@@ -18,7 +18,7 @@
  * `POST /v1/proposals/:id/reject` — and not this package's own identifiers, so
  * they follow the `/v1` surface: they came in from t111 in Portuguese and were
  * renamed to English with the rest of it (t127, FR3/FR4, D18). The button
- * labels this file clicks by ("Rejeitar", "Reverter") are the visible text and
+ * labels this file clicks by (`Rejeitar`, `Reverter`) are the visible text and
  * stay in Portuguese, like the rest of the page: the key and the label are two
  * different vocabularies and only one of them moved.
  */
@@ -110,7 +110,7 @@ function rowsOf(doc: FakeDocument, listId: string): FakeElement[] {
   return doc.require(listId).byClass('proposal');
 }
 
-/** Clicks the action button whose label matches — "Rejeitar", "Reverter". */
+/** Clicks the action button whose label matches — `Rejeitar`, `Reverter`. */
 function clickAction(row: FakeElement, label: string): void {
   const button = only(
     row.byClass('action').filter((node) => node.textContent === label),

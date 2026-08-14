@@ -17,8 +17,8 @@ implementação.
 | Arquivo | O que é |
 |---|---|
 | `schemas/envelope.schema.json` | Os campos que existem em todo evento |
-| `schemas/<tipo>.schema.json` | Um por tipo de evento (15) |
-| `exemplos/log-exemplo.jsonl` | Uma execução ponta a ponta, com os 15 tipos |
+| `schemas/<tipo>.schema.json` | Um por tipo de evento (16) |
+| `exemplos/log-exemplo.jsonl` | Uma execução ponta a ponta, com os 16 tipos |
 | `exemplos/estado-final-esperado.json` | O estado que aquele log reconstrói |
 | `reducers/reconstruir-estado.mjs` | A dobra do log até esse estado |
 | `tests/` | Runner nativo do Node, sem `package.json` e sem dependência |
@@ -35,9 +35,12 @@ funciona no Node 25: a partir do 23 o argumento posicional é tratado como
 caminho de arquivo/glob, não como pasta a varrer. Use uma das duas formas
 acima.
 
-> **Contagem.** A ficha t98 fala em "16 tipos"; a tabela normativa dela e a
-> lista de arquivos a criar descrevem **15 tipos + o envelope = 16 arquivos**
-> em `schemas/`. Vale a tabela: 15 tipos de evento.
+> **Contagem.** A v1 nasceu com **15 tipos + o envelope = 16 arquivos** em
+> `schemas/` (a ficha t98 falava em "16 tipos"; valeu a tabela normativa dela).
+> O intake de duas fases acrescentou o 16º tipo,
+> `trabalho.dependencia_declarada` (t122) — crescer é aditivo, e é isso que a
+> regra de "tipo desconhecido é ignorado" compra. Hoje: **16 tipos + o
+> envelope = 17 arquivos**.
 
 ## Envelope
 
@@ -107,7 +110,7 @@ Três consequências que atravessam esta ficha inteira:
 
 ## Catálogo
 
-15 tipos, em 5 grupos. "Quem emite" é o `ator.tipo` esperado; os exemplos
+16 tipos, em 5 grupos. "Quem emite" é o `ator.tipo` esperado; os exemplos
 mostram o conteúdo de `dados` e saíram do `log-exemplo.jsonl`.
 
 ### Trabalho
@@ -120,8 +123,17 @@ Emitido quando um trabalho entra no grafo, no fim do intake. Ator: `usuario`
 (criação manual) ou `agente` (quebra automática de trabalho).
 
 ```json
-{"titulo":"Especificar a taxonomia de eventos de telemetria","no_entrada_id":"intake"}
+{"titulo":"Especificar a taxonomia de eventos de telemetria","no_entrada_id":"intake",
+ "corpo":"Um log só, com envelope comum e entidade generica.",
+ "criterios_de_aceite":["um schema por tipo","o reducer reproduz o estado final"]}
 ```
+
+`corpo` e `criterios_de_aceite` são **opcionais** e entraram com o intake de
+duas fases (t122): um trabalho pode nascer com conteúdo, e um criado à mão
+continua nascendo só com título — nesse caso os dois chegam ao log como `null`,
+como todo campo opcional desta taxonomia. Os critérios que o intake grava são
+**preliminares**: quem os produz de verdade é o nó que refina, a partir do
+pedido bruto, e ele reescreve o trabalho por `trabalho.emendado`.
 
 #### `trabalho.transicao` — [schema](schemas/trabalho.transicao.schema.json)
 
@@ -164,6 +176,27 @@ refinador enriquecendo a ficha) ou `usuario`.
 Carrega os **nomes** dos campos e nunca o conteúdo. Isto é registro de
 auditoria, não histórico de versões — mesma disciplina do `AMENDED` do
 flowpilot. Quem quer o texto novo lê o trabalho.
+
+#### `trabalho.dependencia_declarada` — [schema](schemas/trabalho.dependencia_declarada.schema.json)
+
+Emitido na **confirmação do intake**, uma vez por aresta declarada entre dois
+trabalhos do mesmo lote (t122). Ator: `usuario` — é um portão humano, e quando
+quem confirma se identifica é o login dele que fica no `ator.ref`; sem
+autenticação (t124) o control plane grava honestamente `sistema`/`intake` em
+vez de inventar um usuário.
+
+```json
+{"depende_de_trabalho_id":101}
+```
+
+`entidade.id` é o trabalho **dependente** e `dados.depende_de_trabalho_id` é
+aquele de quem ele depende: "este espera por aquele" é fato de quem espera, e é
+na linha do tempo dele que alguém vai procurar o motivo de não ter andado.
+
+Declarar a dependência **não bloqueia** o trabalho dependente. A aresta é
+registro; exigir a ordem — bloquear automaticamente, ordenar despacho — é
+decisão de outra ficha, e uma bandeira que ninguém sabe baixar seria pior que
+bandeira nenhuma.
 
 ### Sessão
 
@@ -332,6 +365,7 @@ Legenda: **=** equivalência direta · **≠** divergência de modelo justificad
 | `EventKind.BLOCKED` | `trabalho.bloqueado` | = | `note` livre vira `motivo` obrigatório. |
 | `EventKind.UNBLOCKED` | `trabalho.desbloqueado` | = | |
 | `EventKind.AMENDED` + `note` (nomes separados por vírgula) | `trabalho.emendado` + `campos_alterados` | = | Mesma disciplina (só nomes), com o payload tipado como array em vez de string. |
+| — | `trabalho.dependencia_declarada` | + | Lá a ordem entre tickets é convenção do humano que os cria; aqui o intake quebra um pedido em lote e a aresta entre dois trabalhos do lote é fato do log (t122). |
 | `EventKind.INPUT_REQUESTED` + linha de `input_requests` | `pergunta.criada` | ≠ | Lá são duas coisas: o evento de bandeira e a linha de conteúdo. Aqui um evento só, porque o log já é a fonte do conteúdo. |
 | `EventKind.INPUT_ANSWERED` + `answer_source='user'` | `pergunta.respondida` | ≠ | A origem da resposta virou o tipo do evento. |
 | `EventKind.INPUT_ANSWERED` + `answer_source='auto'` | `pergunta.auto_resolvida` | ≠ | Idem. |

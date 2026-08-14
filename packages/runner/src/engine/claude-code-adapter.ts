@@ -1,25 +1,25 @@
 /**
- * `ClaudeCodeAdapter` — o primeiro EngineAdapter, rodando a CLI `claude`
- * headless como subprocess.
+ * `ClaudeCodeAdapter` — the first EngineAdapter, running the `claude` CLI
+ * headless as a subprocess.
  *
- * "Claude Code é o primeiro adapter, não uma dependência"
- * (`notas/2026-08-14-arquitetura-brain-dump.md:11-14`). Tudo que é específico
- * desta CLI está aqui e em `command.ts`; acima desta linha só existe
- * `SessionSpec`, `SessionStatus` e `SessionListener`.
+ * "Claude Code is the first adapter, not a dependency"
+ * (`notas/2026-08-14-arquitetura-brain-dump.md:11-14`). Everything specific to
+ * this CLI lives here and in `command.ts`; above this line there is only
+ * `SessionSpec`, `SessionStatus` and `SessionListener`.
  *
- * Três decisões estruturais, todas vindas das cicatrizes registradas na
- * especificação:
+ * Three structural decisions, all of them coming from the scars recorded in the
+ * specification:
  *
- * - **O processo sobe destacado (`detached`), e os sinais vão para o GRUPO.**
- *   É o que faz o C4 passar: um engine que deixa um filho vivo derruba a
- *   máquina do runner depois da centésima sessão, não da primeira
+ * - **The process comes up detached, and signals go to the GROUP.** It is what
+ *   makes C4 pass: an engine that leaves a child alive brings the runner's
+ *   machine down after the hundredth session, not the first
  *   (`docs/formatos/engine-adapter.md:367-369`).
- * - **O fim é decidido no `close`, não no `exit`.** `close` só chega quando os
- *   pipes fecharam, e é o que garante a invariante 4 (toda linha emitida chega
- *   ao `onOutput`) antes da invariante 1 (`onFinished` exatamente uma vez).
- * - **O relógio é nosso.** Nenhuma das duas CLIs analisadas tem flag de
- *   timeout (`engine-adapter.md:407`), então o adapter arma, escala
- *   SIGTERM→SIGKILL e desarma.
+ * - **The end is decided on `close`, not on `exit`.** `close` only arrives once
+ *   the pipes are closed, and that is what guarantees invariant 4 (every line
+ *   emitted reaches `onOutput`) before invariant 1 (`onFinished` exactly once).
+ * - **The clock is ours.** Neither of the two CLIs analysed has a timeout flag
+ *   (`engine-adapter.md:407`), so the adapter arms it, escalates SIGTERM→SIGKILL
+ *   and disarms it.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -32,7 +32,7 @@ import {
   buildCommand,
   buildEnvironment,
   CLAUDE_BINARY,
-  STDIO_DO_ENGINE,
+  ENGINE_STDIO,
   type EngineCommand,
 } from './command.ts';
 import {
@@ -46,86 +46,87 @@ import {
   type SessionStatus,
 } from './types.ts';
 
-/** Espera entre o SIGTERM e o SIGKILL. */
-export const MS_DE_GRACA_PADRAO = 5_000;
+/** Wait between the SIGTERM and the SIGKILL. */
+export const DEFAULT_GRACE_MS = 5_000;
 
-/** Prazo da sonda de `--version`; uma CLI que não responde nisso não está de pé. */
-const MS_DE_PRAZO_DA_SONDA = 10_000;
+/** Deadline of the `--version` probe; a CLI that misses it is not up. */
+const PROBE_DEADLINE_MS = 10_000;
 
 /**
- * Credenciais que, presentes no ambiente, sugerem sessão autenticável.
+ * Credentials which, present in the environment, suggest an authenticable
+ * session.
  *
- * "Sugerem" é o verbo certo: `authenticated` é melhor esforço por decisão
- * registrada da especificação — existe engine cuja falha de credencial só
- * aparece no meio da primeira sessão (`engine-adapter.md:452-461`).
+ * "Suggest" is the right verb: `authenticated` is best effort by a recorded
+ * decision of the specification — there is an engine whose credential failure
+ * only shows up in the middle of the first session
+ * (`engine-adapter.md:452-461`).
  */
-export const VARIAVEIS_DE_CREDENCIAL = [
+export const CREDENTIAL_VARIABLES = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',
   'CLAUDE_CODE_OAUTH_TOKEN',
 ] as const;
 
 export interface ClaudeCodeAdapterOptions {
-  /** Costura de teste: troca o binário real pelo fake engine do kit. */
+  /** Test seam: swaps the real binary for the kit's fake engine. */
   readonly commandBuilder?: (spec: SessionSpec) => EngineCommand;
-  /** Costura de teste: ambiente entregue ao processo do engine. */
+  /** Test seam: environment handed to the engine process. */
   readonly environmentBuilder?: (spec: SessionSpec) => NodeJS.ProcessEnv;
-  /** Espera entre SIGTERM e SIGKILL. Default 5s. */
+  /** Wait between SIGTERM and SIGKILL. Default 5s. */
   readonly graceMs?: number;
-  /** Costura de teste: o comando do preflight. */
+  /** Test seam: the preflight command. */
   readonly probeCommandBuilder?: () => EngineCommand;
-  /** Ambiente consultado pelo preflight. Default `process.env`. */
+  /** Environment the preflight reads. Default `process.env`. */
   readonly probeEnvironment?: NodeJS.ProcessEnv;
-  /** Arquivo de credencial lido pelo preflight. Default `~/.claude.json`. */
+  /** Credential file the preflight reads. Default `~/.claude.json`. */
   readonly credentialsPath?: string;
 }
 
-/** Estado local de uma sessão viva. O adapter não persiste nada (D1). */
-interface Sessao {
-  readonly processo: ChildProcess;
+/** Local state of a live session. The adapter persists nothing (D1). */
+interface Session {
+  readonly child: ChildProcess;
   readonly listener: SessionListener;
   status: SessionStatus;
-  /** Status terminal pedido por quem mandou parar (cancelamento ou relógio). */
-  statusPedido: SessionStatus | null;
-  finalizada: boolean;
-  refEnviada: boolean;
-  relogio: NodeJS.Timeout | null;
-  escalada: NodeJS.Timeout | null;
-  rede: NodeJS.Timeout | null;
-  restos: { stdout: string; stderr: string };
+  /** Terminal status asked for by whoever ordered the stop (cancel or clock). */
+  requestedStatus: SessionStatus | null;
+  finished: boolean;
+  refSent: boolean;
+  clock: NodeJS.Timeout | null;
+  escalation: NodeJS.Timeout | null;
+  safetyNet: NodeJS.Timeout | null;
+  leftovers: { stdout: string; stderr: string };
 }
 
 /**
- * O id de sessão que o próprio engine deu, se esta linha for um quadro
- * `stream-json` reconhecido.
+ * The session id the engine itself gave, if this line is a recognized
+ * `stream-json` frame.
  *
- * Exigir `type` e `session_id` é o que separa um quadro de verdade de uma
- * linha de log que por acaso menciona a palavra: o stream mistura frames
- * estruturados com "grito de morte em texto puro"
- * (`engine-adapter.md:209-214`), e classificar errado aqui produziria um
- * `engineRef` inventado.
+ * Demanding `type` and `session_id` is what separates a real frame from a log
+ * line that happens to mention the word: the stream mixes structured frames
+ * with a "dying scream in plain text" (`engine-adapter.md:209-214`), and
+ * classifying it wrong here would produce a made-up `engineRef`.
  */
-export function extrairEngineRef(linha: string): string | null {
-  const podado = linha.trim();
-  if (!podado.startsWith('{')) return null;
+export function extractEngineRef(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('{')) return null;
 
-  let quadro: unknown;
+  let frame: unknown;
   try {
-    quadro = JSON.parse(podado);
+    frame = JSON.parse(trimmed);
   } catch {
     return null;
   }
-  if (typeof quadro !== 'object' || quadro === null) return null;
+  if (typeof frame !== 'object' || frame === null) return null;
 
-  const { type, session_id: idDaSessao } = quadro as { type?: unknown; session_id?: unknown };
-  if (typeof type !== 'string' || typeof idDaSessao !== 'string' || idDaSessao === '') return null;
-  return idDaSessao;
+  const { type, session_id: sessionId } = frame as { type?: unknown; session_id?: unknown };
+  if (typeof type !== 'string' || typeof sessionId !== 'string' || sessionId === '') return null;
+  return sessionId;
 }
 
 export class ClaudeCodeAdapter implements EngineAdapter {
   readonly engineName = 'claude-code';
 
-  readonly #sessoes = new Map<string, Sessao>();
+  readonly #sessions = new Map<string, Session>();
   readonly #commandBuilder: (spec: SessionSpec) => EngineCommand;
   readonly #environmentBuilder: (spec: SessionSpec) => NodeJS.ProcessEnv;
   readonly #graceMs: number;
@@ -133,99 +134,100 @@ export class ClaudeCodeAdapter implements EngineAdapter {
   readonly #probeEnvironment: NodeJS.ProcessEnv;
   readonly #credentialsPath: string;
 
-  constructor(opcoes: ClaudeCodeAdapterOptions = {}) {
-    this.#commandBuilder = opcoes.commandBuilder ?? ((spec) => buildCommand(spec));
-    this.#environmentBuilder = opcoes.environmentBuilder ?? ((spec) => buildEnvironment(spec));
-    this.#graceMs = opcoes.graceMs ?? MS_DE_GRACA_PADRAO;
+  constructor(options: ClaudeCodeAdapterOptions = {}) {
+    this.#commandBuilder = options.commandBuilder ?? ((spec) => buildCommand(spec));
+    this.#environmentBuilder = options.environmentBuilder ?? ((spec) => buildEnvironment(spec));
+    this.#graceMs = options.graceMs ?? DEFAULT_GRACE_MS;
     this.#probeCommandBuilder =
-      opcoes.probeCommandBuilder ?? (() => ({ command: CLAUDE_BINARY, args: ['--version'] }));
-    this.#probeEnvironment = opcoes.probeEnvironment ?? process.env;
-    this.#credentialsPath = opcoes.credentialsPath ?? join(homedir(), '.claude.json');
+      options.probeCommandBuilder ?? (() => ({ command: CLAUDE_BINARY, args: ['--version'] }));
+    this.#probeEnvironment = options.probeEnvironment ?? process.env;
+    this.#credentialsPath = options.credentialsPath ?? join(homedir(), '.claude.json');
   }
 
   async startSession(spec: SessionSpec, listener: SessionListener): Promise<string> {
-    const comando = this.#commandBuilder(spec);
+    const command = this.#commandBuilder(spec);
 
-    let processo: ChildProcess;
+    let child: ChildProcess;
     try {
-      processo = spawn(comando.command, [...comando.args], {
+      child = spawn(command.command, [...command.args], {
         cwd: spec.workingDir,
         env: this.#environmentBuilder(spec),
-        stdio: [...STDIO_DO_ENGINE],
-        // Grupo próprio: é o que permite sinalizar netos junto com o pai.
+        stdio: [...ENGINE_STDIO],
+        // Its own group: that is what allows signalling grandchildren along
+        // with the parent.
         detached: true,
       });
-    } catch (causa) {
-      throw new SessionStartError(`não foi possível iniciar "${comando.command}"`, { cause: causa });
+    } catch (cause) {
+      throw new SessionStartError(`could not start "${command.command}"`, { cause });
     }
 
     const id = randomUUID();
-    const sessao: Sessao = {
-      processo,
+    const session: Session = {
+      child,
       listener,
       status: 'pending',
-      statusPedido: null,
-      finalizada: false,
-      refEnviada: false,
-      relogio: null,
-      escalada: null,
-      rede: null,
-      restos: { stdout: '', stderr: '' },
+      requestedStatus: null,
+      finished: false,
+      refSent: false,
+      clock: null,
+      escalation: null,
+      safetyNet: null,
+      leftovers: { stdout: '', stderr: '' },
     };
-    this.#sessoes.set(id, sessao);
+    this.#sessions.set(id, session);
 
-    // Todos os handlers são registrados AGORA, síncronos: um processo que morre
-    // depressa dispararia `close` antes de um registro adiado por `await`, e a
-    // sessão ficaria pendurada para sempre.
-    let subiu = false;
-    let avisarInicio: (erro: Error | null) => void = () => {};
-    const inicio = new Promise<Error | null>((resolve) => {
-      avisarInicio = resolve;
+    // Every handler is registered NOW, synchronously: a process that dies fast
+    // would fire `close` before a registration deferred by an `await`, and the
+    // session would hang forever.
+    let started = false;
+    let announceStart: (error: Error | null) => void = () => {};
+    const start = new Promise<Error | null>((resolve) => {
+      announceStart = resolve;
     });
 
-    processo.once('spawn', () => {
-      subiu = true;
-      sessao.status = 'running';
-      avisarInicio(null);
+    child.once('spawn', () => {
+      started = true;
+      session.status = 'running';
+      announceStart(null);
     });
 
-    processo.once('error', (erro: Error) => {
-      if (!subiu) {
-        avisarInicio(erro);
+    child.once('error', (error: Error) => {
+      if (!started) {
+        announceStart(error);
         return;
       }
-      this.#finalizar(id, sessao.statusPedido ?? 'failed', null);
+      this.#finish(id, session.requestedStatus ?? 'failed', null);
     });
 
-    for (const fluxo of ['stdout', 'stderr'] as const) {
-      const stream = processo[fluxo];
+    for (const channel of ['stdout', 'stderr'] as const) {
+      const stream = child[channel];
       if (!stream) continue;
       stream.setEncoding('utf8');
-      stream.on('data', (pedaco: string) => {
-        this.#bombear(sessao, fluxo, pedaco);
+      stream.on('data', (chunk: string) => {
+        this.#pump(session, channel, chunk);
       });
     }
 
-    processo.once('close', (codigo: number | null) => {
-      if (!subiu) {
-        avisarInicio(new Error(`o processo do engine fechou antes de subir (código ${codigo})`));
+    child.once('close', (code: number | null) => {
+      if (!started) {
+        announceStart(new Error(`the engine process closed before coming up (code ${code})`));
         return;
       }
-      this.#concluir(id, codigo);
+      this.#complete(id, code);
     });
 
-    const falha = await inicio;
-    if (falha) {
-      this.#sessoes.delete(id);
+    const failure = await start;
+    if (failure) {
+      this.#sessions.delete(id);
       throw new SessionStartError(
-        `não foi possível abrir sessão com "${comando.command}" em "${spec.workingDir}"`,
-        { cause: falha },
+        `could not open a session with "${command.command}" in "${spec.workingDir}"`,
+        { cause: failure },
       );
     }
 
     if (spec.timeoutSeconds > 0) {
-      sessao.relogio = setTimeout(() => {
-        this.#encerrar(id, 'timed_out');
+      session.clock = setTimeout(() => {
+        this.#stop(id, 'timed_out');
       }, spec.timeoutSeconds * 1_000);
     }
 
@@ -233,152 +235,154 @@ export class ClaudeCodeAdapter implements EngineAdapter {
   }
 
   async getStatus(sessionId: string): Promise<SessionStatus> {
-    return this.#exigirSessao(sessionId).status;
+    return this.#requireSession(sessionId).status;
   }
 
   async cancel(sessionId: string, status: SessionStatus = 'cancelled'): Promise<void> {
-    const sessao = this.#exigirSessao(sessionId);
-    // No-op silencioso, não erro: quem cancela corre com a própria thread de
-    // streaming do adapter e não tem como saber se perdeu a corrida.
-    if (sessao.finalizada) return;
-    this.#encerrar(sessionId, status);
+    const session = this.#requireSession(sessionId);
+    // A silent no-op, not an error: whoever cancels races with the adapter's
+    // own streaming thread and has no way of knowing it lost the race.
+    if (session.finished) return;
+    this.#stop(sessionId, status);
   }
 
   /**
-   * `stream-json` é parseável, então `hasStructuredOutput`. As outras duas
-   * ficam ausentes (default `false`): resume e contagem de uso estão fora do
-   * v0 e não têm consumidor — "declarar a quarta, quinta e sexta antes de
-   * alguém ler é como o formato apodrece" (`engine-adapter.md:160-165`).
+   * `stream-json` is parseable, hence `hasStructuredOutput`. The other two stay
+   * absent (default `false`): resume and usage accounting are out of v0 and
+   * have no consumer — "declaring the fourth, fifth and sixth before anybody
+   * reads them is how a format rots" (`engine-adapter.md:160-165`).
    */
   capabilities(): EngineCapabilities {
     return { hasStructuredOutput: true };
   }
 
   async verifyCli(): Promise<CliProbe> {
-    const versao = await this.#sondarVersao();
+    const version = await this.#probeVersion();
     return {
-      available: versao !== null,
-      version: versao,
-      authenticated: this.#pareceAutenticado(),
+      available: version !== null,
+      version,
+      authenticated: this.#looksAuthenticated(),
     };
   }
 
-  #exigirSessao(sessionId: string): Sessao {
-    const sessao = this.#sessoes.get(sessionId);
-    if (!sessao) throw new UnknownSessionError(sessionId);
-    return sessao;
+  #requireSession(sessionId: string): Session {
+    const session = this.#sessions.get(sessionId);
+    if (!session) throw new UnknownSessionError(sessionId);
+    return session;
   }
 
-  /** Quebra o fluxo em linhas, guardando o resto sem `\n` para o próximo pedaço. */
-  #bombear(sessao: Sessao, fluxo: 'stdout' | 'stderr', pedaco: string): void {
-    const acumulado = sessao.restos[fluxo] + pedaco;
-    const partes = acumulado.split('\n');
-    sessao.restos[fluxo] = partes.pop() ?? '';
-    for (const linha of partes) this.#emitir(sessao, linha);
+  /** Splits the stream into lines, keeping the `\n`-less tail for the next chunk. */
+  #pump(session: Session, channel: 'stdout' | 'stderr', chunk: string): void {
+    const accumulated = session.leftovers[channel] + chunk;
+    const parts = accumulated.split('\n');
+    session.leftovers[channel] = parts.pop() ?? '';
+    for (const line of parts) this.#emit(session, line);
   }
 
-  #emitir(sessao: Sessao, linha: string): void {
-    // Invariante 2: depois do onFinished, nenhum onOutput.
-    if (sessao.finalizada) return;
-    sessao.listener.onOutput(linha);
+  #emit(session: Session, line: string): void {
+    // Invariant 2: after onFinished, no onOutput.
+    if (session.finished) return;
+    session.listener.onOutput(line);
 
-    if (sessao.refEnviada || !sessao.listener.onEngineRef) return;
-    const ref = extrairEngineRef(linha);
+    if (session.refSent || !session.listener.onEngineRef) return;
+    const ref = extractEngineRef(line);
     if (ref === null) return;
-    sessao.refEnviada = true;
-    sessao.listener.onEngineRef(ref);
+    session.refSent = true;
+    session.listener.onEngineRef(ref);
   }
 
-  /** Fim natural do processo: drena o que sobrou e classifica o desfecho. */
-  #concluir(id: string, codigo: number | null): void {
-    const sessao = this.#sessoes.get(id);
-    if (!sessao || sessao.finalizada) return;
+  /** Natural end of the process: drains what is left and classifies the outcome. */
+  #complete(id: string, code: number | null): void {
+    const session = this.#sessions.get(id);
+    if (!session || session.finished) return;
 
-    for (const fluxo of ['stdout', 'stderr'] as const) {
-      const resto = sessao.restos[fluxo];
-      sessao.restos[fluxo] = '';
-      if (resto !== '') this.#emitir(sessao, resto);
+    for (const channel of ['stdout', 'stderr'] as const) {
+      const leftover = session.leftovers[channel];
+      session.leftovers[channel] = '';
+      if (leftover !== '') this.#emit(session, leftover);
     }
 
-    // Quem mandou parar tem a palavra sobre o status; sem isso, o exit code
-    // decide. `codigo` já vem `null` quando o processo morreu por sinal — em
-    // POSIX não há código de saída nesse caso, e `null` é "não houve", nunca
-    // "zero" (`engine-adapter.md:227-234`).
-    const status = sessao.statusPedido ?? (codigo === 0 ? 'completed' : 'failed');
-    this.#finalizar(id, status, codigo);
+    // Whoever ordered the stop has the last word on the status; without that,
+    // the exit code decides. `code` already arrives `null` when the process
+    // died by a signal — in POSIX there is no exit code in that case, and
+    // `null` is "there was none", never "zero" (`engine-adapter.md:227-234`).
+    const status = session.requestedStatus ?? (code === 0 ? 'completed' : 'failed');
+    this.#finish(id, status, code);
   }
 
-  /** Pede parada: SIGTERM ao grupo, SIGKILL depois do grace. */
-  #encerrar(id: string, status: SessionStatus): void {
-    const sessao = this.#sessoes.get(id);
-    if (!sessao || sessao.finalizada) return;
+  /** Asks for a stop: SIGTERM to the group, SIGKILL after the grace. */
+  #stop(id: string, status: SessionStatus): void {
+    const session = this.#sessions.get(id);
+    if (!session || session.finished) return;
 
-    sessao.statusPedido = status;
-    this.#sinalizarGrupo(sessao, 'SIGTERM');
-    if (sessao.escalada) return;
+    session.requestedStatus = status;
+    this.#signalGroup(session, 'SIGTERM');
+    if (session.escalation) return;
 
-    sessao.escalada = setTimeout(() => {
-      this.#sinalizarGrupo(sessao, 'SIGKILL');
+    session.escalation = setTimeout(() => {
+      this.#signalGroup(session, 'SIGKILL');
 
-      // Rede de segurança da invariante 1 ("onFinished exatamente uma vez,
-      // sempre"): se nem depois do SIGKILL o `close` chegar, o desfecho é
-      // reportado assim mesmo. Sessão pendurada para sempre é pior do que
-      // sessão reportada sem a última linha, e este caminho não deveria
-      // acontecer — matar o grupo fecha os pipes.
-      sessao.rede = setTimeout(() => {
-        this.#finalizar(id, status, null);
+      // Safety net for invariant 1 ("onFinished exactly once, always"): if not
+      // even after the SIGKILL the `close` arrives, the outcome is reported all
+      // the same. A session hanging forever is worse than a session reported
+      // without its last line, and this path should not happen — killing the
+      // group closes the pipes.
+      session.safetyNet = setTimeout(() => {
+        this.#finish(id, status, null);
       }, this.#graceMs);
     }, this.#graceMs);
   }
 
-  #finalizar(id: string, status: SessionStatus, exitCode: number | null): void {
-    const sessao = this.#sessoes.get(id);
-    if (!sessao || sessao.finalizada) return;
+  #finish(id: string, status: SessionStatus, exitCode: number | null): void {
+    const session = this.#sessions.get(id);
+    if (!session || session.finished) return;
 
-    this.#desarmar(sessao);
-    sessao.finalizada = true;
-    // Invariante 3: o status só vira terminal junto com o onFinished, nunca antes.
-    sessao.status = status;
-    sessao.listener.onFinished(status, exitCode);
+    this.#disarm(session);
+    session.finished = true;
+    // Invariant 3: the status only turns terminal together with onFinished,
+    // never before.
+    session.status = status;
+    session.listener.onFinished(status, exitCode);
   }
 
-  #desarmar(sessao: Sessao): void {
-    for (const nome of ['relogio', 'escalada', 'rede'] as const) {
-      const relogio = sessao[nome];
-      if (relogio) clearTimeout(relogio);
-      sessao[nome] = null;
+  #disarm(session: Session): void {
+    for (const name of ['clock', 'escalation', 'safetyNet'] as const) {
+      const timer = session[name];
+      if (timer) clearTimeout(timer);
+      session[name] = null;
     }
   }
 
   /**
-   * Sinaliza o grupo inteiro do processo (pid negativo).
+   * Signals the process's whole group (negative pid).
    *
-   * O processo subiu com `detached`, então é líder do próprio grupo: o sinal
-   * alcança o filho que o engine deixou para trás. Se o grupo não existir mais,
-   * cai para o processo direto, e a falha final é ignorada — o alvo já morreu.
+   * The process came up `detached`, so it leads its own group: the signal
+   * reaches the child the engine left behind. If the group no longer exists, it
+   * falls back to the direct process, and the final failure is ignored — the
+   * target is already dead.
    */
-  #sinalizarGrupo(sessao: Sessao, sinal: NodeJS.Signals): void {
-    const pid = sessao.processo.pid;
+  #signalGroup(session: Session, signal: NodeJS.Signals): void {
+    const pid = session.child.pid;
     if (pid === undefined) return;
     try {
-      process.kill(-pid, sinal);
+      process.kill(-pid, signal);
     } catch {
       try {
-        sessao.processo.kill(sinal);
+        session.child.kill(signal);
       } catch {
-        /* já morreu; nada a fazer */
+        /* already dead; nothing to do */
       }
     }
   }
 
-  /** `claude --version`: preflight que não abre sessão nem gasta cota. */
-  #sondarVersao(): Promise<string | null> {
-    const comando = this.#probeCommandBuilder();
+  /** `claude --version`: a preflight that opens no session and spends no quota. */
+  #probeVersion(): Promise<string | null> {
+    const command = this.#probeCommandBuilder();
 
     return new Promise((resolve) => {
-      let processo: ChildProcess;
+      let child: ChildProcess;
       try {
-        processo = spawn(comando.command, [...comando.args], {
+        child = spawn(command.command, [...command.args], {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: this.#probeEnvironment,
         });
@@ -387,49 +391,49 @@ export class ClaudeCodeAdapter implements EngineAdapter {
         return;
       }
 
-      let saida = '';
-      processo.stdout?.setEncoding('utf8');
-      processo.stdout?.on('data', (pedaco: string) => {
-        saida += pedaco;
+      let out = '';
+      child.stdout?.setEncoding('utf8');
+      child.stdout?.on('data', (chunk: string) => {
+        out += chunk;
       });
 
-      const prazo = setTimeout(() => {
-        processo.kill('SIGKILL');
+      const deadline = setTimeout(() => {
+        child.kill('SIGKILL');
         resolve(null);
-      }, MS_DE_PRAZO_DA_SONDA);
+      }, PROBE_DEADLINE_MS);
 
-      const responder = (versao: string | null): void => {
-        clearTimeout(prazo);
-        resolve(versao);
+      const settle = (version: string | null): void => {
+        clearTimeout(deadline);
+        resolve(version);
       };
 
-      // Binário ausente chega aqui como ENOENT: `available: false`, sem lançar.
-      processo.once('error', () => responder(null));
-      processo.once('close', (codigo: number | null) => {
-        const podado = saida.trim();
-        responder(codigo === 0 && podado !== '' ? podado : null);
+      // A missing binary arrives here as ENOENT: `available: false`, no throw.
+      child.once('error', () => settle(null));
+      child.once('close', (code: number | null) => {
+        const trimmed = out.trim();
+        settle(code === 0 && trimmed !== '' ? trimmed : null);
       });
     });
   }
 
   /**
-   * Melhor esforço, nunca garantia: credencial no ambiente OU conta OAuth
-   * registrada no arquivo de credencial. `true` significa "não achei motivo
-   * para falhar", não "vai autenticar" (`engine-adapter.md:245-252`).
+   * Best effort, never a guarantee: a credential in the environment OR an OAuth
+   * account recorded in the credential file. `true` means "I found no reason to
+   * fail", not "it will authenticate" (`engine-adapter.md:245-252`).
    */
-  #pareceAutenticado(): boolean {
-    for (const nome of VARIAVEIS_DE_CREDENCIAL) {
-      const valor = this.#probeEnvironment[nome];
-      if (typeof valor === 'string' && valor.trim() !== '') return true;
+  #looksAuthenticated(): boolean {
+    for (const name of CREDENTIAL_VARIABLES) {
+      const value = this.#probeEnvironment[name];
+      if (typeof value === 'string' && value.trim() !== '') return true;
     }
 
     try {
-      const conteudo: unknown = JSON.parse(readFileSync(this.#credentialsPath, 'utf8'));
-      if (typeof conteudo !== 'object' || conteudo === null) return false;
-      return Boolean((conteudo as { oauthAccount?: unknown }).oauthAccount);
+      const content: unknown = JSON.parse(readFileSync(this.#credentialsPath, 'utf8'));
+      if (typeof content !== 'object' || content === null) return false;
+      return Boolean((content as { oauthAccount?: unknown }).oauthAccount);
     } catch {
-      // Arquivo ausente, ilegível ou corrompido não é sinal de autenticação —
-      // e muito menos motivo para derrubar um preflight.
+      // A missing, unreadable or corrupt file is no sign of authentication —
+      // and much less a reason to bring a preflight down.
       return false;
     }
   }

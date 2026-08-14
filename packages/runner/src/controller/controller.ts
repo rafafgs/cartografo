@@ -1,157 +1,160 @@
 /**
- * Controller do runner: o loop de despacho (t103, FR11).
+ * The runner's controller: the dispatch loop (t103, FR11).
  *
- * "Controller (dentro do runner). Avalia um diretório (modo local) ou consulta
- * a API (modo distribuído) para pegar trabalhos liberados. Controle máximo de
- * sessões: teto de concorrência por runner e por projeto"
- * (`notas/2026-08-14-arquitetura-brain-dump.md`). Esta ficha implementa o
- * caminho via API; o modo local ficou de fora por não ter contrato escrito em
- * lugar nenhum do repo.
+ * "Controller (inside the runner). Evaluates a directory (local mode) or asks
+ * the API (distributed mode) to pick up released work. Maximum session control:
+ * concurrency cap per runner and per project"
+ * (`notas/2026-08-14-arquitetura-brain-dump.md`). This ticket implements the
+ * API path; local mode was left out for having no contract written anywhere in
+ * the repo.
  *
- * Um `tick()` é uma passada completa: pergunta o que está liberado, disputa a
- * lease do primeiro candidato que aceitar, e — conseguindo — mantém o heartbeat
- * enquanto o despacho corre. O teto é decidido no server (D1), não aqui: o
- * controller só declara os limites e obedece à resposta. Dois runners pedindo
- * ao mesmo tempo não precisam se conhecer.
+ * One `tick()` is a complete pass: it asks what has been released, competes for
+ * the lease of the first candidate that accepts, and — winning it — keeps the
+ * heartbeat going while the dispatch runs. The cap is decided on the server
+ * (D1), not here: the controller only declares the limits and obeys the answer.
+ * Two runners asking at the same time do not need to know about each other.
  *
- * A regra que não pode quebrar: **a lease é sempre devolvida**. Se o despacho
- * estoura, a lease vai embora do mesmo jeito e só então o erro sobe. Uma lease
- * presa por trabalho que falhou é capacidade ocupada por ninguém até o TTL
- * vencer — o pior dos dois mundos.
+ * The rule that must not break: **the lease is always given back**. If the
+ * dispatch blows up, the lease goes away all the same and only then does the
+ * error travel up. A lease stuck on work that failed is capacity occupied by
+ * nobody until the TTL expires — the worst of both worlds.
  *
- * `despachar` é injetado e é a única costura com o `EngineAdapter` (t104): esta
- * ficha não abre sessão nenhuma. Quem ligar o ciclo ponta a ponta com sessão de
- * verdade (t106/t109) passa o adapter por aqui sem tocar neste arquivo.
+ * `dispatch` is injected and is the only seam with the `EngineAdapter` (t104):
+ * this ticket opens no session at all. Whoever wires the cycle end to end with
+ * a real session (t106/t109) passes the adapter through here without touching
+ * this file.
  */
 
 import type { ClienteControle, Lease } from './cliente-controle.ts';
 
-/** Configuração do controller. */
-export interface OpcoesDoController {
-  /** Cliente já apontado para o control plane. */
-  cliente: ClienteControle;
-  /** Identidade deste runner, já pareada via `POST /v1/runners`. */
+/** Configuration of the controller. */
+export interface ControllerOptions {
+  /** Client already pointed at the control plane. */
+  client: ClienteControle;
+  /** Identity of this runner, already paired through `POST /v1/runners`. */
   runnerId: string;
-  projetoId: number;
-  /** Teto de sessões simultâneas deste runner. */
-  tetoRunner: number;
-  /** Teto de sessões simultâneas do projeto, somando todos os runners. */
-  tetoProjeto: number;
-  /** Prazo da lease pedida, em segundos. */
-  ttlSegundos: number;
+  projectId: number;
+  /** Cap of simultaneous sessions of this runner. */
+  runnerCap: number;
+  /** Cap of simultaneous sessions of the project, across every runner. */
+  projectCap: number;
+  /** Term of the lease asked for, in seconds. */
+  ttlSeconds: number;
   /**
-   * O que fazer com o trabalho conquistado. Resolve quando a sessão termina;
-   * rejeita quando ela morre. Nos dois casos a lease é devolvida.
+   * What to do with the work won. Resolves when the session ends; rejects when
+   * it dies. In both cases the lease is given back.
    */
-  despachar: (trabalhoId: number) => Promise<void>;
+  dispatch: (jobId: number) => Promise<void>;
   /**
-   * Intervalo entre heartbeats. Default: um terço do TTL — folga para duas
-   * batidas perdidas antes de o server dar o runner por morto.
+   * Interval between heartbeats. Default: a third of the TTL — slack for two
+   * missed beats before the server gives the runner up for dead.
    *
-   * Quem passa um valor explícito assume a conta: um intervalo maior que o TTL
-   * deixa a própria lease expirar debaixo do despacho.
+   * Whoever passes an explicit value takes on the arithmetic: an interval
+   * larger than the TTL lets the lease itself expire under the dispatch.
    */
-  intervaloHeartbeatMs?: number;
+  heartbeatIntervalMs?: number;
 }
 
-/** O que um `tick()` conquistou. */
-export interface DespachoConcluido {
-  trabalhoId: number;
+/** What one `tick()` won. */
+export interface DispatchResult {
+  jobId: number;
   leaseId: number;
 }
 
 export class Controller {
-  readonly #opcoes: OpcoesDoController;
+  readonly #options: ControllerOptions;
 
   /**
-   * Último erro de heartbeat, para quem quiser observar.
+   * Last heartbeat error, for whoever wants to watch.
    *
-   * Heartbeat que falha NÃO derruba o despacho em curso: uma falha isolada de
-   * rede é passageira, e a consequência de várias seguidas já é a certa — a
-   * lease expira no server e o trabalho volta à fila (D5). Derrubar a sessão na
-   * primeira falha seria trocar um soluço de rede por trabalho perdido.
+   * A heartbeat that fails does NOT bring down the dispatch in flight: an
+   * isolated network failure is transient, and the consequence of several in a
+   * row is already the right one — the lease expires on the server and the work
+   * goes back to the queue (D5). Killing the session on the first failure would
+   * be trading a network hiccup for lost work.
    */
-  ultimoErroDeHeartbeat: unknown = null;
+  lastHeartbeatError: unknown = null;
 
-  constructor(opcoes: OpcoesDoController) {
-    this.#opcoes = opcoes;
+  constructor(options: ControllerOptions) {
+    this.#options = options;
   }
 
-  /** Intervalo efetivo entre heartbeats, em milissegundos. */
-  get intervaloHeartbeatMs(): number {
+  /** Effective interval between heartbeats, in milliseconds. */
+  get heartbeatIntervalMs(): number {
     return (
-      this.#opcoes.intervaloHeartbeatMs ?? Math.max(1, Math.floor((this.#opcoes.ttlSegundos * 1000) / 3))
+      this.#options.heartbeatIntervalMs ?? Math.max(1, Math.floor((this.#options.ttlSeconds * 1000) / 3))
     );
   }
 
   /**
-   * Uma passada do loop de despacho.
+   * One pass of the dispatch loop.
    *
-   * Tenta os candidatos em ordem e para no primeiro que render lease: quem
-   * decide se há vaga é o server, então "recusado" aqui significa apenas que
-   * outro runner chegou antes ou que o teto está cheio — nos dois casos, tentar
-   * o próximo é o certo.
+   * It tries the candidates in order and stops at the first one that yields a
+   * lease: whoever decides whether there is room is the server, so "refused"
+   * here only means another runner got there first or the cap is full — in both
+   * cases trying the next one is the right move.
    *
-   * @returns O trabalho despachado e a lease usada, ou `null` quando não havia
-   *   trabalho liberado ou nenhum candidato rendeu lease.
+   * @returns The work dispatched and the lease used, or `null` when there was
+   *   no released work or no candidate yielded a lease.
    */
-  async tick(): Promise<DespachoConcluido | null> {
-    const candidatos = await this.#opcoes.cliente.listarTrabalhosLiberados();
+  async tick(): Promise<DispatchResult | null> {
+    const candidates = await this.#options.client.listarTrabalhosLiberados();
 
-    for (const trabalho of candidatos) {
-      const { lease } = await this.#opcoes.cliente.pedirLease({
-        runner_id: this.#opcoes.runnerId,
-        projeto_id: this.#opcoes.projetoId,
-        trabalho_id: trabalho.id,
-        teto_runner: this.#opcoes.tetoRunner,
-        teto_projeto: this.#opcoes.tetoProjeto,
-        ttl_segundos: this.#opcoes.ttlSegundos,
+    for (const job of candidates) {
+      const { lease } = await this.#options.client.pedirLease({
+        runner_id: this.#options.runnerId,
+        projeto_id: this.#options.projectId,
+        trabalho_id: job.id,
+        teto_runner: this.#options.runnerCap,
+        teto_projeto: this.#options.projectCap,
+        ttl_segundos: this.#options.ttlSeconds,
       });
 
       if (lease === null) continue;
 
-      await this.#despachar(lease, trabalho.id);
-      return { trabalhoId: trabalho.id, leaseId: lease.id };
+      await this.#dispatch(lease, job.id);
+      return { jobId: job.id, leaseId: lease.id };
     }
 
     return null;
   }
 
-  /** Despacha sob a lease, com heartbeat armado, e devolve a lease no fim. */
-  async #despachar(lease: Lease, trabalhoId: number): Promise<void> {
-    const pararHeartbeat = this.#armarHeartbeat(lease);
+  /** Dispatches under the lease, with the heartbeat armed, and returns it at the end. */
+  async #dispatch(lease: Lease, jobId: number): Promise<void> {
+    const stopHeartbeat = this.#armHeartbeat(lease);
 
     try {
-      await this.#opcoes.despachar(trabalhoId);
+      await this.#options.dispatch(jobId);
     } finally {
-      // `finally`, e não o caminho feliz: o trabalho que estoura devolve a
-      // lease exatamente como o que termina bem. O erro do despacho continua
-      // subindo depois daqui — quem chama o loop decide o que fazer com ele.
-      pararHeartbeat();
-      await this.#opcoes.cliente.liberar(lease.id);
+      // `finally`, and not the happy path: work that blows up gives the lease
+      // back exactly like work that ends well. The dispatch error keeps
+      // travelling up after this — whoever calls the loop decides what to do
+      // with it.
+      stopHeartbeat();
+      await this.#options.client.liberar(lease.id);
     }
   }
 
   /**
-   * Arma o heartbeat periódico da lease.
+   * Arms the lease's periodic heartbeat.
    *
-   * O relógio é `unref`ado: um runner esperando uma sessão terminar não é
-   * motivo para o processo ficar de pé sozinho.
+   * The clock is `unref`ed: a runner waiting for a session to end is no reason
+   * for the process to stay up on its own.
    *
-   * @param lease Lease recém-concedida.
-   * @returns Função que desarma o relógio.
+   * @param lease A freshly granted lease.
+   * @returns Function that disarms the clock.
    */
-  #armarHeartbeat(lease: Lease): () => void {
-    const relogio = setInterval(() => {
-      void this.#opcoes.cliente.heartbeat(lease.id).catch((erro: unknown) => {
-        this.ultimoErroDeHeartbeat = erro;
+  #armHeartbeat(lease: Lease): () => void {
+    const clock = setInterval(() => {
+      void this.#options.client.heartbeat(lease.id).catch((error: unknown) => {
+        this.lastHeartbeatError = error;
       });
-    }, this.intervaloHeartbeatMs);
+    }, this.heartbeatIntervalMs);
 
-    if (typeof relogio.unref === 'function') relogio.unref();
+    if (typeof clock.unref === 'function') clock.unref();
 
     return () => {
-      clearInterval(relogio);
+      clearInterval(clock);
     };
   }
 }

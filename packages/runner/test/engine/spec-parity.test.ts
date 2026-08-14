@@ -1,16 +1,20 @@
 /**
- * Paridade de especificação: `types.ts` não pode divergir do documento.
+ * Specification parity: `types.ts` may not drift away from the document.
  *
- * A especificação do EngineAdapter está declaradamente **não congelada**
- * (`docs/formatos/engine-adapter.md:1-9`) — a regra dos dois consumidores
- * exige dois adapters implementados antes de travar o formato. Enquanto ela se
- * move, o risco real não é o código contradizer o documento de forma barulhenta:
- * é ele divergir em silêncio e só aparecer no dia da segunda CLI (t119).
+ * The EngineAdapter specification is declaredly **not frozen**
+ * (`docs/formatos/engine-adapter.md:1-9`) — the two-consumers rule demands two
+ * implemented adapters before the format is locked. While it moves, the real
+ * risk is not the code contradicting the document loudly: it is the code
+ * drifting in silence and only showing up on the day of the second CLI (t119).
  *
- * Este teste é o portão contra isso. Ele lê os blocos ```typescript``` da seção
- * "Interface TypeScript" do documento, extrai todo símbolo exportado e exige do
- * módulo o MESMO conjunto — nem a menos (o documento manda) nem a mais (o
- * módulo não inventa contrato).
+ * This test is the gate against that. It reads the ```typescript``` blocks of
+ * the "Interface TypeScript" section of the document, extracts every exported
+ * symbol and demands the SAME set from the module — neither less (the document
+ * rules) nor more (the module invents no contract).
+ *
+ * Only names and kinds are compared, never the prose around them: the document
+ * is a repo document and stays in Portuguese, while the module's comments are
+ * English from D18 onward.
  */
 
 import assert from 'node:assert/strict';
@@ -19,88 +23,88 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const DOC = fileURLToPath(new URL('../../../../docs/formatos/engine-adapter.md', import.meta.url));
-const TIPOS = fileURLToPath(new URL('../../src/engine/types.ts', import.meta.url));
+const TYPES = fileURLToPath(new URL('../../src/engine/types.ts', import.meta.url));
 
-const SECAO = '## Interface TypeScript';
+const SECTION = '## Interface TypeScript';
 
-/** Símbolos que só existem em tempo de compilação — não dá para checar em runtime. */
-const ESPECIES_APAGADAS = new Set(['type', 'interface']);
+/** Symbols that only exist at compile time — there is no checking them at runtime. */
+const ERASED_KINDS = new Set(['type', 'interface']);
 
-const PADRAO_DE_EXPORT =
+const EXPORT_PATTERN =
   /^export\s+(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(type|interface|class|const|let|var|function|enum)\s+([A-Za-z_$][\w$]*)/gm;
 
-/** Corpo de uma seção `## <título>` até o próximo heading de mesmo nível. */
-function corpoDaSecao(markdown: string, titulo: string): string {
-  const linhas = markdown.split('\n');
-  const inicio = linhas.indexOf(titulo);
-  assert.notEqual(inicio, -1, `seção "${titulo}" não encontrada em ${DOC}`);
-  const resto = linhas.slice(inicio + 1);
-  const fim = resto.findIndex((linha) => linha.startsWith('## '));
-  return (fim === -1 ? resto : resto.slice(0, fim)).join('\n');
+/** Body of a `## <title>` section up to the next heading of the same level. */
+function sectionBody(markdown: string, title: string): string {
+  const lines = markdown.split('\n');
+  const start = lines.indexOf(title);
+  assert.notEqual(start, -1, `section "${title}" not found in ${DOC}`);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => line.startsWith('## '));
+  return (end === -1 ? rest : rest.slice(0, end)).join('\n');
 }
 
-/** Concatena o conteúdo de todo bloco cercado ```typescript``` de um trecho. */
-function blocosTypescript(trecho: string): string {
-  const blocos: string[] = [];
-  const padrao = /^```typescript\n([\s\S]*?)^```$/gm;
-  let casamento: RegExpExecArray | null;
-  while ((casamento = padrao.exec(trecho)) !== null) blocos.push(casamento[1] ?? '');
-  return blocos.join('\n');
+/** Concatenates the content of every fenced ```typescript``` block of an excerpt. */
+function typescriptBlocks(excerpt: string): string {
+  const blocks: string[] = [];
+  const pattern = /^```typescript\n([\s\S]*?)^```$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(excerpt)) !== null) blocks.push(match[1] ?? '');
+  return blocks.join('\n');
 }
 
-/** `nome -> espécie` de cada símbolo exportado num fonte TypeScript. */
-function exportsDe(fonte: string): Map<string, string> {
-  const encontrados = new Map<string, string>();
-  PADRAO_DE_EXPORT.lastIndex = 0;
-  let casamento: RegExpExecArray | null;
-  while ((casamento = PADRAO_DE_EXPORT.exec(fonte)) !== null) {
-    const [, especie, nome] = casamento;
-    if (especie && nome) encontrados.set(nome, especie);
+/** `name -> kind` of every exported symbol in a TypeScript source. */
+function exportsOf(source: string): Map<string, string> {
+  const found = new Map<string, string>();
+  EXPORT_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = EXPORT_PATTERN.exec(source)) !== null) {
+    const [, kind, name] = match;
+    if (kind && name) found.set(name, kind);
   }
-  return encontrados;
+  return found;
 }
 
-const doDocumento = exportsDe(blocosTypescript(corpoDaSecao(readFileSync(DOC, 'utf8'), SECAO)));
+const fromDocument = exportsOf(typescriptBlocks(sectionBody(readFileSync(DOC, 'utf8'), SECTION)));
 
-test('a extração do documento achou a interface (guarda contra regex quebrada)', () => {
+test('the extraction from the document found the interface (guard against a broken regex)', () => {
   assert.ok(
-    doDocumento.size >= 10,
-    `só ${doDocumento.size} símbolo(s) extraído(s) de "${SECAO}" — a extração quebrou`,
+    fromDocument.size >= 10,
+    `only ${fromDocument.size} symbol(s) extracted from "${SECTION}" — the extraction broke`,
   );
-  for (const ancora of ['SessionSpec', 'SessionListener', 'EngineAdapter', 'UnknownSessionError']) {
-    assert.ok(doDocumento.has(ancora), `âncora "${ancora}" não veio do documento`);
+  for (const anchor of ['SessionSpec', 'SessionListener', 'EngineAdapter', 'UnknownSessionError']) {
+    assert.ok(fromDocument.has(anchor), `anchor "${anchor}" did not come from the document`);
   }
 });
 
-test('types.ts exporta exatamente os símbolos do documento — nem a menos, nem a mais', () => {
-  const doModulo = exportsDe(readFileSync(TIPOS, 'utf8'));
+test('types.ts exports exactly the symbols of the document — neither less, nor more', () => {
+  const fromModule = exportsOf(readFileSync(TYPES, 'utf8'));
 
-  const esperados = [...doDocumento.keys()].sort();
-  const declarados = [...doModulo.keys()].sort();
+  const expected = [...fromDocument.keys()].sort();
+  const declared = [...fromModule.keys()].sort();
 
-  const faltando = esperados.filter((nome) => !doModulo.has(nome));
-  const sobrando = declarados.filter((nome) => !doDocumento.has(nome));
+  const missing = expected.filter((name) => !fromModule.has(name));
+  const extra = declared.filter((name) => !fromDocument.has(name));
 
   assert.deepEqual(
-    { faltando, sobrando },
-    { faltando: [], sobrando: [] },
-    'types.ts divergiu de docs/formatos/engine-adapter.md § Interface TypeScript',
+    { missing, extra },
+    { missing: [], extra: [] },
+    'types.ts drifted away from docs/formatos/engine-adapter.md § Interface TypeScript',
   );
-  assert.deepEqual(declarados, esperados);
+  assert.deepEqual(declared, expected);
 
-  for (const [nome, especie] of doDocumento) {
-    assert.equal(doModulo.get(nome), especie, `"${nome}" mudou de espécie em relação ao documento`);
+  for (const [name, kind] of fromDocument) {
+    assert.equal(fromModule.get(name), kind, `"${name}" changed kind relative to the document`);
   }
 });
 
-test('os símbolos de valor do documento existem de verdade em runtime', async () => {
-  const modulo: Record<string, unknown> = await import('../../src/engine/types.ts');
+test('the value symbols of the document really exist at runtime', async () => {
+  const module: Record<string, unknown> = await import('../../src/engine/types.ts');
 
-  for (const [nome, especie] of doDocumento) {
-    if (ESPECIES_APAGADAS.has(especie)) continue;
+  for (const [name, kind] of fromDocument) {
+    if (ERASED_KINDS.has(kind)) continue;
     assert.ok(
-      Object.hasOwn(modulo, nome),
-      `"${nome}" está declarado mas não é exportado em runtime por types.ts`,
+      Object.hasOwn(module, name),
+      `"${name}" is declared but is not exported at runtime by types.ts`,
     );
   }
 });

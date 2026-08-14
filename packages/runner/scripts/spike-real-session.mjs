@@ -1,31 +1,32 @@
 /**
- * Prova manual: uma sessão de verdade, com a CLI `claude` real.
+ * Manual proof: a real session, with the real `claude` CLI.
  *
- * NÃO é teste de CI e não deve virar um. A suíte roda contra o fake engine
- * justamente para não depender de binário instalado, autenticação nem rede
- * (`docs/formatos/engine-adapter.md:363-366`); esta prova é o portão manual do
- * outro lado — o que o kit não pode provar porque não tem CLI de verdade.
- * Mesma divisão do `make spike` do flowpilot: evidência anexada à ficha, não
- * gate automático.
+ * NOT a CI test, and it must not become one. The suite runs against the fake
+ * engine precisely so it does not depend on an installed binary, credentials or
+ * network (`docs/formatos/engine-adapter.md:363-366`); this proof is the manual
+ * gate on the other side — the half the kit cannot prove because it has no real
+ * CLI. Same division the flowpilot's `make spike` set up: evidence attached to
+ * the ticket, not an automatic gate.
  *
- * O que ela demonstra, ponta a ponta:
+ * What it demonstrates, end to end:
  *
- * 1. `verifyCli()` acha a CLI real e reporta a versão.
- * 2. Uma sessão roda num repositório git descartável, com `instructions` vindo
- *    do manifesto de skill "fazer" já existente
- *    (`especificacoes/formatos/exemplos/manifesto-skill.develop.json`). É o
- *    stand-in mais próximo de "skill vinda do banco" disponível hoje: o banco
- *    é t101/t102 e ainda não existe.
- * 3. A sessão de fato TRABALHOU — o arquivo que o prompt pediu está no
- *    workdir. Sem isso, "saiu com 0" não prova nada.
- * 4. Os callbacks do listener são projetados em `sessao.aberta` e
- *    `sessao.finalizada` conformes à taxonomia (t98) e validados com ajv
- *    contra os schemas de verdade.
+ * 1. `verifyCli()` finds the real CLI and reports the version.
+ * 2. A session runs in a disposable git repository, with `instructions` coming
+ *    from the existing "fazer" skill manifest
+ *    (`especificacoes/formatos/exemplos/manifesto-skill.develop.json`). It is
+ *    the closest stand-in for "skill coming from the database" available today:
+ *    the database is t101/t102 and does not exist yet.
+ * 3. The session actually WORKED — the file the prompt asked for is in the
+ *    workdir. Without that, "it exited with 0" proves nothing.
+ * 4. The listener's callbacks are projected into `sessao.aberta` and
+ *    `sessao.finalizada` conforming to the taxonomy (t98) and validated with
+ *    ajv against the real schemas.
  *
- * O JSONL é artefato local de evidência, não tabela: o adapter não escreve em
- * banco (D1 — o listener é a única saída, e quem chamou decide o que persistir).
+ * The JSONL is a local evidence artifact, not a table: the adapter does not
+ * write to a database (D1 — the listener is the only output, and whoever called
+ * decides what to persist).
  *
- * Uso: npm run spike --workspace @cartografo/runner
+ * Usage: npm run spike --workspace @cartografo/runner
  */
 
 import { execFileSync } from 'node:child_process';
@@ -42,46 +43,45 @@ import { ClaudeCodeAdapter } from '../src/engine/claude-code-adapter.ts';
 const Ajv2020 = AjvModule.default ?? AjvModule;
 const addFormats = formatsModule.default ?? formatsModule;
 
-const RAIZ = fileURLToPath(new URL('../../../', import.meta.url));
-const DIR_SCHEMAS = join(RAIZ, 'especificacoes/eventos/schemas');
-const MANIFESTO = join(RAIZ, 'especificacoes/formatos/exemplos/manifesto-skill.develop.json');
+const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+const SCHEMAS_DIR = join(REPO_ROOT, 'especificacoes/eventos/schemas');
+const MANIFEST = join(REPO_ROOT, 'especificacoes/formatos/exemplos/manifesto-skill.develop.json');
 
-const ARQUIVO_PEDIDO = 'PROVA-T104.md';
-const FRASE = 'sessao real do EngineAdapter do Claude Code';
-const TIMEOUT_SEGUNDOS = 300;
+const REQUESTED_FILE = 'PROVA-T104.md';
+const PHRASE = 'sessao real do EngineAdapter do Claude Code';
+const TIMEOUT_SECONDS = 300;
 
 /**
- * `SessionStatus` (vocabulário da interface) -> `status` da taxonomia de
- * eventos (t98). São dois vocabulários de propósito: o da interface é o mínimo
- * que toda CLI headless expressa, o da taxonomia descreve o desfecho do
- * trabalho.
+ * `SessionStatus` (the interface's vocabulary) -> the event taxonomy's `status`
+ * (t98). Two vocabularies on purpose: the interface's is the minimum every
+ * headless CLI expresses, the taxonomy's describes the outcome of the WORK.
  *
- * `cancelled` cai em `travada` por falta de coisa melhor — a taxonomia não tem
- * "cancelada". A descrição de `travada` é "uma parada nossa", que serve, mas o
- * casamento não é exato e vale registrar antes que o runner (t103) tenha de
- * decidir isso sozinho.
+ * `cancelled` lands on `travada` for want of anything better — the taxonomy has
+ * no "cancelled". The description of `travada` is "a stop of ours", which does
+ * the job, but the match is not exact and is worth recording before the runner
+ * (t103) has to decide it alone.
  */
-const STATUS_DA_TAXONOMIA = {
+const TAXONOMY_STATUS = {
   completed: 'concluida',
   failed: 'falhou',
   timed_out: 'tempo_esgotado',
   cancelled: 'travada',
 };
 
-const registrar = (mensagem) => console.log(`[spike] ${mensagem}`);
+const log = (message) => console.log(`[spike] ${message}`);
 
-function morrer(mensagem) {
-  console.error(`\n[spike] FALHOU: ${mensagem}\n`);
+function die(message) {
+  console.error(`\n[spike] FAILED: ${message}\n`);
   process.exit(1);
 }
 
-/** Repositório git descartável — o `workingDir` da sessão. */
-function criarRepoDescartavel() {
-  const raiz = mkdtempSync(join(tmpdir(), 'cartografo-spike-'));
-  const repo = join(raiz, 'repo');
+/** A disposable git repository — the session's `workingDir`. */
+function createDisposableRepo() {
+  const root = mkdtempSync(join(tmpdir(), 'cartografo-spike-'));
+  const repo = join(root, 'repo');
   mkdirSync(repo);
-  const git = (...argumentos) =>
-    execFileSync('git', argumentos, { cwd: repo, stdio: 'pipe', encoding: 'utf8' });
+  const git = (...args) =>
+    execFileSync('git', args, { cwd: repo, stdio: 'pipe', encoding: 'utf8' });
 
   git('init', '--quiet');
   git('config', 'user.email', 'spike@cartografo.local');
@@ -89,156 +89,159 @@ function criarRepoDescartavel() {
   writeFileSync(join(repo, 'README.md'), '# Repo descartável da prova manual da t104\n');
   git('add', '.');
   git('commit', '--quiet', '-m', 'inicial');
-  return { raiz, repo };
+  return { root, repo };
 }
 
-function montarValidador() {
-  // `allowUnionTypes` porque a taxonomia usa união de tipo de propósito:
-  // `entidade.id` é inteiro para trabalho/sessao/pergunta/lease e string para
-  // grafo_versao, cujo id é o hash do snapshot (D15). É decisão do t98, não
-  // desleixo de schema — e alterar schema de outra ficha está fora de escopo.
+function buildValidator() {
+  // `allowUnionTypes` because the taxonomy uses a type union on purpose:
+  // `entidade.id` is an integer for `trabalho`, `sessao`, `pergunta` and
+  // `lease`, and a string for `grafo_versao`, whose id is the snapshot hash
+  // (D15). It is t98's
+  // decision, not schema sloppiness — and changing another ticket's schema is
+  // out of scope.
   const ajv = new Ajv2020({ strict: true, allowUnionTypes: true, allErrors: true });
   addFormats(ajv);
-  for (const nome of ['envelope', 'sessao.aberta', 'sessao.finalizada']) {
-    ajv.addSchema(JSON.parse(readFileSync(join(DIR_SCHEMAS, `${nome}.schema.json`), 'utf8')));
+  for (const name of ['envelope', 'sessao.aberta', 'sessao.finalizada']) {
+    ajv.addSchema(JSON.parse(readFileSync(join(SCHEMAS_DIR, `${name}.schema.json`), 'utf8')));
   }
-  return (tipo, evento) => {
-    const valido = ajv.validate(`${tipo}.schema.json`, evento);
-    if (!valido) {
-      morrer(`evento ${tipo} não valida contra o schema:\n${ajv.errorsText(ajv.errors, { separator: '\n' })}`);
+  return (type, event) => {
+    const valid = ajv.validate(`${type}.schema.json`, event);
+    if (!valid) {
+      die(`event ${type} does not validate against the schema:\n${ajv.errorsText(ajv.errors, { separator: '\n' })}`);
     }
-    registrar(`evento ${tipo} valida contra o schema da taxonomia`);
+    log(`event ${type} validates against the taxonomy schema`);
   };
 }
 
-/** Envelope comum. `id` é local: num sistema de verdade quem numera é o server. */
-function envelope(id, tipo, dados) {
+/** The common envelope. `id` is local: in a real system the server numbers it. */
+function envelope(id, type, payload) {
   return {
     id,
-    tipo,
+    tipo: type,
     projeto_id: 3,
     execucao_id: null,
     entidade: { tipo: 'sessao', id: 1 },
     ator: { tipo: 'sistema', ref: 'runner/spike-t104' },
     ocorrido_em: new Date().toISOString(),
-    dados,
+    dados: payload,
   };
 }
 
-async function principal() {
+async function main() {
   const adapter = new ClaudeCodeAdapter();
 
-  const sonda = await adapter.verifyCli();
-  registrar(`verifyCli: ${JSON.stringify(sonda)}`);
-  if (!sonda.available) morrer('a CLI `claude` não respondeu a --version — instale antes de rodar a prova');
-  if (!sonda.authenticated) {
-    registrar('AVISO: authenticated=false. É melhor esforço, não garantia; seguindo assim mesmo.');
+  const probe = await adapter.verifyCli();
+  log(`verifyCli: ${JSON.stringify(probe)}`);
+  if (!probe.available) die('the `claude` CLI did not answer --version — install it before running the proof');
+  if (!probe.authenticated) {
+    log('WARNING: authenticated=false. It is best effort, not a guarantee; going ahead anyway.');
   }
 
-  const manifesto = JSON.parse(readFileSync(MANIFESTO, 'utf8'));
-  const instrucoes = manifesto.instrucoes;
-  if (typeof instrucoes !== 'string' || instrucoes.length === 0) {
-    morrer(`o manifesto ${MANIFESTO} não tem o campo "instrucoes"`);
+  const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+  const instructions = manifest.instrucoes;
+  if (typeof instructions !== 'string' || instructions.length === 0) {
+    die(`the manifest ${MANIFEST} has no "instrucoes" field`);
   }
-  registrar(`instructions: ${instrucoes.length} caracteres do manifesto de skill "${manifesto.id}"`);
+  log(`instructions: ${instructions.length} characters from the skill manifest "${manifest.id}"`);
 
-  const { raiz, repo } = criarRepoDescartavel();
-  registrar(`workingDir: ${repo}`);
+  const { root, repo } = createDisposableRepo();
+  log(`workingDir: ${repo}`);
 
   const prompt =
-    `Crie no diretório atual um arquivo chamado ${ARQUIVO_PEDIDO} contendo exatamente ` +
-    `uma linha com o texto: ${FRASE}\n` +
+    `Crie no diretório atual um arquivo chamado ${REQUESTED_FILE} contendo exatamente ` +
+    `uma linha com o texto: ${PHRASE}\n` +
     'Não faça mais nada além disso, e não commite.';
 
   const spec = {
     workingDir: repo,
-    instructions: instrucoes,
+    instructions,
     prompt,
-    timeoutSeconds: TIMEOUT_SEGUNDOS,
+    timeoutSeconds: TIMEOUT_SECONDS,
   };
 
   const transcript = [];
   let engineRef = null;
-  let desfecho = null;
-  let resolverFim;
-  const fim = new Promise((resolve) => {
-    resolverFim = resolve;
+  let outcome = null;
+  let resolveEnd;
+  const end = new Promise((resolve) => {
+    resolveEnd = resolve;
   });
 
-  const inicio = Date.now();
+  const startedAt = Date.now();
   const handle = await adapter.startSession(spec, {
-    onOutput(linha) {
-      transcript.push(linha);
-      process.stdout.write(`  | ${linha}\n`);
+    onOutput(line) {
+      transcript.push(line);
+      process.stdout.write(`  | ${line}\n`);
     },
     onEngineRef(ref) {
       engineRef = ref;
-      registrar(`onEngineRef: ${ref}`);
+      log(`onEngineRef: ${ref}`);
     },
     onFinished(status, exitCode) {
-      desfecho = { status, exitCode };
-      resolverFim();
+      outcome = { status, exitCode };
+      resolveEnd();
     },
   });
-  registrar(`handle local do adapter: ${handle}`);
-  registrar(`getStatus logo após o start: ${await adapter.getStatus(handle)}`);
+  log(`local handle of the adapter: ${handle}`);
+  log(`getStatus right after the start: ${await adapter.getStatus(handle)}`);
 
-  await fim;
-  const duracao = ((Date.now() - inicio) / 1000).toFixed(1);
-  registrar(`onFinished: ${JSON.stringify(desfecho)} em ${duracao}s`);
-  registrar(`getStatus depois do fim: ${await adapter.getStatus(handle)}`);
+  await end;
+  const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+  log(`onFinished: ${JSON.stringify(outcome)} in ${elapsed}s`);
+  log(`getStatus after the end: ${await adapter.getStatus(handle)}`);
 
-  const validar = montarValidador();
+  const validate = buildValidator();
 
-  // `sessao.aberta` sai com o ref que a sessão já revelou: o quadro de init é o
-  // primeiro do stream, então na prática ele é conhecido bem antes do fim.
-  const aberta = envelope(1, 'sessao.aberta', {
+  // `sessao.aberta` goes out with the ref the session has already revealed: the
+  // init frame is the first of the stream, so in practice it is known well
+  // before the end.
+  const opened = envelope(1, 'sessao.aberta', {
     engine: adapter.engineName,
     engine_session_ref: engineRef,
     working_dir: repo,
     prompt,
-    timeout_seconds: TIMEOUT_SEGUNDOS,
+    timeout_seconds: TIMEOUT_SECONDS,
     trabalho_id: null,
     no_id: null,
   });
-  validar('sessao.aberta', aberta);
+  validate('sessao.aberta', opened);
 
-  const finalizada = envelope(2, 'sessao.finalizada', {
-    status: STATUS_DA_TAXONOMIA[desfecho.status],
-    exit_code: desfecho.exitCode,
-    // A interface v0 não reporta uso de tokens (fora de escopo), e null aqui é
-    // "o engine não reportou nada" — nunca colapsar em zero.
+  const finished = envelope(2, 'sessao.finalizada', {
+    status: TAXONOMY_STATUS[outcome.status],
+    exit_code: outcome.exitCode,
+    // The v0 interface reports no token usage (out of scope), and null here is
+    // "the engine reported nothing" — never collapse it into zero.
     uso: null,
   });
-  validar('sessao.finalizada', finalizada);
+  validate('sessao.finalizada', finished);
 
-  const jsonl = join(raiz, 'eventos.jsonl');
-  writeFileSync(jsonl, `${JSON.stringify(aberta)}\n${JSON.stringify(finalizada)}\n`);
-  writeFileSync(join(raiz, 'transcript.txt'), `${transcript.join('\n')}\n`);
+  const jsonl = join(root, 'eventos.jsonl');
+  writeFileSync(jsonl, `${JSON.stringify(opened)}\n${JSON.stringify(finished)}\n`);
+  writeFileSync(join(root, 'transcript.txt'), `${transcript.join('\n')}\n`);
 
-  // As provas duras, na ordem em que importam.
-  if (desfecho.status !== 'completed') morrer(`a sessão terminou como "${desfecho.status}"`);
-  if (desfecho.exitCode !== 0) morrer(`exit code ${desfecho.exitCode}`);
-  if (transcript.length === 0) morrer('nenhuma linha chegou ao onOutput');
-  if (engineRef === null) morrer('onEngineRef nunca disparou — nenhum session_id foi reconhecido no stream');
+  // The hard proofs, in the order that matters.
+  if (outcome.status !== 'completed') die(`the session ended as "${outcome.status}"`);
+  if (outcome.exitCode !== 0) die(`exit code ${outcome.exitCode}`);
+  if (transcript.length === 0) die('no line reached onOutput');
+  if (engineRef === null) die('onEngineRef never fired — no session_id was recognized in the stream');
 
-  const produzido = join(repo, ARQUIVO_PEDIDO);
-  if (!existsSync(produzido)) morrer(`a sessão não criou ${ARQUIVO_PEDIDO} — saiu com 0 sem ter trabalhado`);
-  const conteudo = readFileSync(produzido, 'utf8');
-  if (!conteudo.includes(FRASE)) morrer(`${ARQUIVO_PEDIDO} existe mas não tem a frase pedida:\n${conteudo}`);
+  const produced = join(repo, REQUESTED_FILE);
+  if (!existsSync(produced)) die(`the session did not create ${REQUESTED_FILE} — it exited with 0 without working`);
+  const content = readFileSync(produced, 'utf8');
+  if (!content.includes(PHRASE)) die(`${REQUESTED_FILE} exists but does not carry the phrase asked for:\n${content}`);
 
-  console.log('\n===== evidência =====');
-  console.log(`CLI:            ${sonda.version}`);
+  console.log('\n===== evidence =====');
+  console.log(`CLI:            ${probe.version}`);
   console.log(`engineName:     ${adapter.engineName}`);
   console.log(`engineRef:      ${engineRef}`);
-  console.log(`desfecho:       ${desfecho.status} / exit ${desfecho.exitCode} / ${duracao}s`);
-  console.log(`linhas:         ${transcript.length}`);
-  console.log(`${ARQUIVO_PEDIDO}: ${JSON.stringify(conteudo.trim())}`);
-  console.log(`eventos:        ${jsonl}`);
-  console.log(`transcript:     ${join(raiz, 'transcript.txt')}`);
+  console.log(`outcome:        ${outcome.status} / exit ${outcome.exitCode} / ${elapsed}s`);
+  console.log(`lines:          ${transcript.length}`);
+  console.log(`${REQUESTED_FILE}: ${JSON.stringify(content.trim())}`);
+  console.log(`events:         ${jsonl}`);
+  console.log(`transcript:     ${join(root, 'transcript.txt')}`);
   console.log(`workdir:        ${repo}`);
   console.log('=====================\n');
-  registrar('prova manual OK');
+  log('manual proof OK');
 }
 
-await principal();
+await main();

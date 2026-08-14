@@ -2,7 +2,7 @@
  * Agregação de custo por `(versão de grafo, nó)` — a lente de custo do topógrafo
  * (t114, FR2).
  *
- * `GET /v1/execucoes/:id/metricas-por-versao` já cruza versão × telemetria, mas
+ * `GET /v1/executions/:id/metrics-by-version` já cruza versão × telemetria, mas
  * só conta trabalhos e eventos por `grafo_versao_id`. Aqui o join desce um nível:
  * o par `(grafo_versao_id, no_id)` é a unidade em que uma política de custo
  * consegue apontar um alvo — "a v2 é mais cara que a v1" é opinião até dizer
@@ -34,7 +34,7 @@ export interface UsoDeSessao {
 }
 
 /**
- * Uma sessão como `GET /v1/sessoes` a devolve, no subconjunto que a lente lê.
+ * Uma sessão como `GET /v1/sessions` a devolve, no subconjunto que a lente lê.
  *
  * Subconjunto deliberado da projeção de `packages/core/src/repositorios/sessao.ts`:
  * declarar só o que se consome é o que faz esta lente sobreviver a campos novos
@@ -113,9 +113,9 @@ function compararComNuloPorUltimo(a: string | null, b: string | null): number {
 /**
  * Agrega as sessões de uma execução por `(versão de grafo, nó)` (FR2).
  *
- * @param sessoes Sessões como `GET /v1/sessoes?execucao_id=` as devolveu.
+ * @param sessoes Sessões como `GET /v1/sessions?execucao_id=` as devolveu.
  * @param trabalhoPorId Mapa `trabalho_id -> grafo_versao_id`, montado de
- *   `GET /v1/trabalhos?execucao_id=`. Trabalho ausente do mapa é tratado como
+ *   `GET /v1/jobs?execucao_id=`. Trabalho ausente do mapa é tratado como
  *   versão desconhecida, não como erro.
  * @returns Uma linha por par distinto observado; pares identificados primeiro,
  *   o grupo com `null` em qualquer das duas pontas por último.

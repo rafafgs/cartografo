@@ -22,6 +22,15 @@
         "no_entrada_id": {
           "type": "string",
           "description": "Nó do grafo em que o trabalho nasce. O cartografo não tem estados fixos: o nó de entrada é dado da versão de grafo vigente."
+        },
+        "corpo": {
+          "type": ["string", "null"],
+          "description": "Corpo do trabalho, quando ele nasce com conteúdo (intake). null quando ninguém escreveu nenhum."
+        },
+        "criterios_de_aceite": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Critérios de aceite PRELIMINARES, como o intake os propôs. Quem os produz de verdade é o nó que refina, a partir do pedido bruto. null e [] são coisas diferentes."
         }
       },
       "additionalProperties": false

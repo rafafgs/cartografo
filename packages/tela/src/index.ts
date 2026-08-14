@@ -1,31 +1,35 @@
 /**
- * Tela do cartografo — placeholder.
+ * The cartografo screen — placeholder.
  *
- * Existe nesta fase só para provar a fronteira da D11: a tela é um cliente
- * comum da API pública, sem privilégio nenhum sobre o core. Ela não conhece o
- * banco, não importa nada de `packages/core/src/db` e não declara o driver do
- * SQLite — fala com o control plane exclusivamente por HTTP.
+ * It exists at this stage only to prove the D11 boundary: the screen is one
+ * more client of the public API, with no privilege over the core. It does not
+ * know the database, imports nothing from `packages/core/src/db` and declares
+ * no SQLite driver — it talks to the control plane over HTTP and nothing else.
  *
- * O conteúdo de verdade (observabilidade e inbox de propostas, D11) entra nas
- * tickets seguintes.
+ * The real content (observability and the proposal inbox, D11) arrives in the
+ * following tickets.
  */
 
-/** Resposta de `GET /health` do control plane. */
-export interface Saude {
+/** Body of the control plane's `GET /health`. */
+export interface HealthStatus {
   status: string;
   db: string;
 }
 
 /**
- * Consulta a saúde do control plane pela rota pública.
+ * Reads the control plane's health through the public route.
  *
- * `buscar` é injetável só para teste; em produção é o `fetch` global.
+ * `doFetch` is injectable for tests only; in production it is the global
+ * `fetch` — the same convention `proxy.ts` already uses.
  *
- * @param urlBase URL base do control plane (ex.: `http://127.0.0.1:4317`).
- * @param buscar Implementação de `fetch` a usar.
- * @returns Corpo da resposta de `/health`.
+ * @param baseUrl Control plane base URL (e.g. `http://127.0.0.1:4317`).
+ * @param doFetch `fetch` implementation to use.
+ * @returns The body of `/health`.
  */
-export async function consultarSaude(urlBase: string, buscar: typeof fetch = fetch): Promise<Saude> {
-  const resposta = await buscar(`${urlBase.replace(/\/+$/, '')}/health`);
-  return (await resposta.json()) as Saude;
+export async function checkHealth(
+  baseUrl: string,
+  doFetch: typeof fetch = fetch,
+): Promise<HealthStatus> {
+  const response = await doFetch(`${baseUrl.replace(/\/+$/, '')}/health`);
+  return (await response.json()) as HealthStatus;
 }

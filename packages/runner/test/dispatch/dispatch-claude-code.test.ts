@@ -15,7 +15,7 @@
  * (`scripts/spike-t106-human-escalation.mjs`), same discipline t104 used.
  *
  * The control-plane boot is the same pattern as
- * `test/controller/dispatch-e-lease.e2e.test.ts`: spawn the real binary, wait
+ * `test/controller/dispatch-and-lease.e2e.test.ts`: spawn the real binary, wait
  * for the readiness line, never `sleep` and hope. It is duplicated rather than
  * extracted because that file belongs to another ticket's surface.
  *
@@ -281,19 +281,19 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
 
   let currentDispatch = dispatchThatAsks;
   const controller = new Controller({
-    cliente: client,
+    client,
     runnerId: 'runner-t106',
-    projetoId: 1,
-    tetoRunner: 1,
-    tetoProjeto: 4,
-    ttlSegundos: 30,
-    despachar: async (workId) => currentDispatch(workId),
+    projectId: 1,
+    runnerCap: 1,
+    projectCap: 4,
+    ttlSeconds: 30,
+    dispatch: async (jobId) => currentDispatch(jobId),
   });
 
   // --- 1. the first tick dispatches, and the session asks -------------------
   const first = await controller.tick();
   assert.ok(first !== null, 'the first tick should have found and dispatched the work');
-  assert.equal(first.trabalhoId, work.id);
+  assert.equal(first.jobId, work.id);
 
   const blocked = await api<Work>(baseUrl, 'GET', `/v1/jobs/${work.id}`);
   assert.equal(blocked.bloqueado, true, 'asking blocks the work, without the runner asking for it');
@@ -345,7 +345,7 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
   currentDispatch = dispatchThatFinishes;
   const second = await controller.tick();
   assert.ok(second !== null, 'the answered work is a candidate again');
-  assert.equal(second.trabalhoId, work.id);
+  assert.equal(second.jobId, work.id);
 
   const record = JSON.parse(readFileSync(secondRecord, 'utf8')) as FakeRecord;
   const prompt = record.argv[record.argv.length - 1];

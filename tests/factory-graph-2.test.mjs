@@ -1,0 +1,634 @@
+/**
+ * Acceptance tests of t116 — factory graph 2 (asymmetric bets).
+ *
+ * They cover the whole bundle: the graph document, the seven skill manifests it
+ * pins and the bundle validator. Same mould as `tests/factory-graph-1.test.mjs`
+ * (t105), with two tests this graph's problem class demands and the software one
+ * did not have:
+ *
+ * - **AT11** — the crossing by contract: each node's output feeds the next
+ *   node's input, and the `decisao` node produces no output at all without a
+ *   recorded human answer. It is the proof, at contract level, of "a real thesis
+ *   crosses all the way to the human decision" — not a live execution, which
+ *   depends on t109 (see the bundle's README).
+ * - **FR7** — the metrics recorded are process metrics, never a financial
+ *   outcome (D14: "P&L is slow validation, never a round's metric").
+ *
+ * The hash procedure is reimplemented HERE, straight from the specification
+ * (`especificacoes/formatos/manifesto-skill.md`, "Identificação" section),
+ * rather than imported from the validator: if the test reused the
+ * implementation it checks, a bug in the canonicalizer would go unnoticed on
+ * both sides.
+ *
+ * The Portuguese names below are data: the bundle's directory, the schema keys
+ * (`nos`, `arestas`, `skill_ref`, `instrucoes`, `permissoes`, …), the node ids
+ * and the enum values are all frozen by D18's own carve-out, and so are the
+ * reference validator's pinned exports (t133, exception 5).
+ *
+ * Run with: `node --test tests/`
+ */
+
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+
+const ROOT = path.resolve(import.meta.dirname, '..');
+const BUNDLE_DIR = path.join(ROOT, 'grafos-de-fabrica', 'bets-assimetricas');
+const SKILLS_DIR = path.join(BUNDLE_DIR, 'skills');
+const GRAPH_PATH = path.join(BUNDLE_DIR, 'grafo.json');
+const GRAPH_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validar-grafo.mjs');
+const BUNDLE_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-factory-bundle.mjs');
+const GRAPH_SCHEMA_PATH = path.join(ROOT, 'schema', 'grafo.schema.json');
+const MANIFEST_SCHEMA_PATH = path.join(
+  ROOT,
+  'especificacoes',
+  'formatos',
+  'manifesto-skill.schema.json',
+);
+const THESIS_FIXTURE_PATH = path.join(
+  ROOT,
+  'tests',
+  'fixtures',
+  'tese-exemplo-bets-assimetricas.json',
+);
+
+/** D14's seven nodes: node -> { papel, tipo_no, skill }. */
+const NODES = {
+  triagem: { papel: 'triador', tipo_no: 'portao', skill: 'triar-tese' },
+  'coleta-fundamentos': { papel: 'pesquisador', tipo_no: 'trabalho', skill: 'coletar-fundamentos' },
+  'analise-assimetria': { papel: 'analista', tipo_no: 'trabalho', skill: 'analisar-assimetria' },
+  'red-team': { papel: 'red-team', tipo_no: 'portao', skill: 'derrubar-tese' },
+  'dimensionamento-risco': {
+    papel: 'gestor-de-risco',
+    tipo_no: 'trabalho',
+    skill: 'dimensionar-risco',
+  },
+  decisao: { papel: 'decisor', tipo_no: 'portao', skill: 'escalar-decisao' },
+  'registro-monitoramento': {
+    papel: 'registrador',
+    tipo_no: 'trabalho',
+    skill: 'registrar-travessia',
+  },
+};
+
+/** manifest file -> { id, papel } (the manifest's role, not the node's). */
+const SKILLS = {
+  'triar-tese.json': { id: 'triar-tese', papel: 'portao' },
+  'coletar-fundamentos.json': { id: 'coletar-fundamentos', papel: 'fazer' },
+  'analisar-assimetria.json': { id: 'analisar-assimetria', papel: 'fazer' },
+  'derrubar-tese.json': { id: 'derrubar-tese', papel: 'portao' },
+  'dimensionar-risco.json': { id: 'dimensionar-risco', papel: 'fazer' },
+  'escalar-decisao.json': { id: 'escalar-decisao', papel: 'portao' },
+  'registrar-travessia.json': { id: 'registrar-travessia', papel: 'fazer' },
+};
+
+const FILE_BY_SKILL = Object.fromEntries(
+  Object.entries(SKILLS).map(([file, { id }]) => [id, file]),
+);
+
+/** The three gate skills, by the mandatory enum of `saida.resultado`. */
+const GATES = ['triar-tese.json', 'derrubar-tese.json', 'escalar-decisao.json'];
+const GATE_RESULTS = ['passou', 'falhou', 'escalar_humano'];
+
+/** FR2's nine edges. Two leave `decisao` towards the same final node. */
+const EXPECTED_EDGES = [
+  { de: 'triagem', para: 'coleta-fundamentos', condicao: 'aprofundar' },
+  { de: 'triagem', para: 'registro-monitoramento', condicao: 'descartar' },
+  { de: 'coleta-fundamentos', para: 'analise-assimetria', condicao: 'sempre' },
+  { de: 'analise-assimetria', para: 'red-team', condicao: 'sempre' },
+  { de: 'red-team', para: 'dimensionamento-risco', condicao: 'sobrevive' },
+  { de: 'red-team', para: 'registro-monitoramento', condicao: 'morta' },
+  { de: 'dimensionamento-risco', para: 'decisao', condicao: 'sempre' },
+  { de: 'decisao', para: 'registro-monitoramento', condicao: 'aprovado' },
+  { de: 'decisao', para: 'registro-monitoramento', condicao: 'recusado' },
+];
+
+/** The crossing order AT11 proves, from `triagem` to `decisao`. */
+const CHAIN = [
+  'triagem',
+  'coleta-fundamentos',
+  'analise-assimetria',
+  'red-team',
+  'dimensionamento-risco',
+  'decisao',
+];
+
+/** Reads a JSON file from the repo, failing with its relative path if missing. */
+function readJson(filePath) {
+  assert.ok(existsSync(filePath), `artifact does not exist yet: ${path.relative(ROOT, filePath)}`);
+  return JSON.parse(readFileSync(filePath, 'utf8'));
+}
+
+const readManifest = (file) => readJson(path.join(SKILLS_DIR, file));
+const readManifestOfSkill = (skill) => readManifest(FILE_BY_SKILL[skill]);
+
+/** Sorts keys recursively (RFC 8785, in the part this format uses). */
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = canonicalize(value[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+/**
+ * Canonical hash of the manifest, by the procedure in
+ * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
+ * `{instrucoes, entrada, saida, checks, permissoes}`.
+ */
+function hashOfManifest(manifest) {
+  const subset = {
+    instrucoes: manifest.instrucoes,
+    entrada: manifest.entrada,
+    saida: manifest.saida,
+    checks: manifest.checks,
+    permissoes: manifest.permissoes,
+  };
+  const digest = createHash('sha256')
+    .update(JSON.stringify(canonicalize(subset)), 'utf8')
+    .digest('hex');
+  return `sha256:${digest}`;
+}
+
+let graphValidatorModule = null;
+let bundleValidatorModule = null;
+
+/**
+ * Imports a validator on demand. The existence check comes before the
+ * `import()` so the initial red says which artifact is missing, rather than
+ * blowing up with a raw ERR_MODULE_NOT_FOUND.
+ */
+async function load(filePath, cache) {
+  assert.ok(existsSync(filePath), `artifact does not exist yet: ${path.relative(ROOT, filePath)}`);
+  return cache ?? (await import(`file://${filePath}`));
+}
+
+async function graphValidator() {
+  graphValidatorModule = await load(GRAPH_VALIDATOR_PATH, graphValidatorModule);
+  return graphValidatorModule;
+}
+
+async function bundleValidator() {
+  bundleValidatorModule = await load(BUNDLE_VALIDATOR_PATH, bundleValidatorModule);
+  return bundleValidatorModule;
+}
+
+/** Runs the bundle validator's CLI against a directory. */
+function runCli(directory) {
+  return spawnSync(process.execPath, [BUNDLE_VALIDATOR_PATH, directory], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+}
+
+/** The graph document's node, by id. */
+const findNode = (doc, id) => doc.nos.find((node) => node.id === id);
+
+/** Lines of a text that contain every given fragment. */
+function linesWith(text, fragments) {
+  return text
+    .split('\n')
+    .filter((line) => fragments.every((fragment) => line.includes(fragment)));
+}
+
+test("AT1 — grafo.json passes validarEstrutura, validarSoundness and t96's schema", async () => {
+  const { validarEstrutura, validarSoundness } = await graphValidator();
+  const { validateAgainstSchema } = await bundleValidator();
+  const doc = readJson(GRAPH_PATH);
+
+  assert.deepEqual(validarEstrutura(doc).erros, []);
+  assert.equal(validarEstrutura(doc).valido, true);
+  assert.deepEqual(validarSoundness(doc).violacoes, []);
+  assert.equal(validarSoundness(doc).valido, true);
+
+  // The bundle does not validate shape against `schema/grafo.schema.json` —
+  // only structure and soundness. This document is new content, so the shape is
+  // checked here.
+  assert.deepEqual(validateAgainstSchema(doc, readJson(GRAPH_SCHEMA_PATH)), []);
+});
+
+test('AT2 — the 7 nodes and 9 edges match the FR1-FR2 tables exactly', () => {
+  const doc = readJson(GRAPH_PATH);
+
+  assert.deepEqual(doc.nos.map((node) => node.id).sort(), Object.keys(NODES).sort());
+  for (const [id, expected] of Object.entries(NODES)) {
+    const node = findNode(doc, id);
+    assert.equal(node.papel, expected.papel, `expected role for node "${id}"`);
+    assert.equal(node.tipo_no, expected.tipo_no, `expected tipo_no for node "${id}"`);
+    assert.equal(node.skill_ref.id, expected.skill, `expected skill_ref.id for node "${id}"`);
+  }
+
+  // The key includes the condition: two edges out of `decisao` go to the same
+  // final node, and a from/to-only key would collapse both into one.
+  const key = (edge) => `${edge.de}>${edge.para}>${edge.condicao}`;
+  assert.equal(doc.arestas.length, EXPECTED_EDGES.length);
+  assert.deepEqual(doc.arestas.map(key).sort(), EXPECTED_EDGES.map(key).sort());
+
+  assert.equal(doc.no_inicial, 'triagem');
+  assert.deepEqual(doc.nos_finais, ['registro-monitoramento']);
+  assert.equal(doc.classe, 'bets-assimetricas');
+  assert.equal(doc.linhagem.tipo, 'base');
+});
+
+test('AT3 — the seven manifests validate against manifesto-skill.schema.json', async () => {
+  const { validateManifest } = await bundleValidator();
+  const schema = readJson(MANIFEST_SCHEMA_PATH);
+  assert.equal(
+    typeof validateManifest,
+    'function',
+    'validate-factory-bundle.mjs has to export validateManifest',
+  );
+
+  for (const file of Object.keys(SKILLS)) {
+    const { valid, errors } = validateManifest(readManifest(file));
+    assert.deepEqual(errors, [], `${file}: schema errors`);
+    assert.equal(
+      valid,
+      true,
+      `${file} has to validate against ${path.basename(MANIFEST_SCHEMA_PATH)}`,
+    );
+  }
+
+  // t97's negative fixture keeps being rejected by the same validator — that is
+  // what proves the green above does not come from a permissive validator.
+  assert.ok(schema.$defs.check, 'the manifest schema has to declare $defs.check');
+  const invalid = readJson(
+    path.join(ROOT, 'especificacoes', 'formatos', 'exemplos', 'manifesto-skill.invalido.fixture.json'),
+  );
+  assert.equal(validateManifest(invalid).valid, false, "t97's negative fixture has to be rejected");
+});
+
+test('AT4 — the seven manifests exist with the expected kebab-case id and role', () => {
+  for (const [file, expected] of Object.entries(SKILLS)) {
+    const manifest = readManifest(file);
+    assert.equal(manifest.id, expected.id, `${file}: id`);
+    assert.equal(manifest.papel, expected.papel, `${file}: papel`);
+    assert.ok(
+      /^[a-z0-9]+(-[a-z0-9]+)*$/.test(manifest.id),
+      `${file}: the id has to be pure kebab-case, with no namespace prefix`,
+    );
+    assert.equal(
+      manifest.id,
+      path.basename(file, '.json'),
+      `${file}: the id is the file name without its extension`,
+    );
+  }
+});
+
+test("AT5 — the three gates declare saida.resultado with the enum's three values", () => {
+  for (const file of GATES) {
+    const manifest = readManifest(file);
+    assert.equal(manifest.papel, 'portao', `${file}: papel`);
+    assert.deepEqual(
+      manifest.saida.properties.resultado.enum,
+      GATE_RESULTS,
+      `${file}: saida.resultado enum`,
+    );
+    assert.ok(
+      manifest.saida.required.includes('resultado'),
+      `${file}: resultado has to be required in the gate's output`,
+    );
+  }
+});
+
+test("AT6 — the recomputed hash of each manifest matches the node's skill_ref", () => {
+  const doc = readJson(GRAPH_PATH);
+  const byId = new Map(
+    Object.keys(SKILLS).map((file) => {
+      const manifest = readManifest(file);
+      return [manifest.id, manifest];
+    }),
+  );
+
+  assert.equal(doc.nos.length, 7);
+  for (const node of doc.nos) {
+    const manifest = byId.get(node.skill_ref.id);
+    assert.ok(manifest, `no manifest with id "${node.skill_ref.id}" (node "${node.id}")`);
+    assert.equal(manifest.versao, node.skill_ref.versao, `node "${node.id}": pinned version`);
+    assert.equal(
+      hashOfManifest(manifest),
+      node.skill_ref.hash,
+      `node "${node.id}": the pinned hash has to be the manifest's real hash`,
+    );
+    assert.equal(
+      manifest.hash,
+      node.skill_ref.hash,
+      `node "${node.id}": the manifest has to declare the same hash the node pins`,
+    );
+    assert.ok(
+      /^sha256:[0-9a-f]{64}$/.test(node.skill_ref.hash),
+      `node "${node.id}": a real hash, never a placeholder`,
+    );
+  }
+});
+
+test('AT7 — no deterministic check; every manifest has an agentic check with evidence', () => {
+  for (const file of Object.keys(SKILLS)) {
+    const manifest = readManifest(file);
+    assert.deepEqual(
+      manifest.checks.filter((check) => check.tipo === 'deterministico'),
+      [],
+      `${file}: this problem class has no shop-floor command`,
+    );
+    const agentic = manifest.checks.filter((check) => check.tipo === 'agentico');
+    assert.ok(agentic.length >= 1, `${file}: needs at least one agentic check`);
+    for (const check of agentic) {
+      assert.ok(
+        Array.isArray(check.evidencia_obrigatoria) && check.evidencia_obrigatoria.length > 0,
+        `${file}: check "${check.id}" needs a non-empty evidencia_obrigatoria`,
+      );
+    }
+  }
+
+  // The graph document cannot reintroduce from behind the deterministic check
+  // the manifests refuse.
+  const doc = readJson(GRAPH_PATH);
+  for (const node of doc.nos) {
+    assert.deepEqual(
+      node.contrato.verificacoes.filter((check) => check.tipo === 'deterministico'),
+      [],
+      `node "${node.id}": the contract cannot declare a deterministic check`,
+    );
+  }
+
+  // The structural limit that does exist is imposed by JSON Schema, not by a
+  // manufactured check (FR8).
+  const sizing = readManifest('dimensionar-risco.json');
+  const size = sizing.saida.properties.dimensionamento.properties.tamanho_posicao_pct;
+  assert.equal(typeof size.maximum, 'number', 'the position ceiling is a schema maximum');
+  assert.ok(size.maximum > 0);
+});
+
+test('AT8 — derrubar-tese forbids "passou" with a high objection the thesis never answered', () => {
+  const manifest = readManifest('derrubar-tese.json');
+
+  const objections = manifest.saida.properties.objecoes;
+  assert.ok(manifest.saida.required.includes('objecoes'), 'objecoes is required in the output');
+  assert.deepEqual(
+    objections.items.required.sort(),
+    ['gravidade', 'objecao', 'resposta_da_tese'],
+    'every objection declares objecao, gravidade and resposta_da_tese',
+  );
+  assert.deepEqual(
+    objections.items.properties.resposta_da_tese.type,
+    ['string', 'null'],
+    'resposta_da_tese is null when the thesis did not answer',
+  );
+
+  const prohibition = linesWith(manifest.instrucoes, [
+    'passou',
+    'sobrevive',
+    'gravidade',
+    'alta',
+    'resposta_da_tese',
+  ]).filter((line) => /NUNCA|nunca|jamais/.test(line));
+  assert.ok(
+    prohibition.length >= 1,
+    'instrucoes has to explicitly forbid concluding "passou" (edge "sobrevive") while a high-severity objection has no resposta_da_tese',
+  );
+
+  const counterEvidence = manifest.checks
+    .filter((check) => check.tipo === 'agentico')
+    .flatMap((check) => check.evidencia_obrigatoria);
+  assert.ok(
+    counterEvidence.some((item) => /contra_evidencia|contra-evidencia/.test(item)),
+    'the agentic check demands specific researched counter-evidence, not a reread of the analysis',
+  );
+});
+
+test('AT9 — escalar-decisao never produces a result without a recorded human answer', () => {
+  const manifest = readManifest('escalar-decisao.json');
+
+  assert.ok(
+    manifest.entrada.required.includes('perguntas_respondidas'),
+    'the input has to require perguntas_respondidas',
+  );
+  assert.deepEqual(
+    manifest.entrada.properties.perguntas_respondidas.items.required.sort(),
+    ['id', 'pergunta', 'resposta'],
+    'every answered question carries id, pergunta and resposta',
+  );
+
+  const prohibition = linesWith(manifest.instrucoes, ['perguntas_respondidas', 'resultado']).filter(
+    (line) => /NUNCA|nunca|jamais/.test(line),
+  );
+  assert.ok(
+    prohibition.length >= 1,
+    'instrucoes has to forbid producing a result without an allocation answer in perguntas_respondidas',
+  );
+  assert.ok(
+    manifest.instrucoes.includes('```input-request'),
+    'a session with no recorded answer ends its turn with an input-request block',
+  );
+
+  const evidence = manifest.checks
+    .filter((check) => check.tipo === 'agentico')
+    .flatMap((check) => check.evidencia_obrigatoria);
+  assert.ok(
+    evidence.some((item) => /id_da_pergunta/.test(item)),
+    "the mandatory evidence has to cite the allocation question's id",
+  );
+  assert.ok(
+    evidence.some((item) => /texto_literal_da_resposta/.test(item)),
+    'the mandatory evidence has to cite the literal text of the recorded answer',
+  );
+});
+
+test('AT10 — every instrucoes carries the escalation block; only coletar-fundamentos opens the network', () => {
+  for (const file of Object.keys(SKILLS)) {
+    const manifest = readManifest(file);
+    assert.ok(
+      manifest.instrucoes.includes('```input-request'),
+      `${file}: instrucoes has to contain the \`\`\`input-request marker`,
+    );
+    assert.deepEqual(
+      manifest.permissoes.filesystem.escrita,
+      [],
+      `${file}: no node of this graph writes to the investor's repository`,
+    );
+  }
+
+  const research = readManifest('coletar-fundamentos.json');
+  assert.equal(research.permissoes.rede.permitido, true, 'coletar-fundamentos needs the network');
+  assert.equal(
+    research.permissoes.rede.dominios,
+    undefined,
+    'unrestricted network: a fixed allowlist does not cover fundamentals research (native skill)',
+  );
+
+  for (const file of Object.keys(SKILLS).filter((name) => name !== 'coletar-fundamentos.json')) {
+    assert.equal(readManifest(file).permissoes.rede.permitido, false, `${file}: network closed`);
+  }
+});
+
+test('AT11 — the thesis fixture crosses contract by contract up to the human decision', async () => {
+  const { validateAgainstSchema } = await bundleValidator();
+  const doc = readJson(GRAPH_PATH);
+  const fixture = readJson(THESIS_FIXTURE_PATH);
+
+  const steps = fixture.travessia;
+  assert.deepEqual(
+    steps.map((step) => step.no),
+    CHAIN,
+    "the fixture's crossing follows triagem → … → decisao",
+  );
+
+  // 1. Every payload holds against BOTH of the node's contracts: the graph
+  //    document's (what the executor reads) and the manifest's (what the runner
+  //    validates).
+  for (const step of steps) {
+    const node = findNode(doc, step.no);
+    const manifest = readManifestOfSkill(NODES[step.no].skill);
+    assert.deepEqual(
+      validateAgainstSchema(step.entrada, node.contrato.entrada_schema),
+      [],
+      `node "${step.no}": input against the graph's entrada_schema`,
+    );
+    assert.deepEqual(
+      validateAgainstSchema(step.entrada, manifest.entrada),
+      [],
+      `node "${step.no}": input against the manifest's entrada`,
+    );
+    assert.deepEqual(
+      validateAgainstSchema(step.saida, node.contrato.saida_schema),
+      [],
+      `node "${step.no}": output against the graph's saida_schema`,
+    );
+    assert.deepEqual(
+      validateAgainstSchema(step.saida, manifest.saida),
+      [],
+      `node "${step.no}": output against the manifest's saida`,
+    );
+  }
+
+  // 2. A node's output FEEDS the next node's input: every field the next
+  //    contract declares and the previous one produced arrives intact.
+  for (let i = 0; i < steps.length - 1; i += 1) {
+    const previous = steps[i];
+    const next = steps[i + 1];
+    const declared = Object.keys(readManifestOfSkill(NODES[next.no].skill).entrada.properties);
+    const carried = Object.keys(previous.saida).filter((key) => declared.includes(key));
+    assert.ok(
+      carried.length >= 1,
+      `nothing from "${previous.no}" feeds "${next.no}": the chain is broken`,
+    );
+    for (const key of carried) {
+      assert.deepEqual(
+        next.entrada[key],
+        previous.saida[key],
+        `"${key}" arrives from "${previous.no}" at "${next.no}" unchanged`,
+      );
+    }
+  }
+
+  // 3. Each gate's routing is a declared edge, never a free choice.
+  const edgeFrom = (from, condition) =>
+    doc.arestas.find((edge) => edge.de === from && edge.condicao === condition);
+  const redTeam = steps.find((step) => step.no === 'red-team');
+  assert.equal(redTeam.saida.resultado, 'passou', 'in the fixture the thesis survives the red team');
+  assert.ok(edgeFrom('red-team', 'sobrevive'), 'passing the red team follows the "sobrevive" edge');
+
+  // 4. No edge out of `decisao` is followed without a human answer.
+  const decisionStep = steps.at(-1);
+  const decisionManifest = readManifestOfSkill('escalar-decisao');
+  const question = fixture.pergunta_de_alocacao;
+
+  const withoutAnswer = fixture.decisao_sem_resposta_humana;
+  assert.deepEqual(
+    withoutAnswer.entrada.perguntas_respondidas,
+    [],
+    'the no-human-answer variant reaches the node with an empty question queue',
+  );
+  assert.deepEqual(
+    validateAgainstSchema(withoutAnswer.entrada, decisionManifest.entrada),
+    [],
+    'entering `decisao` without a human answer is legal — the session pauses, it does not fail',
+  );
+  const errors = validateAgainstSchema(withoutAnswer.saida_tentada, decisionManifest.saida);
+  assert.ok(
+    errors.length > 0 && errors.some((error) => /decisao_humana/.test(error.message)),
+    `a result without the recorded human decision has to be refused by the contract: ${JSON.stringify(errors)}`,
+  );
+
+  // 5. With the answer recorded, the result is a literal transcription of it.
+  const recorded = decisionStep.entrada.perguntas_respondidas.find(
+    (answered) => answered.id === question.id,
+  );
+  assert.ok(recorded, 'the allocation answer arrives in entrada.perguntas_respondidas');
+  assert.equal(decisionStep.saida.decisao_humana.pergunta_id, question.id);
+  assert.equal(
+    decisionStep.saida.decisao_humana.resposta_literal,
+    recorded.resposta,
+    'the result quotes the human answer literally, without interpreting it',
+  );
+  assert.ok(
+    edgeFrom('decisao', fixture.aresta_esperada),
+    `the "${fixture.aresta_esperada}" edge has to exist out of "decisao"`,
+  );
+});
+
+test('FR7 — registrar-travessia records process metrics, never a financial outcome', () => {
+  const manifest = readManifest('registrar-travessia.json');
+  const metrics = manifest.saida.properties.metricas_processo;
+
+  assert.ok(manifest.saida.required.includes('metricas_processo'));
+  for (const field of [
+    'red_team_executado',
+    'fracao_premissas_com_fonte',
+    'decisao_humana_id',
+    'desfecho_final',
+  ]) {
+    assert.ok(metrics.required.includes(field), `metricas_processo has to require "${field}"`);
+  }
+  assert.equal(metrics.properties.red_team_executado.type, 'boolean');
+  assert.equal(metrics.properties.fracao_premissas_com_fonte.minimum, 0);
+  assert.equal(metrics.properties.fracao_premissas_com_fonte.maximum, 1);
+  assert.deepEqual(
+    metrics.properties.decisao_humana_id.type,
+    ['string', 'null'],
+    'null only when the crossing never reached decisao',
+  );
+  assert.deepEqual(metrics.properties.desfecho_final.enum, ['monitorando', 'arquivado']);
+
+  // D14: "P&L is slow long-term validation, never a round's metric".
+  const serialized = JSON.stringify(manifest.saida);
+  for (const forbidden of ['p_l', 'pnl', 'lucro', 'retorno_realizado', 'resultado_financeiro']) {
+    assert.ok(
+      !serialized.includes(`"${forbidden}"`),
+      `the output cannot carry a financial-outcome metric ("${forbidden}")`,
+    );
+  }
+});
+
+test('AT12 — the validator CLI approves the bundle and rejects a tampered hash', () => {
+  assert.ok(
+    existsSync(BUNDLE_VALIDATOR_PATH),
+    `artifact does not exist yet: ${path.relative(ROOT, BUNDLE_VALIDATOR_PATH)}`,
+  );
+
+  const good = runCli(BUNDLE_DIR);
+  assert.equal(good.status, 0, `the real bundle has to exit 0:\n${good.stdout}${good.stderr}`);
+
+  const copy = path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-bundle-')), 'bundle');
+  cpSync(BUNDLE_DIR, copy, { recursive: true });
+  const target = path.join(copy, 'skills', 'derrubar-tese.json');
+  const manifest = JSON.parse(readFileSync(target, 'utf8'));
+  manifest.hash = `sha256:${'0'.repeat(64)}`;
+  writeFileSync(target, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  const bad = runCli(copy);
+  assert.notEqual(bad.status, 0, 'a tampered hash has to exit with a non-zero code');
+  assert.ok(
+    `${bad.stdout}${bad.stderr}`.includes('red-team'),
+    `the report has to name the diverging node:\n${bad.stdout}${bad.stderr}`,
+  );
+});

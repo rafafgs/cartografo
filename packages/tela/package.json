@@ -2,7 +2,7 @@
   "name": "@cartografo/tela",
   "version": "0.1.0",
   "private": true,
-  "description": "Tela do cartografo: cliente comum da API pública, sem privilégio sobre o core (D11).",
+  "description": "The cartografo screen: one more client of the public API, with no privilege over the core (D11).",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

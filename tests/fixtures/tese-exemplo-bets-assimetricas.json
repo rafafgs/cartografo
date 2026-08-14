@@ -1,5 +1,5 @@
 {
-  "descricao": "Tese fixture da t116, usada por AT11 de tests/grafo-fabrica-2.test.mjs. Empresa, números e fontes são inventados de propósito — o que o fixture prova é que os contratos dos sete nós encaixam um no outro, não que a tese é boa. A travessia vai de `triagem` até `decisao`, pelo ramo em que a tese sobrevive ao red team.",
+  "descricao": "Tese fixture da t116, usada por AT11 de tests/factory-graph-2.test.mjs. Empresa, números e fontes são inventados de propósito — o que o fixture prova é que os contratos dos sete nós encaixam um no outro, não que a tese é boa. A travessia vai de `triagem` até `decisao`, pelo ramo em que a tese sobrevive ao red team.",
   "pergunta_de_alocacao": {
     "id": "alocacao-nvlr3-2026-08-14",
     "pergunta": "Alocar 1,4% do capital em NVLR3 a até R$ 18,50, com saída se o contrato portuário não for renovado até o 3T27?",

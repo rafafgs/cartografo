@@ -4,11 +4,20 @@
 > skill de fazer ou de portão — entrar no registro. Sem manifesto válido, não
 > entra (D4).
 
-**Estado: especificação.** Nada aqui está implementado; o control plane que
-persiste e renderiza manifestos ainda não existe (t100+). O entregável desta
-doc é o contrato: schema formal, exemplos que validam e um fixture que é
-rejeitado — para que a implementação futura (banco, API, importador) não
-precise adivinhar nenhum campo.
+**Estado: especificação normativa, com registro implementado.** O entregável
+desta doc continua sendo o contrato — schema formal, exemplos que validam e um
+fixture que é rejeitado —, e é ele que manda: quando implementação e schema
+divergem, quem está errada é a implementação. O que mudou é que já existe
+registro: a tabela `skill` e as rotas `POST /v1/skills` e `GET /v1/skills[/:id]`
+persistem manifestos e os devolvem a quem consulta capacidades. Entram por dois
+caminhos, e a diferença é D4: skill **nativa** (in-repo, já revisada no merge)
+entra junto com o bundle, por `cartografo import <bundle>`; skill de **repo
+externo** entra pelo pipeline com portão humano `cartografo scan-skill` →
+`propose-skill` → `register-skill`. Em ambos os casos o registro reverifica
+tudo por conta própria — pin, forma, proveniência —, porque assinatura humana
+não é verificação. Ainda não implementado: renderizar `instrucoes` para dentro
+de uma sessão, que é trabalho do runner, e reimportar/versionar uma skill já
+registrada (o registro é create-only por enquanto).
 
 | Arquivo | O que é |
 |---|---|

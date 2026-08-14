@@ -1,5 +1,5 @@
 /**
- * Skill-registry acceptance tests (t117, AT1–AT7).
+ * Skill-registry acceptance tests (t117, AT1–AT7; t135, AT8–AT9).
  *
  * The registry is the gate of truth of D4, and that is the whole point of these
  * tests: every rule below is re-checked by the SERVER, independently of the CLI
@@ -22,9 +22,35 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
-import { request, requireArtifacts, startControlPlane, type TestContext } from './support.ts';
+import {
+  PACKAGE_ROOT,
+  request,
+  requireArtifacts,
+  startControlPlane,
+  type TestContext,
+} from './support.ts';
+
+/**
+ * The specification's own negative fixture (t135, AT8).
+ *
+ * It is read from disk, verbatim, instead of being rebuilt here: its whole
+ * reason to exist is to be the ONE manifest the format promises is rejected, and
+ * a copy of it in a test file would let the fixture and the registry drift apart
+ * without either one noticing.
+ */
+const INVALID_FIXTURE = path.join(
+  PACKAGE_ROOT,
+  '..',
+  '..',
+  'especificacoes',
+  'formatos',
+  'exemplos',
+  'manifesto-skill.invalido.fixture.json',
+);
 
 /** Artifacts of this ticket; every test names them before touching the API. */
 const T117_ARTIFACTS = Object.freeze({
@@ -283,4 +309,53 @@ test('AT7 — registering the same id twice is a conflict', async (t) => {
     'Orchestrates new feature development following the full 4-phase protocol',
     'the conflict cannot have overwritten the registered manifest',
   );
+});
+
+test('AT8 — the specification\'s negative fixture is refused, naming the field and the check (t135)', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const fixture = JSON.parse(readFileSync(INVALID_FIXTURE, 'utf8')) as Record<string, unknown>;
+
+  const refused = await post(ctx, fixture);
+  assert.equal(
+    refused.status,
+    422,
+    `expected 422, got ${refused.status}: ${JSON.stringify(refused.body)}`,
+  );
+  const message = reason(refused.body);
+  assert.match(message, /evidencia_obrigatoria/, 'the message has to name the missing field');
+  assert.match(
+    message,
+    /criterios-atendidos/,
+    'the message has to name the check that broke the rule',
+  );
+
+  const read = await request<Skill>(ctx, 'GET', '/v1/skills/portao-sem-evidencia');
+  assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');
+});
+
+test('AT9 — the same manifest with evidencia_obrigatoria declared registers (t135)', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const fixture = JSON.parse(readFileSync(INVALID_FIXTURE, 'utf8')) as Record<string, unknown>;
+  const checks = (fixture.checks as Record<string, unknown>[]).map((check) =>
+    check.tipo === 'agentico'
+      ? { ...check, evidencia_obrigatoria: ['trecho_citado_do_criterio_de_aceite'] }
+      : check,
+  );
+  const repaired: Record<string, unknown> = { ...fixture, checks };
+  repaired.hash = contentHash(repaired);
+
+  const created = await post(ctx, repaired);
+  assert.equal(
+    created.status,
+    201,
+    `the rule cannot over-reject: ${created.status} ${JSON.stringify(created.body)}`,
+  );
+
+  const read = await request<Skill>(ctx, 'GET', '/v1/skills/portao-sem-evidencia');
+  assert.equal(read.status, 200);
+  assert.deepEqual(read.body.checks, checks);
 });

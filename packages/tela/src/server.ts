@@ -6,11 +6,11 @@
  * driver in this package's manifest: the D11 boundary is the reason this
  * package exists, and `test/no-privileged-access.test.ts` keeps it honest.
  *
- * The routing itself lives in `servidor.ts`, which is the single handler both
+ * The routing itself lives in `router.ts`, which is the single handler both
  * halves of the screen share; this module is the process shell around it. It
  * exists separately because `npm start` and the readiness contract were written
  * against this file, and because the configuration is read from the
- * environment here while `servidor.ts` takes it as an argument.
+ * environment here while `router.ts` takes it as an argument.
  *
  * Startup mirrors the control plane's: resolve the configuration, listen, print
  * one JSON readiness line to stdout. A supervisor — or a person with two
@@ -21,7 +21,7 @@
 import type { Server } from 'node:http';
 
 import { parsePortFromEnv, resolveControlPlaneUrl } from './proxy.ts';
-import { criarServidorDaTela, EVENTO_PRONTO } from './servidor.ts';
+import { createScreenRouter, READY_EVENT } from './router.ts';
 
 export { INDEX_FILE, PUBLIC_DIR, resolveStaticFile } from './static.ts';
 
@@ -42,11 +42,11 @@ export const SCREEN_HOST = '127.0.0.1';
 /**
  * Name of the readiness event printed on stdout, next to `cartografo.ready`.
  *
- * Defined in `servidor.ts` and re-exported here: the screen is one process on
- * one port, so both entry points — `npx cartografo-tela` and this module — have
- * to announce themselves with the same name.
+ * Defined in `router.ts` and re-exported here: the screen is one process on one
+ * port, so both entry points — `npx cartografo-tela` and this module — have to
+ * announce themselves with the same name.
  */
-export const READY_EVENT = EVENTO_PRONTO;
+export { READY_EVENT };
 
 /** The screen, up. */
 export interface Screen {
@@ -78,7 +78,7 @@ export function resolveScreenPort(env: NodeJS.ProcessEnv = process.env): number 
  * @returns A server ready to `listen`.
  */
 export function createScreenServer(controlPlaneUrl: string): Server {
-  return criarServidorDaTela({ urlControlPlane: controlPlaneUrl });
+  return createScreenRouter({ controlPlaneUrl });
 }
 
 /**
@@ -97,7 +97,7 @@ export async function startScreen(env: NodeJS.ProcessEnv = process.env): Promise
     server.listen(port, SCREEN_HOST, () => {
       const address = server.address();
       if (address === null || typeof address === 'string') {
-        reject(new Error(`a tela não conseguiu escutar em ${SCREEN_HOST}:${port}`));
+        reject(new Error(`the screen could not listen on ${SCREEN_HOST}:${port}`));
         return;
       }
       resolve(address.port);
@@ -111,7 +111,7 @@ export async function startScreen(env: NodeJS.ProcessEnv = process.env): Promise
     controlPlaneUrl,
     close: async () => {
       await new Promise<void>((resolve, reject) => {
-        server.close((erro) => (erro === undefined ? resolve() : reject(erro)));
+        server.close((error) => (error === undefined ? resolve() : reject(error)));
       });
     },
   };
@@ -128,14 +128,14 @@ export async function main(): Promise<void> {
 
   process.stdout.write(
     `${JSON.stringify({
-      evento: READY_EVENT,
+      event: READY_EVENT,
       url: screen.url,
-      control_plane: screen.controlPlaneUrl,
+      controlPlane: screen.controlPlaneUrl,
     })}\n`,
   );
 
-  for (const sinal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(sinal, () => {
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
       void screen
         .close()
         .catch(() => undefined)
@@ -145,10 +145,10 @@ export async function main(): Promise<void> {
 }
 
 if (import.meta.filename === process.argv[1]) {
-  main().catch((causa: unknown) => {
+  main().catch((cause: unknown) => {
     process.exitCode = 1;
     process.stderr.write(
-      `cartografo-tela: ${causa instanceof Error ? causa.message : String(causa)}\n`,
+      `cartografo-tela: ${cause instanceof Error ? cause.message : String(cause)}\n`,
     );
   });
 }

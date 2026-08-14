@@ -1,0 +1,237 @@
+/*
+ * Minimal style for the inbox: three columns, one system font, no assets.
+ *
+ * The screen has no build step and no dependency, so this file is the whole
+ * design system. What it is really for is legibility of the diff — the person
+ * reading it is deciding whether a change enters the graph.
+ */
+
+:root {
+  --ink: #1c1c1c;
+  --muted: #6b6b6b;
+  --line: #dcdcdc;
+  --bg: #fbfaf8;
+  --add: #1a7f37;
+  --remove: #b3261e;
+  --change: #8a5a00;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 1.5rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.35rem;
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+h4 {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.lead {
+  max-width: 60ch;
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+}
+
+.controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0 0 1.25rem;
+}
+
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.column {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1rem;
+}
+
+.proposals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.proposal {
+  border-top: 1px solid var(--line);
+  padding: 0.75rem 0;
+}
+
+.proposal:first-child {
+  border-top: 0;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.status {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.version,
+.message {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0 0;
+}
+
+.reason {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+}
+
+.reason-input {
+  flex: 1 1 14rem;
+  min-width: 10rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+button.action {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+}
+
+button.action:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+button.action:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  text-decoration: underline;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--remove);
+}
+
+.notice {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.detail .field {
+  margin: 0.25rem 0;
+  word-break: break-all;
+}
+
+.detail .label {
+  color: var(--muted);
+}
+
+.diff {
+  margin-top: 0.5rem;
+}
+
+.op {
+  margin: 0.15rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+.op.add {
+  color: var(--add);
+}
+
+.op.remove {
+  color: var(--remove);
+}
+
+.op.change {
+  color: var(--change);
+}
+
+.op.unknown {
+  color: var(--muted);
+}
+
+pre {
+  margin: 0;
+  padding: 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

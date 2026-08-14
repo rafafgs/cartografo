@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cartografo — inbox de propostas</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Inbox de propostas</h1>
+      <p class="lead">
+        Cada proposta é uma hipótese sobre o grafo: um diff semântico, a evidência que o motivou e
+        a métrica que ele espera mover. Nada entra no grafo sem passar por aqui.
+      </p>
+      <p class="controls">
+        <button id="refresh" type="button">Atualizar</button>
+        <span id="notice" class="notice" role="status"></span>
+      </p>
+    </header>
+
+    <main>
+      <section class="column">
+        <h2>Pendentes</h2>
+        <ul id="pending-list" class="proposals"></ul>
+      </section>
+
+      <section class="column">
+        <h2>Histórico</h2>
+        <ul id="history-list" class="proposals"></ul>
+      </section>
+
+      <section class="column">
+        <h2>Detalhe</h2>
+        <div id="detail" class="detail">Selecione uma proposta.</div>
+      </section>
+    </main>
+
+    <script type="module">
+      import { mount } from './inbox.js';
+
+      // The module takes the document and fetch as arguments instead of reaching
+      // for the globals, which is what lets every piece of it be read (and, for
+      // actions.js and diff.js, tested) outside a browser.
+      mount(document, (input, init) => fetch(input, init));
+    </script>
+  </body>
+</html>

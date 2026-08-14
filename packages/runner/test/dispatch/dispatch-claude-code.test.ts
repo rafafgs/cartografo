@@ -24,7 +24,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
@@ -357,7 +357,9 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
     prompt.includes(ANSWER),
     `the re-dispatched prompt must carry the answer that was given:\n${prompt}`,
   );
-  assert.equal(record.cwd, workDir);
+  // `realpathSync` because macOS hands out `/var/folders/...` temp dirs that
+  // the child process reports as `/private/var/folders/...`.
+  assert.equal(record.cwd, realpathSync(workDir), 'the session ran in the working dir it was given');
 
   const questions = await api<{ perguntas: Question[] }>(baseUrl, 'GET', '/v1/perguntas');
   assert.equal(

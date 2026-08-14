@@ -10,13 +10,19 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { BancoDeDados } from './db/connection.ts';
+import { registrarExecucoes } from './routes/execucoes.ts';
 import { registrarGrafos } from './routes/grafos.ts';
 import { registrarSaude } from './routes/health.ts';
+import { registrarLeases } from './routes/leases.ts';
+import { registrarPerguntas } from './routes/perguntas.ts';
 import { registrarPropostas } from './routes/propostas.ts';
+import { registrarRunners } from './routes/runners.ts';
+import { registrarSessoes } from './routes/sessoes.ts';
+import { registrarTrabalhos } from './routes/trabalhos.ts';
 
 /**
- * Prefixo das rotas de negócio. Nasce vazio: as rotas entram nas tickets de
- * schema de domínio, na ordem da D6. `/health` fica fora dele (FR10).
+ * Prefixo das rotas de negócio. Toda rota de domínio nasce dentro dele;
+ * `/health` fica fora, porque é probe de infraestrutura (t100, FR10).
  */
 export const PREFIXO_API = '/v1';
 
@@ -44,6 +50,12 @@ export function criarApp(opcoes: OpcoesApp): FastifyInstance {
   // paralelo tocam linhas diferentes deste arquivo, e não a mesma.
   app.register(async (escopo) => registrarGrafos(escopo, opcoes.db), { prefix: PREFIXO_API });
   app.register(async (escopo) => registrarPropostas(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarTrabalhos(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarSessoes(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarPerguntas(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarExecucoes(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarRunners(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarLeases(escopo, opcoes.db), { prefix: PREFIXO_API });
 
   return app;
 }

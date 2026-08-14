@@ -10,6 +10,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { Database } from './db/connection.ts';
+import { registerEvents } from './routes/events.ts';
 import { registerExecutions } from './routes/executions.ts';
 import { registerGraphs } from './routes/graphs.ts';
 import { registerHealth } from './routes/health.ts';
@@ -60,6 +61,7 @@ export function createApp(options: AppOptions): FastifyInstance {
   app.register(async (scope) => registerLeases(scope, options.db), { prefix: API_PREFIX });
   app.register(async (scope) => registerIntake(scope, options.db), { prefix: API_PREFIX });
   app.register(async (scope) => registerSkills(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerEvents(scope, options.db), { prefix: API_PREFIX });
 
   return app;
 }

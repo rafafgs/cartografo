@@ -159,7 +159,7 @@ function readCursor(header: string | string[] | undefined, db: Database): number
 function begin(connection: Connection, open: Set<() => void>): void {
   const { request, reply, db, filter } = connection;
   let cursor = connection.cursor;
-  let quiet = true;
+  let lastWrite = Date.now();
 
   reply.hijack();
   const raw = reply.raw;
@@ -184,7 +184,7 @@ function begin(connection: Connection, open: Set<() => void>): void {
         raw.write(`id: ${event.id}\nevent: ${event.tipo}\ndata: ${JSON.stringify(event)}\n\n`);
         cursor = event.id;
       }
-      quiet = false;
+      lastWrite = Date.now();
 
       // A full batch means there may be more behind it: keep reading, in bounded
       // steps, until this tick is caught up (FR8).
@@ -193,22 +193,35 @@ function begin(connection: Connection, open: Set<() => void>): void {
   };
 
   const poll = setInterval(drain, connection.pollIntervalMs);
-  const heartbeat = setInterval(() => {
-    if (!alive()) return;
-    // Only when nothing real went out since the last tick: a busy stream needs
-    // no proof that it is alive.
-    if (quiet) raw.write(': heartbeat\n\n');
-    quiet = true;
-  }, connection.heartbeatIntervalMs);
-
-  // `unref`ed, like the runner's heartbeat: an open connection is no reason for
-  // the process to stay up on its own.
   if (typeof poll.unref === 'function') poll.unref();
-  if (typeof heartbeat.unref === 'function') heartbeat.unref();
+
+  /**
+   * The keep-alive, measured from the LAST byte written and not from a fixed
+   * grid: a stream that went quiet 14s after an event owes a comment in one
+   * second, not in sixteen. With a fixed interval, an event landing just after a
+   * tick buys the connection two whole intervals of silence — which is exactly
+   * the idle window the comment exists to stay under.
+   */
+  let heartbeat: NodeJS.Timeout;
+  const beat = (): void => {
+    if (!alive()) return;
+    if (Date.now() - lastWrite >= connection.heartbeatIntervalMs) {
+      raw.write(': heartbeat\n\n');
+      lastWrite = Date.now();
+    }
+    // Whatever is left of the interval counted from the last byte — never zero,
+    // which is what would turn this clock into a busy loop.
+    const wait = Math.max(connection.heartbeatIntervalMs - (Date.now() - lastWrite), 1);
+    heartbeat = setTimeout(beat, wait);
+    // `unref`ed, like the runner's heartbeat: an open connection is no reason
+    // for the process to stay up on its own.
+    if (typeof heartbeat.unref === 'function') heartbeat.unref();
+  };
+  beat();
 
   const release = (): void => {
     clearInterval(poll);
-    clearInterval(heartbeat);
+    clearTimeout(heartbeat);
     open.delete(release);
     if (alive()) raw.end();
   };

@@ -129,7 +129,9 @@ const FORBIDDEN = Object.freeze([
       'responder',
       'enviar',
       'ler',
-      'resolver',
+      // `resolver` is deliberately absent, as it is from t127's own glossary:
+      // it is a Portuguese verb AND an English noun, and English prose about
+      // "the resolver" is not a rename this gate gets to demand.
       'consultar',
       'cortar',
       'carregar',

@@ -21,7 +21,7 @@ import { ACTIONS, isOpen, resolveActionsForStatus } from './actions.js';
 import { renderOperations } from './diff.js';
 
 /** List endpoint. Filtering happens upstream; the screen only asks. */
-const LIST_URL = '/v1/propostas';
+const LIST_URL = '/v1/proposals';
 
 /**
  * Starts the page.
@@ -272,7 +272,7 @@ export function mount(doc, request) {
      * Fires an action, asking for a reason first when the action needs one
      * (FR7: reject and revert do, approve and apply do not).
      *
-     * @param {'aprovar'|'rejeitar'|'aplicar'|'reverter'} name
+     * @param {'approve'|'reject'|'apply'|'revert'} name
      */
     function start(name) {
       const action = ACTIONS[name];
@@ -318,7 +318,7 @@ export function mount(doc, request) {
     /**
      * Calls the API and updates THIS row — the whole point of FR8.
      *
-     * @param {'aprovar'|'rejeitar'|'aplicar'|'reverter'} name
+     * @param {'approve'|'reject'|'apply'|'revert'} name
      * @param {string|undefined} reason
      */
     async function run(name, reason) {

@@ -10,16 +10,19 @@
  * Pure and side-effect free so it can be tested in Node while running in the
  * browser (`test/actions.test.ts`) — no DOM, no fetch, no import.
  *
- * The names are the API's, in Portuguese, because they ARE the route: `aprovar`
- * is the path of `POST /v1/propostas/:id/aprovar` (D18 covers this package's
- * own identifiers, not the protocol's vocabulary).
+ * The names are the API's, because they ARE the route: `approve` is the path of
+ * `POST /v1/proposals/:id/approve`. They came in from t111 in Portuguese and
+ * were renamed with the rest of the `/v1` surface (t127, FR3/FR4) — this file's
+ * own identifiers and the button labels are the tela ticket's scope, not this
+ * one's. `approve` and `reject` have no route in core yet; they are spelled the
+ * way core will spell them under D18.
  */
 
-/** @typedef {'aprovar' | 'rejeitar' | 'aplicar' | 'reverter'} ActionName */
+/** @typedef {'approve' | 'reject' | 'apply' | 'revert'} ActionName */
 
 /**
  * @typedef {object} ActionDescriptor
- * @property {ActionName} route Last segment of `POST /v1/propostas/:id/<route>`.
+ * @property {ActionName} route Last segment of `POST /v1/proposals/:id/<route>`.
  * @property {string} label Button text, in Portuguese, like the rest of the page.
  * @property {boolean} requiresReason Whether a `motivo` is mandatory (FR7).
  * @property {string} reasonLabel Visible label — and accessible name — of the reason field, when there is one.
@@ -28,26 +31,26 @@
 /** Everything a row needs to draw a button and fire it. */
 /** @type {Readonly<Record<ActionName, ActionDescriptor>>} */
 export const ACTIONS = Object.freeze({
-  aprovar: Object.freeze({
-    route: 'aprovar',
+  approve: Object.freeze({
+    route: 'approve',
     label: 'Aprovar',
     requiresReason: false,
     reasonLabel: '',
   }),
-  rejeitar: Object.freeze({
-    route: 'rejeitar',
+  reject: Object.freeze({
+    route: 'reject',
     label: 'Rejeitar',
     requiresReason: true,
     reasonLabel: 'Por que esta hipótese não vale a pena?',
   }),
-  aplicar: Object.freeze({
-    route: 'aplicar',
+  apply: Object.freeze({
+    route: 'apply',
     label: 'Aplicar',
     requiresReason: false,
     reasonLabel: '',
   }),
-  reverter: Object.freeze({
-    route: 'reverter',
+  revert: Object.freeze({
+    route: 'revert',
     label: 'Reverter',
     requiresReason: true,
     reasonLabel: 'Por que a versão aplicada está sendo abandonada?',
@@ -64,9 +67,9 @@ export const ACTIONS = Object.freeze({
  */
 /** @type {Readonly<Record<string, readonly ActionName[]>>} */
 const ACTIONS_BY_STATUS = Object.freeze({
-  pendente: Object.freeze(['aprovar', 'rejeitar']),
-  aprovada: Object.freeze(['aplicar']),
-  aplicada: Object.freeze(['reverter']),
+  pendente: Object.freeze(['approve', 'reject']),
+  aprovada: Object.freeze(['apply']),
+  aplicada: Object.freeze(['revert']),
   revertida: Object.freeze([]),
   rejeitada: Object.freeze([]),
 });

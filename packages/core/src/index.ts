@@ -1,102 +1,103 @@
 /**
- * Partida do control plane, em um comando só.
+ * Startup of the control plane, in a single command.
  *
- * A ordem é fixa e não tem passo manual: abrir/criar o banco → aplicar as
- * migrações pendentes → subir o HTTP → imprimir a linha de prontidão. É o
- * inegociável de qualidade registrado em `notas/2026-08-14-extensao-e-qualidade.md`
- * ("partida em um comando", "migrações automáticas").
+ * The order is fixed and has no manual step: open/create the database → apply
+ * the pending migrations → bring HTTP up → print the readiness line. It is the
+ * quality non-negotiable recorded in
+ * `notas/2026-08-14-extensao-e-qualidade.md` ("one-command start", "automatic
+ * migrations").
  */
 
 import path from 'node:path';
 
 import type { FastifyInstance } from 'fastify';
 
-import { abrirBanco, aplicarPragmas, caminhoDoBanco, type BancoDeDados } from './db/connection.ts';
-import { migrar } from './db/migrate.ts';
-import { criarApp } from './server.ts';
+import { openDatabase, applyPragmas, databasePath, type Database } from './db/connection.ts';
+import { migrate } from './db/migrate.ts';
+import { createApp } from './server.ts';
 
-/** Porta default do control plane. */
-export const PORTA_PADRAO = 4317;
+/** Default port of the control plane. */
+export const DEFAULT_PORT = 4317;
 
-/** Variável de ambiente que sobrescreve a porta default. */
-export const ENV_PORTA = 'CARTOGRAFO_PORT';
+/** Environment variable that overrides the default port. */
+export const ENV_PORT = 'CARTOGRAFO_PORT';
 
 /**
- * Endereço de escuta. Fixo em loopback: o control plane é dono do banco (D1) e
- * não tem autenticação nesta fase — expor a interface externa é decisão da
- * ticket que trouxer autorização, não desta.
+ * Listening address. Fixed on loopback: the control plane owns the database (D1)
+ * and has no authentication in this phase — exposing the external interface is
+ * the decision of the ticket that brings authorization, not of this one.
  */
-export const HOST_PADRAO = '127.0.0.1';
+export const DEFAULT_HOST = '127.0.0.1';
 
-/** Diretório das migrações do pacote. */
-export const DIR_MIGRACOES = path.resolve(import.meta.dirname, '..', 'migrations');
+/** Migrations directory of the package. */
+export const MIGRATIONS_DIR = path.resolve(import.meta.dirname, '..', 'migrations');
 
-/** Nome do evento da linha de prontidão impressa em stdout. */
-export const EVENTO_PRONTO = 'cartografo.pronto';
+/** Event name of the readiness line printed on stdout. */
+export const READY_EVENT = 'cartografo.ready';
 
-/** Control plane no ar. */
+/** The control plane, running. */
 export interface ControlPlane {
   app: FastifyInstance;
-  db: BancoDeDados;
-  /** Caminho absoluto do arquivo do banco em uso. */
-  caminhoBanco: string;
-  /** Ids das migrações aplicadas NESTA partida (vazio quando já estava em dia). */
-  migracoesAplicadas: string[];
-  /** URL base do servidor. */
+  db: Database;
+  /** Absolute path of the database file in use. */
+  databasePath: string;
+  /** Ids of the migrations applied IN THIS startup (empty when already up to date). */
+  migrationsApplied: string[];
+  /** Base URL of the server. */
   url: string;
-  /** Fecha o HTTP e o banco, nesta ordem. */
-  encerrar: () => Promise<void>;
+  /** Closes HTTP and the database, in that order. */
+  shutdown: () => Promise<void>;
 }
 
 /**
- * Resolve a porta de escuta.
+ * Resolves the listening port.
  *
- * @param env Ambiente de onde ler `CARTOGRAFO_PORT`.
- * @returns Porta válida.
+ * @param env Environment to read `CARTOGRAFO_PORT` from.
+ * @returns A valid port.
  */
-export function portaDoServidor(env: NodeJS.ProcessEnv = process.env): number {
-  const configurada = env[ENV_PORTA]?.trim();
-  if (configurada === undefined || configurada === '') return PORTA_PADRAO;
+export function serverPort(env: NodeJS.ProcessEnv = process.env): number {
+  const configured = env[ENV_PORT]?.trim();
+  if (configured === undefined || configured === '') return DEFAULT_PORT;
 
-  const porta = Number(configurada);
-  if (!Number.isInteger(porta) || porta < 0 || porta > 65535) {
-    throw new Error(`${ENV_PORTA} inválida: "${configurada}" (esperado um inteiro de 0 a 65535)`);
+  const port = Number(configured);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`invalid ${ENV_PORT}: "${configured}" (expected an integer from 0 to 65535)`);
   }
-  return porta;
+  return port;
 }
 
 /**
- * Sobe o control plane inteiro.
+ * Brings the whole control plane up.
  *
- * @param env Ambiente de onde ler a configuração.
- * @returns O control plane no ar, com o que é preciso para encerrá-lo.
+ * @param env Environment to read the configuration from.
+ * @returns The control plane running, with what is needed to shut it down.
  */
-export async function iniciar(env: NodeJS.ProcessEnv = process.env): Promise<ControlPlane> {
-  const caminhoBanco = caminhoDoBanco(env);
-  const db = abrirBanco(caminhoBanco);
+export async function start(env: NodeJS.ProcessEnv = process.env): Promise<ControlPlane> {
+  const file = databasePath(env);
+  const db = openDatabase(file);
 
   let app: FastifyInstance;
-  let migracoesAplicadas: string[];
+  let migrationsApplied: string[];
   try {
-    aplicarPragmas(db);
-    migracoesAplicadas = migrar(db, DIR_MIGRACOES);
-    app = criarApp({ db });
-    await app.listen({ port: portaDoServidor(env), host: HOST_PADRAO });
-  } catch (erro) {
+    applyPragmas(db);
+    migrationsApplied = migrate(db, MIGRATIONS_DIR);
+    app = createApp({ db });
+    await app.listen({ port: serverPort(env), host: DEFAULT_HOST });
+  } catch (error) {
     db.close();
-    throw erro;
+    throw error;
   }
 
-  const endereco = app.server.address();
-  const porta = endereco !== null && typeof endereco !== 'string' ? endereco.port : portaDoServidor(env);
+  const address = app.server.address();
+  const port = address !== null && typeof address !== 'string' ? address.port : serverPort(env);
 
   return {
     app,
     db,
-    caminhoBanco,
-    migracoesAplicadas,
-    url: `http://${HOST_PADRAO}:${porta}`,
-    encerrar: async () => {
+    databasePath: file,
+    migrationsApplied,
+    url: `http://${DEFAULT_HOST}:${port}`,
+    shutdown: async () => {
       await app.close();
       db.close();
     },
@@ -104,28 +105,28 @@ export async function iniciar(env: NodeJS.ProcessEnv = process.env): Promise<Con
 }
 
 /**
- * Ponto de entrada do comando `cartografo`.
+ * Entry point of the `cartografo` command.
  *
- * Imprime uma linha JSON de prontidão em stdout — é o que um supervisor (ou o
- * teste de aceite da partida) usa para saber que o servidor está no ar e
- * quantas migrações esta partida aplicou.
+ * Prints a JSON readiness line on stdout — it is what a supervisor (or the
+ * startup acceptance test) uses to know the server is up and how many migrations
+ * this startup applied.
  */
-export async function principal(): Promise<void> {
-  const controlPlane = await iniciar();
+export async function main(): Promise<void> {
+  const controlPlane = await start();
 
   process.stdout.write(
     `${JSON.stringify({
-      evento: EVENTO_PRONTO,
-      banco: controlPlane.caminhoBanco,
-      migracoes_aplicadas: controlPlane.migracoesAplicadas.length,
+      event: READY_EVENT,
+      database: controlPlane.databasePath,
+      migrationsApplied: controlPlane.migrationsApplied.length,
       url: controlPlane.url,
     })}\n`,
   );
 
-  for (const sinal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(sinal, () => {
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
       void controlPlane
-        .encerrar()
+        .shutdown()
         .catch(() => undefined)
         .then(() => process.exit(0));
     });

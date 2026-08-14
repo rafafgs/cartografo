@@ -18,7 +18,7 @@
  * 3. That session hits something it may not decide alone, emits a real
  *    ```input-request block and stops. The work blocks BY ITSELF — nobody in
  *    this script posts a block.
- * 4. A human answers through the API (`PATCH /v1/perguntas/:id/resposta`), and
+ * 4. A human answers through the API (`PATCH /v1/input-requests/:id/answer`), and
  *    the work is unblocked and dispatchable again.
  * 5. A second tick dispatches a second real session with the SAME instructions
  *    — and this one behaves differently only because the question and its
@@ -139,7 +139,7 @@ async function startControlPlane(root) {
     const line = out
       .split('\n')
       .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.pronto'));
+      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
     if (line !== undefined) return { url: JSON.parse(line).url, stop };
     await wait(50);
   }
@@ -181,7 +181,7 @@ async function main() {
     const client = new ClienteControle({ urlBase: plane.url });
     await client.registrarRunner('spike-t106', 'prova manual da escalação humana');
 
-    const work = await api('POST', '/v1/trabalhos', {
+    const work = await api('POST', '/v1/jobs', {
       titulo: 'Criar o arquivo de prova da t106, com o nome que a pessoa escolher',
       no_entrada_id: 'implementar',
       execucao_id: 106,
@@ -212,13 +212,13 @@ async function main() {
     if (first === null) die('o primeiro tick não despachou nada');
     log(`primeiro despacho: trabalho ${first.trabalhoId}, lease ${first.leaseId}`);
 
-    const blocked = await api('GET', `/v1/trabalhos/${work.id}`);
+    const blocked = await api('GET', `/v1/jobs/${work.id}`);
     if (blocked.bloqueado !== true) {
       die('a sessão real não escalou: o trabalho continuou liberado (nenhum bloco input-request?)');
     }
     log(`trabalho bloqueado: ${blocked.motivo_bloqueio}`);
 
-    const { perguntas: pending } = await api('GET', '/v1/perguntas?status=pendente');
+    const { perguntas: pending } = await api('GET', '/v1/input-requests?status=pendente');
     if (pending.length !== 1) die(`esperava 1 pergunta pendente, achei ${pending.length}`);
     const question = pending[0];
     log(`pergunta #${question.id}: ${question.pergunta}`);
@@ -234,13 +234,13 @@ async function main() {
     log('trabalho bloqueado não é candidato de nenhum tick — confirmado');
 
     // --- 2. a human answers ---------------------------------------------------
-    const answered = await api('PATCH', `/v1/perguntas/${question.id}/resposta`, {
+    const answered = await api('PATCH', `/v1/input-requests/${question.id}/answer`, {
       resposta: `Use o nome ${CHOSEN_NAME}`,
       respondido_por: 'spike-t106',
     });
     log(`resposta registrada: ${answered.resposta} (origem ${answered.origem})`);
 
-    const unblocked = await api('GET', `/v1/trabalhos/${work.id}`);
+    const unblocked = await api('GET', `/v1/jobs/${work.id}`);
     if (unblocked.bloqueado !== false) die('responder não desbloqueou o trabalho');
     log('trabalho desbloqueado pela resposta');
 
@@ -259,14 +259,14 @@ async function main() {
       die(`${CHOSEN_NAME} existe mas não tem a frase pedida:\n${content}`);
     }
 
-    const { perguntas: allQuestions } = await api('GET', '/v1/perguntas');
+    const { perguntas: allQuestions } = await api('GET', '/v1/input-requests');
     if (allQuestions.length !== 1) {
       die(`a segunda sessão perguntou de novo: ${allQuestions.length} perguntas no total`);
     }
 
     // --- 4. the evidence ------------------------------------------------------
-    const { eventos } = await api('GET', `/v1/trabalhos/${work.id}/eventos`);
-    const { sessoes } = await api('GET', '/v1/sessoes?execucao_id=106');
+    const { eventos } = await api('GET', `/v1/jobs/${work.id}/events`);
+    const { sessoes } = await api('GET', '/v1/sessions?execucao_id=106');
     const types = eventos.map((event) => event.tipo);
     for (const expected of ['pergunta.criada', 'trabalho.bloqueado', 'trabalho.desbloqueado']) {
       if (!types.includes(expected)) die(`falta ${expected} na linha do tempo: ${types.join(', ')}`);

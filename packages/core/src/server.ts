@@ -1,61 +1,61 @@
 /**
- * Fábrica do app HTTP do control plane.
+ * Factory of the control plane's HTTP app.
  *
- * Recebe o banco já aberto em vez de abri-lo: quem decide o caminho do arquivo
- * e quando migrar é a partida (`src/index.ts`), e é o que deixa os testes
- * subirem o app contra um banco arbitrário — inclusive um corrompido de
- * propósito, para provar que `/health` checa mesmo.
+ * It receives the already-open database instead of opening it: whoever decides
+ * the file path and when to migrate is the startup (`src/index.ts`), and that is
+ * what lets the tests bring the app up against an arbitrary database — including
+ * one corrupted on purpose, to prove `/health` really checks.
  */
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import type { BancoDeDados } from './db/connection.ts';
-import { registrarExecucoes } from './routes/execucoes.ts';
-import { registrarGrafos } from './routes/grafos.ts';
-import { registrarSaude } from './routes/health.ts';
-import { registrarLeases } from './routes/leases.ts';
-import { registrarPerguntas } from './routes/perguntas.ts';
-import { registrarPropostas } from './routes/propostas.ts';
-import { registrarRunners } from './routes/runners.ts';
-import { registrarSessoes } from './routes/sessoes.ts';
-import { registrarTrabalhos } from './routes/trabalhos.ts';
+import type { Database } from './db/connection.ts';
+import { registerExecutions } from './routes/executions.ts';
+import { registerGraphs } from './routes/graphs.ts';
+import { registerHealth } from './routes/health.ts';
+import { registerLeases } from './routes/leases.ts';
+import { registerInputRequests } from './routes/input-requests.ts';
+import { registerProposals } from './routes/proposals.ts';
+import { registerRunners } from './routes/runners.ts';
+import { registerSessions } from './routes/sessions.ts';
+import { registerJobs } from './routes/jobs.ts';
 
 /**
- * Prefixo das rotas de negócio. Toda rota de domínio nasce dentro dele;
- * `/health` fica fora, porque é probe de infraestrutura (t100, FR10).
+ * Prefix of the business routes. Every domain route is born inside it;
+ * `/health` stays outside, because it is an infrastructure probe (t100, FR10).
  */
-export const PREFIXO_API = '/v1';
+export const API_PREFIX = '/v1';
 
-/** Opções da fábrica do app. */
-export interface OpcoesApp {
-  /** Banco já aberto; o app nunca abre o seu. */
-  db: BancoDeDados;
-  /** Nível de log do Fastify. `false` desliga (default nos testes silenciosos). */
+/** Options of the app factory. */
+export interface AppOptions {
+  /** Already open database; the app never opens its own. */
+  db: Database;
+  /** Fastify log level. `false` turns it off (the default in silent tests). */
   logger?: boolean;
 }
 
 /**
- * Monta o app com a rota de saúde e o escopo versionado.
+ * Assembles the app with the health route and the versioned scope.
  *
- * @param opcoes Banco aberto e configuração de log.
- * @returns Instância do Fastify pronta para `listen`.
+ * @param options Open database and log configuration.
+ * @returns A Fastify instance ready to `listen`.
  */
-export function criarApp(opcoes: OpcoesApp): FastifyInstance {
-  const app = Fastify({ logger: opcoes.logger ?? false });
+export function createApp(options: AppOptions): FastifyInstance {
+  const app = Fastify({ logger: options.logger ?? false });
 
-  registrarSaude(app, opcoes.db);
+  registerHealth(app, options.db);
 
-  // Escopo versionado: toda rota de negócio nasce dentro dele. Uma linha de
-  // `register` por família de rotas — assim duas tickets que registram rotas em
-  // paralelo tocam linhas diferentes deste arquivo, e não a mesma.
-  app.register(async (escopo) => registrarGrafos(escopo, opcoes.db), { prefix: PREFIXO_API });
-  app.register(async (escopo) => registrarPropostas(escopo, opcoes.db), { prefix: PREFIXO_API });
-  app.register(async (escopo) => registrarTrabalhos(escopo, opcoes.db), { prefix: PREFIXO_API });
-  app.register(async (escopo) => registrarSessoes(escopo, opcoes.db), { prefix: PREFIXO_API });
-  app.register(async (escopo) => registrarPerguntas(escopo, opcoes.db), { prefix: PREFIXO_API });
-  app.register(async (escopo) => registrarExecucoes(escopo, opcoes.db), { prefix: PREFIXO_API });
-  app.register(async (escopo) => registrarRunners(escopo, opcoes.db), { prefix: PREFIXO_API });
-  app.register(async (escopo) => registrarLeases(escopo, opcoes.db), { prefix: PREFIXO_API });
+  // Versioned scope: every business route is born inside it. One `register` line
+  // per route family — that way two tickets registering routes in parallel touch
+  // different lines of this file, and not the same one.
+  app.register(async (scope) => registerGraphs(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerProposals(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerJobs(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerSessions(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerInputRequests(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerExecutions(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerRunners(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerLeases(scope, options.db), { prefix: API_PREFIX });
 
   return app;
 }

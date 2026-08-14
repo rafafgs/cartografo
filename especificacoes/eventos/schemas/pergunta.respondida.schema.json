@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pergunta.respondida.schema.json",
+  "title": "pergunta.respondida",
+  "description": "Um humano respondeu. Paridade com EventKind.INPUT_ANSWERED + AnswerSource.USER do flowpilot; aqui a origem da resposta é o próprio tipo do evento, não uma coluna.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "pergunta.respondida" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "pergunta" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["resposta", "respondido_por"],
+      "properties": {
+        "resposta": {
+          "type": "string",
+          "description": "A resposta, como o humano a deu."
+        },
+        "respondido_por": {
+          "type": "string",
+          "description": "Quem respondeu. Redundante com ator.ref por desenho: a auditoria de \"o que foi perguntado, respondido, quando e por quem\" tem que sobreviver a uma leitura só do payload."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

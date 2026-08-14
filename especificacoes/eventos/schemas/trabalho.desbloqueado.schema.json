@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trabalho.desbloqueado.schema.json",
+  "title": "trabalho.desbloqueado",
+  "description": "A bandeira de bloqueio caiu e o trabalho pode andar de novo. Paridade com EventKind.UNBLOCKED do flowpilot. Sem payload: o fato é a própria queda da bandeira.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "trabalho.desbloqueado" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "trabalho" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": [],
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+}

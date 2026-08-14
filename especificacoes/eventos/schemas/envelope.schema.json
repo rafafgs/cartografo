@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "envelope.schema.json",
+  "title": "Envelope de evento de telemetria (cartografo v1)",
+  "description": "Campos presentes em todo evento do log. O log é append-only: a única operação sobre ele é inserir uma linha nova.",
+  "type": "object",
+  "required": [
+    "id",
+    "tipo",
+    "projeto_id",
+    "execucao_id",
+    "entidade",
+    "ator",
+    "ocorrido_em",
+    "dados"
+  ],
+  "properties": {
+    "id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotônico, atribuído pelo servidor. É a ordem do log e a única ordenação total que existe (dois eventos podem compartilhar o mesmo ocorrido_em)."
+    },
+    "tipo": {
+      "type": "string",
+      "description": "Discriminador do evento, ex. \"trabalho.criado\". Cada valor tem um schema próprio que fixa este campo com const."
+    },
+    "projeto_id": {
+      "type": "integer",
+      "description": "Projeto dono do evento."
+    },
+    "execucao_id": {
+      "type": ["integer", "null"],
+      "description": "Execução à qual o evento pertence, ou null quando o evento acontece fora de uma rodada (ex. registro de versão de grafo)."
+    },
+    "entidade": {
+      "type": "object",
+      "description": "O sujeito do evento — a chave de join da telemetria com o resto do banco.",
+      "required": ["tipo", "id"],
+      "properties": {
+        "tipo": {
+          "enum": ["trabalho", "sessao", "pergunta", "lease", "grafo_versao"]
+        },
+        "id": {
+          "type": ["integer", "string"],
+          "description": "Id da própria entidade nomeada em entidade.tipo. Inteiro para trabalho/sessao/pergunta/lease; string para grafo_versao, cujo id é o hash do snapshot (D15)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ator": {
+      "type": "object",
+      "description": "Quem causou o evento. Paridade com ActorType do flowpilot (user/agent/system).",
+      "required": ["tipo", "ref"],
+      "properties": {
+        "tipo": {
+          "enum": ["usuario", "agente", "sistema"]
+        },
+        "ref": {
+          "type": "string",
+          "description": "Identificação livre do ator: login do usuário, papel do agente, nome do componente do sistema."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ocorrido_em": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Quando o fato aconteceu, ISO 8601. É o único carimbo de tempo do log — uma coluna de modificação num log append-only seria mentira."
+    },
+    "dados": {
+      "type": "object",
+      "description": "Payload específico do tipo, declarado pelo schema do tipo."
+    }
+  },
+  "additionalProperties": false
+}

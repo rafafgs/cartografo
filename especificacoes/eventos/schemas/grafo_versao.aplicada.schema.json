@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "grafo_versao.aplicada.schema.json",
+  "title": "grafo_versao.aplicada",
+  "description": "O ponteiro de versão corrente do grafo passou a apontar para esta versão (D15). entidade.id é o hash da versão que passou a valer. Extensão do cartografo, sem equivalente no flowpilot.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "grafo_versao.aplicada" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "grafo_versao" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["grafo_id"],
+      "properties": {
+        "grafo_id": {
+          "type": "string",
+          "description": "Grafo cujo ponteiro se moveu."
+        },
+        "proposta_id": {
+          "type": ["integer", "null"],
+          "description": "Proposta cuja aplicação moveu o ponteiro, quando houve uma."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

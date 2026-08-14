@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lease.concedida.schema.json",
+  "title": "lease.concedida",
+  "description": "Um runner tomou posse de um trabalho por um prazo (D5). Extensão do cartografo: o flowpilot é de um runner só e não tem equivalente.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "lease.concedida" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "lease" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["trabalho_id", "runner_id", "expira_em"],
+      "properties": {
+        "trabalho_id": {
+          "type": "integer",
+          "description": "Trabalho despachado sob esta posse."
+        },
+        "runner_id": {
+          "type": "string",
+          "description": "Runner que tomou a posse."
+        },
+        "expira_em": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Quando a posse caduca se o heartbeat não a renovar."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pergunta.criada.schema.json",
+  "title": "pergunta.criada",
+  "description": "Um agente precisa de algo do humano antes de continuar. Paridade com input_requests + EventKind.INPUT_REQUESTED do flowpilot: pergunta e aprovação são o mesmo animal, o campo tipo é a única diferença.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "pergunta.criada" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "pergunta" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["trabalho_id", "tipo", "pergunta", "auto_aprovavel"],
+      "properties": {
+        "trabalho_id": {
+          "type": "integer",
+          "description": "Trabalho que fica esperando a resposta."
+        },
+        "sessao_id": {
+          "type": ["integer", "null"],
+          "description": "Sessão que perguntou. Opcional porque o caminho da resposta sobrevive à sessão: ela emite o pedido e o processo termina."
+        },
+        "tipo": {
+          "enum": ["pergunta", "aprovacao"],
+          "description": "pergunta: alguém precisa saber algo. aprovacao: um portão manual quer um OK sobre um artefato."
+        },
+        "pergunta": {
+          "type": "string",
+          "description": "O que está sendo perguntado."
+        },
+        "contexto": {
+          "type": ["string", "null"],
+          "description": "Evidência, alternativas pesadas, o que já foi tentado."
+        },
+        "opcoes": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Rótulos curtos das decisões possíveis."
+        },
+        "recomendacao": {
+          "type": ["string", "null"],
+          "description": "O que o agente escolheria, no imperativo."
+        },
+        "resposta_padrao": {
+          "type": ["string", "null"],
+          "description": "O valor que a auto-aprovação aplica em nome do humano."
+        },
+        "auto_aprovavel": {
+          "type": "boolean",
+          "description": "Se o portão de auto-aprovação PODE responder no lugar do humano. Carregado explicitamente: \"sem opções e sem padrão\" nunca foi um bom proxy para inaprovável."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

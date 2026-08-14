@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pergunta.auto_resolvida.schema.json",
+  "title": "pergunta.auto_resolvida",
+  "description": "O portão de auto-aprovação respondeu em nome do humano. Paridade com AnswerSource.AUTO do flowpilot: a auditoria SEMPRE distingue aprovado-por-usuário de aprovado-pelo-sistema — aqui a distinção é o tipo do evento.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "pergunta.auto_resolvida" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "pergunta" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["resposta", "baseada_em"],
+      "properties": {
+        "resposta": {
+          "type": "string",
+          "description": "O que foi aplicado em nome do humano."
+        },
+        "baseada_em": {
+          "enum": ["recomendacao", "resposta_padrao", "precedente"],
+          "description": "De onde a resposta saiu: da recomendação do próprio agente, da resposta padrão declarada na pergunta, ou de um precedente registrado no log."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

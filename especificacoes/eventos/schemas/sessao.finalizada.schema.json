@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sessao.finalizada.schema.json",
+  "title": "sessao.finalizada",
+  "description": "A sessão chegou ao fim da vida. Paridade com o status terminal + os totais de uso de agent_sessions no flowpilot.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "sessao.finalizada" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "sessao" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": [
+            "concluida",
+            "falhou",
+            "travada",
+            "tempo_esgotado",
+            "pausada_cota",
+            "retomada_falhou"
+          ],
+          "description": "Como terminou. Os quatro além de concluida/falhou existem para que um desfecho saudável (pausada_cota), um ref inválido (retomada_falhou) e uma parada nossa (travada por silêncio, tempo_esgotado por relógio) nunca sejam lidos como bug a investigar."
+        },
+        "exit_code": {
+          "type": ["integer", "null"],
+          "description": "Código de saída do processo do engine, quando houve processo com saída."
+        },
+        "uso": {
+          "type": ["object", "null"],
+          "description": "Totais de tokens congelados no fim da vida. null quando o engine não reportou nada — nunca colapsar em zero. Sem campo de custo: custo é vocabulário de engine.",
+          "required": [
+            "input_tokens",
+            "output_tokens",
+            "cache_creation_input_tokens",
+            "cache_read_input_tokens"
+          ],
+          "properties": {
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "cache_creation_input_tokens": { "type": "integer", "minimum": 0 },
+            "cache_read_input_tokens": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trabalho.criado.schema.json",
+  "title": "trabalho.criado",
+  "description": "Um trabalho (viajante) entrou no grafo. Paridade com EventKind.CREATED do flowpilot.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "trabalho.criado" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "trabalho" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["titulo", "no_entrada_id"],
+      "properties": {
+        "titulo": {
+          "type": "string",
+          "description": "Título do trabalho no momento da criação."
+        },
+        "no_entrada_id": {
+          "type": "string",
+          "description": "Nó do grafo em que o trabalho nasce. O cartografo não tem estados fixos: o nó de entrada é dado da versão de grafo vigente."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

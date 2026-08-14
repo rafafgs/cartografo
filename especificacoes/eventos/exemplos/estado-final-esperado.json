@@ -1,0 +1,37 @@
+{
+  "trabalhos": {
+    "101": {
+      "no_atual": "desenvolvimento",
+      "bloqueado": false,
+      "historico_nos": ["intake", "refinamento", "desenvolvimento"]
+    },
+    "102": {
+      "no_atual": "desenvolvimento",
+      "bloqueado": true,
+      "historico_nos": ["intake", "desenvolvimento"]
+    }
+  },
+  "sessoes": {
+    "5001": { "status": "concluida", "exit_code": 0 },
+    "5002": { "status": "travada", "exit_code": null }
+  },
+  "perguntas": {
+    "900": {
+      "status": "respondida",
+      "resposta": "Unificar num log so, com envelope comum e entidade generica",
+      "origem": "usuario"
+    },
+    "901": {
+      "status": "respondida",
+      "resposta": "Porte os 12 nos como estao; reagrupar e decisao de outra ficha",
+      "origem": "auto"
+    }
+  },
+  "leases": {
+    "7001": { "status": "ativa" },
+    "7002": { "status": "expirada" }
+  },
+  "grafo_versao_corrente": {
+    "software-dev": "sha256:1a0b7e55"
+  }
+}

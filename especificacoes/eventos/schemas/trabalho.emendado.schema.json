@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trabalho.emendado.schema.json",
+  "title": "trabalho.emendado",
+  "description": "O conteúdo do trabalho foi editado. Paridade com EventKind.AMENDED do flowpilot, inclusive na disciplina: registro de auditoria, não histórico de versões.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "trabalho.emendado" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "trabalho" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["campos_alterados"],
+      "properties": {
+        "campos_alterados": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "description": "Só os NOMES dos campos que mudaram, nunca o conteúdo. Quem quer o texto novo lê o trabalho; o log diz o que foi mexido e por quem."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

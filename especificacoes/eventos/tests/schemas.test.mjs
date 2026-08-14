@@ -202,8 +202,17 @@ test('nenhum schema descreve update ou delete de evento (append-only)', () => {
   }
 });
 
-test('nada de service_class nem de proposta/topógrafo (fora de escopo)', () => {
-  const fora = ['service_class', 'proposta.criada', 'proposta.aprovada', 'topografo'];
+test('nenhum tipo de evento fora do escopo da PoC', () => {
+  // `service_class` (urgência) e os eventos de proposta ficam fora da PoC
+  // (D6/D16). A checagem é por NOME DE TIPO, não por vocabulário: citar o
+  // topógrafo numa descrição é legítimo — ele é o consumidor desta telemetria.
+  const fora = [
+    'service_class',
+    'proposta.criada',
+    'proposta.aprovada',
+    'proposta.aplicada',
+    'proposta.revertida',
+  ];
   for (const arquivo of arquivosDeSchema()) {
     const bruto = readFileSync(join(DIR_SCHEMAS, arquivo), 'utf8');
     for (const termo of fora) {

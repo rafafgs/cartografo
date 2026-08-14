@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trabalho.transicao.schema.json",
+  "title": "trabalho.transicao",
+  "description": "O trabalho andou de um nó para outro. Divergência justificada do EventKind.STATE_CHANGE do flowpilot: nós do grafo congelado por versão, não os 12 estados fixos de um TicketState.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "trabalho.transicao" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "trabalho" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["para_no_id"],
+      "properties": {
+        "de_no_id": {
+          "type": ["string", "null"],
+          "description": "Nó de origem; null na primeira transição, quando o trabalho sai do nó de entrada pela primeira vez."
+        },
+        "para_no_id": {
+          "type": "string",
+          "description": "Nó de destino, dentro da versão de grafo congelada para esta execução."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

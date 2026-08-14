@@ -311,10 +311,13 @@ export function registrarPropostas(app: FastifyInstance, db: BancoDeDados): void
     // t102), não alegada no corpo: sem trabalho registrado sob a versão que
     // esta proposta aplicou, não há rodada seguinte de que falar.
     const versaoAplicada = proposta.versao_aplicada_id;
-    const evidencia = metricasPorVersao(db, execucaoId as number).find(
-      (linha) => linha.grafo_versao_id === versaoAplicada,
-    );
-    if (versaoAplicada === null || evidencia === undefined || evidencia.trabalhos < 1) {
+    const evidencia =
+      versaoAplicada === null
+        ? undefined
+        : metricasPorVersao(db, execucaoId as number).find(
+            (linha) => linha.grafo_versao_id === versaoAplicada,
+          );
+    if (evidencia === undefined || evidencia.trabalhos < 1) {
       resposta.code(422);
       return {
         erro: 'execucao_sem_evidencia',

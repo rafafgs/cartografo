@@ -1,11 +1,11 @@
 /**
- * O `ClaudeCodeAdapter` rodando o kit de conformidade inteiro (C1–C7).
+ * The `ClaudeCodeAdapter` running the whole conformance kit (C1–C7).
  *
- * O kit não sabe nada deste adapter: ele recebe uma fábrica e um caminho de
- * fake engine. Toda a especificidade do Claude Code mora neste arquivo — a
- * costura que troca o binário real pelo fake, e o formato do quadro
- * `stream-json` de onde o `engineRef` sai. É essa fronteira que faz a mesma
- * suíte servir ao segundo adapter (t119) sem cópia.
+ * The kit knows nothing about this adapter: it receives a factory and a path to
+ * a fake engine. Every Claude Code specificity lives in this file — the seam
+ * that swaps the real binary for the fake, and the shape of the `stream-json`
+ * frame the `engineRef` comes out of. It is that boundary that makes the same
+ * suite serve the second adapter (t119) without a copy.
  */
 
 import assert from 'node:assert/strict';
@@ -18,49 +18,50 @@ import { runConformanceKit } from '../../src/engine/conformance-kit.ts';
 
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
-const REF_DO_ENGINE = 'ref-de-sessao-do-engine-abc123';
+const ENGINE_REF = 'engine-session-ref-abc123';
 
 runConformanceKit(
   (fakeEnginePath) =>
     new ClaudeCodeAdapter({
-      // A costura exigida pelo kit: o argv que a CLI `claude` receberia,
-      // inteiro e sem edição, entregue ao fake engine. Trocar só o binário é o
-      // que faz C2 medir a injeção de verdade, e não uma versão simplificada
-      // dela montada para o teste.
+      // The seam the kit demands: the argv the `claude` CLI would receive,
+      // whole and unedited, handed to the fake engine. Changing only the binary
+      // is what makes C2 measure the real injection, and not a simplified
+      // version of it built for the test.
       commandBuilder: (spec) => ({
         command: process.execPath,
         args: [fakeEnginePath, ...buildCommand(spec).args],
       }),
-      // Grace curto: C4 espera a escalada para SIGKILL dentro do prazo do caso.
+      // Short grace: C4 waits for the escalation to SIGKILL within the case's
+      // own deadline.
       graceMs: 300,
     }),
   FAKE_ENGINE,
   {
-    quadroDeEngineRef: {
-      linha: JSON.stringify({
+    engineRefFrame: {
+      line: JSON.stringify({
         type: 'system',
         subtype: 'init',
-        session_id: REF_DO_ENGINE,
+        session_id: ENGINE_REF,
         model: 'claude-opus-5',
       }),
-      refEsperada: REF_DO_ENGINE,
+      expectedRef: ENGINE_REF,
     },
   },
 );
 
-test('engineName é o identificador estável persistido na linha da sessão', () => {
+test('engineName is the stable identifier persisted on the session row', () => {
   assert.equal(new ClaudeCodeAdapter().engineName, 'claude-code');
 });
 
-test('capabilities declara só o que tem consumidor', () => {
-  // `hasStructuredOutput` porque `stream-json` é parseável. As outras duas
-  // ficam AUSENTES, não `false` explícito: nenhuma tem consumidor no v0, e
-  // "declarar a quarta, quinta e sexta antes de alguém ler é como o formato
-  // apodrece" (`docs/formatos/engine-adapter.md:160-165`). Ausente já é
-  // `false` por `resolveCapabilities`.
-  const declaradas = new ClaudeCodeAdapter().capabilities();
+test('capabilities declares only what has a consumer', () => {
+  // `hasStructuredOutput` because `stream-json` is parseable. The other two
+  // stay ABSENT, not explicitly `false`: neither has a consumer in v0, and
+  // "declaring the fourth, fifth and sixth before anybody reads them is how a
+  // format rots" (`docs/formatos/engine-adapter.md:160-165`). Absent already
+  // means `false` through `resolveCapabilities`.
+  const declared = new ClaudeCodeAdapter().capabilities();
 
-  assert.deepEqual(declaradas, { hasStructuredOutput: true });
-  assert.ok(!('hasResume' in declaradas));
-  assert.ok(!('reportsUsage' in declaradas));
+  assert.deepEqual(declared, { hasStructuredOutput: true });
+  assert.ok(!('hasResume' in declared));
+  assert.ok(!('reportsUsage' in declared));
 });

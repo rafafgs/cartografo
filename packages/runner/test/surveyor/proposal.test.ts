@@ -45,7 +45,7 @@ import type {
   SessionStatus,
 } from '../../src/engine/types.ts';
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
-import type * as ProposalModule from '../../src/topografo/proposta.ts';
+import type * as ProposalModule from '../../src/surveyor/proposal.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
@@ -53,7 +53,7 @@ const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs
 const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
-const PROPOSAL_MODULE = 'src/topografo/proposta.ts';
+const PROPOSAL_MODULE = 'src/surveyor/proposal.ts';
 
 /** Deadline for anything this test waits on. Wide on purpose. */
 const DEADLINE_MS = 30_000;
@@ -209,11 +209,11 @@ async function api<T>(
 /** Everything a test needs: a control plane, a seeded graph and a work dir. */
 interface Scenario {
   baseUrl: string;
-  versao: GraphVersion;
+  version: GraphVersion;
   workingDir: string;
   eventIds: number[];
   calls: string[];
-  cliente: ClientModule.ClienteControle;
+  client: ClientModule.ClienteControle;
 }
 
 /**
@@ -224,7 +224,7 @@ interface Scenario {
  * not fabricate timestamps, precisely because FR1's stream is what the surveyor
  * will read in production.
  */
-async function seedBottleneck(baseUrl: string, versaoId: string): Promise<void> {
+async function seedBottleneck(baseUrl: string, versionId: string): Promise<void> {
   const work = await api<Work>(
     baseUrl,
     'POST',
@@ -233,7 +233,7 @@ async function seedBottleneck(baseUrl: string, versaoId: string): Promise<void> 
       titulo: 'travessia com gargalo',
       no_entrada_id: 'redigir',
       execucao_id: EXECUTION_WITH_SIGNAL,
-      grafo_versao_id: versaoId,
+      grafo_versao_id: versionId,
     },
     201,
   );
@@ -287,16 +287,16 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
   const { ClienteControle } = await loadClient();
   const baseUrl = await startControlPlane(t);
 
-  const documento: unknown = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
-  const { grafo_versao: versao } = await api<{ grafo_versao: GraphVersion }>(
+  const document: unknown = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
+  const { grafo_versao: version } = await api<{ grafo_versao: GraphVersion }>(
     baseUrl,
     'POST',
     '/v1/graphs',
-    documento,
+    document,
     201,
   );
 
-  await seedBottleneck(baseUrl, versao.id);
+  await seedBottleneck(baseUrl, version.id);
 
   // The flat execution: a work that was created under the same version and
   // never moved. No session, no block — no signal.
@@ -308,7 +308,7 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
       titulo: 'travessia sem sinal',
       no_entrada_id: 'redigir',
       execucao_id: FLAT_EXECUTION,
-      grafo_versao_id: versao.id,
+      grafo_versao_id: version.id,
     },
     201,
   );
@@ -318,26 +318,26 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
     rmSync(workingDir, { recursive: true, force: true });
   });
 
-  const { eventos } = await api<{ eventos: Event[] }>(
+  const { eventos: events } = await api<{ eventos: Event[] }>(
     baseUrl,
     'GET',
     `/v1/executions/${EXECUTION_WITH_SIGNAL}/events`,
   );
-  assert.ok(eventos.length >= 6, `the seeded log is too short: ${JSON.stringify(eventos)}`);
+  assert.ok(events.length >= 6, `the seeded log is too short: ${JSON.stringify(events)}`);
 
   const calls: string[] = [];
-  const buscar: typeof fetch = async (entrada, init) => {
-    calls.push(`${init?.method ?? 'GET'} ${new URL(String(entrada)).pathname}`);
-    return await fetch(entrada, init);
+  const doFetch: typeof fetch = async (input, init) => {
+    calls.push(`${init?.method ?? 'GET'} ${new URL(String(input)).pathname}`);
+    return await fetch(input, init);
   };
 
   return {
     baseUrl,
-    versao,
+    version,
     workingDir,
-    eventIds: eventos.map((evento) => evento.id),
+    eventIds: events.map((event) => event.id),
     calls,
-    cliente: new ClienteControle({ urlBase: baseUrl, buscar }),
+    client: new ClienteControle({ urlBase: baseUrl, buscar: doFetch }),
   };
 }
 
@@ -404,151 +404,153 @@ const VALID_OPERATIONS = [
 ];
 
 /** Configures the fake engine to write `conteudo` where the surveyor reads it. */
-function engineWriting(arquivo: string, conteudo: string): Record<string, string> {
-  return { FAKE_ENGINE_WRITE_FILES: JSON.stringify({ [arquivo]: conteudo }) };
+function engineWriting(file: string, content: string): Record<string, string> {
+  return { FAKE_ENGINE_WRITE_FILES: JSON.stringify({ [file]: content }) };
 }
 
 const postsToProposals = (calls: readonly string[]): string[] =>
-  calls.filter((chamada) => chamada === 'POST /v1/proposals');
+  calls.filter((call) => call === 'POST /v1/proposals');
 
 test('t110 — a run with a bottleneck lands exactly one pending proposal, backed by real event ids', async (t) => {
-  const { proporMelhoriaDeFluxo, ARQUIVO_DE_SAIDA } = await loadProposal();
-  const cenario = await buildScenario(t);
+  const { proposeFlowImprovement, OUTPUT_FILE } = await loadProposal();
+  const scenario = await buildScenario(t);
   const adapter = new CountingAdapter(fakeAdapter());
 
-  const resultado = await proporMelhoriaDeFluxo({
-    cliente: cenario.cliente,
+  const result = await proposeFlowImprovement({
+    client: scenario.client,
     adapter,
-    execucaoId: EXECUTION_WITH_SIGNAL,
-    workingDir: cenario.workingDir,
+    executionId: EXECUTION_WITH_SIGNAL,
+    workingDir: scenario.workingDir,
     timeoutSeconds: 60,
     envOverrides: engineWriting(
-      ARQUIVO_DE_SAIDA,
+      OUTPUT_FILE,
       JSON.stringify({ operacoes: VALID_OPERATIONS }, null, 2),
     ),
   });
 
   assert.equal(adapter.sessions, 1, 'exactly one agent session decides the operations');
-  assert.equal(resultado.gargalo?.no_id, 'revisar', 'the seeded bottleneck is the one found');
-  assert.ok(resultado.proposta !== null, 'a bottleneck with a well-formed diff becomes a proposal');
+  assert.equal(result.gargalo?.no_id, 'revisar', 'the seeded bottleneck is the one found');
+  assert.ok(result.proposta !== null, 'a bottleneck with a well-formed diff becomes a proposal');
 
   assert.deepEqual(
-    postsToProposals(cenario.calls),
+    postsToProposals(scenario.calls),
     ['POST /v1/proposals'],
     'exactly one POST /v1/proposals, never two',
   );
   assert.deepEqual(
-    cenario.calls.filter((chamada) => chamada.includes('/aplicar')),
+    scenario.calls.filter((call) => call.includes('/aplicar')),
     [],
     'a surveyor proposal only ever reaches "pendente" (README, princípio 5)',
   );
 
-  const { propostas } = await api<{ propostas: Proposal[] }>(
-    cenario.baseUrl,
+  const { propostas: proposals } = await api<{ propostas: Proposal[] }>(
+    scenario.baseUrl,
     'GET',
     '/v1/proposals',
   );
-  assert.equal(propostas.length, 1);
-  const proposta = propostas[0];
+  assert.equal(proposals.length, 1);
+  const proposal = proposals[0];
 
-  assert.equal(proposta.id, resultado.proposta.id);
-  assert.equal(proposta.status, 'pendente');
-  assert.equal(proposta.versao_aplicada_id, null, 'nothing was applied');
-  assert.equal(proposta.grafo_id, cenario.versao.grafo_id);
-  assert.equal(proposta.versao_alvo, cenario.versao.id);
-  assert.deepEqual(proposta.operacoes, VALID_OPERATIONS, 'the session chose the operations');
+  assert.equal(proposal.id, result.proposta.id);
+  assert.equal(proposal.status, 'pendente');
+  assert.equal(proposal.versao_aplicada_id, null, 'nothing was applied');
+  assert.equal(proposal.grafo_id, scenario.version.grafo_id);
+  assert.equal(proposal.versao_alvo, scenario.version.id);
+  assert.deepEqual(proposal.operacoes, VALID_OPERATIONS, 'the session chose the operations');
 
   // The evidence is ours, not the agent's: the four numbers plus the ids of the
   // events they were computed from, every one of them real.
-  const evidencia = proposta.evidencia;
-  assert.equal(evidencia.no_id, 'revisar');
-  assert.equal(evidencia.execucao_id, EXECUTION_WITH_SIGNAL);
-  const ids = evidencia.eventos as number[];
+  const evidence = proposal.evidencia;
+  assert.equal(evidence.no_id, 'revisar');
+  assert.equal(evidence.execucao_id, EXECUTION_WITH_SIGNAL);
+  const ids = evidence.eventos as number[];
   assert.ok(Array.isArray(ids) && ids.length > 0, 'evidence without ids is a summary, not evidence');
   for (const id of ids) {
-    assert.ok(cenario.eventIds.includes(id), `evidencia.eventos cites ${id}, absent from the log`);
+    assert.ok(scenario.eventIds.includes(id), `evidencia.eventos cites ${id}, absent from the log`);
   }
-  for (const campo of ['tempo_agente_ms', 'tempo_espera_ms', 'tempo_fila_ms', 'perguntas']) {
-    assert.equal(typeof evidencia[campo], 'number', `evidencia.${campo} must be a number`);
+  for (const field of ['tempo_agente_ms', 'tempo_espera_ms', 'tempo_fila_ms', 'perguntas']) {
+    assert.equal(typeof evidence[field], 'number', `evidencia.${field} must be a number`);
   }
-  assert.ok((evidencia.total_ms as number) > 0, 'the bottleneck has to have cost something');
+  assert.ok((evidence.total_ms as number) > 0, 'the bottleneck has to have cost something');
 
   // `metrica_esperada` has the shape t112's verdict can read.
-  const metrica = proposta.metrica_esperada;
-  assert.equal(typeof metrica.nome, 'string');
-  assert.ok(['sobe', 'cai'].includes(metrica.direcao as string));
-  assert.equal(typeof metrica.de, 'number');
-  assert.equal(typeof metrica.para, 'number');
+  const metric = proposal.metrica_esperada;
+  assert.equal(typeof metric.nome, 'string');
+  assert.ok(['sobe', 'cai'].includes(metric.direcao as string));
+  assert.equal(typeof metric.de, 'number');
+  assert.equal(typeof metric.para, 'number');
 });
 
 test('t110 — a session that returns nothing usable aborts, and posts nothing', async (t) => {
-  const { proporMelhoriaDeFluxo, ARQUIVO_DE_SAIDA } = await loadProposal();
-  const cenario = await buildScenario(t);
+  const { proposeFlowImprovement, OUTPUT_FILE } = await loadProposal();
+  const scenario = await buildScenario(t);
 
-  const rodar = async (envOverrides: Record<string, string>): Promise<void> => {
-    await proporMelhoriaDeFluxo({
-      cliente: cenario.cliente,
+  const run = async (envOverrides: Record<string, string>): Promise<void> => {
+    await proposeFlowImprovement({
+      client: scenario.client,
       adapter: fakeAdapter(),
-      execucaoId: EXECUTION_WITH_SIGNAL,
-      workingDir: cenario.workingDir,
+      executionId: EXECUTION_WITH_SIGNAL,
+      workingDir: scenario.workingDir,
       timeoutSeconds: 60,
       envOverrides,
     });
   };
 
   // 1. An empty diff: a proposal that changes nothing is not a proposal.
+  // The pattern is built from a string, not a regex literal, because what it
+  // matches is the frozen wire key and not an identifier of ours (D18/FR2).
   await assert.rejects(
-    async () => rodar(engineWriting(ARQUIVO_DE_SAIDA, JSON.stringify({ operacoes: [] }))),
-    /operacoes/i,
+    async () => run(engineWriting(OUTPUT_FILE, JSON.stringify({ operacoes: [] }))),
+    new RegExp('operacoes', 'i'),
   );
 
   // 2. Structurally malformed: an operation with no inverse, which the server
   // would refuse with 400 — and which never gets that far.
   await assert.rejects(
     async () =>
-      rodar(
+      run(
         engineWriting(
-          ARQUIVO_DE_SAIDA,
+          OUTPUT_FILE,
           JSON.stringify({ operacoes: [{ tipo: 'adicionar_no', no: { id: 'red_team' } }] }),
         ),
       ),
-    /operacao|operacoes/i,
+    new RegExp('operation|operacoes', 'i'),
   );
 
   // 3. The session wrote nothing at all.
-  await assert.rejects(async () => rodar({ FAKE_ENGINE_LINES: '[]' }));
+  await assert.rejects(async () => run({ FAKE_ENGINE_LINES: '[]' }));
 
   // 4. The session died.
-  await assert.rejects(async () => rodar({ FAKE_ENGINE_EXIT_CODE: '3' }));
+  await assert.rejects(async () => run({ FAKE_ENGINE_EXIT_CODE: '3' }));
 
-  assert.deepEqual(postsToProposals(cenario.calls), [], 'no proposal may be posted from a bad run');
-  const { propostas } = await api<{ propostas: Proposal[] }>(
-    cenario.baseUrl,
+  assert.deepEqual(postsToProposals(scenario.calls), [], 'no proposal may be posted from a bad run');
+  const { propostas: proposals } = await api<{ propostas: Proposal[] }>(
+    scenario.baseUrl,
     'GET',
     '/v1/proposals',
   );
-  assert.deepEqual(propostas, [], 'and nothing landed in the book');
+  assert.deepEqual(proposals, [], 'and nothing landed in the book');
 });
 
 test('t110 — a flat run exits quietly: no session, no proposal', async (t) => {
-  const { proporMelhoriaDeFluxo, ARQUIVO_DE_SAIDA } = await loadProposal();
-  const cenario = await buildScenario(t);
+  const { proposeFlowImprovement, OUTPUT_FILE } = await loadProposal();
+  const scenario = await buildScenario(t);
   const adapter = new CountingAdapter(fakeAdapter());
 
-  const resultado = await proporMelhoriaDeFluxo({
-    cliente: cenario.cliente,
+  const result = await proposeFlowImprovement({
+    client: scenario.client,
     adapter,
-    execucaoId: FLAT_EXECUTION,
-    workingDir: cenario.workingDir,
+    executionId: FLAT_EXECUTION,
+    workingDir: scenario.workingDir,
     timeoutSeconds: 60,
     envOverrides: engineWriting(
-      ARQUIVO_DE_SAIDA,
+      OUTPUT_FILE,
       JSON.stringify({ operacoes: VALID_OPERATIONS }),
     ),
   });
 
-  assert.equal(resultado.gargalo, null, 'no signal, nothing to propose');
-  assert.equal(resultado.proposta, null);
+  assert.equal(result.gargalo, null, 'no signal, nothing to propose');
+  assert.equal(result.proposta, null);
   assert.equal(adapter.sessions, 0, 'with nothing to explain, no agent is paid to explain it');
-  assert.deepEqual(postsToProposals(cenario.calls), []);
+  assert.deepEqual(postsToProposals(scenario.calls), []);
 });

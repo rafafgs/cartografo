@@ -1,6 +1,6 @@
 # Especificação: topógrafo de fluxo, da telemetria à proposta
 
-**Versão da API:** `v1` · **Implementação:** [`packages/runner/src/topografo/`](../../packages/runner/src/topografo)
+**Versão da API:** `v1` · **Implementação:** [`packages/runner/src/surveyor/`](../../packages/runner/src/surveyor)
 **Decisão de origem:** [D16](../../DECISOES.md) — "superar o flowpilot é o marco seguinte (primeira proposta do topógrafo com evidência)"
 
 Um grafo que roda produz um rastro; um grafo que **melhora** precisa de alguém
@@ -29,8 +29,8 @@ qualquer detalhe:
 
 | Metade | Onde | O que faz | Determinística? |
 |---|---|---|---|
-| Lente de fluxo | [`metricas.ts`](../../packages/runner/src/topografo/metricas.ts) | Dobra o log da execução em quatro números por nó e nomeia o gargalo. | Sim: função pura, sem HTTP, sem relógio. |
-| Orquestrador | [`proposta.ts`](../../packages/runner/src/topografo/proposta.ts) | Monta evidência e hipótese, despacha **uma** sessão para escolher as operações, valida e grava a proposta. | A parte que importa, sim — só a escolha das operações é agêntica. |
+| Lente de fluxo | [`metrics.ts`](../../packages/runner/src/surveyor/metrics.ts) | Dobra o log da execução em quatro números por nó e nomeia o gargalo. | Sim: função pura, sem HTTP, sem relógio. |
+| Orquestrador | [`proposal.ts`](../../packages/runner/src/surveyor/proposal.ts) | Monta evidência e hipótese, despacha **uma** sessão para escolher as operações, valida e grava a proposta. | A parte que importa, sim — só a escolha das operações é agêntica. |
 
 A entrada da primeira metade é `GET /v1/executions/:id/events` (§6) mais os ids
 dos nós da versão de grafo sob a qual a execução correu. A saída da segunda é
@@ -208,7 +208,7 @@ que continua sendo a única porta HTTP do processo.
 O comando é manual, e é assim de propósito (§8):
 
 ```
-npm run topografo --workspace @cartografo/runner -- <execucao_id> [url] [dir]
+npm run surveyor --workspace @cartografo/runner -- <execucao_id> [url] [dir]
 ```
 
 Códigos de saída: `0` quando gravou a proposta (o id vai para stdout) **ou**
@@ -216,8 +216,8 @@ quando não havia o que propor; `1` quando a sessão falhou ou não devolveu
 `operacoes` utilizáveis — e nesse caso nada foi gravado.
 
 A prova manual contra a CLI real é
-[`scripts/spike-topografo-fluxo.mjs`](../../packages/runner/scripts/spike-topografo-fluxo.mjs)
-(`npm run spike:topografo`): ela sobe um control plane de verdade, faz um
+[`scripts/spike-surveyor-flow.mjs`](../../packages/runner/scripts/spike-surveyor-flow.mjs)
+(`npm run spike:surveyor`): ela sobe um control plane de verdade, faz um
 trabalho atravessar dois nós com duas sessões `claude` reais, bloqueia e
 desbloqueia o trabalho, e só então roda o topógrafo. Não é teste de CI e não
 deve virar um — a suíte roda contra o fake engine justamente para não depender

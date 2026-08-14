@@ -1,11 +1,12 @@
 /**
- * Construção do comando da CLI `claude`.
+ * Building the `claude` CLI command.
  *
- * O que estes testes protegem é a regra normativa da especificação: "o chamador
- * jamais concatena os dois campos" (`docs/formatos/engine-adapter.md:114-149`).
- * O Claude Code tem `--system-prompt` nativo, então a injeção correta aqui é a
- * flag — concatenar seria adotar, sem revisão, o caminho de quem *não* tem a
- * flag, e apagar a diferença justamente no engine que faz melhor.
+ * What these tests protect is the specification's normative rule: "the caller
+ * never concatenates the two fields"
+ * (`docs/formatos/engine-adapter.md:114-149`). Claude Code has a native
+ * `--system-prompt`, so the correct injection here is the flag — concatenating
+ * would be adopting, unreviewed, the path of whoever does *not* have the flag,
+ * and erasing the difference precisely on the engine that does it better.
  */
 
 import assert from 'node:assert/strict';
@@ -13,112 +14,112 @@ import { test } from 'node:test';
 
 import {
   CLAUDE_BINARY,
-  MODO_DE_PERMISSAO_PADRAO,
-  STDIO_DO_ENGINE,
-  VARIAVEL_DE_MODO_DE_PERMISSAO,
+  DEFAULT_PERMISSION_MODE,
+  ENGINE_STDIO,
+  PERMISSION_MODE_VARIABLE,
   buildCommand,
   buildEnvironment,
 } from '../../src/engine/command.ts';
 import type { SessionSpec } from '../../src/engine/types.ts';
 
-const INSTRUCOES = 'Você é o nó "fazer". Implemente o ticket com testes primeiro.';
+const INSTRUCTIONS = 'Você é o nó "fazer". Implemente o ticket com testes primeiro.';
 const PROMPT = 'Ticket #104: EngineAdapter do Claude Code.';
 
 const spec = (extra: Partial<SessionSpec> = {}): SessionSpec => ({
-  workingDir: '/tmp/worktree-de-teste',
-  instructions: INSTRUCOES,
+  workingDir: '/tmp/test-worktree',
+  instructions: INSTRUCTIONS,
   prompt: PROMPT,
   timeoutSeconds: 600,
   ...extra,
 });
 
-test('instructions nunca chega concatenado ao prompt', () => {
+test('instructions never arrives concatenated to the prompt', () => {
   const { args } = buildCommand(spec(), {});
 
-  for (const argumento of args) {
+  for (const argument of args) {
     assert.ok(
-      !(argumento.includes(INSTRUCOES) && argumento.includes(PROMPT)),
-      `o argumento ${JSON.stringify(argumento)} carrega instructions E prompt no mesmo valor`,
+      !(argument.includes(INSTRUCTIONS) && argument.includes(PROMPT)),
+      `the argument ${JSON.stringify(argument)} carries instructions AND prompt in the same value`,
     );
   }
 });
 
-test('--system-prompt carrega instructions verbatim', () => {
+test('--system-prompt carries instructions verbatim', () => {
   const { args } = buildCommand(spec(), {});
 
-  const posicao = args.indexOf('--system-prompt');
-  assert.notEqual(posicao, -1, 'o comando não usa a flag nativa de system prompt');
+  const position = args.indexOf('--system-prompt');
+  assert.notEqual(position, -1, 'the command does not use the native system-prompt flag');
   assert.equal(
-    args[posicao + 1],
-    INSTRUCOES,
-    'as instruções do nó têm de ir verbatim, sem prefixo, sufixo ou reformatação',
+    args[position + 1],
+    INSTRUCTIONS,
+    'the node instructions have to go verbatim, with no prefix, suffix or reformatting',
   );
 });
 
-test('prompt é o último elemento do argv', () => {
+test('prompt is the last element of the argv', () => {
   const { command, args } = buildCommand(spec(), {});
 
   assert.equal(command, CLAUDE_BINARY);
   assert.equal(args.at(-1), PROMPT);
 });
 
-test('o comando roda headless com saída estruturada', () => {
+test('the command runs headless with structured output', () => {
   const { args } = buildCommand(spec(), {});
 
-  assert.ok(args.includes('--print'), 'sem --print a CLI abre sessão interativa');
+  assert.ok(args.includes('--print'), 'without --print the CLI opens an interactive session');
   assert.ok(args.includes('--verbose'));
 
-  const formato = args.indexOf('--output-format');
-  assert.notEqual(formato, -1);
-  assert.equal(args[formato + 1], 'stream-json');
+  const format = args.indexOf('--output-format');
+  assert.notEqual(format, -1);
+  assert.equal(args[format + 1], 'stream-json');
 });
 
-test('sem --permission-mode explícito o default é bypassPermissions', () => {
+test('with no explicit --permission-mode the default is bypassPermissions', () => {
   const { args } = buildCommand(spec(), {});
 
-  const posicao = args.indexOf('--permission-mode');
-  assert.notEqual(posicao, -1);
-  assert.equal(args[posicao + 1], 'bypassPermissions');
-  assert.equal(MODO_DE_PERMISSAO_PADRAO, 'bypassPermissions');
+  const position = args.indexOf('--permission-mode');
+  assert.notEqual(position, -1);
+  assert.equal(args[position + 1], 'bypassPermissions');
+  assert.equal(DEFAULT_PERMISSION_MODE, 'bypassPermissions');
 });
 
-test('CLAUDE_PERMISSION_MODE sobrepõe o default, e só ela', () => {
-  const { args } = buildCommand(spec(), { [VARIAVEL_DE_MODO_DE_PERMISSAO]: 'plan' });
+test('CLAUDE_PERMISSION_MODE overrides the default, and only it', () => {
+  const { args } = buildCommand(spec(), { [PERMISSION_MODE_VARIABLE]: 'plan' });
 
   assert.equal(args[args.indexOf('--permission-mode') + 1], 'plan');
 });
 
-test('envOverrides do spec não muda o modo de permissão', () => {
-  // A política de permissão é assunto do adapter, não do chamador: enquanto a
-  // tensão da D4 não for resolvida (`engine-adapter.md:515-532`), nenhuma
-  // configuração de engine atravessa a fronteira por cima.
+test('envOverrides of the spec does not change the permission mode', () => {
+  // Permission policy is the adapter's business, not the caller's: while D4's
+  // tension is unresolved (`engine-adapter.md:515-532`), no engine
+  // configuration crosses the boundary from above.
   const { args } = buildCommand(
-    spec({ envOverrides: { [VARIAVEL_DE_MODO_DE_PERMISSAO]: 'acceptEdits' } }),
+    spec({ envOverrides: { [PERMISSION_MODE_VARIABLE]: 'acceptEdits' } }),
     {},
   );
 
   assert.equal(args[args.indexOf('--permission-mode') + 1], 'bypassPermissions');
 });
 
-test('buildEnvironment funde envOverrides por cima do ambiente base', () => {
-  const ambiente = buildEnvironment(spec({ envOverrides: { MINHA_CHAVE: 'valor' } }), {
+test('buildEnvironment merges envOverrides on top of the base environment', () => {
+  const environment = buildEnvironment(spec({ envOverrides: { MY_KEY: 'value' } }), {
     PATH: '/usr/bin',
-    MINHA_CHAVE: 'antigo',
+    MY_KEY: 'old',
   });
 
-  assert.equal(ambiente.MINHA_CHAVE, 'valor');
-  assert.equal(ambiente.PATH, '/usr/bin', 'o ambiente base tem de sobreviver à fusão');
+  assert.equal(environment.MY_KEY, 'value');
+  assert.equal(environment.PATH, '/usr/bin', 'the base environment has to survive the merge');
 });
 
-test('buildEnvironment sem envOverrides devolve o ambiente base', () => {
-  const ambiente = buildEnvironment(spec(), { PATH: '/usr/bin' });
+test('buildEnvironment with no envOverrides returns the base environment', () => {
+  const environment = buildEnvironment(spec(), { PATH: '/usr/bin' });
 
-  assert.deepEqual(ambiente, { PATH: '/usr/bin' });
+  assert.deepEqual(environment, { PATH: '/usr/bin' });
 });
 
-test('stdin do processo do engine é fechado por default', () => {
-  // Invariante 6 da especificação: um pipe aberto que ninguém escreve trava a
-  // sessão para sempre, esperando EOF.
-  assert.equal(STDIO_DO_ENGINE[0], 'ignore');
-  assert.deepEqual([...STDIO_DO_ENGINE], ['ignore', 'pipe', 'pipe']);
+test('stdin of the engine process is closed by default', () => {
+  // Invariant 6 of the specification: an open pipe nobody writes to hangs the
+  // session forever, waiting for EOF.
+  assert.equal(ENGINE_STDIO[0], 'ignore');
+  assert.deepEqual([...ENGINE_STDIO], ['ignore', 'pipe', 'pipe']);
 });

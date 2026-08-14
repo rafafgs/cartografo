@@ -25,6 +25,12 @@
 /** Environment variable that overrides the control plane base URL. */
 export const CONTROL_PLANE_URL_ENV = 'CARTOGRAFO_URL';
 
+/** Environment variable with the screen's own credential (t124, FR7). */
+export const SCREEN_TOKEN_ENV = 'CARTOGRAFO_TELA_TOKEN';
+
+/** Fallback credential: the one the CLI already uses, when the screen has none. */
+export const SHARED_TOKEN_ENV = 'CARTOGRAFO_TOKEN';
+
 /** Environment variable that gives the control plane port of the default URL. */
 export const CONTROL_PLANE_PORT_ENV = 'CARTOGRAFO_PORT';
 
@@ -137,6 +143,32 @@ export function resolveControlPlaneUrl(env: NodeJS.ProcessEnv = process.env): st
 }
 
 /**
+ * Resolves the credential the screen presents to the control plane (t124, FR7).
+ *
+ * Its own variable first, the CLI's shared one after: a single-operator setup
+ * exports `CARTOGRAFO_TOKEN` once and everything works, and whoever later gives
+ * the screen a credential of its own does it without touching the terminal where
+ * the CLI runs.
+ *
+ * The screen holds this token; it does NOT ask the browser for one. D11 makes
+ * the screen an unprivileged client of the public API, not a second
+ * authentication boundary — the browser reaches the screen with no credential,
+ * exactly as before.
+ *
+ * @param env Environment to read from.
+ * @returns The token, or `undefined` when the screen has none to present.
+ */
+export function resolveControlPlaneToken(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const own = env[SCREEN_TOKEN_ENV]?.trim();
+  if (own !== undefined && own !== '') return own;
+
+  const shared = env[SHARED_TOKEN_ENV]?.trim();
+  return shared === undefined || shared === '' ? undefined : shared;
+}
+
+/**
  * The answer for a control plane that did not answer.
  *
  * Same `erro` / `mensagem` shape every error of the core uses, so the page has
@@ -177,21 +209,31 @@ export function jsonResponse(status: number, body: unknown): ProxiedResponse {
  * inbox renders. It only absorbs the failure to REACH the server, and even that
  * comes back as a response, so the caller stays a dumb pipe.
  *
+ * The one header this proxy writes itself is the credential (t124, FR7): it is
+ * the screen's, not the browser's, and it OVERWRITES whatever came in. A browser
+ * that sends an `Authorization` of its own is not granted anything it could not
+ * already reach through this same screen — the credential of this hop belongs to
+ * the process, not to whoever opened the page.
+ *
  * @param baseUrl Control plane base URL, no trailing slash.
  * @param request The browser request to forward.
- * @param doFetch `fetch` implementation; injectable for tests.
+ * @param options `fetch` implementation (injectable for tests) and the token.
  * @returns The upstream response, or the `502` of a control plane that is down.
  */
 export async function forwardRequest(
   baseUrl: string,
   request: ProxiedRequest,
-  doFetch: typeof fetch = fetch,
+  options: { doFetch?: typeof fetch; token?: string } = {},
 ): Promise<ProxiedResponse> {
+  const doFetch = options.doFetch ?? fetch;
+
   const headers = new Headers();
   for (const [name, value] of Object.entries(request.headers)) {
     if (value === undefined || HOP_BY_HOP_HEADERS.has(name.toLowerCase())) continue;
     headers.set(name, Array.isArray(value) ? value.join(', ') : value);
   }
+  if (options.token !== undefined) headers.set('authorization', `Bearer ${options.token}`);
+  else headers.delete('authorization');
 
   const method = request.method.toUpperCase();
   const hasBody =

@@ -36,6 +36,8 @@ import type * as MigrateModule from '../src/db/migrate.ts';
 import type * as LeaseRoutesModule from '../src/routes/leases.ts';
 import type * as RunnersModule from '../src/repositories/runners.ts';
 import type * as ServerModule from '../src/server.ts';
+import type * as CredentialsModule from '../src/repositories/credentials.ts';
+import { authorizeGlobalFetch } from './authorized-fetch.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const MIGRATIONS_DIR = path.join(PACKAGE_ROOT, 'migrations');
@@ -138,8 +140,16 @@ async function start(t: TestHook): Promise<{
   const { createApp } = await loadServer();
   const db = await temporaryDatabase(t);
 
+  // Every `/v1` route demands a credential since t124; this suite is about
+  // the routes, so the harness issues one and presents it on every call.
+  const { issueCredential } = (await import(
+    new URL('../src/repositories/credentials.ts', import.meta.url).href
+  )) as typeof CredentialsModule;
+  const { token } = issueCredential(db, { tipo: 'usuario' });
+
   const app = createApp({ db });
   const address = await app.listen({ port: 0, host: '127.0.0.1' });
+  authorizeGlobalFetch(t, { baseUrl: address, token });
   t.after(async () => {
     await app.close();
   });

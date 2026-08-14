@@ -16,6 +16,8 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+import { authorizeGlobalFetch } from './authorized-fetch.ts';
+
 /** Root of the `cartografo` package (packages/core). */
 export const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -175,6 +177,12 @@ export async function runCli(
 /**
  * Starts a control plane through the command itself and waits for the readiness line.
  *
+ * The credential it announces is presented on every direct `fetch` this test
+ * makes at it (t124) — these suites check the RESULT of a subcommand against the
+ * server, and re-proving the gate on each of those checks would say nothing that
+ * `test/auth.test.ts` does not already say. The subcommands themselves get the
+ * token through `runCli`'s `token` option, as a person would.
+ *
  * @param t Test context, used to shut the process down at the end.
  * @param options Database and arguments (`[]` = implicit start, `['up']` = explicit).
  * @returns The control plane running.
@@ -229,13 +237,9 @@ export async function startControlPlane(
       .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
     if (line !== undefined) {
       const readiness = JSON.parse(line) as ReadinessLine;
-      return {
-        url: readiness.url,
-        port,
-        readiness,
-        token: readiness.bootstrapToken ?? '',
-        shutdown,
-      };
+      const token = readiness.bootstrapToken ?? '';
+      authorizeGlobalFetch(t, { baseUrl: readiness.url, token });
+      return { url: readiness.url, port, readiness, token, shutdown };
     }
     await sleep(100);
   }

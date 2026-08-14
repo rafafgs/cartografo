@@ -9,6 +9,7 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
+import { registerAuth } from './auth.ts';
 import type { Database } from './db/connection.ts';
 import { registerExecutions } from './routes/executions.ts';
 import { registerGraphs } from './routes/graphs.ts';
@@ -47,19 +48,30 @@ export function createApp(options: AppOptions): FastifyInstance {
 
   registerHealth(app, options.db);
 
-  // Versioned scope: every business route is born inside it. One `register` line
-  // per route family — that way two tickets registering routes in parallel touch
-  // different lines of this file, and not the same one.
-  app.register(async (scope) => registerGraphs(scope, options.db), { prefix: API_PREFIX });
-  app.register(async (scope) => registerProposals(scope, options.db), { prefix: API_PREFIX });
-  app.register(async (scope) => registerJobs(scope, options.db), { prefix: API_PREFIX });
-  app.register(async (scope) => registerSessions(scope, options.db), { prefix: API_PREFIX });
-  app.register(async (scope) => registerInputRequests(scope, options.db), { prefix: API_PREFIX });
-  app.register(async (scope) => registerExecutions(scope, options.db), { prefix: API_PREFIX });
-  app.register(async (scope) => registerRunners(scope, options.db), { prefix: API_PREFIX });
-  app.register(async (scope) => registerLeases(scope, options.db), { prefix: API_PREFIX });
-  app.register(async (scope) => registerIntake(scope, options.db), { prefix: API_PREFIX });
-  app.register(async (scope) => registerSkills(scope, options.db), { prefix: API_PREFIX });
+  // Versioned scope: every business route is born inside it, and so does the
+  // credential gate (t124) — ONE `onRequest` hook, before the first route, is
+  // what makes "no route under /v1 answers without a credential" a property of
+  // this file instead of a habit each route file has to keep.
+  //
+  // One `register` line per route family — that way two tickets registering
+  // routes in parallel touch different lines of this file, and not the same one.
+  app.register(
+    async (scope) => {
+      registerAuth(scope, options.db);
+
+      scope.register(async (inner) => registerGraphs(inner, options.db));
+      scope.register(async (inner) => registerProposals(inner, options.db));
+      scope.register(async (inner) => registerJobs(inner, options.db));
+      scope.register(async (inner) => registerSessions(inner, options.db));
+      scope.register(async (inner) => registerInputRequests(inner, options.db));
+      scope.register(async (inner) => registerExecutions(inner, options.db));
+      scope.register(async (inner) => registerRunners(inner, options.db));
+      scope.register(async (inner) => registerLeases(inner, options.db));
+      scope.register(async (inner) => registerIntake(inner, options.db));
+      scope.register(async (inner) => registerSkills(inner, options.db));
+    },
+    { prefix: API_PREFIX },
+  );
 
   return app;
 }

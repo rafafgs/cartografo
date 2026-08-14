@@ -134,6 +134,14 @@ export class NetworkError extends Error {
 export interface ClientOptions {
   /** Control plane base URL (e.g. `http://127.0.0.1:4317`). */
   baseUrl: string;
+  /**
+   * Credential presented on every call (t124, FR7).
+   *
+   * It is the SCREEN's credential, held by the process and never asked of the
+   * browser: the pages rendered from this client show whatever this token can
+   * read, and the browser that asks for a page still presents nothing (D11).
+   */
+  token?: string;
   /** `fetch` implementation to use. Default: the global `fetch`. */
   doFetch?: typeof fetch;
 }
@@ -152,10 +160,12 @@ export class ApiClient {
   /** Base URL, already normalized, with no trailing slash. */
   readonly baseUrl: string;
   readonly #doFetch: typeof fetch;
+  readonly #token: string | undefined;
 
   constructor(options: ClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.#doFetch = options.doFetch ?? fetch;
+    this.#token = options.token;
   }
 
   /**
@@ -269,12 +279,16 @@ export class ApiClient {
     const url = `${this.baseUrl}${path}`;
     const hasBody = options.body !== undefined;
 
+    const headers: Record<string, string> = {};
+    if (hasBody) headers['content-type'] = 'application/json';
+    if (this.#token !== undefined) headers.authorization = `Bearer ${this.#token}`;
+
     let response: Response;
     let text: string;
     try {
       response = await this.#doFetch(url, {
         method: options.method ?? 'GET',
-        headers: hasBody ? { 'content-type': 'application/json' } : undefined,
+        headers,
         body: hasBody ? JSON.stringify(options.body) : undefined,
       });
       text = await response.text();

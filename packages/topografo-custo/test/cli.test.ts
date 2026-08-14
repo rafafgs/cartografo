@@ -102,7 +102,27 @@ async function subirControlPlane(t: ContextoDeTeste): Promise<string> {
       .split('\n')
       .map((texto) => texto.trim())
       .find((texto) => texto.startsWith('{') && texto.includes('cartografo.ready'));
-    if (linha !== undefined) return (JSON.parse(linha) as { url: string }).url;
+    if (linha !== undefined) {
+      // Desde a t124 a API não responde sem credencial. O control plane imprime
+      // a que acabou de emitir; este teste a apresenta daqui para a frente, tanto
+      // na semeadura quanto no comando — que é como uma pessoa o rodaria.
+      const pronto = JSON.parse(linha) as { url: string; bootstrapToken: string | null };
+      const anterior = globalThis.fetch;
+      globalThis.fetch = async (entrada: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const alvo =
+          typeof entrada === 'string' ? entrada : entrada instanceof URL ? entrada.href : entrada.url;
+        if (!alvo.startsWith(pronto.url)) return await anterior(entrada, init);
+        const cabecalhos = new Headers(init?.headers);
+        if (!cabecalhos.has('authorization')) {
+          cabecalhos.set('authorization', `Bearer ${pronto.bootstrapToken ?? ''}`);
+        }
+        return await anterior(entrada, { ...init, headers: cabecalhos });
+      };
+      t.after(() => {
+        globalThis.fetch = anterior;
+      });
+      return pronto.url;
+    }
     await esperar(50);
   }
 

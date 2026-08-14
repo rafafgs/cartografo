@@ -55,6 +55,8 @@ opções:
                          (default 3)
   --tier-minimo-nos <n>  mínimo de nós medidos na versão para avaliar tier
                          (default 3)
+  --token <token>        credencial do control plane (env CARTOGRAFO_TOKEN);
+                         ela é impressa na primeira partida do control plane
   -h, --help             este texto
 
 Sem nenhum teto declarado, a política de teto não roda: não há o que exceder.`;
@@ -287,10 +289,44 @@ export async function executarCli(
   }
 }
 
+/**
+ * Variável de ambiente que carrega a credencial do control plane (t124).
+ *
+ * A mesma do `cartografo`: quem exporta o token uma vez no shell usa o comando
+ * daquele control plane sem repetir nada.
+ */
+export const ENV_TOKEN = 'CARTOGRAFO_TOKEN';
+
+/**
+ * Envolve o `fetch` para apresentar a credencial em toda chamada (t124).
+ *
+ * O ponto de injeção já existia — `buscar` — e é por ele que a credencial entra:
+ * as quatro funções de `cliente.ts` continuam sem saber que existe autenticação,
+ * do mesmo jeito que não sabem que existe rede além do `fetch` que recebem.
+ *
+ * @param buscar Implementação base (default: o `fetch` global).
+ * @param token Token a apresentar; sem ele, nada é acrescentado ao pedido.
+ * @returns O `fetch` que a lente vai usar.
+ */
+export function comCredencial(buscar: typeof fetch = fetch, token?: string): typeof fetch {
+  if (token === undefined || token === '') return buscar;
+
+  return async (entrada, init) => {
+    const cabecalhos = new Headers(init?.headers);
+    cabecalhos.set('authorization', `Bearer ${token}`);
+    return await buscar(entrada, { ...init, headers: cabecalhos });
+  };
+}
+
 /** Lê as opções de `avaliar`, recusando o que não entende. */
-function interpretarArgumentos(argumentos: string[], buscar?: typeof fetch): OpcoesDeAvaliacao {
+function interpretarArgumentos(
+  argumentos: string[],
+  buscar?: typeof fetch,
+  ambiente: NodeJS.ProcessEnv = process.env,
+): OpcoesDeAvaliacao {
   const daUrl = extrairValor(argumentos, '--url');
-  const daExecucao = extrairValor(daUrl.restante, '--execucao');
+  const doToken = extrairValor(daUrl.restante, '--token');
+  const daExecucao = extrairValor(doToken.restante, '--execucao');
   const doTetoTokens = extrairValor(daExecucao.restante, '--teto-tokens');
   const doTetoSegundos = extrairValor(doTetoTokens.restante, '--teto-segundos');
   const doFator = extrairValor(doTetoSegundos.restante, '--tier-fator');
@@ -317,7 +353,7 @@ function interpretarArgumentos(argumentos: string[], buscar?: typeof fetch): Opc
     tetoSegundos: comoNumero('--teto-segundos', doTetoSegundos.valor),
     tierFator: comoNumero('--tier-fator', doFator.valor),
     tierMinimoNos: comoNumero('--tier-minimo-nos', doMinimo.valor),
-    buscar,
+    buscar: comCredencial(buscar, doToken.valor?.trim() ?? ambiente[ENV_TOKEN]?.trim()),
   };
 }
 

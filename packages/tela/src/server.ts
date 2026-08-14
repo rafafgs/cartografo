@@ -20,7 +20,7 @@
 
 import type { Server } from 'node:http';
 
-import { parsePortFromEnv, resolveControlPlaneUrl } from './proxy.ts';
+import { parsePortFromEnv, resolveControlPlaneToken, resolveControlPlaneUrl } from './proxy.ts';
 import { createScreenRouter, READY_EVENT } from './router.ts';
 
 export { INDEX_FILE, PUBLIC_DIR, resolveStaticFile } from './static.ts';
@@ -32,10 +32,9 @@ export const SCREEN_PORT_ENV = 'CARTOGRAFO_TELA_PORT';
 export const DEFAULT_SCREEN_PORT = 4318;
 
 /**
- * Listening address. Loopback, like the control plane: the screen has no
- * authentication (`t124`) and proxies to the only writer in the system, so
- * exposing it on an external interface is a decision for the ticket that brings
- * authorization, not for this one.
+ * Listening address. Loopback, and staying there: the screen holds a service
+ * credential and takes none from the browser (`t124`, D11), so its own port —
+ * not a login — is what keeps a passer-by out of the only writer in the system.
  */
 export const SCREEN_HOST = '127.0.0.1';
 
@@ -75,22 +74,24 @@ export function resolveScreenPort(env: NodeJS.ProcessEnv = process.env): number 
  * Builds the HTTP server without listening.
  *
  * @param controlPlaneUrl Control plane base URL.
+ * @param token Credential presented to the control plane (t124, FR7).
  * @returns A server ready to `listen`.
  */
-export function createScreenServer(controlPlaneUrl: string): Server {
-  return createScreenRouter({ controlPlaneUrl });
+export function createScreenServer(controlPlaneUrl: string, token?: string): Server {
+  return createScreenRouter({ controlPlaneUrl, token });
 }
 
 /**
  * Starts the screen.
  *
- * @param env Environment with `CARTOGRAFO_TELA_PORT` and `CARTOGRAFO_URL`.
+ * @param env Environment with `CARTOGRAFO_TELA_PORT`, `CARTOGRAFO_URL` and the
+ *   credential (`CARTOGRAFO_TELA_TOKEN`, or `CARTOGRAFO_TOKEN`).
  * @returns The screen, up, with what it takes to shut it down.
  */
 export async function startScreen(env: NodeJS.ProcessEnv = process.env): Promise<Screen> {
   const controlPlaneUrl = resolveControlPlaneUrl(env);
   const port = resolveScreenPort(env);
-  const server = createScreenServer(controlPlaneUrl);
+  const server = createScreenServer(controlPlaneUrl, resolveControlPlaneToken(env));
 
   const bound = await new Promise<number>((resolve, reject) => {
     server.once('error', reject);

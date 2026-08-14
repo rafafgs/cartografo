@@ -153,6 +153,16 @@ export interface RespostaDeConcessao {
 export interface OpcoesDoCliente {
   /** URL base do control plane (ex.: `http://127.0.0.1:4317`). */
   urlBase: string;
+  /**
+   * Credencial apresentada em toda chamada (t124).
+   *
+   * Genérica de propósito: é um token qualquer que o control plane aceite, e não
+   * ainda a credencial de runner emitida no pareamento — essa, com escopo e
+   * revogação, é a ficha seguinte. Sem ela o cliente não manda cabeçalho nenhum
+   * e toma 401, que é o comportamento honesto: um cabeçalho vazio se pareceria
+   * com credencial.
+   */
+  token?: string;
   /** Implementação de `fetch` a usar. Default: o `fetch` global. */
   buscar?: typeof fetch;
 }
@@ -181,10 +191,12 @@ export class ClienteControle {
   /** URL base já normalizada, sem barra no fim. */
   readonly urlBase: string;
   readonly #buscar: typeof fetch;
+  readonly #token: string | undefined;
 
   constructor(opcoes: OpcoesDoCliente) {
     this.urlBase = opcoes.urlBase.replace(/\/+$/, '');
     this.#buscar = opcoes.buscar ?? fetch;
+    this.#token = opcoes.token;
   }
 
   /**
@@ -318,14 +330,25 @@ export class ClienteControle {
     return proposta;
   }
 
+  /** Cabeçalhos de uma chamada: o `content-type` do corpo, se houver, e a credencial. */
+  #cabecalhos(comCorpo: boolean): Record<string, string> {
+    const cabecalhos: Record<string, string> = {};
+    if (comCorpo) cabecalhos['content-type'] = 'application/json';
+    if (this.#token !== undefined) cabecalhos.authorization = `Bearer ${this.#token}`;
+    return cabecalhos;
+  }
+
   async #get<T>(caminho: string): Promise<T> {
-    return await this.#interpretar(caminho, 'GET', await this.#buscar(`${this.urlBase}${caminho}`));
+    const resposta = await this.#buscar(`${this.urlBase}${caminho}`, {
+      headers: this.#cabecalhos(false),
+    });
+    return await this.#interpretar(caminho, 'GET', resposta);
   }
 
   async #post<T>(caminho: string, corpo: unknown): Promise<T> {
     const resposta = await this.#buscar(`${this.urlBase}${caminho}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: this.#cabecalhos(true),
       body: JSON.stringify(corpo),
     });
     return await this.#interpretar(caminho, 'POST', resposta);

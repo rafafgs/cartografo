@@ -103,19 +103,22 @@ awk '
 if [ ! -s "$ts_file" ]; then
   fail 'no ```typescript block found in the doc'
 else
-  # Two corrections over the ticket's literal command
+  # Three corrections over the ticket's literal command
   # (`npx --yes typescript tsc --noEmit --strict`):
   #
-  # 1. the `tsc` word is one too many — the `typescript` package's default bin
-  #    ALREADY is tsc, so npx passes "tsc" through as if it were an input file
-  #    and the compiler dies with TS6231 before it ever looks at the doc (a
-  #    false red);
+  # 1. the package and the binary have to be named SEPARATELY, `-p typescript
+  #    tsc`. Writing them adjacent makes npx read "tsc" as an input file;
+  #    writing only the package name makes npx resolve the package and find TWO
+  #    bins in it (`tsc` and `tsserver`), which since t119 — when `typescript`
+  #    became a devDependency of the root and npx started preferring the local
+  #    install over the registry — dies with "could not determine executable to
+  #    run" before ever looking at the doc. Both are false reds, in opposite
+  #    directions;
   # 2. `--target es2022` is required — the default (ES5) does not load the
-  #    `Promise` lib, and the whole interface is asynchronous.
-  #
-  # Run ad hoc through npx so this gate does not depend on the repository's own
-  # toolchain being installed.
-  if tsc_out=$(npx --yes typescript --noEmit --strict --target es2022 "$ts_file" 2>&1); then
+  #    `Promise` lib, and the whole interface is asynchronous;
+  # 3. run ad hoc through npx so this gate does not depend on the repository's
+  #    own toolchain being installed.
+  if tsc_out=$(npx --yes -p typescript tsc --noEmit --strict --target es2022 "$ts_file" 2>&1); then
     pass "$(grep -c '' "$ts_file") lines of TS compile clean"
   else
     fail 'tsc rejected the typescript blocks of the doc:'

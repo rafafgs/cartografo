@@ -126,9 +126,9 @@ test('t107 AT4 — the board escapes HTML coming from the control plane', async 
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  // The title is user data and arrives through an API with no authentication
-  // (t124 is another ticket): interpolating it raw would be HTML injection on
-  // the project's very first screen.
+  // The title is outside data, and the credential the API demands since t124
+  // says nothing about what it carries: interpolating it raw would be HTML
+  // injection on the project's very first screen.
   await createJob(cp, {
     titulo: '<script>alert("xss")</script> & cia',
     no_entrada_id: 'refinar',

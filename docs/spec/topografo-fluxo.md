@@ -251,8 +251,10 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   uma rodada do topógrafo não emite telemetria sobre si mesma.
 - **Concorrência** entre dois topógrafos na mesma execução: a v1 assume invocação
   manual única.
-- **Autenticação** na rota nova e no comando (`t124`), como em todas as rotas de
-  hoje.
+- **Escopo de credencial** na rota nova e no comando. A `t124` autenticou todas
+  as rotas de `/v1`, esta inclusive, e o comando apresenta o token
+  (`CARTOGRAFO_TOKEN` ou `--token`); recortar o que cada credencial alcança é
+  outra ficha.
 
 [D10]: ../../DECISOES.md
 [D11]: ../../DECISOES.md

@@ -7,8 +7,9 @@
  * receive neither an error nor a duplicated row. It is the same spirit as D5's
  * "idempotent writes in the API".
  *
- * Authenticating the pairing is t124 (out of the PoC, D16): here the id is
- * declared by the runner itself.
+ * The route demands a credential since t124, but pairing itself is unchanged:
+ * the id is still declared by the runner, and a credential of its own is the
+ * follow-up ticket.
  *
  * The response field names stay in Portuguese: they mirror the untouched
  * migration columns (t127, FR8).

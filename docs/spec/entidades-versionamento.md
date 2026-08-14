@@ -384,8 +384,8 @@ chegou a ser `aplicada`.
 
 ## 6. Endpoints
 
-Todos sob `/v1`. Nenhum exige autenticação (`t124`) e nenhum emite evento de
-telemetria (`t102`).
+Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`.
+Nenhum emite evento de telemetria (`t102`).
 
 Os caminhos abaixo estão na grafia em português deste documento; a superfície
 implementada foi renomeada para inglês pelo `t127` (D18), e é ela que vale:
@@ -472,4 +472,6 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   Fechar o experimento é sempre chamada explícita de API (§5).
 - **Emissão de eventos** `grafo_versao.registrada/.aplicada/.revertida` — o
   `t102` traz a tabela `evento`.
-- **Autenticação** (`t124`).
+- **Identidade de quem chama.** A `t124` fechou a autenticação — todas estas
+  rotas exigem credencial —, mas um token prova posse, não pessoa: o `ator` dos
+  eventos segue sendo `sistema`/componente.

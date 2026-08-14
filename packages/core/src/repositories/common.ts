@@ -5,12 +5,12 @@
  * SQLite (which has neither a native boolean nor native JSON) and the API's
  * JSON, plus the envelope defaults v0 has nowhere else to get.
  *
- * About the `ator` defaults: without authentication (t124, out of the PoC by
- * D16) the control plane has no way of knowing WHO is on the other side.
- * Instead of inventing a user, it honestly records `sistema` + the component
- * that acted, and accepts an explicit `ator` in the body for when the caller
- * knows more than it does — which is the case of the runner (t103) and of the
- * screen (t107).
+ * About the `ator` defaults: t124 authenticated the API, but a token proves
+ * POSSESSION and not identity — the control plane still has no way of knowing
+ * WHO is on the other side. Instead of inventing a user, it honestly records
+ * `sistema` + the component that acted, and accepts an explicit `ator` in the
+ * body for when the caller knows more than it does — which is the case of the
+ * runner (t103) and of the screen (t107).
  */
 
 import { ValidationError, type Actor } from '../db/event-validation.ts';

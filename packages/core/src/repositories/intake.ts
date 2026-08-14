@@ -39,10 +39,11 @@ export type DraftStatus = 'pendente' | 'confirmado' | 'descartado';
 /**
  * Actor of a confirmation that arrives without one.
  *
- * The gate is human by design, but there is no authentication yet (t124): rather
- * than inventing a user, the log honestly records the component that acted, and
- * a caller that knows who is on the other side sends `ator` in the body — the
- * same convention as every other write of this API.
+ * The gate is human by design, and t124 authenticated the route — but a token
+ * proves possession, not which person holds it. Rather than inventing a user,
+ * the log honestly records the component that acted, and a caller that knows who
+ * is on the other side sends `ator` in the body — the same convention as every
+ * other write of this API.
  */
 export const INTAKE_ACTOR: Actor = Object.freeze({ tipo: 'sistema', ref: 'intake' });
 

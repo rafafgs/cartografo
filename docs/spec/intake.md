@@ -117,7 +117,9 @@ vezes é um `409`, nunca dois lotes de trabalho.
 
 ### O ator da confirmação
 
-O portão é humano por desenho, mas ainda não há autenticação (`t124`). Em vez
+O portão é humano por desenho, e a `t124` autenticou a API — mas um token prova
+posse, não identidade: quem apresenta a credencial de operador pode ser qualquer
+pessoa da equipe, e o control plane não tem como dizer qual delas. Em vez
 de inventar um usuário, o log registra honestamente o componente que agiu —
 `INTAKE_ACTOR`, `sistema`/`intake` (linha 47) — e quem sabe quem está do outro
 lado manda `ator` no corpo da confirmação, como em qualquer outra escrita desta
@@ -259,5 +261,6 @@ aplicada ao intake.
 - **Tela de revisão e confirmação.** A D11 põe observabilidade e inbox antes de
   tela de edição; aqui entrega-se só a API, no mesmo espírito do inbox de
   propostas.
-- **Autenticação** (`t124`) e **idempotência de submissão**: reenviar o mesmo
-  pedido duas vezes cria dois rascunhos.
+- **Identidade por usuário** — a `t124` fechou a autenticação destas rotas, mas
+  não diz QUEM confirmou (ver "O ator da confirmação") — e **idempotência de
+  submissão**: reenviar o mesmo pedido duas vezes cria dois rascunhos.

@@ -213,4 +213,6 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
 - **Timeout de pergunta pendente.** Uma pergunta sem resposta bloqueia o
   trabalho para sempre, por desenho: a alternativa é o sistema decidir sozinho
   o que declarou não saber decidir.
-- **Tela da fila** (`t107`) e **autenticação** (`t124`).
+- **Tela da fila** (`t107`) e **identidade de quem responde**: a `t124`
+  autenticou estas rotas, mas o token não diz qual pessoa está do outro lado, e
+  `respondido_por` segue vindo do corpo.

@@ -113,22 +113,32 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
 
   let app: FastifyInstance;
   let migrationsApplied: string[];
-  let bootstrapToken: string | null;
   try {
     applyPragmas(db);
     migrationsApplied = migrate(db, MIGRATIONS_DIR);
-
-    // After the migrations (the table has to exist) and before `listen` (the
-    // API must not answer a single request before there is a credential to
-    // demand). A database that already has one gets no second one: the token
-    // lives in the file, not in the process, and restarting is not re-issuing.
-    bootstrapToken = hasLiveCredential(db, 'usuario')
-      ? null
-      : issueCredential(db, { tipo: 'usuario' }).token;
-
     app = createApp({ db });
     await app.listen({ port: serverPort(env), host });
   } catch (error) {
+    db.close();
+    throw error;
+  }
+
+  // AFTER `listen`, and the order is the whole point: a credential is minted
+  // once and printed once, so a startup that mints one and then dies before
+  // announcing it leaves a token nobody can ever use — and, worse, leaves the
+  // NEXT startup announcing `null`, with no way back short of deleting the
+  // database. The common way to die right there is the port being busy, which
+  // is exactly what happens to whoever left another control plane running.
+  //
+  // Minting late opens no window: until the credential exists the gate denies
+  // every request, because there is nothing for a token to resolve to.
+  let bootstrapToken: string | null;
+  try {
+    bootstrapToken = hasLiveCredential(db, 'usuario')
+      ? null
+      : issueCredential(db, { tipo: 'usuario' }).token;
+  } catch (error) {
+    await app.close();
     db.close();
     throw error;
   }

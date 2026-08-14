@@ -220,6 +220,67 @@ test(
 );
 
 test(
+  't124 AT — a startup that cannot listen does not burn the bootstrap token',
+  { timeout: 180_000 },
+  async (t) => {
+    assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
+
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t124-busy-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const databasePath = path.join(base, 'cartografo.db');
+
+    // Somebody else is already on the port. This is not an exotic case: it is
+    // the first `npx cartografo` of anyone who left another one running, and it
+    // happens BEFORE the operator has ever seen a token.
+    const squatter = createServer();
+    const port = await new Promise<number>((resolve, reject) => {
+      squatter.on('error', reject);
+      squatter.listen(0, '127.0.0.1', () => {
+        const address = squatter.address();
+        if (address === null || typeof address === 'string') {
+          reject(new Error('could not hold a port'));
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+
+    const failed = spawn(process.execPath, [BIN_PATH], {
+      cwd: base,
+      env: { ...process.env, CARTOGRAFO_DB_PATH: databasePath, CARTOGRAFO_PORT: String(port) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const code = await new Promise<number | null>((resolve) => failed.on('close', resolve));
+    assert.notEqual(code, 0, 'a control plane that cannot listen has to fail');
+
+    await new Promise<void>((resolve) => squatter.close(() => resolve()));
+
+    // The database survived that attempt — migrated. The credential must NOT
+    // have: a token minted and never printed is a token nobody can ever use, and
+    // it would make this second startup announce `null` with no way back.
+    const startup = await start({ cwd: base, databasePath, port });
+    try {
+      assert.equal(
+        typeof startup.readiness.bootstrapToken,
+        'string',
+        'the first startup that actually serves is the one that mints the credential',
+      );
+      assert.equal(
+        (
+          await fetch(`http://127.0.0.1:${port}/v1/jobs`, {
+            headers: { authorization: `Bearer ${startup.readiness.bootstrapToken ?? ''}` },
+          })
+        ).status,
+        200,
+      );
+    } finally {
+      await startup.shutdown();
+    }
+  },
+);
+
+test(
   't124 AT — CARTOGRAFO_HOST decides the bind address, and the announced url says so',
   { timeout: 180_000 },
   async (t) => {

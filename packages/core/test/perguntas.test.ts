@@ -1,13 +1,17 @@
 /**
- * Testes de aceite da pergunta (t102, AT11–AT14).
+ * Testes de aceite da pergunta (t102, AT11–AT14; t106, o wiring do bloqueio).
  *
  * Escalação humana é entidade de primeira classe, não caso especial: pergunta e
  * aprovação são o mesmo animal, e a ORIGEM da resposta é o tipo do evento
  * (`pergunta.respondida` vs `pergunta.auto_resolvida`), não uma coluna. Na
  * projeção a origem volta a ser campo — quem lê estado quer comparar.
  *
- * O que esta ficha NÃO faz: bloquear o trabalho ao criar a pergunta. Esse
- * wiring é o critério de aceite de t106, e AT11 existe para travar a fronteira.
+ * O t102 parou de propósito antes de ligar pergunta a bloqueio, e o AT11
+ * travava essa fronteira afirmando `bloqueado === false`. A t106 é a ficha que
+ * fecha o ciclo, então o AT11 muda de lado: criar a pergunta bloqueia o
+ * trabalho NA MESMA transação, e responder desbloqueia com o ator de quem
+ * respondeu. Quem quer saber por que o ciclo mora aqui, e não no runner, lê
+ * `docs/spec/escalacao-humana.md`.
  */
 
 import assert from 'node:assert/strict';
@@ -44,7 +48,7 @@ const CORPO_COMPLETO = {
   auto_aprovavel: true,
 };
 
-test('AT11 — POST /v1/perguntas cria pendente e NÃO bloqueia o trabalho', async (t) => {
+test('AT11 — POST /v1/perguntas cria pendente E bloqueia o trabalho dono (t106)', async (t) => {
   exigirArtefatos(...ARTEFATOS);
   const ctx = await subirControlPlane(t);
   const { buscarEventosPorEntidade } = await carregarEventos();
@@ -71,12 +75,16 @@ test('AT11 — POST /v1/perguntas cria pendente e NÃO bloqueia o trabalho', asy
   assert.deepEqual(pergunta.opcoes, CORPO_COMPLETO.opcoes);
   assert.equal(pergunta.execucao_id, 7, 'a execução vem do trabalho que espera');
 
+  // A rota não muda de forma: quem quer o bloqueio lê o trabalho. O que muda é
+  // que ele JÁ está bloqueado quando a resposta do POST chega — mesma
+  // transação, não um segundo passo que alguém pode esquecer de dar.
   const depois = await pedir<Trabalho>(ctx, 'GET', `/v1/trabalhos/${trabalho.id}`);
   assert.equal(depois.status, 200);
+  assert.equal(depois.corpo.bloqueado, true, 'criar a pergunta para o trabalho');
   assert.equal(
-    depois.corpo.bloqueado,
-    false,
-    'o wiring pergunta→bloqueio é de t106; esta ficha só registra o pedido',
+    depois.corpo.motivo_bloqueio,
+    `aguardando resposta da pergunta ${pergunta.id}`,
+    'o motivo cita o id da pergunta: quem lê o trabalho sabe o que destrava',
   );
 
   const eventos = buscarEventosPorEntidade(ctx.db, 'pergunta', pergunta.id);
@@ -94,6 +102,101 @@ test('AT11 — POST /v1/perguntas cria pendente e NÃO bloqueia o trabalho', asy
     resposta_padrao: CORPO_COMPLETO.resposta_padrao,
     auto_aprovavel: true,
   });
+
+  // A linha do tempo do trabalho: a criação, e logo depois o bloqueio. A ordem
+  // é a do log (id), e é ela que conta a história — pergunta primeiro, bandeira
+  // depois.
+  const doTrabalho = buscarEventosPorEntidade(ctx.db, 'trabalho', trabalho.id);
+  assert.deepEqual(
+    doTrabalho.map((evento) => evento.tipo),
+    ['trabalho.criado', 'trabalho.bloqueado'],
+  );
+  const bloqueio = doTrabalho[1];
+  assert.deepEqual(bloqueio.dados, { motivo: `aguardando resposta da pergunta ${pergunta.id}` });
+  assert.equal(
+    bloqueio.ator.tipo,
+    'sistema',
+    'quem levanta a bandeira é o wiring, não o humano nem o agente que perguntou',
+  );
+  assert.equal(bloqueio.ator.ref, 'escalacao-humana');
+});
+
+test('t106 — PATCH /resposta desbloqueia o trabalho, com o ator de quem respondeu', async (t) => {
+  exigirArtefatos(...ARTEFATOS);
+  const ctx = await subirControlPlane(t);
+  const { buscarEventosPorEntidade } = await carregarEventos();
+
+  const trabalho = await criarTrabalho(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+  const criada = await pedir<Pergunta>(ctx, 'POST', '/v1/perguntas', {
+    trabalho_id: trabalho.id,
+    ...CORPO_COMPLETO,
+  });
+  assert.equal(criada.status, 201);
+
+  const bloqueado = await pedir<Trabalho>(ctx, 'GET', `/v1/trabalhos/${trabalho.id}`);
+  assert.equal(bloqueado.corpo.bloqueado, true);
+
+  const resposta = await pedir<Pergunta>(
+    ctx,
+    'PATCH',
+    `/v1/perguntas/${criada.corpo.id}/resposta`,
+    { resposta: 'Manter 0002', respondido_por: 'rafael' },
+  );
+  assert.equal(resposta.status, 200);
+
+  const depois = await pedir<Trabalho>(ctx, 'GET', `/v1/trabalhos/${trabalho.id}`);
+  assert.equal(depois.corpo.bloqueado, false, 'responder devolve o trabalho à fila');
+  assert.equal(depois.corpo.motivo_bloqueio, null);
+
+  const doTrabalho = buscarEventosPorEntidade(ctx.db, 'trabalho', trabalho.id);
+  assert.deepEqual(
+    doTrabalho.map((evento) => evento.tipo),
+    ['trabalho.criado', 'trabalho.bloqueado', 'trabalho.desbloqueado'],
+  );
+  const desbloqueio = doTrabalho[2];
+  assert.deepEqual(desbloqueio.dados, {}, 'o fato é a própria queda da bandeira');
+  assert.equal(
+    desbloqueio.ator.tipo,
+    'usuario',
+    'quem destravou foi gente, e o desbloqueio carrega o MESMO ator da resposta',
+  );
+  assert.equal(desbloqueio.ator.ref, 'rafael');
+});
+
+test('t106 — PATCH /auto_resolucao desbloqueia com ator que não é usuário', async (t) => {
+  exigirArtefatos(...ARTEFATOS);
+  const ctx = await subirControlPlane(t);
+  const { buscarEventosPorEntidade } = await carregarEventos();
+
+  const trabalho = await criarTrabalho(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+  const criada = await pedir<Pergunta>(ctx, 'POST', '/v1/perguntas', {
+    trabalho_id: trabalho.id,
+    ...CORPO_COMPLETO,
+  });
+  assert.equal(criada.status, 201);
+
+  const resposta = await pedir<Pergunta>(
+    ctx,
+    'PATCH',
+    `/v1/perguntas/${criada.corpo.id}/auto_resolucao`,
+    { resposta: 'Manter 0002', baseada_em: 'resposta_padrao' },
+  );
+  assert.equal(resposta.status, 200);
+
+  const depois = await pedir<Trabalho>(ctx, 'GET', `/v1/trabalhos/${trabalho.id}`);
+  assert.equal(depois.corpo.bloqueado, false, 'o portão automático também destrava');
+  assert.equal(depois.corpo.motivo_bloqueio, null);
+
+  const doTrabalho = buscarEventosPorEntidade(ctx.db, 'trabalho', trabalho.id);
+  assert.deepEqual(
+    doTrabalho.map((evento) => evento.tipo),
+    ['trabalho.criado', 'trabalho.bloqueado', 'trabalho.desbloqueado'],
+  );
+  assert.notEqual(
+    doTrabalho[2].ator.tipo,
+    'usuario',
+    'a auditoria SEMPRE distingue destravado-por-gente de destravado-pelo-sistema',
+  );
 });
 
 test('AT12 — PATCH /v1/perguntas/:id/resposta registra a resposta do humano', async (t) => {

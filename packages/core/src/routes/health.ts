@@ -1,31 +1,34 @@
 /**
- * `GET /health` — probe de infraestrutura do control plane.
+ * `GET /health` — infrastructure probe of the control plane.
  *
- * Fica FORA do prefixo `/v1` de propósito (FR10): quem consulta saúde é
- * supervisor de processo, orquestrador ou script de partida, e nenhum deles
- * deve ter que acompanhar a versão da API de negócio.
+ * It sits OUTSIDE the `/v1` prefix on purpose (FR10): whoever checks health is a
+ * process supervisor, an orchestrator or a startup script, and none of them
+ * should have to track the version of the business API.
  *
- * O campo `db` é o resultado de um `SELECT 1` de verdade — a rota responde 503
- * quando o banco não responde, para que um supervisor consiga distinguir
- * "processo vivo" de "processo útil".
+ * The `db` field is the result of a real `SELECT 1` — the route answers 503 when
+ * the database does not answer, so that a supervisor can tell "process alive"
+ * from "process useful".
+ *
+ * The response values (`ok`/`erro`) are the wire contract of the probe, pinned
+ * byte for byte by the acceptance test, and stay as they are (t127, FR8).
  */
 
 import type { FastifyInstance } from 'fastify';
 
-import { checarBanco, type BancoDeDados } from '../db/connection.ts';
+import { checkDatabase, type Database } from '../db/connection.ts';
 
-/** Corpo da resposta de `/health`. A ordem das chaves é parte do contrato. */
-export interface RespostaSaude {
+/** Body of the `/health` response. Key order is part of the contract. */
+export interface HealthResponse {
   status: 'ok' | 'erro';
   db: 'ok' | 'erro';
 }
 
 /**
- * Schema de resposta declarado (D9: contrato explícito em toda rota). Além de
- * documentar, é ele que fixa a ordem das chaves na serialização — o teste de
- * aceite compara o corpo byte a byte.
+ * Declared response schema (D9: an explicit contract on every route). Besides
+ * documenting, it is what fixes the key order in the serialization — the
+ * acceptance test compares the body byte for byte.
  */
-const SCHEMA_RESPOSTA = {
+const RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     status: { type: 'string' },
@@ -36,19 +39,19 @@ const SCHEMA_RESPOSTA = {
 } as const;
 
 /**
- * Registra `GET /health` na instância dada.
+ * Registers `GET /health` on the given instance.
  *
- * @param app Instância do Fastify (a raiz, não o escopo do `/v1`).
- * @param db Banco já aberto, de quem a rota só usa a checagem de saúde.
+ * @param app Fastify instance (the root, not the `/v1` scope).
+ * @param db Already open database, of which the route only uses the health check.
  */
-export function registrarSaude(app: FastifyInstance, db: BancoDeDados): void {
+export function registerHealth(app: FastifyInstance, db: Database): void {
   app.get(
     '/health',
-    { schema: { response: { 200: SCHEMA_RESPOSTA, 503: SCHEMA_RESPOSTA } } },
-    async (_requisicao, resposta): Promise<RespostaSaude> => {
-      const banco = checarBanco(db);
-      resposta.code(banco === 'ok' ? 200 : 503);
-      return { status: banco === 'ok' ? 'ok' : 'erro', db: banco };
+    { schema: { response: { 200: RESPONSE_SCHEMA, 503: RESPONSE_SCHEMA } } },
+    async (_request, reply): Promise<HealthResponse> => {
+      const database = checkDatabase(db);
+      reply.code(database === 'ok' ? 200 : 503);
+      return { status: database === 'ok' ? 'ok' : 'erro', db: database };
     },
   );
 }

@@ -1,13 +1,14 @@
 /**
- * Testes de aceite de `import` e `export` (t108, FR2/FR3/FR4).
+ * Acceptance tests of `import` and `export` (t108, FR2/FR3/FR4).
  *
- * O teste central é o round-trip: exportar de um control plane e importar em
- * OUTRO, de banco vazio, tem que produzir o mesmo `grafo_versao.id`. Isso só
- * fecha se o export devolver o snapshot sem tocar nele — o id é o hash
- * canônico do documento (`docs/spec/entidades-versionamento.md` §2), então
- * qualquer campo acrescentado, removido ou reescrito no caminho aparece como
- * hash diferente. É a prova de que o par import/export preserva o dado, e não
- * só de que os dois comandos rodam.
+ * The central test is the round trip: exporting from one control plane and
+ * importing into ANOTHER, with an empty database, has to produce the same
+ * `grafo_versao.id`. That only closes if the export returns the snapshot without
+ * touching it — the id is the canonical hash of the document
+ * (`docs/spec/entidades-versionamento.md` §2), so any field added, removed or
+ * rewritten along the way shows up as a different hash. It is the proof that the
+ * import/export pair preserves the data, and not merely that the two commands
+ * run.
  */
 
 import assert from 'node:assert/strict';
@@ -16,128 +17,128 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
-  BUNDLE_FABRICA,
-  RAIZ_REPO,
-  areaTemporaria,
-  pareceStackTrace,
-  portaLivre,
-  primeiroHash,
-  rodarCli,
-  subirControlPlane,
-} from './cli-apoio.ts';
+  FACTORY_BUNDLE,
+  REPO_ROOT,
+  temporaryArea,
+  looksLikeStackTrace,
+  freePort,
+  firstHash,
+  runCli,
+  startControlPlane,
+} from './cli-support.ts';
 
-const CLASSE_FABRICA = 'desenvolvimento-de-software';
-const GRAFO_FABRICA = path.join(BUNDLE_FABRICA, 'grafo.json');
-const GRAFO_INVALIDO = path.join(RAIZ_REPO, 'schema', 'exemplos', 'grafo-invalido-no-inalcancavel.json');
+const FACTORY_CLASS = 'desenvolvimento-de-software';
+const FACTORY_GRAPH = path.join(FACTORY_BUNDLE, 'grafo.json');
+const INVALID_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-invalido-no-inalcancavel.json');
 
-test('AT5 — import do bundle de fábrica, recusa de reimportação, export e round-trip', { timeout: 300_000 }, async (t) => {
-  const base = areaTemporaria(t);
-  const primeiro = await subirControlPlane(t, {
-    caminhoBanco: path.join(base, 'primeiro', 'cartografo.db'),
+test('AT5 — importing the factory bundle, refusing a reimport, exporting and the round trip', { timeout: 300_000 }, async (t) => {
+  const base = temporaryArea(t);
+  const first = await startControlPlane(t, {
+    databasePath: path.join(base, 'primeiro', 'cartografo.db'),
   });
 
-  let versaoImportada = '';
+  let importedVersion = '';
 
-  await t.test('importar o bundle de fábrica registra a classe', async () => {
-    const resultado = await rodarCli(['import', BUNDLE_FABRICA, '--url', primeiro.url]);
-    assert.equal(resultado.codigo, 0, `stdout:\n${resultado.saida}\nstderr:\n${resultado.erros}`);
-    assert.match(resultado.saida, new RegExp(CLASSE_FABRICA));
-    versaoImportada = primeiroHash(resultado.saida);
+  await t.test('importing the factory bundle registers the class', async () => {
+    const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url]);
+    assert.equal(result.code, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+    assert.match(result.stdout, new RegExp(FACTORY_CLASS));
+    importedVersion = firstHash(result.stdout);
 
-    const resposta = await fetch(`${primeiro.url}/v1/classes`);
-    assert.equal(resposta.status, 200);
-    const corpo = (await resposta.json()) as {
+    const response = await fetch(`${first.url}/v1/classes`);
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
       classes: { classe: string; versao_corrente_id: string }[];
     };
     assert.deepEqual(
-      corpo.classes.map((entrada) => entrada.classe),
-      [CLASSE_FABRICA],
+      body.classes.map((entry) => entry.classe),
+      [FACTORY_CLASS],
     );
-    assert.equal(corpo.classes[0]?.versao_corrente_id, versaoImportada);
+    assert.equal(body.classes[0]?.versao_corrente_id, importedVersion);
   });
 
-  await t.test('importar o mesmo bundle de novo é recusado com classe_ja_registrada', async () => {
-    const resultado = await rodarCli(['import', BUNDLE_FABRICA, '--url', primeiro.url]);
-    assert.notEqual(resultado.codigo, 0, 'reimportar sobre linhagem existente não pode sair 0');
-    assert.match(resultado.erros, /classe_ja_registrada/);
-    assert.equal(pareceStackTrace(resultado.erros), false, `stack trace vazou:\n${resultado.erros}`);
+  await t.test('importing the same bundle again is refused with classe_ja_registrada', async () => {
+    const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url]);
+    assert.notEqual(result.code, 0, 'reimporting over an existing lineage cannot exit 0');
+    assert.match(result.stderr, /classe_ja_registrada/);
+    assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
   });
 
-  const arquivoExportado = path.join(base, 'saida.grafo.json');
+  const exportedFile = path.join(base, 'saida.grafo.json');
 
-  await t.test('exportar devolve o mesmo documento que o grafo.json de origem', async () => {
-    const resultado = await rodarCli([
+  await t.test('exporting returns the same document as the source grafo.json', async () => {
+    const result = await runCli([
       'export',
-      CLASSE_FABRICA,
+      FACTORY_CLASS,
       '--out',
-      arquivoExportado,
+      exportedFile,
       '--url',
-      primeiro.url,
+      first.url,
     ]);
-    assert.equal(resultado.codigo, 0, `stdout:\n${resultado.saida}\nstderr:\n${resultado.erros}`);
+    assert.equal(result.code, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
 
-    const texto = readFileSync(arquivoExportado, 'utf8');
-    assert.ok(texto.endsWith('\n'), 'o arquivo exportado termina com quebra de linha');
-    assert.match(texto, /\n {2}"classe"/, 'o arquivo exportado é JSON indentado');
+    const text = readFileSync(exportedFile, 'utf8');
+    assert.ok(text.endsWith('\n'), 'the exported file ends with a line break');
+    assert.match(text, /\n {2}"classe"/, 'the exported file is indented JSON');
     assert.deepEqual(
-      JSON.parse(texto),
-      JSON.parse(readFileSync(GRAFO_FABRICA, 'utf8')),
-      'export sem envelope: o que sai é o documento que entrou',
+      JSON.parse(text),
+      JSON.parse(readFileSync(FACTORY_GRAPH, 'utf8')),
+      'export with no envelope: what comes out is the document that went in',
     );
   });
 
-  await t.test('exportar classe desconhecida sai não-zero com grafo_desconhecido', async () => {
-    const resultado = await rodarCli(['export', 'classe-que-nao-existe', '--url', primeiro.url], {
+  await t.test('exporting an unknown class exits non-zero with grafo_desconhecido', async () => {
+    const result = await runCli(['export', 'classe-que-nao-existe', '--url', first.url], {
       cwd: base,
     });
-    assert.notEqual(resultado.codigo, 0);
-    assert.match(resultado.erros, /grafo_desconhecido/);
-    assert.equal(pareceStackTrace(resultado.erros), false, `stack trace vazou:\n${resultado.erros}`);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /grafo_desconhecido/);
+    assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
   });
 
-  await t.test('round-trip: o arquivo exportado importa em outro control plane com o mesmo id', async () => {
-    const segundo = await subirControlPlane(t, {
-      caminhoBanco: path.join(base, 'segundo', 'cartografo.db'),
+  await t.test('round trip: the exported file imports into another control plane with the same id', async () => {
+    const second = await startControlPlane(t, {
+      databasePath: path.join(base, 'segundo', 'cartografo.db'),
     });
 
-    const resultado = await rodarCli(['import', arquivoExportado, '--url', segundo.url]);
-    assert.equal(resultado.codigo, 0, `stdout:\n${resultado.saida}\nstderr:\n${resultado.erros}`);
+    const result = await runCli(['import', exportedFile, '--url', second.url]);
+    assert.equal(result.code, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
     assert.equal(
-      primeiroHash(resultado.saida),
-      versaoImportada,
-      'o id da versão é o hash canônico do snapshot: round-trip não pode mudá-lo',
+      firstHash(result.stdout),
+      importedVersion,
+      'the version id is the canonical hash of the snapshot: a round trip cannot change it',
     );
   });
 });
 
-test('AT6 — importar grafo inválido imprime as violações do 422', { timeout: 180_000 }, async (t) => {
-  const base = areaTemporaria(t);
-  const controlPlane = await subirControlPlane(t, {
-    caminhoBanco: path.join(base, 'cartografo.db'),
+test('AT6 — importing an invalid graph prints the violations of the 422', { timeout: 180_000 }, async (t) => {
+  const base = temporaryArea(t);
+  const controlPlane = await startControlPlane(t, {
+    databasePath: path.join(base, 'cartografo.db'),
   });
 
-  const resultado = await rodarCli(['import', GRAFO_INVALIDO, '--url', controlPlane.url]);
+  const result = await runCli(['import', INVALID_GRAPH, '--url', controlPlane.url]);
 
-  assert.notEqual(resultado.codigo, 0, 'grafo inválido não pode sair 0');
-  assert.match(resultado.erros, /grafo_invalido/);
-  assert.match(resultado.erros, /alcançável/, 'a violação de soundness sai na saída de erro');
-  assert.match(resultado.erros, /revisar_lote/, 'a violação sai com o alvo que a quebrou');
-  assert.equal(pareceStackTrace(resultado.erros), false, `stack trace vazou:\n${resultado.erros}`);
+  assert.notEqual(result.code, 0, 'an invalid graph cannot exit 0');
+  assert.match(result.stderr, /grafo_invalido/);
+  assert.match(result.stderr, /alcançável/, 'the soundness violation comes out on the error output');
+  assert.match(result.stderr, /revisar_lote/, 'the violation comes out with the target that broke it');
+  assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
 
-  const resposta = await fetch(`${controlPlane.url}/v1/classes`);
-  assert.deepEqual(await resposta.json(), { classes: [] }, 'grafo recusado não pode ter sido registrado');
+  const response = await fetch(`${controlPlane.url}/v1/classes`);
+  assert.deepEqual(await response.json(), { classes: [] }, 'a refused graph cannot have been registered');
 });
 
-test('AT7 — importar sem control plane no ar aponta para `cartografo up`, sem stack trace', { timeout: 60_000 }, async () => {
-  const porta = await portaLivre();
-  const resultado = await rodarCli([
+test('AT7 — importing with no control plane running points at `cartografo up`, with no stack trace', { timeout: 60_000 }, async () => {
+  const port = await freePort();
+  const result = await runCli([
     'import',
-    BUNDLE_FABRICA,
+    FACTORY_BUNDLE,
     '--url',
-    `http://127.0.0.1:${porta}`,
+    `http://127.0.0.1:${port}`,
   ]);
 
-  assert.notEqual(resultado.codigo, 0);
-  assert.match(resultado.erros, /cartografo up/, 'a mensagem precisa dizer o que fazer');
-  assert.equal(pareceStackTrace(resultado.erros), false, `stack trace vazou:\n${resultado.erros}`);
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /cartografo up/, 'the message has to say what to do');
+  assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
 });

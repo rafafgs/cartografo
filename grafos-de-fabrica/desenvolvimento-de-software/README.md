@@ -77,13 +77,23 @@ Os testes de aceite deste bundle estão em
 [`tests/grafo-fabrica-1.test.mjs`](../../tests/grafo-fabrica-1.test.mjs)
 (`node --test`).
 
-## Convenção de diretório: provisória
+## Convenção de diretório
 
-`grafos-de-fabrica/<classe>/` é convenção **provisória**, nomeada a partir da
-string de `classe` do documento (D8). O formato geral de atlas/bundle
-multi-grafo — com assinatura, publicação e o resto — é a `t120`; se ela decidir
-outro layout, mover este diretório não custa nada, porque nada aqui depende do
-caminho.
+`grafos-de-fabrica/<classe>/` é a forma do bundle, nomeada a partir da string
+de `classe` do documento (D8), e ela é a mesma do atlas: um subdiretório por
+classe, com `grafo.json` e os manifestos que os nós pinam. O layout, o passo de
+publicação e a verificação de integridade na travessia estão em
+[`docs/formatos/atlas-bundle.md`](../../docs/formatos/atlas-bundle.md) — v0,
+não congelada, pela regra dos dois consumidores.
+
+Na prática isso quer dizer que este diretório e um checkout de atlas são
+entradas intercambiáveis do mesmo comando, e que publicar este bundle num atlas
+é copiá-lo para lá depois de validado:
+
+```sh
+node scripts/publish-atlas-bundle.mjs \
+  grafos-de-fabrica/desenvolvimento-de-software ../atlas
+```
 
 O registro de skills do control plane já existe, e `cartografo import
 grafos-de-fabrica/desenvolvimento-de-software` registra os cinco manifestos

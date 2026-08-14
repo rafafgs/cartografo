@@ -293,9 +293,13 @@ O que o formato pressupõe do resto do sistema:
   resultado → gravar versão nova → mover ponteiro. Rollback move o ponteiro de
   volta; nada se apaga.
 
-Empacotamento multi-grafo e multi-arquivo — assinatura, publicação, formato de
-arquivo do atlas — é outro documento (`t120`). Aqui termina em: um grafo, um
-arquivo, autocontido.
+Empacotamento multi-grafo e multi-arquivo — layout do atlas, passo de
+publicação, verificação de integridade na travessia — está em
+[`docs/formatos/atlas-bundle.md`](../formatos/atlas-bundle.md), que trata um
+diretório por classe (`grafo.json` mais os manifestos que os nós pinam) e
+mantém a verificação nos dois hashes que já existem: o `id` da versão de grafo
+e o `skill_ref.hash` de cada nó. Aqui termina em: um grafo, um arquivo,
+autocontido.
 
 ---
 

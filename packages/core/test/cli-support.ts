@@ -28,6 +28,9 @@ export const BIN_PATH = path.join(PACKAGE_ROOT, 'bin', 'cartografo.mjs');
 /** Factory bundle 1 (D14), the input of the README's three-command path. */
 export const FACTORY_BUNDLE = path.join(REPO_ROOT, 'grafos-de-fabrica', 'desenvolvimento-de-software');
 
+/** Factory bundle 2 (D14) — the second class, which makes the atlas multi-map (t120). */
+export const BETS_BUNDLE = path.join(REPO_ROOT, 'grafos-de-fabrica', 'bets-assimetricas');
+
 /** Test context, in the part this support file uses. */
 export interface TestHook {
   after: (fn: () => void | Promise<void>) => void;

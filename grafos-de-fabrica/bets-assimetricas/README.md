@@ -138,12 +138,20 @@ Os testes de aceite deste bundle estão em
 (`node --test`), com o fixture de travessia em
 [`tests/fixtures/tese-exemplo-bets-assimetricas.json`](../../tests/fixtures/tese-exemplo-bets-assimetricas.json).
 
-## Convenção de diretório: provisória
+## Convenção de diretório
 
-`grafos-de-fabrica/<classe>/` é convenção **provisória**, nomeada a partir da
-string de `classe` do documento (D8) — mesma nota do bundle 1. O formato geral
-de atlas/bundle multi-grafo é a `t120`; se ela decidir outro layout, mover este
-diretório não custa nada, porque nada aqui depende do caminho.
+`grafos-de-fabrica/<classe>/` é a forma do bundle, nomeada a partir da string
+de `classe` do documento (D8) — mesma nota do bundle 1. É também a forma do
+atlas, um subdiretório por classe, especificada em
+[`docs/formatos/atlas-bundle.md`](../../docs/formatos/atlas-bundle.md) (v0, não
+congelada). Publicar este mapa num atlas é copiá-lo para lá depois de validado:
+
+```sh
+node scripts/publish-atlas-bundle.mjs grafos-de-fabrica/bets-assimetricas ../atlas
+```
+
+Os dois mapas de fábrica convivem no mesmo atlas sem se tocar — é o que a D14
+chama de semente do atlas compartilhável.
 
 ## Divergências registradas
 

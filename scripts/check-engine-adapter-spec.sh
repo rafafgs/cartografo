@@ -103,22 +103,28 @@ awk '
 if [ ! -s "$ts_file" ]; then
   fail 'no ```typescript block found in the doc'
 else
-  # Three corrections over the ticket's literal command
+  # Two corrections over the ticket's literal command
   # (`npx --yes typescript tsc --noEmit --strict`):
   #
-  # 1. the package and the binary have to be named SEPARATELY, `-p typescript
-  #    tsc`. Writing them adjacent makes npx read "tsc" as an input file;
-  #    writing only the package name makes npx resolve the package and find TWO
-  #    bins in it (`tsc` and `tsserver`), which since t119 — when `typescript`
-  #    became a devDependency of the root and npx started preferring the local
-  #    install over the registry — dies with "could not determine executable to
-  #    run" before ever looking at the doc. Both are false reds, in opposite
-  #    directions;
+  # 1. `--package typescript -- tsc` is the form that works. `typescript` is a
+  #    PACKAGE name; npx wants a BINARY, and it only infers one from a package
+  #    when that package exposes exactly one. typescript exposed two through
+  #    6.x (`tsc` and `tsserver`), so `npx --yes typescript ...` died with
+  #    `npm error could not determine executable to run` (t137). Naming the bin
+  #    after `--` settles it for every version. The package and the bin also
+  #    have to stay SEPARATED by that `--`: written adjacent, the way the
+  #    ticket's literal command had them, npx reads the package name as the
+  #    binary and passes "tsc" through as an input file, and the compiler dies
+  #    with TS6231 before ever looking at the doc (t119). Note that dropping
+  #    the word `tsc` entirely does NOT work either: 7.0.2 happens to expose
+  #    only `tsc`, so the short form resolves today and would break again the
+  #    day a second bin comes back. Three false reds, in three directions;
   # 2. `--target es2022` is required — the default (ES5) does not load the
-  #    `Promise` lib, and the whole interface is asynchronous;
-  # 3. run ad hoc through npx so this gate does not depend on the repository's
-  #    own toolchain being installed.
-  if tsc_out=$(npx --yes -p typescript tsc --noEmit --strict --target es2022 "$ts_file" 2>&1); then
+  #    `Promise` lib, and the whole interface is asynchronous.
+  #
+  # Run ad hoc through npx so this gate does not depend on the repository's own
+  # toolchain being installed.
+  if tsc_out=$(npx --yes --package typescript -- tsc --noEmit --strict --target es2022 "$ts_file" 2>&1); then
     pass "$(grep -c '' "$ts_file") lines of TS compile clean"
   else
     fail 'tsc rejected the typescript blocks of the doc:'

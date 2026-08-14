@@ -38,7 +38,7 @@ const FORBIDDEN = Object.freeze([
   { bare: ['grafo', 'grafos'], camel: ['Grafo', 'Grafos'] },
   { bare: ['aresta', 'arestas'], camel: ['Aresta', 'Arestas'] },
   { bare: ['nos', 'finais'], camel: ['Nos', 'Finais'] },
-  { bare: ['fabrica', 'bundle'], camel: ['Fabrica'] },
+  { bare: ['fabrica'], camel: ['Fabrica'] },
   { bare: ['classe', 'classes', 'linhagem'], camel: ['Classe', 'Linhagem'] },
   { bare: ['contrato', 'contratos'], camel: ['Contrato'] },
   { bare: ['manifesto', 'documento'], camel: ['Manifesto', 'Documento'] },
@@ -101,20 +101,31 @@ const FORBIDDEN = Object.freeze([
 ]);
 
 /**
+ * The reference validator's four exported names, frozen WHEREVER they appear.
+ *
+ * `packages/core/test/domain-graph.test.ts` imports the first two by name, and
+ * `validate-factory-bundle.mjs` imports `validarGrafo` from the same module.
+ * Masking the exact spellings — rather than the words `validar` and `grafo`
+ * everywhere — keeps the exemption narrow: a NEW `validarAlgumaCoisa` in either
+ * file is still flagged.
+ */
+const FROZEN_IDENTIFIERS = Object.freeze([
+  'validarEstrutura',
+  'validarSoundness',
+  'validarGrafo',
+  'carregarGrafo',
+]);
+
+/**
  * Tokens a given file is allowed to keep, because something outside this
  * ticket's scope pins them. See this file's header for why.
+ *
+ * Only `validar-grafo.mjs`, and only the report vocabulary: those words are the
+ * keys core `deepEqual`s against, plus the locals whose shorthand builds them
+ * (`return { valido: erros.length === 0, erros }`).
  */
 const FROZEN_TOKENS_BY_FILE = Object.freeze({
   'validar-grafo.mjs': Object.freeze([
-    // exported names, imported by `packages/core/test/domain-graph.test.ts`
-    'validar',
-    'carregar',
-    'grafo',
-    'grafos',
-    'Grafo',
-    'estrutura',
-    'Estrutura',
-    // report keys and the locals whose shorthand builds them
     'valido',
     'erro',
     'erros',
@@ -126,6 +137,8 @@ const FROZEN_TOKENS_BY_FILE = Object.freeze({
     'alvo',
     'regra',
     'regras',
+    'estrutura',
+    'Estrutura',
   ]),
 });
 
@@ -369,6 +382,15 @@ export function maskLiteralsAndCommentQuotes(source) {
  * `doc.nos`, `{ no_inicial: id }` and `aresta.condicao` are the graph-bundle
  * JSON Schema, frozen by D18's own carve-out; a bare `const nos = …` is not.
  */
+/** Blanks the pinned export names, so only NEW Portuguese around them counts. */
+function maskFrozenIdentifiers(text) {
+  let out = text;
+  for (const name of FROZEN_IDENTIFIERS) {
+    out = out.replace(new RegExp(`\\b${name}\\b`, 'g'), (span) => blank(span));
+  }
+  return out;
+}
+
 function maskKeyAndMemberPositions(text, token) {
   const boundary = '(?![A-Za-z0-9_])';
   return text
@@ -390,7 +412,7 @@ function scannedFiles() {
  * @param {readonly string[]} frozen Tokens this file is allowed to keep.
  */
 export function hitsInSource(source, frozen = []) {
-  const masked = maskLiteralsAndCommentQuotes(source);
+  const masked = maskFrozenIdentifiers(maskLiteralsAndCommentQuotes(source));
   const exempt = new Set(frozen);
   const hits = [];
 
@@ -492,8 +514,10 @@ test('exception 5 — validar-grafo.mjs keeps the names and report shape core pi
 
 test('AC1 — the sweep bites on real Portuguese identifiers', () => {
   const caught = [
-    'const relatorio = validarGrafo(doc);',
+    'const relatorio = readReport(doc);',
     'function percorrer(sementes, vizinhos) { return sementes; }',
+    // the exemption is the exact spelling, not the words in it
+    'export function validarBundle(dir) { return dir; }',
     'const arestas = doc.arestas ?? [];',
     'export const PREFIXO_DONO_DO_BANCO = "packages/core";',
     'let houveFalha = false;',
@@ -521,6 +545,9 @@ test('AC1 — the sweep does NOT bite on the frozen exceptions', () => {
     // English code that merely contains a forbidden token as a substring
     'export class ValidationError extends Error { readonly errors = []; }',
     'const half = total / 1000;',
+    // the pinned export names, at the call site that imports them
+    "import { validarGrafo } from './validar-grafo.mjs';",
+    'const report = validarGrafo(carregarGrafo(filePath));',
     // a backticked frozen name inside English prose
     '/** `validarEstrutura` and its `valido` / `erros` report are pinned by core. */',
   ];

@@ -1,38 +1,57 @@
 /**
- * Validador de referência do documento de grafo (t96).
+ * Reference validator of the graph document (t96).
  *
- * Duas checagens, deliberadamente separadas:
+ * Two checks, deliberately kept apart:
  *
- * - `validarEstrutura(doc)` — integridade de forma e de referência: chaves
- *   obrigatórias presentes, ids de nó únicos, toda aresta e todo id em
- *   `no_inicial`/`nos_finais` apontando para nó existente.
- * - `validarSoundness(doc)` — as quatro regras formais de workflow net (van der
- *   Aalst) que o portão de validação de grafo aplica: alcançável, termina,
- *   aresta_com_condicao, no_com_contrato.
+ * - `validarEstrutura(doc)` — shape and referential integrity: required keys
+ *   present, node ids unique, every edge and every id in
+ *   `no_inicial`/`nos_finais` pointing at a node that exists.
+ * - `validarSoundness(doc)` — the four formal workflow-net rules (van der
+ *   Aalst) the graph validation gate applies: reachable, terminates,
+ *   edge with condition, node with contract.
  *
- * As duas rodam independentes e nenhuma lança exceção em documento malformado:
- * o sintetizador (D10) monta grafo em memória e precisa de um relatório de
- * tudo que está errado, não do primeiro erro.
+ * The two run independently and neither throws on a malformed document: the
+ * synthesizer (D10) builds graphs in memory and needs a report of everything
+ * that is wrong, not the first error.
  *
- * Zero dependências: só módulos nativos do Node. Validação de FORMA completa
- * contra `schema/grafo.schema.json` (via ajv ou equivalente) entra com o
- * scaffold TypeScript do control plane — aqui o validador cobre o necessário
- * para provar os fixtures.
+ * Zero dependencies: only Node built-ins. Full SHAPE validation against
+ * `schema/grafo.schema.json` (via ajv or equivalent) arrives with the control
+ * plane's TypeScript scaffold — here the validator covers what it takes to
+ * prove the fixtures.
  *
- * Uso como CLI: `node scripts/validar-grafo.mjs schema/exemplos/*.json`
+ * ## Why the exported names and the report stay in Portuguese
+ *
+ * This file is outside the D18 rename scope (t127, FR8; t133, exception 5), and
+ * for a reason that is checked rather than asserted:
+ * `packages/core/test/domain-graph.test.ts` imports it BY PATH, destructures it
+ * by the names `validarEstrutura` / `validarSoundness`, and `deepEqual`s its
+ * report against the TypeScript port in `packages/core/src/domain/graph.ts` on
+ * every fixture in `schema/exemplos/`. That parity is the whole point of the
+ * port, so the four exported names and the full report shape — `valido`,
+ * `erros`, `violacoes`, `codigo`, `mensagem`, `alvo`, `regra`, `estrutura` and
+ * the four rule-name values — are frozen here. Everything else in the file is
+ * English, like the rest of the repository from D18 onward.
+ *
+ * CLI use: `node scripts/validar-grafo.mjs schema/exemplos/*.json`
  */
 
 import { readFileSync } from 'node:fs';
 
-/** Nomes das quatro regras de soundness, na ordem em que rodam. */
-export const REGRAS = Object.freeze({
-  ALCANCAVEL: 'alcançável',
-  TERMINA: 'termina',
-  ARESTA_COM_CONDICAO: 'aresta_com_condicao',
-  NO_COM_CONTRATO: 'no_com_contrato',
+/**
+ * Names of the four soundness rules, in the order they run.
+ *
+ * The KEYS match `packages/core/src/domain/graph.ts`'s `RULES` so the two
+ * byte-for-byte siblings read the same side by side; the VALUES are frozen,
+ * because they are what the reports compare on.
+ */
+export const RULES = Object.freeze({
+  REACHABLE: 'alcançável',
+  TERMINATES: 'termina',
+  EDGE_WITH_CONDITION: 'aresta_com_condicao',
+  NODE_WITH_CONTRACT: 'no_com_contrato',
 });
 
-const CAMPOS_OBRIGATORIOS_DOC = [
+const REQUIRED_DOC_FIELDS = [
   'classe',
   'linhagem',
   'metadata',
@@ -41,110 +60,111 @@ const CAMPOS_OBRIGATORIOS_DOC = [
   'no_inicial',
   'nos_finais',
 ];
-const CAMPOS_OBRIGATORIOS_NO = ['id', 'papel', 'tipo_no', 'skill_ref', 'contrato'];
-const CAMPOS_OBRIGATORIOS_ARESTA = ['de', 'para', 'condicao'];
+const REQUIRED_NODE_FIELDS = ['id', 'papel', 'tipo_no', 'skill_ref', 'contrato'];
+const REQUIRED_EDGE_FIELDS = ['de', 'para', 'condicao'];
 
-const ehObjeto = (valor) => typeof valor === 'object' && valor !== null && !Array.isArray(valor);
-const ehTextoPreenchido = (valor) => typeof valor === 'string' && valor.trim() !== '';
+const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+const isFilledText = (value) => typeof value === 'string' && value.trim() !== '';
 
 /**
- * Confere forma e integridade referencial do documento.
+ * Checks the document's shape and referential integrity.
  *
- * @param {unknown} doc Documento de grafo já parseado.
+ * @param {unknown} doc Graph document, already parsed.
  * @returns {{valido: boolean, erros: Array<{codigo: string, mensagem: string, alvo: unknown}>}}
  */
 export function validarEstrutura(doc) {
   const erros = [];
-  const anotar = (codigo, mensagem, alvo = null) => erros.push({ codigo, mensagem, alvo });
+  const annotate = (code, message, target = null) =>
+    erros.push({ codigo: code, mensagem: message, alvo: target });
 
-  if (!ehObjeto(doc)) {
-    anotar('documento_invalido', 'documento de grafo precisa ser um objeto JSON');
+  if (!isObject(doc)) {
+    annotate('documento_invalido', 'documento de grafo precisa ser um objeto JSON');
     return { valido: false, erros };
   }
 
-  for (const campo of CAMPOS_OBRIGATORIOS_DOC) {
-    if (doc[campo] === undefined || doc[campo] === null) {
-      anotar('campo_obrigatorio_ausente', `campo obrigatório ausente no documento: "${campo}"`, campo);
+  for (const field of REQUIRED_DOC_FIELDS) {
+    if (doc[field] === undefined || doc[field] === null) {
+      annotate('campo_obrigatorio_ausente', `campo obrigatório ausente no documento: "${field}"`, field);
     }
   }
 
   if (doc.nos !== undefined && !Array.isArray(doc.nos)) {
-    anotar('campo_invalido', '"nos" precisa ser uma lista', 'nos');
+    annotate('campo_invalido', '"nos" precisa ser uma lista', 'nos');
   }
   if (doc.arestas !== undefined && !Array.isArray(doc.arestas)) {
-    anotar('campo_invalido', '"arestas" precisa ser uma lista', 'arestas');
+    annotate('campo_invalido', '"arestas" precisa ser uma lista', 'arestas');
   }
   if (doc.nos_finais !== undefined && !Array.isArray(doc.nos_finais)) {
-    anotar('campo_invalido', '"nos_finais" precisa ser uma lista', 'nos_finais');
+    annotate('campo_invalido', '"nos_finais" precisa ser uma lista', 'nos_finais');
   }
 
-  const nos = Array.isArray(doc.nos) ? doc.nos : [];
-  const idsConhecidos = new Set();
-  const idsJaReportados = new Set();
+  const nodes = Array.isArray(doc.nos) ? doc.nos : [];
+  const knownIds = new Set();
+  const reportedIds = new Set();
 
-  nos.forEach((no, indice) => {
-    if (!ehObjeto(no)) {
-      anotar('no_invalido', `o nó na posição ${indice} precisa ser um objeto`, indice);
+  nodes.forEach((node, index) => {
+    if (!isObject(node)) {
+      annotate('no_invalido', `o nó na posição ${index} precisa ser um objeto`, index);
       return;
     }
-    for (const campo of CAMPOS_OBRIGATORIOS_NO) {
-      if (no[campo] === undefined || no[campo] === null) {
-        anotar(
+    for (const field of REQUIRED_NODE_FIELDS) {
+      if (node[field] === undefined || node[field] === null) {
+        annotate(
           'campo_obrigatorio_ausente',
-          `campo obrigatório ausente no nó "${no.id ?? `#${indice}`}": "${campo}"`,
-          no.id ?? indice,
+          `campo obrigatório ausente no nó "${node.id ?? `#${index}`}": "${field}"`,
+          node.id ?? index,
         );
       }
     }
-    if (!ehTextoPreenchido(no.id)) return;
-    if (idsConhecidos.has(no.id)) {
-      if (!idsJaReportados.has(no.id)) {
-        anotar('id_no_duplicado', `id de nó repetido no documento: "${no.id}"`, no.id);
-        idsJaReportados.add(no.id);
+    if (!isFilledText(node.id)) return;
+    if (knownIds.has(node.id)) {
+      if (!reportedIds.has(node.id)) {
+        annotate('id_no_duplicado', `id de nó repetido no documento: "${node.id}"`, node.id);
+        reportedIds.add(node.id);
       }
       return;
     }
-    idsConhecidos.add(no.id);
+    knownIds.add(node.id);
   });
 
-  const arestas = Array.isArray(doc.arestas) ? doc.arestas : [];
-  arestas.forEach((aresta, indice) => {
-    if (!ehObjeto(aresta)) {
-      anotar('aresta_invalida', `a aresta na posição ${indice} precisa ser um objeto`, indice);
+  const edges = Array.isArray(doc.arestas) ? doc.arestas : [];
+  edges.forEach((edge, index) => {
+    if (!isObject(edge)) {
+      annotate('aresta_invalida', `a aresta na posição ${index} precisa ser um objeto`, index);
       return;
     }
-    for (const campo of CAMPOS_OBRIGATORIOS_ARESTA) {
-      if (aresta[campo] === undefined || aresta[campo] === null) {
-        anotar(
+    for (const field of REQUIRED_EDGE_FIELDS) {
+      if (edge[field] === undefined || edge[field] === null) {
+        annotate(
           'campo_obrigatorio_ausente',
-          `campo obrigatório ausente na aresta #${indice}: "${campo}"`,
-          { de: aresta.de ?? null, para: aresta.para ?? null },
+          `campo obrigatório ausente na aresta #${index}: "${field}"`,
+          { de: edge.de ?? null, para: edge.para ?? null },
         );
       }
     }
-    for (const ponta of ['de', 'para']) {
-      const alvo = aresta[ponta];
-      if (ehTextoPreenchido(alvo) && !idsConhecidos.has(alvo)) {
-        anotar(
+    for (const side of ['de', 'para']) {
+      const target = edge[side];
+      if (isFilledText(target) && !knownIds.has(target)) {
+        annotate(
           'aresta_no_inexistente',
-          `a aresta #${indice} referencia em "${ponta}" um nó que não existe: "${alvo}"`,
-          { de: aresta.de ?? null, para: aresta.para ?? null },
+          `a aresta #${index} referencia em "${side}" um nó que não existe: "${target}"`,
+          { de: edge.de ?? null, para: edge.para ?? null },
         );
       }
     }
   });
 
-  if (ehTextoPreenchido(doc.no_inicial) && !idsConhecidos.has(doc.no_inicial)) {
-    anotar('no_inicial_inexistente', `no_inicial referencia um nó que não existe: "${doc.no_inicial}"`, doc.no_inicial);
+  if (isFilledText(doc.no_inicial) && !knownIds.has(doc.no_inicial)) {
+    annotate('no_inicial_inexistente', `no_inicial referencia um nó que não existe: "${doc.no_inicial}"`, doc.no_inicial);
   }
 
-  const finais = Array.isArray(doc.nos_finais) ? doc.nos_finais : [];
-  if (Array.isArray(doc.nos_finais) && finais.length === 0) {
-    anotar('campo_invalido', '"nos_finais" precisa listar pelo menos um nó', 'nos_finais');
+  const finals = Array.isArray(doc.nos_finais) ? doc.nos_finais : [];
+  if (Array.isArray(doc.nos_finais) && finals.length === 0) {
+    annotate('campo_invalido', '"nos_finais" precisa listar pelo menos um nó', 'nos_finais');
   }
-  for (const final of finais) {
-    if (ehTextoPreenchido(final) && !idsConhecidos.has(final)) {
-      anotar('no_final_inexistente', `nos_finais referencia um nó que não existe: "${final}"`, final);
+  for (const finalId of finals) {
+    if (isFilledText(finalId) && !knownIds.has(finalId)) {
+      annotate('no_final_inexistente', `nos_finais referencia um nó que não existe: "${finalId}"`, finalId);
     }
   }
 
@@ -152,145 +172,147 @@ export function validarEstrutura(doc) {
 }
 
 /**
- * Roda as quatro regras de soundness, nesta ordem: alcançável, termina,
- * aresta_com_condicao, no_com_contrato.
+ * Runs the four soundness rules, in this order: reachable, terminates,
+ * edge with condition, node with contract.
  *
- * @param {unknown} doc Documento de grafo já parseado.
+ * @param {unknown} doc Graph document, already parsed.
  * @returns {{valido: boolean, violacoes: Array<{regra: string, alvo: unknown}>}}
  */
 export function validarSoundness(doc) {
   const violacoes = [];
-  const nos = ehObjeto(doc) && Array.isArray(doc.nos) ? doc.nos.filter(ehObjeto) : [];
-  const arestas = ehObjeto(doc) && Array.isArray(doc.arestas) ? doc.arestas.filter(ehObjeto) : [];
-  const ids = nos.map((no) => no.id).filter(ehTextoPreenchido);
-  const conhecidos = new Set(ids);
+  const nodes = isObject(doc) && Array.isArray(doc.nos) ? doc.nos.filter(isObject) : [];
+  const edges = isObject(doc) && Array.isArray(doc.arestas) ? doc.arestas.filter(isObject) : [];
+  const ids = nodes.map((node) => node.id).filter(isFilledText);
+  const known = new Set(ids);
 
-  // Só arestas entre nós existentes entram na topologia; ponta solta é problema
-  // de estrutura, e contá-la aqui inventaria alcançabilidade que não existe.
-  const saidas = new Map(ids.map((id) => [id, []]));
-  const entradas = new Map(ids.map((id) => [id, []]));
-  for (const aresta of arestas) {
-    if (!conhecidos.has(aresta.de) || !conhecidos.has(aresta.para)) continue;
-    saidas.get(aresta.de).push(aresta.para);
-    entradas.get(aresta.para).push(aresta.de);
+  // Only edges between existing nodes enter the topology; a dangling end is a
+  // structural problem, and counting it here would invent reachability that
+  // does not exist.
+  const outgoing = new Map(ids.map((id) => [id, []]));
+  const incoming = new Map(ids.map((id) => [id, []]));
+  for (const edge of edges) {
+    if (!known.has(edge.de) || !known.has(edge.para)) continue;
+    outgoing.get(edge.de).push(edge.para);
+    incoming.get(edge.para).push(edge.de);
   }
 
-  // 1. alcançável — todo nó é atingível a partir de no_inicial.
-  const alcancados = percorrer(
-    conhecidos.has(doc?.no_inicial) ? [doc.no_inicial] : [],
-    (id) => saidas.get(id) ?? [],
+  // 1. reachable — every node is reachable from no_inicial.
+  const reached = traverse(
+    known.has(doc?.no_inicial) ? [doc.no_inicial] : [],
+    (id) => outgoing.get(id) ?? [],
   );
   for (const id of ids) {
-    if (!alcancados.has(id)) violacoes.push({ regra: REGRAS.ALCANCAVEL, alvo: id });
+    if (!reached.has(id)) violacoes.push({ regra: RULES.REACHABLE, alvo: id });
   }
 
-  // 2. termina — de todo nó existe caminho até algum nó final. Calculado de trás
-  // para frente: quem chega ao fim é quem alcança um final andando nas arestas
-  // invertidas. Nó preso em ciclo sem saída simplesmente nunca é atingido.
-  const finais = (Array.isArray(doc?.nos_finais) ? doc.nos_finais : []).filter((id) => conhecidos.has(id));
-  const chegamAoFim = percorrer(finais, (id) => entradas.get(id) ?? []);
+  // 2. terminates — from every node there is a path to some final node.
+  // Computed backwards: whoever reaches the end is whoever reaches a final node
+  // walking the reversed edges. A node stuck in a cycle with no way out is
+  // simply never reached.
+  const finals = (Array.isArray(doc?.nos_finais) ? doc.nos_finais : []).filter((id) => known.has(id));
+  const reachEnd = traverse(finals, (id) => incoming.get(id) ?? []);
   for (const id of ids) {
-    if (!chegamAoFim.has(id)) violacoes.push({ regra: REGRAS.TERMINA, alvo: id });
+    if (!reachEnd.has(id)) violacoes.push({ regra: RULES.TERMINATES, alvo: id });
   }
 
-  // 3. aresta_com_condicao — nenhuma transição sem rótulo.
-  for (const aresta of arestas) {
-    if (!ehTextoPreenchido(aresta.condicao)) {
+  // 3. edge with condition — no transition without a label.
+  for (const edge of edges) {
+    if (!isFilledText(edge.condicao)) {
       violacoes.push({
-        regra: REGRAS.ARESTA_COM_CONDICAO,
-        alvo: { de: aresta.de ?? null, para: aresta.para ?? null },
+        regra: RULES.EDGE_WITH_CONDITION,
+        alvo: { de: edge.de ?? null, para: edge.para ?? null },
       });
     }
   }
 
-  // 4. no_com_contrato — vale para portão igual, que é nó como outro qualquer.
-  for (const no of nos) {
-    if (!temSkillRef(no) || !temContrato(no)) {
-      violacoes.push({ regra: REGRAS.NO_COM_CONTRATO, alvo: no.id ?? null });
+  // 4. node with contract — holds for a gate too, which is a node like any other.
+  for (const node of nodes) {
+    if (!hasSkillRef(node) || !hasContract(node)) {
+      violacoes.push({ regra: RULES.NODE_WITH_CONTRACT, alvo: node.id ?? null });
     }
   }
 
   return { valido: violacoes.length === 0, violacoes };
 }
 
-/** Busca em largura a partir de várias sementes; devolve o conjunto visitado. */
-function percorrer(sementes, vizinhos) {
-  const visitados = new Set(sementes);
-  const fila = [...sementes];
-  while (fila.length > 0) {
-    for (const vizinho of vizinhos(fila.shift())) {
-      if (visitados.has(vizinho)) continue;
-      visitados.add(vizinho);
-      fila.push(vizinho);
+/** Breadth-first search from several seeds; returns the visited set. */
+function traverse(seeds, neighbours) {
+  const visited = new Set(seeds);
+  const queue = [...seeds];
+  while (queue.length > 0) {
+    for (const neighbour of neighbours(queue.shift())) {
+      if (visited.has(neighbour)) continue;
+      visited.add(neighbour);
+      queue.push(neighbour);
     }
   }
-  return visitados;
+  return visited;
 }
 
-function temSkillRef(no) {
-  const ref = no.skill_ref;
-  return ehObjeto(ref) && ehTextoPreenchido(ref.id) && ehTextoPreenchido(ref.versao) && ehTextoPreenchido(ref.hash);
+function hasSkillRef(node) {
+  const ref = node.skill_ref;
+  return isObject(ref) && isFilledText(ref.id) && isFilledText(ref.versao) && isFilledText(ref.hash);
 }
 
-function temContrato(no) {
-  const contrato = no.contrato;
+function hasContract(node) {
+  const contract = node.contrato;
   return (
-    ehObjeto(contrato) &&
-    ehObjeto(contrato.entrada_schema) &&
-    ehObjeto(contrato.saida_schema) &&
-    Array.isArray(contrato.verificacoes) &&
-    contrato.verificacoes.length > 0
+    isObject(contract) &&
+    isObject(contract.entrada_schema) &&
+    isObject(contract.saida_schema) &&
+    Array.isArray(contract.verificacoes) &&
+    contract.verificacoes.length > 0
   );
 }
 
 /**
- * Lê e parseia um documento de grafo do disco.
+ * Reads and parses a graph document from disk.
  *
- * @param {string} caminho Caminho do arquivo JSON.
- * @returns {unknown} Documento parseado.
+ * @param {string} filePath Path of the JSON file.
+ * @returns {unknown} The parsed document.
  */
-export function carregarGrafo(caminho) {
-  return JSON.parse(readFileSync(caminho, 'utf8'));
+export function carregarGrafo(filePath) {
+  return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
-/** Roda as duas validações e devolve o relatório combinado. */
+/** Runs both validations and returns the combined report. */
 export function validarGrafo(doc) {
-  const estrutura = validarEstrutura(doc);
+  const structure = validarEstrutura(doc);
   const soundness = validarSoundness(doc);
-  return { valido: estrutura.valido && soundness.valido, estrutura, soundness };
+  return { valido: structure.valido && soundness.valido, estrutura: structure, soundness };
 }
 
-function principal(caminhos) {
-  if (caminhos.length === 0) {
-    console.error('uso: node scripts/validar-grafo.mjs <grafo.json> [...]');
+function main(paths) {
+  if (paths.length === 0) {
+    console.error('usage: node scripts/validar-grafo.mjs <graph.json> [...]');
     return 2;
   }
-  let houveFalha = false;
-  for (const caminho of caminhos) {
-    let relatorio;
+  let failed = false;
+  for (const filePath of paths) {
+    let report;
     try {
-      relatorio = validarGrafo(carregarGrafo(caminho));
-    } catch (erro) {
-      console.error(`✖ ${caminho}: não deu para ler o documento — ${erro.message}`);
-      houveFalha = true;
+      report = validarGrafo(carregarGrafo(filePath));
+    } catch (error) {
+      console.error(`✖ ${filePath}: could not read the document — ${error.message}`);
+      failed = true;
       continue;
     }
-    if (relatorio.valido) {
-      console.log(`✔ ${caminho}`);
+    if (report.valido) {
+      console.log(`✔ ${filePath}`);
       continue;
     }
-    houveFalha = true;
-    console.error(`✖ ${caminho}`);
-    for (const erro of relatorio.estrutura.erros) {
-      console.error(`  estrutura  ${erro.codigo}: ${erro.mensagem}`);
+    failed = true;
+    console.error(`✖ ${filePath}`);
+    for (const problem of report.estrutura.erros) {
+      console.error(`  structure  ${problem.codigo}: ${problem.mensagem}`);
     }
-    for (const violacao of relatorio.soundness.violacoes) {
-      console.error(`  soundness  ${violacao.regra}: ${JSON.stringify(violacao.alvo)}`);
+    for (const violation of report.soundness.violacoes) {
+      console.error(`  soundness  ${violation.regra}: ${JSON.stringify(violation.alvo)}`);
     }
   }
-  return houveFalha ? 1 : 0;
+  return failed ? 1 : 0;
 }
 
 if (import.meta.filename === process.argv[1]) {
-  process.exitCode = principal(process.argv.slice(2));
+  process.exitCode = main(process.argv.slice(2));
 }

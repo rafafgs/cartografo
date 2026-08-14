@@ -33,7 +33,6 @@ const FORBIDDEN = Object.freeze([
   { bare: ['contrato', 'contratos'], camel: ['Contrato'] },
   { bare: ['manifesto', 'documento'], camel: ['Manifesto', 'Documento'] },
   { bare: ['versao', 'versoes'], camel: ['Versao'] },
-  { bare: ['skill', 'skills'], camel: [] },
 
   // Report vocabulary.
   { bare: ['valido', 'validos'], camel: ['Valido'] },
@@ -86,9 +85,34 @@ const FORBIDDEN = Object.freeze([
   },
 ]);
 
+/**
+ * The reference validator's pinned export names, frozen WHEREVER they appear.
+ *
+ * These tests import `scripts/validar-grafo.mjs` by name, and that module's
+ * exports cannot move: `packages/core/test/domain-graph.test.ts` `deepEqual`s
+ * its report against the TypeScript port (t133, exception 5). Masking the exact
+ * spellings — rather than the words `validar` and `grafo` everywhere — keeps
+ * the exemption narrow: a NEW `validarAlgumaCoisa` here is still flagged.
+ */
+const FROZEN_IDENTIFIERS = Object.freeze([
+  'validarEstrutura',
+  'validarSoundness',
+  'validarGrafo',
+  'carregarGrafo',
+]);
+
 /** Replaces a span with same-length blanks, so line numbers stay honest. */
 function blank(text) {
   return text.replace(/[^\n]/g, ' ');
+}
+
+/** Blanks the pinned export names, so only NEW Portuguese around them counts. */
+function maskFrozenIdentifiers(text) {
+  let out = text;
+  for (const name of FROZEN_IDENTIFIERS) {
+    out = out.replace(new RegExp(`\\b${name}\\b`, 'g'), (span) => blank(span));
+  }
+  return out;
 }
 
 /** Words after which a `/` opens a regular expression instead of dividing. */
@@ -342,7 +366,7 @@ function scannedFiles() {
 
 /** Every forbidden-token hit in one source text, as `line — token` pairs. */
 export function hitsInSource(source) {
-  const masked = maskLiteralsAndCommentQuotes(source);
+  const masked = maskFrozenIdentifiers(maskLiteralsAndCommentQuotes(source));
   const hits = [];
 
   masked.split('\n').forEach((rawLine, index) => {
@@ -421,6 +445,9 @@ test('AC1 — the sweep does NOT bite on the frozen exceptions', () => {
     "const EXAMPLES = path.join(REPO_ROOT, 'schema', 'exemplos');",
     "const BUNDLE = path.join(REPO_ROOT, 'grafos-de-fabrica', 'desenvolvimento-de-software');",
     "assert.equal(report.violacoes[0].regra, 'alcançável');",
+    // the pinned export names, at the call site that imports them
+    'const { validarEstrutura, validarSoundness } = await loadValidator();',
+    'assert.deepEqual(validarEstrutura(doc).erros, []);',
     // a template nested inside another template's interpolation: the masking
     // has to survive it, or everything after the inner backtick reads as code
     'const line = `${name}: ${ok ? `valido` : `erro ${n}`}`;',

@@ -116,6 +116,41 @@ else
   fi
 fi
 
+# --- 6. citação dos flags de aprovação do codex (t126) -----------------------
+#
+# `-a, --ask-for-approval` é flag do `codex` interativo (nível superior). O
+# subcomando `codex exec` NÃO o aceita: `codex exec --help` não o lista e
+# `codex exec -a on-request …` morre com `error: unexpected argument '-a'
+# found`. Medido em codex-cli 0.147.0, a mesma versão que o doc cita. A
+# superfície de aprovação não-interativa do exec é outra — `--approve-for-me` e
+# `--dangerously-bypass-approvals-and-sandbox`. Estas verificações impedem a
+# citação errada de voltar, e a última impede que a correção seja feita
+# apagando junto a parte que estava certa.
+printf '\n[6] flags de aprovação do codex exec\n'
+
+for flag in '--approve-for-me' '--dangerously-bypass-approvals-and-sandbox'; do
+  if grep -qF -- "$flag" "$DOC"; then
+    pass "cita '$flag' (superfície de aprovação não-interativa real do exec)"
+  else
+    fail "não cita '$flag'"
+  fi
+done
+
+# Todo parágrafo que menciona o flag precisa atribuí-lo à CLI interativa.
+mal_atribuido=$(awk 'BEGIN { RS = "" } /--ask-for-approval/ && !/interativ/' "$DOC")
+if [ -z "$mal_atribuido" ]; then
+  pass '--ask-for-approval sempre atribuído ao `codex` interativo'
+else
+  fail '--ask-for-approval citado sem atribuir ao `codex` interativo:'
+  printf '%s\n' "$mal_atribuido" | sed 's/^/        /'
+fi
+
+if grep -qF -- '-s, --sandbox <read-only|workspace-write|danger-full-access>' "$DOC"; then
+  pass 'mantém a citação de -s, --sandbox (confirmada contra a CLI)'
+else
+  fail 'perdeu a citação de -s, --sandbox, que está correta e medida'
+fi
+
 printf '\n'
 if [ "$failures" -eq 0 ]; then
   printf 'Todas as verificações passaram.\n'

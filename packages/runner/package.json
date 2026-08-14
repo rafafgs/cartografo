@@ -1,0 +1,22 @@
+{
+  "name": "@cartografo/runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runner do cartografo: cliente da API que despacha sessões de CLI por um EngineAdapter (D1, D17).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "spike": "node scripts/spike-real-session.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "ajv": "^8.17.1",
+    "tsx": "^4.23.12",
+    "typescript": "^6.0.3"
+  }
+}

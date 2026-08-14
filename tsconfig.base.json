@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+
+    // Os pacotes rodam o TypeScript direto (tsx / type stripping), sem passo de
+    // emissão. Por isso os imports relativos citam o arquivo `.ts` real: é o que
+    // o loader resolve em tempo de execução, e `allowImportingTsExtensions`
+    // (que exige `noEmit`) é o que faz o compilador aceitar a mesma grafia.
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+
+    "types": ["node"]
+  }
+}

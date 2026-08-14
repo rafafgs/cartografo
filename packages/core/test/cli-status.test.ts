@@ -5,7 +5,7 @@
  * for the same reason `health.test.ts` pins the `/health` body: it is machine
  * output, and a field that silently appears or disappears breaks its consumers.
  * What the pin protects most is `jobs`/`pendingInputRequests` being `null` — the
- * `sessão`/`input_request` tables do not exist (`migrations/0001_init.sql`), and
+ * `sessao`/`input_request` tables do not exist (`migrations/0001_init.sql`), and
  * a `0` there would assert "empty queue" when the honest answer is "not tracked
  * yet".
  *

@@ -2,7 +2,7 @@
  * `cartografo status` — what the control plane knows today (t108, FR5).
  *
  * The most important field of this report is the one it does NOT assert:
- * `jobs` and `pendingInputRequests` come out as `null`, never `0`. The `sessão`
+ * `jobs` and `pendingInputRequests` come out as `null`, never `0`. The `sessao`
  * and `input_request` tables do not exist yet (`migrations/0001_init.sql`,
  * `docs/spec/entidades-versionamento.md` §7), and a `0` there would say "there
  * is no queue" when the honest answer is "this is not tracked yet" — which is

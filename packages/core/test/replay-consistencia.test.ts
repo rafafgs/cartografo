@@ -127,7 +127,6 @@ test('AT17 — o reducer da especificação reproduz exatamente as tabelas de pr
     execucao_id: EXECUCAO,
     grafo_versao_id: 'v2',
   });
-  await pedir(ctx, 'POST', `/v1/trabalhos/${parado.id}/bloqueios`, { motivo: 'esperando humano' });
   const auto = await pedir<Pergunta>(ctx, 'POST', '/v1/perguntas', {
     trabalho_id: parado.id,
     tipo: 'aprovacao',
@@ -140,6 +139,12 @@ test('AT17 — o reducer da especificação reproduz exatamente as tabelas de pr
     resposta: 'aprovar',
     baseada_em: 'resposta_padrao',
   });
+  // O bloqueio manual vem DEPOIS da auto-resolução desde t106: perguntar já
+  // bloqueia e responder já desbloqueia (na mesma transação), então bloquear
+  // antes deixaria o trabalho destravado no fim e a ponta "bandeira levantada"
+  // sem cobertura nenhuma. A sequência de agora exercita as duas origens de
+  // bloqueio — a automática da escalação e a manual.
+  await pedir(ctx, 'POST', `/v1/trabalhos/${parado.id}/bloqueios`, { motivo: 'esperando humano' });
   const outraSessao = await pedir<Sessao>(ctx, 'POST', '/v1/sessoes', {
     execucao_id: EXECUCAO,
     engine: 'claude-code',

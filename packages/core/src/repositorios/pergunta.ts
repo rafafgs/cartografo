@@ -8,10 +8,11 @@
  * linha de projeção. Na projeção a origem volta a ser campo, porque quem lê
  * estado quer comparar, não classificar.
  *
- * O que este arquivo NÃO faz, de propósito: bloquear o trabalho ao criar a
- * pergunta. Esse wiring (pergunta → bloqueio → resposta → desbloqueio →
- * retomada da sessão) é o critério de aceite central de t106; antecipá-lo aqui
- * criaria dois donos para o mesmo ciclo.
+ * O wiring pergunta → bloqueio → resposta → desbloqueio mora AQUI desde t106, e
+ * mora dentro das transações que já existiam: perguntar para o trabalho e o
+ * trabalho continuar andando é o estado que ninguém consegue explicar depois.
+ * O redespacho da sessão é do outro lado da fronteira (o `Controller` do
+ * runner, t103/t106) — ver `docs/spec/escalacao-humana.md`.
  */
 
 import type { BancoDeDados } from '../db/connection.ts';
@@ -20,6 +21,7 @@ import { exigirDadosValidos, type Ator } from '../db/validacao-evento.ts';
 import {
   ATOR_API,
   ATOR_AUTO_APROVACAO,
+  ATOR_ESCALACAO,
   PROJETO_PADRAO,
   agora,
   comoBooleano,
@@ -27,6 +29,7 @@ import {
   jsonOuNulo,
   resolverAtor,
 } from './comum.ts';
+import { bloquearTrabalho, desbloquearTrabalho } from './trabalho.ts';
 
 /** Projeção da pergunta, como a API a devolve. */
 export interface Pergunta {
@@ -101,7 +104,17 @@ export interface EntradaCriarPergunta {
 }
 
 /**
- * Registra o pedido de escalação e grava `pergunta.criada` (FR13).
+ * Registra o pedido de escalação, grava `pergunta.criada` e BLOQUEIA o trabalho
+ * dono na mesma transação (FR13; t106).
+ *
+ * O bloqueio não é um segundo passo do chamador: quem pergunta é uma sessão que
+ * está terminando, e um trabalho que fica candidato a despacho com pergunta
+ * pendente é uma sessão nova repetindo a mesma pergunta para sempre. O
+ * `db.transaction` aninhado vira savepoint no `better-sqlite3`, então pergunta,
+ * evento e bandeira caem juntos ou não caem.
+ *
+ * A rota não muda de forma: `POST /v1/perguntas` continua devolvendo só a
+ * pergunta, e quem quer a bandeira lê `GET /v1/trabalhos/:id`.
  *
  * @param db Handle aberto.
  * @param entrada Corpo da requisição.
@@ -168,6 +181,14 @@ export function criarPergunta(
       dados,
     });
 
+    // O motivo cita o id da pergunta (mesmo exemplo da taxonomia): quem lê o
+    // trabalho descobre pelo próprio motivo o que precisa acontecer para ele
+    // voltar a andar.
+    bloquearTrabalho(db, trabalhoId, {
+      motivo: `aguardando resposta da pergunta ${id}`,
+      ator: ATOR_ESCALACAO,
+    });
+
     return paraPergunta(lerLinha(db, id) as LinhaPergunta);
   });
 
@@ -175,10 +196,16 @@ export function criarPergunta(
 }
 
 /**
- * Fecha uma pergunta com uma resposta, seja de quem for.
+ * Fecha uma pergunta com uma resposta, seja de quem for, e DESBLOQUEIA o
+ * trabalho que esperava por ela (FR14/FR15; t106).
  *
  * O molde compartilhado por FR14 e FR15: a única coisa que muda entre humano e
  * portão automático é o tipo do evento, o `origem` da projeção e o ator.
+ *
+ * O desbloqueio reusa o MESMO ator do evento de resposta — `usuario` quando
+ * gente respondeu, o portão quando foi automático. A taxonomia pede isso
+ * explicitamente para `trabalho.desbloqueado`, e é o que impede a auditoria de
+ * concluir que "o sistema" destravou tudo o que um humano destravou.
  */
 function responder(
   db: BancoDeDados,
@@ -215,6 +242,13 @@ function responder(
       ocorrido_em: carimbo,
       dados,
     });
+
+    // Baixa a bandeira que `criarPergunta` levantou. Sem condicional de
+    // propósito: o trabalho pode ter sido bloqueado por outra razão junto, e
+    // "respondi e o trabalho continuou parado" é o pior desfecho possível para
+    // quem acabou de responder. Trabalho inexistente devolve `null` e não faz
+    // nada — a pergunta continua respondida.
+    desbloquearTrabalho(db, linha.trabalho_id, { ator });
 
     return paraPergunta(lerLinha(db, id) as LinhaPergunta);
   });

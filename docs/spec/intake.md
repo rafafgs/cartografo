@@ -200,7 +200,19 @@ Registrada em [`routes/intake.ts`](../../packages/core/src/routes/intake.ts)
 | `GET /v1/intake/:id` | `200 {rascunho}` | `404 rascunho_desconhecido` |
 | `PATCH /v1/intake/:id` | `200 {rascunho}` | `404` · `409 rascunho_nao_pendente` · `400 itens_invalidos` |
 | `POST /v1/intake/:id/discards` | `200 {rascunho}` | `404` · `409 rascunho_nao_pendente` |
-| `POST /v1/intake/:id/confirmations` | `201 {rascunho, trabalhos}` | `404` · `409 rascunho_nao_pendente` · `404 grafo_desconhecido` |
+| `POST /v1/intake/:id/confirmations` | `201 {rascunho, trabalhos}` | `404` · `409 rascunho_nao_pendente` · `404 grafo_desconhecido` · `400 validation_failed` |
+
+Os erros desta camada falam a vocabulário de fio dela — `erro` em português,
+como os das rotas de grafo e de proposta (t127, FR8). A confirmação tem **uma**
+exceção, e é a única rota do intake que grava EVENTO: um envelope de evento
+torto (um `ator` que não é `{tipo, ref}`, por exemplo) é recusado pelo mesmo
+`validateEvent` que serve toda a API, e volta pelo mesmo `withValidation` de
+[`routes/common.ts`](../../packages/core/src/routes/common.ts), com o mesmo
+corpo `{error: "validation_failed", details: [...]}` que `POST /v1/jobs`
+devolve. Quem precisa corrigir o próprio `ator` não deveria ter de aprender uma
+segunda forma de erro para descobrir isso — era um `500` até a rodada alfa
+t139. O rascunho recusado continua `pendente` e confirmável; nenhum `trabalho`,
+nenhuma dependência e nenhuma linha de log sobrevivem à transação que caiu.
 
 `PATCH` **substitui** a lista de itens, nunca funde: um intake que fundisse não
 teria como remover um item de que alguém desistiu, e "me mande a quebra que você

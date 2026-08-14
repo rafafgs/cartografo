@@ -242,13 +242,19 @@ async function seedBottleneck(baseUrl: string, versaoId: string): Promise<void> 
   await api(baseUrl, 'POST', `/v1/trabalhos/${work.id}/transicoes`, { para_no_id: 'revisar' });
   await delay(GAP_MS);
 
-  const session = await api<Session>(baseUrl, 'POST', '/v1/sessoes', {
-    trabalho_id: work.id,
-    no_id: 'revisar',
-    engine: 'claude-code',
-    working_dir: '/tmp/cartografo',
-    prompt: 'revise a nota',
-  });
+  const session = await api<Session>(
+    baseUrl,
+    'POST',
+    '/v1/sessoes',
+    {
+      trabalho_id: work.id,
+      no_id: 'revisar',
+      engine: 'claude-code',
+      working_dir: '/tmp/cartografo',
+      prompt: 'revise a nota',
+    },
+    201,
+  );
 
   // Asks, which blocks the work in the same transaction (t106).
   const question = await api<Question>(

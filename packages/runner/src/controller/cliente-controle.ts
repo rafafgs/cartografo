@@ -35,6 +35,73 @@ export interface Trabalho {
   grafo_versao_id: string | null;
 }
 
+/**
+ * Um envelope do log, como a API o devolve (t102).
+ *
+ * Declarado à mão aqui, como o resto do arquivo: o cliente descreve o CONTRATO
+ * que consome, e importar o tipo do core furaria a fronteira que este módulo
+ * existe para manter.
+ */
+export interface Evento {
+  id: number;
+  tipo: string;
+  projeto_id: number;
+  execucao_id: number | null;
+  entidade: { tipo: string; id: number | string };
+  ator: { tipo: string; ref: string };
+  ocorrido_em: string;
+  dados: Record<string, unknown>;
+}
+
+/** Uma linha de `GET /v1/execucoes/:id/metricas-por-versao` (t102, FR17). */
+export interface MetricaPorVersao {
+  grafo_versao_id: string | null;
+  trabalhos: number;
+  eventos: number;
+}
+
+/**
+ * O documento de grafo dentro de uma versão.
+ *
+ * Só `nos` e `arestas` são nomeados: é o que o topógrafo lê para montar o
+ * prompt. O resto do documento chega inteiro e passa direto — o formato é do
+ * `schema/grafo.schema.json`, não deste cliente.
+ */
+export interface SnapshotDeGrafo {
+  nos?: Array<{ id: string; [chave: string]: unknown }>;
+  arestas?: Array<{ de: string; para: string; condicao?: string; [chave: string]: unknown }>;
+  [chave: string]: unknown;
+}
+
+/** Uma versão de grafo, como `GET /v1/grafo-versoes/:id` a devolve (t101). */
+export interface VersaoDeGrafo {
+  id: string;
+  grafo_id: string;
+  versao_pai: string | null;
+  origem: string;
+  proposta_id: number | null;
+  snapshot: SnapshotDeGrafo;
+  criado_em: string;
+}
+
+/** O que `POST /v1/propostas` exige: um diff semântico com hipótese (D15). */
+export interface EntradaDeProposta {
+  grafo_id: string;
+  versao_alvo: string;
+  operacoes: readonly unknown[];
+  evidencia: unknown;
+  metrica_esperada: unknown;
+}
+
+/** Uma proposta, no recorte que o runner precisa da resposta. */
+export interface Proposta {
+  id: number;
+  grafo_id: string;
+  versao_alvo: string;
+  status: string;
+  versao_aplicada_id: string | null;
+}
+
 /** Um runner pareado. */
 export interface Runner {
   id: string;
@@ -183,6 +250,72 @@ export class ClienteControle {
   async liberar(leaseId: number): Promise<Lease> {
     const { lease } = await this.#post<{ lease: Lease }>(`/v1/leases/${leaseId}/liberacoes`, {});
     return lease;
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* t110 — the three reads and the one write the flow surveyor needs.         */
+  /* Same door as everything else: the runner speaks HTTP and nothing else.    */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * O log inteiro de uma execução, em ordem de `id` (t110, FR1).
+   *
+   * @param execucaoId Agrupador opaco da rodada.
+   * @returns Todos os eventos da execução; lista vazia quando não houve nenhum
+   *   — execução não é entidade, então não existe 404 aqui.
+   */
+  async listarEventosDaExecucao(execucaoId: number): Promise<Evento[]> {
+    const { eventos } = await this.#get<{ eventos: Evento[] }>(
+      `/v1/execucoes/${execucaoId}/eventos`,
+    );
+    return eventos;
+  }
+
+  /**
+   * Versão de grafo × telemetria daquela execução (t102, FR17).
+   *
+   * É por aqui que o topógrafo descobre sob QUE versão a rodada correu: o log
+   * não carrega `grafo_versao_id` (o schema de `trabalho.criado` não o declara),
+   * e essa consulta existe exatamente para o cruzamento.
+   *
+   * @param execucaoId Agrupador opaco da rodada.
+   * @returns Uma linha por versão; a linha `null` agrupa trabalhos sem versão.
+   */
+  async metricasPorVersao(execucaoId: number): Promise<MetricaPorVersao[]> {
+    const { metricas } = await this.#get<{ metricas: MetricaPorVersao[] }>(
+      `/v1/execucoes/${execucaoId}/metricas-por-versao`,
+    );
+    return metricas;
+  }
+
+  /**
+   * Uma versão de grafo, com o snapshot completo.
+   *
+   * @param id Id da versão (o hash do snapshot, com `:` — daí o encode).
+   * @returns A versão e o documento que ela congela.
+   * @throws {ErroDoControlPlane} 404 quando a versão não existe.
+   */
+  async buscarVersaoDeGrafo(id: string): Promise<VersaoDeGrafo> {
+    const { grafo_versao: versao } = await this.#get<{ grafo_versao: VersaoDeGrafo }>(
+      `/v1/grafo-versoes/${encodeURIComponent(id)}`,
+    );
+    return versao;
+  }
+
+  /**
+   * Cria uma proposta — que nasce, sempre, `pendente`.
+   *
+   * Não existe par `aplicar` neste cliente de propósito: aplicar é decisão
+   * humana (README, princípio 5), e um cliente que não tem o método não a toma
+   * por engano.
+   *
+   * @param entrada Grafo, versão-alvo, operações, evidência e métrica esperada.
+   * @returns A proposta gravada.
+   * @throws {ErroDoControlPlane} 400 quando o server recusa a forma.
+   */
+  async criarProposta(entrada: EntradaDeProposta): Promise<Proposta> {
+    const { proposta } = await this.#post<{ proposta: Proposta }>('/v1/propostas', entrada);
+    return proposta;
   }
 
   async #get<T>(caminho: string): Promise<T> {

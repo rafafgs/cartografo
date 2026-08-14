@@ -11,6 +11,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { BancoDeDados } from '../db/connection.ts';
+import { listarEventos } from '../db/eventos.ts';
 import { metricasPorVersao } from '../repositorios/trabalho.ts';
 import { comValidacao, idDaRota } from './comum.ts';
 
@@ -25,6 +26,25 @@ export function registrarExecucoes(app: FastifyInstance, db: BancoDeDados): void
     comValidacao(resposta, () => {
       const execucaoId = idDaRota(requisicao.params);
       return { execucao_id: execucaoId, metricas: metricasPorVersao(db, execucaoId) };
+    }),
+  );
+
+  /**
+   * O log inteiro da execução, em ordem de `id` (t110, FR1).
+   *
+   * A linha do tempo por trabalho (`GET /v1/trabalhos/:id/eventos`) e a
+   * contagem por versão (a rota acima) já existiam; o que faltava era o fluxo
+   * ordenado da rodada INTEIRA, que é o que permite comparar nós entre si —
+   * tempo por estado, gargalo, perguntas por nó. Leitura pura: `evento`
+   * continua tendo um único escritor (`src/db/eventos.ts`).
+   *
+   * Sem paginação de propósito: uma execução da PoC cabe folgada numa resposta,
+   * e um cursor que ninguém precisa é contrato para manter para sempre.
+   */
+  app.get('/execucoes/:id/eventos', async (requisicao, resposta) =>
+    comValidacao(resposta, () => {
+      const execucaoId = idDaRota(requisicao.params);
+      return { execucao_id: execucaoId, eventos: listarEventos(db, { execucao_id: execucaoId }) };
     }),
   );
 }

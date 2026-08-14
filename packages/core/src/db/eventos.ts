@@ -124,6 +124,20 @@ export interface FiltroDeEventos {
    * pela sessão.
    */
   trabalho_id?: number;
+
+  /**
+   * O log inteiro de uma execução (t110, FR2): todo evento cuja coluna
+   * `execucao_id` casa, seja de trabalho, sessão ou pergunta.
+   *
+   * Não é a união das linhas do tempo dos trabalhos daquela rodada: o vínculo
+   * aqui é a COLUNA, escrita por quem registrou o fato a partir do trabalho
+   * dono (`repositorios/sessao.ts`, `repositorios/pergunta.ts`), e não um
+   * `json_extract` do payload. É o que permite ao topógrafo cruzar nós
+   * diferentes numa execução só sem perguntar trabalho por trabalho.
+   *
+   * Combinado com `trabalho_id`, os dois filtros se somam (E, não OU).
+   */
+  execucao_id?: number;
 }
 
 /**
@@ -137,20 +151,29 @@ export interface FiltroDeEventos {
  * @returns Eventos do mais antigo para o mais novo.
  */
 export function listarEventos(db: BancoDeDados, filtro: FiltroDeEventos = {}): Evento[] {
-  if (filtro.trabalho_id === undefined) {
-    const todos = db.prepare(`SELECT ${COLUNAS} FROM evento ORDER BY id`).all() as LinhaEvento[];
-    return todos.map(paraEvento);
+  const condicoes: string[] = [];
+  const parametros: Record<string, number | string> = {};
+
+  if (filtro.trabalho_id !== undefined) {
+    condicoes.push(
+      `((entidade_tipo = 'trabalho' AND entidade_id = @id_texto)
+        OR (entidade_tipo IN ('sessao','pergunta')
+            AND json_extract(dados, '$.trabalho_id') = @id))`,
+    );
+    parametros.id = filtro.trabalho_id;
+    parametros.id_texto = String(filtro.trabalho_id);
   }
 
-  const linhas = db
-    .prepare(
-      `SELECT ${COLUNAS} FROM evento
-        WHERE (entidade_tipo = 'trabalho' AND entidade_id = @id_texto)
-           OR (entidade_tipo IN ('sessao','pergunta')
-               AND json_extract(dados, '$.trabalho_id') = @id)
-        ORDER BY id`,
-    )
-    .all({ id: filtro.trabalho_id, id_texto: String(filtro.trabalho_id) }) as LinhaEvento[];
+  if (filtro.execucao_id !== undefined) {
+    condicoes.push('execucao_id = @execucao_id');
+    parametros.execucao_id = filtro.execucao_id;
+  }
+
+  const onde = condicoes.length === 0 ? '' : `WHERE ${condicoes.join(' AND ')}`;
+  const consulta = db.prepare(`SELECT ${COLUNAS} FROM evento ${onde} ORDER BY id`);
+  const linhas = (
+    condicoes.length === 0 ? consulta.all() : consulta.all(parametros)
+  ) as LinhaEvento[];
   return linhas.map(paraEvento);
 }
 

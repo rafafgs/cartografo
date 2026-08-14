@@ -127,6 +127,20 @@ export interface EventFilter {
    * the session asks about the session.
    */
   trabalho_id?: number;
+
+  /**
+   * The whole log of one execution (t110, FR2): every event whose `execucao_id`
+   * column matches, be it from a `trabalho`, a `sessao` or a `pergunta`.
+   *
+   * This is not the union of the timelines of that round's jobs: the link here
+   * is the COLUMN, written by whoever recorded the fact from the owning
+   * `trabalho` (`repositories/session.ts`, `repositories/input-request.ts`), and
+   * not a `json_extract` of the payload. It is what lets the surveyor cross
+   * different nodes of a single execution without asking job by job.
+   *
+   * Combined with `trabalho_id`, the two filters add up (AND, not OR).
+   */
+  execucao_id?: number;
 }
 
 /**
@@ -140,20 +154,29 @@ export interface EventFilter {
  * @returns Events from oldest to newest.
  */
 export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
-  if (filter.trabalho_id === undefined) {
-    const all = db.prepare(`SELECT ${COLUMNS} FROM evento ORDER BY id`).all() as EventRow[];
-    return all.map(toEvent);
+  const conditions: string[] = [];
+  const parameters: Record<string, number | string> = {};
+
+  if (filter.trabalho_id !== undefined) {
+    conditions.push(
+      `((entidade_tipo = 'trabalho' AND entidade_id = @id_texto)
+        OR (entidade_tipo IN ('sessao','pergunta')
+            AND json_extract(dados, '$.trabalho_id') = @id))`,
+    );
+    parameters.id = filter.trabalho_id;
+    parameters.id_texto = String(filter.trabalho_id);
   }
 
-  const rows = db
-    .prepare(
-      `SELECT ${COLUMNS} FROM evento
-        WHERE (entidade_tipo = 'trabalho' AND entidade_id = @id_texto)
-           OR (entidade_tipo IN ('sessao','pergunta')
-               AND json_extract(dados, '$.trabalho_id') = @id)
-        ORDER BY id`,
-    )
-    .all({ id: filter.trabalho_id, id_texto: String(filter.trabalho_id) }) as EventRow[];
+  if (filter.execucao_id !== undefined) {
+    conditions.push('execucao_id = @execucao_id');
+    parameters.execucao_id = filter.execucao_id;
+  }
+
+  const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;
+  const statement = db.prepare(`SELECT ${COLUMNS} FROM evento ${where} ORDER BY id`);
+  const rows = (
+    conditions.length === 0 ? statement.all() : statement.all(parameters)
+  ) as EventRow[];
   return rows.map(toEvent);
 }
 

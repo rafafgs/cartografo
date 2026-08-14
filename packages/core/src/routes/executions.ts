@@ -14,6 +14,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
+import { listEvents } from '../db/events.ts';
 import { listExecutions, metricsByVersion } from '../repositories/job.ts';
 import { withValidation, routeId } from './common.ts';
 
@@ -35,6 +36,25 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
     withValidation(reply, () => {
       const executionId = routeId(request.params);
       return { execucao_id: executionId, metricas: metricsByVersion(db, executionId) };
+    }),
+  );
+
+  /**
+   * The whole log of the execution, in `id` order (t110, FR1).
+   *
+   * The per-job timeline (`GET /v1/jobs/:id/events`) and the per-version count
+   * (the route above) already existed; what was missing was the ordered stream
+   * of the WHOLE round, which is what lets one node be compared with another —
+   * time per state, bottleneck, questions per node. A pure read: `evento` still
+   * has a single writer (`src/db/events.ts`).
+   *
+   * No pagination on purpose: one execution of the PoC fits a response with room
+   * to spare, and a cursor nobody needs is a contract to keep forever.
+   */
+  app.get('/executions/:id/events', async (request, reply) =>
+    withValidation(reply, () => {
+      const executionId = routeId(request.params);
+      return { execucao_id: executionId, eventos: listEvents(db, { execucao_id: executionId }) };
     }),
   );
 }

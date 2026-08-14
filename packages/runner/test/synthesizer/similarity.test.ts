@@ -86,8 +86,13 @@ test('AT1 — the port is symmetric and blind to word order, like the original',
   const { similarity } = await loadSimilarity();
 
   const a = 'desenvolvimento de software com portão de revisão';
-  const b = 'portão de revisão no desenvolvimento de software';
+  const b = 'portão de revisão com desenvolvimento de software';
 
-  assert.equal(similarity(a, b), similarity(b, a));
+  assert.equal(similarity(a, b), similarity(b, a), 'symmetric: (a, b) is (b, a)');
   assert.equal(similarity(a, b), 1, 'the same vocabulary in another order is the same set');
+
+  // And a word that only one side has is genuinely extra vocabulary — the score
+  // falls, which is the whole reason a set index was picked over an equality.
+  const wider = similarity(a, `${b} incremental`);
+  assert.ok(wider > 0 && wider < 1, `expected 0 < score < 1, got ${wider}`);
 });

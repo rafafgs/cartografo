@@ -5,10 +5,12 @@
  * This file is NOT a place for design decisions. It is the specification
  * compiling: the `typescript` blocks of that section, in the order they appear,
  * carrying the same commentary in English (D18 — the document is a repo
- * document and stays in Portuguese; the code does not). The specification is
- * declaredly "not frozen" (`engine-adapter.md:1-9`) until the two-consumers
- * rule is satisfied, and `test/engine/spec-parity.test.ts` is the gate that
- * keeps the code from drifting away from it in silence.
+ * document and stays in Portuguese; the code does not). Since t119 the
+ * specification is **frozen at v1** (`engine-adapter.md:1-9`): the
+ * two-consumers rule is satisfied, and growth from here is additive. That
+ * makes `test/engine/spec-parity.test.ts` matter MORE, not less — it is the
+ * gate that keeps the code from drifting away from a document that no longer
+ * moves to meet it.
  *
  * What that gate compares is the set of EXPORTED SYMBOLS and their kinds, never
  * the prose around them: a change of symbol here without a change there (or the

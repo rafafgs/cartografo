@@ -12,6 +12,7 @@
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "spike": "node --import tsx scripts/spike-real-session.mjs",
+    "spike:codex": "node --import tsx scripts/spike-real-session-codex.mjs",
     "spike:escalation": "node --import tsx scripts/spike-t106-human-escalation.mjs",
     "spike:surveyor": "node --import tsx scripts/spike-surveyor-flow.mjs",
     "surveyor": "node --import tsx src/surveyor/cli.mjs",

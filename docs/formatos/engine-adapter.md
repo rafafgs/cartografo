@@ -1,11 +1,35 @@
-# EngineAdapter — especificação v0
+# EngineAdapter — especificação v1
 
-> **Status:** v0 revisada por viabilidade contra uma segunda CLI real,
-> **não congelada**. A regra dos dois consumidores
+> **Status:** v1, **congelada**. A regra dos dois consumidores
 > (`notas/2026-08-14-extensao-e-qualidade.md:57-63`) exige dois adapters
-> *implementados* antes de travar o formato; hoje existe zero. Esta versão é
-> o contrato contra o qual a ticket de construção do adapter do Claude Code
-> (onda 1, ordem da D6) trabalha sem decisões de design pendentes.
+> *implementados* antes de travar o formato, e os dois existem:
+> `packages/runner/src/engine/claude-code-adapter.ts` (t104) e
+> `packages/runner/src/engine/codex-adapter.ts` (t119), cada um certificado
+> pelos sete casos do kit contra o fake engine.
+>
+> **Lacuna registrada no congelamento (t119):** a prova manual do adapter do
+> Codex contra a CLI real rodou até o 401 — a máquina não tem credencial
+> OpenAI (`codex doctor`: "no Codex credentials were found") — então a metade
+> credenciada dela, a que exige que a sessão *tenha trabalhado*, fica
+> pendente de uma rodada com `OPENAI_API_KEY`. O que a rodada sem credencial
+> já provou está no roteiro de `packages/runner/scripts/spike-real-session-codex.mjs`;
+> o congelamento se apoia na certificação C1–C7, que está verde.
+>
+> O que autoriza o congelamento não é a contagem, é o que a contagem serve
+> para medir: construir o segundo adapter **não exigiu mudança nenhuma** na
+> interface nem no kit. O `CodexAdapter` entrou pela interface como ela
+> estava e reusou `src/engine/conformance-kit.ts` e
+> `test/fixtures/fake-engine.mjs` sem cópia e sem edição — a hipótese que a
+> regra dos dois consumidores manda testar antes de travar, testada.
+>
+> Congelada significa aditivo daqui para frente: campo novo entra opcional
+> (é para isso que `EngineCapabilities` já é toda opcional), e símbolo
+> publicado não muda de nome nem de forma sem uma decisão registrada. Onde a
+> análise de viabilidade abaixo e "Fora de escopo (v0)" discordarem, **a
+> decisão de escopo é a que vale**: a tabela é levantamento exploratório de
+> uma CLI, não promessa de superfície. O caso vivo é `hasResume` — o
+> `codex exec resume` existe, a tabela sugere declará-lo, e nenhum dos dois
+> adapters declara, porque resume está fora do v0.
 >
 > **Portão deste documento:** `scripts/check-engine-adapter-spec.sh`.
 > Ele verifica estrutura e sintaxe (headings, cobertura do kit, citação de
@@ -491,13 +515,18 @@ Registrado para quem ler depois não presumir esquecimento:
 - **`continueSession` / resume**, contagem de uso (`SessionUsage`) e projeção
   de transcript. Existem no flowpilot; a régua da PoC (D16) pede sessões
   despachadas e telemetria completa, e não menciona resume. `onEngineRef` já
-  captura a chave que o resume vai precisar.
-- **Implementar qualquer adapter** — nem Claude Code nem Codex. Construção é
-  ticket de onda 1, na ordem da D6.
-- **Congelar a interface.** Dois adapters reais primeiro.
+  captura a chave que o resume vai precisar. Continua fora no v1: o
+  `codex exec resume` existe e segue não declarado nas `capabilities` dos dois
+  adapters, justamente por isto.
 - **Sandboxing e permissões de skill (D4)** — ver a tensão registrada abaixo.
 - **SDK vs subprocess.** Assumido subprocess de CLI, alinhado à D17 e ao
   precedente do flowpilot.
+
+Duas entradas **saíram** desta lista no congelamento para v1 (t119), por terem
+deixado de ser verdade — registradas aqui em vez de sumirem sem rastro:
+"implementar qualquer adapter, nem Claude Code nem Codex" (o primeiro saiu na
+t104, o segundo nesta ficha) e "congelar a interface: dois adapters reais
+primeiro" (é o que este documento acabou de fazer).
 
 ## Revisão contra as decisões registradas
 

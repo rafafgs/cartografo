@@ -1,11 +1,13 @@
 /**
  * Specification parity: `types.ts` may not drift away from the document.
  *
- * The EngineAdapter specification is declaredly **not frozen**
- * (`docs/formatos/engine-adapter.md:1-9`) — the two-consumers rule demands two
- * implemented adapters before the format is locked. While it moves, the real
- * risk is not the code contradicting the document loudly: it is the code
- * drifting in silence and only showing up on the day of the second CLI (t119).
+ * The EngineAdapter specification is **frozen at v1** since t119
+ * (`docs/formatos/engine-adapter.md:1-9`) — the two-consumers rule demanded two
+ * implemented adapters before the format could be locked, and both exist. The
+ * risk this test guards against did not end with the freeze, it changed sides:
+ * while the document moved, the danger was the code drifting in silence; now
+ * that it is still, the danger is a convenient edit to a published format
+ * passing as an implementation detail.
  *
  * This test is the gate against that. It reads the ```typescript``` blocks of
  * the "Interface TypeScript" section of the document, extracts every exported

@@ -1,0 +1,20 @@
+{
+  "name": "@cartografo/tela",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tela do cartografo: cliente comum da API pública, sem privilégio sobre o core (D11).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "tsx": "^4.23.12",
+    "typescript": "^6.0.3"
+  }
+}

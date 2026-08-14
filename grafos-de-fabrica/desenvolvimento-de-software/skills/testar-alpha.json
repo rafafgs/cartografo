@@ -1,0 +1,271 @@
+{
+  "id": "testar-alpha",
+  "versao": "1.0.0",
+  "hash": "sha256:1321f33d031629d6463ea7c1e179ba1ac58b1e528804f81ab8ba71b317d71067",
+  "papel": "portao",
+  "descricao": "Valida semanticamente cada critério de aceite contra a aplicação integrada rodando, com evidência própria, e roteia o trabalho: aprovado segue, reprovado volta para desenvolvimento.",
+  "entrada": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "ticket",
+      "artefato",
+      "aplicacao",
+      "banco_de_testes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "ticket": {
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "criterios_de_aceite"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "criterios_de_aceite": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "ref",
+                "texto"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "description": "referência estável, ex.: AT1"
+                },
+                "texto": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "artefato": {
+        "type": "object",
+        "required": [
+          "merge_commit"
+        ],
+        "description": "o que a integração deixou na linha principal; o que as sessões anteriores declararam é contexto, nunca evidência",
+        "properties": {
+          "merge_commit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "gates_declarados": {
+            "type": "object",
+            "description": "AUTORRELATO das sessões anteriores. Serve para você saber onde olhar; não sustenta veredito nenhum, e rerodar esses comandos NÃO é o seu trabalho.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "nota": {
+            "type": "string"
+          }
+        }
+      },
+      "aplicacao": {
+        "type": "object",
+        "required": [
+          "rodando"
+        ],
+        "properties": {
+          "rodando": {
+            "type": "boolean"
+          },
+          "endereco": {
+            "type": "string",
+            "description": "endereço de loopback da aplicação integrada, quando rodando"
+          },
+          "motivo_ausencia": {
+            "type": "string",
+            "description": "por que não há aplicação de pé, quando rodando = false"
+          }
+        }
+      },
+      "banco_de_testes": {
+        "type": "object",
+        "required": [
+          "caminho"
+        ],
+        "description": "checkout do integrado preparado pelo executor; ponto de observação, não área de trabalho",
+        "properties": {
+          "caminho": {
+            "type": "string",
+            "minLength": 1
+          },
+          "comandos_de_dados": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "comandos do próprio projeto para preparar os dados de teste"
+          }
+        }
+      },
+      "contexto_falha": {
+        "type": "string",
+        "description": "vereditos da rodada anterior, numa reverificação depois de retrabalho"
+      }
+    }
+  },
+  "saida": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "resultado",
+      "vereditos",
+      "nota"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "resultado": {
+        "type": "string",
+        "enum": [
+          "passou",
+          "falhou",
+          "escalar_humano"
+        ],
+        "description": "obrigatório em toda skill de papel portao; é o que o executor lê para escolher a aresta (README princípio 2). Neste grafo, \"passou\" segue pela aresta \"aprovado\" e \"falhou\" segue pela aresta \"retrabalho\". \"escalar_humano\" existe porque o formato de portão exige os três valores, mas uma sessão que precisa do humano PAUSA com um bloco input-request em vez de resolver aqui — ver as instruções."
+      },
+      "vereditos": {
+        "type": "array",
+        "minItems": 1,
+        "description": "um por critério de aceite; critério não exercitado tem entrada honesta, nunca é pulado",
+        "items": {
+          "type": "object",
+          "required": [
+            "ref",
+            "veredito",
+            "evidencia"
+          ],
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "veredito": {
+              "type": "string",
+              "enum": [
+                "passou",
+                "falhou",
+                "nao_exercitado"
+              ]
+            },
+            "evidencia": {
+              "type": "string",
+              "minLength": 1,
+              "description": "o que ESTE portão observou por conta própria; autorrelato das sessões anteriores não conta"
+            }
+          }
+        }
+      },
+      "ux": {
+        "type": "string",
+        "description": "resultado da checagem de consistência de UX/design nos critérios que tocam interface: \"passou\" ou os problemas encontrados"
+      },
+      "bugs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "severidade",
+            "titulo",
+            "criterio",
+            "repro"
+          ],
+          "properties": {
+            "severidade": {
+              "type": "string",
+              "enum": [
+                "simples",
+                "complexo"
+              ],
+              "description": "simples = conserto contido que uma rodada de desenvolvimento pega direto; complexo = causa incerta, implicação arquitetural ou decisão do fundador"
+            },
+            "titulo": {
+              "type": "string",
+              "minLength": 1
+            },
+            "criterio": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repro": {
+              "type": "string",
+              "minLength": 1,
+              "description": "passos, esperado vs. observado"
+            },
+            "arquivos": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "arquivos suspeitos; é por sobreposição de arquivo que o executor agenda o conserto em paralelo com segurança"
+            }
+          }
+        }
+      },
+      "nota": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gotchas": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "pre_condicoes": [
+    "artefato integrado na linha principal, com merge commit conhecido",
+    "banco de testes em check-out até esse merge commit",
+    "critérios de aceite disponíveis em lista, com referência estável por critério",
+    "aplicação de pé no endereço informado, ou motivo registrado da ausência",
+    "comandos de qualidade já rodados pelo nó de integração contra a árvore mesclada"
+  ],
+  "checks": [
+    {
+      "id": "caminhada-semantica",
+      "tipo": "agentico",
+      "descricao": "Caminhada critério a critério contra a aplicação rodando, mais a checagem de UX. É o ÚNICO check desta skill de propósito: rerodar aqui os comandos de qualidade que a integração já rodou contra esta mesma árvore é estação redundante — não prova nada novo e consome o orçamento da rodada.",
+      "instrucao": "Caminhe critério a critério pela lista de critérios de aceite e emita um veredito para cada um, exercitando a aplicação integrada que está rodando em {{entrada.aplicacao.endereco}}.\n\nCada veredito cita evidência produzida por você, neste portão: a requisição que você mesmo disparou e a resposta que voltou, a saída do comando que você mesmo executou, a página que você mesmo renderizou. O que as sessões anteriores relataram (entrada.artefato.gates_declarados, a nota delas) entra como contexto para você saber onde olhar e não vale como prova de nada: portão que aceita autorrelato como evidência não é portão. Se a única coisa que sustenta um critério é a afirmação de quem o implementou, o veredito não é \"passou\".\n\nNos critérios que tocam interface, rode também a checagem de consistência de UX/design: a superfície segue o sistema de design do próprio projeto, se comporta em viewport pequena e grande, e é acessível (rótulos, alcance por teclado, contraste)?\n\nCritério que você não conseguiu exercitar recebe veredito \"nao_exercitado\", com a evidência do que impediu — nunca um \"passou\" silencioso. Critério que exige prova manual ou julgamento estético vai para o fundador: pause com um input-request levando toda a evidência que você juntou.",
+      "evidencia_obrigatoria": [
+        "requisicao_disparada_pelo_portao_e_resposta_recebida",
+        "saida_do_comando_executado_pelo_portao",
+        "referencia_do_criterio_de_aceite_avaliado"
+      ]
+    }
+  ],
+  "permissoes": {
+    "filesystem": {
+      "leitura": [
+        "**"
+      ],
+      "escrita": []
+    },
+    "rede": {
+      "permitido": true,
+      "dominios": [
+        "127.0.0.1",
+        "localhost",
+        "::1"
+      ]
+    }
+  },
+  "instrucoes": "# Validar o que foi entregue, critério a critério\n\nSeu trabalho é validar semanticamente CADA critério de aceite do trabalho\nabaixo contra a aplicação integrada rodando, e registrar um veredito por\ncritério. O código já foi integrado e todo comando de qualidade já foi rerodado\nverde contra esta mesma árvore — o que ninguém conferiu ainda é se a aplicação\nde fato FAZ o que cada critério diz, e essa é a sua tarefa inteira.\n\n**Trabalho:** {{entrada.ticket.titulo}} (#{{entrada.ticket.id}})\n**Artefato:** merge commit `{{entrada.artefato.merge_commit}}`\n**Aplicação:** {{entrada.aplicacao.endereco}}\n\n## A regra que define este nó\n\nVocê verifica com **evidência própria**. O que as sessões anteriores\ndeclararam — os gates que dizem ter rodado, as notas que escreveram — chega\naté você como contexto, para você saber onde olhar. Não é prova de nada, e\nnenhum veredito seu pode se apoiar nisso. Quem confere roda o resultado; quem\nconfere não lê o relatório de quem fez e assina embaixo.\n\n## Onde você está\n\nVocê está num banco de testes compartilhado (`{{entrada.banco_de_testes.caminho}}`):\num checkout da linha principal integrada, preparado pelo executor. É ponto de\nobservação, não área de trabalho.\n\n- **Nenhum commit, nenhum push, nenhuma troca de branch.** Deixe o checkout\n  exatamente como encontrou — você não tem permissão de escrita nele.\n- **Nunca toque em outro checkout deste repositório**, mesmo que você o veja.\n- **NUNCA rerode os comandos de qualidade do projeto como validação.** O nó de\n  integração já rodou todos eles, mecanicamente, contra esta árvore exata.\n  Repetir aqui é estação redundante: não prova nada novo e custa à rodada o\n  orçamento que a caminhada semântica precisa. É por isso que esta skill não\n  tem nenhum check determinístico.\n- Sua rede está aberta só para o endereço de loopback da aplicação. É o\n  mínimo de que a caminhada precisa, e é tudo.\n\n## Caminhando os critérios\n\n1. **Leia a lista de critérios de aceite primeiro.** Todo critério recebe um\n   veredito; critério que você não conseguiu exercitar ainda assim recebe\n   entrada, marcada honestamente, nunca pulada em silêncio.\n2. **Exercite a aplicação de verdade** — requisição direta contra o endereço\n   dado, mais qualquer ferramenta disponível no checkout. Prepare os dados de\n   que precisar com os comandos do próprio projeto\n   ({{entrada.banco_de_testes.comandos_de_dados}}). Se não houver aplicação de\n   pé, o motivo chega em `{{entrada.aplicacao.motivo_ausencia}}`: valide o que\n   o checkout e os comandos do projeto permitirem, e diga claramente nos\n   vereditos o que não deu para exercitar e por quê.\n3. **Julgue cada critério pela evidência observada** — uma resposta, uma\n   saída, uma página renderizada — nunca pelo que o código sugere que\n   aconteceria.\n4. **Rode a checagem de UX/design nos critérios que tocam interface**: a\n   superfície segue o sistema de design do projeto, se comporta em viewport\n   pequena e grande, é acessível (rótulos, alcance por teclado, contraste)?\n   Registre em `ux`.\n5. **Critério que exige prova manual ou julgamento estético vai para o\n   fundador.** Nunca marque um desses como aprovado por julgamento próprio.\n\n## Reportando problemas\n\nQuando um critério falha, abra um bug com severidade:\n\n- `simples` — conserto contido que uma rodada de desenvolvimento pega direto:\n  você consegue nomear o critério, a reprodução e os arquivos provavelmente\n  envolvidos.\n- `complexo` — qualquer coisa maior: causa incerta, implicação arquitetural,\n  ou trabalho que depende do fundador decidir se vale a pena.\n\nListe os arquivos suspeitos de todo bug — o executor agenda o conserto por\nsobreposição de arquivo, e uma boa lista é o que permite rodar o conserto em\nparalelo com segurança.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais — \"Rode a migração e\n  depois integre\", não \"acho que, como o schema já tem a coluna, provavelmente\n  seria seguro…\". É o texto de um botão de aceite de um clique, então o que\n  estiver ali vira a resposta do fundador, literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver, e o que \"escalar_humano\" quer dizer aqui\n\nDevolva o resultado no formato que o schema de saída desta skill declara:\n`resultado`, `vereditos` (um por critério, cada um com a evidência que VOCÊ\nproduziu), `ux`, `bugs`, `nota` e `gotchas`.\n\n- `resultado: \"passou\"` é reservado para passe completo: todo critério com\n  veredito `passou` e a checagem de UX limpa. O executor lê isso e segue pela\n  aresta **aprovado**.\n- `resultado: \"falhou\"` é a rodada que encontrou problema, com a lista de\n  bugs. Isso é uma rodada de verificação bem-sucedida que achou trabalho, não\n  uma sessão que falhou. O executor lê isso e segue pela aresta\n  **retrabalho**, de volta para desenvolvimento.\n- `resultado: \"escalar_humano\"` existe porque o formato de manifesto exige os\n  três valores em toda skill de portão — e, neste grafo, **uma sessão que\n  escala nunca chega a emitir esse valor**. Precisar do fundador significa\n  encerrar o turno com o bloco `input-request` acima: a sessão pausa, o\n  trabalho é registrado como bloqueado, e quando a resposta chega a sessão\n  retoma de onde parou e só então resolve em `passou` ou `falhou`. Escalar\n  pausa um nó; não abre uma terceira aresta, porque as únicas decisões em voo\n  são as saídas de portão sobre arestas já declaradas.\n\nVocê nunca devolve a especificação: ela pertence ao nó de refino, e nada\ndepois dele a reescreve.\n\n{{entrada.contexto_falha}}",
+  "origem": {
+    "tipo": "nativa"
+  }
+}

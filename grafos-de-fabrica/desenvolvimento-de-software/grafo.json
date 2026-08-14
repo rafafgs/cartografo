@@ -1,0 +1,386 @@
+{
+  "classe": "desenvolvimento-de-software",
+  "linhagem": {
+    "tipo": "base"
+  },
+  "metadata": {
+    "nome": "Entrega de software — fluxo do flowpilot portado",
+    "descricao": "Grafo de fábrica 1 (D14): o fluxo do flowpilot expresso neste formato. Um nó por estado de atividade; os estados de fila do flowpilot (to_refine, to_develop, to_integrate, to_test, to_deploy) não viram nó — são plumbing de escalonamento do controller, não topologia do trabalho. As arestas seguem ALLOWED_TRANSITIONS colapsando essas filas, incluindo o ciclo de retrabalho testar → desenvolver.",
+    "versao_schema": "1.0.0",
+    "criado_em": "2026-08-14",
+    "origem": "porte manual do flowpilot (D17: referência de comportamento, sem dependência de código)"
+  },
+  "nos": [
+    {
+      "id": "refinar",
+      "papel": "arquiteto",
+      "tipo_no": "trabalho",
+      "descricao": "Transforma o pedido em especificação: requisitos funcionais, arquivos tocados, critérios de aceite e escopo negativo.",
+      "skill_ref": {
+        "id": "refinar-ticket",
+        "versao": "1.0.0",
+        "hash": "sha256:2af61665b994e6a73fe02779e33dedc3c37a4f14c5d0546fa92ea6ad33b01249"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "pedido"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pedido": {
+              "type": "string",
+              "minLength": 1
+            },
+            "perfil_do_projeto": {
+              "type": "string"
+            }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": [
+            "especificacao",
+            "criterios_de_aceite",
+            "arquivos_tocados"
+          ],
+          "properties": {
+            "especificacao": {
+              "type": "string",
+              "minLength": 1
+            },
+            "criterios_de_aceite": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "arquivos_tocados": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "fora_de_escopo": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "agentico",
+            "instrucao": "Cada critério de aceite é verificável por um teste concreto, e a lista de arquivos tocados existe no repositório? Anexe o caminho conferido de cada arquivo citado.",
+            "evidencia_obrigatoria": true,
+            "descricao": "Critério de aceite não verificável é o defeito mais caro do refino: contamina todas as etapas seguintes."
+          }
+        ]
+      }
+    },
+    {
+      "id": "desenvolver",
+      "papel": "desenvolvedor",
+      "tipo_no": "trabalho",
+      "descricao": "Implementa a especificação em checkout isolado, com os testes de aceite escritos antes da implementação.",
+      "skill_ref": {
+        "id": "desenvolver-ticket",
+        "versao": "1.0.0",
+        "hash": "sha256:f5862b4664f1d0fed5c747b8eb7686a061d87e1fd3ee1ba51c698477900993c1"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "especificacao",
+            "criterios_de_aceite"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "especificacao": {
+              "type": "string",
+              "minLength": 1
+            },
+            "criterios_de_aceite": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": [
+            "branch",
+            "commits"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commits": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "arquivos_inesperados": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "deterministico",
+            "comando": "make check",
+            "descricao": "Suíte, lint e typecheck verdes no branch da ticket."
+          },
+          {
+            "tipo": "agentico",
+            "instrucao": "Os testes de aceite foram commitados antes da implementação e cobrem os critérios da especificação? Anexe os hashes dos dois commits e o diff do commit de testes.",
+            "evidencia_obrigatoria": true,
+            "descricao": "Verifica a ordem do TDD pelo histórico, não pelo relato de quem desenvolveu."
+          }
+        ]
+      }
+    },
+    {
+      "id": "integrar",
+      "papel": "integrador",
+      "tipo_no": "trabalho",
+      "descricao": "Traz o branch para a linha principal e reverifica a suíte contra a árvore já integrada.",
+      "skill_ref": {
+        "id": "integrar-branch",
+        "versao": "1.0.0",
+        "hash": "sha256:c917f54d7a014329fde9185d24627e2581132bcfa2d27e1171b3b7222c99e041"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "branch"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "branch": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": [
+            "merge_commit"
+          ],
+          "properties": {
+            "merge_commit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "conflitos_resolvidos": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "deterministico",
+            "comando": "make check",
+            "descricao": "A suíte passa na árvore mesclada, não só no branch isolado."
+          }
+        ]
+      }
+    },
+    {
+      "id": "testar",
+      "papel": "tester",
+      "tipo_no": "portao",
+      "descricao": "Exercita o comportamento entregue contra os critérios de aceite e roteia: aprovado segue para implantação, retrabalho volta para desenvolvimento.",
+      "skill_ref": {
+        "id": "testar-alpha",
+        "versao": "1.0.0",
+        "hash": "sha256:1321f33d031629d6463ea7c1e179ba1ac58b1e528804f81ab8ba71b317d71067"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "criterios_de_aceite",
+            "merge_commit"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "criterios_de_aceite": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "merge_commit": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": [
+            "resultado",
+            "evidencia"
+          ],
+          "properties": {
+            "resultado": {
+              "enum": [
+                "aprovado",
+                "retrabalho",
+                "escala"
+              ]
+            },
+            "evidencia": {
+              "type": "string",
+              "minLength": 1
+            },
+            "defeitos": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "deterministico",
+            "comando": "make check",
+            "descricao": "Reverificação determinística antes de qualquer julgamento."
+          },
+          {
+            "tipo": "agentico",
+            "instrucao": "Rode o comportamento entregue e confira cada critério de aceite na aplicação real. Anexe a saída de cada execução; relato do desenvolvedor não conta como evidência.",
+            "evidencia_obrigatoria": true,
+            "descricao": "Portão agêntico verifica com evidência própria (nota de aprendizado, 2026-08-14)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "implantar",
+      "papel": "deployer",
+      "tipo_no": "trabalho",
+      "descricao": "Publica o que foi aprovado e encerra a travessia.",
+      "skill_ref": {
+        "id": "implantar-release",
+        "versao": "1.0.0",
+        "hash": "sha256:d1bd047f6a995691d4a441477ef890db76533ead673c9e742b5a275635b9ff40"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": [
+            "ticket_id",
+            "merge_commit"
+          ],
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "merge_commit": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": [
+            "release",
+            "implantado_em"
+          ],
+          "properties": {
+            "release": {
+              "type": "string",
+              "minLength": 1
+            },
+            "implantado_em": {
+              "type": "string"
+            }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "deterministico",
+            "comando": "make smoke",
+            "descricao": "Smoke test contra o ambiente publicado."
+          }
+        ]
+      }
+    }
+  ],
+  "arestas": [
+    {
+      "de": "refinar",
+      "para": "desenvolver",
+      "condicao": "sempre",
+      "descricao": "flowpilot: refining -> to_develop -> developing."
+    },
+    {
+      "de": "desenvolver",
+      "para": "integrar",
+      "condicao": "sempre",
+      "descricao": "flowpilot: developing -> to_integrate -> integrating."
+    },
+    {
+      "de": "integrar",
+      "para": "testar",
+      "condicao": "sempre",
+      "descricao": "flowpilot: integrating -> to_test -> testing."
+    },
+    {
+      "de": "testar",
+      "para": "implantar",
+      "condicao": "aprovado",
+      "descricao": "flowpilot: testing -> to_deploy -> deploying."
+    },
+    {
+      "de": "testar",
+      "para": "desenvolver",
+      "condicao": "retrabalho",
+      "descricao": "flowpilot: testing -> to_develop, o ciclo de retrabalho do teste alfa."
+    }
+  ],
+  "no_inicial": "refinar",
+  "nos_finais": [
+    "implantar"
+  ]
+}

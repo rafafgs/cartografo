@@ -254,7 +254,15 @@ test('AT6 — GET /v1/trabalhos/:id/eventos é a linha do tempo, em ordem de id'
   const eventos = await linhaDoTempo(ctx, trabalho.id);
   assert.deepEqual(
     eventos.map((evento) => evento.tipo),
-    ['trabalho.criado', 'trabalho.transicao', 'sessao.aberta', 'pergunta.criada'],
+    [
+      'trabalho.criado',
+      'trabalho.transicao',
+      'sessao.aberta',
+      'pergunta.criada',
+      // Criar a pergunta bloqueia o trabalho na mesma transação desde t106; a
+      // bandeira aparece aqui porque `trabalho.bloqueado` é evento DO trabalho.
+      'trabalho.bloqueado',
+    ],
     'os do trabalho mais os de sessão/pergunta que o citam via dados.trabalho_id',
   );
   assert.deepEqual(

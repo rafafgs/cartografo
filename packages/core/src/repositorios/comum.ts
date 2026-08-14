@@ -35,6 +35,16 @@ export const ATOR_AUTO_APROVACAO: Ator = Object.freeze({
   ref: 'portao-auto-aprovacao',
 });
 
+/**
+ * Ator do bloqueio automático que nasce junto com uma pergunta (t106).
+ *
+ * Só o BLOQUEIO usa esta constante. O desbloqueio carrega o ator de quem
+ * respondeu — `usuario` quando foi gente, o portão automático quando não foi —
+ * porque "quem destravou este trabalho?" é pergunta de auditoria e a resposta
+ * não pode ser sempre "o sistema".
+ */
+export const ATOR_ESCALACAO: Ator = Object.freeze({ tipo: 'sistema', ref: 'escalacao-humana' });
+
 /** Instante do fato, ISO 8601. */
 export const agora = (): string => new Date().toISOString();
 

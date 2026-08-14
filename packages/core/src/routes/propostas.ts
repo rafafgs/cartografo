@@ -20,6 +20,7 @@ import type { FastifyInstance } from 'fastify';
 import type { BancoDeDados } from '../db/connection.ts';
 import { validarGrafo } from '../dominio/grafo.ts';
 import { hashSnapshot } from '../dominio/hash.ts';
+import { isExpectedMetric, validateExpectedMetric, verdictFor } from '../dominio/hypothesis.ts';
 import {
   aplicarOperacoes,
   validarOperacao,
@@ -31,10 +32,13 @@ import {
   aplicarProposta,
   buscarProposta,
   criarProposta,
+  listProposals,
+  recordVerdict,
   rejeitarProposta,
   reverterProposta,
   type LinhaProposta,
 } from '../repositorios/propostas.ts';
+import { metricasPorVersao } from '../repositorios/trabalho.ts';
 
 interface ParametroId {
   Params: { id: string };
@@ -244,6 +248,112 @@ export function registrarPropostas(app: FastifyInstance, db: BancoDeDados): void
     const revertida = reverterProposta(db, { proposta, motivo });
     return { proposta: revertida, grafo: buscarGrafo(db, proposta.grafo_id) };
   });
+
+  /* ------------------------------------------------------------------------ */
+  /* t112 — the next run closes the proposal. New identifiers in English (D18); */
+  /* route segments and payload keys stay in Portuguese, as already published.  */
+  /* ------------------------------------------------------------------------ */
+
+  app.post<ParametroId>('/propostas/:id/resultado', async (requisicao, resposta) => {
+    const proposta = carregar(db, requisicao.params.id);
+    if (proposta === undefined) {
+      resposta.code(404);
+      return { erro: 'proposta_desconhecida', id: requisicao.params.id };
+    }
+
+    const corpo = ehObjeto(requisicao.body) ? requisicao.body : {};
+    const execucaoId = corpo.execucao_id;
+    const depois = corpo.depois;
+    if (!Number.isInteger(execucaoId) || !Number.isFinite(depois)) {
+      resposta.code(400);
+      return {
+        erro: 'campo_obrigatorio_ausente',
+        mensagem:
+          'fechar o experimento exige execucao_id (inteiro) e depois (número): quem calcula a métrica é quem chama',
+      };
+    }
+
+    if (proposta.status !== 'aplicada') {
+      resposta.code(409);
+      return {
+        erro: 'proposta_nao_aplicada',
+        mensagem: `só proposta aplicada tem experimento a fechar; esta está "${proposta.status}"`,
+        status: proposta.status,
+      };
+    }
+
+    // Só a primeira chamada conta. Reavaliar seria reescrever o passado de uma
+    // hipótese, e a coluna guarda UM resultado, o da primeira rodada seguinte.
+    if (proposta.resultado !== null) {
+      resposta.code(409);
+      return {
+        erro: 'proposta_ja_avaliada',
+        mensagem: 'o resultado desta hipótese já foi gravado pela primeira execução seguinte',
+        resultado: proposta.resultado,
+      };
+    }
+
+    const metrica = proposta.metrica_esperada;
+    if (!isExpectedMetric(metrica)) {
+      // A criação nunca validou esta forma (fora de escopo aqui): uma proposta
+      // aplicada pode perfeitamente carregar métrica que ninguém consegue ler.
+      // Calcular veredito sobre dado incompleto é pior do que não calcular.
+      resposta.code(422);
+      return {
+        erro: 'metrica_esperada_invalida',
+        mensagem:
+          'metrica_esperada precisa ter a forma {nome, direcao: "sobe"|"cai", de, para} para haver veredito',
+        detalhes: validateExpectedMetric(metrica).map((problema) => problema.message),
+      };
+    }
+
+    // "A execução seguinte" tem que ser demonstrável pela telemetria (FR17 do
+    // t102), não alegada no corpo: sem trabalho registrado sob a versão que
+    // esta proposta aplicou, não há rodada seguinte de que falar.
+    const versaoAplicada = proposta.versao_aplicada_id;
+    const evidencia =
+      versaoAplicada === null
+        ? undefined
+        : metricasPorVersao(db, execucaoId as number).find(
+            (linha) => linha.grafo_versao_id === versaoAplicada,
+          );
+    if (evidencia === undefined || evidencia.trabalhos < 1) {
+      resposta.code(422);
+      return {
+        erro: 'execucao_sem_evidencia',
+        mensagem: 'nenhum trabalho desta execução rodou sob a versão que a proposta aplicou',
+        execucao_id: execucaoId,
+        versao_aplicada_id: versaoAplicada,
+      };
+    }
+
+    const gravada = recordVerdict(db, {
+      proposta,
+      execucaoId: execucaoId as number,
+      depois: depois as number,
+      veredito: verdictFor(metrica, depois as number),
+      antes: metrica.de,
+    });
+
+    // O status continua `aplicada` de propósito: "piorou" é dado, não ação.
+    // Reverter é decisão humana, pela rota de reversão (README, princípio 5).
+    return { proposta: gravada };
+  });
+
+  app.get('/propostas', async (requisicao) => {
+    const filtro = requisicao.query as { status?: string; veredito?: string };
+    return {
+      propostas: listProposals(db, {
+        status: optionalFilter(filtro.status),
+        veredito: optionalFilter(filtro.veredito),
+      }),
+    };
+  });
+}
+
+/** An absent or empty querystring filter means "no filter", not "empty". */
+function optionalFilter(value: string | undefined): string | undefined {
+  return value === undefined || value === '' ? undefined : value;
 }
 
 /** Resolve o `:id` da rota em uma proposta; id não numérico é 404, não 500. */

@@ -19,6 +19,7 @@
 
 import type { BancoDeDados } from '../db/connection.ts';
 import type { DocumentoGrafo } from '../dominio/grafo.ts';
+import type { Verdict } from '../dominio/hypothesis.ts';
 import type { Operacao } from '../dominio/operacoes.ts';
 import {
   agora,
@@ -238,4 +239,110 @@ export function reverterProposta(
   const atualizada = buscarProposta(db, proposta.id);
   if (atualizada === undefined) throw new Error(`proposta ${proposta.id} sumiu`);
   return atualizada;
+}
+
+/* -------------------------------------------------------------------------- */
+/* t112 — hypothesis outcome. New identifiers in English (D18); the column and  */
+/* payload keys stay in Portuguese, mirroring what is already published.        */
+/* -------------------------------------------------------------------------- */
+
+/** What gets written into `proposta.resultado` when the experiment closes. */
+export interface HypothesisOutcome {
+  veredito: Verdict;
+  /** The `de` the proposal declared — the baseline the verdict compared against. */
+  antes: number;
+  depois: number;
+  execucao_id: number;
+  avaliado_em: string;
+}
+
+/** Arguments of `recordVerdict`, already judged and checked against telemetry. */
+export interface VerdictRecord {
+  proposta: LinhaProposta;
+  execucaoId: number;
+  depois: number;
+  veredito: Verdict;
+  antes: number;
+}
+
+/**
+ * Writes the outcome of the hypothesis, once (t112, FR5/FR6).
+ *
+ * The status does NOT change: a proposal that made things worse stays
+ * `aplicada`, and reverting remains a human decision (README, princípio 5).
+ * "Piorou" is data, not an action.
+ *
+ * The `UPDATE` is guarded by `resultado IS NULL AND status = 'aplicada'`, the
+ * same concurrency pattern `aplicarProposta`/`reverterProposta` use: two
+ * callers closing the same experiment at once is a `409`, never a verdict
+ * silently overwritten by whoever arrived last.
+ *
+ * @param db Banco aberto.
+ * @param dados Proposal, execution that produced the evidence, measured value
+ *   and the verdict already computed by `computeVerdict`.
+ * @returns The proposal as it was written.
+ * @throws {Error} When the row stopped matching the guard mid-flight.
+ */
+export function recordVerdict(db: BancoDeDados, dados: VerdictRecord): LinhaProposta {
+  const { proposta } = dados;
+  const outcome: HypothesisOutcome = {
+    veredito: dados.veredito,
+    antes: dados.antes,
+    depois: dados.depois,
+    execucao_id: dados.execucaoId,
+    avaliado_em: agora(),
+  };
+
+  const efeito = db
+    .prepare(
+      `UPDATE proposta SET resultado = ?, atualizado_em = ?
+        WHERE id = ? AND resultado IS NULL AND status = 'aplicada'`,
+    )
+    .run(JSON.stringify(outcome), outcome.avaliado_em, proposta.id);
+
+  if (efeito.changes !== 1) {
+    throw new Error(`proposta ${proposta.id} deixou de estar avaliável durante a gravação`);
+  }
+
+  const atualizada = buscarProposta(db, proposta.id);
+  if (atualizada === undefined) throw new Error(`proposta ${proposta.id} sumiu`);
+  return atualizada;
+}
+
+/** Optional cuts of the proposal listing (t112, FR8). */
+export interface ProposalFilter {
+  status?: string;
+  /** Read out of `resultado.veredito`; a proposal with no outcome never matches. */
+  veredito?: string;
+}
+
+/**
+ * Lists proposals in id order, optionally filtered (t112, FR8).
+ *
+ * `status=aplicada&veredito=piorou` is the reversal-suggestion queue: the
+ * hypotheses that made things worse and are still in force. It is a filtered
+ * read and nothing else — no notification surface is implied by it.
+ *
+ * @param db Banco aberto.
+ * @param filtro Optional cuts; absent keys mean "no filter".
+ * @returns Proposals with the JSON columns already parsed, in id order.
+ */
+export function listProposals(db: BancoDeDados, filtro: ProposalFilter = {}): LinhaProposta[] {
+  const condicoes: string[] = [];
+  const valores: unknown[] = [];
+
+  if (filtro.status !== undefined) {
+    condicoes.push('status = ?');
+    valores.push(filtro.status);
+  }
+  if (filtro.veredito !== undefined) {
+    condicoes.push("json_extract(resultado, '$.veredito') = ?");
+    valores.push(filtro.veredito);
+  }
+
+  const onde = condicoes.length === 0 ? '' : ` WHERE ${condicoes.join(' AND ')}`;
+  const linhas = db
+    .prepare(`SELECT ${COLUNAS} FROM proposta${onde} ORDER BY id`)
+    .all(...valores) as LinhaCrua[];
+  return linhas.map(hidratar);
 }

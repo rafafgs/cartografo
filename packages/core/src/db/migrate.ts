@@ -1,131 +1,131 @@
 /**
- * Runner de migração: arquivos `.sql` numerados, sem ORM e sem lib de migração.
+ * Migration runner: numbered `.sql` files, no ORM and no migration library.
  *
- * Contrato do diretório de migrações:
+ * Contract of the migrations directory:
  *
- * - todo arquivo `.sql` começa com um número, seguido de `_` e de um nome
- *   (`0001_init.sql`). O número decide a ordem; o nome só documenta;
- * - o arquivo NÃO abre transação própria — quem transaciona é este runner, uma
- *   transação por migração, para que uma migração que quebra no meio não deixe
- *   resíduo;
- * - o que já rodou fica em `schema_migrations`, que é criada pela própria
- *   `0001_init.sql`. Antes dela existir, o conjunto de aplicadas é vazio.
+ * - every `.sql` file starts with a number, followed by `_` and a name
+ *   (`0001_init.sql`). The number decides the order; the name only documents;
+ * - the file does NOT open a transaction of its own — this runner is what
+ *   transacts, one transaction per migration, so that a migration breaking
+ *   halfway leaves no residue;
+ * - what already ran is kept in `schema_migrations`, which `0001_init.sql`
+ *   creates itself. Before it exists, the applied set is empty.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
-import type { BancoDeDados } from './connection.ts';
+import type { Database } from './connection.ts';
 
-/** Tabela de controle: o que já rodou, e quando. */
-export const TABELA_MIGRACOES = 'schema_migrations';
+/** Control table: what already ran, and when. */
+export const MIGRATIONS_TABLE = 'schema_migrations';
 
-/** Uma migração encontrada no disco. */
-export interface Migracao {
-  /** Nome do arquivo sem a extensão — é o que vai para `schema_migrations.id`. */
+/** A migration found on disk. */
+export interface Migration {
+  /** File name without the extension — this is what goes to `schema_migrations.id`. */
   id: string;
-  /** Número do prefixo, já convertido; é o critério de ordenação. */
-  numero: number;
-  /** Nome do arquivo, como está no disco. */
-  arquivo: string;
-  /** Caminho absoluto do arquivo. */
-  caminho: string;
+  /** Prefix number, already converted; it is the ordering criterion. */
+  number: number;
+  /** File name, as it is on disk. */
+  file: string;
+  /** Absolute path of the file. */
+  path: string;
 }
 
-const PADRAO_NOME = /^(\d+)_.+$/;
+const NAME_PATTERN = /^(\d+)_.+$/;
 
 /**
- * Lê o diretório de migrações e devolve as migrações em ordem numérica.
+ * Reads the migrations directory and returns the migrations in numeric order.
  *
- * Falha alto (em vez de ignorar em silêncio) em arquivo `.sql` sem prefixo
- * numérico e em número repetido: nos dois casos a ordem de aplicação seria
- * ambígua, e uma migração aplicada fora de ordem é dano difícil de desfazer.
+ * Fails loudly (instead of silently ignoring) on a `.sql` file without a numeric
+ * prefix and on a repeated number: in both cases the application order would be
+ * ambiguous, and a migration applied out of order is damage that is hard to undo.
  *
- * @param dir Diretório com os arquivos `.sql`.
- * @returns Migrações ordenadas pelo número do prefixo.
+ * @param dir Directory with the `.sql` files.
+ * @returns Migrations sorted by prefix number.
  */
-export function listarMigracoes(dir: string): Migracao[] {
-  const migracoes: Migracao[] = [];
-  const porNumero = new Map<number, string>();
+export function listMigrations(dir: string): Migration[] {
+  const migrations: Migration[] = [];
+  const byNumber = new Map<number, string>();
 
-  for (const arquivo of readdirSync(dir)) {
-    if (!arquivo.endsWith('.sql')) continue;
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith('.sql')) continue;
 
-    const base = arquivo.slice(0, -'.sql'.length);
-    const casamento = PADRAO_NOME.exec(base);
-    if (casamento === null) {
+    const base = file.slice(0, -'.sql'.length);
+    const match = NAME_PATTERN.exec(base);
+    if (match === null) {
       throw new Error(
-        `migração com nome fora do padrão "<numero>_<nome>.sql": "${arquivo}" (em ${dir})`,
+        `migration named outside the "<number>_<name>.sql" pattern: "${file}" (in ${dir})`,
       );
     }
 
-    const numero = Number.parseInt(casamento[1], 10);
-    const conflito = porNumero.get(numero);
-    if (conflito !== undefined) {
+    const number = Number.parseInt(match[1], 10);
+    const conflict = byNumber.get(number);
+    if (conflict !== undefined) {
       throw new Error(
-        `duas migrações com o número ${casamento[1]}: "${conflito}" e "${arquivo}" (em ${dir})`,
+        `two migrations with number ${match[1]}: "${conflict}" and "${file}" (in ${dir})`,
       );
     }
-    porNumero.set(numero, arquivo);
+    byNumber.set(number, file);
 
-    migracoes.push({ id: base, numero, arquivo, caminho: path.join(dir, arquivo) });
+    migrations.push({ id: base, number, file, path: path.join(dir, file) });
   }
 
-  // Ordem numérica, não alfabética: "10_" vem DEPOIS de "2_".
-  return migracoes.sort((a, b) => a.numero - b.numero);
+  // Numeric order, not alphabetical: "10_" comes AFTER "2_".
+  return migrations.sort((a, b) => a.number - b.number);
 }
 
 /**
- * Ids já registrados em `schema_migrations`.
+ * Ids already recorded in `schema_migrations`.
  *
- * Quando a tabela ainda não existe (banco novo, antes da 0001), o conjunto é
- * vazio — não é erro.
+ * When the table does not exist yet (a new database, before 0001), the set is
+ * empty — that is not an error.
  *
- * @param db Handle aberto.
- * @returns Conjunto de ids aplicados.
+ * @param db Open handle.
+ * @returns Set of applied ids.
  */
-export function migracoesAplicadas(db: BancoDeDados): Set<string> {
-  const tabela = db
+export function appliedMigrations(db: Database): Set<string> {
+  const table = db
     .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = ?")
-    .get(TABELA_MIGRACOES);
-  if (tabela === undefined) return new Set();
+    .get(MIGRATIONS_TABLE);
+  if (table === undefined) return new Set();
 
-  const linhas = db.prepare(`SELECT id FROM ${TABELA_MIGRACOES}`).all() as Array<{ id: string }>;
-  return new Set(linhas.map((linha) => linha.id));
+  const rows = db.prepare(`SELECT id FROM ${MIGRATIONS_TABLE}`).all() as Array<{ id: string }>;
+  return new Set(rows.map((row) => row.id));
 }
 
 /**
- * Aplica as migrações pendentes, em ordem, uma transação por migração.
+ * Applies the pending migrations, in order, one transaction per migration.
  *
- * @param db Handle aberto.
- * @param dir Diretório com os arquivos `.sql`.
- * @returns Ids aplicados NESTA chamada, em ordem. Vazio quando não havia nada
- *   pendente — é o caso da partida idempotente (FR3).
+ * @param db Open handle.
+ * @param dir Directory with the `.sql` files.
+ * @returns Ids applied IN THIS call, in order. Empty when there was nothing
+ *   pending — that is the idempotent-startup case (FR3).
  */
-export function migrar(db: BancoDeDados, dir: string): string[] {
-  const jaAplicadas = migracoesAplicadas(db);
-  const aplicadas: string[] = [];
+export function migrate(db: Database, dir: string): string[] {
+  const alreadyApplied = appliedMigrations(db);
+  const applied: string[] = [];
 
-  for (const migracao of listarMigracoes(dir)) {
-    if (jaAplicadas.has(migracao.id)) continue;
+  for (const migration of listMigrations(dir)) {
+    if (alreadyApplied.has(migration.id)) continue;
 
-    const sql = readFileSync(migracao.caminho, 'utf8');
-    const passo = db.transaction(() => {
+    const sql = readFileSync(migration.path, 'utf8');
+    const step = db.transaction(() => {
       db.exec(sql);
-      db.prepare(`INSERT INTO ${TABELA_MIGRACOES} (id, applied_at) VALUES (?, ?)`).run(
-        migracao.id,
+      db.prepare(`INSERT INTO ${MIGRATIONS_TABLE} (id, applied_at) VALUES (?, ?)`).run(
+        migration.id,
         new Date().toISOString(),
       );
     });
 
     try {
-      passo();
-    } catch (erro) {
-      throw new Error(`falha ao aplicar a migração "${migracao.arquivo}"`, { cause: erro });
+      step();
+    } catch (error) {
+      throw new Error(`failed to apply migration "${migration.file}"`, { cause: error });
     }
 
-    aplicadas.push(migracao.id);
+    applied.push(migration.id);
   }
 
-  return aplicadas;
+  return applied;
 }

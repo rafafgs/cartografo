@@ -130,7 +130,7 @@ async function subirControlPlane(t: ContextoDeTeste): Promise<string> {
     const linha = saida
       .split('\n')
       .map((texto) => texto.trim())
-      .find((texto) => texto.startsWith('{') && texto.includes('cartografo.pronto'));
+      .find((texto) => texto.startsWith('{') && texto.includes('cartografo.ready'));
     if (linha !== undefined) return (JSON.parse(linha) as { url: string }).url;
     await esperar(50);
   }

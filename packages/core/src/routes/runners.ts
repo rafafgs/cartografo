@@ -1,51 +1,55 @@
 /**
- * Rota de pareamento de runner (t103, FR4).
+ * Runner pairing route (t103, FR4).
  *
- * Um verbo só, e ele é idempotente: `201` quando o id aparece pela primeira
- * vez, `200` quando já era conhecido. A distinção existe para o operador
- * (saber se um runner é novo é informação), nunca para o runner — que trata os
- * dois como sucesso e segue para a fila.
+ * One verb only, and it is idempotent: `201` when the id shows up for the first
+ * time, `200` when it was already known. The distinction exists for the operator
+ * (knowing whether a runner is new is information), never for the runner — which
+ * treats both as success and moves on to the queue.
  *
- * Autenticação do pareamento é t124: nesta fase o id é declarado pelo próprio
- * runner, como o resto da API pré-autorização (mesmo corte de t101/t102).
+ * Authenticating the pairing is t124: in this phase the id is declared by the
+ * runner itself, like the rest of the pre-authorization API (the same cut as
+ * t101/t102).
+ *
+ * The request/response field names stay in Portuguese: they mirror the untouched
+ * migration columns (t127, FR8).
  */
 
 import type { FastifyInstance } from 'fastify';
 
-import type { BancoDeDados } from '../db/connection.ts';
-import { registrarRunner } from '../repositorios/runners.ts';
+import type { Database } from '../db/connection.ts';
+import { registerRunner } from '../repositories/runners.ts';
 
-function ehObjeto(valor: unknown): valor is Record<string, unknown> {
-  return typeof valor === 'object' && valor !== null && !Array.isArray(valor);
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
- * Registra as rotas de runner no escopo recebido (já com o prefixo /v1).
+ * Registers the runner routes in the given scope (already carrying the /v1 prefix).
  *
- * @param app Escopo do Fastify.
- * @param db Banco já aberto; as rotas nunca abrem o seu (D1).
+ * @param app Fastify scope.
+ * @param db Already open database; the routes never open their own (D1).
  */
-export function registrarRunners(app: FastifyInstance, db: BancoDeDados): void {
-  app.post('/runners', async (requisicao, resposta) => {
-    const corpo = ehObjeto(requisicao.body) ? requisicao.body : {};
+export function registerRunners(app: FastifyInstance, db: Database): void {
+  app.post('/runners', async (request, reply) => {
+    const body = isObject(request.body) ? request.body : {};
 
-    const id = corpo.id;
+    const id = body.id;
     if (typeof id !== 'string' || id.trim() === '') {
-      resposta.code(400);
+      reply.code(400);
       return {
         erro: 'id_obrigatorio',
         mensagem: 'runner declara a própria identidade: id precisa ser uma string não vazia',
       };
     }
 
-    const nome = corpo.nome;
-    if (nome !== undefined && nome !== null && typeof nome !== 'string') {
-      resposta.code(400);
+    const name = body.nome;
+    if (name !== undefined && name !== null && typeof name !== 'string') {
+      reply.code(400);
       return { erro: 'nome_invalido', mensagem: 'nome, quando enviado, precisa ser string' };
     }
 
-    const { runner, criado } = registrarRunner(db, { id, nome: nome ?? null });
-    resposta.code(criado ? 201 : 200);
+    const { runner, created } = registerRunner(db, { id, nome: name ?? null });
+    reply.code(created ? 201 : 200);
     return { runner };
   });
 }

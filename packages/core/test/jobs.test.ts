@@ -325,7 +325,7 @@ test('t127 — the old Portuguese job paths no longer exist', async (t) => {
     ['POST', `/v1/trabalhos/${job.id}/desbloqueios`],
     ['PATCH', `/v1/trabalhos/${job.id}`],
   ] as const) {
-    const response = await request(ctx, method, routePath, {});
+    const response = await request(ctx, method, routePath, method === 'GET' ? undefined : {});
     assert.equal(response.status, 404, `${method} ${routePath} should be gone (D18)`);
   }
 });

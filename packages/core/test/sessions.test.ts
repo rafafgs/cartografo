@@ -183,7 +183,12 @@ test('t127 — the old Portuguese session paths no longer exist', async (t) => {
     ['GET', '/v1/sessoes'],
     ['PATCH', `/v1/sessoes/${created.body.id}/finalizar`],
   ] as const) {
-    const response = await request(ctx, method, routePath, { status: 'concluida' });
+    const response = await request(
+      ctx,
+      method,
+      routePath,
+      method === 'GET' ? undefined : { status: 'concluida' },
+    );
     assert.equal(response.status, 404, `${method} ${routePath} should be gone (D18)`);
   }
 });

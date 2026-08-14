@@ -1,81 +1,81 @@
 /**
- * Conexão com o SQLite embarcado.
+ * Connection to the embedded SQLite.
  *
- * Este é o ÚNICO módulo do repositório autorizado a importar o driver do
- * SQLite (D1: só o control plane escreve no banco). Quem precisa do banco fora
- * daqui recebe um `BancoDeDados` já aberto e usa o tipo re-exportado abaixo —
- * nunca o pacote do driver. `scripts/check-single-writer.mjs` transforma essa
- * regra em portão de lint.
+ * This is the ONLY module in the repository allowed to import the SQLite driver
+ * (D1: only the control plane writes to the database). Whoever needs the
+ * database outside of here receives an already-open `Database` and uses the type
+ * re-exported below — never the driver package. `scripts/check-single-writer.mjs`
+ * turns that rule into a lint gate.
  */
 
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-import Database from 'better-sqlite3';
-import type { Database as BancoDoDriver } from 'better-sqlite3';
+import SqliteDatabase from 'better-sqlite3';
+import type { Database as DriverDatabase } from 'better-sqlite3';
 
-/** Handle de banco visto pelo resto do core, sem vazar o nome do driver. */
-export type BancoDeDados = BancoDoDriver;
+/** Database handle seen by the rest of the core, without leaking the driver name. */
+export type Database = DriverDatabase;
 
-/** Caminho default do arquivo do banco, relativo ao diretório de trabalho. */
-export const CAMINHO_BANCO_PADRAO = path.join('.cartografo', 'cartografo.db');
+/** Default path of the database file, relative to the working directory. */
+export const DEFAULT_DATABASE_PATH = path.join('.cartografo', 'cartografo.db');
 
-/** Variável de ambiente que sobrescreve o caminho default. */
-export const ENV_CAMINHO_BANCO = 'CARTOGRAFO_DB_PATH';
+/** Environment variable that overrides the default path. */
+export const ENV_DATABASE_PATH = 'CARTOGRAFO_DB_PATH';
 
 /**
- * Resolve o caminho absoluto do arquivo do banco.
+ * Resolves the absolute path of the database file.
  *
- * @param env Ambiente de onde ler `CARTOGRAFO_DB_PATH`.
- * @returns Caminho absoluto do arquivo.
+ * @param env Environment to read `CARTOGRAFO_DB_PATH` from.
+ * @returns Absolute path of the file.
  */
-export function caminhoDoBanco(env: NodeJS.ProcessEnv = process.env): string {
-  const configurado = env[ENV_CAMINHO_BANCO]?.trim();
+export function databasePath(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env[ENV_DATABASE_PATH]?.trim();
   return path.resolve(
-    configurado !== undefined && configurado !== '' ? configurado : CAMINHO_BANCO_PADRAO,
+    configured !== undefined && configured !== '' ? configured : DEFAULT_DATABASE_PATH,
   );
 }
 
 /**
- * Abre (criando o arquivo e o diretório, se faltarem) o banco no caminho dado.
+ * Opens (creating the file and the directory, if missing) the database at the given path.
  *
- * Deliberadamente NÃO valida o conteúdo do arquivo nem roda pragma nenhum: o
- * SQLite só lê o cabeçalho na primeira consulta, e é isso que faz o `SELECT 1`
- * de `checarBanco` ser uma checagem de verdade em `/health` (FR4), em vez de
- * uma constante disfarçada.
+ * Deliberately does NOT validate the file contents nor run any pragma: SQLite
+ * only reads the header on the first query, and that is what makes the
+ * `SELECT 1` of `checkDatabase` a real check in `/health` (FR4), instead of a
+ * constant in disguise.
  *
- * @param caminho Caminho do arquivo do banco.
- * @returns Handle aberto.
+ * @param filePath Path of the database file.
+ * @returns Open handle.
  */
-export function abrirBanco(caminho: string): BancoDeDados {
-  mkdirSync(path.dirname(caminho), { recursive: true });
-  return new Database(caminho);
+export function openDatabase(filePath: string): Database {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  return new SqliteDatabase(filePath);
 }
 
 /**
- * Liga os pragmas de operação do control plane.
+ * Turns on the control plane's operating pragmas.
  *
- * Fica fora de `abrirBanco` de propósito: pragma é a primeira coisa que toca o
- * arquivo, e juntar as duas coisas faria um banco corrompido estourar já na
- * abertura, antes de existir rota de saúde para reportar o problema.
+ * Kept out of `openDatabase` on purpose: a pragma is the first thing that
+ * touches the file, and merging the two would make a corrupted database blow up
+ * right at opening time, before there is a health route to report the problem.
  *
- * @param db Handle aberto.
+ * @param db Open handle.
  */
-export function aplicarPragmas(db: BancoDeDados): void {
+export function applyPragmas(db: Database): void {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 }
 
 /**
- * Checagem de saúde do banco: um `SELECT 1` de verdade.
+ * Database health check: a real `SELECT 1`.
  *
- * @param db Handle aberto.
- * @returns `'ok'` quando a consulta responde, `'erro'` quando o driver estoura.
+ * @param db Open handle.
+ * @returns `'ok'` when the query answers, `'erro'` when the driver throws.
  */
-export function checarBanco(db: BancoDeDados): 'ok' | 'erro' {
+export function checkDatabase(db: Database): 'ok' | 'erro' {
   try {
-    const linha = db.prepare('SELECT 1 AS um').get() as { um: number } | undefined;
-    return linha?.um === 1 ? 'ok' : 'erro';
+    const row = db.prepare('SELECT 1 AS one').get() as { one: number } | undefined;
+    return row?.one === 1 ? 'ok' : 'erro';
   } catch {
     return 'erro';
   }

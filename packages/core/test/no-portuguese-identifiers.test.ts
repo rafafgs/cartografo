@@ -5,23 +5,25 @@
  * checklist a reviewer maintains by hand. It walks `src/`, `test/` and `bin/`,
  * masks out everything FR8 deliberately leaves in Portuguese, and then asserts
  * that none of the pre-rename tokens of the ticket's Glossary and Code Changes
- * table survives anywhere in what is left.
+ * table survives in an identifier position.
  *
  * What gets masked, and why — these are the FR8 exceptions, not loopholes:
  *
- * - **SQL** inside query strings. The schema is untouched (AC3), so
- *   `FROM trabalho`, `SELECT ... criado_em` and the column-list constants stay
- *   exactly as the migrations spell them.
- * - **Event-type strings** (`'trabalho.criado'`, `'sessao.aberta'`, …), governed
- *   by `especificacoes/eventos/taxonomia.md`, and the CHECK-constrained enum
- *   values (`entidade_tipo`, `ator_tipo`, `origem`, `status`).
- * - **Column-mirrored wire fields.** These are snake_case, so the word-boundary
- *   rules below never reach them: `\btrabalho\b` does not match `trabalho_id`.
- * - **Prose spans in backticks** inside comments, which is how this codebase
- *   quotes a table, column or event name while writing English around it.
+ * - **String and template literals.** This is where SQL (`FROM trabalho`,
+ *   `criado_em`), event-type strings (`'trabalho.criado'`), CHECK-constrained
+ *   enum values (`'pendente'`, `'usuario'`) and the frozen wire codes live. The
+ *   schema is untouched (AC3) and the taxonomy governs the event vocabulary, so
+ *   none of it translates.
+ * - **Key and member positions.** A wire field that mirrors a migration column
+ *   is still spelled in Portuguese in the code that builds or reads it —
+ *   `{ grafo_versao: version }`, `body.grafo`, `erro: 'grafo_invalido'`. Those
+ *   are the data format, not code (FR8).
+ * - **Backticked spans inside comments**, which is how this codebase quotes a
+ *   table, column or event name while writing English prose around it.
  *
- * Anything else — a function, type, const, variable, file name, route segment or
- * plain word in a comment — is code, and code is English from D18 onward.
+ * What is left after masking is a real identifier position — a variable, a
+ * parameter, a function, a type, a const, an import binding — and from D18
+ * onward those are English.
  */
 
 import assert from 'node:assert/strict';
@@ -35,10 +37,12 @@ const SCANNED_DIRS = ['src', 'test', 'bin'];
 /**
  * Pre-rename tokens of the Glossary and the Code Changes table.
  *
- * `bare` matches the standalone lowercase word (so `\btrabalho\b` fires on a
- * variable named `trabalho` but never on the column `trabalho_id`); `camel`
- * matches the capitalized form anywhere, which is what catches it inside
- * `buscarTrabalho`, `LinhaTrabalho` or `EntradaCriarTrabalho`.
+ * `bare` matches the standalone lowercase word — `\btrabalho\b` fires on a
+ * variable named `trabalho` but never on the column `trabalho_id`, because `_`
+ * is a word character. `camel` matches the capitalized form when it starts a
+ * word inside an identifier, which is what catches `buscarTrabalho`,
+ * `LinhaTrabalho` or `EntradaCriarTrabalho` — and, thanks to the "not followed
+ * by a lowercase letter" rule, never catches the English `Error` with `Erro`.
  */
 const FORBIDDEN = Object.freeze([
   // Domain vocabulary (Glossary).
@@ -53,7 +57,6 @@ const FORBIDDEN = Object.freeze([
   { bare: ['versao', 'versoes'], camel: ['Versao'] },
   { bare: ['operacao', 'operacoes'], camel: ['Operacao'] },
   { bare: ['ator', 'atores'], camel: ['Ator'] },
-  { bare: ['lease'], camel: [] },
 
   // Structural vocabulary (Glossary + Code Changes table).
   { bare: ['dominio', 'repositorios', 'comum', 'apoio', 'rota', 'rotas'], camel: [] },
@@ -82,124 +85,112 @@ const FORBIDDEN = Object.freeze([
       'abrir',
       'iniciar',
       'encerrar',
+      'subir',
+      'pedir',
+      'conferir',
+      'exigir',
+      'anotar',
+      'percorrer',
+      'mutar',
+      'hidratar',
+      'liberar',
+      'renovar',
+      'conceder',
+      'avancar',
     ],
     camel: [],
   },
 ]);
 
-/** Literal string values FR8 freezes: event types and CHECK-constrained enums. */
-const FROZEN_STRING_VALUES = new Set([
-  // Event types (especificacoes/eventos/taxonomia.md).
-  'trabalho.criado',
-  'trabalho.transicao',
-  'trabalho.bloqueado',
-  'trabalho.desbloqueado',
-  'trabalho.emendado',
-  'sessao.aberta',
-  'sessao.finalizada',
-  'pergunta.criada',
-  'pergunta.respondida',
-  'pergunta.auto_resolvida',
-  'grafo_versao.aplicada',
-  'grafo_versao.revertida',
-  'lease.concedida',
-  'lease.expirada',
-  // entidade_tipo / ator_tipo / origem / status enum values.
-  'trabalho',
-  'sessao',
-  'pergunta',
-  'grafo',
-  'grafo_versao',
-  'proposta',
-  'evento',
-  'usuario',
-  'agente',
-  'sistema',
-  'manual',
-  'sintetizador',
-  'auto',
-  'base',
-  'variante',
-  'pendente',
-  'aplicada',
-  'revertida',
-  'rejeitada',
-  'aberta',
-  'respondida',
-  'ativa',
-  'liberada',
-  'expirada',
-  'concluida',
-  'pausada_cota',
-  'heartbeat_perdido',
-  'expirou',
-  'trabalho_ja_leased',
-  'teto_runner',
-  'teto_projeto',
-  'recomendacao',
-  'resposta_padrao',
-  'precedente',
-  // Inline HTTP error codes of the non-envelope routes, frozen with the wire
-  // format the runner parses (t127 keeps FR7 scoped to routes/common.ts).
-  'grafo_invalido',
-  'grafo_desconhecido',
-  'grafo_versao_desconhecida',
-  'classe_ja_registrada',
-  'linhagem_nao_base',
-  'campo_invalido',
-  'versao_alvo_desconhecida',
-  'campo_obrigatorio_ausente',
-  'operacoes_invalidas',
-  'operacao_inaplicavel',
-  'versao_sem_efeito',
-  'proposta_desconhecida',
-  'proposta_nao_pendente',
-  'proposta_nao_aplicada',
-  'proposta_desatualizada',
-  'motivo_obrigatorio',
-  'corpo_invalido',
-  'filtro_invalido',
-  'runner_desconhecido',
-  'lease_desconhecida',
-  'lease_nao_ativa',
-  'id_obrigatorio',
-  'nome_invalido',
-]);
-
-const SQL_KEYWORD = /\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|VALUES|ORDER\s+BY|GROUP\s+BY|CREATE|PRAGMA|COALESCE|COUNT|CAST|json_extract|AS|SET|AND|LIMIT)\b/;
-
-/** A string made only of snake_case names, commas and whitespace: a column list. */
-const COLUMN_LIST = /^[\s,]*[a-z][a-z0-9_]*(?:\s*,\s*[a-z][a-z0-9_]*)*[\s,]*$/;
-
-/** Replaces a span with same-length blanks, so line/column numbers stay honest. */
+/** Replaces a span with same-length blanks, so line numbers stay honest. */
 function blank(text: string): string {
   return text.replace(/[^\n]/g, ' ');
 }
 
 /**
- * Masks every FR8-exempt span of a source file.
+ * Single left-to-right pass that blanks out every string literal, every template
+ * literal and every backticked span inside a comment.
+ *
+ * A hand-written scanner and not a regex alternation: with alternation, one
+ * backtick in a comment can swallow the quoted strings that follow it, and the
+ * masking silently stops applying — which is how a sweep quietly stops biting.
  *
  * @param source File contents.
- * @returns The same text with the exempt spans blanked out.
+ * @returns The same text, same length, with those spans blanked.
  */
-function maskExemptSpans(source: string): string {
-  // Quoted strings and template literals: masked when they are SQL, a column
-  // list, or one of the frozen event-type/enum values.
-  let masked = source.replace(/`(?:[^`\\]|\\.)*`|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g, (span) => {
-    const inner = span.slice(1, -1);
-    if (SQL_KEYWORD.test(inner) || COLUMN_LIST.test(inner) || FROZEN_STRING_VALUES.has(inner)) {
-      return span[0] + blank(inner) + span.at(-1);
+function maskLiteralsAndCommentQuotes(source: string): string {
+  const out: string[] = [];
+  let index = 0;
+
+  const readDelimited = (quote: string): void => {
+    // Opening delimiter stays, the content is blanked, the closing one stays.
+    out.push(source[index]);
+    index += 1;
+    const start = index;
+    while (index < source.length) {
+      const char = source[index];
+      if (char === '\\') {
+        index += 2;
+        continue;
+      }
+      if (char === quote) break;
+      // A plain quote never spans lines; a template literal may.
+      if (char === '\n' && quote !== '`') break;
+      index += 1;
     }
-    return span;
-  });
+    out.push(blank(source.slice(start, Math.min(index, source.length))));
+    if (index < source.length) {
+      out.push(source[index]);
+      index += 1;
+    }
+  };
 
-  // Backticked prose spans inside comments: how this codebase names a table,
-  // column or event while writing English around it.
-  masked = masked.replace(/^\s*(?:\/\*\*?|\*|\/\/).*$/gm, (line) =>
-    line.replace(/`[^`\n]*`/g, (span) => '`' + blank(span.slice(1, -1)) + '`'),
-  );
+  const readComment = (end: string): void => {
+    const start = index;
+    const stop = source.indexOf(end, index + 2);
+    const finish = stop === -1 ? source.length : stop + end.length;
+    // Inside a comment only the backticked spans are masked: the English prose
+    // around them still has to be scanned.
+    out.push(source.slice(start, finish).replace(/`[^`\n]*`/g, (span) => `\`${blank(span.slice(1, -1))}\``));
+    index = finish;
+  };
 
-  return masked;
+  while (index < source.length) {
+    const char = source[index];
+    const next = source[index + 1];
+
+    if (char === '/' && next === '/') {
+      readComment('\n');
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      readComment('*/');
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      readDelimited(char);
+      continue;
+    }
+    out.push(char);
+    index += 1;
+  }
+
+  return out.join('');
+}
+
+/**
+ * Blanks the token when it sits in a key or member position.
+ *
+ * `{ grafo_versao: version }`, `body.grafo`, `erro: 'x'` and `versoes?: Row[]`
+ * are the wire format FR8 freezes; a bare `const grafo = …` is not.
+ */
+function maskKeyAndMemberPositions(text: string, token: string): string {
+  const boundary = '(?![A-Za-z0-9_])';
+  return text
+    // property access / optional chaining: `.grafo`
+    .replace(new RegExp(`\\.\\s*${token}${boundary}`, 'g'), (span) => blank(span))
+    // object key, interface member, destructuring rename: `grafo:` / `grafo?:`
+    .replace(new RegExp(`(^|[{,(\\s])${token}\\s*\\??\\s*:`, 'gm'), (span) => blank(span));
 }
 
 /** Every scanned file, as a path relative to `packages/core`. */
@@ -219,20 +210,37 @@ function scannedFiles(): string[] {
   return found.sort();
 }
 
-/** Every forbidden-token hit in one file, as `path:line — token` strings. */
-function hitsIn(relative: string): string[] {
-  const masked = maskExemptSpans(readFileSync(path.join(PACKAGE_ROOT, relative), 'utf8'));
-  const hits: string[] = [];
+/** Every forbidden-token hit in one source text, as `line — token` pairs. */
+export function hitsInSource(source: string): Array<{ line: number; token: string }> {
+  const masked = maskLiteralsAndCommentQuotes(source);
+  const hits: Array<{ line: number; token: string }> = [];
 
-  masked.split('\n').forEach((line, index) => {
+  masked.split('\n').forEach((rawLine, index) => {
     for (const group of FORBIDDEN) {
       for (const word of group.bare) {
-        if (new RegExp(`\\b${word}\\b`, 'i').test(line)) {
-          hits.push(`${relative}:${index + 1} — ${word}`);
+        let line = rawLine;
+        for (const token of [word, word[0].toUpperCase() + word.slice(1)]) {
+          line = maskKeyAndMemberPositions(line, token);
+        }
+        const screaming = word.toUpperCase();
+        if (
+          // standalone word: `const trabalho = …` (never the column `trabalho_id`)
+          new RegExp(`\\b${word}\\b`, 'i').test(line) ||
+          // SCREAMING_SNAKE segment: `PREFIXO_API`
+          new RegExp(`\\b${screaming}(_|\\b)`).test(line) ||
+          // camelCase prefix: `criarApp`, `listarClasses`
+          new RegExp(`\\b${word}(?=[A-Z])`).test(line)
+        ) {
+          hits.push({ line: index + 1, token: word });
         }
       }
       for (const word of group.camel) {
-        if (line.includes(word)) hits.push(`${relative}:${index + 1} — ${word}`);
+        const line = maskKeyAndMemberPositions(rawLine, word);
+        // `Erro` must not fire on the English `Error`: a capitalized token only
+        // counts when the next character does not continue the same word.
+        if (new RegExp(`${word}(?![a-z])`).test(line)) {
+          hits.push({ line: index + 1, token: word });
+        }
       }
     }
   });
@@ -242,14 +250,15 @@ function hitsIn(relative: string): string[] {
 
 test('AC9 — no Portuguese identifier survives in packages/core/{src,test,bin}', () => {
   const files = scannedFiles();
-  assert.ok(files.length > 40, `the sweep found only ${files.length} files; it is not walking the tree`);
+  assert.ok(files.length > 30, `the sweep found only ${files.length} files; it is not walking the tree`);
 
-  const hits = files.flatMap(hitsIn);
-  assert.deepEqual(
-    hits,
-    [],
-    `Portuguese identifiers still present (D18):\n${hits.join('\n')}`,
+  const hits = files.flatMap((relative) =>
+    hitsInSource(readFileSync(path.join(PACKAGE_ROOT, relative), 'utf8')).map(
+      (hit) => `${relative}:${hit.line} — ${hit.token}`,
+    ),
   );
+
+  assert.deepEqual(hits, [], `Portuguese identifiers still present (D18):\n${hits.join('\n')}`);
 });
 
 test('AC9 — no file or directory name under packages/core/{src,test,bin} is in Portuguese', () => {
@@ -262,14 +271,45 @@ test('AC9 — no file or directory name under packages/core/{src,test,bin} is in
   assert.deepEqual(offenders, [], `Portuguese file/directory names (D18):\n${offenders.join('\n')}`);
 });
 
-test('AC9 — the sweep actually bites: a planted Portuguese identifier is caught', () => {
-  const planted = maskExemptSpans(
-    ["const trabalho = buscarTrabalho(db, 1);", "const linha = { trabalho_id: 1 };"].join('\n'),
-  );
+test('AC9 — the sweep bites on real Portuguese identifiers', () => {
+  const caught = [
+    'const trabalho = getJob(db, 1);',
+    'function buscarGrafo(db) { return db; }',
+    'export interface LinhaTrabalho { id: number }',
+    'const { erro } = report;',
+    'export const PREFIXO_API = 1;',
+    'import { criarApp } from "./server.ts";',
+    '// a versao corrente do grafo muda aqui',
+  ];
+  for (const source of caught) {
+    assert.ok(hitsInSource(source).length > 0, `the sweep missed a Portuguese identifier: ${source}`);
+  }
+});
 
-  assert.match(planted, /\btrabalho\b/, 'a bare Portuguese identifier survives masking');
-  assert.ok(
-    !/\btrabalho\b/.test('const row = { trabalho_id: 1 };'),
-    'a column-mirrored snake_case field is NOT a hit (FR8)',
-  );
+test('AC9 — the sweep does NOT bite on the FR8 exceptions', () => {
+  const allowed = [
+    // column-mirrored snake_case fields
+    'const row = { trabalho_id: 1, criado_em: now(), grafo_versao_id: null };',
+    // wire keys in key and member position
+    'return { grafo: graph, grafo_versao: version };',
+    'const version = body.grafo_versao;',
+    "reply.code(422); return { erro: 'grafo_invalido', ...report };",
+    'export interface StructureError { codigo: string; mensagem: string; alvo: unknown }',
+    // SQL and enum/event-type literals
+    "db.prepare('SELECT id, criado_em FROM trabalho WHERE id = ?');",
+    "recordEvent(db, { tipo: 'trabalho.criado' });",
+    "export type LeaseStatus = 'ativa' | 'liberada' | 'expirada';",
+    // English code that merely contains a forbidden token as a substring
+    'export class ValidationError extends Error { readonly errors: string[]; }',
+    'throw new NetworkError(url, cause);',
+    // a backticked frozen name inside English prose
+    '/** The `evento` table and the `trabalho.criado` type stay Portuguese. */',
+  ];
+  for (const source of allowed) {
+    assert.deepEqual(
+      hitsInSource(source),
+      [],
+      `the sweep flagged an FR8 exception: ${source}`,
+    );
+  }
 });

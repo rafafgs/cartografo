@@ -254,7 +254,12 @@ test('t127 — the old Portuguese input-request paths no longer exist', async (t
     ['PATCH', `/v1/perguntas/${created.body.id}/resposta`],
     ['PATCH', `/v1/perguntas/${created.body.id}/auto_resolucao`],
   ] as const) {
-    const response = await request(ctx, method, routePath, { resposta: 'x' });
+    const response = await request(
+      ctx,
+      method,
+      routePath,
+      method === 'GET' ? undefined : { resposta: 'x' },
+    );
     assert.equal(response.status, 404, `${method} ${routePath} should be gone (D18)`);
   }
 });

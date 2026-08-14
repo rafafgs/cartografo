@@ -18,6 +18,39 @@ log (onde formou fila, onde o humano foi puxado, onde o trabalho ciclou) e
 propõe mudanças no grafo para a próxima rodada. O sistema se melhora sozinho
 entre execuções, com o humano trabalhando nas exceções.
 
+## Como rodar
+
+Do checkout limpo ao primeiro grafo registrado, em três comandos:
+
+```bash
+npm install                                                          # 1
+npx cartografo                                                       # 2 (deixe rodando)
+npx cartografo import grafos-de-fabrica/desenvolvimento-de-software  # 3 (outro terminal)
+```
+
+O passo 2 é o control plane inteiro em um comando: cria `.cartografo/cartografo.db`,
+aplica as migrações pendentes, sobe o HTTP e imprime a linha `cartografo.pronto`.
+O passo 3 registra o grafo de fábrica 1 (D14) como linhagem base — conferindo
+antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a
+`grafo_versao.id` que ficou gravada. Ao final, `GET /v1/classes` lista
+`desenvolvimento-de-software`.
+
+Os outros dois subcomandos, para conferir e levar o grafo embora:
+
+```bash
+npx cartografo status                                   # servidor e projetos registrados
+npx cartografo status --json                            # o mesmo, para script
+npx cartografo export desenvolvimento-de-software       # grava ./desenvolvimento-de-software.grafo.json
+```
+
+O arquivo que `export` grava é o mesmo documento que `import` aceita de volta:
+importá-lo em outro control plane produz a mesma `grafo_versao.id`, porque o id
+de uma versão é o hash canônico do documento. `npx cartografo --help` lista tudo.
+
+Configuração: `CARTOGRAFO_PORT` e `CARTOGRAFO_DB_PATH` na partida;
+`CARTOGRAFO_URL` (ou `--url`) para apontar os outros subcomandos a um control
+plane que não esteja no default `http://127.0.0.1:4317`.
+
 ## O buraco que ele ocupa
 
 Hoje existem dois modos de graph engineering: desenhar a topologia na mão,

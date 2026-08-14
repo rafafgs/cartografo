@@ -1,4 +1,8 @@
--- 0002 — trabalho, sessão, evento e pergunta.
+-- 0003 — trabalho, sessão, evento e pergunta.
+--
+-- Numerada 0003, não 0002: t101 (grafo/grafo_versao/proposta) aterrissou na
+-- main primeiro e ocupou o 0002. `src/db/migrate.ts` falha alto em número
+-- repetido, então a renumeração no merge é obrigatória, não cosmética.
 --
 -- `evento` é a fonte de verdade (t98): append-only, sem update e sem delete.
 -- As outras três tabelas são PROJEÇÃO — estado atual, sempre reconstruível a

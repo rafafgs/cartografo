@@ -33,7 +33,7 @@ export const DIR_MIGRACOES = path.join(RAIZ_PACOTE, 'migrations');
 
 /** Artefatos que esta ficha cria; todo teste exige os que ele exercita. */
 export const ARTEFATOS_T102 = Object.freeze({
-  migracao: 'migrations/0002_trabalho_sessao_evento_pergunta.sql',
+  migracao: 'migrations/0003_trabalho_sessao_evento_pergunta.sql',
   eventos: 'src/db/eventos.ts',
   validacao: 'src/db/validacao-evento.ts',
   repoTrabalho: 'src/repositorios/trabalho.ts',

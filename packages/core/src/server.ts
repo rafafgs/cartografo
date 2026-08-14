@@ -11,8 +11,10 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { BancoDeDados } from './db/connection.ts';
 import { registrarExecucoes } from './routes/execucoes.ts';
+import { registrarGrafos } from './routes/grafos.ts';
 import { registrarSaude } from './routes/health.ts';
 import { registrarPerguntas } from './routes/perguntas.ts';
+import { registrarPropostas } from './routes/propostas.ts';
 import { registrarSessoes } from './routes/sessoes.ts';
 import { registrarTrabalhos } from './routes/trabalhos.ts';
 
@@ -41,17 +43,15 @@ export function criarApp(opcoes: OpcoesApp): FastifyInstance {
 
   registrarSaude(app, opcoes.db);
 
-  // Escopo versionado: toda rota de negócio nasce dentro dele, sem ninguém ter
-  // que lembrar da convenção.
-  app.register(
-    async (escopo) => {
-      registrarTrabalhos(escopo, opcoes.db);
-      registrarSessoes(escopo, opcoes.db);
-      registrarPerguntas(escopo, opcoes.db);
-      registrarExecucoes(escopo, opcoes.db);
-    },
-    { prefix: PREFIXO_API },
-  );
+  // Escopo versionado: toda rota de negócio nasce dentro dele. Uma linha de
+  // `register` por família de rotas — assim duas tickets que registram rotas em
+  // paralelo tocam linhas diferentes deste arquivo, e não a mesma.
+  app.register(async (escopo) => registrarGrafos(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarPropostas(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarTrabalhos(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarSessoes(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarPerguntas(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarExecucoes(escopo, opcoes.db), { prefix: PREFIXO_API });
 
   return app;
 }

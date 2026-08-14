@@ -1,4 +1,4 @@
--- 0003_runner_lease — o par runner/lease da D5.
+-- 0004_runner_lease — o par runner/lease da D5.
 --
 -- "Trabalho despachado carrega lease; runner morto expira e o trabalho volta à
 -- fila. Registros idempotentes na API" (D5). runner é a identidade do processo
@@ -9,19 +9,19 @@
 -- (D1): o runner é cliente HTTP puro e nunca abre este arquivo. É isso que faz
 -- o teto de concorrência valer para o projeto inteiro, e não por processo.
 --
--- trabalho_id fica SOLTO de propósito, sem FK: a tabela `trabalho` é entrega do
--- t102, e acoplar as duas fichas por schema forçaria uma ordem de build que
--- nenhuma das duas precisa. Mesma escolha que o t102 já fez para
--- grafo_versao_id. Quem decide se um trabalho é elegível é GET /v1/trabalhos,
--- consultado pelo controller ANTES de pedir a lease; esta tabela só guarda quem
--- ficou com o quê, até quando.
+-- trabalho_id fica SOLTO de propósito, sem FK. A razão original era ordem de
+-- build (a tabela `trabalho` é entrega do t102, que agora já aterrissou na
+-- 0003), mas o corte segue valendo pelo motivo de desenho: esta rota trata
+-- trabalho_id como inteiro opaco e nunca lê a tabela `trabalho`. Quem decide se
+-- um trabalho é elegível é GET /v1/trabalhos, consultado pelo controller ANTES
+-- de pedir a lease; esta tabela só guarda quem ficou com o quê, até quando.
+-- Apertar a FK é aditivo e fica para a ficha que ligar os dois lados.
 --
 -- Os nomes de coluna copiam os schemas de evento já especificados em
 -- especificacoes/eventos/schemas/lease.concedida.schema.json e
 -- lease.expirada.schema.json (runner_id, trabalho_id, expira_em, motivo), para
--- que ligar a emissão de telemetria quando o t102 aterrissar seja mapeamento
--- direto, não tradução. Esta migração NÃO cria a tabela de eventos: ela é do
--- t102.
+-- que ligar a emissão de telemetria seja mapeamento direto, não tradução. Esta
+-- migração NÃO cria a tabela de eventos: ela é do t102 (0003).
 --
 -- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
 

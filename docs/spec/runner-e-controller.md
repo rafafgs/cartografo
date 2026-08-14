@@ -1,6 +1,6 @@
 # Especificação: runner, lease e controller de despacho
 
-**Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0003_runner_lease.sql`](../../packages/core/migrations/0003_runner_lease.sql)
+**Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0004_runner_lease.sql`](../../packages/core/migrations/0004_runner_lease.sql)
 **Decisão de origem:** [D5](../../DECISOES.md) — "trabalho despachado carrega lease; runner morto expira e o trabalho volta à fila. Registros idempotentes na API"
 
 Um trabalho só pode ter um dono por vez, e o dono pode morrer sem avisar. Essas
@@ -261,10 +261,11 @@ do SQLite (D1); repositórios e rotas recebem o banco já aberto.
 
 ## 6. `trabalho_id` é um inteiro opaco
 
-`POST /v1/leases` **não lê a tabela `trabalho`** e não tem FK para ela. A tabela
-é entrega do `t102`, e acoplar as duas fichas por schema forçaria uma ordem de
-build que nenhuma das duas precisa — a mesma escolha que o `t102` já fez para
-`grafo_versao_id`.
+`POST /v1/leases` **não lê a tabela `trabalho`** e não tem FK para ela. A razão
+original foi ordem de build (a tabela é entrega do `t102`, hoje já mergeada na
+migração `0003`), mas o corte permanece pelo motivo de desenho — a mesma escolha
+que o `t102` já fez para `grafo_versao_id`. Apertar a FK depois é aditivo, e cabe
+à ficha que ligar os dois lados.
 
 A divisão de responsabilidade que isso produz é, aliás, a correta:
 

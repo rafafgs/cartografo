@@ -6,10 +6,10 @@
  * verbo, caminho e corpo — contra um `fetch` falso injetado, no mesmo padrão de
  * `packages/tela/src/index.ts`.
  *
- * `GET /v1/trabalhos` é rota do t102 e não existe ainda; o cliente consome
- * apenas o contrato já fechado no corpo refinado daquela ficha
- * (`id, titulo, no_atual, bloqueado, execucao_id, grafo_versao_id`), e o filtro
- * de `bloqueado` mora do lado do cliente.
+ * `GET /v1/trabalhos` é rota do t102, já mergeada; o cliente consome dela
+ * apenas o subconjunto de que precisa (`id`, `bloqueado`), e o filtro de
+ * `bloqueado` mora do lado do cliente. A rota segue simulada aqui porque o que
+ * este teste cobra é o cliente, não o server do t102.
  */
 
 import assert from 'node:assert/strict';

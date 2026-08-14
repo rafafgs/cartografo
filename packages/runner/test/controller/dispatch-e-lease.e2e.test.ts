@@ -139,8 +139,14 @@ async function subirControlPlane(t: ContextoDeTeste): Promise<string> {
 }
 
 /**
- * `fetch` que responde `GET /v1/trabalhos` (rota do t102, inexistente aqui) e
- * delega TODO o resto para o control plane de verdade.
+ * `fetch` que responde `GET /v1/trabalhos` com uma fila fixa e delega TODO o
+ * resto para o control plane de verdade.
+ *
+ * A rota existe de verdade desde que o t102 mergeou, mas continua simulada de
+ * propósito: o que a AT17 prova é o ciclo de lease sob tempo real, e semear a
+ * fila por HTTP faria o teste falhar por mudança de contrato do t102 em vez de
+ * por regressão de lease. Quem ligar o ciclo ponta a ponta (t106/t109) é quem
+ * troca esta simulação pela fila de verdade.
  */
 function fetchComFilaSimulada(): typeof fetch {
   return async (entrada, init) => {

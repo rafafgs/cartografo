@@ -139,3 +139,17 @@ comportamento e fonte do grafo de fábrica 1, sem dependência de código;
 migração/substituição do flowpilot é decisão futura, fora de escopo. Stack
 cravado: TypeScript, API REST/JSON, SQLite (D1), tela como pacote separado
 (D11).
+
+## D18 (2026-08-14) — Idioma do código: inglês
+
+Todo código do produto é em inglês: identificadores, nomes de arquivo e de
+pacote, comentários, docstrings, nomes de teste, caminhos de rota da API e
+mensagens de commit daqui em diante. Motivo: D12 (Apache-2.0) e a preparação
+open source fazem do código a superfície pública do projeto, e a audiência é
+global. O vocabulário de protocolo já era inglês (status de sessão etc.) e
+permanece. Os documentos do repo (DECISOES.md, README, notas/) seguem em
+português até decisão própria na preparação open source. O código escrito
+antes desta decisão é regularizado por um ticket de refactor dedicado.
+Fica de fora, como decisão separada ainda não tomada: as CHAVES dos formatos
+de dados em português (manifesto de skill, bundle de grafo) — mudar chave de
+formato é mudar especificação (t96–t99), não estilo de código.

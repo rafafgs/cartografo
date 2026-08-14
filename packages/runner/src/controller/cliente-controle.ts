@@ -11,21 +11,28 @@
  * `buscar` é injetável só para teste; em produção é o `fetch` global — mesmo
  * padrão de `packages/tela/src/index.ts`.
  *
- * `GET /v1/trabalhos` é entrega do t102 e ainda não existe no server. O cliente
- * consome apenas o contrato já fechado no corpo refinado daquela ficha
- * (`id, titulo, no_atual, bloqueado, execucao_id, grafo_versao_id`) e nada mais:
- * enquanto ela não aterrissa, a rota é simulada nos testes, e o dia em que
- * aterrissar não muda uma linha daqui.
+ * `GET /v1/trabalhos` é entrega do t102, hoje já mergeada, e devolve
+ * `{trabalhos: [...]}`. O cliente consome apenas o subconjunto do contrato de
+ * que precisa para escolher um candidato — `id` e `bloqueado` — e declara os
+ * demais campos só para documentar o que chega; os testes seguem simulando a
+ * rota, porque o que esta ficha prova é o comportamento do cliente, não o do
+ * server do t102.
  */
 
-/** Um trabalho, como `GET /v1/trabalhos` (t102) o devolve. */
+/**
+ * Um trabalho, como `GET /v1/trabalhos` (t102) o devolve.
+ *
+ * Subconjunto da projeção de `packages/core/src/repositorios/trabalho.ts`: os
+ * opcionais são anuláveis lá, e são anuláveis aqui pela mesma razão (execução e
+ * versão de grafo são soltas, D15).
+ */
 export interface Trabalho {
   id: number;
   titulo: string;
   no_atual: string;
   bloqueado: boolean;
-  execucao_id: number;
-  grafo_versao_id: string;
+  execucao_id: number | null;
+  grafo_versao_id: string | null;
 }
 
 /** Um runner pareado. */

@@ -98,22 +98,28 @@ lado do core confere contra esta seção.
 
 | Método | Rota | Estado | O que a tela usa |
 |---|---|---|---|
-| `GET` | `/v1/propostas` | **assumida** | Lista para as duas seções. Idealmente filtrável por `?status=`; a tela hoje pede tudo e separa no cliente. |
-| `GET` | `/v1/propostas/:id` | **assumida** | Detalhe: `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao`, `motivo_rejeicao`. |
-| `POST` | `/v1/propostas/:id/aprovar` | **assumida** | `pendente` → `aprovada`. Sem corpo. |
-| `POST` | `/v1/propostas/:id/rejeitar` | **assumida** | `{motivo}` obrigatório → `rejeitada`. |
-| `POST` | `/v1/propostas/:id/aplicar` | existe | Executa o fluxo do §5 de `entidades-versionamento.md`. |
-| `POST` | `/v1/propostas/:id/reverter` | existe | `{motivo}` obrigatório; move o ponteiro de volta. |
+| `GET` | `/v1/proposals` | **assumida** | Lista para as duas seções. Idealmente filtrável por `?status=`; a tela hoje pede tudo e separa no cliente. |
+| `GET` | `/v1/proposals/:id` | **assumida** | Detalhe: `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao`, `motivo_rejeicao`. |
+| `POST` | `/v1/proposals/:id/approve` | **assumida** | `pendente` → `aprovada`. Sem corpo. |
+| `POST` | `/v1/proposals/:id/reject` | **assumida** | `{motivo}` obrigatório → `rejeitada`. |
+| `POST` | `/v1/proposals/:id/apply` | existe | Executa o fluxo do §5 de `entidades-versionamento.md`. |
+| `POST` | `/v1/proposals/:id/revert` | existe | `{motivo}` obrigatório; move o ponteiro de volta. |
+
+Os caminhos são os da superfície `/v1` em inglês (D18, renomeada pelo `t127`);
+as **chaves** dos corpos (`propostas`, `proposta`, `motivo`, `grafo_versao`) e o
+vocabulário de status (`pendente`, `aprovada`, …) continuam em português, que é
+o que a D18 deixou de fora de propósito. Pinado contra o cliente real em
+`packages/tela/test/inbox-spec-routes.test.ts`.
 
 Envelope de resposta que a tela espera — e como ela se protege de estar errada:
 
 - lista: `{propostas: [...]}` (um array cru também é aceito);
 - detalhe e ações: `{proposta: {...}}` (a proposta crua também é aceita), mais
-  `{grafo_versao: {id}}` no `aplicar`, que é o que a linha passa a exibir;
+  `{grafo_versao: {id}}` no `apply`, que é o que a linha passa a exibir;
 - erro: `{erro, mensagem}`, em qualquer status não-2xx.
 
 **A incompatibilidade que o `t111` precisa resolver.** Hoje
-[`routes/propostas.ts`](../../packages/core/src/routes/propostas.ts) exige
+[`routes/proposals.ts`](../../packages/core/src/routes/proposals.ts) exige
 `status === 'pendente'` para aplicar, porque o estado `aprovada` ainda não
 existe. Esta tela assume o contrário: `pendente` só oferece Aprovar/Rejeitar, e
 Aplicar aparece em `aprovada`. Enquanto o `t111` não mudar essa guarda, aplicar

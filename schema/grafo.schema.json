@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cartografo:schema:grafo:1.0.0",
+  "title": "Documento de grafo (cartografo)",
+  "description": "Formato do documento de grafo: nós com papel/skill/contrato, arestas com condição, metadados de classe (D8) e linhagem (D13). Este documento é o snapshot completo de uma versão de grafo — o mesmo conteúdo que grafo_versao.snapshot guarda no banco (D15) e que sai como bundle mínimo exportável. Validação estrutural aqui é de FORMA; as quatro regras de soundness (alcançável, termina, aresta_com_condicao, no_com_contrato) são semânticas e vivem em scripts/validar-grafo.mjs.",
+  "type": "object",
+  "required": [
+    "classe",
+    "linhagem",
+    "metadata",
+    "nos",
+    "arestas",
+    "no_inicial",
+    "nos_finais"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "classe": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identidade da classe de problema, nomeada pelo usuário (D8). Raiz de versionamento do grafo e unidade de agregação da telemetria.",
+      "examples": ["desenvolvimento-de-software", "bets-assimetricas"]
+    },
+    "linhagem": {
+      "$ref": "#/$defs/linhagem"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "nos": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Etapas do grafo. Portão é nó (tipo_no: portao), não entidade separada.",
+      "items": { "$ref": "#/$defs/no" }
+    },
+    "arestas": {
+      "type": "array",
+      "description": "Transições entre nós, cada uma rotulada por uma condição.",
+      "items": { "$ref": "#/$defs/aresta" }
+    },
+    "no_inicial": {
+      "$ref": "#/$defs/id_no",
+      "description": "Id do nó por onde toda travessia começa. Precisa existir em nos."
+    },
+    "nos_finais": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Ids dos nós que encerram a travessia. Todo id precisa existir em nos.",
+      "items": { "$ref": "#/$defs/id_no" }
+    }
+  },
+  "$defs": {
+    "id_no": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "description": "Identificador de nó, único no documento. Minúsculas, dígitos, hífen e underscore."
+    },
+    "linhagem": {
+      "type": "object",
+      "description": "Posição do grafo na linhagem da classe (D13): cada classe tem um grafo-base e um projeto pode ter uma variante, que é fork do base. O fork nasce de proposta do topógrafo com evidência, nunca de decisão a priori.",
+      "required": ["tipo"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": {
+          "enum": ["base", "variante"],
+          "description": "base: o grafo canônico da classe. variante: fork de um base, com diff e linhagem registrados."
+        },
+        "base_classe": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Classe do grafo-base do qual esta variante saiu. Obrigatório quando tipo = variante."
+        },
+        "origem_proposta_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Id da proposta do topógrafo que originou o fork (D13). Opcional: uma variante importada de um atlas externo pode não ter proposta local de origem."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "tipo": { "const": "variante" } }, "required": ["tipo"] },
+          "then": { "required": ["tipo", "base_classe"] }
+        },
+        {
+          "if": { "properties": { "tipo": { "const": "base" } }, "required": ["tipo"] },
+          "then": {
+            "not": { "anyOf": [{ "required": ["base_classe"] }, { "required": ["origem_proposta_id"] }] }
+          }
+        }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Gaveta de metadados do documento. Deliberadamente aberta a chaves extras (additionalProperties: true) enquanto o formato não congela — regra dos dois consumidores.",
+      "required": ["nome", "versao_schema"],
+      "additionalProperties": true,
+      "properties": {
+        "nome": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Nome legível do grafo."
+        },
+        "descricao": {
+          "type": "string",
+          "description": "O que este mapa cobre, em uma ou duas frases."
+        },
+        "versao_schema": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Versão do schema do documento contra a qual este grafo foi escrito (semver; casa com a versão em $id)."
+        },
+        "criado_em": {
+          "type": "string",
+          "format": "date",
+          "description": "Data de criação do documento (AAAA-MM-DD)."
+        },
+        "origem": {
+          "type": "string",
+          "description": "De onde este grafo veio: sintetizador, porte manual, importação de atlas."
+        }
+      }
+    },
+    "no": {
+      "type": "object",
+      "description": "Uma etapa do grafo. Tudo que executa é skill com contrato; o que muda é o papel (fazer, conferir, rotear).",
+      "required": ["id", "papel", "tipo_no", "skill_ref", "contrato"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id_no" },
+        "papel": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Quem faz o trabalho, na linguagem do domínio (arquiteto, desenvolvedor, tester).",
+          "examples": ["arquiteto", "desenvolvedor", "red-team"]
+        },
+        "descricao": {
+          "type": "string",
+          "description": "O que este nó faz, em uma frase."
+        },
+        "tipo_no": {
+          "enum": ["trabalho", "portao"],
+          "description": "trabalho: produz artefato. portao: confere e roteia — passou/falhou/escala, sempre com evidência. Portão é nó como outro qualquer, e determinístico sempre que possível."
+        },
+        "skill_ref": { "$ref": "#/$defs/skill_ref" },
+        "contrato": { "$ref": "#/$defs/contrato" }
+      }
+    },
+    "skill_ref": {
+      "type": "object",
+      "description": "Ponteiro opaco para uma skill do registro, pinado por versão e hash (D4). O formato interno do manifesto de skill é outro documento (t97) — aqui só o pin importa.",
+      "required": ["id", "versao", "hash"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identificador da skill no registro."
+        },
+        "versao": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Versão semver da skill."
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Pin por hash do conteúdo da skill (D4): skill importada é vetor de prompt injection; o hash é o que impede troca silenciosa por baixo de um grafo já validado."
+        }
+      }
+    },
+    "contrato": {
+      "type": "object",
+      "description": "A peça de sustentação (README princípio 3, D9): entrada e saída em JSON Schema, verificação como lista de checks tipados. Sem contrato o sintetizador compõe por alucinação; com contrato, compor grafo vira casar contratos.",
+      "required": ["entrada_schema", "saida_schema", "verificacoes"],
+      "additionalProperties": false,
+      "properties": {
+        "entrada_schema": {
+          "type": "object",
+          "description": "JSON Schema da projeção de estado que o nó recebe (README princípio 4: estado explícito, nunca janela comum)."
+        },
+        "saida_schema": {
+          "type": "object",
+          "description": "JSON Schema do que o nó devolve ao quadro."
+        },
+        "verificacoes": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Como se confere o que este nó produziu. Pelo menos uma; determinística sempre que possível.",
+          "items": { "$ref": "#/$defs/verificacao" }
+        }
+      }
+    },
+    "verificacao": {
+      "oneOf": [
+        { "$ref": "#/$defs/verificacao_deterministica" },
+        { "$ref": "#/$defs/verificacao_agentica" }
+      ]
+    },
+    "verificacao_deterministica": {
+      "type": "object",
+      "description": "Comando que passa ou falha sozinho: rodar teste, validar schema, build.",
+      "required": ["tipo", "comando"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "deterministico" },
+        "comando": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Comando executável, tal como roda no repositório de trabalho."
+        },
+        "descricao": {
+          "type": "string",
+          "description": "O que este check prova."
+        }
+      }
+    },
+    "verificacao_agentica": {
+      "type": "object",
+      "description": "Check que exige julgamento. Verifica com evidência própria — nunca com o relato de quem fez o trabalho.",
+      "required": ["tipo", "instrucao", "evidencia_obrigatoria"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "const": "agentico" },
+        "instrucao": {
+          "type": "string",
+          "minLength": 1,
+          "description": "O que o verificador precisa julgar, na forma de pergunta respondível."
+        },
+        "evidencia_obrigatoria": {
+          "const": true,
+          "description": "Sempre true (D9): check agêntico sem evidência anexada não é verificação, é opinião."
+        },
+        "descricao": {
+          "type": "string",
+          "description": "O que este check prova."
+        }
+      }
+    },
+    "aresta": {
+      "type": "object",
+      "description": "Transição de um nó para outro, rotulada pelo resultado do nó de origem.",
+      "required": ["de", "para", "condicao"],
+      "additionalProperties": false,
+      "properties": {
+        "de": { "$ref": "#/$defs/id_no" },
+        "para": { "$ref": "#/$defs/id_no" },
+        "condicao": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Rótulo do resultado do nó de origem (\"aprovado\", \"retrabalho\") quando a origem tem múltiplas saídas, ou o literal \"sempre\" quando tem saída única. String simples de propósito: sem linguagem de expressão antes de existirem dois grafos reais pressionando o formato.",
+          "examples": ["sempre", "aprovado", "retrabalho"]
+        },
+        "descricao": {
+          "type": "string",
+          "description": "Quando esta transição acontece, em uma frase."
+        }
+      }
+    }
+  }
+}

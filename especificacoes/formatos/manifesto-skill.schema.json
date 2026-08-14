@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cartografo.dev/especificacoes/formatos/manifesto-skill.schema.json",
+  "title": "Manifesto de skill — cartografo",
+  "description": "Contrato de entrada no registro de capacidades (D4, D9). Ver especificacoes/formatos/manifesto-skill.md.",
+  "type": "object",
+  "required": [
+    "id",
+    "versao",
+    "hash",
+    "papel",
+    "descricao",
+    "entrada",
+    "saida",
+    "pre_condicoes",
+    "checks",
+    "permissoes",
+    "instrucoes",
+    "origem"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "identificador estável da skill; único no registro"
+    },
+    "versao": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "semver da skill; muda a cada diff aprovado no portão humano"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "description": "pin de conteúdo (D4): sha256 da serialização JSON canônica de {instrucoes, entrada, saida, checks, permissoes}"
+    },
+    "papel": {
+      "type": "string",
+      "enum": ["fazer", "portao"],
+      "description": "fazer = produz artefato; portao = confere artefato de outro nó"
+    },
+    "descricao": {
+      "type": "string",
+      "minLength": 1,
+      "description": "uma linha; é o que o sintetizador lê ao consultar o registro de capacidades"
+    },
+    "entrada": {
+      "type": "object",
+      "description": "documento JSON Schema válido (validado à parte pelo meta-schema oficial)"
+    },
+    "saida": {
+      "type": "object",
+      "description": "documento JSON Schema válido; para papel=portao deve incluir um campo resultado com enum [\"passou\",\"falhou\",\"escalar_humano\"]"
+    },
+    "pre_condicoes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "o que precisa ser verdade no estado antes de despachar; o executor checa antes de abrir sessão"
+    },
+    "checks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/check" },
+      "description": "verificação tipada do que a skill produz (D9)"
+    },
+    "permissoes": { "$ref": "#/$defs/permissoes" },
+    "instrucoes": {
+      "type": "string",
+      "minLength": 1,
+      "description": "corpo em Markdown; pode conter {{entrada.<campo>}} resolvidos pelo runner antes da injeção"
+    },
+    "origem": { "$ref": "#/$defs/origem" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "papel": { "const": "portao" } } },
+      "then": { "properties": { "checks": { "type": "array", "minItems": 1 } } }
+    }
+  ],
+  "$defs": {
+    "check": {
+      "type": "object",
+      "required": ["id", "tipo", "descricao"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "estável dentro da skill; é a chave por onde a telemetria agrega o check"
+        },
+        "descricao": { "type": "string" },
+        "tipo": { "type": "string", "enum": ["deterministico", "agentico"] },
+        "comando": {
+          "type": "string",
+          "description": "check determinístico: exit 0 = passou; qualquer outro = falhou"
+        },
+        "timeout_s": { "type": "integer", "minimum": 1 },
+        "instrucao": {
+          "type": "string",
+          "description": "check agêntico: o julgamento pedido, incluindo a exigência de evidência própria"
+        },
+        "evidencia_obrigatoria": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "artefatos que o veredito precisa citar; sem eles o check não conclui"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "tipo": { "const": "deterministico" } } },
+          "then": { "required": ["comando"] }
+        },
+        {
+          "if": { "properties": { "tipo": { "const": "agentico" } } },
+          "then": { "required": ["instrucao", "evidencia_obrigatoria"] }
+        }
+      ]
+    },
+    "permissoes": {
+      "type": "object",
+      "required": ["filesystem", "rede"],
+      "additionalProperties": false,
+      "properties": {
+        "filesystem": {
+          "type": "object",
+          "required": ["leitura", "escrita"],
+          "properties": {
+            "leitura": { "type": "array", "items": { "type": "string" } },
+            "escrita": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "rede": {
+          "type": "object",
+          "required": ["permitido"],
+          "properties": {
+            "permitido": { "type": "boolean" },
+            "dominios": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "origem": {
+      "type": "object",
+      "required": ["tipo"],
+      "properties": {
+        "tipo": { "type": "string", "enum": ["nativa", "importada"] },
+        "repo": { "type": "string" },
+        "ref": { "type": "string" },
+        "importado_por": { "type": "string" },
+        "importado_em": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "data ISO 8601 (AAAA-MM-DD)"
+        },
+        "revisado_por": {
+          "type": "string",
+          "description": "quem assinou o portão de importação (D4); pessoa, nunca agente"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "tipo": { "const": "importada" } } },
+          "then": {
+            "required": [
+              "repo",
+              "ref",
+              "importado_por",
+              "importado_em",
+              "revisado_por"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

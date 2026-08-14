@@ -1,0 +1,96 @@
+{
+  "classe": "nota-curta",
+  "linhagem": {
+    "tipo": "base"
+  },
+  "metadata": {
+    "nome": "Nota curta — grafo mínimo",
+    "descricao": "O menor documento de grafo que ainda é sound: um nó de trabalho, um portão terminal e a aresta entre eles. Serve de esqueleto para quem está escrevendo o primeiro grafo.",
+    "versao_schema": "1.0.0",
+    "criado_em": "2026-08-14",
+    "origem": "porte manual (exemplo da especificação)"
+  },
+  "nos": [
+    {
+      "id": "redigir",
+      "papel": "redator",
+      "tipo_no": "trabalho",
+      "descricao": "Escreve a nota a partir do tema declarado.",
+      "skill_ref": {
+        "id": "cartografo/redigir-nota",
+        "versao": "1.0.0",
+        "hash": "sha256:2745f9d87a5b35e77dc5a73b8db71039cdfdae5a4c647f2f4122c1f3fb384b18"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": ["tema"],
+          "properties": {
+            "tema": { "type": "string", "minLength": 1 }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": ["texto"],
+          "properties": {
+            "texto": { "type": "string", "minLength": 1 }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "deterministico",
+            "comando": "test -s nota.md",
+            "descricao": "A nota existe e não está vazia."
+          }
+        ]
+      }
+    },
+    {
+      "id": "revisar",
+      "papel": "revisor",
+      "tipo_no": "portao",
+      "descricao": "Confere a nota contra o tema declarado e encerra a travessia.",
+      "skill_ref": {
+        "id": "cartografo/revisar-nota",
+        "versao": "1.0.0",
+        "hash": "sha256:2df09e19d5917210efc074a4d3c9d5f4c8e20e29e479f524afdcbbc9859b3e55"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": ["tema", "texto"],
+          "properties": {
+            "tema": { "type": "string" },
+            "texto": { "type": "string" }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": ["resultado", "evidencia"],
+          "properties": {
+            "resultado": { "enum": ["passou", "falhou", "escala"] },
+            "evidencia": { "type": "string", "minLength": 1 }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "agentico",
+            "instrucao": "A nota responde ao tema declarado sem afirmação sem fonte? Cite o trecho que sustenta o veredito.",
+            "evidencia_obrigatoria": true,
+            "descricao": "Julgamento de aderência ao tema, com evidência própria."
+          }
+        ]
+      }
+    }
+  ],
+  "arestas": [
+    {
+      "de": "redigir",
+      "para": "revisar",
+      "condicao": "sempre",
+      "descricao": "Saída única: a nota redigida sempre segue para revisão."
+    }
+  ],
+  "no_inicial": "redigir",
+  "nos_finais": ["revisar"]
+}

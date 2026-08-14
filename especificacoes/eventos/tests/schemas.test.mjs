@@ -202,6 +202,15 @@ test('nenhum schema descreve update ou delete de evento (append-only)', () => {
   }
 });
 
+test('taxonomia.md referencia todos os schemas', () => {
+  // Item mecânico da definição de pronto. O resto do documento é prosa e é
+  // conferido por revisão humana no portão de aceite (exceção ao TDD da
+  // ficha); "existe schema sem entrada no catálogo" não é prosa.
+  const doc = readFileSync(fileURLToPath(new URL('../taxonomia.md', import.meta.url)), 'utf8');
+  const ausentes = arquivosDeSchema().filter((nome) => !doc.includes(nome));
+  assert.deepEqual(ausentes, [], `schemas sem referência em taxonomia.md: ${ausentes.join(', ')}`);
+});
+
 test('nenhum tipo de evento fora do escopo da PoC', () => {
   // `service_class` (urgência) e os eventos de proposta ficam fora da PoC
   // (D6/D16). A checagem é por NOME DE TIPO, não por vocabulário: citar o

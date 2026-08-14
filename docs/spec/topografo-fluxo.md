@@ -32,7 +32,7 @@ qualquer detalhe:
 | Lente de fluxo | [`metricas.ts`](../../packages/runner/src/topografo/metricas.ts) | Dobra o log da execução em quatro números por nó e nomeia o gargalo. | Sim: função pura, sem HTTP, sem relógio. |
 | Orquestrador | [`proposta.ts`](../../packages/runner/src/topografo/proposta.ts) | Monta evidência e hipótese, despacha **uma** sessão para escolher as operações, valida e grava a proposta. | A parte que importa, sim — só a escolha das operações é agêntica. |
 
-A entrada da primeira metade é `GET /v1/execucoes/:id/eventos` (§6) mais os ids
+A entrada da primeira metade é `GET /v1/executions/:id/events` (§6) mais os ids
 dos nós da versão de grafo sob a qual a execução correu. A saída da segunda é
 uma linha em `proposta`, sempre com status `pendente`.
 
@@ -84,7 +84,7 @@ sem sinal, e o desfecho correto é não propor nada (§5).
 
 ## 4. A evidência e a hipótese
 
-Uma proposta é uma hipótese: `POST /v1/propostas` recusa com `400` qualquer uma
+Uma proposta é uma hipótese: `POST /v1/proposals` recusa com `400` qualquer uma
 que chegue sem `evidencia` e sem `metrica_esperada`
 ([`entidades-versionamento.md` §6](entidades-versionamento.md)). O topógrafo
 monta as duas antes de qualquer agente entrar na história.
@@ -120,7 +120,7 @@ custa 25s" não é acionável, "o nó passa 20s com agente aberto" é.
 
 `para` é 20% abaixo de `de` — ambição declarada, não limiar. Quem julga a
 hipótese na rodada seguinte (`t112`) compara o número medido com **`de`**, nunca
-com `para` ([`hypothesis.ts`](../../packages/core/src/dominio/hypothesis.ts)):
+com `para` ([`hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts)):
 "andou na direção declarada, menos do que se esperava" é hipótese confirmada, e
 não fracasso.
 
@@ -152,12 +152,12 @@ mais nada. O único `POST` desta camada é o do orquestrador.
 ## 6. A ordem de uma rodada
 
 ```
-resolver versão da execução      (GET /v1/execucoes/:id/metricas-por-versao)
+resolver versão da execução      (GET /v1/executions/:id/metrics-by-version)
         │
         ├─ nenhuma versão declarada ──▶ erro, nada gravado
         ▼
-ler o snapshot da versão          (GET /v1/grafo-versoes/:id)
-ler o log inteiro da execução     (GET /v1/execucoes/:id/eventos)
+ler o snapshot da versão          (GET /v1/graph-versions/:id)
+ler o log inteiro da execução     (GET /v1/executions/:id/events)
         ▼
 calcularMetricasDeFluxo(eventos, nós do snapshot)
         │
@@ -168,9 +168,9 @@ montar evidência + métrica esperada   (nosso código, determinístico)
 uma sessão de EngineAdapter escolhe as operações
         │
         ├─ falhou / estourou o relógio / arquivo ausente / `operacoes` vazias
-        │  ou malformadas ──▶ erro, ZERO chamadas a POST /v1/propostas
+        │  ou malformadas ──▶ erro, ZERO chamadas a POST /v1/proposals
         ▼
-POST /v1/propostas  (exatamente uma vez)  ──▶  proposta `pendente`
+POST /v1/proposals  (exatamente uma vez)  ──▶  proposta `pendente`
 ```
 
 Três garantias que o desenho compra, e que os testes de aceite cobram:
@@ -180,7 +180,7 @@ Três garantias que o desenho compra, e que os testes de aceite cobram:
    servidor continua sendo a autoridade — ele valida de novo — mas descobrir um
    diff malformado não custa uma linha no banco.
 2. **Exatamente uma proposta por rodada.** Não há laço, não há retry silencioso.
-3. **Nada é aplicado.** Não existe chamada a `POST /v1/propostas/:id/aplicar`
+3. **Nada é aplicado.** Não existe chamada a `POST /v1/proposals/:id/apply`
    nesta camada, e o cliente do runner nem sequer tem o método: aplicar é
    decisão humana (README, princípio 5), e um cliente que não tem o botão não o
    aperta por engano.
@@ -196,10 +196,10 @@ base nova é trabalho de outra rodada ([t118](entidades-versionamento.md)).
 
 | Método | Rota | Papel nesta camada |
 |---|---|---|
-| `GET` | `/v1/execucoes/:id/eventos` | **Novo (t110).** O log inteiro da execução, em ordem de `id`. Execução sem evento nenhum responde `200` com lista vazia — execução é agrupador opaco, nunca entidade, então não há `404`. |
-| `GET` | `/v1/execucoes/:id/metricas-por-versao` | Sob que versão a rodada correu (o log não carrega `grafo_versao_id`). |
-| `GET` | `/v1/grafo-versoes/:id` | O snapshot: os nós que a medição reporta e as arestas que vão no prompt. |
-| `POST` | `/v1/propostas` | A única escrita. Devolve `201` com a proposta `pendente`. |
+| `GET` | `/v1/executions/:id/events` | **Novo (t110).** O log inteiro da execução, em ordem de `id`. Execução sem evento nenhum responde `200` com lista vazia — execução é agrupador opaco, nunca entidade, então não há `404`. |
+| `GET` | `/v1/executions/:id/metrics-by-version` | Sob que versão a rodada correu (o log não carrega `grafo_versao_id`). |
+| `GET` | `/v1/graph-versions/:id` | O snapshot: os nós que a medição reporta e as arestas que vão no prompt. |
+| `POST` | `/v1/proposals` | A única escrita. Devolve `201` com a proposta `pendente`. |
 
 Do lado do runner, tudo isso passa por `ClienteControle`
 ([`cliente-controle.ts`](../../packages/runner/src/controller/cliente-controle.ts)),

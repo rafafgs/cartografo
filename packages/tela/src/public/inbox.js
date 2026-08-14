@@ -21,7 +21,7 @@ import { ACTIONS, isOpen, resolveActionsForStatus } from './actions.js';
 import { renderOperations } from './diff.js';
 
 /** List endpoint. Filtering happens upstream; the screen only asks. */
-const LIST_URL = '/v1/propostas';
+const LIST_URL = '/v1/proposals';
 
 /**
  * Starts the page.
@@ -57,6 +57,16 @@ export function mount(doc, request) {
     node.replaceChildren(...children);
     return node;
   }
+
+  /**
+   * Serial number behind the id of each reason field.
+   *
+   * Not derived from the proposal id: that value comes from the API, and a
+   * `for`/`id` pair breaks on anything with a space in it. Two rows can have a
+   * field open at the same time and a duplicate id would aim both labels at the
+   * first one, so the counter is per field, not per action.
+   */
+  let fieldCount = 0;
 
   /**
    * One HTTP call, with failures already turned into a body.
@@ -262,7 +272,7 @@ export function mount(doc, request) {
      * Fires an action, asking for a reason first when the action needs one
      * (FR7: reject and revert do, approve and apply do not).
      *
-     * @param {'aprovar'|'rejeitar'|'aplicar'|'reverter'} name
+     * @param {'approve'|'reject'|'apply'|'revert'} name
      */
     function start(name) {
       const action = ACTIONS[name];
@@ -272,9 +282,17 @@ export function mount(doc, request) {
       }
 
       const form = el('span', 'reason');
+
+      // The question is a real <label>, not a placeholder. A placeholder is a
+      // hint: it disappears at the first keystroke, and it is not a name a
+      // screen reader can count on — which leaves the one field on this page
+      // that takes a written justification unable to say what it is for.
+      const fieldId = `reason-${(fieldCount += 1)}`;
+      const label = el('label', 'reason-label', action.reasonLabel);
+      label.htmlFor = fieldId;
       const input = el('input', 'reason-input');
+      input.id = fieldId;
       input.type = 'text';
-      input.placeholder = action.reasonLabel;
       const confirm = el('button', 'action', `Confirmar ${action.label.toLowerCase()}`);
       confirm.type = 'button';
       confirm.disabled = true;
@@ -292,7 +310,7 @@ export function mount(doc, request) {
         message.textContent = '';
       });
 
-      form.append(input, confirm, cancel);
+      form.append(label, input, confirm, cancel);
       fill(controls, form);
       input.focus();
     }
@@ -300,7 +318,7 @@ export function mount(doc, request) {
     /**
      * Calls the API and updates THIS row — the whole point of FR8.
      *
-     * @param {'aprovar'|'rejeitar'|'aplicar'|'reverter'} name
+     * @param {'approve'|'reject'|'apply'|'revert'} name
      * @param {string|undefined} reason
      */
     async function run(name, reason) {

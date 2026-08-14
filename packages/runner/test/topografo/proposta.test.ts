@@ -4,9 +4,9 @@
  *
  * This is D16's "beat the flowpilot" milestone exercised end to end: a real
  * control plane over HTTP, a real event log read back through
- * `GET /v1/execucoes/:id/eventos`, a real `EngineAdapter` session (the fake
+ * `GET /v1/executions/:id/events`, a real `EngineAdapter` session (the fake
  * engine, for the reason the conformance kit records), and a real
- * `POST /v1/propostas` — with the evidence computed by our own code, never by
+ * `POST /v1/proposals` — with the evidence computed by our own code, never by
  * the agent's recall.
  *
  * Three claims, one per test:
@@ -180,7 +180,7 @@ async function startControlPlane(t: TestHook): Promise<string> {
     const line = out
       .split('\n')
       .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.pronto'));
+      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
     if (line !== undefined) return (JSON.parse(line) as { url: string }).url;
     await delay(50);
   }
@@ -228,7 +228,7 @@ async function seedBottleneck(baseUrl: string, versaoId: string): Promise<void> 
   const work = await api<Work>(
     baseUrl,
     'POST',
-    '/v1/trabalhos',
+    '/v1/jobs',
     {
       titulo: 'travessia com gargalo',
       no_entrada_id: 'redigir',
@@ -239,13 +239,13 @@ async function seedBottleneck(baseUrl: string, versaoId: string): Promise<void> 
   );
 
   // Lands on `revisar` and waits in the dispatch queue.
-  await api(baseUrl, 'POST', `/v1/trabalhos/${work.id}/transicoes`, { para_no_id: 'revisar' });
+  await api(baseUrl, 'POST', `/v1/jobs/${work.id}/transitions`, { para_no_id: 'revisar' });
   await delay(GAP_MS);
 
   const session = await api<Session>(
     baseUrl,
     'POST',
-    '/v1/sessoes',
+    '/v1/sessions',
     {
       trabalho_id: work.id,
       no_id: 'revisar',
@@ -260,7 +260,7 @@ async function seedBottleneck(baseUrl: string, versaoId: string): Promise<void> 
   const question = await api<Question>(
     baseUrl,
     'POST',
-    '/v1/perguntas',
+    '/v1/input-requests',
     {
       trabalho_id: work.id,
       sessao_id: session.id,
@@ -272,11 +272,11 @@ async function seedBottleneck(baseUrl: string, versaoId: string): Promise<void> 
   );
   await delay(GAP_MS);
 
-  await api(baseUrl, 'PATCH', `/v1/perguntas/${question.id}/resposta`, {
+  await api(baseUrl, 'PATCH', `/v1/input-requests/${question.id}/answer`, {
     resposta: 'responde, siga',
     respondido_por: 'rafael',
   });
-  await api(baseUrl, 'PATCH', `/v1/sessoes/${session.id}/finalizar`, {
+  await api(baseUrl, 'PATCH', `/v1/sessions/${session.id}/finish`, {
     status: 'concluida',
     exit_code: 0,
     uso: null,
@@ -291,7 +291,7 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
   const { grafo_versao: versao } = await api<{ grafo_versao: GraphVersion }>(
     baseUrl,
     'POST',
-    '/v1/grafos',
+    '/v1/graphs',
     documento,
     201,
   );
@@ -303,7 +303,7 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
   await api(
     baseUrl,
     'POST',
-    '/v1/trabalhos',
+    '/v1/jobs',
     {
       titulo: 'travessia sem sinal',
       no_entrada_id: 'redigir',
@@ -321,7 +321,7 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
   const { eventos } = await api<{ eventos: Event[] }>(
     baseUrl,
     'GET',
-    `/v1/execucoes/${EXECUTION_WITH_SIGNAL}/eventos`,
+    `/v1/executions/${EXECUTION_WITH_SIGNAL}/events`,
   );
   assert.ok(eventos.length >= 6, `the seeded log is too short: ${JSON.stringify(eventos)}`);
 
@@ -409,7 +409,7 @@ function engineWriting(arquivo: string, conteudo: string): Record<string, string
 }
 
 const postsToProposals = (calls: readonly string[]): string[] =>
-  calls.filter((chamada) => chamada === 'POST /v1/propostas');
+  calls.filter((chamada) => chamada === 'POST /v1/proposals');
 
 test('t110 — a run with a bottleneck lands exactly one pending proposal, backed by real event ids', async (t) => {
   const { proporMelhoriaDeFluxo, ARQUIVO_DE_SAIDA } = await loadProposal();
@@ -434,8 +434,8 @@ test('t110 — a run with a bottleneck lands exactly one pending proposal, backe
 
   assert.deepEqual(
     postsToProposals(cenario.calls),
-    ['POST /v1/propostas'],
-    'exactly one POST /v1/propostas, never two',
+    ['POST /v1/proposals'],
+    'exactly one POST /v1/proposals, never two',
   );
   assert.deepEqual(
     cenario.calls.filter((chamada) => chamada.includes('/aplicar')),
@@ -446,7 +446,7 @@ test('t110 — a run with a bottleneck lands exactly one pending proposal, backe
   const { propostas } = await api<{ propostas: Proposal[] }>(
     cenario.baseUrl,
     'GET',
-    '/v1/propostas',
+    '/v1/proposals',
   );
   assert.equal(propostas.length, 1);
   const proposta = propostas[0];
@@ -525,7 +525,7 @@ test('t110 — a session that returns nothing usable aborts, and posts nothing',
   const { propostas } = await api<{ propostas: Proposal[] }>(
     cenario.baseUrl,
     'GET',
-    '/v1/propostas',
+    '/v1/proposals',
   );
   assert.deepEqual(propostas, [], 'and nothing landed in the book');
 });

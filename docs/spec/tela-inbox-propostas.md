@@ -146,6 +146,14 @@ vira leitura, nunca exceção no meio da renderização. Um botão que aparece e
 volta `409` ensina a pessoa a desconfiar da tela, o que é pior que um botão a
 menos.
 
+Onde o motivo é obrigatório, o campo aparece com a pergunta em um `<label>`
+visível, amarrado ao input por `for`/`id` (`Por que esta hipótese não vale a
+pena?`, `Por que a versão aplicada está sendo abandonada?`). Não é placeholder:
+placeholder é dica, some no primeiro caractere digitado e não é nome acessível
+confiável — e este é justamente o campo da página que pede uma justificativa
+escrita. Pinado em `packages/tela/test/inbox-reason-field.test.ts`, que resolve
+o nome como um leitor de tela resolveria.
+
 A regra mora em uma função pura, `resolveActionsForStatus`
 ([`src/public/actions.js`](../../packages/tela/src/public/actions.js)), testada
 em Node mesmo rodando no navegador.

@@ -3,7 +3,7 @@
  * FR3/FR4).
  *
  * This module is the half of the surveyor that no agent touches. It reads the
- * append-only log of a whole execution (`GET /v1/execucoes/:id/eventos`) and
+ * append-only log of a whole execution (`GET /v1/executions/:id/events`) and
  * answers four questions per node — how long agents were busy on it, how long
  * work sat blocked on it, how long work waited in the dispatch queue for it,
  * and how many questions it escalated — then names the worst one.

@@ -10,9 +10,10 @@
  * status vocabulary and will grow it (`t112` writes `resultado`), so the screen
  * has to degrade to read-only instead of throwing in the middle of a render.
  *
- * Status names and action names stay in Portuguese because they are the API's
- * vocabulary, not this package's identifiers (D18): `aprovar` here is literally
- * the path of `POST /v1/propostas/:id/aprovar`.
+ * Status names stay in Portuguese because they are DB enum values the API
+ * publishes verbatim (t127, FR8). Action names, on the other hand, ARE the route:
+ * `approve` here is literally the path of `POST /v1/proposals/:id/approve`, so
+ * they were renamed with the rest of the `/v1` surface (t127, FR3/FR4).
  */
 
 import assert from 'node:assert/strict';
@@ -37,17 +38,17 @@ async function loadActions(): Promise<typeof ActionsModule> {
 
 test('AT8 — a pending proposal offers approve and reject, in that order', async () => {
   const { resolveActionsForStatus } = await loadActions();
-  assert.deepEqual(resolveActionsForStatus('pendente'), ['aprovar', 'rejeitar']);
+  assert.deepEqual(resolveActionsForStatus('pendente'), ['approve', 'reject']);
 });
 
 test('AT9 — an approved proposal offers only apply', async () => {
   const { resolveActionsForStatus } = await loadActions();
-  assert.deepEqual(resolveActionsForStatus('aprovada'), ['aplicar']);
+  assert.deepEqual(resolveActionsForStatus('aprovada'), ['apply']);
 });
 
 test('AT10 — an applied proposal offers only revert', async () => {
   const { resolveActionsForStatus } = await loadActions();
-  assert.deepEqual(resolveActionsForStatus('aplicada'), ['reverter']);
+  assert.deepEqual(resolveActionsForStatus('aplicada'), ['revert']);
 });
 
 test('AT11 — reverted and rejected proposals are read-only', async () => {
@@ -82,13 +83,13 @@ test('AT12 — every offered action carries the label and route its row needs', 
   for (const action of offered) {
     const descriptor = ACTIONS[action];
     assert.ok(descriptor !== undefined, `action "${action}" has no descriptor in ACTIONS`);
-    assert.equal(descriptor.route, action, 'the core route is POST /v1/propostas/:id/<action>');
+    assert.equal(descriptor.route, action, 'the core route is POST /v1/proposals/:id/<action>');
     assert.ok(descriptor.label.length > 0, `action "${action}" has no visible label`);
   }
 
   // FR7: reject and revert take a mandatory reason; approve and apply do not.
-  assert.equal(ACTIONS.rejeitar.requiresReason, true);
-  assert.equal(ACTIONS.reverter.requiresReason, true);
-  assert.equal(ACTIONS.aprovar.requiresReason, false);
-  assert.equal(ACTIONS.aplicar.requiresReason, false);
+  assert.equal(ACTIONS.reject.requiresReason, true);
+  assert.equal(ACTIONS.revert.requiresReason, true);
+  assert.equal(ACTIONS.approve.requiresReason, false);
+  assert.equal(ACTIONS.apply.requiresReason, false);
 });

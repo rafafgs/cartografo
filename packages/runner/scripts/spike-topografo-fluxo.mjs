@@ -21,7 +21,7 @@
  * 3. Between them the work is blocked and unblocked through the API — the
  *    operator action a human escalation would produce — so the run has real
  *    wait time on a real node.
- * 4. The surveyor reads THAT execution through `GET /v1/execucoes/:id/eventos`,
+ * 4. The surveyor reads THAT execution through `GET /v1/executions/:id/events`,
  *    computes time per node, and dispatches one more real session to choose the
  *    semantic diff.
  * 5. Exactly one proposal lands in the book, `pendente`, and its `evidencia`
@@ -105,7 +105,7 @@ async function subirControlPlane() {
     const linha = saida
       .split('\n')
       .map((texto) => texto.trim())
-      .find((texto) => texto.startsWith('{') && texto.includes('cartografo.pronto'));
+      .find((texto) => texto.startsWith('{') && texto.includes('cartografo.ready'));
     if (linha !== undefined) return { url: JSON.parse(linha).url, filho, base };
     await esperar(50);
   }
@@ -150,7 +150,7 @@ async function principal() {
   try {
     // --- 1. o grafo vira dado -------------------------------------------------
     const documento = JSON.parse(readFileSync(GRAFO_MINIMO, 'utf8'));
-    const { grafo, grafo_versao: versao } = await api(url, 'POST', '/v1/grafos', documento, 201);
+    const { grafo, grafo_versao: versao } = await api(url, 'POST', '/v1/graphs', documento, 201);
     registrar(`grafo "${grafo.id}" registrado na versão ${versao.id}`);
 
     const { raiz, repo } = criarRepoDescartavel();
@@ -160,7 +160,7 @@ async function principal() {
     const trabalho = await api(
       url,
       'POST',
-      '/v1/trabalhos',
+      '/v1/jobs',
       {
         titulo: 'nota curta sobre o topógrafo de fluxo',
         no_entrada_id: 'redigir',
@@ -187,14 +187,14 @@ async function principal() {
     );
 
     // --- 3. o trabalho espera por gente (tempo de espera de verdade) ----------
-    await api(url, 'POST', `/v1/trabalhos/${trabalho.id}/bloqueios`, {
+    await api(url, 'POST', `/v1/jobs/${trabalho.id}/blocks`, {
       motivo: 'aguardando o operador liberar a revisão',
     });
     registrar(`trabalho bloqueado; esperando ${BLOQUEIO_MS}ms de relógio real`);
     await esperar(BLOQUEIO_MS);
-    await api(url, 'POST', `/v1/trabalhos/${trabalho.id}/desbloqueios`, {});
+    await api(url, 'POST', `/v1/jobs/${trabalho.id}/unblocks`, {});
 
-    await api(url, 'POST', `/v1/trabalhos/${trabalho.id}/transicoes`, { para_no_id: 'revisar' });
+    await api(url, 'POST', `/v1/jobs/${trabalho.id}/transitions`, { para_no_id: 'revisar' });
     registrar('trabalho transicionado para "revisar"');
 
     registrar('sessão real #2 — nó "revisar"...');
@@ -221,9 +221,9 @@ async function principal() {
     if (resultado.proposta === null) morrer('havia gargalo e nenhuma proposta foi criada');
 
     // --- 5. as provas duras, lidas de volta da API ---------------------------
-    const { eventos } = await api(url, 'GET', `/v1/execucoes/${EXECUCAO_ID}/eventos`);
+    const { eventos } = await api(url, 'GET', `/v1/executions/${EXECUCAO_ID}/events`);
     const idsDoLog = new Set(eventos.map((evento) => evento.id));
-    const { propostas } = await api(url, 'GET', '/v1/propostas');
+    const { propostas } = await api(url, 'GET', '/v1/proposals');
 
     if (propostas.length !== 1) morrer(`o livro tem ${propostas.length} propostas; esperava 1`);
     const proposta = propostas[0];
@@ -234,7 +234,7 @@ async function principal() {
       if (!idsDoLog.has(id)) morrer(`evidencia.eventos cita o evento ${id}, ausente do log`);
     }
 
-    const grafoDepois = await api(url, 'GET', `/v1/grafos/${grafo.id}`);
+    const grafoDepois = await api(url, 'GET', `/v1/graphs/${grafo.id}`);
     if (grafoDepois.grafo.versao_corrente_id !== versao.id) {
       morrer('o ponteiro de versão se moveu: o topógrafo aplicou alguma coisa');
     }

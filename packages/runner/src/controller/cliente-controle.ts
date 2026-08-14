@@ -11,7 +11,7 @@
  * `buscar` é injetável só para teste; em produção é o `fetch` global — mesmo
  * padrão de `packages/tela/src/index.ts`.
  *
- * `GET /v1/trabalhos` é entrega do t102, hoje já mergeada, e devolve
+ * `GET /v1/jobs` é entrega do t102, hoje já mergeada, e devolve
  * `{trabalhos: [...]}`. O cliente consome apenas o subconjunto do contrato de
  * que precisa para escolher um candidato — `id` e `bloqueado` — e declara os
  * demais campos só para documentar o que chega; os testes seguem simulando a
@@ -20,9 +20,9 @@
  */
 
 /**
- * Um trabalho, como `GET /v1/trabalhos` (t102) o devolve.
+ * Um trabalho, como `GET /v1/jobs` (t102) o devolve.
  *
- * Subconjunto da projeção de `packages/core/src/repositorios/trabalho.ts`: os
+ * Subconjunto da projeção de `packages/core/src/repositories/job.ts`: os
  * opcionais são anuláveis lá, e são anuláveis aqui pela mesma razão (execução e
  * versão de grafo são soltas, D15).
  */
@@ -53,7 +53,7 @@ export interface Evento {
   dados: Record<string, unknown>;
 }
 
-/** Uma linha de `GET /v1/execucoes/:id/metricas-por-versao` (t102, FR17). */
+/** Uma linha de `GET /v1/executions/:id/metrics-by-version` (t102, FR17). */
 export interface MetricaPorVersao {
   grafo_versao_id: string | null;
   trabalhos: number;
@@ -73,7 +73,7 @@ export interface SnapshotDeGrafo {
   [chave: string]: unknown;
 }
 
-/** Uma versão de grafo, como `GET /v1/grafo-versoes/:id` a devolve (t101). */
+/** Uma versão de grafo, como `GET /v1/graph-versions/:id` a devolve (t101). */
 export interface VersaoDeGrafo {
   id: string;
   grafo_id: string;
@@ -84,7 +84,7 @@ export interface VersaoDeGrafo {
   criado_em: string;
 }
 
-/** O que `POST /v1/propostas` exige: um diff semântico com hipótese (D15). */
+/** O que `POST /v1/proposals` exige: um diff semântico com hipótese (D15). */
 export interface EntradaDeProposta {
   grafo_id: string;
   versao_alvo: string;
@@ -210,7 +210,7 @@ export class ClienteControle {
    * @returns Só os trabalhos não bloqueados, na ordem em que o server mandou.
    */
   async listarTrabalhosLiberados(): Promise<Trabalho[]> {
-    const { trabalhos } = await this.#get<{ trabalhos: Trabalho[] }>('/v1/trabalhos');
+    const { trabalhos } = await this.#get<{ trabalhos: Trabalho[] }>('/v1/jobs');
     return trabalhos.filter((trabalho) => trabalho.bloqueado === false);
   }
 
@@ -248,7 +248,7 @@ export class ClienteControle {
    * @returns A lease liberada.
    */
   async liberar(leaseId: number): Promise<Lease> {
-    const { lease } = await this.#post<{ lease: Lease }>(`/v1/leases/${leaseId}/liberacoes`, {});
+    const { lease } = await this.#post<{ lease: Lease }>(`/v1/leases/${leaseId}/releases`, {});
     return lease;
   }
 
@@ -266,7 +266,7 @@ export class ClienteControle {
    */
   async listarEventosDaExecucao(execucaoId: number): Promise<Evento[]> {
     const { eventos } = await this.#get<{ eventos: Evento[] }>(
-      `/v1/execucoes/${execucaoId}/eventos`,
+      `/v1/executions/${execucaoId}/events`,
     );
     return eventos;
   }
@@ -283,7 +283,7 @@ export class ClienteControle {
    */
   async metricasPorVersao(execucaoId: number): Promise<MetricaPorVersao[]> {
     const { metricas } = await this.#get<{ metricas: MetricaPorVersao[] }>(
-      `/v1/execucoes/${execucaoId}/metricas-por-versao`,
+      `/v1/executions/${execucaoId}/metrics-by-version`,
     );
     return metricas;
   }
@@ -297,7 +297,7 @@ export class ClienteControle {
    */
   async buscarVersaoDeGrafo(id: string): Promise<VersaoDeGrafo> {
     const { grafo_versao: versao } = await this.#get<{ grafo_versao: VersaoDeGrafo }>(
-      `/v1/grafo-versoes/${encodeURIComponent(id)}`,
+      `/v1/graph-versions/${encodeURIComponent(id)}`,
     );
     return versao;
   }
@@ -314,7 +314,7 @@ export class ClienteControle {
    * @throws {ErroDoControlPlane} 400 quando o server recusa a forma.
    */
   async criarProposta(entrada: EntradaDeProposta): Promise<Proposta> {
-    const { proposta } = await this.#post<{ proposta: Proposta }>('/v1/propostas', entrada);
+    const { proposta } = await this.#post<{ proposta: Proposta }>('/v1/proposals', entrada);
     return proposta;
   }
 

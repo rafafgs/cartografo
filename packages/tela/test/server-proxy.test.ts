@@ -121,12 +121,12 @@ async function startScreenFor(
   return screen;
 }
 
-test('AT1 — GET /v1/propostas reaches CARTOGRAFO_URL and comes back body and status verbatim', async (t) => {
+test('AT1 — GET /v1/proposals reaches CARTOGRAFO_URL and comes back body and status verbatim', async (t) => {
   const listBody = '{"propostas":[{"id":1,"status":"pendente"},{"id":2,"status":"aplicada"}]}';
   const conflictBody = '{"erro":"proposta_nao_pendente","status":"aplicada"}';
 
   const upstream = await startFakeUpstream(t, (request, response) => {
-    if (request.target.startsWith('/v1/propostas?')) {
+    if (request.target.startsWith('/v1/proposals?')) {
       response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
       response.end(listBody);
       return;
@@ -137,24 +137,24 @@ test('AT1 — GET /v1/propostas reaches CARTOGRAFO_URL and comes back body and s
 
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
 
-  const list = await fetch(`${screen.url}/v1/propostas?status=pendente`);
+  const list = await fetch(`${screen.url}/v1/proposals?status=pendente`);
   assert.equal(list.status, 200);
   assert.equal(await list.text(), listBody);
   assert.match(list.headers.get('content-type') ?? '', /^application\/json/);
 
   // A non-2xx from the core is an answer, not an error the proxy may reshape.
-  const conflict = await fetch(`${screen.url}/v1/propostas/9/aplicar`, { method: 'POST' });
+  const conflict = await fetch(`${screen.url}/v1/proposals/9/apply`, { method: 'POST' });
   assert.equal(conflict.status, 409);
   assert.equal(await conflict.text(), conflictBody);
 
   assert.deepEqual(
     upstream.requests.map((request) => `${request.method} ${request.target}`),
-    ['GET /v1/propostas?status=pendente', 'POST /v1/propostas/9/aplicar'],
+    ['GET /v1/proposals?status=pendente', 'POST /v1/proposals/9/apply'],
     'the query string is part of the request: filtering by status happens upstream',
   );
 });
 
-test('AT2 — POST /v1/propostas/:id/aprovar forwards method, body and content-type unchanged', async (t) => {
+test('AT2 — POST /v1/proposals/:id/approve forwards method, body and content-type unchanged', async (t) => {
   const upstream = await startFakeUpstream(t, (_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end('{"proposta":{"id":7,"status":"aprovada"}}');
@@ -163,7 +163,7 @@ test('AT2 — POST /v1/propostas/:id/aprovar forwards method, body and content-t
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
 
   const body = JSON.stringify({ motivo: 'métrica esperada não é observável' });
-  const response = await fetch(`${screen.url}/v1/propostas/7/aprovar`, {
+  const response = await fetch(`${screen.url}/v1/proposals/7/approve`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body,
@@ -175,7 +175,7 @@ test('AT2 — POST /v1/propostas/:id/aprovar forwards method, body and content-t
   assert.equal(upstream.requests.length, 1);
   const [forwarded] = upstream.requests;
   assert.equal(forwarded.method, 'POST');
-  assert.equal(forwarded.target, '/v1/propostas/7/aprovar');
+  assert.equal(forwarded.target, '/v1/proposals/7/approve');
   assert.match(forwarded.contentType ?? '', /^application\/json/);
   assert.equal(forwarded.body, body, 'the body travels byte for byte, accents included');
 });
@@ -236,7 +236,7 @@ test('AT5 — an unreachable control plane becomes 502 control_plane_indisponive
   const deadPort = await freePort();
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: `http://127.0.0.1:${deadPort}` });
 
-  const response = await fetch(`${screen.url}/v1/propostas`);
+  const response = await fetch(`${screen.url}/v1/proposals`);
   assert.equal(response.status, 502);
   assert.match(response.headers.get('content-type') ?? '', /^application\/json/);
 

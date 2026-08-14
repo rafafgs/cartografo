@@ -1,144 +1,147 @@
 /**
- * `cartografo status` — o que o control plane sabe hoje (t108, FR5).
+ * `cartografo status` — what the control plane knows today (t108, FR5).
  *
- * O campo mais importante deste relatório é o que ele NÃO afirma:
- * `trabalhos` e `perguntas_pendentes` saem como `null`, nunca `0`. As tabelas
- * `sessão` e `input_request` ainda não existem (`migrations/0001_init.sql`,
- * `docs/spec/entidades-versionamento.md` §7), e um `0` ali diria "não há fila"
- * quando a resposta honesta é "isto ainda não é rastreado" — que é justamente
- * a diferença que faria alguém confiar num painel vazio. O campo aparece, com
- * o valor certo, e vira número quando as entidades existirem.
+ * The most important field of this report is the one it does NOT assert:
+ * `jobs` and `pendingInputRequests` come out as `null`, never `0`. The `sessão`
+ * and `input_request` tables do not exist yet (`migrations/0001_init.sql`,
+ * `docs/spec/entidades-versionamento.md` §7), and a `0` there would say "there
+ * is no queue" when the honest answer is "this is not tracked yet" — which is
+ * exactly the difference that would make someone trust an empty dashboard. The
+ * field shows up, with the right value, and becomes a number once the entities
+ * exist.
  *
- * `--json` imprime uma linha só, com as chaves em ordem fixa: é saída de
- * máquina, e o teste de aceite a compara byte a byte, pelo mesmo motivo que
- * `health.test.ts` pina o corpo de `/health`.
+ * `--json` prints a single line, with the keys in a fixed order: it is machine
+ * output, and the acceptance test compares it byte for byte, for the same reason
+ * `health.test.ts` pins the `/health` body. Like the startup readiness line
+ * (t127, FR6), this is a bespoke CLI shape — no migration column, no event
+ * taxonomy and no other package parses it — so D18 translates its keys too.
  */
 
-import { ErroDeRede, mensagemDeServidorFora, pedirJson } from './url.ts';
+import { NetworkError, serverDownMessage, requestJson } from './url.ts';
 
-/** Uma classe registrada, na visão de `status`. */
-export interface ProjetoNoStatus {
+/** A registered class, in `status`'s view. */
+export interface StatusProject {
   classe: string;
   versao_corrente_id: string | null;
 }
 
 /**
- * O relatório inteiro. A ordem das chaves é parte do contrato do `--json`.
+ * The whole report. Key order is part of the `--json` contract.
  *
- * `projetos: null` significa "não deu para consultar" (servidor fora), que é
- * diferente de `[]`, "nenhuma classe registrada".
+ * `projects: null` means "could not be queried" (server down), which is
+ * different from `[]`, "no class registered".
  */
-export interface RelatorioDeStatus {
-  server: 'ok' | 'erro' | 'indisponível';
-  projetos: ProjetoNoStatus[] | null;
-  trabalhos: null;
-  perguntas_pendentes: null;
+export interface StatusReport {
+  server: 'ok' | 'error' | 'unavailable';
+  projects: StatusProject[] | null;
+  jobs: null;
+  pendingInputRequests: null;
 }
 
-/** Opções de `status`. */
-export interface OpcoesDeStatus {
-  /** URL base do control plane. */
+/** Options of `status`. */
+export interface StatusOptions {
+  /** Base URL of the control plane. */
   url: string;
-  /** Imprime o relatório como um objeto JSON único. */
+  /** Prints the report as a single JSON object. */
   json?: boolean;
 }
 
-function ehObjeto(valor: unknown): valor is Record<string, unknown> {
-  return typeof valor === 'object' && valor !== null && !Array.isArray(valor);
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
- * Monta o relatório consultando `/health` e `/v1/classes`.
+ * Builds the report by querying `/health` and `/v1/classes`.
  *
- * Servidor fora do ar não é exceção aqui: é um estado que o relatório sabe
- * dizer. Por isso `ErroDeRede` é capturado em vez de propagado — quem roda
- * `status` está justamente perguntando se o servidor responde.
+ * A server that is down is not an exception here: it is a state the report knows
+ * how to say. That is why `NetworkError` is caught instead of propagated —
+ * whoever runs `status` is precisely asking whether the server answers.
  *
- * @param url URL base do control plane.
- * @returns O relatório e o sub-status do banco, quando houver.
+ * @param url Base URL of the control plane.
+ * @returns The report and the database sub-status, when there is one.
  */
-export async function coletarStatus(
+export async function collectStatus(
   url: string,
-): Promise<{ relatorio: RelatorioDeStatus; db: string | null }> {
-  let server: RelatorioDeStatus['server'];
+): Promise<{ report: StatusReport; db: string | null }> {
+  let server: StatusReport['server'];
   let db: string | null;
 
   try {
-    const saude = await pedirJson(`${url}/health`);
-    const corpo = ehObjeto(saude.corpo) ? saude.corpo : {};
-    db = typeof corpo.db === 'string' ? corpo.db : null;
-    server = saude.status === 200 && corpo.status === 'ok' ? 'ok' : 'erro';
-  } catch (erro) {
-    if (!(erro instanceof ErroDeRede)) throw erro;
+    const health = await requestJson(`${url}/health`);
+    const body = isObject(health.body) ? health.body : {};
+    db = typeof body.db === 'string' ? body.db : null;
+    server = health.status === 200 && body.status === 'ok' ? 'ok' : 'error';
+  } catch (error) {
+    if (!(error instanceof NetworkError)) throw error;
     return {
-      relatorio: { server: 'indisponível', projetos: null, trabalhos: null, perguntas_pendentes: null },
+      report: { server: 'unavailable', projects: null, jobs: null, pendingInputRequests: null },
       db: null,
     };
   }
 
-  let projetos: ProjetoNoStatus[] | null = null;
+  let projects: StatusProject[] | null = null;
   try {
-    const classes = await pedirJson(`${url}/v1/classes`);
-    const corpo = ehObjeto(classes.corpo) ? classes.corpo : {};
-    if (classes.status === 200 && Array.isArray(corpo.classes)) {
-      projetos = corpo.classes.filter(ehObjeto).map((entrada) => ({
-        classe: String(entrada.classe),
+    const classes = await requestJson(`${url}/v1/classes`);
+    const body = isObject(classes.body) ? classes.body : {};
+    if (classes.status === 200 && Array.isArray(body.classes)) {
+      projects = body.classes.filter(isObject).map((entry) => ({
+        classe: String(entry.classe),
         versao_corrente_id:
-          typeof entrada.versao_corrente_id === 'string' ? entrada.versao_corrente_id : null,
+          typeof entry.versao_corrente_id === 'string' ? entry.versao_corrente_id : null,
       }));
     }
-  } catch (erro) {
-    if (!(erro instanceof ErroDeRede)) throw erro;
+  } catch (error) {
+    if (!(error instanceof NetworkError)) throw error;
   }
 
-  return { relatorio: { server, projetos, trabalhos: null, perguntas_pendentes: null }, db };
+  return { report: { server, projects, jobs: null, pendingInputRequests: null }, db };
 }
 
-/** Formata o relatório para leitura humana. */
-function comoTabela(relatorio: RelatorioDeStatus, db: string | null, url: string): string {
-  const linhas: string[] = [];
+/** Formats the report for a human to read. */
+function asTable(report: StatusReport, db: string | null, url: string): string {
+  const lines: string[] = [];
 
-  const detalheDoServidor =
-    relatorio.server === 'indisponível' ? ` (${url})` : db === null ? '' : ` (db: ${db})`;
-  linhas.push(`server: ${relatorio.server}${detalheDoServidor}`);
+  const serverDetail =
+    report.server === 'unavailable' ? ` (${url})` : db === null ? '' : ` (db: ${db})`;
+  lines.push(`server: ${report.server}${serverDetail}`);
 
-  if (relatorio.projetos === null) {
-    linhas.push('projetos: não consultado');
+  if (report.projects === null) {
+    lines.push('projects: not queried');
   } else {
-    linhas.push(`projetos: ${relatorio.projetos.length}`);
-    for (const projeto of relatorio.projetos) {
-      linhas.push(`  - ${projeto.classe}  ${projeto.versao_corrente_id ?? 'sem versão corrente'}`);
+    lines.push(`projects: ${report.projects.length}`);
+    for (const project of report.projects) {
+      lines.push(`  - ${project.classe}  ${project.versao_corrente_id ?? 'no current version'}`);
     }
   }
 
-  linhas.push('trabalhos: não rastreado ainda');
-  linhas.push('perguntas_pendentes: não rastreado ainda');
-  linhas.push('');
-  linhas.push(
-    '(trabalhos e perguntas pendentes não são zero: as entidades sessão/input_request entram em ticket seguinte)',
+  lines.push('jobs: not tracked yet');
+  lines.push('pendingInputRequests: not tracked yet');
+  lines.push('');
+  lines.push(
+    '(jobs and pending input requests are not zero: the session/input_request entities land in a later ticket)',
   );
 
-  return `${linhas.join('\n')}\n`;
+  return `${lines.join('\n')}\n`;
 }
 
 /**
- * Roda `cartografo status`.
+ * Runs `cartografo status`.
  *
- * @param opcoes URL base e formato de saída.
- * @returns Código de saída: 0 só quando o control plane responde saudável.
+ * @param options Base URL and output format.
+ * @returns Exit code: 0 only when the control plane answers healthy.
  */
-export async function executarStatus(opcoes: OpcoesDeStatus): Promise<number> {
-  const { relatorio, db } = await coletarStatus(opcoes.url);
+export async function runStatus(options: StatusOptions): Promise<number> {
+  const { report, db } = await collectStatus(options.url);
 
-  if (opcoes.json === true) {
-    process.stdout.write(`${JSON.stringify(relatorio)}\n`);
+  if (options.json === true) {
+    process.stdout.write(`${JSON.stringify(report)}\n`);
   } else {
-    process.stdout.write(comoTabela(relatorio, db, opcoes.url));
+    process.stdout.write(asTable(report, db, options.url));
   }
 
-  if (relatorio.server === 'indisponível') {
-    process.stderr.write(`${mensagemDeServidorFora(opcoes.url)}\n`);
+  if (report.server === 'unavailable') {
+    process.stderr.write(`${serverDownMessage(options.url)}\n`);
   }
 
-  return relatorio.server === 'ok' ? 0 : 1;
+  return report.server === 'ok' ? 0 : 1;
 }

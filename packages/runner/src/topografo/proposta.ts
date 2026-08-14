@@ -4,7 +4,7 @@
  *
  * This is D16's next milestone — "superar o flowpilot é o marco seguinte
  * (primeira proposta do topógrafo com evidência)" — assembled out of machinery
- * that already existed and had no caller. `POST /v1/propostas` has always
+ * that already existed and had no caller. `POST /v1/proposals` has always
  * validated the semantic diff, demanded `evidencia` and `metrica_esperada`, and
  * landed the row as `pendente`; what was missing was somebody with something to
  * say.
@@ -65,12 +65,12 @@ const TIMEOUT_PADRAO_SEGUNDOS = 900;
  *
  * Declared, not measured: it is the ambition of the hypothesis. The verdict of
  * t112 compares the next run against `de`, never against `para`
- * (`packages/core/src/dominio/hypothesis.ts`), so this number decides nothing
+ * (`packages/core/src/domain/hypothesis.ts`), so this number decides nothing
  * on its own — it says out loud what "worth it" would look like.
  */
 const REDUCAO_ESPERADA = 0.2;
 
-/** The five operation types, as `dominio/operacoes.ts` defines them. */
+/** The five operation types, as `domain/operations.ts` defines them. */
 const TIPOS_DE_OPERACAO = ['adicionar_no', 'remover_no', 'adicionar_aresta', 'remover_aresta', 'alterar_campo_no'];
 
 /** Which type undoes which. `alterar_campo_no` is its own inverse. */
@@ -172,12 +172,12 @@ function ehTextoPreenchido(valor: unknown): valor is string {
 
 /**
  * Client-side mirror of the server's `validarOperacao`
- * (`packages/core/src/dominio/operacoes.ts`).
+ * (`packages/core/src/domain/operations.ts`).
  *
  * The server remains the authority — every operation is validated again there,
  * and a disagreement is a `400` we would rather read than route around. The
  * mirror exists for one reason: FR7 requires a bad session to make **zero**
- * `POST /v1/propostas` calls, and "let the server decide" would spend a write
+ * `POST /v1/proposals` calls, and "let the server decide" would spend a write
  * to find that out.
  *
  * Structural only, exactly like the original: it checks keys, types and that

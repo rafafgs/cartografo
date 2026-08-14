@@ -87,7 +87,7 @@ export const INSTRUCOES_PADRAO = [
   'aconteceu antes.',
 ].join('\n');
 
-/** What `GET /v1/trabalhos/:id` gives back, in the part this module reads. */
+/** What `GET /v1/jobs/:id` gives back, in the part this module reads. */
 interface Trabalho {
   id: number;
   titulo: string;
@@ -104,7 +104,7 @@ interface Evento {
   dados: Record<string, unknown>;
 }
 
-/** A question, as `GET /v1/perguntas` projects it. */
+/** A question, as `GET /v1/input-requests` projects it. */
 interface Pergunta {
   id: number;
   trabalho_id: number;
@@ -115,7 +115,7 @@ interface Pergunta {
   origem: string | null;
 }
 
-/** A session, as `POST /v1/sessoes` gives it back. */
+/** A session, as `POST /v1/sessions` gives it back. */
 interface Sessao {
   id: number;
 }
@@ -251,7 +251,7 @@ export function montarPrompt(
   // The ORDER comes from the log — the only total ordering there is — and the
   // ANSWER from the projection: `pergunta.respondida` carries no `trabalho_id`,
   // so the work's timeline structurally cannot show it (t102,
-  // `packages/core/src/db/eventos.ts`, `FiltroDeEventos`).
+  // `packages/core/src/db/events.ts`, `FiltroDeEventos`).
   for (const evento of eventos) {
     if (evento.tipo !== 'pergunta.criada') continue;
     const pergunta = porId.get(Number(evento.entidade.id));
@@ -317,13 +317,13 @@ export function createClaudeCodeDispatch(
   };
 
   return async (trabalhoId: number): Promise<void> => {
-    const trabalho = await pedir<Trabalho>(`/v1/trabalhos/${trabalhoId}`, 'GET');
+    const trabalho = await pedir<Trabalho>(`/v1/jobs/${trabalhoId}`, 'GET');
     const { eventos } = await pedir<{ eventos: Evento[] }>(
-      `/v1/trabalhos/${trabalhoId}/eventos`,
+      `/v1/jobs/${trabalhoId}/events`,
       'GET',
     );
     const { perguntas } = await pedir<{ perguntas: Pergunta[] }>(
-      '/v1/perguntas?status=respondida',
+      '/v1/input-requests?status=respondida',
       'GET',
     );
 
@@ -367,7 +367,7 @@ export function createClaudeCodeDispatch(
     // then. There is no endpoint to fill `engine_session_ref` in later (out of
     // scope), so `null` here means "the engine had not said it yet" and never
     // "this engine has no ref".
-    const sessao = await pedir<Sessao>('/v1/sessoes', 'POST', {
+    const sessao = await pedir<Sessao>('/v1/sessions', 'POST', {
       trabalho_id: trabalho.id,
       no_id: trabalho.no_atual,
       engine: opcoes.adapter.engineName,
@@ -379,7 +379,7 @@ export function createClaudeCodeDispatch(
 
     const desfecho = await fim;
 
-    await pedir(`/v1/sessoes/${sessao.id}/finalizar`, 'PATCH', {
+    await pedir(`/v1/sessions/${sessao.id}/finish`, 'PATCH', {
       status: STATUS_DA_TAXONOMIA[desfecho.status],
       exit_code: desfecho.exitCode,
       // The v0 interface reports no token usage (out of scope). `null` is "the
@@ -393,7 +393,7 @@ export function createClaudeCodeDispatch(
       // same transaction as `pergunta.criada` (FR1). The runner never posts a
       // block of its own — two owners for one flag is how a work ends up
       // blocked with nothing pending.
-      await pedir('/v1/perguntas', 'POST', {
+      await pedir('/v1/input-requests', 'POST', {
         trabalho_id: trabalho.id,
         sessao_id: sessao.id,
         tipo: 'pergunta',

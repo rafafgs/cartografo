@@ -59,11 +59,16 @@ export function registrarPerguntas(app: FastifyInstance, db: BancoDeDados): void
 
   app.get('/perguntas', async (requisicao, resposta) =>
     comValidacao(resposta, () => {
-      const consulta = requisicao.query as { status?: string; execucao_id?: string };
+      const consulta = requisicao.query as {
+        status?: string;
+        execucao_id?: string;
+        trabalho_id?: string;
+      };
       return {
         perguntas: listarPerguntas(db, {
           status: consulta.status,
           execucao_id: inteiroDaQuery('execucao_id', consulta.execucao_id),
+          trabalho_id: inteiroDaQuery('trabalho_id', consulta.trabalho_id),
         }),
       };
     }),

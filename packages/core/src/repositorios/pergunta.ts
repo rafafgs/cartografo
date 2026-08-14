@@ -302,19 +302,24 @@ export function autoResolverPergunta(
 }
 
 /**
- * A fila de perguntas de uma execução (FR16).
+ * A fila de perguntas de uma execução ou de um trabalho (FR16; t107 FR3).
  *
  * Devolve a pergunta INTEIRA — contexto, opções, recomendação e resposta
  * padrão. O critério é o do enunciado: quem responde tem que conseguir decidir
  * sem abrir o repositório.
  *
+ * O recorte por trabalho é simétrico ao de `listarSessoes` e existe pela mesma
+ * razão: a linha do tempo da tela precisa do fim das esperas, e o payload de
+ * `pergunta.respondida` não carrega `trabalho_id` — logo esse fato não aparece
+ * em `GET /v1/trabalhos/:id/eventos`. Os filtros se somam em AND.
+ *
  * @param db Handle aberto.
- * @param filtro Recortes opcionais por status e execução.
+ * @param filtro Recortes opcionais por status, execução e trabalho.
  * @returns Perguntas em ordem de id.
  */
 export function listarPerguntas(
   db: BancoDeDados,
-  filtro: { status?: string; execucao_id?: number } = {},
+  filtro: { status?: string; execucao_id?: number; trabalho_id?: number } = {},
 ): Pergunta[] {
   const condicoes: string[] = [];
   const valores: unknown[] = [];
@@ -326,6 +331,10 @@ export function listarPerguntas(
   if (filtro.execucao_id !== undefined) {
     condicoes.push('execucao_id = ?');
     valores.push(filtro.execucao_id);
+  }
+  if (filtro.trabalho_id !== undefined) {
+    condicoes.push('trabalho_id = ?');
+    valores.push(filtro.trabalho_id);
   }
 
   const onde = condicoes.length === 0 ? '' : `WHERE ${condicoes.join(' AND ')}`;

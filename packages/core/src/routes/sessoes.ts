@@ -42,11 +42,13 @@ export function registrarSessoes(app: FastifyInstance, db: BancoDeDados): void {
 
   app.get('/sessoes', async (requisicao, resposta) =>
     comValidacao(resposta, () => {
-      const execucaoId = inteiroDaQuery(
-        'execucao_id',
-        (requisicao.query as { execucao_id?: string }).execucao_id,
-      );
-      return { sessoes: listarSessoes(db, { execucao_id: execucaoId }) };
+      const consulta = requisicao.query as { execucao_id?: string; trabalho_id?: string };
+      return {
+        sessoes: listarSessoes(db, {
+          execucao_id: inteiroDaQuery('execucao_id', consulta.execucao_id),
+          trabalho_id: inteiroDaQuery('trabalho_id', consulta.trabalho_id),
+        }),
+      };
     }),
   );
 }

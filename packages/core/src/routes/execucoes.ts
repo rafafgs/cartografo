@@ -11,7 +11,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { BancoDeDados } from '../db/connection.ts';
-import { metricasPorVersao } from '../repositorios/trabalho.ts';
+import { listarExecucoes, metricasPorVersao } from '../repositorios/trabalho.ts';
 import { comValidacao, idDaRota } from './comum.ts';
 
 /**
@@ -21,6 +21,12 @@ import { comValidacao, idDaRota } from './comum.ts';
  * @param db Banco aberto.
  */
 export function registrarExecucoes(app: FastifyInstance, db: BancoDeDados): void {
+  // A LISTA é agregação sobre `trabalho`, não leitura de tabela (t107, FR1):
+  // sem ela ninguém descobre quais execuções existem sem já saber o id.
+  app.get('/execucoes', async (_requisicao, resposta) =>
+    comValidacao(resposta, () => ({ execucoes: listarExecucoes(db) })),
+  );
+
   app.get('/execucoes/:id/metricas-por-versao', async (requisicao, resposta) =>
     comValidacao(resposta, () => {
       const execucaoId = idDaRota(requisicao.params);

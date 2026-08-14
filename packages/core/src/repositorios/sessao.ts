@@ -237,19 +237,39 @@ export function finalizarSessao(
 }
 
 /**
- * As sessões de uma execução (FR12).
+ * As sessões de uma execução ou de um trabalho (FR12; t107 FR2).
+ *
+ * O recorte por trabalho existe porque a linha do tempo da tela precisa do FIM
+ * das sessões, e `GET /v1/trabalhos/:id/eventos` não o entrega: o payload de
+ * `sessao.finalizada` não carrega `trabalho_id`, e o comentário de
+ * `src/db/eventos.ts` já dizia para onde mandar quem quer esse fato — "quem
+ * quer o fim da sessão pergunta pela sessão". Faltava só por onde perguntar.
+ *
+ * Os dois filtros se somam em AND: são recortes, não modos.
  *
  * @param db Handle aberto.
- * @param filtro Recorte opcional por execução.
+ * @param filtro Recortes opcionais por execução e por trabalho.
  * @returns Sessões em ordem de id.
  */
-export function listarSessoes(db: BancoDeDados, filtro: { execucao_id?: number } = {}): Sessao[] {
-  const linhas = (
-    filtro.execucao_id === undefined
-      ? db.prepare(`SELECT ${COLUNAS} FROM sessao ORDER BY id`).all()
-      : db
-          .prepare(`SELECT ${COLUNAS} FROM sessao WHERE execucao_id = ? ORDER BY id`)
-          .all(filtro.execucao_id)
-  ) as LinhaSessao[];
+export function listarSessoes(
+  db: BancoDeDados,
+  filtro: { execucao_id?: number; trabalho_id?: number } = {},
+): Sessao[] {
+  const condicoes: string[] = [];
+  const valores: unknown[] = [];
+
+  if (filtro.execucao_id !== undefined) {
+    condicoes.push('execucao_id = ?');
+    valores.push(filtro.execucao_id);
+  }
+  if (filtro.trabalho_id !== undefined) {
+    condicoes.push('trabalho_id = ?');
+    valores.push(filtro.trabalho_id);
+  }
+
+  const onde = condicoes.length === 0 ? '' : `WHERE ${condicoes.join(' AND ')}`;
+  const linhas = db
+    .prepare(`SELECT ${COLUNAS} FROM sessao ${onde} ORDER BY id`)
+    .all(...valores) as LinhaSessao[];
   return linhas.map(paraSessao);
 }

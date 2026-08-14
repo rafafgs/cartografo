@@ -49,6 +49,14 @@ export interface MetricaPorVersao {
   eventos: number;
 }
 
+/** Uma linha de `GET /v1/execucoes` — o resumo de uma rodada (t107, FR1). */
+export interface ResumoDeExecucao {
+  execucao_id: number | null;
+  trabalhos: number;
+  trabalhos_bloqueados: number;
+  perguntas_pendentes: number;
+}
+
 interface LinhaTrabalho {
   id: number;
   projeto_id: number;
@@ -410,5 +418,46 @@ export function metricasPorVersao(db: BancoDeDados, execucaoId: number): Metrica
     if (a.grafo_versao_id === null) return 1;
     if (b.grafo_versao_id === null) return -1;
     return a.grafo_versao_id.localeCompare(b.grafo_versao_id);
+  });
+}
+
+/**
+ * As execuções que existem, uma linha por rodada (t107, FR1).
+ *
+ * Não há entidade "execução" nesta v1 — `execucao_id` é agrupador opaco, e a
+ * lista é uma AGREGAÇÃO sobre `trabalho`, não uma tabela. Ela existe porque
+ * sem ela a tela não teria como DESCOBRIR quais rodadas existem: até aqui só
+ * dava para consultar uma execução sabendo o id de antemão, o que serve a quem
+ * já sabe e a mais ninguém. D11 chama isso de bug da API, e é aqui que ele se
+ * fecha.
+ *
+ * As três contagens são as que respondem "onde olhar primeiro": tamanho da
+ * rodada, quanto dela está travado e quanta gente está sendo esperada.
+ * `perguntas_pendentes` sai de subconsulta correlacionada com `IS` (igualdade
+ * que enxerga `NULL`), para que o grupo sem execução conte as perguntas dele em
+ * vez de zerar em silêncio.
+ *
+ * @param db Handle aberto.
+ * @returns Uma linha por execução, em ordem crescente e com o grupo `null` por
+ *   último — mesma convenção de `metricasPorVersao`.
+ */
+export function listarExecucoes(db: BancoDeDados): ResumoDeExecucao[] {
+  const linhas = db
+    .prepare(
+      `SELECT t.execucao_id            AS execucao_id,
+              COUNT(*)                 AS trabalhos,
+              COALESCE(SUM(t.bloqueado), 0) AS trabalhos_bloqueados,
+              (SELECT COUNT(*) FROM pergunta p
+                WHERE p.status = 'pendente' AND p.execucao_id IS t.execucao_id)
+                                       AS perguntas_pendentes
+         FROM trabalho t
+        GROUP BY t.execucao_id`,
+    )
+    .all() as ResumoDeExecucao[];
+
+  return linhas.sort((a, b) => {
+    if (a.execucao_id === null) return 1;
+    if (b.execucao_id === null) return -1;
+    return a.execucao_id - b.execucao_id;
   });
 }

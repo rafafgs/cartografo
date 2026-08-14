@@ -345,7 +345,7 @@ test('AT9 — the same manifest with evidencia_obrigatoria declared registers (t
       ? { ...check, evidencia_obrigatoria: ['trecho_citado_do_criterio_de_aceite'] }
       : check,
   );
-  const repaired = { ...fixture, checks };
+  const repaired: Record<string, unknown> = { ...fixture, checks };
   repaired.hash = contentHash(repaired);
 
   const created = await post(ctx, repaired);

@@ -26,6 +26,14 @@
  * entry precisely because the schema cannot navigate inside an arbitrary JSON
  * Schema document.
  *
+ * The fourth, `instrucao` + `evidencia_obrigatoria` on an agentic check (t135,
+ * FR1), applies to everyone for a simpler reason: it is the schema's own
+ * conditional (`manifesto-skill.schema.json:113-115`), and the schema does not
+ * ask where the manifest came from. This validator ports the schema by hand —
+ * there is no ajv here, for the reason `db/event-validation.ts:9` gives — so
+ * every rule that matters has to be ported deliberately, and this one had been
+ * missed.
+ *
  * No telemetry event is emitted. `skill` is not a member of the taxonomy's
  * `entidade.tipo` enum (`especificacoes/eventos/schemas/envelope.schema.json`),
  * and extending a versioned product format is a change of its own. Meanwhile the
@@ -169,6 +177,8 @@ function checkShape(manifest: Record<string, unknown>, problems: string[]): void
   }
   if (!Array.isArray(manifest.checks) || manifest.checks.some((item) => !isObject(item))) {
     problems.push('checks: has to be a list of check objects');
+  } else {
+    for (const check of manifest.checks) checkAgentic(check as Record<string, unknown>, problems);
   }
 
   checkPermissions(manifest.permissoes, problems);
@@ -177,6 +187,38 @@ function checkShape(manifest: Record<string, unknown>, problems: string[]): void
     problems.push('origem: has to be an object with a "tipo" of nativa or importada');
   } else if (manifest.origem.tipo !== 'nativa' && manifest.origem.tipo !== 'importada') {
     problems.push('origem.tipo: has to be nativa or importada');
+  }
+}
+
+/**
+ * An agentic check says what to judge and what the verdict has to cite.
+ *
+ * `manifesto-skill.schema.json:113-115`: `tipo: "agentico"` requires both
+ * `instrucao` and `evidencia_obrigatoria`. The rule is the format's, not an
+ * import rule, so it applies to every manifest — a judgment nobody has to
+ * evidence concludes on the self-report of whoever produced the artifact, which
+ * is what D9 exists to forbid, and a native gate can get that wrong exactly as
+ * easily as an imported one.
+ *
+ * `evidencia_obrigatoria` is a LIST of artifacts (the schema's `minItems: 1`),
+ * not a sentence: the check is supposed to name what it will go read.
+ *
+ * @param check One entry of `checks`, already known to be an object.
+ * @param problems Accumulator; the offending check's `id` names each message.
+ */
+function checkAgentic(check: Record<string, unknown>, problems: string[]): void {
+  if (check.tipo !== 'agentico') return;
+
+  const label = `checks[${isText(check.id) ? check.id : '?'}]`;
+  if (!isText(check.instrucao)) {
+    problems.push(`${label}: tipo "agentico" requires "instrucao" — the judgment being asked for`);
+  }
+
+  const evidence = check.evidencia_obrigatoria;
+  if (!Array.isArray(evidence) || evidence.length === 0 || evidence.some((item) => !isText(item))) {
+    problems.push(
+      `${label}: tipo "agentico" requires "evidencia_obrigatoria" — a non-empty list of the artifacts the verdict has to cite; without it the check concludes on a self-report (D9)`,
+    );
   }
 }
 

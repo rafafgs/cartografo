@@ -1,0 +1,60 @@
+{
+  "id": "portao-sem-evidencia",
+  "versao": "1.0.0",
+  "hash": "sha256:85275ef6fc8b7acf1b04e77bef60dd78b1ff399ddce2877d16f51144699873e2",
+  "papel": "portao",
+  "descricao": "FIXTURE NEGATIVO — não é um exemplo de manifesto válido. Existe para provar que o schema rejeita um check agêntico sem evidência obrigatória.",
+  "entrada": {
+    "type": "object",
+    "required": [
+      "artefato"
+    ],
+    "properties": {
+      "artefato": {
+        "type": "string"
+      }
+    }
+  },
+  "saida": {
+    "type": "object",
+    "required": [
+      "resultado"
+    ],
+    "properties": {
+      "resultado": {
+        "type": "string",
+        "enum": [
+          "passou",
+          "falhou",
+          "escalar_humano"
+        ]
+      }
+    }
+  },
+  "pre_condicoes": [
+    "artefato produzido pelo nó anterior"
+  ],
+  "checks": [
+    {
+      "id": "criterios-atendidos",
+      "tipo": "agentico",
+      "descricao": "Confere se os critérios de aceite foram atendidos — e é exatamente aqui que o manifesto quebra: sem evidencia_obrigatoria, o portão poderia concluir com o autorrelato de quem produziu o artefato, que é o que D9 e a nota de aprendizado proíbem.",
+      "instrucao": "Verifique se os critérios de aceite foram atendidos."
+    }
+  ],
+  "permissoes": {
+    "filesystem": {
+      "leitura": [
+        "**"
+      ],
+      "escrita": []
+    },
+    "rede": {
+      "permitido": false
+    }
+  },
+  "instrucoes": "Confira o artefato do nó anterior e conclua.",
+  "origem": {
+    "tipo": "nativa"
+  }
+}

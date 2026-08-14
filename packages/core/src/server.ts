@@ -10,11 +10,15 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { BancoDeDados } from './db/connection.ts';
+import { registrarExecucoes } from './routes/execucoes.ts';
 import { registrarSaude } from './routes/health.ts';
+import { registrarPerguntas } from './routes/perguntas.ts';
+import { registrarSessoes } from './routes/sessoes.ts';
+import { registrarTrabalhos } from './routes/trabalhos.ts';
 
 /**
- * Prefixo das rotas de negócio. Nasce vazio: as rotas entram nas tickets de
- * schema de domínio, na ordem da D6. `/health` fica fora dele (FR10).
+ * Prefixo das rotas de negócio. Toda rota de domínio nasce dentro dele;
+ * `/health` fica fora, porque é probe de infraestrutura (t100, FR10).
  */
 export const PREFIXO_API = '/v1';
 
@@ -37,11 +41,14 @@ export function criarApp(opcoes: OpcoesApp): FastifyInstance {
 
   registrarSaude(app, opcoes.db);
 
-  // Escopo versionado, ainda sem rotas: existe desde já para que toda rota de
-  // negócio nasça dentro dele, sem ninguém ter que lembrar da convenção.
+  // Escopo versionado: toda rota de negócio nasce dentro dele, sem ninguém ter
+  // que lembrar da convenção.
   app.register(
-    async () => {
-      /* rotas de negócio entram aqui nas tickets seguintes (D6) */
+    async (escopo) => {
+      registrarTrabalhos(escopo, opcoes.db);
+      registrarSessoes(escopo, opcoes.db);
+      registrarPerguntas(escopo, opcoes.db);
+      registrarExecucoes(escopo, opcoes.db);
     },
     { prefix: PREFIXO_API },
   );

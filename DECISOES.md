@@ -77,3 +77,31 @@ separado do core headless).
 
 Proteção explícita de patente, padrão de infraestrutura aberta. Nome público
 ("cartografo" ou outro) validado contra colisões e domínio antes do anúncio.
+
+## D13 (2026-08-14) — Linhagem de grafos: base da classe + variantes por projeto
+
+Cada classe de problema tem um grafo-base; um projeto pode ter uma variante,
+que é fork do base com diff e linhagem registrados (semântica de branch). O
+aprendizado flui nos dois sentidos, sempre com portão: diff de variante que
+supera o base vira proposta de promoção para o base; melhoria no base é
+oferecida às variantes, nunca forçada. O próprio fork nasce de proposta do
+topógrafo com evidência de divergência sistemática na telemetria, não de
+decisão a priori.
+
+## D14 (2026-08-14) — Duas instâncias de validação, com grafos de fábrica
+
+Duas instâncias, e está bom (amenda o "2–3 domínios" de D7 e do README):
+
+1. **Desenvolvimento de software** — o grafo do flowpilot portado.
+2. **Bets assimétricas (tese de investimento)** — triagem → coleta de
+   fundamentos → análise de assimetria (downside limitado, upside grande) →
+   red team (papel dedicado a derrubar a tese) → dimensionamento de risco →
+   decisão (portão humano obrigatório, sempre) → registro e monitoramento.
+   O topógrafo aprende sobre métricas de processo (red team rodou? premissas
+   com fonte? erro de estimativa caindo?); P&L é validação lenta de longo
+   prazo, nunca métrica de rodada — em mercado, resultado não valida
+   processo.
+
+Requisito de produto derivado: o sistema entrega **grafos pré-determinados
+prontos para uso** (biblioteca de fábrica com esses dois mapas; é a semente
+do atlas compartilhável).

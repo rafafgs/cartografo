@@ -79,9 +79,10 @@ código.
 ## Condição de partida (a regra do teto)
 
 Não construir a meta-camada a priori. A generalização se extrai de
-instâncias: começar quando existirem 2–3 grafos fixos funcionando em domínios
-diferentes. Instância 1: flowpilot (entrega de software). Instâncias 2 e 3:
-em aberto.
+instâncias: começar com grafos fixos funcionando em domínios diferentes.
+Decidido (D14): duas instâncias — desenvolvimento de software (grafo do
+flowpilot portado) e bets assimétricas (tese de investimento) — entregues
+como grafos de fábrica, prontos para uso.
 
 ## Protótipo barato
 
@@ -99,8 +100,8 @@ problema, redesenhado conforme o território é explorado. Considerados:
 
 ## Plano
 
-Fazer funcionar → testar em 2–3 domínios diferentes → publicar artigo na
-newsletter com o repo público (só depois de pronto), como alavanca de
-subscribers. O README público carregará o convite para seguir
+Fazer funcionar → validar nas duas instâncias da D14 (software e bets
+assimétricas) → publicar artigo na newsletter com o repo público (só depois
+de pronto), como alavanca de subscribers. O README público carregará o convite para seguir
 agentsmaestro.dev. Decisões em [DECISOES.md](./DECISOES.md); notas em
 `notas/`.

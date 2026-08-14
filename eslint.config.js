@@ -3,7 +3,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 /**
- * Flat config única da raiz, aplicada aos dois pacotes e aos scripts soltos.
+ * Flat config única da raiz, aplicada a todos os pacotes e aos scripts soltos.
  *
  * Só regras de base (`recommended`), sem checagem com informação de tipo: o
  * portão de tipos é `npm run typecheck` (`tsc --noEmit --strict`), e duplicá-lo

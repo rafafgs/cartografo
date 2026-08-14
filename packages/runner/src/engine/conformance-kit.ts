@@ -1,0 +1,521 @@
+/**
+ * Kit de conformidade do EngineAdapter — os sete casos C1–C7 da tabela de
+ * `docs/formatos/engine-adapter.md`, como testes `node:test` parametrizados
+ * por qualquer implementação da interface.
+ *
+ * "Esta é a suíte que um adapter de terceiro precisa passar para entrar"
+ * (`docs/formatos/engine-adapter.md:342-346`). Por isso ele mora em `src/` e
+ * não em `test/`: é artefato publicado do pacote, consumido pelo adapter do
+ * Codex (t119) e por quem plugar uma CLI nova, não teste privado deste
+ * repositório.
+ *
+ * Duas regras de projeto mantêm o kit reutilizável:
+ *
+ * 1. **Nada de vocabulário de engine aqui.** O kit só fala `SessionSpec`,
+ *    `SessionStatus` e `SessionListener`. O fake engine é configurado por
+ *    `envOverrides`, que a interface já define como adições opacas ao ambiente
+ *    do processo — o kit configura o fake sem saber que binário o adapter
+ *    resolveu rodar.
+ * 2. **Toda espera tem prazo próprio e mensagem explícita** (nota de execução
+ *    do documento): nenhum caso dorme esperando que dê certo.
+ *
+ * O único ponto em que um engine específico aparece é opcional e injetado:
+ * `quadroDeEngineRef` carrega a linha que AQUELE engine emite com seu id de
+ * sessão, porque `system/init` do Claude Code e `thread.started` do Codex não
+ * têm a mesma forma.
+ */
+
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+  type EngineAdapter,
+  type SessionListener,
+  type SessionSpec,
+  type SessionStatus,
+  TERMINAL_STATUSES,
+  UnknownSessionError,
+} from './types.ts';
+
+/** Prazo padrão de espera por status terminal. */
+const PRAZO_PADRAO_MS = 15_000;
+
+/**
+ * Janela usada só para provar que NADA MAIS acontece (segundo `onFinished`,
+ * `onOutput` atrasado, relógio que continua armado).
+ *
+ * É a única espera fixa do kit, e é fixa por necessidade: não existe evento
+ * para "o que não vai acontecer". As esperas por algo que deve acontecer são
+ * todas por prazo com falha explícita.
+ */
+const MS_DE_ASSENTAMENTO = 300;
+
+const pausa = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+/** O que o fake engine gravou sobre o que o processo recebeu. */
+interface RegistroDoFake {
+  readonly pid: number;
+  readonly pidDoNeto: number | null;
+  readonly argv: string[];
+  readonly env: Record<string, string>;
+  readonly cwd: string;
+  readonly stdin: string;
+  readonly arquivos: Record<string, string>;
+}
+
+/** Uma linha que o fake engine deve emitir, e por qual fluxo. */
+interface LinhaDoFake {
+  readonly stream: 'stdout' | 'stderr';
+  readonly text: string;
+}
+
+export interface OpcoesDoKit {
+  /**
+   * A linha que ESTE engine emite carregando seu id de sessão, e o id que o
+   * adapter deve extrair dela. Ausente, o kit só verifica que `onEngineRef`
+   * não é chamado mais de uma vez.
+   */
+  readonly quadroDeEngineRef?: { readonly linha: string; readonly refEsperada: string };
+  /** Prazo de espera por status terminal. Default 15s. */
+  readonly prazoMs?: number;
+}
+
+/** Coleta tudo que o adapter reporta e permite esperar pelo fim com prazo. */
+class Coletor implements SessionListener {
+  readonly linhas: string[] = [];
+  readonly refs: string[] = [];
+  readonly finais: Array<{ status: SessionStatus; exitCode: number | null }> = [];
+  linhasDepoisDoFim = 0;
+
+  #avisar: Array<() => void> = [];
+
+  onOutput(line: string): void {
+    if (this.finais.length > 0) this.linhasDepoisDoFim += 1;
+    this.linhas.push(line);
+  }
+
+  onEngineRef(engineRef: string): void {
+    this.refs.push(engineRef);
+  }
+
+  onFinished(status: SessionStatus, exitCode: number | null): void {
+    this.finais.push({ status, exitCode });
+    const pendentes = this.#avisar;
+    this.#avisar = [];
+    for (const avisar of pendentes) avisar();
+  }
+
+  async aguardarFim(
+    rotulo: string,
+    prazoMs: number,
+  ): Promise<{ status: SessionStatus; exitCode: number | null }> {
+    if (this.finais.length === 0) {
+      await new Promise<void>((resolve, reject) => {
+        const relogio = setTimeout(() => {
+          reject(
+            new Error(
+              `${rotulo}: onFinished não ocorreu em ${prazoMs}ms — ` +
+                `${this.linhas.length} linha(s) recebida(s) até aqui`,
+            ),
+          );
+        }, prazoMs);
+        this.#avisar.push(() => {
+          clearTimeout(relogio);
+          resolve();
+        });
+      });
+    }
+    const primeiro = this.finais[0];
+    assert.ok(primeiro, `${rotulo}: onFinished resolveu sem registrar o desfecho`);
+    return primeiro;
+  }
+}
+
+/** Diretórios efêmeros de um caso: o workdir da sessão e o sidecar do fake. */
+interface Cenario {
+  readonly workingDir: string;
+  readonly registro: string;
+  lerRegistro(): RegistroDoFake;
+  limpar(): void;
+}
+
+function montarCenario(): Cenario {
+  const raiz = mkdtempSync(join(tmpdir(), 'cartografo-kit-'));
+  const workingDir = join(raiz, 'workdir');
+  mkdirSync(workingDir);
+  // O sidecar mora FORA do workdir: dentro, ele mesmo apareceria na lista de
+  // arquivos que o caso C2 inspeciona.
+  const registro = join(raiz, 'registro.json');
+  return {
+    workingDir,
+    registro,
+    lerRegistro: () => JSON.parse(readFileSync(registro, 'utf8')) as RegistroDoFake,
+    limpar: () => rmSync(raiz, { recursive: true, force: true }),
+  };
+}
+
+/** `true` enquanto o pid existir; `EPERM` conta como vivo (existe, mas não é nosso). */
+function processoVivo(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (erro) {
+    return (erro as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+async function exigirProcessoMorto(pid: number, rotulo: string, prazoMs = 5_000): Promise<void> {
+  const limite = Date.now() + prazoMs;
+  while (Date.now() < limite) {
+    if (!processoVivo(pid)) return;
+    await pausa(25);
+  }
+  assert.fail(`${rotulo}: processo ${pid} continuou vivo ${prazoMs}ms depois do fim (órfão)`);
+}
+
+/** Todo canal legítimo por onde o processo pode ter recebido alguma coisa. */
+function tudoQueOProcessoRecebeu(registro: RegistroDoFake): string {
+  return [
+    registro.argv.join('\n'),
+    Object.values(registro.env).join('\n'),
+    registro.stdin,
+    Object.values(registro.arquivos).join('\n'),
+  ].join('\n');
+}
+
+function exigirStatusDoBaseline(status: SessionStatus, rotulo: string): void {
+  assert.ok(
+    (TERMINAL_STATUSES as readonly string[]).includes(status),
+    `${rotulo}: "${status}" não é status terminal do baseline da interface`,
+  );
+}
+
+/**
+ * Registra os sete casos de conformidade contra um adapter.
+ *
+ * @param makeAdapter Fábrica que devolve um adapter NOVO (estado limpo) já
+ *   costurado para rodar `fakeEnginePath` no lugar do binário real.
+ * @param fakeEnginePath Caminho do fake engine controlável.
+ * @param opcoes Ajustes específicos do engine sob teste.
+ */
+export function runConformanceKit(
+  makeAdapter: (fakeEnginePath: string) => EngineAdapter,
+  fakeEnginePath: string,
+  opcoes: OpcoesDoKit = {},
+): void {
+  const prazo = opcoes.prazoMs ?? PRAZO_PADRAO_MS;
+  const novoAdapter = (): EngineAdapter => makeAdapter(fakeEnginePath);
+
+  const linhasDeAmbiente = (linhas: LinhaDoFake[]): string => JSON.stringify(linhas);
+
+  describe('kit de conformidade do EngineAdapter', () => {
+    test('C1 — sessão básica', async () => {
+      const cenario = montarCenario();
+      const coletor = new Coletor();
+      const adapter = novoAdapter();
+
+      const linhas: LinhaDoFake[] = [];
+      if (opcoes.quadroDeEngineRef) {
+        linhas.push({ stream: 'stdout', text: opcoes.quadroDeEngineRef.linha });
+      }
+      linhas.push({ stream: 'stdout', text: 'primeira linha' });
+      linhas.push({ stream: 'stdout', text: 'segunda linha' });
+
+      const spec: SessionSpec = {
+        workingDir: cenario.workingDir,
+        instructions: 'instruções do nó, vindas do banco',
+        prompt: 'o trabalho deste turno',
+        timeoutSeconds: 30,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: cenario.registro,
+          FAKE_ENGINE_LINES: linhasDeAmbiente(linhas),
+          FAKE_ENGINE_EXIT_CODE: '0',
+          // Segura o processo de pé o suficiente para observar "running" sem
+          // corrida; a espera pelo fim continua sendo por prazo.
+          FAKE_ENGINE_DELAY_MS: '500',
+        },
+      };
+
+      try {
+        const handle = await adapter.startSession(spec, coletor);
+        assert.equal(
+          await adapter.getStatus(handle),
+          'running',
+          'C1: logo após o start a sessão tem de estar "running"',
+        );
+
+        const fim = await coletor.aguardarFim('C1', prazo);
+        assert.equal(fim.status, 'completed');
+        assert.equal(fim.exitCode, 0);
+        assert.equal(await adapter.getStatus(handle), 'completed');
+
+        await pausa(MS_DE_ASSENTAMENTO);
+        assert.equal(coletor.finais.length, 1, 'C1: onFinished tem de ocorrer exatamente uma vez');
+        assert.equal(
+          coletor.linhasDepoisDoFim,
+          0,
+          'C1: nenhum onOutput pode chegar depois do onFinished (invariante 2)',
+        );
+
+        const registro = cenario.lerRegistro();
+        assert.equal(
+          registro.stdin,
+          '',
+          'C1: o engine recebeu conteúdo em stdin — a invariante 6 pede stdin fechado/em /dev/null',
+        );
+
+        assert.ok(coletor.refs.length <= 1, 'C1: onEngineRef dispara no máximo uma vez');
+        if (opcoes.quadroDeEngineRef) {
+          assert.deepEqual(coletor.refs, [opcoes.quadroDeEngineRef.refEsperada]);
+        }
+      } finally {
+        cenario.limpar();
+      }
+    });
+
+    test('C2 — injeção de skill', async () => {
+      const cenario = montarCenario();
+      const coletor = new Coletor();
+      const adapter = novoAdapter();
+
+      const marcador = 'MARCADOR-a1b2c3';
+      const prompt = 'trabalho deste turno, sem o marcador';
+      assert.ok(!prompt.includes(marcador), 'C2: o próprio fixture não pode vazar o marcador no prompt');
+
+      const spec: SessionSpec = {
+        workingDir: cenario.workingDir,
+        instructions: `Você é o nó de teste. ${marcador}`,
+        prompt,
+        timeoutSeconds: 30,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: cenario.registro,
+          FAKE_ENGINE_EXIT_CODE: '0',
+        },
+      };
+
+      try {
+        await adapter.startSession(spec, coletor);
+        await coletor.aguardarFim('C2', prazo);
+
+        // Asserção proibida pela especificação: inspecionar o SessionSpec.
+        // Só o que o PROCESSO recebeu conta.
+        const recebido = tudoQueOProcessoRecebeu(cenario.lerRegistro());
+        assert.ok(
+          recebido.includes(marcador),
+          'C2: o marcador das instruções não chegou ao processo por nenhum caminho ' +
+            '(argumento, flag de system prompt, stdin ou arquivo efêmero)',
+        );
+        assert.ok(recebido.includes(prompt), 'C2: o prompt do turno não chegou ao processo');
+      } finally {
+        cenario.limpar();
+      }
+    });
+
+    test('C3 — timeout', async () => {
+      const cenario = montarCenario();
+      const coletor = new Coletor();
+      const adapter = novoAdapter();
+
+      const spec: SessionSpec = {
+        workingDir: cenario.workingDir,
+        instructions: 'instruções do nó',
+        prompt: 'trabalho que nunca termina',
+        timeoutSeconds: 1,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: cenario.registro,
+          FAKE_ENGINE_HANG: '1',
+        },
+      };
+
+      try {
+        const handle = await adapter.startSession(spec, coletor);
+        const fim = await coletor.aguardarFim('C3', prazo);
+
+        assert.equal(fim.status, 'timed_out', 'C3: expirar o relógio é "timed_out", não "failed"');
+        exigirStatusDoBaseline(fim.status, 'C3');
+        assert.equal(await adapter.getStatus(handle), 'timed_out');
+
+        await exigirProcessoMorto(cenario.lerRegistro().pid, 'C3');
+
+        // Passado o dobro do prazo original, o relógio não pode disparar de novo.
+        await pausa(1_000 + MS_DE_ASSENTAMENTO);
+        assert.equal(coletor.finais.length, 1, 'C3: onFinished ocorreu mais de uma vez');
+      } finally {
+        cenario.limpar();
+      }
+    });
+
+    test('C4 — morte de processo (SIGTERM ignorado, neto vivo)', async () => {
+      const cenario = montarCenario();
+      const coletor = new Coletor();
+      const adapter = novoAdapter();
+
+      const spec: SessionSpec = {
+        workingDir: cenario.workingDir,
+        instructions: 'instruções do nó',
+        prompt: 'trabalho que resiste ao SIGTERM',
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: cenario.registro,
+          FAKE_ENGINE_HANG: '1',
+          FAKE_ENGINE_IGNORE_SIGTERM: '1',
+          FAKE_ENGINE_SPAWN_CHILD: '1',
+        },
+      };
+
+      try {
+        const handle = await adapter.startSession(spec, coletor);
+        // O sidecar existe assim que o processo subiu; ler antes de matar
+        // garante os dois pids.
+        await pausa(MS_DE_ASSENTAMENTO);
+        const registro = cenario.lerRegistro();
+
+        await adapter.cancel(handle);
+        const fim = await coletor.aguardarFim('C4', prazo);
+
+        exigirStatusDoBaseline(fim.status, 'C4');
+        assert.equal(coletor.finais.length, 1, 'C4: onFinished tem de ocorrer mesmo com SIGKILL');
+
+        await exigirProcessoMorto(registro.pid, 'C4 (processo do engine)');
+        assert.ok(registro.pidDoNeto, 'C4: o fixture precisa ter deixado um neto vivo');
+        await exigirProcessoMorto(registro.pidDoNeto, 'C4 (neto que sobreviveu ao pai)');
+      } finally {
+        cenario.limpar();
+      }
+    });
+
+    test('C5 — cancelamento', async () => {
+      const especDeSessaoLonga = (cenario: Cenario): SessionSpec => ({
+        workingDir: cenario.workingDir,
+        instructions: 'instruções do nó',
+        prompt: 'trabalho longo',
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: cenario.registro,
+          FAKE_ENGINE_HANG: '1',
+        },
+      });
+
+      // O status reportado é O QUE FOI PASSADO, não um "cancelled" fixo.
+      const comStatusProprio = montarCenario();
+      try {
+        const coletor = new Coletor();
+        const adapter = novoAdapter();
+        const handle = await adapter.startSession(especDeSessaoLonga(comStatusProprio), coletor);
+        await adapter.cancel(handle, 'timed_out');
+        const fim = await coletor.aguardarFim('C5 (status próprio)', prazo);
+        assert.equal(fim.status, 'timed_out');
+
+        // Cancelar de novo, já terminal, é no-op silencioso — não erro.
+        await adapter.cancel(handle);
+        await pausa(MS_DE_ASSENTAMENTO);
+        assert.equal(
+          coletor.finais.length,
+          1,
+          'C5: cancelar sessão já terminal não pode disparar um segundo onFinished',
+        );
+      } finally {
+        comStatusProprio.limpar();
+      }
+
+      // Sem argumento, o default é "cancelled".
+      const semArgumento = montarCenario();
+      try {
+        const coletor = new Coletor();
+        const adapter = novoAdapter();
+        const handle = await adapter.startSession(especDeSessaoLonga(semArgumento), coletor);
+        await adapter.cancel(handle);
+        const fim = await coletor.aguardarFim('C5 (default)', prazo);
+        assert.equal(fim.status, 'cancelled');
+      } finally {
+        semArgumento.limpar();
+      }
+    });
+
+    test('C6 — colheita de eventos', async () => {
+      const sequencia: LinhaDoFake[] = [
+        { stream: 'stdout', text: '{"type":"assistant","text":"quadro estruturado 1"}' },
+        { stream: 'stdout', text: 'grito de morte em texto puro, sem ser JSON' },
+        { stream: 'stdout', text: '{"type":"assistant","text":"quadro estruturado 2"}' },
+        { stream: 'stderr', text: 'aviso do runtime no stderr' },
+      ];
+      const soDoFluxo = (fluxo: 'stdout' | 'stderr'): string[] =>
+        sequencia.filter((l) => l.stream === fluxo).map((l) => l.text);
+
+      const rodar = async (
+        rotulo: string,
+        exitCode: number,
+      ): Promise<{ status: SessionStatus; exitCode: number | null; linhas: string[] }> => {
+        const cenario = montarCenario();
+        const coletor = new Coletor();
+        const adapter = novoAdapter();
+        try {
+          await adapter.startSession(
+            {
+              workingDir: cenario.workingDir,
+              instructions: 'instruções do nó',
+              prompt: 'colheita',
+              timeoutSeconds: 30,
+              envOverrides: {
+                FAKE_ENGINE_RECORD: cenario.registro,
+                FAKE_ENGINE_LINES: linhasDeAmbiente(sequencia),
+                FAKE_ENGINE_EXIT_CODE: String(exitCode),
+              },
+            },
+            coletor,
+          );
+          const fim = await coletor.aguardarFim(rotulo, prazo);
+          await pausa(MS_DE_ASSENTAMENTO);
+          return { ...fim, linhas: [...coletor.linhas] };
+        } finally {
+          cenario.limpar();
+        }
+      };
+
+      const falho = await rodar('C6 (saída não-zero)', 3);
+      assert.equal(falho.status, 'failed');
+      assert.equal(falho.exitCode, 3, 'C6: o exit code exato tem de chegar ao onFinished');
+
+      for (const linha of sequencia) {
+        assert.ok(
+          falho.linhas.includes(linha.text),
+          `C6: a linha ${JSON.stringify(linha.text)} (${linha.stream}) não chegou ao onOutput`,
+        );
+      }
+
+      // Ordem: stdout e stderr são dois pipes, e só a ordem DENTRO de cada um é
+      // determinística no leitor. A fusão dos dois é verificada por presença.
+      for (const fluxo of ['stdout', 'stderr'] as const) {
+        const esperadas = soDoFluxo(fluxo);
+        const recebidas = falho.linhas.filter((linha) => esperadas.includes(linha));
+        assert.deepEqual(recebidas, esperadas, `C6: as linhas de ${fluxo} chegaram fora de ordem`);
+      }
+
+      const ok = await rodar('C6 (saída zero)', 0);
+      assert.equal(ok.status, 'completed');
+      assert.equal(ok.exitCode, 0);
+    });
+
+    test('C7 — handle desconhecido', async () => {
+      const adapter = novoAdapter();
+      const inexistente = 'handle-que-nunca-existiu';
+
+      await assert.rejects(
+        () => adapter.getStatus(inexistente),
+        UnknownSessionError,
+        'C7: getStatus tem de lançar, nunca inventar status',
+      );
+      await assert.rejects(
+        () => adapter.cancel(inexistente),
+        UnknownSessionError,
+        'C7: cancel tem de lançar para handle desconhecido',
+      );
+    });
+  });
+}

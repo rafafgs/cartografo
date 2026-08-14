@@ -8,12 +8,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import path from 'node:path';
+import type { Readable } from 'node:stream';
 import test from 'node:test';
+import path from 'node:path';
 import { setTimeout as esperar } from 'node:timers/promises';
 
 const RAIZ_PACOTE = path.resolve(import.meta.dirname, '..');
@@ -27,8 +28,11 @@ interface LinhaDeProntidao {
   url: string;
 }
 
+/** `stdio: ['ignore', 'pipe', 'pipe']` — sem stdin, com stdout/stderr lidos. */
+type FilhoDoComando = ChildProcessByStdio<null, Readable, Readable>;
+
 interface Partida {
-  filho: ChildProcessWithoutNullStreams;
+  filho: FilhoDoComando;
   prontidao: LinhaDeProntidao;
   encerrar: () => Promise<void>;
 }

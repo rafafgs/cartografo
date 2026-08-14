@@ -10,13 +10,15 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
 import type * as ModuloCliente from '../src/cliente.ts';
 
 const RAIZ_PACOTE = path.resolve(import.meta.dirname, '..');
+const RAIZ_REPO = path.resolve(RAIZ_PACOTE, '..', '..');
+const CAMINHO_FICHA = path.join(RAIZ_REPO, 'docs', 'spec', 'topografo-custo.md');
 
 let cache: typeof ModuloCliente | null = null;
 
@@ -138,6 +140,72 @@ test('AT8 — buscarGrafoVersao lê o snapshot pela rota pública de versão', a
     chamadas.map((chamada) => chamada.url),
     ['http://127.0.0.1:4317/v1/graph-versions/sha256%3Av1'],
     'o id da versão carrega ":" e precisa entrar escapado no caminho',
+  );
+});
+
+/**
+ * Os caminhos pré-D18 que a API deixou de servir (t127/t130/t132/t133).
+ *
+ * Lista escrita à mão, e é o ponto: um caminho renomeado no core não quebra
+ * nenhum teste desta ficha, porque todo teste de unidade aqui fala com `fetch`
+ * falso. Foi assim que a lente inteira ficou apontada para rotas que respondiam
+ * 404 sem nada acusar (t136). Quem renomear de novo acrescenta a linha aqui.
+ */
+const CAMINHOS_PRE_D18 = Object.freeze([
+  '/v1/sessoes',
+  '/v1/trabalhos',
+  '/v1/grafos',
+  '/v1/grafo-versoes',
+  '/v1/propostas',
+  '/v1/execucoes',
+]);
+
+/** A fronteira da lente: as quatro rotas do §5, e nenhuma a mais. */
+const FRONTEIRA = Object.freeze([
+  ['/v1/sessions', 'GET'],
+  ['/v1/jobs', 'GET'],
+  ['/v1/graph-versions/:id', 'GET'],
+  ['/v1/proposals', 'POST'],
+]);
+
+/** O texto de uma seção `## N.` da ficha, até a próxima seção. */
+function secao(ficha: string, numero: number): string {
+  const inicio = ficha.indexOf(`\n## ${numero}.`);
+  assert.notEqual(inicio, -1, `a ficha não tem a seção ${numero}`);
+  const resto = ficha.slice(inicio + 1);
+  const fim = resto.indexOf('\n## ');
+  return fim === -1 ? resto : resto.slice(0, fim);
+}
+
+test('t136 — a ficha não cita nenhum caminho pré-D18 da API', () => {
+  assert.ok(existsSync(CAMINHO_FICHA), `artefato ainda não existe: ${CAMINHO_FICHA}`);
+  const ficha = readFileSync(CAMINHO_FICHA, 'utf8');
+
+  for (const caminho of CAMINHOS_PRE_D18) {
+    const linhas = ficha
+      .split('\n')
+      .map((texto, indice) => [indice + 1, texto] as const)
+      .filter(([, texto]) => new RegExp(`${caminho}\\b`).test(texto));
+
+    assert.deepEqual(
+      linhas,
+      [],
+      `a ficha promete ${caminho}, que a API não serve mais (D18):\n` +
+        linhas.map(([numero, texto]) => `  ${numero}: ${texto.trim()}`).join('\n'),
+    );
+  }
+});
+
+test('t136 — a tabela de fronteira do §5 é exatamente o que o cliente chama', () => {
+  const ficha = readFileSync(CAMINHO_FICHA, 'utf8');
+
+  const tabela = [...secao(ficha, 5).matchAll(/^\|\s*`(\/v1\/[^`]+)`\s*\|\s*(GET|POST|PATCH)\s*\|/gm)]
+    .map((linha) => [linha[1], linha[2]]);
+
+  assert.deepEqual(
+    tabela,
+    FRONTEIRA.map((linha) => [...linha]),
+    'a tabela do §5 e as rotas de src/cliente.ts precisam dizer a mesma coisa',
   );
 });
 

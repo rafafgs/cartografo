@@ -20,7 +20,7 @@ coisas, "ponto de extensão" seria afirmação sem lastro.
 
 ## 1. A unidade de observação: `(versão de grafo, nó)`
 
-`GET /v1/execucoes/:id/metricas-por-versao` já cruza versão × telemetria
+`GET /v1/executions/:id/metrics-by-version` já cruza versão × telemetria
 ([`trabalho.ts`](../../packages/core/src/repositorios/trabalho.ts)), mas conta
 trabalhos e eventos por `grafo_versao_id` e para aí. Isso responde "a v2 andou
 mais que a v1"; não responde "**qual nó** ficou caro na v2" — e uma política de
@@ -37,9 +37,9 @@ A lente desce um nível e agrega por par:
 | `sessoes_com_tempo` / `sessoes_sem_tempo` | idem, para os carimbos de tempo |
 
 **Nenhuma coluna nova foi precisa.** `sessao.uso` e os dois carimbos já existem
-e já saem em `GET /v1/sessoes` junto com `no_id` e `trabalho_id`; o
+e já saem em `GET /v1/sessions` junto com `no_id` e `trabalho_id`; o
 `grafo_versao_id` de cada sessão se resolve pelo `trabalho.grafo_versao_id`, que
-já vem em `GET /v1/trabalhos`. A junção é feita no cliente, com dois GETs.
+já vem em `GET /v1/jobs`. A junção é feita no cliente, com dois GETs.
 
 ### Ausência nunca é zero
 
@@ -186,14 +186,14 @@ topografo-custo avaliar --url <url> --execucao <id>
 
 O caminho inteiro, em ordem:
 
-1. `GET /v1/sessoes?execucao_id=` e `GET /v1/trabalhos?execucao_id=` (em
+1. `GET /v1/sessions?execucao_id=` e `GET /v1/jobs?execucao_id=` (em
    paralelo);
 2. monta o mapa `trabalho_id -> grafo_versao_id`;
 3. agrega por `(versão, nó)` e descarta as linhas não identificadas;
-4. `GET /v1/grafo-versoes/:id` **uma vez por versão distinta** — é de onde sai a
+4. `GET /v1/graph-versions/:id` **uma vez por versão distinta** — é de onde sai a
    `descricao` atual, que vira o `de` da operação e o `para` da inversa;
 5. avalia as duas políticas;
-6. `POST /v1/propostas` por candidata, e imprime uma linha por proposta criada.
+6. `POST /v1/proposals` por candidata, e imprime uma linha por proposta criada.
 
 Códigos de saída seguem a convenção da CLI `cartografo`
 ([`cli/index.ts`](../../packages/core/src/cli/index.ts)): `0` fez o que
@@ -206,12 +206,16 @@ prometeu (inclusive quando não havia candidata), `1` resultado negativo
 
 | Rota | Verbo | Para quê |
 |---|---|---|
-| `/v1/sessoes` | GET | tokens e tempo por `no_id` |
-| `/v1/trabalhos` | GET | o mapa `trabalho_id -> grafo_versao_id` |
-| `/v1/grafo-versoes/:id` | GET | a `descricao` atual do nó |
-| `/v1/propostas` | POST | a candidata, como proposta pendente |
+| `/v1/sessions` | GET | tokens e tempo por `no_id` |
+| `/v1/jobs` | GET | o mapa `trabalho_id -> grafo_versao_id` |
+| `/v1/graph-versions/:id` | GET | a `descricao` atual do nó |
+| `/v1/proposals` | POST | a candidata, como proposta pendente |
 
-A ausência mais importante da tabela é `POST /v1/propostas/:id/aplicar`. O
+Os caminhos são inglês (D18); as **chaves** do corpo (`sessoes`, `trabalhos`,
+`grafo_versao`, `proposta`) seguem em português, porque são formato e a D18 as
+tira explicitamente do escopo do inglês.
+
+A ausência mais importante da tabela é `POST /v1/proposals/:id/apply`. O
 topógrafo **cria** e para: aplicar, aprovar ou reverter é decisão humana no
 portão (README, princípio 5), e o inbox é ficha própria (`t111`). Isso está
 travado por teste — a lista de rotas tocadas por uma execução real do comando é
@@ -236,10 +240,14 @@ que impede a dependência de voltar pela porta dos tipos.
 Cada item aqui é escopo declarado, não esquecimento:
 
 - **Deduplicar propostas entre execuções repetidas do comando.** Rodar duas
-  vezes sobre a mesma telemetria cria propostas repetidas. Checar duplicidade
-  exigiria uma rota `GET /v1/propostas`, que não existe — e criá-la seria
-  mudança no core, exatamente o que esta ficha existe para não precisar fazer.
-  Quem criar essa rota herda a checagem.
+  vezes sobre a mesma telemetria cria propostas repetidas. Quando esta ficha foi
+  escrita, checar duplicidade exigiria uma rota de listagem que não existia, e
+  criá-la seria mudança no core — exatamente o que a ficha existe para não
+  precisar fazer. `GET /v1/proposals` existe hoje
+  ([`proposals.ts`](../../packages/core/src/routes/proposals.ts)), então o
+  bloqueio caiu; a checagem continua não implementada, e continua fora de
+  escopo **desta** ficha, que é sobre caber na API e não sobre idempotência.
+  É ficha de quem a quiser, e a rota já está lá.
 - **Campo de custo/tier real** no documento de grafo ou no manifesto de skill
   (§3).
 - **Superfície de política formal** — tabela `politica` versionada, orçamento

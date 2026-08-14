@@ -15,9 +15,9 @@
  *   nenhum deste pacote: aplicar é decisão humana no portão (README, princípio 5),
  *   e o inbox é ficha própria (`t111`).
  * - **não deduplica.** Rodar duas vezes sobre a mesma telemetria cria propostas
- *   repetidas. Checar duplicidade exigiria uma rota `GET /v1/proposals` que não
- *   existe, e criá-la seria mudança no core — o oposto do que esta ficha prova.
- *   Fora de escopo declarado, não bug silencioso.
+ *   repetidas. `GET /v1/proposals` existe e daria para checar, mas idempotência
+ *   não é o que esta ficha prova e nada aqui a implementa: fora de escopo
+ *   declarado (ficha, §6), não bug silencioso.
  *
  * Códigos de saída, na mesma convenção da CLI `cartografo`
  * (`packages/core/src/cli/index.ts`):

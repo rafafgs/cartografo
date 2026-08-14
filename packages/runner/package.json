@@ -14,7 +14,8 @@
     "spike": "node --import tsx scripts/spike-real-session.mjs",
     "spike:escalation": "node --import tsx scripts/spike-t106-human-escalation.mjs",
     "spike:surveyor": "node --import tsx scripts/spike-surveyor-flow.mjs",
-    "surveyor": "node --import tsx src/surveyor/cli.mjs"
+    "surveyor": "node --import tsx src/surveyor/cli.mjs",
+    "synthesize": "node --import tsx src/synthesizer/cli.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

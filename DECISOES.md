@@ -46,3 +46,34 @@ Repo privado até funcionar. Validar em 2–3 domínios diferentes (condição d
 partida do README). Depois de pronto: repo vira público junto com artigo na
 newsletter, como alavanca de crescimento de subscribers; o README público
 carrega convite para seguir e acompanhar agentsmaestro.dev.
+
+## D8 (2026-08-14) — Classe de problema é nomeada pelo usuário (MVP)
+
+Quem nomeia a classe é o usuário, na declaração do problema; o sintetizador
+apenas sugere classe existente quando reconhecer semelhança ("isso parece a
+classe tal, quer usar o mapa dela?"). Identidade da classe = raiz de
+versionamento do grafo e unidade de agregação da telemetria.
+
+## D9 (2026-08-14) — Formato do contrato
+
+Entrada e saída em JSON Schema; verificação como lista de checks tipados,
+cada check sendo ou um comando determinístico (rodar teste, validar schema)
+ou uma instrução agêntica com evidência obrigatória. O contrato é a espinha
+comum de skill, portão e validação formal do grafo.
+
+## D10 (2026-08-14) — Sintetizador é copiloto no MVP
+
+Propõe o grafo, o usuário edita e é o portão de validação inteiro.
+Automatizar por partes depois, começando pelos checks formais de soundness.
+
+## D11 (2026-08-14) — Tela: observabilidade + inbox de propostas primeiro
+
+Configuração via arquivos e CLI no começo; tela de edição depois. Condição
+do Rafael: arquitetada para estender e alterar fácil — garantida por
+API-first (a tela é cliente da API pública, sem privilégios, em pacote
+separado do core headless).
+
+## D12 (2026-08-14) — Licença Apache-2.0
+
+Proteção explícita de patente, padrão de infraestrutura aberta. Nome público
+("cartografo" ou outro) validado contra colisões e domínio antes do anúncio.

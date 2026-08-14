@@ -96,3 +96,11 @@ ou os dois.
 `cartografo`: quem desenha um mapa por território — um grafo por classe de
 problema, redesenhado conforme o território é explorado. Considerados:
 `topografo` (ficou para o avaliador, que mede o terreno), `graphsmith` (EN).
+
+## Plano
+
+Fazer funcionar → testar em 2–3 domínios diferentes → publicar artigo na
+newsletter com o repo público (só depois de pronto), como alavanca de
+subscribers. O README público carregará o convite para seguir
+agentsmaestro.dev. Decisões em [DECISOES.md](./DECISOES.md); notas em
+`notas/`.

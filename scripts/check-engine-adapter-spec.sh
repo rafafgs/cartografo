@@ -111,10 +111,14 @@ else
   #    when that package exposes exactly one. typescript exposed two through
   #    6.x (`tsc` and `tsserver`), so `npx --yes typescript ...` died with
   #    `npm error could not determine executable to run` (t137). Naming the bin
-  #    after `--` settles it for every version. Note that dropping the word
-  #    `tsc` entirely does NOT work either: 7.0.2 happens to expose only `tsc`,
-  #    so the short form resolves today and would break again the day a second
-  #    bin comes back;
+  #    after `--` settles it for every version. The package and the bin also
+  #    have to stay SEPARATED by that `--`: written adjacent, the way the
+  #    ticket's literal command had them, npx reads the package name as the
+  #    binary and passes "tsc" through as an input file, and the compiler dies
+  #    with TS6231 before ever looking at the doc (t119). Note that dropping
+  #    the word `tsc` entirely does NOT work either: 7.0.2 happens to expose
+  #    only `tsc`, so the short form resolves today and would break again the
+  #    day a second bin comes back. Three false reds, in three directions;
   # 2. `--target es2022` is required — the default (ES5) does not load the
   #    `Promise` lib, and the whole interface is asynchronous.
   #

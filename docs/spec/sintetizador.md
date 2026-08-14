@@ -148,7 +148,7 @@ chegam concatenados pelo chamador.
 - **`instructions`** — o papel e as regras duras: a `classe` é do usuário e é
   literal; `linhagem` é sempre `{"tipo": "base"}`; todo `skill_ref` é copiado do
   catálogo; todo nó precisa de aresta de entrada e de saída; toda aresta tem
-  `condicao`.
+  `condicao`; todo `contrato` traz `verificacoes` com pelo menos uma verificação.
 - **`prompt`** — a declaração verbatim, a classe alvo, os precedentes do §4 e o
   catálogo inteiro de skills (`id`, `versao`, `hash`, `papel`, `descricao`,
   `entrada`, `saida`, `checks` de cada uma), mais o contrato de saída.
@@ -171,6 +171,34 @@ catálogo, nunca inventado**. Um pin é o que impede troca silenciosa de capacid
 por baixo de um grafo já validado (D4), e um hash que o modelo inventou não é um
 pin — é um grafo que vai ser reprovado no `import` depois de já ter custado a
 edição de alguém.
+
+### O prompt é a única fonte do formato
+
+`workingDir` é um diretório temporário vazio: a sessão **não consegue abrir**
+[`schema/grafo.schema.json`](../../schema/grafo.schema.json). Toda regra que o
+portão de `cartografo import` (§7) aplica e que o prompt não diz é uma regra que
+a sessão não tem como seguir — e a conta chega como `grafo_invalido` depois de a
+pessoa já ter editado o rascunho.
+
+Foi assim que t138 apareceu na rodada alpha: um rascunho obedecia cada palavra do
+prompt e ainda assim voltava com `soundness no_com_contrato`, porque
+`contrato.verificacoes` tem `minItems: 1` no schema e o prompt não falava disso.
+Duas consequências viraram texto:
+
+- **`verificacoes` com pelo menos uma verificação**, dito nas regras duras e
+  repetido no contrato de saída, com o nome da regra de soundness que reprova a
+  lista vazia. Vale igual para portão, que é nó como outro qualquer.
+- **Um check do catálogo não é uma `verificacao`.** Os dois formatos divergem em
+  `evidencia_obrigatoria`: lista de artefatos no
+  [manifesto de skill](../../especificacoes/formatos/manifesto-skill.md), o
+  literal `true` no documento de grafo. Como o catálogo imprime os `checks` de
+  cada skill logo acima, o prompt mostra os dois formatos de verificação por
+  extenso e diz para reescrever, não copiar. `prompt.test.ts` valida esses
+  exemplos contra o schema de verdade, então eles não podem divergir do formato
+  que existem para ensinar.
+
+Isto continua não sendo validação (§9): o sintetizador não confere o documento
+que recebeu de volta. É só o formato dito por inteiro para quem não pode lê-lo.
 
 ---
 

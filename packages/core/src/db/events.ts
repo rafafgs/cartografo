@@ -141,6 +141,41 @@ export interface EventFilter {
    * Combined with `trabalho_id`, the two filters add up (AND, not OR).
    */
   execucao_id?: number;
+
+  /**
+   * Everything recorded AFTER this id (t123, FR4).
+   *
+   * This is the cursor of the outbound stream, and it is the envelope's own
+   * `id` because that is "the only total ordering there is"
+   * (`especificacoes/eventos/taxonomia.md:52`). Strictly greater, never greater
+   * or equal: what the consumer sends back is the last id it ALREADY has, so
+   * delivering it again would be the duplicate the reconnect protocol exists to
+   * avoid.
+   */
+  sinceId?: number;
+
+  /** The events of one project — the `projeto_id` column, exactly (t123, FR3). */
+  projetoId?: number;
+
+  /**
+   * Only these event types, exact strings of the taxonomy (t123, FR3).
+   *
+   * The catalogue is NOT re-declared here: whoever filters validates against
+   * `KNOWN_TYPES` (`src/db/event-validation.ts`) before calling, and an empty
+   * list means "no type filter" instead of "no event" — an empty filter that
+   * silently returns nothing is a trap, not a feature.
+   */
+  tipos?: string[];
+
+  /**
+   * Ceiling of rows for one read (t123, FR8).
+   *
+   * Only the stream uses it: a consumer that reconnects far behind would
+   * otherwise turn one poll tick into an unbounded write burst. Whoever reads a
+   * whole timeline (`GET /v1/executions/:id/events`) keeps asking for
+   * everything, because there the response IS the whole slice.
+   */
+  limit?: number;
 }
 
 /**
@@ -172,10 +207,35 @@ export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
     parameters.execucao_id = filter.execucao_id;
   }
 
+  if (filter.sinceId !== undefined) {
+    conditions.push('id > @since_id');
+    parameters.since_id = filter.sinceId;
+  }
+
+  if (filter.projetoId !== undefined) {
+    conditions.push('projeto_id = @projeto_id');
+    parameters.projeto_id = filter.projetoId;
+  }
+
+  if (filter.tipos !== undefined && filter.tipos.length > 0) {
+    // One named parameter per type, and never interpolation: the list comes from
+    // a query string, and the only reason it is safe is that it never touches
+    // the SQL text.
+    conditions.push(`tipo IN (${filter.tipos.map((_, index) => `@tipo_${index}`).join(', ')})`);
+    filter.tipos.forEach((value, index) => {
+      parameters[`tipo_${index}`] = value;
+    });
+  }
+
+  if (filter.limit !== undefined) {
+    parameters.limit = filter.limit;
+  }
+
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;
-  const statement = db.prepare(`SELECT ${COLUMNS} FROM evento ${where} ORDER BY id`);
+  const ceiling = filter.limit === undefined ? '' : 'LIMIT @limit';
+  const statement = db.prepare(`SELECT ${COLUMNS} FROM evento ${where} ORDER BY id ${ceiling}`);
   const rows = (
-    conditions.length === 0 ? statement.all() : statement.all(parameters)
+    Object.keys(parameters).length === 0 ? statement.all() : statement.all(parameters)
   ) as EventRow[];
   return rows.map(toEvent);
 }

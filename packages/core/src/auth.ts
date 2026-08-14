@@ -2,8 +2,8 @@
  * The credential gate of the business API (t124, FR3).
  *
  * ONE `onRequest` hook, registered once on the `/v1` scope by `server.ts`, and
- * not a check inside each route file. Ten route families exist today and the
- * eleventh will be written by somebody who never reads this file: a gate that
+ * not a check inside each route file. Eleven route families exist today and the
+ * twelfth will be written by somebody who never reads this file: a gate that
  * has to be remembered is a gate that will eventually be forgotten, and the
  * failure mode of forgetting it is an open route nobody notices.
  *

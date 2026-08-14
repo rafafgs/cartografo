@@ -11,6 +11,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerAuth } from './auth.ts';
 import type { Database } from './db/connection.ts';
+import { registerEvents } from './routes/events.ts';
 import { registerExecutions } from './routes/executions.ts';
 import { registerGraphs } from './routes/graphs.ts';
 import { registerHealth } from './routes/health.ts';
@@ -51,7 +52,8 @@ export function createApp(options: AppOptions): FastifyInstance {
   // Versioned scope: every business route is born inside it, and so does the
   // credential gate (t124) — ONE `onRequest` hook, before the first route, is
   // what makes "no route under /v1 answers without a credential" a property of
-  // this file instead of a habit each route file has to keep.
+  // this file instead of a habit each route file has to keep. The stream (t123)
+  // is a route family like any other, so it is gated like any other.
   //
   // One `register` line per route family — that way two tickets registering
   // routes in parallel touch different lines of this file, and not the same one.
@@ -69,6 +71,7 @@ export function createApp(options: AppOptions): FastifyInstance {
       scope.register(async (inner) => registerLeases(inner, options.db));
       scope.register(async (inner) => registerIntake(inner, options.db));
       scope.register(async (inner) => registerSkills(inner, options.db));
+      scope.register(async (inner) => registerEvents(inner, options.db));
     },
     { prefix: API_PREFIX },
   );

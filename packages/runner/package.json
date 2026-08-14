@@ -9,7 +9,7 @@
     "node": ">=20.11.0"
   },
   "scripts": {
-    "test": "node --import tsx --test test/**/*.test.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "spike": "node scripts/spike-real-session.mjs"
   },

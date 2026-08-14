@@ -14,7 +14,7 @@
  * superfície entre os dois é a porta HTTP. É a D1 sendo exercida, não só
  * declarada — e é o que deixa este arquivo passar no portão de AT19.
  *
- * `GET /v1/trabalhos` é do t102 e ainda não existe: só ELA é simulada, por um
+ * `GET /v1/jobs` é do t102 e ainda não existe: só ELA é simulada, por um
  * `fetch` que intercepta esse caminho e delega todo o resto para o control plane
  * de verdade. Todo o caminho de lease — conceder, expirar, reivindicar,
  * reconceder — é HTTP real contra o server real.
@@ -139,7 +139,7 @@ async function subirControlPlane(t: ContextoDeTeste): Promise<string> {
 }
 
 /**
- * `fetch` que responde `GET /v1/trabalhos` com uma fila fixa e delega TODO o
+ * `fetch` que responde `GET /v1/jobs` com uma fila fixa e delega TODO o
  * resto para o control plane de verdade.
  *
  * A rota existe de verdade desde que o t102 mergeou, mas continua simulada de
@@ -150,7 +150,7 @@ async function subirControlPlane(t: ContextoDeTeste): Promise<string> {
  */
 function fetchComFilaSimulada(): typeof fetch {
   return async (entrada, init) => {
-    if (String(entrada).endsWith('/v1/trabalhos')) {
+    if (String(entrada).endsWith('/v1/jobs')) {
       return new Response(
         JSON.stringify({
           trabalhos: [

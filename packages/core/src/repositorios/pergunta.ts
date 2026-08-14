@@ -18,6 +18,7 @@
 import type { BancoDeDados } from '../db/connection.ts';
 import { registrarEvento } from '../db/eventos.ts';
 import { exigirDadosValidos, type Ator } from '../db/validacao-evento.ts';
+import { similaridade } from '../dominio/similaridade.ts';
 import {
   ATOR_API,
   ATOR_AUTO_APROVACAO,
@@ -367,4 +368,113 @@ export function listarPerguntas(
     .prepare(`SELECT ${COLUNAS} FROM pergunta ${onde} ORDER BY id`)
     .all(...valores) as LinhaPergunta[];
   return linhas.map(paraPergunta);
+}
+
+/**
+ * Um precedente: pergunta já respondida do mesmo projeto, com o quanto ela se
+ * parece com a consultada.
+ *
+ * Carrega a DECISÃO (`resposta`) e a procedência dela (`origem`,
+ * `respondido_por`, `respondida_em`), porque é isso que quem está respondendo
+ * agora precisa ver: não basta saber que já perguntaram parecido, é preciso
+ * saber o que se decidiu, quem decidiu e quando.
+ */
+export interface Precedente {
+  id: number;
+  tipo: string;
+  pergunta: string;
+  resposta: string | null;
+  respondido_por: string | null;
+  origem: string | null;
+  criada_em: string;
+  respondida_em: string | null;
+  /** Escore em `[0, 1]`, arredondado a 2 casas — ver `dominio/similaridade.ts`. */
+  similaridade: number;
+}
+
+type LinhaPrecedente = Omit<Precedente, 'similaridade'>;
+
+/** Quantos precedentes voltam quando o chamador não diz. */
+const LIMITE_PADRAO_DE_PRECEDENTES = 5;
+
+/** Teto do `limite`: a rota apara, não recusa (é botão de tamanho, não regra). */
+const LIMITE_MAXIMO_DE_PRECEDENTES = 20;
+
+const COLUNAS_PRECEDENTE = `
+  p.id, p.tipo, p.pergunta, p.resposta, p.respondido_por, p.origem,
+  p.criada_em, p.respondida_em
+`;
+
+/** Duas casas: o escore é para LER e comparar, não para fazer conta em cima. */
+function arredondarEscore(escore: number): number {
+  return Math.round(escore * 100) / 100;
+}
+
+/**
+ * As perguntas já respondidas do mesmo projeto mais parecidas com a de `:id`
+ * (t113).
+ *
+ * O recorte é o projeto de quem pergunta — o `projeto_id` chega pelo `trabalho`
+ * dono, o mesmo caminho que `criarPergunta` já percorre. Precedente de outro
+ * projeto seria decisão de outro contexto entrando como se fosse história da
+ * casa, e é justamente o isolamento que o resto do código já aplica (leases,
+ * trabalho).
+ *
+ * A própria pergunta nunca entra na lista: respondida, ela casaria consigo
+ * mesma com escore 1 e ocuparia o topo do próprio ranking para sempre.
+ *
+ * A varredura é ingênua de propósito: lê todas as respondidas do projeto e
+ * pontua em memória. Com o volume da PoC isso é irrelevante, e índice ou cache
+ * antes de existir uma base grande seria otimizar contra um problema imaginado
+ * — a nota de gotcha da ficha registra quando revisitar.
+ *
+ * @param db Handle aberto.
+ * @param id Id da pergunta consultada (pendente ou não).
+ * @param opcoes `limite` de itens; aparado em `[1, 20]`, default 5.
+ * @returns Precedentes em ordem de escore, ou `null` se a pergunta não existe.
+ */
+export function buscarPrecedentes(
+  db: BancoDeDados,
+  id: number,
+  opcoes: { limite?: number } = {},
+): Precedente[] | null {
+  const alvo = lerLinha(db, id);
+  if (alvo === undefined) return null;
+
+  // O projeto de quem pergunta vem do trabalho dono — mesmo caminho de
+  // `criarPergunta`. Trabalho ausente é impossível pela FK, e mesmo assim a
+  // resposta honesta é "nenhum precedente", nunca um erro.
+  const dono = db.prepare('SELECT projeto_id FROM trabalho WHERE id = ?').get(alvo.trabalho_id) as
+    | { projeto_id: number }
+    | undefined;
+  if (dono === undefined) return [];
+
+  const limite = Math.min(
+    Math.max(opcoes.limite ?? LIMITE_PADRAO_DE_PRECEDENTES, 1),
+    LIMITE_MAXIMO_DE_PRECEDENTES,
+  );
+
+  const candidatas = db
+    .prepare(
+      `SELECT ${COLUNAS_PRECEDENTE}
+         FROM pergunta p
+         JOIN trabalho t ON t.id = p.trabalho_id
+        WHERE p.status = 'respondida'
+          AND p.id <> ?
+          AND t.projeto_id = ?`,
+    )
+    .all(id, dono.projeto_id) as LinhaPrecedente[];
+
+  // Empate de escore vai para a decisão mais RECENTE: quando duas decisões
+  // antigas se parecem igualmente com a de hoje, a última é a que vale. As
+  // datas são ISO 8601, então ordem lexicográfica é ordem cronológica.
+  const maisRecente = (a: LinhaPrecedente, b: LinhaPrecedente): number =>
+    (b.respondida_em ?? '').localeCompare(a.respondida_em ?? '');
+
+  return candidatas
+    .map((linha) => ({ linha, escore: similaridade(alvo.pergunta, linha.pergunta) }))
+    .filter((par) => par.escore > 0)
+    .sort((a, b) => b.escore - a.escore || maisRecente(a.linha, b.linha))
+    .slice(0, limite)
+    .map(({ linha, escore }) => ({ ...linha, similaridade: arredondarEscore(escore) }));
 }

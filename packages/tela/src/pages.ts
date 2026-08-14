@@ -68,6 +68,7 @@ const STYLE = `
   .pergunta dt { opacity: .6; }
   .pergunta dd { margin: 0; }
   form textarea { width: 100%; min-height: 3.5rem; font: inherit; padding: .4rem; }
+  form label[for] { display: block; font-size: .8rem; letter-spacing: .02em; opacity: .7; margin-bottom: .2rem; }
   form .opcoes { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0; }
   .linha-do-tempo { list-style: none; padding: 0; max-width: 52rem; }
   .segmento { display: grid; grid-template-columns: 11rem 1fr; gap: .8rem; padding: .35rem 0; border-bottom: 1px solid currentColor; }
@@ -213,6 +214,15 @@ function questionSummary(question: Question): string {
  * and default answer — because the criterion is the same as
  * `GET /v1/input-requests`: whoever answers has to be able to decide without
  * opening the repository.
+ *
+ * The answer field carries a visible `<label>` tied by `for`/`id`, not just a
+ * placeholder: a placeholder is a hint, it disappears at the first character
+ * typed and it is not a reliable accessible name — and this is the only
+ * required field of the page. The id comes from the question's own id, which is
+ * already the card's unique key (`data-pergunta`, the form's `action`) and
+ * arrives whole from the API, leaving no room to break the `for`/`id` pair.
+ * Pinned by `packages/tela/test/questions-answer-field.test.ts`; it is the same
+ * fix `t128` made on the inbox's reason field.
  */
 function questionCard(question: Question): string {
   const field = (label: string, value: string | null): string =>
@@ -239,7 +249,8 @@ function questionCard(question: Question): string {
   </dl>
   <form method="post" action="/perguntas/${question.id}/resposta">
     ${options}
-    <textarea name="resposta" required placeholder="a resposta, como você a daria a uma pessoa">${escapeHtml(question.resposta_padrao ?? '')}</textarea>
+    <label for="resposta-${question.id}">sua resposta</label>
+    <textarea id="resposta-${question.id}" name="resposta" required placeholder="a resposta, como você a daria a uma pessoa">${escapeHtml(question.resposta_padrao ?? '')}</textarea>
     <p>
       <label>quem responde <input name="respondido_por" value="${escapeHtml(DEFAULT_ANSWERED_BY)}"></label>
       <button type="submit">responder</button>

@@ -398,7 +398,11 @@ export function hitsInSource(source) {
 }
 
 /** File names this ticket renames away. */
-const RENAMED_AWAY = Object.freeze(['grafo-fabrica-1.test.mjs', 'schema-grafo.test.mjs']);
+const RENAMED_AWAY = Object.freeze([
+  'grafo-fabrica-1.test.mjs',
+  'grafo-fabrica-2.test.mjs',
+  'schema-grafo.test.mjs',
+]);
 
 test('AC1 — no Portuguese identifier survives in tests/*.mjs', () => {
   const files = scannedFiles();

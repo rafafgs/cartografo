@@ -26,6 +26,7 @@ import {
   asInteger,
   integerOrNull,
   integerOrDefault,
+  jsonOrNull,
   resolveActor,
   textOrNull,
 } from './common.ts';
@@ -36,6 +37,15 @@ export interface Job {
   projeto_id: number;
   execucao_id: number | null;
   titulo: string;
+  /** Body of the job; `null` when it was born with a title and nothing else (t122). */
+  corpo: string | null;
+  /**
+   * Preliminary acceptance criteria; `null` when none was declared (t122).
+   *
+   * `null` is not `[]`: the node that refines has to be able to tell "nobody
+   * wrote any yet" from "it was declared that there are none".
+   */
+  criterios_de_aceite: string[] | null;
   no_entrada_id: string;
   no_atual: string;
   bloqueado: boolean;
@@ -61,23 +71,16 @@ export interface ExecutionSummary {
   perguntas_pendentes: number;
 }
 
-interface JobRow {
-  id: number;
-  projeto_id: number;
-  execucao_id: number | null;
-  titulo: string;
-  no_entrada_id: string;
-  no_atual: string;
+interface JobRow extends Omit<Job, 'bloqueado' | 'criterios_de_aceite'> {
   bloqueado: number;
-  motivo_bloqueio: string | null;
-  grafo_versao_id: string | null;
-  criado_em: string;
-  atualizado_em: string;
+  /** JSON in a TEXT column, like `sessao.uso` and `pergunta.opcoes`. */
+  criterios_de_aceite: string | null;
 }
 
 const COLUMNS = `
-  id, projeto_id, execucao_id, titulo, no_entrada_id, no_atual,
-  bloqueado, motivo_bloqueio, grafo_versao_id, criado_em, atualizado_em
+  id, projeto_id, execucao_id, titulo, corpo, criterios_de_aceite,
+  no_entrada_id, no_atual, bloqueado, motivo_bloqueio, grafo_versao_id,
+  criado_em, atualizado_em
 `;
 
 /**
@@ -95,7 +98,11 @@ const JOB_EVENTS = `
 `;
 
 function toJob(row: JobRow): Job {
-  return { ...row, bloqueado: asBoolean(row.bloqueado) };
+  return {
+    ...row,
+    bloqueado: asBoolean(row.bloqueado),
+    criterios_de_aceite: jsonOrNull<string[]>(row.criterios_de_aceite),
+  };
 }
 
 function readRow(db: Database, id: number): JobRow | undefined {
@@ -119,6 +126,10 @@ export function getJob(db: Database, id: number): Job | null {
 /** Body of `POST /v1/jobs`. */
 export interface CreateJobInput {
   titulo?: unknown;
+  /** Optional body (t122): manual creation still only needs a title. */
+  corpo?: unknown;
+  /** Optional preliminary acceptance criteria (t122). */
+  criterios_de_aceite?: unknown;
   no_entrada_id?: unknown;
   execucao_id?: unknown;
   projeto_id?: unknown;
@@ -131,7 +142,9 @@ export interface CreateJobInput {
  *
  * `grafo_versao_id` goes into the PROJECTION and not into the event payload: the
  * `trabalho.criado` schema does not declare it, and a log carrying a field
- * outside its contract is a log no consumer can validate.
+ * outside its contract is a log no consumer can validate. `corpo` and
+ * `criterios_de_aceite` go into BOTH, because the schema does declare them since
+ * t122 — a job that is born with content has that content as part of the fact.
  *
  * @param db Open handle.
  * @param input Request body.
@@ -144,26 +157,32 @@ export function createJob(db: Database, input: CreateJobInput): Job {
   const data = requireValidData('trabalho.criado', {
     titulo: input.titulo,
     no_entrada_id: input.no_entrada_id,
+    corpo: input.corpo,
+    criterios_de_aceite: input.criterios_de_aceite,
   });
   const projectId = integerOrDefault('projeto_id', input.projeto_id, DEFAULT_PROJECT);
   const executionId = integerOrNull('execucao_id', input.execucao_id);
   const graphVersionId = textOrNull('grafo_versao_id', input.grafo_versao_id);
   const actor = resolveActor(input.ator, API_ACTOR);
   const entryNode = data.no_entrada_id as string;
+  const criteria = data.criterios_de_aceite as string[] | null;
 
   const create = db.transaction((): Job => {
     const timestamp = now();
     const result = db
       .prepare(
         `INSERT INTO trabalho (
-           projeto_id, execucao_id, titulo, no_entrada_id, no_atual,
-           bloqueado, motivo_bloqueio, grafo_versao_id, criado_em, atualizado_em
-         ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+           projeto_id, execucao_id, titulo, corpo, criterios_de_aceite,
+           no_entrada_id, no_atual, bloqueado, motivo_bloqueio, grafo_versao_id,
+           criado_em, atualizado_em
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
       )
       .run(
         projectId,
         executionId,
         data.titulo as string,
+        data.corpo as string | null,
+        criteria === null ? null : JSON.stringify(criteria),
         entryNode,
         entryNode,
         graphVersionId,

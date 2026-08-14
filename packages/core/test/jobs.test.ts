@@ -74,6 +74,12 @@ test('AT1 — POST /v1/jobs creates the job and records trabalho.criado', async 
   assert.deepEqual(event.dados, {
     titulo: 'Entidades e API: trabalho, sessão, evento e pergunta',
     no_entrada_id: 'entrada',
+    // The intake (t122) added two optional fields to the type's contract. A job
+    // created by hand declares neither, and the payload normalizes them to an
+    // explicit `null` — the taxonomy's rule for every optional field, the same
+    // one `sessao.aberta` has always followed.
+    corpo: null,
+    criterios_de_aceite: null,
   });
 });
 

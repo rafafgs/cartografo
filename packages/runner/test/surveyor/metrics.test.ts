@@ -1,7 +1,7 @@
 /**
  * Acceptance tests for the flow lens (t110, FR3/FR4).
  *
- * `calcularMetricasDeFluxo` is the half of the surveyor that no agent touches:
+ * `calculateFlowMetrics` is the half of the surveyor that no agent touches:
  * given one execution's event log and the node ids of the graph it ran under,
  * it folds the log into time-in-node, time-waiting, time-in-queue and questions
  * per node, and names the worst one. Everything the proposal will later claim
@@ -27,10 +27,10 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import type * as MetricsModule from '../../src/topografo/metricas.ts';
+import type * as MetricsModule from '../../src/surveyor/metrics.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const METRICS_MODULE = 'src/topografo/metricas.ts';
+const METRICS_MODULE = 'src/surveyor/metrics.ts';
 
 /** One envelope, in the taxonomy's shape (t98), reduced to what the fold reads. */
 interface Event {
@@ -57,19 +57,19 @@ async function loadMetrics(): Promise<typeof MetricsModule> {
 
 const NODES = ['implantar', 'redigir', 'revisar'];
 
-/** `2026-08-14T10:00:00Z` plus `segundos`, so every expectation is arithmetic. */
-function at(segundos: number): string {
-  return new Date(Date.parse('2026-08-14T10:00:00.000Z') + segundos * 1_000).toISOString();
+/** `2026-08-14T10:00:00Z` plus `seconds`, so every expectation is arithmetic. */
+function at(seconds: number): string {
+  return new Date(Date.parse('2026-08-14T10:00:00.000Z') + seconds * 1_000).toISOString();
 }
 
 function event(
   id: number,
-  tipo: string,
-  entidade: { tipo: string; id: number },
-  segundos: number,
-  dados: Record<string, unknown> = {},
+  type: string,
+  entity: { tipo: string; id: number },
+  seconds: number,
+  payload: Record<string, unknown> = {},
 ): Event {
-  return { id, tipo, execucao_id: 7, entidade, ocorrido_em: at(segundos), dados };
+  return { id, tipo: type, execucao_id: 7, entidade: entity, ocorrido_em: at(seconds), dados: payload };
 }
 
 const work = (id: number): { tipo: string; id: number } => ({ tipo: 'trabalho', id });
@@ -145,11 +145,11 @@ function unbalancedLog(): Event[] {
 }
 
 test('t110 — the flow lens computes the four numbers per node and names the bottleneck', async () => {
-  const { calcularMetricasDeFluxo } = await loadMetrics();
+  const { calculateFlowMetrics } = await loadMetrics();
 
-  const metricas = calcularMetricasDeFluxo(unbalancedLog(), NODES);
+  const metrics = calculateFlowMetrics(unbalancedLog(), NODES);
 
-  assert.deepEqual(metricas.por_no, [
+  assert.deepEqual(metrics.por_no, [
     {
       no_id: 'revisar',
       tempo_agente_ms: 9_000,
@@ -179,16 +179,16 @@ test('t110 — the flow lens computes the four numbers per node and names the bo
     },
   ]);
 
-  assert.equal(metricas.gargalo?.no_id, 'revisar', 'the worst total is the bottleneck');
+  assert.equal(metrics.gargalo?.no_id, 'revisar', 'the worst total is the bottleneck');
   assert.deepEqual(
-    metricas.gargalo?.eventos,
+    metrics.gargalo?.eventos,
     [4, 5, 6, 7, 8, 10],
     'every number carries the ids of the events it was computed from',
   );
 });
 
 test('t110 — a run with no time signal at all has no bottleneck', async () => {
-  const { calcularMetricasDeFluxo } = await loadMetrics();
+  const { calculateFlowMetrics } = await loadMetrics();
 
   // Two works that were created and moved, and nothing ever ran: no session
   // opened, nothing blocked. Every total is zero.
@@ -198,23 +198,23 @@ test('t110 — a run with no time signal at all has no bottleneck', async () => 
     event(3, 'trabalho.transicao', work(1), 0, { de_no_id: null, para_no_id: 'revisar' }),
   ];
 
-  const metricas = calcularMetricasDeFluxo(flat, NODES);
+  const metrics = calculateFlowMetrics(flat, NODES);
 
-  assert.equal(metricas.gargalo, null, '"nothing to propose" is a valid outcome, not an error');
+  assert.equal(metrics.gargalo, null, '"nothing to propose" is a valid outcome, not an error');
   assert.deepEqual(
-    metricas.por_no.map((linha) => linha.total_ms),
+    metrics.por_no.map((row) => row.total_ms),
     [0, 0, 0],
     'the nodes are still reported — a report that hides what it measured lies about the total',
   );
   assert.deepEqual(
-    metricas.por_no.map((linha) => linha.no_id),
+    metrics.por_no.map((row) => row.no_id),
     ['implantar', 'redigir', 'revisar'],
     'with every total tied at zero, the order is the node id',
   );
 });
 
 test('t110 — a tie is broken by node id, and nodes outside the graph are ignored', async () => {
-  const { calcularMetricasDeFluxo } = await loadMetrics();
+  const { calculateFlowMetrics } = await loadMetrics();
 
   const tied: Event[] = [
     event(1, 'trabalho.criado', work(1), 0, { titulo: 'a', no_entrada_id: 'redigir' }),
@@ -250,16 +250,16 @@ test('t110 — a tie is broken by node id, and nodes outside the graph are ignor
     }),
   ];
 
-  const metricas = calcularMetricasDeFluxo(tied, NODES);
+  const metrics = calculateFlowMetrics(tied, NODES);
 
-  assert.equal(metricas.gargalo?.no_id, 'implantar', 'same total, lowest node id wins');
+  assert.equal(metrics.gargalo?.no_id, 'implantar', 'same total, lowest node id wins');
   assert.deepEqual(
-    metricas.por_no.map((linha) => linha.no_id),
+    metrics.por_no.map((row) => row.no_id),
     ['implantar', 'revisar', 'redigir'],
     'the ranking lists every node of the graph, and only them',
   );
   assert.equal(
-    metricas.por_no.find((linha) => linha.no_id === 'redigir')?.total_ms,
+    metrics.por_no.find((row) => row.no_id === 'redigir')?.total_ms,
     0,
     'the ten minutes of a node outside the graph land nowhere',
   );

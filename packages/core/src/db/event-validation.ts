@@ -131,11 +131,13 @@ const optional = (shape: FieldRule['shape'], extra: Partial<FieldRule> = {}): Fi
 });
 
 /**
- * The 9 types of this ticket, in taxonomy order.
+ * The types the control plane emits today, in taxonomy order.
  *
- * The other 6 of the catalogue are left to their owners: `lease.*` belongs to
- * t103 (runner and controller) and `grafo_versao.*` to t101 — each enters here
- * together with the code that emits it, never before.
+ * The rest of the catalogue is left to its owners: `lease.*` belongs to t103
+ * (runner and controller) and `grafo_versao.*` to t101 — each enters here
+ * together with the code that emits it, never before. That is how
+ * `trabalho.dependencia_declarada` arrived: with the intake that declares it
+ * (t122).
  */
 const RULES: Record<string, TypeRule> = {
   'trabalho.criado': {
@@ -143,6 +145,11 @@ const RULES: Record<string, TypeRule> = {
     fields: {
       titulo: required('string'),
       no_entrada_id: required('string'),
+      // Optional since the intake (t122): a job can be born already carrying
+      // content. The criteria recorded here are PRELIMINARY — the node that
+      // refines is the one that produces the real ones out of the raw request.
+      corpo: optional('string'),
+      criterios_de_aceite: optional('string-list'),
     },
   },
   'trabalho.transicao': {
@@ -164,6 +171,12 @@ const RULES: Record<string, TypeRule> = {
     entity: 'trabalho',
     fields: {
       campos_alterados: required('string-list', { minItems: 1, unique: true }),
+    },
+  },
+  'trabalho.dependencia_declarada': {
+    entity: 'trabalho',
+    fields: {
+      depende_de_trabalho_id: required('integer'),
     },
   },
   'sessao.aberta': {

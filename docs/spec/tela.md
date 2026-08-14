@@ -142,6 +142,15 @@ Duas escolhas de fronteira:
   entrou é tudo o que o sistema de fato sabe; inventar um usuário seria pior,
   porque `pergunta.respondida` é evento de auditoria.
 
+O campo de resposta tem `<label>` visível amarrado ao `<textarea>` por
+`for`/`id`, e não apenas placeholder — placeholder é dica, some no primeiro
+caractere digitado e não é nome acessível confiável, e este é o único campo
+obrigatório da página. O id sai do id da pergunta, que já é a chave única do
+cartão. É a mesma regra que o inbox de propostas segue no campo de motivo
+([`tela-inbox-propostas.md`](tela-inbox-propostas.md) §3); pinada em
+[`packages/tela/test/questions-answer-field.test.ts`](../../packages/tela/test/questions-answer-field.test.ts),
+que resolve o nome como um leitor de tela resolveria.
+
 **Quem desbloqueia o trabalho não é a tela.** O wiring pergunta → bloqueio →
 resposta → desbloqueio → retomada da sessão é do `t106`, e mora no control
 plane: criar a pergunta bloqueia o trabalho na mesma transação, e responder

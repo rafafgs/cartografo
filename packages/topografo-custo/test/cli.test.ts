@@ -101,7 +101,7 @@ async function subirControlPlane(t: ContextoDeTeste): Promise<string> {
     const linha = saida
       .split('\n')
       .map((texto) => texto.trim())
-      .find((texto) => texto.startsWith('{') && texto.includes('cartografo.pronto'));
+      .find((texto) => texto.startsWith('{') && texto.includes('cartografo.ready'));
     if (linha !== undefined) return (JSON.parse(linha) as { url: string }).url;
     await esperar(50);
   }
@@ -137,7 +137,7 @@ async function semearSessao(
   tokens: number,
 ): Promise<void> {
   // A rota devolve a projeção da sessão crua no corpo, sem envelope (t102).
-  const sessao = (await chamar(urlBase, '/v1/sessoes', 'POST', {
+  const sessao = (await chamar(urlBase, '/v1/sessions', 'POST', {
     trabalho_id: trabalhoId,
     no_id: noId,
     engine: 'claude-code',
@@ -145,7 +145,7 @@ async function semearSessao(
     prompt: `trabalhar o nó ${noId}`,
   })) as { id: number };
 
-  await chamar(urlBase, `/v1/sessoes/${sessao.id}/finalizar`, 'PATCH', {
+  await chamar(urlBase, `/v1/sessions/${sessao.id}/finish`, 'PATCH', {
     status: 'concluida',
     exit_code: 0,
     uso: {
@@ -170,12 +170,12 @@ test('AT9 — avaliar cria exatamente uma proposta pendente da lente de custo', 
 
   // --- semeadura: grafo como dado, um trabalho e duas sessões de nós distintos
   const documento = JSON.parse(readFileSync(CAMINHO_GRAFO, 'utf8')) as Record<string, unknown>;
-  const registro = (await chamar(urlBase, '/v1/grafos', 'POST', documento)) as {
+  const registro = (await chamar(urlBase, '/v1/graphs', 'POST', documento)) as {
     grafo_versao: { id: string };
   };
   const versaoId = registro.grafo_versao.id;
 
-  const trabalho = (await chamar(urlBase, '/v1/trabalhos', 'POST', {
+  const trabalho = (await chamar(urlBase, '/v1/jobs', 'POST', {
     titulo: 'nota sobre custo',
     no_entrada_id: 'redigir',
     execucao_id: EXECUCAO_ID,
@@ -218,7 +218,7 @@ test('AT9 — avaliar cria exatamente uma proposta pendente da lente de custo', 
   assert.equal(codigo, 0, `o comando saiu ${codigo}:\n${impresso.join('')}`);
 
   const criacoes = chamadas.filter(
-    (chamada) => chamada.caminho === '/v1/propostas' && chamada.metodo === 'POST',
+    (chamada) => chamada.caminho === '/v1/proposals' && chamada.metodo === 'POST',
   );
   assert.equal(criacoes.length, 1, 'só "redigir" passa do teto; "revisar" não gera nada');
 
@@ -245,10 +245,10 @@ test('AT9 — avaliar toca só as quatro rotas do contrato, e nunca /aplicar', a
   const urlBase = await subirControlPlane(t);
 
   const documento = JSON.parse(readFileSync(CAMINHO_GRAFO, 'utf8')) as Record<string, unknown>;
-  const registro = (await chamar(urlBase, '/v1/grafos', 'POST', documento)) as {
+  const registro = (await chamar(urlBase, '/v1/graphs', 'POST', documento)) as {
     grafo_versao: { id: string };
   };
-  const trabalho = (await chamar(urlBase, '/v1/trabalhos', 'POST', {
+  const trabalho = (await chamar(urlBase, '/v1/jobs', 'POST', {
     titulo: 'nota sobre custo',
     no_entrada_id: 'redigir',
     execucao_id: EXECUCAO_ID,
@@ -268,10 +268,10 @@ test('AT9 — avaliar toca só as quatro rotas do contrato, e nunca /aplicar', a
   );
 
   const permitidas = [
-    /^GET \/v1\/sessoes$/,
-    /^GET \/v1\/trabalhos$/,
-    /^GET \/v1\/grafo-versoes\/[^/]+$/,
-    /^POST \/v1\/propostas$/,
+    /^GET \/v1\/sessions$/,
+    /^GET \/v1\/jobs$/,
+    /^GET \/v1\/graph-versions\/[^/]+$/,
+    /^POST \/v1\/proposals$/,
   ];
   for (const chamada of caminhos) {
     assert.ok(

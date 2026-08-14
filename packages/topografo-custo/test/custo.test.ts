@@ -44,7 +44,7 @@ function uso(
   };
 }
 
-/** Uma sessão como `GET /v1/sessoes` a devolve, no subconjunto que a lente lê. */
+/** Uma sessão como `GET /v1/sessions` a devolve, no subconjunto que a lente lê. */
 function sessao(parcial: Partial<ModuloCusto.SessaoObservada>): ModuloCusto.SessaoObservada {
   return {
     trabalho_id: 1,

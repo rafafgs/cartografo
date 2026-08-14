@@ -34,7 +34,7 @@
  */
 
 /** One envelope of the log, reduced to what the fold reads. */
-export interface EventoDeFluxo {
+export interface FlowEvent {
   id: number;
   tipo: string;
   entidade: { tipo: string; id: number | string };
@@ -43,7 +43,7 @@ export interface EventoDeFluxo {
 }
 
 /** What one node cost in one execution. */
-export interface MetricaDeNo {
+export interface NodeMetric {
   no_id: string;
   /** Sum of `sessao.aberta` → `sessao.finalizada` for sessions on this node. */
   tempo_agente_ms: number;
@@ -60,15 +60,15 @@ export interface MetricaDeNo {
 }
 
 /** The ranking, plus the node at the top of it. */
-export interface MetricasDeFluxo {
+export interface FlowMetrics {
   /** Every node of the graph, worst total first, ties broken by node id. */
-  por_no: MetricaDeNo[];
+  por_no: NodeMetric[];
   /** The worst node, or `null` when nothing in this run cost any time. */
-  gargalo: MetricaDeNo | null;
+  gargalo: NodeMetric | null;
 }
 
-/** Mutable accumulator of one node, before it becomes a `MetricaDeNo`. */
-interface Acumulador {
+/** Mutable accumulator of one node, before it becomes a `NodeMetric`. */
+interface Accumulator {
   no_id: string;
   tempo_agente_ms: number;
   tempo_espera_ms: number;
@@ -78,57 +78,57 @@ interface Acumulador {
 }
 
 /** A session, from `sessao.aberta` until its `sessao.finalizada` shows up. */
-interface SessaoAberta {
+interface OpenSession {
   no_id: string | null;
   trabalho_id: number | null;
-  abertaEm: number;
-  evento: number;
+  openedAt: number;
+  event: number;
 }
 
 /** An interval that started and is waiting for the event that closes it. */
-interface Pendencia {
+interface PendingInterval {
   no_id: string;
-  desde: number;
-  evento: number;
+  since: number;
+  event: number;
 }
 
-const texto = (valor: unknown): string | null => (typeof valor === 'string' ? valor : null);
+const asText = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 
-const inteiro = (valor: unknown): number | null =>
-  typeof valor === 'number' && Number.isInteger(valor) ? valor : null;
+const asInteger = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isInteger(value) ? value : null;
 
 /** Milliseconds of an ISO instant, or `null` when it cannot be read. */
-function instante(evento: EventoDeFluxo): number | null {
-  const carimbo = Date.parse(evento.ocorrido_em);
-  return Number.isNaN(carimbo) ? null : carimbo;
+function instantOf(event: FlowEvent): number | null {
+  const stamp = Date.parse(event.ocorrido_em);
+  return Number.isNaN(stamp) ? null : stamp;
 }
 
 /** The entity id as an integer; `trabalho`, `sessao` and `pergunta` all use one. */
-function idDaEntidade(evento: EventoDeFluxo): number | null {
-  const numero = Number(evento.entidade.id);
-  return Number.isInteger(numero) ? numero : null;
+function entityId(event: FlowEvent): number | null {
+  const value = Number(event.entidade.id);
+  return Number.isInteger(value) ? value : null;
 }
 
 /**
  * Folds an execution's log into per-node metrics and picks the bottleneck.
  *
- * @param eventos The execution's events, in any order — they are sorted by id
+ * @param events The execution's events, in any order — they are sorted by id
  *   here, so a paginated or out-of-order read reaches the same numbers.
- * @param nos Node ids of the graph version the execution ran under. Only these
- *   are reported; telemetry of a node the graph no longer has is dropped rather
- *   than attributed to something else.
+ * @param nodeIds Node ids of the graph version the execution ran under. Only
+ *   these are reported; telemetry of a node the graph no longer has is dropped
+ *   rather than attributed to something else.
  * @returns The ranking and the worst node, or `gargalo: null` when every total
  *   is zero — "nothing to propose" is a valid outcome, not an error.
  */
-export function calcularMetricasDeFluxo(
-  eventos: readonly EventoDeFluxo[],
-  nos: readonly string[],
-): MetricasDeFluxo {
-  const acumuladores = new Map<string, Acumulador>();
-  for (const no of nos) {
-    if (acumuladores.has(no)) continue;
-    acumuladores.set(no, {
-      no_id: no,
+export function calculateFlowMetrics(
+  events: readonly FlowEvent[],
+  nodeIds: readonly string[],
+): FlowMetrics {
+  const accumulators = new Map<string, Accumulator>();
+  for (const nodeId of nodeIds) {
+    if (accumulators.has(nodeId)) continue;
+    accumulators.set(nodeId, {
+      no_id: nodeId,
       tempo_agente_ms: 0,
       tempo_espera_ms: 0,
       tempo_fila_ms: 0,
@@ -138,85 +138,85 @@ export function calcularMetricasDeFluxo(
   }
 
   /** Adds an interval to a node, ignoring what the graph does not have. */
-  const somar = (
-    no_id: string | null,
-    campo: 'tempo_agente_ms' | 'tempo_espera_ms' | 'tempo_fila_ms',
+  const add = (
+    nodeId: string | null,
+    field: 'tempo_agente_ms' | 'tempo_espera_ms' | 'tempo_fila_ms',
     ms: number,
-    origem: readonly number[],
+    from: readonly number[],
   ): void => {
-    const acumulador = no_id === null ? undefined : acumuladores.get(no_id);
-    if (acumulador === undefined) return;
+    const accumulator = nodeId === null ? undefined : accumulators.get(nodeId);
+    if (accumulator === undefined) return;
     // An interval that runs backwards is a clock disagreement, not negative
     // time: `ocorrido_em` is not a total ordering, and subtracting here would
     // let one bad timestamp erase a real cost.
-    acumulador[campo] += Math.max(0, ms);
-    for (const id of origem) acumulador.eventos.add(id);
+    accumulator[field] += Math.max(0, ms);
+    for (const id of from) accumulator.eventos.add(id);
   };
 
-  const noAtual = new Map<number, string>();
-  const naFila = new Map<number, Pendencia>();
-  const bloqueado = new Map<number, Pendencia>();
-  const sessoes = new Map<number, SessaoAberta>();
+  const currentNode = new Map<number, string>();
+  const queued = new Map<number, PendingInterval>();
+  const blocked = new Map<number, PendingInterval>();
+  const sessions = new Map<number, OpenSession>();
 
-  for (const evento of [...eventos].sort((a, b) => a.id - b.id)) {
-    const quando = instante(evento);
-    const entidade = idDaEntidade(evento);
-    if (quando === null || entidade === null) continue;
+  for (const event of [...events].sort((a, b) => a.id - b.id)) {
+    const when = instantOf(event);
+    const entity = entityId(event);
+    if (when === null || entity === null) continue;
 
-    switch (evento.tipo) {
+    switch (event.tipo) {
       case 'trabalho.criado': {
-        const entrada = texto(evento.dados.no_entrada_id);
-        if (entrada !== null) noAtual.set(entidade, entrada);
+        const entryNode = asText(event.dados.no_entrada_id);
+        if (entryNode !== null) currentNode.set(entity, entryNode);
         break;
       }
 
       case 'trabalho.transicao': {
-        const destino = texto(evento.dados.para_no_id);
-        if (destino === null) break;
-        noAtual.set(entidade, destino);
+        const target = asText(event.dados.para_no_id);
+        if (target === null) break;
+        currentNode.set(entity, target);
         // Landing on a node starts the dispatch clock. A previous landing that
         // never got a session is overwritten: the work left without one, and
         // there is no queue time to charge anyone.
-        naFila.set(entidade, { no_id: destino, desde: quando, evento: evento.id });
+        queued.set(entity, { no_id: target, since: when, event: event.id });
         break;
       }
 
       case 'trabalho.bloqueado': {
-        const onde = noAtual.get(entidade);
-        if (onde === undefined) break;
-        bloqueado.set(entidade, { no_id: onde, desde: quando, evento: evento.id });
+        const where = currentNode.get(entity);
+        if (where === undefined) break;
+        blocked.set(entity, { no_id: where, since: when, event: event.id });
         break;
       }
 
       case 'trabalho.desbloqueado': {
-        const espera = bloqueado.get(entidade);
-        if (espera === undefined) break;
-        bloqueado.delete(entidade);
-        somar(espera.no_id, 'tempo_espera_ms', quando - espera.desde, [espera.evento, evento.id]);
+        const wait = blocked.get(entity);
+        if (wait === undefined) break;
+        blocked.delete(entity);
+        add(wait.no_id, 'tempo_espera_ms', when - wait.since, [wait.event, event.id]);
         break;
       }
 
       case 'sessao.aberta': {
-        const no_id = texto(evento.dados.no_id);
-        const trabalho_id = inteiro(evento.dados.trabalho_id);
-        sessoes.set(entidade, { no_id, trabalho_id, abertaEm: quando, evento: evento.id });
+        const no_id = asText(event.dados.no_id);
+        const trabalho_id = asInteger(event.dados.trabalho_id);
+        sessions.set(entity, { no_id, trabalho_id, openedAt: when, event: event.id });
 
         if (trabalho_id === null || no_id === null) break;
-        const fila = naFila.get(trabalho_id);
+        const queue = queued.get(trabalho_id);
         // Only the session that opens ON THE NODE the work landed on closes the
         // queue interval; anything else is a different node's business.
-        if (fila === undefined || fila.no_id !== no_id) break;
-        naFila.delete(trabalho_id);
-        somar(no_id, 'tempo_fila_ms', quando - fila.desde, [fila.evento, evento.id]);
+        if (queue === undefined || queue.no_id !== no_id) break;
+        queued.delete(trabalho_id);
+        add(no_id, 'tempo_fila_ms', when - queue.since, [queue.event, event.id]);
         break;
       }
 
       case 'sessao.finalizada': {
-        const sessao = sessoes.get(entidade);
-        if (sessao === undefined) break;
-        somar(sessao.no_id, 'tempo_agente_ms', quando - sessao.abertaEm, [
-          sessao.evento,
-          evento.id,
+        const session = sessions.get(entity);
+        if (session === undefined) break;
+        add(session.no_id, 'tempo_agente_ms', when - session.openedAt, [
+          session.event,
+          event.id,
         ]);
         break;
       }
@@ -225,15 +225,15 @@ export function calcularMetricasDeFluxo(
         // The node comes from the session that asked. A question with no
         // session (`sessao_id: null` is allowed by the taxonomy) belongs to no
         // node, and guessing one would be inventing a number.
-        const sessaoId = inteiro(evento.dados.sessao_id);
-        const sessao = sessaoId === null ? undefined : sessoes.get(sessaoId);
-        const acumulador =
-          sessao?.no_id === undefined || sessao.no_id === null
+        const sessionId = asInteger(event.dados.sessao_id);
+        const session = sessionId === null ? undefined : sessions.get(sessionId);
+        const accumulator =
+          session?.no_id === undefined || session.no_id === null
             ? undefined
-            : acumuladores.get(sessao.no_id);
-        if (acumulador === undefined) break;
-        acumulador.perguntas += 1;
-        acumulador.eventos.add(evento.id);
+            : accumulators.get(session.no_id);
+        if (accumulator === undefined) break;
+        accumulator.perguntas += 1;
+        accumulator.eventos.add(event.id);
         break;
       }
 
@@ -242,24 +242,24 @@ export function calcularMetricasDeFluxo(
     }
   }
 
-  const por_no = [...acumuladores.values()]
-    .map((acumulador) => ({
-      no_id: acumulador.no_id,
-      tempo_agente_ms: acumulador.tempo_agente_ms,
-      tempo_espera_ms: acumulador.tempo_espera_ms,
-      tempo_fila_ms: acumulador.tempo_fila_ms,
+  const ranking = [...accumulators.values()]
+    .map((accumulator) => ({
+      no_id: accumulator.no_id,
+      tempo_agente_ms: accumulator.tempo_agente_ms,
+      tempo_espera_ms: accumulator.tempo_espera_ms,
+      tempo_fila_ms: accumulator.tempo_fila_ms,
       total_ms:
-        acumulador.tempo_agente_ms + acumulador.tempo_espera_ms + acumulador.tempo_fila_ms,
-      perguntas: acumulador.perguntas,
-      eventos: [...acumulador.eventos].sort((a, b) => a - b),
+        accumulator.tempo_agente_ms + accumulator.tempo_espera_ms + accumulator.tempo_fila_ms,
+      perguntas: accumulator.perguntas,
+      eventos: [...accumulator.eventos].sort((a, b) => a - b),
     }))
     // Ties broken by node id so the ranking is a function of the log alone —
     // two runs with the same numbers must name the same bottleneck.
     .sort((a, b) => b.total_ms - a.total_ms || (a.no_id < b.no_id ? -1 : 1));
 
-  const primeiro = por_no[0];
+  const worst = ranking[0];
   return {
-    por_no,
-    gargalo: primeiro !== undefined && primeiro.total_ms > 0 ? primeiro : null,
+    por_no: ranking,
+    gargalo: worst !== undefined && worst.total_ms > 0 ? worst : null,
   };
 }

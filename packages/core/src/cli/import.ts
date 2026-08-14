@@ -11,10 +11,20 @@
  *   (D4), and a graph whose `skill_ref` does not match the manifest next to it
  *   is exactly the case the pin exists to catch.
  *
- * Nothing from `skills/` is persisted: there is no skill registration endpoint
- * (see the factory bundle README, "Convenção de diretório" section). The local
- * check is what can be guaranteed today, and it is better than nothing — but it
- * does not replace registration, which is a future ticket.
+ * A bundle's `skills/` ARE registered, and the boundary is the one D4 draws
+ * (t135, FR2). D4's gate — `cartografo scan-skill`/`propose-skill`/`register-skill`,
+ * with a human signature on it — exists against *skill de repo externo*: content
+ * nobody in this repository wrote, whose instructions are an injection vector. A
+ * factory bundle is in-repo, code-reviewed content, and asking a human to
+ * re-approve five manifests they already merged buys no safety at all; what it
+ * buys is an empty registry, and a graph whose nodes pin capabilities the
+ * synthesizer cannot find. So the manifests go up first, then the graph.
+ *
+ * "Registered" here still means *offered*: the registry re-verifies everything
+ * on its own (`repositories/skill.ts`), and a manifest it refuses stops the
+ * import before the graph is sent. The local check that runs first is about the
+ * pin, computed by the very same `manifestHash` the registry re-verifies with —
+ * that is what `domain/manifest.ts` is for.
  *
  * **Declared limit of the manifest check.** The three checks are those of
  * `scripts/validar-bundle-fabrica.mjs` — a sound graph, a checked manifest, a
@@ -33,34 +43,19 @@
  * does not touch (t127, FR8).
  */
 
-import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { validateGraph } from '../domain/graph.ts';
-import { canonicalize, HASH_PREFIX } from '../domain/hash.ts';
+import {
+  HASH_PATTERN,
+  ID_PATTERN,
+  MANIFEST_FIELDS,
+  MANIFEST_ROLES,
+  VERSION_PATTERN,
+  manifestHash,
+} from '../domain/manifest.ts';
 import { UsageError, requestJson } from './url.ts';
-
-/** Fields every manifest declares (`required` of the t97 schema). */
-const MANIFEST_FIELDS = [
-  'id',
-  'versao',
-  'hash',
-  'papel',
-  'descricao',
-  'entrada',
-  'saida',
-  'pre_condicoes',
-  'checks',
-  'permissoes',
-  'instrucoes',
-  'origem',
-];
-
-const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
-const HASH_PATTERN = /^sha256:[a-f0-9]{64}$/;
-const MANIFEST_ROLES = ['fazer', 'portao'];
 
 /** A problem found in the local check, already carrying the scope that produced it. */
 export interface BundleProblem {
@@ -92,32 +87,6 @@ function readJson(filePath: string): unknown {
   } catch (error) {
     throw new UsageError(`"${filePath}" is not valid JSON — ${(error as Error).message}`);
   }
-}
-
-/**
- * Content hash of a skill manifest, by the procedure of
- * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
- * `{instrucoes, entrada, saida, checks, permissoes}`.
- *
- * It covers only that subset — and not the whole manifest, as the graph version
- * hash does — because catalogue metadata (`id`, `versao`, `descricao`, `origem`)
- * must not invalidate a pin: renaming the skill does not change what it does.
- *
- * @param manifest Already parsed manifest.
- * @returns `sha256:` followed by 64 hex characters.
- */
-export function manifestHash(manifest: Record<string, unknown>): string {
-  const subset = {
-    instrucoes: manifest.instrucoes,
-    entrada: manifest.entrada,
-    saida: manifest.saida,
-    checks: manifest.checks,
-    permissoes: manifest.permissoes,
-  };
-  const digest = createHash('sha256')
-    .update(JSON.stringify(canonicalize(subset)), 'utf8')
-    .digest('hex');
-  return `${HASH_PREFIX}${digest}`;
 }
 
 /** Checks one manifest in isolation; returns the messages of whatever is wrong. */
@@ -244,6 +213,88 @@ export function verifyBundle(directory: string, document: unknown): BundleProble
   return problems;
 }
 
+/** How the registry answered for the bundle as a whole. */
+interface RegistryOutcome {
+  /** Manifests the registry had never seen (201). */
+  created: number;
+  /** Manifests already registered (409) — a reimport, not a failure. */
+  known: number;
+}
+
+/**
+ * Reads `<directory>/skills/*.json`, in file-name order.
+ *
+ * Only ever called after `verifyBundle` came back empty, which is what makes
+ * reading the same files twice safe rather than sloppy: by then every one of
+ * them parsed, declared the required fields and matched its pin.
+ *
+ * @param directory Bundle directory.
+ * @returns File name and parsed manifest, sorted by file name.
+ */
+function readBundleSkills(directory: string): { file: string; manifest: unknown }[] {
+  const skillsDir = path.join(directory, 'skills');
+  return readdirSync(skillsDir)
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((file) => ({ file, manifest: readJson(path.join(skillsDir, file)) }));
+}
+
+/**
+ * Offers every manifest of the bundle to the registry, over HTTP (D1), before
+ * the graph (FR2/FR3).
+ *
+ * 201 and 409 are both success. Registration is create-only (t117), so the
+ * second `cartografo import` of a bundle finds its manifests already there —
+ * treating that as a failure would make the command non-idempotent in exchange
+ * for nothing, since the pin the CLI just checked is the same content the
+ * registry already holds.
+ *
+ * Anything else stops the import where it stands, and the graph is never sent:
+ * a class whose nodes pin a capability the registry refused is a class nobody
+ * can dispatch, and registering it would leave a lineage in the database
+ * pointing at a skill that does not exist. Manifests already accepted before the
+ * refusal stay registered — they passed the same gate on their own, and this
+ * command owns no transaction across the API.
+ *
+ * @param directory Bundle directory, already checked.
+ * @param url Base URL of the control plane.
+ * @returns What the registry did, or `null` when it refused a manifest.
+ */
+async function registerBundleSkills(
+  directory: string,
+  url: string,
+): Promise<RegistryOutcome | null> {
+  const outcome: RegistryOutcome = { created: 0, known: 0 };
+
+  for (const { file, manifest } of readBundleSkills(directory)) {
+    const response = await requestJson(`${url}/v1/skills`, { method: 'POST', body: manifest });
+    if (response.status === 201) {
+      outcome.created += 1;
+      continue;
+    }
+    if (response.status === 409) {
+      outcome.known += 1;
+      continue;
+    }
+
+    const id = isObject(manifest) && typeof manifest.id === 'string' ? manifest.id : file;
+    const body = isObject(response.body) ? response.body : {};
+    process.stderr.write(
+      `cartografo: the registry refused a skill (HTTP ${response.status}) — ${id}\n`,
+    );
+    if (typeof body.error === 'string') {
+      process.stderr.write(`  ${'registry'.padEnd(10)} ${body.error}\n`);
+    }
+    for (const detail of Array.isArray(body.details) ? body.details : []) {
+      process.stderr.write(`  ${'registry'.padEnd(10)} ${String(detail)}\n`);
+    }
+    process.stderr.write('cartografo: the graph was not sent to the control plane\n');
+    return null;
+  }
+
+  return outcome;
+}
+
 /** One `label  value` line of the success output. */
 function line(label: string, value: string): string {
   return `  ${label.padEnd(18)}${value}\n`;
@@ -277,6 +328,7 @@ export async function runImport(options: ImportOptions): Promise<number> {
     }
   }
 
+  let registry: RegistryOutcome | null = null;
   if (hasSkills) {
     const problems = verifyBundle(target, document);
     if (problems.length > 0) {
@@ -287,6 +339,9 @@ export async function runImport(options: ImportOptions): Promise<number> {
       process.stderr.write('cartografo: nothing was sent to the control plane\n');
       return 1;
     }
+
+    registry = await registerBundleSkills(target, options.url);
+    if (registry === null) return 1;
   }
 
   const response = await requestJson(`${options.url}/v1/graphs`, { method: 'POST', body: document });
@@ -299,6 +354,11 @@ export async function runImport(options: ImportOptions): Promise<number> {
     process.stdout.write(line('classe', String(graph.classe)));
     process.stdout.write(line('grafo.id', String(graph.id)));
     process.stdout.write(line('grafo_versao.id', String(version.id)));
+    if (registry !== null) {
+      process.stdout.write(
+        line('skills', `${registry.created} registered, ${registry.known} already in the registry`),
+      );
+    }
     return 0;
   }
 

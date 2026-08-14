@@ -191,6 +191,11 @@ export function maskLiteralsAndCommentQuotes(source) {
   let index = 0;
   let lastMeaningful = '';
   let lastWord = '';
+  /** Are we blanking template text right now, as opposed to reading code? */
+  let inTemplateBody = false;
+  /** Brace depth at which each open `${…}` closes and its template resumes. */
+  const interpolations = [];
+  let braceDepth = 0;
 
   const readDelimited = (quote) => {
     out.push(source[index]);
@@ -203,7 +208,8 @@ export function maskLiteralsAndCommentQuotes(source) {
         continue;
       }
       if (char === quote) break;
-      if (char === '\n' && quote !== '`') break;
+      // A plain quote never spans lines.
+      if (char === '\n') break;
       index += 1;
     }
     out.push(blank(source.slice(start, Math.min(index, source.length))));
@@ -238,6 +244,43 @@ export function maskLiteralsAndCommentQuotes(source) {
     }
   };
 
+  /**
+   * Blanks one run of template text, stopping at the closing backtick or at the
+   * `${` that opens an interpolation.
+   *
+   * Templates need their own reader because they NEST: a backtick can sit
+   * inside a template's own interpolation, and a reader that just scans for
+   * "the next backtick" would take that one for the closing delimiter, drop
+   * back into code mode halfway through a string, and start reporting the text
+   * inside it as identifiers. The interpolated expressions themselves are read
+   * as code, which is what a template literal actually is.
+   *
+   * @returns {boolean} `true` when the template closed, `false` when `${` opened.
+   */
+  const readTemplateChunk = () => {
+    const start = index;
+    while (index < source.length) {
+      const char = source[index];
+      if (char === '\\') {
+        index += 2;
+        continue;
+      }
+      if (char === '`') break;
+      if (char === '$' && source[index + 1] === '{') break;
+      index += 1;
+    }
+    out.push(blank(source.slice(start, Math.min(index, source.length))));
+    if (index >= source.length) return true;
+    if (source[index] === '`') {
+      out.push('`');
+      index += 1;
+      return true;
+    }
+    out.push('${');
+    index += 2;
+    return false;
+  };
+
   const readComment = (end) => {
     const start = index;
     const stop = source.indexOf(end, index + 2);
@@ -249,6 +292,18 @@ export function maskLiteralsAndCommentQuotes(source) {
   };
 
   while (index < source.length) {
+    if (inTemplateBody) {
+      if (readTemplateChunk()) {
+        lastMeaningful = '`';
+      } else {
+        interpolations.push(braceDepth);
+        lastMeaningful = '{';
+      }
+      inTemplateBody = false;
+      lastWord = '';
+      continue;
+    }
+
     const char = source[index];
     const next = source[index + 1];
 
@@ -260,10 +315,16 @@ export function maskLiteralsAndCommentQuotes(source) {
       readComment('*/');
       continue;
     }
-    if (char === "'" || char === '"' || char === '`') {
+    if (char === "'" || char === '"') {
       readDelimited(char);
       lastMeaningful = char;
       lastWord = '';
+      continue;
+    }
+    if (char === '`') {
+      out.push('`');
+      index += 1;
+      inTemplateBody = true;
       continue;
     }
     if (char === '/' && (REGEX_PRECEDERS.has(lastMeaningful) || REGEX_KEYWORDS.has(lastWord))) {
@@ -271,6 +332,22 @@ export function maskLiteralsAndCommentQuotes(source) {
       lastMeaningful = '/';
       lastWord = '';
       continue;
+    }
+
+    if (char === '{') {
+      braceDepth += 1;
+    } else if (char === '}') {
+      if (interpolations.length > 0 && braceDepth === interpolations[interpolations.length - 1]) {
+        // This `}` closes a `${…}`: the template text picks up right after it.
+        interpolations.pop();
+        out.push('}');
+        index += 1;
+        inTemplateBody = true;
+        lastMeaningful = '}';
+        lastWord = '';
+        continue;
+      }
+      braceDepth -= 1;
     }
 
     out.push(char);
@@ -438,6 +515,9 @@ test('AC1 — the sweep does NOT bite on the frozen exceptions', () => {
     // literals: every schema key and enum value lives in one
     "const REQUIRED = ['classe', 'linhagem', 'metadata', 'nos', 'arestas', 'no_inicial'];",
     "annotate('campo_obrigatorio_ausente', `campo obrigatório ausente: \"${field}\"`);",
+    // a template nested inside another template's interpolation: the masking
+    // has to survive it, or everything after the inner backtick reads as code
+    'const line = `${name}: ${ok ? `valido` : `erro ${n}`}`;',
     // English code that merely contains a forbidden token as a substring
     'export class ValidationError extends Error { readonly errors = []; }',
     'const half = total / 1000;',

@@ -205,6 +205,11 @@ export function maskLiteralsAndCommentQuotes(source: string): string {
   let index = 0;
   let lastMeaningful = '';
   let lastWord = '';
+  /** Are we blanking template text right now, as opposed to reading code? */
+  let inTemplateBody = false;
+  /** Brace depth at which each open `${…}` closes and its template resumes. */
+  const interpolations: number[] = [];
+  let braceDepth = 0;
 
   const readDelimited = (quote: string): void => {
     // Opening delimiter stays, the content is blanked, the closing one stays.
@@ -218,8 +223,8 @@ export function maskLiteralsAndCommentQuotes(source: string): string {
         continue;
       }
       if (char === quote) break;
-      // A plain quote never spans lines; a template literal may.
-      if (char === '\n' && quote !== '`') break;
+      // A plain quote never spans lines.
+      if (char === '\n') break;
       index += 1;
     }
     out.push(blank(source.slice(start, Math.min(index, source.length))));
@@ -227,6 +232,43 @@ export function maskLiteralsAndCommentQuotes(source: string): string {
       out.push(source[index]);
       index += 1;
     }
+  };
+
+  /**
+   * Blanks one run of template text, stopping at the closing backtick or at the
+   * `${` that opens an interpolation.
+   *
+   * Templates need their own reader because they NEST: `` `a ${x ? `b` : c}` ``
+   * has a backtick inside its own interpolation, and a reader that just scans
+   * for "the next backtick" would take that one for the closing delimiter, drop
+   * back into code mode halfway through a string, and start reporting the HTML
+   * inside it as identifiers. The interpolated expressions themselves are read
+   * as code, which is what a template literal actually is.
+   *
+   * @returns `true` when the template closed, `false` when `${` opened.
+   */
+  const readTemplateChunk = (): boolean => {
+    const start = index;
+    while (index < source.length) {
+      const char = source[index];
+      if (char === '\\') {
+        index += 2;
+        continue;
+      }
+      if (char === '`') break;
+      if (char === '$' && source[index + 1] === '{') break;
+      index += 1;
+    }
+    out.push(blank(source.slice(start, Math.min(index, source.length))));
+    if (index >= source.length) return true;
+    if (source[index] === '`') {
+      out.push('`');
+      index += 1;
+      return true;
+    }
+    out.push('${');
+    index += 2;
+    return false;
   };
 
   /** Reads `/…/flags`, honouring `\/` escapes and `/` inside a `[…]` class. */
@@ -267,6 +309,18 @@ export function maskLiteralsAndCommentQuotes(source: string): string {
   };
 
   while (index < source.length) {
+    if (inTemplateBody) {
+      if (readTemplateChunk()) {
+        lastMeaningful = '`';
+      } else {
+        interpolations.push(braceDepth);
+        lastMeaningful = '{';
+      }
+      inTemplateBody = false;
+      lastWord = '';
+      continue;
+    }
+
     const char = source[index];
     const next = source[index + 1];
 
@@ -278,10 +332,16 @@ export function maskLiteralsAndCommentQuotes(source: string): string {
       readComment('*/');
       continue;
     }
-    if (char === "'" || char === '"' || char === '`') {
+    if (char === "'" || char === '"') {
       readDelimited(char);
       lastMeaningful = char;
       lastWord = '';
+      continue;
+    }
+    if (char === '`') {
+      out.push('`');
+      index += 1;
+      inTemplateBody = true;
       continue;
     }
     if (char === '/' && (REGEX_PRECEDERS.has(lastMeaningful) || REGEX_KEYWORDS.has(lastWord))) {
@@ -289,6 +349,22 @@ export function maskLiteralsAndCommentQuotes(source: string): string {
       lastMeaningful = '/';
       lastWord = '';
       continue;
+    }
+
+    if (char === '{') {
+      braceDepth += 1;
+    } else if (char === '}') {
+      if (interpolations.length > 0 && braceDepth === interpolations[interpolations.length - 1]) {
+        // This `}` closes a `${…}`: the template text picks up right after it.
+        interpolations.pop();
+        out.push('}');
+        index += 1;
+        inTemplateBody = true;
+        lastMeaningful = '}';
+        lastWord = '';
+        continue;
+      }
+      braceDepth -= 1;
     }
 
     out.push(char);
@@ -445,6 +521,9 @@ test('AC1 — the sweep does NOT bite on the frozen exceptions', () => {
     // `data-*` markers, a declared DOM contract, and the Portuguese UI content
     'return `<section class="grupo" data-no-atual="${escape(node)}">`;',
     'return `<tr data-sessao="${row.id}" data-trabalho="${row.id}"></tr>`;',
+    // a template nested inside another template's interpolation: the masking
+    // has to survive it, or everything after the inner backtick reads as code
+    'const cell = `<td data-campo="opcao">${o === "" ? `sem opcao` : escape(o)}</td>`;',
     "const empty = 'Nenhum trabalho por aqui ainda.';",
     "const buckets = { fila: 0, agente_trabalhando: 0, esperando_humano: 0 };",
     // English code that merely contains a forbidden token as a substring

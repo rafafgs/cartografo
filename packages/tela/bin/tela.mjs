@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * Comando da tela: `cartografo-tela`.
+ * The screen's command: `cartografo-tela`.
  *
- * Casca fina, no mesmo molde de `packages/core/bin/cartografo.mjs`: o
- * executável é `.mjs` (e não `.ts`) para não depender de flag nenhuma do Node —
- * ele registra o loader do tsx em processo e só então importa
- * `src/servidor.ts`. Em processo, e não via `spawn`, para que o processo que o
- * supervisor vê seja o mesmo que escuta a porta.
+ * A thin shell, in the same mould as `packages/core/bin/cartografo.mjs`: the
+ * executable is `.mjs` (and not `.ts`) so it depends on no Node flag at all —
+ * it registers the tsx loader in process and only then imports `src/router.ts`.
+ * In process, and not through `spawn`, so that the process the supervisor sees
+ * is the same one listening on the port.
  *
- * Comando PRÓPRIO, e não subcomando de `cartografo`, porque a tela é outro
- * processo, em outra porta, sem nenhum privilégio sobre o control plane (D11):
- * dois binários é o que essa fronteira parece do lado de fora.
+ * Its OWN command, rather than a subcommand of `cartografo`, because the screen
+ * is another process, on another port, with no privilege over the control plane
+ * (D11): two binaries is what that boundary looks like from the outside.
  *
- * Uso: `npx cartografo-tela [--url http://127.0.0.1:4317]`.
- * Configuração: `CARTOGRAFO_TELA_PORT` (porta da tela, default 4318),
+ * Usage: `npx cartografo-tela [--url http://127.0.0.1:4317]`.
+ * Configuration: `CARTOGRAFO_TELA_PORT` (the screen's port, default 4318),
  * `CARTOGRAFO_URL` (control plane, default `http://127.0.0.1:4317`).
  */
 
@@ -21,12 +21,12 @@ import { register } from 'tsx/esm/api';
 
 register();
 
-const { principal } = await import(new URL('../src/servidor.ts', import.meta.url).href);
+const { runScreenCli } = await import(new URL('../src/router.ts', import.meta.url).href);
 
 try {
-  await principal(process.argv.slice(2));
-} catch (erro) {
-  console.error('cartografo-tela: falha ao subir a tela');
-  console.error(erro instanceof Error ? erro.message : erro);
+  await runScreenCli(process.argv.slice(2));
+} catch (error) {
+  console.error('cartografo-tela: could not start the screen');
+  console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 }

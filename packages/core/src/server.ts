@@ -13,11 +13,13 @@ import type { Database } from './db/connection.ts';
 import { registerExecutions } from './routes/executions.ts';
 import { registerGraphs } from './routes/graphs.ts';
 import { registerHealth } from './routes/health.ts';
+import { registerIntake } from './routes/intake.ts';
 import { registerLeases } from './routes/leases.ts';
 import { registerInputRequests } from './routes/input-requests.ts';
 import { registerProposals } from './routes/proposals.ts';
 import { registerRunners } from './routes/runners.ts';
 import { registerSessions } from './routes/sessions.ts';
+import { registerSkills } from './routes/skills.ts';
 import { registerJobs } from './routes/jobs.ts';
 
 /**
@@ -56,6 +58,8 @@ export function createApp(options: AppOptions): FastifyInstance {
   app.register(async (scope) => registerExecutions(scope, options.db), { prefix: API_PREFIX });
   app.register(async (scope) => registerRunners(scope, options.db), { prefix: API_PREFIX });
   app.register(async (scope) => registerLeases(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerIntake(scope, options.db), { prefix: API_PREFIX });
+  app.register(async (scope) => registerSkills(scope, options.db), { prefix: API_PREFIX });
 
   return app;
 }

@@ -5,12 +5,16 @@
  *
  * | Rota | Para quê |
  * |---|---|
- * | `GET /v1/sessoes?execucao_id=` | tokens (`uso`) e tempo (`aberta_em`/`finalizada_em`) por `no_id` |
- * | `GET /v1/trabalhos?execucao_id=` | o mapa `trabalho_id -> grafo_versao_id` |
- * | `GET /v1/grafo-versoes/:id` | a `descricao` atual do nó, que vira o `de` da operação |
- * | `POST /v1/propostas` | a candidata, como proposta pendente |
+ * | `GET /v1/sessions?execucao_id=` | tokens (`uso`) e tempo (`aberta_em`/`finalizada_em`) por `no_id` |
+ * | `GET /v1/jobs?execucao_id=` | o mapa `trabalho_id -> grafo_versao_id` |
+ * | `GET /v1/graph-versions/:id` | a `descricao` atual do nó, que vira o `de` da operação |
+ * | `POST /v1/proposals` | a candidata, como proposta pendente |
  *
- * Não existe `POST /v1/propostas/:id/aplicar` aqui, e a ausência é a regra:
+ * O CAMINHO é inglês (D18, t127); as CHAVES do corpo seguem em português
+ * (`sessoes`, `trabalhos`, `grafo_versao`, `proposta`), porque são chaves de
+ * formato e a D18 as tira explicitamente do escopo do inglês.
+ *
+ * Não existe `POST /v1/proposals/:id/apply` aqui, e a ausência é a regra:
  * aplicar uma proposta é decisão humana no portão (README, princípio 5).
  *
  * Esta é a ÚNICA superfície entre a lente e o estado do sistema. Nada de banco,
@@ -22,7 +26,7 @@ import type { SessaoObservada } from './custo.ts';
 import type { AlterarDescricaoDoNo, EvidenciaDeCusto, MetricaEsperada } from './politica.ts';
 
 /**
- * Um trabalho, no subconjunto que a lente lê de `GET /v1/trabalhos`.
+ * Um trabalho, no subconjunto que a lente lê de `GET /v1/jobs`.
  *
  * `grafo_versao_id` é anulável aqui porque é anulável lá: a versão é solta na
  * projeção do trabalho (D15).
@@ -45,7 +49,7 @@ export interface GrafoVersao {
   snapshot: { nos?: NoDoSnapshot[] };
 }
 
-/** Corpo de `POST /v1/propostas`. As cinco chaves que a rota exige. */
+/** Corpo de `POST /v1/proposals`. As cinco chaves que a rota exige. */
 export interface EntradaDeProposta {
   grafo_id: string;
   versao_alvo: string;
@@ -125,7 +129,7 @@ export async function buscarSessoes(
 ): Promise<SessaoObservada[]> {
   const { sessoes } = await pegar<{ sessoes: SessaoObservada[] }>(
     urlBase,
-    `/v1/sessoes${consulta(filtro)}`,
+    `/v1/sessions${consulta(filtro)}`,
     buscar,
   );
   return sessoes;
@@ -146,7 +150,7 @@ export async function buscarTrabalhos(
 ): Promise<TrabalhoObservado[]> {
   const { trabalhos } = await pegar<{ trabalhos: TrabalhoObservado[] }>(
     urlBase,
-    `/v1/trabalhos${consulta(filtro)}`,
+    `/v1/jobs${consulta(filtro)}`,
     buscar,
   );
   return trabalhos;
@@ -167,7 +171,7 @@ export async function buscarGrafoVersao(
 ): Promise<GrafoVersao> {
   const { grafo_versao: versao } = await pegar<{ grafo_versao: GrafoVersao }>(
     urlBase,
-    `/v1/grafo-versoes/${encodeURIComponent(id)}`,
+    `/v1/graph-versions/${encodeURIComponent(id)}`,
     buscar,
   );
   return versao;
@@ -186,7 +190,7 @@ export async function criarProposta(
   entrada: EntradaDeProposta,
   buscar: typeof fetch = fetch,
 ): Promise<Proposta> {
-  const caminho = '/v1/propostas';
+  const caminho = '/v1/proposals';
   const resposta = await buscar(`${normalizar(urlBase)}${caminho}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

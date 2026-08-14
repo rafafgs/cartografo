@@ -1,0 +1,252 @@
+{
+  "id": "dimensionar-risco",
+  "versao": "1.0.0",
+  "hash": "sha256:e4b32cb394f18543c4461fb139f6f7fa5f932851f3050d0f494723dd0cb65ec1",
+  "papel": "fazer",
+  "descricao": "Converte assimetria e objeções sobreviventes em tamanho de posição, perda máxima aceita e gatilho de saída escrito antes da entrada.",
+  "entrada": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "tese_triada",
+      "assimetria",
+      "objecoes",
+      "capital"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "tese_triada": {
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "ativo",
+          "hipotese",
+          "escopo_de_pesquisa"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ativo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hipotese": {
+            "type": "string",
+            "minLength": 1
+          },
+          "escopo_de_pesquisa": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "as frentes que a coleta de fundamentos deve cobrir; vazio quando a triagem descarta"
+          }
+        }
+      },
+      "assimetria": {
+        "type": "object",
+        "required": [
+          "downside_max_pct",
+          "upside_alvo_pct",
+          "razao_assimetria",
+          "cenarios"
+        ],
+        "properties": {
+          "downside_max_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "perda máxima da tese em cenário ruim, em % do valor investido"
+          },
+          "upside_alvo_pct": {
+            "type": "number",
+            "minimum": 0
+          },
+          "razao_assimetria": {
+            "type": "number",
+            "minimum": 0,
+            "description": "upside alvo dividido pelo downside máximo; é o número que a classe inteira existe para maximizar"
+          },
+          "cenarios": {
+            "type": "array",
+            "minItems": 2,
+            "description": "pelo menos dois: um em que a tese morre e um em que ela funciona",
+            "items": {
+              "type": "object",
+              "required": [
+                "nome",
+                "probabilidade",
+                "retorno_pct",
+                "premissas_chave"
+              ],
+              "properties": {
+                "nome": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "probabilidade": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "retorno_pct": {
+                  "type": "number"
+                },
+                "premissas_chave": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "objecoes": {
+        "type": "array",
+        "minItems": 1,
+        "description": "red team que não achou nenhuma objeção não rodou; lista vazia é recusada de propósito",
+        "items": {
+          "type": "object",
+          "required": [
+            "objecao",
+            "gravidade",
+            "resposta_da_tese"
+          ],
+          "properties": {
+            "objecao": {
+              "type": "string",
+              "minLength": 1
+            },
+            "gravidade": {
+              "enum": [
+                "alta",
+                "media",
+                "baixa"
+              ]
+            },
+            "resposta_da_tese": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "nulo quando a tese não respondeu; objeção alta com nulo mata a tese"
+            }
+          }
+        }
+      },
+      "capital": {
+        "type": "object",
+        "required": [
+          "total",
+          "moeda"
+        ],
+        "properties": {
+          "total": {
+            "type": "number",
+            "minimum": 0
+          },
+          "moeda": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exposicao_atual_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  },
+  "saida": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "dimensionamento",
+      "nota"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "dimensionamento": {
+        "type": "object",
+        "required": [
+          "tamanho_posicao_pct",
+          "perda_maxima_aceita_pct",
+          "gatilho_de_saida",
+          "horizonte"
+        ],
+        "properties": {
+          "tamanho_posicao_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "teto estrutural de tamanho de posição, em % do capital total. É schema, não check: o limite que o contrato pode impor, o contrato impõe."
+          },
+          "perda_maxima_aceita_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "gatilho_de_saida": {
+            "type": "string",
+            "minLength": 1
+          },
+          "horizonte": {
+            "type": "string",
+            "minLength": 1
+          },
+          "correlacao_com_carteira": {
+            "type": "string"
+          }
+        }
+      },
+      "nota": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "pre_condicoes": [
+    "tese sobrevivente ao red team, com a lista de objeções registrada",
+    "assimetria calculada, com downside máximo explícito",
+    "capital total e exposição atual da carteira conhecidos"
+  ],
+  "checks": [
+    {
+      "id": "tamanho-preso-ao-downside",
+      "tipo": "agentico",
+      "descricao": "O tamanho é onde a convicção vira risco. O erro caro é dimensionar pela qualidade da narrativa em vez de pela perda que ela implica, e é o único erro deste grafo que não dá para desfazer depois.",
+      "instrucao": "Refaça a conta do tamanho a partir do downside, sem partir do número proposto.\n\n1. `tamanho_posicao_pct` × `assimetria.downside_max_pct` dá que perda em % do capital total? Ela cabe no que a nota declara como perda aceitável para uma tese só?\n2. As objeções sobreviventes do red team — em especial as de gravidade `alta` e `media` — aparecem no raciocínio do tamanho? Objeção que sobreviveu e não encolheu o tamanho foi objeção ignorada.\n3. `gatilho_de_saida` é observável por terceiro, com data ou evento nomeado, e não \"quando a tese não fizer mais sentido\"? Gatilho subjetivo é gatilho que nunca dispara.\n4. A correlação com o que já está na carteira foi considerada? Três teses corretas na mesma direção são uma tese, com três vezes o tamanho.",
+      "evidencia_obrigatoria": [
+        "conta_da_perda_em_percentual_do_capital_total_refeita",
+        "objecao_sobrevivente_e_o_efeito_dela_no_tamanho",
+        "gatilho_de_saida_avaliado_como_observavel_por_terceiro"
+      ]
+    }
+  ],
+  "permissoes": {
+    "filesystem": {
+      "leitura": [],
+      "escrita": []
+    },
+    "rede": {
+      "permitido": false
+    }
+  },
+  "instrucoes": "# Dimensionar o risco\n\nSeu trabalho é responder **quanto**, e escrever a saída antes da entrada. A\ntese já sobreviveu ao red team; o que falta é o único número que transforma\numa opinião em exposição.\n\n**Tese:** {{entrada.tese_triada.titulo}} ({{entrada.tese_triada.ativo}})\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\n## Dimensione pela perda, não pela convicção\n\nComece pela pergunta que importa: **se o cenário ruim acontecer, quanto do\ncapital total some?** É `tamanho_posicao_pct` × `downside_max_pct`. Esse número\né o que você está de fato decidindo; o tamanho é só a variável que o produz.\n\nConvicção não entra na conta. Ela já entrou duas vezes — na triagem e na\nanálise — e entra de novo aqui só como viés.\n\nO contrato desta skill impõe um **teto estrutural** em\n`dimensionamento.tamanho_posicao_pct`: nenhuma tese isolada passa dele, e o\nschema recusa o payload que tentar. Isso é deliberado — o limite que o contrato\npode impor, o contrato impõe, em vez de virar um check que alguém pode\nargumentar contra.\n\n## As objeções sobreviventes têm peso\n\nA tese passou pelo red team, mas as objeções não desapareceram: elas chegam\naqui em `entrada.objecoes`. Objeção de gravidade `alta` que foi respondida\nainda é um risco conhecido, e risco conhecido encolhe tamanho. Se nenhuma\nobjeção mexeu no seu número, você não usou o trabalho do red team — usou o\nresultado dele.\n\n## Correlação\n\nUm tamanho pequeno em três teses que dependem do mesmo fator é um tamanho\ngrande em um fator. Olhe a exposição atual da carteira antes de fechar o\nnúmero e registre a correlação que você viu.\n\n## O gatilho de saída é escrito agora\n\n`gatilho_de_saida` precisa ser observável por terceiro: uma data, um evento,\num número divulgado. \"Quando a tese deixar de fazer sentido\" não é gatilho — é\na promessa de decidir depois, no pior momento possível para decidir.\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nDevolva no formato que o schema de saída declara: `dimensionamento` e `nota`.\nVocê **não** decide se a posição é aberta — isso é o próximo nó, e ele nunca\ndecide sozinho. Você entrega o tamanho proposto, a perda que ele implica e a\ncondição de saída.",
+  "origem": {
+    "tipo": "nativa"
+  }
+}

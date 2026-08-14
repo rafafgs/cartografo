@@ -47,9 +47,24 @@ O arquivo que `export` grava é o mesmo documento que `import` aceita de volta:
 importá-lo em outro control plane produz a mesma `grafo_versao.id`, porque o id
 de uma versão é o hash canônico do documento. `npx cartografo --help` lista tudo.
 
+E, para ver o que está acontecendo:
+
+```bash
+npx cartografo-tela                                     # http://127.0.0.1:4318
+```
+
+A tela mínima de observabilidade (D11): o quadro de trabalhos agrupado por nó,
+as execuções, as sessões, a fila de perguntas pendentes — com resposta inline,
+que escreve de verdade na API — e a linha do tempo de qualquer trabalho,
+separada em fila, agente trabalhando e esperando humano. Ela é um cliente comum
+da API pública, sem privilégio nenhum sobre o control plane: outro processo,
+outra porta, nenhum acesso ao banco. Contrato em
+[`docs/spec/tela.md`](docs/spec/tela.md).
+
 Configuração: `CARTOGRAFO_PORT` e `CARTOGRAFO_DB_PATH` na partida;
-`CARTOGRAFO_URL` (ou `--url`) para apontar os outros subcomandos a um control
-plane que não esteja no default `http://127.0.0.1:4317`.
+`CARTOGRAFO_URL` (ou `--url`) para apontar os outros subcomandos — e a tela — a
+um control plane que não esteja no default `http://127.0.0.1:4317`;
+`CARTOGRAFO_TELA_PORT` para mudar a porta da tela.
 
 ## O buraco que ele ocupa
 

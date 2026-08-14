@@ -217,6 +217,57 @@ Registrar **não** move o ponteiro
 bootstrap de uma linhagem nova, porque não existe "corrente" anterior a
 preservar e uma linhagem sem ponteiro seria um grafo que existe sem valer.
 
+### Bifurcar uma linhagem
+
+`POST /v1/grafos/:id/fork` cria a **variante** de um base (D13) e é o segundo —
+e último — bootstrap desta camada, com a mesma exceção de ponteiro do fluxo
+acima:
+
+```
+conferir que :id existe e é linhagem base
+        ↓
+montar o documento: snapshot CORRENTE do base, só trocando linhagem
+        ↓ (hash já existente em qualquer linhagem: 409, nada é escrito)
+gravar grafo (linhagem_tipo = variante, classe e base_classe = classe do base)
+        ↓
+gravar grafo_versao (versao_pai = versão corrente do base)
+        ↓
+mover versao_corrente_id da variante
+```
+
+Semântica de branch: bifurcar **não carrega diff nenhum**. Um `git branch` não
+muda conteúdo — cria ponteiro e parentesco, e a variante e o base andam
+separados depois, pelo fluxo de proposta comum, que não precisa de caso
+especial para variante.
+
+Duas consequências que o desenho assume de propósito:
+
+- **O parentesco atravessa a linhagem.** `versao_pai` da primeira versão da
+  variante é a versão corrente do **base**. O schema permite: `versao_pai` só
+  referencia `grafo_versao(id)`, sem exigir o mesmo `grafo_id`. É esse ponteiro
+  que vai ancorar o diff entre linhagens quando promoção e oferta existirem.
+- **O hash é global, não escopado por linhagem.** Duas bifurcações do mesmo base
+  com a mesma origem (ou ambas sem origem) produziriam o mesmo documento, e
+  `grafo_versao.grafo_id` é coluna única — uma linha não pode pertencer a duas
+  linhagens ao mesmo tempo. A segunda é recusada com `409
+  bifurcacao_sem_efeito`, antes de qualquer escrita.
+
+O corpo pede `id` (a identidade da linhagem que nasce; a `classe` é herdada do
+base) e aceita `origem_proposta_id` opcional. Ele é conferido **só por
+existência**, em qualquer status: o topógrafo ainda não sabe propor um fork.
+Quando presente, a versão nasce com `origem: "proposta"`; ausente, com
+`origem: "manual"` — o mesmo tratamento que o bootstrap do base já dá a uma
+versão sem proposta por trás.
+
+O tipo do campo diverge de propósito entre banco e documento:
+`grafo.origem_proposta_id` é `INTEGER REFERENCES proposta(id)`, e
+`linhagem.origem_proposta_id` é `string` no
+[`grafo.schema.json`](../../schema/grafo.schema.json) — pensado para acomodar
+id de fora, como o de um atlas importado. O inteiro fica no banco e vira
+`String(id)` no documento. Sem `origem_proposta_id`, a chave é **omitida** do
+documento, nunca `null`, como o `base` já faz com os dois campos que o schema
+lhe proíbe.
+
 ### Aplicar uma proposta
 
 `POST /v1/propostas/:id/aplicar` é o fluxo da D15 inteiro, e a ordem não é
@@ -336,9 +387,15 @@ chegou a ser `aplicada`.
 Todos sob `/v1`. Nenhum exige autenticação (`t124`) e nenhum emite evento de
 telemetria (`t102`).
 
+Os caminhos abaixo estão na grafia em português deste documento; a superfície
+implementada foi renomeada para inglês pelo `t127` (D18), e é ela que vale:
+`/v1/graphs`, `/v1/graphs/:id/fork`, `/v1/graph-versions/:id`, `/v1/proposals`,
+`/v1/proposals/:id/apply` etc. Reescrever a tabela inteira é outra ticket.
+
 | Método | Rota | O que faz |
 |---|---|---|
 | `POST` | `/v1/grafos` | Registra uma linhagem **base** nova a partir do documento completo (corpo cru, sem envelope). |
+| `POST` | `/v1/grafos/:id/fork` | Bifurca um base em uma **variante** (§5). Corpo: `{id, origem_proposta_id?}`. |
 | `GET` | `/v1/classes` | Catálogo de classes registradas. |
 | `GET` | `/v1/grafos` | Todas as linhagens. |
 | `GET` | `/v1/grafos/:id` | Uma linhagem, com o ponteiro de versão corrente. |
@@ -357,6 +414,13 @@ Códigos de erro, por rota:
 | Documento reprovado no portão | `422` | `grafo_invalido` (com `estrutura` e `soundness`) |
 | `linhagem.tipo` ≠ `base` em `POST /v1/grafos` | `400` | `linhagem_nao_base` |
 | Classe já tem grafo base | `409` | `classe_ja_registrada` |
+| Bifurcar o que não é linhagem `base` | `400` | `base_invalida` |
+| `id` da variante ausente ou vazio | `400` | `campo_obrigatorio_ausente` |
+| `id` da variante já é uma linhagem | `409` | `id_ja_registrado` |
+| `origem_proposta_id` não é inteiro positivo | `400` | `origem_proposta_id_invalido` |
+| `origem_proposta_id` sem proposta correspondente | `400` | `origem_proposta_desconhecida` |
+| Base sem `versao_corrente_id` (invariante defensivo) | `409` | `grafo_sem_versao_corrente` |
+| Bifurcação que produz um snapshot já existente | `409` | `bifurcacao_sem_efeito` |
 | `versao_alvo` inexistente ou de outro grafo | `400` | `versao_alvo_desconhecida` |
 | Operação de tipo desconhecido, sem inversa ou malformada | `400` | `operacoes_invalidas` |
 | Aplicar/reverter proposta em estado errado | `409` | `proposta_nao_pendente` / `proposta_nao_aplicada` |
@@ -388,10 +452,13 @@ aberto.
 
 Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 
-- **Variantes** (D13) — criar, promover, oferecer ao base. `POST /v1/grafos`
-  recusa `linhagem.tipo: "variante"` com `400`; as colunas `base_classe` e
-  `origem_proposta_id` já têm a forma certa para não exigir `ALTER TABLE`
-  (`t118`).
+- **Variantes** (D13) — **promover** o diff da variante para o base e
+  **oferecer** melhoria do base às variantes. Criar já existe:
+  `POST /v1/grafos/:id/fork` (§5); `POST /v1/grafos` continua recusando
+  `linhagem.tipo: "variante"` com `400`, porque variante nasce de fork, não de
+  registro. As duas pendentes dependem de um motor de diff semântico entre dois
+  documentos completos (o par inverso de `applyOperations`), que ainda não
+  existe.
 - **Executar a inversa** de uma operação — aqui só a forma é validada (`t118`).
 - **Registrar versão manual nova sobre linhagem existente**, fora do fluxo de
   proposta.

@@ -12,6 +12,13 @@
  * trabalho NA MESMA transação, e responder desbloqueia com o ator de quem
  * respondeu. Quem quer saber por que o ciclo mora aqui, e não no runner, lê
  * `docs/spec/escalacao-humana.md`.
+ *
+ * A t113 acrescenta a base de precedentes (AT3–AT7): pergunta respondida vira
+ * consulta, para quem responde a próxima ver o que foi decidido da última vez
+ * (`notas/2026-08-14-aprendizado.md`). É superfície de LEITURA e só isso — a
+ * política de auto-resposta é ficha separada, porque a escada de segurança
+ * (princípio 5) pede que o precedente exista e acumule história ANTES de
+ * qualquer portão responder sozinho.
  */
 
 import assert from 'node:assert/strict';
@@ -24,6 +31,7 @@ import {
   exigirArtefatos,
   pedir,
   subirControlPlane,
+  type ContextoTeste,
   type Pergunta,
   type Trabalho,
 } from './apoio.ts';
@@ -38,6 +46,9 @@ const ARTEFATOS = [
   ARTEFATOS_T102.rotasTrabalhos,
 ];
 
+/** Artefato próprio da t113; os testes de precedente o exigem pelo nome. */
+const ARTEFATO_SIMILARIDADE = 'src/dominio/similaridade.ts';
+
 const CORPO_COMPLETO = {
   tipo: 'pergunta',
   pergunta: 'Renumerar a migração para 0003?',
@@ -47,6 +58,24 @@ const CORPO_COMPLETO = {
   resposta_padrao: 'Manter 0002',
   auto_aprovavel: true,
 };
+
+/**
+ * Um precedente, como a API o devolve (t113).
+ *
+ * Escrito à mão, e não importado de `src/`: esta interface É o contrato que o
+ * teste cobra, e contrato importado da implementação não cobra nada.
+ */
+interface Precedente {
+  id: number;
+  pergunta: string;
+  resposta: string | null;
+  origem: string | null;
+  respondido_por: string | null;
+  tipo: string;
+  criada_em: string;
+  respondida_em: string | null;
+  similaridade: number;
+}
 
 test('AT11 — POST /v1/perguntas cria pendente E bloqueia o trabalho dono (t106)', async (t) => {
   exigirArtefatos(...ARTEFATOS);
@@ -331,4 +360,221 @@ test('AT14 — GET /v1/perguntas?status=pendente&execucao_id=7 dá o suficiente 
   assert.equal(fila.recomendacao, CORPO_COMPLETO.recomendacao);
   assert.equal(fila.resposta_padrao, CORPO_COMPLETO.resposta_padrao);
   assert.equal(fila.trabalho_id, daSete.id);
+});
+
+/** Cria uma pergunta com o texto pedido e devolve a projeção pendente. */
+async function perguntar(
+  ctx: ContextoTeste,
+  trabalhoId: number,
+  texto: string,
+): Promise<Pergunta> {
+  const resposta = await pedir<Pergunta>(ctx, 'POST', '/v1/perguntas', {
+    trabalho_id: trabalhoId,
+    ...CORPO_COMPLETO,
+    pergunta: texto,
+  });
+  assert.equal(resposta.status, 201);
+  return resposta.corpo;
+}
+
+/** Cria e já responde — o formato de tudo o que pode virar precedente. */
+async function perguntarEResponder(
+  ctx: ContextoTeste,
+  trabalhoId: number,
+  texto: string,
+  resposta: string,
+): Promise<Pergunta> {
+  const criada = await perguntar(ctx, trabalhoId, texto);
+  const fechada = await pedir<Pergunta>(ctx, 'PATCH', `/v1/perguntas/${criada.id}/resposta`, {
+    resposta,
+    respondido_por: 'rafael',
+  });
+  assert.equal(fechada.status, 200);
+  return fechada.corpo;
+}
+
+/** Consulta a base de precedentes de uma pergunta. */
+async function precedentesDe(
+  ctx: ContextoTeste,
+  id: number,
+  consulta = '',
+): Promise<{ status: number; corpo: { precedentes: Precedente[] } }> {
+  return await pedir<{ precedentes: Precedente[] }>(
+    ctx,
+    'GET',
+    `/v1/perguntas/${id}/precedentes${consulta}`,
+  );
+}
+
+test('AT3 — GET /v1/perguntas/:id/precedentes de pergunta inexistente é 404', async (t) => {
+  exigirArtefatos(...ARTEFATOS, ARTEFATO_SIMILARIDADE);
+  const ctx = await subirControlPlane(t);
+
+  const resposta = await precedentesDe(ctx, 99999);
+  assert.equal(resposta.status, 404);
+  assert.equal(
+    (resposta.corpo as unknown as { erro: string }).erro,
+    'nao_encontrado',
+    'o 404 é o da casa (`naoEncontrado`), não o genérico do roteador',
+  );
+});
+
+test('AT4 — sem nenhuma pergunta respondida no projeto, precedentes é lista vazia', async (t) => {
+  exigirArtefatos(...ARTEFATOS, ARTEFATO_SIMILARIDADE);
+  const ctx = await subirControlPlane(t);
+
+  const trabalho = await criarTrabalho(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+  const pendente = await perguntar(ctx, trabalho.id, 'Renumerar a migração para 0004?');
+
+  const resposta = await precedentesDe(ctx, pendente.id);
+  assert.equal(resposta.status, 200, '"não achei nada" é 200 com lista vazia, nunca 404 nem 500');
+  assert.deepEqual(resposta.corpo, { precedentes: [] });
+});
+
+test('AT5 — precedente é a respondida parecida, e a própria pergunta nunca entra', async (t) => {
+  exigirArtefatos(...ARTEFATOS, ARTEFATO_SIMILARIDADE);
+  const ctx = await subirControlPlane(t);
+
+  const trabalho = await criarTrabalho(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+
+  const parecida = await perguntarEResponder(
+    ctx,
+    trabalho.id,
+    'Renumerar a migração para 0003?',
+    'Manter 0002',
+  );
+  await perguntarEResponder(
+    ctx,
+    trabalho.id,
+    'Qual engine adapter usar no despacho?',
+    'Claude Code',
+  );
+
+  const consultada = await perguntar(ctx, trabalho.id, 'Renumerar a migração para 0004?');
+
+  const resposta = await precedentesDe(ctx, consultada.id);
+  assert.equal(resposta.status, 200);
+  assert.deepEqual(
+    resposta.corpo.precedentes.map((linha) => linha.id),
+    [parecida.id],
+    'a respondida sem token em comum não é precedente de nada',
+  );
+
+  const [precedente] = resposta.corpo.precedentes;
+  assert.ok(precedente.similaridade > 0, 'o escore é o que torna o ranking auditável');
+  assert.ok(precedente.similaridade <= 1);
+  assert.equal(precedente.pergunta, 'Renumerar a migração para 0003?');
+  assert.equal(precedente.resposta, 'Manter 0002', 'o precedente serve para ver O QUE se decidiu');
+  assert.equal(precedente.origem, 'usuario');
+  assert.equal(precedente.respondido_por, 'rafael');
+  assert.equal(precedente.tipo, 'pergunta');
+  assert.ok(!Number.isNaN(Date.parse(precedente.criada_em)));
+  assert.ok(!Number.isNaN(Date.parse(precedente.respondida_em ?? '')));
+
+  // Depois de respondida, ela vira candidata a precedente das OUTRAS — nunca de
+  // si mesma, que seria sempre o topo do ranking com escore 1.
+  const fechada = await pedir<Pergunta>(ctx, 'PATCH', `/v1/perguntas/${consultada.id}/resposta`, {
+    resposta: 'Renumerar para 0004',
+    respondido_por: 'rafael',
+  });
+  assert.equal(fechada.status, 200);
+
+  const depois = await precedentesDe(ctx, consultada.id);
+  assert.equal(depois.status, 200);
+  assert.deepEqual(
+    depois.corpo.precedentes.map((linha) => linha.id),
+    [parecida.id],
+  );
+});
+
+test('AT6 — respondida de outro projeto nunca é precedente, nem com texto idêntico', async (t) => {
+  exigirArtefatos(...ARTEFATOS, ARTEFATO_SIMILARIDADE);
+  const ctx = await subirControlPlane(t);
+
+  const texto = 'Renumerar a migração para 0003?';
+
+  const doOutro = await criarTrabalho(ctx, {
+    titulo: 'de outro projeto',
+    no_entrada_id: 'entrada',
+    projeto_id: 42,
+  });
+  const alheia = await perguntarEResponder(ctx, doOutro.id, texto, 'Manter 0002');
+
+  const meu = await criarTrabalho(ctx, { titulo: 'meu', no_entrada_id: 'entrada' });
+  const consultada = await perguntar(ctx, meu.id, texto);
+
+  const resposta = await precedentesDe(ctx, consultada.id);
+  assert.equal(resposta.status, 200);
+  assert.deepEqual(
+    resposta.corpo.precedentes,
+    [],
+    'precedente é do projeto de quem pergunta; texto idêntico não fura o isolamento',
+  );
+
+  // E o espelho: quem pergunta do lado de lá enxerga a própria história.
+  const deLa = await perguntar(ctx, doOutro.id, texto);
+  const dele = await precedentesDe(ctx, deLa.id);
+  assert.deepEqual(
+    dele.corpo.precedentes.map((linha) => linha.id),
+    [alheia.id],
+  );
+});
+
+test('AT7 — limite corta pelo topo do ranking, e valor acima do teto é aparado', async (t) => {
+  exigirArtefatos(...ARTEFATOS, ARTEFATO_SIMILARIDADE);
+  const ctx = await subirControlPlane(t);
+
+  const trabalho = await criarTrabalho(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+
+  const maisParecida = await perguntarEResponder(
+    ctx,
+    trabalho.id,
+    'Renumerar a migração para 0003?',
+    'Manter 0002',
+  );
+  const menosParecida = await perguntarEResponder(
+    ctx,
+    trabalho.id,
+    'Renumerar tudo?',
+    'Não renumerar',
+  );
+
+  const consultada = await perguntar(ctx, trabalho.id, 'Renumerar a migração para 0004?');
+
+  const ambas = await precedentesDe(ctx, consultada.id);
+  assert.equal(ambas.status, 200);
+  assert.deepEqual(
+    ambas.corpo.precedentes.map((linha) => linha.id),
+    [maisParecida.id, menosParecida.id],
+    'a ordem é a do escore, decrescente',
+  );
+  assert.ok(
+    ambas.corpo.precedentes[0].similaridade > ambas.corpo.precedentes[1].similaridade,
+    'o ranking é explicável pelo próprio corpo da resposta',
+  );
+
+  const cortada = await precedentesDe(ctx, consultada.id, '?limite=1');
+  assert.equal(cortada.status, 200);
+  assert.deepEqual(
+    cortada.corpo.precedentes.map((linha) => linha.id),
+    [maisParecida.id],
+    'cortar pelo limite corta a cauda, não o topo',
+  );
+
+  // O limite é botão de tamanho de tela, não regra de correção: valor fora da
+  // faixa é aparado para o teto, e não vira 400.
+  const acimaDoTeto = await precedentesDe(ctx, consultada.id, '?limite=999');
+  assert.equal(acimaDoTeto.status, 200);
+  assert.deepEqual(
+    acimaDoTeto.corpo.precedentes.map((linha) => linha.id),
+    [maisParecida.id, menosParecida.id],
+  );
+
+  const abaixoDoPiso = await precedentesDe(ctx, consultada.id, '?limite=0');
+  assert.equal(abaixoDoPiso.status, 200);
+  assert.deepEqual(
+    abaixoDoPiso.corpo.precedentes.map((linha) => linha.id),
+    [maisParecida.id],
+    'zero e negativo são aparados para o piso de 1, pela mesma razão',
+  );
 });

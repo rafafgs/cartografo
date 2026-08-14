@@ -1,0 +1,225 @@
+{
+  "id": "coletar-fundamentos",
+  "versao": "1.0.0",
+  "hash": "sha256:29689a5dd09730c711e16ff1b3f1ac451b26cd4e6bc06873d40c020b1f6ac395",
+  "papel": "fazer",
+  "descricao": "Reúne os fundamentos da tese em documento primário e separa, uma a uma, as premissas com fonte das premissas sem fonte.",
+  "entrada": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "tese_triada"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "tese_triada": {
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "ativo",
+          "hipotese",
+          "escopo_de_pesquisa"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ativo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hipotese": {
+            "type": "string",
+            "minLength": 1
+          },
+          "escopo_de_pesquisa": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "as frentes que a coleta de fundamentos deve cobrir; vazio quando a triagem descarta"
+          }
+        }
+      },
+      "fontes_preferidas": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "onde o investidor prefere que você procure primeiro; não é lista fechada"
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "perguntas já respondidas pelo fundador neste trabalho, para a sessão nova não reabrir o que foi decidido. Lista vazia é legal: significa que ainda não há decisão registrada.",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "saida": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "fundamentos",
+      "premissas",
+      "nota"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "fundamentos": {
+        "type": "object",
+        "required": [
+          "resumo",
+          "numeros"
+        ],
+        "properties": {
+          "resumo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "numeros": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "metrica",
+                "valor",
+                "periodo",
+                "fonte"
+              ],
+              "properties": {
+                "metrica": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "valor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "periodo": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fonte": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "documento primário; \"acho que\" não é fonte"
+                }
+              }
+            }
+          },
+          "riscos_conhecidos": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "premissas": {
+        "type": "array",
+        "minItems": 1,
+        "description": "toda premissa que a tese precisa que seja verdadeira, com a fonte que a sustenta ou nulo declarado",
+        "items": {
+          "type": "object",
+          "required": [
+            "premissa",
+            "fonte",
+            "confianca"
+          ],
+          "properties": {
+            "premissa": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fonte": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "nulo é uma resposta legal e honesta; premissa sem fonte inventada é o defeito que este campo existe para impedir"
+            },
+            "confianca": {
+              "enum": [
+                "alta",
+                "media",
+                "baixa"
+              ]
+            }
+          }
+        }
+      },
+      "lacunas": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "o que você procurou e não achou; lacuna registrada vale mais que número inventado"
+      },
+      "nota": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "pre_condicoes": [
+    "tese triada com escopo de pesquisa não vazio",
+    "acesso de rede disponível para as fontes públicas do escopo"
+  ],
+  "checks": [
+    {
+      "id": "premissa-com-fonte-primaria",
+      "tipo": "agentico",
+      "descricao": "A falha típica desta etapa não é achar pouco: é apresentar como fato o que é premissa. Cada número precisa vir de documento, e cada premissa precisa dizer se tem fonte ou não.",
+      "instrucao": "Confira a coleta contra as fontes, não contra o resumo dela.\n\n1. Abra a fonte de cada item de `fundamentos.numeros` e confirme o valor e o período. Anexe o trecho citado. Número cuja fonte você não conseguiu abrir vira lacuna, não vira número.\n2. Para cada item de `premissas`, confirme que `fonte` aponta para documento primário que de fato sustenta a frase — e que `fonte: null` foi usado onde não há documento, em vez de uma fonte genérica de fachada.\n3. Toda frente do `escopo_de_pesquisa` da tese foi coberta ou registrada em `lacunas`?\n\nUma premissa com fonte que não sustenta a frase é pior que uma premissa sem fonte: ela passa pelo red team disfarçada de fato.",
+      "evidencia_obrigatoria": [
+        "trecho_citado_da_fonte_primaria_de_cada_numero_registrado",
+        "trecho_citado_da_fonte_de_cada_premissa_com_fonte",
+        "lista_das_premissas_com_fonte_nula_e_das_frentes_do_escopo_nao_cobertas"
+      ]
+    }
+  ],
+  "permissoes": {
+    "filesystem": {
+      "leitura": [],
+      "escrita": []
+    },
+    "rede": {
+      "permitido": true
+    }
+  },
+  "instrucoes": "# Coletar os fundamentos da tese\n\nSeu trabalho é reunir o que se sabe — de documento, não de impressão — sobre a\ntese abaixo, e separar com honestidade o que é fato do que é premissa.\n\n**Tese:** {{entrada.tese_triada.titulo}} ({{entrada.tese_triada.ativo}})\n\n{{entrada.tese_triada.hipotese}}\n\n**Frentes a cobrir:** {{entrada.tese_triada.escopo_de_pesquisa}}\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\n## Sua rede está aberta, e é o único nó deste grafo em que está\n\nPesquisa de fundamentos varre fontes públicas demais para caber numa\nallowlist: documento entregue a regulador, release de resultado, transcrição\nde teleconferência, contrato anexo, dado de mercado, notícia datada. Por isso\nesta skill declara `rede.permitido: true` sem lista de domínios — é legal para\nskill nativa, e é a exceção declarada deste bundle.\n\nRede aberta não é licença para credibilidade aberta. Prefira, nesta ordem:\ndocumento da própria companhia entregue a regulador; contrato; transcrição\noficial; dado de mercado de fonte nomeada; notícia datada de veículo\nidentificável. Blog, fórum e resumo de terceiro entram como pista para achar o\ndocumento, nunca como fonte.\n\n## Fato, premissa e lacuna\n\nTrês categorias, e não confunda:\n\n- **Fato** vai em `fundamentos.numeros`, com métrica, valor, período e a fonte\n  onde você leu aquilo. Sem os quatro, não é fato: é lembrança.\n- **Premissa** é o que a tese precisa que seja verdade e ainda não é. Vai em\n  `premissas`, com `fonte` quando existe documento que a sustente e\n  `fonte: null` quando não existe. **Nulo é a resposta certa** quando não há\n  documento — a fração de premissas com fonte é métrica de processo deste\n  grafo, e uma fonte de fachada a corrompe.\n- **Lacuna** é o que você procurou e não achou. Registrar vale mais que\n  preencher: é a lacuna que o red team ataca primeiro, e é ela que diz ao\n  fundador o que ele está aceitando sem saber.\n\nSe você não conseguiu abrir a fonte de um número, ele não vira número. Vira\nlacuna.\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nDevolva no formato que o schema de saída declara: `fundamentos`, `premissas`,\n`lacunas` e `nota`. Não emita veredito sobre a tese — julgar assimetria é o\npróximo nó, e derrubar a tese é o nó depois dele. Aqui você reúne e separa.",
+  "origem": {
+    "tipo": "nativa"
+  }
+}

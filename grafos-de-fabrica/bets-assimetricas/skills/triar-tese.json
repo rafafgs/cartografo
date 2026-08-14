@@ -1,0 +1,228 @@
+{
+  "id": "triar-tese",
+  "versao": "1.0.0",
+  "hash": "sha256:7a80684172f59bcddb80ef9b3014e46f6867d7230835b44f393c1b89faab30dd",
+  "papel": "portao",
+  "descricao": "Filtra a ideia de investimento antes de qualquer esforço de pesquisa: passa o que tem piso, gatilho datado e tamanho cabível, descarta o resto.",
+  "entrada": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "tese",
+      "criterios_de_triagem"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "tese": {
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "ativo",
+          "hipotese"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ativo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hipotese": {
+            "type": "string",
+            "minLength": 1,
+            "description": "o que o mercado estaria errando, em uma ou duas frases"
+          },
+          "origem": {
+            "type": "string",
+            "description": "de onde a ideia veio"
+          }
+        }
+      },
+      "criterios_de_triagem": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "os critérios do próprio investidor; a triagem julga contra estes, nunca contra critérios inventados na sessão"
+      },
+      "carteira": {
+        "type": "object",
+        "description": "estado da carteira, para a triagem saber se cabe mais uma tese",
+        "properties": {
+          "posicoes_abertas": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "exposicao_atual_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "perguntas já respondidas pelo fundador neste trabalho, para a sessão nova não reabrir o que foi decidido. Lista vazia é legal: significa que ainda não há decisão registrada.",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "saida": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "resultado",
+      "tese_triada",
+      "criterios_avaliados",
+      "justificativa",
+      "nota"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "resultado": {
+        "type": "string",
+        "enum": [
+          "passou",
+          "falhou",
+          "escalar_humano"
+        ],
+        "description": "obrigatório em toda skill de papel portao. Neste grafo \"passou\" segue pela aresta \"aprofundar\" e \"falhou\" pela aresta \"descartar\". \"escalar_humano\" existe porque o formato exige os três valores — uma sessão que precisa do fundador PAUSA com input-request em vez de resolver aqui."
+      },
+      "tese_triada": {
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "ativo",
+          "hipotese",
+          "escopo_de_pesquisa"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ativo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hipotese": {
+            "type": "string",
+            "minLength": 1
+          },
+          "escopo_de_pesquisa": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "as frentes que a coleta de fundamentos deve cobrir; vazio quando a triagem descarta"
+          }
+        }
+      },
+      "criterios_avaliados": {
+        "type": "array",
+        "minItems": 1,
+        "description": "um por critério recebido; critério não avaliado tem entrada honesta, nunca é pulado",
+        "items": {
+          "type": "object",
+          "required": [
+            "criterio",
+            "veredito",
+            "evidencia"
+          ],
+          "properties": {
+            "criterio": {
+              "type": "string",
+              "minLength": 1
+            },
+            "veredito": {
+              "enum": [
+                "atende",
+                "nao_atende",
+                "indeterminado"
+              ]
+            },
+            "evidencia": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "justificativa": {
+        "type": "string",
+        "minLength": 1
+      },
+      "nota": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "pre_condicoes": [
+    "ideia registrada com ativo e hipótese não vazios",
+    "critérios de triagem do investidor disponíveis em lista",
+    "estado da carteira conhecido, quando houver posição aberta"
+  ],
+  "checks": [
+    {
+      "id": "triagem-contra-criterio-declarado",
+      "tipo": "agentico",
+      "descricao": "A triagem existe para gastar pesquisa só no que merece. O defeito que ela produz é o oposto do que parece: não é descartar uma boa ideia, é aprovar uma ideia sem piso e queimar a rodada inteira de pesquisa nela.",
+      "instrucao": "Confira, critério a critério, se o veredito registrado se sustenta no que a entrada de fato traz.\n\n1. Todo critério recebido em `entrada.criterios_de_triagem` aparece em `criterios_avaliados`? Critério pulado é reprovação do check.\n2. Cada veredito `atende` cita evidência concreta — um documento, uma data, um número — e não uma paráfrase da própria hipótese? Reafirmar a tese não é evidência dela.\n3. O `escopo_de_pesquisa` da tese triada endereça as lacunas que os vereditos `indeterminado` abriram?\n\nSe o resultado é `passou` e existe critério com veredito `nao_atende`, a justificativa precisa dizer por que ele não é eliminatório. Sem isso, o check falhou.",
+      "evidencia_obrigatoria": [
+        "criterio_avaliado_com_o_trecho_da_entrada_que_o_sustenta",
+        "lista_dos_criterios_com_veredito_indeterminado_e_o_que_falta",
+        "justificativa_do_resultado_confrontada_com_os_vereditos"
+      ]
+    }
+  ],
+  "permissoes": {
+    "filesystem": {
+      "leitura": [],
+      "escrita": []
+    },
+    "rede": {
+      "permitido": false
+    }
+  },
+  "instrucoes": "# Triar uma ideia antes de gastar pesquisa nela\n\nSeu trabalho é decidir se esta ideia merece uma rodada de pesquisa de\nfundamentos — e nada além disso. Você não avalia se a tese é boa; avalia se\nela tem chance de ter piso.\n\n**Tese:** {{entrada.tese.titulo}} ({{entrada.tese.ativo}})\n\n{{entrada.tese.hipotese}}\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\n## Como triar\n\nJulgue contra os critérios que o investidor declarou, e só contra eles:\n\n{{entrada.criterios_de_triagem}}\n\nUm veredito por critério, cada um com evidência do que você leu na entrada.\nCritério que você não consegue julgar recebe `indeterminado` com a lacuna\nnomeada — nunca um `atende` de conveniência.\n\nA pergunta que decide a triagem é sempre a mesma: **existe um piso que não\ndepende da narrativa dar certo?** Caixa líquido, ativo real, contrato. Tese\ncujo downside é \"o mercado entender\" não tem piso, tem esperança.\n\n## O escopo de pesquisa é seu produto principal\n\nQuando a ideia passa, o que você entrega de mais valioso não é o `passou` — é\no `escopo_de_pesquisa`: as frentes que a coleta precisa cobrir para a tese\nficar de pé ou cair. Escopo largo demais transforma a coleta em leitura\ninfinita; escopo estreito demais deixa passar o risco que mata. Três a cinco\nfrentes, cada uma respondível por documento.\n\nQuando a ideia é descartada, `escopo_de_pesquisa` fica vazio e a justificativa\ndiz o que faltou — o registro de uma ideia descartada é o que impede a mesma\nideia de voltar todo mês.\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nDevolva no formato que o schema de saída declara: `resultado`, `tese_triada`,\n`criterios_avaliados`, `justificativa`, `nota`.\n\n- `resultado: \"passou\"` — a ideia merece pesquisa. O executor segue pela aresta\n  **aprofundar**, para a coleta de fundamentos.\n- `resultado: \"falhou\"` — a ideia não passa. O executor segue pela aresta\n  **descartar**, direto para o registro. Isso é uma triagem bem-sucedida, não\n  uma sessão que falhou: descartar cedo é o produto deste nó.\n- `resultado: \"escalar_humano\"` existe porque o formato de portão exige os três\n  valores. Precisar do fundador significa encerrar o turno com o bloco\n  `input-request` acima: a sessão pausa, e retoma quando a resposta chegar.",
+  "origem": {
+    "tipo": "nativa"
+  }
+}

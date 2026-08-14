@@ -1,0 +1,318 @@
+{
+  "id": "derrubar-tese",
+  "versao": "1.0.0",
+  "hash": "sha256:8e6436602431dc8574ebacbce333b4faf805d126a9ade5ff5098a1cf5bf16f32",
+  "papel": "portao",
+  "descricao": "Red team: tenta derrubar a tese com contra-evidência pesquisada, registra cada objeção com gravidade, e mata a tese que não responde a uma objeção grave.",
+  "entrada": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "tese_triada",
+      "fundamentos",
+      "premissas",
+      "assimetria"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "tese_triada": {
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "ativo",
+          "hipotese",
+          "escopo_de_pesquisa"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "titulo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ativo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hipotese": {
+            "type": "string",
+            "minLength": 1
+          },
+          "escopo_de_pesquisa": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "as frentes que a coleta de fundamentos deve cobrir; vazio quando a triagem descarta"
+          }
+        }
+      },
+      "fundamentos": {
+        "type": "object",
+        "required": [
+          "resumo",
+          "numeros"
+        ],
+        "properties": {
+          "resumo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "numeros": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "metrica",
+                "valor",
+                "periodo",
+                "fonte"
+              ],
+              "properties": {
+                "metrica": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "valor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "periodo": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fonte": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "documento primário; \"acho que\" não é fonte"
+                }
+              }
+            }
+          },
+          "riscos_conhecidos": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "premissas": {
+        "type": "array",
+        "minItems": 1,
+        "description": "toda premissa que a tese precisa que seja verdadeira, com a fonte que a sustenta ou nulo declarado",
+        "items": {
+          "type": "object",
+          "required": [
+            "premissa",
+            "fonte",
+            "confianca"
+          ],
+          "properties": {
+            "premissa": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fonte": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "nulo é uma resposta legal e honesta; premissa sem fonte inventada é o defeito que este campo existe para impedir"
+            },
+            "confianca": {
+              "enum": [
+                "alta",
+                "media",
+                "baixa"
+              ]
+            }
+          }
+        }
+      },
+      "assimetria": {
+        "type": "object",
+        "required": [
+          "downside_max_pct",
+          "upside_alvo_pct",
+          "razao_assimetria",
+          "cenarios"
+        ],
+        "properties": {
+          "downside_max_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "perda máxima da tese em cenário ruim, em % do valor investido"
+          },
+          "upside_alvo_pct": {
+            "type": "number",
+            "minimum": 0
+          },
+          "razao_assimetria": {
+            "type": "number",
+            "minimum": 0,
+            "description": "upside alvo dividido pelo downside máximo; é o número que a classe inteira existe para maximizar"
+          },
+          "cenarios": {
+            "type": "array",
+            "minItems": 2,
+            "description": "pelo menos dois: um em que a tese morre e um em que ela funciona",
+            "items": {
+              "type": "object",
+              "required": [
+                "nome",
+                "probabilidade",
+                "retorno_pct",
+                "premissas_chave"
+              ],
+              "properties": {
+                "nome": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "probabilidade": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "retorno_pct": {
+                  "type": "number"
+                },
+                "premissas_chave": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "saida": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "resultado",
+      "objecoes",
+      "contra_evidencia_pesquisada",
+      "nota"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "resultado": {
+        "type": "string",
+        "enum": [
+          "passou",
+          "falhou",
+          "escalar_humano"
+        ],
+        "description": "obrigatório em toda skill de papel portao. Neste grafo \"passou\" segue pela aresta \"sobrevive\" e \"falhou\" pela aresta \"morta\". \"escalar_humano\" existe porque o formato exige os três valores — uma sessão que precisa do fundador PAUSA com input-request em vez de resolver aqui."
+      },
+      "objecoes": {
+        "type": "array",
+        "minItems": 1,
+        "description": "red team que não achou nenhuma objeção não rodou; lista vazia é recusada de propósito",
+        "items": {
+          "type": "object",
+          "required": [
+            "objecao",
+            "gravidade",
+            "resposta_da_tese"
+          ],
+          "properties": {
+            "objecao": {
+              "type": "string",
+              "minLength": 1
+            },
+            "gravidade": {
+              "enum": [
+                "alta",
+                "media",
+                "baixa"
+              ]
+            },
+            "resposta_da_tese": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "nulo quando a tese não respondeu; objeção alta com nulo mata a tese"
+            }
+          }
+        }
+      },
+      "contra_evidencia_pesquisada": {
+        "type": "array",
+        "minItems": 1,
+        "description": "o que você foi procurar CONTRA a tese; releitura da análise já feita não conta",
+        "items": {
+          "type": "object",
+          "required": [
+            "afirmacao_atacada",
+            "fonte",
+            "achado"
+          ],
+          "properties": {
+            "afirmacao_atacada": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fonte": {
+              "type": "string",
+              "minLength": 1
+            },
+            "achado": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "nota": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "pre_condicoes": [
+    "fundamentos e análise de assimetria completos, disponíveis na entrada",
+    "lista de premissas com a marcação de quais têm fonte"
+  ],
+  "checks": [
+    {
+      "id": "contra-evidencia-propria",
+      "tipo": "agentico",
+      "descricao": "Portão verifica com evidência própria. O modo de falhar deste nó é sutil: reler a análise, concordar com ela em voz alta e chamar isso de red team. Contra-evidência é o que você foi buscar CONTRA a tese, fora do material que a tese já traz.",
+      "instrucao": "Confira o veredito do red team contra o que ele foi buscar, não contra o que ele concluiu.\n\n1. Cada item de `contra_evidencia_pesquisada` cita fonte externa ao material recebido, com data, e um achado que de fato tensiona a afirmação atacada? Item que só reformula `entrada.fundamentos` não é contra-evidência: é resumo.\n2. As premissas de maior alavancagem — as que aparecem em `premissas_chave` do cenário de maior retorno, e as que têm `fonte: null` — foram atacadas? Premissa central não atacada é buraco de cobertura.\n3. Toda objeção de `gravidade: \"alta\"` tem `resposta_da_tese` sustentada em documento, e não em contra-argumento retórico?\n4. O `resultado` bate com as objeções: `passou` com objeção alta sem resposta é reprovação automática deste check.",
+      "evidencia_obrigatoria": [
+        "contra_evidencia_pesquisada_com_fonte_datada_e_externa_ao_material_recebido",
+        "premissa_de_maior_alavancagem_e_o_ataque_que_ela_recebeu",
+        "documento_citado_em_cada_resposta_da_tese_a_objecao_de_gravidade_alta"
+      ]
+    }
+  ],
+  "permissoes": {
+    "filesystem": {
+      "leitura": [],
+      "escrita": []
+    },
+    "rede": {
+      "permitido": false
+    }
+  },
+  "instrucoes": "# Derrubar a tese\n\nSeu papel é o oposto do de todos os nós anteriores: eles construíram a tese,\nvocê existe para **matá-la**. Uma tese que sobrevive a você vale alguma coisa;\numa tese que você não tentou matar não vale nada, mesmo que esteja certa.\n\n**Tese:** {{entrada.tese_triada.titulo}} ({{entrada.tese_triada.ativo}})\n\n{{entrada.tese_triada.hipotese}}\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\n## A regra que define este nó\n\nVocê ataca com **evidência própria**. O que os nós anteriores produziram —\nfundamentos, premissas, assimetria — chega até você como o alvo, não como\nprova. Concordar com a análise recebida não é trabalho de red team; é a\nanálise recebida se auto-aprovando com outro nome.\n\nPara cada afirmação que você ataca, registre em `contra_evidencia_pesquisada`\no que você foi buscar contra ela, de onde veio e o que achou. Um item que só\nreformula o material recebido não conta — e o check deste nó reprova por isso.\n\n## Onde atacar primeiro\n\n1. **As premissas com `fonte: null`.** Elas são a tese pedindo fé.\n2. **As `premissas_chave` do cenário de maior retorno.** É onde o upside mora,\n   então é onde a fragilidade custa mais caro.\n3. **O piso do downside.** Se o piso depende de contrato, quem é a contraparte?\n   Se depende de caixa, quem decide o que fazer com ele?\n4. **A base rate.** Quantas vezes esse tipo de reprecificação aconteceu, e em\n   quanto tempo? O caso específico quase sempre parece diferente da base — e\n   quase nunca é.\n5. **A explicação alternativa.** Se o desconto é óbvio, por que ele existe?\n   \"O mercado não percebeu\" é a hipótese menos provável, não a mais.\n\n## Gravidade e resposta\n\nToda objeção entra na lista com `gravidade` (`alta`, `media`, `baixa`) e com\n`resposta_da_tese`: o que, no material recebido ou no que você mesmo achou,\nresponde àquela objeção — ou `null` quando nada responde.\n\n`gravidade: \"alta\"` é a objeção que, se verdadeira, **inverte a assimetria**:\ndestrói o piso, elimina o gatilho ou mata o upside. Não é a objeção mais\nincômoda; é a que muda a decisão.\n\nNUNCA conclua `resultado: \"passou\"` (aresta `sobrevive`) havendo qualquer objeção de `gravidade: \"alta\"` com `resposta_da_tese` nulo — objeção alta sem resposta_da_tese é tese morta, e o resultado é `falhou` (aresta `morta`).\n\nLista de objeções vazia é recusada pelo contrato de propósito: red team que\nnão achou nada não rodou.\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nDevolva no formato que o schema de saída declara: `resultado`, `objecoes`,\n`contra_evidencia_pesquisada` e `nota`.\n\n- `resultado: \"passou\"` — a tese sobreviveu ao ataque. O executor segue pela\n  aresta **sobrevive**, para o dimensionamento de risco. Sobreviver não é ser\n  aprovada: as objeções seguem junto, e são elas que puxam o tamanho da\n  posição para baixo no próximo nó.\n- `resultado: \"falhou\"` — a tese morreu aqui. O executor segue pela aresta\n  **morta**, direto para o registro. Matar uma tese é uma rodada bem-sucedida\n  deste nó, e a mais barata de todas.\n- `resultado: \"escalar_humano\"` existe porque o formato de portão exige os três\n  valores. Precisar do fundador significa encerrar o turno com o bloco\n  `input-request` acima: a sessão pausa, e retoma quando a resposta chegar.",
+  "origem": {
+    "tipo": "nativa"
+  }
+}

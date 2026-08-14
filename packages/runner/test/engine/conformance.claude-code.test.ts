@@ -8,6 +8,8 @@
  * suíte servir ao segundo adapter (t119) sem cópia.
  */
 
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
@@ -45,3 +47,20 @@ runConformanceKit(
     },
   },
 );
+
+test('engineName é o identificador estável persistido na linha da sessão', () => {
+  assert.equal(new ClaudeCodeAdapter().engineName, 'claude-code');
+});
+
+test('capabilities declara só o que tem consumidor', () => {
+  // `hasStructuredOutput` porque `stream-json` é parseável. As outras duas
+  // ficam AUSENTES, não `false` explícito: nenhuma tem consumidor no v0, e
+  // "declarar a quarta, quinta e sexta antes de alguém ler é como o formato
+  // apodrece" (`docs/formatos/engine-adapter.md:160-165`). Ausente já é
+  // `false` por `resolveCapabilities`.
+  const declaradas = new ClaudeCodeAdapter().capabilities();
+
+  assert.deepEqual(declaradas, { hasStructuredOutput: true });
+  assert.ok(!('hasResume' in declaradas));
+  assert.ok(!('reportsUsage' in declaradas));
+});

@@ -44,7 +44,7 @@ test('t107 AT5 — GET /execucoes lists the executions with the right counts', a
   await api(cp, 'POST', `/v1/jobs/${fromSeven.id}/blocks`, { motivo: 'travou' });
   await createQuestion(cp, { trabalho_id: fromSeven.id, pergunta: 'renumerar?' });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const page = await openPage(screen, '/execucoes');
 
   assert.equal(page.status, 200);
@@ -105,7 +105,7 @@ test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of tha
     pergunta: 'pergunta da outra execução',
   });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const page = await openPage(screen, '/execucoes/7');
 
   assert.equal(page.status, 200);
@@ -144,7 +144,7 @@ test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of tha
 test('t107 AT5 — an execution with nothing in it is 200 with an empty page, not an error', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
 
   // An execution is an opaque grouper: there is no object to be missing (the
   // same reading `GET /v1/executions/:id/metrics-by-version` already makes).

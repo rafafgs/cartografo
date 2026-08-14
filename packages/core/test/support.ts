@@ -26,6 +26,7 @@ import path from 'node:path';
 
 import type { Database } from '../src/db/connection.ts';
 import type * as ConnectionModule from '../src/db/connection.ts';
+import type * as CredentialsModule from '../src/repositories/credentials.ts';
 import type * as MigrateModule from '../src/db/migrate.ts';
 import type * as ServerModule from '../src/server.ts';
 
@@ -150,6 +151,15 @@ export interface TestContext {
   db: Database;
   /** Base URL of the server. */
   url: string;
+  /**
+   * Operator credential of this control plane (t124).
+   *
+   * Issued by the harness, because `createApp` does not mint one — that is the
+   * startup's job (`src/index.ts`), and these tests bring the app up without it.
+   * `request()` attaches it by default, which is what keeps every other suite in
+   * the package passing unmodified now that `/v1/*` denies anonymous requests.
+   */
+  token: string;
 }
 
 /** The slice of `node:test`'s `TestContext` this support file uses. */
@@ -174,11 +184,16 @@ export async function startControlPlane(t: TestHook): Promise<TestContext> {
   );
   const { migrate } = await load<typeof MigrateModule>('src/db/migrate.ts');
   const { createApp } = await load<typeof ServerModule>('src/server.ts');
+  const { issueCredential } = await load<typeof CredentialsModule>(
+    'src/repositories/credentials.ts',
+  );
 
   const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t102-'));
   const db = openDatabase(path.join(base, 'cartografo.db'));
   applyPragmas(db);
   migrate(db, MIGRATIONS_DIR);
+
+  const { token } = issueCredential(db, { tipo: 'usuario' });
 
   const app = createApp({ db });
   const url = await app.listen({ port: 0, host: '127.0.0.1' });
@@ -189,7 +204,7 @@ export async function startControlPlane(t: TestHook): Promise<TestContext> {
     rmSync(base, { recursive: true, force: true });
   });
 
-  return { db, url };
+  return { db, url, token };
 }
 
 /** An HTTP response, already decoded. */
@@ -200,6 +215,11 @@ export interface HttpResponse<T> {
 
 /**
  * Speaks HTTP/JSON with the control plane.
+ *
+ * Every request carries the context's credential (t124): what these suites are
+ * about is the routes' behaviour, and re-proving the gate on each of them would
+ * only make the gate's own test file redundant. The suite that exercises the
+ * gate — `test/auth.test.ts` — builds its requests header by header instead.
  *
  * @param ctx Control plane running.
  * @param method HTTP verb.
@@ -213,9 +233,12 @@ export async function request<T>(
   routePath: string,
   body?: unknown,
 ): Promise<HttpResponse<T>> {
+  const headers: Record<string, string> = { authorization: `Bearer ${ctx.token}` };
+  if (body !== undefined) headers['content-type'] = 'application/json';
+
   const response = await fetch(`${ctx.url}${routePath}`, {
     method,
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();

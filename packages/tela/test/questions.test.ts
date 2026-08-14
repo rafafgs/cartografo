@@ -77,7 +77,7 @@ test('t107 AT6 — GET /perguntas shows the whole question, with what it takes t
     respondido_por: 'rafael',
   });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const page = await openPage(screen, '/perguntas');
 
   assert.equal(page.status, 200);
@@ -113,7 +113,7 @@ test('t107 AT6 — the submit answers FOR REAL in the control plane and leaves t
   const before = await readFromControlPlane(cp, job.id, question.id);
   assert.equal(before.status, 'pendente');
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const submission = await submitForm(screen, `/perguntas/${question.id}/resposta`, {
     resposta: 'Manter 0002',
     respondido_por: 'rafael',
@@ -146,7 +146,7 @@ test('t107 AT6 — a blank answer is refused by the screen, with nothing written
   const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
   const question = await createQuestion(cp, { trabalho_id: job.id, ...FULL_BODY });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const submission = await submitForm(screen, `/perguntas/${question.id}/resposta`, {
     resposta: '   ',
     respondido_por: 'rafael',
@@ -162,7 +162,7 @@ test('t107 AT6 — a blank answer is refused by the screen, with nothing written
 test('t107 AT6 — answering a nonexistent question propagates the control plane 404', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
 
   const submission = await submitForm(screen, '/perguntas/424242/resposta', {
     resposta: 'seja lá o que for',

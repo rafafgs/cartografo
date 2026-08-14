@@ -152,7 +152,7 @@ test('t134 AT6 — the answer field on GET /perguntas has an accessible name', a
   const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
   await createQuestion(cp, { trabalho_id: job.id, ...QUESTION });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const { cards } = await openQueue(screen);
   assert.equal(cards.length, 1);
 
@@ -171,7 +171,7 @@ test('t134 AT6 — the name comes from something that outlives the first keystro
   const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
   await createQuestion(cp, { trabalho_id: job.id, ...QUESTION });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const { cards } = await openQueue(screen);
   const before = accessibleNameOf(cards[0], answerFieldOf(cards[0]));
 
@@ -191,7 +191,7 @@ test('t134 AT6 — every field of the answer form has a name, not just a placeho
   const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
   await createQuestion(cp, { trabalho_id: job.id, ...QUESTION });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const { cards } = await openQueue(screen);
 
   const fields = controlsOf(cards[0]);
@@ -213,7 +213,7 @@ test('t134 AT6 — two pending questions keep one name each', async (t) => {
   await createQuestion(cp, { trabalho_id: job.id, ...QUESTION });
   await createQuestion(cp, { trabalho_id: job.id, pergunta: 'E a outra, renumera?' });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const { html, cards } = await openQueue(screen);
   assert.equal(cards.length, 2, 'both questions are pending');
 

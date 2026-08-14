@@ -52,11 +52,21 @@ test('t107 AT4 — GET /quadro shows jobs grouped by node, with the block reason
     motivo: 'esperando decisão do fundador',
   });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const page = await openPage(screen, '/quadro');
 
   assert.equal(page.status, 200);
   assert.match(page.contentType ?? '', /text\/html/, 'the screen returns HTML, not JSON');
+
+  // t124: the control plane behind this page denies anonymous requests, and the
+  // browser that just rendered it presented none. Both halves of that sentence
+  // are asserted here — the unit-level proxy test proves the header is built,
+  // this one proves the whole real stack still works once it is required.
+  assert.equal(
+    (await fetch(`${cp.url}/v1/jobs`)).status,
+    401,
+    'the real control plane behind the screen requires a credential',
+  );
 
   for (const job of [refining, implementing, stuck]) {
     assert.ok(page.html.includes(job.titulo), `the board does not show the title "${job.titulo}"`);
@@ -124,7 +134,7 @@ test('t107 AT4 — the board escapes HTML coming from the control plane', async 
     no_entrada_id: 'refinar',
   });
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const page = await openPage(screen, '/quadro');
 
   assert.equal(page.status, 200);

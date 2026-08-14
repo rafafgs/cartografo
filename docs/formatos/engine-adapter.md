@@ -7,6 +7,14 @@
 > `packages/runner/src/engine/codex-adapter.ts` (t119), cada um certificado
 > pelos sete casos do kit contra o fake engine.
 >
+> **Lacuna registrada no congelamento (t119):** a prova manual do adapter do
+> Codex contra a CLI real rodou até o 401 — a máquina não tem credencial
+> OpenAI (`codex doctor`: "no Codex credentials were found") — então a metade
+> credenciada dela, a que exige que a sessão *tenha trabalhado*, fica
+> pendente de uma rodada com `OPENAI_API_KEY`. O que a rodada sem credencial
+> já provou está no roteiro de `packages/runner/scripts/spike-real-session-codex.mjs`;
+> o congelamento se apoia na certificação C1–C7, que está verde.
+>
 > O que autoriza o congelamento não é a contagem, é o que a contagem serve
 > para medir: construir o segundo adapter **não exigiu mudança nenhuma** na
 > interface nem no kit. O `CodexAdapter` entrou pela interface como ela

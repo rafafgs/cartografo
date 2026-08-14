@@ -39,6 +39,17 @@
  *   effort (`engine-adapter.md:452-461`), and is why this script keeps going
  *   past a false `authenticated` instead of refusing to start.
  *
+ * **State of this proof as of t119:** run against `codex-cli 0.147.0` WITHOUT a
+ * credential, by the founder's decision not to hold the wave for one. It got as
+ * far as the 401 and, on the way, proved everything that does not need a model:
+ * `verifyCli` finding the real CLI, the `thread.started` frame becoming the
+ * `engineRef`, plain-text runtime errors reaching `onOutput` interleaved with
+ * the JSON frames, a failed turn leaving with exit code 1 and being classified
+ * `failed`, and both events validating against the taxonomy schemas. What is
+ * still pending is the half below the `onFinished` line — that the session
+ * actually WORKED. Whoever has an `OPENAI_API_KEY` closes it by running this
+ * script once, unchanged.
+ *
  * Usage: npm run spike:codex --workspace @cartografo/runner
  */
 

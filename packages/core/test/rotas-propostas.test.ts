@@ -189,13 +189,14 @@ async function criarProposta(
   grafoId: string,
   versaoAlvo: string,
   operacoes: ModuloOperacoes.Operacao[],
+  metricaEsperada: unknown = METRICA_ESPERADA,
 ): Promise<LinhaProposta> {
   const resposta = await postar(endereco, '/v1/propostas', {
     grafo_id: grafoId,
     versao_alvo: versaoAlvo,
     operacoes,
     evidencia: EVIDENCIA,
-    metrica_esperada: METRICA_ESPERADA,
+    metrica_esperada: metricaEsperada,
   });
   const corpo = await corpoJson<{ proposta: LinhaProposta }>(resposta);
   assert.equal(resposta.status, 201, JSON.stringify(corpo));
@@ -562,5 +563,310 @@ test('FR7 — versão-alvo estranha ao grafo e operação malformada devolvem 40
   assert.equal(
     (await postar(endereco, '/v1/propostas/999/reverter', { motivo: 'x' })).status,
     404,
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t112 — hypothesis outcome: the next run closes the proposal                 */
+/*                                                                            */
+/* From here down every new identifier and test name is in English (D18/FR9);  */
+/* the JSON payload keys and the route segments stay in Portuguese, mirroring  */
+/* the API that is already published.                                          */
+/* -------------------------------------------------------------------------- */
+
+/** The shape `proposta.resultado` takes once the experiment is closed (FR5). */
+interface HypothesisOutcome {
+  veredito: string;
+  antes: number;
+  depois: number;
+  execucao_id: number;
+  avaliado_em: string;
+}
+
+/** Changes a node's `papel`, so each proposal produces a distinct snapshot. */
+function roleChange(papel: string): ModuloOperacoes.Operacao[] {
+  return [
+    {
+      tipo: 'alterar_campo_no',
+      no_id: 'redigir',
+      campo: 'papel',
+      de: 'redator',
+      para: papel,
+      inversa: {
+        tipo: 'alterar_campo_no',
+        no_id: 'redigir',
+        campo: 'papel',
+        de: papel,
+        para: 'redator',
+      },
+    },
+  ];
+}
+
+/**
+ * Registers real telemetry under a version, inside an execution.
+ *
+ * This is the evidence FR3 demands: `metricas-por-versao` (t102, FR17) only
+ * sees a version that actually ran because some `trabalho` declared it.
+ */
+async function recordWorkUnderVersion(
+  endereco: string,
+  execucaoId: number,
+  versaoId: string,
+): Promise<void> {
+  const resposta = await postar(endereco, '/v1/trabalhos', {
+    titulo: 'travessia da rodada seguinte',
+    no_entrada_id: 'redigir',
+    execucao_id: execucaoId,
+    grafo_versao_id: versaoId,
+  });
+  assert.equal(resposta.status, 201, 'a telemetria da rodada seguinte precisa existir de verdade');
+}
+
+/** Applies a proposal and returns the version it wrote. */
+async function applyProposal(endereco: string, propostaId: number): Promise<string> {
+  const resposta = await postar(endereco, `/v1/propostas/${propostaId}/aplicar`, {});
+  const corpo = await corpoJson<RespostaAplicacao>(resposta);
+  assert.equal(resposta.status, 200, JSON.stringify(corpo));
+  assert.ok(corpo.proposta.versao_aplicada_id !== null);
+  return corpo.proposta.versao_aplicada_id;
+}
+
+/** The whole prelude of the outcome route: base, applied proposal, telemetry. */
+async function appliedProposalWithTelemetry(
+  t: ContextoDeTeste,
+  opcoes: { execucaoId?: number; metricaEsperada?: unknown } = {},
+): Promise<{
+  endereco: string;
+  grafo: LinhaGrafo;
+  versaoAlvo: string;
+  proposta: LinhaProposta;
+  versaoAplicada: string;
+  execucaoId: number;
+}> {
+  const endereco = await subirApp(t);
+  const execucaoId = opcoes.execucaoId ?? 1;
+
+  const { grafo, versao } = await registrarBase(endereco);
+  const proposta = await criarProposta(
+    endereco,
+    grafo.id,
+    versao.id,
+    operacoesQuePassam(),
+    opcoes.metricaEsperada ?? METRICA_ESPERADA,
+  );
+  const versaoAplicada = await applyProposal(endereco, proposta.id);
+  await recordWorkUnderVersion(endereco, execucaoId, versaoAplicada);
+
+  return { endereco, grafo, versaoAlvo: versao.id, proposta, versaoAplicada, execucaoId };
+}
+
+/** Reads the listing route, with the querystring already assembled. */
+async function listProposals(endereco: string, query = ''): Promise<LinhaProposta[]> {
+  const resposta = await fetch(`${endereco}/v1/propostas${query}`);
+  const corpo = await corpoJson<{ propostas: LinhaProposta[] }>(resposta);
+  assert.equal(resposta.status, 200, JSON.stringify(corpo));
+  return corpo.propostas;
+}
+
+test('AT20 — a metric that moved in the declared direction closes the hypothesis as confirmada', async (t) => {
+  const cenario = await appliedProposalWithTelemetry(t);
+
+  const resposta = await postar(
+    cenario.endereco,
+    `/v1/propostas/${cenario.proposta.id}/resultado`,
+    { execucao_id: cenario.execucaoId, depois: 0.1 },
+  );
+  const corpo = await corpoJson<RespostaAplicacao>(resposta);
+  assert.equal(resposta.status, 200, JSON.stringify(corpo));
+
+  const resultado = corpo.proposta.resultado as HypothesisOutcome;
+  assert.equal(resultado.veredito, 'confirmada');
+  assert.equal(resultado.antes, 0.4, 'o "antes" é o `de` que a proposta declarou');
+  assert.equal(resultado.depois, 0.1);
+  assert.equal(resultado.execucao_id, cenario.execucaoId);
+  assert.equal(typeof resultado.avaliado_em, 'string');
+
+  assert.equal(corpo.proposta.status, 'aplicada', 'fechar o experimento não muda o estado');
+  assert.equal(corpo.proposta.versao_aplicada_id, cenario.versaoAplicada);
+});
+
+test('AT21 — a metric that did not move is sem_efeito', async (t) => {
+  const cenario = await appliedProposalWithTelemetry(t);
+
+  const resposta = await postar(
+    cenario.endereco,
+    `/v1/propostas/${cenario.proposta.id}/resultado`,
+    { execucao_id: cenario.execucaoId, depois: 0.4 },
+  );
+  const corpo = await corpoJson<RespostaAplicacao>(resposta);
+  assert.equal(resposta.status, 200, JSON.stringify(corpo));
+  assert.equal((corpo.proposta.resultado as HypothesisOutcome).veredito, 'sem_efeito');
+  assert.equal(corpo.proposta.status, 'aplicada');
+});
+
+test('AT22 — a metric that moved the wrong way is piorou, and nothing is reverted', async (t) => {
+  const cenario = await appliedProposalWithTelemetry(t);
+
+  const resposta = await postar(
+    cenario.endereco,
+    `/v1/propostas/${cenario.proposta.id}/resultado`,
+    { execucao_id: cenario.execucaoId, depois: 0.9 },
+  );
+  const corpo = await corpoJson<RespostaAplicacao>(resposta);
+  assert.equal(resposta.status, 200, JSON.stringify(corpo));
+  assert.equal((corpo.proposta.resultado as HypothesisOutcome).veredito, 'piorou');
+
+  // "piorou" is data, never an action: reverting stays a human decision.
+  assert.equal(corpo.proposta.status, 'aplicada');
+  assert.equal(corpo.proposta.versao_aplicada_id, cenario.versaoAplicada);
+  const grafo = await pedirGrafo(cenario.endereco, cenario.grafo.id);
+  assert.equal(grafo.versao_corrente_id, cenario.versaoAplicada, 'o ponteiro não pode ter voltado');
+});
+
+test('AT23 — only the first outcome counts; the second call is 409 and changes nothing', async (t) => {
+  const cenario = await appliedProposalWithTelemetry(t);
+  const rota = `/v1/propostas/${cenario.proposta.id}/resultado`;
+
+  const primeira = await postar(cenario.endereco, rota, {
+    execucao_id: cenario.execucaoId,
+    depois: 0.1,
+  });
+  assert.equal(primeira.status, 200);
+  const gravado = (await corpoJson<RespostaAplicacao>(primeira)).proposta
+    .resultado as HypothesisOutcome;
+
+  const segunda = await postar(cenario.endereco, rota, {
+    execucao_id: cenario.execucaoId,
+    depois: 0.9,
+  });
+  assert.equal(segunda.status, 409);
+  assert.equal((await corpoJson<{ erro: string }>(segunda)).erro, 'proposta_ja_avaliada');
+
+  const [depois] = await listProposals(cenario.endereco);
+  assert.deepEqual(depois.resultado, gravado, 'a segunda chamada não pode reescrever o veredito');
+});
+
+test('AT24 — a proposal that is not aplicada cannot have an outcome', async (t) => {
+  const endereco = await subirApp(t);
+  const { grafo, versao } = await registrarBase(endereco);
+  const pendente = await criarProposta(endereco, grafo.id, versao.id, operacoesQuePassam());
+
+  const resposta = await postar(endereco, `/v1/propostas/${pendente.id}/resultado`, {
+    execucao_id: 1,
+    depois: 0.1,
+  });
+  assert.equal(resposta.status, 409);
+  assert.equal((await corpoJson<{ erro: string }>(resposta)).erro, 'proposta_nao_aplicada');
+
+  assert.equal(
+    (await postar(endereco, '/v1/propostas/999/resultado', { execucao_id: 1, depois: 0.1 })).status,
+    404,
+  );
+});
+
+test('AT25 — an execution with no telemetry under the applied version is refused', async (t) => {
+  const cenario = await appliedProposalWithTelemetry(t, { execucaoId: 1 });
+  const rota = `/v1/propostas/${cenario.proposta.id}/resultado`;
+
+  const semTrabalho = await postar(cenario.endereco, rota, { execucao_id: 99, depois: 0.1 });
+  assert.equal(semTrabalho.status, 422);
+  assert.equal((await corpoJson<{ erro: string }>(semTrabalho)).erro, 'execucao_sem_evidencia');
+
+  // Uma execução que rodou, mas sob a versão ANTERIOR, também não é evidência
+  // desta proposta: o join é por versão, não por execução.
+  await recordWorkUnderVersion(cenario.endereco, 2, cenario.versaoAlvo);
+  const outraVersao = await postar(cenario.endereco, rota, { execucao_id: 2, depois: 0.1 });
+  assert.equal(outraVersao.status, 422);
+  assert.equal((await corpoJson<{ erro: string }>(outraVersao)).erro, 'execucao_sem_evidencia');
+
+  const [proposta] = await listProposals(cenario.endereco);
+  assert.equal(proposta.resultado, null, 'nada pode ter sido gravado');
+});
+
+test('AT26 — a proposal whose metrica_esperada has no shape gets no verdict', async (t) => {
+  const cenario = await appliedProposalWithTelemetry(t, {
+    metricaEsperada: { nome: 'retrabalho_por_travessia', de: 0.4, para: 0.1 },
+  });
+
+  const resposta = await postar(
+    cenario.endereco,
+    `/v1/propostas/${cenario.proposta.id}/resultado`,
+    { execucao_id: cenario.execucaoId, depois: 0.1 },
+  );
+  assert.equal(resposta.status, 422);
+  assert.equal((await corpoJson<{ erro: string }>(resposta)).erro, 'metrica_esperada_invalida');
+
+  const [proposta] = await listProposals(cenario.endereco);
+  assert.equal(proposta.resultado, null, 'veredito sobre dado incompleto não se grava');
+});
+
+test('AT27 — the reversal-suggestion queue is a filtered read over the proposals', async (t) => {
+  const endereco = await subirApp(t);
+  const { grafo, versao } = await registrarBase(endereco);
+
+  // A: aplicada e piorou — a fila de sugestão de reversão é exatamente esta.
+  const a = await criarProposta(endereco, grafo.id, versao.id, operacoesQuePassam());
+  const versaoA = await applyProposal(endereco, a.id);
+  await recordWorkUnderVersion(endereco, 1, versaoA);
+  assert.equal(
+    (await postar(endereco, `/v1/propostas/${a.id}/resultado`, { execucao_id: 1, depois: 0.9 }))
+      .status,
+    200,
+  );
+
+  // B: piorou também, mas já foi revertida por decisão humana — sai da fila.
+  const b = await criarProposta(endereco, grafo.id, versaoA, roleChange('red-team'));
+  const versaoB = await applyProposal(endereco, b.id);
+  await recordWorkUnderVersion(endereco, 2, versaoB);
+  assert.equal(
+    (await postar(endereco, `/v1/propostas/${b.id}/resultado`, { execucao_id: 2, depois: 0.9 }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (await postar(endereco, `/v1/propostas/${b.id}/reverter`, { motivo: 'piorou de verdade' }))
+      .status,
+    200,
+  );
+
+  // C: aplicada, mas confirmada — hipótese que deu certo não é sugestão de nada.
+  const c = await criarProposta(endereco, grafo.id, versaoA, roleChange('copidesque'));
+  const versaoC = await applyProposal(endereco, c.id);
+  await recordWorkUnderVersion(endereco, 3, versaoC);
+  assert.equal(
+    (await postar(endereco, `/v1/propostas/${c.id}/resultado`, { execucao_id: 3, depois: 0.1 }))
+      .status,
+    200,
+  );
+
+  // D: pendente, sem resultado nenhum.
+  const d = await criarProposta(endereco, grafo.id, versaoC, roleChange('editor'));
+
+  const fila = await listProposals(endereco, '?status=aplicada&veredito=piorou');
+  assert.deepEqual(
+    fila.map((proposta) => proposta.id),
+    [a.id],
+    'só a proposta que piorou E continua aplicada',
+  );
+
+  const todas = await listProposals(endereco);
+  assert.deepEqual(
+    todas.map((proposta) => proposta.id),
+    [a.id, b.id, c.id, d.id],
+    'sem filtro, todas as propostas em ordem de id',
+  );
+  assert.deepEqual(
+    todas.map((proposta) => proposta.status),
+    ['aplicada', 'revertida', 'aplicada', 'pendente'],
+  );
+
+  assert.deepEqual(
+    (await listProposals(endereco, '?veredito=confirmada')).map((proposta) => proposta.id),
+    [c.id],
+  );
+  assert.deepEqual(
+    (await listProposals(endereco, '?status=pendente')).map((proposta) => proposta.id),
+    [d.id],
   );
 });

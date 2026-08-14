@@ -8,10 +8,11 @@
  * (`notas/2026-08-14-extensao-e-qualidade.md`). A mandatory subcommand would add
  * a word to the most travelled path of the product for nobody's benefit.
  *
- * The other three (`import`, `export`, `status`) are pure HTTP clients of the
- * public API: they open no database, do not import `src/db/**` and have no
- * privilege whatsoever over the screen or the runner (D1, D11). What they know
- * about the control plane fits in `cli/url.ts`.
+ * Every other subcommand — `import`, `export`, `status` and the three steps of
+ * the D4 skill-import gate — is a pure HTTP client of the public API: they open
+ * no database, do not import `src/db/**` and have no privilege whatsoever over
+ * the screen or the runner (D1, D11). What they know about the control plane
+ * fits in `cli/url.ts`.
  *
  * One single exit-code convention:
  *
@@ -26,6 +27,7 @@
 import { DEFAULT_PORT, main } from '../index.ts';
 import { runExport } from './export.ts';
 import { runImport } from './import.ts';
+import { runProposeSkill, runRegisterSkill, runScanSkill } from './skill-import.ts';
 import { runStatus } from './status.ts';
 import { ENV_URL, NetworkError, UsageError, serverDownMessage, resolveBaseUrl } from './url.ts';
 
@@ -42,14 +44,40 @@ subcommands:
                          the same format import accepts back.
   status                 reports the server and the registered projects.
 
+  the D4 skill-import gate, in three steps:
+
+  scan-skill <path>      derives a draft manifest from the SKILL.md of an
+                         already-cloned local checkout. Guesses nothing: what
+                         only a human can write comes out as a placeholder.
+  propose-skill <file>   opens the human approval for a completed manifest and
+                         blocks a job on it. Never auto-approvable.
+  register-skill         sends what the human approved to the registry, which
+                         verifies it again before anything is stored.
+
 options:
   --url <url>            control plane to query (env ${ENV_URL};
                          default http://127.0.0.1:${DEFAULT_PORT})
   --out <path>           (export) output file; default ./<class>.grafo.json
+                         (scan-skill) draft file; default ./<id>.manifest.json
+  --repo <repo>          (scan-skill) source repository, for origem.repo
+  --ref <ref>            (scan-skill) commit or tag — never a branch (D4)
+  --role fazer|portao    (scan-skill) papel of the skill; always explicit
+  --by <name>            (scan-skill) who is importing, for origem.importado_por
+  --job <id>             (register-skill) job the approval was opened on
   --json                 (status) prints the report as a single JSON object
   -h, --help             this text
 
 Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT.`;
+
+/** Subcommands that talk to the control plane over HTTP; `up` is the other one. */
+const API_SUBCOMMANDS = [
+  'import',
+  'export',
+  'status',
+  'scan-skill',
+  'propose-skill',
+  'register-skill',
+];
 
 /** What is left of the command line after taking one option out. */
 interface Extraction {
@@ -119,7 +147,7 @@ async function startControlPlane(): Promise<number> {
 /**
  * Routes one of the subcommands that talk to the API.
  *
- * @param subcommand `import`, `export` or `status`.
+ * @param subcommand Any of `API_SUBCOMMANDS`.
  * @param args Arguments after the subcommand.
  * @param env Environment the default URL comes from.
  * @returns Process exit code.
@@ -147,6 +175,57 @@ async function runApiClient(
     const className = fromOutput.rest[0];
     if (className === undefined) throw new UsageError('export needs the graph class');
     return await runExport({ className, url, output: fromOutput.value });
+  }
+
+  if (subcommand === 'scan-skill') {
+    const fromRepo = extractValue(fromUrl.rest, '--repo');
+    const fromRef = extractValue(fromRepo.rest, '--ref');
+    const fromRole = extractValue(fromRef.rest, '--role');
+    const fromBy = extractValue(fromRole.rest, '--by');
+    const fromOutput = extractValue(fromBy.rest, '--out');
+    requireNothingElse(fromOutput.rest, 1, 'scan-skill');
+
+    const source = fromOutput.rest[0];
+    if (source === undefined) throw new UsageError('scan-skill needs the path of a SKILL.md');
+
+    // None of the four has a default, and none gets one: each is either a field
+    // of `origem` — the provenance D4 makes mandatory — or the `papel` the same
+    // decision refuses to have inferred. A default here would be the tool
+    // deciding something the gate exists to make a person decide.
+    const mandatory = (name: string, value?: string): string => {
+      if (value === undefined) throw new UsageError(`scan-skill needs ${name}`);
+      return value;
+    };
+
+    return await runScanSkill({
+      source,
+      repo: mandatory('--repo', fromRepo.value),
+      ref: mandatory('--ref', fromRef.value),
+      role: mandatory('--role', fromRole.value),
+      by: mandatory('--by', fromBy.value),
+      url,
+      output: fromOutput.value,
+    });
+  }
+
+  if (subcommand === 'propose-skill') {
+    requireNothingElse(fromUrl.rest, 1, 'propose-skill');
+    const manifestPath = fromUrl.rest[0];
+    if (manifestPath === undefined) {
+      throw new UsageError('propose-skill needs the path of a completed manifest file');
+    }
+    return await runProposeSkill({ path: manifestPath, url });
+  }
+
+  if (subcommand === 'register-skill') {
+    const fromJob = extractValue(fromUrl.rest, '--job');
+    requireNothingElse(fromJob.rest, 0, 'register-skill');
+    if (fromJob.value === undefined) throw new UsageError('register-skill needs --job');
+    const jobId = Number(fromJob.value);
+    if (!Number.isInteger(jobId)) {
+      throw new UsageError(`--job has to be an integer (got: "${fromJob.value}")`);
+    }
+    return await runRegisterSkill({ jobId, url });
   }
 
   const fromFlag = extractFlag(fromUrl.rest, '--json');
@@ -178,7 +257,7 @@ export async function runCli(
 
   if (subcommand === 'up') return await startControlPlane();
 
-  if (subcommand !== 'import' && subcommand !== 'export' && subcommand !== 'status') {
+  if (!API_SUBCOMMANDS.includes(subcommand)) {
     process.stderr.write(`cartografo: unknown subcommand: "${subcommand}"\n${USAGE}\n`);
     return 2;
   }

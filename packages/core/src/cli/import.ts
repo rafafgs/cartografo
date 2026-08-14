@@ -11,10 +11,14 @@
  *   (D4), and a graph whose `skill_ref` does not match the manifest next to it
  *   is exactly the case the pin exists to catch.
  *
- * Nothing from `skills/` is persisted: there is no skill registration endpoint
- * (see the factory bundle README, "Convenção de diretório" section). The local
- * check is what can be guaranteed today, and it is better than nothing — but it
- * does not replace registration, which is a future ticket.
+ * Nothing from `skills/` is persisted, and that stays true now that a registry
+ * exists (`POST /v1/skills`, t117): a bundle's manifests are checked here, not
+ * registered. Registration is a gated act with a human signature on it (D4), and
+ * silently registering whatever came inside a bundle would be exactly the gate
+ * the import pipeline (`cartografo scan-skill`/`propose-skill`/`register-skill`)
+ * exists to make unavoidable. What this path guarantees is the pin, and the pin
+ * is computed by the very same `manifestHash` the registry re-verifies with —
+ * that is what `domain/manifest.ts` is for.
  *
  * **Declared limit of the manifest check.** The three checks are those of
  * `scripts/validar-bundle-fabrica.mjs` — a sound graph, a checked manifest, a
@@ -33,34 +37,19 @@
  * does not touch (t127, FR8).
  */
 
-import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { validateGraph } from '../domain/graph.ts';
-import { canonicalize, HASH_PREFIX } from '../domain/hash.ts';
+import {
+  HASH_PATTERN,
+  ID_PATTERN,
+  MANIFEST_FIELDS,
+  MANIFEST_ROLES,
+  VERSION_PATTERN,
+  manifestHash,
+} from '../domain/manifest.ts';
 import { UsageError, requestJson } from './url.ts';
-
-/** Fields every manifest declares (`required` of the t97 schema). */
-const MANIFEST_FIELDS = [
-  'id',
-  'versao',
-  'hash',
-  'papel',
-  'descricao',
-  'entrada',
-  'saida',
-  'pre_condicoes',
-  'checks',
-  'permissoes',
-  'instrucoes',
-  'origem',
-];
-
-const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
-const HASH_PATTERN = /^sha256:[a-f0-9]{64}$/;
-const MANIFEST_ROLES = ['fazer', 'portao'];
 
 /** A problem found in the local check, already carrying the scope that produced it. */
 export interface BundleProblem {
@@ -92,32 +81,6 @@ function readJson(filePath: string): unknown {
   } catch (error) {
     throw new UsageError(`"${filePath}" is not valid JSON — ${(error as Error).message}`);
   }
-}
-
-/**
- * Content hash of a skill manifest, by the procedure of
- * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
- * `{instrucoes, entrada, saida, checks, permissoes}`.
- *
- * It covers only that subset — and not the whole manifest, as the graph version
- * hash does — because catalogue metadata (`id`, `versao`, `descricao`, `origem`)
- * must not invalidate a pin: renaming the skill does not change what it does.
- *
- * @param manifest Already parsed manifest.
- * @returns `sha256:` followed by 64 hex characters.
- */
-export function manifestHash(manifest: Record<string, unknown>): string {
-  const subset = {
-    instrucoes: manifest.instrucoes,
-    entrada: manifest.entrada,
-    saida: manifest.saida,
-    checks: manifest.checks,
-    permissoes: manifest.permissoes,
-  };
-  const digest = createHash('sha256')
-    .update(JSON.stringify(canonicalize(subset)), 'utf8')
-    .digest('hex');
-  return `${HASH_PREFIX}${digest}`;
 }
 
 /** Checks one manifest in isolation; returns the messages of whatever is wrong. */

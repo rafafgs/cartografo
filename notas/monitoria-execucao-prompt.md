@@ -12,10 +12,14 @@ flowpilot. Contexto: o flowpilot vive em `~/flowpilot` (Flask, server :5000,
 UI :5173, banco `~/flowpilot/instance/flowpilot.db`); o projeto cartografo é
 o **id=3**, repo de trabalho `~/cartografo` (decisões do produto em
 `DECISOES.md`, princípios no `README.md`, notas em `notas/` — é a fonte da
-verdade para responder dúvidas de agente). O backlog tem 14 tickets:
-**t96–t99** especificações (prioridade 2), **t100–t108** construção,
-**t109** a PoC (alpha_test, já em to_develop porém **bloqueado de
-propósito**; só desbloquear quando t96–t108 estiverem done).
+verdade para responder dúvidas de agente). O backlog tem duas ondas:
+**onda 1 (a PoC)** — t96–t99 especificações (prioridade 2), t100–t108
+construção (p3), t109 a PoC (alpha_test, já em to_develop porém **bloqueado
+de propósito**; só desbloquear quando t96–t108 estiverem done). **Onda 2
+(pós-PoC, prioridade 4, ranks 15–26)** — t110–t121: marcos "o grafo
+aprende" (t110–t114), "o mapa novo" (t115–t118) e "abertura" (t119–t121).
+**Nenhum ticket da onda 2 é liberado antes de a PoC (t109) ser aceita pelo
+Rafael na régua da D16**; depois disso, liberar por rank, marco a marco.
 
 Passos de armação (uma vez):
 

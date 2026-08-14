@@ -204,7 +204,7 @@ Implementação: [`packages/core/src/dominio/grafo.ts`](../../packages/core/src/
 
 ---
 
-## 5. Os dois fluxos que mexem no ponteiro
+## 5. Os fluxos que mexem no ponteiro — e o que fecha a hipótese
 
 ### Registrar uma linhagem nova
 
@@ -255,6 +255,60 @@ topógrafo, não lixo.
 é a evidência que o topógrafo vai cruzar com a telemetria da versão abandonada.
 Reverter sem dizer por quê perde a metade útil do fato.
 
+### Fechar o experimento
+
+Proposta é hipótese, aprovação é experimento, a telemetria da rodada seguinte é
+o resultado ([`notas/2026-08-14-aprendizado.md`](../../notas/2026-08-14-aprendizado.md)).
+`POST /v1/propostas/:id/resultado` é onde esse ciclo fecha: recebe
+`{execucao_id, depois}` e grava o veredito da hipótese em `proposta.resultado`.
+
+Duas formas até então opacas ficam exigidas **aqui, e só aqui**:
+
+```jsonc
+// proposta.metrica_esperada — o que a hipótese declarou que ia mover
+{ "nome": "retrabalho_por_travessia", "direcao": "cai", "de": 0.4, "para": 0.1 }
+
+// proposta.resultado — o veredito, escrito uma única vez
+{ "veredito": "piorou", "antes": 0.4, "depois": 0.9,
+  "execucao_id": 7, "avaliado_em": "2026-08-14T18:20:31.004Z" }
+```
+
+`POST /v1/propostas` **continua sem validar** `metrica_esperada`: mudar um
+endpoint já publicado é outra ticket, e uma proposta antiga com métrica
+incompleta simplesmente não tem veredito a calcular (`422`).
+
+A regra do veredito, sem faixa de tolerância — comparação numérica estrita:
+
+| Movimento de `depois` em relação a `de` | Veredito |
+|---|---|
+| Igual | `sem_efeito` |
+| Na direção declarada (`cai` → menor; `sobe` → maior) | `confirmada` |
+| Na direção oposta | `piorou` |
+
+A linha de base é `de`, nunca `para`: `para` é a meta que a proposta esperava, e
+julgar contra ela transformaria "andou para o lado certo, menos do que se
+esperava" em fracasso.
+
+Três garantias em volta do cálculo:
+
+- **`depois` é de quem chama.** Não existe motor de métricas nomeadas na v1;
+  quem calcula é o topógrafo (`t110`), que já precisou calcular a mesma métrica
+  para escrever `metrica_esperada` na criação da proposta.
+- **A execução seguinte é demonstrada, não alegada.** `execucao_id` é conferido
+  contra `metricasPorVersao` (`t102`, FR17): sem ao menos um `trabalho` daquela
+  execução registrado sob `versao_aplicada_id`, é `422 execucao_sem_evidencia`.
+  É o join que prova que a versão aplicada realmente rodou.
+- **Só a primeira chamada conta.** Com `resultado` já preenchido, a rota é
+  `409 proposta_ja_avaliada` e nada muda. Reavaliar seria reescrever o passado
+  de uma hipótese.
+
+Fechar o experimento **não muda o status**: uma proposta que piorou continua
+`aplicada`, e esta rota nunca chama a reversão. "Piorou" é dado, não ação — a
+escada de segurança da evolução (README, princípio 5) manda sugerir e passar
+por portão humano, não reverter sozinho. A fila dessas sugestões é uma leitura
+filtrada, `GET /v1/propostas?status=aplicada&veredito=piorou`, e nada além
+disso: notificação ativa, se um dia existir, é decisão de outra ticket.
+
 ### Estados da proposta
 
 ```
@@ -269,6 +323,11 @@ Reverter sem dizer por quê perde a metade útil do fato.
 
 `aprovada`/`rejeitada` como ação humana explícita é do inbox (`t111`); nesta
 camada o único caminho para `rejeitada` é o portão reprovar.
+
+O veredito é ortogonal a este diagrama: ele escreve `resultado` e deixa o estado
+onde estava. `resultado` acumula dois usos que nunca coexistem — o relatório que
+reprovou uma proposta `rejeitada`, ou o veredito da hipótese de uma proposta que
+chegou a ser `aplicada`.
 
 ---
 
@@ -286,8 +345,10 @@ telemetria (`t102`).
 | `GET` | `/v1/grafos/:id/versoes` | A cadeia inteira de versões, inclusive as abandonadas por reversão. |
 | `GET` | `/v1/grafo-versoes/:id` | Uma versão, com o `snapshot` completo. |
 | `POST` | `/v1/propostas` | Cria uma proposta pendente. |
+| `GET` | `/v1/propostas` | Lista as propostas em ordem de `id`; filtros opcionais `status` e `veredito`. |
 | `POST` | `/v1/propostas/:id/aplicar` | Executa o fluxo do §5. |
 | `POST` | `/v1/propostas/:id/reverter` | Move o ponteiro de volta; exige `motivo`. |
+| `POST` | `/v1/propostas/:id/resultado` | Fecha o experimento: grava o veredito da hipótese. Não muda o status. |
 
 Códigos de erro, por rota:
 
@@ -303,7 +364,10 @@ Códigos de erro, por rota:
 | Operação não se aplica ao snapshot | `422` | `operacao_inaplicavel` |
 | Resultado idêntico a uma versão existente | `422` | `versao_sem_efeito` |
 | Reverter sem motivo | `400` | `motivo_obrigatorio` |
-| `evidencia` ou `metrica_esperada` ausente | `400` | `campo_obrigatorio_ausente` |
+| `evidencia` ou `metrica_esperada` ausente; `execucao_id`/`depois` ausente ou não numérico | `400` | `campo_obrigatorio_ausente` |
+| Resultado já gravado por uma execução anterior | `409` | `proposta_ja_avaliada` |
+| `metrica_esperada` sem a forma `{nome, direcao, de, para}` | `422` | `metrica_esperada_invalida` |
+| Nenhum trabalho da execução rodou sob `versao_aplicada_id` | `422` | `execucao_sem_evidencia` |
 | Recurso inexistente | `404` | `grafo_desconhecido` / `grafo_versao_desconhecida` / `proposta_desconhecida` |
 
 O corpo de erro sempre traz `erro` — código estável, legível por máquina — e,
@@ -313,8 +377,10 @@ apontar a regra e o alvo em vez de dizer só "inválido".
 
 Implementação: [`routes/grafos.ts`](../../packages/core/src/routes/grafos.ts),
 [`routes/propostas.ts`](../../packages/core/src/routes/propostas.ts),
-[`repositorios/`](../../packages/core/src/repositorios). Só `src/db/` toca o
-driver do SQLite (D1); repositórios e rotas recebem o banco já aberto.
+[`dominio/hypothesis.ts`](../../packages/core/src/dominio/hypothesis.ts) (o
+veredito, puro) e [`repositorios/`](../../packages/core/src/repositorios). Só
+`src/db/` toca o driver do SQLite (D1); repositórios e rotas recebem o banco já
+aberto.
 
 ---
 
@@ -332,9 +398,11 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 - **Reverter para versão arbitrária**, fora do par `versao_alvo` /
   `versao_aplicada_id` de uma proposta.
 - **Aprovação/rejeição humana** como ação de API (`t111`).
-- **Resultado de hipótese** (`confirmada`/`sem_efeito`/`piorou`): a coluna
-  `proposta.resultado` já existe com a forma que a D15 descreve, mas nenhuma
-  rota desta camada escreve o veredito (`t112`).
+- **Cálculo automático de `depois`** a partir da telemetria, e disparo do
+  veredito "quando a execução termina": não existe motor de métricas nomeadas
+  nem entidade/evento de execução finalizada na v1
+  ([`routes/execucoes.ts`](../../packages/core/src/routes/execucoes.ts)).
+  Fechar o experimento é sempre chamada explícita de API (§5).
 - **Emissão de eventos** `grafo_versao.registrada/.aplicada/.revertida` — o
   `t102` traz a tabela `evento`.
 - **Autenticação** (`t124`).

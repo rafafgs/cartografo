@@ -1,0 +1,20 @@
+{
+  "name": "@cartografo/topografo-custo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Topógrafo de custo: segunda lente de telemetria (tokens e tempo por nó e por versão), cliente comum da API pública (D1, D11).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "tsx": "^4.23.12",
+    "typescript": "^6.0.3"
+  }
+}

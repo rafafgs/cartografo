@@ -22,7 +22,7 @@
  * @property {ActionName} route Last segment of `POST /v1/propostas/:id/<route>`.
  * @property {string} label Button text, in Portuguese, like the rest of the page.
  * @property {boolean} requiresReason Whether a `motivo` is mandatory (FR7).
- * @property {string} reasonLabel Placeholder of the reason field, when there is one.
+ * @property {string} reasonLabel Visible label — and accessible name — of the reason field, when there is one.
  */
 
 /** Everything a row needs to draw a button and fire it. */

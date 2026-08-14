@@ -59,6 +59,16 @@ export function mount(doc, request) {
   }
 
   /**
+   * Serial number behind the id of each reason field.
+   *
+   * Not derived from the proposal id: that value comes from the API, and a
+   * `for`/`id` pair breaks on anything with a space in it. Two rows can have a
+   * field open at the same time and a duplicate id would aim both labels at the
+   * first one, so the counter is per field, not per action.
+   */
+  let fieldCount = 0;
+
+  /**
    * One HTTP call, with failures already turned into a body.
    *
    * The proxy answers `502 control_plane_indisponivel` when the core is down,
@@ -272,9 +282,17 @@ export function mount(doc, request) {
       }
 
       const form = el('span', 'reason');
+
+      // The question is a real <label>, not a placeholder. A placeholder is a
+      // hint: it disappears at the first keystroke, and it is not a name a
+      // screen reader can count on — which leaves the one field on this page
+      // that takes a written justification unable to say what it is for.
+      const fieldId = `reason-${(fieldCount += 1)}`;
+      const label = el('label', 'reason-label', action.reasonLabel);
+      label.htmlFor = fieldId;
       const input = el('input', 'reason-input');
+      input.id = fieldId;
       input.type = 'text';
-      input.placeholder = action.reasonLabel;
       const confirm = el('button', 'action', `Confirmar ${action.label.toLowerCase()}`);
       confirm.type = 'button';
       confirm.disabled = true;
@@ -292,7 +310,7 @@ export function mount(doc, request) {
         message.textContent = '';
       });
 
-      form.append(input, confirm, cancel);
+      form.append(label, input, confirm, cancel);
       fill(controls, form);
       input.focus();
     }

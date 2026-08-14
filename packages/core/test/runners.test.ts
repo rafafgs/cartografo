@@ -1,14 +1,17 @@
 /**
- * Testes de aceite do pareamento de runner (t103, FR2/FR4).
+ * Acceptance tests of runner pairing (t103, FR2/FR4).
  *
- * Registrar runner é a única coisa que um runner faz antes de disputar
- * trabalho, e precisa ser idempotente por construção: um runner que reinicia
- * (crash, deploy, máquina que voltou) se registra de novo com o MESMO id e não
- * pode receber erro nem duplicar linha. É o mesmo espírito de "registros
- * idempotentes na API" da D5.
+ * Registering a runner is the only thing a runner does before disputing a job,
+ * and it has to be idempotent by construction: a runner that restarts (a crash,
+ * a deploy, a machine that came back) registers again with the SAME id and must
+ * receive neither an error nor a duplicated row. It is the same spirit as D5's
+ * "idempotent writes in the API".
  *
- * Autenticação do pareamento é t124 (fora da PoC, D16): aqui o id é declarado
- * pelo próprio runner.
+ * Authenticating the pairing is t124 (out of the PoC, D16): here the id is
+ * declared by the runner itself.
+ *
+ * The response field names stay in Portuguese: they mirror the untouched
+ * migration columns (t127, FR8).
  */
 
 import assert from 'node:assert/strict';
@@ -17,133 +20,133 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import type * as ModuloConnection from '../src/db/connection.ts';
-import type * as ModuloMigrate from '../src/db/migrate.ts';
-import type * as ModuloRunners from '../src/repositorios/runners.ts';
-import type * as ModuloServer from '../src/server.ts';
+import type * as ConnectionModule from '../src/db/connection.ts';
+import type * as MigrateModule from '../src/db/migrate.ts';
+import type * as RunnersModule from '../src/repositories/runners.ts';
+import type * as ServerModule from '../src/server.ts';
 
-const RAIZ_PACOTE = path.resolve(import.meta.dirname, '..');
-const DIR_MIGRACOES = path.join(RAIZ_PACOTE, 'migrations');
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
+const MIGRATIONS_DIR = path.join(PACKAGE_ROOT, 'migrations');
 
-interface ContextoDeTeste {
+interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
 }
 
-interface LinhaRunner {
+interface RunnerRow {
   id: string;
   nome: string | null;
   registrado_em: string;
 }
 
-let cacheConnection: typeof ModuloConnection | null = null;
-let cacheMigrate: typeof ModuloMigrate | null = null;
-let cacheServer: typeof ModuloServer | null = null;
-let cacheRunners: typeof ModuloRunners | null = null;
+let connectionCache: typeof ConnectionModule | null = null;
+let migrateCache: typeof MigrateModule | null = null;
+let serverCache: typeof ServerModule | null = null;
+let runnersCache: typeof RunnersModule | null = null;
 
-async function carregarConnection(): Promise<typeof ModuloConnection> {
-  cacheConnection ??= (await import(
+async function loadConnection(): Promise<typeof ConnectionModule> {
+  connectionCache ??= (await import(
     new URL('../src/db/connection.ts', import.meta.url).href
-  )) as typeof ModuloConnection;
-  return cacheConnection;
+  )) as typeof ConnectionModule;
+  return connectionCache;
 }
 
-async function carregarMigrate(): Promise<typeof ModuloMigrate> {
-  cacheMigrate ??= (await import(
+async function loadMigrate(): Promise<typeof MigrateModule> {
+  migrateCache ??= (await import(
     new URL('../src/db/migrate.ts', import.meta.url).href
-  )) as typeof ModuloMigrate;
-  return cacheMigrate;
+  )) as typeof MigrateModule;
+  return migrateCache;
 }
 
-async function carregarServer(): Promise<typeof ModuloServer> {
-  cacheServer ??= (await import(
+async function loadServer(): Promise<typeof ServerModule> {
+  serverCache ??= (await import(
     new URL('../src/server.ts', import.meta.url).href
-  )) as typeof ModuloServer;
-  return cacheServer;
+  )) as typeof ServerModule;
+  return serverCache;
 }
 
-async function carregarRunners(): Promise<typeof ModuloRunners> {
+async function loadRunners(): Promise<typeof RunnersModule> {
   assert.ok(
-    existsSync(path.join(RAIZ_PACOTE, 'src', 'repositorios', 'runners.ts')),
-    'artefato ainda não existe: packages/core/src/repositorios/runners.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'repositories', 'runners.ts')),
+    'artifact does not exist yet: packages/core/src/repositories/runners.ts',
   );
-  cacheRunners ??= (await import(
-    new URL('../src/repositorios/runners.ts', import.meta.url).href
-  )) as typeof ModuloRunners;
-  return cacheRunners;
+  runnersCache ??= (await import(
+    new URL('../src/repositories/runners.ts', import.meta.url).href
+  )) as typeof RunnersModule;
+  return runnersCache;
 }
 
-/** Control plane efêmero: banco em diretório temporário, porta 0. */
-async function subir(t: ContextoDeTeste): Promise<{
-  endereco: string;
-  db: ModuloConnection.BancoDeDados;
+/** Ephemeral control plane: a database in a temporary directory, port 0. */
+async function start(t: TestHook): Promise<{
+  address: string;
+  db: ConnectionModule.Database;
 }> {
-  const { abrirBanco, aplicarPragmas } = await carregarConnection();
-  const { migrar } = await carregarMigrate();
-  const { criarApp } = await carregarServer();
+  const { openDatabase, applyPragmas } = await loadConnection();
+  const { migrate } = await loadMigrate();
+  const { createApp } = await loadServer();
 
   const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t103-runners-'));
-  const db = abrirBanco(path.join(base, 'cartografo.db'));
-  aplicarPragmas(db);
-  migrar(db, DIR_MIGRACOES);
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  applyPragmas(db);
+  migrate(db, MIGRATIONS_DIR);
 
-  const app = criarApp({ db });
-  const endereco = await app.listen({ port: 0, host: '127.0.0.1' });
+  const app = createApp({ db });
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
   t.after(async () => {
     await app.close();
     db.close();
     rmSync(base, { recursive: true, force: true });
   });
 
-  return { endereco, db };
+  return { address, db };
 }
 
-test('AT1 — POST /v1/runners cria o registro e devolve 201', async (t) => {
-  const { endereco } = await subir(t);
+test('AT1 — POST /v1/runners creates the record and returns 201', async (t) => {
+  const { address } = await start(t);
 
-  const resposta = await fetch(`${endereco}/v1/runners`, {
+  const response = await fetch(`${address}/v1/runners`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ id: 'runner-a', nome: 'laptop do fundador' }),
   });
 
-  assert.equal(resposta.status, 201);
-  const corpo = (await resposta.json()) as { runner: LinhaRunner };
-  assert.equal(corpo.runner.id, 'runner-a');
-  assert.equal(corpo.runner.nome, 'laptop do fundador');
-  assert.equal(typeof corpo.runner.registrado_em, 'string');
+  assert.equal(response.status, 201);
+  const body = (await response.json()) as { runner: RunnerRow };
+  assert.equal(body.runner.id, 'runner-a');
+  assert.equal(body.runner.nome, 'laptop do fundador');
+  assert.equal(typeof body.runner.registrado_em, 'string');
   assert.ok(
-    !Number.isNaN(Date.parse(corpo.runner.registrado_em)),
-    'registrado_em precisa ser um instante ISO 8601',
+    !Number.isNaN(Date.parse(body.runner.registrado_em)),
+    'registrado_em has to be an ISO 8601 instant',
   );
 });
 
-test('AT2 — POST /v1/runners com o mesmo id é idempotente: 200 e uma linha só', async (t) => {
-  const { endereco, db } = await subir(t);
-  const { listarRunners } = await carregarRunners();
+test('AT2 — POST /v1/runners with the same id is idempotent: 200 and a single row', async (t) => {
+  const { address, db } = await start(t);
+  const { listRunners } = await loadRunners();
 
-  const primeira = await fetch(`${endereco}/v1/runners`, {
+  const first = await fetch(`${address}/v1/runners`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ id: 'runner-a', nome: 'nome antigo' }),
   });
-  assert.equal(primeira.status, 201);
+  assert.equal(first.status, 201);
 
-  const segunda = await fetch(`${endereco}/v1/runners`, {
+  const second = await fetch(`${address}/v1/runners`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ id: 'runner-a', nome: 'nome novo' }),
   });
   assert.equal(
-    segunda.status,
+    second.status,
     200,
-    'registrar de novo o mesmo runner é idempotente, não conflito (D5)',
+    'registering the same runner again is idempotent, not a conflict (D5)',
   );
 
-  const corpo = (await segunda.json()) as { runner: LinhaRunner };
-  assert.equal(corpo.runner.id, 'runner-a');
-  assert.equal(corpo.runner.nome, 'nome novo', 'a re-inscrição atualiza o nome enviado');
+  const body = (await second.json()) as { runner: RunnerRow };
+  assert.equal(body.runner.id, 'runner-a');
+  assert.equal(body.runner.nome, 'nome novo', 're-registering updates the name that was sent');
 
-  const registrados = listarRunners(db);
-  assert.equal(registrados.length, 1, 'o segundo registro não pode duplicar a linha');
-  assert.equal(registrados[0].id, 'runner-a');
+  const registered = listRunners(db);
+  assert.equal(registered.length, 1, 'the second registration cannot duplicate the row');
+  assert.equal(registered[0].id, 'runner-a');
 });

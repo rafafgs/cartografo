@@ -14,9 +14,9 @@
  *
  * | Fonte | O que só ela tem |
  * |---|---|
- * | `GET /v1/trabalhos/:id/eventos` | as transições — onde o trabalho esteve |
- * | `GET /v1/sessoes?trabalho_id=` | o FIM das sessões |
- * | `GET /v1/perguntas?trabalho_id=` | o FIM das esperas |
+ * | `GET /v1/jobs/:id/events` | as transições — onde o trabalho esteve |
+ * | `GET /v1/sessions?trabalho_id=` | o FIM das sessões |
+ * | `GET /v1/input-requests?trabalho_id=` | o FIM das esperas |
  *
  * A rota de eventos exclui `sessao.finalizada` e `pergunta.respondida` porque
  * os payloads desses eventos não carregam `trabalho_id` — o vínculo foi

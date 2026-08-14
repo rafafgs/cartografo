@@ -11,7 +11,7 @@
  * `buscar` é injetável só para teste; em produção é o `fetch` global — mesmo
  * padrão de `packages/tela/src/index.ts`.
  *
- * `GET /v1/trabalhos` é entrega do t102, hoje já mergeada, e devolve
+ * `GET /v1/jobs` é entrega do t102, hoje já mergeada, e devolve
  * `{trabalhos: [...]}`. O cliente consome apenas o subconjunto do contrato de
  * que precisa para escolher um candidato — `id` e `bloqueado` — e declara os
  * demais campos só para documentar o que chega; os testes seguem simulando a
@@ -20,9 +20,9 @@
  */
 
 /**
- * Um trabalho, como `GET /v1/trabalhos` (t102) o devolve.
+ * Um trabalho, como `GET /v1/jobs` (t102) o devolve.
  *
- * Subconjunto da projeção de `packages/core/src/repositorios/trabalho.ts`: os
+ * Subconjunto da projeção de `packages/core/src/repositories/job.ts`: os
  * opcionais são anuláveis lá, e são anuláveis aqui pela mesma razão (execução e
  * versão de grafo são soltas, D15).
  */
@@ -143,7 +143,7 @@ export class ClienteControle {
    * @returns Só os trabalhos não bloqueados, na ordem em que o server mandou.
    */
   async listarTrabalhosLiberados(): Promise<Trabalho[]> {
-    const { trabalhos } = await this.#get<{ trabalhos: Trabalho[] }>('/v1/trabalhos');
+    const { trabalhos } = await this.#get<{ trabalhos: Trabalho[] }>('/v1/jobs');
     return trabalhos.filter((trabalho) => trabalho.bloqueado === false);
   }
 
@@ -181,7 +181,7 @@ export class ClienteControle {
    * @returns A lease liberada.
    */
   async liberar(leaseId: number): Promise<Lease> {
-    const { lease } = await this.#post<{ lease: Lease }>(`/v1/leases/${leaseId}/liberacoes`, {});
+    const { lease } = await this.#post<{ lease: Lease }>(`/v1/leases/${leaseId}/releases`, {});
     return lease;
   }
 

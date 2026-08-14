@@ -131,7 +131,7 @@ export async function subirControlPlane(t: GanchoDeTeste): Promise<ControlPlaneN
     const linha = saida
       .split('\n')
       .map((texto) => texto.trim())
-      .find((texto) => texto.startsWith('{') && texto.includes('cartografo.pronto'));
+      .find((texto) => texto.startsWith('{') && texto.includes('cartografo.ready'));
     if (linha !== undefined) return { url: (JSON.parse(linha) as { url: string }).url };
     await esperar(50);
   }
@@ -237,8 +237,8 @@ export async function criarTrabalho(
   cp: ControlPlaneNoAr,
   corpo: Record<string, unknown>,
 ): Promise<Trabalho> {
-  const resposta = await api<Trabalho>(cp, 'POST', '/v1/trabalhos', corpo);
-  assert.equal(resposta.status, 201, `POST /v1/trabalhos devolveu ${resposta.status}`);
+  const resposta = await api<Trabalho>(cp, 'POST', '/v1/jobs', corpo);
+  assert.equal(resposta.status, 201, `POST /v1/jobs devolveu ${resposta.status}`);
   return resposta.corpo;
 }
 
@@ -247,13 +247,13 @@ export async function abrirSessao(
   cp: ControlPlaneNoAr,
   corpo: Record<string, unknown>,
 ): Promise<Sessao> {
-  const resposta = await api<Sessao>(cp, 'POST', '/v1/sessoes', {
+  const resposta = await api<Sessao>(cp, 'POST', '/v1/sessions', {
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'trabalhe',
     ...corpo,
   });
-  assert.equal(resposta.status, 201, `POST /v1/sessoes devolveu ${resposta.status}`);
+  assert.equal(resposta.status, 201, `POST /v1/sessions devolveu ${resposta.status}`);
   return resposta.corpo;
 }
 
@@ -262,12 +262,12 @@ export async function criarPergunta(
   cp: ControlPlaneNoAr,
   corpo: Record<string, unknown>,
 ): Promise<Pergunta> {
-  const resposta = await api<Pergunta>(cp, 'POST', '/v1/perguntas', {
+  const resposta = await api<Pergunta>(cp, 'POST', '/v1/input-requests', {
     tipo: 'pergunta',
     auto_aprovavel: false,
     ...corpo,
   });
-  assert.equal(resposta.status, 201, `POST /v1/perguntas devolveu ${resposta.status}`);
+  assert.equal(resposta.status, 201, `POST /v1/input-requests devolveu ${resposta.status}`);
   return resposta.corpo;
 }
 

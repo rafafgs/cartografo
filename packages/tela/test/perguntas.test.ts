@@ -2,7 +2,7 @@
  * Testes de aceite do inbox de perguntas (t107, FR8/FR9).
  *
  * O ponto central, e o que distingue esta ficha de uma maquete: o submit do
- * formulário faz a ESCRITA DE VERDADE (`PATCH /v1/perguntas/:id/resposta`)
+ * formulário faz a ESCRITA DE VERDADE (`PATCH /v1/input-requests/:id/answer`)
  * contra o control plane real. Por isso a prova não é o HTML que a tela
  * devolve — é uma leitura independente feita direto no control plane, pela API
  * pública, depois do submit. Uma tela que "respondesse" só no seu próprio
@@ -49,7 +49,7 @@ async function lerNoControlPlane(
   const resposta = await api<{ perguntas: Pergunta[] }>(
     cp,
     'GET',
-    `/v1/perguntas?trabalho_id=${trabalhoId}`,
+    `/v1/input-requests?trabalho_id=${trabalhoId}`,
   );
   assert.equal(resposta.status, 200);
   const achada = resposta.corpo.perguntas.find((pergunta) => pergunta.id === perguntaId);
@@ -72,7 +72,7 @@ test('t107 AT6 — GET /perguntas mostra a pergunta inteira, com o que é precis
     trabalho_id: trabalho.id,
     pergunta: 'esta já foi decidida',
   });
-  await api(cp, 'PATCH', `/v1/perguntas/${respondida.id}/resposta`, {
+  await api(cp, 'PATCH', `/v1/input-requests/${respondida.id}/answer`, {
     resposta: 'sim',
     respondido_por: 'rafael',
   });

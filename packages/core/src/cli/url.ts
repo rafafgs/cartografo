@@ -1,125 +1,125 @@
 /**
- * Endereço do control plane, e o acesso HTTP até ele (t108, FR6).
+ * Address of the control plane, and the HTTP access to it (t108, FR6).
  *
- * `import`, `export` e `status` são clientes da API como qualquer outro (D1,
- * D11): falam `/health` e `/v1/*` por HTTP e não abrem banco nenhum. Este
- * módulo é toda a rede que os três conhecem — resolver o endereço e fazer o
- * pedido moram juntos porque são a mesma pergunta ("como eu alcanço o control
- * plane?"), e porque manter o `fetch` em um lugar só é o que garante que erro
- * de conexão sempre vire a MESMA mensagem acionável, em vez de um stack trace
- * de `TypeError: fetch failed` vazando para o usuário.
+ * `import`, `export` and `status` are API clients like any other (D1, D11): they
+ * speak `/health` and `/v1/*` over HTTP and open no database. This module is all
+ * the networking the three of them know — resolving the address and making the
+ * request live together because they are the same question ("how do I reach the
+ * control plane?"), and because keeping `fetch` in a single place is what
+ * guarantees a connection error always becomes the SAME actionable message,
+ * instead of a `TypeError: fetch failed` stack trace leaking to the user.
  *
- * Precedência do endereço: `--url` > `CARTOGRAFO_URL` > `http://127.0.0.1:PORTA`.
- * A porta do default vem de `portaDoServidor` (`src/index.ts`), a mesma função
- * que decide onde a partida escuta — assim `CARTOGRAFO_PORT=5000 cartografo up`
- * em um terminal e `CARTOGRAFO_PORT=5000 cartografo status` em outro se
- * encontram sem ninguém precisar repetir `--url`.
+ * Address precedence: `--url` > `CARTOGRAFO_URL` > `http://127.0.0.1:PORT`.
+ * The default port comes from `serverPort` (`src/index.ts`), the same function
+ * that decides where the startup listens — so `CARTOGRAFO_PORT=5000 cartografo up`
+ * in one terminal and `CARTOGRAFO_PORT=5000 cartografo status` in another find
+ * each other without anyone having to repeat `--url`.
  */
 
-import { HOST_PADRAO, portaDoServidor } from '../index.ts';
+import { DEFAULT_HOST, serverPort } from '../index.ts';
 
-/** Variável de ambiente que sobrescreve a URL base do control plane. */
+/** Environment variable that overrides the control plane's base URL. */
 export const ENV_URL = 'CARTOGRAFO_URL';
 
-/** Falha em ALCANÇAR o control plane — distinta de uma resposta de erro dele. */
-export class ErroDeRede extends Error {
+/** Failure to REACH the control plane — distinct from an error response from it. */
+export class NetworkError extends Error {
   readonly url: string;
 
-  constructor(url: string, causa: unknown) {
-    super(`não deu para falar com o control plane em ${url}`, { cause: causa });
-    this.name = 'ErroDeRede';
+  constructor(url: string, cause: unknown) {
+    super(`could not talk to the control plane at ${url}`, { cause });
+    this.name = 'NetworkError';
     this.url = url;
   }
 }
 
-/** Uso do comando errado — o chamador vira mensagem, nunca stack trace. */
-export class ErroDeUso extends Error {
-  constructor(mensagem: string) {
-    super(mensagem);
-    this.name = 'ErroDeUso';
+/** Wrong use of the command — the caller turns it into a message, never a stack trace. */
+export class UsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UsageError';
   }
 }
 
 /**
- * A mensagem de servidor fora do ar. Sempre esta, e sempre com o que fazer a
- * seguir: quem roda `import` num terminal limpo não erra por falta de servidor,
- * erra por não saber que precisava subir um.
+ * The server-is-down message. Always this one, and always with what to do next:
+ * whoever runs `import` in a clean terminal does not fail for lack of a server,
+ * they fail for not knowing they needed to start one.
  *
- * @param url Endereço que não respondeu.
- * @returns Linha única para stderr.
+ * @param url Address that did not answer.
+ * @returns A single line for stderr.
  */
-export function mensagemDeServidorFora(url: string): string {
-  return `cartografo: não deu para falar com o control plane em ${url} — rode \`cartografo up\` primeiro (ou aponte outro endereço com --url)`;
+export function serverDownMessage(url: string): string {
+  return `cartografo: could not talk to the control plane at ${url} — run \`cartografo up\` first (or point somewhere else with --url)`;
 }
 
 /**
- * Resolve a URL base do control plane.
+ * Resolves the control plane's base URL.
  *
- * @param opcao Valor de `--url`, quando veio na linha de comando.
- * @param env Ambiente de onde ler `CARTOGRAFO_URL` e `CARTOGRAFO_PORT`.
- * @returns URL base sem barra final.
+ * @param option Value of `--url`, when it came on the command line.
+ * @param env Environment to read `CARTOGRAFO_URL` and `CARTOGRAFO_PORT` from.
+ * @returns Base URL with no trailing slash.
  */
-export function resolverUrlBase(opcao?: string, env: NodeJS.ProcessEnv = process.env): string {
-  const doAmbiente = env[ENV_URL]?.trim();
-  const escolhida =
-    opcao !== undefined && opcao.trim() !== ''
-      ? opcao.trim()
-      : doAmbiente !== undefined && doAmbiente !== ''
-        ? doAmbiente
-        : `http://${HOST_PADRAO}:${portaDoServidor(env)}`;
+export function resolveBaseUrl(option?: string, env: NodeJS.ProcessEnv = process.env): string {
+  const fromEnv = env[ENV_URL]?.trim();
+  const chosen =
+    option !== undefined && option.trim() !== ''
+      ? option.trim()
+      : fromEnv !== undefined && fromEnv !== ''
+        ? fromEnv
+        : `http://${DEFAULT_HOST}:${serverPort(env)}`;
 
-  let analisada: URL;
+  let parsed: URL;
   try {
-    analisada = new URL(escolhida);
+    parsed = new URL(chosen);
   } catch {
-    throw new ErroDeUso(`URL inválida: "${escolhida}" (esperado algo como http://127.0.0.1:4317)`);
+    throw new UsageError(`invalid URL: "${chosen}" (expected something like http://127.0.0.1:4317)`);
   }
-  if (analisada.protocol !== 'http:' && analisada.protocol !== 'https:') {
-    throw new ErroDeUso(`URL precisa ser http ou https: "${escolhida}"`);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new UsageError(`the URL has to be http or https: "${chosen}"`);
   }
 
-  return escolhida.replace(/\/+$/, '');
+  return chosen.replace(/\/+$/, '');
 }
 
-/** Resposta já lida: status e corpo parseado (texto cru, se não for JSON). */
-export interface RespostaHttp {
+/** A response already read: status and parsed body (raw text, if it is not JSON). */
+export interface HttpResponse {
   status: number;
-  corpo: unknown;
+  body: unknown;
 }
 
 /**
- * Faz um pedido e lê a resposta inteira.
+ * Makes a request and reads the whole response.
  *
- * Não lança por status de erro — 404 e 422 são resposta, não exceção, e cada
- * subcomando decide o que fazer com o corpo. Só falha em não alcançar o
- * servidor, e aí sempre com `ErroDeRede`.
+ * Does not throw on an error status — 404 and 422 are answers, not exceptions,
+ * and each subcommand decides what to do with the body. It only fails on not
+ * reaching the server, and then always with `NetworkError`.
  *
- * @param url URL completa.
- * @param opcoes Método e corpo JSON, quando houver.
- * @returns Status e corpo já parseado.
+ * @param url Full URL.
+ * @param options Method and JSON body, when there is one.
+ * @returns Status and already parsed body.
  */
-export async function pedirJson(
+export async function requestJson(
   url: string,
-  opcoes: { metodo?: string; corpo?: unknown } = {},
-): Promise<RespostaHttp> {
-  const temCorpo = opcoes.corpo !== undefined;
-  let resposta: Response;
-  let texto: string;
+  options: { method?: string; body?: unknown } = {},
+): Promise<HttpResponse> {
+  const hasBody = options.body !== undefined;
+  let response: Response;
+  let text: string;
   try {
-    resposta = await fetch(url, {
-      method: opcoes.metodo ?? 'GET',
-      headers: temCorpo ? { 'content-type': 'application/json' } : undefined,
-      body: temCorpo ? JSON.stringify(opcoes.corpo) : undefined,
+    response = await fetch(url, {
+      method: options.method ?? 'GET',
+      headers: hasBody ? { 'content-type': 'application/json' } : undefined,
+      body: hasBody ? JSON.stringify(options.body) : undefined,
     });
-    texto = await resposta.text();
-  } catch (causa) {
-    throw new ErroDeRede(url, causa);
+    text = await response.text();
+  } catch (cause) {
+    throw new NetworkError(url, cause);
   }
 
-  if (texto === '') return { status: resposta.status, corpo: undefined };
+  if (text === '') return { status: response.status, body: undefined };
   try {
-    return { status: resposta.status, corpo: JSON.parse(texto) };
+    return { status: response.status, body: JSON.parse(text) };
   } catch {
-    return { status: resposta.status, corpo: texto };
+    return { status: response.status, body: text };
   }
 }

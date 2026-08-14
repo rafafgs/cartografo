@@ -1,96 +1,104 @@
 /**
- * Rotas de lease (t103, FR5–FR9) — a fila de despacho da D5, vista do server.
+ * Lease routes (t103, FR5–FR9) — D5's dispatch queue, seen from the server.
  *
- * Quatro verbos cobrem o ciclo inteiro: pedir, bater heartbeat, liberar e olhar.
- * O ciclo de vida é o mesmo em todos os caminhos — `ativa` → `liberada` (o dono
- * terminou) ou `ativa` → `expirada` (o dono calou) — e nenhuma linha some.
+ * Four verbs cover the whole cycle: ask, beat a heartbeat, release and look. The
+ * life cycle is the same on every path — `ativa` → `liberada` (the owner
+ * finished) or `ativa` → `expirada` (the owner went quiet) — and no row
+ * disappears.
  *
- * Duas escolhas de contrato que valem explicar:
+ * Two contract choices worth explaining:
  *
- * - **Recusa não é erro.** Teto batido e trabalho já com dono devolvem `200`
- *   com `{lease: null, motivo}`, não `409`. Do ponto de vista do runner isso é
- *   "agora não, tenta o próximo", e é o caso comum de um pool saudável — não a
- *   exceção. Erro fica para o que é erro: corpo inválido (`400`), runner
- *   desconhecido (`404`), heartbeat/liberação sobre lease que não está mais
- *   ativa (`409`).
- * - **Reconciliar é parte de pedir**, nunca uma varredura à parte (FR9): quem
- *   pede trabalho é quem descobre que uma lease morreu, na mesma transação em
- *   que a substitui. Uma rota de varredura independente só faz sentido quando
- *   houver consumidor concreto (a tela, um projeto com runners todos ociosos).
+ * - **A refusal is not an error.** A cap reached and a job that already has an
+ *   owner return `200` with `{lease: null, motivo}`, not `409`. From the
+ *   runner's point of view that is "not now, try the next one", and it is the
+ *   common case of a healthy pool — not the exception. Errors are left for what
+ *   is an error: an invalid body (`400`), an unknown runner (`404`), a
+ *   heartbeat/release over a lease that is no longer active (`409`).
+ * - **Reconciling is part of asking**, never a separate sweep (FR9): whoever
+ *   asks for work is whoever discovers that a lease died, in the same
+ *   transaction that replaces it. An independent sweep route only makes sense
+ *   once there is a concrete consumer (the screen, a project whose runners are
+ *   all idle).
  *
- * `trabalho_id` é inteiro opaco aqui: a tabela `trabalho` é do t102 e esta rota
- * não a lê. Quem filtra elegibilidade é o controller, por `GET /v1/trabalhos`.
+ * `trabalho_id` is an opaque integer here: the `trabalho` table belongs to t102
+ * and this route does not read it. Whoever filters eligibility is the
+ * controller, through `GET /v1/jobs`.
+ *
+ * The request/response field names and the status/reason values stay in
+ * Portuguese: they mirror the untouched migration columns and are the wire shape
+ * the runner parses (t127, FR8).
  */
 
 import type { FastifyInstance } from 'fastify';
 
-import type { BancoDeDados } from '../db/connection.ts';
+import type { Database } from '../db/connection.ts';
 import {
-  buscarLease,
-  concederLease,
-  liberarLease,
-  listarLeases,
-  renovarLease,
-  type FiltrosDeLease,
-  type StatusDeLease,
-} from '../repositorios/leases.ts';
-import { buscarRunner } from '../repositorios/runners.ts';
+  getLease,
+  grantLease,
+  releaseLease,
+  listLeases,
+  renewLease,
+  type LeaseFilters,
+  type LeaseStatus,
+} from '../repositories/leases.ts';
+import { getRunner } from '../repositories/runners.ts';
 
-interface ParametroId {
+interface IdParam {
   Params: { id: string };
 }
 
-interface ConsultaDeLista {
+interface ListQuery {
   Querystring: { projeto_id?: string; runner_id?: string; status?: string };
 }
 
-const STATUS_VALIDOS: StatusDeLease[] = ['ativa', 'liberada', 'expirada'];
+const VALID_STATUSES: LeaseStatus[] = ['ativa', 'liberada', 'expirada'];
 
-function ehObjeto(valor: unknown): valor is Record<string, unknown> {
-  return typeof valor === 'object' && valor !== null && !Array.isArray(valor);
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function ehInteiro(valor: unknown): valor is number {
-  return typeof valor === 'number' && Number.isInteger(valor);
+function isInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value);
 }
 
-/** Resolve o `:id` da rota; id não numérico é 404, não 500. */
-function idDaRota(bruto: string): number | undefined {
-  const numero = Number(bruto);
-  return Number.isInteger(numero) ? numero : undefined;
+/** Resolves the route's `:id`; a non-numeric id is a 404, not a 500. */
+function routeId(raw: string): number | undefined {
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) ? parsed : undefined;
 }
 
 /**
- * Registra as rotas de lease no escopo recebido (já com o prefixo /v1).
+ * Registers the lease routes in the given scope (already carrying the /v1 prefix).
  *
- * @param app Escopo do Fastify.
- * @param db Banco já aberto; as rotas nunca abrem o seu (D1).
- * @param opcoes Relógio injetável, repassado aos repositórios. Em produção fica
- *   vazio; existe para os testes de expiração controlarem o tempo sem `sleep`.
+ * @param app Fastify scope.
+ * @param db Already open database; the routes never open their own (D1).
+ * @param options Injectable clock, passed on to the repositories. In production
+ *   it is empty; it exists so the expiration tests can control time without a
+ *   `sleep`.
  */
-export function registrarLeases(
+export function registerLeases(
   app: FastifyInstance,
-  db: BancoDeDados,
-  opcoes: { agora?: () => string } = {},
+  db: Database,
+  options: { now?: () => string } = {},
 ): void {
-  app.post('/leases', async (requisicao, resposta) => {
-    const corpo = ehObjeto(requisicao.body) ? requisicao.body : {};
+  app.post('/leases', async (request, reply) => {
+    const body = isObject(request.body) ? request.body : {};
 
-    const runnerId = corpo.runner_id;
+    const runnerId = body.runner_id;
     if (typeof runnerId !== 'string' || runnerId.trim() === '') {
-      resposta.code(400);
+      reply.code(400);
       return { erro: 'corpo_invalido', campo: 'runner_id' };
     }
 
-    for (const campo of ['projeto_id', 'trabalho_id', 'teto_runner', 'teto_projeto'] as const) {
-      if (!ehInteiro(corpo[campo])) {
-        resposta.code(400);
-        return { erro: 'corpo_invalido', campo, mensagem: `${campo} precisa ser inteiro` };
+    for (const field of ['projeto_id', 'trabalho_id', 'teto_runner', 'teto_projeto'] as const) {
+      if (!isInteger(body[field])) {
+        reply.code(400);
+        return { erro: 'corpo_invalido', campo: field, mensagem: `${field} precisa ser inteiro` };
       }
     }
 
-    if (!ehInteiro(corpo.ttl_segundos) || corpo.ttl_segundos <= 0) {
-      resposta.code(400);
+    if (!isInteger(body.ttl_segundos) || body.ttl_segundos <= 0) {
+      reply.code(400);
       return {
         erro: 'corpo_invalido',
         campo: 'ttl_segundos',
@@ -98,42 +106,42 @@ export function registrarLeases(
       };
     }
 
-    // Lease é direito de um runner pareado. Um id desconhecido não é recusa de
-    // capacidade — é um runner que não existe para o control plane.
-    if (buscarRunner(db, runnerId) === undefined) {
-      resposta.code(404);
+    // A lease is the right of a paired runner. An unknown id is not a capacity
+    // refusal — it is a runner that does not exist for the control plane.
+    if (getRunner(db, runnerId) === undefined) {
+      reply.code(404);
       return { erro: 'runner_desconhecido', runner_id: runnerId };
     }
 
-    const resultado = concederLease(
+    const result = grantLease(
       db,
       {
         runner_id: runnerId,
-        projeto_id: corpo.projeto_id as number,
-        trabalho_id: corpo.trabalho_id as number,
-        teto_runner: corpo.teto_runner as number,
-        teto_projeto: corpo.teto_projeto as number,
-        ttl_segundos: corpo.ttl_segundos,
+        projeto_id: body.projeto_id as number,
+        trabalho_id: body.trabalho_id as number,
+        teto_runner: body.teto_runner as number,
+        teto_projeto: body.teto_projeto as number,
+        ttl_segundos: body.ttl_segundos,
       },
-      opcoes,
+      options,
     );
 
-    if (resultado.lease === null) return resultado;
+    if (result.lease === null) return result;
 
-    resposta.code(201);
-    return { lease: resultado.lease };
+    reply.code(201);
+    return { lease: result.lease };
   });
 
-  app.post<ParametroId>('/leases/:id/heartbeats', async (requisicao, resposta) => {
-    const id = idDaRota(requisicao.params.id);
-    const lease = id === undefined ? undefined : buscarLease(db, id);
+  app.post<IdParam>('/leases/:id/heartbeats', async (request, reply) => {
+    const id = routeId(request.params.id);
+    const lease = id === undefined ? undefined : getLease(db, id);
     if (lease === undefined) {
-      resposta.code(404);
-      return { erro: 'lease_desconhecida', id: requisicao.params.id };
+      reply.code(404);
+      return { erro: 'lease_desconhecida', id: request.params.id };
     }
 
     if (lease.status !== 'ativa') {
-      resposta.code(409);
+      reply.code(409);
       return {
         erro: 'lease_nao_ativa',
         mensagem: `só lease ativa recebe heartbeat; esta está "${lease.status}"`,
@@ -141,26 +149,26 @@ export function registrarLeases(
       };
     }
 
-    const corpo = ehObjeto(requisicao.body) ? requisicao.body : {};
-    const ttl = corpo.ttl_segundos;
-    if (ttl !== undefined && (!ehInteiro(ttl) || ttl <= 0)) {
-      resposta.code(400);
+    const body = isObject(request.body) ? request.body : {};
+    const ttl = body.ttl_segundos;
+    if (ttl !== undefined && (!isInteger(ttl) || ttl <= 0)) {
+      reply.code(400);
       return { erro: 'corpo_invalido', campo: 'ttl_segundos' };
     }
 
-    return { lease: renovarLease(db, { id: lease.id, ttl_segundos: ttl }, opcoes) };
+    return { lease: renewLease(db, { id: lease.id, ttl_segundos: ttl }, options) };
   });
 
-  app.post<ParametroId>('/leases/:id/liberacoes', async (requisicao, resposta) => {
-    const id = idDaRota(requisicao.params.id);
-    const lease = id === undefined ? undefined : buscarLease(db, id);
+  app.post<IdParam>('/leases/:id/releases', async (request, reply) => {
+    const id = routeId(request.params.id);
+    const lease = id === undefined ? undefined : getLease(db, id);
     if (lease === undefined) {
-      resposta.code(404);
-      return { erro: 'lease_desconhecida', id: requisicao.params.id };
+      reply.code(404);
+      return { erro: 'lease_desconhecida', id: request.params.id };
     }
 
     if (lease.status !== 'ativa') {
-      resposta.code(409);
+      reply.code(409);
       return {
         erro: 'lease_nao_ativa',
         mensagem: `só lease ativa pode ser liberada; esta está "${lease.status}"`,
@@ -168,32 +176,32 @@ export function registrarLeases(
       };
     }
 
-    return { lease: liberarLease(db, lease.id, opcoes) };
+    return { lease: releaseLease(db, lease.id, options) };
   });
 
-  app.get<ConsultaDeLista>('/leases', async (requisicao, resposta) => {
-    const { projeto_id: projeto, runner_id: runner, status } = requisicao.query;
-    const filtros: FiltrosDeLease = {};
+  app.get<ListQuery>('/leases', async (request, reply) => {
+    const { projeto_id: project, runner_id: runner, status } = request.query;
+    const filters: LeaseFilters = {};
 
-    if (projeto !== undefined) {
-      const numero = Number(projeto);
-      if (!Number.isInteger(numero)) {
-        resposta.code(400);
+    if (project !== undefined) {
+      const parsed = Number(project);
+      if (!Number.isInteger(parsed)) {
+        reply.code(400);
         return { erro: 'filtro_invalido', campo: 'projeto_id' };
       }
-      filtros.projeto_id = numero;
+      filters.projeto_id = parsed;
     }
 
-    if (runner !== undefined) filtros.runner_id = runner;
+    if (runner !== undefined) filters.runner_id = runner;
 
     if (status !== undefined) {
-      if (!STATUS_VALIDOS.includes(status as StatusDeLease)) {
-        resposta.code(400);
-        return { erro: 'filtro_invalido', campo: 'status', esperado: STATUS_VALIDOS };
+      if (!VALID_STATUSES.includes(status as LeaseStatus)) {
+        reply.code(400);
+        return { erro: 'filtro_invalido', campo: 'status', esperado: VALID_STATUSES };
       }
-      filtros.status = status as StatusDeLease;
+      filters.status = status as LeaseStatus;
     }
 
-    return { leases: listarLeases(db, filtros) };
+    return { leases: listLeases(db, filters) };
   });
 }

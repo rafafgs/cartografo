@@ -53,13 +53,17 @@ E, para ver o que está acontecendo:
 npx cartografo-tela                                     # http://127.0.0.1:4318
 ```
 
-A tela mínima de observabilidade (D11): o quadro de trabalhos agrupado por nó,
+Um comando, as duas metades da tela que a D11 pede. Em `/`, o **inbox de
+propostas**: o diff semântico, a evidência e as quatro decisões
+([`docs/spec/tela-inbox-propostas.md`](docs/spec/tela-inbox-propostas.md)). Em
+`/quadro`, a **observabilidade mínima**: o quadro de trabalhos agrupado por nó,
 as execuções, as sessões, a fila de perguntas pendentes — com resposta inline,
 que escreve de verdade na API — e a linha do tempo de qualquer trabalho,
-separada em fila, agente trabalhando e esperando humano. Ela é um cliente comum
-da API pública, sem privilégio nenhum sobre o control plane: outro processo,
-outra porta, nenhum acesso ao banco. Contrato em
-[`docs/spec/tela.md`](docs/spec/tela.md).
+separada em fila, agente trabalhando e esperando humano
+([`docs/spec/tela.md`](docs/spec/tela.md)).
+
+As duas são cliente comum da API pública, sem privilégio nenhum sobre o control
+plane: outro processo, outra porta, nenhum acesso ao banco.
 
 Configuração: `CARTOGRAFO_PORT` e `CARTOGRAFO_DB_PATH` na partida;
 `CARTOGRAFO_URL` (ou `--url`) para apontar os outros subcomandos — e a tela — a

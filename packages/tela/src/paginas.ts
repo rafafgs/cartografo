@@ -95,9 +95,10 @@ function layout(titulo: string, corpo: string): string {
 <header class="topo">
   <h1>cartografo</h1>
   <nav>
-    <a href="/">quadro</a>
+    <a href="/quadro">quadro</a>
     <a href="/execucoes">execuções</a>
     <a href="/perguntas">perguntas</a>
+    <a href="/">propostas</a>
   </nav>
 </header>
 ${corpo}
@@ -204,7 +205,7 @@ function resumoDePergunta(pergunta: Pergunta): string {
  * A pergunta com o formulário inline.
  *
  * O card carrega TUDO o que a API guardou — contexto, opções, recomendação e
- * resposta padrão — porque o critério é o mesmo de `GET /v1/perguntas`: quem
+ * resposta padrão — porque o critério é o mesmo de `GET /v1/input-requests`: quem
  * responde tem que conseguir decidir sem abrir o repositório.
  */
 function cartaoDePergunta(pergunta: Pergunta): string {
@@ -336,7 +337,7 @@ export async function paginaExecucoes(cliente: ClienteApi): Promise<Pagina> {
  *
  * Execução é agrupador opaco, não entidade: uma rodada sem nada responde 200
  * com página vazia, nunca 404 — é a mesma leitura que o control plane já faz em
- * `GET /v1/execucoes/:id/metricas-por-versao`.
+ * `GET /v1/executions/:id/metrics-by-version`.
  *
  * @param cliente Cliente da API pública.
  * @param execucaoId Id da execução.
@@ -457,7 +458,7 @@ export function paginaDeErro(status: number, titulo: string, detalhe: string): P
     status,
     html: layout(
       titulo,
-      `<h2>${escapar(titulo)}</h2>\n<p>${escapar(detalhe)}</p>\n<p><a href="/">voltar ao quadro</a></p>`,
+      `<h2>${escapar(titulo)}</h2>\n<p>${escapar(detalhe)}</p>\n<p><a href="/quadro">voltar ao quadro</a></p>`,
     ),
   };
 }

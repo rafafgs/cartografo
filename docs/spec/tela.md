@@ -29,12 +29,12 @@ roda no `npm run lint`, e travada por
 
 | Rota | O que mostra | O que lê da API |
 |---|---|---|
-| `GET /` | O quadro: todos os trabalhos, agrupados por `no_atual`, com o motivo do bloqueio quando há. | `GET /v1/trabalhos` |
-| `GET /execucoes` | Uma linha por execução, com trabalhos, bloqueados e perguntas pendentes. | `GET /v1/execucoes` |
-| `GET /execucoes/:id` | O recorte de uma rodada: quadro, sessões e perguntas pendentes na mesma página. | `GET /v1/trabalhos?execucao_id=`, `GET /v1/sessoes?execucao_id=`, `GET /v1/perguntas?status=pendente&execucao_id=` |
-| `GET /perguntas` | A fila de escalação, cada pergunta inteira e com formulário inline. | `GET /v1/perguntas?status=pendente` |
-| `POST /perguntas/:id/resposta` | Nada: escreve e redireciona (303) para `/perguntas`. | `PATCH /v1/perguntas/:id/resposta` |
-| `GET /trabalhos/:id` | A linha do tempo do trabalho, em três baldes, mais os totais. | `GET /v1/trabalhos/:id`, `GET /v1/trabalhos/:id/eventos`, `GET /v1/sessoes?trabalho_id=`, `GET /v1/perguntas?trabalho_id=` |
+| `GET /quadro` | O quadro: todos os trabalhos, agrupados por `no_atual`, com o motivo do bloqueio quando há. | `GET /v1/jobs` |
+| `GET /execucoes` | Uma linha por execução, com trabalhos, bloqueados e perguntas pendentes. | `GET /v1/executions` |
+| `GET /execucoes/:id` | O recorte de uma rodada: quadro, sessões e perguntas pendentes na mesma página. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
+| `GET /perguntas` | A fila de escalação, cada pergunta inteira e com formulário inline. | `GET /v1/input-requests?status=pendente` |
+| `POST /perguntas/:id/resposta` | Nada: escreve e redireciona (303) para `/perguntas`. | `PATCH /v1/input-requests/:id/answer` |
+| `GET /trabalhos/:id` | A linha do tempo do trabalho, em três baldes, mais os totais. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
 
 Cada view renderiza **no request**. Não há polling, websocket nem
 auto-refresh: recarregar a página é a atualização, e o estado da tela é sempre
@@ -43,8 +43,33 @@ o estado que a API acabou de contar.
 **Execução não é entidade.** `execucao_id` é agrupador opaco (não existe tabela
 `execucao` na v1), então `/execucoes/99` sem nada dentro responde **200 com
 página vazia**, nunca 404 — mesma leitura que o control plane já faz em
-`GET /v1/execucoes/:id/metricas-por-versao`. Trabalho, esse sim, é entidade:
+`GET /v1/executions/:id/metrics-by-version`. Trabalho, esse sim, é entidade:
 `/trabalhos/424242` responde **404**.
+
+### O pacote tem duas metades, e uma porta só
+
+A D11 pede duas coisas da tela: observabilidade e inbox. Elas chegaram em
+fichas diferentes — esta e a `t111` — e dividem o mesmo pacote, o mesmo
+processo e a mesma porta. Um handler só
+([`packages/tela/src/servidor.ts`](../../packages/tela/src/servidor.ts)) decide
+entre elas, nesta ordem:
+
+| Caminho | Quem responde |
+|---|---|
+| `/v1/*` | Proxy **verbatim** para o control plane, para o inbox poder falar same-origin (§1 de [`tela-inbox-propostas.md`](tela-inbox-propostas.md)). |
+| Arquivo de `src/public/` — `/`, `/inbox.js`, `/style.css`, … | O inbox de propostas: página estática e módulos ES nativos. |
+| Qualquer outro | As seis rotas desta especificação, renderizadas no servidor. |
+
+A ordem é o contrato. O estático vem antes do render porque `resolveStaticFile`
+só devolve caminho para extensão conhecida, e é justamente o `null` dele que
+entrega `/execucoes` e `/trabalhos/7` às views em vez de 404-á-los como arquivo
+faltando.
+
+**Por que o quadro é `/quadro` e não `/`.** A raiz já era o `index.html` do
+inbox quando esta metade chegou, e trocar isso quebraria os testes de aceite da
+`t111` sem ganho funcional: as duas metades se alcançam pela navegação, que
+ambas as páginas trazem no topo. É layout, não fronteira — mudar de ideia custa
+uma linha em cada lado.
 
 ---
 
@@ -82,16 +107,16 @@ Quatro regras fecham a definição:
 
 ### Por que três fontes, e não uma
 
-Porque `GET /v1/trabalhos/:id/eventos` **exclui de propósito**
+Porque `GET /v1/jobs/:id/events` **exclui de propósito**
 `sessao.finalizada`, `pergunta.respondida` e `pergunta.auto_resolvida`: os
 payloads desses eventos não carregam `trabalho_id` — o vínculo foi declarado na
 abertura, e repeti-lo seria dado duplicado no log
-([`packages/core/src/db/eventos.ts`](../../packages/core/src/db/eventos.ts)).
+([`packages/core/src/db/events.ts`](../../packages/core/src/db/events.ts)).
 "Quem quer o fim da sessão pergunta pela sessão", diz o comentário de lá. Esta
 tela é o primeiro consumidor a fazer essa pergunta, e por isso é esta ficha que
 abriu por onde fazê-la (§4).
 
-O cabeçalho da página vem de uma quarta leitura, `GET /v1/trabalhos/:id`, e não
+O cabeçalho da página vem de uma quarta leitura, `GET /v1/jobs/:id`, e não
 do log: `trabalho.emendado` grava só o **nome** do campo alterado, de modo que
 reconstruir o título a partir dos eventos daria o título antigo.
 
@@ -99,7 +124,7 @@ reconstruir o título a partir dos eventos daria o título antigo.
 
 ## 3. Responder é escrita de verdade
 
-`POST /perguntas/:id/resposta` chama `PATCH /v1/perguntas/:id/resposta` no
+`POST /perguntas/:id/resposta` chama `PATCH /v1/input-requests/:id/answer` no
 control plane real e devolve **303** para `/perguntas` — 303 e não 302 porque
 depois de um POST a volta é um GET, e é isso que impede o navegador de reenviar
 a resposta em um recarregamento. A pergunta some da fila porque a fila é relida
@@ -117,12 +142,15 @@ Duas escolhas de fronteira:
   entrou é tudo o que o sistema de fato sabe; inventar um usuário seria pior,
   porque `pergunta.respondida` é evento de auditoria.
 
-**O que responder NÃO faz aqui:** desbloquear o trabalho e retomar a sessão do
-agente. Esse wiring (pergunta → bloqueio → resposta → desbloqueio → retomada) é
-critério de aceite do `t106`, fronteira documentada em
-[`packages/core/src/repositorios/pergunta.ts`](../../packages/core/src/repositorios/pergunta.ts)
-e travada por `AT11` do `t102`. Quando o `t106` existir, esta tela não muda uma
-linha: ela já escreve o fato que dispara o ciclo.
+**Quem desbloqueia o trabalho não é a tela.** O wiring pergunta → bloqueio →
+resposta → desbloqueio → retomada da sessão é do `t106`, e mora no control
+plane: criar a pergunta bloqueia o trabalho na mesma transação, e responder
+desbloqueia com o ator de quem respondeu
+([`packages/core/src/repositories/input-request.ts`](../../packages/core/src/repositories/input-request.ts),
+contrato em [`escalacao-humana.md`](escalacao-humana.md)). A tela escreve o
+fato e mais nada; o ciclo acontece do outro lado do HTTP. Foi escrita antes do
+`t106` existir e não mudou uma linha quando ele chegou — que era exatamente a
+aposta.
 
 ---
 
@@ -133,9 +161,9 @@ três são aditivas e simétricas a filtros que já existiam:
 
 | Rota | O que faltava |
 |---|---|
-| `GET /v1/execucoes` | Não havia como **descobrir** quais execuções existem: só existia `GET /v1/execucoes/:id/metricas-por-versao`, que exige já saber o id. Devolve `{execucoes: [...]}` com `execucao_id`, `trabalhos`, `trabalhos_bloqueados` e `perguntas_pendentes`, em ordem crescente e com o grupo `null` por último (mesma convenção de `metricasPorVersao`). |
-| `GET /v1/sessoes?trabalho_id=` | Só havia filtro por execução; sem este, não dá para pedir "as sessões deste trabalho" — e sem elas não há fim de sessão na linha do tempo. |
-| `GET /v1/perguntas?trabalho_id=` | Simétrico ao anterior, pela mesma razão: o fim das esperas. |
+| `GET /v1/executions` | Não havia como **descobrir** quais execuções existem: só existia `GET /v1/executions/:id/metrics-by-version`, que exige já saber o id. Devolve `{execucoes: [...]}` com `execucao_id`, `trabalhos`, `trabalhos_bloqueados` e `perguntas_pendentes`, em ordem crescente e com o grupo `null` por último (mesma convenção de `metricsByVersion`). |
+| `GET /v1/sessions?trabalho_id=` | Só havia filtro por execução; sem este, não dá para pedir "as sessões deste trabalho" — e sem elas não há fim de sessão na linha do tempo. |
+| `GET /v1/input-requests?trabalho_id=` | Simétrico ao anterior, pela mesma razão: o fim das esperas. |
 
 Os filtros se somam em **AND** com os que já existiam, e um filtro inválido é
 **400**, nunca um filtro ignorado em silêncio.
@@ -159,7 +187,7 @@ Ao subir, imprime uma linha JSON de prontidão em stdout — mesmo contrato da
 partida do control plane:
 
 ```json
-{"evento":"cartografo-tela.pronto","url":"http://127.0.0.1:4318","control_plane":"http://127.0.0.1:4317"}
+{"evento":"cartografo.tela.pronta","url":"http://127.0.0.1:4318","control_plane":"http://127.0.0.1:4317"}
 ```
 
 **Quando o control plane está fora do ar**, toda página responde **502** com o
@@ -210,10 +238,12 @@ Cada item é escopo declarado de outra ficha, não esquecimento:
 - **Tela de edição/configuração de grafo** — D11 fixa a ordem: observabilidade
   primeiro, edição depois; por ora, arquivos e CLI.
 - **Inbox de aprovação de propostas** (entidade `proposta`, distinta de
-  `pergunta`) — `t111`.
+  `pergunta`) — é a outra metade do pacote, entregue pela `t111` e servida em
+  `/` ([`tela-inbox-propostas.md`](tela-inbox-propostas.md)).
 - **Autenticação** — `t124`. Enquanto não houver, a tela escuta em loopback e
   `respondido_por` cai em `"tela"`.
-- **Retomada de verdade da sessão ao responder** — `t106` (§3).
+- **Retomada de verdade da sessão ao responder** — do control plane, pela
+  `t106` (§3); a tela só escreve o fato.
 - **Rótulo de nó com `papel`/`descricao` do snapshot do grafo** — o quadro
   mostra `no_atual` cru; buscar o grafo para rotular é aditivo.
 - **Paginação** — nenhuma rota da API pagina hoje, e não é esta ficha que

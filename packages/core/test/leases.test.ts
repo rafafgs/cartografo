@@ -1,23 +1,26 @@
 /**
- * Testes de aceite do mecanismo de lease (t103, FR3, FR5–FR9).
+ * Acceptance tests of the lease mechanism (t103, FR3, FR5–FR9).
  *
- * A D5 cabe em duas frases: "trabalho despachado carrega lease; runner morto
- * expira e o trabalho volta à fila", e o teto de concorrência nunca é excedido.
- * As duas viram teste aqui — AT5/AT6/AT12 para o teto (inclusive sob chamadas
- * simultâneas) e AT10/AT11 para a morte do runner.
+ * D5 fits in two sentences: "a dispatched job carries a lease; a dead runner
+ * expires and the job goes back to the queue", and the concurrency cap is never
+ * exceeded. Both become tests here — AT5/AT6/AT12 for the cap (including under
+ * simultaneous calls) and AT10/AT11 for the death of the runner.
  *
- * Duas formas de montar o app convivem de propósito:
+ * Two ways of assembling the app coexist on purpose:
  *
- * - a maioria dos casos sobe o app real (`criarApp`), com o relógio de verdade,
- *   porque é o caminho que produção usa;
- * - AT10/AT11 montam o MESMO módulo de rotas com um relógio controlado
- *   (`registrarLeases(app, db, {agora})`, FR3). É o que deixa "o runner morreu e
- *   o prazo venceu" ser determinístico, sem `sleep`. O caminho com tempo real de
- *   ponta a ponta está provado em AT17
+ * - most cases bring the real app up (`createApp`), with the real clock, because
+ *   that is the path production uses;
+ * - AT10/AT11 assemble the SAME route module with a controlled clock
+ *   (`registerLeases(app, db, {now})`, FR3). That is what lets "the runner died
+ *   and the deadline passed" be deterministic, without a `sleep`. The end-to-end
+ *   path with real time is proven in AT17
  *   (`packages/runner/test/controller/dispatch-e-lease.e2e.test.ts`).
  *
- * `trabalho_id` é inteiro opaco em toda esta suíte: a tabela `trabalho` é do
- * t102 e esta rota nunca a lê (Out of Scope).
+ * `trabalho_id` is an opaque integer throughout this suite: the `trabalho` table
+ * belongs to t102 and this route never reads it (Out of Scope).
+ *
+ * The response field names and the status/reason values stay in Portuguese: they
+ * mirror the untouched migration columns (t127, FR8).
  */
 
 import assert from 'node:assert/strict';
@@ -28,20 +31,20 @@ import test from 'node:test';
 
 import Fastify from 'fastify';
 
-import type * as ModuloConnection from '../src/db/connection.ts';
-import type * as ModuloMigrate from '../src/db/migrate.ts';
-import type * as ModuloRotasLeases from '../src/routes/leases.ts';
-import type * as ModuloRunners from '../src/repositorios/runners.ts';
-import type * as ModuloServer from '../src/server.ts';
+import type * as ConnectionModule from '../src/db/connection.ts';
+import type * as MigrateModule from '../src/db/migrate.ts';
+import type * as LeaseRoutesModule from '../src/routes/leases.ts';
+import type * as RunnersModule from '../src/repositories/runners.ts';
+import type * as ServerModule from '../src/server.ts';
 
-const RAIZ_PACOTE = path.resolve(import.meta.dirname, '..');
-const DIR_MIGRACOES = path.join(RAIZ_PACOTE, 'migrations');
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
+const MIGRATIONS_DIR = path.join(PACKAGE_ROOT, 'migrations');
 
-interface ContextoDeTeste {
+interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
 }
 
-interface LinhaLease {
+interface LeaseRow {
   id: number;
   runner_id: string;
   trabalho_id: number;
@@ -55,69 +58,69 @@ interface LinhaLease {
   motivo_expiracao: 'heartbeat_perdido' | 'expirou' | null;
 }
 
-interface RespostaConcessao {
-  lease: LinhaLease | null;
+interface GrantResponse {
+  lease: LeaseRow | null;
   motivo?: string;
 }
 
-let cacheConnection: typeof ModuloConnection | null = null;
-let cacheMigrate: typeof ModuloMigrate | null = null;
-let cacheServer: typeof ModuloServer | null = null;
-let cacheRunners: typeof ModuloRunners | null = null;
-let cacheRotasLeases: typeof ModuloRotasLeases | null = null;
+let connectionCache: typeof ConnectionModule | null = null;
+let migrateCache: typeof MigrateModule | null = null;
+let serverCache: typeof ServerModule | null = null;
+let runnersCache: typeof RunnersModule | null = null;
+let leaseRoutesCache: typeof LeaseRoutesModule | null = null;
 
-async function carregarConnection(): Promise<typeof ModuloConnection> {
-  cacheConnection ??= (await import(
+async function loadConnection(): Promise<typeof ConnectionModule> {
+  connectionCache ??= (await import(
     new URL('../src/db/connection.ts', import.meta.url).href
-  )) as typeof ModuloConnection;
-  return cacheConnection;
+  )) as typeof ConnectionModule;
+  return connectionCache;
 }
 
-async function carregarMigrate(): Promise<typeof ModuloMigrate> {
-  cacheMigrate ??= (await import(
+async function loadMigrate(): Promise<typeof MigrateModule> {
+  migrateCache ??= (await import(
     new URL('../src/db/migrate.ts', import.meta.url).href
-  )) as typeof ModuloMigrate;
-  return cacheMigrate;
+  )) as typeof MigrateModule;
+  return migrateCache;
 }
 
-async function carregarServer(): Promise<typeof ModuloServer> {
-  cacheServer ??= (await import(
+async function loadServer(): Promise<typeof ServerModule> {
+  serverCache ??= (await import(
     new URL('../src/server.ts', import.meta.url).href
-  )) as typeof ModuloServer;
-  return cacheServer;
+  )) as typeof ServerModule;
+  return serverCache;
 }
 
-async function carregarRunners(): Promise<typeof ModuloRunners> {
+async function loadRunners(): Promise<typeof RunnersModule> {
   assert.ok(
-    existsSync(path.join(RAIZ_PACOTE, 'src', 'repositorios', 'runners.ts')),
-    'artefato ainda não existe: packages/core/src/repositorios/runners.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'repositories', 'runners.ts')),
+    'artifact does not exist yet: packages/core/src/repositories/runners.ts',
   );
-  cacheRunners ??= (await import(
-    new URL('../src/repositorios/runners.ts', import.meta.url).href
-  )) as typeof ModuloRunners;
-  return cacheRunners;
+  runnersCache ??= (await import(
+    new URL('../src/repositories/runners.ts', import.meta.url).href
+  )) as typeof RunnersModule;
+  return runnersCache;
 }
 
-async function carregarRotasLeases(): Promise<typeof ModuloRotasLeases> {
+async function loadLeaseRoutes(): Promise<typeof LeaseRoutesModule> {
   assert.ok(
-    existsSync(path.join(RAIZ_PACOTE, 'src', 'routes', 'leases.ts')),
-    'artefato ainda não existe: packages/core/src/routes/leases.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'routes', 'leases.ts')),
+    'artifact does not exist yet: packages/core/src/routes/leases.ts',
   );
-  cacheRotasLeases ??= (await import(
+  leaseRoutesCache ??= (await import(
     new URL('../src/routes/leases.ts', import.meta.url).href
-  )) as typeof ModuloRotasLeases;
-  return cacheRotasLeases;
+  )) as typeof LeaseRoutesModule;
+  return leaseRoutesCache;
 }
 
-/** Banco efêmero, já migrado. */
-async function bancoTemporario(t: ContextoDeTeste): Promise<ModuloConnection.BancoDeDados> {
-  const { abrirBanco, aplicarPragmas } = await carregarConnection();
-  const { migrar } = await carregarMigrate();
+/** Ephemeral database, already migrated. */
+async function temporaryDatabase(t: TestHook): Promise<ConnectionModule.Database> {
+  const { openDatabase, applyPragmas } = await loadConnection();
+  const { migrate } = await loadMigrate();
 
   const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t103-leases-'));
-  const db = abrirBanco(path.join(base, 'cartografo.db'));
-  aplicarPragmas(db);
-  migrar(db, DIR_MIGRACOES);
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  applyPragmas(db);
+  migrate(db, MIGRATIONS_DIR);
 
   t.after(() => {
     db.close();
@@ -127,61 +130,61 @@ async function bancoTemporario(t: ContextoDeTeste): Promise<ModuloConnection.Ban
   return db;
 }
 
-/** Control plane efêmero de verdade, com o relógio de produção. */
-async function subir(t: ContextoDeTeste): Promise<{
-  endereco: string;
-  db: ModuloConnection.BancoDeDados;
+/** A real ephemeral control plane, with the production clock. */
+async function start(t: TestHook): Promise<{
+  address: string;
+  db: ConnectionModule.Database;
 }> {
-  const { criarApp } = await carregarServer();
-  const db = await bancoTemporario(t);
+  const { createApp } = await loadServer();
+  const db = await temporaryDatabase(t);
 
-  const app = criarApp({ db });
-  const endereco = await app.listen({ port: 0, host: '127.0.0.1' });
+  const app = createApp({ db });
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
   t.after(async () => {
     await app.close();
   });
 
-  return { endereco, db };
+  return { address, db };
 }
 
 /**
- * O mesmo módulo de rotas de lease, montado com um relógio controlado.
+ * The same lease route module, assembled with a controlled clock.
  *
- * Só AT10/AT11 usam: são os dois casos em que o fato sob teste é a passagem do
- * tempo, e um `sleep` de verdade os tornaria lentos e instáveis.
+ * Only AT10/AT11 use it: they are the two cases in which the fact under test is
+ * the passing of time, and a real `sleep` would make them slow and flaky.
  */
-async function subirComRelogio(
-  t: ContextoDeTeste,
-  agora: () => string,
-): Promise<{ endereco: string; db: ModuloConnection.BancoDeDados }> {
-  const { registrarLeases } = await carregarRotasLeases();
-  const db = await bancoTemporario(t);
+async function startWithClock(
+  t: TestHook,
+  now: () => string,
+): Promise<{ address: string; db: ConnectionModule.Database }> {
+  const { registerLeases } = await loadLeaseRoutes();
+  const db = await temporaryDatabase(t);
 
   const app = Fastify({ logger: false });
-  app.register(async (escopo) => registrarLeases(escopo, db, { agora }), { prefix: '/v1' });
-  const endereco = await app.listen({ port: 0, host: '127.0.0.1' });
+  app.register(async (scope) => registerLeases(scope, db, { now }), { prefix: '/v1' });
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
   t.after(async () => {
     await app.close();
   });
 
-  return { endereco, db };
+  return { address, db };
 }
 
-/** Relógio de teste: começa em um instante fixo e só anda quando mandam. */
-function relogioControlado(inicio = '2026-08-14T12:00:00.000Z'): {
-  agora: () => string;
-  avancar: (segundos: number) => void;
+/** Test clock: starts at a fixed instant and only moves when told to. */
+function controlledClock(start = '2026-08-14T12:00:00.000Z'): {
+  now: () => string;
+  advance: (seconds: number) => void;
 } {
-  let instante = Date.parse(inicio);
+  let instant = Date.parse(start);
   return {
-    agora: () => new Date(instante).toISOString(),
-    avancar: (segundos) => {
-      instante += segundos * 1000;
+    now: () => new Date(instant).toISOString(),
+    advance: (seconds) => {
+      instant += seconds * 1000;
     },
   };
 }
 
-interface Pedido {
+interface LeaseRequestBody {
   runner_id: string;
   projeto_id?: number;
   trabalho_id: number;
@@ -190,8 +193,8 @@ interface Pedido {
   ttl_segundos?: number;
 }
 
-async function pedirLease(endereco: string, pedido: Pedido): Promise<Response> {
-  return await fetch(`${endereco}/v1/leases`, {
+async function requestLease(address: string, request: LeaseRequestBody): Promise<Response> {
+  return await fetch(`${address}/v1/leases`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -199,367 +202,367 @@ async function pedirLease(endereco: string, pedido: Pedido): Promise<Response> {
       teto_runner: 8,
       teto_projeto: 8,
       ttl_segundos: 60,
-      ...pedido,
+      ...request,
     }),
   });
 }
 
-async function listarLeasesHttp(endereco: string, consulta = ''): Promise<LinhaLease[]> {
-  const resposta = await fetch(`${endereco}/v1/leases${consulta}`);
-  assert.equal(resposta.status, 200);
-  return ((await resposta.json()) as { leases: LinhaLease[] }).leases;
+async function listLeasesHttp(address: string, query = ''): Promise<LeaseRow[]> {
+  const response = await fetch(`${address}/v1/leases${query}`);
+  assert.equal(response.status, 200);
+  return ((await response.json()) as { leases: LeaseRow[] }).leases;
 }
 
-async function registrar(db: ModuloConnection.BancoDeDados, ...ids: string[]): Promise<void> {
-  const { registrarRunner } = await carregarRunners();
-  for (const id of ids) registrarRunner(db, { id });
+async function registerRunners(db: ConnectionModule.Database, ...ids: string[]): Promise<void> {
+  const { registerRunner } = await loadRunners();
+  for (const id of ids) registerRunner(db, { id });
 }
 
-test('AT3 — POST /v1/leases com runner_id não registrado devolve 404', async (t) => {
-  const { endereco } = await subir(t);
+test('AT3 — POST /v1/leases with an unregistered runner_id returns 404', async (t) => {
+  const { address } = await start(t);
 
-  const resposta = await pedirLease(endereco, { runner_id: 'runner-fantasma', trabalho_id: 1 });
+  const response = await requestLease(address, { runner_id: 'runner-fantasma', trabalho_id: 1 });
 
   assert.equal(
-    resposta.status,
+    response.status,
     404,
-    'lease é concedida a runner pareado; um id desconhecido não existe para o control plane',
+    'a lease is granted to a paired runner; an unknown id does not exist for the control plane',
   );
-  // O corpo importa: um 404 de rota inexistente também seria 404, e passaria
-  // este teste sem que a regra existisse.
-  const corpo = (await resposta.json()) as { erro?: string; runner_id?: string };
-  assert.equal(corpo.erro, 'runner_desconhecido');
-  assert.equal(corpo.runner_id, 'runner-fantasma');
+  // The body matters: a 404 from a nonexistent route would also be a 404, and
+  // would pass this test without the rule existing at all.
+  const body = (await response.json()) as { erro?: string; runner_id?: string };
+  assert.equal(body.erro, 'runner_desconhecido');
+  assert.equal(body.runner_id, 'runner-fantasma');
 });
 
-test('AT4 — lease concedida nasce ativa e com expira_em = concedida_em + ttl_segundos', async (t) => {
-  const { endereco, db } = await subir(t);
-  await registrar(db, 'runner-a');
+test('AT4 — lease granted nasce ativa e com expira_em = concedida_em + ttl_segundos', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a');
 
-  const resposta = await pedirLease(endereco, {
+  const response = await requestLease(address, {
     runner_id: 'runner-a',
     trabalho_id: 7,
     ttl_segundos: 30,
   });
 
-  assert.equal(resposta.status, 201);
-  const { lease } = (await resposta.json()) as RespostaConcessao;
-  assert.ok(lease !== null, 'sem lease concorrente, a concessão não pode falhar');
+  assert.equal(response.status, 201);
+  const { lease } = (await response.json()) as GrantResponse;
+  assert.ok(lease !== null, 'with no competing lease, the grant cannot fail');
   assert.equal(lease.status, 'ativa');
   assert.equal(lease.runner_id, 'runner-a');
   assert.equal(lease.trabalho_id, 7);
   assert.equal(lease.ttl_segundos, 30);
-  assert.equal(lease.heartbeat_em, lease.concedida_em, 'lease recém-nascida nunca foi renovada');
+  assert.equal(lease.heartbeat_em, lease.concedida_em, 'a newborn lease has never been renewed');
   assert.equal(
     Date.parse(lease.expira_em) - Date.parse(lease.concedida_em),
     30_000,
-    'expira_em é concedida_em + ttl_segundos',
+    'expira_em is concedida_em + ttl_segundos',
   );
   assert.equal(lease.liberada_em, null);
   assert.equal(lease.motivo_expiracao, null);
 });
 
-test('AT5 — o teto por runner nunca é excedido', async (t) => {
-  const { endereco, db } = await subir(t);
-  await registrar(db, 'runner-a');
+test('AT5 — the per-runner cap is never exceeded', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a');
 
-  const primeira = await pedirLease(endereco, {
+  const first = await requestLease(address, {
     runner_id: 'runner-a',
     trabalho_id: 1,
     teto_runner: 1,
   });
-  assert.equal(primeira.status, 201);
+  assert.equal(first.status, 201);
 
-  const segunda = await pedirLease(endereco, {
+  const second = await requestLease(address, {
     runner_id: 'runner-a',
     trabalho_id: 2,
     teto_runner: 1,
   });
-  assert.equal(segunda.status, 200, 'teto batido não é erro do cliente: é "agora não"');
-  const corpo = (await segunda.json()) as RespostaConcessao;
-  assert.equal(corpo.lease, null);
-  assert.equal(corpo.motivo, 'teto_runner');
+  assert.equal(second.status, 200, 'a reached cap is not a client error: it is "not now"');
+  const body = (await second.json()) as GrantResponse;
+  assert.equal(body.lease, null);
+  assert.equal(body.motivo, 'teto_runner');
 
-  const ativas = await listarLeasesHttp(endereco, '?status=ativa');
-  assert.equal(ativas.length, 1, 'a primeira lease segue ativa e é a única');
-  assert.equal(ativas[0].trabalho_id, 1);
+  const active = await listLeasesHttp(address, '?status=ativa');
+  assert.equal(active.length, 1, 'the first lease stays active and is the only one');
+  assert.equal(active[0].trabalho_id, 1);
 });
 
-test('AT6 — o teto por projeto nunca é excedido, entre runners diferentes', async (t) => {
-  const { endereco, db } = await subir(t);
-  await registrar(db, 'runner-a', 'runner-b');
+test('AT6 — the per-project cap is never exceeded, across different runners', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a', 'runner-b');
 
-  const primeira = await pedirLease(endereco, {
+  const first = await requestLease(address, {
     runner_id: 'runner-a',
     trabalho_id: 1,
     projeto_id: 42,
     teto_projeto: 1,
   });
-  assert.equal(primeira.status, 201);
+  assert.equal(first.status, 201);
 
-  const segunda = await pedirLease(endereco, {
+  const second = await requestLease(address, {
     runner_id: 'runner-b',
     trabalho_id: 2,
     projeto_id: 42,
     teto_projeto: 1,
   });
-  assert.equal(segunda.status, 200);
-  const corpo = (await segunda.json()) as RespostaConcessao;
-  assert.equal(corpo.lease, null);
+  assert.equal(second.status, 200);
+  const body = (await second.json()) as GrantResponse;
+  assert.equal(body.lease, null);
   assert.equal(
-    corpo.motivo,
+    body.motivo,
     'teto_projeto',
-    'o teto do projeto vale para o projeto inteiro, não por runner',
+    'the project cap applies to the whole project, not per runner',
   );
 
-  const ativas = await listarLeasesHttp(endereco, '?status=ativa&projeto_id=42');
-  assert.equal(ativas.length, 1);
+  const active = await listLeasesHttp(address, '?status=ativa&projeto_id=42');
+  assert.equal(active.length, 1);
 });
 
-test('AT7 — trabalho que já tem lease ativa não recebe uma segunda', async (t) => {
-  const { endereco, db } = await subir(t);
-  await registrar(db, 'runner-a', 'runner-b');
+test('AT7 — a job that already has an active lease does not get a second one', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a', 'runner-b');
 
-  assert.equal((await pedirLease(endereco, { runner_id: 'runner-a', trabalho_id: 99 })).status, 201);
+  assert.equal((await requestLease(address, { runner_id: 'runner-a', trabalho_id: 99 })).status, 201);
 
-  const resposta = await pedirLease(endereco, { runner_id: 'runner-b', trabalho_id: 99 });
-  assert.equal(resposta.status, 200);
-  const corpo = (await resposta.json()) as RespostaConcessao;
-  assert.equal(corpo.lease, null);
-  assert.equal(corpo.motivo, 'trabalho_ja_leased');
+  const response = await requestLease(address, { runner_id: 'runner-b', trabalho_id: 99 });
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as GrantResponse;
+  assert.equal(body.lease, null);
+  assert.equal(body.motivo, 'trabalho_ja_leased');
 
-  const todas = await listarLeasesHttp(endereco);
-  assert.equal(todas.length, 1, 'a disputa perdida não pode deixar linha para trás');
+  const all = await listLeasesHttp(address);
+  assert.equal(all.length, 1, 'a lost dispute cannot leave a row behind');
 });
 
-test('AT8 — heartbeat estende o prazo; sobre lease não ativa é 409, sobre id inexistente é 404', async (t) => {
-  const { endereco, db } = await subir(t);
-  await registrar(db, 'runner-a');
+test('AT8 — a heartbeat extends the deadline; over a non-active lease it is 409, over a missing id it is 404', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a');
 
-  const concedida = (await (
-    await pedirLease(endereco, { runner_id: 'runner-a', trabalho_id: 1, ttl_segundos: 30 })
-  ).json()) as RespostaConcessao;
-  assert.ok(concedida.lease !== null);
-  const leaseId = concedida.lease.id;
+  const granted = (await (
+    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1, ttl_segundos: 30 })
+  ).json()) as GrantResponse;
+  assert.ok(granted.lease !== null);
+  const leaseId = granted.lease.id;
 
-  const batida = await fetch(`${endereco}/v1/leases/${leaseId}/heartbeats`, {
+  const beat = await fetch(`${address}/v1/leases/${leaseId}/heartbeats`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ttl_segundos: 300 }),
   });
-  assert.equal(batida.status, 200);
-  const renovada = ((await batida.json()) as { lease: LinhaLease }).lease;
-  assert.equal(renovada.status, 'ativa');
-  assert.equal(renovada.ttl_segundos, 300, 'o ttl enviado no heartbeat passa a valer');
+  assert.equal(beat.status, 200);
+  const renewed = ((await beat.json()) as { lease: LeaseRow }).lease;
+  assert.equal(renewed.status, 'ativa');
+  assert.equal(renewed.ttl_segundos, 300, 'the ttl sent in the heartbeat starts to hold');
   assert.ok(
-    Date.parse(renovada.expira_em) > Date.parse(concedida.lease.expira_em),
-    'heartbeat empurra expira_em para frente',
+    Date.parse(renewed.expira_em) > Date.parse(granted.lease.expira_em),
+    'a heartbeat pushes expira_em forward',
   );
   assert.ok(
-    Date.parse(renovada.heartbeat_em) >= Date.parse(concedida.lease.heartbeat_em),
-    'heartbeat_em registra a última batida',
+    Date.parse(renewed.heartbeat_em) >= Date.parse(granted.lease.heartbeat_em),
+    'heartbeat_em records the last beat',
   );
 
-  const inexistente = await fetch(`${endereco}/v1/leases/987654/heartbeats`, {
+  const missing = await fetch(`${address}/v1/leases/987654/heartbeats`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
-  assert.equal(inexistente.status, 404);
+  assert.equal(missing.status, 404);
 
-  const liberacao = await fetch(`${endereco}/v1/leases/${leaseId}/liberacoes`, {
+  const release = await fetch(`${address}/v1/leases/${leaseId}/releases`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
-  assert.equal(liberacao.status, 200);
+  assert.equal(release.status, 200);
 
-  const tardia = await fetch(`${endereco}/v1/leases/${leaseId}/heartbeats`, {
+  const late = await fetch(`${address}/v1/leases/${leaseId}/heartbeats`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
-  assert.equal(tardia.status, 409, 'heartbeat só faz sentido sobre lease ativa');
+  assert.equal(late.status, 409, 'a heartbeat only makes sense over an active lease');
 });
 
-test('AT9 — liberar devolve a capacidade na hora', async (t) => {
-  const { endereco, db } = await subir(t);
-  await registrar(db, 'runner-a');
+test('AT9 — releasing returns the capacity right away', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a');
 
-  const primeira = (await (
-    await pedirLease(endereco, { runner_id: 'runner-a', trabalho_id: 1, teto_runner: 1 })
-  ).json()) as RespostaConcessao;
-  assert.ok(primeira.lease !== null);
+  const first = (await (
+    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1, teto_runner: 1 })
+  ).json()) as GrantResponse;
+  assert.ok(first.lease !== null);
 
-  const bloqueada = await pedirLease(endereco, {
+  const blocked = await requestLease(address, {
     runner_id: 'runner-a',
     trabalho_id: 2,
     teto_runner: 1,
   });
-  assert.equal(((await bloqueada.json()) as RespostaConcessao).motivo, 'teto_runner');
+  assert.equal(((await blocked.json()) as GrantResponse).motivo, 'teto_runner');
 
-  const liberacao = await fetch(`${endereco}/v1/leases/${primeira.lease.id}/liberacoes`, {
+  const release = await fetch(`${address}/v1/leases/${first.lease.id}/releases`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
-  assert.equal(liberacao.status, 200);
-  const liberada = ((await liberacao.json()) as { lease: LinhaLease }).lease;
-  assert.equal(liberada.status, 'liberada');
-  assert.ok(liberada.liberada_em !== null, 'liberar carimba quando');
+  assert.equal(release.status, 200);
+  const released = ((await release.json()) as { lease: LeaseRow }).lease;
+  assert.equal(released.status, 'liberada');
+  assert.ok(released.liberada_em !== null, 'releasing stamps when');
 
-  const depois = await pedirLease(endereco, {
+  const after = await requestLease(address, {
     runner_id: 'runner-a',
     trabalho_id: 2,
     teto_runner: 1,
   });
-  assert.equal(depois.status, 201, 'a vaga liberada conta imediatamente na próxima concessão');
+  assert.equal(after.status, 201, 'the released slot counts immediately in the next grant');
 
-  const inexistente = await fetch(`${endereco}/v1/leases/987654/liberacoes`, {
+  const missing = await fetch(`${address}/v1/leases/987654/releases`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
-  assert.equal(inexistente.status, 404);
+  assert.equal(missing.status, 404);
 
-  const repetida = await fetch(`${endereco}/v1/leases/${primeira.lease.id}/liberacoes`, {
+  const repeated = await fetch(`${address}/v1/leases/${first.lease.id}/releases`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
-  assert.equal(repetida.status, 409, 'liberar duas vezes a mesma lease é conflito');
+  assert.equal(repeated.status, 409, 'releasing the same lease twice is a conflict');
 });
 
-test('AT10 — runner morre, lease expira, outro runner pega o mesmo trabalho', async (t) => {
-  const relogio = relogioControlado();
-  const { endereco, db } = await subirComRelogio(t, relogio.agora);
-  await registrar(db, 'runner-a', 'runner-b');
+test('AT10 — a runner dies, the lease expires, another runner takes the same job', async (t) => {
+  const clock = controlledClock();
+  const { address, db } = await startWithClock(t, clock.now);
+  await registerRunners(db, 'runner-a', 'runner-b');
 
-  const primeira = (await (
-    await pedirLease(endereco, { runner_id: 'runner-a', trabalho_id: 55, ttl_segundos: 5 })
-  ).json()) as RespostaConcessao;
-  assert.ok(primeira.lease !== null);
-  const leaseMorta = primeira.lease.id;
+  const first = (await (
+    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 55, ttl_segundos: 5 })
+  ).json()) as GrantResponse;
+  assert.ok(first.lease !== null);
+  const deadLeaseId = first.lease.id;
 
-  // runner-a morre aqui: nenhum heartbeat sai daqui para frente.
-  relogio.avancar(6);
+  // runner-a dies here: no heartbeat goes out from this point on.
+  clock.advance(6);
 
-  const resposta = await pedirLease(endereco, {
+  const response = await requestLease(address, {
     runner_id: 'runner-b',
     trabalho_id: 55,
     ttl_segundos: 5,
   });
 
   assert.equal(
-    resposta.status,
+    response.status,
     201,
-    'o mesmo request que pede lease reivindica as expiradas antes de decidir (FR9)',
+    'the same request that asks for a lease claims the expired ones before deciding (FR9)',
   );
-  const nova = ((await resposta.json()) as RespostaConcessao).lease;
-  assert.ok(nova !== null);
-  assert.equal(nova.runner_id, 'runner-b');
-  assert.equal(nova.trabalho_id, 55);
-  assert.equal(nova.status, 'ativa');
-  assert.notEqual(nova.id, leaseMorta);
+  const fresh = ((await response.json()) as GrantResponse).lease;
+  assert.ok(fresh !== null);
+  assert.equal(fresh.runner_id, 'runner-b');
+  assert.equal(fresh.trabalho_id, 55);
+  assert.equal(fresh.status, 'ativa');
+  assert.notEqual(fresh.id, deadLeaseId);
 
-  const todas = await listarLeasesHttp(endereco);
-  const antiga = todas.find((lease) => lease.id === leaseMorta);
-  assert.ok(antiga !== undefined);
-  assert.equal(antiga.status, 'expirada', 'a lease do runner morto vira expirada, não some');
+  const all = await listLeasesHttp(address);
+  const old = all.find((lease) => lease.id === deadLeaseId);
+  assert.ok(old !== undefined);
+  assert.equal(old.status, 'expirada', 'the dead runner\'s lease becomes expired, it does not disappear');
 
-  const ativas = todas.filter((lease) => lease.status === 'ativa');
-  assert.equal(ativas.length, 1, 'o trabalho re-enfileirado tem exatamente um dono novo');
+  const active = all.filter((lease) => lease.status === 'ativa');
+  assert.equal(active.length, 1, 'the re-queued job has exactly one new owner');
 });
 
-test('AT11 — motivo_expiracao distingue nunca-renovada de heartbeat-perdido', async (t) => {
-  const relogio = relogioControlado();
-  const { endereco, db } = await subirComRelogio(t, relogio.agora);
-  await registrar(db, 'runner-a', 'runner-b', 'runner-c');
+test('AT11 — motivo_expiracao tells never-renewed apart from heartbeat-lost', async (t) => {
+  const clock = controlledClock();
+  const { address, db } = await startWithClock(t, clock.now);
+  await registerRunners(db, 'runner-a', 'runner-b', 'runner-c');
 
-  const nuncaRenovada = (await (
-    await pedirLease(endereco, { runner_id: 'runner-a', trabalho_id: 1, ttl_segundos: 10 })
-  ).json()) as RespostaConcessao;
-  const comHeartbeat = (await (
-    await pedirLease(endereco, { runner_id: 'runner-b', trabalho_id: 2, ttl_segundos: 10 })
-  ).json()) as RespostaConcessao;
-  assert.ok(nuncaRenovada.lease !== null && comHeartbeat.lease !== null);
+  const neverRenewed = (await (
+    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1, ttl_segundos: 10 })
+  ).json()) as GrantResponse;
+  const withHeartbeat = (await (
+    await requestLease(address, { runner_id: 'runner-b', trabalho_id: 2, ttl_segundos: 10 })
+  ).json()) as GrantResponse;
+  assert.ok(neverRenewed.lease !== null && withHeartbeat.lease !== null);
 
-  relogio.avancar(3);
-  const batida = await fetch(`${endereco}/v1/leases/${comHeartbeat.lease.id}/heartbeats`, {
+  clock.advance(3);
+  const beat = await fetch(`${address}/v1/leases/${withHeartbeat.lease.id}/heartbeats`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
-  assert.equal(batida.status, 200);
+  assert.equal(beat.status, 200);
 
-  // As duas param aqui; o prazo das duas vence.
-  relogio.avancar(60);
+  // Both stop here; both deadlines pass.
+  clock.advance(60);
 
-  // Qualquer pedido novo reconcilia as expiradas antes de decidir (FR9).
+  // Any new request reconciles the expired ones before deciding (FR9).
   assert.equal(
-    (await pedirLease(endereco, { runner_id: 'runner-c', trabalho_id: 3, ttl_segundos: 10 })).status,
+    (await requestLease(address, { runner_id: 'runner-c', trabalho_id: 3, ttl_segundos: 10 })).status,
     201,
   );
 
-  const todas = await listarLeasesHttp(endereco);
-  const semRenovacao = todas.find((lease) => lease.id === nuncaRenovada.lease?.id);
-  const comRenovacao = todas.find((lease) => lease.id === comHeartbeat.lease?.id);
-  assert.ok(semRenovacao !== undefined && comRenovacao !== undefined);
+  const all = await listLeasesHttp(address);
+  const withoutRenewal = all.find((lease) => lease.id === neverRenewed.lease?.id);
+  const withRenewal = all.find((lease) => lease.id === withHeartbeat.lease?.id);
+  assert.ok(withoutRenewal !== undefined && withRenewal !== undefined);
 
-  assert.equal(semRenovacao.status, 'expirada');
+  assert.equal(withoutRenewal.status, 'expirada');
   assert.equal(
-    semRenovacao.motivo_expiracao,
+    withoutRenewal.motivo_expiracao,
     'expirou',
-    'nunca renovada (heartbeat_em == concedida_em): o prazo simplesmente venceu',
+    'never renewed (heartbeat_em == concedida_em): the deadline simply passed',
   );
 
-  assert.equal(comRenovacao.status, 'expirada');
+  assert.equal(withRenewal.status, 'expirada');
   assert.equal(
-    comRenovacao.motivo_expiracao,
+    withRenewal.motivo_expiracao,
     'heartbeat_perdido',
-    'renovada ao menos uma vez e depois calada: o heartbeat é que se perdeu',
+    'renewed at least once and then silent: it is the heartbeat that was lost',
   );
 });
 
-test('AT12 — teto respeitado sob chamadas simultâneas', async (t) => {
-  const { endereco, db } = await subir(t);
-  await registrar(db, 'runner-a');
+test('AT12 — the cap is respected under simultaneous calls', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a');
 
-  const TETO_PROJETO = 3;
-  const TRABALHOS = [1, 2, 3, 4, 5, 6, 7, 8];
+  const PROJECT_CAP = 3;
+  const JOBS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-  const respostas = await Promise.all(
-    TRABALHOS.map(async (trabalho_id) =>
-      pedirLease(endereco, {
+  const responses = await Promise.all(
+    JOBS.map(async (trabalho_id) =>
+      requestLease(address, {
         runner_id: 'runner-a',
         trabalho_id,
         projeto_id: 7,
-        teto_runner: TRABALHOS.length,
-        teto_projeto: TETO_PROJETO,
+        teto_runner: JOBS.length,
+        teto_projeto: PROJECT_CAP,
       }),
     ),
   );
 
-  const concedidas = respostas.filter((resposta) => resposta.status === 201);
-  const recusadas = respostas.filter((resposta) => resposta.status === 200);
+  const grantedResponses = responses.filter((response) => response.status === 201);
+  const refused = responses.filter((response) => response.status === 200);
   assert.equal(
-    concedidas.length,
-    TETO_PROJETO,
-    'a contagem e a escrita precisam ser atômicas: nem uma concessão a mais',
+    grantedResponses.length,
+    PROJECT_CAP,
+    'the count and the write have to be atomic: not one grant more',
   );
-  assert.equal(recusadas.length, TRABALHOS.length - TETO_PROJETO);
+  assert.equal(refused.length, JOBS.length - PROJECT_CAP);
 
-  for (const resposta of recusadas) {
-    const corpo = (await resposta.json()) as RespostaConcessao;
-    assert.equal(corpo.lease, null);
-    assert.equal(corpo.motivo, 'teto_projeto');
+  for (const response of refused) {
+    const body = (await response.json()) as GrantResponse;
+    assert.equal(body.lease, null);
+    assert.equal(body.motivo, 'teto_projeto');
   }
 
-  const ativas = await listarLeasesHttp(endereco, '?status=ativa&projeto_id=7');
-  assert.equal(ativas.length, TETO_PROJETO, 'o estado no banco nunca excede o teto configurado');
+  const active = await listLeasesHttp(address, '?status=ativa&projeto_id=7');
+  assert.equal(active.length, PROJECT_CAP, 'the state in the database never exceeds the configured cap');
   assert.equal(
-    new Set(ativas.map((lease) => lease.trabalho_id)).size,
-    TETO_PROJETO,
-    'nenhum trabalho recebeu duas leases na corrida',
+    new Set(active.map((lease) => lease.trabalho_id)).size,
+    PROJECT_CAP,
+    'no job received two leases in the race',
   );
 });

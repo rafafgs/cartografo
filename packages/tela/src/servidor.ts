@@ -1,10 +1,27 @@
 /**
- * O servidor da tela (t107, FR4).
+ * O servidor da tela (t107, FR4) — e a porta única das duas metades dela.
  *
- * `node:http` puro, seis rotas, nenhuma dependência de runtime. Este é o ÚNICO
- * módulo que sabe o endereço do control plane — todo o resto recebe um
- * `ClienteApi` já apontado —, e é também o único que conhece HTTP de entrada:
- * `paginas.ts` devolve `{status, html}` e não sabe que existe um `ServerResponse`.
+ * `node:http` puro, nenhuma dependência de runtime. Este é o ÚNICO módulo que
+ * sabe o endereço do control plane — todo o resto recebe um `ClienteApi` já
+ * apontado —, e é também o único que conhece HTTP de entrada: `paginas.ts`
+ * devolve `{status, html}` e não sabe que existe um `ServerResponse`.
+ *
+ * **As duas metades da D11 dividem este servidor.** O inbox de propostas
+ * (`t111`) é página estática mais proxy same-origin; a observabilidade
+ * (`t107`) é renderizada no servidor. As duas moram no mesmo pacote e na mesma
+ * porta, então um handler só decide entre elas, nesta ordem:
+ *
+ * | Caminho | Quem responde |
+ * |---|---|
+ * | `/v1/*` | proxy verbatim para o control plane (`proxy.ts`) |
+ * | arquivo de `src/public/` (`/`, `/inbox.js`, `/style.css`, …) | `static.ts` |
+ * | qualquer outro | as views renderizadas aqui (`/quadro`, `/execucoes`, …) |
+ *
+ * A ordem é o contrato: o proxy vem primeiro porque `/v1` é da API e não da
+ * tela; o estático vem antes do render porque `resolveStaticFile` só devolve
+ * caminho para extensão conhecida, e é justamente o `null` dele que entrega
+ * `/execucoes` e `/trabalhos/7` para as views em vez de 404-á-los como
+ * arquivo faltando.
  *
  * A fronteira da D11 se lê inteira aqui: nenhum import de `packages/core`,
  * nenhum driver de banco, nenhum caminho de arquivo. A tela sobe em outra
@@ -20,6 +37,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 import { ClienteApi, ErroDaApi, ErroDeRede } from './cliente.ts';
+import { API_PREFIX, forwardRequest, type ProxiedResponse } from './proxy.ts';
+import { resolveStaticFile, serveStatic } from './static.ts';
 import {
   RESPONDIDO_POR_PADRAO,
   paginaDeErro,
@@ -46,8 +65,15 @@ export const URL_CONTROL_PLANE_PADRAO = 'http://127.0.0.1:4317';
 /** Endereço de escuta. Loopback, como o control plane: não há autenticação (t124). */
 export const HOST_PADRAO = '127.0.0.1';
 
-/** Nome do evento da linha de prontidão impressa em stdout. */
-export const EVENTO_PRONTO = 'cartografo-tela.pronto';
+/**
+ * Nome do evento da linha de prontidão impressa em stdout.
+ *
+ * Um só para o pacote inteiro, e é o da `t111`, que chegou primeiro: as duas
+ * metades da tela são UM processo em UMA porta, então duas linhas de prontidão
+ * diferentes conforme o ponto de entrada seria a mesma tela mentindo sobre si
+ * mesma para quem a supervisiona. `server.ts` o reexporta como `READY_EVENT`.
+ */
+export const EVENTO_PRONTO = 'cartografo.tela.pronta';
 
 /** Corpo de formulário maior que isto é recusado sem ser lido inteiro. */
 const LIMITE_DO_CORPO = 64 * 1024;
@@ -178,7 +204,10 @@ async function rotear(cliente: ClienteApi, requisicao: IncomingMessage): Promise
   const metodo = requisicao.method ?? 'GET';
 
   if (metodo === 'GET') {
-    if (caminho === '') return await paginaQuadro(cliente);
+    // `/quadro`, e não `/`: a raiz é do inbox de propostas (t111), que já era o
+    // `index.html` estático deste pacote quando esta metade chegou. As duas
+    // metades se linkam pela navegação; nenhuma some.
+    if (caminho === '/quadro') return await paginaQuadro(cliente);
     if (caminho === '/execucoes') return await paginaExecucoes(cliente);
     if (caminho === '/perguntas') return await paginaPerguntas(cliente);
 
@@ -274,19 +303,62 @@ export interface OpcoesDaTela {
   buscar?: typeof fetch;
 }
 
+/** É este caminho da API, ou da tela? */
+function ehCaminhoDaApi(caminho: string): boolean {
+  return caminho === API_PREFIX || caminho.startsWith(`${API_PREFIX}/`);
+}
+
+/** Lê o corpo inteiro de um pedido; o proxy encaminha bytes, não stream. */
+async function lerCorpo(requisicao: IncomingMessage): Promise<Buffer> {
+  const pedacos: Buffer[] = [];
+  for await (const pedaco of requisicao) {
+    pedacos.push(Buffer.isBuffer(pedaco) ? pedaco : Buffer.from(pedaco as string));
+  }
+  return Buffer.concat(pedacos);
+}
+
 /**
- * Sobe a tela.
+ * Cria o servidor das duas metades, sem escutar.
  *
- * @param opcoes Control plane, porta e host.
- * @returns A tela no ar, com o que é preciso para encerrá-la.
+ * A ordem das três decisões é o contrato descrito no cabeçalho deste arquivo:
+ * API, arquivo, view. Nada aqui inventa sucesso — uma falha ao montar a página
+ * vira `paginaDaFalha`, e uma falha ao alcançar o control plane vira a resposta
+ * que o próprio `proxy.ts` escreve.
+ *
+ * @param opcoes Control plane e `fetch` a usar.
+ * @returns Servidor pronto para `listen`.
  */
-export async function iniciarTela(opcoes: OpcoesDaTela = {}): Promise<TelaNoAr> {
+export function criarServidorDaTela(opcoes: OpcoesDaTela = {}): Server {
   const urlControlPlane = opcoes.urlControlPlane ?? resolverUrlDoControlPlane();
   const cliente = new ClienteApi({ urlBase: urlControlPlane, buscar: opcoes.buscar });
-  const host = opcoes.host ?? HOST_PADRAO;
 
-  const servidor = createServer((requisicao: IncomingMessage, resposta: ServerResponse) => {
+  return createServer((requisicao: IncomingMessage, resposta: ServerResponse) => {
     void (async () => {
+      const alvo = requisicao.url ?? '/';
+      const { pathname } = new URL(alvo, 'http://tela.local');
+
+      // 1. A API é do control plane; a tela só repassa, verbatim.
+      if (ehCaminhoDaApi(pathname)) {
+        const encaminhada: ProxiedResponse = await forwardRequest(urlControlPlane, {
+          method: requisicao.method ?? 'GET',
+          target: alvo,
+          headers: requisicao.headers,
+          body: await lerCorpo(requisicao),
+        });
+        resposta.writeHead(encaminhada.status, encaminhada.headers);
+        resposta.end(encaminhada.body);
+        return;
+      }
+
+      // 2. Arquivo de `src/public/` — a página do inbox e seus módulos.
+      if (resolveStaticFile(pathname) !== null) {
+        const arquivo = await serveStatic(pathname);
+        resposta.writeHead(arquivo.status, arquivo.headers);
+        resposta.end(arquivo.body);
+        return;
+      }
+
+      // 3. O que sobra é view renderizada aqui.
       let resultado: Resultado;
       try {
         resultado = await rotear(cliente, requisicao);
@@ -307,6 +379,18 @@ export async function iniciarTela(opcoes: OpcoesDaTela = {}): Promise<TelaNoAr> 
       resposta.end(resultado.html);
     })();
   });
+}
+
+/**
+ * Sobe a tela.
+ *
+ * @param opcoes Control plane, porta e host.
+ * @returns A tela no ar, com o que é preciso para encerrá-la.
+ */
+export async function iniciarTela(opcoes: OpcoesDaTela = {}): Promise<TelaNoAr> {
+  const urlControlPlane = opcoes.urlControlPlane ?? resolverUrlDoControlPlane();
+  const host = opcoes.host ?? HOST_PADRAO;
+  const servidor = criarServidorDaTela({ ...opcoes, urlControlPlane });
 
   await new Promise<void>((resolve, reject) => {
     servidor.once('error', reject);

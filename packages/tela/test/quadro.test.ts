@@ -24,7 +24,7 @@ import {
   subirTela,
 } from './apoio.ts';
 
-test('t107 AT4 — GET / mostra os trabalhos agrupados por nó, com o motivo do bloqueio', async (t) => {
+test('t107 AT4 — GET /quadro mostra os trabalhos agrupados por nó, com o motivo do bloqueio', async (t) => {
   exigirArtefatos(ARTEFATOS_T107.cliente, ARTEFATOS_T107.paginas, ARTEFATOS_T107.servidor);
   const cp = await subirControlPlane(t);
 
@@ -44,16 +44,16 @@ test('t107 AT4 — GET / mostra os trabalhos agrupados por nó, com o motivo do 
     execucao_id: 7,
   });
 
-  await api(cp, 'POST', `/v1/trabalhos/${implementando.id}/transicoes`, {
+  await api(cp, 'POST', `/v1/jobs/${implementando.id}/transitions`, {
     para_no_id: 'implementar',
   });
-  await api(cp, 'POST', `/v1/trabalhos/${travado.id}/transicoes`, { para_no_id: 'implementar' });
-  await api(cp, 'POST', `/v1/trabalhos/${travado.id}/bloqueios`, {
+  await api(cp, 'POST', `/v1/jobs/${travado.id}/transitions`, { para_no_id: 'implementar' });
+  await api(cp, 'POST', `/v1/jobs/${travado.id}/blocks`, {
     motivo: 'esperando decisão do fundador',
   });
 
   const tela = await subirTela(t, cp.url);
-  const pagina = await abrirPagina(tela, '/');
+  const pagina = await abrirPagina(tela, '/quadro');
 
   assert.equal(pagina.status, 200);
   assert.match(pagina.tipo ?? '', /text\/html/, 'a tela devolve HTML, não JSON');
@@ -127,7 +127,7 @@ test('t107 AT4 — o quadro escapa HTML vindo do control plane', async (t) => {
   });
 
   const tela = await subirTela(t, cp.url);
-  const pagina = await abrirPagina(tela, '/');
+  const pagina = await abrirPagina(tela, '/quadro');
 
   assert.equal(pagina.status, 200);
   assert.ok(!pagina.html.includes('<script>alert'), 'título de trabalho não pode virar script');

@@ -1,7 +1,7 @@
 /**
  * Testes de aceite das duas telas de execução (t107, FR6/FR7).
  *
- * A lista de execuções só existe porque a API ganhou `GET /v1/execucoes` nesta
+ * A lista de execuções só existe porque a API ganhou `GET /v1/executions` nesta
  * mesma ficha: `execucao_id` é agrupador opaco, e até aqui só dava para
  * consultá-lo já sabendo o id. D11 é explícita — "se a tela precisa de algo que
  * a API não dá, o bug é da API" —, então a lacuna foi fechada no core e a tela
@@ -40,7 +40,7 @@ test('t107 AT5 — GET /execucoes lista as execuções com as contagens certas',
   });
   await criarTrabalho(cp, { titulo: 'único da oito', no_entrada_id: 'refinar', execucao_id: 8 });
 
-  await api(cp, 'POST', `/v1/trabalhos/${daSete.id}/bloqueios`, { motivo: 'travou' });
+  await api(cp, 'POST', `/v1/jobs/${daSete.id}/blocks`, { motivo: 'travou' });
   await criarPergunta(cp, { trabalho_id: daSete.id, pergunta: 'renumerar?' });
 
   const tela = await subirTela(t, cp.url);
@@ -90,7 +90,7 @@ test('t107 AT5 — GET /execucoes/:id recorta trabalhos, sessões e perguntas da
 
   const sessaoDaSete = await abrirSessao(cp, { trabalho_id: daSete.id, no_id: 'refinar' });
   const sessaoDaOito = await abrirSessao(cp, { trabalho_id: daOito.id, no_id: 'refinar' });
-  await api(cp, 'PATCH', `/v1/sessoes/${sessaoDaSete.id}/finalizar`, {
+  await api(cp, 'PATCH', `/v1/sessions/${sessaoDaSete.id}/finish`, {
     status: 'concluida',
     exit_code: 0,
   });
@@ -140,7 +140,7 @@ test('t107 AT5 — execução sem nada é 200 com página vazia, não erro', asy
   const tela = await subirTela(t, cp.url);
 
   // Execução é agrupador opaco: não existe objeto para faltar (mesma leitura
-  // que `GET /v1/execucoes/:id/metricas-por-versao` já faz no core).
+  // que `GET /v1/executions/:id/metrics-by-version` já faz no core).
   const pagina = await abrirPagina(tela, '/execucoes/99');
   assert.equal(pagina.status, 200);
   assert.deepEqual(blocos(pagina.html, 'trabalho'), []);

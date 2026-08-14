@@ -1,12 +1,16 @@
 /**
- * Testes de aceite de `status` (t108, FR5).
+ * Acceptance tests of `status` (t108, FR5).
  *
- * A forma do `--json` é pinada byte a byte no control plane vazio, pelo mesmo
- * motivo que `health.test.ts` pina o corpo de `/health`: é saída de máquina, e
- * campo que aparece ou some silenciosamente quebra quem consome. O que o pino
- * mais protege é `trabalhos`/`perguntas_pendentes` valendo `null` — as tabelas
- * `sessão`/`input_request` não existem (`migrations/0001_init.sql`), e um `0`
- * ali afirmaria "fila vazia" quando a resposta honesta é "não rastreado ainda".
+ * The shape of `--json` is pinned byte for byte against an empty control plane,
+ * for the same reason `health.test.ts` pins the `/health` body: it is machine
+ * output, and a field that silently appears or disappears breaks its consumers.
+ * What the pin protects most is `jobs`/`pendingInputRequests` being `null` — the
+ * `sessão`/`input_request` tables do not exist (`migrations/0001_init.sql`), and
+ * a `0` there would assert "empty queue" when the honest answer is "not tracked
+ * yet".
+ *
+ * The keys are English since t127 (FR6): this is a bespoke CLI shape, like the
+ * readiness line, and no other package parses it.
  */
 
 import assert from 'node:assert/strict';
@@ -14,70 +18,70 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
-  BUNDLE_FABRICA,
-  areaTemporaria,
-  pareceStackTrace,
-  portaLivre,
-  primeiroHash,
-  rodarCli,
-  subirControlPlane,
-} from './cli-apoio.ts';
+  FACTORY_BUNDLE,
+  temporaryArea,
+  looksLikeStackTrace,
+  freePort,
+  firstHash,
+  runCli,
+  startControlPlane,
+} from './cli-support.ts';
 
-const CLASSE_FABRICA = 'desenvolvimento-de-software';
+const FACTORY_CLASS = 'desenvolvimento-de-software';
 
-test('AT8 — status --json no control plane vazio tem forma pinada', { timeout: 180_000 }, async (t) => {
-  const base = areaTemporaria(t);
-  const controlPlane = await subirControlPlane(t, {
-    caminhoBanco: path.join(base, 'cartografo.db'),
+test('AT8 — status --json against an empty control plane has a pinned shape', { timeout: 180_000 }, async (t) => {
+  const base = temporaryArea(t);
+  const controlPlane = await startControlPlane(t, {
+    databasePath: path.join(base, 'cartografo.db'),
   });
 
-  const resultado = await rodarCli(['status', '--json'], {
+  const result = await runCli(['status', '--json'], {
     env: { CARTOGRAFO_URL: controlPlane.url },
   });
 
-  assert.equal(resultado.codigo, 0, `stderr:\n${resultado.erros}`);
+  assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
   assert.equal(
-    resultado.saida.trim(),
-    '{"server":"ok","projetos":[],"trabalhos":null,"perguntas_pendentes":null}',
+    result.stdout.trim(),
+    '{"server":"ok","projects":[],"jobs":null,"pendingInputRequests":null}',
   );
 });
 
-test('AT9 — depois de importar, status --json lista a classe com a versão corrente', { timeout: 180_000 }, async (t) => {
-  const base = areaTemporaria(t);
-  const controlPlane = await subirControlPlane(t, {
-    caminhoBanco: path.join(base, 'cartografo.db'),
+test('AT9 — after importing, status --json lists the class with its current version', { timeout: 180_000 }, async (t) => {
+  const base = temporaryArea(t);
+  const controlPlane = await startControlPlane(t, {
+    databasePath: path.join(base, 'cartografo.db'),
   });
 
-  const importacao = await rodarCli(['import', BUNDLE_FABRICA, '--url', controlPlane.url]);
-  assert.equal(importacao.codigo, 0, `stderr:\n${importacao.erros}`);
-  const versao = primeiroHash(importacao.saida);
+  const importResult = await runCli(['import', FACTORY_BUNDLE, '--url', controlPlane.url]);
+  assert.equal(importResult.code, 0, `stderr:\n${importResult.stderr}`);
+  const version = firstHash(importResult.stdout);
 
-  const resultado = await rodarCli(['status', '--json', '--url', controlPlane.url]);
-  assert.equal(resultado.codigo, 0, `stderr:\n${resultado.erros}`);
+  const result = await runCli(['status', '--json', '--url', controlPlane.url]);
+  assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
 
-  const relatorio = JSON.parse(resultado.saida) as {
+  const report = JSON.parse(result.stdout) as {
     server: string;
-    projetos: { classe: string; versao_corrente_id: string }[];
-    trabalhos: null;
-    perguntas_pendentes: null;
+    projects: { classe: string; versao_corrente_id: string }[];
+    jobs: null;
+    pendingInputRequests: null;
   };
-  assert.equal(relatorio.server, 'ok');
-  assert.deepEqual(relatorio.projetos, [{ classe: CLASSE_FABRICA, versao_corrente_id: versao }]);
-  assert.equal(relatorio.trabalhos, null);
-  assert.equal(relatorio.perguntas_pendentes, null);
+  assert.equal(report.server, 'ok');
+  assert.deepEqual(report.projects, [{ classe: FACTORY_CLASS, versao_corrente_id: version }]);
+  assert.equal(report.jobs, null);
+  assert.equal(report.pendingInputRequests, null);
 
-  const tabela = await rodarCli(['status', '--url', controlPlane.url]);
-  assert.equal(tabela.codigo, 0, `stderr:\n${tabela.erros}`);
-  assert.match(tabela.saida, /server: ok/);
-  assert.match(tabela.saida, new RegExp(CLASSE_FABRICA));
-  assert.match(tabela.saida, new RegExp(versao));
+  const table = await runCli(['status', '--url', controlPlane.url]);
+  assert.equal(table.code, 0, `stderr:\n${table.stderr}`);
+  assert.match(table.stdout, /server: ok/);
+  assert.match(table.stdout, new RegExp(FACTORY_CLASS));
+  assert.match(table.stdout, new RegExp(version));
 });
 
-test('AT10 — status contra servidor inalcançável diz `server: indisponível` e sai não-zero', { timeout: 60_000 }, async () => {
-  const porta = await portaLivre();
-  const resultado = await rodarCli(['status', '--url', `http://127.0.0.1:${porta}`]);
+test('AT10 — status against an unreachable server says `server: unavailable` and exits non-zero', { timeout: 60_000 }, async () => {
+  const port = await freePort();
+  const result = await runCli(['status', '--url', `http://127.0.0.1:${port}`]);
 
-  assert.notEqual(resultado.codigo, 0);
-  assert.match(resultado.saida, /server: indisponível/);
-  assert.equal(pareceStackTrace(resultado.erros), false, `stack trace vazou:\n${resultado.erros}`);
+  assert.notEqual(result.code, 0);
+  assert.match(result.stdout, /server: unavailable/);
+  assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
 });

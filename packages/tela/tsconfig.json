@@ -1,4 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The page ships as plain ES modules (no bundler, no build step), and two of
+    // them — actions.js and diff.js — are imported by the tests in Node. Without
+    // allowJs those imports would not resolve at all under `tsc --noEmit`; with
+    // it, their JSDoc types are what the tests typecheck against.
+    "allowJs": true
+  },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }

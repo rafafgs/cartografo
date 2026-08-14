@@ -5,7 +5,7 @@
  * não importa nada de `packages/core`, e sequer sabe onde o arquivo do SQLite
  * mora. Tudo o que ela mostra passou por aqui, e o que não existe aqui a tela
  * não tem como inventar — foi por isso que esta ficha fechou três lacunas na
- * API em vez de contorná-las (`GET /v1/execucoes` e o filtro `trabalho_id` em
+ * API em vez de contorná-las (`GET /v1/executions` e o filtro `trabalho_id` em
  * sessões e perguntas).
  *
  * As interfaces declaram só o SUBCONJUNTO do contrato que a tela consome, no
@@ -16,7 +16,7 @@
  * `buscar` é injetável só para teste; em produção é o `fetch` global.
  */
 
-/** Projeção do trabalho, como `GET /v1/trabalhos` a devolve. */
+/** Projeção do trabalho, como `GET /v1/jobs` a devolve. */
 export interface Trabalho {
   id: number;
   execucao_id: number | null;
@@ -30,7 +30,7 @@ export interface Trabalho {
   atualizado_em: string;
 }
 
-/** Uma linha de `GET /v1/execucoes`. */
+/** Uma linha de `GET /v1/executions`. */
 export interface ResumoDeExecucao {
   execucao_id: number | null;
   trabalhos: number;
@@ -46,7 +46,7 @@ export interface UsoDeSessao {
   cache_read_input_tokens: number;
 }
 
-/** Projeção da sessão, como `GET /v1/sessoes` a devolve. */
+/** Projeção da sessão, como `GET /v1/sessions` a devolve. */
 export interface Sessao {
   id: number;
   trabalho_id: number | null;
@@ -60,7 +60,7 @@ export interface Sessao {
   finalizada_em: string | null;
 }
 
-/** Projeção da pergunta, como `GET /v1/perguntas` a devolve. */
+/** Projeção da pergunta, como `GET /v1/input-requests` a devolve. */
 export interface Pergunta {
   id: number;
   trabalho_id: number;
@@ -159,7 +159,7 @@ export class ClienteApi {
    */
   async listarTrabalhos(filtro: Filtro = {}): Promise<Trabalho[]> {
     const { trabalhos } = await this.#get<{ trabalhos: Trabalho[] }>(
-      `/v1/trabalhos${consulta(filtro)}`,
+      `/v1/jobs${consulta(filtro)}`,
     );
     return trabalhos;
   }
@@ -171,7 +171,7 @@ export class ClienteApi {
    * @returns O trabalho, ou `null` quando o control plane diz que não existe.
    */
   async buscarTrabalho(id: number): Promise<Trabalho | null> {
-    return await this.#getOuNulo<Trabalho>(`/v1/trabalhos/${id}`);
+    return await this.#getOuNulo<Trabalho>(`/v1/jobs/${id}`);
   }
 
   /**
@@ -181,7 +181,7 @@ export class ClienteApi {
    * @returns Eventos em ordem, ou `null` se o trabalho não existe.
    */
   async eventosDoTrabalho(id: number): Promise<Evento[] | null> {
-    const corpo = await this.#getOuNulo<{ eventos: Evento[] }>(`/v1/trabalhos/${id}/eventos`);
+    const corpo = await this.#getOuNulo<{ eventos: Evento[] }>(`/v1/jobs/${id}/events`);
     return corpo === null ? null : corpo.eventos;
   }
 
@@ -191,7 +191,7 @@ export class ClienteApi {
    * @returns Uma linha por execução, com o grupo `null` por último.
    */
   async listarExecucoes(): Promise<ResumoDeExecucao[]> {
-    const { execucoes } = await this.#get<{ execucoes: ResumoDeExecucao[] }>('/v1/execucoes');
+    const { execucoes } = await this.#get<{ execucoes: ResumoDeExecucao[] }>('/v1/executions');
     return execucoes;
   }
 
@@ -202,7 +202,7 @@ export class ClienteApi {
    * @returns Sessões em ordem de id.
    */
   async listarSessoes(filtro: Filtro = {}): Promise<Sessao[]> {
-    const { sessoes } = await this.#get<{ sessoes: Sessao[] }>(`/v1/sessoes${consulta(filtro)}`);
+    const { sessoes } = await this.#get<{ sessoes: Sessao[] }>(`/v1/sessions${consulta(filtro)}`);
     return sessoes;
   }
 
@@ -214,7 +214,7 @@ export class ClienteApi {
    */
   async listarPerguntas(filtro: Filtro = {}): Promise<Pergunta[]> {
     const { perguntas } = await this.#get<{ perguntas: Pergunta[] }>(
-      `/v1/perguntas${consulta(filtro)}`,
+      `/v1/input-requests${consulta(filtro)}`,
     );
     return perguntas;
   }
@@ -234,7 +234,7 @@ export class ClienteApi {
    * @throws {ErroDaApi} Quando o control plane recusa — 404 inclusive.
    */
   async responderPergunta(id: number, resposta: string, respondidoPor: string): Promise<Pergunta> {
-    return await this.#pedir<Pergunta>(`/v1/perguntas/${id}/resposta`, {
+    return await this.#pedir<Pergunta>(`/v1/input-requests/${id}/answer`, {
       metodo: 'PATCH',
       corpo: { resposta, respondido_por: respondidoPor },
     });

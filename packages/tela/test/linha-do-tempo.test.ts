@@ -10,11 +10,11 @@
  * A reconstrução acontece na TELA, a partir de três respostas HTTP, porque
  * nenhuma rota da API entrega isso pronta:
  *
- * - `GET /v1/trabalhos/:id/eventos` dá as transições, mas EXCLUI de propósito
+ * - `GET /v1/jobs/:id/events` dá as transições, mas EXCLUI de propósito
  *   `sessao.finalizada` e `pergunta.respondida` (os schemas desses eventos não
  *   carregam `trabalho_id`; ver `packages/core/src/db/eventos.ts`);
- * - `GET /v1/sessoes?trabalho_id=` dá o fim das sessões;
- * - `GET /v1/perguntas?trabalho_id=` dá o fim das esperas.
+ * - `GET /v1/sessions?trabalho_id=` dá o fim das sessões;
+ * - `GET /v1/input-requests?trabalho_id=` dá o fim das esperas.
  *
  * Os dois filtros `trabalho_id` são lacuna de API fechada nesta mesma ficha.
  *
@@ -85,13 +85,13 @@ test('t107 AT7 — GET /trabalhos/:id monta fila, agente e humano em ordem crono
   });
 
   await esperar(FOLGA_MS);
-  await api(cp, 'POST', `/v1/trabalhos/${trabalho.id}/transicoes`, { para_no_id: 'implementar' });
+  await api(cp, 'POST', `/v1/jobs/${trabalho.id}/transitions`, { para_no_id: 'implementar' });
 
   await esperar(FOLGA_MS);
   const sessao = await abrirSessao(cp, { trabalho_id: trabalho.id, no_id: 'implementar' });
 
   await esperar(FOLGA_MS);
-  const finalizada = await api<Sessao>(cp, 'PATCH', `/v1/sessoes/${sessao.id}/finalizar`, {
+  const finalizada = await api<Sessao>(cp, 'PATCH', `/v1/sessions/${sessao.id}/finish`, {
     status: 'concluida',
     exit_code: 0,
   });
@@ -104,7 +104,7 @@ test('t107 AT7 — GET /trabalhos/:id monta fila, agente e humano em ordem crono
   });
 
   await esperar(FOLGA_MS);
-  const respondida = await api<Pergunta>(cp, 'PATCH', `/v1/perguntas/${pergunta.id}/resposta`, {
+  const respondida = await api<Pergunta>(cp, 'PATCH', `/v1/input-requests/${pergunta.id}/answer`, {
     resposta: 'siga',
     respondido_por: 'rafael',
   });

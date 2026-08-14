@@ -1,0 +1,16 @@
+# Dependências
+node_modules/
+
+# Banco embarcado do control plane (D1) — o diretório default de CARTOGRAFO_DB_PATH
+.cartografo/
+*.db
+*.db-shm
+*.db-wal
+
+# Artefatos de build / cache de ferramenta
+dist/
+*.tsbuildinfo
+.eslintcache
+
+# Sistema
+.DS_Store

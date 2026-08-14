@@ -1,0 +1,29 @@
+{
+  "name": "cartografo-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monorepo do cartografo: control plane (packages/core) e tela (packages/tela).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "start": "npm run start --workspace cartografo",
+    "test": "npm run test --workspaces --if-present && node --test \"tests/**/*.test.mjs\" \"especificacoes/**/*.test.mjs\" \"scripts/**/*.test.mjs\"",
+    "lint": "eslint . && node scripts/check-single-writer.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.13.3",
+    "eslint": "^10.8.1",
+    "globals": "^17.11.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0"
+  }
+}

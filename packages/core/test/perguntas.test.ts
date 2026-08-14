@@ -229,3 +229,69 @@ test('AT14 — GET /v1/perguntas?status=pendente&execucao_id=7 dá o suficiente 
   assert.equal(fila.resposta_padrao, CORPO_COMPLETO.resposta_padrao);
   assert.equal(fila.trabalho_id, daSete.id);
 });
+
+test('t107 AT3 — GET /v1/perguntas?trabalho_id= recorta por trabalho dentro da mesma execução', async (t) => {
+  exigirArtefatos(...ARTEFATOS);
+  const ctx = await subirControlPlane(t);
+
+  // Mesma execução nos dois: o recorte que este teste cobra é o do TRABALHO,
+  // que é o que a linha do tempo da tela precisa para achar as esperas.
+  const observado = await criarTrabalho(ctx, {
+    titulo: 'o que a tela abre',
+    no_entrada_id: 'entrada',
+    execucao_id: 7,
+  });
+  const vizinho = await criarTrabalho(ctx, {
+    titulo: 'o outro da mesma rodada',
+    no_entrada_id: 'entrada',
+    execucao_id: 7,
+  });
+
+  const criar = async (trabalhoId: number): Promise<Pergunta> => {
+    const resposta = await pedir<Pergunta>(ctx, 'POST', '/v1/perguntas', {
+      trabalho_id: trabalhoId,
+      ...CORPO_COMPLETO,
+    });
+    assert.equal(resposta.status, 201);
+    return resposta.corpo;
+  };
+
+  const pendente = await criar(observado.id);
+  const respondida = await criar(observado.id);
+  const doVizinho = await criar(vizinho.id);
+
+  await pedir(ctx, 'PATCH', `/v1/perguntas/${respondida.id}/resposta`, {
+    resposta: 'Manter 0002',
+    respondido_por: 'rafael',
+  });
+
+  const doTrabalho = await pedir<{ perguntas: Pergunta[] }>(
+    ctx,
+    'GET',
+    `/v1/perguntas?trabalho_id=${observado.id}`,
+  );
+  assert.equal(doTrabalho.status, 200);
+  assert.deepEqual(
+    doTrabalho.corpo.perguntas.map((linha) => linha.id),
+    [pendente.id, respondida.id],
+    'sem filtro de status, as duas do trabalho — respondida inclusive (a linha do tempo precisa dela)',
+  );
+  assert.ok(
+    !doTrabalho.corpo.perguntas.some((linha) => linha.id === doVizinho.id),
+    'a pergunta do vizinho compartilha a execução, mas não o trabalho',
+  );
+
+  const somentePendente = await pedir<{ perguntas: Pergunta[] }>(
+    ctx,
+    'GET',
+    `/v1/perguntas?status=pendente&trabalho_id=${observado.id}`,
+  );
+  assert.deepEqual(
+    somentePendente.corpo.perguntas.map((linha) => linha.id),
+    [pendente.id],
+    'os filtros se somam em AND',
+  );
+
+  const invalido = await pedir(ctx, 'GET', '/v1/perguntas?trabalho_id=abc');
+  assert.equal(invalido.status, 400, 'filtro inválido é 400, nunca filtro ignorado em silêncio');
+});

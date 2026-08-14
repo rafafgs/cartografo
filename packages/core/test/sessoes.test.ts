@@ -158,3 +158,74 @@ test('AT10 — GET /v1/sessoes?execucao_id=7 devolve só as sessões daquela exe
     [uma.id, outra.id].sort((a, b) => a - b),
   );
 });
+
+test('t107 AT2 — GET /v1/sessoes?trabalho_id= recorta por trabalho dentro da mesma execução', async (t) => {
+  exigirArtefatos(...ARTEFATOS, ARTEFATOS_T102.repoTrabalho, ARTEFATOS_T102.rotasTrabalhos);
+  const ctx = await subirControlPlane(t);
+
+  // Os dois trabalhos moram na MESMA execução: é o que faz o teste provar o
+  // filtro novo, e não o `execucao_id` que já existia.
+  const observado = await criarTrabalho(ctx, {
+    titulo: 'o que a tela abre',
+    no_entrada_id: 'entrada',
+    execucao_id: 7,
+  });
+  const vizinho = await criarTrabalho(ctx, {
+    titulo: 'o outro da mesma rodada',
+    no_entrada_id: 'entrada',
+    execucao_id: 7,
+  });
+
+  const abrir = async (trabalhoId: number, prompt: string): Promise<Sessao> => {
+    const resposta = await pedir<Sessao>(ctx, 'POST', '/v1/sessoes', {
+      trabalho_id: trabalhoId,
+      engine: 'claude-code',
+      working_dir: '/tmp/cartografo',
+      prompt,
+    });
+    assert.equal(resposta.status, 201);
+    return resposta.corpo;
+  };
+
+  const primeira = await abrir(observado.id, 'primeira passada');
+  const segunda = await abrir(observado.id, 'segunda passada');
+  const doVizinho = await abrir(vizinho.id, 'do vizinho');
+
+  const resposta = await pedir<{ sessoes: Sessao[] }>(
+    ctx,
+    'GET',
+    `/v1/sessoes?trabalho_id=${observado.id}`,
+  );
+  assert.equal(resposta.status, 200);
+  assert.deepEqual(
+    resposta.corpo.sessoes.map((sessao) => sessao.id),
+    [primeira.id, segunda.id],
+    'só as sessões do trabalho pedido, em ordem de id',
+  );
+  assert.ok(
+    !resposta.corpo.sessoes.some((sessao) => sessao.id === doVizinho.id),
+    'a sessão do vizinho compartilha a execução, mas não o trabalho',
+  );
+
+  const combinado = await pedir<{ sessoes: Sessao[] }>(
+    ctx,
+    'GET',
+    `/v1/sessoes?execucao_id=7&trabalho_id=${observado.id}`,
+  );
+  assert.equal(combinado.status, 200);
+  assert.deepEqual(
+    combinado.corpo.sessoes.map((sessao) => sessao.id),
+    [primeira.id, segunda.id],
+    'os dois filtros juntos são AND',
+  );
+
+  const semCasamento = await pedir<{ sessoes: Sessao[] }>(
+    ctx,
+    'GET',
+    `/v1/sessoes?execucao_id=8&trabalho_id=${observado.id}`,
+  );
+  assert.deepEqual(semCasamento.corpo.sessoes, [], 'AND, não OR');
+
+  const invalido = await pedir(ctx, 'GET', '/v1/sessoes?trabalho_id=abc');
+  assert.equal(invalido.status, 400, 'filtro inválido é 400, nunca filtro ignorado em silêncio');
+});

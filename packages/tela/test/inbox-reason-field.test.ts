@@ -14,11 +14,12 @@
  * by `for`/`id`), so the page is free to change how it gets there as long as
  * the name is there. `fake-dom.ts` explains why the DOM is a stub.
  *
- * Action names are the API's vocabulary — `reject` IS the path of
+ * Action names are the API's vocabulary — `reject` IS the last segment of
  * `POST /v1/proposals/:id/reject` — and not this package's own identifiers, so
- * they were renamed to English with the rest of the `/v1` surface (t127,
- * FR3/FR4, D18). The labels this test clicks ("Rejeitar", "Reverter") stay in
- * Portuguese, like the rest of the page: the key and the label are two
+ * they follow the `/v1` surface: they came in from t111 in Portuguese and were
+ * renamed to English with the rest of it (t127, FR3/FR4, D18). The button
+ * labels this file clicks by ("Rejeitar", "Reverter") are the visible text and
+ * stay in Portuguese, like the rest of the page: the key and the label are two
  * different vocabularies and only one of them moved.
  */
 

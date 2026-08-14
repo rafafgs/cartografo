@@ -12,7 +12,9 @@
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "spike": "node --import tsx scripts/spike-real-session.mjs",
-    "spike:escalation": "node --import tsx scripts/spike-t106-human-escalation.mjs"
+    "spike:escalation": "node --import tsx scripts/spike-t106-human-escalation.mjs",
+    "spike:topografo": "node --import tsx scripts/spike-topografo-fluxo.mjs",
+    "topografo": "node --import tsx src/topografo/cli.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

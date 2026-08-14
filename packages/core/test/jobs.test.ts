@@ -245,7 +245,16 @@ test('AT6 — GET /v1/jobs/:id/events is the timeline, in id order', async (t) =
   const events = await timeline(ctx, job.id);
   assert.deepEqual(
     events.map((event) => event.tipo),
-    ['trabalho.criado', 'trabalho.transicao', 'sessao.aberta', 'pergunta.criada'],
+    [
+      'trabalho.criado',
+      'trabalho.transicao',
+      'sessao.aberta',
+      'pergunta.criada',
+      // Creating the input request blocks the job in the same transaction since
+      // t106; the flag shows up here because `trabalho.bloqueado` is an event OF
+      // the job.
+      'trabalho.bloqueado',
+    ],
     'the job ones plus the session/input-request ones that cite it via dados.trabalho_id',
   );
   assert.deepEqual(

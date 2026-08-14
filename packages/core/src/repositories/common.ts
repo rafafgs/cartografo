@@ -36,6 +36,19 @@ export const AUTO_APPROVAL_ACTOR: Actor = Object.freeze({
   ref: 'portao-auto-aprovacao',
 });
 
+/**
+ * Actor of the automatic block that is born together with an input request (t106).
+ *
+ * Only the BLOCK uses this constant. The unblock carries the actor of whoever
+ * answered — `usuario` when it was a person, the automatic gate when it was not —
+ * because "who unblocked this job?" is an audit question and the answer cannot
+ * always be "the system".
+ */
+export const ESCALATION_ACTOR: Actor = Object.freeze({
+  tipo: 'sistema',
+  ref: 'escalacao-humana',
+});
+
 /** Instant of the fact, ISO 8601. */
 export const now = (): string => new Date().toISOString();
 

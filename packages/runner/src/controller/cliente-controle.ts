@@ -22,7 +22,7 @@
 /**
  * Um trabalho, como `GET /v1/jobs` (t102) o devolve.
  *
- * Subconjunto da projeção de `packages/core/src/repositorios/trabalho.ts`: os
+ * Subconjunto da projeção de `packages/core/src/repositories/job.ts`: os
  * opcionais são anuláveis lá, e são anuláveis aqui pela mesma razão (execução e
  * versão de grafo são soltas, D15).
  */

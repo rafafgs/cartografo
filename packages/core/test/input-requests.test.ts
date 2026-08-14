@@ -1,5 +1,5 @@
 /**
- * Input-request acceptance tests (t102, AT11–AT14).
+ * Input-request acceptance tests (t102, AT11–AT14; t106, the block wiring).
  *
  * Human escalation is a first-class entity, not a special case: question and
  * approval are the same animal, and the ORIGIN of the answer is the event type
@@ -7,9 +7,12 @@
  * projection the origin becomes a field again — whoever reads state wants to
  * compare.
  *
- * What this suite does NOT do: block the job when the input request is created.
- * That wiring is the acceptance criterion of t106, and AT11 exists to lock the
- * boundary.
+ * t102 deliberately stopped short of wiring input request to block, and AT11
+ * locked that boundary by asserting `bloqueado === false`. t106 is the ticket
+ * that closes the cycle, so AT11 switches sides: creating the input request
+ * blocks the job IN THE SAME transaction, and answering unblocks it with the
+ * actor of whoever answered. Whoever wants to know why the cycle lives here, and
+ * not in the runner, reads `docs/spec/escalacao-humana.md`.
  *
  * The JSON field names stay in Portuguese: they mirror the untouched migration
  * columns (t127, FR8).
@@ -49,7 +52,7 @@ const FULL_BODY = {
   auto_aprovavel: true,
 };
 
-test('AT11 — POST /v1/input-requests creates a pending one and does NOT block the job', async (t) => {
+test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owning job (t106)', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
   const { getEventsByEntity } = await loadEvents();
@@ -76,12 +79,16 @@ test('AT11 — POST /v1/input-requests creates a pending one and does NOT block 
   assert.deepEqual(inputRequest.opcoes, FULL_BODY.opcoes);
   assert.equal(inputRequest.execucao_id, 7, 'the execution comes from the job that waits');
 
+  // The route's shape does not change: whoever wants the block reads the job.
+  // What changes is that it is ALREADY blocked by the time the POST's response
+  // arrives — same transaction, not a second step somebody may forget to take.
   const after = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
   assert.equal(after.status, 200);
+  assert.equal(after.body.bloqueado, true, 'creating the input request stops the job');
   assert.equal(
-    after.body.bloqueado,
-    false,
-    'the input-request→block wiring belongs to t106; this suite only records the request',
+    after.body.motivo_bloqueio,
+    `aguardando resposta da pergunta ${inputRequest.id}`,
+    'the reason quotes the input request id: whoever reads the job knows what unblocks it',
   );
 
   const events = getEventsByEntity(ctx.db, 'pergunta', inputRequest.id);
@@ -99,6 +106,103 @@ test('AT11 — POST /v1/input-requests creates a pending one and does NOT block 
     resposta_padrao: FULL_BODY.resposta_padrao,
     auto_aprovavel: true,
   });
+
+  // The job's timeline: the creation, and right after it the block. The order is
+  // the log's (id), and it is what tells the story — input request first, flag
+  // second.
+  const jobEvents = getEventsByEntity(ctx.db, 'trabalho', job.id);
+  assert.deepEqual(
+    jobEvents.map((event) => event.tipo),
+    ['trabalho.criado', 'trabalho.bloqueado'],
+  );
+  const block = jobEvents[1];
+  assert.deepEqual(block.dados, {
+    motivo: `aguardando resposta da pergunta ${inputRequest.id}`,
+  });
+  assert.equal(
+    block.ator.tipo,
+    'sistema',
+    'the wiring raises the flag, not the human nor the agent that asked',
+  );
+  assert.equal(block.ator.ref, 'escalacao-humana');
+});
+
+test('t106 — PATCH /answer unblocks the job, with the actor of whoever answered', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const job = await createJob(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+  const created = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
+    trabalho_id: job.id,
+    ...FULL_BODY,
+  });
+  assert.equal(created.status, 201);
+
+  const blocked = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
+  assert.equal(blocked.body.bloqueado, true);
+
+  const answered = await request<InputRequest>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${created.body.id}/answer`,
+    { resposta: 'Manter 0002', respondido_por: 'rafael' },
+  );
+  assert.equal(answered.status, 200);
+
+  const after = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
+  assert.equal(after.body.bloqueado, false, 'answering returns the job to the queue');
+  assert.equal(after.body.motivo_bloqueio, null);
+
+  const jobEvents = getEventsByEntity(ctx.db, 'trabalho', job.id);
+  assert.deepEqual(
+    jobEvents.map((event) => event.tipo),
+    ['trabalho.criado', 'trabalho.bloqueado', 'trabalho.desbloqueado'],
+  );
+  const unblock = jobEvents[2];
+  assert.deepEqual(unblock.dados, {}, 'the fact is the fall of the flag itself');
+  assert.equal(
+    unblock.ator.tipo,
+    'usuario',
+    'a person unblocked it, and the unblock carries the SAME actor as the answer',
+  );
+  assert.equal(unblock.ator.ref, 'rafael');
+});
+
+test('t106 — PATCH /auto-resolution unblocks with an actor that is not a user', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const job = await createJob(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+  const created = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
+    trabalho_id: job.id,
+    ...FULL_BODY,
+  });
+  assert.equal(created.status, 201);
+
+  const resolved = await request<InputRequest>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${created.body.id}/auto-resolution`,
+    { resposta: 'Manter 0002', baseada_em: 'resposta_padrao' },
+  );
+  assert.equal(resolved.status, 200);
+
+  const after = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
+  assert.equal(after.body.bloqueado, false, 'the automatic gate unblocks too');
+  assert.equal(after.body.motivo_bloqueio, null);
+
+  const jobEvents = getEventsByEntity(ctx.db, 'trabalho', job.id);
+  assert.deepEqual(
+    jobEvents.map((event) => event.tipo),
+    ['trabalho.criado', 'trabalho.bloqueado', 'trabalho.desbloqueado'],
+  );
+  assert.notEqual(
+    jobEvents[2].ator.tipo,
+    'usuario',
+    'the audit ALWAYS distinguishes unblocked-by-a-person from unblocked-by-the-system',
+  );
 });
 
 test('AT12 — PATCH /v1/input-requests/:id/answer records the human answer', async (t) => {

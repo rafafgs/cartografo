@@ -9,6 +9,7 @@
     "node": ">=20.11.0"
   },
   "scripts": {
+    "start": "node --import tsx src/server.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },

@@ -23,6 +23,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Database } from '../db/connection.ts';
 import { validateGraph } from '../domain/graph.ts';
 import { hashSnapshot } from '../domain/hash.ts';
+import { isExpectedMetric, validateExpectedMetric, verdictFor } from '../domain/hypothesis.ts';
 import {
   applyOperations,
   validateOperation,
@@ -30,10 +31,13 @@ import {
   type Operation,
 } from '../domain/operations.ts';
 import { getGraph, getVersion } from '../repositories/graphs.ts';
+import { metricsByVersion } from '../repositories/job.ts';
 import {
   applyProposal,
   getProposal,
   createProposal,
+  listProposals,
+  recordVerdict,
   rejectProposal,
   revertProposal,
   type ProposalRow,
@@ -249,6 +253,113 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
     const reverted = revertProposal(db, { proposal, reason });
     return { proposta: reverted, grafo: getGraph(db, proposal.grafo_id) };
   });
+
+  /* ------------------------------------------------------------------------ */
+  /* t112 — the next run closes the proposal. Route segments are code and were  */
+  /* renamed to English with the rest of the surface (t127, FR3); the payload   */
+  /* keys stay in Portuguese, mirroring the untouched column (FR8).             */
+  /* ------------------------------------------------------------------------ */
+
+  app.post<IdParam>('/proposals/:id/outcome', async (request, reply) => {
+    const proposal = load(db, request.params.id);
+    if (proposal === undefined) {
+      reply.code(404);
+      return { erro: 'proposta_desconhecida', id: request.params.id };
+    }
+
+    const body = isObject(request.body) ? request.body : {};
+    const executionId = body.execucao_id;
+    const after = body.depois;
+    if (!Number.isInteger(executionId) || !Number.isFinite(after)) {
+      reply.code(400);
+      return {
+        erro: 'campo_obrigatorio_ausente',
+        mensagem:
+          'fechar o experimento exige execucao_id (inteiro) e depois (número): quem calcula a métrica é quem chama',
+      };
+    }
+
+    if (proposal.status !== 'aplicada') {
+      reply.code(409);
+      return {
+        erro: 'proposta_nao_aplicada',
+        mensagem: `só proposta aplicada tem experimento a fechar; esta está "${proposal.status}"`,
+        status: proposal.status,
+      };
+    }
+
+    // Only the first call counts. Re-evaluating would be rewriting a hypothesis'
+    // past, and the column holds ONE result, the one of the first next round.
+    if (proposal.resultado !== null) {
+      reply.code(409);
+      return {
+        erro: 'proposta_ja_avaliada',
+        mensagem: 'o resultado desta hipótese já foi gravado pela primeira execução seguinte',
+        resultado: proposal.resultado,
+      };
+    }
+
+    const metric = proposal.metrica_esperada;
+    if (!isExpectedMetric(metric)) {
+      // Creation never validated this shape (out of scope here): an applied
+      // proposal may perfectly well carry a metric nobody can read. Computing a
+      // verdict over incomplete data is worse than not computing one.
+      reply.code(422);
+      return {
+        erro: 'metrica_esperada_invalida',
+        mensagem:
+          'metrica_esperada precisa ter a forma {nome, direcao: "sobe"|"cai", de, para} para haver veredito',
+        detalhes: validateExpectedMetric(metric).map((problem) => problem.message),
+      };
+    }
+
+    // "The next execution" has to be demonstrable from telemetry (t102's FR17),
+    // not claimed in the body: with no job recorded under the version this
+    // proposal applied, there is no next round to speak of.
+    const appliedVersion = proposal.versao_aplicada_id;
+    const evidence =
+      appliedVersion === null
+        ? undefined
+        : metricsByVersion(db, executionId as number).find(
+            (row) => row.grafo_versao_id === appliedVersion,
+          );
+    if (evidence === undefined || evidence.trabalhos < 1) {
+      reply.code(422);
+      return {
+        erro: 'execucao_sem_evidencia',
+        mensagem: 'nenhum trabalho desta execução rodou sob a versão que a proposta aplicou',
+        execucao_id: executionId,
+        versao_aplicada_id: appliedVersion,
+      };
+    }
+
+    const written = recordVerdict(db, {
+      proposal,
+      executionId: executionId as number,
+      after: after as number,
+      verdict: verdictFor(metric, after as number),
+      before: metric.de,
+    });
+
+    // The status stays `aplicada` on purpose: "piorou" is data, not an action.
+    // Reverting is a human decision, through the revert route (README, princípio 5).
+    return { proposta: written };
+  });
+
+  app.get('/proposals', async (request) => {
+    const filter = request.query as { status?: string; veredito?: string };
+    return {
+      propostas: listProposals(db, {
+        status: optionalFilter(filter.status),
+        veredito: optionalFilter(filter.veredito),
+      }),
+    };
+  });
+}
+
+/** An absent or empty querystring filter means "no filter", not "empty". */
+function optionalFilter(value: string | undefined): string | undefined {
+  return value === undefined || value === '' ? undefined : value;
 }
 
 /** Resolves a route's `:id` into a proposal; a non-numeric id is a 404, not a 500. */

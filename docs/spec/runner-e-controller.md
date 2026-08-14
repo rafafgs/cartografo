@@ -292,7 +292,14 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   cega para o encerramento normal — que é o caso mais comum de todos. A
   decisão é de quem ligar a emissão; esta ficha não mexe na taxonomia.
 - **Abrir sessão de verdade** pelo `EngineAdapter` — `despachar` é callback
-  injetado (`t106`/`t109`).
+  injetado (`t106`/`t109`). **Construído pela `t106`:**
+  [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch-claude-code.ts)
+  é uma implementação desse callback — abre a sessão, grava `sessao.aberta` e
+  `sessao.finalizada`, e transforma um pedido de escalação em pergunta pela
+  API ([escalacao-humana.md](escalacao-humana.md)). O controller continua sem
+  saber que engine existe: nada neste arquivo mudou para isso acontecer, que
+  era o ponto da costura. O que segue pendente é a instrução do nó vir do
+  grafo registrado em vez de um literal (`t109`).
 - **Modo local** (avaliar um diretório sem control plane): não tem schema nem
   critério de aceite escrito em lugar nenhum do repo. Revisitar quando houver
   caso de uso concreto.

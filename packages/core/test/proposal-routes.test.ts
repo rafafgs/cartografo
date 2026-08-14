@@ -193,13 +193,14 @@ async function createProposal(
   graphId: string,
   targetVersion: string,
   operations: OperationsModule.Operation[],
+  expectedMetric: unknown = EXPECTED_METRIC,
 ): Promise<ProposalRow> {
   const response = await post(address, '/v1/proposals', {
     grafo_id: graphId,
     versao_alvo: targetVersion,
     operacoes: operations,
     evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    metrica_esperada: expectedMetric,
   });
   const body = await jsonBody<{ proposta: ProposalRow }>(response);
   assert.equal(response.status, 201, JSON.stringify(body));
@@ -592,5 +593,313 @@ test('t127 — the old Portuguese proposal paths no longer exist', async (t) => 
   assert.equal(
     (await post(address, `/v1/proposals/${proposal.id}/reverter`, { motivo: 'x' })).status,
     404,
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t112 — hypothesis outcome: the next run closes the proposal                 */
+/*                                                                            */
+/* The route segments came in from main in Portuguese and were renamed with    */
+/* the rest of the surface (t127, FR3); the JSON payload keys stay in          */
+/* Portuguese, mirroring the untouched migration column (FR8).                 */
+/* -------------------------------------------------------------------------- */
+
+/** The shape `proposta.resultado` takes once the experiment is closed (FR5). */
+interface HypothesisOutcome {
+  veredito: string;
+  antes: number;
+  depois: number;
+  execucao_id: number;
+  avaliado_em: string;
+}
+
+/** Changes a node's `papel`, so each proposal produces a distinct snapshot. */
+function roleChange(papel: string): OperationsModule.Operation[] {
+  return [
+    {
+      tipo: 'alterar_campo_no',
+      no_id: 'redigir',
+      campo: 'papel',
+      de: 'redator',
+      para: papel,
+      inversa: {
+        tipo: 'alterar_campo_no',
+        no_id: 'redigir',
+        campo: 'papel',
+        de: papel,
+        para: 'redator',
+      },
+    },
+  ];
+}
+
+/**
+ * Registers real telemetry under a version, inside an execution.
+ *
+ * This is the evidence FR3 demands: `metrics-by-version` (t102, FR17) only sees
+ * a version that actually ran because some job declared it.
+ */
+async function recordWorkUnderVersion(
+  address: string,
+  executionId: number,
+  versionId: string,
+): Promise<void> {
+  const response = await post(address, '/v1/jobs', {
+    titulo: 'travessia da rodada seguinte',
+    no_entrada_id: 'redigir',
+    execucao_id: executionId,
+    grafo_versao_id: versionId,
+  });
+  assert.equal(response.status, 201, 'the next round telemetry has to exist for real');
+}
+
+/** Applies a proposal and returns the version it wrote. */
+async function applyProposal(address: string, proposalId: number): Promise<string> {
+  const response = await post(address, `/v1/proposals/${proposalId}/apply`, {});
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.ok(body.proposta.versao_aplicada_id !== null);
+  return body.proposta.versao_aplicada_id;
+}
+
+/** The whole prelude of the outcome route: base, applied proposal, telemetry. */
+async function appliedProposalWithTelemetry(
+  t: TestHook,
+  options: { executionId?: number; expectedMetric?: unknown } = {},
+): Promise<{
+  address: string;
+  graph: GraphRow;
+  targetVersion: string;
+  proposal: ProposalRow;
+  appliedVersion: string;
+  executionId: number;
+}> {
+  const address = await startApp(t);
+  const executionId = options.executionId ?? 1;
+
+  const { graph, version } = await registerBase(address);
+  const proposal = await createProposal(
+    address,
+    graph.id,
+    version.id,
+    passingOperations(),
+    options.expectedMetric ?? EXPECTED_METRIC,
+  );
+  const appliedVersion = await applyProposal(address, proposal.id);
+  await recordWorkUnderVersion(address, executionId, appliedVersion);
+
+  return { address, graph, targetVersion: version.id, proposal, appliedVersion, executionId };
+}
+
+/** Reads the listing route, with the querystring already assembled. */
+async function listProposals(address: string, query = ''): Promise<ProposalRow[]> {
+  const response = await fetch(`${address}/v1/proposals${query}`);
+  const body = await jsonBody<{ propostas: ProposalRow[] }>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  return body.propostas;
+}
+
+test('AT20 — a metric that moved in the declared direction closes the hypothesis as confirmada', async (t) => {
+  const scenario = await appliedProposalWithTelemetry(t);
+
+  const response = await post(
+    scenario.address,
+    `/v1/proposals/${scenario.proposal.id}/outcome`,
+    { execucao_id: scenario.executionId, depois: 0.1 },
+  );
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+
+  const outcome = body.proposta.resultado as HypothesisOutcome;
+  assert.equal(outcome.veredito, 'confirmada');
+  assert.equal(outcome.antes, 0.4, 'the "antes" is the `de` the proposal declared');
+  assert.equal(outcome.depois, 0.1);
+  assert.equal(outcome.execucao_id, scenario.executionId);
+  assert.equal(typeof outcome.avaliado_em, 'string');
+
+  assert.equal(body.proposta.status, 'aplicada', 'closing the experiment does not change the state');
+  assert.equal(body.proposta.versao_aplicada_id, scenario.appliedVersion);
+});
+
+test('AT21 — a metric that did not move is sem_efeito', async (t) => {
+  const scenario = await appliedProposalWithTelemetry(t);
+
+  const response = await post(
+    scenario.address,
+    `/v1/proposals/${scenario.proposal.id}/outcome`,
+    { execucao_id: scenario.executionId, depois: 0.4 },
+  );
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal((body.proposta.resultado as HypothesisOutcome).veredito, 'sem_efeito');
+  assert.equal(body.proposta.status, 'aplicada');
+});
+
+test('AT22 — a metric that moved the wrong way is piorou, and nothing is reverted', async (t) => {
+  const scenario = await appliedProposalWithTelemetry(t);
+
+  const response = await post(
+    scenario.address,
+    `/v1/proposals/${scenario.proposal.id}/outcome`,
+    { execucao_id: scenario.executionId, depois: 0.9 },
+  );
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal((body.proposta.resultado as HypothesisOutcome).veredito, 'piorou');
+
+  // "piorou" is data, never an action: reverting stays a human decision.
+  assert.equal(body.proposta.status, 'aplicada');
+  assert.equal(body.proposta.versao_aplicada_id, scenario.appliedVersion);
+  const graph = await getGraph(scenario.address, scenario.graph.id);
+  assert.equal(
+    graph.versao_corrente_id,
+    scenario.appliedVersion,
+    'the pointer cannot have moved back',
+  );
+});
+
+test('AT23 — only the first outcome counts; the second call is 409 and changes nothing', async (t) => {
+  const scenario = await appliedProposalWithTelemetry(t);
+  const route = `/v1/proposals/${scenario.proposal.id}/outcome`;
+
+  const first = await post(scenario.address, route, {
+    execucao_id: scenario.executionId,
+    depois: 0.1,
+  });
+  assert.equal(first.status, 200);
+  const written = (await jsonBody<ApplyResponse>(first)).proposta.resultado as HypothesisOutcome;
+
+  const second = await post(scenario.address, route, {
+    execucao_id: scenario.executionId,
+    depois: 0.9,
+  });
+  assert.equal(second.status, 409);
+  assert.equal((await jsonBody<{ erro: string }>(second)).erro, 'proposta_ja_avaliada');
+
+  const [stored] = await listProposals(scenario.address);
+  assert.deepEqual(
+    stored.resultado,
+    written,
+    'the second call cannot rewrite the first round outcome',
+  );
+});
+
+test('AT24 — a proposal that is not aplicada cannot have an outcome', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+  const pending = await createProposal(address, graph.id, version.id, passingOperations());
+
+  const response = await post(address, `/v1/proposals/${pending.id}/outcome`, {
+    execucao_id: 1,
+    depois: 0.1,
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await jsonBody<{ erro: string }>(response)).erro, 'proposta_nao_aplicada');
+
+  assert.equal(
+    (await post(address, '/v1/proposals/999/outcome', { execucao_id: 1, depois: 0.1 })).status,
+    404,
+  );
+});
+
+test('AT25 — an execution with no telemetry under the applied version is refused', async (t) => {
+  const scenario = await appliedProposalWithTelemetry(t, { executionId: 1 });
+  const route = `/v1/proposals/${scenario.proposal.id}/outcome`;
+
+  const noJob = await post(scenario.address, route, { execucao_id: 99, depois: 0.1 });
+  assert.equal(noJob.status, 422);
+  assert.equal((await jsonBody<{ erro: string }>(noJob)).erro, 'execucao_sem_evidencia');
+
+  // An execution that ran, but under the PREVIOUS version, is not evidence for
+  // this proposal either: the join is by version, not by execution.
+  await recordWorkUnderVersion(scenario.address, 2, scenario.targetVersion);
+  const otherVersion = await post(scenario.address, route, { execucao_id: 2, depois: 0.1 });
+  assert.equal(otherVersion.status, 422);
+  assert.equal((await jsonBody<{ erro: string }>(otherVersion)).erro, 'execucao_sem_evidencia');
+
+  const [proposal] = await listProposals(scenario.address);
+  assert.equal(proposal.resultado, null, 'nothing can have been written');
+});
+
+test('AT26 — a proposal whose metrica_esperada has no shape gets no verdict', async (t) => {
+  const scenario = await appliedProposalWithTelemetry(t, {
+    expectedMetric: { nome: 'retrabalho_por_travessia', de: 0.4, para: 0.1 },
+  });
+
+  const response = await post(
+    scenario.address,
+    `/v1/proposals/${scenario.proposal.id}/outcome`,
+    { execucao_id: scenario.executionId, depois: 0.1 },
+  );
+  assert.equal(response.status, 422);
+  assert.equal((await jsonBody<{ erro: string }>(response)).erro, 'metrica_esperada_invalida');
+
+  const [proposal] = await listProposals(scenario.address);
+  assert.equal(proposal.resultado, null, 'a verdict over incomplete data is not written');
+});
+
+test('AT27 — the reversal-suggestion queue is a filtered read over the proposals', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+
+  // A: applied and piorou — the reversal-suggestion queue is exactly this one.
+  const a = await createProposal(address, graph.id, version.id, passingOperations());
+  const versionA = await applyProposal(address, a.id);
+  await recordWorkUnderVersion(address, 1, versionA);
+  assert.equal(
+    (await post(address, `/v1/proposals/${a.id}/outcome`, { execucao_id: 1, depois: 0.9 })).status,
+    200,
+  );
+
+  // B: piorou as well, but already reverted by a human decision — out of the queue.
+  const b = await createProposal(address, graph.id, versionA, roleChange('red-team'));
+  const versionB = await applyProposal(address, b.id);
+  await recordWorkUnderVersion(address, 2, versionB);
+  assert.equal(
+    (await post(address, `/v1/proposals/${b.id}/outcome`, { execucao_id: 2, depois: 0.9 })).status,
+    200,
+  );
+  assert.equal(
+    (await post(address, `/v1/proposals/${b.id}/revert`, { motivo: 'piorou de verdade' })).status,
+    200,
+  );
+
+  // C: applied, but confirmada — a hypothesis that worked suggests nothing.
+  const c = await createProposal(address, graph.id, versionA, roleChange('copidesque'));
+  const versionC = await applyProposal(address, c.id);
+  await recordWorkUnderVersion(address, 3, versionC);
+  assert.equal(
+    (await post(address, `/v1/proposals/${c.id}/outcome`, { execucao_id: 3, depois: 0.1 })).status,
+    200,
+  );
+
+  // D: pending, with no outcome at all.
+  const d = await createProposal(address, graph.id, versionC, roleChange('editor'));
+
+  const queue = await listProposals(address, '?status=aplicada&veredito=piorou');
+  assert.deepEqual(
+    queue.map((proposal) => proposal.id),
+    [a.id],
+    'only the proposal that got worse AND is still applied',
+  );
+
+  const all = await listProposals(address);
+  assert.deepEqual(
+    all.map((proposal) => proposal.id),
+    [a.id, b.id, c.id, d.id],
+    'with no filter, every proposal in id order',
+  );
+  assert.deepEqual(
+    all.map((proposal) => proposal.status),
+    ['aplicada', 'revertida', 'aplicada', 'pendente'],
+  );
+
+  assert.deepEqual(
+    (await listProposals(address, '?veredito=confirmada')).map((proposal) => proposal.id),
+    [c.id],
+  );
+  assert.deepEqual(
+    (await listProposals(address, '?status=pendente')).map((proposal) => proposal.id),
+    [d.id],
   );
 });

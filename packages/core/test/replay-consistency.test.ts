@@ -126,7 +126,6 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     execucao_id: EXECUTION,
     grafo_versao_id: 'v2',
   });
-  await request(ctx, 'POST', `/v1/jobs/${stopped.id}/blocks`, { motivo: 'esperando humano' });
   const auto = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
     trabalho_id: stopped.id,
     tipo: 'aprovacao',
@@ -139,6 +138,12 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     resposta: 'aprovar',
     baseada_em: 'resposta_padrao',
   });
+  // The manual block comes AFTER the auto-resolution since t106: asking already
+  // blocks and answering already unblocks (in the same transaction), so blocking
+  // first would leave the job unblocked at the end and the "flag raised" end with
+  // no coverage at all. The sequence as it is now exercises both origins of a
+  // block — the automatic one from the escalation and the manual one.
+  await request(ctx, 'POST', `/v1/jobs/${stopped.id}/blocks`, { motivo: 'esperando humano' });
   const otherSession = await request<Session>(ctx, 'POST', '/v1/sessions', {
     execucao_id: EXECUTION,
     engine: 'claude-code',

@@ -8,10 +8,11 @@
  * somebody altering a projection row. In the projection the origin becomes a
  * field again, because whoever reads state wants to compare, not to classify.
  *
- * What this file does NOT do, on purpose: block the job when the input request
- * is created. That wiring (input request → block → answer → unblock → session
- * resumed) is the central acceptance criterion of t106; anticipating it here
- * would create two owners for the same cycle.
+ * The input request → block → answer → unblock wiring lives HERE since t106, and
+ * it lives inside the transactions that already existed: asking on behalf of the
+ * job and the job carrying on anyway is the state nobody can explain afterwards.
+ * Re-dispatching the session is on the other side of the boundary (the runner's
+ * `Controller`, t103/t106) — see `docs/spec/escalacao-humana.md`.
  *
  * The projection's field names, the table/column names and the event-type
  * strings mirror the untouched migration and the event taxonomy, so they stay in
@@ -25,12 +26,14 @@ import {
   API_ACTOR,
   AUTO_APPROVAL_ACTOR,
   DEFAULT_PROJECT,
+  ESCALATION_ACTOR,
   now,
   asBoolean,
   asInteger,
   jsonOrNull,
   resolveActor,
 } from './common.ts';
+import { blockJob, unblockJob } from './job.ts';
 
 /** Input-request projection, as the API returns it. */
 export interface InputRequest {
@@ -105,7 +108,17 @@ export interface CreateInputRequestInput {
 }
 
 /**
- * Records the escalation request and writes `pergunta.criada` (FR13).
+ * Records the escalation request, writes `pergunta.criada` and BLOCKS the owning
+ * job in the same transaction (FR13; t106).
+ *
+ * The block is not a second step for the caller: whoever asks is a session that
+ * is ending, and a job that stays a dispatch candidate with a pending input
+ * request is a brand-new session asking the same question forever. The nested
+ * `db.transaction` becomes a savepoint in `better-sqlite3`, so input request,
+ * event and flag all land together or not at all.
+ *
+ * The route's shape does not change: `POST /v1/input-requests` still returns only
+ * the input request, and whoever wants the flag reads `GET /v1/jobs/:id`.
  *
  * @param db Open handle.
  * @param input Request body.
@@ -172,6 +185,14 @@ export function createInputRequest(
       dados: data,
     });
 
+    // The reason quotes the input request's id (the taxonomy's own example):
+    // whoever reads the job discovers from the reason itself what has to happen
+    // for it to start moving again.
+    blockJob(db, jobId, {
+      motivo: `aguardando resposta da pergunta ${id}`,
+      ator: ESCALATION_ACTOR,
+    });
+
     return toInputRequest(readRow(db, id) as InputRequestRow);
   });
 
@@ -179,11 +200,17 @@ export function createInputRequest(
 }
 
 /**
- * Closes an input request with an answer, whoever it comes from.
+ * Closes an input request with an answer, whoever it comes from, and UNBLOCKS the
+ * job that was waiting on it (FR14/FR15; t106).
  *
  * The template shared by FR14 and FR15: the only things that change between a
  * human and the automatic gate are the event type, the projection's `origem` and
  * the actor.
+ *
+ * The unblock reuses the SAME actor as the answer event — `usuario` when a person
+ * answered, the gate when it was automatic. The taxonomy asks for this explicitly
+ * on `trabalho.desbloqueado`, and it is what stops the audit from concluding that
+ * "the system" unblocked everything a human unblocked.
  */
 function answer(
   db: Database,
@@ -220,6 +247,13 @@ function answer(
       ocorrido_em: timestamp,
       dados: data,
     });
+
+    // Lowers the flag `createInputRequest` raised. Deliberately without a
+    // condition: the job may have been blocked for another reason at the same
+    // time, and "I answered and the job stayed put" is the worst possible outcome
+    // for whoever just answered. A non-existent job returns `null` and does
+    // nothing — the input request stays answered.
+    unblockJob(db, row.trabalho_id, { ator: actor });
 
     return toInputRequest(readRow(db, id) as InputRequestRow);
   });

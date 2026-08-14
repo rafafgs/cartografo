@@ -21,6 +21,7 @@
 
 import type { Database } from '../db/connection.ts';
 import type { GraphDocument } from '../domain/graph.ts';
+import type { Verdict } from '../domain/hypothesis.ts';
 import type { Operation } from '../domain/operations.ts';
 import {
   now,
@@ -241,4 +242,110 @@ export function revertProposal(
   const updated = getProposal(db, proposal.id);
   if (updated === undefined) throw new Error(`proposal ${proposal.id} is gone`);
   return updated;
+}
+
+/* -------------------------------------------------------------------------- */
+/* t112 — hypothesis outcome. Identifiers in English (D18); the column and the  */
+/* payload keys stay in Portuguese, mirroring what is already published (FR8).  */
+/* -------------------------------------------------------------------------- */
+
+/** What gets written into `proposta.resultado` when the experiment closes. */
+export interface HypothesisOutcome {
+  veredito: Verdict;
+  /** The `de` the proposal declared — the baseline the verdict compared against. */
+  antes: number;
+  depois: number;
+  execucao_id: number;
+  avaliado_em: string;
+}
+
+/** Arguments of `recordVerdict`, already judged and checked against telemetry. */
+export interface VerdictRecord {
+  proposal: ProposalRow;
+  executionId: number;
+  after: number;
+  verdict: Verdict;
+  before: number;
+}
+
+/**
+ * Writes the outcome of the hypothesis, once (t112, FR5/FR6).
+ *
+ * The status does NOT change: a proposal that made things worse stays
+ * `aplicada`, and reverting remains a human decision (README, princípio 5).
+ * "Piorou" is data, not an action.
+ *
+ * The `UPDATE` is guarded by `resultado IS NULL AND status = 'aplicada'`, the
+ * same concurrency pattern `applyProposal`/`revertProposal` use: two callers
+ * closing the same experiment at once is a `409`, never a verdict silently
+ * overwritten by whoever arrived last.
+ *
+ * @param db Open handle.
+ * @param data Proposal, execution that produced the evidence, measured value and
+ *   the verdict already computed by `computeVerdict`.
+ * @returns The proposal as it was written.
+ * @throws {Error} When the row stopped matching the guard mid-flight.
+ */
+export function recordVerdict(db: Database, data: VerdictRecord): ProposalRow {
+  const { proposal } = data;
+  const outcome: HypothesisOutcome = {
+    veredito: data.verdict,
+    antes: data.before,
+    depois: data.after,
+    execucao_id: data.executionId,
+    avaliado_em: now(),
+  };
+
+  const effect = db
+    .prepare(
+      `UPDATE proposta SET resultado = ?, atualizado_em = ?
+        WHERE id = ? AND resultado IS NULL AND status = 'aplicada'`,
+    )
+    .run(JSON.stringify(outcome), outcome.avaliado_em, proposal.id);
+
+  if (effect.changes !== 1) {
+    throw new Error(`proposal ${proposal.id} stopped being evaluable during the write`);
+  }
+
+  const updated = getProposal(db, proposal.id);
+  if (updated === undefined) throw new Error(`proposal ${proposal.id} is gone`);
+  return updated;
+}
+
+/** Optional cuts of the proposal listing (t112, FR8). */
+export interface ProposalFilter {
+  status?: string;
+  /** Read out of `resultado.veredito`; a proposal with no outcome never matches. */
+  veredito?: string;
+}
+
+/**
+ * Lists proposals in id order, optionally filtered (t112, FR8).
+ *
+ * `status=aplicada&veredito=piorou` is the reversal-suggestion queue: the
+ * hypotheses that made things worse and are still in force. It is a filtered
+ * read and nothing else — no notification surface is implied by it.
+ *
+ * @param db Open handle.
+ * @param filter Optional cuts; absent keys mean "no filter".
+ * @returns Proposals with the JSON columns already parsed, in id order.
+ */
+export function listProposals(db: Database, filter: ProposalFilter = {}): ProposalRow[] {
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+
+  if (filter.status !== undefined) {
+    conditions.push('status = ?');
+    values.push(filter.status);
+  }
+  if (filter.veredito !== undefined) {
+    conditions.push("json_extract(resultado, '$.veredito') = ?");
+    values.push(filter.veredito);
+  }
+
+  const where = conditions.length === 0 ? '' : ` WHERE ${conditions.join(' AND ')}`;
+  const rows = db
+    .prepare(`SELECT ${COLUMNS} FROM proposta${where} ORDER BY id`)
+    .all(...values) as RawRow[];
+  return rows.map(hydrate);
 }

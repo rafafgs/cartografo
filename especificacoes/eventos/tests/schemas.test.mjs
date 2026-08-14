@@ -20,7 +20,10 @@ export const TABELA = {
   'trabalho.criado': {
     entidade: 'trabalho',
     obrigatorios: ['titulo', 'no_entrada_id'],
-    opcionais: [],
+    // `corpo` e `criterios_de_aceite` entraram com o intake (t122): um trabalho
+    // pode nascer com conteúdo, e os critérios que o intake grava são
+    // preliminares — quem tem a palavra final é o nó `refinar`.
+    opcionais: ['corpo', 'criterios_de_aceite'],
   },
   'trabalho.transicao': {
     entidade: 'trabalho',
@@ -40,6 +43,11 @@ export const TABELA = {
   'trabalho.emendado': {
     entidade: 'trabalho',
     obrigatorios: ['campos_alterados'],
+    opcionais: [],
+  },
+  'trabalho.dependencia_declarada': {
+    entidade: 'trabalho',
+    obrigatorios: ['depende_de_trabalho_id'],
     opcionais: [],
   },
   'sessao.aberta': {

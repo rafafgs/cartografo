@@ -64,6 +64,7 @@ const ESTILO = `
   .pergunta dt { opacity: .6; }
   .pergunta dd { margin: 0; }
   form textarea { width: 100%; min-height: 3.5rem; font: inherit; padding: .4rem; }
+  form label[for] { display: block; font-size: .8rem; letter-spacing: .02em; opacity: .7; margin-bottom: .2rem; }
   form .opcoes { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0; }
   .linha-do-tempo { list-style: none; padding: 0; max-width: 52rem; }
   .segmento { display: grid; grid-template-columns: 11rem 1fr; gap: .8rem; padding: .35rem 0; border-bottom: 1px solid currentColor; }
@@ -207,6 +208,14 @@ function resumoDePergunta(pergunta: Pergunta): string {
  * O card carrega TUDO o que a API guardou — contexto, opções, recomendação e
  * resposta padrão — porque o critério é o mesmo de `GET /v1/input-requests`: quem
  * responde tem que conseguir decidir sem abrir o repositório.
+ *
+ * O campo de resposta tem `<label>` visível amarrado por `for`/`id`, e não só
+ * placeholder: placeholder é dica, some no primeiro caractere digitado e não é
+ * nome acessível confiável — e este é o único campo obrigatório da página. O id
+ * sai do id da pergunta, que já é a chave única do cartão (`data-pergunta`, a
+ * `action` do formulário) e vem inteiro da API, sem espaço para quebrar o par
+ * `for`/`id`. Pinado em `packages/tela/test/questions-answer-field.test.ts`; é
+ * a mesma correção que o `t128` fez no campo de motivo do inbox.
  */
 function cartaoDePergunta(pergunta: Pergunta): string {
   const campo = (rotulo: string, valor: string | null): string =>
@@ -233,7 +242,8 @@ function cartaoDePergunta(pergunta: Pergunta): string {
   </dl>
   <form method="post" action="/perguntas/${pergunta.id}/resposta">
     ${opcoes}
-    <textarea name="resposta" required placeholder="a resposta, como você a daria a uma pessoa">${escapar(pergunta.resposta_padrao ?? '')}</textarea>
+    <label for="resposta-${pergunta.id}">sua resposta</label>
+    <textarea id="resposta-${pergunta.id}" name="resposta" required placeholder="a resposta, como você a daria a uma pessoa">${escapar(pergunta.resposta_padrao ?? '')}</textarea>
     <p>
       <label>quem responde <input name="respondido_por" value="${escapar(RESPONDIDO_POR_PADRAO)}"></label>
       <button type="submit">responder</button>

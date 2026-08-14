@@ -105,3 +105,18 @@ Duas instâncias, e está bom (amenda o "2–3 domínios" de D7 e do README):
 Requisito de produto derivado: o sistema entrega **grafos pré-determinados
 prontos para uso** (biblioteca de fábrica com esses dois mapas; é a semente
 do atlas compartilhável).
+
+## D15 (2026-08-14) — Versionamento de grafos: no banco, com as ideias do git
+
+Versionamos como o git pensa, sem o git instalado no núcleo. Entidades:
+grafo (linhagem: classe, variante, ponteiro para versão corrente),
+grafo_versao (id = hash do snapshot, parent, snapshot JSON completo, origem)
+e proposta (versão-alvo, operações semânticas tipadas + inversas, evidência,
+métrica esperada, status, resultado). Aplicar proposta = aplicar ops →
+validar soundness no resultado → gravar versão nova → mover ponteiro;
+rollback = mover ponteiro de volta; nada se apaga (append-only). Motivos:
+topógrafo cruza versão×telemetria por join; propostas exigem diff semântico
+(não diff de linha); fonte de verdade única (D1). Git entra nas bordas:
+qualquer versão exporta como bundle em arquivos (atlas, backup, espelho em
+repo do usuário; futura superfície de aprovação via PR, sem dependência do
+core).

@@ -45,7 +45,7 @@ const FACTORY_GRAPH = path.join(
 
 /** Artifacts this ticket creates; every test requires them by name. */
 const ARTIFACTS = [
-  'migrations/0005_intake.sql',
+  'migrations/0006_intake.sql',
   'src/domain/intake.ts',
   'src/repositories/intake.ts',
   'src/routes/intake.ts',

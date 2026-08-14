@@ -1,4 +1,9 @@
--- 0005_intake — o intake de duas fases: rascunho, confirmação, dependência.
+-- 0006_intake — o intake de duas fases: rascunho, confirmação, dependência.
+--
+-- Renumerada de 0005 para 0006 no merge: a 0005_skill (t117/t135) chegou antes
+-- na main, e `src/db/migrate.ts` falha alto em número repetido. Nenhuma ordem
+-- de dependência entre as duas — esta só mexe em `trabalho` e cria tabelas
+-- próprias.
 --
 -- A D3 separa dois atos do meta-processo: sintetizar topologia produz NÓS (uma
 -- vez por classe) e quebrar trabalho produz TICKETS (a cada execução). Esta

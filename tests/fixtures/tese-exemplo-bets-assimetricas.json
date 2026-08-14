@@ -1,0 +1,672 @@
+{
+  "descricao": "Tese fixture da t116, usada por AT11 de tests/grafo-fabrica-2.test.mjs. Empresa, números e fontes são inventados de propósito — o que o fixture prova é que os contratos dos sete nós encaixam um no outro, não que a tese é boa. A travessia vai de `triagem` até `decisao`, pelo ramo em que a tese sobrevive ao red team.",
+  "pergunta_de_alocacao": {
+    "id": "alocacao-nvlr3-2026-08-14",
+    "pergunta": "Alocar 1,4% do capital em NVLR3 a até R$ 18,50, com saída se o contrato portuário não for renovado até o 3T27?",
+    "resposta": "Aprovado: alocar 1,2% do capital, entrada limitada a R$ 18,00, e saída integral se a renovação do contrato portuário não sair até 30/09/2027."
+  },
+  "aresta_esperada": "aprovado",
+  "travessia": [
+    {
+      "no": "triagem",
+      "entrada": {
+        "tese": {
+          "id": "tese-nvlr3-2026-08-14",
+          "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
+          "ativo": "NVLR3",
+          "hipotese": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.",
+          "origem": "fato relevante de 2026-07-30, lido na leitura semanal de fatos relevantes"
+        },
+        "criterios_de_triagem": [
+          "o downside está limitado por caixa líquido ou ativo real, não por narrativa",
+          "existe um evento datado que força a reprecificação em até 12 meses",
+          "a tese cabe no círculo de competência declarado",
+          "o tamanho pretendido cabe no teto de risco da carteira"
+        ],
+        "carteira": {
+          "posicoes_abertas": 7,
+          "exposicao_atual_pct": 62.5
+        }
+      },
+      "saida": {
+        "resultado": "passou",
+        "tese_triada": {
+          "id": "tese-nvlr3-2026-08-14",
+          "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
+          "ativo": "NVLR3",
+          "hipotese": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.",
+          "escopo_de_pesquisa": [
+            "termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam",
+            "contrato portuário: prazo, cláusula de reajuste e concentração de cliente",
+            "caixa e dívida pró-forma depois da venda",
+            "histórico de alocação de capital da controladora"
+          ]
+        },
+        "criterios_avaliados": [
+          {
+            "criterio": "o downside está limitado por caixa líquido ou ativo real, não por narrativa",
+            "veredito": "atende",
+            "evidencia": "O fato relevante de 2026-07-30 fixa a venda em R$ 1,2 bi à vista, contra valor de mercado de R$ 2,1 bi — o piso é caixa contratado, não projeção."
+          },
+          {
+            "criterio": "existe um evento datado que força a reprecificação em até 12 meses",
+            "veredito": "atende",
+            "evidencia": "Primeiro trimestre pró-forma previsto para o release do 1T27, em 2027-05-12 pelo calendário da própria companhia."
+          },
+          {
+            "criterio": "a tese cabe no círculo de competência declarado",
+            "veredito": "atende",
+            "evidencia": "Concessão portuária com contrato take-or-pay é o mesmo padrão das duas posições atuais em infraestrutura."
+          },
+          {
+            "criterio": "o tamanho pretendido cabe no teto de risco da carteira",
+            "veredito": "indeterminado",
+            "evidencia": "Exposição atual em 62,5% com 7 posições; o tamanho só é decidido no nó de dimensionamento, não aqui."
+          }
+        ],
+        "justificativa": "Três dos quatro critérios são atendidos com evidência de documento público, e o quarto é decidido por outro nó. A ideia merece pesquisa de fundamentos.",
+        "nota": "Triagem aprovada para aprofundar; escopo de pesquisa restrito a quatro frentes para a coleta não virar leitura infinita."
+      }
+    },
+    {
+      "no": "coleta-fundamentos",
+      "entrada": {
+        "tese_triada": {
+          "id": "tese-nvlr3-2026-08-14",
+          "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
+          "ativo": "NVLR3",
+          "hipotese": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.",
+          "escopo_de_pesquisa": [
+            "termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam",
+            "contrato portuário: prazo, cláusula de reajuste e concentração de cliente",
+            "caixa e dívida pró-forma depois da venda",
+            "histórico de alocação de capital da controladora"
+          ]
+        },
+        "fontes_preferidas": [
+          "documentos entregues ao regulador pela própria companhia",
+          "contrato portuário arquivado como anexo do formulário de referência",
+          "transcrição das duas últimas teleconferências de resultado"
+        ]
+      },
+      "saida": {
+        "fundamentos": {
+          "resumo": "Depois da venda, a Navelar fica com um terminal portuário de contrato take-or-pay até 2032, caixa líquido de R$ 0,9 bi e uma base de custo fixo que a operação rodoviária inflava. A concentração de cliente é o ponto frágil: 71% da receita do terminal vem de um único embarcador.",
+          "numeros": [
+            {
+              "metrica": "preço da venda do braço rodoviário",
+              "valor": "R$ 1,2 bi à vista",
+              "periodo": "2026-07-30",
+              "fonte": "fato relevante arquivado no regulador"
+            },
+            {
+              "metrica": "caixa líquido pró-forma",
+              "valor": "R$ 0,9 bi",
+              "periodo": "pró-forma 2T26",
+              "fonte": "release do 2T26, nota 14"
+            },
+            {
+              "metrica": "receita do terminal concentrada no maior cliente",
+              "valor": "71%",
+              "periodo": "2025",
+              "fonte": "formulário de referência 2026, item 7.4"
+            },
+            {
+              "metrica": "prazo remanescente do contrato take-or-pay",
+              "valor": "6 anos",
+              "periodo": "até 2032-12-31",
+              "fonte": "anexo contratual do formulário de referência 2026"
+            }
+          ],
+          "riscos_conhecidos": [
+            "concentração de 71% da receita em um único embarcador",
+            "renovação do contrato portuário depende de anuência do poder concedente",
+            "a controladora tem histórico de reinvestir caixa em aquisição fora do core"
+          ]
+        },
+        "premissas": [
+          {
+            "premissa": "a venda do braço rodoviário se conclui sem retenção relevante de passivo",
+            "fonte": "fato relevante de 2026-07-30, cláusula 4",
+            "confianca": "alta"
+          },
+          {
+            "premissa": "o contrato take-or-pay é honrado até 2032",
+            "fonte": "anexo contratual do formulário de referência 2026",
+            "confianca": "alta"
+          },
+          {
+            "premissa": "o caixa líquido de R$ 0,9 bi permanece no balanço até o release do 1T27",
+            "fonte": "release do 2T26, nota 14",
+            "confianca": "media"
+          },
+          {
+            "premissa": "o custo fixo cai com a saída da operação rodoviária na proporção declarada",
+            "fonte": "transcrição da teleconferência do 2T26",
+            "confianca": "media"
+          },
+          {
+            "premissa": "o mercado reprecifica no release do 1T27, e não antes nem muito depois",
+            "fonte": null,
+            "confianca": "baixa"
+          }
+        ],
+        "lacunas": [
+          "não há documento público com o preço por tonelada do contrato take-or-pay",
+          "a anuência do poder concedente para a renovação não tem prazo regulamentar declarado"
+        ],
+        "nota": "Quatro das cinco premissas têm fonte primária; a quinta é expectativa de timing, marcada como sem fonte de propósito."
+      }
+    },
+    {
+      "no": "analise-assimetria",
+      "entrada": {
+        "tese_triada": {
+          "id": "tese-nvlr3-2026-08-14",
+          "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
+          "ativo": "NVLR3",
+          "hipotese": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.",
+          "escopo_de_pesquisa": [
+            "termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam",
+            "contrato portuário: prazo, cláusula de reajuste e concentração de cliente",
+            "caixa e dívida pró-forma depois da venda",
+            "histórico de alocação de capital da controladora"
+          ]
+        },
+        "fundamentos": {
+          "resumo": "Depois da venda, a Navelar fica com um terminal portuário de contrato take-or-pay até 2032, caixa líquido de R$ 0,9 bi e uma base de custo fixo que a operação rodoviária inflava. A concentração de cliente é o ponto frágil: 71% da receita do terminal vem de um único embarcador.",
+          "numeros": [
+            {
+              "metrica": "preço da venda do braço rodoviário",
+              "valor": "R$ 1,2 bi à vista",
+              "periodo": "2026-07-30",
+              "fonte": "fato relevante arquivado no regulador"
+            },
+            {
+              "metrica": "caixa líquido pró-forma",
+              "valor": "R$ 0,9 bi",
+              "periodo": "pró-forma 2T26",
+              "fonte": "release do 2T26, nota 14"
+            },
+            {
+              "metrica": "receita do terminal concentrada no maior cliente",
+              "valor": "71%",
+              "periodo": "2025",
+              "fonte": "formulário de referência 2026, item 7.4"
+            },
+            {
+              "metrica": "prazo remanescente do contrato take-or-pay",
+              "valor": "6 anos",
+              "periodo": "até 2032-12-31",
+              "fonte": "anexo contratual do formulário de referência 2026"
+            }
+          ],
+          "riscos_conhecidos": [
+            "concentração de 71% da receita em um único embarcador",
+            "renovação do contrato portuário depende de anuência do poder concedente",
+            "a controladora tem histórico de reinvestir caixa em aquisição fora do core"
+          ]
+        },
+        "premissas": [
+          {
+            "premissa": "a venda do braço rodoviário se conclui sem retenção relevante de passivo",
+            "fonte": "fato relevante de 2026-07-30, cláusula 4",
+            "confianca": "alta"
+          },
+          {
+            "premissa": "o contrato take-or-pay é honrado até 2032",
+            "fonte": "anexo contratual do formulário de referência 2026",
+            "confianca": "alta"
+          },
+          {
+            "premissa": "o caixa líquido de R$ 0,9 bi permanece no balanço até o release do 1T27",
+            "fonte": "release do 2T26, nota 14",
+            "confianca": "media"
+          },
+          {
+            "premissa": "o custo fixo cai com a saída da operação rodoviária na proporção declarada",
+            "fonte": "transcrição da teleconferência do 2T26",
+            "confianca": "media"
+          },
+          {
+            "premissa": "o mercado reprecifica no release do 1T27, e não antes nem muito depois",
+            "fonte": null,
+            "confianca": "baixa"
+          }
+        ]
+      },
+      "saida": {
+        "assimetria": {
+          "downside_max_pct": 22,
+          "upside_alvo_pct": 85,
+          "razao_assimetria": 3.9,
+          "cenarios": [
+            {
+              "nome": "contrato rompido e caixa queimado em aquisição",
+              "probabilidade": 0.2,
+              "retorno_pct": -22,
+              "premissas_chave": [
+                "o contrato take-or-pay é honrado até 2032",
+                "o caixa líquido de R$ 0,9 bi permanece no balanço até o release do 1T27"
+              ]
+            },
+            {
+              "nome": "reprecificação parcial no release do 1T27",
+              "probabilidade": 0.5,
+              "retorno_pct": 40,
+              "premissas_chave": [
+                "o custo fixo cai com a saída da operação rodoviária na proporção declarada",
+                "o mercado reprecifica no release do 1T27, e não antes nem muito depois"
+              ]
+            },
+            {
+              "nome": "reprecificação plena com múltiplo de concessão portuária",
+              "probabilidade": 0.3,
+              "retorno_pct": 85,
+              "premissas_chave": [
+                "a venda do braço rodoviário se conclui sem retenção relevante de passivo",
+                "o contrato take-or-pay é honrado até 2032"
+              ]
+            }
+          ]
+        },
+        "nota": "O downside é limitado pelo caixa líquido mais o valor do terminal em cenário de contrato rompido; a razão de assimetria de 3,9 assume que o piso é contratual e não narrativo."
+      }
+    },
+    {
+      "no": "red-team",
+      "entrada": {
+        "tese_triada": {
+          "id": "tese-nvlr3-2026-08-14",
+          "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
+          "ativo": "NVLR3",
+          "hipotese": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.",
+          "escopo_de_pesquisa": [
+            "termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam",
+            "contrato portuário: prazo, cláusula de reajuste e concentração de cliente",
+            "caixa e dívida pró-forma depois da venda",
+            "histórico de alocação de capital da controladora"
+          ]
+        },
+        "fundamentos": {
+          "resumo": "Depois da venda, a Navelar fica com um terminal portuário de contrato take-or-pay até 2032, caixa líquido de R$ 0,9 bi e uma base de custo fixo que a operação rodoviária inflava. A concentração de cliente é o ponto frágil: 71% da receita do terminal vem de um único embarcador.",
+          "numeros": [
+            {
+              "metrica": "preço da venda do braço rodoviário",
+              "valor": "R$ 1,2 bi à vista",
+              "periodo": "2026-07-30",
+              "fonte": "fato relevante arquivado no regulador"
+            },
+            {
+              "metrica": "caixa líquido pró-forma",
+              "valor": "R$ 0,9 bi",
+              "periodo": "pró-forma 2T26",
+              "fonte": "release do 2T26, nota 14"
+            },
+            {
+              "metrica": "receita do terminal concentrada no maior cliente",
+              "valor": "71%",
+              "periodo": "2025",
+              "fonte": "formulário de referência 2026, item 7.4"
+            },
+            {
+              "metrica": "prazo remanescente do contrato take-or-pay",
+              "valor": "6 anos",
+              "periodo": "até 2032-12-31",
+              "fonte": "anexo contratual do formulário de referência 2026"
+            }
+          ],
+          "riscos_conhecidos": [
+            "concentração de 71% da receita em um único embarcador",
+            "renovação do contrato portuário depende de anuência do poder concedente",
+            "a controladora tem histórico de reinvestir caixa em aquisição fora do core"
+          ]
+        },
+        "premissas": [
+          {
+            "premissa": "a venda do braço rodoviário se conclui sem retenção relevante de passivo",
+            "fonte": "fato relevante de 2026-07-30, cláusula 4",
+            "confianca": "alta"
+          },
+          {
+            "premissa": "o contrato take-or-pay é honrado até 2032",
+            "fonte": "anexo contratual do formulário de referência 2026",
+            "confianca": "alta"
+          },
+          {
+            "premissa": "o caixa líquido de R$ 0,9 bi permanece no balanço até o release do 1T27",
+            "fonte": "release do 2T26, nota 14",
+            "confianca": "media"
+          },
+          {
+            "premissa": "o custo fixo cai com a saída da operação rodoviária na proporção declarada",
+            "fonte": "transcrição da teleconferência do 2T26",
+            "confianca": "media"
+          },
+          {
+            "premissa": "o mercado reprecifica no release do 1T27, e não antes nem muito depois",
+            "fonte": null,
+            "confianca": "baixa"
+          }
+        ],
+        "assimetria": {
+          "downside_max_pct": 22,
+          "upside_alvo_pct": 85,
+          "razao_assimetria": 3.9,
+          "cenarios": [
+            {
+              "nome": "contrato rompido e caixa queimado em aquisição",
+              "probabilidade": 0.2,
+              "retorno_pct": -22,
+              "premissas_chave": [
+                "o contrato take-or-pay é honrado até 2032",
+                "o caixa líquido de R$ 0,9 bi permanece no balanço até o release do 1T27"
+              ]
+            },
+            {
+              "nome": "reprecificação parcial no release do 1T27",
+              "probabilidade": 0.5,
+              "retorno_pct": 40,
+              "premissas_chave": [
+                "o custo fixo cai com a saída da operação rodoviária na proporção declarada",
+                "o mercado reprecifica no release do 1T27, e não antes nem muito depois"
+              ]
+            },
+            {
+              "nome": "reprecificação plena com múltiplo de concessão portuária",
+              "probabilidade": 0.3,
+              "retorno_pct": 85,
+              "premissas_chave": [
+                "a venda do braço rodoviário se conclui sem retenção relevante de passivo",
+                "o contrato take-or-pay é honrado até 2032"
+              ]
+            }
+          ]
+        }
+      },
+      "saida": {
+        "resultado": "passou",
+        "objecoes": [
+          {
+            "objecao": "Com 71% da receita em um embarcador, o take-or-pay vira risco de contraparte: se o embarcador renegociar, o piso contratual não é piso.",
+            "gravidade": "alta",
+            "resposta_da_tese": "O embarcador é investment grade e o contrato tem garantia bancária de 18 meses de receita — conferido no anexo contratual do formulário de referência 2026, cláusula 11."
+          },
+          {
+            "objecao": "A controladora reinvestiu caixa de duas vendas anteriores em aquisições fora do core; o caixa líquido pode não chegar ao acionista.",
+            "gravidade": "alta",
+            "resposta_da_tese": "As duas aquisições citadas somam R$ 0,3 bi e ambas foram aprovadas em assembleia com o minoritário votando contra; o estatuto passou a exigir quórum qualificado acima de R$ 0,5 bi desde 2025."
+          },
+          {
+            "objecao": "O desconto pode não ser erro de classificação do mercado, e sim precificação de um passivo trabalhista rodoviário que fica com a vendedora.",
+            "gravidade": "media",
+            "resposta_da_tese": "O passivo trabalhista remanescente é de R$ 0,12 bi provisionado, contra R$ 0,9 bi de caixa líquido — cabe no piso sem inverter a assimetria."
+          },
+          {
+            "objecao": "A data do gatilho é escolha do agente, não do mercado: nada obriga a reprecificação a acontecer no release do 1T27.",
+            "gravidade": "baixa",
+            "resposta_da_tese": null
+          }
+        ],
+        "contra_evidencia_pesquisada": [
+          {
+            "afirmacao_atacada": "o contrato take-or-pay é honrado até 2032",
+            "fonte": "processo de arbitragem 0021xxx, noticiado em 2025-11-04",
+            "achado": "O mesmo embarcador arbitrou um take-or-pay com outro terminal em 2025 e obteve redução de volume mínimo de 12%. Precedente real, não hipótese."
+          },
+          {
+            "afirmacao_atacada": "o caixa líquido permanece no balanço até o release do 1T27",
+            "fonte": "atas de assembleia de 2023 e 2024",
+            "achado": "As duas vendas anteriores tiveram o caixa reinvestido em menos de três trimestres; o padrão histórico contradiz a premissa."
+          },
+          {
+            "afirmacao_atacada": "o desconto é erro de classificação do mercado",
+            "fonte": "relatórios de duas casas de análise que cobrem o nome, 2026-08",
+            "achado": "As duas já modelam a operação como portuária; o desconto não vem de classificação errada, e sim de desconto de governança aplicado à controladora."
+          }
+        ],
+        "nota": "A tese sobrevive: as duas objeções de gravidade alta têm resposta documental, e a de gravidade baixa não muda o piso — muda só o prazo. A contra-evidência de governança encolhe o upside plausível e precisa entrar no dimensionamento."
+      }
+    },
+    {
+      "no": "dimensionamento-risco",
+      "entrada": {
+        "tese_triada": {
+          "id": "tese-nvlr3-2026-08-14",
+          "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
+          "ativo": "NVLR3",
+          "hipotese": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.",
+          "escopo_de_pesquisa": [
+            "termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam",
+            "contrato portuário: prazo, cláusula de reajuste e concentração de cliente",
+            "caixa e dívida pró-forma depois da venda",
+            "histórico de alocação de capital da controladora"
+          ]
+        },
+        "assimetria": {
+          "downside_max_pct": 22,
+          "upside_alvo_pct": 85,
+          "razao_assimetria": 3.9,
+          "cenarios": [
+            {
+              "nome": "contrato rompido e caixa queimado em aquisição",
+              "probabilidade": 0.2,
+              "retorno_pct": -22,
+              "premissas_chave": [
+                "o contrato take-or-pay é honrado até 2032",
+                "o caixa líquido de R$ 0,9 bi permanece no balanço até o release do 1T27"
+              ]
+            },
+            {
+              "nome": "reprecificação parcial no release do 1T27",
+              "probabilidade": 0.5,
+              "retorno_pct": 40,
+              "premissas_chave": [
+                "o custo fixo cai com a saída da operação rodoviária na proporção declarada",
+                "o mercado reprecifica no release do 1T27, e não antes nem muito depois"
+              ]
+            },
+            {
+              "nome": "reprecificação plena com múltiplo de concessão portuária",
+              "probabilidade": 0.3,
+              "retorno_pct": 85,
+              "premissas_chave": [
+                "a venda do braço rodoviário se conclui sem retenção relevante de passivo",
+                "o contrato take-or-pay é honrado até 2032"
+              ]
+            }
+          ]
+        },
+        "objecoes": [
+          {
+            "objecao": "Com 71% da receita em um embarcador, o take-or-pay vira risco de contraparte: se o embarcador renegociar, o piso contratual não é piso.",
+            "gravidade": "alta",
+            "resposta_da_tese": "O embarcador é investment grade e o contrato tem garantia bancária de 18 meses de receita — conferido no anexo contratual do formulário de referência 2026, cláusula 11."
+          },
+          {
+            "objecao": "A controladora reinvestiu caixa de duas vendas anteriores em aquisições fora do core; o caixa líquido pode não chegar ao acionista.",
+            "gravidade": "alta",
+            "resposta_da_tese": "As duas aquisições citadas somam R$ 0,3 bi e ambas foram aprovadas em assembleia com o minoritário votando contra; o estatuto passou a exigir quórum qualificado acima de R$ 0,5 bi desde 2025."
+          },
+          {
+            "objecao": "O desconto pode não ser erro de classificação do mercado, e sim precificação de um passivo trabalhista rodoviário que fica com a vendedora.",
+            "gravidade": "media",
+            "resposta_da_tese": "O passivo trabalhista remanescente é de R$ 0,12 bi provisionado, contra R$ 0,9 bi de caixa líquido — cabe no piso sem inverter a assimetria."
+          },
+          {
+            "objecao": "A data do gatilho é escolha do agente, não do mercado: nada obriga a reprecificação a acontecer no release do 1T27.",
+            "gravidade": "baixa",
+            "resposta_da_tese": null
+          }
+        ],
+        "capital": {
+          "total": 4200000,
+          "moeda": "BRL",
+          "exposicao_atual_pct": 62.5
+        }
+      },
+      "saida": {
+        "dimensionamento": {
+          "tamanho_posicao_pct": 1.4,
+          "perda_maxima_aceita_pct": 22,
+          "gatilho_de_saida": "saída integral se a renovação do contrato portuário não sair até 30/09/2027, ou imediata se o embarcador principal abrir renegociação de volume mínimo.",
+          "horizonte": "até o release do 1T27, com revisão trimestral do gatilho",
+          "correlacao_com_carteira": "alta com as duas posições de infraestrutura já abertas; por isso o tamanho fica abaixo do teto de 2% que o downside isolado permitiria."
+        },
+        "nota": "1,4% do capital deixa a perda máxima da tese em 0,31% do patrimônio. A objeção de governança que o red team documentou foi o que puxou o tamanho para baixo do que a assimetria isolada sugeriria."
+      }
+    },
+    {
+      "no": "decisao",
+      "entrada": {
+        "tese_triada": {
+          "id": "tese-nvlr3-2026-08-14",
+          "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
+          "ativo": "NVLR3",
+          "hipotese": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.",
+          "escopo_de_pesquisa": [
+            "termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam",
+            "contrato portuário: prazo, cláusula de reajuste e concentração de cliente",
+            "caixa e dívida pró-forma depois da venda",
+            "histórico de alocação de capital da controladora"
+          ]
+        },
+        "assimetria": {
+          "downside_max_pct": 22,
+          "upside_alvo_pct": 85,
+          "razao_assimetria": 3.9,
+          "cenarios": [
+            {
+              "nome": "contrato rompido e caixa queimado em aquisição",
+              "probabilidade": 0.2,
+              "retorno_pct": -22,
+              "premissas_chave": [
+                "o contrato take-or-pay é honrado até 2032",
+                "o caixa líquido de R$ 0,9 bi permanece no balanço até o release do 1T27"
+              ]
+            },
+            {
+              "nome": "reprecificação parcial no release do 1T27",
+              "probabilidade": 0.5,
+              "retorno_pct": 40,
+              "premissas_chave": [
+                "o custo fixo cai com a saída da operação rodoviária na proporção declarada",
+                "o mercado reprecifica no release do 1T27, e não antes nem muito depois"
+              ]
+            },
+            {
+              "nome": "reprecificação plena com múltiplo de concessão portuária",
+              "probabilidade": 0.3,
+              "retorno_pct": 85,
+              "premissas_chave": [
+                "a venda do braço rodoviário se conclui sem retenção relevante de passivo",
+                "o contrato take-or-pay é honrado até 2032"
+              ]
+            }
+          ]
+        },
+        "objecoes": [
+          {
+            "objecao": "Com 71% da receita em um embarcador, o take-or-pay vira risco de contraparte: se o embarcador renegociar, o piso contratual não é piso.",
+            "gravidade": "alta",
+            "resposta_da_tese": "O embarcador é investment grade e o contrato tem garantia bancária de 18 meses de receita — conferido no anexo contratual do formulário de referência 2026, cláusula 11."
+          },
+          {
+            "objecao": "A controladora reinvestiu caixa de duas vendas anteriores em aquisições fora do core; o caixa líquido pode não chegar ao acionista.",
+            "gravidade": "alta",
+            "resposta_da_tese": "As duas aquisições citadas somam R$ 0,3 bi e ambas foram aprovadas em assembleia com o minoritário votando contra; o estatuto passou a exigir quórum qualificado acima de R$ 0,5 bi desde 2025."
+          },
+          {
+            "objecao": "O desconto pode não ser erro de classificação do mercado, e sim precificação de um passivo trabalhista rodoviário que fica com a vendedora.",
+            "gravidade": "media",
+            "resposta_da_tese": "O passivo trabalhista remanescente é de R$ 0,12 bi provisionado, contra R$ 0,9 bi de caixa líquido — cabe no piso sem inverter a assimetria."
+          },
+          {
+            "objecao": "A data do gatilho é escolha do agente, não do mercado: nada obriga a reprecificação a acontecer no release do 1T27.",
+            "gravidade": "baixa",
+            "resposta_da_tese": null
+          }
+        ],
+        "dimensionamento": {
+          "tamanho_posicao_pct": 1.4,
+          "perda_maxima_aceita_pct": 22,
+          "gatilho_de_saida": "saída integral se a renovação do contrato portuário não sair até 30/09/2027, ou imediata se o embarcador principal abrir renegociação de volume mínimo.",
+          "horizonte": "até o release do 1T27, com revisão trimestral do gatilho",
+          "correlacao_com_carteira": "alta com as duas posições de infraestrutura já abertas; por isso o tamanho fica abaixo do teto de 2% que o downside isolado permitiria."
+        },
+        "perguntas_respondidas": [
+          {
+            "id": "alocacao-nvlr3-2026-08-14",
+            "pergunta": "Alocar 1,4% do capital em NVLR3 a até R$ 18,50, com saída se o contrato portuário não for renovado até o 3T27?",
+            "resposta": "Aprovado: alocar 1,2% do capital, entrada limitada a R$ 18,00, e saída integral se a renovação do contrato portuário não sair até 30/09/2027."
+          }
+        ]
+      },
+      "saida": {
+        "resultado": "passou",
+        "decisao_humana": {
+          "pergunta_id": "alocacao-nvlr3-2026-08-14",
+          "resposta_literal": "Aprovado: alocar 1,2% do capital, entrada limitada a R$ 18,00, e saída integral se a renovação do contrato portuário não sair até 30/09/2027."
+        },
+        "nota": "Resultado transcrito da resposta registrada, que reduziu o tamanho de 1,4% para 1,2% e baixou o preço-limite. Nada aqui foi decidido pela sessão."
+      }
+    }
+  ],
+  "decisao_sem_resposta_humana": {
+    "entrada": {
+      "tese_triada": {
+        "id": "tese-nvlr3-2026-08-14",
+        "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
+        "ativo": "NVLR3",
+        "hipotese": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.",
+        "escopo_de_pesquisa": [
+          "termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam",
+          "contrato portuário: prazo, cláusula de reajuste e concentração de cliente",
+          "caixa e dívida pró-forma depois da venda",
+          "histórico de alocação de capital da controladora"
+        ]
+      },
+      "assimetria": {
+        "downside_max_pct": 22,
+        "upside_alvo_pct": 85,
+        "razao_assimetria": 3.9,
+        "cenarios": [
+          {
+            "nome": "contrato rompido e caixa queimado em aquisição",
+            "probabilidade": 0.2,
+            "retorno_pct": -22,
+            "premissas_chave": [
+              "o contrato take-or-pay é honrado até 2032"
+            ]
+          },
+          {
+            "nome": "reprecificação plena com múltiplo de concessão portuária",
+            "probabilidade": 0.8,
+            "retorno_pct": 85,
+            "premissas_chave": [
+              "a venda do braço rodoviário se conclui sem retenção relevante de passivo"
+            ]
+          }
+        ]
+      },
+      "objecoes": [
+        {
+          "objecao": "A data do gatilho é escolha do agente, não do mercado: nada obriga a reprecificação a acontecer no release do 1T27.",
+          "gravidade": "baixa",
+          "resposta_da_tese": null
+        }
+      ],
+      "dimensionamento": {
+        "tamanho_posicao_pct": 1.4,
+        "perda_maxima_aceita_pct": 22,
+        "gatilho_de_saida": "saída integral se a renovação do contrato portuário não sair até 30/09/2027.",
+        "horizonte": "até o release do 1T27"
+      },
+      "perguntas_respondidas": []
+    },
+    "saida_tentada": {
+      "resultado": "passou",
+      "nota": "Sessão que decidiu sozinha a alocação: entrada legal, saída ilegal. O contrato recusa este payload porque não há decisao_humana registrada — é o mecanismo de FR6, em schema e não em prosa."
+    }
+  }
+}

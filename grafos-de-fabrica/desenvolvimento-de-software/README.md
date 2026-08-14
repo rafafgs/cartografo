@@ -85,10 +85,15 @@ multi-grafo — com assinatura, publicação e o resto — é a `t120`; se ela d
 outro layout, mover este diretório não custa nada, porque nada aqui depende do
 caminho.
 
-O control plane que persistiria estes manifestos no registro de skills também
-não existe ainda (D6: control plane + um EngineAdapter + um grafo fixo antes do
-sintetizador). Por isso o critério de aceite deste bundle é o validador
-determinístico acima, e não "importa pela API".
+O registro de skills do control plane já existe, e `cartografo import
+grafos-de-fabrica/desenvolvimento-de-software` registra os cinco manifestos
+(`POST /v1/skills`, cada um revalidado pelo servidor) antes de mandar o grafo:
+manifesto que o registro recusa aborta a importação e o grafo não sobe. O
+validador determinístico acima continua sendo o critério de aceite **do
+bundle como artefato de repositório** — ele roda sem servidor nenhum, no
+`npm test`, e é o que garante que o diretório está íntegro antes de qualquer
+importação. O caminho pela API tem cobertura própria em
+[`packages/core/test/cli-import-export.test.ts`](../../packages/core/test/cli-import-export.test.ts).
 
 ## Divergências registradas
 

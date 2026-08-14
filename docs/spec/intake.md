@@ -1,6 +1,6 @@
 # Especificação: intake — do pedido à quebra em tickets no grafo
 
-**Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0005_intake.sql`](../../packages/core/migrations/0005_intake.sql)
+**Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0006_intake.sql`](../../packages/core/migrations/0006_intake.sql)
 **Decisão de origem:** [D3](../../DECISOES.md) — sintetizar topologia e quebrar
 trabalho são **dois atos**: o primeiro produz nós (uma vez por classe), o
 segundo produz tickets (a cada execução), e o caminho fica congelado durante a

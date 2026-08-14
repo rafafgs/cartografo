@@ -11,11 +11,11 @@
  *
  * O que ele deliberadamente NÃO faz:
  *
- * - **não aplica nada.** `POST /v1/propostas/:id/aplicar` não é chamado em lugar
+ * - **não aplica nada.** `POST /v1/proposals/:id/apply` não é chamado em lugar
  *   nenhum deste pacote: aplicar é decisão humana no portão (README, princípio 5),
  *   e o inbox é ficha própria (`t111`).
  * - **não deduplica.** Rodar duas vezes sobre a mesma telemetria cria propostas
- *   repetidas. Checar duplicidade exigiria uma rota `GET /v1/propostas` que não
+ *   repetidas. Checar duplicidade exigiria uma rota `GET /v1/proposals` que não
  *   existe, e criá-la seria mudança no core — o oposto do que esta ficha prova.
  *   Fora de escopo declarado, não bug silencioso.
  *

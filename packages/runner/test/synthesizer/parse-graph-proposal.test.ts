@@ -130,7 +130,7 @@ test('AT3 — a closing fence inside the JSON does not truncate the block', asyn
   const { parseGraphProposal } = await loadParser();
 
   // The reason the extent comes from the JSON and never from a search for the
-  // next ```: a node's `descricao` is prose written by a model, and prose about
+  // next fence: a node's `descricao` is prose written by a model, and prose about
   // a graph quotes fenced examples of graphs.
   const document = graph('nota-curta');
   const nodes = document.nos as Record<string, unknown>[];

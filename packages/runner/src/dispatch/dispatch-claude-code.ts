@@ -2,7 +2,7 @@
  * The real dispatch: an `EngineAdapter` session, wired to the control plane
  * (t106, FR6/FR7).
  *
- * This is the seam t103 left open. `Controller.despachar` is an injected
+ * This is the seam t103 left open. `ControllerOptions.dispatch` is an injected
  * callback and the controller opens no session at all; `createClaudeCodeDispatch`
  * returns exactly that callback, with the engine on one side and the API on the
  * other. Nothing here touches the database: the runner is an ordinary client of
@@ -47,7 +47,7 @@ import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
  * no "cancelled". Same table `scripts/spike-real-session.mjs` already uses; if
  * it ever grows a third copy, it belongs in a module of its own.
  */
-export const STATUS_DA_TAXONOMIA: Readonly<Record<SessionStatus, string>> = Object.freeze({
+export const TAXONOMY_STATUS: Readonly<Record<SessionStatus, string>> = Object.freeze({
   pending: 'travada',
   running: 'travada',
   completed: 'concluida',
@@ -64,7 +64,7 @@ export const STATUS_DA_TAXONOMIA: Readonly<Record<SessionStatus, string>> = Obje
  * session that does not know how to escalate never escalates, and the whole
  * cycle this ticket builds would never trigger.
  */
-export const INSTRUCOES_PADRAO = [
+export const DEFAULT_INSTRUCTIONS = [
   'Você é uma sessão de trabalho despachada pelo runner do cartografo.',
   '',
   'Trabalhe no diretório atual e faça o que o trabalho pede.',
@@ -88,7 +88,7 @@ export const INSTRUCOES_PADRAO = [
 ].join('\n');
 
 /** What `GET /v1/jobs/:id` gives back, in the part this module reads. */
-interface Trabalho {
+interface Job {
   id: number;
   titulo: string;
   no_atual: string;
@@ -97,7 +97,7 @@ interface Trabalho {
 }
 
 /** One envelope of the work's timeline. */
-interface Evento {
+interface Event {
   id: number;
   tipo: string;
   entidade: { tipo: string; id: number | string };
@@ -105,7 +105,7 @@ interface Evento {
 }
 
 /** A question, as `GET /v1/input-requests` projects it. */
-interface Pergunta {
+interface Question {
   id: number;
   trabalho_id: number;
   pergunta: string;
@@ -116,7 +116,7 @@ interface Pergunta {
 }
 
 /** A session, as `POST /v1/sessions` gives it back. */
-interface Sessao {
+interface Session {
   id: number;
 }
 
@@ -133,12 +133,12 @@ export interface ClaudeCodeDispatchOptions {
   workingDir: string;
   /** Wall-clock limit of the session. Default: one hour. */
   timeoutSeconds?: number;
-  /** Node instructions. Default: {@link INSTRUCOES_PADRAO}. */
+  /** Node instructions. Default: {@link DEFAULT_INSTRUCTIONS}. */
   instructions?: string;
   /** Opaque additions to the engine's environment. */
   envOverrides?: Readonly<Record<string, string>>;
   /** `fetch` implementation. Default: the global one. Test seam only. */
-  buscar?: typeof fetch;
+  doFetch?: typeof fetch;
 }
 
 /** A session that started but did not end well. */
@@ -179,19 +179,19 @@ const isTextBlock = (value: unknown): value is TextBlock =>
  * engine of the suite prints plain lines, which fall through untouched — which
  * is exactly why this trap survives CI and only the manual spike catches it.
  */
-function textoDoQuadro(linha: string): string[] | null {
-  const podado = linha.trim();
-  if (!podado.startsWith('{')) return null;
+function frameText(line: string): string[] | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('{')) return null;
 
-  let quadro: unknown;
+  let frame: unknown;
   try {
-    quadro = JSON.parse(podado);
+    frame = JSON.parse(trimmed);
   } catch {
     return null;
   }
-  if (typeof quadro !== 'object' || quadro === null) return null;
+  if (typeof frame !== 'object' || frame === null) return null;
 
-  const { type, result, message } = quadro as {
+  const { type, result, message } = frame as {
     type?: unknown;
     result?: unknown;
     message?: unknown;
@@ -206,160 +206,160 @@ function textoDoQuadro(linha: string): string[] | null {
     // An assistant turn with only tool calls yields an empty list — and an
     // empty list is still a recognized frame, so the raw JSON is dropped
     // instead of being fed to the parser as if it were prose.
-    if (Array.isArray(content)) return content.filter(isTextBlock).map((bloco) => bloco.text);
+    if (Array.isArray(content)) return content.filter(isTextBlock).map((block) => block.text);
   }
 
   return null;
 }
 
 /** Everything the session said, with engine frames decoded back into text. */
-export function textoDaSessao(linhas: readonly string[]): string {
-  const partes: string[] = [];
-  for (const linha of linhas) {
-    const textos = textoDoQuadro(linha);
-    if (textos === null) partes.push(linha);
-    else partes.push(...textos);
+export function sessionText(lines: readonly string[]): string {
+  const parts: string[] = [];
+  for (const line of lines) {
+    const texts = frameText(line);
+    if (texts === null) parts.push(line);
+    else parts.push(...texts);
   }
-  return partes.join('\n');
+  return parts.join('\n');
 }
 
 /**
  * The prompt of a dispatch: what to do, plus what was already asked and
  * answered.
  *
- * @param trabalho The work being dispatched.
- * @param eventos Its timeline, in log order.
- * @param respondidas Questions already answered, from the projection.
+ * @param job The work being dispatched.
+ * @param events Its timeline, in log order.
+ * @param answered Questions already answered, from the projection.
  * @returns The prompt text.
  */
-export function montarPrompt(
-  trabalho: Trabalho,
-  eventos: readonly Evento[],
-  respondidas: readonly Pergunta[],
+export function buildPrompt(
+  job: Job,
+  events: readonly Event[],
+  answered: readonly Question[],
 ): string {
-  const partes = [
-    `# Trabalho #${trabalho.id} — ${trabalho.titulo}`,
+  const parts = [
+    `# Trabalho #${job.id} — ${job.titulo}`,
     '',
-    `Nó atual: \`${trabalho.no_atual}\`.`,
+    `Nó atual: \`${job.no_atual}\`.`,
     '',
     'Faça o que este nó pede neste trabalho, no diretório em que você está.',
   ];
 
-  const porId = new Map(respondidas.map((pergunta) => [pergunta.id, pergunta]));
-  const jaFechadas: Pergunta[] = [];
+  const byId = new Map(answered.map((question) => [question.id, question]));
+  const alreadyClosed: Question[] = [];
 
   // The ORDER comes from the log — the only total ordering there is — and the
   // ANSWER from the projection: `pergunta.respondida` carries no `trabalho_id`,
   // so the work's timeline structurally cannot show it (t102,
-  // `packages/core/src/db/events.ts`, `FiltroDeEventos`).
-  for (const evento of eventos) {
-    if (evento.tipo !== 'pergunta.criada') continue;
-    const pergunta = porId.get(Number(evento.entidade.id));
-    if (pergunta !== undefined && pergunta.resposta !== null) jaFechadas.push(pergunta);
+  // `packages/core/src/db/events.ts`, `EventFilter`).
+  for (const event of events) {
+    if (event.tipo !== 'pergunta.criada') continue;
+    const question = byId.get(Number(event.entidade.id));
+    if (question !== undefined && question.resposta !== null) alreadyClosed.push(question);
   }
 
-  if (jaFechadas.length > 0) {
-    partes.push(
+  if (alreadyClosed.length > 0) {
+    parts.push(
       '',
       '## O que você já perguntou, e o que responderam',
       '',
       'Isto já foi decidido. Não pergunte de novo: siga a resposta.',
     );
-    for (const pergunta of jaFechadas) {
-      const quem = pergunta.origem === 'auto' ? 'a resposta automática' : (pergunta.respondido_por ?? 'a pessoa');
-      partes.push(
+    for (const question of alreadyClosed) {
+      const who = question.origem === 'auto' ? 'a resposta automática' : (question.respondido_por ?? 'a pessoa');
+      parts.push(
         '',
-        `- **Você perguntou:** ${pergunta.pergunta}`,
-        `  **${quem} respondeu:** ${pergunta.resposta ?? ''}`,
+        `- **Você perguntou:** ${question.pergunta}`,
+        `  **${who} respondeu:** ${question.resposta ?? ''}`,
       );
     }
   }
 
-  return partes.join('\n');
+  return parts.join('\n');
 }
 
 /** What the session reported when it ended. */
-interface Desfecho {
+interface Outcome {
   status: SessionStatus;
   exitCode: number | null;
 }
 
 /**
- * Builds the `despachar` callback of the controller (t103), with a real engine
- * behind it.
+ * Builds the controller's `dispatch` callback (t103), with a real engine behind
+ * it.
  *
- * @param opcoes Control plane, engine, working directory and session limits.
- * @returns The exact signature `OpcoesDoController.despachar` expects.
+ * @param options Control plane, engine, working directory and session limits.
+ * @returns The exact signature `ControllerOptions.dispatch` expects.
  */
 export function createClaudeCodeDispatch(
-  opcoes: ClaudeCodeDispatchOptions,
-): (trabalhoId: number) => Promise<void> {
-  const urlBase = opcoes.urlBase.replace(/\/+$/, '');
-  const buscar = opcoes.buscar ?? fetch;
-  const timeoutSeconds = opcoes.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+  options: ClaudeCodeDispatchOptions,
+): (jobId: number) => Promise<void> {
+  const urlBase = options.urlBase.replace(/\/+$/, '');
+  const doFetch = options.doFetch ?? fetch;
+  const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
 
-  const pedir = async <T>(caminho: string, metodo: string, corpo?: unknown): Promise<T> => {
-    const resposta = await buscar(`${urlBase}${caminho}`, {
-      method: metodo,
-      headers: corpo === undefined ? undefined : { 'content-type': 'application/json' },
-      body: corpo === undefined ? undefined : JSON.stringify(corpo),
+  const call = async <T>(route: string, method: string, body?: unknown): Promise<T> => {
+    const response = await doFetch(`${urlBase}${route}`, {
+      method,
+      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
-    const texto = await resposta.text();
-    const decodificado: unknown = texto === '' ? undefined : JSON.parse(texto);
-    if (!resposta.ok) {
+    const text = await response.text();
+    const decoded: unknown = text === '' ? undefined : JSON.parse(text);
+    if (!response.ok) {
       throw new ErroDoControlPlane(
-        `${metodo} ${caminho} respondeu ${resposta.status}`,
-        resposta.status,
-        decodificado,
+        `${method} ${route} answered ${response.status}`,
+        response.status,
+        decoded,
       );
     }
-    return decodificado as T;
+    return decoded as T;
   };
 
-  return async (trabalhoId: number): Promise<void> => {
-    const trabalho = await pedir<Trabalho>(`/v1/jobs/${trabalhoId}`, 'GET');
-    const { eventos } = await pedir<{ eventos: Evento[] }>(
-      `/v1/jobs/${trabalhoId}/events`,
+  return async (jobId: number): Promise<void> => {
+    const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
+    const { eventos: events } = await call<{ eventos: Event[] }>(
+      `/v1/jobs/${jobId}/events`,
       'GET',
     );
-    const { perguntas } = await pedir<{ perguntas: Pergunta[] }>(
+    const { perguntas: questions } = await call<{ perguntas: Question[] }>(
       '/v1/input-requests?status=respondida',
       'GET',
     );
 
-    const prompt = montarPrompt(
-      trabalho,
-      eventos,
-      perguntas.filter((pergunta) => pergunta.trabalho_id === trabalhoId),
+    const prompt = buildPrompt(
+      job,
+      events,
+      questions.filter((question) => question.trabalho_id === jobId),
     );
 
     const spec: SessionSpec = {
-      workingDir: opcoes.workingDir,
-      instructions: opcoes.instructions ?? INSTRUCOES_PADRAO,
+      workingDir: options.workingDir,
+      instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
       prompt,
       timeoutSeconds,
-      ...(opcoes.envOverrides === undefined ? {} : { envOverrides: opcoes.envOverrides }),
+      ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
     };
 
-    const linhas: string[] = [];
+    const lines: string[] = [];
     let engineRef: string | null = null;
-    let avisarFim: (desfecho: Desfecho) => void = () => undefined;
-    const fim = new Promise<Desfecho>((resolve) => {
-      avisarFim = resolve;
+    let announceEnd: (outcome: Outcome) => void = () => undefined;
+    const end = new Promise<Outcome>((resolve) => {
+      announceEnd = resolve;
     });
 
     // `startSession` rejects with `SessionStartError` when the session did not
     // come up. That one propagates untouched: it is a dispatch that never
     // happened, and the controller's `finally` gives the lease back anyway.
-    await opcoes.adapter.startSession(spec, {
-      onOutput(linha) {
-        linhas.push(linha);
+    await options.adapter.startSession(spec, {
+      onOutput(line) {
+        lines.push(line);
       },
       onEngineRef(ref) {
         engineRef = ref;
       },
       onFinished(status, exitCode) {
-        avisarFim({ status, exitCode });
+        announceEnd({ status, exitCode });
       },
     });
 
@@ -367,45 +367,45 @@ export function createClaudeCodeDispatch(
     // then. There is no endpoint to fill `engine_session_ref` in later (out of
     // scope), so `null` here means "the engine had not said it yet" and never
     // "this engine has no ref".
-    const sessao = await pedir<Sessao>('/v1/sessions', 'POST', {
-      trabalho_id: trabalho.id,
-      no_id: trabalho.no_atual,
-      engine: opcoes.adapter.engineName,
+    const session = await call<Session>('/v1/sessions', 'POST', {
+      trabalho_id: job.id,
+      no_id: job.no_atual,
+      engine: options.adapter.engineName,
       engine_session_ref: engineRef,
       working_dir: spec.workingDir,
       prompt: spec.prompt,
       timeout_seconds: spec.timeoutSeconds,
     });
 
-    const desfecho = await fim;
+    const outcome = await end;
 
-    await pedir(`/v1/sessions/${sessao.id}/finish`, 'PATCH', {
-      status: STATUS_DA_TAXONOMIA[desfecho.status],
-      exit_code: desfecho.exitCode,
+    await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
+      status: TAXONOMY_STATUS[outcome.status],
+      exit_code: outcome.exitCode,
       // The v0 interface reports no token usage (out of scope). `null` is "the
       // engine reported nothing" and must never collapse into zero.
       uso: null,
     });
 
-    const pedido: InputRequest | null = parseInputRequest(textoDaSessao(linhas));
-    if (pedido !== null) {
+    const request: InputRequest | null = parseInputRequest(sessionText(lines));
+    if (request !== null) {
       // This POST is what blocks the work, inside the control plane and in the
       // same transaction as `pergunta.criada` (FR1). The runner never posts a
       // block of its own — two owners for one flag is how a work ends up
       // blocked with nothing pending.
-      await pedir('/v1/input-requests', 'POST', {
-        trabalho_id: trabalho.id,
-        sessao_id: sessao.id,
+      await call('/v1/input-requests', 'POST', {
+        trabalho_id: job.id,
+        sessao_id: session.id,
         tipo: 'pergunta',
-        pergunta: pedido.question,
-        contexto: pedido.context ?? null,
-        opcoes: pedido.options ?? null,
-        recomendacao: pedido.recommendation ?? null,
-        resposta_padrao: pedido.default ?? null,
+        pergunta: request.question,
+        contexto: request.context ?? null,
+        opcoes: request.options ?? null,
+        recomendacao: request.recommendation ?? null,
+        resposta_padrao: request.default ?? null,
         // The field exists since t102; nothing reads it to answer on its own —
         // the auto-answer policy is still outside the PoC.
         auto_aprovavel: true,
-        ator: { tipo: 'agente', ref: trabalho.no_atual === '' ? 'sessao' : trabalho.no_atual },
+        ator: { tipo: 'agente', ref: job.no_atual === '' ? 'sessao' : job.no_atual },
       });
     }
 
@@ -413,11 +413,11 @@ export function createClaudeCodeDispatch(
     // and the work is already blocked. What is NOT successful is a session that
     // died: reporting that as a normal dispatch would hide a broken engine
     // behind a work that simply stopped moving.
-    if (desfecho.status !== 'completed') {
+    if (outcome.status !== 'completed') {
       throw new DispatchError(
-        `a sessão do trabalho ${trabalho.id} terminou como "${desfecho.status}" (exit ${String(desfecho.exitCode)})`,
-        desfecho.status,
-        desfecho.exitCode,
+        `the session of job ${job.id} ended as "${outcome.status}" (exit ${String(outcome.exitCode)})`,
+        outcome.status,
+        outcome.exitCode,
       );
     }
   };

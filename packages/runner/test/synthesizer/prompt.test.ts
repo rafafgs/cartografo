@@ -10,7 +10,7 @@
  * the declaration as the user wrote it, the class name the user chose (D8 — the
  * command never invents one), the skill catalogue in enough detail to compose
  * nodes from it, and the similarity suggestions when there are any. Plus the
- * output contract: EXACTLY one ```grafo-proposto block.
+ * output contract: EXACTLY one fenced `grafo-proposto` block.
  */
 
 import assert from 'node:assert/strict';
@@ -138,9 +138,11 @@ test('AT2 — an empty catalogue is stated, not silently rendered as nothing', a
   const prompt = buildSynthesisPrompt(DECLARATION, 'artigo-revisado', [], []);
 
   assert.ok(prompt.includes(DECLARATION));
+  // Built from a string and not a regex literal: what it matches is the
+  // prompt's Portuguese prose, which stays Portuguese (D18/FR3).
   assert.match(
     prompt,
-    /registro (de skills )?(está )?vazio|nenhuma skill/i,
+    new RegExp('registro (de skills )?(está )?vazio|nenhuma skill', 'i'),
     'an empty registry is said out loud, or the session composes from hallucination',
   );
 });

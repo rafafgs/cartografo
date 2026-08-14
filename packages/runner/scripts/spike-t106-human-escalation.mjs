@@ -39,7 +39,7 @@ import { fileURLToPath } from 'node:url';
 
 import { ClienteControle } from '../src/controller/cliente-controle.ts';
 import { Controller } from '../src/controller/controller.ts';
-import { createClaudeCodeDispatch, INSTRUCOES_PADRAO } from '../src/dispatch/dispatch-claude-code.ts';
+import { createClaudeCodeDispatch, DEFAULT_INSTRUCTIONS } from '../src/dispatch/dispatch-claude-code.ts';
 import { ClaudeCodeAdapter } from '../src/engine/claude-code-adapter.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -58,7 +58,7 @@ const DEADLINE_MS = 60_000;
  * the two situations it is in by reading its own prompt.
  */
 const INSTRUCTIONS = [
-  INSTRUCOES_PADRAO,
+  DEFAULT_INSTRUCTIONS,
   '',
   '## Regra deste nó',
   '',
@@ -79,7 +79,7 @@ const INSTRUCTIONS = [
 const log = (message) => console.log(`[spike] ${message}`);
 
 function die(message) {
-  console.error(`\n[spike] FALHOU: ${message}\n`);
+  console.error(`\n[spike] FAILED: ${message}\n`);
   process.exit(1);
 }
 
@@ -104,7 +104,7 @@ function createDisposableRepo() {
 
 /** Boots the real control plane and returns its URL plus a way to kill it. */
 async function startControlPlane(root) {
-  if (!existsSync(BIN_PATH)) die(`o control plane não existe em ${BIN_PATH}`);
+  if (!existsSync(BIN_PATH)) die(`the control plane does not exist at ${BIN_PATH}`);
 
   const child = spawn(process.execPath, [BIN_PATH], {
     cwd: root,
@@ -134,7 +134,7 @@ async function startControlPlane(root) {
   const deadline = Date.now() + DEADLINE_MS;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      die(`o control plane morreu antes de ficar pronto (código ${child.exitCode})\n${err}`);
+      die(`the control plane died before it was ready (code ${child.exitCode})\n${err}`);
     }
     const line = out
       .split('\n')
@@ -145,7 +145,7 @@ async function startControlPlane(root) {
   }
 
   stop();
-  die(`o control plane não ficou pronto em ${DEADLINE_MS}ms\n${out}`);
+  die(`the control plane was not ready within ${DEADLINE_MS}ms\n${out}`);
   return null;
 }
 
@@ -155,10 +155,10 @@ async function main() {
   const probe = await adapter.verifyCli();
   log(`verifyCli: ${JSON.stringify(probe)}`);
   if (!probe.available) {
-    die('a CLI `claude` não respondeu a --version — instale antes de rodar a prova');
+    die('the `claude` CLI did not answer --version — install it before running the proof');
   }
   if (!probe.authenticated) {
-    log('AVISO: authenticated=false. É melhor esforço, não garantia; seguindo assim mesmo.');
+    log('WARNING: authenticated=false. It is best effort, not a guarantee; going ahead anyway.');
   }
 
   const { root, repo } = createDisposableRepo();
@@ -173,20 +173,20 @@ async function main() {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await response.text();
-    if (!response.ok) die(`${method} ${route} respondeu ${response.status}: ${text}`);
+    if (!response.ok) die(`${method} ${route} answered ${response.status}: ${text}`);
     return text === '' ? undefined : JSON.parse(text);
   };
 
   try {
     const client = new ClienteControle({ urlBase: plane.url });
-    await client.registrarRunner('spike-t106', 'prova manual da escalação humana');
+    await client.registrarRunner('spike-t106', 'the manual proof of human escalation');
 
     const work = await api('POST', '/v1/jobs', {
       titulo: 'Criar o arquivo de prova da t106, com o nome que a pessoa escolher',
       no_entrada_id: 'implementar',
       execucao_id: 106,
     });
-    log(`trabalho #${work.id} criado`);
+    log(`job #${work.id} created`);
 
     const dispatch = createClaudeCodeDispatch({
       urlBase: plane.url,
@@ -197,108 +197,108 @@ async function main() {
     });
 
     const controller = new Controller({
-      cliente: client,
+      client,
       runnerId: 'spike-t106',
-      projetoId: 1,
-      tetoRunner: 1,
-      tetoProjeto: 2,
-      ttlSegundos: TIMEOUT_SECONDS,
-      despachar: dispatch,
+      projectId: 1,
+      runnerCap: 1,
+      projectCap: 2,
+      ttlSeconds: TIMEOUT_SECONDS,
+      dispatch,
     });
 
     // --- 1. first tick: the session should ask --------------------------------
-    log('primeiro tick: despachando uma sessão real do `claude`...');
+    log('first tick: dispatching a real `claude` session...');
     const first = await controller.tick();
-    if (first === null) die('o primeiro tick não despachou nada');
-    log(`primeiro despacho: trabalho ${first.trabalhoId}, lease ${first.leaseId}`);
+    if (first === null) die('the first tick dispatched nothing');
+    log(`first dispatch: job ${first.jobId}, lease ${first.leaseId}`);
 
     const blocked = await api('GET', `/v1/jobs/${work.id}`);
     if (blocked.bloqueado !== true) {
-      die('a sessão real não escalou: o trabalho continuou liberado (nenhum bloco input-request?)');
+      die('the real session did not escalate: the work stayed released (no input-request block?)');
     }
-    log(`trabalho bloqueado: ${blocked.motivo_bloqueio}`);
+    log(`work blocked: ${blocked.motivo_bloqueio}`);
 
     const { perguntas: pending } = await api('GET', '/v1/input-requests?status=pendente');
-    if (pending.length !== 1) die(`esperava 1 pergunta pendente, achei ${pending.length}`);
+    if (pending.length !== 1) die(`expected 1 pending question, found ${pending.length}`);
     const question = pending[0];
-    log(`pergunta #${question.id}: ${question.pergunta}`);
+    log(`question #${question.id}: ${question.pergunta}`);
     if (blocked.motivo_bloqueio !== `aguardando resposta da pergunta ${question.id}`) {
-      die(`o motivo do bloqueio não cita a pergunta: ${blocked.motivo_bloqueio}`);
+      die(`the block reason does not name the question: ${blocked.motivo_bloqueio}`);
     }
     if (existsSync(join(repo, CHOSEN_NAME))) {
-      die('a sessão perguntou E criou o arquivo — devia ter parado ao perguntar');
+      die('the session asked AND created the file — it should have stopped when it asked');
     }
 
     const idle = await controller.tick();
-    if (idle !== null) die('um trabalho bloqueado não pode ser despachado de novo');
-    log('trabalho bloqueado não é candidato de nenhum tick — confirmado');
+    if (idle !== null) die('a blocked work must not be dispatched again');
+    log('a blocked work is not a candidate for any tick — confirmed');
 
     // --- 2. a human answers ---------------------------------------------------
     const answered = await api('PATCH', `/v1/input-requests/${question.id}/answer`, {
       resposta: `Use o nome ${CHOSEN_NAME}`,
       respondido_por: 'spike-t106',
     });
-    log(`resposta registrada: ${answered.resposta} (origem ${answered.origem})`);
+    log(`answer recorded: ${answered.resposta} (origem ${answered.origem})`);
 
     const unblocked = await api('GET', `/v1/jobs/${work.id}`);
-    if (unblocked.bloqueado !== false) die('responder não desbloqueou o trabalho');
-    log('trabalho desbloqueado pela resposta');
+    if (unblocked.bloqueado !== false) die('answering did not unblock the work');
+    log('work unblocked by the answer');
 
     // --- 3. second tick: same instructions, different behaviour ---------------
-    log('segundo tick: despachando a sessão que já sabe a resposta...');
+    log('second tick: dispatching the session that already knows the answer...');
     const second = await controller.tick();
-    if (second === null) die('o trabalho respondido não voltou a ser candidato');
-    log(`segundo despacho: trabalho ${second.trabalhoId}, lease ${second.leaseId}`);
+    if (second === null) die('the answered work did not become a candidate again');
+    log(`second dispatch: job ${second.jobId}, lease ${second.leaseId}`);
 
     const produced = join(repo, CHOSEN_NAME);
     if (!existsSync(produced)) {
-      die(`a segunda sessão não criou ${CHOSEN_NAME} — não usou a resposta que estava no prompt`);
+      die(`the second session did not create ${CHOSEN_NAME} — it did not use the answer in the prompt`);
     }
     const content = readFileSync(produced, 'utf8');
     if (!content.includes(PHRASE)) {
-      die(`${CHOSEN_NAME} existe mas não tem a frase pedida:\n${content}`);
+      die(`${CHOSEN_NAME} exists but does not carry the phrase asked for:\n${content}`);
     }
 
     const { perguntas: allQuestions } = await api('GET', '/v1/input-requests');
     if (allQuestions.length !== 1) {
-      die(`a segunda sessão perguntou de novo: ${allQuestions.length} perguntas no total`);
+      die(`the second session asked again: ${allQuestions.length} questions in total`);
     }
 
     // --- 4. the evidence ------------------------------------------------------
-    const { eventos } = await api('GET', `/v1/jobs/${work.id}/events`);
-    const { sessoes } = await api('GET', '/v1/sessions?execucao_id=106');
-    const types = eventos.map((event) => event.tipo);
+    const { eventos: events } = await api('GET', `/v1/jobs/${work.id}/events`);
+    const { sessoes: sessions } = await api('GET', '/v1/sessions?execucao_id=106');
+    const types = events.map((event) => event.tipo);
     for (const expected of ['pergunta.criada', 'trabalho.bloqueado', 'trabalho.desbloqueado']) {
-      if (!types.includes(expected)) die(`falta ${expected} na linha do tempo: ${types.join(', ')}`);
+      if (!types.includes(expected)) die(`${expected} is missing from the timeline: ${types.join(', ')}`);
     }
-    if (sessoes.length !== 2) die(`esperava 2 sessões, achei ${sessoes.length}`);
-    if (!sessoes[1].prompt.includes(question.pergunta)) {
-      die('o prompt da segunda sessão não carrega a pergunta anterior');
+    if (sessions.length !== 2) die(`expected 2 sessions, found ${sessions.length}`);
+    if (!sessions[1].prompt.includes(question.pergunta)) {
+      die('the prompt of the second session does not carry the earlier question');
     }
 
     const timelinePath = join(root, 'linha-do-tempo.jsonl');
-    writeFileSync(timelinePath, `${eventos.map((event) => JSON.stringify(event)).join('\n')}\n`);
+    writeFileSync(timelinePath, `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
     const sessionsPath = join(root, 'sessoes.json');
-    writeFileSync(sessionsPath, `${JSON.stringify(sessoes, null, 2)}\n`);
+    writeFileSync(sessionsPath, `${JSON.stringify(sessions, null, 2)}\n`);
     const questionsPath = join(root, 'perguntas.json');
     writeFileSync(questionsPath, `${JSON.stringify(allQuestions, null, 2)}\n`);
 
-    console.log('\n===== evidência =====');
+    console.log('\n===== evidence =====');
     console.log(`CLI:            ${probe.version}`);
     console.log(`engineName:     ${adapter.engineName}`);
     console.log(`pergunta:       ${JSON.stringify(question.pergunta)}`);
     console.log(`contexto:       ${JSON.stringify(question.contexto)}`);
-    console.log(`opções:         ${JSON.stringify(question.opcoes)}`);
-    console.log(`recomendação:   ${JSON.stringify(question.recomendacao)}`);
+    console.log(`opcoes:         ${JSON.stringify(question.opcoes)}`);
+    console.log(`recomendacao:   ${JSON.stringify(question.recomendacao)}`);
     console.log(`resposta:       ${JSON.stringify(answered.resposta)}`);
     console.log(`eventos:        ${types.join(' -> ')}`);
     console.log(`${CHOSEN_NAME}:  ${JSON.stringify(content.trim())}`);
-    console.log(`linha do tempo: ${timelinePath}`);
-    console.log(`sessões:        ${sessionsPath}`);
-    console.log(`perguntas:      ${questionsPath}`);
+    console.log(`timeline:       ${timelinePath}`);
+    console.log(`sessions:       ${sessionsPath}`);
+    console.log(`questions:      ${questionsPath}`);
     console.log(`workdir:        ${repo}`);
     console.log('=====================\n');
-    log('prova manual OK');
+    log('manual proof OK');
   } finally {
     plane.stop();
   }

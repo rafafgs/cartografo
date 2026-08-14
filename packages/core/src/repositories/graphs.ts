@@ -247,3 +247,71 @@ export function registerBaseGraph(
 
   return { graph, version };
 }
+
+/** Arguments of `forkVariant`, already validated by the route. */
+export interface VariantFork {
+  /** The base lineage being forked; it carries the class and the current pointer. */
+  base: GraphRow;
+  /** Id of the lineage being born — the request says it, it is not derived. */
+  id: string;
+  /** Proposal that originated the fork, or `null` when there is none (D13). */
+  originProposalId: number | null;
+  /** Document of the variant: the base snapshot with `linhagem` swapped. */
+  document: GraphDocument;
+  /** Hash of that document, already checked for collision by the caller. */
+  versionId: string;
+}
+
+/**
+ * Bootstrap of a variant lineage out of a base one, in one transaction (D13).
+ *
+ * Branch semantics: the first version of the variant IS the base's current
+ * snapshot, with no diff, and `versao_pai` points at the version it was forked
+ * from — a parenthood that crosses lineages, which the schema allows because
+ * `grafo_versao.versao_pai` only references `grafo_versao(id)`, with no demand
+ * that both sides share a `grafo_id`.
+ *
+ * It moves the pointer for the same reason `registerBaseGraph` does: this is the
+ * lineage's first version and there is no previous "current" to preserve.
+ *
+ * @param db Open database.
+ * @param data Base lineage, id of the new one, origin proposal, document and hash.
+ * @returns The variant lineage and its first version, as they were written.
+ */
+export function forkVariant(
+  db: Database,
+  data: VariantFork,
+): { graph: GraphRow; version: GraphVersionRow } {
+  const { base, id, originProposalId, document, versionId } = data;
+  const createdAt = now();
+
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO grafo (id, classe, linhagem_tipo, base_classe, origem_proposta_id, versao_corrente_id, criado_em)
+       VALUES (?, ?, 'variante', ?, ?, NULL, ?)`,
+    ).run(id, base.classe, base.classe, originProposalId, createdAt);
+
+    // Same treatment `registerBaseGraph` gives a bootstrap version with no
+    // proposal behind it: with an origin proposal the version comes from it, and
+    // without one it is a manual write.
+    insertVersion(db, {
+      id: versionId,
+      grafo_id: id,
+      versao_pai: base.versao_corrente_id,
+      snapshot: document,
+      origem: originProposalId === null ? 'manual' : 'proposta',
+      proposta_id: originProposalId,
+      criado_em: createdAt,
+    });
+
+    movePointer(db, id, versionId);
+  })();
+
+  const graph = getGraph(db, id);
+  const version = getVersionSummary(db, versionId);
+  if (graph === undefined || version === undefined) {
+    throw new Error(`variant "${id}" was not written`);
+  }
+
+  return { graph, version };
+}

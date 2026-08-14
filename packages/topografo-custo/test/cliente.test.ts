@@ -62,14 +62,14 @@ test('AT8 — buscarSessoes e buscarTrabalhos põem execucao_id na query quando 
   assert.equal(sessoes.length, 1);
   assert.deepEqual(
     dasSessoes.chamadas.map((chamada) => chamada.url),
-    ['http://127.0.0.1:4317/v1/sessoes?execucao_id=7'],
+    ['http://127.0.0.1:4317/v1/sessions?execucao_id=7'],
   );
 
   const dosTrabalhos = espiao({ trabalhos: [{ id: 1 }] });
   await buscarTrabalhos('http://127.0.0.1:4317', { execucao_id: 7 }, dosTrabalhos.buscar);
   assert.deepEqual(
     dosTrabalhos.chamadas.map((chamada) => chamada.url),
-    ['http://127.0.0.1:4317/v1/trabalhos?execucao_id=7'],
+    ['http://127.0.0.1:4317/v1/jobs?execucao_id=7'],
   );
 
   // Sem filtro não sobra `?` pendurado na URL.
@@ -77,12 +77,12 @@ test('AT8 — buscarSessoes e buscarTrabalhos põem execucao_id na query quando 
   await buscarSessoes('http://127.0.0.1:4317/', {}, semFiltro.buscar);
   assert.deepEqual(
     semFiltro.chamadas.map((chamada) => chamada.url),
-    ['http://127.0.0.1:4317/v1/sessoes'],
+    ['http://127.0.0.1:4317/v1/sessions'],
     'a barra final da url base é normalizada, como em packages/tela',
   );
 });
 
-test('AT8 — criarProposta faz POST /v1/propostas com as cinco chaves do contrato', async () => {
+test('AT8 — criarProposta faz POST /v1/proposals com as cinco chaves do contrato', async () => {
   const { criarProposta } = await carregar();
 
   const entrada = {
@@ -113,7 +113,7 @@ test('AT8 — criarProposta faz POST /v1/propostas com as cinco chaves do contra
 
   assert.equal(proposta.id, 42);
   assert.equal(chamadas.length, 1);
-  assert.equal(chamadas[0].url, 'http://127.0.0.1:4317/v1/propostas');
+  assert.equal(chamadas[0].url, 'http://127.0.0.1:4317/v1/proposals');
   assert.equal(chamadas[0].metodo, 'POST');
   assert.deepEqual(Object.keys(chamadas[0].corpo as object).sort(), [
     'evidencia',
@@ -136,7 +136,7 @@ test('AT8 — buscarGrafoVersao lê o snapshot pela rota pública de versão', a
   assert.equal(versao.grafo_id, 'nota-curta');
   assert.deepEqual(
     chamadas.map((chamada) => chamada.url),
-    ['http://127.0.0.1:4317/v1/grafo-versoes/sha256%3Av1'],
+    ['http://127.0.0.1:4317/v1/graph-versions/sha256%3Av1'],
     'o id da versão carrega ":" e precisa entrar escapado no caminho',
   );
 });

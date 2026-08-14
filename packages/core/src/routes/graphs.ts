@@ -24,15 +24,19 @@ import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { validateGraph, type GraphDocument } from '../domain/graph.ts';
+import { hashSnapshot } from '../domain/hash.ts';
 import {
+  forkVariant,
   getClassBase,
   getGraph,
   getVersion,
+  getVersionSummary,
   listClasses,
   listGraphs,
   listVersions,
   registerBaseGraph,
 } from '../repositories/graphs.ts';
+import { getProposal } from '../repositories/proposals.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -88,7 +92,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       return {
         erro: 'linhagem_nao_base',
         mensagem:
-          'esta rota registra apenas grafo base; variante nasce de fork com proposta (D13, t118)',
+          'esta rota registra apenas grafo base; variante nasce de POST /v1/graphs/:id/fork (D13)',
         linhagem_tipo: lineage.tipo ?? null,
       };
     }
@@ -103,6 +107,128 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
     }
 
     const { graph, version } = registerBaseGraph(db, document as GraphDocument);
+    reply.code(201);
+    return { grafo: graph, grafo_versao: version };
+  });
+
+  /**
+   * `POST /graphs/:id/fork` is D13's branch semantics: the variant is born as the
+   * base's current snapshot, byte for byte, with `linhagem` swapped and nothing
+   * else. A `git branch` does not change content either — it creates a pointer
+   * and a parenthood, and evolving the two sides apart is the ordinary proposal
+   * flow, which needs no special case for a variant.
+   *
+   * Every check below runs BEFORE any write, and the refusals are ordered from
+   * the route's own subject (the base) outwards to the body.
+   */
+  app.post<IdParam>('/graphs/:id/fork', async (request, reply) => {
+    const base = getGraph(db, request.params.id);
+    if (base === undefined) {
+      reply.code(404);
+      return { erro: 'grafo_desconhecido', id: request.params.id };
+    }
+
+    if (base.linhagem_tipo !== 'base') {
+      reply.code(400);
+      return {
+        erro: 'base_invalida',
+        mensagem: 'só uma linhagem base pode ser bifurcada; variante de variante está fora (D13)',
+        linhagem_tipo: base.linhagem_tipo,
+      };
+    }
+
+    const body = isObject(request.body) ? request.body : {};
+
+    // The id of the variant is said by the request, never derived: `classe` is
+    // the identity of the BASE lineage (D8), and the variant shares the class.
+    const id = body.id;
+    if (typeof id !== 'string' || id.trim() === '') {
+      reply.code(400);
+      return {
+        erro: 'campo_obrigatorio_ausente',
+        mensagem: 'a bifurcação exige "id": é a identidade da linhagem que nasce',
+      };
+    }
+
+    if (getGraph(db, id) !== undefined) {
+      reply.code(409);
+      return {
+        erro: 'id_ja_registrado',
+        mensagem: `já existe uma linhagem com o id "${id}"`,
+        id,
+      };
+    }
+
+    // Existence only, at any status: the topographer does not know how to propose
+    // a fork yet, so checking the content of the proposal would be checking a
+    // shape nobody writes (out of scope).
+    const rawOrigin = body.origem_proposta_id;
+    let originProposalId: number | null = null;
+    if (rawOrigin !== undefined && rawOrigin !== null) {
+      if (typeof rawOrigin !== 'number' || !Number.isInteger(rawOrigin) || rawOrigin <= 0) {
+        reply.code(400);
+        return {
+          erro: 'origem_proposta_id_invalido',
+          mensagem: 'origem_proposta_id precisa ser um inteiro positivo',
+          origem_proposta_id: rawOrigin,
+        };
+      }
+      if (getProposal(db, rawOrigin) === undefined) {
+        reply.code(400);
+        return {
+          erro: 'origem_proposta_desconhecida',
+          mensagem: 'origem_proposta_id não referencia nenhuma proposta',
+          origem_proposta_id: rawOrigin,
+        };
+      }
+      originProposalId = rawOrigin;
+    }
+
+    // Defensive invariant: a lineage with no pointer is a graph that exists
+    // without holding, which no code path here creates.
+    const current =
+      base.versao_corrente_id === null ? undefined : getVersion(db, base.versao_corrente_id);
+    if (current === undefined) {
+      reply.code(409);
+      return {
+        erro: 'grafo_sem_versao_corrente',
+        mensagem: 'a linhagem base não aponta para uma versão corrente; não há de onde bifurcar',
+        id: base.id,
+      };
+    }
+
+    const document: GraphDocument = {
+      ...current.snapshot,
+      linhagem: {
+        tipo: 'variante',
+        base_classe: base.classe,
+        // Absent, not null: the same elision `base` already does with the two
+        // fields the schema forbids it. The column is INTEGER and the document
+        // field is a string (`schema/grafo.schema.json`) — hence the `String`.
+        ...(originProposalId === null ? {} : { origem_proposta_id: String(originProposalId) }),
+      },
+    };
+
+    // The hash IS the version's identity, and it is global, not scoped per
+    // lineage: two forks of the same base with the same origin would produce the
+    // same document, and one row cannot belong to two lineages at once.
+    const versionId = hashSnapshot(document);
+    if (getVersionSummary(db, versionId) !== undefined) {
+      reply.code(409);
+      return {
+        erro: 'bifurcacao_sem_efeito',
+        mensagem: 'esta bifurcação produz um snapshot que já existe; nada seria registrado',
+        versao_existente: versionId,
+      };
+    }
+
+    const { graph, version } = forkVariant(db, {
+      base,
+      id,
+      originProposalId,
+      document,
+      versionId,
+    });
     reply.code(201);
     return { grafo: graph, grafo_versao: version };
   });

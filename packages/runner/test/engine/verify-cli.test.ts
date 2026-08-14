@@ -1,12 +1,13 @@
 /**
- * Preflight da CLI (`verifyCli`), rodado contra o binário fake.
+ * The CLI preflight (`verifyCli`), run against the fake binary.
  *
- * `available` é uma pergunta barata e honesta: o binário existe e responde a
- * `--version`, sem gastar cota. `authenticated` é outra coisa — a especificação
- * o rebaixou a **melhor esforço** por escrito, depois de medir um engine que
- * abre a sessão normalmente e só descobre a falta de credencial no meio do
- * stream (`docs/formatos/engine-adapter.md:452-461`). Estes testes fixam
- * exatamente isso: uma sonda que não promete mais do que consegue.
+ * `available` is a cheap and honest question: the binary exists and answers
+ * `--version`, without spending quota. `authenticated` is another matter — the
+ * specification demoted it to **best effort** in writing, after measuring an
+ * engine that opens the session normally and only discovers the missing
+ * credential in the middle of the stream
+ * (`docs/formatos/engine-adapter.md:452-461`). These tests pin exactly that: a
+ * probe that promises no more than it can deliver.
  */
 
 import assert from 'node:assert/strict';
@@ -20,80 +21,80 @@ import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 
 const FAKE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
-/** Um caminho que garantidamente não existe, para o caso do binário ausente. */
-const BINARIO_INEXISTENTE = join(tmpdir(), 'cartografo-binario-que-nao-existe-104');
+/** A path guaranteed not to exist, for the missing-binary case. */
+const MISSING_BINARY = join(tmpdir(), 'cartografo-binary-that-does-not-exist-104');
 
-const adapterCom = (opcoes: {
-  comando?: { command: string; args: string[] };
-  ambiente?: Record<string, string>;
-  credenciais?: string;
+const adapterWith = (options: {
+  command?: { command: string; args: string[] };
+  environment?: Record<string, string>;
+  credentials?: string;
 }): ClaudeCodeAdapter =>
   new ClaudeCodeAdapter({
-    probeCommandBuilder: () => opcoes.comando ?? { command: process.execPath, args: [FAKE, '--version'] },
-    probeEnvironment: opcoes.ambiente ?? {},
-    credentialsPath: opcoes.credenciais ?? join(tmpdir(), 'cartografo-sem-credencial-104.json'),
+    probeCommandBuilder: () => options.command ?? { command: process.execPath, args: [FAKE, '--version'] },
+    probeEnvironment: options.environment ?? {},
+    credentialsPath: options.credentials ?? join(tmpdir(), 'cartografo-no-credential-104.json'),
   });
 
-test('available é true e a versão vem do binário que respondeu', async () => {
-  const sonda = await adapterCom({}).verifyCli();
+test('available is true and the version comes from the binary that answered', async () => {
+  const probe = await adapterWith({}).verifyCli();
 
-  assert.equal(sonda.available, true);
-  assert.equal(sonda.version, '9.9.9 (Fake Engine)');
+  assert.equal(probe.available, true);
+  assert.equal(probe.version, '9.9.9 (Fake Engine)');
 });
 
-test('binário inexistente devolve available false, sem lançar', async () => {
-  const sonda = await adapterCom({
-    comando: { command: BINARIO_INEXISTENTE, args: ['--version'] },
+test('a missing binary returns available false, without throwing', async () => {
+  const probe = await adapterWith({
+    command: { command: MISSING_BINARY, args: ['--version'] },
   }).verifyCli();
 
-  assert.equal(sonda.available, false);
-  assert.equal(sonda.version, null);
+  assert.equal(probe.available, false);
+  assert.equal(probe.version, null);
 });
 
-test('binário que responde com erro não conta como disponível', async () => {
-  const sonda = await adapterCom({
-    comando: { command: process.execPath, args: ['-e', 'process.exit(1)'] },
+test('a binary that answers with an error does not count as available', async () => {
+  const probe = await adapterWith({
+    command: { command: process.execPath, args: ['-e', 'process.exit(1)'] },
   }).verifyCli();
 
-  assert.equal(sonda.available, false);
+  assert.equal(probe.available, false);
 });
 
-test('authenticated reflete a variável de credencial presente', async () => {
-  const comChave = await adapterCom({ ambiente: { ANTHROPIC_API_KEY: 'sk-de-teste' } }).verifyCli();
-  assert.equal(comChave.authenticated, true);
+test('authenticated reflects the credential variable that is present', async () => {
+  const withKey = await adapterWith({ environment: { ANTHROPIC_API_KEY: 'sk-for-testing' } }).verifyCli();
+  assert.equal(withKey.authenticated, true);
 
-  const semChave = await adapterCom({ ambiente: {} }).verifyCli();
-  assert.equal(semChave.authenticated, false);
+  const withoutKey = await adapterWith({ environment: {} }).verifyCli();
+  assert.equal(withoutKey.authenticated, false);
 });
 
-test('authenticated também aceita a conta OAuth do arquivo de credencial', async () => {
-  const raiz = mkdtempSync(join(tmpdir(), 'cartografo-cred-'));
-  const credenciais = join(raiz, '.claude.json');
+test('authenticated also accepts the OAuth account in the credential file', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cartografo-cred-'));
+  const credentials = join(root, '.claude.json');
 
   try {
-    writeFileSync(credenciais, JSON.stringify({ oauthAccount: { emailAddress: 'x@example.com' } }));
-    const comConta = await adapterCom({ credenciais }).verifyCli();
-    assert.equal(comConta.authenticated, true);
+    writeFileSync(credentials, JSON.stringify({ oauthAccount: { emailAddress: 'x@example.com' } }));
+    const withAccount = await adapterWith({ credentials }).verifyCli();
+    assert.equal(withAccount.authenticated, true);
 
-    writeFileSync(credenciais, JSON.stringify({ outraCoisa: true }));
-    const semConta = await adapterCom({ credenciais }).verifyCli();
-    assert.equal(semConta.authenticated, false);
+    writeFileSync(credentials, JSON.stringify({ somethingElse: true }));
+    const withoutAccount = await adapterWith({ credentials }).verifyCli();
+    assert.equal(withoutAccount.authenticated, false);
   } finally {
-    rmSync(raiz, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('arquivo de credencial corrompido não derruba a sonda', async () => {
-  const raiz = mkdtempSync(join(tmpdir(), 'cartografo-cred-'));
-  const credenciais = join(raiz, '.claude.json');
+test('a corrupt credential file does not bring the probe down', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cartografo-cred-'));
+  const credentials = join(root, '.claude.json');
 
   try {
-    writeFileSync(credenciais, '{ isto não é json');
-    const sonda = await adapterCom({ credenciais }).verifyCli();
+    writeFileSync(credentials, '{ this is not json');
+    const probe = await adapterWith({ credentials }).verifyCli();
 
-    assert.equal(sonda.available, true);
-    assert.equal(sonda.authenticated, false);
+    assert.equal(probe.available, true);
+    assert.equal(probe.authenticated, false);
   } finally {
-    rmSync(raiz, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
 });

@@ -1,133 +1,134 @@
 #!/usr/bin/env node
 /**
- * Fake engine — a CLI controlável que o kit de conformidade roda no lugar de
- * um engine de verdade.
+ * Fake engine — a controllable CLI the conformance kit runs in place of a real
+ * engine.
  *
- * Existe porque o kit precisa ser determinístico e rodar sem CLI instalada nem
- * autenticada: "a costura é a construção do comando; trocar o binário pelo
- * fake engine é o que mantém a suíte determinística"
- * (`docs/formatos/engine-adapter.md:363-366`).
+ * It exists because the kit has to be deterministic and has to run with no CLI
+ * installed and no authentication: "the seam is the command construction;
+ * swapping the binary for the fake engine is what keeps the suite
+ * deterministic" (`docs/formatos/engine-adapter.md:363-366`).
  *
- * Todo o controle vem do AMBIENTE, nunca de argv. Isso é deliberado: argv é o
- * canal que o adapter usa para entregar `instructions`/`prompt`, e o caso C2 se
- * verifica pelo que o processo recebeu ali. Um fake engine configurado por
- * flags disputaria esse canal com o que está sendo medido. O ambiente chega
- * pelo `envOverrides` do `SessionSpec`, que a interface já define como
- * "adições opacas ao ambiente do processo do engine" — ou seja, o kit
- * configura o fake sem saber nada do adapter sob teste.
+ * All the control comes from the ENVIRONMENT, never from argv. That is
+ * deliberate: argv is the channel the adapter uses to deliver
+ * `instructions`/`prompt`, and case C2 checks itself against what the process
+ * received there. A fake engine configured by flags would compete for that
+ * channel with what is being measured. The environment arrives through the
+ * `SessionSpec`'s `envOverrides`, which the interface already defines as
+ * "opaque additions to the engine process's environment" — that is, the kit
+ * configures the fake knowing nothing about the adapter under test.
  *
- * Variáveis reconhecidas:
+ * Recognized variables:
  *
- * - `FAKE_ENGINE_RECORD`      caminho do sidecar JSON com tudo que o processo
- *                             recebeu (argv, env, cwd, stdin, arquivos do
- *                             workdir, pid próprio e do neto).
+ * - `FAKE_ENGINE_RECORD`      path of the JSON sidecar with everything the
+ *                             process received (argv, env, cwd, stdin, files
+ *                             of the workdir, its own pid and the grandchild's).
  * - `FAKE_ENGINE_LINES`       JSON `[{stream:"stdout"|"stderr",text:string}]`,
- *                             emitidas em ordem.
- * - `FAKE_ENGINE_WRITE_FILES` JSON `{"<nome>": "<conteúdo>"}`; cada entrada
- *                             vira um arquivo no cwd da sessão. É como o fake
- *                             engine "trabalha": um contrato de saída em
- *                             arquivo (t110) só se verifica se o processo puder
- *                             de fato escrevê-lo.
- * - `FAKE_ENGINE_EXIT_CODE`   código de saída (default 0).
- * - `FAKE_ENGINE_DELAY_MS`    espera antes de sair.
- * - `FAKE_ENGINE_HANG`        "1" = nunca termina sozinho (C3).
- * - `FAKE_ENGINE_IGNORE_SIGTERM` "1" = instala handler que ignora SIGTERM (C4).
- * - `FAKE_ENGINE_SPAWN_CHILD` "1" = deixa um neto vivo que também ignora
- *                             SIGTERM (C4, "o filho que sobrevive ao pai").
- * - `FAKE_ENGINE_VERSION`     resposta de `--version` (sonda do verifyCli).
+ *                             emitted in order.
+ * - `FAKE_ENGINE_WRITE_FILES` JSON `{"<name>": "<content>"}`; each entry becomes
+ *                             a file in the session's cwd. It is how the fake
+ *                             engine "works": an output-in-a-file contract
+ *                             (t110) can only be checked if the process can
+ *                             actually write it.
+ * - `FAKE_ENGINE_EXIT_CODE`   exit code (default 0).
+ * - `FAKE_ENGINE_DELAY_MS`    wait before exiting.
+ * - `FAKE_ENGINE_HANG`        "1" = never ends on its own (C3).
+ * - `FAKE_ENGINE_IGNORE_SIGTERM` "1" = installs a handler that ignores SIGTERM (C4).
+ * - `FAKE_ENGINE_SPAWN_CHILD` "1" = leaves a grandchild alive that also ignores
+ *                             SIGTERM (C4, "the child that outlives the parent").
+ * - `FAKE_ENGINE_VERSION`     answer to `--version` (the verifyCli probe).
  *
- * `--version` é tratado ANTES de qualquer outra coisa e sem ler stdin: é a
- * sonda que "não gasta quota" da interface, e ela não abre sessão.
+ * `--version` is handled BEFORE anything else and without reading stdin: it is
+ * the interface's probe that "spends no quota", and it opens no session.
  *
- * Nenhum caminho deste script chama `process.exit()` depois de escrever: em
- * POSIX o stdout de um pipe é assíncrono, e sair na hora trunca as linhas que
- * o caso C6 confere uma a uma. O jeito certo é `process.exitCode` e deixar o
- * loop de eventos drenar sozinho.
+ * No path of this script calls `process.exit()` after writing: in POSIX the
+ * stdout of a pipe is asynchronous, and exiting right away truncates the lines
+ * case C6 checks one by one. The right way is `process.exitCode` and letting
+ * the event loop drain on its own.
  */
 
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-const TAMANHO_MAXIMO_DE_ARQUIVO = 64 * 1024;
+const MAX_FILE_SIZE = 64 * 1024;
 
 /**
- * Lê stdin até EOF.
+ * Reads stdin until EOF.
  *
- * É aqui que a invariante 6 (`stdin` fechado ou redirecionado para
- * `/dev/null`) se paga sozinha: com stdin em `/dev/null` o EOF chega na hora;
- * com um pipe que o adapter abriu e nunca fecha, este `await` nunca resolve, o
- * sidecar nunca é escrito e o caso do kit estoura o prazo com mensagem
- * explícita. Nenhuma asserção extra precisa existir para o adapter que trava.
+ * This is where invariant 6 (`stdin` closed or redirected to `/dev/null`) pays
+ * for itself: with stdin on `/dev/null` the EOF arrives at once; with a pipe
+ * the adapter opened and never closes, this `await` never resolves, the sidecar
+ * is never written and the kit's case blows its deadline with an explicit
+ * message. No extra assertion needs to exist for the adapter that hangs.
  */
-function lerStdin() {
+function readStdin() {
   return new Promise((resolve) => {
-    let dados = '';
+    let data = '';
     process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (pedaco) => {
-      dados += pedaco;
+    process.stdin.on('data', (chunk) => {
+      data += chunk;
     });
-    process.stdin.on('end', () => resolve(dados));
-    process.stdin.on('error', () => resolve(dados));
+    process.stdin.on('end', () => resolve(data));
+    process.stdin.on('error', () => resolve(data));
   });
 }
 
-/** Arquivos de primeiro nível do workdir, com conteúdo — o caminho "arquivo efêmero" do C2. */
-function arquivosDoWorkdir() {
-  const encontrados = {};
-  let entradas;
+/** Top-level files of the workdir, with content — C2's "ephemeral file" path. */
+function workdirFiles() {
+  const found = {};
+  let entries;
   try {
-    entradas = readdirSync(process.cwd(), { withFileTypes: true });
+    entries = readdirSync(process.cwd(), { withFileTypes: true });
   } catch {
-    return encontrados;
+    return found;
   }
-  for (const entrada of entradas) {
-    if (!entrada.isFile()) continue;
-    const caminho = path.join(process.cwd(), entrada.name);
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const filePath = path.join(process.cwd(), entry.name);
     try {
-      encontrados[entrada.name] =
-        statSync(caminho).size > TAMANHO_MAXIMO_DE_ARQUIVO
-          ? '<grande demais para o sidecar>'
-          : readFileSync(caminho, 'utf8');
+      found[entry.name] =
+        statSync(filePath).size > MAX_FILE_SIZE
+          ? '<too large for the sidecar>'
+          : readFileSync(filePath, 'utf8');
     } catch {
-      encontrados[entrada.name] = '<ilegível>';
+      found[entry.name] = '<unreadable>';
     }
   }
-  return encontrados;
+  return found;
 }
 
 /**
- * Escreve os arquivos pedidos no cwd — o "trabalho" do fake engine.
+ * Writes the requested files in the cwd — the fake engine's "work".
  *
- * Só nomes de primeiro nível: o fake não cria diretório e não sai do workdir da
- * sessão, que é a única coisa que uma sessão tem direito de tocar.
+ * Top-level names only: the fake creates no directory and does not leave the
+ * session's workdir, which is the only thing a session has any right to touch.
  */
-function escreverArquivos(bruto) {
-  if (!bruto) return;
-  let pedidos;
+function writeRequestedFiles(raw) {
+  if (!raw) return;
+  let requested;
   try {
-    pedidos = JSON.parse(bruto);
+    requested = JSON.parse(raw);
   } catch {
     return;
   }
-  if (typeof pedidos !== 'object' || pedidos === null || Array.isArray(pedidos)) return;
+  if (typeof requested !== 'object' || requested === null || Array.isArray(requested)) return;
 
-  for (const [nome, conteudo] of Object.entries(pedidos)) {
-    writeFileSync(path.join(process.cwd(), path.basename(nome)), String(conteudo));
+  for (const [name, content] of Object.entries(requested)) {
+    writeFileSync(path.join(process.cwd(), path.basename(name)), String(content));
   }
 }
 
-function analisarLinhas(bruto) {
-  if (!bruto) return [];
+function parseLines(raw) {
+  if (!raw) return [];
   try {
-    const analisado = JSON.parse(bruto);
-    return Array.isArray(analisado) ? analisado : [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-async function principal() {
+async function main() {
   const env = process.env;
   const argv = process.argv.slice(2);
 
@@ -136,19 +137,19 @@ async function principal() {
     return;
   }
 
-  const stdin = await lerStdin();
+  const stdin = await readStdin();
 
-  // O neto sobe ANTES do sidecar para que seu pid fique registrado mesmo se o
-  // adapter matar o pai imediatamente.
-  let pidDoNeto = null;
+  // The grandchild comes up BEFORE the sidecar so its pid is recorded even if
+  // the adapter kills the parent immediately.
+  let grandchildPid = null;
   if (env.FAKE_ENGINE_SPAWN_CHILD === '1') {
-    const neto = spawn(
+    const grandchild = spawn(
       process.execPath,
       ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);'],
       { stdio: 'ignore' },
     );
-    neto.unref();
-    pidDoNeto = neto.pid ?? null;
+    grandchild.unref();
+    grandchildPid = grandchild.pid ?? null;
   }
 
   if (env.FAKE_ENGINE_RECORD) {
@@ -157,12 +158,12 @@ async function principal() {
       JSON.stringify(
         {
           pid: process.pid,
-          pidDoNeto,
+          grandchildPid,
           argv,
           env: { ...env },
           cwd: process.cwd(),
           stdin,
-          arquivos: arquivosDoWorkdir(),
+          files: workdirFiles(),
         },
         null,
         2,
@@ -170,18 +171,18 @@ async function principal() {
     );
   }
 
-  // Depois do sidecar, de propósito: o registro conta o que o processo
-  // RECEBEU, e um arquivo que ele mesmo escreveu não é entrada.
-  escreverArquivos(env.FAKE_ENGINE_WRITE_FILES);
+  // After the sidecar, on purpose: the record tells what the process RECEIVED,
+  // and a file it wrote itself is not an input.
+  writeRequestedFiles(env.FAKE_ENGINE_WRITE_FILES);
 
   if (env.FAKE_ENGINE_IGNORE_SIGTERM === '1') {
     process.on('SIGTERM', () => {});
     process.on('SIGINT', () => {});
   }
 
-  for (const linha of analisarLinhas(env.FAKE_ENGINE_LINES)) {
-    const fluxo = linha.stream === 'stderr' ? process.stderr : process.stdout;
-    fluxo.write(`${linha.text}\n`);
+  for (const line of parseLines(env.FAKE_ENGINE_LINES)) {
+    const stream = line.stream === 'stderr' ? process.stderr : process.stdout;
+    stream.write(`${line.text}\n`);
   }
 
   process.exitCode = Number(env.FAKE_ENGINE_EXIT_CODE ?? 0);
@@ -191,8 +192,8 @@ async function principal() {
     return;
   }
 
-  const espera = Number(env.FAKE_ENGINE_DELAY_MS ?? 0);
-  if (espera > 0) await new Promise((resolve) => setTimeout(resolve, espera));
+  const wait = Number(env.FAKE_ENGINE_DELAY_MS ?? 0);
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
 }
 
-await principal();
+await main();

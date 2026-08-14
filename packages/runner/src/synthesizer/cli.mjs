@@ -2,7 +2,7 @@
 /**
  * `synthesize` — the copilot synthesizer, invoked by hand (t115, FR1/FR9).
  *
- * A command a person types, like the surveyor's (`src/topografo/cli.mjs`) and
+ * A command a person types, like the surveyor's (`src/surveyor/cli.mjs`) and
  * for the same reason: D10 makes the synthesizer a copilot in the MVP, and a
  * copilot nobody asked for is just an autopilot. Nothing in the graph runs this,
  * and wiring it into anything is a decision, not a refactor.
@@ -21,7 +21,7 @@
  *
  * Usage:
  *   npm run synthesize --workspace @cartografo/runner -- \
- *     "<declaração>" --classe <nome> [--url <url>] [--saida <caminho>] [--timeout <seg>]
+ *     `"<declaração>" --classe <nome> [--url <url>] [--saida <caminho>] [--timeout <seg>]`
  */
 
 import { mkdtempSync } from 'node:fs';
@@ -73,7 +73,7 @@ async function main() {
 
 try {
   process.exitCode = await main();
-} catch (erro) {
-  process.stderr.write(`synthesize: ${erro instanceof Error ? erro.message : String(erro)}\n`);
+} catch (error) {
+  process.stderr.write(`synthesize: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 }

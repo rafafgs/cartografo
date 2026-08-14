@@ -267,10 +267,13 @@ async function rankPrecedents(
       continue;
     }
 
-    const nome = typeof metadata.nome === 'string' ? metadata.nome : '';
-    const descricao = typeof metadata.descricao === 'string' ? metadata.descricao : '';
-    const score = similarity(declaration, `${nome} ${descricao}`);
-    if (score > 0) scored.push({ classe: entry.classe, nome, descricao, score });
+    // `nome`/`descricao` stay spelled in Portuguese as KEYS — they are the
+    // frozen wire format of `metadata` — while the locals they land in are
+    // English like the rest of the code written from D18 onward.
+    const name = typeof metadata.nome === 'string' ? metadata.nome : '';
+    const description = typeof metadata.descricao === 'string' ? metadata.descricao : '';
+    const score = similarity(declaration, `${name} ${description}`);
+    if (score > 0) scored.push({ classe: entry.classe, nome: name, descricao: description, score });
   }
 
   return scored.sort((a, b) => b.score - a.score).slice(0, SUGGESTION_LIMIT);

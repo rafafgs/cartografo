@@ -1,16 +1,17 @@
 /**
- * Testes de aceite do portão de single-writer (t100, FR6/FR7).
+ * Acceptance tests of the single-writer gate (t100, FR6/FR7).
  *
- * Cobrem a função exportada e o CLI de `scripts/check-single-writer.mjs`, com
- * fixtures positivo e negativos escritos em diretório temporário.
+ * They cover the exported function and the CLI of
+ * `scripts/check-single-writer.mjs`, with a positive and several negative
+ * fixtures written into a temporary directory.
  *
- * ATENÇÃO ao escrever fixture aqui: este arquivo é varrido pelo próprio script
- * quando `npm run lint` roda na raiz. Por isso NENHUMA linha abaixo escreve
- * literalmente o nome de um driver nem o caminho `packages/core/src/db` dentro
- * de um `import ... from '...'` — tudo entra por interpolação das constantes
- * exportadas pelo script. Um literal aqui viraria violação real no lint.
+ * CAREFUL when writing a fixture here: this file is swept by the script itself
+ * when `npm run lint` runs at the root. That is why NO line below writes a
+ * driver name, or the path `packages/core/src/db`, literally inside an
+ * `import ... from '...'` — everything comes in by interpolating the constants
+ * the script exports. A literal here would become a real lint violation.
  *
- * Rodar: `npm test` na raiz.
+ * Run with: `npm test` at the root.
  */
 
 import assert from 'node:assert/strict';
@@ -20,185 +21,186 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-const RAIZ = path.resolve(import.meta.dirname, '..');
-const CAMINHO_SCRIPT = path.join(RAIZ, 'scripts', 'check-single-writer.mjs');
+const ROOT = path.resolve(import.meta.dirname, '..');
+const SCRIPT_PATH = path.join(ROOT, 'scripts', 'check-single-writer.mjs');
 
-let moduloScript = null;
+let scriptModule = null;
 
-async function carregarScript() {
-  assert.ok(existsSync(CAMINHO_SCRIPT), 'artefato ainda não existe: scripts/check-single-writer.mjs');
-  moduloScript ??= await import(new URL('./check-single-writer.mjs', import.meta.url));
-  return moduloScript;
+async function loadScript() {
+  assert.ok(existsSync(SCRIPT_PATH), 'artifact does not exist yet: scripts/check-single-writer.mjs');
+  scriptModule ??= await import(new URL('./check-single-writer.mjs', import.meta.url));
+  return scriptModule;
 }
 
-function areaTemporaria(t) {
+function temporaryArea(t) {
   const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t100-swriter-'));
   t.after(() => rmSync(base, { recursive: true, force: true }));
   return base;
 }
 
-function escrever(raiz, relativo, conteudo) {
-  const destino = path.join(raiz, relativo);
-  mkdirSync(path.dirname(destino), { recursive: true });
-  writeFileSync(destino, conteudo, 'utf8');
+function write(root, relative, content) {
+  const destination = path.join(root, relative);
+  mkdirSync(path.dirname(destination), { recursive: true });
+  writeFileSync(destination, content, 'utf8');
 }
 
 /**
- * Monta a árvore de fixture base: core com o driver no lugar certo, tela sem
- * nenhum privilégio. `ajustes` sobrescreve arquivos para produzir cada negativo.
+ * Builds the base fixture tree: a core with the driver in the right place, a
+ * screen with no privilege at all. `overrides` replaces files to produce each
+ * negative case.
  */
-function montarArvore(raiz, { DRIVERS_SQLITE, SEGMENTO_DONO_DO_BANCO }, ajustes = {}) {
-  const arquivos = {
+function buildTree(root, { SQLITE_DRIVERS, DB_OWNER_SEGMENT }, overrides = {}) {
+  const files = {
     'packages/core/package.json': JSON.stringify(
-      { name: 'cartografo', dependencies: { [DRIVERS_SQLITE[0]]: '^13.0.0' } },
+      { name: 'cartografo', dependencies: { [SQLITE_DRIVERS[0]]: '^13.0.0' } },
       null,
       2,
     ),
     'packages/core/src/db/connection.ts':
-      `import Database from '${DRIVERS_SQLITE[0]}';\n` +
-      `export const abrir = () => new Database(':memory:');\n`,
+      `import Database from '${SQLITE_DRIVERS[0]}';\n` +
+      `export const open = () => new Database(':memory:');\n`,
     'packages/core/src/server.ts':
-      `import { abrir } from './db/connection.ts';\nexport const app = abrir;\n`,
-    // Teste do próprio core alcançando o módulo de banco: legítimo, porque o
-    // que é privado é o pacote, não a pasta `src/`.
+      `import { open } from './db/connection.ts';\nexport const app = open;\n`,
+    // The core's own test reaching the database module: legitimate, because
+    // what is private is the package, not the `src/` folder.
     'packages/core/test/connection.test.ts':
-      `import { abrir } from '../${SEGMENTO_DONO_DO_BANCO.split('/').slice(1).join('/')}/connection.ts';\n` +
-      `export const alvo = abrir;\n`,
+      `import { open } from '../${DB_OWNER_SEGMENT.split('/').slice(1).join('/')}/connection.ts';\n` +
+      `export const target = open;\n`,
     'packages/tela/package.json': JSON.stringify(
       { name: '@cartografo/tela', dependencies: {} },
       null,
       2,
     ),
-    'packages/tela/src/index.ts': `export const saude = (url) => fetch(url + '/health');\n`,
-    ...ajustes,
+    'packages/tela/src/index.ts': `export const health = (url) => fetch(url + '/health');\n`,
+    ...overrides,
   };
-  for (const [relativo, conteudo] of Object.entries(arquivos)) {
-    escrever(raiz, relativo, conteudo);
+  for (const [relative, content] of Object.entries(files)) {
+    write(root, relative, content);
   }
-  return raiz;
+  return root;
 }
 
-function rodarCli(...args) {
-  const resultado = spawnSync(process.execPath, [CAMINHO_SCRIPT, ...args], { encoding: 'utf8' });
-  return { status: resultado.status, stdout: resultado.stdout ?? '', stderr: resultado.stderr ?? '' };
+function runCli(...args) {
+  const result = spawnSync(process.execPath, [SCRIPT_PATH, ...args], { encoding: 'utf8' });
+  return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
-test('AT10 — extrairImports pega import, export-from, import() e require()', async () => {
-  const { extrairImports } = await carregarScript();
+test('AT10 — extractImports catches import, export-from, import() and require()', async () => {
+  const { extractImports } = await loadScript();
 
-  const codigo = [
+  const code = [
     "import fs from 'node:fs';",
-    'import { a, b } from "./modulo-a.ts";',
-    "import './efeito-colateral.ts';",
-    "export { c } from './modulo-c.ts';",
-    "export * from './modulo-d.ts';",
-    "const tardio = await import('./modulo-e.ts');",
-    "const velho = require('pacote-cjs');",
-    "const naoEhImport = 'pacote-que-so-aparece-em-string';",
+    'import { a, b } from "./module-a.ts";',
+    "import './side-effect.ts';",
+    "export { c } from './module-c.ts';",
+    "export * from './module-d.ts';",
+    "const lazy = await import('./module-e.ts');",
+    "const old = require('cjs-package');",
+    "const notAnImport = 'package-that-only-shows-up-in-a-string';",
   ].join('\n');
 
-  const achados = extrairImports(codigo);
-  for (const esperado of [
+  const found = extractImports(code);
+  for (const expected of [
     'node:fs',
-    './modulo-a.ts',
-    './efeito-colateral.ts',
-    './modulo-c.ts',
-    './modulo-d.ts',
-    './modulo-e.ts',
-    'pacote-cjs',
+    './module-a.ts',
+    './side-effect.ts',
+    './module-c.ts',
+    './module-d.ts',
+    './module-e.ts',
+    'cjs-package',
   ]) {
-    assert.ok(achados.includes(esperado), `extrairImports precisa achar "${esperado}"`);
+    assert.ok(found.includes(expected), `extractImports has to find "${expected}"`);
   }
   assert.ok(
-    !achados.includes('pacote-que-so-aparece-em-string'),
-    'string solta não é import: só conta o que está em posição de especificador',
+    !found.includes('package-that-only-shows-up-in-a-string'),
+    'a loose string is not an import: only a specifier position counts',
   );
 });
 
-test('AT11 — árvore com o driver só sob o caminho permitido sai 0', async (t) => {
-  const script = await carregarScript();
-  const raiz = montarArvore(areaTemporaria(t), script);
+test('AT11 — a tree with the driver only under the allowed path exits 0', async (t) => {
+  const script = await loadScript();
+  const root = buildTree(temporaryArea(t), script);
 
-  const relatorio = script.verificar(raiz);
-  assert.deepEqual(relatorio.violacoes, []);
-  assert.equal(relatorio.valido, true);
+  const report = script.check(root);
+  assert.deepEqual(report.violations, []);
+  assert.equal(report.valid, true);
 
-  const cli = rodarCli(raiz);
-  assert.equal(cli.status, 0, `CLI devia sair 0:\n${cli.stdout}${cli.stderr}`);
+  const cli = runCli(root);
+  assert.equal(cli.status, 0, `the CLI should have exited 0:\n${cli.stdout}${cli.stderr}`);
 });
 
-test('AT12 — import do driver fora do dono sai 1 e reporta o arquivo', async (t) => {
-  const script = await carregarScript();
-  const { DRIVERS_SQLITE } = script;
-  const raiz = montarArvore(areaTemporaria(t), script, {
+test('AT12 — a driver import outside the owner exits 1 and names the file', async (t) => {
+  const script = await loadScript();
+  const { SQLITE_DRIVERS } = script;
+  const root = buildTree(temporaryArea(t), script, {
     'packages/core/src/server.ts':
-      `import Database from '${DRIVERS_SQLITE[0]}';\nexport const app = () => new Database(':memory:');\n`,
+      `import Database from '${SQLITE_DRIVERS[0]}';\nexport const app = () => new Database(':memory:');\n`,
   });
 
-  const relatorio = script.verificar(raiz);
-  assert.equal(relatorio.valido, false);
+  const report = script.check(root);
+  assert.equal(report.valid, false);
 
-  const violacao = relatorio.violacoes.find((v) => v.codigo === 'driver_fora_do_dono');
-  assert.ok(violacao, 'violação esperada: driver_fora_do_dono');
-  assert.equal(violacao.arquivo, 'packages/core/src/server.ts');
-  assert.equal(violacao.alvo, DRIVERS_SQLITE[0]);
+  const violation = report.violations.find((v) => v.code === 'driver_fora_do_dono');
+  assert.ok(violation, 'expected violation: driver_fora_do_dono');
+  assert.equal(violation.file, 'packages/core/src/server.ts');
+  assert.equal(violation.target, SQLITE_DRIVERS[0]);
 
-  const cli = rodarCli(raiz);
+  const cli = runCli(root);
   assert.equal(cli.status, 1);
-  const relato = `${cli.stdout}${cli.stderr}`;
-  assert.ok(relato.includes('packages/core/src/server.ts'), 'o CLI precisa nomear o arquivo culpado');
-  assert.ok(relato.includes(DRIVERS_SQLITE[0]), 'o CLI precisa nomear o driver importado');
+  const output = `${cli.stdout}${cli.stderr}`;
+  assert.ok(output.includes('packages/core/src/server.ts'), 'the CLI has to name the guilty file');
+  assert.ok(output.includes(SQLITE_DRIVERS[0]), 'the CLI has to name the imported driver');
 });
 
-test('AT13 — módulo fora do core importando o banco privado sai 1', async (t) => {
-  const script = await carregarScript();
-  const { SEGMENTO_DONO_DO_BANCO } = script;
-  const raiz = montarArvore(areaTemporaria(t), script, {
+test('AT13 — a module outside the core importing the private database exits 1', async (t) => {
+  const script = await loadScript();
+  const { DB_OWNER_SEGMENT } = script;
+  const root = buildTree(temporaryArea(t), script, {
     'packages/tela/src/index.ts':
-      `import { abrir } from '../../${SEGMENTO_DONO_DO_BANCO}/connection.ts';\n` +
-      `export const saude = abrir;\n`,
+      `import { open } from '../../${DB_OWNER_SEGMENT}/connection.ts';\n` +
+      `export const health = open;\n`,
   });
 
-  const relatorio = script.verificar(raiz);
-  assert.equal(relatorio.valido, false);
-  const violacao = relatorio.violacoes.find((v) => v.codigo === 'db_privado_importado');
-  assert.ok(violacao, 'violação esperada: db_privado_importado');
-  assert.equal(violacao.arquivo, 'packages/tela/src/index.ts');
+  const report = script.check(root);
+  assert.equal(report.valid, false);
+  const violation = report.violations.find((v) => v.code === 'db_privado_importado');
+  assert.ok(violation, 'expected violation: db_privado_importado');
+  assert.equal(violation.file, 'packages/tela/src/index.ts');
 
-  assert.equal(rodarCli(raiz).status, 1);
+  assert.equal(runCli(root).status, 1);
 
-  // Mesma varredura, agora com a raiz apontando só para a tela (FR7).
-  const soATela = script.verificar(path.join(raiz, 'packages', 'tela'));
-  assert.equal(soATela.valido, false);
-  assert.ok(soATela.violacoes.some((v) => v.codigo === 'db_privado_importado'));
-  assert.equal(rodarCli(path.join(raiz, 'packages', 'tela')).status, 1);
+  // The same sweep, now with the root pointing only at the screen (FR7).
+  const screenOnly = script.check(path.join(root, 'packages', 'tela'));
+  assert.equal(screenOnly.valid, false);
+  assert.ok(screenOnly.violations.some((v) => v.code === 'db_privado_importado'));
+  assert.equal(runCli(path.join(root, 'packages', 'tela')).status, 1);
 });
 
-test('AT14 — pacote fora do core declarando o driver como dependência sai 1', async (t) => {
-  const script = await carregarScript();
-  const { DRIVERS_SQLITE } = script;
-  const raiz = montarArvore(areaTemporaria(t), script, {
+test('AT14 — a package outside the core declaring the driver as a dependency exits 1', async (t) => {
+  const script = await loadScript();
+  const { SQLITE_DRIVERS } = script;
+  const root = buildTree(temporaryArea(t), script, {
     'packages/tela/package.json': JSON.stringify(
-      { name: '@cartografo/tela', dependencies: { [DRIVERS_SQLITE[0]]: '^13.0.0' } },
+      { name: '@cartografo/tela', dependencies: { [SQLITE_DRIVERS[0]]: '^13.0.0' } },
       null,
       2,
     ),
   });
 
-  const relatorio = script.verificar(raiz);
-  assert.equal(relatorio.valido, false);
-  const violacao = relatorio.violacoes.find((v) => v.codigo === 'driver_declarado_fora_do_core');
-  assert.ok(violacao, 'violação esperada: driver_declarado_fora_do_core');
-  assert.equal(violacao.arquivo, 'packages/tela/package.json');
+  const report = script.check(root);
+  assert.equal(report.valid, false);
+  const violation = report.violations.find((v) => v.code === 'driver_declarado_fora_do_core');
+  assert.ok(violation, 'expected violation: driver_declarado_fora_do_core');
+  assert.equal(violation.file, 'packages/tela/package.json');
 
-  assert.equal(rodarCli(raiz).status, 1);
+  assert.equal(runCli(root).status, 1);
 });
 
-test('AT15 — o repositório de verdade passa no portão', async () => {
-  const { verificar } = await carregarScript();
-  const relatorio = verificar(RAIZ);
-  assert.deepEqual(relatorio.violacoes, []);
-  assert.equal(relatorio.valido, true);
+test('AT15 — the real repository passes the gate', async () => {
+  const { check } = await loadScript();
+  const report = check(ROOT);
+  assert.deepEqual(report.violations, []);
+  assert.equal(report.valid, true);
 
-  assert.equal(rodarCli().status, 0, 'o CLI sem argumento varre a raiz do repo');
+  assert.equal(runCli().status, 0, 'the CLI with no argument sweeps the repo root');
 });

@@ -73,7 +73,9 @@ test('AT5 — --help prints the flow and the mandatory next step by hand', () =>
   assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
   assert.match(result.stdout, /cartografo import/, 'the manual next step is the whole gate (D10)');
   assert.match(result.stdout, /--classe/);
-  assert.match(result.stdout, /--saida/);
+  // Built from a string and not a regex literal: `--saida` is the user-facing
+  // flag, a frozen surface, not an identifier of ours (D18/FR2).
+  assert.match(result.stdout, new RegExp('--saida'));
   assert.match(result.stdout, /rascunho/, 'what the command produces is a draft, and says so');
 });
 

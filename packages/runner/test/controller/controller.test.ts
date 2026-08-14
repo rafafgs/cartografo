@@ -1,15 +1,16 @@
 /**
- * Testes de aceite do loop de despacho do controller (t103, FR11/AT14–AT16).
+ * Acceptance tests for the controller's dispatch loop (t103, FR11/AT14–AT16).
  *
- * O controller é o dono do ciclo de vida da lease do lado do runner: pega
- * trabalho liberado, disputa a lease, mantém o heartbeat enquanto a sessão roda
- * e devolve a capacidade ao terminar — inclusive quando o trabalho estoura. Uma
- * lease presa por erro de despacho é capacidade vazando até o TTL vencer, que é
- * o pior dos dois mundos: ninguém trabalha e o teto continua ocupado.
+ * The controller owns the lease's lifecycle on the runner side: it picks up
+ * released work, competes for the lease, keeps the heartbeat going while the
+ * session runs, and gives the capacity back when it ends — including when the
+ * work blows up. A lease stuck by a dispatch error is capacity leaking until
+ * the TTL expires, which is the worst of both worlds: nobody works and the cap
+ * stays occupied.
  *
- * O tempo aqui é falso (`t.mock.timers`): o que está sob teste é o
- * comportamento do relógio do controller, não a paciência da suíte. O caminho
- * com tempo real está em `dispatch-e-lease.e2e.test.ts` (AT17).
+ * Time here is fake (`t.mock.timers`): what is under test is the behaviour of
+ * the controller's clock, not the suite's patience. The real-time path is in
+ * `dispatch-and-lease.e2e.test.ts` (AT17).
  */
 
 import assert from 'node:assert/strict';
@@ -17,45 +18,45 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import type * as ModuloCliente from '../../src/controller/cliente-controle.ts';
-import type * as ModuloController from '../../src/controller/controller.ts';
+import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ControllerModule from '../../src/controller/controller.ts';
 
-const RAIZ_PACOTE = path.resolve(import.meta.dirname, '..', '..');
-const URL_BASE = 'http://127.0.0.1:4317';
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
+const BASE_URL = 'http://127.0.0.1:4317';
 
-interface ChamadaHttp {
+interface HttpCall {
   url: string;
-  metodo: string;
-  corpo: unknown;
+  method: string;
+  body: unknown;
 }
 
-let cacheCliente: typeof ModuloCliente | null = null;
-let cacheController: typeof ModuloController | null = null;
+let clientCache: typeof ClientModule | null = null;
+let controllerCache: typeof ControllerModule | null = null;
 
-async function carregarCliente(): Promise<typeof ModuloCliente> {
+async function loadClient(): Promise<typeof ClientModule> {
   assert.ok(
-    existsSync(path.join(RAIZ_PACOTE, 'src', 'controller', 'cliente-controle.ts')),
-    'artefato ainda não existe: packages/runner/src/controller/cliente-controle.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'cliente-controle.ts')),
+    'artifact does not exist yet: packages/runner/src/controller/cliente-controle.ts',
   );
-  cacheCliente ??= (await import(
+  clientCache ??= (await import(
     new URL('../../src/controller/cliente-controle.ts', import.meta.url).href
-  )) as typeof ModuloCliente;
-  return cacheCliente;
+  )) as typeof ClientModule;
+  return clientCache;
 }
 
-async function carregarController(): Promise<typeof ModuloController> {
+async function loadController(): Promise<typeof ControllerModule> {
   assert.ok(
-    existsSync(path.join(RAIZ_PACOTE, 'src', 'controller', 'controller.ts')),
-    'artefato ainda não existe: packages/runner/src/controller/controller.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'controller.ts')),
+    'artifact does not exist yet: packages/runner/src/controller/controller.ts',
   );
-  cacheController ??= (await import(
+  controllerCache ??= (await import(
     new URL('../../src/controller/controller.ts', import.meta.url).href
-  )) as typeof ModuloController;
-  return cacheController;
+  )) as typeof ControllerModule;
+  return controllerCache;
 }
 
-/** Cede o event loop de verdade: `setImmediate` não é mockado nestes testes. */
-const cederEventLoop = (): Promise<void> =>
+/** Yields the real event loop: `setImmediate` is not mocked in these tests. */
+const yieldEventLoop = (): Promise<void> =>
   new Promise((resolve) => {
     setImmediate(resolve);
   });
@@ -75,35 +76,35 @@ const LEASE = {
 };
 
 /**
- * Cliente apontado para um control plane falso que responde o mínimo do
- * contrato e guarda tudo o que recebeu.
+ * A client pointed at a fake control plane that answers the minimum of the
+ * contract and keeps everything it received.
  */
-async function ambiente(): Promise<{
-  cliente: ModuloCliente.ClienteControle;
-  chamadas: ChamadaHttp[];
+async function environment(): Promise<{
+  client: ClientModule.ClienteControle;
+  calls: HttpCall[];
   heartbeats: () => number;
-  liberacoes: () => number;
+  releases: () => number;
 }> {
-  const { ClienteControle } = await carregarCliente();
-  const chamadas: ChamadaHttp[] = [];
+  const { ClienteControle } = await loadClient();
+  const calls: HttpCall[] = [];
 
-  const responder = (status: number, corpo: unknown): Response =>
-    new Response(JSON.stringify(corpo), {
+  const respond = (status: number, body: unknown): Response =>
+    new Response(JSON.stringify(body), {
       status,
       headers: { 'content-type': 'application/json' },
     });
 
-  const buscar: typeof fetch = async (entrada, init) => {
-    const corpoBruto = init?.body;
-    const url = String(entrada);
-    chamadas.push({
+  const doFetch: typeof fetch = async (input, init) => {
+    const rawBody = init?.body;
+    const url = String(input);
+    calls.push({
       url,
-      metodo: init?.method ?? 'GET',
-      corpo: typeof corpoBruto === 'string' ? JSON.parse(corpoBruto) : undefined,
+      method: init?.method ?? 'GET',
+      body: typeof rawBody === 'string' ? JSON.parse(rawBody) : undefined,
     });
 
     if (url.endsWith('/v1/jobs')) {
-      return responder(200, {
+      return respond(200, {
         trabalhos: [
           {
             id: 1,
@@ -116,146 +117,146 @@ async function ambiente(): Promise<{
         ],
       });
     }
-    if (url.endsWith('/v1/leases')) return responder(201, { lease: LEASE });
-    if (url.endsWith('/heartbeats')) return responder(200, { lease: LEASE });
+    if (url.endsWith('/v1/leases')) return respond(201, { lease: LEASE });
+    if (url.endsWith('/heartbeats')) return respond(200, { lease: LEASE });
     if (url.endsWith('/releases')) {
-      return responder(200, { lease: { ...LEASE, status: 'liberada' } });
+      return respond(200, { lease: { ...LEASE, status: 'liberada' } });
     }
-    throw new Error(`chamada inesperada: ${url}`);
+    throw new Error(`unexpected call: ${url}`);
   };
 
   return {
-    cliente: new ClienteControle({ urlBase: URL_BASE, buscar }),
-    chamadas,
-    heartbeats: () => chamadas.filter((chamada) => chamada.url.endsWith('/heartbeats')).length,
-    liberacoes: () => chamadas.filter((chamada) => chamada.url.endsWith('/releases')).length,
+    client: new ClienteControle({ urlBase: BASE_URL, buscar: doFetch }),
+    calls,
+    heartbeats: () => calls.filter((call) => call.url.endsWith('/heartbeats')).length,
+    releases: () => calls.filter((call) => call.url.endsWith('/releases')).length,
   };
 }
 
-const OPCOES_BASE = {
+const BASE_OPTIONS = {
   runnerId: 'runner-a',
-  projetoId: 3,
-  tetoRunner: 1,
-  tetoProjeto: 4,
-  ttlSegundos: 6,
+  projectId: 3,
+  runnerCap: 1,
+  projectCap: 4,
+  ttlSeconds: 6,
 };
 
-test('AT14 — com o despacho em curso, o heartbeat bate em intervalo menor que o TTL', async (t) => {
+test('AT14 — with the dispatch in flight, the heartbeat beats at an interval shorter than the TTL', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
 
-  const { cliente, chamadas, heartbeats } = await ambiente();
-  const { Controller } = await carregarController();
+  const { client, calls, heartbeats } = await environment();
+  const { Controller } = await loadController();
 
-  let avisarDespachou: () => void = () => undefined;
-  const despachou = new Promise<void>((resolve) => {
-    avisarDespachou = resolve;
+  let announceDispatched: () => void = () => undefined;
+  const dispatched = new Promise<void>((resolve) => {
+    announceDispatched = resolve;
   });
 
   const controller = new Controller({
-    ...OPCOES_BASE,
-    cliente,
-    // Nunca resolve: é a sessão que ainda está rodando.
-    despachar: async () => {
-      avisarDespachou();
+    ...BASE_OPTIONS,
+    client,
+    // Never resolves: it is the session still running.
+    dispatch: async () => {
+      announceDispatched();
       return new Promise<void>(() => undefined);
     },
   });
 
-  const emCurso = controller.tick();
-  emCurso.catch(() => undefined);
+  const inFlight = controller.tick();
+  inFlight.catch(() => undefined);
 
-  await despachou;
-  await cederEventLoop();
+  await dispatched;
+  await yieldEventLoop();
 
-  assert.equal(heartbeats(), 0, 'nada de heartbeat antes de o relógio andar');
+  assert.equal(heartbeats(), 0, 'no heartbeat before the clock moves');
 
-  // Uma janela inteira de TTL menos 1ms: se o intervalo fosse >= TTL, a lease
-  // teria expirado no server sem nenhuma batida.
-  t.mock.timers.tick(OPCOES_BASE.ttlSegundos * 1000 - 1);
-  await cederEventLoop();
+  // A whole TTL window minus 1ms: if the interval were >= the TTL, the lease
+  // would have expired on the server without a single beat.
+  t.mock.timers.tick(BASE_OPTIONS.ttlSeconds * 1000 - 1);
+  await yieldEventLoop();
 
   assert.ok(
     heartbeats() >= 2,
-    `o heartbeat precisa bater mais de uma vez dentro do TTL; bateu ${heartbeats()}`,
+    `the heartbeat has to beat more than once within the TTL; it beat ${heartbeats()}`,
   );
   assert.ok(
-    chamadas.some((chamada) => chamada.url.endsWith(`/v1/leases/${LEASE.id}/heartbeats`)),
-    'o heartbeat é da lease concedida',
+    calls.some((call) => call.url.endsWith(`/v1/leases/${LEASE.id}/heartbeats`)),
+    'the heartbeat is for the lease that was granted',
   );
 });
 
-test('AT15 — despacho concluído libera a lease e para o heartbeat', async (t) => {
+test('AT15 — a finished dispatch releases the lease and stops the heartbeat', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
 
-  const { cliente, chamadas, heartbeats, liberacoes } = await ambiente();
-  const { Controller } = await carregarController();
+  const { client, calls, heartbeats, releases } = await environment();
+  const { Controller } = await loadController();
 
   const controller = new Controller({
-    ...OPCOES_BASE,
-    cliente,
-    despachar: async () => undefined,
+    ...BASE_OPTIONS,
+    client,
+    dispatch: async () => undefined,
   });
 
-  const resultado = await controller.tick();
-  assert.deepEqual(resultado, { trabalhoId: 1, leaseId: LEASE.id });
+  const result = await controller.tick();
+  assert.deepEqual(result, { jobId: 1, leaseId: LEASE.id });
 
-  assert.equal(liberacoes(), 1, 'trabalho terminado devolve a lease');
-  const batidasAteALiberacao = heartbeats();
+  assert.equal(releases(), 1, 'finished work gives the lease back');
+  const beatsUntilRelease = heartbeats();
 
-  const indiceLiberacao = chamadas.findIndex((chamada) => chamada.url.endsWith('/releases'));
+  const releaseIndex = calls.findIndex((call) => call.url.endsWith('/releases'));
   assert.ok(
-    !chamadas.slice(indiceLiberacao + 1).some((chamada) => chamada.url.endsWith('/heartbeats')),
-    'nenhum heartbeat depois da liberação',
+    !calls.slice(releaseIndex + 1).some((call) => call.url.endsWith('/heartbeats')),
+    'no heartbeat after the release',
   );
 
   t.mock.timers.tick(60_000);
-  await cederEventLoop();
+  await yieldEventLoop();
   assert.equal(
     heartbeats(),
-    batidasAteALiberacao,
-    'o relógio do heartbeat é desarmado junto com a liberação',
+    beatsUntilRelease,
+    'the heartbeat clock is disarmed together with the release',
   );
 });
 
-test('AT16 — despacho que estoura AINDA libera a lease', async (t) => {
+test('AT16 — a dispatch that blows up STILL releases the lease', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
 
-  const { cliente, heartbeats, liberacoes } = await ambiente();
-  const { Controller } = await carregarController();
+  const { client, heartbeats, releases } = await environment();
+  const { Controller } = await loadController();
 
   const controller = new Controller({
-    ...OPCOES_BASE,
-    cliente,
-    despachar: async () => {
-      throw new Error('a sessão morreu no meio');
+    ...BASE_OPTIONS,
+    client,
+    dispatch: async () => {
+      throw new Error('the session died halfway');
     },
   });
 
   await assert.rejects(
     async () => controller.tick(),
-    /a sessão morreu no meio/,
-    'o erro do trabalho não pode ser engolido pelo controller',
+    /the session died halfway/,
+    'the error of the work must not be swallowed by the controller',
   );
 
   assert.equal(
-    liberacoes(),
+    releases(),
     1,
-    'lease presa por erro de despacho é capacidade vazando até o TTL vencer',
+    'a lease stuck by a dispatch error is capacity leaking until the TTL expires',
   );
 
-  const batidas = heartbeats();
+  const beats = heartbeats();
   t.mock.timers.tick(60_000);
-  await cederEventLoop();
-  assert.equal(heartbeats(), batidas, 'o heartbeat para junto, mesmo no caminho de erro');
+  await yieldEventLoop();
+  assert.equal(heartbeats(), beats, 'the heartbeat stops too, even on the error path');
 });
 
-test('AT16 — sem trabalho liberado, o tick não pede lease nenhuma', async () => {
-  const { ClienteControle } = await carregarCliente();
-  const { Controller } = await carregarController();
+test('AT16 — with no released work, the tick asks for no lease at all', async () => {
+  const { ClienteControle } = await loadClient();
+  const { Controller } = await loadController();
 
-  const chamadas: string[] = [];
-  const buscar: typeof fetch = async (entrada) => {
-    chamadas.push(String(entrada));
+  const calls: string[] = [];
+  const doFetch: typeof fetch = async (input) => {
+    calls.push(String(input));
     return new Response(JSON.stringify({ trabalhos: [{ id: 1, bloqueado: true }] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -263,13 +264,13 @@ test('AT16 — sem trabalho liberado, o tick não pede lease nenhuma', async () 
   };
 
   const controller = new Controller({
-    ...OPCOES_BASE,
-    cliente: new ClienteControle({ urlBase: URL_BASE, buscar }),
-    despachar: async () => {
-      throw new Error('não deveria despachar sem trabalho liberado');
+    ...BASE_OPTIONS,
+    client: new ClienteControle({ urlBase: BASE_URL, buscar: doFetch }),
+    dispatch: async () => {
+      throw new Error('it should not dispatch without released work');
     },
   });
 
   assert.equal(await controller.tick(), null);
-  assert.deepEqual(chamadas, [`${URL_BASE}/v1/jobs`]);
+  assert.deepEqual(calls, [`${BASE_URL}/v1/jobs`]);
 });

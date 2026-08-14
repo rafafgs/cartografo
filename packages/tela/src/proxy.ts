@@ -67,7 +67,7 @@ const BODILESS_METHODS = new Set(['GET', 'HEAD']);
 /** A request as it arrived from the browser, ready to be forwarded. */
 export interface ProxiedRequest {
   method: string;
-  /** Path AND query, exactly as the browser wrote it (`/v1/propostas?status=x`). */
+  /** Path AND query, exactly as the browser wrote it (`/v1/proposals?status=x`). */
   target: string;
   headers: NodeJS.Dict<string | string[]>;
   body?: Buffer;

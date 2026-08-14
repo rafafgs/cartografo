@@ -1,201 +1,200 @@
 /**
- * Roteador do comando `cartografo` (t108, FR1/FR7).
+ * Router of the `cartografo` command (t108, FR1/FR7).
  *
- * O comando nasceu fazendo uma coisa só — subir o control plane — e continua
- * fazendo exatamente isso quando chamado sem argumento. Isso não é
- * retrocompatibilidade por educação: `npx cartografo` é a porta de entrada do
- * projeto, e time-to-first-graph é inegociável de qualidade
- * (`notas/2026-08-14-extensao-e-qualidade.md`). Um subcomando obrigatório
- * acrescentaria uma palavra ao caminho mais percorrido do produto para benefício
- * de ninguém.
+ * The command was born doing one thing only — starting the control plane — and
+ * keeps doing exactly that when called with no argument. That is not
+ * backward-compatibility out of politeness: `npx cartografo` is the project's
+ * front door, and time-to-first-graph is a quality non-negotiable
+ * (`notas/2026-08-14-extensao-e-qualidade.md`). A mandatory subcommand would add
+ * a word to the most travelled path of the product for nobody's benefit.
  *
- * Os outros três (`import`, `export`, `status`) são clientes HTTP puros da API
- * pública: não abrem banco, não importam `src/db/**` e não têm privilégio
- * nenhum sobre a tela ou o runner (D1, D11). O que eles conhecem do control
- * plane cabe em `cli/url.ts`.
+ * The other three (`import`, `export`, `status`) are pure HTTP clients of the
+ * public API: they open no database, do not import `src/db/**` and have no
+ * privilege whatsoever over the screen or the runner (D1, D11). What they know
+ * about the control plane fits in `cli/url.ts`.
  *
- * Convenção única de código de saída:
+ * One single exit-code convention:
  *
- * - `0` — o comando fez o que prometeu;
- * - `1` — o comando rodou e o resultado foi negativo (servidor fora, grafo
- *   recusado, classe desconhecida);
- * - `2` — a linha de comando está errada (subcomando inexistente, argumento
- *   faltando). É o mesmo `2` que `scripts/validar-bundle-fabrica.mjs` usa para
- *   uso incorreto.
+ * - `0` — the command did what it promised;
+ * - `1` — the command ran and the result was negative (server down, graph
+ *   refused, unknown class);
+ * - `2` — the command line is wrong (nonexistent subcommand, missing argument).
+ *   It is the same `2` that `scripts/validar-bundle-fabrica.mjs` uses for
+ *   incorrect usage.
  */
 
-import { PORTA_PADRAO, principal } from '../index.ts';
-import { executarExport } from './exportar.ts';
-import { executarImport } from './importar.ts';
-import { executarStatus } from './status.ts';
-import { ENV_URL, ErroDeRede, ErroDeUso, mensagemDeServidorFora, resolverUrlBase } from './url.ts';
+import { DEFAULT_PORT, main } from '../index.ts';
+import { runExport } from './export.ts';
+import { runImport } from './import.ts';
+import { runStatus } from './status.ts';
+import { ENV_URL, NetworkError, UsageError, serverDownMessage, resolveBaseUrl } from './url.ts';
 
-/** Texto de uso. É o mesmo em `--help` (stdout) e em subcomando errado (stderr). */
-export const USO = `uso: cartografo [subcomando] [opções]
+/** Usage text. The same in `--help` (stdout) and on a wrong subcommand (stderr). */
+export const USAGE = `usage: cartografo [subcommand] [options]
 
-subcomandos:
-  up                     sobe o control plane: banco, migrações e HTTP. É o
-                         default — \`cartografo\` sem argumento faz isto.
-  import <caminho>       registra um grafo como linhagem base nova. <caminho> é
-                         um arquivo de grafo ou um diretório de bundle (com
-                         grafo.json e, opcionalmente, skills/ para conferir).
-  export <classe>        grava a versão corrente da classe em um arquivo, no
-                         mesmo formato que import aceita de volta.
-  status                 relata servidor e projetos registrados.
+subcommands:
+  up                     starts the control plane: database, migrations and HTTP.
+                         It is the default — \`cartografo\` with no argument does this.
+  import <path>          registers a graph as a new base lineage. <path> is a
+                         graph file or a bundle directory (with grafo.json and,
+                         optionally, skills/ to check).
+  export <class>         writes the current version of the class to a file, in
+                         the same format import accepts back.
+  status                 reports the server and the registered projects.
 
-opções:
-  --url <url>            control plane a consultar (env ${ENV_URL};
-                         default http://127.0.0.1:${PORTA_PADRAO})
-  --out <caminho>        (export) arquivo de saída; default ./<classe>.grafo.json
-  --json                 (status) imprime o relatório como um objeto JSON único
-  -h, --help             este texto
+options:
+  --url <url>            control plane to query (env ${ENV_URL};
+                         default http://127.0.0.1:${DEFAULT_PORT})
+  --out <path>           (export) output file; default ./<class>.grafo.json
+  --json                 (status) prints the report as a single JSON object
+  -h, --help             this text
 
-Configuração da partida: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT.`;
+Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT.`;
 
-/** O que sobrou da linha de comando depois de tirar uma opção. */
-interface Extracao {
-  valor?: string;
-  restante: string[];
+/** What is left of the command line after taking one option out. */
+interface Extraction {
+  value?: string;
+  rest: string[];
 }
 
 /**
- * Tira uma opção com valor (`--nome valor` ou `--nome=valor`) da lista.
+ * Takes an option with a value (`--name value` or `--name=value`) out of the list.
  *
- * @param argumentos Argumentos do subcomando.
- * @param nome Nome longo da opção, com os dois traços.
- * @returns O valor, quando presente, e a lista sem ela.
+ * @param args Arguments of the subcommand.
+ * @param name Long name of the option, with the two dashes.
+ * @returns The value, when present, and the list without it.
  */
-function extrairValor(argumentos: string[], nome: string): Extracao {
-  const restante: string[] = [];
-  let valor: string | undefined;
+function extractValue(args: string[], name: string): Extraction {
+  const rest: string[] = [];
+  let value: string | undefined;
 
-  for (let indice = 0; indice < argumentos.length; indice += 1) {
-    const atual = argumentos[indice];
-    if (atual === nome) {
-      const proximo = argumentos[indice + 1];
-      if (proximo === undefined || proximo.startsWith('--')) {
-        throw new ErroDeUso(`${nome} precisa de um valor`);
+  for (let index = 0; index < args.length; index += 1) {
+    const current = args[index];
+    if (current === name) {
+      const next = args[index + 1];
+      if (next === undefined || next.startsWith('--')) {
+        throw new UsageError(`${name} needs a value`);
       }
-      valor = proximo;
-      indice += 1;
+      value = next;
+      index += 1;
       continue;
     }
-    if (atual.startsWith(`${nome}=`)) {
-      valor = atual.slice(nome.length + 1);
-      if (valor === '') throw new ErroDeUso(`${nome} precisa de um valor`);
+    if (current.startsWith(`${name}=`)) {
+      value = current.slice(name.length + 1);
+      if (value === '') throw new UsageError(`${name} needs a value`);
       continue;
     }
-    restante.push(atual);
+    rest.push(current);
   }
 
-  return { valor, restante };
+  return { value, rest };
 }
 
-/** Tira uma bandeira booleana da lista. */
-function extrairBandeira(argumentos: string[], nome: string): { presente: boolean; restante: string[] } {
-  const restante = argumentos.filter((argumento) => argumento !== nome);
-  return { presente: restante.length !== argumentos.length, restante };
+/** Takes a boolean flag out of the list. */
+function extractFlag(args: string[], name: string): { present: boolean; rest: string[] } {
+  const rest = args.filter((argument) => argument !== name);
+  return { present: rest.length !== args.length, rest };
 }
 
-/** Recusa o que sobrou na linha de comando em vez de ignorar em silêncio. */
-function exigirNadaAlem(sobrou: string[], quantosPosicionais: number, subcomando: string): void {
-  const extras = sobrou.slice(quantosPosicionais);
+/** Refuses what is left on the command line instead of ignoring it silently. */
+function requireNothingElse(left: string[], positionalCount: number, subcommand: string): void {
+  const extras = left.slice(positionalCount);
   if (extras.length > 0) {
-    throw new ErroDeUso(`${subcomando} não entende: ${extras.map((extra) => `"${extra}"`).join(', ')}`);
+    throw new UsageError(`${subcommand} does not understand: ${extras.map((extra) => `"${extra}"`).join(', ')}`);
   }
 }
 
-/** Sobe o control plane, preservando a mensagem de falha que a partida já tinha. */
-async function subirControlPlane(): Promise<number> {
+/** Starts the control plane, preserving the failure message the startup already had. */
+async function startControlPlane(): Promise<number> {
   try {
-    await principal();
+    await main();
     return 0;
-  } catch (erro) {
-    console.error('cartografo: falha na partida');
-    console.error(erro);
+  } catch (error) {
+    console.error('cartografo: startup failed');
+    console.error(error);
     return 1;
   }
 }
 
 /**
- * Roteia um dos subcomandos que falam com a API.
+ * Routes one of the subcommands that talk to the API.
  *
- * @param subcomando `import`, `export` ou `status`.
- * @param argumentos Argumentos depois do subcomando.
- * @param env Ambiente de onde sai a URL default.
- * @returns Código de saída do processo.
+ * @param subcommand `import`, `export` or `status`.
+ * @param args Arguments after the subcommand.
+ * @param env Environment the default URL comes from.
+ * @returns Process exit code.
  */
-async function rodarClienteDaApi(
-  subcomando: string,
-  argumentos: string[],
+async function runApiClient(
+  subcommand: string,
+  args: string[],
   env: NodeJS.ProcessEnv,
 ): Promise<number> {
-  const daUrl = extrairValor(argumentos, '--url');
-  const url = resolverUrlBase(daUrl.valor, env);
+  const fromUrl = extractValue(args, '--url');
+  const url = resolveBaseUrl(fromUrl.value, env);
 
-  if (subcomando === 'import') {
-    exigirNadaAlem(daUrl.restante, 1, 'import');
-    const caminho = daUrl.restante[0];
-    if (caminho === undefined) {
-      throw new ErroDeUso('import precisa de um caminho: um arquivo de grafo ou um diretório de bundle');
+  if (subcommand === 'import') {
+    requireNothingElse(fromUrl.rest, 1, 'import');
+    const inputPath = fromUrl.rest[0];
+    if (inputPath === undefined) {
+      throw new UsageError('import needs a path: a graph file or a bundle directory');
     }
-    return await executarImport({ caminho, url });
+    return await runImport({ path: inputPath, url });
   }
 
-  if (subcomando === 'export') {
-    const daSaida = extrairValor(daUrl.restante, '--out');
-    exigirNadaAlem(daSaida.restante, 1, 'export');
-    const classe = daSaida.restante[0];
-    if (classe === undefined) throw new ErroDeUso('export precisa da classe do grafo');
-    return await executarExport({ classe, url, saida: daSaida.valor });
+  if (subcommand === 'export') {
+    const fromOutput = extractValue(fromUrl.rest, '--out');
+    requireNothingElse(fromOutput.rest, 1, 'export');
+    const className = fromOutput.rest[0];
+    if (className === undefined) throw new UsageError('export needs the graph class');
+    return await runExport({ className, url, output: fromOutput.value });
   }
 
-  const daBandeira = extrairBandeira(daUrl.restante, '--json');
-  exigirNadaAlem(daBandeira.restante, 0, 'status');
-  return await executarStatus({ url, json: daBandeira.presente });
+  const fromFlag = extractFlag(fromUrl.rest, '--json');
+  requireNothingElse(fromFlag.rest, 0, 'status');
+  return await runStatus({ url, json: fromFlag.present });
 }
 
 /**
- * Ponto de entrada do comando: decide o subcomando e devolve o código de saída.
+ * Entry point of the command: decides the subcommand and returns the exit code.
  *
- * Não chama `process.exit`: quem decide isso é o `bin`, e `up` precisa que o
- * processo continue vivo servindo HTTP depois que esta função retorna.
+ * It does not call `process.exit`: the `bin` decides that, and `up` needs the
+ * process to stay alive serving HTTP after this function returns.
  *
- * @param argumentos `process.argv.slice(2)`.
- * @param env Ambiente do processo.
- * @returns Código de saída.
+ * @param args `process.argv.slice(2)`.
+ * @param env Process environment.
+ * @returns Exit code.
  */
-export async function executarCli(
-  argumentos: string[],
+export async function runCli(
+  args: string[],
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<number> {
-  if (argumentos.some((argumento) => argumento === '--help' || argumento === '-h' || argumento === 'help')) {
-    process.stdout.write(`${USO}\n`);
+  if (args.some((argument) => argument === '--help' || argument === '-h' || argument === 'help')) {
+    process.stdout.write(`${USAGE}\n`);
     return 0;
   }
 
-  const subcomando = argumentos[0] ?? 'up';
-  const resto = argumentos.slice(1);
+  const subcommand = args[0] ?? 'up';
+  const rest = args.slice(1);
 
-  if (subcomando === 'up') return await subirControlPlane();
+  if (subcommand === 'up') return await startControlPlane();
 
-  if (subcomando !== 'import' && subcomando !== 'export' && subcomando !== 'status') {
-    process.stderr.write(`cartografo: subcomando desconhecido: "${subcomando}"\n${USO}\n`);
+  if (subcommand !== 'import' && subcommand !== 'export' && subcommand !== 'status') {
+    process.stderr.write(`cartografo: unknown subcommand: "${subcommand}"\n${USAGE}\n`);
     return 2;
   }
 
   try {
-    return await rodarClienteDaApi(subcomando, resto, env);
-  } catch (erro) {
-    if (erro instanceof ErroDeRede) {
-      process.stderr.write(`${mensagemDeServidorFora(erro.url)}\n`);
+    return await runApiClient(subcommand, rest, env);
+  } catch (error) {
+    if (error instanceof NetworkError) {
+      process.stderr.write(`${serverDownMessage(error.url)}\n`);
       return 1;
     }
-    if (erro instanceof ErroDeUso) {
-      process.stderr.write(`cartografo: ${erro.message}\n`);
-      process.stderr.write('cartografo: rode `cartografo --help` para o uso\n');
+    if (error instanceof UsageError) {
+      process.stderr.write(`cartografo: ${error.message}\n`);
+      process.stderr.write('cartografo: run `cartografo --help` for usage\n');
       return 2;
     }
-    throw erro;
+    throw error;
   }
 }

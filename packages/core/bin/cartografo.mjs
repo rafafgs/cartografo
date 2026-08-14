@@ -1,32 +1,32 @@
 #!/usr/bin/env node
 /**
- * Comando único do control plane: `cartografo`.
+ * Single command of the control plane: `cartografo`.
  *
- * O executável é `.mjs` (e não `.ts`) para não depender de nenhuma flag do
- * Node: ele registra o loader do tsx em processo e só então importa
- * `src/cli/index.ts`. Em processo, e não via `spawn`, para que o processo que o
- * supervisor vê seja o mesmo que escuta a porta — sinal enviado ao comando
- * chega em quem precisa encerrar.
+ * The executable is `.mjs` (and not `.ts`) so it depends on no Node flag: it
+ * registers the tsx loader in-process and only then imports `src/cli/index.ts`.
+ * In-process, and not through `spawn`, so that the process the supervisor sees
+ * is the same one listening on the port — a signal sent to the command reaches
+ * whoever needs to shut down.
  *
- * Aqui só mora o despacho: o roteador devolve o código de saída e este arquivo
- * o registra em `process.exitCode` em vez de chamar `process.exit`. A diferença
- * importa — `up` retorna com o servidor no ar, e um `exit` mataria o control
- * plane no instante em que ele ficou pronto.
+ * Only the dispatch lives here: the router returns the exit code and this file
+ * records it in `process.exitCode` instead of calling `process.exit`. The
+ * difference matters — `up` returns with the server running, and an `exit` would
+ * kill the control plane at the very moment it became ready.
  *
- * Uso: `npm exec cartografo [subcomando]`, `node packages/core/bin/cartografo.mjs`.
- * Configuração: `CARTOGRAFO_DB_PATH`, `CARTOGRAFO_PORT`, `CARTOGRAFO_URL`.
+ * Usage: `npm exec cartografo [subcommand]`, `node packages/core/bin/cartografo.mjs`.
+ * Configuration: `CARTOGRAFO_DB_PATH`, `CARTOGRAFO_PORT`, `CARTOGRAFO_URL`.
  */
 
 import { register } from 'tsx/esm/api';
 
 register();
 
-const { executarCli } = await import(new URL('../src/cli/index.ts', import.meta.url).href);
+const { runCli } = await import(new URL('../src/cli/index.ts', import.meta.url).href);
 
 try {
-  process.exitCode = await executarCli(process.argv.slice(2));
-} catch (erro) {
-  console.error('cartografo: falha ao executar o comando');
-  console.error(erro);
+  process.exitCode = await runCli(process.argv.slice(2));
+} catch (error) {
+  console.error('cartografo: failed to run the command');
+  console.error(error);
   process.exitCode = 1;
 }

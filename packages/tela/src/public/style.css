@@ -135,6 +135,19 @@ main {
   width: 100%;
 }
 
+/*
+ * The question, on a line of its own above the field.
+ *
+ * It is the accessible name of the input (`for`/`id`), so it is not decoration
+ * and never gets hidden: a row is narrow, and full width is what keeps a
+ * question of this length from squeezing the field it names into nothing.
+ */
+.reason-label {
+  flex: 1 0 100%;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .reason-input {
   flex: 1 1 14rem;
   min-width: 10rem;

@@ -8,8 +8,15 @@
   "engines": {
     "node": ">=20.11.0"
   },
+  "bin": {
+    "cartografo-tela": "./bin/tela.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
   "scripts": {
-    "start": "node --import tsx src/server.ts",
+    "start": "node bin/tela.mjs",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },

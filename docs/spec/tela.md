@@ -1,0 +1,251 @@
+# Especificação: tela mínima de observabilidade
+
+**Versão da API consumida:** `v1` · **Pacote:** [`packages/tela`](../../packages/tela)
+**Comando:** `npx cartografo-tela` · **Porta default:** `4318`
+**Decisão de origem:** [D11](../../DECISOES.md) — "observabilidade + inbox primeiro; a
+tela é cliente comum da API pública, sem privilégio" · Critério de PoC da
+[D16](../../DECISOES.md)
+
+A tela responde três perguntas e mais nenhuma: **onde está cada trabalho**,
+**quem está esperando uma decisão minha**, e **para onde foi o tempo de um
+trabalho**. Tudo o que ela mostra saiu de uma rota pública documentada; tudo o
+que ela escreve foi um `PATCH` na mesma API que qualquer outro cliente usa.
+
+O corolário, que é a D11 inteira: **a tela não tem privilégio nenhum**. Não abre
+o banco, não importa nada de `packages/core`, não declara driver de SQLite e não
+conhece o caminho do arquivo. Ela sobe em outra porta, em outro processo, e pode
+morrer sem o control plane notar. Se ela precisa de algo que a API não dá, o bug
+é da API — foi assim que esta camada nasceu com três rotas novas do lado do
+core, e não com três atalhos do lado dela (§4).
+
+A regra é verificada estaticamente por
+[`scripts/check-single-writer.mjs`](../../scripts/check-single-writer.mjs), que
+roda no `npm run lint`, e travada por
+[`packages/tela/test/no-privileged-access.test.ts`](../../packages/tela/test/no-privileged-access.test.ts).
+
+---
+
+## 1. As seis rotas
+
+| Rota | O que mostra | O que lê da API |
+|---|---|---|
+| `GET /quadro` | O quadro: todos os trabalhos, agrupados por `no_atual`, com o motivo do bloqueio quando há. | `GET /v1/jobs` |
+| `GET /execucoes` | Uma linha por execução, com trabalhos, bloqueados e perguntas pendentes. | `GET /v1/executions` |
+| `GET /execucoes/:id` | O recorte de uma rodada: quadro, sessões e perguntas pendentes na mesma página. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
+| `GET /perguntas` | A fila de escalação, cada pergunta inteira e com formulário inline. | `GET /v1/input-requests?status=pendente` |
+| `POST /perguntas/:id/resposta` | Nada: escreve e redireciona (303) para `/perguntas`. | `PATCH /v1/input-requests/:id/answer` |
+| `GET /trabalhos/:id` | A linha do tempo do trabalho, em três baldes, mais os totais. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
+
+Cada view renderiza **no request**. Não há polling, websocket nem
+auto-refresh: recarregar a página é a atualização, e o estado da tela é sempre
+o estado que a API acabou de contar.
+
+**Execução não é entidade.** `execucao_id` é agrupador opaco (não existe tabela
+`execucao` na v1), então `/execucoes/99` sem nada dentro responde **200 com
+página vazia**, nunca 404 — mesma leitura que o control plane já faz em
+`GET /v1/executions/:id/metrics-by-version`. Trabalho, esse sim, é entidade:
+`/trabalhos/424242` responde **404**.
+
+### O pacote tem duas metades, e uma porta só
+
+A D11 pede duas coisas da tela: observabilidade e inbox. Elas chegaram em
+fichas diferentes — esta e a `t111` — e dividem o mesmo pacote, o mesmo
+processo e a mesma porta. Um handler só
+([`packages/tela/src/servidor.ts`](../../packages/tela/src/servidor.ts)) decide
+entre elas, nesta ordem:
+
+| Caminho | Quem responde |
+|---|---|
+| `/v1/*` | Proxy **verbatim** para o control plane, para o inbox poder falar same-origin (§1 de [`tela-inbox-propostas.md`](tela-inbox-propostas.md)). |
+| Arquivo de `src/public/` — `/`, `/inbox.js`, `/style.css`, … | O inbox de propostas: página estática e módulos ES nativos. |
+| Qualquer outro | As seis rotas desta especificação, renderizadas no servidor. |
+
+A ordem é o contrato. O estático vem antes do render porque `resolveStaticFile`
+só devolve caminho para extensão conhecida, e é justamente o `null` dele que
+entrega `/execucoes` e `/trabalhos/7` às views em vez de 404-á-los como arquivo
+faltando.
+
+**Por que o quadro é `/quadro` e não `/`.** A raiz já era o `index.html` do
+inbox quando esta metade chegou, e trocar isso quebraria os testes de aceite da
+`t111` sem ganho funcional: as duas metades se alcançam pela navegação, que
+ambas as páginas trazem no topo. É layout, não fronteira — mudar de ideia custa
+uma linha em cada lado.
+
+---
+
+## 2. A regra dos três baldes
+
+A linha do tempo é o "tempo genérico" do `t81` do flowpilot
+([`notas/2026-08-14-aprendizado.md`](../../notas/2026-08-14-aprendizado.md)):
+o tempo total de um trabalho não diz nada; o que diz é como ele se reparte.
+
+| Balde | Intervalo | Fonte |
+|---|---|---|
+| `agente_trabalhando` | `[aberta_em, finalizada_em]` | uma sessão |
+| `esperando_humano` | `[criada_em, respondida_em]` | uma pergunta |
+| `fila` | o **complemento**: todo intervalo sem sessão aberta e sem pergunta pendente | as transições |
+
+Quatro regras fecham a definição:
+
+1. **Uma transição corta a fila em dois**, mesmo sem nada acontecer no meio.
+   "Parado dois dias no refinamento e uma hora na implementação" e "parado dois
+   dias e uma hora" são diagnósticos diferentes, e o primeiro é o útil.
+   Bloqueio e desbloqueio **não** cortam: são bandeira, não movimento — o
+   trabalho não sai do nó, e a espera continua sendo a mesma espera.
+2. **O que não terminou fica aberto** (`fim: null`) e **não entra nos totais**.
+   Fechar um segmento com o relógio de quem abriu a página inventaria um fato
+   que o log não tem.
+3. **Trabalho concluído é derivado**, porque a API não tem campo de estado
+   terminal: sem sessão aberta, sem pergunta pendente e sem bloqueio. É esse
+   critério — e só ele — que fecha o último segmento de fila. Um trabalho
+   bloqueado e parado continua acumulando fila, em aberto; é exatamente o tempo
+   que ninguém quer ver crescendo sem explicação.
+4. **A reconstrução é uma função pura** e não olha o relógio
+   ([`linha-do-tempo.ts`](../../packages/tela/src/linha-do-tempo.ts)): as mesmas
+   três respostas produzem a mesma linha do tempo hoje e daqui a um mês. É o que
+   a torna testável sem tempo real.
+
+### Por que três fontes, e não uma
+
+Porque `GET /v1/jobs/:id/events` **exclui de propósito**
+`sessao.finalizada`, `pergunta.respondida` e `pergunta.auto_resolvida`: os
+payloads desses eventos não carregam `trabalho_id` — o vínculo foi declarado na
+abertura, e repeti-lo seria dado duplicado no log
+([`packages/core/src/db/events.ts`](../../packages/core/src/db/events.ts)).
+"Quem quer o fim da sessão pergunta pela sessão", diz o comentário de lá. Esta
+tela é o primeiro consumidor a fazer essa pergunta, e por isso é esta ficha que
+abriu por onde fazê-la (§4).
+
+O cabeçalho da página vem de uma quarta leitura, `GET /v1/jobs/:id`, e não
+do log: `trabalho.emendado` grava só o **nome** do campo alterado, de modo que
+reconstruir o título a partir dos eventos daria o título antigo.
+
+---
+
+## 3. Responder é escrita de verdade
+
+`POST /perguntas/:id/resposta` chama `PATCH /v1/input-requests/:id/answer` no
+control plane real e devolve **303** para `/perguntas` — 303 e não 302 porque
+depois de um POST a volta é um GET, e é isso que impede o navegador de reenviar
+a resposta em um recarregamento. A pergunta some da fila porque a fila é relida
+da API, **não** porque o formulário a escondeu localmente. O teste de aceite
+cobra essa diferença com uma leitura independente no control plane depois do
+submit.
+
+Duas escolhas de fronteira:
+
+- **Resposta em branco é recusada pela tela** (400), antes da rede. O schema de
+  `pergunta.respondida` aceita string vazia; gravar um fato sem conteúdo
+  poluiria a auditoria com uma decisão que não decide nada.
+- **`respondido_por` cai em `"tela"`** quando o campo vem vazio. Não há
+  autenticação (`t124`), e registrar honestamente a porta por onde a resposta
+  entrou é tudo o que o sistema de fato sabe; inventar um usuário seria pior,
+  porque `pergunta.respondida` é evento de auditoria.
+
+**Quem desbloqueia o trabalho não é a tela.** O wiring pergunta → bloqueio →
+resposta → desbloqueio → retomada da sessão é do `t106`, e mora no control
+plane: criar a pergunta bloqueia o trabalho na mesma transação, e responder
+desbloqueia com o ator de quem respondeu
+([`packages/core/src/repositories/input-request.ts`](../../packages/core/src/repositories/input-request.ts),
+contrato em [`escalacao-humana.md`](escalacao-humana.md)). A tela escreve o
+fato e mais nada; o ciclo acontece do outro lado do HTTP. Foi escrita antes do
+`t106` existir e não mudou uma linha quando ele chegou — que era exatamente a
+aposta.
+
+---
+
+## 4. As três lacunas de API que esta camada fechou
+
+D11 manda tratar "a tela precisa de algo que a API não dá" como bug da API. As
+três são aditivas e simétricas a filtros que já existiam:
+
+| Rota | O que faltava |
+|---|---|
+| `GET /v1/executions` | Não havia como **descobrir** quais execuções existem: só existia `GET /v1/executions/:id/metrics-by-version`, que exige já saber o id. Devolve `{execucoes: [...]}` com `execucao_id`, `trabalhos`, `trabalhos_bloqueados` e `perguntas_pendentes`, em ordem crescente e com o grupo `null` por último (mesma convenção de `metricsByVersion`). |
+| `GET /v1/sessions?trabalho_id=` | Só havia filtro por execução; sem este, não dá para pedir "as sessões deste trabalho" — e sem elas não há fim de sessão na linha do tempo. |
+| `GET /v1/input-requests?trabalho_id=` | Simétrico ao anterior, pela mesma razão: o fim das esperas. |
+
+Os filtros se somam em **AND** com os que já existiam, e um filtro inválido é
+**400**, nunca um filtro ignorado em silêncio.
+
+---
+
+## 5. Configuração
+
+| Variável | Default | O que é |
+|---|---|---|
+| `CARTOGRAFO_TELA_PORT` | `4318` | Porta em que a tela escuta. |
+| `CARTOGRAFO_URL` (ou `--url`) | `http://127.0.0.1:4317` | Control plane que ela lê. |
+
+Precedência do endereço: `--url` > `CARTOGRAFO_URL` > default — a mesma da CLI
+do core ([`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts)),
+para que subir o control plane em outra porta não exija configurar duas coisas
+em dois vocabulários. A tela escuta em **loopback**, como o control plane e pela
+mesma razão: não há autenticação nesta fase.
+
+Ao subir, imprime uma linha JSON de prontidão em stdout — mesmo contrato da
+partida do control plane:
+
+```json
+{"evento":"cartografo.tela.pronta","url":"http://127.0.0.1:4318","control_plane":"http://127.0.0.1:4317"}
+```
+
+**Quando o control plane está fora do ar**, toda página responde **502** com o
+comando que resolve (`npx cartografo`), nunca um 200 com quadro vazio. Um 404 da
+API vira 404 na tela; qualquer outro erro do control plane vira 502 — quem
+falhou foi o servidor de trás, e o navegador precisa saber que não foi ele.
+
+---
+
+## 6. Sem framework, sem build
+
+Servidor `node:http` puro, HTML montado no request, **zero dependência de
+runtime**. O único JavaScript que vai ao navegador são as oito linhas que copiam
+uma opção clicada para o campo de resposta; sem elas, digitar a resposta
+continua funcionando.
+
+É escolha de escala, não de gosto: a tela é um cliente HTTP de leitura com um
+formulário, e um pipeline de front-end custaria mais manutenção do que a coisa
+toda que ele serviria. É também reversível — a fronteira que a D11 congela é o
+contrato HTTP entre a tela e o core, não o que a tela usa por dentro.
+
+### Os marcadores `data-*` são contrato
+
+Existem para que os testes de aceite afirmem sobre **estrutura** — o que está
+dentro de qual grupo, em que ordem — sem congelar a marcação inteira. Mudar um
+deles é mudar o contrato; mudar classe de CSS não é.
+
+| Marcador | Onde | Valor |
+|---|---|---|
+| `data-no-atual` | grupo do quadro | id do nó |
+| `data-trabalho` | cartão de trabalho | id do trabalho |
+| `data-execucao` | linha da lista de execuções | id, ou vazio no grupo `null` |
+| `data-campo` | célula de contagem | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes` |
+| `data-sessao` | linha da tabela de sessões | id da sessão |
+| `data-pergunta` | cartão de pergunta | id da pergunta |
+| `data-segmento` | item da linha do tempo | `fila`, `agente_trabalhando`, `esperando_humano` (com `data-inicio` e `data-fim`; `data-fim` vazio = em aberto) |
+
+Todo dado que entra em HTML passa por `escapar`. Título de trabalho, texto de
+pergunta e motivo de bloqueio vêm de fora, por uma API que ainda não autentica
+ninguém.
+
+---
+
+## 7. O que esta tela ainda não faz
+
+Cada item é escopo declarado de outra ficha, não esquecimento:
+
+- **Tela de edição/configuração de grafo** — D11 fixa a ordem: observabilidade
+  primeiro, edição depois; por ora, arquivos e CLI.
+- **Inbox de aprovação de propostas** (entidade `proposta`, distinta de
+  `pergunta`) — é a outra metade do pacote, entregue pela `t111` e servida em
+  `/` ([`tela-inbox-propostas.md`](tela-inbox-propostas.md)).
+- **Autenticação** — `t124`. Enquanto não houver, a tela escuta em loopback e
+  `respondido_por` cai em `"tela"`.
+- **Retomada de verdade da sessão ao responder** — do control plane, pela
+  `t106` (§3); a tela só escreve o fato.
+- **Rótulo de nó com `papel`/`descricao` do snapshot do grafo** — o quadro
+  mostra `no_atual` cru; buscar o grafo para rotular é aditivo.
+- **Paginação** — nenhuma rota da API pagina hoje, e não é esta ficha que
+  inventa o que a API não tem.
+- **Atualização ao vivo** (polling/websocket) — cada view renderiza no request.

@@ -23,6 +23,11 @@
  *                             workdir, pid próprio e do neto).
  * - `FAKE_ENGINE_LINES`       JSON `[{stream:"stdout"|"stderr",text:string}]`,
  *                             emitidas em ordem.
+ * - `FAKE_ENGINE_WRITE_FILES` JSON `{"<nome>": "<conteúdo>"}`; cada entrada
+ *                             vira um arquivo no cwd da sessão. É como o fake
+ *                             engine "trabalha": um contrato de saída em
+ *                             arquivo (t110) só se verifica se o processo puder
+ *                             de fato escrevê-lo.
  * - `FAKE_ENGINE_EXIT_CODE`   código de saída (default 0).
  * - `FAKE_ENGINE_DELAY_MS`    espera antes de sair.
  * - `FAKE_ENGINE_HANG`        "1" = nunca termina sozinho (C3).
@@ -91,6 +96,27 @@ function arquivosDoWorkdir() {
   return encontrados;
 }
 
+/**
+ * Escreve os arquivos pedidos no cwd — o "trabalho" do fake engine.
+ *
+ * Só nomes de primeiro nível: o fake não cria diretório e não sai do workdir da
+ * sessão, que é a única coisa que uma sessão tem direito de tocar.
+ */
+function escreverArquivos(bruto) {
+  if (!bruto) return;
+  let pedidos;
+  try {
+    pedidos = JSON.parse(bruto);
+  } catch {
+    return;
+  }
+  if (typeof pedidos !== 'object' || pedidos === null || Array.isArray(pedidos)) return;
+
+  for (const [nome, conteudo] of Object.entries(pedidos)) {
+    writeFileSync(path.join(process.cwd(), path.basename(nome)), String(conteudo));
+  }
+}
+
 function analisarLinhas(bruto) {
   if (!bruto) return [];
   try {
@@ -143,6 +169,10 @@ async function principal() {
       ),
     );
   }
+
+  // Depois do sidecar, de propósito: o registro conta o que o processo
+  // RECEBEU, e um arquivo que ele mesmo escreveu não é entrada.
+  escreverArquivos(env.FAKE_ENGINE_WRITE_FILES);
 
   if (env.FAKE_ENGINE_IGNORE_SIGTERM === '1') {
     process.on('SIGTERM', () => {});

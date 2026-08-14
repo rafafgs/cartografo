@@ -177,7 +177,7 @@ async function startControlPlane(t: TestHook): Promise<string> {
     const line = out
       .split('\n')
       .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.pronto'));
+      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
     if (line !== undefined) return (JSON.parse(line) as { url: string }).url;
     await delay(50);
   }
@@ -244,7 +244,7 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
   const work = await api<Work>(
     baseUrl,
     'POST',
-    '/v1/trabalhos',
+    '/v1/jobs',
     { titulo: 'ficha que escala', no_entrada_id: 'implementar', execucao_id: 7 },
     201,
   );
@@ -295,13 +295,13 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
   assert.ok(first !== null, 'the first tick should have found and dispatched the work');
   assert.equal(first.trabalhoId, work.id);
 
-  const blocked = await api<Work>(baseUrl, 'GET', `/v1/trabalhos/${work.id}`);
+  const blocked = await api<Work>(baseUrl, 'GET', `/v1/jobs/${work.id}`);
   assert.equal(blocked.bloqueado, true, 'asking blocks the work, without the runner asking for it');
 
   const pending = await api<{ perguntas: Question[] }>(
     baseUrl,
     'GET',
-    '/v1/perguntas?status=pendente',
+    '/v1/input-requests?status=pendente',
   );
   assert.equal(pending.perguntas.length, 1);
   const question = pending.perguntas[0];
@@ -331,13 +331,13 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
   const answered = await api<Question>(
     baseUrl,
     'PATCH',
-    `/v1/perguntas/${question.id}/resposta`,
+    `/v1/input-requests/${question.id}/answer`,
     { resposta: ANSWER, respondido_por: ANSWERED_BY },
   );
   assert.equal(answered.status, 'respondida');
   assert.equal(answered.origem, 'usuario');
 
-  const unblocked = await api<Work>(baseUrl, 'GET', `/v1/trabalhos/${work.id}`);
+  const unblocked = await api<Work>(baseUrl, 'GET', `/v1/jobs/${work.id}`);
   assert.equal(unblocked.bloqueado, false, 'answering returns the work to the queue');
   assert.equal(unblocked.motivo_bloqueio, null);
 
@@ -361,7 +361,7 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
   // the child process reports as `/private/var/folders/...`.
   assert.equal(record.cwd, realpathSync(workDir), 'the session ran in the working dir it was given');
 
-  const questions = await api<{ perguntas: Question[] }>(baseUrl, 'GET', '/v1/perguntas');
+  const questions = await api<{ perguntas: Question[] }>(baseUrl, 'GET', '/v1/input-requests');
   assert.equal(
     questions.perguntas.length,
     1,
@@ -372,7 +372,7 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
   const timeline = await api<{ eventos: Event[] }>(
     baseUrl,
     'GET',
-    `/v1/trabalhos/${work.id}/eventos`,
+    `/v1/jobs/${work.id}/events`,
   );
   assert.deepEqual(
     timeline.eventos.map((event) => event.tipo),
@@ -386,7 +386,7 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
     ],
     // `sessao.finalizada` and `pergunta.respondida` are absent BY CONTRACT, not
     // by omission: their payloads carry no `trabalho_id`, so the work timeline
-    // cannot see them (t102, `packages/core/src/db/eventos.ts`
+    // cannot see them (t102, `packages/core/src/db/events.ts`
     // `FiltroDeEventos`). They are proven below, on the projections.
     'the work timeline, in the order the log recorded it',
   );
@@ -398,7 +398,7 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
   const unblockEvent = timeline.eventos.find((event) => event.tipo === 'trabalho.desbloqueado');
   assert.equal(unblockEvent?.ator.tipo, 'usuario', 'the flag was lowered by the human who answered');
 
-  const sessions = await api<{ sessoes: Session[] }>(baseUrl, 'GET', '/v1/sessoes?execucao_id=7');
+  const sessions = await api<{ sessoes: Session[] }>(baseUrl, 'GET', '/v1/sessions?execucao_id=7');
   assert.equal(sessions.sessoes.length, 2, 'two sessions: the one that asked and the one that knew');
   for (const session of sessions.sessoes) {
     assert.equal(session.trabalho_id, work.id);

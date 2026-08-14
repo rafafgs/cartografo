@@ -98,22 +98,28 @@ lado do core confere contra esta seção.
 
 | Método | Rota | Estado | O que a tela usa |
 |---|---|---|---|
-| `GET` | `/v1/propostas` | **assumida** | Lista para as duas seções. Idealmente filtrável por `?status=`; a tela hoje pede tudo e separa no cliente. |
-| `GET` | `/v1/propostas/:id` | **assumida** | Detalhe: `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao`, `motivo_rejeicao`. |
-| `POST` | `/v1/propostas/:id/aprovar` | **assumida** | `pendente` → `aprovada`. Sem corpo. |
-| `POST` | `/v1/propostas/:id/rejeitar` | **assumida** | `{motivo}` obrigatório → `rejeitada`. |
-| `POST` | `/v1/propostas/:id/aplicar` | existe | Executa o fluxo do §5 de `entidades-versionamento.md`. |
-| `POST` | `/v1/propostas/:id/reverter` | existe | `{motivo}` obrigatório; move o ponteiro de volta. |
+| `GET` | `/v1/proposals` | **assumida** | Lista para as duas seções. Idealmente filtrável por `?status=`; a tela hoje pede tudo e separa no cliente. |
+| `GET` | `/v1/proposals/:id` | **assumida** | Detalhe: `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao`, `motivo_rejeicao`. |
+| `POST` | `/v1/proposals/:id/approve` | **assumida** | `pendente` → `aprovada`. Sem corpo. |
+| `POST` | `/v1/proposals/:id/reject` | **assumida** | `{motivo}` obrigatório → `rejeitada`. |
+| `POST` | `/v1/proposals/:id/apply` | existe | Executa o fluxo do §5 de `entidades-versionamento.md`. |
+| `POST` | `/v1/proposals/:id/revert` | existe | `{motivo}` obrigatório; move o ponteiro de volta. |
+
+Os caminhos são os da superfície `/v1` em inglês (D18, renomeada pelo `t127`);
+as **chaves** dos corpos (`propostas`, `proposta`, `motivo`, `grafo_versao`) e o
+vocabulário de status (`pendente`, `aprovada`, …) continuam em português, que é
+o que a D18 deixou de fora de propósito. Pinado contra o cliente real em
+`packages/tela/test/inbox-spec-routes.test.ts`.
 
 Envelope de resposta que a tela espera — e como ela se protege de estar errada:
 
 - lista: `{propostas: [...]}` (um array cru também é aceito);
 - detalhe e ações: `{proposta: {...}}` (a proposta crua também é aceita), mais
-  `{grafo_versao: {id}}` no `aplicar`, que é o que a linha passa a exibir;
+  `{grafo_versao: {id}}` no `apply`, que é o que a linha passa a exibir;
 - erro: `{erro, mensagem}`, em qualquer status não-2xx.
 
 **A incompatibilidade que o `t111` precisa resolver.** Hoje
-[`routes/propostas.ts`](../../packages/core/src/routes/propostas.ts) exige
+[`routes/proposals.ts`](../../packages/core/src/routes/proposals.ts) exige
 `status === 'pendente'` para aplicar, porque o estado `aprovada` ainda não
 existe. Esta tela assume o contrário: `pendente` só oferece Aprovar/Rejeitar, e
 Aplicar aparece em `aprovada`. Enquanto o `t111` não mudar essa guarda, aplicar
@@ -145,6 +151,14 @@ crescê-lo (`t112` escreve `resultado`). Status desconhecido **falha seguro** �
 vira leitura, nunca exceção no meio da renderização. Um botão que aparece e
 volta `409` ensina a pessoa a desconfiar da tela, o que é pior que um botão a
 menos.
+
+Onde o motivo é obrigatório, o campo aparece com a pergunta em um `<label>`
+visível, amarrado ao input por `for`/`id` (`Por que esta hipótese não vale a
+pena?`, `Por que a versão aplicada está sendo abandonada?`). Não é placeholder:
+placeholder é dica, some no primeiro caractere digitado e não é nome acessível
+confiável — e este é justamente o campo da página que pede uma justificativa
+escrita. Pinado em `packages/tela/test/inbox-reason-field.test.ts`, que resolve
+o nome como um leitor de tela resolveria.
 
 A regra mora em uma função pura, `resolveActionsForStatus`
 ([`src/public/actions.js`](../../packages/tela/src/public/actions.js)), testada

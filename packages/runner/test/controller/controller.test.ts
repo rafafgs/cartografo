@@ -102,7 +102,7 @@ async function ambiente(): Promise<{
       corpo: typeof corpoBruto === 'string' ? JSON.parse(corpoBruto) : undefined,
     });
 
-    if (url.endsWith('/v1/trabalhos')) {
+    if (url.endsWith('/v1/jobs')) {
       return responder(200, {
         trabalhos: [
           {
@@ -118,7 +118,7 @@ async function ambiente(): Promise<{
     }
     if (url.endsWith('/v1/leases')) return responder(201, { lease: LEASE });
     if (url.endsWith('/heartbeats')) return responder(200, { lease: LEASE });
-    if (url.endsWith('/liberacoes')) {
+    if (url.endsWith('/releases')) {
       return responder(200, { lease: { ...LEASE, status: 'liberada' } });
     }
     throw new Error(`chamada inesperada: ${url}`);
@@ -128,7 +128,7 @@ async function ambiente(): Promise<{
     cliente: new ClienteControle({ urlBase: URL_BASE, buscar }),
     chamadas,
     heartbeats: () => chamadas.filter((chamada) => chamada.url.endsWith('/heartbeats')).length,
-    liberacoes: () => chamadas.filter((chamada) => chamada.url.endsWith('/liberacoes')).length,
+    liberacoes: () => chamadas.filter((chamada) => chamada.url.endsWith('/releases')).length,
   };
 }
 
@@ -202,7 +202,7 @@ test('AT15 — despacho concluído libera a lease e para o heartbeat', async (t)
   assert.equal(liberacoes(), 1, 'trabalho terminado devolve a lease');
   const batidasAteALiberacao = heartbeats();
 
-  const indiceLiberacao = chamadas.findIndex((chamada) => chamada.url.endsWith('/liberacoes'));
+  const indiceLiberacao = chamadas.findIndex((chamada) => chamada.url.endsWith('/releases'));
   assert.ok(
     !chamadas.slice(indiceLiberacao + 1).some((chamada) => chamada.url.endsWith('/heartbeats')),
     'nenhum heartbeat depois da liberação',
@@ -271,5 +271,5 @@ test('AT16 — sem trabalho liberado, o tick não pede lease nenhuma', async () 
   });
 
   assert.equal(await controller.tick(), null);
-  assert.deepEqual(chamadas, [`${URL_BASE}/v1/trabalhos`]);
+  assert.deepEqual(chamadas, [`${URL_BASE}/v1/jobs`]);
 });

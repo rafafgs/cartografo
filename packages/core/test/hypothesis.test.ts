@@ -17,7 +17,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import type * as HypothesisModule from '../src/dominio/hypothesis.ts';
+import type * as HypothesisModule from '../src/domain/hypothesis.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -26,11 +26,11 @@ let cachedHypothesis: typeof HypothesisModule | null = null;
 /** Loads the module on demand so the initial red NAMES the missing artifact. */
 async function loadHypothesis(): Promise<typeof HypothesisModule> {
   assert.ok(
-    existsSync(path.join(PACKAGE_ROOT, 'src', 'dominio', 'hypothesis.ts')),
-    'artefato ainda não existe: packages/core/src/dominio/hypothesis.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'domain', 'hypothesis.ts')),
+    'artefato ainda não existe: packages/core/src/domain/hypothesis.ts',
   );
   cachedHypothesis ??= (await import(
-    new URL('../src/dominio/hypothesis.ts', import.meta.url).href
+    new URL('../src/domain/hypothesis.ts', import.meta.url).href
   )) as typeof HypothesisModule;
   return cachedHypothesis;
 }

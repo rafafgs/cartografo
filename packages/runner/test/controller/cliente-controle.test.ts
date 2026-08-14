@@ -6,7 +6,7 @@
  * verbo, caminho e corpo — contra um `fetch` falso injetado, no mesmo padrão de
  * `packages/tela/src/index.ts`.
  *
- * `GET /v1/trabalhos` é rota do t102, já mergeada; o cliente consome dela
+ * `GET /v1/jobs` é rota do t102, já mergeada; o cliente consome dela
  * apenas o subconjunto de que precisa (`id`, `bloqueado`), e o filtro de
  * `bloqueado` mora do lado do cliente. A rota segue simulada aqui porque o que
  * este teste cobra é o cliente, não o server do t102.
@@ -95,7 +95,7 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
         corpo: { runner: { id: 'runner-a', nome: 'laptop', registrado_em: '2026-08-14T12:00:00.000Z' } },
       };
     }
-    if (chamada.url.endsWith('/v1/trabalhos')) {
+    if (chamada.url.endsWith('/v1/jobs')) {
       return {
         status: 200,
         corpo: {
@@ -132,7 +132,7 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
     if (chamada.url.endsWith('/heartbeats')) {
       return { status: 200, corpo: { lease: { ...LEASE, ttl_segundos: 45 } } };
     }
-    if (chamada.url.endsWith('/liberacoes')) {
+    if (chamada.url.endsWith('/releases')) {
       return { status: 200, corpo: { lease: { ...LEASE, status: 'liberada' } } };
     }
     throw new Error(`chamada inesperada: ${chamada.metodo} ${chamada.url}`);
@@ -150,7 +150,7 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
 
   const liberados = await cliente.listarTrabalhosLiberados();
   assert.deepEqual(chamadas[1], {
-    url: `${URL_BASE}/v1/trabalhos`,
+    url: `${URL_BASE}/v1/jobs`,
     metodo: 'GET',
     corpo: undefined,
   });
@@ -193,7 +193,7 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
   const liberada = await cliente.liberar(12);
   assert.equal(liberada.status, 'liberada');
   assert.deepEqual(chamadas[4], {
-    url: `${URL_BASE}/v1/leases/12/liberacoes`,
+    url: `${URL_BASE}/v1/leases/12/releases`,
     metodo: 'POST',
     corpo: {},
   });

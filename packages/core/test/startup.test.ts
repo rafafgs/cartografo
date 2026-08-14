@@ -1,10 +1,11 @@
 /**
- * Teste de aceite da partida em um comando (t100, FR2/FR3).
+ * Acceptance test of the one-command startup (t100, FR2/FR3).
  *
- * Roda `packages/core/bin/cartografo.mjs` como processo filho de verdade, em
- * diretório temporário sem banco: é o único jeito de provar que o comando
- * único cria o arquivo, aplica as migrações e sobe o HTTP sem passo manual de
- * setup. A segunda partida contra o mesmo banco prova a idempotência.
+ * Runs `packages/core/bin/cartografo.mjs` as a real child process, in a
+ * temporary directory with no database: it is the only way to prove that the
+ * single command creates the file, applies the migrations and brings HTTP up
+ * with no manual setup step. The second startup against the same database proves
+ * idempotence.
  */
 
 import assert from 'node:assert/strict';
@@ -15,149 +16,155 @@ import { tmpdir } from 'node:os';
 import type { Readable } from 'node:stream';
 import test from 'node:test';
 import path from 'node:path';
-import { setTimeout as esperar } from 'node:timers/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 
-const RAIZ_PACOTE = path.resolve(import.meta.dirname, '..');
-const CAMINHO_BIN = path.join(RAIZ_PACOTE, 'bin', 'cartografo.mjs');
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
+const BIN_PATH = path.join(PACKAGE_ROOT, 'bin', 'cartografo.mjs');
 
-/** Linha de prontidão que o comando imprime em stdout quando o server sobe. */
-interface LinhaDeProntidao {
-  evento: string;
-  banco: string;
-  migracoes_aplicadas: number;
+/** Readiness line the command prints on stdout when the server comes up. */
+interface ReadinessLine {
+  event: string;
+  database: string;
+  migrationsApplied: number;
   url: string;
 }
 
-/** `stdio: ['ignore', 'pipe', 'pipe']` — sem stdin, com stdout/stderr lidos. */
-type FilhoDoComando = ChildProcessByStdio<null, Readable, Readable>;
+/** `stdio: ['ignore', 'pipe', 'pipe']` — no stdin, stdout/stderr read. */
+type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
 
-interface Partida {
-  filho: FilhoDoComando;
-  prontidao: LinhaDeProntidao;
-  encerrar: () => Promise<void>;
+interface Startup {
+  child: CommandChild;
+  readiness: ReadinessLine;
+  shutdown: () => Promise<void>;
 }
 
-/** Reserva uma porta livre pedindo ao SO a porta 0 e devolvendo o número. */
-async function portaLivre(): Promise<number> {
+/** Reserves a free port by asking the OS for port 0 and returning the number. */
+async function freePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
-    const servidor = createServer();
-    servidor.on('error', reject);
-    servidor.listen(0, '127.0.0.1', () => {
-      const endereco = servidor.address();
-      if (endereco === null || typeof endereco === 'string') {
-        servidor.close();
-        reject(new Error('não deu para reservar uma porta livre'));
+    const server = createServer();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address === null || typeof address === 'string') {
+        server.close();
+        reject(new Error('could not reserve a free port'));
         return;
       }
-      const { port } = endereco;
-      servidor.close(() => resolve(port));
+      const { port } = address;
+      server.close(() => resolve(port));
     });
   });
 }
 
-/** Sobe o comando e resolve quando a linha de prontidão sai em stdout. */
-async function partir(opcoes: {
+/** Starts the command and resolves when the readiness line appears on stdout. */
+async function start(options: {
   cwd: string;
-  caminhoBanco: string;
-  porta: number;
-}): Promise<Partida> {
-  const filho = spawn(process.execPath, [CAMINHO_BIN], {
-    cwd: opcoes.cwd,
+  databasePath: string;
+  port: number;
+}): Promise<Startup> {
+  const child = spawn(process.execPath, [BIN_PATH], {
+    cwd: options.cwd,
     env: {
       ...process.env,
-      CARTOGRAFO_DB_PATH: opcoes.caminhoBanco,
-      CARTOGRAFO_PORT: String(opcoes.porta),
+      CARTOGRAFO_DB_PATH: options.databasePath,
+      CARTOGRAFO_PORT: String(options.port),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  let saida = '';
-  let erros = '';
-  filho.stdout.setEncoding('utf8');
-  filho.stderr.setEncoding('utf8');
-  filho.stdout.on('data', (pedaco: string) => {
-    saida += pedaco;
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    stdout += chunk;
   });
-  filho.stderr.on('data', (pedaco: string) => {
-    erros += pedaco;
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk;
   });
 
-  const encerrar = async (): Promise<void> => {
-    if (filho.exitCode !== null || filho.signalCode !== null) return;
-    filho.kill('SIGTERM');
-    for (let tentativa = 0; tentativa < 100; tentativa += 1) {
-      if (filho.exitCode !== null || filho.signalCode !== null) return;
-      await esperar(100);
+  const shutdown = async (): Promise<void> => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    child.kill('SIGTERM');
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      await sleep(100);
     }
-    filho.kill('SIGKILL');
+    child.kill('SIGKILL');
   };
 
-  const prazo = Date.now() + 60_000;
-  while (Date.now() < prazo) {
-    if (filho.exitCode !== null) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
       throw new Error(
-        `o comando morreu antes de ficar pronto (código ${filho.exitCode})\nstdout:\n${saida}\nstderr:\n${erros}`,
+        `the command died before becoming ready (code ${child.exitCode})\nstdout:\n${stdout}\nstderr:\n${stderr}`,
       );
     }
-    const linha = saida
+    const line = stdout
       .split('\n')
-      .map((texto) => texto.trim())
-      .find((texto) => texto.startsWith('{') && texto.includes('cartografo.pronto'));
-    if (linha !== undefined) {
-      return { filho, prontidao: JSON.parse(linha) as LinhaDeProntidao, encerrar };
+      .map((text) => text.trim())
+      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
+    if (line !== undefined) {
+      return { child, readiness: JSON.parse(line) as ReadinessLine, shutdown };
     }
-    await esperar(100);
+    await sleep(100);
   }
 
-  await encerrar();
-  throw new Error(`o comando não ficou pronto em 60s\nstdout:\n${saida}\nstderr:\n${erros}`);
+  await shutdown();
+  throw new Error(`the command did not become ready in 60s\nstdout:\n${stdout}\nstderr:\n${stderr}`);
 }
 
 test(
-  'AT9 — partida em um comando cria banco, migra e responde /health; a segunda partida não remigra',
+  'AT9 — one-command startup creates the database, migrates and answers /health; the second startup does not re-migrate',
   { timeout: 180_000 },
   async (t) => {
-    assert.ok(existsSync(CAMINHO_BIN), 'artefato ainda não existe: packages/core/bin/cartografo.mjs');
+    assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
 
     const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t100-partida-'));
     t.after(() => rmSync(base, { recursive: true, force: true }));
 
-    // Subdiretório que NÃO existe: prova que o comando cria o caminho do banco.
-    const caminhoBanco = path.join(base, 'dados', 'cartografo.db');
-    assert.equal(existsSync(path.dirname(caminhoBanco)), false);
+    // A subdirectory that does NOT exist: proves the command creates the database path.
+    const databasePath = path.join(base, 'dados', 'cartografo.db');
+    assert.equal(existsSync(path.dirname(databasePath)), false);
 
-    const porta = await portaLivre();
+    const port = await freePort();
 
-    const primeira = await partir({ cwd: base, caminhoBanco, porta });
+    const first = await start({ cwd: base, databasePath, port });
     try {
-      assert.equal(primeira.prontidao.evento, 'cartografo.pronto');
-      assert.equal(primeira.prontidao.banco, caminhoBanco);
+      assert.equal(first.readiness.event, 'cartografo.ready');
+      assert.equal(first.readiness.database, databasePath);
       assert.ok(
-        primeira.prontidao.migracoes_aplicadas >= 1,
-        'a primeira partida precisa aplicar ao menos a migração inicial',
+        first.readiness.migrationsApplied >= 1,
+        'the first startup has to apply at least the initial migration',
       );
-      assert.ok(existsSync(caminhoBanco), 'o arquivo do banco precisa existir no caminho configurado');
+      assert.equal(typeof first.readiness.url, 'string');
+      assert.deepEqual(
+        Object.keys(first.readiness).sort(),
+        ['database', 'event', 'migrationsApplied', 'url'],
+        'the readiness line carries exactly the four English keys (D18, t127 FR6)',
+      );
+      assert.ok(existsSync(databasePath), 'the database file has to exist at the configured path');
 
-      const resposta = await fetch(`http://127.0.0.1:${porta}/health`);
-      assert.equal(resposta.status, 200);
-      assert.deepEqual(await resposta.json(), { status: 'ok', db: 'ok' });
+      const response = await fetch(`http://127.0.0.1:${port}/health`);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { status: 'ok', db: 'ok' });
     } finally {
-      await primeira.encerrar();
+      await first.shutdown();
     }
 
-    // Mesma porta, mesmo banco: só volta a subir se a primeira encerrou de fato.
-    const segunda = await partir({ cwd: base, caminhoBanco, porta });
+    // Same port, same database: it only comes back up if the first one really stopped.
+    const second = await start({ cwd: base, databasePath, port });
     try {
       assert.equal(
-        segunda.prontidao.migracoes_aplicadas,
+        second.readiness.migrationsApplied,
         0,
-        'partida idempotente: banco já migrado não reaplica migração nenhuma',
+        'idempotent startup: an already migrated database reapplies no migration',
       );
-      const resposta = await fetch(`http://127.0.0.1:${porta}/health`);
-      assert.equal(resposta.status, 200);
-      assert.deepEqual(await resposta.json(), { status: 'ok', db: 'ok' });
+      const response = await fetch(`http://127.0.0.1:${port}/health`);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { status: 'ok', db: 'ok' });
     } finally {
-      await segunda.encerrar();
+      await second.shutdown();
     }
   },
 );

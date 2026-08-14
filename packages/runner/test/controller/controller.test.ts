@@ -141,7 +141,7 @@ const OPCOES_BASE = {
 };
 
 test('AT14 — com o despacho em curso, o heartbeat bate em intervalo menor que o TTL', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval', 'clearInterval'] });
+  t.mock.timers.enable({ apis: ['setInterval'] });
 
   const { cliente, chamadas, heartbeats } = await ambiente();
   const { Controller } = await carregarController();
@@ -185,7 +185,7 @@ test('AT14 — com o despacho em curso, o heartbeat bate em intervalo menor que 
 });
 
 test('AT15 — despacho concluído libera a lease e para o heartbeat', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval', 'clearInterval'] });
+  t.mock.timers.enable({ apis: ['setInterval'] });
 
   const { cliente, chamadas, heartbeats, liberacoes } = await ambiente();
   const { Controller } = await carregarController();
@@ -218,7 +218,7 @@ test('AT15 — despacho concluído libera a lease e para o heartbeat', async (t)
 });
 
 test('AT16 — despacho que estoura AINDA libera a lease', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval', 'clearInterval'] });
+  t.mock.timers.enable({ apis: ['setInterval'] });
 
   const { cliente, heartbeats, liberacoes } = await ambiente();
   const { Controller } = await carregarController();

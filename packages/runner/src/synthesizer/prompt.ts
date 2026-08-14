@@ -27,6 +27,14 @@
  * (D4), and a hash a model made up is not a pin — it is a graph that will be
  * refused by `cartografo import` after wasting the person's edit.
  *
+ * Every rule of the format that `cartografo import` enforces has to be stated
+ * here, and "has to" is literal: the session's `workingDir` is an empty
+ * temporary directory, so it cannot open `schema/grafo.schema.json` and read the
+ * format for itself. A rule that lives only in the schema is a rule the session
+ * cannot follow. That is how t138 was found — a draft that obeyed every word of
+ * this text still came back `grafo_invalido` / `soundness no_com_contrato`,
+ * because `contrato.verificacoes` has `minItems: 1` and nothing here said so.
+ *
  * English per D18; the prompt's own text is Portuguese, like every other agent
  * instruction in the repository, because the domain vocabulary the session has
  * to produce (`classe`, `linhagem`, `nos`, `portao`) is Portuguese.
@@ -48,6 +56,44 @@ export interface SimilarClass {
 
 /** The fence the session answers in. Named once, used by prompt and parser. */
 export const PROPOSAL_FENCE = 'grafo-proposto';
+
+/**
+ * One entry of `contrato.verificacoes`, in the GRAPH document's format.
+ *
+ * The open drawer mirrors `domain/graph.ts`: the format has not frozen (rule of
+ * two consumers) and this type exists to be rendered, not to constrain.
+ */
+export type VerificationExample = Readonly<Record<string, unknown>>;
+
+/**
+ * The two shapes a `verificacoes` entry can take, shown to the session verbatim.
+ *
+ * Examples and not prose because of what sits directly above them in the prompt:
+ * the skill catalogue, printing each skill's `checks` — and a manifest's check
+ * is NOT a graph document's `verificacao`. They disagree on
+ * `evidencia_obrigatoria`, which is a non-empty list of the artifacts the
+ * verdict has to cite in `especificacoes/formatos/manifesto-skill.schema.json`
+ * and the literal `true` in `schema/grafo.schema.json`. Tell a session "every
+ * node needs a check" with only manifest-shaped checks in front of it and it
+ * copies one across, which trades the failure t138 reported for a different one
+ * at the same gate.
+ *
+ * `test/synthesizer/prompt.test.ts` validates both against the real schema, so
+ * an example cannot drift away from the format it exists to teach.
+ */
+export const VERIFICATION_EXAMPLES: readonly VerificationExample[] = Object.freeze([
+  Object.freeze({
+    tipo: 'deterministico',
+    comando: 'npm test',
+    descricao: 'O que este check prova.',
+  }),
+  Object.freeze({
+    tipo: 'agentico',
+    instrucao: 'Pergunta respondível sobre o artefato, conferida com evidência própria.',
+    evidencia_obrigatoria: true,
+    descricao: 'O que este check prova.',
+  }),
+]);
 
 /**
  * The session's role and its hard rules, for `SessionSpec.instructions`.
@@ -80,7 +126,13 @@ export const SYNTHESIS_INSTRUCTIONS = [
   '  em `nos`, e `nos_finais` também — um grafo que não alcança o fim é reprovado',
   '  no portão de soundness antes de qualquer humano ler;',
   '- toda aresta tem `condicao`: o literal `"sempre"` quando a origem tem saída',
-  '  única, e o rótulo do resultado quando tem mais de uma.',
+  '  única, e o rótulo do resultado quando tem mais de uma;',
+  '- o `contrato` de todo nó traz `verificacoes` com PELO MENOS UMA verificação, e',
+  '  isso vale igual para portão, que é nó como outro qualquer. Lista vazia é',
+  '  reprovada na regra de soundness `no_com_contrato`, no mesmo portão de',
+  '  importação — e onde você não consegue escrever a verificação de uma etapa,',
+  '  não há portão nenhum ali: prefira dizer isso no seu turno a devolver uma',
+  '  lista vazia.',
 ].join('\n');
 
 /** One skill of the catalogue, rendered so a person can audit the prompt too. */
@@ -185,5 +237,20 @@ export function buildSynthesisPrompt(
     'O `skill_ref` de cada nó é copiado literalmente do catálogo acima:',
     'nunca invente id, versão nem hash — um pin inventado é reprovado no portão',
     'de importação e joga fora a edição de quem vier depois de você.',
+    '',
+    '## `verificacoes`: pelo menos uma por nó',
+    '',
+    '`contrato.verificacoes` é uma lista com PELO MENOS UMA verificação. Lista',
+    'vazia é reprovada na importação (`no_com_contrato`), e o grafo volta para',
+    'quem já tinha editado ele. Cada item é de um destes dois formatos, e nada',
+    'além destes campos:',
+    '',
+    ...VERIFICATION_EXAMPLES.map((example) => `- \`${JSON.stringify(example)}\``),
+    '',
+    'Não copie os `checks` do catálogo para dentro de `verificacoes`: eles estão no',
+    'formato do manifesto de skill, que é outro documento. A diferença que reprova',
+    'é `evidencia_obrigatoria` — lista de artefatos no manifesto, o literal `true`',
+    'aqui. Leia os `checks` para saber COMO a capacidade se confere e reescreva a',
+    'verificação nos dois formatos acima.',
   ].join('\n');
 }

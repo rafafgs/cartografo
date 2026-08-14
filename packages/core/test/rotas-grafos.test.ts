@@ -149,9 +149,8 @@ test('AT6 — o grafo de fábrica 1 entra pela API sem edição, com hash do sna
   const documento = lerJson(GRAFO_DE_FABRICA);
 
   const resposta = await postar(endereco, '/v1/grafos', documento);
-  assert.equal(resposta.status, 201, await resposta.text());
-
   const corpo = await corpoJson<{ grafo: LinhaGrafo; grafo_versao: LinhaVersao }>(resposta);
+  assert.equal(resposta.status, 201, JSON.stringify(corpo));
   assert.equal(corpo.grafo.id, 'desenvolvimento-de-software');
   assert.equal(corpo.grafo.classe, 'desenvolvimento-de-software');
   assert.equal(corpo.grafo.linhagem_tipo, 'base');

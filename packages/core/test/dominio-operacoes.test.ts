@@ -240,13 +240,17 @@ test('AT5 — tipo desconhecido, inversa ausente e inversa incompatível reprova
 test('AT5 — aplicar operação sobre alvo inexistente estoura em vez de virar no-op silencioso', async () => {
   const { aplicarOperacoes, ErroDeAplicacao } = await carregarOperacoes();
 
+  // A inversa precisa readicionar o MESMO nó — senão a operação nem chega a ser
+  // aplicada, e o que estouraria seria a validação de forma, não a aplicação.
+  const fantasma: NoGrafo = { ...structuredClone(NO_NOVO), id: 'nao_existe' };
+
   assert.throws(
     () =>
       aplicarOperacoes(grafoMinimo(), [
         {
           tipo: 'remover_no',
-          no_id: 'nao_existe',
-          inversa: { tipo: 'adicionar_no', no: structuredClone(NO_NOVO) },
+          no_id: fantasma.id,
+          inversa: { tipo: 'adicionar_no', no: fantasma },
         },
       ]),
     (erro: unknown) => erro instanceof ErroDeAplicacao && erro.codigo === 'no_inexistente',

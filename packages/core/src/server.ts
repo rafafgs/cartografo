@@ -10,7 +10,9 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { BancoDeDados } from './db/connection.ts';
+import { registrarGrafos } from './routes/grafos.ts';
 import { registrarSaude } from './routes/health.ts';
+import { registrarPropostas } from './routes/propostas.ts';
 
 /**
  * Prefixo das rotas de negócio. Nasce vazio: as rotas entram nas tickets de
@@ -37,14 +39,11 @@ export function criarApp(opcoes: OpcoesApp): FastifyInstance {
 
   registrarSaude(app, opcoes.db);
 
-  // Escopo versionado, ainda sem rotas: existe desde já para que toda rota de
-  // negócio nasça dentro dele, sem ninguém ter que lembrar da convenção.
-  app.register(
-    async () => {
-      /* rotas de negócio entram aqui nas tickets seguintes (D6) */
-    },
-    { prefix: PREFIXO_API },
-  );
+  // Escopo versionado: toda rota de negócio nasce dentro dele. Uma linha de
+  // `register` por família de rotas — assim duas tickets que registram rotas em
+  // paralelo tocam linhas diferentes deste arquivo, e não a mesma.
+  app.register(async (escopo) => registrarGrafos(escopo, opcoes.db), { prefix: PREFIXO_API });
+  app.register(async (escopo) => registrarPropostas(escopo, opcoes.db), { prefix: PREFIXO_API });
 
   return app;
 }

@@ -167,8 +167,8 @@ async function registrarBase(
 ): Promise<{ documento: DocumentoGrafo; grafo: LinhaGrafo; versao: LinhaVersao }> {
   const documento = grafoMinimo();
   const resposta = await postar(endereco, '/v1/grafos', documento);
-  assert.equal(resposta.status, 201, await resposta.text());
   const corpo = await corpoJson<{ grafo: LinhaGrafo; grafo_versao: LinhaVersao }>(resposta);
+  assert.equal(resposta.status, 201, JSON.stringify(corpo));
   return { documento, grafo: corpo.grafo, versao: corpo.grafo_versao };
 }
 
@@ -197,8 +197,9 @@ async function criarProposta(
     evidencia: EVIDENCIA,
     metrica_esperada: METRICA_ESPERADA,
   });
-  assert.equal(resposta.status, 201, await resposta.text());
-  return (await corpoJson<{ proposta: LinhaProposta }>(resposta)).proposta;
+  const corpo = await corpoJson<{ proposta: LinhaProposta }>(resposta);
+  assert.equal(resposta.status, 201, JSON.stringify(corpo));
+  return corpo.proposta;
 }
 
 /** Nó novo, completo o bastante para passar em `no_com_contrato`. */
@@ -272,8 +273,8 @@ test('AT11 — aplicar proposta gera versão nova com parent e hash corretos e m
   assert.equal(proposta.status, 'pendente', 'toda proposta nasce pendente');
 
   const resposta = await postar(endereco, `/v1/propostas/${proposta.id}/aplicar`, {});
-  assert.equal(resposta.status, 200, await resposta.text());
   const corpo = await corpoJson<RespostaAplicacao>(resposta);
+  assert.equal(resposta.status, 200, JSON.stringify(corpo));
 
   const esperado = hashSnapshot(aplicarOperacoes(documento, operacoes));
   assert.ok(corpo.grafo_versao !== undefined);
@@ -308,8 +309,8 @@ test('AT12 — reverter restaura o ponteiro e o histórico continua íntegro', a
   const reversao = await postar(endereco, `/v1/propostas/${proposta.id}/reverter`, {
     motivo: 'o nó novo dobrou o tempo de travessia sem mexer no retrabalho',
   });
-  assert.equal(reversao.status, 200, await reversao.text());
   const corpo = await corpoJson<RespostaAplicacao>(reversao);
+  assert.equal(reversao.status, 200, JSON.stringify(corpo));
   assert.equal(corpo.proposta.status, 'revertida');
   assert.equal(
     corpo.proposta.motivo_reversao,
@@ -447,9 +448,8 @@ for (const caso of CASOS_DE_REJEICAO) {
     const proposta = await criarProposta(endereco, grafo.id, versao.id, caso.operacoes(documento));
 
     const resposta = await postar(endereco, `/v1/propostas/${proposta.id}/aplicar`, {});
-    assert.equal(resposta.status, 422, await resposta.text());
-
     const corpo = await corpoJson<RespostaAplicacao>(resposta);
+    assert.equal(resposta.status, 422, JSON.stringify(corpo));
     assert.equal(corpo.erro, 'grafo_invalido');
     assert.deepEqual(corpo.soundness?.violacoes, caso.violacoes);
     assert.equal(corpo.proposta.status, 'rejeitada');

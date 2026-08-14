@@ -153,10 +153,10 @@ test('AT6-AT8 — both factory bundles round-trip through a git-backed atlas', {
 
   await t.test('AT6 — desenvolvimento-de-software imports from the clone with the same id', async () => {
     const [map] = MAPS;
-    const fromClone = await runCli(['import', path.join(clone, map.name), '--url', mirrored.url]);
+    const fromClone = await runCli(['import', path.join(clone, map.name), '--url', mirrored.url], { token: mirrored.token });
     assert.equal(fromClone.code, 0, `stdout:\n${fromClone.stdout}\nstderr:\n${fromClone.stderr}`);
 
-    const fromRepo = await runCli(['import', map.bundle, '--url', local.url]);
+    const fromRepo = await runCli(['import', map.bundle, '--url', local.url], { token: local.token });
     assert.equal(fromRepo.code, 0, `stdout:\n${fromRepo.stdout}\nstderr:\n${fromRepo.stderr}`);
 
     assert.equal(
@@ -168,10 +168,10 @@ test('AT6-AT8 — both factory bundles round-trip through a git-backed atlas', {
 
   await t.test('AT7 — bets-assimetricas imports from the clone with the same id', async () => {
     const map = MAPS[1];
-    const fromClone = await runCli(['import', path.join(clone, map.name), '--url', mirrored.url]);
+    const fromClone = await runCli(['import', path.join(clone, map.name), '--url', mirrored.url], { token: mirrored.token });
     assert.equal(fromClone.code, 0, `stdout:\n${fromClone.stdout}\nstderr:\n${fromClone.stderr}`);
 
-    const fromRepo = await runCli(['import', map.bundle, '--url', local.url]);
+    const fromRepo = await runCli(['import', map.bundle, '--url', local.url], { token: local.token });
     assert.equal(fromRepo.code, 0, `stdout:\n${fromRepo.stdout}\nstderr:\n${fromRepo.stderr}`);
 
     assert.equal(

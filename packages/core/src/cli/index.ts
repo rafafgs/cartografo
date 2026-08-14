@@ -29,7 +29,18 @@ import { runExport } from './export.ts';
 import { runImport } from './import.ts';
 import { runProposeSkill, runRegisterSkill, runScanSkill } from './skill-import.ts';
 import { runStatus } from './status.ts';
-import { ENV_URL, NetworkError, UsageError, serverDownMessage, resolveBaseUrl } from './url.ts';
+import {
+  DeniedError,
+  ENV_TOKEN,
+  ENV_URL,
+  NetworkError,
+  UsageError,
+  deniedMessage,
+  resolveBaseUrl,
+  resolveToken,
+  serverDownMessage,
+  useToken,
+} from './url.ts';
 
 /** Usage text. The same in `--help` (stdout) and on a wrong subcommand (stderr). */
 export const USAGE = `usage: cartografo [subcommand] [options]
@@ -57,6 +68,8 @@ subcommands:
 options:
   --url <url>            control plane to query (env ${ENV_URL};
                          default http://127.0.0.1:${DEFAULT_PORT})
+  --token <token>        credential of the control plane (env ${ENV_TOKEN});
+                         it is printed when the control plane first starts
   --out <path>           (export) output file; default ./<class>.grafo.json
                          (scan-skill) draft file; default ./<id>.manifest.json
   --repo <repo>          (scan-skill) source repository, for origem.repo
@@ -67,7 +80,7 @@ options:
   --json                 (status) prints the report as a single JSON object
   -h, --help             this text
 
-Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT.`;
+Startup configuration: CARTOGRAFO_DB_PATH, CARTOGRAFO_PORT, CARTOGRAFO_HOST.`;
 
 /** Subcommands that talk to the control plane over HTTP; `up` is the other one. */
 const API_SUBCOMMANDS = [
@@ -158,11 +171,16 @@ async function runApiClient(
   env: NodeJS.ProcessEnv,
 ): Promise<number> {
   const fromUrl = extractValue(args, '--url');
+  const fromToken = extractValue(fromUrl.rest, '--token');
   const url = resolveBaseUrl(fromUrl.value, env);
 
+  // One place, before any subcommand runs: from here on every request this
+  // process makes carries the credential (t124, FR6).
+  useToken(resolveToken(fromToken.value, env));
+
   if (subcommand === 'import') {
-    requireNothingElse(fromUrl.rest, 1, 'import');
-    const inputPath = fromUrl.rest[0];
+    requireNothingElse(fromToken.rest, 1, 'import');
+    const inputPath = fromToken.rest[0];
     if (inputPath === undefined) {
       throw new UsageError('import needs a path: a graph file or a bundle directory');
     }
@@ -170,7 +188,7 @@ async function runApiClient(
   }
 
   if (subcommand === 'export') {
-    const fromOutput = extractValue(fromUrl.rest, '--out');
+    const fromOutput = extractValue(fromToken.rest, '--out');
     requireNothingElse(fromOutput.rest, 1, 'export');
     const className = fromOutput.rest[0];
     if (className === undefined) throw new UsageError('export needs the graph class');
@@ -178,7 +196,7 @@ async function runApiClient(
   }
 
   if (subcommand === 'scan-skill') {
-    const fromRepo = extractValue(fromUrl.rest, '--repo');
+    const fromRepo = extractValue(fromToken.rest, '--repo');
     const fromRef = extractValue(fromRepo.rest, '--ref');
     const fromRole = extractValue(fromRef.rest, '--role');
     const fromBy = extractValue(fromRole.rest, '--by');
@@ -209,8 +227,8 @@ async function runApiClient(
   }
 
   if (subcommand === 'propose-skill') {
-    requireNothingElse(fromUrl.rest, 1, 'propose-skill');
-    const manifestPath = fromUrl.rest[0];
+    requireNothingElse(fromToken.rest, 1, 'propose-skill');
+    const manifestPath = fromToken.rest[0];
     if (manifestPath === undefined) {
       throw new UsageError('propose-skill needs the path of a completed manifest file');
     }
@@ -218,7 +236,7 @@ async function runApiClient(
   }
 
   if (subcommand === 'register-skill') {
-    const fromJob = extractValue(fromUrl.rest, '--job');
+    const fromJob = extractValue(fromToken.rest, '--job');
     requireNothingElse(fromJob.rest, 0, 'register-skill');
     if (fromJob.value === undefined) throw new UsageError('register-skill needs --job');
     const jobId = Number(fromJob.value);
@@ -228,7 +246,7 @@ async function runApiClient(
     return await runRegisterSkill({ jobId, url });
   }
 
-  const fromFlag = extractFlag(fromUrl.rest, '--json');
+  const fromFlag = extractFlag(fromToken.rest, '--json');
   requireNothingElse(fromFlag.rest, 0, 'status');
   return await runStatus({ url, json: fromFlag.present });
 }
@@ -267,6 +285,12 @@ export async function runCli(
   } catch (error) {
     if (error instanceof NetworkError) {
       process.stderr.write(`${serverDownMessage(error.url)}\n`);
+      return 1;
+    }
+    if (error instanceof DeniedError) {
+      // A negative result, not a wrong command line: the command was right and
+      // the server said no. Same exit code as a server that is down.
+      process.stderr.write(`${deniedMessage(error.url)}\n`);
       return 1;
     }
     if (error instanceof UsageError) {

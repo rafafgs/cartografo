@@ -81,6 +81,15 @@ export function requireArtifacts(...relatives: string[]): void {
 export interface RunningControlPlane {
   /** Base URL announced by the command itself. */
   url: string;
+  /**
+   * Operator credential, read off the same readiness line (t124).
+   *
+   * The database is brand new on every start here, so the control plane always
+   * mints one and always prints it. It is what `api()` seeds with and what the
+   * screen is configured to forward — the screen holds a service credential and
+   * the browser keeps holding none (D11).
+   */
+  token: string;
 }
 
 /**
@@ -137,7 +146,15 @@ export async function startControlPlane(t: TestHooks): Promise<RunningControlPla
       .split('\n')
       .map((text) => text.trim())
       .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) return { url: (JSON.parse(line) as { url: string }).url };
+    if (line !== undefined) {
+      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
+      assert.equal(
+        typeof readiness.bootstrapToken,
+        'string',
+        'a brand-new database announces the credential these tests authenticate with',
+      );
+      return { url: readiness.url, token: readiness.bootstrapToken ?? '' };
+    }
     await wait(50);
   }
 
@@ -152,17 +169,26 @@ export interface ScreenUnderTest {
 /**
  * Starts the screen against a control plane, on an ephemeral port.
  *
+ * The screen receives the control plane's credential and forwards it on every
+ * call it makes (t124, FR7). It is the whole control plane the screen is given,
+ * and not just its URL, because an address without a credential no longer
+ * reaches anything.
+ *
  * @param t Test context, so the server is shut down at the end.
- * @param controlPlaneUrl Address of the control plane the screen will read.
+ * @param cp The control plane the screen will read.
  * @returns The screen, up.
  */
-export async function startScreen(t: TestHooks, controlPlaneUrl: string): Promise<ScreenUnderTest> {
+export async function startScreen(t: TestHooks, cp: RunningControlPlane): Promise<ScreenUnderTest> {
   requireArtifacts(T107_ARTIFACTS.router);
   const { startScreenRouter } = (await import(
     new URL('../src/router.ts', import.meta.url).href
   )) as typeof RouterModule;
 
-  const screen = await startScreenRouter({ controlPlaneUrl, port: 0 });
+  const screen = await startScreenRouter({
+    controlPlaneUrl: cp.url,
+    token: cp.token,
+    port: 0,
+  });
   t.after(async () => {
     await screen.close();
   });
@@ -190,9 +216,12 @@ export async function api<T>(
   path: string,
   body?: unknown,
 ): Promise<JsonResponse<T>> {
+  const headers: Record<string, string> = { authorization: `Bearer ${cp.token}` };
+  if (body !== undefined) headers['content-type'] = 'application/json';
+
   const response = await fetch(`${cp.url}${path}`, {
     method,
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();

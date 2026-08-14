@@ -61,6 +61,8 @@ interface RecordedRequest {
   method: string;
   target: string;
   contentType: string | undefined;
+  /** The credential the screen presented, if it presented one (t124, FR7). */
+  authorization: string | undefined;
   body: string;
 }
 
@@ -83,6 +85,7 @@ async function startFakeUpstream(
         method: request.method ?? '',
         target: request.url ?? '',
         contentType: request.headers['content-type'],
+        authorization: request.headers.authorization,
         body: Buffer.concat(chunks).toString('utf8'),
       };
       requests.push(recorded);
@@ -230,6 +233,65 @@ test('AT4 — the screen listens on CARTOGRAFO_TELA_PORT, and on 4318 when it is
   assert.equal(screen.port, port);
   assert.equal(new URL(screen.url).port, String(port));
   assert.equal((await fetch(`http://127.0.0.1:${port}/`)).status, 200);
+});
+
+test('t124 AT — the screen presents its service credential on every call it makes upstream', async (t) => {
+  const upstream = await startFakeUpstream(t, (request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    response.end(request.target.startsWith('/v1/jobs') ? '{"trabalhos":[]}' : '{"propostas":[]}');
+  });
+
+  const screen = await startScreenFor(t, {
+    CARTOGRAFO_URL: upstream.url,
+    CARTOGRAFO_TELA_TOKEN: 'token-de-servico-da-tela',
+  });
+
+  // 1. The verbatim `/v1/*` passthrough, with the browser sending nothing.
+  const proxied = await fetch(`${screen.url}/v1/proposals?status=pendente`);
+  assert.equal(proxied.status, 200);
+
+  // 2. A server-rendered page, whose API calls do not pass through the proxy at
+  //    all — they are the screen's own `ApiClient`, and they need the token too.
+  const board = await fetch(`${screen.url}/quadro`);
+  assert.equal(board.status, 200, 'the board renders against an authenticated control plane');
+  assert.match(board.headers.get('content-type') ?? '', /^text\/html/);
+
+  assert.ok(upstream.requests.length >= 2, 'both halves of the screen reached the control plane');
+  for (const request of upstream.requests) {
+    assert.equal(
+      request.authorization,
+      'Bearer token-de-servico-da-tela',
+      `${request.method} ${request.target} went upstream without the credential`,
+    );
+  }
+
+  // The browser side is unchanged (D11): it presented no credential and still
+  // got both answers. The screen is a client that HOLDS a token, not a second
+  // authentication boundary that DEMANDS one.
+  assert.equal(proxied.status, 200);
+});
+
+test('t124 AT — CARTOGRAFO_TOKEN is the fallback, and the browser cannot swap the credential', async (t) => {
+  const upstream = await startFakeUpstream(t, (_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    response.end('{"propostas":[]}');
+  });
+
+  const shared = await startScreenFor(t, {
+    CARTOGRAFO_URL: upstream.url,
+    CARTOGRAFO_TOKEN: 'token-compartilhado',
+  });
+
+  await fetch(`${shared.url}/v1/proposals`, {
+    headers: { authorization: 'Bearer token-que-o-navegador-inventou' },
+  });
+
+  assert.equal(upstream.requests.length, 1);
+  assert.equal(
+    upstream.requests[0].authorization,
+    'Bearer token-compartilhado',
+    'with CARTOGRAFO_TELA_TOKEN unset the screen falls back to CARTOGRAFO_TOKEN, and what the browser sent is replaced, never forwarded',
+  );
 });
 
 test('AT5 — an unreachable control plane becomes 502 control_plane_indisponivel, never a stack trace', async (t) => {

@@ -5,7 +5,8 @@
  * other route tests never do: `request()` from `./support.ts` waits for the body
  * to end, and an SSE body never ends. So everything here goes through `fetch`
  * against the real listening server (`startControlPlane`), reading
- * `response.body` chunk by chunk into a tiny SSE parser.
+ * `response.body` chunk by chunk into a tiny SSE parser — and, since t124, with
+ * the credential every `/v1` route now demands (`startAuthorizedControlPlane`).
  *
  * Two servers show up below, on purpose:
  *
@@ -31,6 +32,7 @@ import test from 'node:test';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
+import { authorizeGlobalFetch } from './authorized-fetch.ts';
 import type { Database } from '../src/db/connection.ts';
 import {
   createJob,
@@ -171,6 +173,26 @@ const settle = (ms = 150): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * The control plane, with this file's raw `fetch` calls already authenticated.
+ *
+ * `request()` from `./support.ts` attaches the credential itself, but the whole
+ * point of this suite is the calls that CANNOT go through it — an SSE body never
+ * ends — and those speak the global `fetch` directly. Since t124 every `/v1`
+ * route answers `401` without a credential, so the same patch the other
+ * fetch-by-hand suites use (`./authorized-fetch.ts`) applies here: it presents a
+ * real token, issued against this very database, and only to THIS server — the
+ * bare stream app below carries no gate and is left alone.
+ *
+ * @param t Test context, so the patch is undone at the end.
+ * @returns The control plane context, credential included.
+ */
+async function startAuthorizedControlPlane(t: TestHook): Promise<TestContext> {
+  const ctx = await startControlPlane(t);
+  authorizeGlobalFetch(t, { baseUrl: ctx.url, token: ctx.token });
+  return ctx;
+}
+
+/**
  * A second app carrying only the stream route, over the same database.
  *
  * The writes keep going through the control plane's own API (D1: the server is
@@ -201,7 +223,7 @@ async function moveJob(ctx: TestContext, id: number, target: string): Promise<vo
 
 test('AT1 — the stream delivers the envelope the events route would return', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes, T123_ARTIFACTS.server);
-  const ctx = await startControlPlane(t);
+  const ctx = await startAuthorizedControlPlane(t);
 
   const stream = await openStream(`${ctx.url}/v1/events/stream`);
   t.after(() => stream.abort());
@@ -234,7 +256,7 @@ test('AT1 — the stream delivers the envelope the events route would return', a
 
 test('AT2 — ?tipo filters the stream down to the asked types', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes);
-  const ctx = await startControlPlane(t);
+  const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
   const stream = await openStream(`${url}/v1/events/stream?tipo=trabalho.transicao`);
@@ -255,7 +277,7 @@ test('AT2 — ?tipo filters the stream down to the asked types', async (t) => {
 
 test('AT3 — ?projeto_id keeps another project out of the stream', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes);
-  const ctx = await startControlPlane(t);
+  const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
   const stream = await openStream(`${url}/v1/events/stream?projeto_id=42`);
@@ -279,7 +301,7 @@ test('AT3 — ?projeto_id keeps another project out of the stream', async (t) =>
 
 test('AT4 — an unknown ?tipo is a 400, and nothing is upgraded to SSE', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes, T123_ARTIFACTS.server);
-  const ctx = await startControlPlane(t);
+  const ctx = await startAuthorizedControlPlane(t);
 
   const response = await fetch(`${ctx.url}/v1/events/stream?tipo=nao_existe`);
   const body = (await response.json()) as { error: string; details?: string[] };
@@ -295,7 +317,7 @@ test('AT4 — an unknown ?tipo is a 400, and nothing is upgraded to SSE', async 
 
 test('AT5 — Last-Event-ID resumes without gaps and without repeating', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes);
-  const ctx = await startControlPlane(t);
+  const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
   const first = await openStream(`${url}/v1/events/stream`);
@@ -326,7 +348,7 @@ test('AT5 — Last-Event-ID resumes without gaps and without repeating', async (
 
 test('AT6 — without Last-Event-ID the stream never replays what is already in the log', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes);
-  const ctx = await startControlPlane(t);
+  const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
   const old = await createJob(ctx, { titulo: 'já estava no log', no_entrada_id: 'entrada' });
@@ -347,7 +369,7 @@ test('AT6 — without Last-Event-ID the stream never replays what is already in 
 
 test('AT7 — an idle stream sends the keep-alive comment', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes);
-  const ctx = await startControlPlane(t);
+  const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, {
     pollIntervalMs: 20,
     heartbeatIntervalMs: 20,
@@ -367,7 +389,7 @@ test('AT7 — an idle stream sends the keep-alive comment', async (t) => {
 
 test('AT8 — a client that goes away leaves no timer and no error behind', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes);
-  const ctx = await startControlPlane(t);
+  const ctx = await startAuthorizedControlPlane(t);
   const { url, app } = await startStreamApp(t, ctx, {
     pollIntervalMs: 20,
     heartbeatIntervalMs: 20,

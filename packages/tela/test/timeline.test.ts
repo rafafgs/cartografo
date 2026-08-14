@@ -110,7 +110,7 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
   });
   assert.equal(answered.status, 200);
 
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
   const page = await openPage(screen, `/trabalhos/${job.id}`);
 
   assert.equal(page.status, 200);
@@ -189,7 +189,7 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
 test('t107 AT7 — a nonexistent job is a 404 on the screen', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
-  const screen = await startScreen(t, cp.url);
+  const screen = await startScreen(t, cp);
 
   const page = await openPage(screen, '/trabalhos/424242');
   assert.equal(page.status, 404, 'a job is an entity: absence is a 404, not an empty page');

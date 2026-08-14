@@ -43,8 +43,13 @@ Accept: text/event-stream
 |---|---|
 | Resposta | `200` com `content-type: text/event-stream`, corpo aberto por tempo indeterminado |
 | Cabeçalhos | `cache-control: no-cache, no-transform`, `connection: keep-alive`, `x-accel-buffering: no` |
-| Autenticação | nenhuma — como em toda rota da v1 |
+| Autenticação | `Authorization: Bearer <token>` — obrigatória, como em toda rota da v1 desde a `t124` |
 | Limite de conexões | nenhum; também não há rate limit nem backpressure por cliente |
+
+O token é o mesmo que o control plane imprime na primeira partida (`bootstrapToken`
+na linha `cartografo.ready`) e que o CLI lê de `CARTOGRAFO_TOKEN`. Ele vai no
+cabeçalho da requisição que ABRE o stream; depois disso não há renegociação —
+uma credencial revogada só é notada na próxima conexão.
 
 Um consumidor lento **não** segura o control plane: a conexão lê a tabela por
 conta própria, num relógio próprio, e não está ligada ao caminho de escrita. O
@@ -170,6 +175,18 @@ conexão **nunca** chega a virar `text/event-stream`:
 
 `details` traz a lista inteira dos problemas, não só o primeiro.
 
+Antes ainda dos filtros vem a credencial (§2). Sem ela, ou com uma que não
+resolve, a resposta é `401` — também `application/json`, também sem virar
+`text/event-stream`:
+
+```json
+{"erro": "credencial_ausente", "mensagem": "esta rota exige `Authorization: Bearer <token>` — ..."}
+```
+
+`credencial_ausente` é "não veio cabeçalho usável" e `credencial_invalida` é
+"veio e não vale (desconhecida ou revogada)". Nenhum dos dois melhora com
+retentativa: é configuração, não indisponibilidade.
+
 Depois que o stream abriu, não há corpo de erro possível: o que existe é a
 conexão cair. Trate queda como reconexão (§5), não como falha.
 
@@ -180,21 +197,27 @@ conexão cair. Trate queda como reconexão (§5), não como falha.
 Node ≥ 20, nada instalado. Ele reconecta sozinho pelo cursor:
 
 ```javascript
-// events-stream.mjs — node events-stream.mjs [http://127.0.0.1:4317]
+// events-stream.mjs — CARTOGRAFO_TOKEN=... node events-stream.mjs [http://127.0.0.1:4317]
 const base = process.argv[2] ?? 'http://127.0.0.1:4317';
+const token = process.env.CARTOGRAFO_TOKEN;
 const query = new URLSearchParams({ tipo: 'trabalho.criado,trabalho.transicao' });
 
 let lastEventId = null;
 
 // Reconectar é trabalho do cliente: o servidor não guarda nada da conexão, e o
-// `Last-Event-ID` é o que faz a retomada não ter buraco nem repetição.
+// `Last-Event-ID` é o que faz a retomada não ter buraco nem repetição. A
+// credencial vai em toda tentativa: cada reconexão é uma requisição nova.
 for (;;) {
   try {
     const response = await fetch(`${base}/v1/events/stream?${query}`, {
-      headers: lastEventId === null ? {} : { 'Last-Event-ID': lastEventId },
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(lastEventId === null ? {} : { 'Last-Event-ID': lastEventId }),
+      },
     });
 
-    // 400 é contrato errado (filtro inválido): insistir não conserta.
+    // 400 é contrato errado (filtro inválido) e 401 é credencial: insistir não
+    // conserta nenhum dos dois.
     if (!response.ok) {
       console.error(`stream recusado (${response.status}):`, await response.text());
       break;
@@ -256,6 +279,13 @@ stream.addEventListener('trabalho.transicao', (message) => {
 });
 ```
 
+Com uma ressalva desde a `t124`: `EventSource` não deixa mandar cabeçalho, e a
+rota exige um. Esse trecho só funciona atrás de uma origem que anexe a
+credencial pelo navegador — que é exatamente o papel da tela (D11: ela guarda um
+token de serviço e o repassa, o navegador não apresenta nenhum). O repasse
+`/v1/*` da tela ainda espera o corpo terminar antes de responder, e um corpo SSE
+não termina, então esse caminho está listado na §10.
+
 ---
 
 ## 9. Garantias, e o que elas custam
@@ -270,7 +300,9 @@ stream.addEventListener('trabalho.transicao', (message) => {
 
 O que **não** existe nesta versão: entrega garantida (se ninguém estiver
 conectado, ninguém recebe — o log é que é a fonte da verdade, e ele continua
-lá), autenticação, e limite de conexões simultâneas.
+lá), limite de conexões simultâneas, e escopo de credencial — o token que abre
+o stream é o mesmo que abre toda a `/v1` (`t124`), não um credenciamento só de
+leitura.
 
 ---
 
@@ -280,3 +312,9 @@ lá), autenticação, e limite de conexões simultâneas.
 quer manter uma conexão aberta. É ficha dependente desta, e é o que falta para
 fechar o ponto de extensão nº 5. Até lá, o stream é o transporte oficial para
 fora.
+
+**O stream atravessando a tela** — o repasse `/v1/*` de `packages/tela` lê a
+resposta inteira antes de devolvê-la, o que serve para JSON e não serve para um
+corpo que nunca acaba. Enquanto isso não mudar, o `EventSource` da §8 não tem
+por onde entrar: consumir o stream é coisa de cliente fora do navegador, com o
+cabeçalho na mão.

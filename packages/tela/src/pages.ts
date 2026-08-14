@@ -22,9 +22,10 @@
  *
  * ## Escaping is not a detail
  *
- * A job title, a question text and a block reason are outside data, written by
- * an API that still has no authentication (t124). Everything that goes into
- * HTML passes through `escapeHtml`, with no exception.
+ * A job title, a question text and a block reason are outside data: they were
+ * written by an agent, through an API whose credential (t124) says nothing about
+ * the CONTENT it carries. Everything that goes into HTML passes through
+ * `escapeHtml`, with no exception.
  */
 
 import type { ApiClient, ExecutionSummary, Job, Question, Session } from './client.ts';
@@ -37,8 +38,8 @@ export interface Page {
 }
 
 /**
- * Who is recorded as the author of an answer while there is no authentication
- * (t124).
+ * Who is recorded as the author of an answer, given that the screen holds one
+ * service credential and asks the browser for none (t124, D11).
  *
  * Deliberately honest: recording "tela" is saying the answer came through this
  * door, which is all the system actually knows. Inventing a user would be worse

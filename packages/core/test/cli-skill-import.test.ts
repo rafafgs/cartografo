@@ -28,6 +28,7 @@ import test from 'node:test';
 
 import {
   PACKAGE_ROOT,
+  type RunningControlPlane,
   looksLikeStackTrace,
   runCli,
   startControlPlane,
@@ -88,7 +89,7 @@ function contentHash(manifest: Record<string, unknown>): string {
 async function scan(
   source: string,
   destination: string,
-  url: string,
+  controlPlane: RunningControlPlane,
   role = 'fazer',
 ): Promise<Draft> {
   const result = await runCli([
@@ -105,8 +106,8 @@ async function scan(
     '--out',
     destination,
     '--url',
-    url,
-  ]);
+    controlPlane.url,
+  ], { token: controlPlane.token });
   assert.equal(result.code, 0, `scan-skill failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
   return JSON.parse(readFileSync(destination, 'utf8')) as Draft;
@@ -158,7 +159,7 @@ test('AT8 — scan-skill derives what it can from a real external SKILL.md and g
     databasePath: path.join(base, 'scan', 'cartografo.db'),
   });
 
-  const draft = await scan(FEATURE_DEV, path.join(base, 'feature-dev.manifest.json'), controlPlane.url);
+  const draft = await scan(FEATURE_DEV, path.join(base, 'feature-dev.manifest.json'), controlPlane);
 
   assert.equal(draft.id, 'feature-dev', 'the id is the kebab-case of the frontmatter name');
   assert.equal(draft.versao, '0.1.0', 'a new import is always 0.1.0 (D4)');
@@ -220,10 +221,10 @@ test('AT9 — propose-skill opens a blocking human gate, never auto-approvable',
     databasePath: path.join(base, 'propose', 'cartografo.db'),
   });
 
-  const draft = await scan(FEATURE_DEV, path.join(base, 'draft.json'), controlPlane.url);
+  const draft = await scan(FEATURE_DEV, path.join(base, 'draft.json'), controlPlane);
   const manifestPath = writeManifest(path.join(base, 'final.json'), complete(draft));
 
-  const result = await runCli(['propose-skill', manifestPath, '--url', controlPlane.url]);
+  const result = await runCli(['propose-skill', manifestPath, '--url', controlPlane.url], { token: controlPlane.token });
   assert.equal(result.code, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   const ids = proposedIds(result.stdout);
 
@@ -267,11 +268,11 @@ test('AT10 — scan, complete, propose, approve, register: the whole D4 gate', {
     databasePath: path.join(base, 'gate', 'cartografo.db'),
   });
 
-  const draft = await scan(FEATURE_DEV, path.join(base, 'draft.json'), controlPlane.url);
+  const draft = await scan(FEATURE_DEV, path.join(base, 'draft.json'), controlPlane);
   const finalized = complete(draft);
   const manifestPath = writeManifest(path.join(base, 'final.json'), finalized);
 
-  const proposal = await runCli(['propose-skill', manifestPath, '--url', controlPlane.url]);
+  const proposal = await runCli(['propose-skill', manifestPath, '--url', controlPlane.url], { token: controlPlane.token });
   assert.equal(proposal.code, 0, `stdout:\n${proposal.stdout}\nstderr:\n${proposal.stderr}`);
   const ids = proposedIds(proposal.stdout);
 
@@ -289,7 +290,7 @@ test('AT10 — scan, complete, propose, approve, register: the whole D4 gate', {
     String(ids.job),
     '--url',
     controlPlane.url,
-  ]);
+  ], { token: controlPlane.token });
   assert.equal(
     registration.code,
     0,
@@ -325,7 +326,7 @@ test('AT11 — a skill with no derivable check is refused by the registry, even 
     databasePath: path.join(base, 'refused', 'cartografo.db'),
   });
 
-  const draft = await scan(NO_DERIVABLE_CHECK, path.join(base, 'draft.json'), controlPlane.url);
+  const draft = await scan(NO_DERIVABLE_CHECK, path.join(base, 'draft.json'), controlPlane);
   assert.equal(draft.id, 'architecture-review');
   assert.deepEqual(draft.checks, [], 'pure prose yields no check, and none is invented');
 
@@ -334,7 +335,7 @@ test('AT11 — a skill with no derivable check is refused by the registry, even 
   const finalized = complete(draft);
   const manifestPath = writeManifest(path.join(base, 'final.json'), finalized);
 
-  const proposal = await runCli(['propose-skill', manifestPath, '--url', controlPlane.url]);
+  const proposal = await runCli(['propose-skill', manifestPath, '--url', controlPlane.url], { token: controlPlane.token });
   assert.equal(proposal.code, 0, `stdout:\n${proposal.stdout}\nstderr:\n${proposal.stderr}`);
   const ids = proposedIds(proposal.stdout);
 
@@ -351,7 +352,7 @@ test('AT11 — a skill with no derivable check is refused by the registry, even 
     String(ids.job),
     '--url',
     controlPlane.url,
-  ]);
+  ], { token: controlPlane.token });
   assert.equal(registration.code, 1, `expected exit 1\nstdout:\n${registration.stdout}\nstderr:\n${registration.stderr}`);
   assert.match(registration.stderr, /no derivable check/i);
   assert.equal(looksLikeStackTrace(registration.stderr), false, `a stack trace leaked:\n${registration.stderr}`);

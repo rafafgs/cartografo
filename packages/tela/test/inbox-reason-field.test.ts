@@ -14,9 +14,12 @@
  * by `for`/`id`), so the page is free to change how it gets there as long as
  * the name is there. `fake-dom.ts` explains why the DOM is a stub.
  *
- * Action names stay in Portuguese because they are the API's vocabulary — the
- * path of `POST /v1/propostas/:id/rejeitar` — and not this package's own
- * identifiers (D18).
+ * Action names are the API's vocabulary — `reject` IS the path of
+ * `POST /v1/proposals/:id/reject` — and not this package's own identifiers, so
+ * they were renamed to English with the rest of the `/v1` surface (t127,
+ * FR3/FR4, D18). The labels this test clicks ("Rejeitar", "Reverter") stay in
+ * Portuguese, like the rest of the page: the key and the label are two
+ * different vocabularies and only one of them moved.
  */
 
 import assert from 'node:assert/strict';
@@ -74,13 +77,17 @@ function tick(): Promise<void> {
  * The detail pane asks for one proposal at a time; nothing in these tests
  * reaches a POST, since opening the reason field is what is under test and it
  * never calls the API.
+ *
+ * The route is English and the envelope keys are not: `inbox.js` reads
+ * `propostas` / `proposta` out of the body. t127 renamed the paths of `/v1`,
+ * not the shape of what comes back through them.
  */
 async function openInbox(proposals: readonly Record<string, unknown>[]): Promise<FakeDocument> {
   const mount = await loadMount();
   const doc = new FakeDocument(PAGE_IDS);
 
   const request = async (url: string): Promise<Response> => {
-    const match = /\/v1\/propostas\/(?<id>[^/]+)$/.exec(url);
+    const match = /\/v1\/proposals\/(?<id>[^/]+)$/.exec(url);
     const body =
       match === null
         ? { propostas: proposals }
@@ -131,7 +138,7 @@ test('AT1 — the reason field of Rejeitar has an accessible name', async () => 
   const { ACTIONS } = await loadActions();
   assert.equal(
     accessibleNameOf(row, input),
-    ACTIONS.rejeitar.reasonLabel,
+    ACTIONS.reject.reasonLabel,
     'the reason field must say what it is for; a placeholder is not a name',
   );
 });
@@ -144,7 +151,7 @@ test('AT2 — the reason field of Reverter has an accessible name', async () => 
 
   const input = only(row.byClass('reason-input'), 'reason field');
   const { ACTIONS } = await loadActions();
-  assert.equal(accessibleNameOf(row, input), ACTIONS.reverter.reasonLabel);
+  assert.equal(accessibleNameOf(row, input), ACTIONS.revert.reasonLabel);
 });
 
 test('AT3 — the name is tied to the field, and survives someone typing into it', async () => {
@@ -190,8 +197,8 @@ test('AT4 — two rows with the field open keep one name each', async () => {
   const page = doc.require('pending-list');
   const { ACTIONS } = await loadActions();
   // Resolved over the whole list, which is where a duplicate id would show up.
-  assert.equal(accessibleNameOf(page, firstInput), ACTIONS.rejeitar.reasonLabel);
-  assert.equal(accessibleNameOf(page, secondInput), ACTIONS.rejeitar.reasonLabel);
+  assert.equal(accessibleNameOf(page, firstInput), ACTIONS.reject.reasonLabel);
+  assert.equal(accessibleNameOf(page, secondInput), ACTIONS.reject.reasonLabel);
 });
 
 test('AT5 — cancelling puts the buttons back and leaves no orphan label', async () => {

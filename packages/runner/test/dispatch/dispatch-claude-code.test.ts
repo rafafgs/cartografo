@@ -222,6 +222,52 @@ function linesWithoutBlock(): string {
   ]);
 }
 
+/** The engine's own answer when a tool the policy denied is attempted (t125). */
+const DENIAL_TEXT = 'Claude requested permissions to use WebFetch, but you have not granted it.';
+
+/** The frames of a session that tried a denied tool and was told no. */
+function linesWithDenial(): string {
+  return JSON.stringify([
+    {
+      stream: 'stdout',
+      text: JSON.stringify({
+        type: 'assistant',
+        session_id: 'cc-t125',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_t125',
+              name: 'WebFetch',
+              input: { url: 'https://example.com' },
+            },
+          ],
+        },
+      }),
+    },
+    {
+      stream: 'stdout',
+      text: JSON.stringify({
+        type: 'user',
+        session_id: 'cc-t125',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_t125',
+              is_error: true,
+              content: DENIAL_TEXT,
+            },
+          ],
+        },
+      }),
+    },
+    { stream: 'stdout', text: 'Sem rede, segui pelo que já estava no repositório.' },
+  ]);
+}
+
 test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP', async (t) => {
   const { ClienteControle } = await loadModule<typeof ClientModule>(
     'src/controller/cliente-controle.ts',
@@ -413,4 +459,87 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
     sessions.sessoes[1].prompt.includes(ANSWER),
     'the persisted prompt of the second session carries the answer, for the audit trail',
   );
+});
+
+test('t125 — a denied tool becomes one permission-denial call, and does not fail the dispatch', async (t) => {
+  const { ClienteControle } = await loadModule<typeof ClientModule>(
+    'src/controller/cliente-controle.ts',
+  );
+  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const baseUrl = await startControlPlane(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t125-workdir-'));
+  const record = path.join(workDir, 'despacho-com-negacao.json');
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const client = new ClienteControle({ urlBase: baseUrl });
+  await client.registrarRunner('runner-t125', 'o que despacha com política de permissão');
+
+  const work = await api<Work>(
+    baseUrl,
+    'POST',
+    '/v1/jobs',
+    { titulo: 'ficha com skill de terceiro', no_entrada_id: 'implementar', execucao_id: 9 },
+    201,
+  );
+
+  // A spy in front of the real `fetch`: the claim is "exactly one call, with
+  // this body", and the control plane on the other side is real — so the same
+  // test proves the route accepts what the runner sends.
+  const calls: Array<{ method: string; route: string; body: unknown }> = [];
+  const doFetch: typeof fetch = async (input, init) => {
+    calls.push({
+      method: init?.method ?? 'GET',
+      route: String(input).slice(baseUrl.length),
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+    });
+    return fetch(input, init);
+  };
+
+  const adapter = new ClaudeCodeAdapter({
+    commandBuilder: (spec) => ({
+      command: process.execPath,
+      args: [FAKE_ENGINE, ...buildCommand(spec).args],
+    }),
+    graceMs: 300,
+  });
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    adapter,
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    doFetch,
+    permissions: { filesystem: { write: ['**'] }, network: { allowed: false } },
+    envOverrides: { FAKE_ENGINE_RECORD: record, FAKE_ENGINE_LINES: linesWithDenial() },
+  });
+
+  // Asking is not failing, and neither is being denied: the dispatch of a
+  // session that tried a closed door resolves normally.
+  await dispatch(work.id);
+
+  const sessions = await api<{ sessoes: Session[] }>(baseUrl, 'GET', '/v1/sessions?execucao_id=9');
+  assert.equal(sessions.sessoes.length, 1);
+  const session = sessions.sessoes[0];
+  assert.equal(session.status, 'concluida', 'a denial is an incident, never a terminal status');
+
+  const denials = calls.filter((call) => call.route.endsWith('/permission-denials'));
+  assert.equal(denials.length, 1, `expected exactly one denial call, got ${denials.length}`);
+  assert.equal(denials[0].method, 'POST');
+  assert.equal(denials[0].route, `/v1/sessions/${session.id}/permission-denials`);
+  assert.deepEqual(denials[0].body, {
+    recurso: 'rede',
+    ferramenta: 'WebFetch',
+    motivo: DENIAL_TEXT,
+    ator: { tipo: 'sistema', ref: 'runner' },
+  });
+
+  // ...and the policy really reached the engine process, by the only channel
+  // that counts: the argv (case C2's discipline).
+  const received = JSON.parse(readFileSync(record, 'utf8')) as FakeRecord;
+  assert.ok(received.argv.includes('--disallowedTools'));
+  assert.ok(received.argv.includes('WebFetch'));
 });

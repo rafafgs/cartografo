@@ -95,15 +95,28 @@ Quatro regras fecham a definição:
 2. **O que não terminou fica aberto** (`fim: null`) e **não entra nos totais**.
    Fechar um segmento com o relógio de quem abriu a página inventaria um fato
    que o log não tem.
-3. **Trabalho concluído é derivado**, porque a API não tem campo de estado
-   terminal: sem sessão aberta, sem pergunta pendente e sem bloqueio. É esse
-   critério — e só ele — que fecha o último segmento de fila. Um trabalho
-   bloqueado e parado continua acumulando fila, em aberto; é exatamente o tempo
-   que ninguém quer ver crescendo sem explicação.
+3. **Trabalho concluído é o `concluido` do servidor**, mais o que só a tela sabe.
+   O campo vem de `GET /v1/jobs/:id` e responde a uma pergunta que a tela não
+   teria como responder sozinha: o nó atual do trabalho está entre os
+   `nos_finais` da versão de grafo dele (e ele não está bloqueado). É o único
+   sinal terminal que este sistema tem — não existe evento `trabalho.concluido`
+   na taxonomia, e `nos_finais` mora no snapshot do grafo, longe de qualquer
+   resposta que a tela leia. Sobre esse campo a reconstrução ainda exige **nada
+   aberto e nada bloqueado**: uma sessão aberta ou uma pergunta pendente
+   seguram o trabalho por mais terminal que seja o nó. É esse critério
+   composto — e só ele — que fecha o último segmento de fila.
+
+   Até o `t152` a regra era só "nada aberto e sem bloqueio", porque campo
+   terminal não havia. Ela dava por **concluído** todo trabalho recém-criado:
+   com um único `trabalho.criado` no log, nada está aberto porque nada começou.
+   Um trabalho parado entre duas sessões caía na mesma armadilha — justamente
+   a espera que esta linha do tempo existe para tornar visível. Um trabalho
+   bloqueado e parado, esse, continua acumulando fila, em aberto; é exatamente
+   o tempo que ninguém quer ver crescendo sem explicação.
 4. **A reconstrução é uma função pura** e não olha o relógio
-   ([`linha-do-tempo.ts`](../../packages/tela/src/linha-do-tempo.ts)): as mesmas
-   três respostas produzem a mesma linha do tempo hoje e daqui a um mês. É o que
-   a torna testável sem tempo real.
+   ([`timeline.ts`](../../packages/tela/src/timeline.ts)): as mesmas entradas —
+   as três respostas e o `concluido` da regra 3 — produzem a mesma linha do
+   tempo hoje e daqui a um mês. É o que a torna testável sem tempo real.
 
 ### Por que três fontes, e não uma
 

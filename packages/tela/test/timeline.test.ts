@@ -186,6 +186,31 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
   );
 });
 
+test('t152 — GET /trabalhos/:id on a freshly created job says "em curso", never "concluído"', async (t) => {
+  requireArtifacts(
+    T107_ARTIFACTS.client,
+    T107_ARTIFACTS.timeline,
+    T107_ARTIFACTS.pages,
+    T107_ARTIFACTS.router,
+  );
+  const cp = await startControlPlane(t);
+
+  // Nothing but `trabalho.criado`: no session, no question, no graph version.
+  // It is the most common state on a board — and the one the old heuristic
+  // reported as finished, because "nothing is open" was read as "it is over".
+  const job = await createJob(cp, { titulo: 'acabou de nascer', no_entrada_id: 'refinar' });
+
+  const screen = await startScreen(t, cp);
+  const page = await openPage(screen, `/trabalhos/${job.id}`);
+
+  assert.equal(page.status, 200);
+  assert.ok(
+    !page.html.includes('concluído'),
+    'a job one event old was never finished, and the screen must not say so',
+  );
+  assert.ok(page.html.includes('em curso'), 'it is waiting for someone: that is what it shows');
+});
+
 test('t107 AT7 — a nonexistent job is a 404 on the screen', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
@@ -239,6 +264,10 @@ test('t107 AT7 — the three-bucket rule, as a pure function', async () => {
         respondida_em: instant(50),
       },
     ],
+    // The server's answer, not a re-derivation here (t152): the job walked to a
+    // final node of its graph version, and that is the only terminal signal
+    // this system has.
+    concluido: true,
   });
 
   assert.deepEqual(
@@ -305,6 +334,7 @@ test('t107 AT7 — an open session and a pending question stay open, and the job
         respondida_em: null,
       },
     ],
+    concluido: false,
   });
 
   assert.deepEqual(
@@ -345,6 +375,7 @@ test('t107 AT7 — a blocked, parked job keeps accruing queue, left open', async
     ],
     sessions: [],
     questions: [],
+    concluido: false,
   });
 
   assert.equal(timeline.blocked, true);
@@ -353,5 +384,76 @@ test('t107 AT7 — a blocked, parked job keeps accruing queue, left open', async
     timeline.segments.map((segment) => [segment.category, segment.start, segment.end]),
     [['fila', instant(0), null]],
     'with nothing open and no completion, the current queue goes on running',
+  );
+});
+
+test('t152 — a job one event old is not done: nothing open is not the same as finished', async () => {
+  requireArtifacts(T107_ARTIFACTS.timeline);
+  const { buildTimeline } = (await import(
+    new URL('../src/timeline.ts', import.meta.url).href
+  )) as typeof TimelineModule;
+
+  const timeline = buildTimeline({
+    events: [
+      {
+        id: 1,
+        tipo: 'trabalho.criado',
+        ocorrido_em: '2026-08-15T10:00:00.000Z',
+        dados: { titulo: 'x', no_entrada_id: 'redigir' },
+      },
+    ],
+    sessions: [],
+    questions: [],
+    concluido: false,
+  });
+
+  assert.equal(
+    timeline.done,
+    false,
+    'a job that only exists has nothing open BECAUSE nothing has started — that is waiting, not done',
+  );
+  assert.deepEqual(
+    timeline.segments.map((segment) => [segment.category, segment.start, segment.end]),
+    [['fila', '2026-08-15T10:00:00.000Z', null]],
+    'and the queue it is sitting in goes on running, in the open',
+  );
+});
+
+test('t152 — concluído from the server is necessary, never sufficient: an open session keeps the job open', async () => {
+  requireArtifacts(T107_ARTIFACTS.timeline);
+  const { buildTimeline } = (await import(
+    new URL('../src/timeline.ts', import.meta.url).href
+  )) as typeof TimelineModule;
+
+  const instant = (minute: number): string =>
+    `2026-08-15T10:${String(minute).padStart(2, '0')}:00.000Z`;
+
+  const timeline = buildTimeline({
+    events: [
+      {
+        id: 1,
+        tipo: 'trabalho.criado',
+        ocorrido_em: instant(0),
+        dados: { titulo: 'x', no_entrada_id: 'revisar' },
+      },
+      { id: 2, tipo: 'sessao.aberta', ocorrido_em: instant(10), dados: { trabalho_id: 1 } },
+    ],
+    sessions: [
+      {
+        id: 1,
+        engine: 'claude-code',
+        status: 'aberta',
+        aberta_em: instant(10),
+        finalizada_em: null,
+      },
+    ],
+    questions: [],
+    concluido: true,
+  });
+
+  assert.equal(
+    timeline.done,
+    false,
+    'somebody is still holding the job: what the projection says about the node does not close it',
   );
 });

@@ -72,3 +72,48 @@ backlog→to_refine):**
 t176 em to_develop, t177 em developing (são os bugs de paridade do bundle,
 prioridade 3 — na frente de tudo); t178 e t180 em backlog aguardando a regra
 2; 14 tickets em backlog no total; 4 sessões rodando; 0 perguntas pendentes.
+
+---
+
+## Addendum 2026-08-15 ~19:4x (incidente real, corrige a regra 3 acima)
+
+**Regra 3 como escrita acima é insegura: NUNCA libere por rank sem antes ler
+o corpo INTEIRO do ticket candidato.** Boa parte do backlog carrega uma nota
+própria que veta ou condiciona a liberação, e a regra de rank não sabe disso.
+Aconteceu duas vezes hoje (18:25→18:32 revertido a tempo; 19:35 o controller
+já tinha puxado o ticket para `refining` em 14s antes do revert — sem aresta
+de usuário `refining→backlog`, a sessão teve que ser cancelada via API e o
+ticket ficou "preso" em `refining`/`awaiting_input=1` sem sessão viva e sem
+pergunta pendente. Rafael decidiu ao vivo: **deixar bloqueado até ele
+liberar** — não tentar desbloquear nem re-tentar o refino).
+
+**Levantamento feito no incidente (vale para qualquer sessão futura até o
+PoC ser aceito):**
+- **t121** (open source prep, rank 26.0): nota própria "do not release
+  before the PoC (t109) is accepted against the D16 bar". **Preso em
+  `refining`/awaiting_input desde o incidente — Rafael pediu para DEIXAR
+  ASSIM até ele mesmo liberar. Não tocar.**
+- **t144** (NL intake, rank 27.0): nota própria "ranking/releasing it is
+  the founder's call" — não é sobre o PoC, é founder-only. Não liberar
+  nunca via regra 3.
+- **t166–t175** (toda a onda de melhoria restante, ranks 27.0–36.0): TODOS
+  carregam a mesma nota — "Post-PoC improvement: release at the
+  monitoring's discretion, never before t109 is accepted." Ou seja: a
+  liberação DESSES é delegada à monitoria, mas só depois do t109 (PoC) sair
+  de `to_develop`, rodar, e ser aceito contra a barra D16 — "aceito" é
+  julgamento do Rafael, não é só `state == done`. Enquanto isso não
+  acontecer, a regra 3 não tem NADA para liberar nesse intervalo — é
+  esperado o ciclo reportar "sem candidato elegível", não forçar algo.
+- **t178**: corpo tem um adendo próprio ("Post-PoC unless the monitoring
+  judges it cheaper to do before the PoC report freezes examples") — ler
+  o corpo inteiro antes de aplicar a regra 2 também, não assumir que a
+  regra 2 do topo é a única condição.
+
+**Mandato de 2026-08-15 ~19:4x (Rafael, indo dormir): "pode ir liberando
+aos poucos os tickets até acabar e tomar decisões se necessário sem mim."**
+Delegação ampla para decisões operacionais e de ritmo. NÃO cobre: (a)
+desbloquear t109 (regra 1 permanece — sempre avisar e esperar a ordem
+dele, mesmo de manhã), (b) forçar t121 adiante (ele pediu explicitamente
+para ficar como está), (c) decisão de produto genuinamente nova ou algo
+que mexeria em DECISOES.md (isso continua escalando — registrar para a
+manhã, não adivinhar).

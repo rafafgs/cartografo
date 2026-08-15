@@ -212,6 +212,13 @@ export function createInputRequest(
  * answered, the gate when it was automatic. The taxonomy asks for this explicitly
  * on `trabalho.desbloqueado`, and it is what stops the audit from concluding that
  * "the system" unblocked everything a human unblocked.
+ *
+ * Closing is exactly-once: the `UPDATE` is guarded by `status = 'pendente'` and a
+ * lost claim throws, the same shape `amendDraft`/`applyProposal`/`renewLease`
+ * already use (t149). The route answers 409 for the sequential retry; this guard
+ * is the backstop for two callers racing over the same input request.
+ *
+ * @throws {Error} When the input request stopped being pending mid-flight.
  */
 function answer(
   db: Database,
@@ -233,11 +240,22 @@ function answer(
 
   const close = db.transaction((): InputRequest => {
     const timestamp = now();
-    db.prepare(
-      `UPDATE pergunta
-          SET status = 'respondida', resposta = ?, respondido_por = ?, origem = ?, respondida_em = ?
-        WHERE id = ?`,
-    ).run(data.resposta as string, answeredBy, origin, timestamp, id);
+    const effect = db
+      .prepare(
+        `UPDATE pergunta
+            SET status = 'respondida', resposta = ?, respondido_por = ?, origem = ?, respondida_em = ?
+          WHERE id = ? AND status = 'pendente'`,
+      )
+      .run(data.resposta as string, answeredBy, origin, timestamp, id);
+
+    // The whole transaction falls if the input request stopped being pending
+    // between the route's check and this UPDATE: answering twice is a 409, never
+    // a second answer over the first (t149). Throwing HERE, before the two
+    // writes below, is what keeps the contradictory event and the unblock from
+    // happening at all.
+    if (effect.changes !== 1) {
+      throw new Error(`input request ${id} stopped being pending during the answer`);
+    }
 
     recordEvent(db, {
       tipo: type,
@@ -254,6 +272,10 @@ function answer(
     // time, and "I answered and the job stayed put" is the worst possible outcome
     // for whoever just answered. A non-existent job returns `null` and does
     // nothing — the input request stays answered.
+    //
+    // What makes that safe is the guard above: only an answer that actually
+    // closed a PENDING input request ever gets here, so a retried answer can no
+    // longer unblock a job that is meanwhile waiting on a different question.
     unblockJob(db, row.trabalho_id, { ator: actor });
 
     return toInputRequest(readRow(db, id) as InputRequestRow);

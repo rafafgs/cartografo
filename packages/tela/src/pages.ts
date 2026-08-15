@@ -429,7 +429,7 @@ export async function jobPage(client: ApiClient, jobId: number): Promise<Page> {
     return errorPage(404, 'trabalho não encontrado', `Não existe trabalho #${jobId}.`);
   }
 
-  const timeline = buildTimeline({ events, sessions, questions });
+  const timeline = buildTimeline({ events, sessions, questions, concluido: job.concluido });
   const state = timeline.done
     ? 'concluído'
     : job.bloqueado

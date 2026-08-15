@@ -12,9 +12,12 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
+  PACKAGE_ROOT,
   T102_ARTIFACTS,
   countEvents,
   createJob,
@@ -33,6 +36,59 @@ const ARTIFACTS = [
   T102_ARTIFACTS.jobRepository,
   T102_ARTIFACTS.jobRoutes,
 ];
+
+/** The route that turns a graph document into a version with a snapshot. */
+const GRAPH_ROUTES = 'src/routes/graphs.ts';
+
+/**
+ * The minimal example graph: entry node `redigir`, single final node `revisar`.
+ *
+ * The real document, not a fixture written here, for the same reason AT6 of
+ * `graph-routes.test.ts` feeds the factory bundle in raw: what the derivation
+ * below reads is the `nos_finais` of a snapshot that went through the
+ * registration gate, and a hand-made snapshot would prove nothing about it.
+ */
+const MINIMAL_GRAPH = path.join(
+  PACKAGE_ROOT,
+  '..',
+  '..',
+  'schema',
+  'exemplos',
+  'grafo-valido-minimo.json',
+);
+
+/**
+ * The job projection with the terminal flag this ticket adds (t152).
+ *
+ * Declared here and not in `support.ts` for the same reason the interfaces over
+ * there are hand-written: this is the contract THIS file demands of the API.
+ */
+type JobProjection = Job & { concluido: boolean };
+
+/**
+ * Registers the minimal example graph.
+ *
+ * @param ctx Control plane running.
+ * @returns Id of the version born with the lineage — the one a job cites.
+ */
+async function registerMinimalGraph(ctx: TestContext): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as unknown;
+  const response = await request<{ grafo_versao: { id: string } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(response.status, 201, `POST /v1/graphs returned ${response.status}`);
+  return response.body.grafo_versao.id;
+}
+
+/** Reads one job's projection off the API. */
+async function readJob(ctx: TestContext, id: number): Promise<JobProjection> {
+  const response = await request<JobProjection>(ctx, 'GET', `/v1/jobs/${id}`);
+  assert.equal(response.status, 200);
+  return response.body;
+}
 
 /** Events of a job, in log order. */
 async function timeline(ctx: TestContext, jobId: number): Promise<Event[]> {
@@ -322,6 +378,122 @@ test('FR3 — a body without a required field answers 400 and records no event',
 
   assert.equal(countEvents(ctx), afterValid, 'an invalid request leaves no trace in the log');
   assert.equal(afterValid, before + 1, 'only the valid job recorded an event');
+});
+
+test('t152 — a job with no graph version is never reported as concluído', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, { titulo: 'recém-nascido', no_entrada_id: 'redigir' });
+  const projection = await readJob(ctx, job.id);
+
+  assert.equal(projection.grafo_versao_id, null);
+  assert.equal(
+    projection.concluido,
+    false,
+    'with no graph attached there is no nos_finais to derive a terminal state from',
+  );
+});
+
+test('t152 — concluído is "the current node is a final node of the job\'s graph version"', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+
+  const job = await createJob(ctx, {
+    titulo: 'a nota curta',
+    no_entrada_id: 'redigir',
+    grafo_versao_id: versionId,
+  });
+
+  const atEntry = await readJob(ctx, job.id);
+  assert.equal(atEntry.no_atual, 'redigir');
+  assert.equal(
+    atEntry.concluido,
+    false,
+    'the entry node is not in nos_finais: the traveller has not arrived',
+  );
+
+  const moved = await request<JobProjection>(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {
+    para_no_id: 'revisar',
+  });
+  assert.equal(moved.status, 200);
+
+  const atFinal = await readJob(ctx, job.id);
+  assert.equal(atFinal.no_atual, 'revisar');
+  assert.equal(
+    atFinal.concluido,
+    true,
+    '`revisar` is the only node in the version\'s nos_finais: the walk is over',
+  );
+});
+
+test('t152 — a blocked job is not concluído, even parked on a final node', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+
+  const job = await createJob(ctx, {
+    titulo: 'a nota que travou no fim',
+    no_entrada_id: 'redigir',
+    grafo_versao_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { para_no_id: 'revisar' });
+  assert.equal((await readJob(ctx, job.id)).concluido, true, 'it got there before blocking');
+
+  const blocked = await request<JobProjection>(ctx, 'POST', `/v1/jobs/${job.id}/blocks`, {
+    motivo: 'a revisão parou esperando alguém',
+  });
+  assert.equal(blocked.status, 200);
+
+  const projection = await readJob(ctx, job.id);
+  assert.equal(projection.bloqueado, true);
+  assert.equal(
+    projection.concluido,
+    false,
+    'a block always stops "done" from being reported, wherever the job is standing',
+  );
+});
+
+test('t152 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+
+  const arrived = await createJob(ctx, {
+    titulo: 'chegou ao fim',
+    no_entrada_id: 'redigir',
+    grafo_versao_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${arrived.id}/transitions`, { para_no_id: 'revisar' });
+
+  const walking = await createJob(ctx, {
+    titulo: 'ainda no meio',
+    no_entrada_id: 'redigir',
+    grafo_versao_id: versionId,
+  });
+
+  const list = await request<{ trabalhos: JobProjection[] }>(ctx, 'GET', '/v1/jobs');
+  assert.equal(list.status, 200);
+
+  for (const id of [arrived.id, walking.id]) {
+    const row = list.body.trabalhos.find((candidate) => candidate.id === id);
+    assert.ok(row !== undefined, `job #${id} is missing from the board`);
+    assert.equal(
+      row.concluido,
+      (await readJob(ctx, id)).concluido,
+      'one projection, two routes: the board cannot disagree with the job page',
+    );
+  }
+
+  assert.deepEqual(
+    list.body.trabalhos.map((row) => [row.id, row.concluido]),
+    [
+      [arrived.id, true],
+      [walking.id, false],
+    ],
+    'and the value is the derived one, not a constant',
+  );
 });
 
 test('t127 — the old Portuguese job paths no longer exist', async (t) => {

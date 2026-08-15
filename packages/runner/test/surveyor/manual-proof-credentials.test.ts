@@ -92,11 +92,15 @@ test('AT9 — no call in the manual proof reaches the control plane anonymously'
 
   const dispatch = objectArgument(source, 'createClaudeCodeDispatch');
   assert.ok(dispatch !== null, 'the proof no longer dispatches a session at all');
+  // Until t147 this read `doFetch`: the dispatch had no notion of a credential,
+  // and the only way to arm it was to hand it the wrapper above through its test
+  // seam. t147 gave it a `token` of its own, so the invariant this test defends
+  // is unchanged and only the door it comes through moved.
   assert.match(
     dispatch,
-    /doFetch/,
-    'the two real sessions write their telemetry through the dispatch, which has no token of its ' +
-      'own: it has to receive the arming fetch through its seam',
+    /token/,
+    'the two real sessions write their telemetry through the dispatch, so it has to be handed ' +
+      'the token the boot announced',
   );
 });
 

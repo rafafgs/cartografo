@@ -760,10 +760,14 @@ test('t147 — with a token, the dispatch crosses every route it uses', async (t
   assert.equal(questions.perguntas.length, 1, 'the question reached POST /v1/input-requests');
   assert.equal(questions.perguntas[0].pergunta, ESCALATION.question);
 
+  // The execution stream and not the work timeline: a denial is recorded
+  // against the session and its payload carries no `trabalho_id`, so the work's
+  // own timeline structurally cannot show it — the same contract the t106 test
+  // above records for `sessao.finalizada`.
   const timeline = await api<{ eventos: Event[] }>(
     baseUrl,
     'GET',
-    `/v1/jobs/${work.id}/events`,
+    '/v1/executions/147/events',
     undefined,
     200,
     token,

@@ -86,9 +86,11 @@ let operatorToken = null;
 /**
  * The only `fetch` of this script, and the one that arms the request.
  *
- * `ClienteControle` carries its own token, so it does not come through here;
- * the dispatch does, through its `doFetch` seam, because it has no notion of a
- * credential of its own and giving it one is another ficha.
+ * It serves this script's own `api()` calls and nothing else: `ClienteControle`
+ * carries its own token, and since t147 so does the dispatch. Threading this
+ * closure in through the dispatch's `doFetch` seam is how this proof worked
+ * around a dispatcher that had no notion of a credential — the seam was never
+ * the fix, and the workaround retired with the defect.
  *
  * @param {string | URL | Request} input Target of the request.
  * @param {RequestInit} [init] The rest of the request.
@@ -225,7 +227,7 @@ async function main() {
         workingDir: repo,
         timeoutSeconds: TIMEOUT_SECONDS,
         instructions: nodeInstructions(node, task),
-        doFetch: authorizedFetch,
+        token: operatorToken,
       })(job.id);
 
     log('real session #1 — node "redigir"...');

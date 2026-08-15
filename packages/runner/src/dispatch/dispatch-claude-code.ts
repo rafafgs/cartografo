@@ -139,6 +139,22 @@ export interface ClaudeCodeDispatchOptions {
    * whoever wires both passes the same value to both.
    */
   urlBase: string;
+  /**
+   * Credential presented on every call (t124, t147).
+   *
+   * Generic on purpose: any token this control plane accepts. In production it
+   * has to be the operator token, and that is not a shortcut — the five routes
+   * a pairing credential reaches (`RUNNER_SURFACE`, `packages/core/src/auth.ts`)
+   * do not include a single one of the seven this module calls, so a runner
+   * credential answers `403 credencial_fora_de_escopo` on all of them rather
+   * than degrading into anything usable. Cutting a credential that reaches
+   * exactly these routes is another ticket, the same one t146 deferred for the
+   * flow surveyor (`docs/spec/topografo-fluxo.md`).
+   *
+   * With no token no header goes out, and the API answers 401 — which is the
+   * honest outcome: an empty header would look like a credential.
+   */
+  token?: string;
   /** The engine. Production passes `ClaudeCodeAdapter`; tests pass a fake. */
   adapter: EngineAdapter;
   /** Where the session runs — typically an isolated git worktree. */
@@ -330,10 +346,20 @@ export function createClaudeCodeDispatch(
   const doFetch = options.doFetch ?? fetch;
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
 
+  // Headers of every call: the body's `content-type`, when there is a body, and
+  // the credential. Built once — the seven routes below are one client, and a
+  // route that assembled its own headers is a route that could forget them.
+  const headers = (withBody: boolean): Record<string, string> => {
+    const built: Record<string, string> = {};
+    if (withBody) built['content-type'] = 'application/json';
+    if (options.token !== undefined) built.authorization = `Bearer ${options.token}`;
+    return built;
+  };
+
   const call = async <T>(route: string, method: string, body?: unknown): Promise<T> => {
     const response = await doFetch(`${urlBase}${route}`, {
       method,
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      headers: headers(body !== undefined),
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await response.text();

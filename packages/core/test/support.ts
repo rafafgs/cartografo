@@ -113,6 +113,9 @@ export interface Session {
   status: string;
   exit_code: number | null;
   uso: SessionUsage | null;
+  transcricao: string | null;
+  transcricao_truncada: boolean;
+  transcricao_tamanho_original: number | null;
   aberta_em: string;
   finalizada_em: string | null;
 }

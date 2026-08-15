@@ -22,6 +22,7 @@ import {
   startControlPlane,
   type Event,
   type Session,
+  type TestContext,
 } from './support.ts';
 
 const ARTIFACTS = [
@@ -31,6 +32,38 @@ const ARTIFACTS = [
   T102_ARTIFACTS.sessionRepository,
   T102_ARTIFACTS.sessionRoutes,
 ];
+
+/** The migration that gives the session somewhere to keep its transcript (t159). */
+const T159_MIGRATION = 'migrations/0009_sessao_transcricao.sql';
+
+/**
+ * The cap, in bytes, the stored transcript may not exceed (t159, FR2).
+ *
+ * Restated here instead of imported from `src/`, for the same reason the
+ * projections in `support.ts` are hand-written: this number IS the contract the
+ * test demands, and a contract that reads itself out of the implementation
+ * demands nothing.
+ */
+const TRANSCRIPT_CAP_BYTES = 1_048_576;
+
+/** Body of `GET /v1/sessions/:id/transcript`. */
+interface Transcript {
+  transcricao: string | null;
+  truncada: boolean;
+  tamanho_original: number | null;
+}
+
+/** Opens a job-less session — what every t159 case starts from. */
+async function openBareSession(ctx: TestContext): Promise<Session> {
+  const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    execucao_id: 7,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'faça algo e conte o que aconteceu',
+  });
+  assert.equal(response.status, 201);
+  return response.body;
+}
 
 const USAGE = {
   input_tokens: 18422,
@@ -541,4 +574,217 @@ test('t125 — a denial outside the contract is a 400, and an unknown session a 
     motivo: 'a sessão não existe',
   });
   assert.equal(unknown.status, 404);
+});
+
+test('t159 AT1 — a small transcript is stored verbatim, and the projection and the route agree', async (t) => {
+  requireArtifacts(...ARTIFACTS, T159_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+
+  // With an accent in it on purpose: what is reported is the size in BYTES, and
+  // an all-ASCII sample would let a character count pass as one.
+  const output = 'lendo a ficha…\nerro: não achei o arquivo\nsaindo com 1\n';
+  const bytes = Buffer.byteLength(output, 'utf8');
+  assert.notEqual(bytes, output.length, 'the sample has to be multi-byte to prove anything');
+
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
+    status: 'falhou',
+    exit_code: 1,
+    transcricao: output,
+  });
+  assert.equal(finished.status, 200);
+  assert.equal(finished.body.transcricao, output, 'stored verbatim, byte for byte');
+  assert.equal(finished.body.transcricao_truncada, false);
+  assert.equal(finished.body.transcricao_tamanho_original, bytes);
+
+  const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${session.id}/transcript`);
+  assert.equal(read.status, 200);
+  assert.deepEqual(read.body, {
+    transcricao: output,
+    truncada: false,
+    tamanho_original: bytes,
+  });
+});
+
+test('t159 AT2 — a transcript past the cap keeps the TAIL and reports the size it had before', async (t) => {
+  requireArtifacts(...ARTIFACTS, T159_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+
+  // ASCII, so byte length and character length coincide and the arithmetic
+  // below is the test's own, not the implementation's.
+  const tail = '\nfatal: o engine morreu aqui, e é ISTO que precisa sobreviver\n';
+  const output = 'x'.repeat(TRANSCRIPT_CAP_BYTES) + tail;
+
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
+    status: 'falhou',
+    exit_code: 1,
+    transcricao: output,
+  });
+  assert.equal(finished.status, 200);
+  assert.equal(finished.body.transcricao_truncada, true, 'truncation is never silent');
+  assert.equal(
+    finished.body.transcricao_tamanho_original,
+    output.length,
+    'the reported size is the one BEFORE the cap',
+  );
+  assert.notEqual(
+    finished.body.transcricao_tamanho_original,
+    TRANSCRIPT_CAP_BYTES,
+    'reporting the capped length would erase how much was lost',
+  );
+
+  const stored = finished.body.transcricao ?? '';
+  assert.equal(Buffer.byteLength(stored, 'utf8'), TRANSCRIPT_CAP_BYTES, 'exactly the cap');
+  assert.equal(stored, output.slice(-TRANSCRIPT_CAP_BYTES), 'the TAIL, not the head');
+  assert.ok(stored.endsWith(tail), "a crash's evidence is at the end of the stream");
+
+  const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${session.id}/transcript`);
+  assert.equal(read.status, 200);
+  assert.deepEqual(read.body, {
+    transcricao: stored,
+    truncada: true,
+    tamanho_original: output.length,
+  });
+});
+
+test('t159 — the cap cuts on a character boundary, never in the middle of a rune', async (t) => {
+  requireArtifacts(...ARTIFACTS, T159_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+
+  // Three bytes per character, and the cap is not a multiple of three: the byte
+  // the tail would start at falls INSIDE a character. Cutting there and
+  // decoding anyway produces a `U+FFFD` nobody printed.
+  const rune = '☂';
+  const output = rune.repeat(400_000);
+  assert.ok(Buffer.byteLength(output, 'utf8') > TRANSCRIPT_CAP_BYTES);
+
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
+    status: 'falhou',
+    exit_code: 1,
+    transcricao: output,
+  });
+  assert.equal(finished.status, 200);
+  assert.equal(finished.body.transcricao_truncada, true);
+  assert.equal(finished.body.transcricao_tamanho_original, Buffer.byteLength(output, 'utf8'));
+
+  const stored = finished.body.transcricao ?? '';
+  const storedBytes = Buffer.byteLength(stored, 'utf8');
+  assert.ok(storedBytes <= TRANSCRIPT_CAP_BYTES, `${storedBytes} bytes is over the cap`);
+  assert.ok(
+    storedBytes > TRANSCRIPT_CAP_BYTES - rune.length * 3,
+    'dropping the broken head may cost at most one character',
+  );
+  assert.ok(!stored.includes('�'), 'no replacement character the engine never printed');
+  assert.equal(new Set(stored).size, 1, 'every character survived whole');
+});
+
+test('t159 AT3 — an absent transcript is null, never an empty string; an empty one is kept', async (t) => {
+  requireArtifacts(...ARTIFACTS, T159_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const silent = await openBareSession(ctx);
+  const withoutTranscript = await request<Session>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${silent.id}/finish`,
+    { status: 'pausada_cota' },
+  );
+  assert.equal(withoutTranscript.status, 200);
+  assert.equal(withoutTranscript.body.transcricao, null, 'nothing was reported: null');
+  assert.notEqual(withoutTranscript.body.transcricao, '', 'absence never collapses into empty');
+  assert.equal(withoutTranscript.body.transcricao_truncada, false);
+  assert.equal(withoutTranscript.body.transcricao_tamanho_original, null);
+
+  const absent = await request<Transcript>(ctx, 'GET', `/v1/sessions/${silent.id}/transcript`);
+  assert.equal(absent.status, 200, 'a session with no transcript is an answer, not a 404');
+  assert.deepEqual(absent.body, { transcricao: null, truncada: false, tamanho_original: null });
+
+  // A session still open has never recorded one either, and reads back the same.
+  const open = await openBareSession(ctx);
+  const stillOpen = await request<Transcript>(ctx, 'GET', `/v1/sessions/${open.id}/transcript`);
+  assert.equal(stillOpen.status, 200);
+  assert.deepEqual(stillOpen.body, { transcricao: null, truncada: false, tamanho_original: null });
+
+  // An explicit empty string is a MEASUREMENT — "this session printed nothing" —
+  // and is a different fact from "nobody reported anything".
+  const quiet = await openBareSession(ctx);
+  const empty = await request<Session>(ctx, 'PATCH', `/v1/sessions/${quiet.id}/finish`, {
+    status: 'concluida',
+    exit_code: 0,
+    transcricao: '',
+  });
+  assert.equal(empty.status, 200);
+  assert.equal(empty.body.transcricao, '', 'an empty transcript is stored as given');
+  assert.equal(empty.body.transcricao_truncada, false);
+  assert.equal(empty.body.transcricao_tamanho_original, 0);
+
+  const readEmpty = await request<Transcript>(ctx, 'GET', `/v1/sessions/${quiet.id}/transcript`);
+  assert.deepEqual(readEmpty.body, { transcricao: '', truncada: false, tamanho_original: 0 });
+
+  // Anything that is not a string is a 400, the same shape a malformed `uso` gets.
+  const wrongType = await openBareSession(ctx);
+  const refused = await request<{ error: string; details: string[] }>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${wrongType.id}/finish`,
+    { status: 'concluida', exit_code: 0, transcricao: 42 },
+  );
+  assert.equal(refused.status, 400);
+  assert.equal(refused.body.error, 'validation_failed');
+  assert.ok(
+    refused.body.details.some((detail) => detail.includes('transcricao')),
+    `the 400 has to name the offending field: ${JSON.stringify(refused.body.details)}`,
+  );
+
+  // ...and the refusal wrote nothing: the session is still open, still finishable.
+  const stillFinishable = await request<Session>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${wrongType.id}/finish`,
+    { status: 'concluida', exit_code: 0 },
+  );
+  assert.equal(stillFinishable.status, 200);
+});
+
+test('t159 AT4 — the transcript of a session that does not exist is a 404', async (t) => {
+  requireArtifacts(...ARTIFACTS, T159_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const unknown = await request<{ error: string }>(ctx, 'GET', '/v1/sessions/98765/transcript');
+  assert.equal(unknown.status, 404);
+  assert.equal(unknown.body.error, 'not_found');
+});
+
+test('t159 AT5 — the transcript stays OUT of the sessao.finalizada event', async (t) => {
+  requireArtifacts(...ARTIFACTS, T159_MIGRATION);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const session = await openBareSession(ctx);
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
+    status: 'concluida',
+    exit_code: 0,
+    uso: USAGE,
+    transcricao: 'a saída inteira da sessão, que o log NÃO carrega',
+  });
+  assert.equal(finished.status, 200);
+  assert.equal(finished.body.transcricao, 'a saída inteira da sessão, que o log NÃO carrega');
+
+  const events = getEventsByEntity(ctx.db, 'sessao', session.id);
+  assert.deepEqual(
+    events.map((event: Event) => event.tipo),
+    ['sessao.aberta', 'sessao.finalizada'],
+  );
+  // Raw diagnostic material hangs off the projection, not off the append-only
+  // envelope: `dados` is byte-for-byte what it was before this ticket.
+  assert.deepEqual(events[1].dados, { status: 'concluida', exit_code: 0, uso: USAGE });
+  assert.ok(
+    !JSON.stringify(events[1]).includes('transcricao'),
+    'no corner of the event carries the transcript',
+  );
 });

@@ -133,6 +133,13 @@ interface Session {
   finalizada_em: string | null;
 }
 
+/** Body of `GET /v1/sessions/:id/transcript` (t159). */
+interface Transcript {
+  transcricao: string | null;
+  truncada: boolean;
+  tamanho_original: number | null;
+}
+
 interface Event {
   id: number;
   tipo: string;
@@ -741,6 +748,103 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
   const received = JSON.parse(readFileSync(record, "utf8")) as FakeRecord;
   assert.ok(received.argv.includes("--disallowedTools"));
   assert.ok(received.argv.includes("WebFetch"));
+});
+
+test("t159 — what the engine printed is what the finish call ships, and what a human reads back", async (t) => {
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const baseUrl = await startControlPlane(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t159-workdir-"));
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "a ficha cuja saída precisa sobreviver ao processo",
+      no_entrada_id: "implementar",
+      execucao_id: 11,
+    },
+    201,
+  );
+
+  // The same spy the t125 case uses: the claim is about the BODY of one call,
+  // and the control plane on the other side is real — so the same test proves
+  // the route accepts what the runner sends.
+  const calls: Array<{ method: string; route: string; body: unknown }> = [];
+  const doFetch: typeof fetch = async (input, init) => {
+    calls.push({
+      method: init?.method ?? "GET",
+      route: String(input).slice(baseUrl.length),
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+    });
+    return fetch(input, init);
+  };
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    engines: claudeOnly(fakeAdapter()),
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    doFetch,
+    envOverrides: { FAKE_ENGINE_LINES: linesWithoutBlock() },
+  });
+
+  await dispatch(work.id);
+
+  // Built from the fixture the engine was handed, not from the buffer under
+  // test: the expectation has to come from outside the code it measures.
+  const printed = (
+    JSON.parse(linesWithoutBlock()) as Array<{ text: string }>
+  )
+    .map((line) => line.text)
+    .join("\n");
+
+  const finishes = calls.filter((call) => call.route.endsWith("/finish"));
+  assert.equal(
+    finishes.length,
+    1,
+    `expected exactly one finish call, got ${finishes.length}`,
+  );
+  assert.equal(finishes[0].method, "PATCH");
+  const body = finishes[0].body as Record<string, unknown>;
+  assert.equal(
+    body.transcricao,
+    printed,
+    "the finish call carries the raw lines, joined by newline",
+  );
+  assert.equal(
+    body.uso,
+    null,
+    "the transcript rides along with `uso`; it does not replace it",
+  );
+
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    "GET",
+    "/v1/sessions?execucao_id=11",
+  );
+  assert.equal(sessions.sessoes.length, 1);
+  const session = sessions.sessoes[0];
+
+  // The end of the proof: what the engine printed is what a human can read
+  // back, long after the runner's process is gone.
+  const transcript = await api<Transcript>(
+    baseUrl,
+    "GET",
+    `/v1/sessions/${session.id}/transcript`,
+  );
+  assert.equal(transcript.transcricao, printed);
+  assert.equal(transcript.truncada, false);
+  assert.equal(
+    transcript.tamanho_original,
+    Buffer.byteLength(printed, "utf8"),
+  );
 });
 
 /** The fake engine, wired the way every test in this file wires it. */

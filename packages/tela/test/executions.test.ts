@@ -141,6 +141,49 @@ test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of tha
   );
 });
 
+test('t159 — every session row links its transcript, on the API route the proxy forwards', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+
+  const job = await createJob(cp, {
+    titulo: 'o que deixou saída para trás',
+    no_entrada_id: 'refinar',
+    execucao_id: 7,
+  });
+
+  const failed = await openSession(cp, { trabalho_id: job.id, no_id: 'refinar' });
+  const running = await openSession(cp, { trabalho_id: job.id, no_id: 'implementar' });
+  await api(cp, 'PATCH', `/v1/sessions/${failed.id}/finish`, {
+    status: 'falhou',
+    exit_code: 1,
+    transcricao: 'erro: morri aqui, e sem isto ninguém sabe por quê',
+  });
+
+  const screen = await startScreen(t, cp);
+  const page = await openPage(screen, '/execucoes/7');
+  assert.equal(page.status, 200);
+
+  const rows = blocks(page.html, 'sessao');
+  assert.deepEqual(
+    rows.map((row) => row.value),
+    [String(failed.id), String(running.id)],
+    'both sessions of the execution are on the table',
+  );
+
+  // The still-open session gets a link too: the route answers for it as well,
+  // and a link that appears only after the fact is a link nobody finds.
+  for (const [index, session] of [failed, running].entries()) {
+    assert.ok(
+      rows[index].excerpt.includes(`data-transcricao="${session.id}"`),
+      `session ${session.id} has no data-transcricao marker:\n${rows[index].excerpt}`,
+    );
+    assert.ok(
+      rows[index].excerpt.includes(`href="/v1/sessions/${session.id}/transcript"`),
+      `session ${session.id} does not link its transcript:\n${rows[index].excerpt}`,
+    );
+  }
+});
+
 test('t107 AT5 — an execution with nothing in it is 200 with an empty page, not an error', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);

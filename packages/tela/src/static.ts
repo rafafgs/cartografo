@@ -69,7 +69,7 @@ export async function serveStatic(pathname: string): Promise<ProxiedResponse> {
   if (file === null) {
     return jsonResponse(404, {
       erro: 'arquivo_nao_encontrado',
-      mensagem: `a tela não serve "${pathname}"`,
+      mensagem: `the screen does not serve "${pathname}"`,
     });
   }
 
@@ -82,7 +82,7 @@ export async function serveStatic(pathname: string): Promise<ProxiedResponse> {
   } catch {
     return jsonResponse(404, {
       erro: 'arquivo_nao_encontrado',
-      mensagem: `a tela não serve "${pathname}"`,
+      mensagem: `the screen does not serve "${pathname}"`,
     });
   }
 }

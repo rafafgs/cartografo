@@ -284,6 +284,30 @@ async function main() {
   const client = new ClienteControle({ urlBase: url, token });
   await client.registrarRunner(RUNNER_ID, 'o motor de travessia manual da t165');
 
+  // `Controller.tick()` dispatches the first RELEASED job it can lease, not
+  // "the job this script just created" — and on a database that survives the
+  // process there are older ones. The first run of this driver against a
+  // second round proved it the expensive way: five real sessions of round 2
+  // opened on round 1's job, which was still standing unblocked on its last
+  // node, so the whole round landed in the previous execution's log and node.
+  //
+  // There is no server-side "this one is done" to filter on: `concluido` is
+  // true from the moment a job LANDS on a final node, before that node's own
+  // session ever runs, so skipping those would have skipped the last node of
+  // every crossing. Closing a job for good is `t109`'s.
+  //
+  // So the driver refuses to start rather than guessing. Loud, and the operator
+  // keeps the decision — blocking someone else's work is not this script's call.
+  const released = await client.listarTrabalhosLiberados();
+  if (released.length > 0) {
+    die(
+      `the control plane has ${released.length} released job(s) — ` +
+        `${released.map((job) => `#${job.id} on "${job.no_atual}"`).join(', ')}. ` +
+        'A tick would lease one of THEM instead of this crossing. Block them ' +
+        '(POST /v1/jobs/:id/blocks) or finish them first',
+    );
+  }
+
   // The job is born ON the entry node of the plan and declaring its version.
   // That declaration is the whole point: without it the round produces
   // telemetry no surveyor can read.
@@ -343,10 +367,25 @@ async function main() {
     const started = Date.now();
     const dispatched = await controller.tick();
     if (dispatched === null) die(`the tick on "${node.id}" dispatched nothing`);
+    if (dispatched.jobId !== job.id) {
+      // Belt to the check above's braces: a job released BY somebody else
+      // mid-crossing would land here, and one wrong session is worth stopping
+      // for — the round's telemetry is only worth anything if every session in
+      // it belongs to the same crossing.
+      die(`the tick on "${node.id}" leased job ${dispatched.jobId}, not ${job.id}`);
+    }
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
     log(`  dispatched job ${dispatched.jobId} in ${seconds}s`);
     walked.push({ node: node.id, seconds });
   }
+
+  // The crossing is over, so this job stops being a candidate for the next one.
+  // Without it the driver would leave behind exactly the competitor it refuses
+  // to start next to — and the reason is written down, because that is what
+  // whoever finds the job blocked will want to read.
+  await api(url, token, 'POST', `/v1/jobs/${job.id}/blocks`, {
+    motivo: `travessia da execução ${plan.execucao_id} concluída`,
+  });
 
   // The evidence is read back from the control plane, never asserted from here.
   const { eventos: events } = await api(

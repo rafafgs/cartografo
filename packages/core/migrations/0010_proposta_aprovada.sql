@@ -25,21 +25,31 @@
 -- portão de soundness, não de gente: `motivo_rejeicao = NULL` nelas é a verdade,
 -- e a história delas continua em `resultado`, onde sempre esteve.
 --
--- ## Por que a tabela inteira é reconstruída
+-- ## Por que a tabela inteira é reconstruída, e por que em SEIS passos
 --
 -- O SQLite não tem `ALTER TABLE ... ALTER CONSTRAINT`: um CHECK só muda
--- reconstruindo a tabela. É o procedimento documentado (create novo → copia →
--- drop → rename), e é a primeira vez que este repositório o faz.
+-- reconstruindo a tabela (cria nova → copia → dropa velha → renomeia). É a
+-- primeira vez que este repositório faz isso, e o caminho ingênuo NÃO funciona
+-- aqui — foi preciso descobrir na marra:
 --
--- `PRAGMA defer_foreign_keys = ON` na primeira linha é o que torna o
--- procedimento seguro aqui, e é a parte que não é óbvia: `grafo.origem_proposta_id`
--- e `grafo_versao.proposta_id` referenciam `proposta`, e com as chaves
--- estrangeiras ligadas (`applyPragmas`) o `DROP TABLE` faz um DELETE implícito
--- que viola essas referências na hora. Adiar a checagem para o fecho da
--- transação resolve: lá a tabela `proposta` existe de novo, com os mesmos ids,
--- e toda referência volta a fechar. `PRAGMA foreign_keys` NÃO serviria — ele é
--- no-op dentro de uma transação, e quem transaciona aqui é `src/db/migrate.ts`.
--- O `defer_foreign_keys` se apaga sozinho no fim da transação.
+-- `grafo.origem_proposta_id` e `grafo_versao.proposta_id` referenciam
+-- `proposta`. O control plane liga as chaves estrangeiras ANTES de migrar
+-- (`applyPragmas` e depois `migrate`, em `src/index.ts`), então o `DROP TABLE`
+-- faz um DELETE implícito que viola as duas referências. `PRAGMA foreign_keys`
+-- não ajuda: é no-op dentro de transação, e quem transaciona é
+-- `src/db/migrate.ts`. E `PRAGMA defer_foreign_keys = ON` — o remédio óbvio, e
+-- o que esta migração tentou primeiro — TAMBÉM não resolve: o contador de
+-- violações adiadas sobe no DELETE implícito e o `RENAME` não o abaixa (ele não
+-- insere linha nenhuma), então a transação simplesmente morre no fecho em vez de
+-- morrer no meio. Um banco com uma única proposta já aplicada não migrava.
+--
+-- Daí os dois passos extras: as referências filhas são guardadas em tabelas
+-- temporárias e zeradas ANTES do drop, e restauradas depois do rename. Com
+-- ninguém apontando para a tabela no instante do drop, não há violação para
+-- adiar nem para resolver. As linhas de `grafo`/`grafo_versao` terminam com
+-- exatamente o valor que tinham (os ids são copiados, não regerados), o que
+-- mantém o append-only da D15 honesto: nenhuma delas conta uma história
+-- diferente no fim da migração.
 --
 -- O índice `proposta_por_grafo` cai junto com a tabela e por isso é recriado.
 -- O `AUTOINCREMENT` é preservado: com os ids copiados explicitamente, a
@@ -52,8 +62,16 @@
 --
 -- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
 
-PRAGMA defer_foreign_keys = ON;
+-- 1. guarda quem aponta para uma proposta, e solta os ponteiros
+CREATE TEMP TABLE referencia_grafo_versao AS
+  SELECT id, proposta_id FROM grafo_versao WHERE proposta_id IS NOT NULL;
+CREATE TEMP TABLE referencia_grafo AS
+  SELECT id, origem_proposta_id FROM grafo WHERE origem_proposta_id IS NOT NULL;
 
+UPDATE grafo_versao SET proposta_id = NULL WHERE proposta_id IS NOT NULL;
+UPDATE grafo SET origem_proposta_id = NULL WHERE origem_proposta_id IS NOT NULL;
+
+-- 2. a tabela nova, com o vocabulário novo e a coluna nova
 CREATE TABLE proposta_novo (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   grafo_id            TEXT NOT NULL REFERENCES grafo(id),
@@ -71,6 +89,7 @@ CREATE TABLE proposta_novo (
   atualizado_em       TEXT NOT NULL
 );
 
+-- 3. a cópia, com os ids preservados
 INSERT INTO proposta_novo (id, grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada,
                            status, versao_aplicada_id, motivo_reversao, motivo_rejeicao,
                            resultado, criado_em, atualizado_em)
@@ -79,8 +98,24 @@ SELECT id, grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada,
        resultado, criado_em, atualizado_em
   FROM proposta;
 
+-- 4. a troca
 DROP TABLE proposta;
 
 ALTER TABLE proposta_novo RENAME TO proposta;
 
 CREATE INDEX proposta_por_grafo ON proposta (grafo_id);
+
+-- 5. as referências voltam para exatamente onde estavam
+UPDATE grafo_versao
+   SET proposta_id = (SELECT proposta_id FROM referencia_grafo_versao
+                       WHERE referencia_grafo_versao.id = grafo_versao.id)
+ WHERE id IN (SELECT id FROM referencia_grafo_versao);
+
+UPDATE grafo
+   SET origem_proposta_id = (SELECT origem_proposta_id FROM referencia_grafo
+                              WHERE referencia_grafo.id = grafo.id)
+ WHERE id IN (SELECT id FROM referencia_grafo);
+
+-- 6. e as tabelas de apoio não sobrevivem à migração
+DROP TABLE referencia_grafo_versao;
+DROP TABLE referencia_grafo;

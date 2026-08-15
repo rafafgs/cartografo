@@ -325,8 +325,10 @@ lhe proíbe.
 
 ### Aplicar uma proposta
 
-`POST /v1/propostas/:id/aplicar` é o fluxo da D15 inteiro, e a ordem não é
-negociável:
+`POST /v1/propostas/:id/aplicar` é o fluxo da D15 inteiro. Ele só roda sobre
+proposta **`aprovada`**: o portão humano vem antes, e pular o portão é
+`409 proposta_nao_aprovada` (§ "Estados da proposta"). A ordem do que vem depois
+não é negociável:
 
 ```
 aplicar operações sobre uma CÓPIA do snapshot-alvo
@@ -418,22 +420,44 @@ disso: notificação ativa, se um dia existir, é decisão de outra ticket.
 ### Estados da proposta
 
 ```
-                 aplicar (portão reprova)
-   pendente ──────────────────────────────▶ rejeitada
-      │
-      │ aplicar (portão aprova)
-      ▼
+              rejeitar (com motivo)
+   pendente ───────────────────────────────▶ rejeitada
+      │                                          ▲
+      │ aprovar                                  │ aplicar (portão reprova)
+      ▼                                          │
+   aprovada ─────────────────────────────────────┤
+      │              aplicar (portão aprova)     │
+      ▼                                          │
    aplicada ──────────────────────────────▶ revertida
                  reverter (com motivo)
 ```
 
-`aprovada`/`rejeitada` como ação humana explícita é do inbox (`t111`); nesta
-camada o único caminho para `rejeitada` é o portão reprovar.
+`aprovada` é o portão humano do princípio 5, e desde a `t165` ele é obrigatório:
+aplicar exige `aprovada`, e uma proposta que pula o portão leva
+`409 proposta_nao_aprovada`. É a mesma escada que a tela desenha desde a `t111`
+([`tela-inbox-propostas.md` §3](tela-inbox-propostas.md)) — `pendente` oferece
+Aprovar/Rejeitar, `aprovada` oferece Aplicar.
+
+Aprovar não escreve nada além do status: aplicar é um segundo ato deliberado, e
+colapsar os dois em um clique seria desfazer a escada em nome de um clique a
+menos.
+
+Dois caminhos chegam a `rejeitada`, e as duas histórias moram em colunas
+diferentes de propósito:
+
+| Quem rejeitou | De que estado | Onde fica o porquê |
+|---|---|---|
+| Uma pessoa, pela inbox | `pendente` | `motivo_rejeicao` (texto livre, obrigatório) |
+| O portão de soundness, durante o `aplicar` | `aprovada` | `resultado` (o relatório inteiro do §4) |
+
+Linha `rejeitada` anterior à `t165` tem `motivo_rejeicao = NULL`, e isso é o
+correto: ela nunca foi rejeitada por gente. Não houve backfill.
 
 O veredito é ortogonal a este diagrama: ele escreve `resultado` e deixa o estado
 onde estava. `resultado` acumula dois usos que nunca coexistem — o relatório que
 reprovou uma proposta `rejeitada`, ou o veredito da hipótese de uma proposta que
-chegou a ser `aplicada`.
+chegou a ser `aplicada`. Uma proposta revertida **mantém** o veredito que
+justificou a reversão.
 
 ---
 
@@ -460,7 +484,10 @@ implementada foi renomeada para inglês pelo `t127` (D18), e é ela que vale:
 | `GET` | `/v1/grafo-versoes/:id` | Uma versão, com o `snapshot` completo. |
 | `POST` | `/v1/propostas` | Cria uma proposta pendente. |
 | `GET` | `/v1/propostas` | Lista as propostas em ordem de `id`; filtros opcionais `status` e `veredito`. |
-| `POST` | `/v1/propostas/:id/aplicar` | Executa o fluxo do §5. |
+| `GET` | `/v1/propostas/:id` | Uma proposta, com `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao` e `motivo_rejeicao`. |
+| `POST` | `/v1/propostas/:id/aprovar` | Portão humano: `pendente` → `aprovada`. Sem corpo. |
+| `POST` | `/v1/propostas/:id/rejeitar` | Portão humano: `pendente` → `rejeitada`; exige `motivo`, que vai para `motivo_rejeicao`. |
+| `POST` | `/v1/propostas/:id/aplicar` | Executa o fluxo do §5. Exige `aprovada`. |
 | `POST` | `/v1/propostas/:id/reverter` | Move o ponteiro de volta; exige `motivo`. |
 | `POST` | `/v1/propostas/:id/resultado` | Fecha o experimento: grava o veredito da hipótese. Não muda o status. |
 
@@ -484,11 +511,13 @@ Códigos de erro, por rota:
 | Promoção/oferta cujos dois snapshots já concordam em `nos`/`arestas` | `422` | `diff_sem_efeito` |
 | `versao_alvo` inexistente ou de outro grafo | `400` | `versao_alvo_desconhecida` |
 | Operação de tipo desconhecido, sem inversa ou malformada | `400` | `operacoes_invalidas` |
-| Aplicar/reverter proposta em estado errado | `409` | `proposta_nao_pendente` / `proposta_nao_aplicada` |
+| Aprovar/rejeitar proposta que não está `pendente` | `409` | `proposta_nao_pendente` |
+| Aplicar proposta que não passou pelo portão humano | `409` | `proposta_nao_aprovada` |
+| Reverter, ou fechar experimento de, proposta que não está `aplicada` | `409` | `proposta_nao_aplicada` |
 | A base mudou debaixo da proposta | `409` | `proposta_desatualizada` |
 | Operação não se aplica ao snapshot | `422` | `operacao_inaplicavel` |
 | Resultado idêntico a uma versão existente | `422` | `versao_sem_efeito` |
-| Reverter sem motivo | `400` | `motivo_obrigatorio` |
+| Reverter ou rejeitar sem motivo | `400` | `motivo_obrigatorio` |
 | `evidencia` ou `metrica_esperada` ausente; `execucao_id`/`depois` ausente ou não numérico | `400` | `campo_obrigatorio_ausente` |
 | Resultado já gravado por uma execução anterior | `409` | `proposta_ja_avaliada` |
 | `metrica_esperada` sem a forma `{nome, direcao, de, para}` | `422` | `metrica_esperada_invalida` |

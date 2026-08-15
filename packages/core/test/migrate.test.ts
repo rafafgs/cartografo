@@ -296,6 +296,18 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
   seed.run(versionId, 'rejeitada', '{"soundness":{"valido":false}}', moment, moment);
   seed.run(versionId, 'pendente', null, moment, moment);
 
+  // And rows POINTING AT a proposal, which is the case the rebuild has to
+  // survive and the only reason the migration defers the foreign keys: a
+  // version born of a proposal, and a lineage that declares its origin. Without
+  // these two the drop/rename would pass for a reason that does not hold in a
+  // real database.
+  const bornOfProposal = `sha256:${'b'.repeat(64)}`;
+  db.prepare(
+    `INSERT INTO grafo_versao (id, grafo_id, versao_pai, snapshot, origem, proposta_id, criado_em)
+     VALUES (?, 'redacao', ?, '{}', 'proposta', 1, ?)`,
+  ).run(bornOfProposal, versionId, moment);
+  db.prepare('UPDATE grafo SET origem_proposta_id = 2 WHERE id = ?').run('redacao');
+
   const previous = db
     .prepare('SELECT id, grafo_id, status, resultado, criado_em FROM proposta ORDER BY id')
     .all();
@@ -351,11 +363,37 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
     'AUTOINCREMENT keeps counting from where the seeded rows left it',
   );
 
-  // And the rows that point AT a proposal still point at the same ones: the
-  // rebuild drops and renames a table two other tables reference.
+  // And the rows that point AT a proposal still point at the SAME ones. This is
+  // the assertion the rebuild was rewritten for: the first version of the
+  // migration deferred the foreign keys instead of detaching these two
+  // references, and a database with a single applied proposal did not migrate
+  // at all.
+  assert.deepEqual(
+    db.prepare('SELECT id, proposta_id FROM grafo_versao ORDER BY id').all(),
+    [
+      { id: versionId, proposta_id: null },
+      { id: bornOfProposal, proposta_id: 1 },
+    ],
+    'a version born of a proposal still names it',
+  );
+  assert.equal(
+    (db.prepare('SELECT origem_proposta_id FROM grafo').get() as { origem_proposta_id: number })
+      .origem_proposta_id,
+    2,
+    'and so does a lineage that declares its origin',
+  );
   assert.equal(
     db.prepare('PRAGMA foreign_key_check').all().length,
     0,
     'no dangling reference survives the drop/rename',
+  );
+  assert.equal(
+    (
+      db
+        .prepare("SELECT count(*) AS n FROM sqlite_temp_schema WHERE name LIKE 'referencia_%'")
+        .get() as { n: number }
+    ).n,
+    0,
+    'the scaffolding tables do not survive the migration',
   );
 });

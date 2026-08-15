@@ -19,6 +19,13 @@
  * error travel up. A lease stuck on work that failed is capacity occupied by
  * nobody until the TTL expires — the worst of both worlds.
  *
+ * Which error travels up is a separate question, and the answer is always **the
+ * dispatch's**. Giving the lease back is cleanup, and cleanup that fails does
+ * not get to speak for the work: a control plane that answers 503 on the
+ * release would otherwise erase the reason the session died and leave whoever
+ * called `tick()` reading about a lease. The release failure lands in
+ * {@link Controller.lastReleaseError} instead.
+ *
  * `dispatch` is injected and is the only seam with the `EngineAdapter` (t104):
  * this ticket opens no session at all. Whoever wires the cycle end to end with
  * a real session (t106/t109) passes the adapter through here without touching
@@ -74,6 +81,19 @@ export class Controller {
    * be trading a network hiccup for lost work.
    */
   lastHeartbeatError: unknown = null;
+
+  /**
+   * Last error from giving the lease back, for whoever wants to watch.
+   *
+   * Same shape of problem as {@link Controller.lastHeartbeatError}, one step
+   * later: a background failure that must not kill the primary error path, but
+   * must still be observable. A release that fails is transient — the lease
+   * expires on the server by its own TTL and the work goes back to the queue
+   * (D5) — while the dispatch's error is the one nobody else can reconstruct.
+   * Letting the release's rejection out of the `finally` would trade the
+   * irreplaceable one for the recoverable one.
+   */
+  lastReleaseError: unknown = null;
 
   constructor(options: ControllerOptions) {
     this.#options = options;
@@ -131,7 +151,16 @@ export class Controller {
       // travelling up after this — whoever calls the loop decides what to do
       // with it.
       stopHeartbeat();
-      await this.#options.client.liberar(lease.id);
+      try {
+        await this.#options.client.liberar(lease.id);
+      } catch (error: unknown) {
+        // Caught HERE and nowhere else: a rejection escaping a `finally`
+        // REPLACES whatever was already unwinding through it, so this one would
+        // quietly take the dispatch's place on the way out. The attempt was
+        // made, the fact is recorded, and the outcome of the work — error or
+        // not — stays the outcome of `tick()`.
+        this.lastReleaseError = error;
+      }
     }
   }
 

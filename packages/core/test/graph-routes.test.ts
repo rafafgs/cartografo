@@ -239,6 +239,38 @@ test('AT9 — a graph that breaks soundness returns 422 with the validator repor
   assert.deepEqual(graphs.grafos, []);
 });
 
+test('t153 — a graph whose ids are not filled strings returns 422 and registers nothing', async (t) => {
+  const address = await startApp(t);
+  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+
+  // The whole document is the minimal example, except that every place naming a
+  // node names the NUMBER 1. Nothing else is wrong with it: before t153 the
+  // validator dropped each of those ids out of scope instead of refusing it, so
+  // soundness passed over an empty topology and this very body came back 201.
+  const nodes = document.nos as Array<Record<string, unknown>>;
+  const edges = document.arestas as Array<Record<string, unknown>>;
+  nodes[0].id = 1;
+  document.nos = [nodes[0]];
+  edges[0].de = 1;
+  edges[0].para = 1;
+  document.no_inicial = 1;
+  document.nos_finais = [1];
+
+  const response = await post(address, '/v1/graphs', document);
+  const body = await jsonBody<ValidationReport>(response);
+  assert.equal(response.status, 422, JSON.stringify(body));
+  assert.equal(body.erro, 'grafo_invalido');
+  assert.equal(body.valido, false);
+  assert.ok(
+    body.estrutura.erros.some((item) => item.codigo === 'id_invalido'),
+    `the report has to name the invalid ids: ${JSON.stringify(body.estrutura.erros)}`,
+  );
+
+  // Nothing was written: a document that fails the gate does not become a lineage.
+  const graphs = await jsonBody<{ grafos: GraphRow[] }>(await fetch(`${address}/v1/graphs`));
+  assert.deepEqual(graphs.grafos, []);
+});
+
 test('AT10 — the reads reflect the freshly registered graph and 404 on what does not exist', async (t) => {
   const address = await startApp(t);
   const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));

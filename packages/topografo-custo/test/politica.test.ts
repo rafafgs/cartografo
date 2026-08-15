@@ -134,3 +134,36 @@ test('AT7 — toda candidata carrega um único alterar_campo_no sobre descricao,
     assert.equal(operacao.inversa.para, operacao.de);
   }
 });
+
+test('t158 — teto de tempo cita a amostra de tempo, não a de tokens', async () => {
+  const { avaliarPoliticas } = await carregar();
+
+  // Cinco sessões reportaram uso, duas reportaram os dois carimbos de tempo:
+  // as duas amostras divergem de propósito (`custo.ts`), que é exatamente o
+  // caso em que citar a errada engana quem lê a recomendação.
+  const candidatas = avaliarPoliticas(
+    [
+      linha('redigir', 100, {
+        sessoes_com_uso: 5,
+        sessoes_sem_uso: 0,
+        tempo_total_segundos: 900,
+        sessoes_com_tempo: 2,
+        sessoes_sem_tempo: 3,
+      }),
+    ],
+    { tetoSegundos: 600 },
+  );
+
+  assert.equal(candidatas.length, 1);
+  assert.equal(candidatas[0].evidencia.teto_excedido, 'tempo', 'só o teto de tempo estourou');
+
+  const { para } = candidatas[0].operacoes[0];
+  assert.ok(
+    para.includes('2 sessões com tempo reportado'),
+    `a recomendação de tempo se apoia na amostra de tempo; veio: ${para}`,
+  );
+  assert.ok(
+    !para.includes('5 sessões'),
+    'a amostra de tokens não sustenta uma recomendação de teto de tempo',
+  );
+});

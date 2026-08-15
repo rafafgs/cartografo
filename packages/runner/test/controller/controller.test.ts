@@ -75,17 +75,30 @@ const LEASE = {
   motivo_expiracao: null,
 };
 
+/** Knobs of the fake control plane. Everything answers the happy path by default. */
+interface EnvironmentOptions {
+  /**
+   * Status of `POST /v1/leases/:id/releases`. Default: 200.
+   *
+   * Anything outside 2xx makes `client.liberar` throw `ErroDoControlPlane` —
+   * the transient failure of the control plane while the lease is being given
+   * back (t158).
+   */
+  releaseStatus?: number;
+}
+
 /**
  * A client pointed at a fake control plane that answers the minimum of the
  * contract and keeps everything it received.
  */
-async function environment(): Promise<{
+async function environment(options: EnvironmentOptions = {}): Promise<{
   client: ClientModule.ClienteControle;
   calls: HttpCall[];
   heartbeats: () => number;
   releases: () => number;
 }> {
   const { ClienteControle } = await loadClient();
+  const releaseStatus = options.releaseStatus ?? 200;
   const calls: HttpCall[] = [];
 
   const respond = (status: number, body: unknown): Response =>
@@ -120,7 +133,10 @@ async function environment(): Promise<{
     if (url.endsWith('/v1/leases')) return respond(201, { lease: LEASE });
     if (url.endsWith('/heartbeats')) return respond(200, { lease: LEASE });
     if (url.endsWith('/releases')) {
-      return respond(200, { lease: { ...LEASE, status: 'liberada' } });
+      if (releaseStatus < 200 || releaseStatus > 299) {
+        return respond(releaseStatus, { erro: 'control plane out of order' });
+      }
+      return respond(releaseStatus, { lease: { ...LEASE, status: 'liberada' } });
     }
     throw new Error(`unexpected call: ${url}`);
   };
@@ -273,4 +289,51 @@ test('AT16 — with no released work, the tick asks for no lease at all', async 
 
   assert.equal(await controller.tick(), null);
   assert.deepEqual(calls, [`${BASE_URL}/v1/jobs`]);
+});
+
+test('t158 — a release that also fails does not take the place of the dispatch error', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+
+  const { ErroDoControlPlane } = await loadClient();
+  const { Controller } = await loadController();
+
+  const broken = await environment({ releaseStatus: 503 });
+  const controller = new Controller({
+    ...BASE_OPTIONS,
+    client: broken.client,
+    dispatch: async () => {
+      throw new Error('the session died halfway');
+    },
+  });
+
+  await assert.rejects(
+    async () => controller.tick(),
+    /the session died halfway/,
+    'whoever calls the loop has to learn why the session died, not why the release failed',
+  );
+
+  assert.equal(broken.releases(), 1, 'the lease is still asked back on the way out');
+
+  const releaseError: unknown = controller.lastReleaseError;
+  assert.ok(
+    releaseError instanceof ErroDoControlPlane,
+    'the release failure does not disappear: it stays observable on the controller',
+  );
+  assert.equal(releaseError.status, 503);
+
+  // The other half of the same rule: with nothing wrong in the dispatch, a
+  // release that fails does not invent an error either.
+  const quiet = await environment({ releaseStatus: 503 });
+  const happy = new Controller({
+    ...BASE_OPTIONS,
+    client: quiet.client,
+    dispatch: async () => undefined,
+  });
+
+  assert.deepEqual(
+    await happy.tick(),
+    { jobId: 1, leaseId: LEASE.id },
+    'work that ended well ended well, whatever the control plane answered afterwards',
+  );
+  assert.ok(happy.lastReleaseError instanceof ErroDoControlPlane);
 });

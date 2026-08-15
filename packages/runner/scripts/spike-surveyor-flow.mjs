@@ -48,7 +48,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { ClienteControle } from '../src/controller/cliente-controle.ts';
-import { createClaudeCodeDispatch } from '../src/dispatch/dispatch-claude-code.ts';
+import { createClaudeCodeDispatch, DEFAULT_ENGINE } from '../src/dispatch/dispatch-claude-code.ts';
+import { decodeClaudeCodeSessionText } from '../src/dispatch/session-text.ts';
 import { ClaudeCodeAdapter } from '../src/engine/claude-code-adapter.ts';
 import { proposeFlowImprovement } from '../src/surveyor/proposal.ts';
 
@@ -223,7 +224,7 @@ async function main() {
     const dispatch = (node, task) =>
       createClaudeCodeDispatch({
         urlBase: url,
-        adapter,
+        engines: { [DEFAULT_ENGINE]: { adapter, decodeSessionText: decodeClaudeCodeSessionText } },
         workingDir: repo,
         timeoutSeconds: TIMEOUT_SECONDS,
         instructions: nodeInstructions(node, task),

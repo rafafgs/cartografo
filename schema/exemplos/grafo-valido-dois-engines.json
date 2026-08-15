@@ -1,0 +1,94 @@
+{
+  "classe": "prova-dois-engines",
+  "linhagem": {
+    "tipo": "base"
+  },
+  "metadata": {
+    "nome": "Dois engines numa travessia",
+    "descricao": "Dois nós de trabalho numa aresta: o primeiro não diz nada sobre engine e cai no default do runner, o segundo declara engine \"codex\". O menor documento que consegue distinguir um default de uma rota (t141).",
+    "versao_schema": "1.0.0",
+    "criado_em": "2026-08-15",
+    "origem": "porte manual (prova de roteamento por nó da t141)"
+  },
+  "nos": [
+    {
+      "id": "redigir",
+      "papel": "redator",
+      "tipo_no": "trabalho",
+      "descricao": "Escreve o texto. Não declara engine: quem roda é o engine default do runner.",
+      "skill_ref": {
+        "id": "cartografo/redigir-nota",
+        "versao": "1.0.0",
+        "hash": "sha256:2745f9d87a5b35e77dc5a73b8db71039cdfdae5a4c647f2f4122c1f3fb384b18"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": ["tema"],
+          "properties": {
+            "tema": { "type": "string", "minLength": 1 }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": ["texto"],
+          "properties": {
+            "texto": { "type": "string", "minLength": 1 }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "deterministico",
+            "comando": "test -s nota.md",
+            "descricao": "A nota existe e não está vazia."
+          }
+        ]
+      }
+    },
+    {
+      "id": "conferir",
+      "papel": "revisor",
+      "tipo_no": "trabalho",
+      "engine": "codex",
+      "descricao": "Confere o texto. Declara engine: este nó roda no codex, não no default.",
+      "skill_ref": {
+        "id": "cartografo/revisar-nota",
+        "versao": "1.0.0",
+        "hash": "sha256:2df09e19d5917210efc074a4d3c9d5f4c8e20e29e479f524afdcbbc9859b3e55"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": ["texto"],
+          "properties": {
+            "texto": { "type": "string" }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": ["parecer"],
+          "properties": {
+            "parecer": { "type": "string", "minLength": 1 }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "deterministico",
+            "comando": "test -s parecer.md",
+            "descricao": "O parecer existe e não está vazio."
+          }
+        ]
+      }
+    }
+  ],
+  "arestas": [
+    {
+      "de": "redigir",
+      "para": "conferir",
+      "condicao": "sempre",
+      "descricao": "Saída única: o texto redigido sempre segue para conferência."
+    }
+  ],
+  "no_inicial": "redigir",
+  "nos_finais": ["conferir"]
+}

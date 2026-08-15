@@ -15,6 +15,41 @@
 > já provou está no roteiro de `packages/runner/scripts/spike-real-session-codex.mjs`;
 > o congelamento se apoia na certificação C1–C7, que está verde.
 >
+> **Lacuna FECHADA (t141, 2026-08-15).** A credencial apareceu e
+> `spike-real-session-codex.mjs` rodou, sem uma linha de alteração no corpo,
+> contra `codex-cli 0.147.0` autenticado: sessão `completed` com exit 0 em
+> 11,8s, `onEngineRef` recebendo o `thread_id` do frame `thread.started`
+> (`01a00665-7730-…`), os dois eventos validando contra os schemas da
+> taxonomia e — a metade que faltava — `PROVA-T119.md` criado no workdir com
+> exatamente a frase pedida. A sessão *trabalhou*. Junto com ela rodou
+> `scripts/spike-two-engine-traversal.mjs` (t141/FR9): um grafo, um trabalho,
+> dois `Controller.tick()`, `redigir` no `claude-code` e `conferir` no
+> `codex`, cada `sessao.aberta` registrando o seu próprio engine e o nó do
+> Codex lendo o arquivo que o nó do Claude escreveu.
+>
+> Duas coisas que a rodada credenciada mediu e que não estavam escritas em
+> lugar nenhum — nenhuma delas muda a interface, as duas mudam o que um
+> operador precisa preparar:
+>
+> - **Das três variáveis de credencial, só `CODEX_API_KEY` autentica de
+>   verdade.** A t119 mediu o que o `codex doctor` REPORTA sobre cada uma
+>   (`codex-adapter.ts`, `CODEX_CREDENTIAL_VARIABLES`); o que faltava era
+>   rodar uma sessão com cada uma e ver qual delas de fato fecha o handshake.
+>   `OPENAI_API_KEY` exportada e mais nada — que era o caminho que esta ficha
+>   assumiu — faz todo turno morrer em
+>   `401 Unauthorized ... wss://api.openai.com/v1/responses`, coerente com o
+>   `auth mode none` que a t119 já tinha anotado para ela. Com a MESMA chave
+>   exportada como `CODEX_API_KEY`, e um `CODEX_HOME` sem `auth.json` nenhum,
+>   a sessão sobe e completa. As duas provas desta ficha rodaram assim: só
+>   ambiente, sem `codex login`, sem credencial em arquivo algum.
+> - **`codex exec` roda em sandbox read-only por default.** A sessão responde
+>   educadamente que o ambiente é somente leitura, sai com 0 e não produz
+>   arquivo nenhum — o desfecho mais perigoso que existe para uma prova que
+>   só olha o exit code. Escrever exige `sandbox_mode = "workspace-write"` no
+>   `config.toml` do `CODEX_HOME`. `buildCommand` continua não passando flag
+>   de sandbox, de propósito: mexer nisso reescreveria o argv de um adapter já
+>   certificado em C1–C7.
+>
 > O que autoriza o congelamento não é a contagem, é o que a contagem serve
 > para medir: construir o segundo adapter **não exigiu mudança nenhuma** na
 > interface nem no kit. O `CodexAdapter` entrou pela interface como ela

@@ -399,7 +399,60 @@ test('t162 — the packaged runner, against a real control plane', async (parent
 
   // Registered once and shared: the two subtests that need a node declaring an
   // engine need the SAME class, and a class only has one base lineage.
-  const document = JSON.parse(readFileSync(GRAPH_FIXTURE, 'utf8')) as Record<string, unknown>;
+  //
+  // The fixture's own `skill_ref`s are placeholders and always were —
+  // `cartografo/redigir-nota` could never enter the registry, whose ids are
+  // kebab-case with no slash. That did not matter until t161, when a dispatch
+  // started resolving the node's skill and refusing to open a session for one
+  // nobody registered. So the pins are rewired here, in the test, to a manifest
+  // this package really registers: what these cases are about is which ENGINE
+  // ran, and the skill underneath only has to be real.
+  const skill = await api<{ id: string; versao: string; hash: string }>(
+    plane,
+    'POST',
+    '/v1/skills',
+    JSON.parse(
+      readFileSync(
+        path.join(PACKAGE_ROOT, 'test', 'fixtures', 'skill-travessia-fazer.json'),
+        'utf8',
+      ),
+    ) as Record<string, unknown>,
+    201,
+  );
+  const fixture = JSON.parse(readFileSync(GRAPH_FIXTURE, 'utf8')) as Record<string, unknown>;
+  const pinned: Array<Record<string, unknown>> = (
+    fixture.nos as Array<Record<string, unknown>>
+  ).map((node) => ({
+    ...node,
+    skill_ref: { id: skill.id, versao: skill.versao, hash: skill.hash },
+  }));
+
+  // A third node, and it is not decoration either. In the committed fixture the
+  // codex node IS the only final node, and since t161 a job standing on a final
+  // node is `concluido` and stops being a dispatch candidate — so the two cases
+  // below, which both need a job dispatched ON the codex node, would never get
+  // a tick at all. The terminal step moves one node further along, and `conferir`
+  // becomes an ordinary step of the traversal.
+  const document = {
+    ...fixture,
+    nos: [
+      ...pinned,
+      {
+        id: 'arquivar',
+        papel: 'arquivista',
+        tipo_no: 'trabalho',
+        engine: 'codex',
+        descricao: 'Encerra a travessia. Existe para que `conferir` não seja o nó final.',
+        skill_ref: { id: skill.id, versao: skill.versao, hash: skill.hash },
+        contrato: pinned[0].contrato,
+      },
+    ],
+    arestas: [
+      ...(fixture.arestas as unknown[]),
+      { de: CODEX_NODE, para: 'arquivar', condicao: 'sempre', descricao: 'Saída única.' },
+    ],
+    nos_finais: ['arquivar'],
+  };
   const { grafo_versao: version } = await api<{ grafo_versao: { id: string } }>(
     plane,
     'POST',

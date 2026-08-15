@@ -71,9 +71,28 @@ import type {
   SessionStatus,
 } from '../engine/types.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
+import { parseNodeResult } from './parse-node-result.ts';
 import { PermissionDenialTracker, type PermissionDenial } from './parse-permission-denial.ts';
+import {
+  ESCALATION_PROTOCOL,
+  renderSkillInstructions,
+  type RegisteredSkill,
+  type RenderedSkill,
+} from './render-skill-instructions.ts';
+import {
+  resolveNode,
+  type GraphEdge,
+  type GraphVersionBody,
+  type ResolvedNode,
+} from './resolve-node.ts';
 import { decodeClaudeCodeSessionText } from './session-text.ts';
 import type { WorktreeManager } from './session-worktree.ts';
+
+export {
+  ESCALATION_PROTOCOL,
+  SkillNotRegisteredError,
+  SkillPinMismatchError,
+} from './render-skill-instructions.ts';
 
 /**
  * `SessionStatus` (the interface's vocabulary) -> the taxonomy's `status`
@@ -94,34 +113,24 @@ export const TAXONOMY_STATUS: Readonly<Record<SessionStatus, string>> = Object.f
 });
 
 /**
- * The node instruction, fixed and literal, exactly as t104's spike did it.
+ * The instruction of a work with NO resolvable node, fixed and literal, exactly
+ * as t104's spike wrote it.
  *
- * Pulling the real skill from the registered graph (`grafo_versao`) is t109's
- * job, not this ticket's — but the protocol half of it is not decoration: a
- * session that does not know how to escalate never escalates, and the whole
- * cycle this ticket builds would never trigger.
+ * It stopped being the instruction of every session in t161: a work standing on
+ * a node of a registered graph is dispatched with that node's skill rendered
+ * into it (`render-skill-instructions.ts`), which is what the manifest format
+ * had been waiting for since t117. What is left here is the honest fallback for
+ * the case that has no graph to read — a work created by hand, which is every
+ * work this package's own suite dispatches — and it composes
+ * {@link ESCALATION_PROTOCOL} rather than restating it, so that the two texts
+ * cannot drift apart on the one paragraph both of them need.
  */
 export const DEFAULT_INSTRUCTIONS = [
   'Você é uma sessão de trabalho despachada pelo runner do cartografo.',
   '',
   'Trabalhe no diretório atual e faça o que o trabalho pede.',
   '',
-  'Quando alguma coisa que o trabalho não resolve travar você, NÃO chute e não',
-  'fique esperando: termine seu turno com exatamente UM bloco cercado, e nada',
-  'depois dele:',
-  '',
-  '```input-request',
-  '{"question": "<a decisão que você precisa, em uma ou duas frases>",',
-  ' "context": "<a evidência, o que você já tentou, as alternativas>",',
-  ' "options": ["<rótulo curto>", "<rótulo curto>"],',
-  ' "recommendation": "<a ação que você tomaria, no imperativo>",',
-  ' "default": "<a opção que vale se a pessoa simplesmente aceitar>"}',
-  '```',
-  '',
-  'O control plane bloqueia o trabalho, uma pessoa responde, e você é despachado',
-  'de novo — com a pergunta e a resposta já escritas no prompt. Não existe',
-  'retomada de sessão: cada despacho é uma sessão nova que foi informada do que',
-  'aconteceu antes.',
+  ESCALATION_PROTOCOL,
 ].join('\n');
 
 /** What `GET /v1/jobs/:id` gives back, in the part this module reads. */
@@ -139,21 +148,6 @@ interface Job {
    * t141. It is the first of the three ways {@link DEFAULT_ENGINE} is reached.
    */
   grafo_versao_id?: string | null;
-}
-
-/** One node of a graph snapshot, in the part this module reads. */
-interface GraphNode {
-  id: string;
-  /** The engine declared for this node (t141, FR1). Optional by design. */
-  engine?: unknown;
-}
-
-/** What `GET /v1/graph-versions/:id` gives back, in the part this module reads. */
-interface GraphVersion {
-  grafo_versao: {
-    id: string;
-    snapshot?: { nos?: GraphNode[] };
-  };
 }
 
 /** One envelope of the work's timeline. */
@@ -278,18 +272,33 @@ export interface ClaudeCodeDispatchOptions {
    * seam `permissions` below already is, and for the same missing pipeline.
    */
   silenceSeconds?: number;
-  /** Node instructions. Default: {@link DEFAULT_INSTRUCTIONS}. */
+  /**
+   * Node instructions, for a work with no resolvable node.
+   *
+   * Since t161 it is a FALLBACK and no longer an override: a work standing on a
+   * node of a registered graph is dispatched with that node's skill rendered
+   * into the session, and a dispatch-wide literal that replaced it would be
+   * exactly the hand-cranked mode this ficha closes — one instruction for every
+   * node of every graph, decided by whoever wired the process. What still
+   * arrives here is the text for a work with no graph, or one whose node the
+   * snapshot does not carry. Default: {@link DEFAULT_INSTRUCTIONS}.
+   */
   instructions?: string;
   /** Opaque additions to the engine's environment. */
   envOverrides?: Readonly<Record<string, string>>;
   /**
-   * Permission policy of the session (t125).
+   * Permission policy of a session with no resolvable node (t125).
    *
-   * Passed straight through to the `SessionSpec`, like `instructions` and
-   * `envOverrides`. Resolving it from the node's real `skill_ref` — registry
-   * lookup, hash check — belongs to the skill-rendering pipeline, which does
-   * not exist yet (`especificacoes/formatos/manifesto-skill.md:18-20`); what
-   * exists here is the seam that pipeline will fill.
+   * The seam t125 left open is filled: a dispatch that resolves a node resolves
+   * its skill too, and the session runs under the policy that skill's manifest
+   * declares — registry lookup and hash check included (t161, FR6). This field
+   * is what is left for a work with no graph behind it, and for those it behaves
+   * exactly as it always did.
+   *
+   * The precedence is not a preference. `permissoes` is inside the manifest's
+   * content hash on purpose, so a skill that opens a permission changes hash and
+   * reappears at the human gate; letting a dispatch-wide option override it
+   * would make that whole mechanism decorative.
    */
   permissions?: SessionPermissions;
   /** `fetch` implementation. Default: the global one. Test seam only. */
@@ -491,7 +500,7 @@ export function createClaudeCodeDispatch(
   };
 
   /**
-   * Which engine handles the node this work is sitting on RIGHT NOW (FR3).
+   * Which engine handles the node this work is sitting on RIGHT NOW (t141, FR3).
    *
    * The current node and not the entry one: a work moves, and the engine is a
    * property of the step being executed, not of the traversal that contains it.
@@ -499,39 +508,173 @@ export function createClaudeCodeDispatch(
    * Three roads lead to {@link DEFAULT_ENGINE}, and all three are ordinary: the
    * work carries no graph version, the snapshot has no node with this id, or the
    * node declares no `engine`. A missing graph version the work explicitly
-   * points at is NOT one of them — that is a dangling reference, and `call`
-   * rejects on the 404 rather than papering over it with a default.
+   * points at is NOT one of them — that is a dangling reference, and it rejects
+   * out of `resolveNode` rather than being papered over with a default.
    *
-   * @param job The work being dispatched.
+   * Since t161 the fetch is `resolveNode`'s and this function is pure: the first
+   * two roads are the same `null` the rest of the dispatch reads, so the engine
+   * that ran and the edge that was taken come from ONE read of ONE snapshot.
+   *
+   * @param resolved The node this dispatch resolved, or `null`.
    * @returns The engine name to route on.
    */
-  const resolveEngine = async (job: Job): Promise<string> => {
-    const versionId = job.grafo_versao_id;
-    if (versionId === undefined || versionId === null || versionId === '') return DEFAULT_ENGINE;
-
-    const { grafo_versao: version } = await call<GraphVersion>(
-      `/v1/graph-versions/${encodeURIComponent(versionId)}`,
-      'GET',
-    );
-    const node = version.snapshot?.nos?.find((candidate) => candidate.id === job.no_atual);
-    const declared = node?.engine;
+  const resolveEngine = (resolved: ResolvedNode | null): string => {
+    const declared = resolved?.node.engine;
     // Free text at the schema level on purpose (Out of Scope: no closed enum),
     // so "declared" means a non-empty string and nothing else.
     if (typeof declared !== 'string' || declared.trim() === '') return DEFAULT_ENGINE;
     return declared;
   };
 
+  /**
+   * Moves the work along the edge the traversal chose (FR10).
+   *
+   * The one write of this whole ficha that PROPAGATES on failure, and the
+   * asymmetry with the denial and the closure is deliberate: those are telemetry
+   * the runner owes after the fact, and a work that keeps moving with a gap in
+   * its log is recoverable. A transition that was not recorded is a work that
+   * stopped, standing on a node it already finished, with nobody able to tell
+   * that from a work that is merely slow. That is the single failure mode this
+   * ficha exists to close, so it may not be swallowed into a report at the end.
+   *
+   * @param job The work being dispatched.
+   * @param edge The edge to take.
+   */
+  const transition = async (job: Job, edge: GraphEdge): Promise<void> => {
+    await call(`/v1/jobs/${job.id}/transitions`, 'POST', {
+      para_no_id: edge.para,
+      ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+    });
+  };
+
+  /**
+   * Asks a human which way the work goes (FR9).
+   *
+   * Reached when a node with more than one way out finished without naming one
+   * of them: no block, a malformed block, or a result that matches no edge —
+   * the last of which is a real case and not a defect. The reference graph's own
+   * gate declares `escala` in its `saida_schema` and has no edge for it, on
+   * purpose: some outcomes are not the machine's to route.
+   *
+   * `ator.tipo` is `sistema` and not `agente`, which is the only thing that
+   * tells this question apart from one the SESSION wrote: that one is a model
+   * asking for a decision, this one is the wiring reporting that it has no rule
+   * to apply. Two spellings for two different facts, in a log somebody has to be
+   * able to group.
+   */
+  const escalateRouting = async (
+    job: Job,
+    sessionId: number,
+    edges: readonly GraphEdge[],
+    observed: string | null,
+  ): Promise<void> => {
+    const labels = edges.map((edge) => edge.condicao ?? '').filter((label) => label !== '');
+    const seen = observed === null ? 'nenhum' : `"${observed}"`;
+
+    await call('/v1/input-requests', 'POST', {
+      trabalho_id: job.id,
+      sessao_id: sessionId,
+      tipo: 'pergunta',
+      pergunta:
+        `O nó \`${job.no_atual}\` tem mais de uma saída e a sessão não escolheu ` +
+        `nenhuma delas: o resultado observado foi ${seen}, e ele não casa com ` +
+        'aresta nenhuma deste nó. Por qual aresta o trabalho segue?',
+      contexto:
+        `Arestas que saem de \`${job.no_atual}\`: ` +
+        `${edges.map((edge) => `\`${edge.condicao ?? ''}\` → \`${edge.para}\``).join(', ')}. ` +
+        'A sessão terminou sem falhar; o que falta é a decisão de rota.',
+      opcoes: labels,
+      recomendacao: null,
+      resposta_padrao: null,
+      // Written as `true` since t102, and nothing reads it to answer on its own:
+      // a routing escalation is resolved by a person, same as every other
+      // pending question today.
+      auto_aprovavel: true,
+      ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+    });
+  };
+
+  /**
+   * Advances the work to the next node, or asks (FR8/FR9).
+   *
+   * Only ever called for a session that ended `completed` AND asked nothing:
+   * advancing a work that escalated would answer its own question by walking
+   * away from it, and advancing one whose session died would record progress
+   * that never happened.
+   *
+   * @param job The work being dispatched.
+   * @param resolved Its node and the edges leaving it.
+   * @param sessionId The session that just finished, for the question's trail.
+   * @param output Everything the session printed, decoded.
+   */
+  const advance = async (
+    job: Job,
+    resolved: ResolvedNode,
+    sessionId: number,
+    output: string,
+  ): Promise<void> => {
+    const { edges } = resolved;
+
+    // Nothing to do: a node with no way out is a final node by the graph's own
+    // `termina` soundness rule, and the work has arrived. What marks it as
+    // finished is `concluido`, derived by the control plane from this very
+    // position (t152) — the runner records no arrival of its own.
+    if (edges.length === 0) return;
+
+    // Deterministic by construction: one way out is taken whatever the label
+    // says. Every non-gate node of the reference graph labels it `sempre`, and
+    // that string is not special-cased — a node with a single edge has no
+    // decision to report, so asking it for one would invent a decision and then
+    // escalate for the lack of an answer to it.
+    if (edges.length === 1) {
+      await transition(job, edges[0]);
+      return;
+    }
+
+    const observed = parseNodeResult(output)?.resultado ?? null;
+    const chosen = edges.find((edge) => edge.condicao === observed);
+    if (chosen === undefined) {
+      await escalateRouting(job, sessionId, edges, observed);
+      return;
+    }
+
+    await transition(job, chosen);
+  };
+
   return async (jobId: number): Promise<void> => {
     const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
 
+    // ONE read of the graph version, and it is the first thing the dispatch
+    // does: the engine, the skill, the contract and the edges all come out of
+    // this (FR1). A version the work points at and that does not resolve
+    // rejects right here, which is where stopping is cheapest.
+    const resolved = await resolveNode(job, (route) => call<GraphVersionBody>(route, 'GET'));
+
     // Resolved before anything is read for the prompt and long before a session
     // opens: an engine nobody registered has to stop the dispatch while stopping
-    // it is still free (FR5).
-    const engineName = await resolveEngine(job);
+    // it is still free (t141, FR5).
+    const engineName = resolveEngine(resolved);
     const route = options.engines[engineName];
     if (route === undefined) {
       throw new UnknownEngineError(engineName, job.no_atual, Object.keys(options.engines));
     }
+
+    // Then the skill, in the same window and for the same reason: an
+    // unregistered skill or a pin that stopped matching refuses the dispatch
+    // before a worktree is cut, before a session exists and before a single
+    // token is spent (FR3). A refusal after the engine is running is a refusal
+    // that already let the instructions out.
+    const rendered: RenderedSkill | null =
+      resolved === null
+        ? null
+        : await renderSkillInstructions(resolved, (skillRoute) =>
+            call<RegisteredSkill>(skillRoute, 'GET'),
+          );
+
+    // The manifest wins over the dispatch's own configuration wherever it has
+    // something to say, and falls back to it where it does not (FR4/FR6).
+    const instructions = rendered?.instructions ?? options.instructions ?? DEFAULT_INSTRUCTIONS;
+    const permissions = rendered?.permissions ?? options.permissions;
 
     // The whole write scope of this session, minted here and nowhere else
     // (FR7). After the engine check, because the cheapest failure stays first,
@@ -583,12 +726,12 @@ export function createClaudeCodeDispatch(
 
       const spec: SessionSpec = {
         workingDir: worktree.path,
-        instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
+        instructions,
         prompt,
         timeoutSeconds,
         silenceSeconds,
         ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
-        ...(options.permissions === undefined ? {} : { permissions: options.permissions }),
+        ...(permissions === undefined ? {} : { permissions }),
       };
 
       const lines: string[] = [];
@@ -600,9 +743,10 @@ export function createClaudeCodeDispatch(
 
       // The tracker watches for exactly what this session denied — the same list
       // the adapter handed the engine, resolved from the same policy (t125, FR6).
-      const tracker = new PermissionDenialTracker(
-        resolvePermissions(options.permissions).deniedTools,
-      );
+      // `permissions` and not `options.permissions`: since t161 the policy that
+      // reached the engine may be the skill's, and a tracker watching for the
+      // other one would report denials nobody was denied and miss the real ones.
+      const tracker = new PermissionDenialTracker(resolvePermissions(permissions).deniedTools);
 
       // A denial can happen before `POST /v1/sessions` has answered, and there is
       // no id to post it against until then. It waits here, and the queue is
@@ -739,7 +883,12 @@ export function createClaudeCodeDispatch(
         finishFailure = error;
       }
 
-      const request: InputRequest | null = parseInputRequest(route.decodeSessionText(lines));
+      // Decoded ONCE and read twice: the escalation block and the routing block
+      // are two readings of the same text, and decoding it a second time would
+      // let them disagree about what the session said.
+      const output = route.decodeSessionText(lines);
+
+      const request: InputRequest | null = parseInputRequest(output);
       if (request !== null) {
         // This POST is what blocks the work, inside the control plane and in the
         // same transaction as `pergunta.criada` (FR1). The runner never posts a
@@ -759,6 +908,25 @@ export function createClaudeCodeDispatch(
           auto_aprovavel: true,
           ator: { tipo: 'agente', ref: job.no_atual === '' ? 'sessao' : job.no_atual },
         });
+      }
+
+      // And here is where a traversal stops needing an operator (FR7-FR10).
+      //
+      // Three conditions, and each one is a different way of not having earned
+      // an advance. No resolved node: there is no graph to say where "next"
+      // even is. A session that did not complete: recording progress for work
+      // that died would make the log claim something that did not happen. A
+      // session that asked: it is blocked behind a person now, and the next
+      // dispatch re-enters this same node with the answer already in the
+      // prompt — moving it on would answer its question by walking away from
+      // it (`docs/spec/escalacao-humana.md`).
+      //
+      // BEFORE the release and before the captured failures are rethrown, on
+      // purpose: a denial or a closure the control plane refused is telemetry
+      // the runner owes, and letting either of them strand a work that finished
+      // cleanly would trade the recoverable problem for the unrecoverable one.
+      if (resolved !== null && outcome.status === 'completed' && request === null) {
+        await advance(job, resolved, session.id, output);
       }
 
       // The tree goes back before this callback settles, and the OUTCOME is what
@@ -793,9 +961,11 @@ export function createClaudeCodeDispatch(
     } catch (error) {
       // Every exit that is not the terminal one lands here — a read that
       // failed before the session opened, the control-plane failure that
-      // cancels a live session, a throw from the telemetry the runner owes.
-      // None of them is a completed session, so the tree stays on disk: it is
-      // the only place the evidence of what went wrong still exists (FR8).
+      // cancels a live session, a throw from the telemetry the runner owes, and
+      // since t161 a transition the control plane refused. The tree stays on
+      // disk for all of them, including that last one: a work whose advance did
+      // not record is a work standing on a node it already finished, and the
+      // directory is the only place what it did still exists (FR8).
       await release(true);
       throw error;
     }

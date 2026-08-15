@@ -28,7 +28,8 @@
     "traverse": "node --import tsx scripts/run-graph-traversal.mjs",
     "close-outcome": "node --import tsx scripts/close-surveyor-outcome.mjs",
     "surveyor": "node --import tsx src/surveyor/cli.mjs",
-    "synthesize": "node --import tsx src/synthesizer/cli.mjs"
+    "synthesize": "node --import tsx src/synthesizer/cli.mjs",
+    "spike:traversal": "node --import tsx scripts/spike-graph-traversal.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

@@ -1,0 +1,75 @@
+{
+  "id": "revisar-nota",
+  "versao": "1.0.0",
+  "hash": "sha256:3ca1e0384799619159505765cf0c220bdc450a353422c1fbdfdc7bceaf2493b5",
+  "papel": "portao",
+  "descricao": "Lê `nota.md` e escreve o parecer em `parecer.md`, com a linha que o sustenta.",
+  "entrada": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "texto"
+    ],
+    "properties": {
+      "texto": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "saida": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "resultado",
+      "evidencia"
+    ],
+    "properties": {
+      "resultado": {
+        "type": "string",
+        "enum": [
+          "passou",
+          "falhou",
+          "escalar_humano"
+        ],
+        "description": "obrigatório em toda skill de papel portao; a aresta que o executor toma vem do resultado que o contrato do NÓ declara."
+      },
+      "evidencia": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "pre_condicoes": [
+    "`nota.md` existe no diretório da sessão"
+  ],
+  "checks": [
+    {
+      "id": "parecer-com-evidencia",
+      "tipo": "agentico",
+      "descricao": "O parecer cita a linha da nota que o sustenta, e não o relato de quem escreveu.",
+      "instrucao": "O parecer nomeia a linha de `nota.md` que sustenta o veredito?",
+      "evidencia_obrigatoria": [
+        "parecer.md",
+        "nota.md"
+      ]
+    }
+  ],
+  "permissoes": {
+    "filesystem": {
+      "leitura": [
+        "**"
+      ],
+      "escrita": [
+        "**"
+      ]
+    },
+    "rede": {
+      "permitido": false
+    }
+  },
+  "instrucoes": "# Conferir uma nota curta\n\nLeia `nota.md` no diretório atual e escreva `parecer.md` com o veredito\n(passou ou falhou) e a linha de `nota.md` que sustenta o veredito.\n\nNão crie nenhum outro arquivo. Não commite, não crie branch, não rode git.",
+  "origem": {
+    "tipo": "nativa"
+  }
+}

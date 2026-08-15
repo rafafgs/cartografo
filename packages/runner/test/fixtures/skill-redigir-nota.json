@@ -1,0 +1,62 @@
+{
+  "id": "redigir-nota",
+  "versao": "1.0.0",
+  "hash": "sha256:46c122f41b3cbf9fcaf1d1a4bf8c91d8660afdec70387aed4ac77857e8a20a8d",
+  "papel": "fazer",
+  "descricao": "Escreve uma nota curta em `nota.md`, e nada além disso.",
+  "entrada": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "tema"
+    ],
+    "properties": {
+      "tema": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "saida": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "texto"
+    ],
+    "properties": {
+      "texto": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "pre_condicoes": [
+    "o diretório da sessão existe e é onde `nota.md` vai ser escrito"
+  ],
+  "checks": [
+    {
+      "id": "nota-existe",
+      "tipo": "deterministico",
+      "descricao": "A nota existe e não está vazia.",
+      "comando": "test -s nota.md",
+      "timeout_s": 60
+    }
+  ],
+  "permissoes": {
+    "filesystem": {
+      "leitura": [
+        "**"
+      ],
+      "escrita": [
+        "**"
+      ]
+    },
+    "rede": {
+      "permitido": false
+    }
+  },
+  "instrucoes": "# Redigir uma nota curta\n\nEscreva o arquivo `nota.md` no diretório atual, com 3 a 5 linhas sobre o tema\nque o trabalho pede.\n\nNão crie nenhum outro arquivo. Não commite, não crie branch, não rode git.",
+  "origem": {
+    "tipo": "nativa"
+  }
+}

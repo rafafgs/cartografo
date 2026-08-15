@@ -56,6 +56,10 @@ import { proposeFlowImprovement } from '../src/surveyor/proposal.ts';
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
 const MINIMAL_GRAPH = join(REPO_ROOT, 'schema/exemplos/grafo-valido-minimo.json');
+const FIXTURES_DIR = join(REPO_ROOT, 'packages/runner/test/fixtures');
+
+/** The manifest each node of the minimal graph runs, by node id (t161). */
+const NODE_SKILLS = { redigir: 'skill-redigir-nota.json', revisar: 'skill-revisar-nota.json' };
 
 const EXECUTION_ID = 110;
 const TIMEOUT_SECONDS = 300;
@@ -202,18 +206,6 @@ async function api(url, method, route, body, expected = 200) {
   return text === '' ? undefined : JSON.parse(text);
 }
 
-/** The instruction of each node — the stand-in for the skill the graph injects. */
-function nodeInstructions(node, task) {
-  return [
-    `Você é uma sessão do nó \`${node}\` de um grafo do cartografo.`,
-    '',
-    'Trabalhe no diretório atual, faça exatamente o que se pede e nada além disso.',
-    'Não commite, não crie branch, não rode git.',
-    '',
-    `Tarefa do nó: ${task}`,
-  ].join('\n');
-}
-
 async function main() {
   const adapter = new ClaudeCodeAdapter();
   const probe = await adapter.verifyCli();
@@ -225,7 +217,29 @@ async function main() {
 
   try {
     // --- 1. the graph becomes data -------------------------------------------
-    const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
+    //
+    // The manifests first: since t161 the dispatch resolves the node's skill and
+    // refuses to open a session for one the registry does not carry, so the task
+    // of each node now comes from a registered manifest instead of from this
+    // script. The fixture's own `skill_ref`s are placeholders that could never be
+    // registered — the registry's ids are kebab-case, with no slash — so the pins
+    // are rewired here to the manifests this package ships.
+    const registered = new Map();
+    for (const [nodeId, file] of Object.entries(NODE_SKILLS)) {
+      const skill = await api(url, 'POST', '/v1/skills', JSON.parse(readFileSync(join(FIXTURES_DIR, file), 'utf8')), 201);
+      registered.set(nodeId, skill);
+      log(`skill "${skill.id}" registered at ${skill.hash}`);
+    }
+
+    const fixture = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
+    const document = {
+      ...fixture,
+      nos: fixture.nos.map((no) => {
+        const skill = registered.get(no.id);
+        if (skill === undefined) die(`the fixture grew a node this proof has no skill for: "${no.id}"`);
+        return { ...no, skill_ref: { id: skill.id, versao: skill.versao, hash: skill.hash } };
+      }),
+    };
     const { grafo: graph, grafo_versao: version } = await api(url, 'POST', '/v1/graphs', document, 201);
     log(`graph "${graph.id}" registered at version ${version.id}`);
 
@@ -248,21 +262,19 @@ async function main() {
     );
     log(`job ${job.id} created on node "${job.no_atual}"`);
 
-    const dispatch = (node, task) =>
+    // No `instructions` here since t161: the text of each node comes from the
+    // manifest registered above, resolved from the node the work is standing on.
+    const dispatch = () =>
       createClaudeCodeDispatch({
         urlBase: url,
         engines: { [DEFAULT_ENGINE]: { adapter, decodeSessionText: decodeClaudeCodeSessionText } },
         worktrees,
         timeoutSeconds: TIMEOUT_SECONDS,
-        instructions: nodeInstructions(node, task),
         token: operatorToken,
       })(job.id);
 
     log('real session #1 — node "redigir"...');
-    await dispatch(
-      'redigir',
-      'escreva o arquivo `nota.md` com 3 a 5 linhas sobre o que é um gargalo de fluxo em um grafo de trabalho.',
-    );
+    await dispatch();
 
     // --- 3. the work waits for a person (real wait time) ----------------------
     await api(url, 'POST', `/v1/jobs/${job.id}/blocks`, {
@@ -272,14 +284,17 @@ async function main() {
     await delay(BLOCK_MS);
     await api(url, 'POST', `/v1/jobs/${job.id}/unblocks`, {});
 
-    await api(url, 'POST', `/v1/jobs/${job.id}/transitions`, { para_no_id: 'revisar' });
-    log('work transitioned to "revisar"');
+    // No transition posted here: since t161 the first session's own dispatch
+    // took the single edge leaving `redigir`. What this proof still does by hand
+    // is open the SECOND session — `revisar` is the graph's final node, so the
+    // work is `concluido` the moment it lands there and the controller would
+    // never offer it again.
+    const moved = await api(url, 'GET', `/v1/jobs/${job.id}`);
+    if (moved.no_atual !== 'revisar') die(`the dispatch had to advance the work to "revisar"; it is on "${moved.no_atual}"`);
+    log('the dispatch advanced the work to "revisar" with nobody asking');
 
     log('real session #2 — node "revisar"...');
-    await dispatch(
-      'revisar',
-      'leia `nota.md` e escreva `revisao.md` com o veredito (passou/falhou) e a linha que sustenta o veredito.',
-    );
+    await dispatch();
 
     // --- 4. the surveyor reads the execution and proposes ---------------------
     const { root: surveyorRoot, repo: surveyorRepo } = createDisposableRepo();

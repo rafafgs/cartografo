@@ -154,6 +154,16 @@ async function startControlPlane(t: TestHook): Promise<{ baseUrl: string; token:
   throw new Error(`the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`);
 }
 
+/**
+ * Every call THIS TEST makes to the control plane, as a route string.
+ *
+ * The ledger is the assertion: the claim of this ficha is that a traversal
+ * needs no operator, and the test is standing in for the operator. A
+ * `/transitions` in here would be the test crossing the graph by hand, which is
+ * exactly what the first dogfood run did.
+ */
+const testCalls: string[] = [];
+
 /** Talks JSON with the control plane, asserting the status on the way. */
 async function api<T>(
   baseUrl: string,
@@ -166,6 +176,7 @@ async function api<T>(
   const headers: Record<string, string> = { authorization: `Bearer ${token}` };
   if (body !== undefined) headers['content-type'] = 'application/json';
 
+  testCalls.push(`${method} ${route}`);
   const response = await fetch(`${baseUrl}${route}`, {
     method,
     headers,
@@ -277,19 +288,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     201,
   );
 
-  // The ONE call this test is not allowed to make. Everything below goes
-  // through this wrapper, so the assertion at the end is a measurement and not
-  // a promise: a transition posted from here would be counted.
-  const manualTransitions: string[] = [];
-  const watched: typeof fetch = async (input, init) => {
-    const route = String(input);
-    if ((init?.method ?? 'GET') === 'POST' && route.endsWith('/transitions')) {
-      manualTransitions.push(route);
-    }
-    return fetch(input, init);
-  };
-
-  const client = new ClienteControle({ urlBase: baseUrl, token, buscar: watched });
+  const client = new ClienteControle({ urlBase: baseUrl, token });
   await client.registrarRunner('runner-t161', 'o que atravessa sozinho');
 
   // The fake engine is configured per DISPATCH (`envOverrides` is fixed on the
@@ -301,7 +300,6 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     createClaudeCodeDispatch({
       urlBase: baseUrl,
       token,
-      doFetch: watched,
       engines: {
         'claude-code': {
           adapter: new ClaudeCodeAdapter({
@@ -403,9 +401,9 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
 
   // --- 6. and NOTHING above was moved by hand -------------------------------
   assert.deepEqual(
-    manualTransitions,
+    testCalls.filter((call) => call.endsWith('/transitions')),
     [],
-    'every movement in this traversal was the dispatch\'s; the test posted no transition at all',
+    "the test — standing in for the operator — posted no transition at all",
   );
 
   const { eventos: events } = await api<{ eventos: Event[] }>(
@@ -414,12 +412,15 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     'GET',
     `/v1/executions/${EXECUTION_ID}/events`,
   );
-  const walked = events
-    .filter((event) => event.tipo === 'trabalho.transicao')
-    .map((event) => String(event.dados.para_no_id));
+  const moves = events.filter((event) => event.tipo === 'trabalho.transicao');
   assert.deepEqual(
-    walked,
+    moves.map((event) => String(event.dados.para_no_id)),
     ['conferir', 'implementar', 'conferir', 'publicar'],
     'the log tells the whole traversal, rework cycle and all',
+  );
+  assert.deepEqual(
+    [...new Set(moves.map((event) => `${event.ator.tipo}:${event.ator.ref}`))],
+    ['sistema:runner'],
+    'and the log says who moved it: the runner, on every single edge',
   );
 });

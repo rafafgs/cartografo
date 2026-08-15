@@ -56,7 +56,7 @@ function minimalGraph(): GraphDocument {
 }
 
 function requireNode(doc: GraphDocument, id: string): GraphNode {
-  const node = doc.nos.find((candidate) => candidate.id === id);
+  const node = doc.nodes.find((candidate) => candidate.id === id);
   if (node === undefined) throw new Error(`the fixture changed: node "${id}" is gone`);
   return node;
 }
@@ -64,30 +64,30 @@ function requireNode(doc: GraphDocument, id: string): GraphNode {
 /** A complete new node: role, type, pinned skill and a contract with a check. */
 const NEW_NODE: GraphNode = {
   id: 'checar_fatos',
-  papel: 'revisor',
-  tipo_no: 'trabalho',
-  descricao: 'Confere cada afirmação da nota contra a fonte citada.',
+  role: 'revisor',
+  node_type: 'trabalho',
+  description: 'Confere cada afirmação da nota contra a fonte citada.',
   skill_ref: {
     id: 'cartografo/checar-fatos',
-    versao: '1.0.0',
+    version: '1.0.0',
     hash: `sha256:${'0'.repeat(64)}`,
   },
-  contrato: {
-    entrada_schema: {
+  contract: {
+    input_schema: {
       type: 'object',
       required: ['texto'],
       properties: { texto: { type: 'string', minLength: 1 } },
     },
-    saida_schema: {
+    output_schema: {
       type: 'object',
       required: ['aprovado'],
       properties: { aprovado: { type: 'boolean' } },
     },
-    verificacoes: [
+    checks: [
       {
-        tipo: 'deterministico',
-        comando: 'test -s checagem.md',
-        descricao: 'O relatório de checagem existe e não está vazio.',
+        type: 'deterministic',
+        command: 'test -s checagem.md',
+        description: 'O relatório de checagem existe e não está vazio.',
       },
     ],
   },
@@ -96,30 +96,30 @@ const NEW_NODE: GraphNode = {
 /** A second complete node, used as the one only the `from` side has. */
 const ARCHIVE_NODE: GraphNode = {
   id: 'arquivar',
-  papel: 'arquivista',
-  tipo_no: 'trabalho',
-  descricao: 'Guarda a nota revisada no acervo do projeto.',
+  role: 'arquivista',
+  node_type: 'trabalho',
+  description: 'Guarda a nota revisada no acervo do projeto.',
   skill_ref: {
     id: 'cartografo/arquivar-nota',
-    versao: '1.0.0',
+    version: '1.0.0',
     hash: `sha256:${'1'.repeat(64)}`,
   },
-  contrato: {
-    entrada_schema: {
+  contract: {
+    input_schema: {
       type: 'object',
       required: ['texto'],
       properties: { texto: { type: 'string', minLength: 1 } },
     },
-    saida_schema: {
+    output_schema: {
       type: 'object',
       required: ['caminho'],
       properties: { caminho: { type: 'string', minLength: 1 } },
     },
-    verificacoes: [
+    checks: [
       {
-        tipo: 'deterministico',
-        comando: 'test -s acervo/nota.md',
-        descricao: 'A nota chegou ao acervo.',
+        type: 'deterministic',
+        command: 'test -s acervo/nota.md',
+        description: 'A nota chegou ao acervo.',
       },
     ],
   },
@@ -127,22 +127,22 @@ const ARCHIVE_NODE: GraphNode = {
 
 /** A contract different from `revisar`'s, so the field really changes. */
 const OTHER_CONTRACT = {
-  entrada_schema: {
+  input_schema: {
     type: 'object',
     required: ['texto'],
     properties: { texto: { type: 'string' } },
   },
-  saida_schema: {
+  output_schema: {
     type: 'object',
     required: ['resultado'],
     properties: { resultado: { enum: ['passou', 'falhou'] } },
   },
-  verificacoes: [
+  checks: [
     {
-      tipo: 'agentico',
-      instrucao: 'A nota sobrevive a uma leitura adversarial? Cite o trecho mais frágil.',
-      evidencia_obrigatoria: true,
-      descricao: 'Leitura de red team, com evidência própria.',
+      type: 'agentic',
+      instruction: 'A nota sobrevive a uma leitura adversarial? Cite o trecho mais frágil.',
+      required_evidence: true,
+      description: 'Leitura de red team, com evidência própria.',
     },
   ],
 };
@@ -158,61 +158,61 @@ interface Pair {
 function nodeOnlyInTo(): Pair {
   const from = minimalGraph();
   const to = minimalGraph();
-  to.nos.push(structuredClone(NEW_NODE));
+  to.nodes.push(structuredClone(NEW_NODE));
   return { label: 'node only in to', from, to };
 }
 
 /** AT3 — the node exists only in `from`. */
 function nodeOnlyInFrom(): Pair {
   const from = minimalGraph();
-  from.nos.push(structuredClone(ARCHIVE_NODE));
+  from.nodes.push(structuredClone(ARCHIVE_NODE));
   const to = minimalGraph();
   return { label: 'node only in from', from, to };
 }
 
-/** AT4 — same node, only `papel` differs. */
+/** AT4 — same node, only `role` differs. */
 function roleChanged(): Pair {
   const from = minimalGraph();
   const to = minimalGraph();
-  requireNode(to, 'revisar').papel = 'red-team';
+  requireNode(to, 'revisar').role = 'red-team';
   return { label: 'role changed', from, to };
 }
 
-/** AT5 — same node, `papel` and `contrato` differ. */
+/** AT5 — same node, `role` and `contract` differ. */
 function roleAndContractChanged(): Pair {
   const from = minimalGraph();
   const to = minimalGraph();
   const node = requireNode(to, 'revisar');
-  node.papel = 'red-team';
-  node.contrato = structuredClone(OTHER_CONTRACT);
+  node.role = 'red-team';
+  node.contract = structuredClone(OTHER_CONTRACT);
   return { label: 'role and contract changed', from, to };
 }
 
-/** AT6 — same id, `tipo_no` differs: no field swap can express it. */
+/** AT6 — same id, `node_type` differs: no field swap can express it. */
 function typeChanged(): Pair {
   const from = minimalGraph();
   const to = minimalGraph();
-  requireNode(to, 'revisar').tipo_no = 'trabalho';
+  requireNode(to, 'revisar').node_type = 'trabalho';
   return { label: 'node type changed', from, to };
 }
 
 /** AT7 — the edge exists only in `to`; both ends are already on both sides. */
 function edgeOnlyInTo(): Pair {
   const from = minimalGraph();
-  from.nos.push(structuredClone(NEW_NODE));
+  from.nodes.push(structuredClone(NEW_NODE));
   const to = minimalGraph();
-  to.nos.push(structuredClone(NEW_NODE));
-  to.arestas.push({ de: 'revisar', para: 'checar_fatos', condicao: 'reprovado' });
+  to.nodes.push(structuredClone(NEW_NODE));
+  to.edges.push({ from: 'revisar', to: 'checar_fatos', condition: 'reprovado' });
   return { label: 'edge only in to', from, to };
 }
 
 /** AT8 — the edge exists only in `from`. */
 function edgeOnlyInFrom(): Pair {
   const from = minimalGraph();
-  from.nos.push(structuredClone(ARCHIVE_NODE));
-  from.arestas.push({ de: 'revisar', para: 'arquivar', condicao: 'aprovado' });
+  from.nodes.push(structuredClone(ARCHIVE_NODE));
+  from.edges.push({ from: 'revisar', to: 'arquivar', condition: 'aprovado' });
   const to = minimalGraph();
-  to.nos.push(structuredClone(ARCHIVE_NODE));
+  to.nodes.push(structuredClone(ARCHIVE_NODE));
   return { label: 'edge only in from', from, to };
 }
 
@@ -220,14 +220,14 @@ function edgeOnlyInFrom(): Pair {
 function edgeConditionChanged(): Pair {
   const from = minimalGraph();
   const to = minimalGraph();
-  to.arestas[0] = { ...structuredClone(to.arestas[0]), condicao: 'rascunho pronto' };
+  to.edges[0] = { ...structuredClone(to.edges[0]), condition: 'rascunho pronto' };
   return { label: 'edge condition changed', from, to };
 }
 
 /**
  * AT10 — every change type of AT2-AT9 at once.
  *
- * The order of `to.nos`/`to.arestas` is not decoration: `canonicalize` preserves
+ * The order of `to.nodes`/`to.edges` is not decoration: `canonicalize` preserves
  * array order, so the round trip only closes if the emission order of the engine
  * reproduces it. Whatever survives untouched keeps its place, and whatever is
  * (re)added lands after it — which is exactly what removals-then-additions
@@ -235,20 +235,20 @@ function edgeConditionChanged(): Pair {
  */
 function everythingAtOnce(): Pair {
   const from = minimalGraph();
-  from.nos.push(structuredClone(ARCHIVE_NODE));
-  from.arestas.push({ de: 'revisar', para: 'arquivar', condicao: 'aprovado' });
+  from.nodes.push(structuredClone(ARCHIVE_NODE));
+  from.edges.push({ from: 'revisar', to: 'arquivar', condition: 'aprovado' });
 
   const to = minimalGraph();
-  const rewritten: GraphNode = { ...structuredClone(requireNode(to, 'redigir')), tipo_no: 'portao' };
+  const rewritten: GraphNode = { ...structuredClone(requireNode(to, 'redigir')), node_type: 'portao' };
   const reviewed: GraphNode = {
     ...structuredClone(requireNode(to, 'revisar')),
-    papel: 'red-team',
-    contrato: structuredClone(OTHER_CONTRACT),
+    role: 'red-team',
+    contract: structuredClone(OTHER_CONTRACT),
   };
-  to.nos = [reviewed, rewritten, structuredClone(NEW_NODE)];
-  to.arestas = [
-    { de: 'redigir', para: 'revisar', condicao: 'rascunho pronto' },
-    { de: 'revisar', para: 'checar_fatos', condicao: 'reprovado' },
+  to.nodes = [reviewed, rewritten, structuredClone(NEW_NODE)];
+  to.edges = [
+    { from: 'redigir', to: 'revisar', condition: 'rascunho pronto' },
+    { from: 'revisar', to: 'checar_fatos', condition: 'reprovado' },
   ];
 
   return { label: 'everything at once', from, to };
@@ -299,7 +299,7 @@ test('t140 AT3 — a node only in `from` becomes a single remover_no', async () 
   ]);
 });
 
-test('t140 AT4 — a node with only `papel` changed becomes a single alterar_campo_no', async () => {
+test('t140 AT4 — a node with only `role` changed becomes a single alterar_campo_no', async () => {
   const { diffGraphs } = await loadDiff();
   const { validateOperation } = await loadOperations();
   const { from, to } = roleChanged();
@@ -310,13 +310,13 @@ test('t140 AT4 — a node with only `papel` changed becomes a single alterar_cam
     {
       tipo: 'alterar_campo_no',
       no_id: 'revisar',
-      campo: 'papel',
+      campo: 'role',
       de: 'revisor',
       para: 'red-team',
       inversa: {
         tipo: 'alterar_campo_no',
         no_id: 'revisar',
-        campo: 'papel',
+        campo: 'role',
         de: 'red-team',
         para: 'revisor',
       },
@@ -325,7 +325,7 @@ test('t140 AT4 — a node with only `papel` changed becomes a single alterar_cam
   assert.deepEqual(validateOperation(operations[0]), { valido: true, erros: [] });
 });
 
-test('t140 AT5 — `papel` and `contrato` changed become two ops, in the fixed field order', async () => {
+test('t140 AT5 — `role` and `contract` changed become two ops, in the fixed field order', async () => {
   const { diffGraphs } = await loadDiff();
   const { from, to } = roleAndContractChanged();
 
@@ -334,28 +334,28 @@ test('t140 AT5 — `papel` and `contrato` changed become two ops, in the fixed f
   assert.deepEqual(
     operations.map((operation) => [operation.tipo, (operation as { campo?: string }).campo]),
     [
-      ['alterar_campo_no', 'papel'],
-      ['alterar_campo_no', 'contrato'],
+      ['alterar_campo_no', 'role'],
+      ['alterar_campo_no', 'contract'],
     ],
-    'the fixed order is papel, descricao, skill_ref, contrato — never the key order of the object',
+    'the fixed order is role, description, skill_ref, contract — never the key order of the object',
   );
   assert.deepEqual(operations[1], {
     tipo: 'alterar_campo_no',
     no_id: 'revisar',
-    campo: 'contrato',
-    de: requireNode(from, 'revisar').contrato,
+    campo: 'contract',
+    de: requireNode(from, 'revisar').contract,
     para: structuredClone(OTHER_CONTRACT),
     inversa: {
       tipo: 'alterar_campo_no',
       no_id: 'revisar',
-      campo: 'contrato',
+      campo: 'contract',
       de: structuredClone(OTHER_CONTRACT),
-      para: requireNode(from, 'revisar').contrato,
+      para: requireNode(from, 'revisar').contract,
     },
   });
 });
 
-test('t140 AT6 — a changed `tipo_no` becomes remover_no immediately followed by adicionar_no', async () => {
+test('t140 AT6 — a changed `node_type` becomes remover_no immediately followed by adicionar_no', async () => {
   const { diffGraphs } = await loadDiff();
   const { from, to } = typeChanged();
 
@@ -382,12 +382,12 @@ test('t140 AT7 — an edge only in `to` becomes a single adicionar_aresta', asyn
   const { diffGraphs } = await loadDiff();
   const { from, to } = edgeOnlyInTo();
 
-  const edge: GraphEdge = { de: 'revisar', para: 'checar_fatos', condicao: 'reprovado' };
+  const edge: GraphEdge = { from: 'revisar', to: 'checar_fatos', condition: 'reprovado' };
   assert.deepEqual(diffGraphs(from, to), [
     {
       tipo: 'adicionar_aresta',
       aresta: edge,
-      inversa: { tipo: 'remover_aresta', aresta: { de: 'revisar', para: 'checar_fatos' } },
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'revisar', to: 'checar_fatos' } },
     },
   ]);
 });
@@ -396,11 +396,11 @@ test('t140 AT8 — an edge only in `from` becomes a single remover_aresta', asyn
   const { diffGraphs } = await loadDiff();
   const { from, to } = edgeOnlyInFrom();
 
-  const edge: GraphEdge = { de: 'revisar', para: 'arquivar', condicao: 'aprovado' };
+  const edge: GraphEdge = { from: 'revisar', to: 'arquivar', condition: 'aprovado' };
   assert.deepEqual(diffGraphs(from, to), [
     {
       tipo: 'remover_aresta',
-      aresta: { de: 'revisar', para: 'arquivar' },
+      aresta: { from: 'revisar', to: 'arquivar' },
       inversa: { tipo: 'adicionar_aresta', aresta: edge },
     },
   ]);
@@ -413,13 +413,13 @@ test('t140 AT9 — a changed `condicao` becomes remover_aresta immediately follo
   assert.deepEqual(diffGraphs(from, to), [
     {
       tipo: 'remover_aresta',
-      aresta: { de: 'redigir', para: 'revisar' },
-      inversa: { tipo: 'adicionar_aresta', aresta: structuredClone(from.arestas[0]) },
+      aresta: { from: 'redigir', to: 'revisar' },
+      inversa: { tipo: 'adicionar_aresta', aresta: structuredClone(from.edges[0]) },
     },
     {
       tipo: 'adicionar_aresta',
-      aresta: structuredClone(to.arestas[0]),
-      inversa: { tipo: 'remover_aresta', aresta: { de: 'redigir', para: 'revisar' } },
+      aresta: structuredClone(to.edges[0]),
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: 'revisar' } },
     },
   ]);
 });
@@ -432,8 +432,8 @@ test('t140 AT10 — the round trip closes over a document combining every change
   const operations = diffGraphs(from, to);
   const result = applyOperations(from, operations);
 
-  assert.deepEqual(canonicalize(result.nos), canonicalize(to.nos));
-  assert.deepEqual(canonicalize(result.arestas), canonicalize(to.arestas));
+  assert.deepEqual(canonicalize(result.nodes), canonicalize(to.nodes));
+  assert.deepEqual(canonicalize(result.edges), canonicalize(to.edges));
   assert.deepEqual(
     from,
     everythingAtOnce().from,
@@ -448,8 +448,8 @@ test('t140 AT10 — the round trip closes over every fixture of this file', asyn
   for (const fixture of FIXTURES) {
     const { label, from, to } = fixture();
     const result = applyOperations(from, diffGraphs(from, to));
-    assert.deepEqual(canonicalize(result.nos), canonicalize(to.nos), label);
-    assert.deepEqual(canonicalize(result.arestas), canonicalize(to.arestas), label);
+    assert.deepEqual(canonicalize(result.nodes), canonicalize(to.nodes), label);
+    assert.deepEqual(canonicalize(result.edges), canonicalize(to.edges), label);
   }
 });
 
@@ -478,11 +478,11 @@ test('t140 FR1 — the identity fields are never diffed, whatever they say', asy
 
   const from = minimalGraph();
   const to = minimalGraph();
-  to.classe = 'outra-classe';
-  to.linhagem = { tipo: 'variante', base_classe: 'nota-curta' };
+  to.problem_class = 'outra-classe';
+  to.lineage = { type: 'variante', base_class: 'nota-curta' };
   to.metadata = { nome: 'outro nome' };
-  to.no_inicial = 'revisar';
-  to.nos_finais = ['redigir'];
+  to.initial_node = 'revisar';
+  to.final_nodes = ['redigir'];
 
   assert.deepEqual(
     diffGraphs(from, to),

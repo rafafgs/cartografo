@@ -115,7 +115,7 @@ function openProposal(
     reply.code(422);
     return {
       erro: 'diff_sem_efeito',
-      mensagem: 'the two snapshots already agree on "nos" and "arestas"; there is no diff to propose',
+      mensagem: 'the two snapshots already agree on "nodes" and "edges"; there is no diff to propose',
       grafo_id: target.id,
     };
   }
@@ -155,10 +155,10 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
     }
 
     // The document passed the gate, so it is an object with the seven keys; all
-    // that is left is making sure `classe` serves as identity (D8: lineage id =
-    // class).
+    // that is left is making sure `problem_class` serves as identity (D8:
+    // lineage id = class).
     const raw = document as Record<string, unknown>;
-    const className = raw.classe;
+    const className = raw.problem_class;
     if (typeof className !== 'string' || className.trim() === '') {
       reply.code(422);
       return {
@@ -169,8 +169,8 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
           erros: [
             {
               codigo: 'campo_invalido',
-              mensagem: '"classe" has to be a filled text: it is the identity of the lineage (D8)',
-              alvo: 'classe',
+              mensagem: '"problem_class" has to be a filled text: it is the identity of the lineage (D8)',
+              alvo: 'problem_class',
             },
           ],
         },
@@ -178,14 +178,14 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       };
     }
 
-    const lineage = isObject(raw.linhagem) ? raw.linhagem : {};
-    if (lineage.tipo !== 'base') {
+    const lineage = isObject(raw.lineage) ? raw.lineage : {};
+    if (lineage.type !== 'base') {
       reply.code(400);
       return {
         erro: 'linhagem_nao_base',
         mensagem:
           'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
-        linhagem_tipo: lineage.tipo ?? null,
+        linhagem_tipo: lineage.type ?? null,
       };
     }
 
@@ -205,7 +205,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
 
   /**
    * `POST /graphs/:id/fork` is D13's branch semantics: the variant is born as the
-   * base's current snapshot, byte for byte, with `linhagem` swapped and nothing
+   * base's current snapshot, byte for byte, with `lineage` swapped and nothing
    * else. A `git branch` does not change content either — it creates a pointer
    * and a parenthood, and evolving the two sides apart is the ordinary proposal
    * flow, which needs no special case for a variant.
@@ -291,13 +291,13 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
 
     const document: GraphDocument = {
       ...current.snapshot,
-      linhagem: {
-        tipo: 'variante',
-        base_classe: base.classe,
+      lineage: {
+        type: 'variante',
+        base_class: base.classe,
         // Absent, not null: the same elision `base` already does with the two
         // fields the schema forbids it. The column is INTEGER and the document
         // field is a string (`schema/grafo.schema.json`) — hence the `String`.
-        ...(originProposalId === null ? {} : { origem_proposta_id: String(originProposalId) }),
+        ...(originProposalId === null ? {} : { source_proposal_id: String(originProposalId) }),
       },
     };
 

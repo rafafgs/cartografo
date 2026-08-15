@@ -29,7 +29,7 @@
  * **Declared limit of the manifest check.** The three checks are those of
  * `scripts/validar-bundle-fabrica.mjs` — a sound graph, a checked manifest, a
  * matching pin — but the second one covers here the subset of schema rules the
- * pin depends on (required fields, shape of `id`/`versao`/`hash`, `papel` in the
+ * pin depends on (required fields, shape of `id`/`version`/`hash`, `role` in the
  * enum, and the recalculated hash matching the declared one), not the whole
  * schema. The reason is the same one that made `domain/graph.ts` port the graph
  * rules instead of loading `schema/grafo.schema.json`: `especificacoes/` is
@@ -104,11 +104,11 @@ function checkManifest(manifest: unknown, file: string): string[] {
   } else if (id !== path.basename(file, '.json')) {
     problems.push(`${file}: the id "${id}" has to be the file name without the extension`);
   }
-  if (typeof manifest.versao !== 'string' || !VERSION_PATTERN.test(manifest.versao)) {
-    problems.push(`${file}: "versao" has to be semver (x.y.z)`);
+  if (typeof manifest.version !== 'string' || !VERSION_PATTERN.test(manifest.version)) {
+    problems.push(`${file}: "version" has to be semver (x.y.z)`);
   }
-  if (typeof manifest.papel !== 'string' || !MANIFEST_ROLES.includes(manifest.papel)) {
-    problems.push(`${file}: "papel" has to be ${MANIFEST_ROLES.join(' or ')}`);
+  if (typeof manifest.role !== 'string' || !MANIFEST_ROLES.includes(manifest.role)) {
+    problems.push(`${file}: "role" has to be ${MANIFEST_ROLES.join(' or ')}`);
   }
 
   const declared = manifest.hash;
@@ -185,7 +185,7 @@ export function verifyBundle(directory: string, document: unknown): BundleProble
   }
 
   // 3. each pin checks out: the node's id, version and hash match the manifest next to it.
-  const nodes = isObject(document) && Array.isArray(document.nos) ? document.nos : [];
+  const nodes = isObject(document) && Array.isArray(document.nodes) ? document.nodes : [];
   for (const node of nodes) {
     if (!isObject(node)) continue;
     const ref = isObject(node.skill_ref) ? node.skill_ref : {};
@@ -195,10 +195,10 @@ export function verifyBundle(directory: string, document: unknown): BundleProble
       problems.push({ scope: 'pin', message: `${label}: no manifest in skills/ with that id` });
       continue;
     }
-    if (manifest.versao !== ref.versao) {
+    if (manifest.version !== ref.version) {
       problems.push({
         scope: 'pin',
-        message: `${label}: pinned version ${String(ref.versao)}, manifest ${String(manifest.versao)}`,
+        message: `${label}: pinned version ${String(ref.version)}, manifest ${String(manifest.version)}`,
       });
     }
     const recalculated = manifestHash(manifest);

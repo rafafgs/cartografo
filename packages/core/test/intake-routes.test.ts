@@ -112,8 +112,8 @@ const CLASS = 'desenvolvimento-de-software';
 
 /** Entry node of that graph. Read from the document, never hardcoded twice. */
 function entryNode(): string {
-  const document = JSON.parse(readFileSync(FACTORY_GRAPH, 'utf8')) as { no_inicial: string };
-  return document.no_inicial;
+  const document = JSON.parse(readFileSync(FACTORY_GRAPH, 'utf8')) as { initial_node: string };
+  return document.initial_node;
 }
 
 /** Registers factory bundle 1 as it is on disk and returns the current version. */

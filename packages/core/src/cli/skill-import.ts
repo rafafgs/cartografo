@@ -11,11 +11,11 @@
  * What the derivation refuses to do is as important as what it does. It fills in
  * what a machine can read off the source with no judgement — the id, the
  * description, the body, the commands quoted inside fenced blocks — and leaves an
- * explicit placeholder everywhere a human has to decide: `entrada` and `saida`
+ * explicit placeholder everywhere a human has to decide: `input` and `output`
  * are never guessed from prose ("onde a prosa não diz, o revisor decide... nunca
- * se infere em silêncio"), `permissoes` come in at the safe default and are only
- * ever widened by a recorded human decision, and `papel` is the `--role` flag
- * verbatim, because a "fazer" skill registered as a gate is a gate that checks
+ * se infere em silêncio"), `permissions` come in at the safe default and are only
+ * ever widened by a recorded human decision, and `role` is the `--role` flag
+ * verbatim, because a "work" skill registered as a gate is a gate that checks
  * nothing.
  *
  * Nothing here fetches anything. The source is an already-cloned local checkout,
@@ -25,9 +25,11 @@
  *
  * Like the other subcommands, these are pure HTTP clients of the public API
  * (D1, D11): they open no database and have no privilege the screen does not
- * have. The manifest they write is the format's own vocabulary, in Portuguese —
- * D18 leaves data-format keys out of the rename. What this file PRINTS, and the
- * checklist it puts in front of the reviewer, is English since t180.
+ * have. The manifest they write is the format's own vocabulary, English since
+ * t178 — which is what finally makes `--role` a straight copy: the flag was
+ * already English (t127) and the value it carries now IS `role`, with no
+ * translation step in the middle. What this file PRINTS, and the checklist it
+ * puts in front of the reviewer, is English since t180.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -40,13 +42,13 @@ import { UsageError, requestJson } from './url.ts';
 export interface ScanSkillOptions {
   /** Path of the `SKILL.md` in an already-cloned local checkout. */
   source: string;
-  /** Source repository, as it goes into `origem.repo`. */
+  /** Source repository, as it goes into `origin.repo`. */
   repo: string;
   /** Commit or tag — never a branch, which moves (D4). */
   ref: string;
-  /** `fazer` or `portao`; always explicit, never inferred. */
+  /** `work` or `gate`; always explicit, never inferred. */
   role: string;
-  /** Who is importing, as it goes into `origem.importado_por`. */
+  /** Who is importing, as it goes into `origin.imported_by`. */
   by: string;
   /** Base URL of the control plane (the id collision is checked against it). */
   url: string;
@@ -73,9 +75,9 @@ export interface RegisterSkillOptions {
 /** A check derived from a command quoted in the source body. */
 interface DerivedCheck {
   id: string;
-  tipo: string;
-  descricao: string;
-  comando: string;
+  type: string;
+  description: string;
+  command: string;
 }
 
 /**
@@ -93,11 +95,11 @@ const SCHEMA_PLACEHOLDER = { $comment: 'revisor humano escreve o JSON Schema aqu
 
 /** D4's safe default: read the workspace, write nothing, no network. */
 const SAFE_PERMISSIONS = {
-  filesystem: { leitura: ['**'], escrita: [] },
-  rede: { permitido: false },
+  filesystem: { read: ['**'], write: [] },
+  network: { allowed: false },
 };
 
-/** Version of a new import; the real source reference lives in `origem.ref` (D4). */
+/** Version of a new import; the real source reference lives in `origin.ref` (D4). */
 const IMPORT_VERSION = '0.1.0';
 
 /** The node a skill import travels through, in the job that carries the gate. */
@@ -106,13 +108,13 @@ const IMPORT_NODE = 'importar-skill';
 /** What the reviewer signs (`manifesto-skill.md`, "O que o revisor humano assina"). */
 const REVIEW_CHECKLIST = `What you sign off on by approving (manifesto-skill.md, "O que o revisor humano assina"):
 
-  1. that \`papel\` is right — a doing skill registered as a gate becomes a gate that checks nothing;
-  2. that \`entrada\`/\`saida\` describe what the skill really consumes and produces;
+  1. that \`role\` is right — a doing skill registered as a gate becomes a gate that checks nothing;
+  2. that \`input\`/\`output\` describe what the skill really consumes and produces;
   3. that there is at least one check, and that every agentic check demands evidence of its own;
-  4. that \`permissoes\` are the minimum needed;
-  5. that the reviewed \`instrucoes\` carry no hostile instruction — a reference to a file resident in the target repo, an external document the source controls, a request for a credential, exfiltration or execution of downloaded content.
+  4. that \`permissions\` are the minimum needed;
+  5. that the reviewed \`instructions\` carry no hostile instruction — a reference to a file resident in the target repo, an external document the source controls, a request for a credential, exfiltration or execution of downloaded content.
 
-To APPROVE: answer with the final manifest in JSON, with \`origem.revisado_por\` filled in.
+To APPROVE: answer with the final manifest in JSON, with \`origin.reviewed_by\` filled in.
 To REFUSE: answer with \`rejeitar: <reason>\`.`;
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -216,15 +218,15 @@ export function deriveChecks(body: string): DerivedCheck[] {
   const used = new Set<string>();
   return commands.map((command) => {
     let id = kebabCase(command).slice(0, 60);
-    if (id === '') id = 'comando';
+    if (id === '') id = 'command';
     let candidate = id;
     for (let suffix = 2; used.has(candidate); suffix += 1) candidate = `${id}-${suffix}`;
     used.add(candidate);
     return {
       id: candidate,
-      tipo: 'deterministico',
-      descricao: `Command quoted in a code block of the source SKILL.md: \`${command}\`. Confirm it is still the right command before approving.`,
-      comando: command,
+      type: 'deterministic',
+      description: `Command quoted in a code block of the source SKILL.md: \`${command}\`. Confirm it is still the right command before approving.`,
+      command,
     };
   });
 }
@@ -236,8 +238,8 @@ export function deriveChecks(body: string): DerivedCheck[] {
  * @returns Process exit code.
  */
 export async function runScanSkill(options: ScanSkillOptions): Promise<number> {
-  if (options.role !== 'fazer' && options.role !== 'portao') {
-    throw new UsageError('--role has to be fazer or portao (D4: never inferred, always confirmed)');
+  if (options.role !== 'work' && options.role !== 'gate') {
+    throw new UsageError('--role has to be work or gate (D4: never inferred, always confirmed)');
   }
 
   const source = path.resolve(options.source);
@@ -270,24 +272,24 @@ export async function runScanSkill(options: ScanSkillOptions): Promise<number> {
   const checks = deriveChecks(body);
   const draft: Record<string, unknown> = {
     id,
-    versao: IMPORT_VERSION,
+    version: IMPORT_VERSION,
     hash: '',
-    papel: options.role,
-    descricao: frontmatter.description ?? '',
-    entrada: SCHEMA_PLACEHOLDER,
-    saida: SCHEMA_PLACEHOLDER,
-    pre_condicoes: [],
+    role: options.role,
+    description: frontmatter.description ?? '',
+    input: SCHEMA_PLACEHOLDER,
+    output: SCHEMA_PLACEHOLDER,
+    preconditions: [],
     checks,
-    permissoes: SAFE_PERMISSIONS,
-    instrucoes: body,
-    // `revisado_por` is deliberately absent: nobody has reviewed this yet, and a
+    permissions: SAFE_PERMISSIONS,
+    instructions: body,
+    // `reviewed_by` is deliberately absent: nobody has reviewed this yet, and a
     // draft that claims a reviewer is a signature nobody gave.
-    origem: {
-      tipo: 'importada',
+    origin: {
+      type: 'imported',
       repo: options.repo,
       ref: options.ref,
-      importado_por: options.by,
-      importado_em: new Date().toISOString().slice(0, 10),
+      imported_by: options.by,
+      imported_at: new Date().toISOString().slice(0, 10),
     },
   };
   draft.hash = manifestHash(draft);
@@ -298,7 +300,7 @@ export async function runScanSkill(options: ScanSkillOptions): Promise<number> {
 
   process.stdout.write('skill draft written\n');
   process.stdout.write(line('id', id));
-  process.stdout.write(line('papel', options.role));
+  process.stdout.write(line('role', options.role));
   process.stdout.write(line('checks derived', String(checks.length)));
   process.stdout.write(line('file', destination));
   if (checks.length === 0) {
@@ -307,8 +309,8 @@ export async function runScanSkill(options: ScanSkillOptions): Promise<number> {
     );
   }
   process.stdout.write('\nwhat only a human can write is still a placeholder:\n');
-  process.stdout.write(line('entrada/saida', 'write the JSON Schema of what the skill consumes and produces'));
-  process.stdout.write(line('instrucoes', 'review the body as an injection vector before approving'));
+  process.stdout.write(line('input/output', 'write the JSON Schema of what the skill consumes and produces'));
+  process.stdout.write(line('instructions', 'review the body as an injection vector before approving'));
   process.stdout.write(line('hash', 'recompute it after editing — the pin covers the content fields'));
   process.stdout.write(`\nnext: cartografo propose-skill ${destination}\n`);
   return 0;
@@ -339,7 +341,7 @@ export async function runProposeSkill(options: ProposeSkillOptions): Promise<num
   if (!isObject(manifest)) throw new UsageError(`"${target}" is not a manifest object`);
 
   const id = typeof manifest.id === 'string' ? manifest.id : '(no id)';
-  const origin = isObject(manifest.origem) ? manifest.origem : {};
+  const origin = isObject(manifest.origin) ? manifest.origin : {};
   const repo = typeof origin.repo === 'string' ? origin.repo : '(origin not declared)';
   const ref = typeof origin.ref === 'string' ? origin.ref : '(ref not declared)';
 
@@ -449,7 +451,7 @@ export async function runRegisterSkill(options: RegisterSkillOptions): Promise<n
   if (registration.status === 201) {
     process.stdout.write('skill registered\n');
     process.stdout.write(line('id', String(body.id)));
-    process.stdout.write(line('versao', String(body.versao)));
+    process.stdout.write(line('version', String(body.version)));
     process.stdout.write(line('hash', String(body.hash)));
     process.stdout.write(line('registrado_em', String(body.registrado_em)));
     return 0;

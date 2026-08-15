@@ -254,7 +254,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       const body = isObject(request.body) ? request.body : {};
       const confirmation = confirmDraft(db, {
         draft,
-        no_inicial: version.snapshot.no_inicial,
+        no_inicial: version.snapshot.initial_node,
         grafo_versao_id: version.id,
         ator: resolveActor(body.ator, INTAKE_ACTOR),
       });

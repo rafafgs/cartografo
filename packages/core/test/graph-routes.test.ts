@@ -210,8 +210,8 @@ test('AT8 — registering a variant returns 400 (D13/t118 are out of this ticket
   const address = await startApp(t);
 
   const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
-  document.classe = 'nota-curta-do-projeto';
-  document.linhagem = { tipo: 'variante', base_classe: 'nota-curta' };
+  document.problem_class = 'nota-curta-do-projeto';
+  document.lineage = { type: 'variante', base_class: 'nota-curta' };
 
   const response = await post(address, '/v1/graphs', document);
   assert.equal(response.status, 400);
@@ -247,14 +247,14 @@ test('t153 — a graph whose ids are not filled strings returns 422 and register
   // node names the NUMBER 1. Nothing else is wrong with it: before t153 the
   // validator dropped each of those ids out of scope instead of refusing it, so
   // soundness passed over an empty topology and this very body came back 201.
-  const nodes = document.nos as Array<Record<string, unknown>>;
-  const edges = document.arestas as Array<Record<string, unknown>>;
+  const nodes = document.nodes as Array<Record<string, unknown>>;
+  const edges = document.edges as Array<Record<string, unknown>>;
   nodes[0].id = 1;
-  document.nos = [nodes[0]];
+  document.nodes = [nodes[0]];
   edges[0].de = 1;
   edges[0].para = 1;
-  document.no_inicial = 1;
-  document.nos_finais = [1];
+  document.initial_node = 1;
+  document.final_nodes = [1];
 
   const response = await post(address, '/v1/graphs', document);
   const body = await jsonBody<ValidationReport>(response);
@@ -341,12 +341,12 @@ test('t180 — the register guards refuse in English, quoting the class', async 
   assert.equal(taken.erro, 'classe_ja_registrada', 'the code is frozen (FR2)');
   assert.equal(
     taken.mensagem,
-    `class "${String(document.classe)}" already has a base graph; a new version over an existing lineage is the proposal flow`,
+    `class "${String(document.problem_class)}" already has a base graph; a new version over an existing lineage is the proposal flow`,
   );
 
   const asVariant = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
-  asVariant.classe = 'outra-classe';
-  asVariant.linhagem = { tipo: 'variante', base_classe: String(document.classe) };
+  asVariant.problem_class = 'outra-classe';
+  asVariant.lineage = { type: 'variante', base_class: String(document.problem_class) };
   const refused = await post(address, '/v1/graphs', asVariant);
   assert.equal(refused.status, 400);
   const notBase = await jsonBody<{ erro: string; mensagem: string }>(refused);

@@ -74,7 +74,7 @@ options:
                          (scan-skill) draft file; default ./<id>.manifest.json
   --repo <repo>          (scan-skill) source repository, for origem.repo
   --ref <ref>            (scan-skill) commit or tag — never a branch (D4)
-  --role fazer|portao    (scan-skill) papel of the skill; always explicit
+  --role work|gate       (scan-skill) role of the skill; always explicit
   --by <name>            (scan-skill) who is importing, for origem.importado_por
   --job <id>             (register-skill) job the approval was opened on
   --json                 (status) prints the report as a single JSON object

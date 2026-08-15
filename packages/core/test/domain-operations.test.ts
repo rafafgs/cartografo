@@ -43,7 +43,7 @@ function minimalGraph(): GraphDocument {
 }
 
 function requireNode(doc: GraphDocument, id: string): GraphNode {
-  const node = doc.nos.find((candidate) => candidate.id === id);
+  const node = doc.nodes.find((candidate) => candidate.id === id);
   if (node === undefined) throw new Error(`the fixture changed: node "${id}" is gone`);
   return node;
 }
@@ -51,30 +51,30 @@ function requireNode(doc: GraphDocument, id: string): GraphNode {
 /** A complete new node: role, type, pinned skill and a contract with a check. */
 const NEW_NODE: GraphNode = {
   id: 'checar_fatos',
-  papel: 'revisor',
-  tipo_no: 'trabalho',
-  descricao: 'Confere cada afirmação da nota contra a fonte citada.',
+  role: 'revisor',
+  node_type: 'trabalho',
+  description: 'Confere cada afirmação da nota contra a fonte citada.',
   skill_ref: {
     id: 'cartografo/checar-fatos',
-    versao: '1.0.0',
+    version: '1.0.0',
     hash: `sha256:${'0'.repeat(64)}`,
   },
-  contrato: {
-    entrada_schema: {
+  contract: {
+    input_schema: {
       type: 'object',
       required: ['texto'],
       properties: { texto: { type: 'string', minLength: 1 } },
     },
-    saida_schema: {
+    output_schema: {
       type: 'object',
       required: ['aprovado'],
       properties: { aprovado: { type: 'boolean' } },
     },
-    verificacoes: [
+    checks: [
       {
-        tipo: 'deterministico',
-        comando: 'test -s checagem.md',
-        descricao: 'O relatório de checagem existe e não está vazio.',
+        type: 'deterministic',
+        command: 'test -s checagem.md',
+        description: 'O relatório de checagem existe e não está vazio.',
       },
     ],
   },
@@ -92,19 +92,19 @@ test('AT3 — adicionar_no + adicionar_aresta add the target without mutating th
     },
     {
       tipo: 'adicionar_aresta',
-      aresta: { de: 'redigir', para: NEW_NODE.id, condicao: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { de: 'redigir', para: NEW_NODE.id } },
+      aresta: { from: 'redigir', to: NEW_NODE.id, condition: 'sempre' },
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: NEW_NODE.id } },
     },
   ];
 
   const result = applyOperations(input, operations);
 
   assert.ok(
-    result.nos.some((node) => node.id === NEW_NODE.id),
+    result.nodes.some((node) => node.id === NEW_NODE.id),
     'the new node has to be in the resulting document',
   );
   assert.ok(
-    result.arestas.some((edge) => edge.de === 'redigir' && edge.para === NEW_NODE.id),
+    result.edges.some((edge) => edge.from === 'redigir' && edge.to === NEW_NODE.id),
     'the new edge has to be in the resulting document',
   );
 
@@ -117,14 +117,14 @@ test('AT4 — remover_no and remover_aresta remove exactly the target', async ()
 
   const input = minimalGraph();
   const review = requireNode(input, 'revisar');
-  const originalEdge = input.arestas[0];
+  const originalEdge = input.edges[0];
 
-  // The result is deliberately NOT sound (nos_finais points at a node that
+  // The result is deliberately NOT sound (final_nodes points at a node that
   // stopped existing): applying does not validate — the FR8 gate is what does.
   const result = applyOperations(input, [
     {
       tipo: 'remover_aresta',
-      aresta: { de: 'redigir', para: 'revisar' },
+      aresta: { from: 'redigir', to: 'revisar' },
       inversa: { tipo: 'adicionar_aresta', aresta: structuredClone(originalEdge) },
     },
     {
@@ -135,11 +135,11 @@ test('AT4 — remover_no and remover_aresta remove exactly the target', async ()
   ]);
 
   assert.deepEqual(
-    result.nos.map((node) => node.id),
+    result.nodes.map((node) => node.id),
     ['redigir'],
     'only the target node can go',
   );
-  assert.deepEqual(result.arestas, [], 'only the target edge can go');
+  assert.deepEqual(result.edges, [], 'only the target edge can go');
   assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
 });
 
@@ -147,29 +147,29 @@ test('AT4 — alterar_campo_no swaps the declared field and nothing else', async
   const { applyOperations } = await loadOperations();
 
   const input = minimalGraph();
-  assert.equal(requireNode(input, 'revisar').papel, 'revisor');
+  assert.equal(requireNode(input, 'revisar').role, 'revisor');
 
   const result = applyOperations(input, [
     {
       tipo: 'alterar_campo_no',
       no_id: 'revisar',
-      campo: 'papel',
+      campo: 'role',
       de: 'revisor',
       para: 'red-team',
       inversa: {
         tipo: 'alterar_campo_no',
         no_id: 'revisar',
-        campo: 'papel',
+        campo: 'role',
         de: 'red-team',
         para: 'revisor',
       },
     },
   ]);
 
-  assert.equal(requireNode(result, 'revisar').papel, 'red-team');
+  assert.equal(requireNode(result, 'revisar').role, 'red-team');
   assert.deepEqual(
-    result.nos.map((node) => node.id),
-    input.nos.map((node) => node.id),
+    result.nodes.map((node) => node.id),
+    input.nodes.map((node) => node.id),
     'changing a field does not touch the topology',
   );
   assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
@@ -206,7 +206,7 @@ test('AT5 — an unknown type, a missing inverse and an incompatible inverse fai
   const wrongInverse = validateOperation({
     tipo: 'adicionar_no',
     no: structuredClone(NEW_NODE),
-    inversa: { tipo: 'remover_aresta', aresta: { de: 'redigir', para: 'revisar' } },
+    inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: 'revisar' } },
   });
   assert.equal(wrongInverse.valido, false);
   assert.ok(

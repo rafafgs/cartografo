@@ -2,7 +2,7 @@
  * Fork route acceptance tests (t118, D13).
  *
  * Bifurcating is branch semantics: the variant is born as the base's current
- * snapshot byte for byte, with `linhagem` swapped and nothing else — a `git
+ * snapshot byte for byte, with `lineage` swapped and nothing else — a `git
  * branch` moves no content either. Everything this suite checks hangs off that
  * one sentence: the parent that crosses lineages, the pointer that only moves in
  * the bootstrap, and the refusal when two forks would produce the same document
@@ -147,30 +147,30 @@ function counts(ctx: TestContext): { lineages: number; versions: number } {
 function newNode(): Record<string, unknown> {
   return {
     id: 'checar_fatos',
-    papel: 'revisor',
-    tipo_no: 'trabalho',
-    descricao: 'Confere cada afirmação da nota contra a fonte citada.',
+    role: 'revisor',
+    node_type: 'trabalho',
+    description: 'Confere cada afirmação da nota contra a fonte citada.',
     skill_ref: {
       id: 'cartografo/checar-fatos',
-      versao: '1.0.0',
+      version: '1.0.0',
       hash: `sha256:${'0'.repeat(64)}`,
     },
-    contrato: {
-      entrada_schema: {
+    contract: {
+      input_schema: {
         type: 'object',
         required: ['texto'],
         properties: { texto: { type: 'string', minLength: 1 } },
       },
-      saida_schema: {
+      output_schema: {
         type: 'object',
         required: ['aprovado'],
         properties: { aprovado: { type: 'boolean' } },
       },
-      verificacoes: [
+      checks: [
         {
-          tipo: 'deterministico',
-          comando: 'test -s checagem.md',
-          descricao: 'O relatório de checagem existe e não está vazio.',
+          type: 'deterministic',
+          command: 'test -s checagem.md',
+          description: 'O relatório de checagem existe e não está vazio.',
         },
       ],
     },
@@ -184,13 +184,13 @@ function passingOperations(): unknown[] {
     { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: node.id } },
     {
       tipo: 'adicionar_aresta',
-      aresta: { de: 'redigir', para: node.id, condicao: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { de: 'redigir', para: node.id } },
+      aresta: { from: 'redigir', to: node.id, condition: 'sempre' },
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: node.id } },
     },
     {
       tipo: 'adicionar_aresta',
-      aresta: { de: node.id, para: 'revisar', condicao: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { de: node.id, para: 'revisar' } },
+      aresta: { from: node.id, to: 'revisar', condition: 'sempre' },
+      inversa: { tipo: 'remover_aresta', aresta: { from: node.id, to: 'revisar' } },
     },
   ];
 }
@@ -241,7 +241,7 @@ test('t118 AT2 — with no origin proposal the version is manual', async (t) => 
   assert.equal(response.body.grafo_versao.proposta_id, null);
 });
 
-test('t118 AT3 — the forked snapshot is the base one with only `linhagem` swapped', async (t) => {
+test('t118 AT3 — the forked snapshot is the base one with only `lineage` swapped', async (t) => {
   const ctx = await start(t);
   const { document, graph, version } = await registerBase(ctx);
 
@@ -252,13 +252,13 @@ test('t118 AT3 — the forked snapshot is the base one with only `linhagem` swap
   const forked = (await readVersion(ctx, response.body.grafo_versao.id)).snapshot;
 
   assert.deepEqual(
-    forked.linhagem,
-    { tipo: 'variante', base_classe: graph.classe },
+    forked.lineage,
+    { type: 'variante', base_class: graph.classe },
     'with no origin proposal the key is omitted altogether, never null',
   );
   assert.deepEqual(
-    { ...forked, linhagem: undefined },
-    { ...baseSnapshot, linhagem: undefined },
+    { ...forked, lineage: undefined },
+    { ...baseSnapshot, lineage: undefined },
     'forking carries no diff: every other key is the base document, untouched',
   );
   assert.deepEqual(baseSnapshot, document, 'and the base snapshot itself did not move');
@@ -277,10 +277,10 @@ test('t118 AT4 — an origin proposal lands as an integer in the column and a st
   assert.equal(response.body.grafo_versao.proposta_id, proposal.id);
 
   const forked = (await readVersion(ctx, response.body.grafo_versao.id)).snapshot;
-  assert.deepEqual(forked.linhagem, {
-    tipo: 'variante',
-    base_classe: graph.classe,
-    origem_proposta_id: String(proposal.id),
+  assert.deepEqual(forked.lineage, {
+    type: 'variante',
+    base_class: graph.classe,
+    source_proposal_id: String(proposal.id),
   });
 });
 

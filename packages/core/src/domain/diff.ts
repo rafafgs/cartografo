@@ -10,8 +10,9 @@
  *
  * Three boundaries, all deliberate:
  *
- * - **Only `nos` and `arestas` are diffed.** `classe`, `linhagem`, `metadata`,
- *   `no_inicial` and `nos_finais` have no operation that can express a change to
+ * - **Only `nodes` and `edges` are diffed.** `problem_class`, `lineage`,
+ *   `metadata`, `initial_node` and `final_nodes` have no operation that can
+ *   express a change to
  *   them, and `applyOperations` never mutates them either. That happens to be
  *   exactly the D13 behaviour promotion and offer need: whatever the direction,
  *   the TARGET keeps its own identity — a base stays a base and a variant stays a
@@ -34,9 +35,10 @@
  * their own order is what makes the round trip reproduce `to` — `canonicalize`
  * sorts keys, not array positions.
  *
- * The operation-type names and the document's field names stay in Portuguese:
- * they are the format stored in `proposta.operacoes` and returned on the wire
- * (t127, FR8).
+ * The operation-type names stay in Portuguese — they are the format stored in
+ * `proposta.operacoes` and returned on the wire (t127, FR8) — while the DOCUMENT
+ * fragments the operations carry moved to English with t178. See the note at the
+ * top of `domain/operations.ts`.
  */
 
 import type { GraphDocument, GraphEdge, GraphNode } from './graph.ts';
@@ -57,7 +59,7 @@ function same(left: unknown, right: unknown): boolean {
 
 /** Identity of an edge: the pair of ends, joined by a separator no id can hold. */
 function endsOf(edge: GraphEdge): string {
-  return `${edge.de}\u0000${edge.para}`;
+  return `${edge.from}\u0000${edge.to}`;
 }
 
 /** Groups a list under a key, keeping the original order inside each group. */
@@ -101,14 +103,14 @@ function addEdge(edge: GraphEdge): Operation {
   return {
     tipo: 'adicionar_aresta',
     aresta: structuredClone(edge),
-    inversa: { tipo: 'remover_aresta', aresta: { de: edge.de, para: edge.para } },
+    inversa: { tipo: 'remover_aresta', aresta: { from: edge.from, to: edge.to } },
   };
 }
 
 function removeEdge(edge: GraphEdge): Operation {
   return {
     tipo: 'remover_aresta',
-    aresta: { de: edge.de, para: edge.para },
+    aresta: { from: edge.from, to: edge.to },
     inversa: { tipo: 'adicionar_aresta', aresta: structuredClone(edge) },
   };
 }
@@ -136,7 +138,7 @@ function changeField(node: GraphNode, field: ChangeableField, to: GraphNode): Op
  * Which fields of a node changed, when a field swap can express the whole
  * difference.
  *
- * `undefined` means it cannot: either `tipo_no` moved, or a key outside the four
+ * `undefined` means it cannot: either `node_type` moved, or a key outside the four
  * swappable ones differs, or one of those four is present on one side and absent
  * on the other. The last case is the subtle one — `alterar_campo_no` writes the
  * key, it never unsets it, and an operation carrying `para: undefined` loses that
@@ -152,13 +154,13 @@ function swappableFields(
   from: GraphNode,
   to: GraphNode,
 ): ChangeableField[] | undefined {
-  if (!same(from.tipo_no, to.tipo_no)) return undefined;
+  if (!same(from.node_type, to.node_type)) return undefined;
 
   const keys = new Set([...Object.keys(from), ...Object.keys(to)]);
   const changed: ChangeableField[] = [];
 
   for (const key of keys) {
-    if (key === 'id' || key === 'tipo_no') continue;
+    if (key === 'id' || key === 'node_type') continue;
 
     const swappable = ORDERED_FIELDS.includes(key as ChangeableField);
     if (!swappable) {
@@ -180,13 +182,13 @@ function swappableFields(
  *   proposal that will carry the result).
  * @param to Target document, already parsed.
  * @returns Operations in the fixed emission order; an empty list when the two
- *   documents already agree on `nos` and `arestas`.
+ *   documents already agree on `nodes` and `edges`.
  */
 export function diffGraphs(from: GraphDocument, to: GraphDocument): Operation[] {
-  const fromNodes = Array.isArray(from.nos) ? from.nos : [];
-  const toNodes = Array.isArray(to.nos) ? to.nos : [];
-  const fromEdges = Array.isArray(from.arestas) ? from.arestas : [];
-  const toEdges = Array.isArray(to.arestas) ? to.arestas : [];
+  const fromNodes = Array.isArray(from.nodes) ? from.nodes : [];
+  const toNodes = Array.isArray(to.nodes) ? to.nodes : [];
+  const fromEdges = Array.isArray(from.edges) ? from.edges : [];
+  const toEdges = Array.isArray(to.edges) ? to.edges : [];
 
   const before = byId(fromNodes);
   const after = byId(toNodes);

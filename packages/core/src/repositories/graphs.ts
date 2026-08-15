@@ -216,7 +216,7 @@ export function registerBaseGraph(
   db: Database,
   document: GraphDocument,
 ): { graph: GraphRow; version: GraphVersionRow } {
-  const className = document.classe;
+  const className = document.problem_class;
   const versionId = hashSnapshot(document);
   const createdAt = now();
 
@@ -256,7 +256,7 @@ export interface VariantFork {
   id: string;
   /** Proposal that originated the fork, or `null` when there is none (D13). */
   originProposalId: number | null;
-  /** Document of the variant: the base snapshot with `linhagem` swapped. */
+  /** Document of the variant: the base snapshot with `lineage` swapped. */
   document: GraphDocument;
   /** Hash of that document, already checked for collision by the caller. */
   versionId: string;

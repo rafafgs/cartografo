@@ -12,7 +12,7 @@
  * Two of the rules here are IMPORT rules, not registration rules, and the
  * difference is deliberate:
  *
- * - at least one check, **always**, when `origem.tipo` is `importada`
+ * - at least one check, **always**, when `origin.type` is `imported`
  *   (`manifesto-skill.md:247`: "se não der para escrever nenhum check, a skill
  *   não entra"). A native skill keeps the schema's own weaker rule — one check
  *   required only for a gate — because this ticket's product rule is about
@@ -21,17 +21,17 @@
  *   third-party skill with open network and instructions nobody wrote is the
  *   supply-chain vector D4 exists to close. A native skill may declare it.
  *
- * The third rule, `resultado` in a gate's `saida`, is structural and applies to
+ * The third rule, `outcome` in a gate's `output`, is structural and applies to
  * everyone: `manifesto-skill.md:322-331` documents it as enforced at registry
  * entry precisely because the schema cannot navigate inside an arbitrary JSON
  * Schema document.
  *
  * The fourth is the per-check contract, and it applies to everyone for a simpler
  * reason: it is the schema's own, and the schema does not ask where the manifest
- * came from. `manifesto-skill.schema.json:83` requires `id`, `tipo` and
- * `descricao` of every check; line 91 closes `tipo` to `deterministico` or
- * `agentico`; lines 108-111 require `comando` of the first, lines 112-116
- * `instrucao` + `evidencia_obrigatoria` of the second. This validator ports the
+ * came from. `manifesto-skill.schema.json:83` requires `id`, `type` and
+ * `description` of every check; line 91 closes `type` to `deterministic` or
+ * `agentic`; lines 108-111 require `command` of the first, lines 112-116
+ * `instruction` + `required_evidence` of the second. This validator ports the
  * schema by hand — there is no ajv here, for the reason `db/event-validation.ts:9`
  * gives — so every rule that matters has to be ported deliberately, and this one
  * was ported twice by halves: t135 brought the agentic conditional, t155 the rest
@@ -45,8 +45,16 @@
  * `trabalho.desbloqueado` already record who proposed what, from which repo and
  * ref, and who approved it.
  *
- * The column names and the projection's field names are the skill-manifest
- * format's own keys, which D18 leaves in Portuguese (`DECISOES.md:153-155`).
+ * This module is the translation boundary the t178 rename leans on. `Skill` —
+ * what the API returns — and every manifest-shaped rule below speak the format's
+ * new English vocabulary; `SkillRow` and `COLUMNS` keep the Portuguese COLUMN
+ * names of `migrations/0005_skill.sql`, because the database schema is a
+ * separate slice with a migration of its own. `toSkill` is where the two meet,
+ * and it is the only place that has to know both.
+ *
+ * That migration's own header still justifies its Portuguese columns by citing
+ * the D18 carve-out this ticket lifted. The justification is stale; the columns
+ * are not wrong until somebody migrates them.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -63,21 +71,21 @@ import { now } from './common.ts';
 /** A registered skill, as the API returns it. */
 export interface Skill {
   id: string;
-  versao: string;
+  version: string;
   hash: string;
-  papel: string;
-  descricao: string;
-  entrada: Record<string, unknown>;
-  saida: Record<string, unknown>;
-  pre_condicoes: string[];
+  role: string;
+  description: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  preconditions: string[];
   checks: Record<string, unknown>[];
-  permissoes: Record<string, unknown>;
-  instrucoes: string;
-  origem: Record<string, unknown>;
+  permissions: Record<string, unknown>;
+  instructions: string;
+  origin: Record<string, unknown>;
   registrado_em: string;
 }
 
-/** The three columns that are not JSON, plus the six that are. */
+/** The `skill` table's own projection, in its own Portuguese (see the header). */
 interface SkillRow {
   id: string;
   versao: string;
@@ -116,10 +124,24 @@ export class SkillRejected extends Error {
 }
 
 /** The three values a gate has to be able to return, so the executor can route. */
-const GATE_OUTCOMES = ['passou', 'falhou', 'escalar_humano'];
+const GATE_OUTCOMES = ['pass', 'fail', 'escalate_human'];
 
 /** The two things a check can be (`manifesto-skill.schema.json:91`), and no third. */
-const CHECK_TYPES = ['deterministico', 'agentico'];
+const CHECK_TYPES = ['deterministic', 'agentic'];
+
+/**
+ * `role`, as the `skill` table spells it — the other half of the translation
+ * boundary, and the one that is not cosmetic.
+ *
+ * `migrations/0005_skill.sql:47` puts a `CHECK (papel IN ('fazer', 'portao'))`
+ * on the column, which makes the Portuguese values part of the DB schema rather
+ * than of the format. Renaming them belongs to the DB-entity slice, with its own
+ * migration; until then a manifest that says `work` is stored as `fazer`, and
+ * comes back out as `work`. Every other column is either free text or JSON, so
+ * this is the only value the boundary has to carry across.
+ */
+const ROLE_COLUMN: Record<string, string> = { work: 'fazer', gate: 'portao' };
+const ROLE_FIELD: Record<string, string> = { fazer: 'work', portao: 'gate' };
 
 const COLUMNS = `
   id, versao, hash, papel, descricao, entrada, saida, pre_condicoes,
@@ -134,20 +156,21 @@ function isText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
+/** Row to manifest: the one place the column names meet the format's names. */
 function toSkill(row: SkillRow): Skill {
   return {
     id: row.id,
-    versao: row.versao,
+    version: row.versao,
     hash: row.hash,
-    papel: row.papel,
-    descricao: row.descricao,
-    entrada: JSON.parse(row.entrada) as Record<string, unknown>,
-    saida: JSON.parse(row.saida) as Record<string, unknown>,
-    pre_condicoes: JSON.parse(row.pre_condicoes) as string[],
+    role: ROLE_FIELD[row.papel] ?? row.papel,
+    description: row.descricao,
+    input: JSON.parse(row.entrada) as Record<string, unknown>,
+    output: JSON.parse(row.saida) as Record<string, unknown>,
+    preconditions: JSON.parse(row.pre_condicoes) as string[],
     checks: JSON.parse(row.checks) as Record<string, unknown>[],
-    permissoes: JSON.parse(row.permissoes) as Record<string, unknown>,
-    instrucoes: row.instrucoes,
-    origem: JSON.parse(row.origem) as Record<string, unknown>,
+    permissions: JSON.parse(row.permissoes) as Record<string, unknown>,
+    instructions: row.instrucoes,
+    origin: JSON.parse(row.origem) as Record<string, unknown>,
     registrado_em: row.registrado_em,
   };
 }
@@ -161,25 +184,25 @@ function checkShape(manifest: Record<string, unknown>, problems: string[]): void
   if (!isText(manifest.id) || !ID_PATTERN.test(manifest.id)) {
     problems.push(`id: has to be kebab-case (${ID_PATTERN.source})`);
   }
-  if (!isText(manifest.versao) || !VERSION_PATTERN.test(manifest.versao)) {
-    problems.push('versao: has to be semver (x.y.z)');
+  if (!isText(manifest.version) || !VERSION_PATTERN.test(manifest.version)) {
+    problems.push('version: has to be semver (x.y.z)');
   }
   if (!isText(manifest.hash) || !HASH_PATTERN.test(manifest.hash)) {
     problems.push('hash: has to have the shape sha256:<64 hex>');
   }
-  if (!isText(manifest.papel) || !MANIFEST_ROLES.includes(manifest.papel)) {
-    problems.push(`papel: has to be ${MANIFEST_ROLES.join(' or ')}`);
+  if (!isText(manifest.role) || !MANIFEST_ROLES.includes(manifest.role)) {
+    problems.push(`role: has to be ${MANIFEST_ROLES.join(' or ')}`);
   }
-  if (!isText(manifest.descricao)) problems.push('descricao: has to be a non-empty string');
-  if (!isText(manifest.instrucoes)) problems.push('instrucoes: has to be a non-empty string');
-  if (!isObject(manifest.entrada)) problems.push('entrada: has to be a JSON Schema object');
-  if (!isObject(manifest.saida)) problems.push('saida: has to be a JSON Schema object');
+  if (!isText(manifest.description)) problems.push('description: has to be a non-empty string');
+  if (!isText(manifest.instructions)) problems.push('instructions: has to be a non-empty string');
+  if (!isObject(manifest.input)) problems.push('input: has to be a JSON Schema object');
+  if (!isObject(manifest.output)) problems.push('output: has to be a JSON Schema object');
 
   if (
-    !Array.isArray(manifest.pre_condicoes) ||
-    manifest.pre_condicoes.some((item) => !isText(item))
+    !Array.isArray(manifest.preconditions) ||
+    manifest.preconditions.some((item) => !isText(item))
   ) {
-    problems.push('pre_condicoes: has to be a list of non-empty strings');
+    problems.push('preconditions: has to be a list of non-empty strings');
   }
   if (!Array.isArray(manifest.checks) || manifest.checks.some((item) => !isObject(item))) {
     problems.push('checks: has to be a list of check objects');
@@ -189,22 +212,22 @@ function checkShape(manifest: Record<string, unknown>, problems: string[]): void
     );
   }
 
-  checkPermissions(manifest.permissoes, problems);
+  checkPermissions(manifest.permissions, problems);
 
-  if (!isObject(manifest.origem)) {
-    problems.push('origem: has to be an object with a "tipo" of nativa or importada');
-  } else if (manifest.origem.tipo !== 'nativa' && manifest.origem.tipo !== 'importada') {
-    problems.push('origem.tipo: has to be nativa or importada');
+  if (!isObject(manifest.origin)) {
+    problems.push('origin: has to be an object with a "type" of native or imported');
+  } else if (manifest.origin.type !== 'native' && manifest.origin.type !== 'imported') {
+    problems.push('origin.type: has to be native or imported');
   }
 }
 
 /**
  * The whole per-check contract, the same for every check (t155, FR1-FR3).
  *
- * `manifesto-skill.schema.json:83` makes `id`, `tipo` and `descricao` required
- * of EVERY check, and line 91 closes `tipo` to two values. Then each half of the
- * enum has its own conditional: `deterministico` requires `comando`
- * (lines 108-111), `agentico` requires `instrucao` and `evidencia_obrigatoria`
+ * `manifesto-skill.schema.json:83` makes `id`, `type` and `description` required
+ * of EVERY check, and line 91 closes `type` to two values. Then each half of the
+ * enum has its own conditional: `deterministic` requires `command`
+ * (lines 108-111), `agentic` requires `instruction` and `required_evidence`
  * (lines 112-116). All four rules are the format's own, not import rules, so
  * they apply to every manifest — D9 defines a check as either a deterministic
  * command or an agentic instruction with mandatory evidence, and a check that is
@@ -212,10 +235,10 @@ function checkShape(manifest: Record<string, unknown>, problems: string[]): void
  *
  * The rule this function used to be, `checkAgentic`, enforced only the agentic
  * conditional and returned early for everything else. That early return is what
- * t155 was: a check shaped `{tipo: "deterministico"}`, an unrecognized `tipo`,
+ * t155 was: a check shaped `{type: "deterministic"}`, an unrecognized `type`,
  * or a check missing all three required fields all registered.
  *
- * `evidencia_obrigatoria` is a LIST of artifacts (the schema's `minItems: 1`),
+ * `required_evidence` is a LIST of artifacts (the schema's `minItems: 1`),
  * not a sentence: the check is supposed to name what it will go read.
  *
  * @param check One entry of `checks`, already known to be an object.
@@ -230,68 +253,68 @@ function checkCheck(check: Record<string, unknown>, index: number, problems: str
       `${label}: required field missing: "id" — the key telemetry aggregates the check by`,
     );
   }
-  if (!isText(check.descricao)) {
-    problems.push(`${label}: required field missing: "descricao" — a non-empty string`);
+  if (!isText(check.description)) {
+    problems.push(`${label}: required field missing: "description" — a non-empty string`);
   }
 
-  if (check.tipo === undefined) {
+  if (check.type === undefined) {
     problems.push(
-      `${label}: required field missing: "tipo" — has to be ${CHECK_TYPES.map((type) => `"${type}"`).join(' or ')}`,
+      `${label}: required field missing: "type" — has to be ${CHECK_TYPES.map((type) => `"${type}"`).join(' or ')}`,
     );
     return;
   }
-  if (!isText(check.tipo) || !CHECK_TYPES.includes(check.tipo)) {
+  if (!isText(check.type) || !CHECK_TYPES.includes(check.type)) {
     problems.push(
-      `${label}: tipo ${JSON.stringify(check.tipo)} is not a check type — has to be ${CHECK_TYPES.map(
+      `${label}: type ${JSON.stringify(check.type)} is not a check type — has to be ${CHECK_TYPES.map(
         (type) => `"${type}"`,
       ).join(' or ')}; a check the runner cannot execute is not a check (D9)`,
     );
     return;
   }
 
-  if (check.tipo === 'deterministico' && !isText(check.comando)) {
+  if (check.type === 'deterministic' && !isText(check.command)) {
     problems.push(
-      `${label}: tipo "deterministico" requires "comando" — the command whose exit code is the verdict; without it the runner reaches this check with nothing to run (D9)`,
+      `${label}: type "deterministic" requires "command" — the command whose exit code is the verdict; without it the runner reaches this check with nothing to run (D9)`,
     );
   }
 
-  if (check.tipo === 'agentico') {
-    if (!isText(check.instrucao)) {
-      problems.push(`${label}: tipo "agentico" requires "instrucao" — the judgment being asked for`);
+  if (check.type === 'agentic') {
+    if (!isText(check.instruction)) {
+      problems.push(`${label}: type "agentic" requires "instruction" — the judgment being asked for`);
     }
 
-    const evidence = check.evidencia_obrigatoria;
+    const evidence = check.required_evidence;
     if (
       !Array.isArray(evidence) ||
       evidence.length === 0 ||
       evidence.some((item) => !isText(item))
     ) {
       problems.push(
-        `${label}: tipo "agentico" requires "evidencia_obrigatoria" — a non-empty list of the artifacts the verdict has to cite; without it the check concludes on a self-report (D9)`,
+        `${label}: type "agentic" requires "required_evidence" — a non-empty list of the artifacts the verdict has to cite; without it the check concludes on a self-report (D9)`,
       );
     }
   }
 }
 
-/** `permissoes` declares both surfaces; absence is never read as "anything goes". */
+/** `permissions` declares both surfaces; absence is never read as "anything goes". */
 function checkPermissions(permissions: unknown, problems: string[]): void {
   if (!isObject(permissions)) {
-    problems.push('permissoes: has to declare filesystem and rede');
+    problems.push('permissions: has to declare filesystem and network');
     return;
   }
 
   const filesystem = permissions.filesystem;
   if (
     !isObject(filesystem) ||
-    !Array.isArray(filesystem.leitura) ||
-    !Array.isArray(filesystem.escrita)
+    !Array.isArray(filesystem.read) ||
+    !Array.isArray(filesystem.write)
   ) {
-    problems.push('permissoes.filesystem: has to declare "leitura" and "escrita" as lists');
+    problems.push('permissions.filesystem: has to declare "read" and "write" as lists');
   }
 
-  const network = permissions.rede;
-  if (!isObject(network) || typeof network.permitido !== 'boolean') {
-    problems.push('permissoes.rede: has to declare "permitido" as true or false');
+  const network = permissions.network;
+  if (!isObject(network) || typeof network.allowed !== 'boolean') {
+    problems.push('permissions.network: has to declare "allowed" as true or false');
   }
 }
 
@@ -310,9 +333,9 @@ function checkPin(manifest: Record<string, unknown>, problems: string[]): void {
 
 /** The five provenance fields D4 demands of anything that came from outside. */
 function checkProvenance(origin: Record<string, unknown>, problems: string[]): void {
-  for (const field of ['repo', 'ref', 'importado_por', 'importado_em', 'revisado_por']) {
+  for (const field of ['repo', 'ref', 'imported_by', 'imported_at', 'reviewed_by']) {
     if (!isText(origin[field])) {
-      problems.push(`origem.${field}: required when origem.tipo is "importada" (D4)`);
+      problems.push(`origin.${field}: required when origin.type is "imported" (D4)`);
     }
   }
 }
@@ -320,7 +343,7 @@ function checkProvenance(origin: Record<string, unknown>, problems: string[]): v
 /** A gate has to be able to say how it went, or the executor cannot route. */
 function checkGateOutcome(output: unknown, problems: string[]): void {
   const properties = isObject(output) && isObject(output.properties) ? output.properties : {};
-  const outcome = properties.resultado;
+  const outcome = properties.outcome;
   const values = isObject(outcome) && Array.isArray(outcome.enum) ? outcome.enum : null;
   const declaresOutcome =
     values !== null &&
@@ -329,7 +352,7 @@ function checkGateOutcome(output: unknown, problems: string[]): void {
 
   if (!declaresOutcome) {
     problems.push(
-      `saida: papel "portao" requires a "resultado" field whose enum is exactly [${GATE_OUTCOMES.map(
+      `output: role "gate" requires an "outcome" field whose enum is exactly [${GATE_OUTCOMES.map(
         (value) => `"${value}"`,
       ).join(', ')}] — without it the executor cannot route the outcome`,
     );
@@ -340,7 +363,7 @@ function checkGateOutcome(output: unknown, problems: string[]): void {
  * Every reason this manifest cannot enter the registry.
  *
  * The content rules only run once the shape rules found nothing: recomputing a
- * hash over half a manifest, or reading `origem.tipo` off something that is not
+ * hash over half a manifest, or reading `origin.type` off something that is not
  * an object, produces noise on top of a problem the caller already has.
  *
  * @param manifest The submitted manifest, still unverified.
@@ -355,9 +378,9 @@ export function findProblems(manifest: unknown): string[] {
 
   checkPin(manifest, problems);
 
-  const origin = manifest.origem as Record<string, unknown>;
+  const origin = manifest.origin as Record<string, unknown>;
   const checks = manifest.checks as unknown[];
-  const imported = origin.tipo === 'importada';
+  const imported = origin.type === 'imported';
 
   if (imported) {
     checkProvenance(origin, problems);
@@ -370,21 +393,21 @@ export function findProblems(manifest: unknown): string[] {
       );
     }
 
-    const network = (manifest.permissoes as Record<string, unknown>).rede as Record<
+    const network = (manifest.permissions as Record<string, unknown>).network as Record<
       string,
       unknown
     >;
-    const domains = network.dominios;
-    if (network.permitido === true && (!Array.isArray(domains) || domains.length === 0)) {
+    const domains = network.domains;
+    if (network.allowed === true && (!Array.isArray(domains) || domains.length === 0)) {
       problems.push(
-        'permissoes.rede: unrestricted network is rejected on import (D4) — declare "dominios", or leave "permitido" as false',
+        'permissions.network: unrestricted network is rejected on import (D4) — declare "domains", or leave "allowed" as false',
       );
     }
-  } else if (manifest.papel === 'portao' && checks.length === 0) {
-    problems.push('checks: papel "portao" requires at least one check');
+  } else if (manifest.role === 'gate' && checks.length === 0) {
+    problems.push('checks: role "gate" requires at least one check');
   }
 
-  if (manifest.papel === 'portao') checkGateOutcome(manifest.saida, problems);
+  if (manifest.role === 'gate') checkGateOutcome(manifest.output, problems);
 
   return problems;
 }
@@ -423,17 +446,17 @@ export function registerSkill(db: Database, manifest: unknown): Skill {
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
-    verified.versao as string,
+    verified.version as string,
     verified.hash as string,
-    verified.papel as string,
-    verified.descricao as string,
-    JSON.stringify(verified.entrada),
-    JSON.stringify(verified.saida),
-    JSON.stringify(verified.pre_condicoes),
+    ROLE_COLUMN[verified.role as string] ?? (verified.role as string),
+    verified.description as string,
+    JSON.stringify(verified.input),
+    JSON.stringify(verified.output),
+    JSON.stringify(verified.preconditions),
     JSON.stringify(verified.checks),
-    JSON.stringify(verified.permissoes),
-    verified.instrucoes as string,
-    JSON.stringify(verified.origem),
+    JSON.stringify(verified.permissions),
+    verified.instructions as string,
+    JSON.stringify(verified.origin),
     timestamp,
   );
 

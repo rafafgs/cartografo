@@ -93,7 +93,7 @@ async function registerBase(
   className?: string,
 ): Promise<{ graph: GraphRow; version: VersionRow }> {
   const document = minimalGraph();
-  if (className !== undefined) document.classe = className;
+  if (className !== undefined) document.problem_class = className;
 
   const response = await request<{ grafo: GraphRow; grafo_versao: VersionRow }>(
     ctx,
@@ -149,30 +149,30 @@ function proposalCount(ctx: TestContext): number {
 function newNode(): Record<string, unknown> {
   return {
     id: 'checar_fatos',
-    papel: 'revisor',
-    tipo_no: 'trabalho',
-    descricao: 'Confere cada afirmação da nota contra a fonte citada.',
+    role: 'revisor',
+    node_type: 'trabalho',
+    description: 'Confere cada afirmação da nota contra a fonte citada.',
     skill_ref: {
       id: 'cartografo/checar-fatos',
-      versao: '1.0.0',
+      version: '1.0.0',
       hash: `sha256:${'0'.repeat(64)}`,
     },
-    contrato: {
-      entrada_schema: {
+    contract: {
+      input_schema: {
         type: 'object',
         required: ['texto'],
         properties: { texto: { type: 'string', minLength: 1 } },
       },
-      saida_schema: {
+      output_schema: {
         type: 'object',
         required: ['aprovado'],
         properties: { aprovado: { type: 'boolean' } },
       },
-      verificacoes: [
+      checks: [
         {
-          tipo: 'deterministico',
-          comando: 'test -s checagem.md',
-          descricao: 'O relatório de checagem existe e não está vazio.',
+          type: 'deterministic',
+          command: 'test -s checagem.md',
+          description: 'O relatório de checagem existe e não está vazio.',
         },
       ],
     },
@@ -193,13 +193,13 @@ function passingOperations(): unknown[] {
     { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: node.id } },
     {
       tipo: 'adicionar_aresta',
-      aresta: { de: 'redigir', para: node.id, condicao: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { de: 'redigir', para: node.id } },
+      aresta: { from: 'redigir', to: node.id, condition: 'sempre' },
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: node.id } },
     },
     {
       tipo: 'adicionar_aresta',
-      aresta: { de: node.id, para: 'revisar', condicao: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { de: node.id, para: 'revisar' } },
+      aresta: { from: node.id, to: 'revisar', condition: 'sempre' },
+      inversa: { tipo: 'remover_aresta', aresta: { from: node.id, to: 'revisar' } },
     },
   ];
 }
@@ -211,13 +211,13 @@ function expectedOperations(): unknown[] {
     { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: 'checar_fatos' } },
     {
       tipo: 'adicionar_aresta',
-      aresta: { de: 'redigir', para: 'checar_fatos', condicao: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { de: 'redigir', para: 'checar_fatos' } },
+      aresta: { from: 'redigir', to: 'checar_fatos', condition: 'sempre' },
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: 'checar_fatos' } },
     },
     {
       tipo: 'adicionar_aresta',
-      aresta: { de: 'checar_fatos', para: 'revisar', condicao: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { de: 'checar_fatos', para: 'revisar' } },
+      aresta: { from: 'checar_fatos', to: 'revisar', condition: 'sempre' },
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'checar_fatos', to: 'revisar' } },
     },
   ];
 }
@@ -332,11 +332,11 @@ test('t140 AT13 — applying the promotion carries the diff to the base and keep
 
   const base = await currentSnapshot(ctx, graph.id);
   const variant = await currentSnapshot(ctx, VARIANT_ID);
-  assert.deepEqual(canonicalize(base.nos), canonicalize(variant.nos));
-  assert.deepEqual(canonicalize(base.arestas), canonicalize(variant.arestas));
+  assert.deepEqual(canonicalize(base.nodes), canonicalize(variant.nodes));
+  assert.deepEqual(canonicalize(base.edges), canonicalize(variant.edges));
 
-  assert.equal(base.classe, graph.classe);
-  assert.deepEqual(base.linhagem, { tipo: 'base' }, 'the base stays a base');
+  assert.equal(base.problem_class, graph.classe);
+  assert.deepEqual(base.lineage, { type: 'base' }, 'the base stays a base');
 });
 
 test('t140 AT14 — offering the base improvement opens a pending proposal on the named variant', async (t) => {
@@ -377,12 +377,12 @@ test('t140 AT15 — applying the offer carries the diff to the variant and keeps
 
   const base = await currentSnapshot(ctx, graph.id);
   const variant = await currentSnapshot(ctx, VARIANT_ID);
-  assert.deepEqual(canonicalize(variant.nos), canonicalize(base.nos));
-  assert.deepEqual(canonicalize(variant.arestas), canonicalize(base.arestas));
+  assert.deepEqual(canonicalize(variant.nodes), canonicalize(base.nodes));
+  assert.deepEqual(canonicalize(variant.edges), canonicalize(base.edges));
 
   assert.deepEqual(
-    variant.linhagem,
-    { tipo: 'variante', base_classe: graph.classe },
+    variant.lineage,
+    { type: 'variante', base_class: graph.classe },
     'an offer is not a merge of identities: the variant stays a variant',
   );
   assert.equal((await readGraph(ctx, VARIANT_ID)).linhagem_tipo, 'variante');

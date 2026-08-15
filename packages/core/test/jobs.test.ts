@@ -45,7 +45,7 @@ const GRAPH_ROUTES = 'src/routes/graphs.ts';
  *
  * The real document, not a fixture written here, for the same reason AT6 of
  * `graph-routes.test.ts` feeds the factory bundle in raw: what the derivation
- * below reads is the `nos_finais` of a snapshot that went through the
+ * below reads is the `final_nodes` of a snapshot that went through the
  * registration gate, and a hand-made snapshot would prove nothing about it.
  */
 const MINIMAL_GRAPH = path.join(
@@ -434,7 +434,7 @@ test('t152 — a job with no graph version is never reported as concluído', asy
   assert.equal(
     projection.concluido,
     false,
-    'with no graph attached there is no nos_finais to derive a terminal state from',
+    'with no graph attached there is no final_nodes to derive a terminal state from',
   );
 });
 
@@ -454,7 +454,7 @@ test('t152 — concluído is "the current node is a final node of the job\'s gra
   assert.equal(
     atEntry.concluido,
     false,
-    'the entry node is not in nos_finais: the traveller has not arrived',
+    'the entry node is not in final_nodes: the traveller has not arrived',
   );
 
   const moved = await request<JobProjection>(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {
@@ -467,7 +467,7 @@ test('t152 — concluído is "the current node is a final node of the job\'s gra
   assert.equal(
     atFinal.concluido,
     true,
-    '`revisar` is the only node in the version\'s nos_finais: the walk is over',
+    '`revisar` is the only node in the version\'s final_nodes: the walk is over',
   );
 });
 

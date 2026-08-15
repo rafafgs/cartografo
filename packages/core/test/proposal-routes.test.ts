@@ -171,7 +171,7 @@ function minimalGraph(): GraphDocument {
 }
 
 function requireNode(doc: GraphDocument, id: string): GraphNode {
-  const node = doc.nos.find((candidate) => candidate.id === id);
+  const node = doc.nodes.find((candidate) => candidate.id === id);
   if (node === undefined) throw new Error(`the fixture changed: node "${id}" is gone`);
   return node;
 }
@@ -245,30 +245,30 @@ async function getProposal(address: string, id: number): Promise<ProposalRow> {
 function newNode(): GraphNode {
   return {
     id: 'checar_fatos',
-    papel: 'revisor',
-    tipo_no: 'trabalho',
-    descricao: 'Confere cada afirmação da nota contra a fonte citada.',
+    role: 'revisor',
+    node_type: 'trabalho',
+    description: 'Confere cada afirmação da nota contra a fonte citada.',
     skill_ref: {
       id: 'cartografo/checar-fatos',
-      versao: '1.0.0',
+      version: '1.0.0',
       hash: `sha256:${'0'.repeat(64)}`,
     },
-    contrato: {
-      entrada_schema: {
+    contract: {
+      input_schema: {
         type: 'object',
         required: ['texto'],
         properties: { texto: { type: 'string', minLength: 1 } },
       },
-      saida_schema: {
+      output_schema: {
         type: 'object',
         required: ['aprovado'],
         properties: { aprovado: { type: 'boolean' } },
       },
-      verificacoes: [
+      checks: [
         {
-          tipo: 'deterministico',
-          comando: 'test -s checagem.md',
-          descricao: 'O relatório de checagem existe e não está vazio.',
+          type: 'deterministic',
+          command: 'test -s checagem.md',
+          description: 'O relatório de checagem existe e não está vazio.',
         },
       ],
     },
@@ -290,13 +290,13 @@ function passingOperations(): OperationsModule.Operation[] {
     },
     {
       tipo: 'adicionar_aresta',
-      aresta: { de: 'redigir', para: node.id, condicao: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { de: 'redigir', para: node.id } },
+      aresta: { from: 'redigir', to: node.id, condition: 'sempre' },
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: node.id } },
     },
     {
       tipo: 'adicionar_aresta',
-      aresta: { de: node.id, para: 'revisar', condicao: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { de: node.id, para: 'revisar' } },
+      aresta: { from: node.id, to: 'revisar', condition: 'sempre' },
+      inversa: { tipo: 'remover_aresta', aresta: { from: node.id, to: 'revisar' } },
     },
   ];
 }
@@ -421,8 +421,8 @@ const REJECTION_CASES: Array<{
         { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: node.id } },
         {
           tipo: 'adicionar_aresta',
-          aresta: { de: node.id, para: 'revisar', condicao: 'sempre' },
-          inversa: { tipo: 'remover_aresta', aresta: { de: node.id, para: 'revisar' } },
+          aresta: { from: node.id, to: 'revisar', condition: 'sempre' },
+          inversa: { tipo: 'remover_aresta', aresta: { from: node.id, to: 'revisar' } },
         },
       ];
     },
@@ -438,8 +438,8 @@ const REJECTION_CASES: Array<{
         { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: node.id } },
         {
           tipo: 'adicionar_aresta',
-          aresta: { de: 'redigir', para: node.id, condicao: 'sempre' },
-          inversa: { tipo: 'remover_aresta', aresta: { de: 'redigir', para: node.id } },
+          aresta: { from: 'redigir', to: node.id, condition: 'sempre' },
+          inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: node.id } },
         },
       ];
     },
@@ -447,13 +447,15 @@ const REJECTION_CASES: Array<{
   {
     at: 'AT16',
     counterexample: 'grafo-invalido-aresta-sem-condicao.json',
+    // The report's `alvo` keeps the frozen `de`/`para` pair even now that the
+    // document says `from`/`to`: the 422 wire format did not move (t178).
     violations: [{ regra: 'aresta_com_condicao', alvo: { de: 'revisar', para: 'redigir' } }],
     // A legitimate rework cycle, but with no label on the transition.
     operations: () => [
       {
         tipo: 'adicionar_aresta',
-        aresta: { de: 'revisar', para: 'redigir', condicao: '' },
-        inversa: { tipo: 'remover_aresta', aresta: { de: 'revisar', para: 'redigir' } },
+        aresta: { from: 'revisar', to: 'redigir', condition: '' },
+        inversa: { tipo: 'remover_aresta', aresta: { from: 'revisar', to: 'redigir' } },
       },
     ],
   },
@@ -466,15 +468,15 @@ const REJECTION_CASES: Array<{
       {
         tipo: 'alterar_campo_no',
         no_id: 'revisar',
-        campo: 'contrato',
-        de: structuredClone(requireNode(document, 'revisar').contrato),
+        campo: 'contract',
+        de: structuredClone(requireNode(document, 'revisar').contract),
         para: {},
         inversa: {
           tipo: 'alterar_campo_no',
           no_id: 'revisar',
-          campo: 'contrato',
+          campo: 'contract',
           de: {},
-          para: structuredClone(requireNode(document, 'revisar').contrato),
+          para: structuredClone(requireNode(document, 'revisar').contract),
         },
       },
     ],
@@ -526,13 +528,13 @@ test('AT18 — a proposal whose target version stopped being the current one ret
     {
       tipo: 'alterar_campo_no',
       no_id: 'redigir',
-      campo: 'papel',
+      campo: 'role',
       de: 'redator',
       para: 'red-team',
       inversa: {
         tipo: 'alterar_campo_no',
         no_id: 'redigir',
-        campo: 'papel',
+        campo: 'role',
         de: 'red-team',
         para: 'redator',
       },
@@ -657,20 +659,20 @@ interface HypothesisOutcome {
   avaliado_em: string;
 }
 
-/** Changes a node's `papel`, so each proposal produces a distinct snapshot. */
-function roleChange(papel: string): OperationsModule.Operation[] {
+/** Changes a node's `role`, so each proposal produces a distinct snapshot. */
+function roleChange(role: string): OperationsModule.Operation[] {
   return [
     {
       tipo: 'alterar_campo_no',
       no_id: 'redigir',
-      campo: 'papel',
+      campo: 'role',
       de: 'redator',
-      para: papel,
+      para: role,
       inversa: {
         tipo: 'alterar_campo_no',
         no_id: 'redigir',
-        campo: 'papel',
-        de: papel,
+        campo: 'role',
+        de: role,
         para: 'redator',
       },
     },

@@ -5,7 +5,7 @@
  * serialization of the **whole** document — not of a subset. That is the
  * deliberate difference from the skill manifest hash
  * (`especificacoes/formatos/manifesto-skill.md`), which only covers
- * `{instrucoes, entrada, saida, checks, permissoes}` because there catalogue
+ * `{instructions, input, output, checks, permissions}` because there catalogue
  * metadata must not invalidate the pin. Here the opposite holds: the snapshot of
  * a version is the whole document (`docs/spec/grafo.md` §7), and changing the
  * graph description IS a new version.

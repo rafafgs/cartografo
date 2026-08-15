@@ -22,23 +22,32 @@
  *   variant and base, t118). Here the inverse only has to exist and match the
  *   operation; nobody applies it yet.
  *
- * The operation-type names, the field names and the report's own keys stay in
- * Portuguese: they are the format stored in `proposta.operacoes` and returned on
- * the wire, which the D18 rename does not touch (t127, FR8).
+ * The operation-type names (`adicionar_no`, …), the operation's OWN keys (`no`,
+ * `no_id`, `aresta`, `campo`, the before/after pair `de`/`para`, `inversa`) and
+ * the report's keys stay in Portuguese: they are the format stored in
+ * `proposta.operacoes` and returned on the wire, which the D18 rename does not
+ * touch (t127, FR8).
+ *
+ * What an operation CARRIES is a different matter. `no` is a graph node and
+ * `aresta` is a graph edge — fragments of the document, spliced straight into a
+ * snapshot by `applyOperations` — so their keys moved with the document in t178
+ * (the 2026-08-15 D18 amendment). Hence `aresta: {from, to, condition}` inside
+ * an operation whose own before/after pair is still spelled `de`/`para`: two
+ * formats meeting, each keeping its own vocabulary.
  */
 
 import type { GraphEdge, GraphDocument, GraphNode } from './graph.ts';
 
 /** Node fields that `alterar_campo_no` is allowed to swap. */
-export const CHANGEABLE_FIELDS = Object.freeze(['papel', 'descricao', 'skill_ref', 'contrato']);
+export const CHANGEABLE_FIELDS = Object.freeze(['role', 'description', 'skill_ref', 'contract']);
 
 /** A field swappable by `alterar_campo_no`. */
-export type ChangeableField = 'papel' | 'descricao' | 'skill_ref' | 'contrato';
+export type ChangeableField = 'role' | 'description' | 'skill_ref' | 'contract';
 
 /** End to end of an edge — what identifies the edge on removal. */
 export interface EdgeReference {
-  de: string;
-  para: string;
+  from: string;
+  to: string;
 }
 
 export interface AddNodeInverse {
@@ -231,16 +240,16 @@ function checkBody(type: string, body: PlainObject, role: string, note: Note): v
   };
   const requireEnds = (): void => {
     const edge = body.aresta;
-    if (!isObject(edge) || !isFilledText(edge.de) || !isFilledText(edge.para)) {
-      note('campo_invalido', `${role} "${type}": "aresta" has to have "de" and "para"`);
+    if (!isObject(edge) || !isFilledText(edge.from) || !isFilledText(edge.to)) {
+      note('campo_invalido', `${role} "${type}": "aresta" has to have "from" and "to"`);
       return;
     }
-    // `condicao` is only demanded of an edge that ENTERS the document. Demanding
+    // `condition` is only demanded of an edge that ENTERS the document. Demanding
     // it as a string (even an empty one) and not as filled text is what lets a
     // missing label reach the soundness gate, where it is rejected with the rule
     // name instead of becoming a generic 400.
-    if (type === 'adicionar_aresta' && typeof edge.condicao !== 'string') {
-      note('campo_invalido', `${role} "${type}": "aresta.condicao" has to be a string`);
+    if (type === 'adicionar_aresta' && typeof edge.condition !== 'string') {
+      note('campo_invalido', `${role} "${type}": "aresta.condition" has to be a string`);
     }
   };
 
@@ -260,7 +269,7 @@ function checkBody(type: string, body: PlainObject, role: string, note: Note): v
       if (typeof body.campo !== 'string' || !CHANGEABLE_FIELDS.includes(body.campo)) {
         note(
           'campo_nao_alteravel',
-          `${role} "alterar_campo_no": "campo" has to be one of ${CHANGEABLE_FIELDS.join(', ')} — swapping id or tipo_no is an operation of its own, not a field swap`,
+          `${role} "alterar_campo_no": "campo" has to be one of ${CHANGEABLE_FIELDS.join(', ')} — swapping id or node_type is an operation of its own, not a field swap`,
         );
       }
       for (const key of ['de', 'para']) {
@@ -286,7 +295,7 @@ function checkInverseTarget(
   };
 
   const ends = (value: unknown): string =>
-    isObject(value) ? `${String(value.de)}→${String(value.para)}` : 'invalid';
+    isObject(value) ? `${String(value.from)}→${String(value.to)}` : 'invalid';
 
   switch (type) {
     case 'adicionar_no': {
@@ -344,8 +353,8 @@ export function applyOperations(
   operations: readonly Operation[],
 ): GraphDocument {
   const result = structuredClone(document) as GraphDocument;
-  result.nos = Array.isArray(result.nos) ? result.nos : [];
-  result.arestas = Array.isArray(result.arestas) ? result.arestas : [];
+  result.nodes = Array.isArray(result.nodes) ? result.nodes : [];
+  result.edges = Array.isArray(result.edges) ? result.edges : [];
 
   operations.forEach((operation, index) => {
     const report = validateOperation(operation);
@@ -359,18 +368,18 @@ export function applyOperations(
 
     switch (operation.tipo) {
       case 'adicionar_no': {
-        if (result.nos.some((node) => node.id === operation.no.id)) {
+        if (result.nodes.some((node) => node.id === operation.no.id)) {
           throw new ApplicationError(
             'no_duplicado',
             `node "${operation.no.id}" already exists in the snapshot`,
             operation.no.id,
           );
         }
-        result.nos.push(structuredClone(operation.no));
+        result.nodes.push(structuredClone(operation.no));
         break;
       }
       case 'remover_no': {
-        const position = result.nos.findIndex((node) => node.id === operation.no_id);
+        const position = result.nodes.findIndex((node) => node.id === operation.no_id);
         if (position === -1) {
           throw new ApplicationError(
             'no_inexistente',
@@ -378,29 +387,29 @@ export function applyOperations(
             operation.no_id,
           );
         }
-        result.nos.splice(position, 1);
+        result.nodes.splice(position, 1);
         break;
       }
       case 'adicionar_aresta': {
-        result.arestas.push(structuredClone(operation.aresta));
+        result.edges.push(structuredClone(operation.aresta));
         break;
       }
       case 'remover_aresta': {
-        const position = result.arestas.findIndex(
-          (edge) => edge.de === operation.aresta.de && edge.para === operation.aresta.para,
+        const position = result.edges.findIndex(
+          (edge) => edge.from === operation.aresta.from && edge.to === operation.aresta.to,
         );
         if (position === -1) {
           throw new ApplicationError(
             'aresta_inexistente',
-            `edge "${operation.aresta.de}"→"${operation.aresta.para}" does not exist in the snapshot`,
-            { de: operation.aresta.de, para: operation.aresta.para },
+            `edge "${operation.aresta.from}"→"${operation.aresta.to}" does not exist in the snapshot`,
+            { de: operation.aresta.from, para: operation.aresta.to },
           );
         }
-        result.arestas.splice(position, 1);
+        result.edges.splice(position, 1);
         break;
       }
       case 'alterar_campo_no': {
-        const node = result.nos.find((candidate) => candidate.id === operation.no_id);
+        const node = result.nodes.find((candidate) => candidate.id === operation.no_id);
         if (node === undefined) {
           throw new ApplicationError(
             'no_inexistente',

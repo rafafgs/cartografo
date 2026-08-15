@@ -141,7 +141,7 @@ function isAtFinalNode(db: Database, row: JobRow): boolean {
   const version = getVersion(db, row.grafo_versao_id);
   if (version === undefined) return false;
 
-  return version.snapshot.nos_finais.includes(row.no_atual);
+  return version.snapshot.final_nodes.includes(row.no_atual);
 }
 
 function toJob(db: Database, row: JobRow): Job {

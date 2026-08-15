@@ -33,6 +33,7 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { sessionText } from '../engine/claude-code-frames.ts';
 import type { EngineAdapter, SessionSpec, SessionStatus } from '../engine/types.ts';
 import type { ControlPlaneReader, RegisteredSkill } from './control-plane-client.ts';
 import { parseGraphProposal, type GraphProposal } from './parse-graph-proposal.ts';
@@ -99,8 +100,13 @@ export type ParsedCommand =
         url: string;
         outputPath?: string;
         timeoutSeconds: number;
+        /** Credential to present; absent means no header at all (t148). */
+        token?: string;
       };
     };
+
+/** Environment variable that carries the credential, as everywhere else. */
+export const ENV_TOKEN = 'CARTOGRAFO_TOKEN';
 
 /**
  * Where the draft lands.
@@ -141,6 +147,10 @@ export const HELP = [
   '  --saida <caminho>   onde gravar o rascunho (default',
   `                      <classe>${DRAFT_SUFFIX} no diretório atual).`,
   `  --timeout <seg>     limite da sessão (default ${DEFAULT_TIMEOUT_SECONDS}).`,
+  `  --token <token>     credencial do control plane (env ${ENV_TOKEN}); ela é`,
+  '                      impressa na linha de prontidão do control plane na',
+  '                      primeira vez que ele sobe. Sem credencial nenhuma, toda',
+  '                      leitura aqui responde 401.',
   '  --help              esta ajuda.',
   '',
   'O que o comando faz:',
@@ -171,10 +181,20 @@ export const HELP = [
  * declaration is positional and free text, and a parser that treats an unknown
  * leading token as an error would refuse the only argument that matters.
  *
+ * Precedence of the credential is `--token` > {@link ENV_TOKEN} > nothing,
+ * which is the rule `packages/core/src/cli/url.ts`, `topografo-custo` and the
+ * flow surveyor already use. A fourth rule for a fourth command would be a
+ * fourth thing to remember, and the person running all of them is one person.
+ *
  * @param argv Arguments after the script name.
+ * @param env Environment to read {@link ENV_TOKEN} from. Injectable so a test
+ *   never depends on whoever ran it having exported a credential.
  * @returns What to do: help, a usage refusal with its message, or a run.
  */
-export function parseArguments(argv: readonly string[]): ParsedCommand {
+export function parseArguments(
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): ParsedCommand {
   if (argv.includes('--help') || argv.includes('-h')) return { kind: 'help' };
 
   const positional: string[] = [];
@@ -222,6 +242,12 @@ export function parseArguments(argv: readonly string[]): ParsedCommand {
   }
 
   const outputPath = flags.get('saida');
+  // A blank token is "none presented", not a credential: the whole point of
+  // sending no header is that the 401 says what it means.
+  const token = [flags.get('token'), env[ENV_TOKEN]]
+    .map((candidate) => candidate?.trim())
+    .find((candidate) => candidate !== undefined && candidate !== '');
+
   return {
     kind: 'run',
     options: {
@@ -230,6 +256,7 @@ export function parseArguments(argv: readonly string[]): ParsedCommand {
       url: flags.get('url') ?? DEFAULT_URL,
       ...(outputPath === undefined ? {} : { outputPath }),
       timeoutSeconds,
+      ...(token === undefined ? {} : { token }),
     },
   };
 }
@@ -323,7 +350,13 @@ async function runSession(
   });
 
   const { status, exitCode } = await finished;
-  return { status, exitCode, output: lines.join('\n') };
+  // Decoded, never joined raw (t148). `onOutput` hands over exactly what the
+  // engine printed, and a real Claude Code session prints one `stream-json`
+  // frame per line — so the block's own quotes arrive as `\"` and its newlines
+  // as `\n`, and the fence scanner downstream matches neither. It cost every
+  // real run of this command an exit 1 while every fake-engine test, which
+  // prints prose, stayed green.
+  return { status, exitCode, output: sessionText(lines) };
 }
 
 /**

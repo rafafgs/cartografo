@@ -313,8 +313,13 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
     .all();
   assert.equal(previous.length, 2);
 
-  // ...and now the rebuild.
-  assert.deepEqual(migrate(db, REAL_MIGRATIONS_DIR), [rebuild.id], 'only 0010 was pending');
+  // ...and now the rebuild, applied from a directory that stops AT it instead
+  // of from the package one. What this test is about is the 0010 step over a
+  // populated table; reading the real directory made the assertion below also
+  // claim that nothing had ever landed after 0010, and that claim expires the
+  // day the next migration arrives — as it did in t182.
+  writeMigration(upTo0009, rebuild.file, readFileSync(rebuild.path, 'utf8'));
+  assert.deepEqual(migrate(db, upTo0009), [rebuild.id], 'only the rebuild was pending');
 
   assert.deepEqual(
     db.prepare('SELECT id, grafo_id, status, resultado, criado_em FROM proposta ORDER BY id').all(),

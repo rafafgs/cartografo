@@ -93,6 +93,30 @@ export interface Question {
   respondida_em: string | null;
 }
 
+/** The last lease a runner lost to the deadline, inside {@link RunnerHealth}. */
+export interface RunnerExpiration {
+  trabalho_id: number;
+  expira_em: string;
+  motivo_expiracao: string | null;
+}
+
+/**
+ * A paired runner and its liveness, as `GET /v1/runners` returns it (t164).
+ *
+ * All of it is derived by the control plane from the lease table — there is no
+ * runner-level ping — so a runner that never held a lease reads exactly like
+ * one that is down. The screen shows what the server tracks; inventing a
+ * liveness signal of its own is the one thing D11 does not let it do.
+ */
+export interface RunnerHealth {
+  id: string;
+  nome: string | null;
+  registrado_em: string;
+  leases_ativas: number;
+  ultimo_heartbeat: string | null;
+  ultima_expiracao: RunnerExpiration | null;
+}
+
 /** Event envelope, in the slice the timeline reads. */
 export interface Event {
   id: number;
@@ -245,6 +269,16 @@ export class ApiClient {
       '/v1/executions',
     );
     return executions;
+  }
+
+  /**
+   * The fleet: every paired runner, with what the lease table says about it.
+   *
+   * @returns Runners in pairing order, as the control plane sent them.
+   */
+  async listRunners(): Promise<RunnerHealth[]> {
+    const { runners } = await this.#get<{ runners: RunnerHealth[] }>('/v1/runners');
+    return runners;
   }
 
   /**

@@ -25,7 +25,7 @@ roda no `npm run lint`, e travada por
 
 ---
 
-## 1. As seis rotas
+## 1. As sete rotas
 
 | Rota | O que mostra | O que lê da API |
 |---|---|---|
@@ -33,6 +33,7 @@ roda no `npm run lint`, e travada por
 | `GET /execucoes` | Uma linha por execução, com trabalhos, bloqueados e perguntas pendentes. | `GET /v1/executions` |
 | `GET /execucoes/:id` | O recorte de uma rodada: quadro, sessões e perguntas pendentes na mesma página. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
 | `GET /perguntas` | A fila de escalação, cada pergunta inteira e com formulário inline. | `GET /v1/input-requests?status=pendente` |
+| `GET /runners` | A frota: um runner por linha, com leases ativas, último heartbeat e a última lease que ele perdeu para o TTL. | `GET /v1/runners` |
 | `POST /perguntas/:id/resposta` | Nada: escreve e redireciona (303) para `/perguntas`. | `PATCH /v1/input-requests/:id/answer` |
 | `GET /trabalhos/:id` | A linha do tempo do trabalho, em três baldes, mais os totais. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
 
@@ -244,7 +245,8 @@ deles é mudar o contrato; mudar classe de CSS não é.
 | `data-no-atual` | grupo do quadro | id do nó |
 | `data-trabalho` | cartão de trabalho | id do trabalho |
 | `data-execucao` | linha da lista de execuções | id, ou vazio no grupo `null` |
-| `data-campo` | célula de contagem | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes` |
+| `data-campo` | célula de contagem ou de campo derivado | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes`, `nome`, `leases_ativas`, `ultimo_heartbeat`, `ultima_expiracao` |
+| `data-runner` | linha da tabela de runners | id do runner |
 | `data-sessao` | linha da tabela de sessões | id da sessão |
 | `data-transcricao` | link da célula de transcrição, na tabela de sessões | id da sessão (o `href` é `/v1/sessions/:id/transcript`) |
 | `data-pergunta` | cartão de pergunta | id da pergunta |
@@ -283,3 +285,14 @@ Cada item é escopo declarado de outra ficha, não esquecimento:
 - **Paginação** — nenhuma rota da API pagina hoje, e não é esta ficha que
   inventa o que a API não tem.
 - **Atualização ao vivo** (polling/websocket) — cada view renderiza no request.
+- **Tempo relativo** ("há 3 minutos") em `/runners` ou em qualquer outra data:
+  a tela mostra o instante cru que a API gravou. Rótulo relativo calculado na
+  renderização, numa página sem auto-refresh, começa a mentir no segundo
+  seguinte.
+- **Saber se um runner ocioso está vivo.** `/runners` mostra o que o control
+  plane de fato registra, e ele registra leases: `ultimo_heartbeat` e
+  `ultima_expiracao` são derivados da tabela `lease`
+  ([`runner-e-controller.md`](runner-e-controller.md) §5). Um runner pareado
+  que nunca pegou trabalho aparece com os três campos vazios, igual a um que
+  está fora do ar. Inventar aqui um sinal de vida que a API não tem seria
+  exatamente o atalho que a D11 proíbe.

@@ -31,8 +31,15 @@ import {
   type GraphVersionRow,
 } from './graphs.ts';
 
-/** Possible states of a proposal. A human `aprovada` belongs to the inbox (t111). */
-export type ProposalStatus = 'pendente' | 'aplicada' | 'revertida' | 'rejeitada';
+/**
+ * Possible states of a proposal.
+ *
+ * `aprovada` is the human gate of princípio 5, between the hypothesis and the
+ * change (t165): the topographer writes `pendente`, a person approves, and only
+ * then can it be applied. Rejecting is the other way out of `pendente`, and it
+ * is terminal.
+ */
+export type ProposalStatus = 'pendente' | 'aprovada' | 'aplicada' | 'revertida' | 'rejeitada';
 
 /** A proposal, with the JSON columns already parsed. */
 export interface ProposalRow {
@@ -45,6 +52,8 @@ export interface ProposalRow {
   status: ProposalStatus;
   versao_aplicada_id: string | null;
   motivo_reversao: string | null;
+  /** Why a PERSON refused the hypothesis; the soundness gate writes `resultado` instead. */
+  motivo_rejeicao: string | null;
   resultado: unknown;
   criado_em: string;
   atualizado_em: string;
@@ -61,13 +70,15 @@ interface RawRow {
   status: ProposalStatus;
   versao_aplicada_id: string | null;
   motivo_reversao: string | null;
+  motivo_rejeicao: string | null;
   resultado: string | null;
   criado_em: string;
   atualizado_em: string;
 }
 
 const COLUMNS = `id, grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada, status,
-                 versao_aplicada_id, motivo_reversao, resultado, criado_em, atualizado_em`;
+                 versao_aplicada_id, motivo_reversao, motivo_rejeicao, resultado,
+                 criado_em, atualizado_em`;
 
 function hydrate(row: RawRow): ProposalRow {
   return {
@@ -135,8 +146,14 @@ export function createProposal(
 /**
  * Marks the proposal as rejected and keeps the report that failed it.
  *
- * The only path to `rejeitada` in this ticket is the soundness gate — explicit
- * human rejection belongs to the inbox (t111).
+ * This is the SOUNDNESS GATE's rejection, the one that happens inside `apply`,
+ * and its story goes in `resultado`. The human refusal is
+ * {@link rejectProposalByHuman}, whose story goes in `motivo_rejeicao` — two
+ * columns because the two facts are different, and telling them apart later is
+ * the whole point (t165).
+ *
+ * The guard is `aprovada` because that is the only status `apply` runs from
+ * since t165: a proposal reaches this gate already past the human one.
  *
  * @param db Open database.
  * @param id Proposal.
@@ -146,8 +163,66 @@ export function createProposal(
 export function rejectProposal(db: Database, id: number, report: unknown): ProposalRow {
   db.prepare(
     `UPDATE proposta SET status = 'rejeitada', resultado = ?, atualizado_em = ?
-      WHERE id = ? AND status = 'pendente'`,
+      WHERE id = ? AND status = 'aprovada'`,
   ).run(JSON.stringify(report), now(), id);
+
+  const proposal = getProposal(db, id);
+  if (proposal === undefined) throw new Error(`proposal ${id} is gone`);
+  return proposal;
+}
+
+/**
+ * The human gate says yes: `pendente` → `aprovada` (t165, FR2).
+ *
+ * Approving writes nothing but the status. It is a decision recorded, not the
+ * change itself — applying is a second, deliberate act, and princípio 5's
+ * ladder is exactly that separation.
+ *
+ * @param db Open database.
+ * @param id Proposal, already checked to be pending by the route.
+ * @returns The updated proposal.
+ * @throws {Error} When the row stopped being pending mid-flight — two people
+ *   deciding at once is a 409, never a silent overwrite.
+ */
+export function approveProposal(db: Database, id: number): ProposalRow {
+  const effect = db
+    .prepare(
+      `UPDATE proposta SET status = 'aprovada', atualizado_em = ?
+        WHERE id = ? AND status = 'pendente'`,
+    )
+    .run(now(), id);
+
+  if (effect.changes !== 1) throw new Error(`proposal ${id} stopped being pending during approval`);
+
+  const proposal = getProposal(db, id);
+  if (proposal === undefined) throw new Error(`proposal ${id} is gone`);
+  return proposal;
+}
+
+/**
+ * The human gate says no: `pendente` → `rejeitada`, with the reason (t165, FR3).
+ *
+ * `resultado` is deliberately untouched. That column carries either the report
+ * of the soundness gate that failed a proposal or the verdict of a hypothesis
+ * that was applied; a human "not worth it" is a third fact, and giving it its
+ * own column is what keeps the three readable apart afterwards.
+ *
+ * @param db Open database.
+ * @param id Proposal, already checked to be pending by the route.
+ * @param reason Why, required and non-blank — a rejection with no reason loses
+ *   the half of the fact the topographer would learn from.
+ * @returns The updated proposal.
+ * @throws {Error} When the row stopped being pending mid-flight.
+ */
+export function rejectProposalByHuman(db: Database, id: number, reason: string): ProposalRow {
+  const effect = db
+    .prepare(
+      `UPDATE proposta SET status = 'rejeitada', motivo_rejeicao = ?, atualizado_em = ?
+        WHERE id = ? AND status = 'pendente'`,
+    )
+    .run(reason, now(), id);
+
+  if (effect.changes !== 1) throw new Error(`proposal ${id} stopped being pending during rejection`);
 
   const proposal = getProposal(db, id);
   if (proposal === undefined) throw new Error(`proposal ${id} is gone`);
@@ -158,7 +233,7 @@ export function rejectProposal(db: Database, id: number, report: unknown): Propo
  * Applies the proposal: new version + pointer + status, in one transaction (D15).
  *
  * @param db Open database.
- * @param data Pending proposal, already validated document and its hash.
+ * @param data Approved proposal, already validated document and its hash.
  * @returns The proposal and the new version, as they were written.
  */
 export function applyProposal(
@@ -184,15 +259,15 @@ export function applyProposal(
     const effect = db
       .prepare(
         `UPDATE proposta SET status = 'aplicada', versao_aplicada_id = ?, atualizado_em = ?
-          WHERE id = ? AND status = 'pendente'`,
+          WHERE id = ? AND status = 'aprovada'`,
       )
       .run(versionId, moment, proposal.id);
 
-    // The whole transaction falls if the proposal stopped being pending between
+    // The whole transaction falls if the proposal stopped being approved between
     // the route's check and this UPDATE: applying twice is a 409, never two
     // versions (FR8/AT19).
     if (effect.changes !== 1) {
-      throw new Error(`proposal ${proposal.id} stopped being pending during the application`);
+      throw new Error(`proposal ${proposal.id} stopped being approved during the application`);
     }
   })();
 

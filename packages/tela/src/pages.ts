@@ -28,7 +28,14 @@
  * `escapeHtml`, with no exception.
  */
 
-import type { ApiClient, ExecutionSummary, Job, Question, Session } from './client.ts';
+import type {
+  ApiClient,
+  ExecutionSummary,
+  Job,
+  Question,
+  RunnerHealth,
+  Session,
+} from './client.ts';
 import { buildTimeline, type Segment, type Timeline } from './timeline.ts';
 
 /** A page ready to go to the browser. */
@@ -104,6 +111,7 @@ function layout(title: string, body: string): string {
     <a href="/quadro">quadro</a>
     <a href="/execucoes">execuções</a>
     <a href="/perguntas">perguntas</a>
+    <a href="/runners">runners</a>
     <a href="/">propostas</a>
   </nav>
 </header>
@@ -360,6 +368,60 @@ export async function executionsPage(client: ApiClient): Promise<Page> {
 </table>`;
 
   return { status: 200, html: layout('execuções', `<h2>execuções</h2>\n${body}`) };
+}
+
+/**
+ * `GET /runners` — who is paired, and how alive each one looks (t164, FR3).
+ *
+ * The three derived columns come from the lease table on the other side of the
+ * HTTP door, and are shown RAW: the instant as the control plane wrote it, with
+ * no "3 minutes ago" arithmetic. It is the same convention every other
+ * timestamp on this screen follows, and it is deliberate — a relative label
+ * computed at render time on a page with no auto-refresh starts lying the
+ * moment it is drawn.
+ *
+ * A runner that never held a lease shows three placeholders, and that is the
+ * honest answer: this screen has no liveness signal beyond the leases, so
+ * "never seen" and "down" look the same here (declared in `docs/spec/tela.md`).
+ *
+ * @param client Client of the public API.
+ * @returns The fleet page.
+ */
+export async function runnersPage(client: ApiClient): Promise<Page> {
+  const runners = await client.listRunners();
+
+  const missing = (what: string): string => `<span class="vazio">${escapeHtml(what)}</span>`;
+
+  const row = (runner: RunnerHealth): string => {
+    const expiration =
+      runner.ultima_expiracao === null
+        ? missing('nenhuma')
+        : escapeHtml(
+            `trabalho #${runner.ultima_expiracao.trabalho_id} (${
+              runner.ultima_expiracao.motivo_expiracao ?? 'sem motivo declarado'
+            }) às ${runner.ultima_expiracao.expira_em}`,
+          );
+
+    return `<tr data-runner="${escapeHtml(runner.id)}">
+      <td>${escapeHtml(runner.id)}</td>
+      <td data-campo="nome">${runner.nome === null ? missing('sem nome') : escapeHtml(runner.nome)}</td>
+      <td data-campo="leases_ativas">${runner.leases_ativas}</td>
+      <td data-campo="ultimo_heartbeat">${runner.ultimo_heartbeat === null ? missing('nunca') : escapeHtml(runner.ultimo_heartbeat)}</td>
+      <td data-campo="ultima_expiracao">${expiration}</td>
+    </tr>`;
+  };
+
+  const body =
+    runners.length === 0
+      ? '<p class="vazio">Nenhum runner pareado ainda.</p>'
+      : `<table>
+  <thead><tr><th>runner</th><th>nome</th><th>leases ativas</th><th>último heartbeat</th><th>última expiração</th></tr></thead>
+  <tbody>
+    ${runners.map(row).join('\n    ')}
+  </tbody>
+</table>`;
+
+  return { status: 200, html: layout('runners', `<h2>runners · ${runners.length}</h2>\n${body}`) };
 }
 
 /**

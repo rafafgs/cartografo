@@ -79,8 +79,9 @@ export const READY_EVENT = 'cartografo.runner.ready';
 export const USAGE = `usage: cartografo-runner [options]
 
 Starts a runner: it pairs with the control plane and, from then on, asks for
-released work, takes a lease and dispatches a session for it — one tick every
---interval-ms, until SIGINT or SIGTERM.
+released work, takes a lease and dispatches a session for it — each session in
+a git worktree of its own — one tick every --interval-ms, until SIGINT or
+SIGTERM.
 
 options:
   --url <url>               control plane to dial (env ${URL_ENV};
@@ -94,7 +95,12 @@ options:
   --engine <${ENGINE_NAMES.join('|')}>
                             engine every session of this runner opens on
                             (default ${DEFAULT_ENGINE_NAME}); one per process
-  --working-dir <path>      directory the sessions run in (default: the current one)
+  --working-dir <path>      the git repository the sessions' worktrees are cut
+                            from (default: the current directory)
+  --worktrees-root <path>   REQUIRED: directory those worktrees are created
+                            under. A SIBLING of --working-dir, never inside it
+                            — e.g. --working-dir ~/proj
+                            --worktrees-root ~/proj-worktrees
   --runner-cap <n>          simultaneous sessions of this runner
                             (default ${DEFAULT_RUNNER_CAP})
   --project-cap <n>         simultaneous sessions of the project
@@ -124,6 +130,7 @@ const VALUE_OPTIONS = [
   '--runner-id',
   '--engine',
   '--working-dir',
+  '--worktrees-root',
   '--runner-cap',
   '--project-cap',
   '--interval-ms',
@@ -242,6 +249,62 @@ function positiveInteger(name: string, raw: string | undefined, fallback: number
 }
 
 /**
+ * Resolves the two paths that decide where sessions write (t179).
+ *
+ * `--worktrees-root` is the one option of this command with no default, and
+ * that is a decision rather than an omission: `GitWorktreeManager` refuses to
+ * guess a location because "a default location is a silent guess about which
+ * repository a session may write in" (`session-worktree.ts:24-26`), and a
+ * default invented one layer up here would be exactly that guess wearing a
+ * different hat.
+ *
+ * The overlap check is the other half of it. A worktree created inside the
+ * repository it was cut from is untracked content in that repository's own
+ * `git status` — the same class of problem gap #6 of the first dogfood named
+ * ("the session works in the shared checkout; the OPERATOR itself became a
+ * concurrent writer"), and one that a runner would only reveal on its first
+ * dispatch, in somebody else's tree.
+ *
+ * Only that direction is refused. `--working-dir` inside `--worktrees-root` is
+ * an odd layout, but it pollutes nothing, and a guard nobody can name a failure
+ * for is a rule people route around.
+ *
+ * @param workingDir Value of `--working-dir`, when it came on the command line.
+ * @param worktreesRoot Value of `--worktrees-root`.
+ * @returns The repository and the root, both absolute.
+ * @throws {UsageError} `--worktrees-root` absent, or overlapping the repository.
+ */
+function resolveWorktreePaths(
+  workingDir: string | undefined,
+  worktreesRoot: string | undefined,
+): { repoRoot: string; worktreesRoot: string } {
+  if (worktreesRoot === undefined) {
+    throw new UsageError(
+      '--worktrees-root is required: it says where the sessions\' git worktrees are created, ' +
+        'and there is no safe default for it — pass a directory next to --working-dir ' +
+        '(e.g. --working-dir ~/proj --worktrees-root ~/proj-worktrees)',
+    );
+  }
+
+  const repoRoot = workingDir === undefined ? process.cwd() : path.resolve(workingDir);
+  const resolved = path.resolve(worktreesRoot);
+
+  // `+ path.sep`, and not a bare `startsWith`: `~/proj-worktrees` starts with
+  // `~/proj` as a string while being a sibling of it on disk — and a sibling is
+  // precisely the layout the usage text recommends.
+  if (resolved === repoRoot || resolved.startsWith(repoRoot + path.sep)) {
+    throw new UsageError(
+      `--worktrees-root has to be outside --working-dir (got "${resolved}", inside "${repoRoot}"): ` +
+        'a worktree created inside the repository it was cut from shows up as untracked content ' +
+        'in that repository\'s own `git status` — use a sibling directory instead ' +
+        '(e.g. --working-dir ~/proj --worktrees-root ~/proj-worktrees)',
+    );
+  }
+
+  return { repoRoot, worktreesRoot: resolved };
+}
+
+/**
  * The identity a runner declares when it was not given one.
  *
  * Host plus pid, and regenerated every run: a persisted identity is a config
@@ -272,7 +335,10 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
     throw new UsageError(`--engine has to be one of ${ENGINE_NAMES.join(', ')} (got: "${engine}")`);
   }
 
-  const workingDir = given.get('--working-dir');
+  const { repoRoot, worktreesRoot } = resolveWorktreePaths(
+    given.get('--working-dir'),
+    given.get('--worktrees-root'),
+  );
   const runnerId = given.get('--runner-id');
 
   return {
@@ -281,7 +347,8 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
     projectId: positiveInteger('--project', given.get('--project'), DEFAULT_PROJECT),
     runnerId: runnerId === undefined ? defaultRunnerId() : runnerId,
     engine: engine as EngineName,
-    workingDir: workingDir === undefined ? process.cwd() : path.resolve(workingDir),
+    repoRoot,
+    worktreesRoot,
     runnerCap: positiveInteger('--runner-cap', given.get('--runner-cap'), DEFAULT_RUNNER_CAP),
     projectCap: positiveInteger('--project-cap', given.get('--project-cap'), DEFAULT_PROJECT_CAP),
     intervalMs: positiveInteger('--interval-ms', given.get('--interval-ms'), DEFAULT_INTERVAL_MS),
@@ -391,7 +458,8 @@ export async function runRunnerCli(
             runnerId: options.runnerId,
             projectId: options.projectId,
             engine: options.engine,
-            workingDir: options.workingDir,
+            repoRoot: options.repoRoot,
+            worktreesRoot: options.worktreesRoot,
           })}\n`,
         );
       },

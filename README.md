@@ -46,7 +46,8 @@ E do grafo registrado ao trabalho andando, um quarto comando:
 
 ```bash
 CARTOGRAFO_TOKEN=<o token do passo 2> \
-  npx cartografo-runner --project 1                                    # 4 (outro terminal)
+  npx cartografo-runner --project 1 \
+    --working-dir ~/proj --worktrees-root ~/proj-worktrees              # 4 (outro terminal)
 ```
 
 O passo 4 sobe um runner: ele se pareia com o control plane, imprime a linha
@@ -55,8 +56,17 @@ e despacha uma sessão de agente para cada trabalho que pegar — um tick a cada
 `--interval-ms` (default 2000), até um SIGINT ou SIGTERM, que espera a sessão em
 voo terminar antes de sair. Um engine por processo
 (`--engine claude-code|codex`, default `claude-code`), e é o CLI desse engine,
-já instalado e autenticado na máquina, que roda de fato; as sessões trabalham no
-diretório atual (`--working-dir`). `npx cartografo-runner --help` lista o resto.
+já instalado e autenticado na máquina, que roda de fato.
+
+Cada sessão trabalha num `git worktree` só dela, num branch `ticket-<id>`:
+`--working-dir` é o repositório de onde esse worktree é cortado (default: o
+diretório atual) e `--worktrees-root` é onde ele é criado. O segundo é
+**obrigatório e não tem default** — onde uma sessão pode escrever é decisão de
+quem opera, nunca palpite do código — e tem que ser **irmão** do primeiro, nunca
+um diretório dentro dele: worktree criado dentro do repositório de onde saiu
+aparece como conteúdo não rastreado no `git status` desse repositório. Sem a
+flag, ou com as duas se sobrepondo, o comando sai com 2 e uma linha, antes de
+falar com o control plane. `npx cartografo-runner --help` lista o resto.
 
 Os outros dois subcomandos, para conferir e levar o grafo embora:
 

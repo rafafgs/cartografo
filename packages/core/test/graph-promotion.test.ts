@@ -237,6 +237,7 @@ async function evolve(ctx: TestContext, graphId: string): Promise<VersionRow> {
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
 
+  await approve(ctx, created.body.proposta.id);
   const applied = await request<{ grafo_versao: VersionRow }>(
     ctx,
     'POST',
@@ -263,8 +264,27 @@ async function offer(
   return request<ProposalResponse>(ctx, 'POST', `/v1/graphs/${baseId}/offer`, body);
 }
 
-/** Applies a proposal by id and returns the version it wrote. */
+/**
+ * Walks a proposal through the human gate (t165, FR2/FR4).
+ *
+ * A promotion/offer is a proposal like any other — including in this: since
+ * t165 `apply` demands `aprovada`, and nothing about carrying a diff between
+ * lineages skips the gate of princípio 5.
+ */
+async function approve(ctx: TestContext, id: number): Promise<void> {
+  const response = await request<{ proposta: ProposalRow }>(
+    ctx,
+    'POST',
+    `/v1/proposals/${id}/approve`,
+    {},
+  );
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(response.body.proposta.status, 'aprovada');
+}
+
+/** Approves and applies a proposal by id, and returns the version it wrote. */
 async function apply(ctx: TestContext, id: number): Promise<VersionRow> {
+  await approve(ctx, id);
   const response = await request<{ proposta: ProposalRow; grafo_versao: VersionRow }>(
     ctx,
     'POST',

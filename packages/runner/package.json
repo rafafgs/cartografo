@@ -25,6 +25,8 @@
     "spike:permissions": "node --import tsx scripts/spike-permission-enforcement.mjs",
     "spike:surveyor": "node --import tsx scripts/spike-surveyor-flow.mjs",
     "spike:two-engine": "node --import tsx scripts/spike-two-engine-traversal.mjs",
+    "traverse": "node --import tsx scripts/run-graph-traversal.mjs",
+    "close-outcome": "node --import tsx scripts/close-surveyor-outcome.mjs",
     "surveyor": "node --import tsx src/surveyor/cli.mjs",
     "synthesize": "node --import tsx src/synthesizer/cli.mjs"
   },

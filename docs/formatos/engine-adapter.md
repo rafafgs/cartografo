@@ -245,6 +245,24 @@ processo. Fechar a lacuna de verdade exige sandbox de SO por plataforma
 ficha própria. Toda tentativa negada vira evento `sessao.permissao_negada` no
 log: o que o gating não impede, a telemetria pelo menos registra.
 
+**Medido contra a CLI real** (`claude 2.1.233`, roteiro em
+`packages/runner/scripts/spike-permission-enforcement.mjs`, rodado em
+2026-08-15):
+
+- entrada negada **por nome** (`WebFetch`, `Write`, `Edit`) → a ferramenta
+  simplesmente **não é oferecida** ao modelo. Ela não aparece em nenhum
+  `tool_use`, e por isso **não gera telemetria**: não há tentativa a registrar,
+  há uma ferramenta que nunca existiu naquela sessão;
+- entrada negada **por padrão** (`Bash(curl *)`) → o `Bash` continua
+  disponível e a recusa acontece na chamada, com `tool_result` de erro
+  (`"Permission to use Bash with command curl … has been denied."`). **É este
+  o caso que produz `sessao.permissao_negada`**, e é a razão de o rastreador
+  casar padrão contra o comando, e não só nome contra nome;
+- a lacuna, confirmada nos dois eixos: `node -e "fetch(…)"` trouxe HTTP 200
+  com a rede "fechada", e `printf > arquivo` gravou no workdir com
+  `escrita: []`. Os dois passaram por `Bash`, que estava disponível — como
+  tem de estar, sob pena de a sessão não conseguir trabalhar.
+
 ### Capacidades
 
 ```typescript

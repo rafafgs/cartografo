@@ -255,10 +255,15 @@ negação repetida seria política de escalada, e ninguém decidiu isso ainda.
 `ferramenta` carrega vocabulário de engine dentro do log de propósito
 (`WebFetch`, `Bash(curl *)`). É a exceção que a regra "o log é neutro" aceita
 pelo mesmo motivo que `sessao.aberta` carrega `engine`: sem o nome exato que
-foi negado, a negação não é auditável. E o que este evento **não** promete:
-ele registra o que o gating por nome de ferramenta pegou, não tudo que a
-sessão tentou — a lacuna residual está escrita em
-`docs/formatos/engine-adapter.md`, "Permissões da sessão".
+foi negado, a negação não é auditável.
+
+**O que este evento não promete.** Ele registra o que o gating por nome de
+ferramenta pegou, não tudo que a sessão tentou. Medido contra a CLI real: uma
+ferramenta negada por nome nem chega a ser oferecida ao modelo, então nunca há
+tentativa e nunca há evento — quem aparece aqui é a negação de um *padrão*
+(`Bash(curl *)`), que é recusada na chamada. Ausência de evento significa "não
+tentou ou não foi oferecida", jamais "nada foi barrado". A lacuna residual está
+escrita em `docs/formatos/engine-adapter.md`, "Permissões da sessão".
 
 ### Pergunta
 

@@ -218,6 +218,45 @@ test('AT6 — an unrecognized flag and an extra positional argument both exit 2'
   }
 });
 
+test('a runner that could not run exits 1, saying which control plane and what to do', async () => {
+  const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
+  const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(CLIENT_MODULE);
+
+  // Not an AT of its own: it is the `1` of the exit-code table, and the line it
+  // writes is the difference between "the port is somebody else's" and
+  // `TypeError: fetch failed` — the failure the first dogfood actually hit.
+  const failures: Array<{ thrown: unknown; expected: RegExp }> = [
+    { thrown: new TypeError('fetch failed'), expected: /npx cartografo/ },
+    {
+      thrown: new ErroDoControlPlane('POST /v1/runners respondeu 401', 401, undefined),
+      expected: /--token/,
+    },
+  ];
+
+  for (const failure of failures) {
+    const stderr = captureStream('stderr');
+    let code: number;
+    try {
+      code = await runRunnerCli(['--url', 'http://127.0.0.1:4999'], {}, {
+        run: async () => {
+          throw failure.thrown;
+        },
+      });
+    } finally {
+      stderr.restore();
+    }
+
+    assert.equal(code, 1, 'a runner that could not run is a 1, never a 2');
+    assert.equal(
+      stderr.written().split('\n').filter((line) => line !== '').length,
+      1,
+      `one actionable line:\n${stderr.written()}`,
+    );
+    assert.match(stderr.written(), /http:\/\/127\.0\.0\.1:4999/, 'the line names the address');
+    assert.match(stderr.written(), failure.expected);
+  }
+});
+
 test('AT7 — every optional flag left out resolves to the documented default', async () => {
   const { parseRunnerOptions } = await loadModule<typeof CliModule>(CLI_MODULE);
 

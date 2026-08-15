@@ -229,8 +229,8 @@ async function leasesOfJob(plane: RunningControlPlane, jobId: number): Promise<L
  * this the next subtest's runner would find it and dispatch it again.
  */
 async function blockEveryJob(plane: RunningControlPlane): Promise<void> {
-  const { trabalhos } = await api<{ trabalhos: Job[] }>(plane, 'GET', '/v1/jobs');
-  for (const job of trabalhos) {
+  const { trabalhos: jobs } = await api<{ trabalhos: Job[] }>(plane, 'GET', '/v1/jobs');
+  for (const job of jobs) {
     if (job.bloqueado) continue;
     await api(plane, 'POST', `/v1/jobs/${job.id}/blocks`, { motivo: 'fim do caso de teste' });
   }
@@ -651,21 +651,29 @@ test('t162 — the packaged runner, against a real control plane', async (parent
 
     // Idle means idle: the queue was emptied by the subtests above, so the
     // only thing this loop is doing is waiting out its interval.
-    const { trabalhos } = await api<{ trabalhos: Job[] }>(plane, 'GET', '/v1/jobs');
+    const { trabalhos: jobs } = await api<{ trabalhos: Job[] }>(plane, 'GET', '/v1/jobs');
     assert.deepEqual(
-      trabalhos.filter((job) => !job.bloqueado),
+      jobs.filter((job) => !job.bloqueado),
       [],
       'this case measures a shutdown with nothing in flight',
     );
 
+    // Landed well inside the interval the loop is waiting out, which is where
+    // the two possible implementations differ: one wakes up, the other waits
+    // the remaining ~1.7s out and only then notices.
     await delay(300);
     const asked = Date.now();
     aborter.abort();
     await finished;
+    const took = Date.now() - asked;
 
     assert.ok(
-      Date.now() - asked < intervalMs,
-      `an idle stop took ${Date.now() - asked}ms, longer than the ${intervalMs}ms interval it was waiting out`,
+      took < intervalMs,
+      `an idle stop took ${took}ms, longer than the ${intervalMs}ms interval it was waiting out`,
+    );
+    assert.ok(
+      took < intervalMs / 2,
+      `an idle stop took ${took}ms: the shutdown is bounded by the interval, but it should not be waiting it out`,
     );
   });
 

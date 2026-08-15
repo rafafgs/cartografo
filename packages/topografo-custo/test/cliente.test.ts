@@ -228,3 +228,63 @@ test('AT8 — resposta de erro vira exceção com status e corpo, não silêncio
     },
   );
 });
+
+/**
+ * `fetch` falso que devolve uma resposta CRUA, montada pelo teste (t156).
+ *
+ * Separado do `espiao` do topo de propósito: aquele sempre serializa JSON e
+ * anuncia `application/json`, e por isso não consegue nem descrever o caso desta
+ * ficha — um intermediário quebrado (proxy reverso) respondendo 502 com uma
+ * página HTML, que é corpo que o `JSON.parse` não engole.
+ */
+function fetchQueResponde(montar: () => Response): typeof fetch {
+  return async () => montar();
+}
+
+const HTML_502 = '<html>502 Bad Gateway</html>';
+
+test('t156 — corpo de erro não-JSON vira ErroDaApi com o texto cru, não SyntaxError', async () => {
+  const { buscarSessoes, ErroDaApi } = await carregar();
+
+  const buscar = fetchQueResponde(
+    () => new Response(HTML_502, { status: 502, headers: { 'content-type': 'text/html' } }),
+  );
+
+  await assert.rejects(
+    () => buscarSessoes('http://127.0.0.1:4317', { execucao_id: 7 }, buscar),
+    (erro: unknown) => {
+      assert.ok(
+        erro instanceof ErroDaApi,
+        `esperava ErroDaApi, veio ${erro instanceof Error ? erro.name : String(erro)}`,
+      );
+      assert.equal(erro.status, 502);
+      assert.equal(
+        erro.corpo,
+        HTML_502,
+        'o corpo cru é o que sobra para quem loga: quem respondeu não foi a API',
+      );
+      return true;
+    },
+  );
+});
+
+/**
+ * Pino de não-regressão, não repro: o caso do corpo vazio JÁ funciona hoje
+ * (`texto === '' ? undefined : JSON.parse(texto)`), e o que este teste guarda é
+ * que a refatoração do t156 não o troque por `''` nem por uma exceção.
+ */
+test('t156 (não-regressão) — corpo vazio em resposta de erro continua chegando como undefined', async () => {
+  const { buscarSessoes, ErroDaApi } = await carregar();
+
+  const buscar = fetchQueResponde(() => new Response('', { status: 500 }));
+
+  await assert.rejects(
+    () => buscarSessoes('http://127.0.0.1:4317', {}, buscar),
+    (erro: unknown) => {
+      assert.ok(erro instanceof ErroDaApi);
+      assert.equal(erro.status, 500);
+      assert.equal(erro.corpo, undefined);
+      return true;
+    },
+  );
+});

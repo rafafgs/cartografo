@@ -318,6 +318,13 @@ function validateField(fieldPath: string, rule: FieldRule, value: unknown, error
         errors.push(`${fieldPath} has to be a list of strings`);
         return;
       }
+      // The same non-empty rule the `'string'` case above applies. None of the
+      // JSON schemas declares `minLength` — the rule is this file's own added
+      // contract — and applying it to a scalar `titulo` but not to an item of
+      // `campos_alterados` made the mirror disagree with itself (t157, FR5).
+      if ((value as string[]).some((item) => item.length === 0)) {
+        errors.push(`${fieldPath} cannot contain an empty string`);
+      }
       if (rule.minItems !== undefined && value.length < rule.minItems) {
         errors.push(`${fieldPath} has to have at least ${rule.minItems} item(s)`);
       }

@@ -19,6 +19,12 @@
  *   transaction that replaces it. An independent sweep route only makes sense
  *   once there is a concrete consumer (the screen, a project whose runners are
  *   all idle).
+ * - **The runner declares its caps; the server decides them** (t157, FR1). The
+ *   body keeps carrying `teto_runner`/`teto_projeto` — a runner knows things
+ *   about itself the control plane does not — but what `grantLease` enforces is
+ *   `min(declared, ceiling)`, and the ceiling comes from this process's
+ *   configuration. Without that half, a request would be declaring AND deciding
+ *   its own concurrency, which is exactly the split D1 exists to keep.
  *
  * Since t143 these four verbs are the only ones a `runner`-type credential may
  * reach (`auth.ts`), and inside them it may act **only as itself** (FR3): being
@@ -66,6 +72,26 @@ interface ListQuery {
 
 const VALID_STATUSES: LeaseStatus[] = ['ativa', 'liberada', 'expirada'];
 
+/**
+ * Ceiling of simultaneous active leases per runner, when nothing is configured
+ * (t157, FR1).
+ *
+ * Generous on purpose: it is a backstop against a runner that declares an absurd
+ * number, not a capacity policy. A real policy — per project, per runner, out of
+ * the database — is a later ticket, and only once a second consumer asks for one
+ * (rule of two consumers).
+ */
+export const DEFAULT_LEASE_CAP_RUNNER = 50;
+
+/** Ceiling of simultaneous active leases per project, when nothing is configured. */
+export const DEFAULT_LEASE_CAP_PROJECT = 50;
+
+/** The two ceilings this process enforces, whatever the request declares. */
+export interface LeaseCeilings {
+  runner: number;
+  projeto: number;
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -85,15 +111,21 @@ function routeId(raw: string): number | undefined {
  *
  * @param app Fastify scope.
  * @param db Already open database; the routes never open their own (D1).
- * @param options Injectable clock, passed on to the repositories. In production
+ * @param options Injectable clock, passed on to the repositories (in production
  *   it is empty; it exists so the expiration tests can control time without a
- *   `sleep`.
+ *   `sleep`), and the ceilings this process enforces — resolved from the
+ *   environment by `start()` and falling back to the two defaults above.
  */
 export function registerLeases(
   app: FastifyInstance,
   db: Database,
-  options: { now?: () => string } = {},
+  options: { now?: () => string; leaseCeilings?: LeaseCeilings } = {},
 ): void {
+  const ceilings: LeaseCeilings = options.leaseCeilings ?? {
+    runner: DEFAULT_LEASE_CAP_RUNNER,
+    projeto: DEFAULT_LEASE_CAP_PROJECT,
+  };
+
   app.post('/leases', async (request, reply) => {
     const body = isObject(request.body) ? request.body : {};
 
@@ -137,14 +169,18 @@ export function registerLeases(
       return { erro: 'runner_desconhecido', runner_id: runnerId };
     }
 
+    // The clamp, and not a refusal: a declaration above the ceiling is not a
+    // malformed request, it is a runner asking for more than this control plane
+    // hands out. It gets what there is, and the refusal that follows is the
+    // ordinary `{lease: null, motivo}` — same contract as any other full cap.
     const result = grantLease(
       db,
       {
         runner_id: runnerId,
         projeto_id: body.projeto_id as number,
         trabalho_id: body.trabalho_id as number,
-        teto_runner: body.teto_runner as number,
-        teto_projeto: body.teto_projeto as number,
+        teto_runner: Math.min(body.teto_runner as number, ceilings.runner),
+        teto_projeto: Math.min(body.teto_projeto as number, ceilings.projeto),
         ttl_segundos: body.ttl_segundos,
       },
       options,

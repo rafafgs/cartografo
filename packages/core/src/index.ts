@@ -15,6 +15,7 @@ import type { FastifyInstance } from 'fastify';
 import { openDatabase, applyPragmas, databasePath, type Database } from './db/connection.ts';
 import { migrate } from './db/migrate.ts';
 import { hasLiveCredential, issueCredential } from './repositories/credentials.ts';
+import { DEFAULT_LEASE_CAP_PROJECT, DEFAULT_LEASE_CAP_RUNNER } from './routes/leases.ts';
 import { createApp } from './server.ts';
 
 /** Default port of the control plane. */
@@ -36,6 +37,12 @@ export const DEFAULT_HOST = '127.0.0.1';
 
 /** Environment variable that overrides the listening address. */
 export const ENV_HOST = 'CARTOGRAFO_HOST';
+
+/** Environment variable that overrides the per-runner lease ceiling (t157, FR1). */
+export const ENV_LEASE_CAP_RUNNER = 'CARTOGRAFO_LEASE_CAP_RUNNER';
+
+/** Environment variable that overrides the per-project lease ceiling (t157, FR1). */
+export const ENV_LEASE_CAP_PROJECT = 'CARTOGRAFO_LEASE_CAP_PROJECT';
 
 /** Migrations directory of the package. */
 export const MIGRATIONS_DIR = path.resolve(import.meta.dirname, '..', 'migrations');
@@ -100,6 +107,51 @@ export function serverHost(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
+ * Resolves a positive-integer setting out of the environment (t157, FR1).
+ *
+ * Same shape as `serverPort`, including where it fails: a value that is not a
+ * positive integer stops the startup instead of quietly becoming a default. A
+ * ceiling nobody chose is worse than no server — the operator who typed
+ * `CARTOGRAFO_LEASE_CAP_RUNNER=oito` would go on believing the number in the
+ * environment is the one being enforced.
+ *
+ * @param env Environment to read from.
+ * @param variable Name of the variable, used in the error message.
+ * @param fallback Value when the variable is unset or blank.
+ * @returns The configured ceiling, or the default.
+ */
+function leaseCap(env: NodeJS.ProcessEnv, variable: string, fallback: number): number {
+  const configured = env[variable]?.trim();
+  if (configured === undefined || configured === '') return fallback;
+
+  const cap = Number(configured);
+  if (!Number.isInteger(cap) || cap < 1) {
+    throw new Error(`invalid ${variable}: "${configured}" (expected an integer >= 1)`);
+  }
+  return cap;
+}
+
+/**
+ * Resolves the per-runner lease ceiling (t157, FR1).
+ *
+ * @param env Environment to read `CARTOGRAFO_LEASE_CAP_RUNNER` from.
+ * @returns The ceiling the server enforces per runner.
+ */
+export function leaseCapRunner(env: NodeJS.ProcessEnv = process.env): number {
+  return leaseCap(env, ENV_LEASE_CAP_RUNNER, DEFAULT_LEASE_CAP_RUNNER);
+}
+
+/**
+ * Resolves the per-project lease ceiling (t157, FR1).
+ *
+ * @param env Environment to read `CARTOGRAFO_LEASE_CAP_PROJECT` from.
+ * @returns The ceiling the server enforces per project.
+ */
+export function leaseCapProject(env: NodeJS.ProcessEnv = process.env): number {
+  return leaseCap(env, ENV_LEASE_CAP_PROJECT, DEFAULT_LEASE_CAP_PROJECT);
+}
+
+/**
  * Brings the whole control plane up.
  *
  * @param env Environment to read the configuration from.
@@ -116,7 +168,12 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
   try {
     applyPragmas(db);
     migrationsApplied = migrate(db, MIGRATIONS_DIR);
-    app = createApp({ db });
+    // Inside the `try`, like `serverPort`: a misconfigured ceiling stops the
+    // startup, and the handle opened above is closed on the way out.
+    app = createApp({
+      db,
+      leaseCeilings: { runner: leaseCapRunner(env), projeto: leaseCapProject(env) },
+    });
     await app.listen({ port: serverPort(env), host });
   } catch (error) {
     db.close();

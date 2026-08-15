@@ -179,6 +179,39 @@ async function requireProcessDead(pid: number, label: string, deadlineMs = 5_000
   assert.fail(`${label}: process ${pid} was still alive ${deadlineMs}ms after the end (orphan)`);
 }
 
+/**
+ * Waits for the fake engine's sidecar, with a deadline of its own.
+ *
+ * A case that needs the pid — or that needs the process to be past its own
+ * startup before signalling it — has to wait for THE FACT, not for a plausible
+ * number of milliseconds: the fake writes the sidecar as its first act, so the
+ * file existing is the event "the process is up and has read its environment".
+ * A fixed sleep here is the kit breaking its own second design rule, and under
+ * the full suite's parallelism (every test file at once, each spawning node)
+ * 300ms is not always enough — the case then dies of `ENOENT` on the sidecar,
+ * a wrong-reason failure that says nothing about the adapter under test.
+ */
+async function awaitRecord(
+  scenario: Scenario,
+  label: string,
+  deadlineMs = 5_000,
+): Promise<FakeRecord> {
+  const limit = Date.now() + deadlineMs;
+  for (;;) {
+    try {
+      return scenario.readRecord();
+    } catch (error) {
+      if (Date.now() >= limit) {
+        assert.fail(
+          `${label}: the fake engine did not write its sidecar within ${deadlineMs}ms ` +
+            `(${(error as Error).message})`,
+        );
+      }
+      await sleep(25);
+    }
+  }
+}
+
 /** Every legitimate channel through which the process may have received anything. */
 function everythingTheProcessReceived(record: FakeRecord): string {
   return [
@@ -373,8 +406,7 @@ export function runConformanceKit(
         const handle = await adapter.startSession(spec, collector);
         // The sidecar exists as soon as the process came up; reading it before
         // killing guarantees both pids.
-        await sleep(SETTLE_MS);
-        const record = scenario.readRecord();
+        const record = await awaitRecord(scenario, 'C4');
 
         await adapter.cancel(handle);
         const end = await collector.awaitEnd('C4', deadline);
@@ -554,12 +586,11 @@ export function runConformanceKit(
 
         try {
           const handle = await adapter.startSession(raceSpec(scenario), collector);
-          // The fake only installs the SIGTERM handler after writing the
+          // The fake installs the SIGTERM handler right after writing the
           // sidecar; stopping before that would kill it with the first signal
           // and there would be no grace window to race inside (the same reason
-          // C4 waits here). Between the two stops there is NO sleep.
-          await sleep(SETTLE_MS);
-          const record = scenario.readRecord();
+          // C4 waits here). Between the two stops there is NO wait at all.
+          const record = await awaitRecord(scenario, label);
 
           await adapter.cancel(handle, first);
           await adapter.cancel(handle, second);

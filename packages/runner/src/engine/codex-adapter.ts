@@ -369,10 +369,19 @@ export class CodexAdapter implements EngineAdapter {
   #stop(id: string, status: SessionStatus): void {
     const session = this.#sessions.get(id);
     if (!session || session.finished) return;
+    // A stop is already in flight: this call is a COMPLETE no-op — it does not
+    // overwrite the status, does not signal again, does not re-arm anything.
+    // The order matters, and it is the whole point: the escalation timer below
+    // captures `status` in its closure, so a second writer to
+    // `requestedStatus` would make the reported outcome depend on whether the
+    // process died from the SIGTERM (the closure's status) or from the SIGKILL
+    // (the last writer's). Whoever ordered the stop FIRST is the one who
+    // decides — which is what `cancel()`'s contract already promises
+    // (`types.ts:236-241`).
+    if (session.escalation) return;
 
     session.requestedStatus = status;
     this.#signalGroup(session, 'SIGTERM');
-    if (session.escalation) return;
 
     session.escalation = setTimeout(() => {
       this.#signalGroup(session, 'SIGKILL');

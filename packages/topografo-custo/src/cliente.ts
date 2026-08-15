@@ -99,15 +99,45 @@ function consulta(filtro: FiltroDeExecucao): string {
   return `?execucao_id=${encodeURIComponent(String(filtro.execucao_id))}`;
 }
 
+/**
+ * Decodifica o corpo de uma resposta de ERRO, sem nunca estourar (t156).
+ *
+ * Quem responde um erro nem sempre é a API: um proxy reverso no meio do caminho
+ * responde 502/504 com uma página HTML, e aí o `JSON.parse` estoura um
+ * `SyntaxError` cru — que não carrega o status nem o texto, e não é o erro que
+ * este módulo promete. Falhar em decodificar o corpo de um erro não é uma
+ * segunda falha: é o corpo, do jeito que veio.
+ *
+ * Não vale para o caminho de sucesso, de propósito: corpo malformado num 2xx é
+ * violação de contrato da API, e essa tem que aparecer.
+ *
+ * @param texto O corpo da resposta, como texto.
+ * @returns `undefined` para corpo vazio, o valor decodificado quando é JSON, e
+ *   o próprio texto cru quando não é.
+ */
+function corpoDeErro(texto: string): unknown {
+  if (texto === '') return undefined;
+  try {
+    return JSON.parse(texto);
+  } catch {
+    return texto;
+  }
+}
+
 async function interpretar<T>(caminho: string, verbo: string, resposta: Response): Promise<T> {
   const texto = await resposta.text();
-  const corpo: unknown = texto === '' ? undefined : JSON.parse(texto);
 
+  // O status vem ANTES de qualquer decodificação: sobre um erro, o corpo é
+  // material de log e nunca motivo para uma exceção diferente da desta porta.
   if (!resposta.ok) {
-    throw new ErroDaApi(`${verbo} ${caminho} respondeu ${resposta.status}`, resposta.status, corpo);
+    throw new ErroDaApi(
+      `${verbo} ${caminho} respondeu ${resposta.status}`,
+      resposta.status,
+      corpoDeErro(texto),
+    );
   }
 
-  return corpo as T;
+  return (texto === '' ? undefined : JSON.parse(texto)) as T;
 }
 
 async function pegar<T>(urlBase: string, caminho: string, buscar: typeof fetch): Promise<T> {

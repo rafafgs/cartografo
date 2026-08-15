@@ -50,6 +50,23 @@
  * actually WORKED. Whoever has an `OPENAI_API_KEY` closes it by running this
  * script once, unchanged.
  *
+ * **CLOSED in t141 (2026-08-15).** Run unchanged against `codex-cli 0.147.0`
+ * WITH a credential: `completed`, exit 0, 11.8s, `engineRef`
+ * `01a00665-7730-7591-9c7e-5a090ece0a2a`, and `PROVA-T119.md` in the workdir
+ * carrying exactly the phrase asked for. The session worked. Two things that
+ * run measured, both about the operator's setup and neither about this script:
+ *
+ * - Of the three credential variables `CODEX_CREDENTIAL_VARIABLES` names, only
+ *   `CODEX_API_KEY` actually authenticates. The same key exported as
+ *   `OPENAI_API_KEY` — the obvious guess — dies on
+ *   `401 ... wss://api.openai.com/v1/responses` every turn, which matches the
+ *   `auth mode none` t119 recorded for it. So: `export CODEX_API_KEY="$…"`, and
+ *   no `codex login` and no `auth.json` are needed at all.
+ * - `codex exec` sandboxes to read-only by default, so the session politely
+ *   reports it cannot write, exits 0 and produces nothing — which this script
+ *   catches only because it checks the FILE and not the exit code. Writing needs
+ *   `sandbox_mode = "workspace-write"` in `$CODEX_HOME/config.toml`.
+ *
  * Usage: npm run spike:codex --workspace @cartografo/runner
  */
 

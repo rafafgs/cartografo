@@ -33,7 +33,7 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { sessionText } from '../engine/claude-code-frames.ts';
+import { decodeClaudeCodeSessionText } from '../dispatch/session-text.ts';
 import type { EngineAdapter, SessionSpec, SessionStatus } from '../engine/types.ts';
 import type { ControlPlaneReader, RegisteredSkill } from './control-plane-client.ts';
 import { parseGraphProposal, type GraphProposal } from './parse-graph-proposal.ts';
@@ -356,7 +356,13 @@ async function runSession(
   // as `\n`, and the fence scanner downstream matches neither. It cost every
   // real run of this command an exit 1 while every fake-engine test, which
   // prints prose, stayed green.
-  return { status, exitCode, output: sessionText(lines) };
+  //
+  // The decoder is the ONE t141 published per engine (`dispatch/session-text.ts`),
+  // not a copy: this command opens a Claude Code session itself, so it picks the
+  // Claude Code decoder directly instead of routing on a node's declared engine
+  // the way the dispatcher does. The day the synthesizer accepts a second engine,
+  // it routes the same way the dispatcher already does.
+  return { status, exitCode, output: decodeClaudeCodeSessionText(lines) };
 }
 
 /**

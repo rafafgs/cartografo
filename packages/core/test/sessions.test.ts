@@ -327,6 +327,116 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
   assert.equal(getEventsByEntity(ctx.db, 'sessao', session.id).length, 3);
 });
 
+/**
+ * The project a job-less session declares when it opens (t157, FR3/FR4).
+ *
+ * Deliberately different from `DEFAULT_PROJECT` (1, `repositories/common.ts`):
+ * with the two equal, the bug this test exists for — falling back to the
+ * default because the `trabalho` join found nothing — would pass unnoticed.
+ */
+const OTHER_PROJECT = 42;
+
+test('t157 — a job-less session keeps its own project at finish and at denial', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const open = async (): Promise<Session> => {
+    const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
+      projeto_id: OTHER_PROJECT,
+      execucao_id: 7,
+      engine: 'claude-code',
+      working_dir: '/tmp/cartografo',
+      prompt: 'uma sessão de descoberta, sem trabalho dono',
+    });
+    assert.equal(response.status, 201);
+    assert.equal(response.body.trabalho_id, null, 'the case under test is the job-less session');
+    return response.body;
+  };
+
+  const closed = await open();
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${closed.id}/finish`, {
+    status: 'concluida',
+    exit_code: 0,
+  });
+  assert.equal(finished.status, 200);
+
+  const closedEvents = getEventsByEntity(ctx.db, 'sessao', closed.id);
+  assert.deepEqual(
+    closedEvents.map((event: Event) => event.tipo),
+    ['sessao.aberta', 'sessao.finalizada'],
+  );
+  assert.equal(
+    closedEvents[0].projeto_id,
+    OTHER_PROJECT,
+    'control: the opening already recorded the declared project',
+  );
+  assert.equal(
+    closedEvents[1].projeto_id,
+    OTHER_PROJECT,
+    'the end belongs to the same project as the opening, not to DEFAULT_PROJECT',
+  );
+
+  const denied = await open();
+  const denial = await request<Session>(
+    ctx,
+    'POST',
+    `/v1/sessions/${denied.id}/permission-denials`,
+    { recurso: 'rede', ferramenta: 'WebFetch', motivo: 'sem rede nesta sessão' },
+  );
+  assert.equal(denial.status, 200);
+
+  const deniedEvents = getEventsByEntity(ctx.db, 'sessao', denied.id);
+  assert.deepEqual(
+    deniedEvents.map((event: Event) => event.tipo),
+    ['sessao.aberta', 'sessao.permissao_negada'],
+  );
+  assert.equal(
+    deniedEvents[1].projeto_id,
+    OTHER_PROJECT,
+    'the denial is attributed the same way the end is',
+  );
+});
+
+test('t157 — a session that serves a job is still attributed to the job\'s project', async (t) => {
+  requireArtifacts(...ARTIFACTS, T102_ARTIFACTS.jobRepository, T102_ARTIFACTS.jobRoutes);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const job = await createJob(ctx, {
+    titulo: 'de outro projeto',
+    no_entrada_id: 'entrada',
+    projeto_id: OTHER_PROJECT,
+    execucao_id: 9,
+  });
+
+  const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    trabalho_id: job.id,
+    // Deliberately contradicting the job: the owner's project is the one that
+    // holds, at the opening and at every event after it.
+    projeto_id: 999,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'faça algo pelo trabalho',
+  });
+  assert.equal(opened.status, 201);
+
+  const finished = await request<Session>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${opened.body.id}/finish`,
+    { status: 'concluida', exit_code: 0 },
+  );
+  assert.equal(finished.status, 200);
+
+  const events = getEventsByEntity(ctx.db, 'sessao', opened.body.id);
+  assert.deepEqual(
+    events.map((event: Event) => event.projeto_id),
+    [OTHER_PROJECT, OTHER_PROJECT],
+    'the job owns the project, and the end says the same thing the opening said',
+  );
+});
+
 test('t149 AT5 — finishing an already finished session is a 409, and the first end stands', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);

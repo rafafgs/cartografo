@@ -163,6 +163,31 @@ function queryString(filter: Filter): string {
   return text === '' ? '' : `?${text}`;
 }
 
+/**
+ * Decodes the body of an ERROR answer, without ever throwing (t156).
+ *
+ * Whoever answers an error is not always the control plane: a reverse proxy in
+ * the middle answers 502/504 with an HTML page, and then `JSON.parse` throws a
+ * raw `SyntaxError` — which carries neither the status nor the text, and is
+ * neither of the two failures this module names. Failing to decode the body of
+ * an error is not a second failure: it IS the body, as it came.
+ *
+ * Deliberately not used on the success path: a malformed body on a 2xx is the
+ * control plane breaking its own contract, and that one has to show.
+ *
+ * @param text The answer's body, as text.
+ * @returns `undefined` for an empty body, the decoded value when it is JSON,
+ *   and the raw text itself when it is not.
+ */
+function decodeErrorBody(text: string): unknown {
+  if (text === '') return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 /** Thin client of the slice of the public API the screen reads. */
 export class ApiClient {
   /** Base URL, already normalized, with no trailing slash. */
@@ -304,8 +329,11 @@ export class ApiClient {
       throw new NetworkError(url, cause);
     }
 
-    const body: unknown = text === '' ? undefined : JSON.parse(text);
-    if (!response.ok) throw new ApiError(path, response.status, body);
-    return body as T;
+    // Outside the block above, and on purpose: from here on the control plane
+    // ANSWERED, so nothing that happens next is a `NetworkError`. The status
+    // comes before any decoding — on an error the body is material to log, and
+    // never a reason to throw something other than `ApiError`.
+    if (!response.ok) throw new ApiError(path, response.status, decodeErrorBody(text));
+    return (text === '' ? undefined : JSON.parse(text)) as T;
   }
 }

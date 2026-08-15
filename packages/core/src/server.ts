@@ -16,7 +16,7 @@ import { registerExecutions } from './routes/executions.ts';
 import { registerGraphs } from './routes/graphs.ts';
 import { registerHealth } from './routes/health.ts';
 import { registerIntake } from './routes/intake.ts';
-import { registerLeases } from './routes/leases.ts';
+import { registerLeases, type LeaseCeilings } from './routes/leases.ts';
 import { registerInputRequests } from './routes/input-requests.ts';
 import { registerProposals } from './routes/proposals.ts';
 import { registerRunners } from './routes/runners.ts';
@@ -38,6 +38,14 @@ export interface AppOptions {
   db: Database;
   /** Fastify log level. `false` turns it off (the default in silent tests). */
   logger?: boolean;
+  /**
+   * Ceilings of simultaneous active leases this process enforces (t157, FR1).
+   *
+   * Resolved from the environment by `start()`; omitted here, the lease routes
+   * fall back to their own `DEFAULT_LEASE_CAP_*`. It is configuration of the
+   * control plane, never of the request.
+   */
+  leaseCeilings?: LeaseCeilings;
 }
 
 /**
@@ -70,7 +78,9 @@ export function createApp(options: AppOptions): FastifyInstance {
       scope.register(async (inner) => registerInputRequests(inner, options.db));
       scope.register(async (inner) => registerExecutions(inner, options.db));
       scope.register(async (inner) => registerRunners(inner, options.db));
-      scope.register(async (inner) => registerLeases(inner, options.db));
+      scope.register(async (inner) =>
+        registerLeases(inner, options.db, { leaseCeilings: options.leaseCeilings }),
+      );
       scope.register(async (inner) => registerIntake(inner, options.db));
       scope.register(async (inner) => registerSkills(inner, options.db));
       scope.register(async (inner) => registerEvents(inner, options.db));

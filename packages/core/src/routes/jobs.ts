@@ -67,20 +67,33 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
     }),
   );
 
-  /** The three writes that only change the projection of an existing job. */
+  /**
+   * The four writes that only change the projection of an existing job.
+   *
+   * The amendment (`PATCH`) is the one route in the package that answers `422`
+   * to an unusable body instead of `400` (t157, FR2): it edits CONTENT of an
+   * entity that already exists, and the distinction between "I could not read
+   * this request" and "I read it and the content is not acceptable" is worth
+   * making where the content is the whole point. The `post` sub-resources keep
+   * the `400` convention of every other route.
+   */
   const write = (
     routePath: string,
     method: 'post' | 'patch',
     apply: (id: number, body: Record<string, unknown>) => Job | null,
   ): void => {
     app[method](routePath, async (request, reply) =>
-      withValidation(reply, () => {
-        const updated = apply(
-          routeId(request.params),
-          (request.body ?? {}) as Record<string, unknown>,
-        );
-        return updated ?? notFound(reply, 'job');
-      }),
+      withValidation(
+        reply,
+        () => {
+          const updated = apply(
+            routeId(request.params),
+            (request.body ?? {}) as Record<string, unknown>,
+          );
+          return updated ?? notFound(reply, 'job');
+        },
+        method === 'patch' ? 422 : 400,
+      ),
     );
   };
 

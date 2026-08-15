@@ -17,7 +17,12 @@
 
 import type { Database } from '../db/connection.ts';
 import { listEvents, recordEvent } from '../db/events.ts';
-import { requireValidData, type Actor, type Event } from '../db/event-validation.ts';
+import {
+  ValidationError,
+  requireValidData,
+  type Actor,
+  type Event,
+} from '../db/event-validation.ts';
 import { getVersion } from './graphs.ts';
 import {
   API_ACTOR,
@@ -398,17 +403,34 @@ export interface AmendInput {
  * this is an audit record, not a version history. Whoever wants the new text
  * reads the job.
  *
+ * That is also why the title is validated HERE and not by `requireValidData`:
+ * the payload is the hardcoded `{campos_alterados: ['titulo']}`, which is
+ * well-formed whatever the body carries, so the type's contract has nothing to
+ * say about the one value actually being written (t157, FR2). Without this
+ * check the `UPDATE` bound `undefined` and the driver threw — a 500 for what is
+ * plainly a malformed request.
+ *
+ * The check lives inside `build`, which `mutate` only reaches after loading the
+ * row: a job that does not exist is still a 404, and the order between "does it
+ * exist" and "is the body any good" does not change.
+ *
  * @param db Open handle.
  * @param id Job id.
  * @param input Request body.
  * @returns The updated job, or `null` if it does not exist.
+ * @throws {ValidationError} When `titulo` is absent or is not a non-empty string.
  */
 export function amendJob(db: Database, id: number, input: AmendInput): Job | null {
-  return mutate(db, id, 'trabalho.emendado', input.ator, API_ACTOR, () => ({
-    data: { campos_alterados: ['titulo'] },
-    sql: 'titulo = ?',
-    values: [input.titulo],
-  }));
+  return mutate(db, id, 'trabalho.emendado', input.ator, API_ACTOR, () => {
+    if (typeof input.titulo !== 'string' || input.titulo.length === 0) {
+      throw new ValidationError(['titulo has to be a non-empty string']);
+    }
+    return {
+      data: { campos_alterados: ['titulo'] },
+      sql: 'titulo = ?',
+      values: [input.titulo],
+    };
+  });
 }
 
 /**

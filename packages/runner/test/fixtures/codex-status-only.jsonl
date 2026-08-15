@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a00656-afac-7800-872a-5a69b38631aa"}
+{"type":"turn.started"}
+2026-08-15T16:51:17.344134Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.com/v1/responses
+{"type":"turn.completed","usage":{"input_tokens":22991,"cached_input_tokens":11441,"cache_write_input_tokens":11544,"output_tokens":83,"reasoning_output_tokens":0}}

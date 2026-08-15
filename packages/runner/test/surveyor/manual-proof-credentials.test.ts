@@ -1,0 +1,99 @@
+/**
+ * Acceptance tests for the surveyor's manual proof and for what the spec says
+ * about it (t146).
+ *
+ * `scripts/spike-surveyor-flow.mjs` is the other half of `proposal.test.ts`:
+ * the half the suite cannot run, because it needs a real `claude` binary. Since
+ * t124 it also needs a credential — it boots a real control plane and then
+ * speaks `/v1` at it eight times — and it had none, so the proof died on its
+ * first call with a 401 nobody would understand. A proof script that cannot run
+ * is worse than no proof script: it is a green checkbox in a ficha's evidence
+ * section pointing at a command that fails.
+ *
+ * A static sweep and not an execution, on purpose: running it needs the binary,
+ * an account and about three minutes, which is exactly why it is not a CI test
+ * (`docs/formatos/engine-adapter.md`). What a sweep CAN prove is the invariant
+ * this ficha exists for — that no call in that script reaches the control plane
+ * anonymously — and it is the same device `no-privileged-access.test.ts` uses
+ * to keep the runner off the database.
+ *
+ * The last test is the doc claim itself. The bug this ficha reports is not only
+ * that the command had no token: it is that the spec asserted it did. A
+ * document that describes a flag nobody implemented is a trap for the next
+ * person, so the claim is now something a test holds up.
+ *
+ * English per D18; route segments and payload keys stay in Portuguese.
+ */
+
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+const SPIKE_PATH = path.join(PACKAGE_ROOT, 'scripts', 'spike-surveyor-flow.mjs');
+const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'topografo-fluxo.md');
+
+/** Reads a file the sweep asserts about, failing with its path when absent. */
+function read(file: string): string {
+  assert.ok(existsSync(file), `artifact does not exist yet: ${file}`);
+  return readFileSync(file, 'utf8');
+}
+
+test('AT8 — the manual proof takes the token the control plane printed on boot', () => {
+  const source = read(SPIKE_PATH);
+
+  assert.ok(
+    source.includes('bootstrapToken'),
+    'the proof boots its own control plane, so the only token it can present is the one that ' +
+      'startup announced on its readiness line — and it never reads it',
+  );
+});
+
+test('AT9 — no call in the manual proof reaches the control plane anonymously', () => {
+  const source = read(SPIKE_PATH);
+
+  // One place in the whole script may call the global `fetch`: the wrapper that
+  // arms the request with the token. Any second one is a route that goes out
+  // bare, which is precisely the defect this ficha reports.
+  const bare = source.match(/(?<![\w.$])fetch\(/g) ?? [];
+  assert.equal(
+    bare.length,
+    1,
+    `the script calls the global fetch in ${bare.length} places; exactly one — the wrapper that ` +
+      'presents the token — may do so',
+  );
+  assert.match(source, /authorization/i);
+
+  // The two other doors out of this script: the HTTP client the surveyor gets,
+  // and the dispatch that writes the telemetry of the two crossing sessions.
+  const construction = source.match(/new ClienteControle\(\{[^)]*\}\)/s);
+  assert.ok(construction !== null, 'the proof no longer builds a ClienteControle at all');
+  assert.match(construction[0], /token/, 'the surveyor client is still built with no token');
+
+  const dispatch = source.match(/createClaudeCodeDispatch\(\{[^)]*\}\)/s);
+  assert.ok(dispatch !== null, 'the proof no longer dispatches a session at all');
+  assert.match(
+    dispatch[0],
+    /doFetch/,
+    'the two real sessions write their telemetry through the dispatch, which has no token of its ' +
+      'own: it has to receive the arming fetch through its seam',
+  );
+});
+
+test('AT10 — the spec documents the credential the command actually accepts', () => {
+  const spec = read(SPEC_PATH);
+
+  const usage = spec.match(/```\n(npm run surveyor[^`]*)```/);
+  assert.ok(usage !== null, 'the spec no longer shows how the command is invoked');
+  assert.match(
+    usage[1],
+    /--token/,
+    `the invocation the spec documents does not carry the token:\n${usage[1]}`,
+  );
+  assert.ok(
+    spec.includes('CARTOGRAFO_TOKEN'),
+    'the spec claims the command presents a token; it has to name the variable it reads',
+  );
+});

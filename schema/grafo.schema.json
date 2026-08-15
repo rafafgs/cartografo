@@ -143,6 +143,12 @@
           "enum": ["trabalho", "portao"],
           "description": "trabalho: produz artefato. portao: confere e roteia — passou/falhou/escala, sempre com evidência. Portão é nó como outro qualquer, e determinístico sempre que possível."
         },
+        "engine": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Qual engine executa este nó (t141). Opcional: ausente significa o engine default do runner (claude-code), resolvido na hora do despacho e nunca na validação — é por isso que todo grafo escrito antes deste campo continua válido sem tocar em nada. Texto livre de propósito, como papel e skill_ref.id: quem recusa um engine desconhecido é o runner, com UnknownEngineError, e não um enum fechado que precisaria de edição de schema a cada adapter novo.",
+          "examples": ["claude-code", "codex"]
+        },
         "skill_ref": { "$ref": "#/$defs/skill_ref" },
         "contrato": { "$ref": "#/$defs/contrato" }
       }

@@ -34,6 +34,16 @@
  * repeated denials is a decision nobody has taken yet. Only a session that
  * could not start or did not reach `completed` rejects.
  *
+ * **And a dispatch never settles with a live session.** The lease goes back
+ * through that same `finally` however this callback settles, so a rejection
+ * with the engine still running hands the work to the next tick while a process
+ * is still writing in the same working dir — two sessions, one directory. So
+ * anything that fails between the session coming up and its outcome being known
+ * cancels it before rethrowing (t148). Once the outcome IS known the session is
+ * terminal on its own account, and what is left is telemetry the runner owes:
+ * the closure and the question are attempted write by write, so that neither
+ * one can swallow the other.
+ *
  * English per D18. The prompt and instruction CONTENT stays in Portuguese: it
  * stands in for the skill manifest the graph will inject (t101/t105), and those
  * are written in Portuguese (`especificacoes/formatos/exemplos/`).
@@ -49,6 +59,7 @@ import type {
 } from '../engine/types.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
 import { PermissionDenialTracker, type PermissionDenial } from './parse-permission-denial.ts';
+import { decodeClaudeCodeSessionText } from './session-text.ts';
 
 /**
  * `SessionStatus` (the interface's vocabulary) -> the taxonomy's `status`
@@ -106,6 +117,29 @@ interface Job {
   no_atual: string;
   bloqueado: boolean;
   execucao_id: number | null;
+  /**
+   * The graph version this work traverses, when it has one (t101).
+   *
+   * `null` is ordinary and not a defect: a work created by hand names an entry
+   * node and no graph at all, and that is the shape every dispatch had before
+   * t141. It is the first of the three ways {@link DEFAULT_ENGINE} is reached.
+   */
+  grafo_versao_id?: string | null;
+}
+
+/** One node of a graph snapshot, in the part this module reads. */
+interface GraphNode {
+  id: string;
+  /** The engine declared for this node (t141, FR1). Optional by design. */
+  engine?: unknown;
+}
+
+/** What `GET /v1/graph-versions/:id` gives back, in the part this module reads. */
+interface GraphVersion {
+  grafo_versao: {
+    id: string;
+    snapshot?: { nos?: GraphNode[] };
+  };
 }
 
 /** One envelope of the work's timeline. */
@@ -132,6 +166,35 @@ interface Session {
   id: number;
 }
 
+/**
+ * The engine name used when the graph says nothing (t141, FR3).
+ *
+ * Exported and named, never silently implied: three different situations land
+ * here — a work with no `grafo_versao_id`, a node the snapshot does not carry,
+ * and a node that simply declares no `engine` — and in all three the telemetry
+ * has to be able to say WHICH engine ran without anyone guessing.
+ */
+export const DEFAULT_ENGINE = 'claude-code';
+
+/**
+ * One engine this dispatch can route to: who opens the session, and how to read
+ * back what it printed.
+ */
+export interface EngineRoute {
+  /** Production passes a real adapter; tests pass one pointed at the fake engine. */
+  adapter: EngineAdapter;
+  /**
+   * Decodes the lines that reached `onOutput` into the text the model produced.
+   *
+   * Part of the route and not of the adapter because it is the DISPATCH that
+   * needs the text — to find an escalation block — while the adapter's contract
+   * stops at delivering lines verbatim (invariant 4). Adding it to
+   * `EngineAdapter` would have grown a frozen interface (v1) for the benefit of
+   * exactly one consumer.
+   */
+  decodeSessionText: (lines: readonly string[]) => string;
+}
+
 /** Configuration of a dispatch. */
 export interface ClaudeCodeDispatchOptions {
   /**
@@ -155,8 +218,23 @@ export interface ClaudeCodeDispatchOptions {
    * honest outcome: an empty header would look like a credential.
    */
   token?: string;
-  /** The engine. Production passes `ClaudeCodeAdapter`; tests pass a fake. */
-  adapter: EngineAdapter;
+  /**
+   * The engines this dispatch can route to, by the name a node declares (t141,
+   * FR4).
+   *
+   * A table and not a single adapter, because the choice belongs to the NODE:
+   * `POST /v1/sessions` has recorded `engine` dynamically since t124/t147, but
+   * until this ficha there was only ever one adapter to record. The key is what
+   * `no.engine` says in the graph document; the absence of that field resolves
+   * to {@link DEFAULT_ENGINE}, so a graph that declares nothing behaves exactly
+   * as it did before.
+   *
+   * Whoever wires this owns the pairing: an adapter and the decoder for the
+   * frames that adapter's engine prints. Getting that pair wrong is how a
+   * session's escalation stops being readable, so they travel together rather
+   * than being resolved from the engine name in two different places.
+   */
+  engines: Record<string, EngineRoute>;
   /** Where the session runs — typically an isolated git worktree. */
   workingDir: string;
   /** Wall-clock limit of the session. Default: one hour. */
@@ -192,6 +270,38 @@ export class DispatchError extends Error {
   }
 }
 
+/**
+ * A node asked for an engine this dispatch has no route for (t141, FR5).
+ *
+ * Thrown BEFORE any session opens, and never softened into a fallback: routing
+ * the work to whatever engine happens to be registered would run it on an engine
+ * nobody chose AND record that engine as if the graph had asked for it. The
+ * telemetry would be internally consistent and false, which is worse than a
+ * dispatch that stops.
+ *
+ * It propagates untouched, the same way `SessionStartError` does: the controller's
+ * `finally` returns the lease, and the work is simply not advanced.
+ */
+export class UnknownEngineError extends Error {
+  /** The engine the node declared. */
+  readonly engine: string;
+  /** The node that declared it. */
+  readonly nodeId: string;
+  /** The engines that DO have a route, for the message a human reads. */
+  readonly known: readonly string[];
+
+  constructor(engine: string, nodeId: string, known: readonly string[]) {
+    super(
+      `node "${nodeId}" asks for engine "${engine}", which has no route in this dispatch ` +
+        `(registered: ${known.length === 0 ? 'none' : known.join(', ')})`,
+    );
+    this.name = 'UnknownEngineError';
+    this.engine = engine;
+    this.nodeId = nodeId;
+    this.known = known;
+  }
+}
+
 /** Default wall-clock limit, in seconds. */
 const DEFAULT_TIMEOUT_SECONDS = 3_600;
 
@@ -205,71 +315,14 @@ const DEFAULT_TIMEOUT_SECONDS = 3_600;
  */
 const RUNNER_ACTOR_REF = 'runner';
 
-/** One text block of an assistant message frame. */
-interface TextBlock {
-  type: string;
-  text: string;
-}
-
-const isTextBlock = (value: unknown): value is TextBlock =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as TextBlock).type === 'text' &&
-  typeof (value as TextBlock).text === 'string';
-
 /**
- * The text a `stream-json` frame carries, or `null` when the line is not a
- * frame this engine emits.
+ * Everything the session said, with Claude Code's frames decoded back into text.
  *
- * Without this step the parser would be reading JSON-ESCAPED text: a real
- * Claude Code session prints frames, so the block's own quotes arrive as `\"`
- * and its newlines as `\n`, and no fenced JSON would ever parse. The fake
- * engine of the suite prints plain lines, which fall through untouched — which
- * is exactly why this trap survives CI and only the manual spike catches it.
+ * @deprecated Moved to `./session-text.ts` as `decodeClaudeCodeSessionText`
+ * (t141, FR6) — one decoder per engine, now that there is more than one engine
+ * to decode. Re-exported here, unchanged, so nothing that imported it breaks.
  */
-function frameText(line: string): string[] | null {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith('{')) return null;
-
-  let frame: unknown;
-  try {
-    frame = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-  if (typeof frame !== 'object' || frame === null) return null;
-
-  const { type, result, message } = frame as {
-    type?: unknown;
-    result?: unknown;
-    message?: unknown;
-  };
-
-  // The final frame carries the whole last answer; it is the most reliable
-  // place the block shows up whole.
-  if (type === 'result' && typeof result === 'string') return [result];
-
-  if (typeof message === 'object' && message !== null) {
-    const { content } = message as { content?: unknown };
-    // An assistant turn with only tool calls yields an empty list — and an
-    // empty list is still a recognized frame, so the raw JSON is dropped
-    // instead of being fed to the parser as if it were prose.
-    if (Array.isArray(content)) return content.filter(isTextBlock).map((block) => block.text);
-  }
-
-  return null;
-}
-
-/** Everything the session said, with engine frames decoded back into text. */
-export function sessionText(lines: readonly string[]): string {
-  const parts: string[] = [];
-  for (const line of lines) {
-    const texts = frameText(line);
-    if (texts === null) parts.push(line);
-    else parts.push(...texts);
-  }
-  return parts.join('\n');
-}
+export const sessionText = decodeClaudeCodeSessionText;
 
 /**
  * The prompt of a dispatch: what to do, plus what was already asked and
@@ -374,8 +427,49 @@ export function createClaudeCodeDispatch(
     return decoded as T;
   };
 
+  /**
+   * Which engine handles the node this work is sitting on RIGHT NOW (FR3).
+   *
+   * The current node and not the entry one: a work moves, and the engine is a
+   * property of the step being executed, not of the traversal that contains it.
+   *
+   * Three roads lead to {@link DEFAULT_ENGINE}, and all three are ordinary: the
+   * work carries no graph version, the snapshot has no node with this id, or the
+   * node declares no `engine`. A missing graph version the work explicitly
+   * points at is NOT one of them — that is a dangling reference, and `call`
+   * rejects on the 404 rather than papering over it with a default.
+   *
+   * @param job The work being dispatched.
+   * @returns The engine name to route on.
+   */
+  const resolveEngine = async (job: Job): Promise<string> => {
+    const versionId = job.grafo_versao_id;
+    if (versionId === undefined || versionId === null || versionId === '') return DEFAULT_ENGINE;
+
+    const { grafo_versao: version } = await call<GraphVersion>(
+      `/v1/graph-versions/${encodeURIComponent(versionId)}`,
+      'GET',
+    );
+    const node = version.snapshot?.nos?.find((candidate) => candidate.id === job.no_atual);
+    const declared = node?.engine;
+    // Free text at the schema level on purpose (Out of Scope: no closed enum),
+    // so "declared" means a non-empty string and nothing else.
+    if (typeof declared !== 'string' || declared.trim() === '') return DEFAULT_ENGINE;
+    return declared;
+  };
+
   return async (jobId: number): Promise<void> => {
     const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
+
+    // Resolved before anything is read for the prompt and long before a session
+    // opens: an engine nobody registered has to stop the dispatch while stopping
+    // it is still free (FR5).
+    const engineName = await resolveEngine(job);
+    const route = options.engines[engineName];
+    if (route === undefined) {
+      throw new UnknownEngineError(engineName, job.no_atual, Object.keys(options.engines));
+    }
+
     const { eventos: events } = await call<{ eventos: Event[] }>(
       `/v1/jobs/${jobId}/events`,
       'GET',
@@ -448,7 +542,11 @@ export function createClaudeCodeDispatch(
     // `startSession` rejects with `SessionStartError` when the session did not
     // come up. That one propagates untouched: it is a dispatch that never
     // happened, and the controller's `finally` gives the lease back anyway.
-    await options.adapter.startSession(spec, {
+    //
+    // The handle it resolves with is kept, and that is the whole point: from
+    // here on there is a live process in `spec.workingDir`, and the only thing
+    // that can stop it is this handle (t148, FR1).
+    const handle = await route.adapter.startSession(spec, {
       onOutput(line) {
         lines.push(line);
         for (const denial of tracker.observe(line)) recordDenial(denial);
@@ -461,24 +559,52 @@ export function createClaudeCodeDispatch(
       },
     });
 
-    // Recorded as soon as the session is up, with whatever ref is known by
-    // then. There is no endpoint to fill `engine_session_ref` in later (out of
-    // scope), so `null` here means "the engine had not said it yet" and never
-    // "this engine has no ref".
-    const session = await call<Session>('/v1/sessions', 'POST', {
-      trabalho_id: job.id,
-      no_id: job.no_atual,
-      engine: options.adapter.engineName,
-      engine_session_ref: engineRef,
-      working_dir: spec.workingDir,
-      prompt: spec.prompt,
-      timeout_seconds: spec.timeoutSeconds,
-    });
+    let session: Session;
+    let outcome: Outcome;
+    try {
+      // Recorded as soon as the session is up, with whatever ref is known by
+      // then. There is no endpoint to fill `engine_session_ref` in later (out
+      // of scope), so `null` here means "the engine had not said it yet" and
+      // never "this engine has no ref".
+      session = await call<Session>('/v1/sessions', 'POST', {
+        trabalho_id: job.id,
+        no_id: job.no_atual,
+        engine: route.adapter.engineName,
+        engine_session_ref: engineRef,
+        working_dir: spec.workingDir,
+        prompt: spec.prompt,
+        timeout_seconds: spec.timeoutSeconds,
+      });
 
-    sessionId = session.id;
-    for (const denial of queued.splice(0)) recordDenial(denial);
+      sessionId = session.id;
+      for (const denial of queued.splice(0)) recordDenial(denial);
 
-    const outcome = await end;
+      outcome = await end;
+    } catch (error) {
+      // Everything between the session coming up and its outcome being known
+      // runs with a process alive on the other side, and the controller's
+      // `finally` gives the lease back however this promise settles
+      // (`controller.ts:122-136`). Rejecting from here without taking the
+      // session down puts the work back in the pool with an engine still
+      // writing in its working dir, for up to `timeoutSeconds` — and the next
+      // tick would dispatch a second one into the same directory (t148, FR2).
+      //
+      // No explicit status: `cancel` defaults to `"cancelled"`
+      // (`engine/types.ts:236-245`), which is what happened. The clock did not
+      // run out and the engine did not crash; a control-plane call did.
+      try {
+        await route.adapter.cancel(handle);
+      } catch {
+        // Swallowed on purpose, and only here: the original failure is the one
+        // that explains the dispatch, and a secondary error from the cleanup
+        // would replace a cause with a symptom.
+      }
+      throw error;
+    }
+
+    // Past this line the session is terminal on its own account and `cancel` is
+    // never called again (FR3): what is left is telemetry the runner owes, and
+    // each write is attempted even when the one before it failed.
 
     // Drained BEFORE the end of the session, so the log reads in the order
     // things happened: the session opened, it was denied, it finished. A
@@ -486,15 +612,25 @@ export function createClaudeCodeDispatch(
     // incident may not cost the session its closure nor its question.
     await denialWrites;
 
-    await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
-      status: TAXONOMY_STATUS[outcome.status],
-      exit_code: outcome.exitCode,
-      // The v0 interface reports no token usage (out of scope). `null` is "the
-      // engine reported nothing" and must never collapse into zero.
-      uso: null,
-    });
+    // Captured rather than thrown, exactly as `denialFailure` already is: a
+    // closure the control plane refused may not cancel the question that comes
+    // after it. "Asking is not failing" is not a rule about happy paths — a
+    // question dropped here is a human who is never called, and the work stays
+    // unblocked with nobody knowing what it needed.
+    let finishFailure: unknown = null;
+    try {
+      await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
+        status: TAXONOMY_STATUS[outcome.status],
+        exit_code: outcome.exitCode,
+        // The v0 interface reports no token usage (out of scope). `null` is
+        // "the engine reported nothing" and must never collapse into zero.
+        uso: null,
+      });
+    } catch (error) {
+      finishFailure = error;
+    }
 
-    const request: InputRequest | null = parseInputRequest(sessionText(lines));
+    const request: InputRequest | null = parseInputRequest(route.decodeSessionText(lines));
     if (request !== null) {
       // This POST is what blocks the work, inside the control plane and in the
       // same transaction as `pergunta.criada` (FR1). The runner never posts a
@@ -516,10 +652,16 @@ export function createClaudeCodeDispatch(
       });
     }
 
-    // A denial that could not be recorded is not the session's fault, but it is
-    // a fault: the control plane refused a write the runner owes it, and a
+    // A write that could not be made is not the session's fault, but it is a
+    // fault: the control plane refused something the runner owes it, and a
     // silent swallow here would leave the log claiming a clean session.
-    if (denialFailure !== null) throw denialFailure;
+    //
+    // The FIRST one captured is the one that surfaces — a denial happens during
+    // the session, the closure after it — which is the precedent `denialFailure`
+    // already set when it was alone. Reporting more than one at a time is a
+    // multi-error type nobody has needed yet.
+    const failure = denialFailure ?? finishFailure;
+    if (failure !== null) throw failure;
 
     // Asking is a successful dispatch — the question is already recorded above,
     // and the work is already blocked. What is NOT successful is a session that

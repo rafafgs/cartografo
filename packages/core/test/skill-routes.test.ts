@@ -1,5 +1,5 @@
 /**
- * Skill-registry acceptance tests (t117, AT1–AT7; t135, AT8–AT9).
+ * Skill-registry acceptance tests (t117, AT1–AT7; t135, AT8–AT9; t155, AT10–AT12).
  *
  * The registry is the gate of truth of D4, and that is the whole point of these
  * tests: every rule below is re-checked by the SERVER, independently of the CLI
@@ -358,4 +358,75 @@ test('AT9 — the same manifest with evidencia_obrigatoria declared registers (t
   const read = await request<Skill>(ctx, 'GET', '/v1/skills/portao-sem-evidencia');
   assert.equal(read.status, 200);
   assert.deepEqual(read.body.checks, checks);
+});
+
+test('AT10 — a deterministic check with no comando is refused, naming the field and the check (t155)', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const refused = await post(
+    ctx,
+    importedManifest({
+      checks: [{ id: 'suite-verde', tipo: 'deterministico', descricao: 'A suíte do projeto passa.' }],
+    }),
+  );
+  assert.equal(
+    refused.status,
+    422,
+    `expected 422, got ${refused.status}: ${JSON.stringify(refused.body)}`,
+  );
+  const message = reason(refused.body);
+  assert.match(message, /comando/, 'the message has to name the missing field');
+  assert.match(
+    message,
+    /suite-verde/,
+    'the message has to name the check that broke the rule',
+  );
+
+  const read = await request<Skill>(ctx, 'GET', '/v1/skills/feature-dev');
+  assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');
+});
+
+test('AT11 — a check whose tipo is not one of the two is refused, naming the value and the enum (t155)', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const refused = await post(
+    ctx,
+    importedManifest({
+      checks: [{ id: 'x', tipo: 'nao-existe', descricao: 'Um check que ninguém sabe executar.' }],
+    }),
+  );
+  assert.equal(
+    refused.status,
+    422,
+    `expected 422, got ${refused.status}: ${JSON.stringify(refused.body)}`,
+  );
+  const message = reason(refused.body);
+  assert.match(message, /nao-existe/, 'the message has to quote the value it refused');
+  assert.match(message, /\bx\b/, 'the message has to name the offending check');
+  assert.match(message, /deterministico/, 'the message has to say which types exist');
+  assert.match(message, /agentico/, 'the message has to say which types exist');
+
+  const read = await request<Skill>(ctx, 'GET', '/v1/skills/feature-dev');
+  assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');
+});
+
+test('AT12 — a check with no id, tipo or descricao is refused, naming all three (t155)', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const refused = await post(ctx, importedManifest({ checks: [{}] }));
+  assert.equal(
+    refused.status,
+    422,
+    `expected 422, got ${refused.status}: ${JSON.stringify(refused.body)}`,
+  );
+  const message = reason(refused.body);
+  assert.match(message, /"id"/, 'the message has to name "id" as missing');
+  assert.match(message, /"tipo"/, 'the message has to name "tipo" as missing');
+  assert.match(message, /"descricao"/, 'the message has to name "descricao" as missing');
+
+  const read = await request<Skill>(ctx, 'GET', '/v1/skills/feature-dev');
+  assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');
 });

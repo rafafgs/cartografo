@@ -30,46 +30,65 @@
  * English per D18; this directory is post-decision code.
  */
 
-import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import type { Readable } from 'node:stream';
-import test from 'node:test';
-import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import assert from "node:assert/strict";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { Readable } from "node:stream";
+import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
-import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
-import { buildCommand } from '../../src/engine/command.ts';
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
-import type * as ControllerModule from '../../src/controller/controller.ts';
-import type * as DispatchModule from '../../src/dispatch/dispatch-claude-code.ts';
+import { ClaudeCodeAdapter } from "../../src/engine/claude-code-adapter.ts";
+import { CodexAdapter } from "../../src/engine/codex-adapter.ts";
+import { buildCommand as buildCodexCommand } from "../../src/engine/codex-command.ts";
+import { buildCommand } from "../../src/engine/command.ts";
+import { decodeClaudeCodeSessionText } from "../../src/dispatch/session-text.ts";
+import type * as ClientModule from "../../src/controller/cliente-controle.ts";
+import type * as ControllerModule from "../../src/controller/controller.ts";
+import type * as DispatchModule from "../../src/dispatch/dispatch-claude-code.ts";
+import type * as SessionTextModule from "../../src/dispatch/session-text.ts";
 
-import { authorizeGlobalFetch } from '../authorized-fetch.ts';
+import { authorizeGlobalFetch } from "../authorized-fetch.ts";
 
-const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
-const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..", "..");
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, "..", "..");
+const BIN_PATH = path.join(
+  REPO_ROOT,
+  "packages",
+  "core",
+  "bin",
+  "cartografo.mjs",
+);
+const FAKE_ENGINE = fileURLToPath(
+  new URL("../fixtures/fake-engine.mjs", import.meta.url),
+);
 
-const DISPATCH_MODULE = 'src/dispatch/dispatch-claude-code.ts';
+const DISPATCH_MODULE = "src/dispatch/dispatch-claude-code.ts";
+const SESSION_TEXT_MODULE = "src/dispatch/session-text.ts";
 
 /** Deadline for anything this test waits on. Wide on purpose. */
 const DEADLINE_MS = 30_000;
 
 /** The escalation the fake session emits on the first dispatch. */
 const ESCALATION = {
-  question: 'Renumerar a migração para 0003?',
-  context: 'A t101 corre em paralelo e é dona do mesmo espaço de numeração.',
-  options: ['Renumerar para 0003', 'Manter 0002'],
-  recommendation: 'Manter 0002 e renumerar só se colidir no merge.',
-  default: 'Manter 0002',
+  question: "Renumerar a migração para 0003?",
+  context: "A t101 corre em paralelo e é dona do mesmo espaço de numeração.",
+  options: ["Renumerar para 0003", "Manter 0002"],
+  recommendation: "Manter 0002 e renumerar só se colidir no merge.",
+  default: "Manter 0002",
 };
 
 /** What the human answers through the API. */
-const ANSWER = 'Manter 0002 e renumerar só no merge';
-const ANSWERED_BY = 'rafael';
+const ANSWER = "Manter 0002 e renumerar só no merge";
+const ANSWERED_BY = "rafael";
 
 interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
@@ -124,6 +143,8 @@ interface Event {
 
 /** What the fake engine recorded about the process it was given. */
 interface FakeRecord {
+  /** The engine process's own pid, which is how the t148 tests find it again. */
+  pid: number;
   argv: string[];
   env: Record<string, string>;
   cwd: string;
@@ -136,7 +157,9 @@ async function loadModule<T>(relative: string): Promise<T> {
     existsSync(path.join(PACKAGE_ROOT, relative)),
     `artifact does not exist yet: packages/runner/${relative}`,
   );
-  return (await import(new URL(`../../${relative}`, import.meta.url).href)) as T;
+  return (await import(
+    new URL(`../../${relative}`, import.meta.url).href
+  )) as T;
 }
 
 /** The readiness line the control plane prints when it is up. */
@@ -156,36 +179,37 @@ interface Readiness {
 async function bootControlPlane(t: TestHook): Promise<Readiness> {
   assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
 
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t106-e2e-'));
+  const base = mkdtempSync(path.join(tmpdir(), "cartografo-t106-e2e-"));
   const child: CommandChild = spawn(process.execPath, [BIN_PATH], {
     cwd: base,
     env: {
       ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
+      CARTOGRAFO_DB_PATH: path.join(base, "cartografo.db"),
+      CARTOGRAFO_PORT: "0",
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ["ignore", "pipe", "pipe"],
   });
 
-  let out = '';
-  let err = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
+  let out = "";
+  let err = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
     out += chunk;
   });
-  child.stderr.on('data', (chunk: string) => {
+  child.stderr.on("data", (chunk: string) => {
     err += chunk;
   });
 
   t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
+      child.kill("SIGTERM");
       for (let attempt = 0; attempt < 50; attempt += 1) {
         if (child.exitCode !== null || child.signalCode !== null) break;
         await delay(100);
       }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      if (child.exitCode === null && child.signalCode === null)
+        child.kill("SIGKILL");
     }
     rmSync(base, { recursive: true, force: true });
   });
@@ -198,9 +222,11 @@ async function bootControlPlane(t: TestHook): Promise<Readiness> {
       );
     }
     const line = out
-      .split('\n')
+      .split("\n")
       .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
+      .find(
+        (text) => text.startsWith("{") && text.includes("cartografo.ready"),
+      );
     if (line !== undefined) {
       // Since t124 the API answers nothing without a credential; the control
       // plane prints the one it minted, on this very line.
@@ -209,7 +235,9 @@ async function bootControlPlane(t: TestHook): Promise<Readiness> {
     await delay(50);
   }
 
-  throw new Error(`the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`);
+  throw new Error(
+    `the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`,
+  );
 }
 
 /**
@@ -218,7 +246,10 @@ async function bootControlPlane(t: TestHook): Promise<Readiness> {
  */
 async function startControlPlane(t: TestHook): Promise<string> {
   const readiness = await bootControlPlane(t);
-  authorizeGlobalFetch(t, { baseUrl: readiness.url, token: readiness.bootstrapToken ?? '' });
+  authorizeGlobalFetch(t, {
+    baseUrl: readiness.url,
+    token: readiness.bootstrapToken ?? "",
+  });
   return readiness.url;
 }
 
@@ -238,7 +269,7 @@ async function api<T>(
   token?: string,
 ): Promise<T> {
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers['content-type'] = 'application/json';
+  if (body !== undefined) headers["content-type"] = "application/json";
   if (token !== undefined) headers.authorization = `Bearer ${token}`;
 
   const response = await fetch(`${baseUrl}${route}`, {
@@ -247,64 +278,72 @@ async function api<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();
-  assert.equal(response.status, expected, `${method} ${route} answered ${response.status}: ${text}`);
-  return (text === '' ? undefined : JSON.parse(text)) as T;
+  assert.equal(
+    response.status,
+    expected,
+    `${method} ${route} answered ${response.status}: ${text}`,
+  );
+  return (text === "" ? undefined : JSON.parse(text)) as T;
 }
 
 /** The lines the fake session prints when it needs the founder. */
 function linesWithBlock(): string {
   return JSON.stringify([
-    { stream: 'stdout', text: 'Li a ficha e os arquivos que ela nomeia.' },
-    { stream: 'stdout', text: 'Uma coisa a ficha não resolve, então eu pergunto:' },
-    { stream: 'stdout', text: '```input-request' },
-    { stream: 'stdout', text: JSON.stringify(ESCALATION) },
-    { stream: 'stdout', text: '```' },
+    { stream: "stdout", text: "Li a ficha e os arquivos que ela nomeia." },
+    {
+      stream: "stdout",
+      text: "Uma coisa a ficha não resolve, então eu pergunto:",
+    },
+    { stream: "stdout", text: "```input-request" },
+    { stream: "stdout", text: JSON.stringify(ESCALATION) },
+    { stream: "stdout", text: "```" },
   ]);
 }
 
 /** ...and the lines it prints when it has the answer and just works. */
 function linesWithoutBlock(): string {
   return JSON.stringify([
-    { stream: 'stdout', text: 'A resposta já veio no prompt; segui com ela.' },
-    { stream: 'stdout', text: 'Terminei o trabalho, nada a perguntar.' },
+    { stream: "stdout", text: "A resposta já veio no prompt; segui com ela." },
+    { stream: "stdout", text: "Terminei o trabalho, nada a perguntar." },
   ]);
 }
 
 /** The engine's own answer when a tool the policy denied is attempted (t125). */
-const DENIAL_TEXT = 'Claude requested permissions to use WebFetch, but you have not granted it.';
+const DENIAL_TEXT =
+  "Claude requested permissions to use WebFetch, but you have not granted it.";
 
 /** The frames of a session that tried a denied tool and was told no. */
 function linesWithDenial(): string {
   return JSON.stringify([
     {
-      stream: 'stdout',
+      stream: "stdout",
       text: JSON.stringify({
-        type: 'assistant',
-        session_id: 'cc-t125',
+        type: "assistant",
+        session_id: "cc-t125",
         message: {
-          role: 'assistant',
+          role: "assistant",
           content: [
             {
-              type: 'tool_use',
-              id: 'toolu_t125',
-              name: 'WebFetch',
-              input: { url: 'https://example.com' },
+              type: "tool_use",
+              id: "toolu_t125",
+              name: "WebFetch",
+              input: { url: "https://example.com" },
             },
           ],
         },
       }),
     },
     {
-      stream: 'stdout',
+      stream: "stdout",
       text: JSON.stringify({
-        type: 'user',
-        session_id: 'cc-t125',
+        type: "user",
+        session_id: "cc-t125",
         message: {
-          role: 'user',
+          role: "user",
           content: [
             {
-              type: 'tool_result',
-              tool_use_id: 'toolu_t125',
+              type: "tool_result",
+              tool_use_id: "toolu_t125",
               is_error: true,
               content: DENIAL_TEXT,
             },
@@ -312,7 +351,10 @@ function linesWithDenial(): string {
         },
       }),
     },
-    { stream: 'stdout', text: 'Sem rede, segui pelo que já estava no repositório.' },
+    {
+      stream: "stdout",
+      text: "Sem rede, segui pelo que já estava no repositório.",
+    },
   ]);
 }
 
@@ -330,30 +372,37 @@ function linesWithDenialAndBlock(): string {
   ]);
 }
 
-test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP', async (t) => {
+test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP", async (t) => {
   const { ClienteControle } = await loadModule<typeof ClientModule>(
-    'src/controller/cliente-controle.ts',
+    "src/controller/cliente-controle.ts",
   );
-  const { Controller } = await loadModule<typeof ControllerModule>('src/controller/controller.ts');
-  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { Controller } = await loadModule<typeof ControllerModule>(
+    "src/controller/controller.ts",
+  );
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
   const baseUrl = await startControlPlane(t);
 
-  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t106-workdir-'));
-  const firstRecord = path.join(workDir, 'primeiro-despacho.json');
-  const secondRecord = path.join(workDir, 'segundo-despacho.json');
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t106-workdir-"));
+  const firstRecord = path.join(workDir, "primeiro-despacho.json");
+  const secondRecord = path.join(workDir, "segundo-despacho.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });
   });
 
   const client = new ClienteControle({ urlBase: baseUrl });
-  await client.registrarRunner('runner-t106', 'o que despacha de verdade');
+  await client.registrarRunner("runner-t106", "o que despacha de verdade");
 
   const work = await api<Work>(
     baseUrl,
-    'POST',
-    '/v1/jobs',
-    { titulo: 'ficha que escala', no_entrada_id: 'implementar', execucao_id: 7 },
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha que escala",
+      no_entrada_id: "implementar",
+      execucao_id: 7,
+    },
     201,
   );
 
@@ -369,7 +418,7 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
 
   const dispatchOptions = {
     urlBase: baseUrl,
-    adapter,
+    engines: claudeOnly(adapter),
     workingDir: workDir,
     timeoutSeconds: 60,
   };
@@ -380,17 +429,23 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
   // how this test says "this time the session has nothing to ask".
   const dispatchThatAsks = createClaudeCodeDispatch({
     ...dispatchOptions,
-    envOverrides: { FAKE_ENGINE_RECORD: firstRecord, FAKE_ENGINE_LINES: linesWithBlock() },
+    envOverrides: {
+      FAKE_ENGINE_RECORD: firstRecord,
+      FAKE_ENGINE_LINES: linesWithBlock(),
+    },
   });
   const dispatchThatFinishes = createClaudeCodeDispatch({
     ...dispatchOptions,
-    envOverrides: { FAKE_ENGINE_RECORD: secondRecord, FAKE_ENGINE_LINES: linesWithoutBlock() },
+    envOverrides: {
+      FAKE_ENGINE_RECORD: secondRecord,
+      FAKE_ENGINE_LINES: linesWithoutBlock(),
+    },
   });
 
   let currentDispatch = dispatchThatAsks;
   const controller = new Controller({
     client,
-    runnerId: 'runner-t106',
+    runnerId: "runner-t106",
     projectId: 1,
     runnerCap: 1,
     projectCap: 4,
@@ -400,62 +455,80 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
 
   // --- 1. the first tick dispatches, and the session asks -------------------
   const first = await controller.tick();
-  assert.ok(first !== null, 'the first tick should have found and dispatched the work');
+  assert.ok(
+    first !== null,
+    "the first tick should have found and dispatched the work",
+  );
   assert.equal(first.jobId, work.id);
 
-  const blocked = await api<Work>(baseUrl, 'GET', `/v1/jobs/${work.id}`);
-  assert.equal(blocked.bloqueado, true, 'asking blocks the work, without the runner asking for it');
+  const blocked = await api<Work>(baseUrl, "GET", `/v1/jobs/${work.id}`);
+  assert.equal(
+    blocked.bloqueado,
+    true,
+    "asking blocks the work, without the runner asking for it",
+  );
 
   const pending = await api<{ perguntas: Question[] }>(
     baseUrl,
-    'GET',
-    '/v1/input-requests?status=pendente',
+    "GET",
+    "/v1/input-requests?status=pendente",
   );
   assert.equal(pending.perguntas.length, 1);
   const question = pending.perguntas[0];
   assert.equal(
     blocked.motivo_bloqueio,
     `aguardando resposta da pergunta ${question.id}`,
-    'the reason names the question that unblocks the work',
+    "the reason names the question that unblocks the work",
   );
 
   // The queue carries enough to decide without opening the repository — the
   // criterion t102 set for the question entity, now fed by a real session.
   assert.equal(question.trabalho_id, work.id);
-  assert.equal(question.tipo, 'pergunta');
+  assert.equal(question.tipo, "pergunta");
   assert.equal(question.pergunta, ESCALATION.question);
   assert.equal(question.contexto, ESCALATION.context);
   assert.deepEqual(question.opcoes, ESCALATION.options);
   assert.equal(question.recomendacao, ESCALATION.recommendation);
   assert.equal(question.resposta_padrao, ESCALATION.default);
   assert.equal(question.auto_aprovavel, true);
-  assert.ok(question.sessao_id !== null, 'the question knows which session raised it');
+  assert.ok(
+    question.sessao_id !== null,
+    "the question knows which session raised it",
+  );
 
   // A blocked work is nobody's candidate: the loop keeps turning and finds
   // nothing to do, which is exactly the point of the flag.
-  assert.equal(await controller.tick(), null, 'a blocked work is not dispatched again');
+  assert.equal(
+    await controller.tick(),
+    null,
+    "a blocked work is not dispatched again",
+  );
 
   // --- 2. a human answers through the API -----------------------------------
   const answered = await api<Question>(
     baseUrl,
-    'PATCH',
+    "PATCH",
     `/v1/input-requests/${question.id}/answer`,
     { resposta: ANSWER, respondido_por: ANSWERED_BY },
   );
-  assert.equal(answered.status, 'respondida');
-  assert.equal(answered.origem, 'usuario');
+  assert.equal(answered.status, "respondida");
+  assert.equal(answered.origem, "usuario");
 
-  const unblocked = await api<Work>(baseUrl, 'GET', `/v1/jobs/${work.id}`);
-  assert.equal(unblocked.bloqueado, false, 'answering returns the work to the queue');
+  const unblocked = await api<Work>(baseUrl, "GET", `/v1/jobs/${work.id}`);
+  assert.equal(
+    unblocked.bloqueado,
+    false,
+    "answering returns the work to the queue",
+  );
   assert.equal(unblocked.motivo_bloqueio, null);
 
   // --- 3. the next tick re-dispatches, and this time the session knows ------
   currentDispatch = dispatchThatFinishes;
   const second = await controller.tick();
-  assert.ok(second !== null, 'the answered work is a candidate again');
+  assert.ok(second !== null, "the answered work is a candidate again");
   assert.equal(second.jobId, work.id);
 
-  const record = JSON.parse(readFileSync(secondRecord, 'utf8')) as FakeRecord;
+  const record = JSON.parse(readFileSync(secondRecord, "utf8")) as FakeRecord;
   const prompt = record.argv[record.argv.length - 1];
   assert.ok(
     prompt.includes(ESCALATION.question),
@@ -467,84 +540,130 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
   );
   // `realpathSync` because macOS hands out `/var/folders/...` temp dirs that
   // the child process reports as `/private/var/folders/...`.
-  assert.equal(record.cwd, realpathSync(workDir), 'the session ran in the working dir it was given');
+  assert.equal(
+    record.cwd,
+    realpathSync(workDir),
+    "the session ran in the working dir it was given",
+  );
 
-  const questions = await api<{ perguntas: Question[] }>(baseUrl, 'GET', '/v1/input-requests');
+  const questions = await api<{ perguntas: Question[] }>(
+    baseUrl,
+    "GET",
+    "/v1/input-requests",
+  );
   assert.equal(
     questions.perguntas.length,
     1,
-    'knowing the answer, the second session did not ask the same thing again',
+    "knowing the answer, the second session did not ask the same thing again",
   );
 
   // --- 4. and the log tells the whole story ---------------------------------
   const timeline = await api<{ eventos: Event[] }>(
     baseUrl,
-    'GET',
+    "GET",
     `/v1/jobs/${work.id}/events`,
   );
   assert.deepEqual(
     timeline.eventos.map((event) => event.tipo),
     [
-      'trabalho.criado',
-      'sessao.aberta',
-      'pergunta.criada',
-      'trabalho.bloqueado',
-      'trabalho.desbloqueado',
-      'sessao.aberta',
+      "trabalho.criado",
+      "sessao.aberta",
+      "pergunta.criada",
+      "trabalho.bloqueado",
+      "trabalho.desbloqueado",
+      "sessao.aberta",
     ],
     // `sessao.finalizada` and `pergunta.respondida` are absent BY CONTRACT, not
     // by omission: their payloads carry no `trabalho_id`, so the work timeline
     // cannot see them (t102, `packages/core/src/db/events.ts`
     // `FiltroDeEventos`). They are proven below, on the projections.
-    'the work timeline, in the order the log recorded it',
+    "the work timeline, in the order the log recorded it",
   );
 
-  const created = timeline.eventos.find((event) => event.tipo === 'pergunta.criada');
-  assert.deepEqual(created?.ator, { tipo: 'agente', ref: work.no_atual }, 'the agent asked');
-  const blockEvent = timeline.eventos.find((event) => event.tipo === 'trabalho.bloqueado');
-  assert.equal(blockEvent?.ator.tipo, 'sistema', 'the flag was raised by the wiring');
-  const unblockEvent = timeline.eventos.find((event) => event.tipo === 'trabalho.desbloqueado');
-  assert.equal(unblockEvent?.ator.tipo, 'usuario', 'the flag was lowered by the human who answered');
+  const created = timeline.eventos.find(
+    (event) => event.tipo === "pergunta.criada",
+  );
+  assert.deepEqual(
+    created?.ator,
+    { tipo: "agente", ref: work.no_atual },
+    "the agent asked",
+  );
+  const blockEvent = timeline.eventos.find(
+    (event) => event.tipo === "trabalho.bloqueado",
+  );
+  assert.equal(
+    blockEvent?.ator.tipo,
+    "sistema",
+    "the flag was raised by the wiring",
+  );
+  const unblockEvent = timeline.eventos.find(
+    (event) => event.tipo === "trabalho.desbloqueado",
+  );
+  assert.equal(
+    unblockEvent?.ator.tipo,
+    "usuario",
+    "the flag was lowered by the human who answered",
+  );
 
-  const sessions = await api<{ sessoes: Session[] }>(baseUrl, 'GET', '/v1/sessions?execucao_id=7');
-  assert.equal(sessions.sessoes.length, 2, 'two sessions: the one that asked and the one that knew');
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    "GET",
+    "/v1/sessions?execucao_id=7",
+  );
+  assert.equal(
+    sessions.sessoes.length,
+    2,
+    "two sessions: the one that asked and the one that knew",
+  );
   for (const session of sessions.sessoes) {
     assert.equal(session.trabalho_id, work.id);
     assert.equal(session.no_id, work.no_atual);
-    assert.equal(session.engine, 'claude-code');
+    assert.equal(session.engine, "claude-code");
     assert.equal(session.working_dir, workDir);
-    assert.equal(session.status, 'concluida', 'the taxonomy vocabulary, not the interface one');
+    assert.equal(
+      session.status,
+      "concluida",
+      "the taxonomy vocabulary, not the interface one",
+    );
     assert.equal(session.exit_code, 0);
     assert.ok(session.finalizada_em !== null);
   }
   assert.ok(
     sessions.sessoes[1].prompt.includes(ANSWER),
-    'the persisted prompt of the second session carries the answer, for the audit trail',
+    "the persisted prompt of the second session carries the answer, for the audit trail",
   );
 });
 
-test('t125 — a denied tool becomes one permission-denial call, and does not fail the dispatch', async (t) => {
+test("t125 — a denied tool becomes one permission-denial call, and does not fail the dispatch", async (t) => {
   const { ClienteControle } = await loadModule<typeof ClientModule>(
-    'src/controller/cliente-controle.ts',
+    "src/controller/cliente-controle.ts",
   );
-  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
   const baseUrl = await startControlPlane(t);
 
-  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t125-workdir-'));
-  const record = path.join(workDir, 'despacho-com-negacao.json');
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t125-workdir-"));
+  const record = path.join(workDir, "despacho-com-negacao.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });
   });
 
   const client = new ClienteControle({ urlBase: baseUrl });
-  await client.registrarRunner('runner-t125', 'o que despacha com política de permissão');
+  await client.registrarRunner(
+    "runner-t125",
+    "o que despacha com política de permissão",
+  );
 
   const work = await api<Work>(
     baseUrl,
-    'POST',
-    '/v1/jobs',
-    { titulo: 'ficha com skill de terceiro', no_entrada_id: 'implementar', execucao_id: 9 },
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha com skill de terceiro",
+      no_entrada_id: "implementar",
+      execucao_id: 9,
+    },
     201,
   );
 
@@ -554,9 +673,9 @@ test('t125 — a denied tool becomes one permission-denial call, and does not fa
   const calls: Array<{ method: string; route: string; body: unknown }> = [];
   const doFetch: typeof fetch = async (input, init) => {
     calls.push({
-      method: init?.method ?? 'GET',
+      method: init?.method ?? "GET",
       route: String(input).slice(baseUrl.length),
-      body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
     });
     return fetch(input, init);
   };
@@ -571,39 +690,59 @@ test('t125 — a denied tool becomes one permission-denial call, and does not fa
 
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
-    adapter,
+    engines: claudeOnly(adapter),
     workingDir: workDir,
     timeoutSeconds: 60,
     doFetch,
-    permissions: { filesystem: { write: ['**'] }, network: { allowed: false } },
-    envOverrides: { FAKE_ENGINE_RECORD: record, FAKE_ENGINE_LINES: linesWithDenial() },
+    permissions: { filesystem: { write: ["**"] }, network: { allowed: false } },
+    envOverrides: {
+      FAKE_ENGINE_RECORD: record,
+      FAKE_ENGINE_LINES: linesWithDenial(),
+    },
   });
 
   // Asking is not failing, and neither is being denied: the dispatch of a
   // session that tried a closed door resolves normally.
   await dispatch(work.id);
 
-  const sessions = await api<{ sessoes: Session[] }>(baseUrl, 'GET', '/v1/sessions?execucao_id=9');
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    "GET",
+    "/v1/sessions?execucao_id=9",
+  );
   assert.equal(sessions.sessoes.length, 1);
   const session = sessions.sessoes[0];
-  assert.equal(session.status, 'concluida', 'a denial is an incident, never a terminal status');
+  assert.equal(
+    session.status,
+    "concluida",
+    "a denial is an incident, never a terminal status",
+  );
 
-  const denials = calls.filter((call) => call.route.endsWith('/permission-denials'));
-  assert.equal(denials.length, 1, `expected exactly one denial call, got ${denials.length}`);
-  assert.equal(denials[0].method, 'POST');
-  assert.equal(denials[0].route, `/v1/sessions/${session.id}/permission-denials`);
+  const denials = calls.filter((call) =>
+    call.route.endsWith("/permission-denials"),
+  );
+  assert.equal(
+    denials.length,
+    1,
+    `expected exactly one denial call, got ${denials.length}`,
+  );
+  assert.equal(denials[0].method, "POST");
+  assert.equal(
+    denials[0].route,
+    `/v1/sessions/${session.id}/permission-denials`,
+  );
   assert.deepEqual(denials[0].body, {
-    recurso: 'rede',
-    ferramenta: 'WebFetch',
+    recurso: "rede",
+    ferramenta: "WebFetch",
     motivo: DENIAL_TEXT,
-    ator: { tipo: 'sistema', ref: 'runner' },
+    ator: { tipo: "sistema", ref: "runner" },
   });
 
   // ...and the policy really reached the engine process, by the only channel
   // that counts: the argv (case C2's discipline).
-  const received = JSON.parse(readFileSync(record, 'utf8')) as FakeRecord;
-  assert.ok(received.argv.includes('--disallowedTools'));
-  assert.ok(received.argv.includes('WebFetch'));
+  const received = JSON.parse(readFileSync(record, "utf8")) as FakeRecord;
+  assert.ok(received.argv.includes("--disallowedTools"));
+  assert.ok(received.argv.includes("WebFetch"));
 });
 
 /** The fake engine, wired the way every test in this file wires it. */
@@ -618,40 +757,62 @@ function fakeAdapter(): ClaudeCodeAdapter {
 }
 
 /**
+ * The one-engine registry, which is what every test that is NOT about routing
+ * passes — and what production passed implicitly until t141 replaced the single
+ * `adapter` with a table.
+ */
+function claudeOnly(
+  adapter: ClaudeCodeAdapter,
+): Record<string, DispatchModule.EngineRoute> {
+  return {
+    "claude-code": { adapter, decodeSessionText: decodeClaudeCodeSessionText },
+  };
+}
+
+/**
  * Boots a control plane for a t147 test and hands back what it announced.
  *
  * No `authorizeGlobalFetch`, and that absence is the test device: with the
  * global untouched, the only credential that can reach the API is one the code
  * under test presents itself.
  */
-async function bootUnpatched(t: TestHook): Promise<{ baseUrl: string; token: string }> {
+async function bootUnpatched(
+  t: TestHook,
+): Promise<{ baseUrl: string; token: string }> {
   const readiness = await bootControlPlane(t);
   assert.ok(
-    readiness.bootstrapToken !== null && readiness.bootstrapToken !== '',
-    'each test boots against a database that never existed, so startup always mints and prints a token',
+    readiness.bootstrapToken !== null && readiness.bootstrapToken !== "",
+    "each test boots against a database that never existed, so startup always mints and prints a token",
   );
   return { baseUrl: readiness.url, token: readiness.bootstrapToken };
 }
 
-test('t147 — with no token, the dispatch is refused 401 on its very first call', async (t) => {
+test("t147 — with no token, the dispatch is refused 401 on its very first call", async (t) => {
   const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
-    'src/controller/cliente-controle.ts',
+    "src/controller/cliente-controle.ts",
   );
-  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
   const { baseUrl, token } = await bootUnpatched(t);
 
-  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t147-anonymous-workdir-'));
-  const record = path.join(workDir, 'despacho-sem-token.json');
+  const workDir = mkdtempSync(
+    path.join(tmpdir(), "cartografo-t147-anonymous-workdir-"),
+  );
+  const record = path.join(workDir, "despacho-sem-token.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });
   });
 
   const work = await api<Work>(
     baseUrl,
-    'POST',
-    '/v1/jobs',
-    { titulo: 'ficha despachada contra um control plane autenticado', no_entrada_id: 'implementar', execucao_id: 147 },
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha despachada contra um control plane autenticado",
+      no_entrada_id: "implementar",
+      execucao_id: 147,
+    },
     201,
     token,
   );
@@ -659,10 +820,13 @@ test('t147 — with no token, the dispatch is refused 401 on its very first call
   // Everything a working dispatch gets, minus the credential.
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
-    adapter: fakeAdapter(),
+    engines: claudeOnly(fakeAdapter()),
     workingDir: workDir,
     timeoutSeconds: 60,
-    envOverrides: { FAKE_ENGINE_RECORD: record, FAKE_ENGINE_LINES: linesWithoutBlock() },
+    envOverrides: {
+      FAKE_ENGINE_RECORD: record,
+      FAKE_ENGINE_LINES: linesWithoutBlock(),
+    },
   });
 
   await assert.rejects(
@@ -676,7 +840,7 @@ test('t147 — with no token, the dispatch is refused 401 on its very first call
       assert.equal(
         error.message,
         `GET /v1/jobs/${work.id} answered 401`,
-        'the read that opens a dispatch is where it dies: nothing after it ever runs',
+        "the read that opens a dispatch is where it dies: nothing after it ever runs",
       );
       return true;
     },
@@ -684,11 +848,14 @@ test('t147 — with no token, the dispatch is refused 401 on its very first call
 
   // Which is to say: no engine was started and no telemetry was written. A
   // dispatch that cannot read the work does not half-happen.
-  assert.ok(!existsSync(record), 'the engine process must never have been spawned');
+  assert.ok(
+    !existsSync(record),
+    "the engine process must never have been spawned",
+  );
   const sessions = await api<{ sessoes: Session[] }>(
     baseUrl,
-    'GET',
-    '/v1/sessions?execucao_id=147',
+    "GET",
+    "/v1/sessions?execucao_id=147",
     undefined,
     200,
     token,
@@ -696,22 +863,29 @@ test('t147 — with no token, the dispatch is refused 401 on its very first call
   assert.equal(sessions.sessoes.length, 0);
 });
 
-test('t147 — with a token, the dispatch crosses every route it uses', async (t) => {
-  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+test("t147 — with a token, the dispatch crosses every route it uses", async (t) => {
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
   const { baseUrl, token } = await bootUnpatched(t);
 
-  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t147-authorized-workdir-'));
-  const record = path.join(workDir, 'despacho-com-token.json');
+  const workDir = mkdtempSync(
+    path.join(tmpdir(), "cartografo-t147-authorized-workdir-"),
+  );
+  const record = path.join(workDir, "despacho-com-token.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });
   });
 
   const work = await api<Work>(
     baseUrl,
-    'POST',
-    '/v1/jobs',
-    { titulo: 'ficha despachada com credencial', no_entrada_id: 'implementar', execucao_id: 147 },
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha despachada com credencial",
+      no_entrada_id: "implementar",
+      execucao_id: 147,
+    },
     201,
     token,
   );
@@ -721,12 +895,15 @@ test('t147 — with a token, the dispatch crosses every route it uses', async (t
   // (`packages/core/src/auth.ts`), so a pairing token would be refused 403.
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
-    adapter: fakeAdapter(),
+    engines: claudeOnly(fakeAdapter()),
     workingDir: workDir,
     timeoutSeconds: 60,
     token,
-    permissions: { filesystem: { write: ['**'] }, network: { allowed: false } },
-    envOverrides: { FAKE_ENGINE_RECORD: record, FAKE_ENGINE_LINES: linesWithDenialAndBlock() },
+    permissions: { filesystem: { write: ["**"] }, network: { allowed: false } },
+    envOverrides: {
+      FAKE_ENGINE_RECORD: record,
+      FAKE_ENGINE_LINES: linesWithDenialAndBlock(),
+    },
   });
 
   // Resolving is already most of the proof: a refusal on ANY of the seven
@@ -736,28 +913,36 @@ test('t147 — with a token, the dispatch crosses every route it uses', async (t
 
   const sessions = await api<{ sessoes: Session[] }>(
     baseUrl,
-    'GET',
-    '/v1/sessions?execucao_id=147',
+    "GET",
+    "/v1/sessions?execucao_id=147",
     undefined,
     200,
     token,
   );
-  assert.equal(sessions.sessoes.length, 1, 'the session was opened through POST /v1/sessions');
+  assert.equal(
+    sessions.sessoes.length,
+    1,
+    "the session was opened through POST /v1/sessions",
+  );
   assert.equal(
     sessions.sessoes[0].status,
-    'concluida',
-    'and closed through PATCH /v1/sessions/:id/finish',
+    "concluida",
+    "and closed through PATCH /v1/sessions/:id/finish",
   );
 
   const questions = await api<{ perguntas: Question[] }>(
     baseUrl,
-    'GET',
-    '/v1/input-requests',
+    "GET",
+    "/v1/input-requests",
     undefined,
     200,
     token,
   );
-  assert.equal(questions.perguntas.length, 1, 'the question reached POST /v1/input-requests');
+  assert.equal(
+    questions.perguntas.length,
+    1,
+    "the question reached POST /v1/input-requests",
+  );
   assert.equal(questions.perguntas[0].pergunta, ESCALATION.question);
 
   // The execution stream and not the work timeline: a denial is recorded
@@ -766,14 +951,702 @@ test('t147 — with a token, the dispatch crosses every route it uses', async (t
   // above records for `sessao.finalizada`.
   const timeline = await api<{ eventos: Event[] }>(
     baseUrl,
-    'GET',
-    '/v1/executions/147/events',
+    "GET",
+    "/v1/executions/147/events",
     undefined,
     200,
     token,
   );
   assert.ok(
-    timeline.eventos.some((event) => event.tipo === 'sessao.permissao_negada'),
-    'the denial reached POST /v1/sessions/:id/permission-denials',
+    timeline.eventos.some((event) => event.tipo === "sessao.permissao_negada"),
+    "the denial reached POST /v1/sessions/:id/permission-denials",
   );
+});
+
+// --- t141: per-node engine routing ------------------------------------------
+
+/** A node's contract, in the smallest shape the schema and soundness accept. */
+function contract(): Record<string, unknown> {
+  return {
+    entrada_schema: { type: "object" },
+    saida_schema: { type: "object" },
+    verificacoes: [
+      {
+        tipo: "deterministico",
+        comando: "test -s saida.md",
+        descricao: "A saída existe.",
+      },
+    ],
+  };
+}
+
+/** A `trabalho` node, with `engine` only when the routing test declares one. */
+function node(id: string, engine?: string): Record<string, unknown> {
+  return {
+    id,
+    papel: "desenvolvedor",
+    tipo_no: "trabalho",
+    descricao: `Nó ${id} da prova de roteamento por nó.`,
+    skill_ref: {
+      id: "cartografo/fazer",
+      versao: "1.0.0",
+      hash: `sha256:${"0".repeat(64)}`,
+    },
+    contrato: contract(),
+    ...(engine === undefined ? {} : { engine }),
+  };
+}
+
+/**
+ * A registrable two-node graph: the first node says nothing about an engine, the
+ * second declares one. It is the smallest document that can tell a default from
+ * a route.
+ */
+function twoEngineGraph(
+  className: string,
+  engine: string | undefined,
+): Record<string, unknown> {
+  return {
+    classe: className,
+    linhagem: { tipo: "base" },
+    metadata: {
+      nome: "Prova de roteamento por nó",
+      descricao:
+        "Dois nós de trabalho numa aresta, um deles declarando engine.",
+      versao_schema: "1.0.0",
+      criado_em: "2026-08-15",
+      origem: "fixture da t141",
+    },
+    nos: [node("implementar"), node("revisar", engine)],
+    arestas: [{ de: "implementar", para: "revisar", condicao: "sempre" }],
+    no_inicial: "implementar",
+    nos_finais: ["revisar"],
+  };
+}
+
+/** The `codex` adapter, pointed at the fake engine through its own argv seam. */
+function fakeCodexAdapter(): CodexAdapter {
+  return new CodexAdapter({
+    commandBuilder: (spec) => ({
+      command: process.execPath,
+      args: [FAKE_ENGINE, ...buildCodexCommand(spec).args],
+    }),
+    graceMs: 300,
+  });
+}
+
+/** Registers the graph and returns the version id a job can point at. */
+async function registerGraph(
+  baseUrl: string,
+  token: string,
+  document: Record<string, unknown>,
+): Promise<string> {
+  const registered = await api<{ grafo_versao: { id: string } }>(
+    baseUrl,
+    "POST",
+    "/v1/graphs",
+    document,
+    201,
+    token,
+  );
+  return registered.grafo_versao.id;
+}
+
+/**
+ * The three routing acceptance tests share ONE control plane, on purpose.
+ *
+ * Booting a real server per test is what the rest of this file does, and at
+ * three more boots it stopped being free: the extra parallel load made the
+ * conformance kit's C4 — which sleeps a fixed settle before reading the fake
+ * engine's sidecar — miss its window and fail in a file this ficha never
+ * touched. One boot for three tests keeps the suite's cost where it was.
+ *
+ * Nothing is shared BETWEEN the subtests except the server: each registers its
+ * own graph class, creates its own work under its own `execucao_id`, and
+ * queries back only its own.
+ */
+test("t141 — the engine is resolved from the node the work is standing on", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await parent.test(
+    'AT3 — a node declaring engine "codex" is dispatched through the codex route',
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const { decodeCodexSessionText } =
+        await loadModule<typeof SessionTextModule>(SESSION_TEXT_MODULE);
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t141-codex-workdir-"),
+      );
+      const claudeRecord = path.join(workDir, "nunca-despachado.json");
+      const codexRecord = path.join(workDir, "despacho-codex.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        twoEngineGraph("roteamento-por-no-at3", "codex"),
+      );
+
+      // The work is created ON the node that declares the engine: the dispatch
+      // resolves the CURRENT node, not the entry one.
+      const work = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha cujo nó declara codex",
+          no_entrada_id: "revisar",
+          execucao_id: 141,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const dispatch = createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: {
+          "claude-code": {
+            adapter: fakeAdapter(),
+            decodeSessionText: decodeClaudeCodeSessionText,
+          },
+          codex: {
+            adapter: fakeCodexAdapter(),
+            decodeSessionText: decodeCodexSessionText,
+          },
+        },
+        workingDir: workDir,
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: codexRecord,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      });
+
+      await dispatch(work.id);
+
+      const sessions = await api<{ sessoes: Session[] }>(
+        baseUrl,
+        "GET",
+        "/v1/sessions?execucao_id=141",
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(sessions.sessoes.length, 1);
+      assert.equal(
+        sessions.sessoes[0].engine,
+        "codex",
+        "the engine the node declared is the engine the telemetry records",
+      );
+      assert.equal(sessions.sessoes[0].no_id, "revisar");
+
+      // ...and the route that ran is the codex one, by the only channel that
+      // proves it: the argv the fake engine received.
+      assert.ok(
+        existsSync(codexRecord),
+        "the codex route never started a session",
+      );
+      assert.ok(
+        !existsSync(claudeRecord),
+        "the default route must not have run",
+      );
+      const received = JSON.parse(
+        readFileSync(codexRecord, "utf8"),
+      ) as FakeRecord;
+      assert.ok(
+        received.argv.includes("exec") &&
+          received.argv.includes("--skip-git-repo-check"),
+        `the argv is the one codex's own command builder produces:\n${received.argv.join(" ")}`,
+      );
+    },
+  );
+
+  await parent.test(
+    "AT4 — with no graph version, and with a node that declares nothing, the default runs",
+    async (t) => {
+      const { createClaudeCodeDispatch, DEFAULT_ENGINE } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t141-default-workdir-"),
+      );
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      assert.equal(
+        DEFAULT_ENGINE,
+        "claude-code",
+        "the default is named, never silently implied",
+      );
+
+      const engines = {
+        [DEFAULT_ENGINE]: {
+          adapter: fakeAdapter(),
+          decodeSessionText: decodeClaudeCodeSessionText,
+        },
+      };
+
+      // --- 1. no `grafo_versao_id` at all: today's behaviour, byte for byte ------
+      const bare = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha sem grafo",
+          no_entrada_id: "implementar",
+          execucao_id: 1410,
+        },
+        201,
+        token,
+      );
+
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines,
+        workingDir: workDir,
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: path.join(workDir, "sem-grafo.json"),
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      })(bare.id);
+
+      // --- 2. a graph whose current node declares no engine ---------------------
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        twoEngineGraph("roteamento-por-no-at4", undefined),
+      );
+      const onGraph = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha cujo nó não declara engine",
+          no_entrada_id: "implementar",
+          execucao_id: 1411,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines,
+        workingDir: workDir,
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: path.join(workDir, "no-sem-engine.json"),
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      })(onGraph.id);
+
+      for (const executionId of [1410, 1411]) {
+        const sessions = await api<{ sessoes: Session[] }>(
+          baseUrl,
+          "GET",
+          `/v1/sessions?execucao_id=${executionId}`,
+          undefined,
+          200,
+          token,
+        );
+        assert.equal(
+          sessions.sessoes.length,
+          1,
+          `execution ${executionId} dispatched exactly once`,
+        );
+        assert.equal(
+          sessions.sessoes[0].engine,
+          DEFAULT_ENGINE,
+          `execution ${executionId} must fall back to the default engine`,
+        );
+        assert.equal(sessions.sessoes[0].status, "concluida");
+      }
+    },
+  );
+
+  await parent.test(
+    "AT5 — a node declaring an engine nobody registered fails before any session opens",
+    async (t) => {
+      const { createClaudeCodeDispatch, UnknownEngineError } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t141-unknown-workdir-"),
+      );
+      const record = path.join(workDir, "nunca-despachado.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        twoEngineGraph("roteamento-por-no-at5", "gemini"),
+      );
+      const work = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha cujo nó pede um engine que ninguém registrou",
+          no_entrada_id: "revisar",
+          execucao_id: 1412,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      // A spy that counts, so "before any session opens" is a measured claim and
+      // not an inference from the absence of a row.
+      const posts: string[] = [];
+      const doFetch: typeof fetch = async (input, init) => {
+        if ((init?.method ?? "GET") === "POST")
+          posts.push(String(input).slice(baseUrl.length));
+        return fetch(input, init);
+      };
+
+      const dispatch = createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: {
+          "claude-code": {
+            adapter: fakeAdapter(),
+            decodeSessionText: decodeClaudeCodeSessionText,
+          },
+        },
+        workingDir: workDir,
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      });
+
+      await assert.rejects(
+        async () => dispatch(work.id),
+        (error: unknown) => {
+          assert.ok(
+            error instanceof UnknownEngineError,
+            `expected UnknownEngineError, got: ${String(error)}`,
+          );
+          assert.equal(error.engine, "gemini");
+          assert.equal(error.nodeId, "revisar");
+          return true;
+        },
+      );
+
+      // Never a silent fallback: a session recorded against another engine would
+      // make the telemetry lie about what actually ran.
+      assert.deepEqual(
+        posts.filter((route) => route === "/v1/sessions"),
+        [],
+        "POST /v1/sessions must never be reached for an engine that has no route",
+      );
+      assert.ok(!existsSync(record), "no engine process may have been spawned");
+
+      const sessions = await api<{ sessoes: Session[] }>(
+        baseUrl,
+        "GET",
+        "/v1/sessions?execucao_id=1412",
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(sessions.sessoes.length, 0);
+    },
+  );
+});
+
+// --- t148: a control-plane call that fails must not leak the session --------
+
+/**
+ * `true` while the pid exists; `EPERM` counts as alive (it exists, and is not
+ * ours to signal).
+ *
+ * A local copy of what `src/engine/conformance-kit.ts:163-180` already does.
+ * The kit does not export it, and one caller outside the kit is not yet the two
+ * consumers this project asks for before it moves anything into a shared
+ * surface — when the second one shows up, this is the pair to extract.
+ */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Polls until the pid is gone, and fails the test if it never is. */
+async function requireProcessDead(
+  pid: number,
+  label: string,
+  deadlineMs = 5_000,
+): Promise<void> {
+  const limit = Date.now() + deadlineMs;
+  while (Date.now() < limit) {
+    if (!isProcessAlive(pid)) return;
+    await delay(25);
+  }
+  assert.fail(
+    `${label}: process ${pid} was still alive ${deadlineMs}ms after the dispatch settled (leaked session)`,
+  );
+}
+
+/**
+ * SIGKILLs whatever is left of an engine process, group first.
+ *
+ * The cleanup half of the acceptance criteria: whichever way these two tests
+ * end — green, red or thrown — no fake engine of theirs may outlive them. The
+ * engine comes up `detached`, so the group is the honest target and the direct
+ * pid is only the fallback.
+ */
+function killIfAlive(pid: number): void {
+  if (!isProcessAlive(pid)) return;
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* it died between the check and the signal; nothing to do */
+    }
+  }
+}
+
+/**
+ * Waits for the fake engine's sidecar and reads it.
+ *
+ * `startSession` resolves on the process's `spawn` event, which happens long
+ * before the fake engine has run a line of its own — so "the engine is up" and
+ * "the engine has recorded itself" are two different instants, and only the
+ * second one has a pid in it.
+ */
+async function waitForRecord(
+  recordPath: string,
+  deadlineMs = DEADLINE_MS,
+): Promise<FakeRecord> {
+  const limit = Date.now() + deadlineMs;
+  while (Date.now() < limit) {
+    if (existsSync(recordPath)) {
+      try {
+        return JSON.parse(readFileSync(recordPath, "utf8")) as FakeRecord;
+      } catch {
+        /* caught the file mid-write; read it again on the next turn */
+      }
+    }
+    await delay(25);
+  }
+  throw new Error(
+    `the fake engine never recorded itself at ${recordPath} within ${deadlineMs}ms`,
+  );
+}
+
+/** The body a control plane that fell over would send back. */
+function serverError(): Response {
+  return new Response(JSON.stringify({ erro: "o control plane caiu" }), {
+    status: 500,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+test("t148 — POST /v1/sessions fails after the engine started: the session is cancelled, not leaked", async (t) => {
+  const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
+    "src/controller/cliente-controle.ts",
+  );
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t148-leak-"));
+  const recordPath = path.join(workDir, "despacho-que-vazou.json");
+  let enginePid: number | null = null;
+  t.after(() => {
+    if (enginePid !== null) killIfAlive(enginePid);
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha cujo POST /v1/sessions cai com o engine já de pé",
+      no_entrada_id: "implementar",
+      execucao_id: 148,
+    },
+    201,
+    token,
+  );
+
+  // Everything reaches the real control plane except the one call this test is
+  // about, which never gets there: it fails outright, the way a 500 or a
+  // dropped connection fails.
+  //
+  // Waiting for the sidecar before answering is what makes the race a
+  // certainty instead of a coincidence — the failure has to land while the
+  // engine process is provably up and writing in `workingDir`.
+  const doFetch: typeof fetch = async (input, init) => {
+    const target = String(input);
+    if ((init?.method ?? "GET") === "POST" && target.endsWith("/v1/sessions")) {
+      enginePid = (await waitForRecord(recordPath)).pid;
+      return serverError();
+    }
+    return fetch(input, init);
+  };
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    doFetch,
+    engines: claudeOnly(fakeAdapter()),
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    envOverrides: {
+      FAKE_ENGINE_RECORD: recordPath,
+      // The session never ends on its own: if it dies, somebody killed it, and
+      // this test is about who.
+      FAKE_ENGINE_HANG: "1",
+      FAKE_ENGINE_LINES: linesWithoutBlock(),
+    },
+  });
+
+  await assert.rejects(
+    async () => dispatch(work.id),
+    (error: unknown) => {
+      assert.ok(
+        error instanceof ErroDoControlPlane,
+        `the original failure must be what propagates, got: ${String(error)}`,
+      );
+      assert.equal(error.status, 500);
+      assert.equal(
+        error.message,
+        "POST /v1/sessions answered 500",
+        "cancelling the session may not replace the error that caused it",
+      );
+      return true;
+    },
+  );
+
+  // The controller's `finally` has already given the lease back by now, so the
+  // work is a candidate again: an engine still alive in this working dir is a
+  // second session about to be dispatched on top of the first.
+  assert.ok(
+    enginePid !== null,
+    "the fake engine must have recorded itself before the call failed",
+  );
+  await requireProcessDead(enginePid, "t148 (engine process)");
+
+  // ...and nothing was left half-open on the other side either.
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    "GET",
+    "/v1/sessions?execucao_id=148",
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(
+    sessions.sessoes.length,
+    0,
+    "the call that failed is the one that would have created the row",
+  );
+});
+
+test("t148 — the finish PATCH fails after the session ended: the escalation question is still posted", async (t) => {
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t148-finish-"));
+  const recordPath = path.join(workDir, "despacho-sem-fechamento.json");
+  t.after(() => {
+    if (existsSync(recordPath)) {
+      const { pid } = JSON.parse(
+        readFileSync(recordPath, "utf8"),
+      ) as FakeRecord;
+      killIfAlive(pid);
+    }
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha que pergunta e cujo fechamento de sessão cai",
+      no_entrada_id: "implementar",
+      execucao_id: 1481,
+    },
+    201,
+    token,
+  );
+
+  // Only the finish PATCH fails. The session itself ended `completed` with a
+  // block in its output, so the question is real, parsed and owed to a human.
+  const doFetch: typeof fetch = async (input, init) => {
+    const target = String(input);
+    if (
+      (init?.method ?? "GET") === "PATCH" &&
+      /\/v1\/sessions\/\d+\/finish$/.test(target)
+    ) {
+      return serverError();
+    }
+    return fetch(input, init);
+  };
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    doFetch,
+    engines: claudeOnly(fakeAdapter()),
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    envOverrides: {
+      FAKE_ENGINE_RECORD: recordPath,
+      FAKE_ENGINE_LINES: linesWithBlock(),
+    },
+  });
+
+  // Failing is right — the runner owes the control plane a write it could not
+  // make. Failing BEFORE asking is not: "asking is not failing" is the whole
+  // invariant, and a question dropped here is a human who is never called.
+  await assert.rejects(async () => dispatch(work.id));
+
+  const questions = await api<{ perguntas: Question[] }>(
+    baseUrl,
+    "GET",
+    "/v1/input-requests",
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(
+    questions.perguntas.length,
+    1,
+    "the question the session asked has to reach POST /v1/input-requests anyway",
+  );
+  const question = questions.perguntas[0];
+  assert.equal(question.trabalho_id, work.id);
+  assert.equal(question.pergunta, ESCALATION.question);
+  assert.equal(question.contexto, ESCALATION.context);
+  assert.deepEqual(question.opcoes, ESCALATION.options);
+  assert.equal(question.recomendacao, ESCALATION.recommendation);
+  assert.equal(question.resposta_padrao, ESCALATION.default);
 });

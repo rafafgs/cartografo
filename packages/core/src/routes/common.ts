@@ -5,7 +5,8 @@
  *
  * - **400** when the body does not match the event's contract. The WHOLE list of
  *   problems goes in the body, not only the first — whoever builds a wrong
- *   envelope usually gets more than one field wrong;
+ *   envelope usually gets more than one field wrong. One route asks for `422`
+ *   instead (`PATCH /v1/jobs/:id`, t157) and says so at its own call site;
  * - **404** when the entity does not exist. In that case nothing is written:
  *   neither a projection row nor an event (FR5, AT7);
  * - **409** when the entity exists but has already left the state the operation
@@ -30,21 +31,28 @@ export interface ErrorResponse {
 }
 
 /**
- * Runs a route body translating `ValidationError` into a 400.
+ * Runs a route body translating `ValidationError` into an invalid-body status.
+ *
+ * `invalidStatus` is a parameter and not a constant because of exactly one
+ * route: `PATCH /v1/jobs/:id` answers `422` (t157, FR2). Everywhere else the
+ * default keeps the `400` this file has always written — the divergence is one
+ * route's contract, not a new convention.
  *
  * @param reply Fastify reply.
  * @param action The route's work.
- * @returns What the action returned, or the 400 body.
+ * @param invalidStatus Status for a body that does not match the contract.
+ * @returns What the action returned, or the refusal body.
  */
 export async function withValidation<T>(
   reply: FastifyReply,
   action: () => T | Promise<T>,
+  invalidStatus = 400,
 ): Promise<T | ErrorResponse> {
   try {
     return await action();
   } catch (error) {
     if (error instanceof ValidationError) {
-      reply.code(400);
+      reply.code(invalidStatus);
       return { error: 'validation_failed', details: error.errors };
     }
     throw error;

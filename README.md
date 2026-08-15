@@ -75,8 +75,12 @@ plane: outro processo, outra porta, nenhum acesso ao banco.
 Configuração: `CARTOGRAFO_PORT`, `CARTOGRAFO_DB_PATH` e `CARTOGRAFO_HOST` na
 partida — o último decide o endereço de escuta, e o default segue sendo
 `127.0.0.1`, porque abrir a porta para a rede é decisão de quem opera, não do
-comando; `CARTOGRAFO_URL` (ou `--url`) para apontar os outros subcomandos — e a
-tela — a um control plane que não esteja no default `http://127.0.0.1:4317`;
+comando; `CARTOGRAFO_LEASE_CAP_RUNNER` e `CARTOGRAFO_LEASE_CAP_PROJECT`
+(default 50 cada) para o teto de leases simultâneas que o servidor impõe — o
+runner declara o teto que quer e vale o MENOR dos dois, porque quem decide
+concorrência é o control plane, não o pedido (D1); `CARTOGRAFO_URL` (ou `--url`)
+para apontar os outros subcomandos — e a tela — a um control plane que não
+esteja no default `http://127.0.0.1:4317`;
 `CARTOGRAFO_TOKEN` (ou `--token`) para a credencial que os subcomandos
 apresentam; `CARTOGRAFO_TELA_PORT` para mudar a porta da tela e
 `CARTOGRAFO_TELA_TOKEN` para dar à tela uma credencial própria — sem ela, a tela

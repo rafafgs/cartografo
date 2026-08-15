@@ -17,7 +17,7 @@
  */
 
 import type { Database } from '../db/connection.ts';
-import { recordEvent } from '../db/events.ts';
+import { getEventsByEntity, recordEvent } from '../db/events.ts';
 import { requireValidData } from '../db/event-validation.ts';
 import {
   RUNNER_ACTOR,
@@ -72,6 +72,36 @@ function readRow(db: Database, id: number): SessionRow | undefined {
   return db.prepare(`SELECT ${COLUMNS} FROM sessao WHERE id = ?`).get(id) as
     | SessionRow
     | undefined;
+}
+
+/**
+ * The project this session was opened under (t157, FR3/FR4).
+ *
+ * The `sessao` table has no `projeto_id` column: `openSession` resolves the
+ * project — the served job's, or the one declared in the body — and records it
+ * in the envelope of `sessao.aberta`, and that event is where it lives. Every
+ * later event of the session reads it from there.
+ *
+ * Deriving it again from `trabalho` (which is what this file did until t157)
+ * quietly loses the answer for a session with no job — a discovery session, a
+ * conversation turn, the very case `sessao.aberta`'s contract calls out: the
+ * join finds nothing and the end of the session gets filed under
+ * `DEFAULT_PROJECT`, whatever project it actually opened under. The log already
+ * knew; nobody was asking it.
+ *
+ * Read-only, over the `evento` table: the append-only rule is untouched.
+ *
+ * @param db Open handle.
+ * @param id Session id.
+ * @returns The project of the opening event; `DEFAULT_PROJECT` only for a
+ *   session with no opening event, which `openSession`'s transaction makes
+ *   unreachable in practice.
+ */
+function sessionProject(db: Database, id: number): number {
+  const opening = getEventsByEntity(db, 'sessao', id).find(
+    (event) => event.tipo === 'sessao.aberta',
+  );
+  return opening?.projeto_id ?? DEFAULT_PROJECT;
 }
 
 /**
@@ -214,10 +244,7 @@ export function finishSession(
   });
   const usage = data.uso as SessionUsage | null;
   const actor = resolveActor(input.ator, RUNNER_ACTOR);
-
-  const project = db
-    .prepare('SELECT projeto_id FROM trabalho WHERE id = ?')
-    .get(row.trabalho_id) as { projeto_id: number } | undefined;
+  const projectId = sessionProject(db, id);
 
   const close = db.transaction((): Session => {
     const timestamp = now();
@@ -245,7 +272,7 @@ export function finishSession(
 
     recordEvent(db, {
       tipo: 'sessao.finalizada',
-      projeto_id: project?.projeto_id ?? DEFAULT_PROJECT,
+      projeto_id: projectId,
       execucao_id: row.execucao_id,
       entidade: { tipo: 'sessao', id },
       ator: actor,
@@ -297,15 +324,11 @@ export function recordPermissionDenial(
   });
   const actor = resolveActor(input.ator, RUNNER_ACTOR);
 
-  const project = db
-    .prepare('SELECT projeto_id FROM trabalho WHERE id = ?')
-    .get(row.trabalho_id) as { projeto_id: number } | undefined;
-
   // No transaction: there is a single append and nothing to keep atomic with
   // it. `finishSession` needs one because it also moves the projection row.
   recordEvent(db, {
     tipo: 'sessao.permissao_negada',
-    projeto_id: project?.projeto_id ?? DEFAULT_PROJECT,
+    projeto_id: sessionProject(db, id),
     execucao_id: row.execucao_id,
     entidade: { tipo: 'sessao', id },
     ator: actor,

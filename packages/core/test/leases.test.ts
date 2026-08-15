@@ -180,6 +180,32 @@ async function startWithClock(
   return { address, db };
 }
 
+/**
+ * The same lease route module, assembled with the ceilings the SERVER decides
+ * (t157, FR1).
+ *
+ * It is the injectable-options harness `startWithClock` already uses, with the
+ * other option: in production the two numbers come from the environment
+ * (`leaseCapRunner`/`leaseCapProject`, `src/index.ts`), and what matters here is
+ * that whatever they are, the request cannot talk its way past them.
+ */
+async function startWithCeilings(
+  t: TestHook,
+  leaseCeilings: { runner: number; projeto: number },
+): Promise<{ address: string; db: ConnectionModule.Database }> {
+  const { registerLeases } = await loadLeaseRoutes();
+  const db = await temporaryDatabase(t);
+
+  const app = Fastify({ logger: false });
+  app.register(async (scope) => registerLeases(scope, db, { leaseCeilings }), { prefix: '/v1' });
+  const address = await app.listen({ port: 0, host: '127.0.0.1' });
+  t.after(async () => {
+    await app.close();
+  });
+
+  return { address, db };
+}
+
 /** Test clock: starts at a fixed instant and only moves when told to. */
 function controlledClock(start = '2026-08-14T12:00:00.000Z'): {
   now: () => string;
@@ -654,6 +680,96 @@ test('t143 AT — GET /v1/leases with a runner credential sees only its own leas
   });
   assert.equal(explicit.status, 200, 'naming ITSELF is allowed, and composes with the other filters');
   assert.equal(((await explicit.json()) as { leases: LeaseRow[] }).leases.length, 1);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t157 — the cap is DECIDED on the server, only declared by the runner (D1).  */
+/* -------------------------------------------------------------------------- */
+
+test('t157 AT — teto_runner declared above the server ceiling is capped at the ceiling', async (t) => {
+  const { address, db } = await startWithCeilings(t, { runner: 2, projeto: 2 });
+  await registerRunners(db, 'runner-a');
+
+  // The runner declares 100 on every call: if the number in the body were the
+  // one enforced, all three of these would be granted.
+  for (const trabalho_id of [1, 2]) {
+    const response = await requestLease(address, {
+      runner_id: 'runner-a',
+      trabalho_id,
+      teto_runner: 100,
+      teto_projeto: 100,
+    });
+    assert.equal(response.status, 201, `job ${trabalho_id} is inside the server ceiling`);
+  }
+
+  const refused = await requestLease(address, {
+    runner_id: 'runner-a',
+    trabalho_id: 3,
+    teto_runner: 100,
+    teto_projeto: 100,
+  });
+  assert.equal(refused.status, 200, 'a ceiling reached is still "not now", not an error');
+  const body = (await refused.json()) as GrantResponse;
+  assert.equal(body.lease, null);
+  assert.equal(body.motivo, 'teto_runner');
+
+  const active = await listLeasesHttp(address, '?status=ativa');
+  assert.equal(active.length, 2, 'the request declares; the control plane decides (D1)');
+});
+
+test('t157 AT — teto_projeto declared above the server ceiling is capped at the ceiling', async (t) => {
+  const { address, db } = await startWithCeilings(t, { runner: 2, projeto: 2 });
+  await registerRunners(db, 'runner-a', 'runner-b', 'runner-c');
+
+  for (const [index, runner] of ['runner-a', 'runner-b'].entries()) {
+    const response = await requestLease(address, {
+      runner_id: runner,
+      trabalho_id: index + 1,
+      projeto_id: 42,
+      teto_runner: 100,
+      teto_projeto: 100,
+    });
+    assert.equal(response.status, 201, `${runner} is inside the project ceiling`);
+  }
+
+  // A third runner: its own count is zero, so only the project ceiling can
+  // refuse this one.
+  const refused = await requestLease(address, {
+    runner_id: 'runner-c',
+    trabalho_id: 3,
+    projeto_id: 42,
+    teto_runner: 100,
+    teto_projeto: 100,
+  });
+  assert.equal(refused.status, 200);
+  const body = (await refused.json()) as GrantResponse;
+  assert.equal(body.lease, null);
+  assert.equal(body.motivo, 'teto_projeto');
+
+  const active = await listLeasesHttp(address, '?status=ativa&projeto_id=42');
+  assert.equal(active.length, 2, 'the project ceiling holds across runners');
+});
+
+test('t157 AT — a declaration BELOW the ceiling still holds: the clamp is a minimum', async (t) => {
+  const { address, db } = await startWithCeilings(t, { runner: 50, projeto: 50 });
+  await registerRunners(db, 'runner-a');
+
+  assert.equal(
+    (await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1, teto_runner: 1 })).status,
+    201,
+  );
+
+  const refused = await requestLease(address, {
+    runner_id: 'runner-a',
+    trabalho_id: 2,
+    teto_runner: 1,
+  });
+  assert.equal(refused.status, 200);
+  assert.equal(
+    ((await refused.json()) as GrantResponse).motivo,
+    'teto_runner',
+    'a runner that asks for less than the ceiling gets what it asked for',
+  );
 });
 
 test('AT12 — the cap is respected under simultaneous calls', async (t) => {

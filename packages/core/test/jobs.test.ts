@@ -223,6 +223,49 @@ test('AT4 — PATCH /v1/jobs/:id amends the title and records only the field NAM
   );
 });
 
+test('t157 — PATCH /v1/jobs/:id without a usable titulo is 422, never a 500', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, { titulo: 'título velho', no_entrada_id: 'entrada' });
+  const before = countEvents(ctx);
+
+  // `campos_alterados: ['titulo']` is well-formed whatever comes in the body, so
+  // until t157 the payload validation passed and the UPDATE bound `undefined` —
+  // the driver threw and Fastify answered 500. What is written is what has to be
+  // validated.
+  for (const body of [{}, { titulo: null }, { titulo: '' }, { titulo: 7 }] as const) {
+    const response = await request<{ error: string; details: string[] }>(
+      ctx,
+      'PATCH',
+      `/v1/jobs/${job.id}`,
+      body,
+    );
+    assert.equal(response.status, 422, `PATCH with ${JSON.stringify(body)} should be a 422`);
+    assert.equal(response.body.error, 'validation_failed');
+    assert.ok(
+      response.body.details.some((detail) => detail.includes('titulo')),
+      `the 422 has to name the offending field: ${JSON.stringify(response.body.details)}`,
+    );
+  }
+
+  const literalNull = await request<{ error: string; details: string[] }>(
+    ctx,
+    'PATCH',
+    `/v1/jobs/${job.id}`,
+    null,
+  );
+  assert.equal(literalNull.status, 422, 'a body that IS null is a refusal, not a crash');
+  assert.ok(literalNull.body.details.some((detail) => detail.includes('titulo')));
+
+  assert.equal(countEvents(ctx), before, 'a refused amendment records no trabalho.emendado');
+  assert.equal(
+    (await readJob(ctx, job.id)).titulo,
+    'título velho',
+    'and it does not touch the row either',
+  );
+});
+
 test('AT5 — GET /v1/jobs returns the current board, with a per-execution filter', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);

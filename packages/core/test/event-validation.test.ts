@@ -86,3 +86,52 @@ test('t157 FR5 — a list of real strings still passes', () => {
     criterios_de_aceite: null,
   });
 });
+
+/** Everything `sessao.aberta` requires, so a case only has to vary its own field. */
+const OPEN_SESSION = Object.freeze({
+  engine: 'claude-code',
+  working_dir: '/tmp/cartografo',
+  prompt: 'faça algo e conte o que aconteceu',
+});
+
+test('t163 — sessao.aberta accepts the silence budget, and absent reads as null', () => {
+  assert.equal(
+    requireValidData('sessao.aberta', { ...OPEN_SESSION, silence_seconds: 900 }).silence_seconds,
+    900,
+  );
+  // Zero is a legitimate measurement here, exactly as it is for `timeout_seconds`:
+  // the schema's floor is 0, and "no policy" is expressed by absence, not by a
+  // number. What a non-positive DECLARED budget means is `resolveBudget`'s
+  // business, one layer up, and not this contract's.
+  assert.equal(
+    requireValidData('sessao.aberta', { ...OPEN_SESSION, silence_seconds: 0 }).silence_seconds,
+    0,
+  );
+  assert.equal(
+    requireValidData('sessao.aberta', { ...OPEN_SESSION }).silence_seconds,
+    null,
+    'an absent budget is a session that declares no policy, never a zero',
+  );
+  refuses('sessao.aberta', { ...OPEN_SESSION, silence_seconds: -1 }, 'silence_seconds');
+  refuses('sessao.aberta', { ...OPEN_SESSION, silence_seconds: '900' }, 'silence_seconds');
+});
+
+test('t163 — sessao.finalizada accepts the two watchdog causes and nothing else', () => {
+  for (const reason of ['wall_clock', 'silence']) {
+    assert.equal(
+      requireValidData('sessao.finalizada', { status: 'tempo_esgotado', timeout_reason: reason })
+        .timeout_reason,
+      reason,
+    );
+  }
+  assert.equal(
+    requireValidData('sessao.finalizada', { status: 'concluida' }).timeout_reason,
+    null,
+    'a session that did not run a watchdog out has no cause to report',
+  );
+  refuses(
+    'sessao.finalizada',
+    { status: 'tempo_esgotado', timeout_reason: 'travada' },
+    'timeout_reason',
+  );
+});

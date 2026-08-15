@@ -116,6 +116,10 @@ test('AT8 — POST /v1/sessions records sessao.aberta and creates the open row',
     working_dir: '/Users/rafael/cartografo-ticket-102',
     prompt: 'Refine o trabalho 102 contra as convenções do projeto.',
     timeout_seconds: 5400,
+    // The second budget (t163). Declared by nobody here, so it normalizes to
+    // null — "this session states no inactivity policy", which is what every
+    // row from before the watchdog existed reads as too.
+    silence_seconds: null,
   });
 });
 
@@ -162,13 +166,19 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     events.map((event: Event) => event.tipo),
     ['sessao.aberta', 'sessao.finalizada'],
   );
-  assert.deepEqual(events[1].dados, { status: 'concluida', exit_code: 0, uso: USAGE });
+  assert.deepEqual(events[1].dados, {
+    status: 'concluida',
+    exit_code: 0,
+    uso: USAGE,
+    timeout_reason: null,
+  });
 
   const withoutUsageEvents = getEventsByEntity(ctx.db, 'sessao', withoutUsage.id);
   assert.deepEqual(withoutUsageEvents[1].dados, {
     status: 'pausada_cota',
     exit_code: null,
     uso: null,
+    timeout_reason: null,
   });
 });
 
@@ -782,10 +792,128 @@ test('t159 AT5 — the transcript stays OUT of the sessao.finalizada event', asy
     ['sessao.aberta', 'sessao.finalizada'],
   );
   // Raw diagnostic material hangs off the projection, not off the append-only
-  // envelope: `dados` is byte-for-byte what it was before this ticket.
-  assert.deepEqual(events[1].dados, { status: 'concluida', exit_code: 0, uso: USAGE });
+  // envelope: `dados` carries the contract's own fields and nothing else.
+  assert.deepEqual(events[1].dados, {
+    status: 'concluida',
+    exit_code: 0,
+    uso: USAGE,
+    timeout_reason: null,
+  });
   assert.ok(
     !JSON.stringify(events[1]).includes('transcricao'),
     'no corner of the event carries the transcript',
   );
+});
+
+/** The migration that gives the session its second budget and the cause (t163). */
+const T163_MIGRATION = 'migrations/0010_sessao_orcamento_silencio.sql';
+
+test('t163 — POST /v1/sessions persists and returns the silence budget', async (t) => {
+  requireArtifacts(...ARTIFACTS, T163_MIGRATION);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    execucao_id: 163,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'trabalhe e vá falando',
+    timeout_seconds: 5400,
+    silence_seconds: 900,
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(response.body.timeout_seconds, 5400);
+  assert.equal(
+    response.body.silence_seconds,
+    900,
+    'the two budgets are independent, and both live on the session record',
+  );
+  assert.equal(
+    response.body.timeout_reason,
+    null,
+    'a session that is still open ran no watchdog out',
+  );
+
+  const events = getEventsByEntity(ctx.db, 'sessao', response.body.id);
+  assert.equal(events[0].dados.silence_seconds, 900);
+});
+
+test('t163 — a session with no declared budget reads back as null, never as zero', async (t) => {
+  requireArtifacts(...ARTIFACTS, T163_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+  assert.equal(session.silence_seconds, null);
+  assert.notEqual(
+    session.silence_seconds,
+    0,
+    'absence of a policy is not a budget of zero seconds — the same discipline `uso` has',
+  );
+});
+
+test('t163 — PATCH /finish persists the cause of a watchdog stop', async (t) => {
+  requireArtifacts(...ARTIFACTS, T163_MIGRATION);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const session = await openBareSession(ctx);
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
+    status: 'tempo_esgotado',
+    exit_code: null,
+    timeout_reason: 'silence',
+  });
+
+  assert.equal(finished.status, 200);
+  assert.equal(
+    finished.body.status,
+    'tempo_esgotado',
+    'silence does not get a status of its own; it gets a cause',
+  );
+  assert.equal(finished.body.timeout_reason, 'silence');
+
+  const events = getEventsByEntity(ctx.db, 'sessao', session.id);
+  assert.equal(events[1].dados.timeout_reason, 'silence');
+
+  // ...and the other cause reads back just as plainly.
+  const other = await openBareSession(ctx);
+  const byClock = await request<Session>(ctx, 'PATCH', `/v1/sessions/${other.id}/finish`, {
+    status: 'tempo_esgotado',
+    timeout_reason: 'wall_clock',
+  });
+  assert.equal(byClock.body.timeout_reason, 'wall_clock');
+
+  const refused = await request(ctx, 'PATCH', `/v1/sessions/${(await openBareSession(ctx)).id}/finish`, {
+    status: 'tempo_esgotado',
+    timeout_reason: 'travada',
+  });
+  assert.equal(refused.status, 400, 'a cause outside the two is a 400, never a stored string');
+});
+
+test('t163 — GET /v1/sessions surfaces both new fields on the projection', async (t) => {
+  requireArtifacts(...ARTIFACTS, T163_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    execucao_id: 1631,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'trabalhe e cale-se',
+    silence_seconds: 300,
+  });
+  assert.equal(opened.status, 201);
+  await request<Session>(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
+    status: 'tempo_esgotado',
+    timeout_reason: 'silence',
+  });
+
+  const listed = await request<{ sessoes: Session[] }>(
+    ctx,
+    'GET',
+    '/v1/sessions?execucao_id=1631',
+  );
+  assert.equal(listed.status, 200);
+  assert.equal(listed.body.sessoes.length, 1);
+  assert.equal(listed.body.sessoes[0].silence_seconds, 300);
+  assert.equal(listed.body.sessoes[0].timeout_reason, 'silence');
 });

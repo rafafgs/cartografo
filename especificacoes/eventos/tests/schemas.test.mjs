@@ -50,15 +50,27 @@ export const TABELA = {
     obrigatorios: ['depende_de_trabalho_id'],
     opcionais: [],
   },
+  // `silence_seconds` entrou com o segundo cão de guarda (t163): a sessão passa
+  // a declarar dois orçamentos independentes — relógio de parede e silêncio —
+  // e ambos são opcionais pela mesma razão, ausência = sem política própria.
   'sessao.aberta': {
     entidade: 'sessao',
     obrigatorios: ['engine', 'working_dir', 'prompt'],
-    opcionais: ['trabalho_id', 'no_id', 'engine_session_ref', 'timeout_seconds'],
+    opcionais: [
+      'trabalho_id',
+      'no_id',
+      'engine_session_ref',
+      'timeout_seconds',
+      'silence_seconds',
+    ],
   },
   'sessao.finalizada': {
     entidade: 'sessao',
     obrigatorios: ['status'],
-    opcionais: ['exit_code', 'uso'],
+    // `timeout_reason` (t163) é o que separa as duas paradas nossas sem que o
+    // enum de `status` cresça: os dois cães de guarda desembocam em
+    // `tempo_esgotado`, e a causa viaja no payload.
+    opcionais: ['exit_code', 'uso', 'timeout_reason'],
   },
   // O 17º tipo entrou com o enforcement de permissão (t125): toda tentativa de
   // usar uma ferramenta que a política da sessão negou vira telemetria. Os três

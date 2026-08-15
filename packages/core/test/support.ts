@@ -110,8 +110,12 @@ export interface Session {
   working_dir: string;
   prompt: string;
   timeout_seconds: number | null;
+  /** Inactivity budget the session was opened with; null = no policy (t163). */
+  silence_seconds: number | null;
   status: string;
   exit_code: number | null;
+  /** Which watchdog stopped it, when one did (t163). */
+  timeout_reason: string | null;
   uso: SessionUsage | null;
   transcricao: string | null;
   transcricao_truncada: boolean;

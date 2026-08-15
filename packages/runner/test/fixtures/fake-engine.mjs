@@ -24,6 +24,14 @@
  *                             of the workdir, its own pid and the grandchild's).
  * - `FAKE_ENGINE_LINES`       JSON `[{stream:"stdout"|"stderr",text:string}]`,
  *                             emitted in order.
+ * - `FAKE_ENGINE_HEARTBEAT_MS` milliseconds between one line and the next.
+ *                             Without it the lines go out all at once, which is
+ *                             what C1–C8 ask for; with it they go out one per
+ *                             interval, and that is how C9 proves the
+ *                             inactivity watchdog re-arms on every output. Once
+ *                             the lines run out the process falls through to the
+ *                             usual hang/exit behaviour — alive and silent, with
+ *                             `FAKE_ENGINE_HANG`.
  * - `FAKE_ENGINE_WRITE_FILES` JSON `{"<name>": "<content>"}`; each entry becomes
  *                             a file in the session's cwd. It is how the fake
  *                             engine "works": an output-in-a-file contract
@@ -180,7 +188,12 @@ async function main() {
     process.on('SIGINT', () => {});
   }
 
+  // With a heartbeat, the wait comes BEFORE the line: a session whose first
+  // line landed at t=0 would give the inactivity watchdog a free reset it never
+  // earned, and C9 measures exactly that window.
+  const heartbeatMs = Number(env.FAKE_ENGINE_HEARTBEAT_MS ?? 0);
   for (const line of parseLines(env.FAKE_ENGINE_LINES)) {
+    if (heartbeatMs > 0) await new Promise((resolve) => setTimeout(resolve, heartbeatMs));
     const stream = line.stream === 'stderr' ? process.stderr : process.stdout;
     stream.write(`${line.text}\n`);
   }

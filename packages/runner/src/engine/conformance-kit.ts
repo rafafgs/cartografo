@@ -1,5 +1,5 @@
 /**
- * EngineAdapter conformance kit — the eight C1–C8 cases of the table in
+ * EngineAdapter conformance kit — the nine C1–C9 cases of the table in
  * `docs/formatos/engine-adapter.md`, as `node:test` tests parameterized by any
  * implementation of the interface.
  *
@@ -33,6 +33,7 @@ import { join } from 'node:path';
 
 import {
   type EngineAdapter,
+  type SessionFinishDetail,
   type SessionListener,
   type SessionSpec,
   type SessionStatus,
@@ -52,6 +53,16 @@ const DEFAULT_DEADLINE_MS = 15_000;
  * are all deadline-based with an explicit failure.
  */
 const SETTLE_MS = 300;
+
+/**
+ * Slack C9 allows between the silence window closing and `onFinished` landing.
+ *
+ * A ceiling on a wait that normally ends in milliseconds — the SIGTERM, the
+ * pipes closing, the `close` event — never an expected duration. Wide enough
+ * that a loaded machine does not turn the case red, narrow enough that a
+ * watchdog armed on the wrong instant still shows.
+ */
+const SILENCE_TOLERANCE_MS = 3_000;
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -86,17 +97,29 @@ export interface KitOptions {
   readonly deadlineMs?: number;
 }
 
+/** One outcome, as the collector saw it — with the instant it landed (C9). */
+interface Ending {
+  status: SessionStatus;
+  exitCode: number | null;
+  detail: SessionFinishDetail | undefined;
+  /** When `onFinished` fired. C9 is the only case that measures time. */
+  at: number;
+}
+
 /** Collects everything the adapter reports and can wait for the end with a deadline. */
 class Collector implements SessionListener {
   readonly lines: string[] = [];
   readonly refs: string[] = [];
-  readonly endings: Array<{ status: SessionStatus; exitCode: number | null }> = [];
+  readonly endings: Ending[] = [];
   linesAfterEnd = 0;
+  /** When the last line arrived, which is what the inactivity case measures from. */
+  lastOutputAt: number | null = null;
 
   #waiters: Array<() => void> = [];
 
   onOutput(line: string): void {
     if (this.endings.length > 0) this.linesAfterEnd += 1;
+    this.lastOutputAt = Date.now();
     this.lines.push(line);
   }
 
@@ -104,17 +127,14 @@ class Collector implements SessionListener {
     this.refs.push(engineRef);
   }
 
-  onFinished(status: SessionStatus, exitCode: number | null): void {
-    this.endings.push({ status, exitCode });
+  onFinished(status: SessionStatus, exitCode: number | null, detail?: SessionFinishDetail): void {
+    this.endings.push({ status, exitCode, detail, at: Date.now() });
     const pending = this.#waiters;
     this.#waiters = [];
     for (const notify of pending) notify();
   }
 
-  async awaitEnd(
-    label: string,
-    deadlineMs: number,
-  ): Promise<{ status: SessionStatus; exitCode: number | null }> {
+  async awaitEnd(label: string, deadlineMs: number): Promise<Ending> {
     if (this.endings.length === 0) {
       await new Promise<void>((resolve, reject) => {
         const clock = setTimeout(() => {
@@ -491,10 +511,7 @@ export function runConformanceKit(
       const onlyFromStream = (stream: 'stdout' | 'stderr'): string[] =>
         sequence.filter((l) => l.stream === stream).map((l) => l.text);
 
-      const run = async (
-        label: string,
-        exitCode: number,
-      ): Promise<{ status: SessionStatus; exitCode: number | null; lines: string[] }> => {
+      const run = async (label: string, exitCode: number): Promise<Ending & { lines: string[] }> => {
         const scenario = buildScenario();
         const collector = new Collector();
         const adapter = newAdapter();
@@ -636,6 +653,102 @@ export function runConformanceKit(
       await race('C8 (timed_out, then cancelled)', 'timed_out', 'cancelled');
       // Swapped: proves "the first one wins" and not "'timed_out' wins".
       await race('C8 (cancelled, then timed_out)', 'cancelled', 'timed_out');
+    });
+
+    test('C9 — inactivity', async () => {
+      // The second watchdog (t163): a session that keeps printing is alive, and
+      // one that goes quiet is stuck. The case is built so that ONLY the
+      // inactivity clock can end it — the wall clock is a minute away — and so
+      // that a watchdog which never resets would fire visibly early: the
+      // heartbeats span two whole silence windows, and an unreset timer would
+      // stop the session in the middle of them.
+      const scenario = buildScenario();
+      const collector = new Collector();
+      const adapter = newAdapter();
+
+      const silenceSeconds = 1;
+      const silenceMs = silenceSeconds * 1_000;
+      const heartbeatMs = silenceMs / 2;
+      const heartbeats: FakeLine[] = [1, 2, 3, 4].map((index) => ({
+        stream: 'stdout',
+        text: `heartbeat ${index}`,
+      }));
+
+      const spec: SessionSpec = {
+        workingDir: scenario.workingDir,
+        instructions: 'node instructions',
+        prompt: 'work that talks and then goes quiet',
+        // Generous on purpose: whatever ends this session, it is not the clock.
+        timeoutSeconds: 60,
+        silenceSeconds,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: scenario.recordPath,
+          FAKE_ENGINE_LINES: linesForEnv(heartbeats),
+          // One line per interval instead of all at once — and then, with
+          // nothing left to say, the engine hangs alive and silent.
+          FAKE_ENGINE_HEARTBEAT_MS: String(heartbeatMs),
+          FAKE_ENGINE_HANG: '1',
+        },
+      };
+
+      try {
+        const startedAt = Date.now();
+        const handle = await adapter.startSession(spec, collector);
+        const end = await collector.awaitEnd('C9', deadline);
+
+        assert.equal(
+          end.status,
+          'timed_out',
+          'C9: silence past the budget is "timed_out" — the vocabulary does not grow a status for it',
+        );
+        requireBaselineStatus(end.status, 'C9');
+        assert.equal(end.exitCode, null, 'C9: a process killed by a signal has no exit code');
+        assert.deepEqual(
+          end.detail,
+          { timeoutReason: 'silence' },
+          'C9: the cause has to travel with the outcome, or the two watchdogs are indistinguishable',
+        );
+        assert.equal(await adapter.getStatus(handle), 'timed_out');
+
+        assert.equal(
+          collector.lines.length,
+          heartbeats.length,
+          `C9: every heartbeat has to survive — the session was stopped after ` +
+            `${collector.lines.length} of ${heartbeats.length}, so the watchdog does not reset on output`,
+        );
+
+        const lastOutputAt = collector.lastOutputAt;
+        assert.ok(lastOutputAt !== null, 'C9: no output ever arrived; the fixture is broken');
+        assert.ok(
+          end.at - startedAt >= heartbeats.length * heartbeatMs,
+          'C9: the session ended before the heartbeats did — the watchdog fired from the start, not from the last line',
+        );
+        // Timers do not fire early; the small slack is for the gap between the
+        // re-arm (on the raw chunk) and the `onOutput` that follows it.
+        assert.ok(
+          end.at - lastOutputAt >= silenceMs - 100,
+          `C9: the stop came ${end.at - lastOutputAt}ms after the last line, short of the ${silenceMs}ms window`,
+        );
+        assert.ok(
+          end.at - lastOutputAt <= silenceMs + SILENCE_TOLERANCE_MS,
+          `C9: the stop came ${end.at - lastOutputAt}ms after the last line, far past the ${silenceMs}ms window`,
+        );
+
+        await requireProcessDead((await scenario.readRecord()).pid, 'C9');
+
+        // Whoever stopped it first decided; a cancel afterwards is the same
+        // silent no-op C5 already demands.
+        await adapter.cancel(handle);
+        await sleep(SETTLE_MS);
+        assert.equal(collector.endings.length, 1, 'C9: onFinished happened more than once');
+        assert.equal(
+          collector.linesAfterEnd,
+          0,
+          'C9: no onOutput may arrive after onFinished (invariant 2)',
+        );
+      } finally {
+        scenario.cleanup();
+      }
     });
   });
 }

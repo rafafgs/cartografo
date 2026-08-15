@@ -53,11 +53,14 @@ import { buildCommand as buildCodexCommand } from "../../src/engine/codex-comman
 import { buildCommand } from "../../src/engine/command.ts";
 import type {
   EngineAdapter,
+  SessionFinishDetail,
+  SessionSpec,
   SessionStatus,
 } from "../../src/engine/types.ts";
 import { decodeClaudeCodeSessionText } from "../../src/dispatch/session-text.ts";
 import type * as ClientModule from "../../src/controller/cliente-controle.ts";
 import type * as ControllerModule from "../../src/controller/controller.ts";
+import type * as BudgetModule from "../../src/engine/resolve-budget.ts";
 import type * as DispatchModule from "../../src/dispatch/dispatch-claude-code.ts";
 import type * as SessionTextModule from "../../src/dispatch/session-text.ts";
 import type * as WorktreeModule from "../../src/dispatch/session-worktree.ts";
@@ -136,6 +139,10 @@ interface Session {
   prompt: string;
   status: string;
   exit_code: number | null;
+  /** The inactivity budget the session was opened with (t163). */
+  silence_seconds: number | null;
+  /** Which watchdog stopped it, when one did (t163). */
+  timeout_reason: string | null;
   finalizada_em: string | null;
 }
 
@@ -2130,4 +2137,269 @@ test("t160 AT10 — the outcome decides whether the worktree is kept", async (pa
       },
     );
   }
+});
+
+// --- t163: the silence budget, and the cause of a watchdog stop --------------
+
+/** An adapter that records what it was asked for and ends however the case needs. */
+interface BudgetProbe {
+  adapter: EngineAdapter;
+  /** Every `SessionSpec` the dispatch handed the engine, in order. */
+  readonly specs: SessionSpec[];
+}
+
+/**
+ * The fixture for both halves of t163's dispatch surface.
+ *
+ * A stub and not the fake engine, for the reason {@link stubAdapter} already
+ * records one case up: the outcome under test is one only the INTERFACE can
+ * produce. A real silence stop takes a real silent minute, and what this test
+ * is about is not the watchdog (C9 certifies that, against both adapters) but
+ * what the dispatch does with the outcome it is handed.
+ *
+ * @param outcome What `onFinished` reports, third argument included.
+ * @returns The adapter plus the ledger of specs it received.
+ */
+function recordingAdapter(outcome: {
+  status: SessionStatus;
+  exitCode: number | null;
+  detail?: SessionFinishDetail;
+}): BudgetProbe {
+  const specs: SessionSpec[] = [];
+  return {
+    specs,
+    adapter: {
+      engineName: "claude-code",
+      startSession: (spec, listener) => {
+        specs.push(spec);
+        // On the next turn of the loop, never inside `startSession`: the
+        // dispatch is entitled to have its handle before the outcome lands.
+        queueMicrotask(() => {
+          listener.onFinished(outcome.status, outcome.exitCode, outcome.detail);
+        });
+        return Promise.resolve("recording-session");
+      },
+      getStatus: () => Promise.resolve(outcome.status),
+      cancel: () => Promise.resolve(),
+      capabilities: () => ({}),
+      verifyCli: () =>
+        Promise.resolve({
+          available: true,
+          version: "recording",
+          authenticated: true,
+        }),
+    },
+  };
+}
+
+test("t163 — the silence budget is resolved, dispatched and reported with its cause", async (parent) => {
+  const { createClaudeCodeDispatch, DEFAULT_SILENCE_SECONDS, DispatchError } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { resolveBudget } = await loadModule<typeof BudgetModule>(
+    "src/engine/resolve-budget.ts",
+  );
+
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  /** One call the dispatch made, as the spy in front of `fetch` saw it. */
+  interface Call {
+    method: string;
+    route: string;
+    body: unknown;
+  }
+
+  /**
+   * Runs one dispatch and hands back what the engine and the API saw.
+   *
+   * @param t The subtest, for the worktree cleanup.
+   * @param executionId Slices this case's session away from its neighbours'.
+   * @param outcome What the stub adapter reports.
+   * @param options What the case declares on top of the fixed wiring.
+   * @returns The specs the engine received, the calls the dispatch made, and the
+   *   failure it settled with, if any.
+   */
+  const run = async (
+    t: TestHook,
+    executionId: number,
+    outcome: {
+      status: SessionStatus;
+      exitCode: number | null;
+      detail?: SessionFinishDetail;
+    },
+    options: { silenceSeconds?: number } = {},
+  ): Promise<{ specs: SessionSpec[]; calls: Call[]; failure: unknown }> => {
+    const workDir = mkdtempSync(
+      path.join(tmpdir(), `cartografo-t163-${String(executionId)}-`),
+    );
+    t.after(() => {
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    const work = await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        titulo: "ficha com orçamento de silêncio",
+        no_entrada_id: "implementar",
+        execucao_id: executionId,
+      },
+      201,
+      token,
+    );
+
+    const calls: Call[] = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        route: String(input).slice(baseUrl.length),
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return fetch(input, init);
+    };
+
+    const probe = recordingAdapter(outcome);
+    const dispatch = createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      doFetch,
+      engines: {
+        "claude-code": {
+          adapter: probe.adapter,
+          decodeSessionText: decodeClaudeCodeSessionText,
+        },
+      },
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+      ...(options.silenceSeconds === undefined
+        ? {}
+        : { silenceSeconds: options.silenceSeconds }),
+    });
+
+    let failure: unknown = null;
+    try {
+      await dispatch(work.id);
+    } catch (error) {
+      failure = error;
+    }
+    return { specs: probe.specs, calls, failure };
+  };
+
+  const opened = (calls: Call[]): Record<string, unknown> => {
+    const call = calls.find(
+      (candidate) =>
+        candidate.method === "POST" && candidate.route === "/v1/sessions",
+    );
+    assert.ok(call, "the dispatch never called POST /v1/sessions");
+    return call.body as Record<string, unknown>;
+  };
+
+  const finished = (calls: Call[]): Record<string, unknown> => {
+    const call = calls.find(
+      (candidate) =>
+        candidate.method === "PATCH" && candidate.route.endsWith("/finish"),
+    );
+    assert.ok(call, "the dispatch never called PATCH /v1/sessions/:id/finish");
+    return call.body as Record<string, unknown>;
+  };
+
+  await parent.test(
+    "an undeclared budget resolves to the server ceiling, and the session record carries it",
+    async (t) => {
+      const { specs, calls } = await run(t, 1630, {
+        status: "completed",
+        exitCode: 0,
+      });
+
+      assert.equal(
+        DEFAULT_SILENCE_SECONDS,
+        300,
+        "the ceiling is flowpilot's own DEFAULT_SILENCE_SECONDS",
+      );
+      assert.equal(
+        specs[0]?.silenceSeconds,
+        DEFAULT_SILENCE_SECONDS,
+        "a dispatch that declares nothing still arms the inactivity watchdog",
+      );
+      assert.equal(opened(calls).silence_seconds, DEFAULT_SILENCE_SECONDS);
+
+      const sessions = await api<{ sessoes: Session[] }>(
+        baseUrl,
+        "GET",
+        "/v1/sessions?execucao_id=1630",
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(sessions.sessoes[0]?.silence_seconds, DEFAULT_SILENCE_SECONDS);
+    },
+  );
+
+  await parent.test(
+    "a declared budget resolves through the min() rule, and zero is no override",
+    async (t) => {
+      for (const [index, declared] of [120, 86_400, 0].entries()) {
+        const { specs } = await run(
+          t,
+          1631 + index,
+          { status: "completed", exitCode: 0 },
+          { silenceSeconds: declared },
+        );
+        assert.equal(
+          specs[0]?.silenceSeconds,
+          resolveBudget(declared, DEFAULT_SILENCE_SECONDS),
+          `a declared ${declared}s did not resolve against the ${DEFAULT_SILENCE_SECONDS}s ceiling`,
+        );
+      }
+    },
+  );
+
+  for (const [index, reason] of (["silence", "wall_clock"] as const).entries()) {
+    await parent.test(
+      `a "${reason}" stop closes the session as tempo_esgotado with its cause`,
+      async (t) => {
+        const { calls, failure } = await run(t, 1640 + index, {
+          status: "timed_out",
+          exitCode: null,
+          detail: { timeoutReason: reason },
+        });
+
+        assert.ok(
+          failure instanceof DispatchError,
+          `a session that ran a watchdog out is not a successful dispatch, got: ${String(failure)}`,
+        );
+
+        const body = finished(calls);
+        assert.equal(
+          body.status,
+          "tempo_esgotado",
+          "both watchdogs land on the one status the taxonomy already has",
+        );
+        assert.equal(
+          body.timeout_reason,
+          reason,
+          "the cause is what separates them, and it rides in the payload",
+        );
+      },
+    );
+  }
+
+  await parent.test(
+    "a bare timed_out sends timeout_reason null, never a fabricated cause",
+    async (t) => {
+      const { calls, failure } = await run(t, 1642, {
+        status: "timed_out",
+        exitCode: null,
+      });
+
+      assert.ok(failure instanceof DispatchError);
+      const body = finished(calls);
+      assert.equal(body.status, "tempo_esgotado");
+      assert.equal(
+        body.timeout_reason,
+        null,
+        'an adapter that reported no cause has to read as "unknown", never as one of the two',
+      );
+    },
+  );
 });

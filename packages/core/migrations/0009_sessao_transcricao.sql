@@ -1,0 +1,49 @@
+-- 0009_sessao_transcricao — a saída crua da sessão, guardada para diagnóstico (t159).
+--
+-- Fecha o buraco nº 3 da primeira execução de verdade
+-- (`notas/2026-08-15-primeira-execucao.md`): "a perna 1 do refinar morreu com
+-- exit 1 e trabalho quase pronto, e não há como diagnosticar: o prompt é
+-- gravado, a saída não". A `0003` já guarda o `prompt` — o que ENTROU na
+-- sessão — e nada guardava o que SAIU dela.
+--
+-- Três colunas aditivas em `sessao`, sem backfill: linha antiga lê `NULL`/`0`,
+-- que é exatamente o que a API reporta com honestidade ("nenhuma transcrição
+-- registrada"). Não há valor a inventar para uma sessão que terminou antes
+-- desta migração existir.
+--
+-- - `transcricao` é o texto cru que o engine imprimiu, as linhas do `onOutput`
+--   juntadas por `\n`. Cru é requisito, não descuido: nem toda linha é um
+--   frame estruturado, e "um CLI escreve seu grito de morte em texto puro no
+--   meio do stream" (`packages/runner/src/engine/types.ts`, `SessionListener`).
+--   Decodificar antes de gravar jogaria fora justamente a parte que interessa
+--   quando a sessão morre.
+-- - `transcricao_truncada` é 0/1, com teto de 1 MiB aplicado pelo servidor.
+--   Quando estoura, o que fica é a CAUDA — o fim do stream é onde mora a
+--   evidência de um crash — e a linha nunca cala sobre isso: o par
+--   flag + tamanho original é o que separa "a sessão imprimiu 1 MiB" de "a
+--   sessão imprimiu 40 MiB e você está lendo o último milésimo".
+-- - `transcricao_tamanho_original` é o tamanho em BYTES antes do corte, e é
+--   gravado sempre que há transcrição — igual ao tamanho do próprio texto
+--   quando não houve truncagem. Bytes e não caracteres porque o teto é de
+--   bytes; contar caracteres deixaria uma sessão em UTF-8 pesado passar do
+--   teto sem que ninguém percebesse.
+--
+-- O que esta migração deliberadamente NÃO faz: mexer no envelope do evento.
+-- `sessao.finalizada` continua carregando `status`/`exit_code`/`uso` e mais
+-- nada (`especificacoes/eventos/schemas/sessao.finalizada.schema.json`
+-- intocado). Transcrição é material de diagnóstico pendurado na projeção, não
+-- fato de que estado de grafo dependa — duplicar um blob capado dentro de
+-- `evento.dados` a cada sessão engorda o log append-only sem tornar nada mais
+-- replayável. Quem quer a saída pergunta à sessão, do mesmo jeito que já
+-- pergunta pelo `uso`, pelo `working_dir` e pelo `prompt`.
+--
+-- Nomes de coluna seguem em português, como o resto de `sessao`: a D18 escopa
+-- a regra de inglês a identificadores de código, e schema aqui é vocabulário
+-- de dado. O TypeScript em volta (`TRANSCRIPT_CAP_BYTES`, `capTranscript`) é
+-- inglês, esse sim.
+--
+-- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+
+ALTER TABLE sessao ADD COLUMN transcricao TEXT;                             -- NULO = nada foi reportado
+ALTER TABLE sessao ADD COLUMN transcricao_truncada INTEGER NOT NULL DEFAULT 0; -- 0/1, teto de 1 MiB
+ALTER TABLE sessao ADD COLUMN transcricao_tamanho_original INTEGER;         -- bytes ANTES do corte

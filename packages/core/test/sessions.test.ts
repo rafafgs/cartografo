@@ -615,8 +615,9 @@ test('t159 AT2 — a transcript past the cap keeps the TAIL and reports the size
 
   // ASCII, so byte length and character length coincide and the arithmetic
   // below is the test's own, not the implementation's.
-  const tail = '\nfatal: o engine morreu aqui, e é ISTO que precisa sobreviver\n';
+  const tail = '\nfatal: o engine morreu aqui, e ISTO precisa sobreviver\n';
   const output = 'x'.repeat(TRANSCRIPT_CAP_BYTES) + tail;
+  assert.equal(Buffer.byteLength(output, 'utf8'), output.length, 'the sample has to be ASCII');
 
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
     status: 'falhou',

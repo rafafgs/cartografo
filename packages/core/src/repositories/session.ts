@@ -18,11 +18,13 @@
 
 import type { Database } from '../db/connection.ts';
 import { getEventsByEntity, recordEvent } from '../db/events.ts';
-import { requireValidData } from '../db/event-validation.ts';
+import { requireValidData, ValidationError } from '../db/event-validation.ts';
 import {
   RUNNER_ACTOR,
   DEFAULT_PROJECT,
   now,
+  asBoolean,
+  asInteger,
   integerOrNull,
   integerOrDefault,
   jsonOrNull,
@@ -36,6 +38,16 @@ export interface SessionUsage {
   cache_creation_input_tokens: number;
   cache_read_input_tokens: number;
 }
+
+/**
+ * Ceiling of a stored transcript, in bytes (t159, FR2).
+ *
+ * A fixed constant, not a setting: v0 has one number to get roughly right, and
+ * a knob nobody turns is a knob that rots. 1 MiB is generous for the sessions
+ * this PoC runs and small enough that a runaway loop printing gigabytes cannot
+ * take the database with it.
+ */
+export const TRANSCRIPT_CAP_BYTES = 1_048_576;
 
 /** Session projection, as the API returns it. */
 export interface Session {
@@ -51,21 +63,93 @@ export interface Session {
   status: string;
   exit_code: number | null;
   uso: SessionUsage | null;
+  transcricao: string | null;
+  transcricao_truncada: boolean;
+  transcricao_tamanho_original: number | null;
   aberta_em: string;
   finalizada_em: string | null;
 }
 
-interface SessionRow extends Omit<Session, 'uso'> {
+interface SessionRow extends Omit<Session, 'uso' | 'transcricao_truncada'> {
   uso: string | null;
+  transcricao_truncada: number;
 }
 
 const COLUMNS = `
   id, trabalho_id, execucao_id, no_id, engine, engine_session_ref, working_dir,
-  prompt, timeout_seconds, status, exit_code, uso, aberta_em, finalizada_em
+  prompt, timeout_seconds, status, exit_code, uso, transcricao,
+  transcricao_truncada, transcricao_tamanho_original, aberta_em, finalizada_em
 `;
 
 function toSession(row: SessionRow): Session {
-  return { ...row, uso: jsonOrNull<SessionUsage>(row.uso) };
+  return {
+    ...row,
+    uso: jsonOrNull<SessionUsage>(row.uso),
+    transcricao_truncada: asBoolean(row.transcricao_truncada),
+  };
+}
+
+/** What the cap left of an incoming transcript, and what it cost. */
+interface CappedTranscript {
+  /** The text to store; `null` when nothing was reported. */
+  text: string | null;
+  /** Whether the cap bit. Reported whether it did or not — silence is the bug. */
+  truncated: boolean;
+  /** Size in BYTES before the cap, or `null` when nothing was reported. */
+  originalBytes: number | null;
+}
+
+/**
+ * Applies {@link TRANSCRIPT_CAP_BYTES} to what the runner reported (FR1, FR2).
+ *
+ * Three states, and they are three different facts:
+ *
+ * - **absent/null** — nobody reported anything. Stores a real NULL, never an
+ *   empty string, the same discipline `uso` has had in this file since t102;
+ * - **`''`** — the session ran and printed nothing. That is a measurement, and
+ *   it is stored as given;
+ * - **over the cap** — the TAIL survives, because the end of a stream is where
+ *   a crash's evidence lives, and the row says so out loud: the flag plus the
+ *   size the transcript had BEFORE the cut. Reporting the capped size instead
+ *   would erase how much was lost.
+ *
+ * The cut lands on a character boundary, never inside a rune: slicing UTF-8 at
+ * an arbitrary byte and decoding anyway prints a `U+FFFD` no engine ever
+ * emitted, and re-encoding it can push the result back over the cap. Dropping
+ * the broken head costs at most three bytes.
+ *
+ * Deliberately outside `requireValidData`: the transcript is not part of the
+ * `sessao.finalizada` contract and never enters the event log, so its own type
+ * check lives here — and still raises the `ValidationError` the route already
+ * turns into a 400.
+ *
+ * @param value What came in the body, if it came.
+ * @returns The text to store, the flag and the original size.
+ * @throws {ValidationError} When it is present and is not a string.
+ */
+function capTranscript(value: unknown): CappedTranscript {
+  if (value === undefined || value === null) {
+    return { text: null, truncated: false, originalBytes: null };
+  }
+  if (typeof value !== 'string') {
+    throw new ValidationError(['transcricao has to be a string, or absent']);
+  }
+
+  const bytes = Buffer.from(value, 'utf8');
+  if (bytes.byteLength <= TRANSCRIPT_CAP_BYTES) {
+    return { text: value, truncated: false, originalBytes: bytes.byteLength };
+  }
+
+  // `0b10xxxxxx` is a UTF-8 continuation byte: walking forward off them lands
+  // on the first byte of a whole character.
+  let start = bytes.byteLength - TRANSCRIPT_CAP_BYTES;
+  while (start < bytes.byteLength && (bytes[start] & 0b1100_0000) === 0b1000_0000) start += 1;
+
+  return {
+    text: bytes.subarray(start).toString('utf8'),
+    truncated: true,
+    originalBytes: bytes.byteLength,
+  };
 }
 
 function readRow(db: Database, id: number): SessionRow | undefined {
@@ -210,6 +294,7 @@ export interface FinishSessionInput {
   status?: unknown;
   exit_code?: unknown;
   uso?: unknown;
+  transcricao?: unknown;
   ator?: unknown;
 }
 
@@ -222,11 +307,17 @@ export interface FinishSessionInput {
  * status and NULL the `uso` this whole file exists to protect — so it is refused
  * with a 409 by the route, and never silently applied.
  *
+ * The transcript (t159) rides in the SAME transaction, and there is no second
+ * endpoint for it: one write, one caller. It is the raw stream the engine
+ * printed, capped by {@link capTranscript} — and it goes to the row only, never
+ * into `dados`, because the event schema does not know it exists.
+ *
  * @param db Open handle.
  * @param id Session id.
  * @param input Request body.
  * @returns The closed session, or `null` if it does not exist.
- * @throws {ValidationError} When the status is outside the enum or `uso` does not match.
+ * @throws {ValidationError} When the status is outside the enum, `uso` does not
+ *   match, or `transcricao` is present and is not a string.
  * @throws {Error} When the session stopped being open mid-flight.
  */
 export function finishSession(
@@ -243,6 +334,7 @@ export function finishSession(
     uso: input.uso,
   });
   const usage = data.uso as SessionUsage | null;
+  const transcript = capTranscript(input.transcricao);
   const actor = resolveActor(input.ator, RUNNER_ACTOR);
   const projectId = sessionProject(db, id);
 
@@ -250,7 +342,8 @@ export function finishSession(
     const timestamp = now();
     const effect = db
       .prepare(
-        `UPDATE sessao SET status = ?, exit_code = ?, uso = ?, finalizada_em = ?
+        `UPDATE sessao SET status = ?, exit_code = ?, uso = ?, transcricao = ?,
+                transcricao_truncada = ?, transcricao_tamanho_original = ?, finalizada_em = ?
           WHERE id = ? AND status = 'aberta'`,
       )
       .run(
@@ -258,6 +351,11 @@ export function finishSession(
         data.exit_code as number | null,
         // An absent `uso` writes a real NULL, never an object of zeros.
         usage === null ? null : JSON.stringify(usage),
+        // ...and the same reading for the transcript: NULL is "nothing was
+        // reported", `''` is "the session printed nothing".
+        transcript.text,
+        asInteger(transcript.truncated),
+        transcript.originalBytes,
         timestamp,
         id,
       );
@@ -284,6 +382,39 @@ export function finishSession(
   });
 
   return close();
+}
+
+/** Body of `GET /v1/sessions/:id/transcript`. */
+export interface SessionTranscript {
+  transcricao: string | null;
+  truncada: boolean;
+  tamanho_original: number | null;
+}
+
+/**
+ * The raw output of a session, as it was stored (t159, FR4).
+ *
+ * A route of its own — and not one more field a reader has to fish out of the
+ * projection — because this is the one payload of the session that is measured
+ * in megabytes: whoever is diagnosing a failure asks for it explicitly.
+ *
+ * `null`/`false`/`null` is a legitimate answer, not a 404: a session still
+ * running has not reported anything yet, and one that finished before this
+ * ticket existed never will. Both read back as "no transcript recorded", which
+ * is the honest answer. Only a session id that names nothing is a 404.
+ *
+ * @param db Open handle.
+ * @param id Session id.
+ * @returns The transcript payload, or `null` if the session does not exist.
+ */
+export function getSessionTranscript(db: Database, id: number): SessionTranscript | null {
+  const row = readRow(db, id);
+  if (row === undefined) return null;
+  return {
+    transcricao: row.transcricao,
+    truncada: asBoolean(row.transcricao_truncada),
+    tamanho_original: row.transcricao_tamanho_original,
+  };
 }
 
 /** Body of `POST /v1/sessions/:id/permission-denials`. */

@@ -17,10 +17,27 @@ import {
   openSession,
   finishSession,
   getSession,
+  getSessionTranscript,
   listSessions,
   recordPermissionDenial,
 } from '../repositories/session.ts';
 import { withValidation, routeId, notFound, conflict } from './common.ts';
+
+/**
+ * Body ceiling of the finish route, in bytes (t159).
+ *
+ * Fastify's default is 1 MiB — the SAME number as `TRANSCRIPT_CAP_BYTES`. Left
+ * alone, no transcript could ever reach the cap: the request would be refused
+ * with a 413 before the handler ran, and the tail-keeping path would be dead
+ * code. The server still caps what it stores at 1 MiB; this only decides how
+ * much raw output it is willing to READ in order to cap it.
+ *
+ * Generous on purpose, and only on this route: a session that dies after
+ * printing tens of megabytes of `stream-json` is exactly the session somebody
+ * needs to diagnose, and a `/finish` refused for size would leave it open
+ * forever — losing the ending as well as the output.
+ */
+const FINISH_BODY_LIMIT_BYTES = 32 * 1_048_576;
 
 /**
  * Registers the session routes in the `/v1` scope.
@@ -42,7 +59,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
   // through would rewrite the terminal status and erase the `uso` reported the
   // first time — the only cost record the PoC keeps — so a session that is no
   // longer open is a 409, decided here, before the repository is called.
-  app.patch('/sessions/:id/finish', async (request, reply) =>
+  app.patch('/sessions/:id/finish', { bodyLimit: FINISH_BODY_LIMIT_BYTES }, async (request, reply) =>
     withValidation(reply, () => {
       const id = routeId(request.params);
       const current = getSession(db, id);
@@ -66,6 +83,18 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
         (request.body ?? {}) as Record<string, unknown>,
       );
       return session ?? notFound(reply, 'session');
+    }),
+  );
+
+  // The raw output the session printed (t159). A session with nothing recorded
+  // — still open, or finished before the transcript existed — answers 200 with
+  // an empty payload: "no transcript" is an answer, and only an unknown id is a
+  // 404. It is a GET like any other, which is what lets the screen link it
+  // straight through the verbatim `/v1/*` proxy without a route of its own (D11).
+  app.get('/sessions/:id/transcript', async (request, reply) =>
+    withValidation(reply, () => {
+      const transcript = getSessionTranscript(db, routeId(request.params));
+      return transcript ?? notFound(reply, 'session');
     }),
   );
 

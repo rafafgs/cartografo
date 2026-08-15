@@ -21,7 +21,10 @@
  *    far — it may be `null`, and there is no endpoint to fill it in later;
  * 4. reports every attempt at a tool the session's permission policy denied,
  *    as it happens (t125);
- * 5. on finish, records `sessao.finalizada` in the taxonomy's vocabulary;
+ * 5. on finish, records `sessao.finalizada` in the taxonomy's vocabulary, and
+ *    ships the session's whole raw output with it — the buffer this file was
+ *    already keeping for the escalation parser, which until t159 was thrown
+ *    away with the process that held it;
  * 6. runs the escalation parser over the output and, if the session asked
  *    something, posts the question — which blocks the work inside the control
  *    plane, in the same transaction (t106, FR1).
@@ -576,6 +579,12 @@ export function createClaudeCodeDispatch(
       // The v0 interface reports no token usage (out of scope). `null` is "the
       // engine reported nothing" and must never collapse into zero.
       uso: null,
+      // The raw stream, exactly as `onOutput` reported it — undecoded, frames
+      // and dying screams alike (t159). `decodeSessionText` below is a READER
+      // of this same buffer, and its frame-decoding is lossy by design: what
+      // gets persisted is the material before that, because a session that
+      // died is diagnosed from what it printed, not from what parsed.
+      transcricao: lines.join('\n'),
     });
 
     const request: InputRequest | null = parseInputRequest(route.decodeSessionText(lines));

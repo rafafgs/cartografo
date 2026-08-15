@@ -173,6 +173,20 @@ function jobBoard(jobs: Job[]): string {
   return `<div class="quadro">\n  ${columns.join('\n  ')}\n</div>`;
 }
 
+/**
+ * The sessions of a round, one row each.
+ *
+ * The last cell is a raw link to `/v1/sessions/:id/transcript` — the API's own
+ * route, reached through the verbatim `/v1/*` proxy, so the screen gains no
+ * route and no privilege (D11). It is deliberately not a rendered view:
+ * decoding `stream-json` on the screen is another ticket, and until it exists
+ * the raw output is still the difference between diagnosing a dead session and
+ * re-running it (t159).
+ *
+ * Every row gets the link, including the sessions still open: the route answers
+ * for them too, and a link that only appears after the fact is a link nobody
+ * looks for.
+ */
 function sessionsTable(sessions: Session[]): string {
   if (sessions.length === 0) return '<p class="vazio">Nenhuma sessão nesta execução.</p>';
 
@@ -189,11 +203,12 @@ function sessionsTable(sessions: Session[]): string {
       <td>${escapeHtml(session.aberta_em)}</td>
       <td>${session.finalizada_em === null ? '<span class="vazio">em andamento</span>' : escapeHtml(session.finalizada_em)}</td>
       <td>${escapeHtml(usage)}</td>
+      <td><a data-transcricao="${session.id}" href="/v1/sessions/${session.id}/transcript">ver saída</a></td>
     </tr>`;
   });
 
   return `<table>
-  <thead><tr><th>sessão</th><th>trabalho</th><th>engine</th><th>status</th><th>aberta em</th><th>finalizada em</th><th>uso</th></tr></thead>
+  <thead><tr><th>sessão</th><th>trabalho</th><th>engine</th><th>status</th><th>aberta em</th><th>finalizada em</th><th>uso</th><th>transcrição</th></tr></thead>
   <tbody>
     ${rows.join('\n    ')}
   </tbody>

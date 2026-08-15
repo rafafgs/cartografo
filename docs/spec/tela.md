@@ -246,8 +246,14 @@ deles é mudar o contrato; mudar classe de CSS não é.
 | `data-execucao` | linha da lista de execuções | id, ou vazio no grupo `null` |
 | `data-campo` | célula de contagem | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes` |
 | `data-sessao` | linha da tabela de sessões | id da sessão |
+| `data-transcricao` | link da célula de transcrição, na tabela de sessões | id da sessão (o `href` é `/v1/sessions/:id/transcript`) |
 | `data-pergunta` | cartão de pergunta | id da pergunta |
 | `data-segmento` | item da linha do tempo | `fila`, `agente_trabalhando`, `esperando_humano` (com `data-inicio` e `data-fim`; `data-fim` vazio = em aberto) |
+
+A célula de transcrição é um link cru para a rota da API, e não uma vista
+renderizada: quem clica cai na resposta JSON do control plane, servida pelo
+proxy **verbatim** de `/v1/*` (§1). É de propósito — a tela não ganha rota nova
+nem privilégio nenhum (D11), e decodificar `stream-json` na tela é outra ficha.
 
 Todo dado que entra em HTML passa por `escapar`. Título de trabalho, texto de
 pergunta e motivo de bloqueio vêm de fora, por uma API que ainda não autentica

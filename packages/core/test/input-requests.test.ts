@@ -673,3 +673,187 @@ test('AT7 — limite cuts from the top of the ranking, and a value above the cei
     'zero and negative are clamped to the floor of 1, for the same reason',
   );
 });
+
+/** Reads one input request back through the listing (there is no GET by id). */
+async function readBack(ctx: TestContext, jobId: number, id: number): Promise<InputRequest> {
+  const response = await request<{ perguntas: InputRequest[] }>(
+    ctx,
+    'GET',
+    `/v1/input-requests?trabalho_id=${jobId}`,
+  );
+  assert.equal(response.status, 200);
+  const found = response.body.perguntas.find((item) => item.id === id);
+  assert.ok(found !== undefined, `input request ${id} disappeared from the listing`);
+  return found;
+}
+
+test('t149 AT1 — answering the same input request twice is a 409, and the first answer stands', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const job = await createJob(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+  const created = await askQuestion(ctx, job.id, 'Renumerar a migração para 0003?');
+
+  const first = await request<InputRequest>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${created.id}/answer`,
+    { resposta: 'Manter 0002', respondido_por: 'rafael' },
+  );
+  assert.equal(first.status, 200);
+
+  const retry = await request<{ error: string; details: string[] }>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${created.id}/answer`,
+    { resposta: 'Renumerar para 0003', respondido_por: 'outra-pessoa' },
+  );
+  assert.equal(retry.status, 409, 'the second answer is a conflict, never a silent overwrite');
+  assert.equal(retry.body.error, 'conflict');
+  assert.ok(
+    retry.body.details.some((detail) => detail.includes('respondida')),
+    `the 409 has to say what state refused it: ${JSON.stringify(retry.body.details)}`,
+  );
+
+  // The decision that stands is the FIRST one: an answer already acted upon
+  // (the job went back to the queue) cannot be rewritten by whoever retried.
+  const stored = await readBack(ctx, job.id, created.id);
+  assert.equal(stored.resposta, 'Manter 0002');
+  assert.equal(stored.respondido_por, 'rafael');
+  assert.equal(stored.origem, 'usuario');
+  assert.equal(stored.respondida_em, first.body.respondida_em);
+
+  const events = getEventsByEntity(ctx.db, 'pergunta', created.id);
+  assert.deepEqual(
+    events.map((event) => event.tipo),
+    ['pergunta.criada', 'pergunta.respondida'],
+    'the refused retry writes NOTHING: no second answer event',
+  );
+});
+
+test('t149 AT2 — /auto-resolution over an already answered input request is a 409 too', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const job = await createJob(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+  const created = await askQuestion(ctx, job.id, 'Renumerar a migração para 0003?');
+
+  const answered = await request<InputRequest>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${created.id}/answer`,
+    { resposta: 'Manter 0002', respondido_por: 'rafael' },
+  );
+  assert.equal(answered.status, 200);
+
+  // The hole is across the two routes, not inside one of them: both close the
+  // same input request through the same helper.
+  const auto = await request<{ error: string }>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${created.id}/auto-resolution`,
+    { resposta: 'Manter 0002', baseada_em: 'resposta_padrao' },
+  );
+  assert.equal(auto.status, 409);
+  assert.equal(auto.body.error, 'conflict');
+
+  const stored = await readBack(ctx, job.id, created.id);
+  assert.equal(
+    stored.origem,
+    'usuario',
+    'a decision taken by a person never flips to "auto" afterwards — that is the audit',
+  );
+  assert.equal(stored.respondido_por, 'rafael');
+
+  const events = getEventsByEntity(ctx.db, 'pergunta', created.id);
+  assert.deepEqual(
+    events.map((event) => event.tipo),
+    ['pergunta.criada', 'pergunta.respondida'],
+    'no pergunta.auto_resolvida contradicting the pergunta.respondida before it',
+  );
+});
+
+test('t149 AT3 — a stale answer never unblocks a job that is waiting on another question', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const job = await createJob(ctx, { titulo: 'x', no_entrada_id: 'entrada' });
+
+  const first = await askQuestion(ctx, job.id, 'Renumerar a migração para 0003?');
+  const answered = await request<InputRequest>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${first.id}/answer`,
+    { resposta: 'Manter 0002', respondido_por: 'rafael' },
+  );
+  assert.equal(answered.status, 200);
+
+  const unblocked = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
+  assert.equal(unblocked.body.bloqueado, false, 'the legitimate answer returned it to the queue');
+
+  // The job asks something ELSE and stops again. This is the state the retry
+  // must not touch.
+  const second = await askQuestion(ctx, job.id, 'Qual engine adapter usar no despacho?');
+  const blockedAgain = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
+  assert.equal(blockedAgain.body.bloqueado, true);
+  assert.equal(blockedAgain.body.motivo_bloqueio, `aguardando resposta da pergunta ${second.id}`);
+
+  const retry = await request<{ error: string }>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${first.id}/answer`,
+    { resposta: 'Manter 0002', respondido_por: 'rafael' },
+  );
+  assert.equal(retry.status, 409);
+  assert.equal(retry.body.error, 'conflict');
+
+  const after = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
+  assert.equal(
+    after.body.bloqueado,
+    true,
+    'answering an OLD question does not lower a flag raised by a new one',
+  );
+  assert.equal(
+    after.body.motivo_bloqueio,
+    `aguardando resposta da pergunta ${second.id}`,
+    'the job is still waiting on the question nobody answered',
+  );
+
+  const jobEvents = getEventsByEntity(ctx.db, 'trabalho', job.id);
+  assert.deepEqual(
+    jobEvents.map((event) => event.tipo),
+    [
+      'trabalho.criado',
+      'trabalho.bloqueado',
+      'trabalho.desbloqueado',
+      'trabalho.bloqueado',
+    ],
+    'exactly one unblock, and it is the legitimate one — the retry appends nothing',
+  );
+});
+
+test('t149 AT4 — answering an input request that does not exist is still a 404', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const answer = await request<{ error: string }>(
+    ctx,
+    'PATCH',
+    '/v1/input-requests/98765/answer',
+    { resposta: 'x', respondido_por: 'rafael' },
+  );
+  assert.equal(answer.status, 404, 'reading before writing did not turn a 404 into a 409');
+  assert.equal(answer.body.error, 'not_found');
+
+  const auto = await request<{ error: string }>(
+    ctx,
+    'PATCH',
+    '/v1/input-requests/98765/auto-resolution',
+    { resposta: 'x', baseada_em: 'resposta_padrao' },
+  );
+  assert.equal(auto.status, 404);
+  assert.equal(auto.body.error, 'not_found');
+});

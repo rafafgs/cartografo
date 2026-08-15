@@ -489,9 +489,10 @@ test('AT10 — a broken subscriber does not hold up a healthy one', async (t) =>
   recordJobCreated(ctx.db, 1, 'para os dois');
 
   await waitFor(
-    () => only(deliveries(ctx.db, healthy.id)).status === 'entregue',
+    () => deliveries(ctx.db, healthy.id).some((delivery) => delivery.status === 'entregue'),
     "the healthy subscriber's delivery",
   );
+  assert.equal(only(deliveries(ctx.db, healthy.id)).status, 'entregue');
 
   const stuck = only(deliveries(ctx.db, broken.id));
   assert.equal(stuck.status, 'pendente', 'the broken one keeps its own failure');
@@ -513,7 +514,7 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
   const pushed = recordJobCreated(ctx.db, 1, 'antes da desativação');
 
   await waitFor(
-    () => only(deliveries(ctx.db, subscription.id)).tentativas === 1,
+    () => deliveries(ctx.db, subscription.id).some((delivery) => delivery.tentativas === 1),
     'the first attempt, so there is a pending retry to stop',
   );
   const spent = ctx.calls.length;

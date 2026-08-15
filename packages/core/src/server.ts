@@ -23,6 +23,8 @@ import { registerRunners } from './routes/runners.ts';
 import { registerSessions } from './routes/sessions.ts';
 import { registerSkills } from './routes/skills.ts';
 import { registerJobs } from './routes/jobs.ts';
+import { registerWebhooks } from './routes/webhooks.ts';
+import { registerWebhookDispatcher } from './webhooks/dispatcher.ts';
 
 /**
  * Prefix of the business routes. Every domain route is born inside it;
@@ -72,9 +74,15 @@ export function createApp(options: AppOptions): FastifyInstance {
       scope.register(async (inner) => registerIntake(inner, options.db));
       scope.register(async (inner) => registerSkills(inner, options.db));
       scope.register(async (inner) => registerEvents(inner, options.db));
+      scope.register(async (inner) => registerWebhooks(inner, options.db));
     },
     { prefix: API_PREFIX },
   );
+
+  // The dispatcher is not a route family: it is a background tick, and its
+  // `onReady`/`onClose` hooks go on the whole app — outside the versioned scope,
+  // so they fire exactly once — for the same reason `registerHealth` does.
+  registerWebhookDispatcher(app, options.db);
 
   return app;
 }

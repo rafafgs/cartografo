@@ -19,6 +19,14 @@
  * for the readiness line, never `sleep` and hope. It is duplicated rather than
  * extracted because that file belongs to another ticket's surface.
  *
+ * The t147 tests at the bottom boot through {@link bootControlPlane} and stop
+ * there — they never call `authorizeGlobalFetch`. That is the whole point of
+ * them: the shared {@link startControlPlane} patches `globalThis.fetch`, the
+ * dispatcher captures the already-patched global as its `doFetch`, and every
+ * test above therefore rode the harness's own token instead of exercising the
+ * dispatcher's. That is how a dispatcher with no `Authorization` header at all
+ * stayed green from t124 to t147.
+ *
  * English per D18; this directory is post-decision code.
  */
 
@@ -131,8 +139,21 @@ async function loadModule<T>(relative: string): Promise<T> {
   return (await import(new URL(`../../${relative}`, import.meta.url).href)) as T;
 }
 
-/** Boots the real control plane and returns the URL it announced. */
-async function startControlPlane(t: TestHook): Promise<string> {
+/** The readiness line the control plane prints when it is up. */
+interface Readiness {
+  url: string;
+  bootstrapToken: string | null;
+}
+
+/**
+ * Boots the real control plane and returns its readiness line, verbatim.
+ *
+ * It touches no global: whoever calls it decides how the credential reaches the
+ * requests. {@link startControlPlane} arms `globalThis.fetch` on top of this;
+ * the t147 tests hand the token to the code under test instead, which is the
+ * only way to find out whether that code presents one.
+ */
+async function bootControlPlane(t: TestHook): Promise<Readiness> {
   assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
 
   const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t106-e2e-'));
@@ -182,10 +203,8 @@ async function startControlPlane(t: TestHook): Promise<string> {
       .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
     if (line !== undefined) {
       // Since t124 the API answers nothing without a credential; the control
-      // plane prints the one it minted, and this suite presents it from here on.
-      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
-      authorizeGlobalFetch(t, { baseUrl: readiness.url, token: readiness.bootstrapToken ?? '' });
-      return readiness.url;
+      // plane prints the one it minted, on this very line.
+      return JSON.parse(line) as Readiness;
     }
     await delay(50);
   }
@@ -193,17 +212,38 @@ async function startControlPlane(t: TestHook): Promise<string> {
   throw new Error(`the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`);
 }
 
-/** Talks JSON with the control plane, asserting the status on the way. */
+/**
+ * Boots the control plane and makes every `fetch` of this test present its
+ * token — the shape the t106 and t125 tests below were written against.
+ */
+async function startControlPlane(t: TestHook): Promise<string> {
+  const readiness = await bootControlPlane(t);
+  authorizeGlobalFetch(t, { baseUrl: readiness.url, token: readiness.bootstrapToken ?? '' });
+  return readiness.url;
+}
+
+/**
+ * Talks JSON with the control plane, asserting the status on the way.
+ *
+ * `token` is optional because the tests that boot through
+ * {@link startControlPlane} have their credential armed on the global already;
+ * the t147 tests leave that global alone, so they pass it in here.
+ */
 async function api<T>(
   baseUrl: string,
   method: string,
   route: string,
   body?: unknown,
   expected = 200,
+  token?: string,
 ): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  if (token !== undefined) headers.authorization = `Bearer ${token}`;
+
   const response = await fetch(`${baseUrl}${route}`, {
     method,
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await response.text();
@@ -273,6 +313,20 @@ function linesWithDenial(): string {
       }),
     },
     { stream: 'stdout', text: 'Sem rede, segui pelo que já estava no repositório.' },
+  ]);
+}
+
+/**
+ * The frames of a session that was denied a tool AND ended up asking something.
+ *
+ * One session that touches every write route a dispatch has, which is what
+ * makes the t147 green test say something about all seven of `call`'s routes
+ * instead of only the five a quiet session reaches.
+ */
+function linesWithDenialAndBlock(): string {
+  return JSON.stringify([
+    ...(JSON.parse(linesWithDenial()) as unknown[]),
+    ...(JSON.parse(linesWithBlock()) as unknown[]),
   ]);
 }
 
@@ -550,4 +604,172 @@ test('t125 — a denied tool becomes one permission-denial call, and does not fa
   const received = JSON.parse(readFileSync(record, 'utf8')) as FakeRecord;
   assert.ok(received.argv.includes('--disallowedTools'));
   assert.ok(received.argv.includes('WebFetch'));
+});
+
+/** The fake engine, wired the way every test in this file wires it. */
+function fakeAdapter(): ClaudeCodeAdapter {
+  return new ClaudeCodeAdapter({
+    commandBuilder: (spec) => ({
+      command: process.execPath,
+      args: [FAKE_ENGINE, ...buildCommand(spec).args],
+    }),
+    graceMs: 300,
+  });
+}
+
+/**
+ * Boots a control plane for a t147 test and hands back what it announced.
+ *
+ * No `authorizeGlobalFetch`, and that absence is the test device: with the
+ * global untouched, the only credential that can reach the API is one the code
+ * under test presents itself.
+ */
+async function bootUnpatched(t: TestHook): Promise<{ baseUrl: string; token: string }> {
+  const readiness = await bootControlPlane(t);
+  assert.ok(
+    readiness.bootstrapToken !== null && readiness.bootstrapToken !== '',
+    'each test boots against a database that never existed, so startup always mints and prints a token',
+  );
+  return { baseUrl: readiness.url, token: readiness.bootstrapToken };
+}
+
+test('t147 — with no token, the dispatch is refused 401 on its very first call', async (t) => {
+  const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
+    'src/controller/cliente-controle.ts',
+  );
+  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t147-anonymous-workdir-'));
+  const record = path.join(workDir, 'despacho-sem-token.json');
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    'POST',
+    '/v1/jobs',
+    { titulo: 'ficha despachada contra um control plane autenticado', no_entrada_id: 'implementar', execucao_id: 147 },
+    201,
+    token,
+  );
+
+  // Everything a working dispatch gets, minus the credential.
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    adapter: fakeAdapter(),
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    envOverrides: { FAKE_ENGINE_RECORD: record, FAKE_ENGINE_LINES: linesWithoutBlock() },
+  });
+
+  await assert.rejects(
+    async () => dispatch(work.id),
+    (error: unknown) => {
+      assert.ok(
+        error instanceof ErroDoControlPlane,
+        `expected the control plane's own refusal, got: ${String(error)}`,
+      );
+      assert.equal(error.status, 401);
+      assert.equal(
+        error.message,
+        `GET /v1/jobs/${work.id} answered 401`,
+        'the read that opens a dispatch is where it dies: nothing after it ever runs',
+      );
+      return true;
+    },
+  );
+
+  // Which is to say: no engine was started and no telemetry was written. A
+  // dispatch that cannot read the work does not half-happen.
+  assert.ok(!existsSync(record), 'the engine process must never have been spawned');
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    'GET',
+    '/v1/sessions?execucao_id=147',
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(sessions.sessoes.length, 0);
+});
+
+test('t147 — with a token, the dispatch crosses every route it uses', async (t) => {
+  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t147-authorized-workdir-'));
+  const record = path.join(workDir, 'despacho-com-token.json');
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    'POST',
+    '/v1/jobs',
+    { titulo: 'ficha despachada com credencial', no_entrada_id: 'implementar', execucao_id: 147 },
+    201,
+    token,
+  );
+
+  // The operator token, which is what production has to pass here: none of the
+  // seven routes this dispatch touches is on the runner surface t143 opened
+  // (`packages/core/src/auth.ts`), so a pairing token would be refused 403.
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    adapter: fakeAdapter(),
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    token,
+    permissions: { filesystem: { write: ['**'] }, network: { allowed: false } },
+    envOverrides: { FAKE_ENGINE_RECORD: record, FAKE_ENGINE_LINES: linesWithDenialAndBlock() },
+  });
+
+  // Resolving is already most of the proof: a refusal on ANY of the seven
+  // routes rejects — the reads and the two writes at once, and the denial
+  // report by way of the failure the dispatch re-throws at the very end.
+  await dispatch(work.id);
+
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    'GET',
+    '/v1/sessions?execucao_id=147',
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(sessions.sessoes.length, 1, 'the session was opened through POST /v1/sessions');
+  assert.equal(
+    sessions.sessoes[0].status,
+    'concluida',
+    'and closed through PATCH /v1/sessions/:id/finish',
+  );
+
+  const questions = await api<{ perguntas: Question[] }>(
+    baseUrl,
+    'GET',
+    '/v1/input-requests',
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(questions.perguntas.length, 1, 'the question reached POST /v1/input-requests');
+  assert.equal(questions.perguntas[0].pergunta, ESCALATION.question);
+
+  const timeline = await api<{ eventos: Event[] }>(
+    baseUrl,
+    'GET',
+    `/v1/jobs/${work.id}/events`,
+    undefined,
+    200,
+    token,
+  );
+  assert.ok(
+    timeline.eventos.some((event) => event.tipo === 'sessao.permissao_negada'),
+    'the denial reached POST /v1/sessions/:id/permission-denials',
+  );
 });

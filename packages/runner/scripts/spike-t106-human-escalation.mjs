@@ -90,6 +90,31 @@ function die(message) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * The `WorktreeManager` this proof hands the dispatch (t160, FR10).
+ *
+ * A minimal fake and not the real `GitWorktreeManager`, which the ficha allows
+ * explicitly — and here it is the only thing that keeps the proof proving what
+ * it proves. Both dispatches are the SAME work: the first asks and creates
+ * nothing, the second creates the file, and the check that the second one
+ * really used the answer reads that file out of the directory afterwards. A
+ * real worktree would have been removed with the session that completed, and
+ * the evidence with it.
+ *
+ * Isolation itself has its own proof, against real git and with no `claude` in
+ * sight: `test/dispatch/session-worktree.test.ts`.
+ *
+ * @param {string} repo The disposable repository every session runs in.
+ * @returns {{acquire: (jobId: number) => Promise<{path: string, branch: string}>,
+ *            release: () => Promise<void>}} The manager.
+ */
+function sharedWorktree(repo) {
+  return {
+    acquire: (jobId) => Promise.resolve({ path: repo, branch: `ticket-${jobId}` }),
+    release: () => Promise.resolve(),
+  };
+}
+
 /** A disposable git repository — the session's `workingDir`. */
 function createDisposableRepo() {
   const root = mkdtempSync(join(tmpdir(), 'cartografo-spike-t106-'));
@@ -196,7 +221,7 @@ async function main() {
     const dispatch = createClaudeCodeDispatch({
       urlBase: plane.url,
       engines: { [DEFAULT_ENGINE]: { adapter, decodeSessionText: decodeClaudeCodeSessionText } },
-      workingDir: repo,
+      worktrees: sharedWorktree(repo),
       timeoutSeconds: TIMEOUT_SECONDS,
       instructions: INSTRUCTIONS,
     });

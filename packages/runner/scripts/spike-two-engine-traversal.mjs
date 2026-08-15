@@ -183,6 +183,31 @@ function buildCodexAdapter() {
   });
 }
 
+/**
+ * The `WorktreeManager` this proof hands the dispatch (t160, FR10).
+ *
+ * A minimal fake and not the real `GitWorktreeManager`, which the ficha allows
+ * explicitly — and here it is the only thing that keeps the proof proving what
+ * it proves. The two nodes of this traversal hand a file from one to the other
+ * (`conferir` reads the `nota.md` that `redigir` wrote), nothing commits, and
+ * the evidence at the end reads both files out of that directory. A real
+ * worktree per session would leave the second engine with an empty tree, and
+ * the failure would be about this ficha instead of about routing.
+ *
+ * Isolation itself has its own proof, against real git and with no CLI in
+ * sight: `test/dispatch/session-worktree.test.ts`.
+ *
+ * @param {string} repo The disposable repository every session runs in.
+ * @returns {{acquire: (jobId: number) => Promise<{path: string, branch: string}>,
+ *            release: () => Promise<void>}} The manager.
+ */
+function sharedWorktree(repo) {
+  return {
+    acquire: (jobId) => Promise.resolve({ path: repo, branch: `ticket-${jobId}` }),
+    release: () => Promise.resolve(),
+  };
+}
+
 /** Disposable git repository — the `workingDir` of the crossing. */
 function createDisposableRepo() {
   const root = mkdtempSync(join(tmpdir(), 'cartografo-spike-t141-'));
@@ -286,6 +311,7 @@ async function main() {
   }
 
   const { root, repo } = createDisposableRepo();
+  const worktrees = sharedWorktree(repo);
   const { url, child } = await startControlPlane();
   log(`control plane: ${url}`);
   log(`workingDir of the crossing: ${repo}`);
@@ -349,7 +375,7 @@ async function main() {
           urlBase: url,
           token: operatorToken,
           engines,
-          workingDir: repo,
+          worktrees,
           timeoutSeconds: TIMEOUT_SECONDS,
           instructions: nodeInstructions(current.id, current.task),
         })(jobId),

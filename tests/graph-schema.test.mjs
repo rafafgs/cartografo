@@ -93,11 +93,23 @@ test('AT1 — every fixture in schema/exemplos validates against the schema', as
   const names = readdirSync(EXAMPLES_DIR).filter((name) => name.endsWith('.json')).sort();
 
   assert.equal(names.length, 7, `expected the seven t96 fixtures, found ${names.length}`);
+
+  // Two of the counterexamples break SHAPE as well as soundness, and they do it
+  // on purpose: an edge whose condition is the empty string trips `minLength`,
+  // and a node with no contract trips `required`. Those two pointers are named
+  // here rather than skipped, so the fixtures stay refused for the reason they
+  // were written for — and every other fixture stays shape-clean.
+  const SHAPE_BREAKS = {
+    'grafo-invalido-aresta-sem-condicao.json': ['/edges/0/condition'],
+    'grafo-invalido-no-sem-contrato.json': ['/nodes/1'],
+  };
+
   for (const name of names) {
-    // The four counterexamples are SEMANTICALLY broken (an unreachable node, an
-    // edge with no condition); their SHAPE has to stay valid, or they would be
-    // proving the wrong rule.
-    assert.deepEqual(validateAgainstSchema(readExample(name), schema), [], `${name}: shape`);
+    assert.deepEqual(
+      validateAgainstSchema(readExample(name), schema).map((error) => error.pointer),
+      SHAPE_BREAKS[name] ?? [],
+      `${name}: shape`,
+    );
   }
 });
 

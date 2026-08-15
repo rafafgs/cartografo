@@ -381,7 +381,7 @@ test('AT7 — no deterministic check; every manifest has an agentic check with e
   assert.ok(size.maximum > 0);
 });
 
-test('AT8 — derrubar-tese forbids "pass" with a high objection the thesis never answered', () => {
+test('AT8 — derrubar-tese forbids "passou" with a high objection the thesis never answered', () => {
   const manifest = readManifest('derrubar-tese.json');
 
   const objections = manifest.output.properties.objecoes;
@@ -397,8 +397,11 @@ test('AT8 — derrubar-tese forbids "pass" with a high objection the thesis neve
     'resposta_da_tese is null when the thesis did not answer',
   );
 
+  // The instruction PROSE is untouched by t178 — the bundle-regeneration slice
+  // owns it, citations included — so the words matched here are still the ones
+  // the manifest says.
   const prohibition = linesWith(manifest.instructions, [
-    'pass',
+    'passou',
     'sobrevive',
     'gravidade',
     'alta',
@@ -406,7 +409,7 @@ test('AT8 — derrubar-tese forbids "pass" with a high objection the thesis neve
   ]).filter((line) => /NUNCA|nunca|jamais/.test(line));
   assert.ok(
     prohibition.length >= 1,
-    'instructions has to explicitly forbid concluding "pass" (edge "sobrevive") while a high-severity objection has no resposta_da_tese',
+    'instructions has to explicitly forbid concluding "passou" (edge "sobrevive") while a high-severity objection has no resposta_da_tese',
   );
 
   const counterEvidence = manifest.checks
@@ -433,7 +436,7 @@ test('AT9 — escalar-decisao never produces a result without a recorded human a
 
   const prohibition = linesWith(manifest.instructions, [
     'perguntas_respondidas',
-    'outcome',
+    'resultado',
   ]).filter((line) => /NUNCA|nunca|jamais/.test(line));
   assert.ok(
     prohibition.length >= 1,

@@ -1,10 +1,10 @@
 {
   "id": "portao-sem-evidencia",
-  "versao": "1.0.0",
-  "hash": "sha256:85275ef6fc8b7acf1b04e77bef60dd78b1ff399ddce2877d16f51144699873e2",
-  "papel": "portao",
-  "descricao": "FIXTURE NEGATIVO — não é um exemplo de manifesto válido. Existe para provar que o schema rejeita um check agêntico sem evidência obrigatória.",
-  "entrada": {
+  "version": "1.0.0",
+  "hash": "sha256:8bce86e1f223d44297c82b544f91bd48ab31fd768ac749d0a1a919b86c7a65bc",
+  "role": "gate",
+  "description": "FIXTURE NEGATIVO — não é um exemplo de manifesto válido. Existe para provar que o schema rejeita um check agêntico sem evidência obrigatória.",
+  "input": {
     "type": "object",
     "required": [
       "artefato"
@@ -15,46 +15,46 @@
       }
     }
   },
-  "saida": {
+  "output": {
     "type": "object",
     "required": [
-      "resultado"
+      "outcome"
     ],
     "properties": {
-      "resultado": {
+      "outcome": {
         "type": "string",
         "enum": [
-          "passou",
-          "falhou",
-          "escalar_humano"
+          "pass",
+          "fail",
+          "escalate_human"
         ]
       }
     }
   },
-  "pre_condicoes": [
+  "preconditions": [
     "artefato produzido pelo nó anterior"
   ],
   "checks": [
     {
       "id": "criterios-atendidos",
-      "tipo": "agentico",
-      "descricao": "Confere se os critérios de aceite foram atendidos — e é exatamente aqui que o manifesto quebra: sem evidencia_obrigatoria, o portão poderia concluir com o autorrelato de quem produziu o artefato, que é o que D9 e a nota de aprendizado proíbem.",
-      "instrucao": "Verifique se os critérios de aceite foram atendidos."
+      "type": "agentic",
+      "description": "Confere se os critérios de aceite foram atendidos — e é exatamente aqui que o manifesto quebra: sem evidencia_obrigatoria, o portão poderia concluir com o autorrelato de quem produziu o artefato, que é o que D9 e a nota de aprendizado proíbem.",
+      "instruction": "Verifique se os critérios de aceite foram atendidos."
     }
   ],
-  "permissoes": {
+  "permissions": {
     "filesystem": {
-      "leitura": [
+      "read": [
         "**"
       ],
-      "escrita": []
+      "write": []
     },
-    "rede": {
-      "permitido": false
+    "network": {
+      "allowed": false
     }
   },
-  "instrucoes": "Confira o artefato do nó anterior e conclua.",
-  "origem": {
-    "tipo": "nativa"
+  "instructions": "Confira o artefato do nó anterior e conclua.",
+  "origin": {
+    "type": "native"
   }
 }

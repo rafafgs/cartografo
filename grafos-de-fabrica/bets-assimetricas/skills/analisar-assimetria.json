@@ -1,10 +1,10 @@
 {
   "id": "analisar-assimetria",
-  "versao": "1.0.0",
-  "hash": "sha256:d8adde77a50b877cdff192732714bcbf5ec70ef3a0f1a61ea948b18af85a1ca6",
-  "papel": "fazer",
-  "descricao": "Traduz os fundamentos em assimetria explícita: piso do downside, alvo do upside e os cenários que ligam um ao outro, cada um preso às premissas que o sustentam.",
-  "entrada": {
+  "version": "1.0.0",
+  "hash": "sha256:1a09017b5be2156ee8343c9a6bae889e5987beeabaa8fd8e06d0d4305744217f",
+  "role": "work",
+  "description": "Traduz os fundamentos em assimetria explícita: piso do downside, alvo do upside e os cenários que ligam um ao outro, cada um preso às premissas que o sustentam.",
+  "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
@@ -136,7 +136,7 @@
       }
     }
   },
-  "saida": {
+  "output": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
@@ -213,34 +213,34 @@
       }
     }
   },
-  "pre_condicoes": [
+  "preconditions": [
     "fundamentos coletados, com pelo menos um número de fonte primária",
     "lista de premissas disponível, com a marcação de quais têm fonte"
   ],
   "checks": [
     {
       "id": "piso-do-downside-rastreado",
-      "tipo": "agentico",
-      "descricao": "A assimetria só é assimetria se o downside for calculado sobre algo que existe. O erro caro aqui é o piso narrativo: um downside pequeno que depende de a tese estar certa.",
-      "instrucao": "Refaça a conta do downside a partir dos fundamentos, sem olhar a nota da sessão.\n\n1. `downside_max_pct` sai de quê? Aponte o número de `fundamentos.numeros` e a premissa de `premissas` que sustentam o piso. Se o piso depende de uma premissa com `fonte: null`, isso precisa estar dito na nota — piso sem fonte é piso de narrativa.\n2. Cada cenário lista `premissas_chave` que existem de fato na lista de premissas recebida, com o mesmo texto? Cenário que inventa premissa nova é reprovação.\n3. `razao_assimetria` bate com `upside_alvo_pct / downside_max_pct` nos valores declarados?\n4. Existe pelo menos um cenário em que a tese morre, com probabilidade não desprezível? Análise sem cenário de morte é apresentação de vendas.",
-      "evidencia_obrigatoria": [
+      "type": "agentic",
+      "description": "A assimetria só é assimetria se o downside for calculado sobre algo que existe. O erro caro aqui é o piso narrativo: um downside pequeno que depende de a tese estar certa.",
+      "instruction": "Refaça a conta do downside a partir dos fundamentos, sem olhar a nota da sessão.\n\n1. `downside_max_pct` sai de quê? Aponte o número de `fundamentos.numeros` e a premissa de `premissas` que sustentam o piso. Se o piso depende de uma premissa com `fonte: null`, isso precisa estar dito na nota — piso sem fonte é piso de narrativa.\n2. Cada cenário lista `premissas_chave` que existem de fato na lista de premissas recebida, com o mesmo texto? Cenário que inventa premissa nova é reprovação.\n3. `razao_assimetria` bate com `upside_alvo_pct / downside_max_pct` nos valores declarados?\n4. Existe pelo menos um cenário em que a tese morre, com probabilidade não desprezível? Análise sem cenário de morte é apresentação de vendas.",
+      "required_evidence": [
         "calculo_do_downside_com_o_numero_de_fundamentos_que_o_sustenta",
         "premissa_chave_de_cada_cenario_localizada_na_lista_de_premissas_recebida",
         "conta_refeita_da_razao_de_assimetria"
       ]
     }
   ],
-  "permissoes": {
+  "permissions": {
     "filesystem": {
-      "leitura": [],
-      "escrita": []
+      "read": [],
+      "write": []
     },
-    "rede": {
-      "permitido": false
+    "network": {
+      "allowed": false
     }
   },
-  "instrucoes": "# Analisar a assimetria\n\nSeu trabalho é transformar os fundamentos coletados numa assimetria explícita:\n**quanto se perde se a tese estiver errada, quanto se ganha se estiver certa, e\nde que premissas cada um dos dois depende.**\n\n**Tese:** {{entrada.tese_triada.titulo}} ({{entrada.tese_triada.ativo}})\n\n{{entrada.tese_triada.hipotese}}\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\nSua rede está fechada. Tudo que você precisa chegou em `entrada.fundamentos` e\n`entrada.premissas` — se faltou dado, isso é uma lacuna a registrar na nota,\nnão um motivo para pesquisar aqui. Coleta é o nó anterior.\n\n## Downside primeiro, sempre\n\nComece pelo piso, nunca pelo alvo. A ordem importa: quem começa pelo upside\nancora a análise inteira nele e \"descobre\" um downside compatível.\n\nO piso precisa ser **algo que existe**: caixa líquido, ativo real, contrato,\ngarantia. Escreva de onde ele vem, com o número da coleta que o sustenta. Se o\npiso depende de uma premissa sem fonte, diga isso na nota com todas as letras —\né a diferença entre downside limitado e downside imaginado.\n\n## Cenários\n\nPelo menos dois, e um deles é o cenário em que a **tese morre**. Cada cenário\ncarrega:\n\n- a probabilidade que você atribui (e ela é sua estimativa, não um fato);\n- o retorno que ele implica;\n- as `premissas_chave` de que depende — copiadas da lista de premissas\n  recebida, com o mesmo texto, para o red team poder atacar exatamente elas.\n\nUm cenário que não se prende a nenhuma premissa da coleta não é cenário: é\nopinião com número.\n\n## A razão de assimetria\n\n`razao_assimetria` = `upside_alvo_pct` ÷ `downside_max_pct`. É o número que\nesta classe de problema existe para maximizar, e é também o número mais fácil\nde inflar sem perceber — encolhendo o downside com uma premissa otimista em\nvez de com um piso real. Confira a conta antes de devolver.\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nDevolva no formato que o schema de saída declara: `assimetria` e `nota`. Não\nrecomende tamanho de posição (é o nó de dimensionamento) e não conclua se a\ntese deve ser comprada (é o portão humano). Aqui você mede a forma da aposta.",
-  "origem": {
-    "tipo": "nativa"
+  "instructions": "# Analisar a assimetria\n\nSeu trabalho é transformar os fundamentos coletados numa assimetria explícita:\n**quanto se perde se a tese estiver errada, quanto se ganha se estiver certa, e\nde que premissas cada um dos dois depende.**\n\n**Tese:** {{input.tese_triada.titulo}} ({{input.tese_triada.ativo}})\n\n{{input.tese_triada.hipotese}}\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\nSua rede está fechada. Tudo que você precisa chegou em `entrada.fundamentos` e\n`entrada.premissas` — se faltou dado, isso é uma lacuna a registrar na nota,\nnão um motivo para pesquisar aqui. Coleta é o nó anterior.\n\n## Downside primeiro, sempre\n\nComece pelo piso, nunca pelo alvo. A ordem importa: quem começa pelo upside\nancora a análise inteira nele e \"descobre\" um downside compatível.\n\nO piso precisa ser **algo que existe**: caixa líquido, ativo real, contrato,\ngarantia. Escreva de onde ele vem, com o número da coleta que o sustenta. Se o\npiso depende de uma premissa sem fonte, diga isso na nota com todas as letras —\né a diferença entre downside limitado e downside imaginado.\n\n## Cenários\n\nPelo menos dois, e um deles é o cenário em que a **tese morre**. Cada cenário\ncarrega:\n\n- a probabilidade que você atribui (e ela é sua estimativa, não um fato);\n- o retorno que ele implica;\n- as `premissas_chave` de que depende — copiadas da lista de premissas\n  recebida, com o mesmo texto, para o red team poder atacar exatamente elas.\n\nUm cenário que não se prende a nenhuma premissa da coleta não é cenário: é\nopinião com número.\n\n## A razão de assimetria\n\n`razao_assimetria` = `upside_alvo_pct` ÷ `downside_max_pct`. É o número que\nesta classe de problema existe para maximizar, e é também o número mais fácil\nde inflar sem perceber — encolhendo o downside com uma premissa otimista em\nvez de com um piso real. Confira a conta antes de devolver.\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nDevolva no formato que o schema de saída declara: `assimetria` e `nota`. Não\nrecomende tamanho de posição (é o nó de dimensionamento) e não conclua se a\ntese deve ser comprada (é o portão humano). Aqui você mede a forma da aposta.",
+  "origin": {
+    "type": "native"
   }
 }

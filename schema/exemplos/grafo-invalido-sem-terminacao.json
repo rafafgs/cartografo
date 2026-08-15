@@ -1,78 +1,78 @@
 {
-  "classe": "triagem-de-item",
-  "linhagem": {
-    "tipo": "base"
+  "problem_class": "triagem-de-item",
+  "lineage": {
+    "type": "base"
   },
   "metadata": {
-    "nome": "Contraexemplo — sem terminação garantida",
-    "descricao": "Viola SÓ a regra \"termina\": todo nó é alcançável, mas reprocessar_item só tem aresta para si mesmo — quem cai nele nunca chega a concluir_item. É o ciclo de retrabalho a que esqueceram de dar saída.",
-    "versao_schema": "1.0.0",
-    "criado_em": "2026-08-14",
-    "origem": "contraexemplo da especificação"
+    "name": "Contraexemplo — sem terminação garantida",
+    "description": "Viola SÓ a regra \"termina\": todo nó é alcançável, mas reprocessar_item só tem aresta para si mesmo — quem cai nele nunca chega a concluir_item. É o ciclo de retrabalho a que esqueceram de dar saída.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-14",
+    "source": "contraexemplo da especificação"
   },
-  "nos": [
+  "nodes": [
     {
       "id": "triar_item",
-      "papel": "triador",
-      "tipo_no": "portao",
+      "role": "triador",
+      "node_type": "gate",
       "skill_ref": {
         "id": "cartografo/triar-item",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:631f842f97cfc6c3bb1110fcfe6bfd7317b767a9f9a9dddeee9b709af12690ec"
       },
-      "contrato": {
-        "entrada_schema": { "type": "object", "properties": { "item": { "type": "string" } } },
-        "saida_schema": { "type": "object", "properties": { "resultado": { "enum": ["aprovado", "reprocessar"] } } },
-        "verificacoes": [
+      "contract": {
+        "input_schema": { "type": "object", "properties": { "item": { "type": "string" } } },
+        "output_schema": { "type": "object", "properties": { "outcome": { "enum": ["aprovado", "reprocessar"] } } },
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "O item atende aos critérios de entrada? Anexe o critério que decidiu.",
-            "evidencia_obrigatoria": true
+            "type": "agentic",
+            "instruction": "O item atende aos critérios de entrada? Anexe o critério que decidiu.",
+            "required_evidence": true
           }
         ]
       }
     },
     {
       "id": "reprocessar_item",
-      "papel": "operador",
-      "tipo_no": "trabalho",
-      "descricao": "Armadilha: a única saída volta para si mesmo.",
+      "role": "operador",
+      "node_type": "work",
+      "description": "Armadilha: a única saída volta para si mesmo.",
       "skill_ref": {
         "id": "cartografo/reprocessar-item",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:15b3348f6957eb0087e3b5cf9c2a5a529398675a863c0826bd18514428a3cf85"
       },
-      "contrato": {
-        "entrada_schema": { "type": "object", "properties": { "item": { "type": "string" } } },
-        "saida_schema": { "type": "object", "properties": { "item": { "type": "string" } } },
-        "verificacoes": [
-          { "tipo": "deterministico", "comando": "test -s item.json" }
+      "contract": {
+        "input_schema": { "type": "object", "properties": { "item": { "type": "string" } } },
+        "output_schema": { "type": "object", "properties": { "item": { "type": "string" } } },
+        "checks": [
+          { "type": "deterministic", "command": "test -s item.json" }
         ]
       }
     },
     {
       "id": "concluir_item",
-      "papel": "operador",
-      "tipo_no": "trabalho",
+      "role": "operador",
+      "node_type": "work",
       "skill_ref": {
         "id": "cartografo/concluir-item",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:540c147b9cfa89137072315d17f181abd1601e686d8cdbc177c5d04e17a4d5d2"
       },
-      "contrato": {
-        "entrada_schema": { "type": "object", "properties": { "item": { "type": "string" } } },
-        "saida_schema": { "type": "object", "properties": { "registro": { "type": "string" } } },
-        "verificacoes": [
-          { "tipo": "deterministico", "comando": "test -s registro.txt" }
+      "contract": {
+        "input_schema": { "type": "object", "properties": { "item": { "type": "string" } } },
+        "output_schema": { "type": "object", "properties": { "registro": { "type": "string" } } },
+        "checks": [
+          { "type": "deterministic", "command": "test -s registro.txt" }
         ]
       }
     }
   ],
-  "arestas": [
-    { "de": "triar_item", "para": "concluir_item", "condicao": "aprovado" },
-    { "de": "triar_item", "para": "reprocessar_item", "condicao": "reprocessar" },
-    { "de": "reprocessar_item", "para": "reprocessar_item", "condicao": "sempre" }
+  "edges": [
+    { "from": "triar_item", "to": "concluir_item", "condition": "aprovado" },
+    { "from": "triar_item", "to": "reprocessar_item", "condition": "reprocessar" },
+    { "from": "reprocessar_item", "to": "reprocessar_item", "condition": "sempre" }
   ],
-  "no_inicial": "triar_item",
-  "nos_finais": ["concluir_item"]
+  "initial_node": "triar_item",
+  "final_nodes": ["concluir_item"]
 }

@@ -1,10 +1,10 @@
 {
   "id": "escalar-decisao",
-  "versao": "1.0.0",
-  "hash": "sha256:ed703baa5af65e9d9444c9af597cfdff6b3c7be452a050f2eead7cbe6a2c03b0",
-  "papel": "portao",
-  "descricao": "Portão de alocação de capital: monta o dossiê e escala ao fundador. Nunca decide sozinho — só emite resultado quando a resposta humana já está registrada, e transcrevendo-a literalmente.",
-  "entrada": {
+  "version": "1.0.0",
+  "hash": "sha256:3ae0cd3316560726c51296d1965f012694edcc8d9d1d8ef6ed7456d92f93c26e",
+  "role": "gate",
+  "description": "Portão de alocação de capital: monta o dossiê e escala ao fundador. Nunca decide sozinho — só emite resultado quando a resposta humana já está registrada, e transcrevendo-a literalmente.",
+  "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
@@ -208,22 +208,22 @@
       }
     }
   },
-  "saida": {
+  "output": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
-      "resultado",
+      "outcome",
       "decisao_humana",
       "nota"
     ],
     "additionalProperties": false,
     "properties": {
-      "resultado": {
+      "outcome": {
         "type": "string",
         "enum": [
-          "passou",
-          "falhou",
-          "escalar_humano"
+          "pass",
+          "fail",
+          "escalate_human"
         ],
         "description": "obrigatório em toda skill de papel portao. Neste grafo \"passou\" segue pela aresta \"aprovado\" e \"falhou\" pela aresta \"recusado\" — e nenhum dos dois existe sem decisao_humana registrada. \"escalar_humano\" existe porque o formato exige os três valores: a sessão que precisa do fundador PAUSA com input-request, e não emite saída nenhuma."
       },
@@ -253,7 +253,7 @@
       }
     }
   },
-  "pre_condicoes": [
+  "preconditions": [
     "dimensionamento concluído, com tamanho proposto e gatilho de saída",
     "objeções do red team disponíveis, respondidas ou não",
     "fila de perguntas respondidas acessível, ainda que vazia"
@@ -261,27 +261,27 @@
   "checks": [
     {
       "id": "resultado-transcreve-decisao-humana",
-      "tipo": "agentico",
-      "descricao": "Este é o único nó do grafo em que escalar é obrigatório por desenho, e não um recurso para quando o agente não sabe. O defeito que este check existe para pegar é a sessão que lê uma resposta humana e a interpreta com generosidade a favor da tese.",
-      "instrucao": "Confira o resultado contra a resposta registrada, palavra por palavra.\n\n1. Existe, em `entrada.perguntas_respondidas`, uma resposta para a pergunta de alocação DESTA tese? Se não existe e mesmo assim há `resultado`, o check falhou — não importa o quanto o dossiê pareça conclusivo.\n2. `saida.decisao_humana.resposta_literal` é a transcrição exata do campo `resposta` da pergunta registrada, sem resumo, sem correção de estilo, sem completar frase?\n3. O `resultado` bate com o que a resposta diz? Resposta que aprova com condição diferente da proposta (outro tamanho, outro preço-limite, outro prazo) é aprovação da CONDIÇÃO DELA — e a nota precisa registrar a diferença em vez de aplicar a proposta original.\n4. A resposta é ambígua entre aprovar e recusar? Então não há decisão: a sessão deveria ter escalado de novo, não escolhido.",
-      "evidencia_obrigatoria": [
+      "type": "agentic",
+      "description": "Este é o único nó do grafo em que escalar é obrigatório por desenho, e não um recurso para quando o agente não sabe. O defeito que este check existe para pegar é a sessão que lê uma resposta humana e a interpreta com generosidade a favor da tese.",
+      "instruction": "Confira o resultado contra a resposta registrada, palavra por palavra.\n\n1. Existe, em `entrada.perguntas_respondidas`, uma resposta para a pergunta de alocação DESTA tese? Se não existe e mesmo assim há `resultado`, o check falhou — não importa o quanto o dossiê pareça conclusivo.\n2. `saida.decisao_humana.resposta_literal` é a transcrição exata do campo `resposta` da pergunta registrada, sem resumo, sem correção de estilo, sem completar frase?\n3. O `resultado` bate com o que a resposta diz? Resposta que aprova com condição diferente da proposta (outro tamanho, outro preço-limite, outro prazo) é aprovação da CONDIÇÃO DELA — e a nota precisa registrar a diferença em vez de aplicar a proposta original.\n4. A resposta é ambígua entre aprovar e recusar? Então não há decisão: a sessão deveria ter escalado de novo, não escolhido.",
+      "required_evidence": [
         "id_da_pergunta_de_alocacao_localizada_em_perguntas_respondidas",
         "texto_literal_da_resposta_registrada_copiado_integralmente",
         "comparacao_entre_o_resultado_emitido_e_o_texto_literal_da_resposta"
       ]
     }
   ],
-  "permissoes": {
+  "permissions": {
     "filesystem": {
-      "leitura": [],
-      "escrita": []
+      "read": [],
+      "write": []
     },
-    "rede": {
-      "permitido": false
+    "network": {
+      "allowed": false
     }
   },
-  "instrucoes": "# Levar a decisão ao humano\n\nSeu trabalho é montar o dossiê da decisão e **entregá-lo ao fundador**. Você\nnão decide. Nenhuma sessão deste nó decide alocação de capital — é a regra que\ndefine este grafo, e ela não tem exceção por urgência, por obviedade nem por\ntamanho pequeno.\n\n**Tese:** {{entrada.tese_triada.titulo}} ({{entrada.tese_triada.ativo}})\n**Tamanho proposto:** {{entrada.dimensionamento.tamanho_posicao_pct}}% do capital\n**Perda máxima aceita:** {{entrada.dimensionamento.perda_maxima_aceita_pct}}%\n**Gatilho de saída:** {{entrada.dimensionamento.gatilho_de_saida}}\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\n## A regra, sem exceção\n\nOlhe `entrada.perguntas_respondidas` **antes de qualquer outra coisa**:\n\n{{entrada.perguntas_respondidas}}\n\nNUNCA produza `resultado` quando `entrada.perguntas_respondidas` não contiver a resposta do fundador à pergunta de alocação desta tese — nesse caso a sessão SEMPRE encerra o turno com um bloco `input-request` e para por aí.\n\nAs duas situações possíveis, e só estas duas:\n\n1. **Não há resposta registrada para esta tese.** Monte o dossiê, faça UMA\n   pergunta de alocação no bloco `input-request` e encerre o turno. Você não\n   devolve `saida` nenhuma — nem `escalar_humano`, nem nada. A travessia fica\n   bloqueada, a pergunta entra na fila, e quando a resposta chegar uma nova\n   sessão deste nó retoma já sabendo dela. Escalar não é aresta: é pausa.\n2. **A resposta já está registrada.** Só então você produz `saida`, e ela é\n   transcrição, não julgamento.\n\n## Como escrever a pergunta de alocação\n\nO fundador decide com o que você colocar no bloco, e nada mais. A pergunta\nprecisa ser respondível com um \"aprovado\"/\"recusado\" mais condições, e o\n`context` carrega o dossiê inteiro:\n\n- a hipótese em uma frase, e o gatilho datado;\n- downside máximo, upside alvo e a razão de assimetria;\n- **as objeções do red team**, inclusive as respondidas — em especial as de\n  gravidade alta, com a resposta que a tese deu;\n- o tamanho proposto, a perda que ele implica em % do capital total, o gatilho\n  de saída e a correlação com a carteira;\n- as premissas sem fonte, nominalmente. O fundador precisa saber o que está\n  aceitando sem documento.\n\n`recommendation` é a sua recomendação em uma linha imperativa, e vira a\nresposta do fundador se ele simplesmente aceitar — escreva-a com essa\nresponsabilidade.\n\n## Quando a resposta existe: transcrever, não interpretar\n\n`decisao_humana.resposta_literal` é o texto da resposta registrada, **copiado\ncaractere a caractere**. Não resuma, não corrija, não complete.\n\nO `resultado` sai do que a resposta diz, e nada além: aprovação vira `passou`\n(aresta **aprovado**), recusa vira `falhou` (aresta **recusado**). Se a resposta\naprova com condição diferente da proposta — outro tamanho, outro preço-limite,\noutro prazo —, a condição que vale é a da resposta, e a `nota` registra a\ndiferença explicitamente. Se a resposta for ambígua entre aprovar e recusar,\nnão há decisão: escale de novo pedindo a desambiguação, com o mesmo bloco.\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nQuando — e só quando — houver resposta registrada, devolva no formato que o\nschema de saída declara: `resultado`, `decisao_humana` e `nota`. O contrato\nrecusa um `resultado` sem `decisao_humana`, e isso é proposital: a regra deste\nnó é schema, não recomendação.",
-  "origem": {
-    "tipo": "nativa"
+  "instructions": "# Levar a decisão ao humano\n\nSeu trabalho é montar o dossiê da decisão e **entregá-lo ao fundador**. Você\nnão decide. Nenhuma sessão deste nó decide alocação de capital — é a regra que\ndefine este grafo, e ela não tem exceção por urgência, por obviedade nem por\ntamanho pequeno.\n\n**Tese:** {{input.tese_triada.titulo}} ({{input.tese_triada.ativo}})\n**Tamanho proposto:** {{input.dimensionamento.tamanho_posicao_pct}}% do capital\n**Perda máxima aceita:** {{input.dimensionamento.perda_maxima_aceita_pct}}%\n**Gatilho de saída:** {{input.dimensionamento.gatilho_de_saida}}\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\n## A regra, sem exceção\n\nOlhe `entrada.perguntas_respondidas` **antes de qualquer outra coisa**:\n\n{{input.perguntas_respondidas}}\n\nNUNCA produza `resultado` quando `entrada.perguntas_respondidas` não contiver a resposta do fundador à pergunta de alocação desta tese — nesse caso a sessão SEMPRE encerra o turno com um bloco `input-request` e para por aí.\n\nAs duas situações possíveis, e só estas duas:\n\n1. **Não há resposta registrada para esta tese.** Monte o dossiê, faça UMA\n   pergunta de alocação no bloco `input-request` e encerre o turno. Você não\n   devolve `saida` nenhuma — nem `escalar_humano`, nem nada. A travessia fica\n   bloqueada, a pergunta entra na fila, e quando a resposta chegar uma nova\n   sessão deste nó retoma já sabendo dela. Escalar não é aresta: é pausa.\n2. **A resposta já está registrada.** Só então você produz `saida`, e ela é\n   transcrição, não julgamento.\n\n## Como escrever a pergunta de alocação\n\nO fundador decide com o que você colocar no bloco, e nada mais. A pergunta\nprecisa ser respondível com um \"aprovado\"/\"recusado\" mais condições, e o\n`context` carrega o dossiê inteiro:\n\n- a hipótese em uma frase, e o gatilho datado;\n- downside máximo, upside alvo e a razão de assimetria;\n- **as objeções do red team**, inclusive as respondidas — em especial as de\n  gravidade alta, com a resposta que a tese deu;\n- o tamanho proposto, a perda que ele implica em % do capital total, o gatilho\n  de saída e a correlação com a carteira;\n- as premissas sem fonte, nominalmente. O fundador precisa saber o que está\n  aceitando sem documento.\n\n`recommendation` é a sua recomendação em uma linha imperativa, e vira a\nresposta do fundador se ele simplesmente aceitar — escreva-a com essa\nresponsabilidade.\n\n## Quando a resposta existe: transcrever, não interpretar\n\n`decisao_humana.resposta_literal` é o texto da resposta registrada, **copiado\ncaractere a caractere**. Não resuma, não corrija, não complete.\n\nO `resultado` sai do que a resposta diz, e nada além: aprovação vira `passou`\n(aresta **aprovado**), recusa vira `falhou` (aresta **recusado**). Se a resposta\naprova com condição diferente da proposta — outro tamanho, outro preço-limite,\noutro prazo —, a condição que vale é a da resposta, e a `nota` registra a\ndiferença explicitamente. Se a resposta for ambígua entre aprovar e recusar,\nnão há decisão: escale de novo pedindo a desambiguação, com o mesmo bloco.\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nQuando — e só quando — houver resposta registrada, devolva no formato que o\nschema de saída declara: `resultado`, `decisao_humana` e `nota`. O contrato\nrecusa um `resultado` sem `decisao_humana`, e isso é proposital: a regra deste\nnó é schema, não recomendação.",
+  "origin": {
+    "type": "native"
   }
 }

@@ -29,7 +29,7 @@
         }
       },
       "saida": {
-        "resultado": "passou",
+        "outcome": "pass",
         "tese_triada": {
           "id": "tese-nvlr3-2026-08-14",
           "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
@@ -385,7 +385,7 @@
         }
       },
       "saida": {
-        "resultado": "passou",
+        "outcome": "pass",
         "objecoes": [
           {
             "objecao": "Com 71% da receita em um embarcador, o take-or-pay vira risco de contraparte: se o embarcador renegociar, o piso contratual não é piso.",
@@ -603,7 +603,7 @@
         ]
       },
       "saida": {
-        "resultado": "passou",
+        "outcome": "pass",
         "decisao_humana": {
           "pergunta_id": "alocacao-nvlr3-2026-08-14",
           "resposta_literal": "Aprovado: alocar 1,2% do capital, entrada limitada a R$ 18,00, e saída integral se a renovação do contrato portuário não sair até 30/09/2027."
@@ -665,7 +665,7 @@
       "perguntas_respondidas": []
     },
     "saida_tentada": {
-      "resultado": "passou",
+      "outcome": "pass",
       "nota": "Sessão que decidiu sozinha a alocação: entrada legal, saída ilegal. O contrato recusa este payload porque não há decisao_humana registrada — é o mecanismo de FR6, em schema e não em prosa."
     }
   }

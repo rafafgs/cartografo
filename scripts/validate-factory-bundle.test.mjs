@@ -1,13 +1,13 @@
 /**
  * Acceptance tests of t176 — the bundle validator's cross-check between a
- * node's `contrato.verificacoes` and the `checks` of the manifest its
- * `skill_ref` pins.
+ * node's `contract.checks` and the `checks` of the manifest its `skill_ref`
+ * pins.
  *
  * The rule under test is structural, and only structural: same item count,
- * same sequence of `tipo` position by position, and a byte-identical `comando`
- * on every `deterministico` item. The prose of an `agentico` item is
+ * same sequence of `type` position by position, and a byte-identical `command`
+ * on every `deterministic` item. The prose of an `agentic` item is
  * deliberately NOT compared. The two are distinct FORMATS for the same
- * verification, not the same field duplicated — `evidencia_obrigatoria` is a
+ * verification, not the same field duplicated — `required_evidence` is a
  * list of artifacts in the manifest and the literal `true` in the graph — and
  * `packages/runner/src/synthesizer/prompt.ts` instructs the synthesizer to
  * REWRITE the verification on each side rather than copy it. A rule that
@@ -19,10 +19,9 @@
  * bundle would then be rejected for the pin instead of for the divergence
  * under test.
  *
- * The Portuguese keys read below (`nos`, `contrato`, `verificacoes`, `tipo`,
- * `comando`, `checks`, `skill_ref`) are the graph-bundle and skill-manifest
- * JSON Schema, frozen by D18's own carve-out: these tests read that format,
- * they do not own it.
+ * The keys read below (`nodes`, `contract`, `checks`, `type`, `command`,
+ * `skill_ref`) are the graph-bundle and skill-manifest JSON Schema, English
+ * since t178: these tests read that format, they do not own it.
  *
  * Run with: `node --test scripts/`
  */
@@ -57,9 +56,9 @@ function bundleCopy() {
 function editGraph(bundle, id, mutate) {
   const target = path.join(bundle, 'grafo.json');
   const doc = JSON.parse(readFileSync(target, 'utf8'));
-  const found = doc.nos.find((candidate) => candidate.id === id);
+  const found = doc.nodes.find((candidate) => candidate.id === id);
   assert.ok(found, `the bundle no longer has a node "${id}"`);
-  mutate(found.contrato.verificacoes);
+  mutate(found.contract.checks);
   writeFileSync(target, `${JSON.stringify(doc, null, 2)}\n`);
   return bundle;
 }
@@ -80,7 +79,7 @@ test('AT1 — a bundle whose verifications line up with the pinned checks is val
 
 test('AT2 — a deterministic command that diverges from the check fails the bundle', () => {
   const bundle = editGraph(bundleCopy(), 'integrar', (list) => {
-    list[0].comando = 'make check';
+    list[0].command = 'make check';
   });
 
   const report = validateBundle(bundle);
@@ -134,8 +133,8 @@ test('AT3b — the same items in another order fail the bundle', () => {
 
 test('AT3c — the prose of an agentic item is free to differ from the check', () => {
   const bundle = editGraph(bundleCopy(), 'refinar', (list) => {
-    list[0].instrucao = 'Pergunta reescrita neste formato, com outras palavras.';
-    list[0].descricao = 'Outra redação da mesma prova.';
+    list[0].instruction = 'Pergunta reescrita neste formato, com outras palavras.';
+    list[0].description = 'Outra redação da mesma prova.';
   });
 
   const report = validateBundle(bundle);

@@ -1,48 +1,48 @@
 {
-  "classe": "publicacao-de-texto",
-  "linhagem": {
-    "tipo": "base"
+  "problem_class": "publicacao-de-texto",
+  "lineage": {
+    "type": "base"
   },
   "metadata": {
-    "nome": "Contraexemplo — nó sem contrato",
-    "descricao": "Viola SÓ a regra \"no_com_contrato\": a topologia é sound e as arestas têm condição, mas o nó publicar_texto não declara contrato. Sem contrato não há como verificar o que o nó produziu — é o nó que o sintetizador compôs por alucinação (README, princípio 3). A regra vale igual para portão, que é nó como outro qualquer.",
-    "versao_schema": "1.0.0",
-    "criado_em": "2026-08-14",
-    "origem": "contraexemplo da especificação"
+    "name": "Contraexemplo — nó sem contrato",
+    "description": "Viola SÓ a regra \"no_com_contrato\": a topologia é sound e as arestas têm condição, mas o nó publicar_texto não declara contrato. Sem contrato não há como verificar o que o nó produziu — é o nó que o sintetizador compôs por alucinação (README, princípio 3). A regra vale igual para portão, que é nó como outro qualquer.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-14",
+    "source": "contraexemplo da especificação"
   },
-  "nos": [
+  "nodes": [
     {
       "id": "esbocar_texto",
-      "papel": "redator",
-      "tipo_no": "trabalho",
+      "role": "redator",
+      "node_type": "work",
       "skill_ref": {
         "id": "cartografo/esbocar-texto",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:3f9a3627216879f0544d20d52ab7a0fafa1ae6a4e1a9a9e5d4533be29d9faf42"
       },
-      "contrato": {
-        "entrada_schema": { "type": "object", "properties": { "tema": { "type": "string" } } },
-        "saida_schema": { "type": "object", "properties": { "esboco": { "type": "string" } } },
-        "verificacoes": [
-          { "tipo": "deterministico", "comando": "test -s esboco.md" }
+      "contract": {
+        "input_schema": { "type": "object", "properties": { "tema": { "type": "string" } } },
+        "output_schema": { "type": "object", "properties": { "esboco": { "type": "string" } } },
+        "checks": [
+          { "type": "deterministic", "command": "test -s esboco.md" }
         ]
       }
     },
     {
       "id": "publicar_texto",
-      "papel": "publicador",
-      "tipo_no": "trabalho",
-      "descricao": "Nó sem contrato: não declara entrada, saída nem verificação.",
+      "role": "publicador",
+      "node_type": "work",
+      "description": "Nó sem contrato: não declara entrada, saída nem verificação.",
       "skill_ref": {
         "id": "cartografo/publicar-texto",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:8412cfbdb5cdd8a2290ad84f0a17902ad4dcd5db7cbc7716e7ec846516ad342d"
       }
     }
   ],
-  "arestas": [
-    { "de": "esbocar_texto", "para": "publicar_texto", "condicao": "sempre" }
+  "edges": [
+    { "from": "esbocar_texto", "to": "publicar_texto", "condition": "sempre" }
   ],
-  "no_inicial": "esbocar_texto",
-  "nos_finais": ["publicar_texto"]
+  "initial_node": "esbocar_texto",
+  "final_nodes": ["publicar_texto"]
 }

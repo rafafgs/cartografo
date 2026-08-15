@@ -5,7 +5,7 @@
  *
  * - `validarEstrutura(doc)` — shape and referential integrity: required keys
  *   present, node ids unique, every edge and every id in
- *   `no_inicial`/`nos_finais` pointing at a node that exists.
+ *   `initial_node`/`final_nodes` pointing at a node that exists.
  * - `validarSoundness(doc)` — the four formal workflow-net rules (van der
  *   Aalst) the graph validation gate applies: reachable, terminates,
  *   edge with condition, node with contract.
@@ -35,7 +35,11 @@
  * The message text under `mensagem` is NOT part of that freeze, and moved to
  * English with t180. It moved in lockstep with the port, because it has to:
  * the parity test compares the two reports whole, so a sentence rewritten on
- * one side and not the other fails here, loudly, on the next run.
+ * one side and not the other fails here, loudly, on the next run. The same
+ * applies to the field names quoted inside those messages, which moved with the
+ * document's keys in t178 (the 2026-08-15 D18 amendment): the report vocabulary
+ * is frozen, the DOCUMENT vocabulary is not, and a message still naming `nos`
+ * would be pointing at a key the format no longer has.
  *
  * CLI use: `node scripts/validar-grafo.mjs schema/exemplos/*.json`
  */
@@ -57,16 +61,16 @@ export const RULES = Object.freeze({
 });
 
 const REQUIRED_DOC_FIELDS = [
-  'classe',
-  'linhagem',
+  'problem_class',
+  'lineage',
   'metadata',
-  'nos',
-  'arestas',
-  'no_inicial',
-  'nos_finais',
+  'nodes',
+  'edges',
+  'initial_node',
+  'final_nodes',
 ];
-const REQUIRED_NODE_FIELDS = ['id', 'papel', 'tipo_no', 'skill_ref', 'contrato'];
-const REQUIRED_EDGE_FIELDS = ['de', 'para', 'condicao'];
+const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
+const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isFilledText = (value) => typeof value === 'string' && value.trim() !== '';
@@ -93,17 +97,17 @@ export function validarEstrutura(doc) {
     }
   }
 
-  if (doc.nos !== undefined && !Array.isArray(doc.nos)) {
-    annotate('campo_invalido', '"nos" has to be a list', 'nos');
+  if (doc.nodes !== undefined && !Array.isArray(doc.nodes)) {
+    annotate('campo_invalido', '"nodes" has to be a list', 'nodes');
   }
-  if (doc.arestas !== undefined && !Array.isArray(doc.arestas)) {
-    annotate('campo_invalido', '"arestas" has to be a list', 'arestas');
+  if (doc.edges !== undefined && !Array.isArray(doc.edges)) {
+    annotate('campo_invalido', '"edges" has to be a list', 'edges');
   }
-  if (doc.nos_finais !== undefined && !Array.isArray(doc.nos_finais)) {
-    annotate('campo_invalido', '"nos_finais" has to be a list', 'nos_finais');
+  if (doc.final_nodes !== undefined && !Array.isArray(doc.final_nodes)) {
+    annotate('campo_invalido', '"final_nodes" has to be a list', 'final_nodes');
   }
 
-  const nodes = Array.isArray(doc.nos) ? doc.nos : [];
+  const nodes = Array.isArray(doc.nodes) ? doc.nodes : [];
   const knownIds = new Set();
   const reportedIds = new Set();
 
@@ -144,7 +148,7 @@ export function validarEstrutura(doc) {
     knownIds.add(node.id);
   });
 
-  const edges = Array.isArray(doc.arestas) ? doc.arestas : [];
+  const edges = Array.isArray(doc.edges) ? doc.edges : [];
   edges.forEach((edge, index) => {
     if (!isObject(edge)) {
       annotate('aresta_invalida', `the edge at position ${index} has to be an object`, index);
@@ -155,18 +159,18 @@ export function validarEstrutura(doc) {
         annotate(
           'campo_obrigatorio_ausente',
           `required field missing from edge #${index}: "${field}"`,
-          { de: edge.de ?? null, para: edge.para ?? null },
+          { de: edge.from ?? null, para: edge.to ?? null },
         );
       }
     }
-    for (const side of ['de', 'para']) {
+    for (const side of ['from', 'to']) {
       const target = edge[side];
       if (!isFilledText(target)) {
         if (target !== undefined && target !== null) {
           annotate(
             'id_invalido',
             `edge #${index} needs a filled text in "${side}": ${JSON.stringify(target)}`,
-            { de: edge.de ?? null, para: edge.para ?? null },
+            { de: edge.from ?? null, para: edge.to ?? null },
           );
         }
         continue;
@@ -175,7 +179,7 @@ export function validarEstrutura(doc) {
         annotate(
           'aresta_no_inexistente',
           `edge #${index} references in "${side}" a node that does not exist: "${target}"`,
-          { de: edge.de ?? null, para: edge.para ?? null },
+          { de: edge.from ?? null, para: edge.to ?? null },
         );
       }
     }
@@ -184,21 +188,21 @@ export function validarEstrutura(doc) {
   // The two are mutually exclusive: an id of the wrong type is not an id
   // pointing at a missing node, and only the second one gets to be a reference
   // problem.
-  if (!isFilledText(doc.no_inicial)) {
-    if (doc.no_inicial !== undefined && doc.no_inicial !== null) {
+  if (!isFilledText(doc.initial_node)) {
+    if (doc.initial_node !== undefined && doc.initial_node !== null) {
       annotate(
         'id_invalido',
-        `no_inicial has to be a filled text: ${JSON.stringify(doc.no_inicial)}`,
-        'no_inicial',
+        `initial_node has to be a filled text: ${JSON.stringify(doc.initial_node)}`,
+        'initial_node',
       );
     }
-  } else if (!knownIds.has(doc.no_inicial)) {
-    annotate('no_inicial_inexistente', `no_inicial references a node that does not exist: "${doc.no_inicial}"`, doc.no_inicial);
+  } else if (!knownIds.has(doc.initial_node)) {
+    annotate('no_inicial_inexistente', `initial_node references a node that does not exist: "${doc.initial_node}"`, doc.initial_node);
   }
 
-  const finals = Array.isArray(doc.nos_finais) ? doc.nos_finais : [];
-  if (Array.isArray(doc.nos_finais) && finals.length === 0) {
-    annotate('campo_invalido', '"nos_finais" has to list at least one node', 'nos_finais');
+  const finals = Array.isArray(doc.final_nodes) ? doc.final_nodes : [];
+  if (Array.isArray(doc.final_nodes) && finals.length === 0) {
+    annotate('campo_invalido', '"final_nodes" has to list at least one node', 'final_nodes');
   }
   // No required-fields loop covers an entry of the array, so here the absent
   // value (`null`, `undefined`) is an invalid id like any other.
@@ -206,13 +210,13 @@ export function validarEstrutura(doc) {
     if (!isFilledText(finalId)) {
       annotate(
         'id_invalido',
-        `the id in nos_finais at position ${index} has to be a filled text: ${JSON.stringify(finalId)}`,
+        `the id in final_nodes at position ${index} has to be a filled text: ${JSON.stringify(finalId)}`,
         index,
       );
       return;
     }
     if (!knownIds.has(finalId)) {
-      annotate('no_final_inexistente', `nos_finais references a node that does not exist: "${finalId}"`, finalId);
+      annotate('no_final_inexistente', `final_nodes references a node that does not exist: "${finalId}"`, finalId);
     }
   });
 
@@ -228,8 +232,8 @@ export function validarEstrutura(doc) {
  */
 export function validarSoundness(doc) {
   const violacoes = [];
-  const nodes = isObject(doc) && Array.isArray(doc.nos) ? doc.nos.filter(isObject) : [];
-  const edges = isObject(doc) && Array.isArray(doc.arestas) ? doc.arestas.filter(isObject) : [];
+  const nodes = isObject(doc) && Array.isArray(doc.nodes) ? doc.nodes.filter(isObject) : [];
+  const edges = isObject(doc) && Array.isArray(doc.edges) ? doc.edges.filter(isObject) : [];
   const ids = nodes.map((node) => node.id).filter(isFilledText);
   const known = new Set(ids);
 
@@ -239,14 +243,14 @@ export function validarSoundness(doc) {
   const outgoing = new Map(ids.map((id) => [id, []]));
   const incoming = new Map(ids.map((id) => [id, []]));
   for (const edge of edges) {
-    if (!known.has(edge.de) || !known.has(edge.para)) continue;
-    outgoing.get(edge.de).push(edge.para);
-    incoming.get(edge.para).push(edge.de);
+    if (!known.has(edge.from) || !known.has(edge.to)) continue;
+    outgoing.get(edge.from).push(edge.to);
+    incoming.get(edge.to).push(edge.from);
   }
 
-  // 1. reachable — every node is reachable from no_inicial.
+  // 1. reachable — every node is reachable from initial_node.
   const reached = traverse(
-    known.has(doc?.no_inicial) ? [doc.no_inicial] : [],
+    known.has(doc?.initial_node) ? [doc.initial_node] : [],
     (id) => outgoing.get(id) ?? [],
   );
   for (const id of ids) {
@@ -257,7 +261,7 @@ export function validarSoundness(doc) {
   // Computed backwards: whoever reaches the end is whoever reaches a final node
   // walking the reversed edges. A node stuck in a cycle with no way out is
   // simply never reached.
-  const finals = (Array.isArray(doc?.nos_finais) ? doc.nos_finais : []).filter((id) => known.has(id));
+  const finals = (Array.isArray(doc?.final_nodes) ? doc.final_nodes : []).filter((id) => known.has(id));
   const reachEnd = traverse(finals, (id) => incoming.get(id) ?? []);
   for (const id of ids) {
     if (!reachEnd.has(id)) violacoes.push({ regra: RULES.TERMINATES, alvo: id });
@@ -265,10 +269,10 @@ export function validarSoundness(doc) {
 
   // 3. edge with condition — no transition without a label.
   for (const edge of edges) {
-    if (!isFilledText(edge.condicao)) {
+    if (!isFilledText(edge.condition)) {
       violacoes.push({
         regra: RULES.EDGE_WITH_CONDITION,
-        alvo: { de: edge.de ?? null, para: edge.para ?? null },
+        alvo: { de: edge.from ?? null, para: edge.to ?? null },
       });
     }
   }
@@ -299,17 +303,17 @@ function traverse(seeds, neighbours) {
 
 function hasSkillRef(node) {
   const ref = node.skill_ref;
-  return isObject(ref) && isFilledText(ref.id) && isFilledText(ref.versao) && isFilledText(ref.hash);
+  return isObject(ref) && isFilledText(ref.id) && isFilledText(ref.version) && isFilledText(ref.hash);
 }
 
 function hasContract(node) {
-  const contract = node.contrato;
+  const contract = node.contract;
   return (
     isObject(contract) &&
-    isObject(contract.entrada_schema) &&
-    isObject(contract.saida_schema) &&
-    Array.isArray(contract.verificacoes) &&
-    contract.verificacoes.length > 0
+    isObject(contract.input_schema) &&
+    isObject(contract.output_schema) &&
+    Array.isArray(contract.checks) &&
+    contract.checks.length > 0
   );
 }
 

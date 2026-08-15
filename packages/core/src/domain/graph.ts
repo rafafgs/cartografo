@@ -15,6 +15,12 @@
  * The message PROSE moved to English with t180, in both files at once — a
  * sentence that changed here and not there is what `deepEqual` catches.
  *
+ * The DOCUMENT's own keys moved with t178 (the 2026-08-15 D18 amendment), which
+ * is why the two vocabularies now sit side by side: `doc.nodes` read out of an
+ * English document, `erros`/`violacoes` written into a frozen Portuguese report.
+ * The field names quoted INSIDE a message moved with the document, because a
+ * message naming a key that no longer exists is wrong, not merely untranslated.
+ *
  * Two checks, deliberately separate:
  *
  * - `validateStructure` — shape and referential integrity;
@@ -42,32 +48,32 @@ export const RULES = Object.freeze({
  */
 export interface GraphNode {
   id: string;
-  papel: string;
-  tipo_no: string;
-  descricao?: string;
+  role: string;
+  node_type: string;
+  description?: string;
   skill_ref: unknown;
-  contrato: unknown;
+  contract: unknown;
   [key: string]: unknown;
 }
 
 /** An edge of the document, already validated. */
 export interface GraphEdge {
-  de: string;
-  para: string;
-  condicao: string;
-  descricao?: string;
+  from: string;
+  to: string;
+  condition: string;
+  description?: string;
   [key: string]: unknown;
 }
 
 /** Graph document (the same format as `schema/grafo.schema.json`). */
 export interface GraphDocument {
-  classe: string;
-  linhagem: { tipo: string; base_classe?: string; origem_proposta_id?: string };
+  problem_class: string;
+  lineage: { type: string; base_class?: string; source_proposal_id?: string };
   metadata: Record<string, unknown>;
-  nos: GraphNode[];
-  arestas: GraphEdge[];
-  no_inicial: string;
-  nos_finais: string[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  initial_node: string;
+  final_nodes: string[];
   [key: string]: unknown;
 }
 
@@ -103,17 +109,22 @@ export interface GraphReport {
 
 type PlainObject = Record<string, unknown>;
 
-const REQUIRED_DOCUMENT_FIELDS = [
-  'classe',
-  'linhagem',
+/**
+ * The document's own `required`, node's and edge's — exported so
+ * `test/domain-manifest-fields.test.ts` can hold them against
+ * `schema/grafo.schema.json` and fail the moment one side is renamed alone.
+ */
+export const REQUIRED_DOCUMENT_FIELDS = [
+  'problem_class',
+  'lineage',
   'metadata',
-  'nos',
-  'arestas',
-  'no_inicial',
-  'nos_finais',
+  'nodes',
+  'edges',
+  'initial_node',
+  'final_nodes',
 ];
-const REQUIRED_NODE_FIELDS = ['id', 'papel', 'tipo_no', 'skill_ref', 'contrato'];
-const REQUIRED_EDGE_FIELDS = ['de', 'para', 'condicao'];
+export const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
+export const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
 
 function isObject(value: unknown): value is PlainObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -150,17 +161,17 @@ export function validateStructure(doc: unknown): StructureReport {
     }
   }
 
-  if (doc.nos !== undefined && !Array.isArray(doc.nos)) {
-    note('campo_invalido', '"nos" has to be a list', 'nos');
+  if (doc.nodes !== undefined && !Array.isArray(doc.nodes)) {
+    note('campo_invalido', '"nodes" has to be a list', 'nodes');
   }
-  if (doc.arestas !== undefined && !Array.isArray(doc.arestas)) {
-    note('campo_invalido', '"arestas" has to be a list', 'arestas');
+  if (doc.edges !== undefined && !Array.isArray(doc.edges)) {
+    note('campo_invalido', '"edges" has to be a list', 'edges');
   }
-  if (doc.nos_finais !== undefined && !Array.isArray(doc.nos_finais)) {
-    note('campo_invalido', '"nos_finais" has to be a list', 'nos_finais');
+  if (doc.final_nodes !== undefined && !Array.isArray(doc.final_nodes)) {
+    note('campo_invalido', '"final_nodes" has to be a list', 'final_nodes');
   }
 
-  const nodes: unknown[] = Array.isArray(doc.nos) ? doc.nos : [];
+  const nodes: unknown[] = Array.isArray(doc.nodes) ? doc.nodes : [];
   const knownIds = new Set<string>();
   const alreadyReportedIds = new Set<string>();
 
@@ -201,7 +212,7 @@ export function validateStructure(doc: unknown): StructureReport {
     knownIds.add(node.id);
   });
 
-  const edges: unknown[] = Array.isArray(doc.arestas) ? doc.arestas : [];
+  const edges: unknown[] = Array.isArray(doc.edges) ? doc.edges : [];
   edges.forEach((edge, index) => {
     if (!isObject(edge)) {
       note('aresta_invalida', `the edge at position ${index} has to be an object`, index);
@@ -212,18 +223,18 @@ export function validateStructure(doc: unknown): StructureReport {
         note(
           'campo_obrigatorio_ausente',
           `required field missing from edge #${index}: "${field}"`,
-          { de: edge.de ?? null, para: edge.para ?? null },
+          { de: edge.from ?? null, para: edge.to ?? null },
         );
       }
     }
-    for (const end of ['de', 'para']) {
+    for (const end of ['from', 'to']) {
       const target = edge[end];
       if (!isFilledText(target)) {
         if (target !== undefined && target !== null) {
           note(
             'id_invalido',
             `edge #${index} needs a filled text in "${end}": ${JSON.stringify(target)}`,
-            { de: edge.de ?? null, para: edge.para ?? null },
+            { de: edge.from ?? null, para: edge.to ?? null },
           );
         }
         continue;
@@ -232,7 +243,7 @@ export function validateStructure(doc: unknown): StructureReport {
         note(
           'aresta_no_inexistente',
           `edge #${index} references in "${end}" a node that does not exist: "${target}"`,
-          { de: edge.de ?? null, para: edge.para ?? null },
+          { de: edge.from ?? null, para: edge.to ?? null },
         );
       }
     }
@@ -241,25 +252,25 @@ export function validateStructure(doc: unknown): StructureReport {
   // The two are mutually exclusive: an id of the wrong type is not an id
   // pointing at a missing node, and only the second one gets to be a reference
   // problem.
-  if (!isFilledText(doc.no_inicial)) {
-    if (doc.no_inicial !== undefined && doc.no_inicial !== null) {
+  if (!isFilledText(doc.initial_node)) {
+    if (doc.initial_node !== undefined && doc.initial_node !== null) {
       note(
         'id_invalido',
-        `no_inicial has to be a filled text: ${JSON.stringify(doc.no_inicial)}`,
-        'no_inicial',
+        `initial_node has to be a filled text: ${JSON.stringify(doc.initial_node)}`,
+        'initial_node',
       );
     }
-  } else if (!knownIds.has(doc.no_inicial)) {
+  } else if (!knownIds.has(doc.initial_node)) {
     note(
       'no_inicial_inexistente',
-      `no_inicial references a node that does not exist: "${doc.no_inicial}"`,
-      doc.no_inicial,
+      `initial_node references a node that does not exist: "${doc.initial_node}"`,
+      doc.initial_node,
     );
   }
 
-  const finals: unknown[] = Array.isArray(doc.nos_finais) ? doc.nos_finais : [];
-  if (Array.isArray(doc.nos_finais) && finals.length === 0) {
-    note('campo_invalido', '"nos_finais" has to list at least one node', 'nos_finais');
+  const finals: unknown[] = Array.isArray(doc.final_nodes) ? doc.final_nodes : [];
+  if (Array.isArray(doc.final_nodes) && finals.length === 0) {
+    note('campo_invalido', '"final_nodes" has to list at least one node', 'final_nodes');
   }
   // No required-fields loop covers an entry of the array, so here the absent
   // value (`null`, `undefined`) is an invalid id like any other.
@@ -267,13 +278,13 @@ export function validateStructure(doc: unknown): StructureReport {
     if (!isFilledText(final)) {
       note(
         'id_invalido',
-        `the id in nos_finais at position ${index} has to be a filled text: ${JSON.stringify(final)}`,
+        `the id in final_nodes at position ${index} has to be a filled text: ${JSON.stringify(final)}`,
         index,
       );
       return;
     }
     if (!knownIds.has(final)) {
-      note('no_final_inexistente', `nos_finais references a node that does not exist: "${final}"`, final);
+      note('no_final_inexistente', `final_nodes references a node that does not exist: "${final}"`, final);
     }
   });
 
@@ -290,8 +301,8 @@ export function validateStructure(doc: unknown): StructureReport {
 export function validateSoundness(doc: unknown): SoundnessReport {
   const violations: SoundnessViolation[] = [];
   const document = isObject(doc) ? doc : {};
-  const nodes = Array.isArray(document.nos) ? document.nos.filter(isObject) : [];
-  const edges = Array.isArray(document.arestas) ? document.arestas.filter(isObject) : [];
+  const nodes = Array.isArray(document.nodes) ? document.nodes.filter(isObject) : [];
+  const edges = Array.isArray(document.edges) ? document.edges.filter(isObject) : [];
   const ids = nodes.map((node) => node.id).filter(isFilledText);
   const known = new Set(ids);
 
@@ -301,16 +312,16 @@ export function validateSoundness(doc: unknown): SoundnessReport {
   const outgoing = new Map<string, string[]>(ids.map((id) => [id, []]));
   const incoming = new Map<string, string[]>(ids.map((id) => [id, []]));
   for (const edge of edges) {
-    const from = edge.de;
-    const to = edge.para;
+    const from = edge.from;
+    const to = edge.to;
     if (!isFilledText(from) || !isFilledText(to)) continue;
     if (!known.has(from) || !known.has(to)) continue;
     outgoing.get(from)?.push(to);
     incoming.get(to)?.push(from);
   }
 
-  // 1. reachable — every node is reachable from no_inicial.
-  const start = document.no_inicial;
+  // 1. reachable — every node is reachable from initial_node.
+  const start = document.initial_node;
   const reached = traverse(
     isFilledText(start) && known.has(start) ? [start] : [],
     (id) => outgoing.get(id) ?? [],
@@ -322,8 +333,8 @@ export function validateSoundness(doc: unknown): SoundnessReport {
   // 2. terminates — from every node there is a path to some final node. Computed
   // backwards: whoever reaches the end is whoever reaches a final walking the
   // reversed edges. A node stuck in a cycle with no exit is simply never reached.
-  const declaredFinals: unknown[] = Array.isArray(document.nos_finais)
-    ? document.nos_finais
+  const declaredFinals: unknown[] = Array.isArray(document.final_nodes)
+    ? document.final_nodes
     : [];
   const finals = declaredFinals.filter(
     (id): id is string => isFilledText(id) && known.has(id),
@@ -335,10 +346,10 @@ export function validateSoundness(doc: unknown): SoundnessReport {
 
   // 3. edge-with-condition — no transition without a label.
   for (const edge of edges) {
-    if (!isFilledText(edge.condicao)) {
+    if (!isFilledText(edge.condition)) {
       violations.push({
         regra: RULES.EDGE_WITH_CONDITION,
-        alvo: { de: edge.de ?? null, para: edge.para ?? null },
+        alvo: { de: edge.from ?? null, para: edge.to ?? null },
       });
     }
   }
@@ -386,18 +397,18 @@ function hasSkillRef(node: PlainObject): boolean {
   return (
     isObject(ref) &&
     isFilledText(ref.id) &&
-    isFilledText(ref.versao) &&
+    isFilledText(ref.version) &&
     isFilledText(ref.hash)
   );
 }
 
 function hasContract(node: PlainObject): boolean {
-  const contract = node.contrato;
+  const contract = node.contract;
   return (
     isObject(contract) &&
-    isObject(contract.entrada_schema) &&
-    isObject(contract.saida_schema) &&
-    Array.isArray(contract.verificacoes) &&
-    contract.verificacoes.length > 0
+    isObject(contract.input_schema) &&
+    isObject(contract.output_schema) &&
+    Array.isArray(contract.checks) &&
+    contract.checks.length > 0
   );
 }

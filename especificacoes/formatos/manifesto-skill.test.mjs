@@ -242,13 +242,21 @@ test('t178 — a manifest that still uses any single old key is refused', () => 
   const valid = example(EXAMPLES[1]);
   assert.ok(validate(valid), `the baseline stopped validating: ${JSON.stringify(validate.errors)}`);
 
+  // `budgets` is the one optional field in the map, and the example declares
+  // none — so it is supplied here rather than skipped: an optional key that is
+  // still spelled the old way has to be refused exactly like a required one.
+  const IF_ABSENT = { budgets: { timeout_s: 1800 } };
+
   let checked = 0;
   for (const [old, current] of Object.entries(RETIRED_KEYS)) {
     const manifest = example(EXAMPLES[1]);
-    assert.ok(
-      Object.hasOwn(manifest, current),
-      `the example does not carry "${current}", so this case would prove nothing`,
-    );
+    if (!Object.hasOwn(manifest, current)) {
+      assert.ok(
+        Object.hasOwn(IF_ABSENT, current),
+        `the example does not carry "${current}", so this case would prove nothing`,
+      );
+      manifest[current] = IF_ABSENT[current];
+    }
     manifest[old] = manifest[current];
     delete manifest[current];
     checked += 1;

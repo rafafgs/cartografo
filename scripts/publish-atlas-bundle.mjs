@@ -17,8 +17,8 @@
  *    the atlas is content other people import, and a half-published map with a
  *    broken pin is worse than no map at all (D4).
  * 2. **The class names the directory.** `<atlas-dir>/<classe>/` is read from the
- *    graph document's own `classe` field, which is why an atlas checkout and
- *    this repository's `grafos-de-fabrica/<classe>/` are interchangeable inputs
+ *    graph document's own `problem_class` field, which is why an atlas checkout
+ *    and this repository's `grafos-de-fabrica/<classe>/` are interchangeable inputs
  *    to `cartografo import`: same shape, same file names, same hashes.
  * 3. **It never runs `git`.** Committing and pushing the populated checkout is
  *    the caller's job — CI or a person. Git stays at the edges and never
@@ -36,10 +36,10 @@
  * Zero dependencies: only Node built-ins and the reference validator, the same
  * constraint `validate-factory-bundle.mjs` carries.
  *
- * The Portuguese keys and directory names this file reads (`classe`,
- * `grafo.json`, `skills/`) are the graph-bundle and skill-manifest formats,
- * frozen by D18's own carve-out: this module publishes that format, it does not
- * own it.
+ * The names this file reads (`problem_class`, `grafo.json`, `skills/`) belong to
+ * the graph-bundle and skill-manifest formats: this module publishes that
+ * format, it does not own it. The KEY moved to English with t178; the file and
+ * directory names did not, and are the downstream slice's to rename.
  */
 
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
@@ -58,7 +58,7 @@ const SKILLS_DIR = 'skills';
 /**
  * A class that is safe as a single directory name.
  *
- * The format only requires `classe` to be a non-empty string
+ * The format only requires `problem_class` to be a non-empty string
  * (`schema/grafo.schema.json`), and this script turns that string into a path.
  * Anything with a separator, a drive letter or a `..` in it would publish
  * outside the atlas, so it is refused here instead of being sanitized: a class
@@ -129,11 +129,11 @@ export function publishBundle(bundleDir, atlasDir) {
 
   // 2. the class names the directory, and it has to BE a directory name.
   const document = JSON.parse(readFileSync(path.join(bundle, GRAPH_FILE), 'utf8'));
-  const name = document.classe;
+  const name = document.problem_class;
   if (typeof name !== 'string' || !SAFE_CLASS.test(name)) {
     return refuse(
       'classe_insegura',
-      `"classe" has to be usable as a directory name (${SAFE_CLASS.source}), got ${JSON.stringify(name)}`,
+      `"problem_class" has to be usable as a directory name (${SAFE_CLASS.source}), got ${JSON.stringify(name)}`,
     );
   }
   outcome.name = name;

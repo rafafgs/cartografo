@@ -1,28 +1,28 @@
 {
-  "classe": "bets-assimetricas",
-  "linhagem": {
-    "tipo": "base"
+  "problem_class": "bets-assimetricas",
+  "lineage": {
+    "type": "base"
   },
   "metadata": {
-    "nome": "Bets assimétricas — tese de investimento",
-    "descricao": "Grafo de fábrica 2 (D14): triagem → coleta de fundamentos → análise de assimetria → red team → dimensionamento de risco → decisão (portão humano obrigatório, sempre) → registro e monitoramento. Um nó por passo da sequência de D14; um único nó final coleta as quatro formas de a travessia terminar, para que as métricas de processo valham por travessia e não só pela aprovada.",
-    "versao_schema": "1.0.0",
-    "criado_em": "2026-08-14",
-    "origem": "escrita manual a partir de D14 (t116); nenhuma síntese envolvida"
+    "name": "Bets assimétricas — tese de investimento",
+    "description": "Grafo de fábrica 2 (D14): triagem → coleta de fundamentos → análise de assimetria → red team → dimensionamento de risco → decisão (portão humano obrigatório, sempre) → registro e monitoramento. Um nó por passo da sequência de D14; um único nó final coleta as quatro formas de a travessia terminar, para que as métricas de processo valham por travessia e não só pela aprovada.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-14",
+    "source": "escrita manual a partir de D14 (t116); nenhuma síntese envolvida"
   },
-  "nos": [
+  "nodes": [
     {
       "id": "triagem",
-      "papel": "triador",
-      "tipo_no": "portao",
-      "descricao": "Filtra a ideia contra os critérios do investidor antes de gastar pesquisa nela, e define o escopo do que pesquisar quando ela passa.",
+      "role": "triador",
+      "node_type": "gate",
+      "description": "Filtra a ideia contra os critérios do investidor antes de gastar pesquisa nela, e define o escopo do que pesquisar quando ela passa.",
       "skill_ref": {
         "id": "triar-tese",
-        "versao": "1.0.0",
-        "hash": "sha256:7a80684172f59bcddb80ef9b3014e46f6867d7230835b44f393c1b89faab30dd"
+        "version": "1.0.0",
+        "hash": "sha256:950e14902d464c3a5148e3a285f7d413d0c2d00ab06720cb430f5c132587e46e"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "tese",
@@ -52,20 +52,20 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
-            "resultado",
+            "outcome",
             "tese_triada",
             "criterios_avaliados",
             "justificativa"
           ],
           "properties": {
-            "resultado": {
+            "outcome": {
               "enum": [
-                "passou",
-                "falhou",
-                "escalar_humano"
+                "pass",
+                "fail",
+                "escalate_human"
               ],
               "description": "passou segue pela aresta \"aprofundar\"; falhou, pela aresta \"descartar\""
             },
@@ -89,28 +89,28 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "Todo critério declarado recebeu veredito com evidência da própria entrada, e um \"passou\" com critério não atendido está justificado? Anexe, por critério, o trecho que sustenta o veredito.",
-            "evidencia_obrigatoria": true,
-            "descricao": "Aprovar uma ideia sem piso queima a rodada inteira de pesquisa seguinte — é o defeito caro desta etapa, e nenhum comando o detecta."
+            "type": "agentic",
+            "instruction": "Todo critério declarado recebeu veredito com evidência da própria entrada, e um \"passou\" com critério não atendido está justificado? Anexe, por critério, o trecho que sustenta o veredito.",
+            "required_evidence": true,
+            "description": "Aprovar uma ideia sem piso queima a rodada inteira de pesquisa seguinte — é o defeito caro desta etapa, e nenhum comando o detecta."
           }
         ]
       }
     },
     {
       "id": "coleta-fundamentos",
-      "papel": "pesquisador",
-      "tipo_no": "trabalho",
-      "descricao": "Reúne os fundamentos em documento primário e separa fato, premissa e lacuna — marcando explicitamente cada premissa sem fonte.",
+      "role": "pesquisador",
+      "node_type": "work",
+      "description": "Reúne os fundamentos em documento primário e separa fato, premissa e lacuna — marcando explicitamente cada premissa sem fonte.",
       "skill_ref": {
         "id": "coletar-fundamentos",
-        "versao": "1.0.0",
-        "hash": "sha256:29689a5dd09730c711e16ff1b3f1ac451b26cd4e6bc06873d40c020b1f6ac395"
+        "version": "1.0.0",
+        "hash": "sha256:c5046a5e03e6778ee97e2e8e659559847a30c119d6f448f017505ab33cf2beb5"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "tese_triada"
@@ -134,7 +134,7 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
             "fundamentos",
@@ -164,28 +164,28 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "Cada número registrado abre na fonte citada, e cada premissa com fonte é de fato sustentada por ela? Anexe o trecho citado de cada fonte e a lista das premissas com fonte nula.",
-            "evidencia_obrigatoria": true,
-            "descricao": "Premissa com fonte que não a sustenta passa pelo red team disfarçada de fato — é o defeito mais caro da coleta."
+            "type": "agentic",
+            "instruction": "Cada número registrado abre na fonte citada, e cada premissa com fonte é de fato sustentada por ela? Anexe o trecho citado de cada fonte e a lista das premissas com fonte nula.",
+            "required_evidence": true,
+            "description": "Premissa com fonte que não a sustenta passa pelo red team disfarçada de fato — é o defeito mais caro da coleta."
           }
         ]
       }
     },
     {
       "id": "analise-assimetria",
-      "papel": "analista",
-      "tipo_no": "trabalho",
-      "descricao": "Mede a forma da aposta: downside limitado com piso rastreável, upside alvo e os cenários que ligam um ao outro.",
+      "role": "analista",
+      "node_type": "work",
+      "description": "Mede a forma da aposta: downside limitado com piso rastreável, upside alvo e os cenários que ligam um ao outro.",
       "skill_ref": {
         "id": "analisar-assimetria",
-        "versao": "1.0.0",
-        "hash": "sha256:d8adde77a50b877cdff192732714bcbf5ec70ef3a0f1a61ea948b18af85a1ca6"
+        "version": "1.0.0",
+        "hash": "sha256:1a09017b5be2156ee8343c9a6bae889e5987beeabaa8fd8e06d0d4305744217f"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "tese_triada",
@@ -210,7 +210,7 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
             "assimetria"
@@ -225,28 +225,28 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "O downside máximo sai de um piso que existe (caixa, ativo, contrato) e não de uma premissa otimista, e cada cenário se prende a premissas da lista recebida? Refaça a conta da razão de assimetria e anexe.",
-            "evidencia_obrigatoria": true,
-            "descricao": "Piso narrativo é o modo silencioso de inflar a assimetria: o número fica bonito e a aposta fica simétrica."
+            "type": "agentic",
+            "instruction": "O downside máximo sai de um piso que existe (caixa, ativo, contrato) e não de uma premissa otimista, e cada cenário se prende a premissas da lista recebida? Refaça a conta da razão de assimetria e anexe.",
+            "required_evidence": true,
+            "description": "Piso narrativo é o modo silencioso de inflar a assimetria: o número fica bonito e a aposta fica simétrica."
           }
         ]
       }
     },
     {
       "id": "red-team",
-      "papel": "red-team",
-      "tipo_no": "portao",
-      "descricao": "Papel dedicado a derrubar a tese com contra-evidência própria; a tese que não responde a uma objeção grave morre aqui.",
+      "role": "red-team",
+      "node_type": "gate",
+      "description": "Papel dedicado a derrubar a tese com contra-evidência própria; a tese que não responde a uma objeção grave morre aqui.",
       "skill_ref": {
         "id": "derrubar-tese",
-        "versao": "1.0.0",
-        "hash": "sha256:8e6436602431dc8574ebacbce333b4faf805d126a9ade5ff5098a1cf5bf16f32"
+        "version": "1.0.0",
+        "hash": "sha256:20de5f9f7348d33ac05cf7e495ad0bc596ce3c68034989a6af715ae2f5ac45cb"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "tese_triada",
@@ -276,19 +276,19 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
-            "resultado",
+            "outcome",
             "objecoes",
             "contra_evidencia_pesquisada"
           ],
           "properties": {
-            "resultado": {
+            "outcome": {
               "enum": [
-                "passou",
-                "falhou",
-                "escalar_humano"
+                "pass",
+                "fail",
+                "escalate_human"
               ],
               "description": "passou segue pela aresta \"sobrevive\"; falhou, pela aresta \"morta\""
             },
@@ -312,28 +312,28 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "A contra-evidência é externa ao material recebido e datada, as premissas de maior alavancagem foram atacadas, e nenhum \"passou\" convive com objeção de gravidade alta sem resposta? Anexe cada fonte de contra-evidência.",
-            "evidencia_obrigatoria": true,
-            "descricao": "Portão verifica com evidência própria: reler a análise e concordar com ela não é red team."
+            "type": "agentic",
+            "instruction": "A contra-evidência é externa ao material recebido e datada, as premissas de maior alavancagem foram atacadas, e nenhum \"passou\" convive com objeção de gravidade alta sem resposta? Anexe cada fonte de contra-evidência.",
+            "required_evidence": true,
+            "description": "Portão verifica com evidência própria: reler a análise e concordar com ela não é red team."
           }
         ]
       }
     },
     {
       "id": "dimensionamento-risco",
-      "papel": "gestor-de-risco",
-      "tipo_no": "trabalho",
-      "descricao": "Converte assimetria e objeções sobreviventes em tamanho de posição, perda máxima aceita e gatilho de saída observável.",
+      "role": "gestor-de-risco",
+      "node_type": "work",
+      "description": "Converte assimetria e objeções sobreviventes em tamanho de posição, perda máxima aceita e gatilho de saída observável.",
       "skill_ref": {
         "id": "dimensionar-risco",
-        "versao": "1.0.0",
-        "hash": "sha256:e4b32cb394f18543c4461fb139f6f7fa5f932851f3050d0f494723dd0cb65ec1"
+        "version": "1.0.0",
+        "hash": "sha256:24c5aaefdd870dc1abf4ae064f26ca2e4adea4ea69b9d579ecf70e1f57830ec4"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "tese_triada",
@@ -363,7 +363,7 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
             "dimensionamento"
@@ -378,28 +378,28 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "A perda implicada pelo tamanho foi recalculada em % do capital total, as objeções sobreviventes encolheram o número, e o gatilho de saída é observável por terceiro? Anexe a conta refeita.",
-            "evidencia_obrigatoria": true,
-            "descricao": "Dimensionar pela convicção em vez de pela perda é o único erro deste grafo que não dá para desfazer depois."
+            "type": "agentic",
+            "instruction": "A perda implicada pelo tamanho foi recalculada em % do capital total, as objeções sobreviventes encolheram o número, e o gatilho de saída é observável por terceiro? Anexe a conta refeita.",
+            "required_evidence": true,
+            "description": "Dimensionar pela convicção em vez de pela perda é o único erro deste grafo que não dá para desfazer depois."
           }
         ]
       }
     },
     {
       "id": "decisao",
-      "papel": "decisor",
-      "tipo_no": "portao",
-      "descricao": "Portão humano obrigatório, sempre (D14): monta o dossiê e escala. Nenhuma sessão deste nó decide alocação de capital — só transcreve a decisão já registrada.",
+      "role": "decisor",
+      "node_type": "gate",
+      "description": "Portão humano obrigatório, sempre (D14): monta o dossiê e escala. Nenhuma sessão deste nó decide alocação de capital — só transcreve a decisão já registrada.",
       "skill_ref": {
         "id": "escalar-decisao",
-        "versao": "1.0.0",
-        "hash": "sha256:ed703baa5af65e9d9444c9af597cfdff6b3c7be452a050f2eead7cbe6a2c03b0"
+        "version": "1.0.0",
+        "hash": "sha256:3ae0cd3316560726c51296d1965f012694edcc8d9d1d8ef6ed7456d92f93c26e"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "tese_triada",
@@ -437,18 +437,18 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
-            "resultado",
+            "outcome",
             "decisao_humana"
           ],
           "properties": {
-            "resultado": {
+            "outcome": {
               "enum": [
-                "passou",
-                "falhou",
-                "escalar_humano"
+                "pass",
+                "fail",
+                "escalate_human"
               ],
               "description": "passou segue pela aresta \"aprovado\"; falhou, pela aresta \"recusado\""
             },
@@ -461,28 +461,28 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "Existe resposta registrada para a pergunta de alocação desta tese, o texto citado é transcrição literal dela, e o resultado corresponde ao que ela diz? Anexe o id da pergunta e o texto integral da resposta.",
-            "evidencia_obrigatoria": true,
-            "descricao": "Escalar aqui é obrigatório por desenho, não recurso de exceção: o defeito a pegar é a sessão que interpreta a resposta humana a favor da tese."
+            "type": "agentic",
+            "instruction": "Existe resposta registrada para a pergunta de alocação desta tese, o texto citado é transcrição literal dela, e o resultado corresponde ao que ela diz? Anexe o id da pergunta e o texto integral da resposta.",
+            "required_evidence": true,
+            "description": "Escalar aqui é obrigatório por desenho, não recurso de exceção: o defeito a pegar é a sessão que interpreta a resposta humana a favor da tese."
           }
         ]
       }
     },
     {
       "id": "registro-monitoramento",
-      "papel": "registrador",
-      "tipo_no": "trabalho",
-      "descricao": "Nó final único das quatro formas de terminar: grava as métricas de processo da travessia e o que monitorar daqui para frente.",
+      "role": "registrador",
+      "node_type": "work",
+      "description": "Nó final único das quatro formas de terminar: grava as métricas de processo da travessia e o que monitorar daqui para frente.",
       "skill_ref": {
         "id": "registrar-travessia",
-        "versao": "1.0.0",
-        "hash": "sha256:c41d8706ac7a7c608bf158f15bb43656af5570a53b91407be91a9c170fc3329d"
+        "version": "1.0.0",
+        "hash": "sha256:9c00509c621a20f57ed3d5c1b87ae2760a2d9e3587d7f35630643aa4d020570b"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "tese_triada",
@@ -528,7 +528,7 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
             "metricas_processo",
@@ -548,75 +548,75 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "Cada métrica foi recalculada a partir das saídas reais dos nós desta travessia, e não do autorrelato? Anexe o recálculo da fração de premissas com fonte e o caminho de encerramento citado da saída do último nó.",
-            "evidencia_obrigatoria": true,
-            "descricao": "É esta métrica que o topógrafo usa para propor mutação no grafo; métrica estimada envenena o aprendizado da classe inteira."
+            "type": "agentic",
+            "instruction": "Cada métrica foi recalculada a partir das saídas reais dos nós desta travessia, e não do autorrelato? Anexe o recálculo da fração de premissas com fonte e o caminho de encerramento citado da saída do último nó.",
+            "required_evidence": true,
+            "description": "É esta métrica que o topógrafo usa para propor mutação no grafo; métrica estimada envenena o aprendizado da classe inteira."
           }
         ]
       }
     }
   ],
-  "arestas": [
+  "edges": [
     {
-      "de": "triagem",
-      "para": "coleta-fundamentos",
-      "condicao": "aprofundar",
-      "descricao": "A ideia tem piso e gatilho: vale gastar uma rodada de pesquisa nela (resultado \"passou\")."
+      "from": "triagem",
+      "to": "coleta-fundamentos",
+      "condition": "aprofundar",
+      "description": "A ideia tem piso e gatilho: vale gastar uma rodada de pesquisa nela (resultado \"passou\")."
     },
     {
-      "de": "triagem",
-      "para": "registro-monitoramento",
-      "condicao": "descartar",
-      "descricao": "A ideia não passou do primeiro filtro; vai direto para o registro, e a travessia ainda produz métrica (resultado \"falhou\")."
+      "from": "triagem",
+      "to": "registro-monitoramento",
+      "condition": "descartar",
+      "description": "A ideia não passou do primeiro filtro; vai direto para o registro, e a travessia ainda produz métrica (resultado \"falhou\")."
     },
     {
-      "de": "coleta-fundamentos",
-      "para": "analise-assimetria",
-      "condicao": "sempre",
-      "descricao": "Saída única: coletado o material, ele é medido."
+      "from": "coleta-fundamentos",
+      "to": "analise-assimetria",
+      "condition": "sempre",
+      "description": "Saída única: coletado o material, ele é medido."
     },
     {
-      "de": "analise-assimetria",
-      "para": "red-team",
-      "condicao": "sempre",
-      "descricao": "Saída única: toda análise vai ao red team, inclusive — e principalmente — a que parece boa."
+      "from": "analise-assimetria",
+      "to": "red-team",
+      "condition": "sempre",
+      "description": "Saída única: toda análise vai ao red team, inclusive — e principalmente — a que parece boa."
     },
     {
-      "de": "red-team",
-      "para": "dimensionamento-risco",
-      "condicao": "sobrevive",
-      "descricao": "A tese respondeu às objeções graves (resultado \"passou\"); as objeções seguem junto e encolhem o tamanho."
+      "from": "red-team",
+      "to": "dimensionamento-risco",
+      "condition": "sobrevive",
+      "description": "A tese respondeu às objeções graves (resultado \"passou\"); as objeções seguem junto e encolhem o tamanho."
     },
     {
-      "de": "red-team",
-      "para": "registro-monitoramento",
-      "condicao": "morta",
-      "descricao": "Objeção grave sem resposta mata a tese (resultado \"falhou\"): a morte mais barata do grafo."
+      "from": "red-team",
+      "to": "registro-monitoramento",
+      "condition": "morta",
+      "description": "Objeção grave sem resposta mata a tese (resultado \"falhou\"): a morte mais barata do grafo."
     },
     {
-      "de": "dimensionamento-risco",
-      "para": "decisao",
-      "condicao": "sempre",
-      "descricao": "Saída única: dimensionado o risco, a decisão sobe para o humano."
+      "from": "dimensionamento-risco",
+      "to": "decisao",
+      "condition": "sempre",
+      "description": "Saída única: dimensionado o risco, a decisão sobe para o humano."
     },
     {
-      "de": "decisao",
-      "para": "registro-monitoramento",
-      "condicao": "aprovado",
-      "descricao": "O fundador aprovou (resultado \"passou\"): posição aberta, desfecho \"monitorando\"."
+      "from": "decisao",
+      "to": "registro-monitoramento",
+      "condition": "aprovado",
+      "description": "O fundador aprovou (resultado \"passou\"): posição aberta, desfecho \"monitorando\"."
     },
     {
-      "de": "decisao",
-      "para": "registro-monitoramento",
-      "condicao": "recusado",
-      "descricao": "O fundador recusou (resultado \"falhou\"): tese arquivada com a decisão registrada."
+      "from": "decisao",
+      "to": "registro-monitoramento",
+      "condition": "recusado",
+      "description": "O fundador recusou (resultado \"falhou\"): tese arquivada com a decisão registrada."
     }
   ],
-  "no_inicial": "triagem",
-  "nos_finais": [
+  "initial_node": "triagem",
+  "final_nodes": [
     "registro-monitoramento"
   ]
 }

@@ -450,7 +450,7 @@ test('AT15 — the testar node mirrors the manifest: per-criterion verdicts and 
     'a bug without severity cannot be scheduled by the executor',
   );
   assert.deepEqual(
-    shape.properties.resultado.enum,
+    shape.properties.outcome.enum,
     ['aprovado', 'retrabalho', 'escala'],
     'the edge vocabulary stays as it is — that is divergence 2, out of scope here',
   );

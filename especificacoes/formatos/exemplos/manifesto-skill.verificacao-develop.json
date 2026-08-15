@@ -1,10 +1,10 @@
 {
   "id": "verificacao-de-develop",
-  "versao": "1.0.0",
-  "hash": "sha256:ba2c61b16af5bc6e7cf547ddb9b652c5ab80c8ffb46b2fd7e074d45fc1244e2d",
-  "papel": "portao",
-  "descricao": "Confere o artefato produzido por develop: roda a suíte no integrado e caminha semanticamente pelos critérios de aceite, sempre com evidência própria.",
-  "entrada": {
+  "version": "1.0.0",
+  "hash": "sha256:42eb5236ff39590a576d64d9208183636f570695767e37581e4cdc47c0d01b55",
+  "role": "gate",
+  "description": "Confere o artefato produzido por develop: roda a suíte no integrado e caminha semanticamente pelos critérios de aceite, sempre com evidência própria.",
+  "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
@@ -120,22 +120,22 @@
       }
     }
   },
-  "saida": {
+  "output": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
-      "resultado",
+      "outcome",
       "vereditos",
       "nota"
     ],
     "additionalProperties": false,
     "properties": {
-      "resultado": {
+      "outcome": {
         "type": "string",
         "enum": [
-          "passou",
-          "falhou",
-          "escalar_humano"
+          "pass",
+          "fail",
+          "escalate_human"
         ],
         "description": "obrigatório em toda skill de papel portao; é o que o executor lê para escolher a aresta (princípio 2 do README)"
       },
@@ -218,7 +218,7 @@
       }
     }
   },
-  "pre_condicoes": [
+  "preconditions": [
     "artefato integrado no branch que o banco de testes acompanha",
     "banco de testes atualizado até a ponta desse branch",
     "critérios de aceite do ticket disponíveis em lista, com referência estável por critério",
@@ -227,42 +227,42 @@
   "checks": [
     {
       "id": "suite-verde-no-integrado",
-      "tipo": "deterministico",
-      "descricao": "O portão roda a suíte ele mesmo, no artefato integrado. É a metade determinística da verificação e o ponto onde o autorrelato da sessão de develop deixa de importar.",
-      "comando": "{{entrada.projeto.comando_testes}}",
+      "type": "deterministic",
+      "description": "O portão roda a suíte ele mesmo, no artefato integrado. É a metade determinística da verificação e o ponto onde o autorrelato da sessão de develop deixa de importar.",
+      "command": "{{input.projeto.comando_testes}}",
       "timeout_s": 1800
     },
     {
       "id": "caminhada-semantica",
-      "tipo": "agentico",
-      "descricao": "Caminhada critério a critério contra a aplicação rodando — a metade que exige julgamento e por isso não é determinística.",
-      "instrucao": "Caminhe critério a critério pela lista de critérios de aceite do ticket e emita um veredito para cada um, exercitando a aplicação integrada que está rodando em {{entrada.aplicacao.endereco}}.\n\nCada veredito cita evidência produzida por você, neste portão: a requisição que você mesmo disparou e a resposta que voltou, a saída do comando que você mesmo executou, a página que você mesmo renderizou. O relato de quem produziu o artefato (o campo entrada.artefato.gates_declarados, a nota da sessão, a lista de commits) entra como contexto para você saber onde olhar e não vale como evidência de nada: portão que aceita autorrelato como prova não é portão. Se a única coisa que sustenta um critério é a afirmação de quem o implementou, o veredito não é \"passou\".\n\nCritério que você não conseguiu exercitar recebe veredito \"nao_exercitado\", com a evidência do que impediu — nunca um \"passou\" silencioso. Critério que exige julgamento estético ou prova manual vai para o humano: resultado \"escalar_humano\", com toda a evidência que você juntou anexada.",
-      "evidencia_obrigatoria": [
+      "type": "agentic",
+      "description": "Caminhada critério a critério contra a aplicação rodando — a metade que exige julgamento e por isso não é determinística.",
+      "instruction": "Caminhe critério a critério pela lista de critérios de aceite do ticket e emita um veredito para cada um, exercitando a aplicação integrada que está rodando em {{input.aplicacao.endereco}}.\n\nCada veredito cita evidência produzida por você, neste portão: a requisição que você mesmo disparou e a resposta que voltou, a saída do comando que você mesmo executou, a página que você mesmo renderizou. O relato de quem produziu o artefato (o campo entrada.artefato.gates_declarados, a nota da sessão, a lista de commits) entra como contexto para você saber onde olhar e não vale como evidência de nada: portão que aceita autorrelato como prova não é portão. Se a única coisa que sustenta um critério é a afirmação de quem o implementou, o veredito não é \"passou\".\n\nCritério que você não conseguiu exercitar recebe veredito \"nao_exercitado\", com a evidência do que impediu — nunca um \"passou\" silencioso. Critério que exige julgamento estético ou prova manual vai para o humano: resultado \"escalar_humano\", com toda a evidência que você juntou anexada.",
+      "required_evidence": [
         "requisicao_disparada_pelo_portao_e_resposta_recebida",
         "saida_do_comando_executado_pelo_portao",
         "referencia_ao_criterio_de_aceite_avaliado"
       ]
     }
   ],
-  "permissoes": {
+  "permissions": {
     "filesystem": {
-      "leitura": [
+      "read": [
         "**"
       ],
-      "escrita": [
+      "write": [
         "/tmp/cartografo/**"
       ]
     },
-    "rede": {
-      "permitido": true,
-      "dominios": [
+    "network": {
+      "allowed": true,
+      "domains": [
         "127.0.0.1",
         "localhost"
       ]
     }
   },
-  "instrucoes": "# Verificar o que a sessão de develop entregou\n\nSeu trabalho é validar semanticamente **cada** critério de aceite do ticket\ncontra a aplicação integrada, e registrar um veredito por critério. O código\njá foi integrado; o que ninguém checou ainda é se a aplicação **faz** o que\ncada critério diz — e isso é a sua tarefa inteira.\n\n**Ticket:** {{entrada.ticket.titulo}} (#{{entrada.ticket.id}})\n**Artefato:** branch `{{entrada.artefato.branch}}`\n**Aplicação:** {{entrada.aplicacao.endereco}}\n\n## A regra que define este nó\n\nVocê verifica com **evidência própria**. O que a sessão que produziu o\nartefato declarou — os gates que ela diz ter rodado, a nota que ela escreveu —\nchega até você como contexto, para você saber onde olhar. Não é prova de nada,\ne nenhum veredito seu pode se apoiar nisso. Quem confere roda o resultado;\nquem confere não lê o relatório de quem fez e assina embaixo.\n\n## Onde você está\n\nVocê está num banco de testes compartilhado: um checkout do branch integrado,\npreparado pelo executor. Ele é ponto de observação, não área de trabalho.\n\n- **Nenhum commit, nenhum push, nenhuma troca de branch.** Deixe o checkout\n  exatamente como encontrou.\n- **Nunca toque em outro checkout deste repositório.**\n- Rascunho, dump, log e captura vão para `/tmp/cartografo/`.\n\n## Caminhando os critérios\n\n1. Todo critério recebe um veredito. Critério que você não conseguiu\n   exercitar recebe uma entrada honesta, nunca um pulo silencioso.\n2. **Exercite a aplicação de verdade** — requisição direta contra o endereço\n   dado, mais qualquer ferramenta disponível no checkout. Prepare os dados de\n   que precisar com os comandos do próprio projeto.\n3. **Julgue cada critério pela evidência observada** — uma resposta, uma\n   saída, uma página renderizada — não pelo que o código sugere que\n   aconteceria.\n4. Falhou? Reporte um bug com severidade (`simples` para conserto contido,\n   `complexo` para o resto), repro e arquivos suspeitos. A lista de arquivos\n   é o que permite agendar o conserto em paralelo com segurança.\n5. Critério que exige prova manual ou julgamento estético vai para o humano —\n   `resultado: \"escalar_humano\"`, com a evidência anexada.\n\n`resultado: \"passou\"` é reservado para passe completo: todo critério com\nveredito `passou`. Rodada que achou problema é `resultado: \"falhou\"` com a\nlista de bugs — isso é uma rodada de verificação bem-sucedida que encontrou\ntrabalho, não uma sessão que falhou.\n\n{{entrada.contexto_falha}}",
-  "origem": {
-    "tipo": "nativa"
+  "instructions": "# Verificar o que a sessão de develop entregou\n\nSeu trabalho é validar semanticamente **cada** critério de aceite do ticket\ncontra a aplicação integrada, e registrar um veredito por critério. O código\njá foi integrado; o que ninguém checou ainda é se a aplicação **faz** o que\ncada critério diz — e isso é a sua tarefa inteira.\n\n**Ticket:** {{input.ticket.titulo}} (#{{input.ticket.id}})\n**Artefato:** branch `{{input.artefato.branch}}`\n**Aplicação:** {{input.aplicacao.endereco}}\n\n## A regra que define este nó\n\nVocê verifica com **evidência própria**. O que a sessão que produziu o\nartefato declarou — os gates que ela diz ter rodado, a nota que ela escreveu —\nchega até você como contexto, para você saber onde olhar. Não é prova de nada,\ne nenhum veredito seu pode se apoiar nisso. Quem confere roda o resultado;\nquem confere não lê o relatório de quem fez e assina embaixo.\n\n## Onde você está\n\nVocê está num banco de testes compartilhado: um checkout do branch integrado,\npreparado pelo executor. Ele é ponto de observação, não área de trabalho.\n\n- **Nenhum commit, nenhum push, nenhuma troca de branch.** Deixe o checkout\n  exatamente como encontrou.\n- **Nunca toque em outro checkout deste repositório.**\n- Rascunho, dump, log e captura vão para `/tmp/cartografo/`.\n\n## Caminhando os critérios\n\n1. Todo critério recebe um veredito. Critério que você não conseguiu\n   exercitar recebe uma entrada honesta, nunca um pulo silencioso.\n2. **Exercite a aplicação de verdade** — requisição direta contra o endereço\n   dado, mais qualquer ferramenta disponível no checkout. Prepare os dados de\n   que precisar com os comandos do próprio projeto.\n3. **Julgue cada critério pela evidência observada** — uma resposta, uma\n   saída, uma página renderizada — não pelo que o código sugere que\n   aconteceria.\n4. Falhou? Reporte um bug com severidade (`simples` para conserto contido,\n   `complexo` para o resto), repro e arquivos suspeitos. A lista de arquivos\n   é o que permite agendar o conserto em paralelo com segurança.\n5. Critério que exige prova manual ou julgamento estético vai para o humano —\n   `resultado: \"escalar_humano\"`, com a evidência anexada.\n\n`resultado: \"passou\"` é reservado para passe completo: todo critério com\nveredito `passou`. Rodada que achou problema é `resultado: \"falhou\"` com a\nlista de bugs — isso é uma rodada de verificação bem-sucedida que encontrou\ntrabalho, não uma sessão que falhou.\n\n{{input.contexto_falha}}",
+  "origin": {
+    "type": "native"
   }
 }

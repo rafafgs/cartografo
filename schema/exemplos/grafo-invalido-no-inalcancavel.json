@@ -1,77 +1,77 @@
 {
-  "classe": "expedicao-de-lote",
-  "linhagem": {
-    "tipo": "base"
+  "problem_class": "expedicao-de-lote",
+  "lineage": {
+    "type": "base"
   },
   "metadata": {
-    "nome": "Contraexemplo — nó inalcançável",
-    "descricao": "Viola SÓ a regra \"alcançável\": o nó revisar_lote tem saída para entregar_lote (portanto termina), mas nenhuma aresta chega até ele a partir de no_inicial. É o erro típico de um nó acrescentado por proposta sem a aresta de entrada correspondente.",
-    "versao_schema": "1.0.0",
-    "criado_em": "2026-08-14",
-    "origem": "contraexemplo da especificação"
+    "name": "Contraexemplo — nó inalcançável",
+    "description": "Viola SÓ a regra \"alcançável\": o nó revisar_lote tem saída para entregar_lote (portanto termina), mas nenhuma aresta chega até ele a partir de no_inicial. É o erro típico de um nó acrescentado por proposta sem a aresta de entrada correspondente.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-14",
+    "source": "contraexemplo da especificação"
   },
-  "nos": [
+  "nodes": [
     {
       "id": "preparar_lote",
-      "papel": "preparador",
-      "tipo_no": "trabalho",
+      "role": "preparador",
+      "node_type": "work",
       "skill_ref": {
         "id": "cartografo/preparar-lote",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:3459c3b1c2771388957a9586d764b89e60fea91c7c1e4b77b0da2edf85cbafa1"
       },
-      "contrato": {
-        "entrada_schema": { "type": "object", "properties": { "itens": { "type": "array" } } },
-        "saida_schema": { "type": "object", "properties": { "lote": { "type": "string" } } },
-        "verificacoes": [
-          { "tipo": "deterministico", "comando": "test -s lote.json" }
+      "contract": {
+        "input_schema": { "type": "object", "properties": { "itens": { "type": "array" } } },
+        "output_schema": { "type": "object", "properties": { "lote": { "type": "string" } } },
+        "checks": [
+          { "type": "deterministic", "command": "test -s lote.json" }
         ]
       }
     },
     {
       "id": "revisar_lote",
-      "papel": "revisor",
-      "tipo_no": "portao",
-      "descricao": "Órfão: nenhuma aresta aponta para cá.",
+      "role": "revisor",
+      "node_type": "gate",
+      "description": "Órfão: nenhuma aresta aponta para cá.",
       "skill_ref": {
         "id": "cartografo/revisar-lote",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:b01ec917a2040130ea94827b91981f60229ac56b9c6e4510364ae9d365ff7728"
       },
-      "contrato": {
-        "entrada_schema": { "type": "object", "properties": { "lote": { "type": "string" } } },
-        "saida_schema": { "type": "object", "properties": { "resultado": { "enum": ["passou", "falhou"] } } },
-        "verificacoes": [
+      "contract": {
+        "input_schema": { "type": "object", "properties": { "lote": { "type": "string" } } },
+        "output_schema": { "type": "object", "properties": { "outcome": { "enum": ["passou", "falhou"] } } },
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "O lote confere com a lista pedida? Anexe a contagem conferida.",
-            "evidencia_obrigatoria": true
+            "type": "agentic",
+            "instruction": "O lote confere com a lista pedida? Anexe a contagem conferida.",
+            "required_evidence": true
           }
         ]
       }
     },
     {
       "id": "entregar_lote",
-      "papel": "entregador",
-      "tipo_no": "trabalho",
+      "role": "entregador",
+      "node_type": "work",
       "skill_ref": {
         "id": "cartografo/entregar-lote",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:1cb56d227924a9a8a25fefcdce9dd3c726061ca902e8e32ded09cd985747419a"
       },
-      "contrato": {
-        "entrada_schema": { "type": "object", "properties": { "lote": { "type": "string" } } },
-        "saida_schema": { "type": "object", "properties": { "recibo": { "type": "string" } } },
-        "verificacoes": [
-          { "tipo": "deterministico", "comando": "test -s recibo.txt" }
+      "contract": {
+        "input_schema": { "type": "object", "properties": { "lote": { "type": "string" } } },
+        "output_schema": { "type": "object", "properties": { "recibo": { "type": "string" } } },
+        "checks": [
+          { "type": "deterministic", "command": "test -s recibo.txt" }
         ]
       }
     }
   ],
-  "arestas": [
-    { "de": "preparar_lote", "para": "entregar_lote", "condicao": "sempre" },
-    { "de": "revisar_lote", "para": "entregar_lote", "condicao": "sempre" }
+  "edges": [
+    { "from": "preparar_lote", "to": "entregar_lote", "condition": "sempre" },
+    { "from": "revisar_lote", "to": "entregar_lote", "condition": "sempre" }
   ],
-  "no_inicial": "preparar_lote",
-  "nos_finais": ["entregar_lote"]
+  "initial_node": "preparar_lote",
+  "final_nodes": ["entregar_lote"]
 }

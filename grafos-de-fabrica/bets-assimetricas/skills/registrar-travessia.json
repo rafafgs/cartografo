@@ -1,10 +1,10 @@
 {
   "id": "registrar-travessia",
-  "versao": "1.0.0",
-  "hash": "sha256:c41d8706ac7a7c608bf158f15bb43656af5570a53b91407be91a9c170fc3329d",
-  "papel": "fazer",
-  "descricao": "Fecha a travessia — aprovada, recusada, morta no red team ou descartada na triagem — gravando as métricas de processo que o topógrafo lê e o plano de monitoramento.",
-  "entrada": {
+  "version": "1.0.0",
+  "hash": "sha256:9c00509c621a20f57ed3d5c1b87ae2760a2d9e3587d7f35630643aa4d020570b",
+  "role": "work",
+  "description": "Fecha a travessia — aprovada, recusada, morta no red team ou descartada na triagem — gravando as métricas de processo que o topógrafo lê e o plano de monitoramento.",
+  "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
@@ -185,7 +185,7 @@
       }
     }
   },
-  "saida": {
+  "output": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
@@ -287,7 +287,7 @@
       }
     }
   },
-  "pre_condicoes": [
+  "preconditions": [
     "travessia encerrada por um dos quatro caminhos: descarte na triagem, morte no red team, recusa ou aprovação humana",
     "lista dos nós executados nesta travessia disponível",
     "data de registro fornecida pelo executor"
@@ -295,27 +295,27 @@
   "checks": [
     {
       "id": "metrica-bate-com-a-travessia",
-      "tipo": "agentico",
-      "descricao": "Métrica de processo só vale se for derivada das saídas reais dos nós. Autorrelato — \"o red team rodou\", \"as premissas tinham fonte\" — é exatamente o que ela não pode ser, porque é ela que o topógrafo vai usar para propor mutação no grafo.",
-      "instrucao": "Recalcule cada métrica a partir das saídas dos nós desta travessia, e compare com o que foi registrado.\n\n1. `red_team_executado` bate com a presença de \"red-team\" em `entrada.nos_executados`?\n2. Recalcule `fracao_premissas_com_fonte`: quantas premissas de `entrada.premissas` têm `fonte` não nula, dividido pelo total. Confere com o valor registrado, com a mesma precisão?\n3. `decisao_humana_id` é nulo apenas se a travessia não passou pelo nó `decisao`; e quando não é nulo, casa com o `pergunta_id` da decisão recebida?\n4. `desfecho_final: \"monitorando\"` só é legal quando houve decisão humana aprovando. Travessia descartada, morta ou recusada é `arquivado`.\n5. O `resumo` do registro descreve a travessia que de fato aconteceu, incluindo o caminho pelo qual ela terminou?\n\nNenhuma métrica de resultado financeiro entra aqui. Se o registro trouxer P&L, retorno realizado ou equivalente, o check falhou.",
-      "evidencia_obrigatoria": [
+      "type": "agentic",
+      "description": "Métrica de processo só vale se for derivada das saídas reais dos nós. Autorrelato — \"o red team rodou\", \"as premissas tinham fonte\" — é exatamente o que ela não pode ser, porque é ela que o topógrafo vai usar para propor mutação no grafo.",
+      "instruction": "Recalcule cada métrica a partir das saídas dos nós desta travessia, e compare com o que foi registrado.\n\n1. `red_team_executado` bate com a presença de \"red-team\" em `entrada.nos_executados`?\n2. Recalcule `fracao_premissas_com_fonte`: quantas premissas de `entrada.premissas` têm `fonte` não nula, dividido pelo total. Confere com o valor registrado, com a mesma precisão?\n3. `decisao_humana_id` é nulo apenas se a travessia não passou pelo nó `decisao`; e quando não é nulo, casa com o `pergunta_id` da decisão recebida?\n4. `desfecho_final: \"monitorando\"` só é legal quando houve decisão humana aprovando. Travessia descartada, morta ou recusada é `arquivado`.\n5. O `resumo` do registro descreve a travessia que de fato aconteceu, incluindo o caminho pelo qual ela terminou?\n\nNenhuma métrica de resultado financeiro entra aqui. Se o registro trouxer P&L, retorno realizado ou equivalente, o check falhou.",
+      "required_evidence": [
         "recalculo_da_fracao_de_premissas_com_fonte_a_partir_da_lista_recebida",
         "nos_executados_confrontados_com_as_metricas_registradas",
         "caminho_de_encerramento_da_travessia_citado_da_saida_do_ultimo_no"
       ]
     }
   ],
-  "permissoes": {
+  "permissions": {
     "filesystem": {
-      "leitura": [],
-      "escrita": []
+      "read": [],
+      "write": []
     },
-    "rede": {
-      "permitido": false
+    "network": {
+      "allowed": false
     }
   },
-  "instrucoes": "# Registrar a travessia e o que monitorar\n\nSeu trabalho é fechar a travessia desta tese — não importa por qual dos quatro\ncaminhos ela chegou até aqui — e deixar registrado o que o sistema aprende com\nela.\n\n**Tese:** {{entrada.tese_triada.titulo}} ({{entrada.tese_triada.ativo}})\n**Nós executados:** {{entrada.nos_executados}}\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\n## As quatro formas de chegar aqui\n\nEste é o único nó final do grafo, e ele recebe as quatro:\n\n1. **Descartada na triagem** — a ideia não passou do primeiro filtro.\n2. **Morta no red team** — a tese não respondeu a uma objeção grave.\n3. **Recusada pelo fundador** — a decisão humana disse não.\n4. **Aprovada pelo fundador** — a única que termina em posição aberta.\n\nTrês delas terminam em `desfecho_final: \"arquivado\"`, uma em\n`\"monitorando\"`. Todas as quatro registram métricas: é isso que faz a métrica\nde processo valer para **toda** travessia, e não só para a que virou posição.\n\n## As métricas são de processo\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\nDerive cada uma das saídas reais dos nós anteriores, nunca de memória:\n\n- `red_team_executado` — o nó `red-team` está em `nos_executados`?\n- `fracao_premissas_com_fonte` — premissas com `fonte` não nula ÷ total de\n  premissas coletadas. Sem coleta, é 0.\n- `decisao_humana_id` — o `pergunta_id` da decisão registrada, ou `null` se a\n  travessia nunca chegou ao nó `decisao`. Nulo aqui significa \"não houve\n  decisão humana\", e nunca \"não consegui achar\".\n- `desfecho_final` — `monitorando` só com aprovação humana; caso contrário,\n  `arquivado`.\n\nSe um valor não puder ser derivado das saídas recebidas, diga isso na `nota` em\nvez de estimar. Métrica estimada envenena o aprendizado do topógrafo, que é a\núnica coisa que este nó existe para alimentar.\n\n## O que monitorar\n\nPara a travessia aprovada, `registro.monitoramento` carrega o que acompanhar:\no gatilho de saída que o dimensionamento fixou, os prazos das premissas que\nainda dependem de confirmação, e a data em que a próxima revisão deve\nacontecer. Cada item com gatilho observável e prazo — a mesma régua do nó de\ndimensionamento.\n\nPara a travessia arquivada, `monitoramento` fica vazio e o `resumo` carrega o\nmotivo do arquivamento com precisão suficiente para reconhecer a mesma ideia\nse ela voltar em seis meses.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nDevolva no formato que o schema de saída declara: `metricas_processo`,\n`registro` e `nota`. Use `{{entrada.data_de_registro}}` como data — a sessão\nnão inventa data.",
-  "origem": {
-    "tipo": "nativa"
+  "instructions": "# Registrar a travessia e o que monitorar\n\nSeu trabalho é fechar a travessia desta tese — não importa por qual dos quatro\ncaminhos ela chegou até aqui — e deixar registrado o que o sistema aprende com\nela.\n\n**Tese:** {{input.tese_triada.titulo}} ({{input.tese_triada.ativo}})\n**Nós executados:** {{input.nos_executados}}\n\n## Onde você está\n\nVocê não escreve arquivo nenhum. Nenhum nó deste grafo toca o repositório do\ninvestidor: o resultado volta **pelo contrato de saída**, e quem grava é o\ncontrol plane. Ler, você lê o que a entrada te deu.\n\n## As quatro formas de chegar aqui\n\nEste é o único nó final do grafo, e ele recebe as quatro:\n\n1. **Descartada na triagem** — a ideia não passou do primeiro filtro.\n2. **Morta no red team** — a tese não respondeu a uma objeção grave.\n3. **Recusada pelo fundador** — a decisão humana disse não.\n4. **Aprovada pelo fundador** — a única que termina em posição aberta.\n\nTrês delas terminam em `desfecho_final: \"arquivado\"`, uma em\n`\"monitorando\"`. Todas as quatro registram métricas: é isso que faz a métrica\nde processo valer para **toda** travessia, e não só para a que virou posição.\n\n## As métricas são de processo\n\n## O que este grafo não mede\n\nNada aqui é julgado por P&L. Resultado financeiro é validação lenta de longo\nprazo e nunca métrica de rodada (D14): em mercado, resultado bom não valida\nprocesso ruim, e resultado ruim não invalida processo bom. O que se mede por\ntravessia é processo — o red team rodou? as premissas têm fonte? a decisão foi\nhumana? — e é isso que o registro final grava.\n\nDerive cada uma das saídas reais dos nós anteriores, nunca de memória:\n\n- `red_team_executado` — o nó `red-team` está em `nos_executados`?\n- `fracao_premissas_com_fonte` — premissas com `fonte` não nula ÷ total de\n  premissas coletadas. Sem coleta, é 0.\n- `decisao_humana_id` — o `pergunta_id` da decisão registrada, ou `null` se a\n  travessia nunca chegou ao nó `decisao`. Nulo aqui significa \"não houve\n  decisão humana\", e nunca \"não consegui achar\".\n- `desfecho_final` — `monitorando` só com aprovação humana; caso contrário,\n  `arquivado`.\n\nSe um valor não puder ser derivado das saídas recebidas, diga isso na `nota` em\nvez de estimar. Métrica estimada envenena o aprendizado do topógrafo, que é a\núnica coisa que este nó existe para alimentar.\n\n## O que monitorar\n\nPara a travessia aprovada, `registro.monitoramento` carrega o que acompanhar:\no gatilho de saída que o dimensionamento fixou, os prazos das premissas que\nainda dependem de confirmação, e a data em que a próxima revisão deve\nacontecer. Cada item com gatilho observável e prazo — a mesma régua do nó de\ndimensionamento.\n\nPara a travessia arquivada, `monitoramento` fica vazio e o `resumo` carrega o\nmotivo do arquivamento com precisão suficiente para reconhecer a mesma ideia\nse ela voltar em seis meses.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais. É o texto de um botão\n  de aceite de um clique, então o que estiver ali vira a resposta do fundador,\n  literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\n## O que devolver\n\nDevolva no formato que o schema de saída declara: `metricas_processo`,\n`registro` e `nota`. Use `{{input.data_de_registro}}` como data — a sessão\nnão inventa data.",
+  "origin": {
+    "type": "native"
   }
 }

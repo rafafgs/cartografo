@@ -1,28 +1,28 @@
 {
-  "classe": "desenvolvimento-de-software",
-  "linhagem": {
-    "tipo": "base"
+  "problem_class": "desenvolvimento-de-software",
+  "lineage": {
+    "type": "base"
   },
   "metadata": {
-    "nome": "Entrega de software — fluxo do flowpilot portado",
-    "descricao": "Grafo de fábrica 1 (D14): o fluxo do flowpilot expresso neste formato. Um nó por estado de atividade; os estados de fila do flowpilot (to_refine, to_develop, to_integrate, to_test, to_deploy) não viram nó — são plumbing de escalonamento do controller, não topologia do trabalho. As arestas seguem ALLOWED_TRANSITIONS colapsando essas filas, incluindo o ciclo de retrabalho testar → desenvolver.",
-    "versao_schema": "1.0.0",
-    "criado_em": "2026-08-14",
-    "origem": "porte manual do flowpilot (D17: referência de comportamento, sem dependência de código)"
+    "name": "Entrega de software — fluxo do flowpilot portado",
+    "description": "Grafo de fábrica 1 (D14): o fluxo do flowpilot expresso neste formato. Um nó por estado de atividade; os estados de fila do flowpilot (to_refine, to_develop, to_integrate, to_test, to_deploy) não viram nó — são plumbing de escalonamento do controller, não topologia do trabalho. As arestas seguem ALLOWED_TRANSITIONS colapsando essas filas, incluindo o ciclo de retrabalho testar → desenvolver.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-14",
+    "source": "porte manual do flowpilot (D17: referência de comportamento, sem dependência de código)"
   },
-  "nos": [
+  "nodes": [
     {
       "id": "refinar",
-      "papel": "arquiteto",
-      "tipo_no": "trabalho",
-      "descricao": "Transforma o pedido em especificação: requisitos funcionais, arquivos tocados, critérios de aceite e escopo negativo.",
+      "role": "arquiteto",
+      "node_type": "work",
+      "description": "Transforma o pedido em especificação: requisitos funcionais, arquivos tocados, critérios de aceite e escopo negativo.",
       "skill_ref": {
         "id": "refinar-ticket",
-        "versao": "1.0.0",
-        "hash": "sha256:598262e114039af85da7109cd3bd4f0e6a28a76d21b3d62c7d7b58ba7afbb9c1"
+        "version": "1.0.0",
+        "hash": "sha256:e7a388bf674968583b6da5c2d7f0f83c775f780c1a63a6ac4ebf37a19d5ef9aa"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "ticket_id",
@@ -42,7 +42,7 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
             "especificacao",
@@ -96,28 +96,28 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "Cada critério de aceite é verificável por um teste concreto, e a lista de arquivos tocados existe no repositório? Anexe o caminho conferido de cada arquivo citado.",
-            "evidencia_obrigatoria": true,
-            "descricao": "Critério de aceite não verificável é o defeito mais caro do refino: contamina todas as etapas seguintes."
+            "type": "agentic",
+            "instruction": "Cada critério de aceite é verificável por um teste concreto, e a lista de arquivos tocados existe no repositório? Anexe o caminho conferido de cada arquivo citado.",
+            "required_evidence": true,
+            "description": "Critério de aceite não verificável é o defeito mais caro do refino: contamina todas as etapas seguintes."
           }
         ]
       }
     },
     {
       "id": "desenvolver",
-      "papel": "desenvolvedor",
-      "tipo_no": "trabalho",
-      "descricao": "Implementa a especificação em checkout isolado, com os testes de aceite escritos antes da implementação.",
+      "role": "desenvolvedor",
+      "node_type": "work",
+      "description": "Implementa a especificação em checkout isolado, com os testes de aceite escritos antes da implementação.",
       "skill_ref": {
         "id": "desenvolver-ticket",
-        "versao": "1.0.0",
-        "hash": "sha256:fa92367d51a5d15bae71700e9c895796280b2b35c6fab174771c31e96f7e2f87"
+        "version": "1.0.0",
+        "hash": "sha256:897b7538c55c1ba93fcab5c0c8566b9d43442686f71cedc61b291af990563190"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "ticket_id",
@@ -141,7 +141,7 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
             "branch",
@@ -167,43 +167,43 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "deterministico",
-            "comando": "{{entrada.projeto.comando_testes}}",
-            "descricao": "A suíte do projeto passa no checkout isolado do trabalho."
+            "type": "deterministic",
+            "command": "{{input.projeto.comando_testes}}",
+            "description": "A suíte do projeto passa no checkout isolado do trabalho."
           },
           {
-            "tipo": "deterministico",
-            "comando": "{{entrada.projeto.comandos_qualidade}}",
-            "descricao": "Todo comando de qualidade que o perfil declara, e não só o que a sessão acha que tocou."
+            "type": "deterministic",
+            "command": "{{input.projeto.comandos_qualidade}}",
+            "description": "Todo comando de qualidade que o perfil declara, e não só o que a sessão acha que tocou."
           },
           {
-            "tipo": "deterministico",
-            "comando": "git diff --quiet && git diff --cached --quiet",
-            "descricao": "Nada ficou fora do commit: o nó seguinte só enxerga o branch."
+            "type": "deterministic",
+            "command": "git diff --quiet && git diff --cached --quiet",
+            "description": "Nada ficou fora do commit: o nó seguinte só enxerga o branch."
           },
           {
-            "tipo": "agentico",
-            "instrucao": "Os testes de aceite foram commitados antes da implementação e cobrem os critérios da especificação? Anexe os hashes dos dois commits e o diff do commit de testes.",
-            "evidencia_obrigatoria": true,
-            "descricao": "Verifica a ordem do TDD pelo histórico, não pelo relato de quem desenvolveu."
+            "type": "agentic",
+            "instruction": "Os testes de aceite foram commitados antes da implementação e cobrem os critérios da especificação? Anexe os hashes dos dois commits e o diff do commit de testes.",
+            "required_evidence": true,
+            "description": "Verifica a ordem do TDD pelo histórico, não pelo relato de quem desenvolveu."
           }
         ]
       }
     },
     {
       "id": "integrar",
-      "papel": "integrador",
-      "tipo_no": "trabalho",
-      "descricao": "Traz o branch para a linha principal e reverifica a suíte contra a árvore já integrada.",
+      "role": "integrador",
+      "node_type": "work",
+      "description": "Traz o branch para a linha principal e reverifica a suíte contra a árvore já integrada.",
       "skill_ref": {
         "id": "integrar-branch",
-        "versao": "1.0.0",
-        "hash": "sha256:982955800480ed9856b7a174ac172cf04b697a6c621ab05af6396163bd5a9906"
+        "version": "1.0.0",
+        "hash": "sha256:b3e83e7afc63b24ccebe7f4f1732370f572754c9beb8acd38789ff88f156e60f"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "ticket_id",
@@ -220,7 +220,7 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
             "merge_commit"
@@ -238,37 +238,37 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "deterministico",
-            "comando": "{{entrada.projeto.comando_testes}}",
-            "descricao": "A suíte passa na árvore mesclada, não só no branch isolado."
+            "type": "deterministic",
+            "command": "{{input.projeto.comando_testes}}",
+            "description": "A suíte passa na árvore mesclada, não só no branch isolado."
           },
           {
-            "tipo": "deterministico",
-            "comando": "{{entrada.projeto.comandos_qualidade}}",
-            "descricao": "Última estação determinística do fluxo: o portão de teste não reroda nada disto."
+            "type": "deterministic",
+            "command": "{{input.projeto.comandos_qualidade}}",
+            "description": "Última estação determinística do fluxo: o portão de teste não reroda nada disto."
           },
           {
-            "tipo": "deterministico",
-            "comando": "git diff --quiet && git diff --cached --quiet",
-            "descricao": "Nenhuma sobra de merge pela metade escondida na árvore."
+            "type": "deterministic",
+            "command": "git diff --quiet && git diff --cached --quiet",
+            "description": "Nenhuma sobra de merge pela metade escondida na árvore."
           }
         ]
       }
     },
     {
       "id": "testar",
-      "papel": "tester",
-      "tipo_no": "portao",
-      "descricao": "Exercita o comportamento entregue contra os critérios de aceite e roteia: aprovado segue para implantação, retrabalho volta para desenvolvimento.",
+      "role": "tester",
+      "node_type": "gate",
+      "description": "Exercita o comportamento entregue contra os critérios de aceite e roteia: aprovado segue para implantação, retrabalho volta para desenvolvimento.",
       "skill_ref": {
         "id": "testar-alpha",
-        "versao": "1.0.0",
-        "hash": "sha256:1321f33d031629d6463ea7c1e179ba1ac58b1e528804f81ab8ba71b317d71067"
+        "version": "1.0.0",
+        "hash": "sha256:a260c8db1ab16db84b4f6c854b3e95914e420e8597e920e95bea103b4a29bf45"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "ticket_id",
@@ -292,14 +292,14 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
-            "resultado",
+            "outcome",
             "vereditos"
           ],
           "properties": {
-            "resultado": {
+            "outcome": {
               "enum": [
                 "aprovado",
                 "retrabalho",
@@ -376,28 +376,28 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "Rode o comportamento entregue e confira cada critério de aceite na aplicação real. Anexe a saída de cada execução; relato do desenvolvedor não conta como evidência.",
-            "evidencia_obrigatoria": true,
-            "descricao": "Portão agêntico verifica com evidência própria (nota de aprendizado, 2026-08-14)."
+            "type": "agentic",
+            "instruction": "Rode o comportamento entregue e confira cada critério de aceite na aplicação real. Anexe a saída de cada execução; relato do desenvolvedor não conta como evidência.",
+            "required_evidence": true,
+            "description": "Portão agêntico verifica com evidência própria (nota de aprendizado, 2026-08-14)."
           }
         ]
       }
     },
     {
       "id": "implantar",
-      "papel": "deployer",
-      "tipo_no": "trabalho",
-      "descricao": "Publica o que foi aprovado e encerra a travessia.",
+      "role": "deployer",
+      "node_type": "work",
+      "description": "Publica o que foi aprovado e encerra a travessia.",
       "skill_ref": {
         "id": "implantar-release",
-        "versao": "1.0.0",
-        "hash": "sha256:d1bd047f6a995691d4a441477ef890db76533ead673c9e742b5a275635b9ff40"
+        "version": "1.0.0",
+        "hash": "sha256:f00cd356adb2f9007fa61a7c4f197033236714800f5b19a508eed3c87a09b522"
       },
-      "contrato": {
-        "entrada_schema": {
+      "contract": {
+        "input_schema": {
           "type": "object",
           "required": [
             "ticket_id",
@@ -414,7 +414,7 @@
             }
           }
         },
-        "saida_schema": {
+        "output_schema": {
           "type": "object",
           "required": [
             "release",
@@ -430,55 +430,55 @@
             }
           }
         },
-        "verificacoes": [
+        "checks": [
           {
-            "tipo": "deterministico",
-            "comando": "git -C {{entrada.projeto.repo}} rev-parse --verify --quiet {{entrada.referencia.commit}}^{commit}",
-            "descricao": "A referência existe como commit: sem isso, \"não contém\" seria indistinguível de \"não sei\"."
+            "type": "deterministic",
+            "command": "git -C {{input.projeto.repo}} rev-parse --verify --quiet {{input.referencia.commit}}^{commit}",
+            "description": "A referência existe como commit: sem isso, \"não contém\" seria indistinguível de \"não sei\"."
           },
           {
-            "tipo": "deterministico",
-            "comando": "git -C {{entrada.projeto.repo}} merge-base --is-ancestor {{entrada.artefato.merge_commit}} {{entrada.referencia.commit}}",
-            "descricao": "A pergunta inteira da etapa: o merge commit do trabalho é ancestral da referência publicada."
+            "type": "deterministic",
+            "command": "git -C {{input.projeto.repo}} merge-base --is-ancestor {{input.artefato.merge_commit}} {{input.referencia.commit}}",
+            "description": "A pergunta inteira da etapa: o merge commit do trabalho é ancestral da referência publicada."
           }
         ]
       }
     }
   ],
-  "arestas": [
+  "edges": [
     {
-      "de": "refinar",
-      "para": "desenvolver",
-      "condicao": "sempre",
-      "descricao": "flowpilot: refining -> to_develop -> developing."
+      "from": "refinar",
+      "to": "desenvolver",
+      "condition": "sempre",
+      "description": "flowpilot: refining -> to_develop -> developing."
     },
     {
-      "de": "desenvolver",
-      "para": "integrar",
-      "condicao": "sempre",
-      "descricao": "flowpilot: developing -> to_integrate -> integrating."
+      "from": "desenvolver",
+      "to": "integrar",
+      "condition": "sempre",
+      "description": "flowpilot: developing -> to_integrate -> integrating."
     },
     {
-      "de": "integrar",
-      "para": "testar",
-      "condicao": "sempre",
-      "descricao": "flowpilot: integrating -> to_test -> testing."
+      "from": "integrar",
+      "to": "testar",
+      "condition": "sempre",
+      "description": "flowpilot: integrating -> to_test -> testing."
     },
     {
-      "de": "testar",
-      "para": "implantar",
-      "condicao": "aprovado",
-      "descricao": "flowpilot: testing -> to_deploy -> deploying."
+      "from": "testar",
+      "to": "implantar",
+      "condition": "aprovado",
+      "description": "flowpilot: testing -> to_deploy -> deploying."
     },
     {
-      "de": "testar",
-      "para": "desenvolver",
-      "condicao": "retrabalho",
-      "descricao": "flowpilot: testing -> to_develop, o ciclo de retrabalho do teste alfa."
+      "from": "testar",
+      "to": "desenvolver",
+      "condition": "retrabalho",
+      "description": "flowpilot: testing -> to_develop, o ciclo de retrabalho do teste alfa."
     }
   ],
-  "no_inicial": "refinar",
-  "nos_finais": [
+  "initial_node": "refinar",
+  "final_nodes": [
     "implantar"
   ]
 }

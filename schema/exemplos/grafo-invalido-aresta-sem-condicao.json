@@ -1,58 +1,58 @@
 {
-  "classe": "resumo-de-fontes",
-  "linhagem": {
-    "tipo": "base"
+  "problem_class": "resumo-de-fontes",
+  "lineage": {
+    "type": "base"
   },
   "metadata": {
-    "nome": "Contraexemplo — aresta sem condição",
-    "descricao": "Viola SÓ a regra \"aresta_com_condicao\": a topologia é sound, mas a única aresta tem condicao vazia. Uma transição sem rótulo é um caminho que o executor não sabe quando tomar — e o que a regra impede é justamente o nó escolhendo caminho livremente em runtime (princípio 2 do README). Este contraexemplo também é inválido contra o JSON Schema (condicao tem minLength 1): a regra existe em separado porque o sintetizador monta grafo em memória, antes de qualquer serialização.",
-    "versao_schema": "1.0.0",
-    "criado_em": "2026-08-14",
-    "origem": "contraexemplo da especificação"
+    "name": "Contraexemplo — aresta sem condição",
+    "description": "Viola SÓ a regra \"aresta_com_condicao\": a topologia é sound, mas a única aresta tem condicao vazia. Uma transição sem rótulo é um caminho que o executor não sabe quando tomar — e o que a regra impede é justamente o nó escolhendo caminho livremente em runtime (princípio 2 do README). Este contraexemplo também é inválido contra o JSON Schema (condicao tem minLength 1): a regra existe em separado porque o sintetizador monta grafo em memória, antes de qualquer serialização.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-14",
+    "source": "contraexemplo da especificação"
   },
-  "nos": [
+  "nodes": [
     {
       "id": "coletar_fontes",
-      "papel": "pesquisador",
-      "tipo_no": "trabalho",
+      "role": "pesquisador",
+      "node_type": "work",
       "skill_ref": {
         "id": "cartografo/coletar-fontes",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:a8ef005b48bc12e2b68c5112b28e54af5a2275b168ac02e5dd7374182b445ebf"
       },
-      "contrato": {
-        "entrada_schema": { "type": "object", "properties": { "pergunta": { "type": "string" } } },
-        "saida_schema": { "type": "object", "properties": { "fontes": { "type": "array" } } },
-        "verificacoes": [
-          { "tipo": "deterministico", "comando": "test -s fontes.json" }
+      "contract": {
+        "input_schema": { "type": "object", "properties": { "pergunta": { "type": "string" } } },
+        "output_schema": { "type": "object", "properties": { "fontes": { "type": "array" } } },
+        "checks": [
+          { "type": "deterministic", "command": "test -s fontes.json" }
         ]
       }
     },
     {
       "id": "resumir_fontes",
-      "papel": "redator",
-      "tipo_no": "trabalho",
+      "role": "redator",
+      "node_type": "work",
       "skill_ref": {
         "id": "cartografo/resumir-fontes",
-        "versao": "1.0.0",
+        "version": "1.0.0",
         "hash": "sha256:9fc1f60b3f3c533bb13e94867a4798518620a2d83b7ca9767e796f7a63ea83b3"
       },
-      "contrato": {
-        "entrada_schema": { "type": "object", "properties": { "fontes": { "type": "array" } } },
-        "saida_schema": { "type": "object", "properties": { "resumo": { "type": "string" } } },
-        "verificacoes": [
+      "contract": {
+        "input_schema": { "type": "object", "properties": { "fontes": { "type": "array" } } },
+        "output_schema": { "type": "object", "properties": { "resumo": { "type": "string" } } },
+        "checks": [
           {
-            "tipo": "agentico",
-            "instrucao": "Toda afirmação do resumo tem fonte na lista coletada? Cite fonte por afirmação.",
-            "evidencia_obrigatoria": true
+            "type": "agentic",
+            "instruction": "Toda afirmação do resumo tem fonte na lista coletada? Cite fonte por afirmação.",
+            "required_evidence": true
           }
         ]
       }
     }
   ],
-  "arestas": [
-    { "de": "coletar_fontes", "para": "resumir_fontes", "condicao": "" }
+  "edges": [
+    { "from": "coletar_fontes", "to": "resumir_fontes", "condition": "" }
   ],
-  "no_inicial": "coletar_fontes",
-  "nos_finais": ["resumir_fontes"]
+  "initial_node": "coletar_fontes",
+  "final_nodes": ["resumir_fontes"]
 }

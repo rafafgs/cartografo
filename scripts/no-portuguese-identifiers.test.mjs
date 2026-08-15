@@ -497,7 +497,9 @@ test('exception 5 — validar-grafo.mjs keeps the names and report shape core pi
   assert.deepEqual(Object.keys(structure).sort(), ['erros', 'valido']);
   assert.deepEqual(Object.keys(structure.erros[0]).sort(), ['alvo', 'codigo', 'mensagem']);
 
-  const soundness = validator.validarSoundness({ nos: [{ id: 'a' }], arestas: [] });
+  // The DOCUMENT it is fed speaks English since t178; the REPORT it answers
+  // with does not, and that asymmetry is exactly what this test pins.
+  const soundness = validator.validarSoundness({ nodes: [{ id: 'a' }], edges: [] });
   assert.deepEqual(Object.keys(soundness).sort(), ['valido', 'violacoes']);
   assert.deepEqual(Object.keys(soundness.violacoes[0]).sort(), ['alvo', 'regra']);
 

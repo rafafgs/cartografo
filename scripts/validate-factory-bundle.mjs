@@ -10,15 +10,15 @@
  * 2. **Each manifest validates against the format's schema** — t97's schema,
  *    `especificacoes/formatos/manifesto-skill.schema.json`.
  * 3. **Each pin closes** — for every graph node there is a manifest with the
- *    same `id` and the same `versao`, and the recomputed hash of the content
+ *    same `id` and the same `version`, and the recomputed hash of the content
  *    matches what the node's `skill_ref` pins (D4). It is this third check that
  *    stops a skill's content from being swapped silently under an
  *    already-validated graph — and it is the verifiable stand-in for "import it
  *    through the API" while the control plane does not exist (D6).
  * 4. **The two declarations of how a node verifies itself line up** (t176) —
- *    `contrato.verificacoes` in the graph and `checks` in the pinned manifest
- *    are two FORMATS for the same verification, so they have to state the same
- *    list: same item count, same sequence of `tipo`, same `comando` on every
+ *    `contract.checks` in the graph and `checks` in the pinned manifest are two
+ *    FORMATS for the same verification, so they have to state the same list:
+ *    same item count, same sequence of `type`, same `command` on every
  *    deterministic item. Without this, a bundle can ship a node whose graph
  *    says "run the test suite" and whose manifest says the opposite, and the
  *    runner has no way to know which of the two to apply.
@@ -31,10 +31,11 @@
  * validation by ajv arrives with the control plane's TypeScript scaffold. Until
  * then, the cross-check is the `ajv-cli` of t97's definition of done.
  *
- * The Portuguese keys this file reads (`nos`, `skill_ref`, `versao`, `hash`,
- * `instrucoes`, `permissoes`, …) are the graph-bundle and skill-manifest JSON
- * Schema, frozen by D18's own carve-out: this module reads that format, it does
- * not own it.
+ * The keys this file reads (`nodes`, `skill_ref`, `version`, `hash`,
+ * `instructions`, `permissions`, …) are the graph-bundle and skill-manifest JSON
+ * Schema, which moved to English with t178 (the 2026-08-15 D18 amendment). This
+ * module reads that format, it does not own it: the normative definition of
+ * every name below is the schema next door.
  *
  * CLI use: `node scripts/validate-factory-bundle.mjs <bundle-dir>`
  */
@@ -271,9 +272,9 @@ function canonicalize(value) {
 /**
  * Content hash of the manifest, by the procedure in
  * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
- * `{instrucoes, entrada, saida, checks, permissoes, orcamentos}`.
+ * `{instructions, input, output, checks, permissions, budgets}`.
  *
- * What is left out (`id`, `versao`, `descricao`, `origem`) is catalogue
+ * What is left out (`id`, `version`, `description`, `origin`) is catalogue
  * metadata: renaming the skill does not invalidate the pin, changing a line of
  * the instructions, loosening a check or stretching a budget does.
  *
@@ -282,12 +283,12 @@ function canonicalize(value) {
  */
 export function manifestHash(manifest) {
   const subset = {
-    instrucoes: manifest.instrucoes,
-    entrada: manifest.entrada,
-    saida: manifest.saida,
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
     checks: manifest.checks,
-    permissoes: manifest.permissoes,
-    orcamentos: manifest.orcamentos,
+    permissions: manifest.permissions,
+    budgets: manifest.budgets,
   };
   const digest = createHash('sha256')
     .update(JSON.stringify(canonicalize(subset)), 'utf8')
@@ -303,21 +304,21 @@ export function manifestHash(manifest) {
  * The part of one verification that has to be identical on both sides.
  *
  * Reads an entry of the manifest's `checks` or of the graph's
- * `contrato.verificacoes` — the two spell `tipo` and `comando` the same way,
- * which is exactly the subset that carries the meaning of the verification.
- * Everything else is free to differ: `evidencia_obrigatoria` is a list of
- * artifacts in the manifest and the literal `true` in the graph, and the prose
- * of an agentic item is REWRITTEN in each format rather than copied — the
- * discipline `packages/runner/src/synthesizer/prompt.ts` states for the
- * synthesizer and `bets-assimetricas` already follows.
+ * `contract.checks` — the two spell `type` and `command` the same way, which is
+ * exactly the subset that carries the meaning of the verification. Everything
+ * else is free to differ: `required_evidence` is a list of artifacts in the
+ * manifest and the literal `true` in the graph, and the prose of an agentic item
+ * is REWRITTEN in each format rather than copied — the discipline
+ * `packages/runner/src/synthesizer/prompt.ts` states for the synthesizer and
+ * `bets-assimetricas` already follows.
  *
  * @param {unknown} entry One check, or one verification.
- * @returns {{tipo: string|null, comando: string|null}}
+ * @returns {{type: string|null, command: string|null}}
  */
 export function verificationShape(entry) {
-  const kind = isObject(entry) && typeof entry.tipo === 'string' ? entry.tipo : null;
-  const command = isObject(entry) && typeof entry.comando === 'string' ? entry.comando : null;
-  return { tipo: kind, comando: kind === 'deterministico' ? command : null };
+  const kind = isObject(entry) && typeof entry.type === 'string' ? entry.type : null;
+  const command = isObject(entry) && typeof entry.command === 'string' ? entry.command : null;
+  return { type: kind, command: kind === 'deterministic' ? command : null };
 }
 
 const sameShape = (left, right) =>
@@ -385,7 +386,7 @@ export function validateBundle(bundleDir) {
     }
     const { valid, errors } = validateManifest(manifest);
     entry.id = manifest?.id ?? null;
-    entry.version = manifest?.versao ?? null;
+    entry.version = manifest?.version ?? null;
     entry.valid = valid;
     entry.errors = errors;
 
@@ -407,7 +408,7 @@ export function validateBundle(bundleDir) {
   }
 
   const pinned = new Set();
-  for (const node of Array.isArray(doc?.nos) ? doc.nos : []) {
+  for (const node of Array.isArray(doc?.nodes) ? doc.nodes : []) {
     const ref = isObject(node?.skill_ref) ? node.skill_ref : {};
     const pin = { node: node?.id ?? null, skill: ref.id ?? null, file: null, ok: true, problems: [] };
     report.pins.push(pin);
@@ -424,8 +425,8 @@ export function validateBundle(bundleDir) {
     pinned.add(ref.id);
     pin.file = found.file;
 
-    if (found.manifest.versao !== ref.versao) {
-      fail(`pinned version ${ref.versao}, manifest ${found.manifest.versao}`);
+    if (found.manifest.version !== ref.version) {
+      fail(`pinned version ${ref.version}, manifest ${found.manifest.version}`);
     }
     const recomputed = manifestHash(found.manifest);
     if (recomputed !== ref.hash) {
@@ -435,7 +436,7 @@ export function validateBundle(bundleDir) {
       fail(`the manifest declares hash ${found.manifest.hash}, but its content is ${recomputed}`);
     }
 
-    const declared = Array.isArray(node?.contrato?.verificacoes) ? node.contrato.verificacoes : [];
+    const declared = Array.isArray(node?.contract?.checks) ? node.contract.checks : [];
     const checks = Array.isArray(found.manifest.checks) ? found.manifest.checks : [];
     if (declared.length !== checks.length) {
       fail(

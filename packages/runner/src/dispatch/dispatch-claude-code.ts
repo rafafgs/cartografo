@@ -19,15 +19,20 @@
  *    is always a fresh session that was told what happened;
  * 3. opens the session and records `sessao.aberta` with the engine ref known so
  *    far — it may be `null`, and there is no endpoint to fill it in later;
- * 4. on finish, records `sessao.finalizada` in the taxonomy's vocabulary;
- * 5. runs the escalation parser over the output and, if the session asked
+ * 4. reports every attempt at a tool the session's permission policy denied,
+ *    as it happens (t125);
+ * 5. on finish, records `sessao.finalizada` in the taxonomy's vocabulary;
+ * 6. runs the escalation parser over the output and, if the session asked
  *    something, posts the question — which blocks the work inside the control
  *    plane, in the same transaction (t106, FR1).
  *
- * **Asking is not failing.** A dispatch that ends with a pending question and a
- * blocked work resolves normally: the lease goes back through the controller's
- * `finally`, and the work simply stops being a candidate until someone answers.
- * Only a session that could not start or did not reach `completed` rejects.
+ * **Asking is not failing, and neither is being denied.** A dispatch that ends
+ * with a pending question and a blocked work resolves normally: the lease goes
+ * back through the controller's `finally`, and the work simply stops being a
+ * candidate until someone answers. A denial is an incident that gets recorded,
+ * never a reason to fail the dispatch nor to cancel the session — escalating on
+ * repeated denials is a decision nobody has taken yet. Only a session that
+ * could not start or did not reach `completed` rejects.
  *
  * English per D18. The prompt and instruction CONTENT stays in Portuguese: it
  * stands in for the skill manifest the graph will inject (t101/t105), and those
@@ -35,8 +40,15 @@
  */
 
 import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
-import type { EngineAdapter, SessionSpec, SessionStatus } from '../engine/types.ts';
+import { resolvePermissions } from '../engine/permission-policy.ts';
+import type {
+  EngineAdapter,
+  SessionPermissions,
+  SessionSpec,
+  SessionStatus,
+} from '../engine/types.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
+import { PermissionDenialTracker, type PermissionDenial } from './parse-permission-denial.ts';
 
 /**
  * `SessionStatus` (the interface's vocabulary) -> the taxonomy's `status`
@@ -137,6 +149,16 @@ export interface ClaudeCodeDispatchOptions {
   instructions?: string;
   /** Opaque additions to the engine's environment. */
   envOverrides?: Readonly<Record<string, string>>;
+  /**
+   * Permission policy of the session (t125).
+   *
+   * Passed straight through to the `SessionSpec`, like `instructions` and
+   * `envOverrides`. Resolving it from the node's real `skill_ref` — registry
+   * lookup, hash check — belongs to the skill-rendering pipeline, which does
+   * not exist yet (`especificacoes/formatos/manifesto-skill.md:18-20`); what
+   * exists here is the seam that pipeline will fill.
+   */
+  permissions?: SessionPermissions;
   /** `fetch` implementation. Default: the global one. Test seam only. */
   doFetch?: typeof fetch;
 }
@@ -156,6 +178,16 @@ export class DispatchError extends Error {
 
 /** Default wall-clock limit, in seconds. */
 const DEFAULT_TIMEOUT_SECONDS = 3_600;
+
+/**
+ * `ator.ref` of a permission denial.
+ *
+ * `sistema` and not `agente`: the fact being recorded is not something the
+ * session decided, it is the wiring reporting what the engine refused. Same
+ * `ref` the control plane uses by default for a write coming from the runner,
+ * on purpose — two spellings for one actor is how a log stops being groupable.
+ */
+const RUNNER_ACTOR_REF = 'runner';
 
 /** One text block of an assistant message frame. */
 interface TextBlock {
@@ -339,6 +371,7 @@ export function createClaudeCodeDispatch(
       prompt,
       timeoutSeconds,
       ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
+      ...(options.permissions === undefined ? {} : { permissions: options.permissions }),
     };
 
     const lines: string[] = [];
@@ -348,12 +381,51 @@ export function createClaudeCodeDispatch(
       announceEnd = resolve;
     });
 
+    // The tracker watches for exactly what this session denied — the same list
+    // the adapter handed the engine, resolved from the same policy (t125, FR6).
+    const tracker = new PermissionDenialTracker(
+      resolvePermissions(options.permissions).deniedTools,
+    );
+
+    // A denial can happen before `POST /v1/sessions` has answered, and there is
+    // no id to post it against until then. It waits here, and the queue is
+    // drained as soon as the id exists.
+    const queued: PermissionDenial[] = [];
+    let sessionId: number | null = null;
+    let denialWrites: Promise<void> = Promise.resolve();
+    let denialFailure: unknown = null;
+
+    const recordDenial = (denial: PermissionDenial): void => {
+      const id = sessionId;
+      if (id === null) {
+        queued.push(denial);
+        return;
+      }
+      // Serialized, and with the catch attached right here: a rejection with
+      // nobody listening yet would take the whole process down as an unhandled
+      // rejection, long before anyone could report it.
+      denialWrites = denialWrites
+        .then(() =>
+          call(`/v1/sessions/${id}/permission-denials`, 'POST', {
+            recurso: denial.recurso,
+            ferramenta: denial.ferramenta,
+            motivo: denial.motivo,
+            ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+          }),
+        )
+        .then(() => undefined)
+        .catch((error: unknown) => {
+          denialFailure ??= error;
+        });
+    };
+
     // `startSession` rejects with `SessionStartError` when the session did not
     // come up. That one propagates untouched: it is a dispatch that never
     // happened, and the controller's `finally` gives the lease back anyway.
     await options.adapter.startSession(spec, {
       onOutput(line) {
         lines.push(line);
+        for (const denial of tracker.observe(line)) recordDenial(denial);
       },
       onEngineRef(ref) {
         engineRef = ref;
@@ -377,7 +449,16 @@ export function createClaudeCodeDispatch(
       timeout_seconds: spec.timeoutSeconds,
     });
 
+    sessionId = session.id;
+    for (const denial of queued.splice(0)) recordDenial(denial);
+
     const outcome = await end;
+
+    // Drained BEFORE the end of the session, so the log reads in the order
+    // things happened: the session opened, it was denied, it finished. A
+    // failure here is remembered and surfaced at the very end — telemetry of an
+    // incident may not cost the session its closure nor its question.
+    await denialWrites;
 
     await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
       status: TAXONOMY_STATUS[outcome.status],
@@ -408,6 +489,11 @@ export function createClaudeCodeDispatch(
         ator: { tipo: 'agente', ref: job.no_atual === '' ? 'sessao' : job.no_atual },
       });
     }
+
+    // A denial that could not be recorded is not the session's fault, but it is
+    // a fault: the control plane refused a write the runner owes it, and a
+    // silent swallow here would leave the log claiming a clean session.
+    if (denialFailure !== null) throw denialFailure;
 
     // Asking is a successful dispatch — the question is already recorded above,
     // and the work is already blocked. What is NOT successful is a session that

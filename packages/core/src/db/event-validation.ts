@@ -208,6 +208,14 @@ const RULES: Record<string, TypeRule> = {
       uso: optional('usage'),
     },
   },
+  'sessao.permissao_negada': {
+    entity: 'sessao',
+    fields: {
+      recurso: required('string', { values: ['filesystem', 'rede'] }),
+      ferramenta: required('string'),
+      motivo: required('string'),
+    },
+  },
   'pergunta.criada': {
     entity: 'pergunta',
     fields: {

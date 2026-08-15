@@ -35,6 +35,7 @@ import {
   ENGINE_STDIO,
   type EngineCommand,
 } from './command.ts';
+import { resolvePermissions } from './permission-policy.ts';
 import {
   SessionStartError,
   UnknownSessionError,
@@ -66,6 +67,15 @@ export const CREDENTIAL_VARIABLES = [
   'ANTHROPIC_AUTH_TOKEN',
   'CLAUDE_CODE_OAUTH_TOKEN',
 ] as const;
+
+/**
+ * Prefix of every refusal for a policy this engine cannot express (t125, FR3).
+ *
+ * Stable on purpose: it is what lets a caller tell "the session did not come
+ * up" from "the session was never going to come up, and here is the field to
+ * fix". The reasons after it come from `permission-policy.ts` verbatim.
+ */
+export const PERMISSION_REFUSAL_PREFIX = 'permission policy unsupported: ';
 
 export interface ClaudeCodeAdapterOptions {
   /** Test seam: swaps the real binary for the kit's fake engine. */
@@ -145,6 +155,16 @@ export class ClaudeCodeAdapter implements EngineAdapter {
   }
 
   async startSession(spec: SessionSpec, listener: SessionListener): Promise<string> {
+    // BEFORE the spawn, and before anything is reported: a policy this engine
+    // cannot express is a session that must not exist. Opening it and enforcing
+    // less than what was declared is the one failure mode a permission system
+    // may never have — and a half-open session would already have produced
+    // output, a pid and a row somewhere.
+    const { refusals } = resolvePermissions(spec.permissions);
+    if (refusals.length > 0) {
+      throw new SessionStartError(`${PERMISSION_REFUSAL_PREFIX}${refusals.join('; ')}`);
+    }
+
     const command = this.#commandBuilder(spec);
 
     let child: ChildProcess;

@@ -12,6 +12,7 @@
  * upwards (boundary 1 of the specification).
  */
 
+import { resolvePermissions } from './permission-policy.ts';
 import { composeWithSystemPromptFlag, type SessionSpec } from './types.ts';
 
 /** The headless binary. */
@@ -25,23 +26,27 @@ export const CLAUDE_BINARY = 'claude';
  * that hangs asking for permission is a session lost. Same trade-off the
  * flowpilot already takes.
  *
- * Where the policy *should* come from is a recorded and still open tension: the
- * v0 `SessionSpec` has nowhere to express it, and when D4 leaves the page
- * (permissions declared in the skill manifest, pinned by hash) exactly this
- * field will be missing (`docs/formatos/engine-adapter.md:515-532`). Until
- * then the default belongs to the adapter, and the only override is the
- * variable below.
+ * It is the mode for what the session is NOT forbidden to do, and it stays: the
+ * tension this comment used to record — the `SessionSpec` having nowhere to
+ * express a policy — was resolved by `spec.permissions` (t125). The two do not
+ * compete. `--permission-mode` says "do not stop to ask"; `--disallowedTools`
+ * below says "and these you do not get at all", which is the half that survives
+ * having nobody to answer a prompt.
  */
 export const DEFAULT_PERMISSION_MODE = 'bypassPermissions';
 
 /**
  * The one permission-mode override, read from the ADAPTER'S OWN environment.
  *
- * Deliberately neither a `SessionSpec` field nor an `envOverrides` key: no
- * engine configuration may come from above the adapter's boundary while D4 has
- * not decided who answers for the policy.
+ * Deliberately neither a `SessionSpec` field nor an `envOverrides` key: the
+ * MODE is engine configuration and stays below the boundary. What comes from
+ * above is the POLICY (`spec.permissions`), in the interface's vocabulary and
+ * never in this CLI's — which is the whole difference between the two.
  */
 export const PERMISSION_MODE_VARIABLE = 'CLAUDE_PERMISSION_MODE';
+
+/** The flag that denies tools by name, one argv element per entry. */
+export const DISALLOWED_TOOLS_FLAG = '--disallowedTools';
 
 /**
  * `stdio` of the engine process: stdin on `/dev/null`, stdout and stderr piped.
@@ -76,11 +81,23 @@ export function resolvePermissionMode(env: NodeJS.ProcessEnv = process.env): str
  * rewriting it here is what makes the normative rule (`instructions` and
  * `prompt` NEVER concatenated) hold by construction, and not by the discipline
  * of whoever edits this file next.
+ *
+ * Two things about the denied list, both of them scars:
+ *
+ * - **one argv element per entry.** `--disallowedTools <tools...>` is variadic
+ *   and the CLI's own help spells an entry with a space inside it
+ *   (`"Bash(git *) Edit"`); joining them by hand is how `Bash(curl *)` arrives
+ *   split in half. It comes BEFORE `--system-prompt` so that the flag that
+ *   follows closes the variadic — after the prompt, it would swallow it.
+ * - **`--add-dir` is never assembled, on any path** (invariant 7). An extra
+ *   directory hands back, in one flag, the write scope the policy just closed.
  */
 export function buildCommand(
   spec: SessionSpec,
   env: NodeJS.ProcessEnv = process.env,
 ): EngineCommand {
+  const { deniedTools } = resolvePermissions(spec.permissions);
+
   return {
     command: CLAUDE_BINARY,
     args: [
@@ -90,6 +107,9 @@ export function buildCommand(
       '--verbose',
       '--permission-mode',
       resolvePermissionMode(env),
+      // Absent policy, absent flag: a session that declared nothing produces
+      // exactly the argv it produced before this field existed.
+      ...(deniedTools.length === 0 ? [] : [DISALLOWED_TOOLS_FLAG, ...deniedTools]),
       ...composeWithSystemPromptFlag(spec),
     ],
   };

@@ -263,3 +263,107 @@ test('t107 AT2 — GET /v1/sessions?trabalho_id= slices by job inside the same e
   const invalid = await request(ctx, 'GET', '/v1/sessions?trabalho_id=abc');
   assert.equal(invalid.status, 400, 'an invalid filter is 400, never a silently ignored filter');
 });
+
+test('t125 — POST /v1/sessions/:id/permission-denials records the denial without ending the session', async (t) => {
+  requireArtifacts(...ARTIFACTS, T102_ARTIFACTS.jobRepository, T102_ARTIFACTS.jobRoutes);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const job = await createJob(ctx, {
+    titulo: 'com skill de terceiro',
+    no_entrada_id: 'entrada',
+    execucao_id: 9,
+  });
+
+  const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    trabalho_id: job.id,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'faça algo sem rede',
+  });
+  assert.equal(opened.status, 201);
+  const session = opened.body;
+
+  const denied = await request<Session>(
+    ctx,
+    'POST',
+    `/v1/sessions/${session.id}/permission-denials`,
+    {
+      recurso: 'rede',
+      ferramenta: 'WebFetch',
+      motivo: 'Claude requested permissions to use WebFetch, but you have not granted it.',
+    },
+  );
+
+  assert.equal(denied.status, 200);
+  // A denial is an incident, not a terminal state: the row does not move.
+  assert.equal(denied.body.status, 'aberta');
+  assert.equal(denied.body.finalizada_em, null);
+  assert.equal(denied.body.exit_code, null);
+
+  const events = getEventsByEntity(ctx.db, 'sessao', session.id);
+  assert.deepEqual(
+    events.map((event: Event) => event.tipo),
+    ['sessao.aberta', 'sessao.permissao_negada'],
+  );
+  assert.deepEqual(events[1].entidade, { tipo: 'sessao', id: session.id });
+  assert.deepEqual(events[1].ator, { tipo: 'sistema', ref: 'runner' });
+  assert.equal(events[1].execucao_id, 9, 'the denial belongs to the round the session serves');
+  assert.deepEqual(events[1].dados, {
+    recurso: 'rede',
+    ferramenta: 'WebFetch',
+    motivo: 'Claude requested permissions to use WebFetch, but you have not granted it.',
+  });
+
+  // The same session can be denied more than once: the log is append-only and
+  // nothing about the first denial closes the door on the second.
+  const again = await request<Session>(
+    ctx,
+    'POST',
+    `/v1/sessions/${session.id}/permission-denials`,
+    { recurso: 'filesystem', ferramenta: 'Write', motivo: 'write scope is empty for this skill' },
+  );
+  assert.equal(again.status, 200);
+  assert.equal(getEventsByEntity(ctx.db, 'sessao', session.id).length, 3);
+});
+
+test('t125 — a denial outside the contract is a 400, and an unknown session a 404', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    execucao_id: 9,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'faça algo',
+  });
+  assert.equal(opened.status, 201);
+
+  const outsideEnum = await request<{ error: string; details: string[] }>(
+    ctx,
+    'POST',
+    `/v1/sessions/${opened.body.id}/permission-denials`,
+    { recurso: 'memoria', ferramenta: 'WebFetch', motivo: 'inventado' },
+  );
+  assert.equal(outsideEnum.status, 400);
+  assert.equal(outsideEnum.body.error, 'validation_failed');
+  assert.ok(
+    outsideEnum.body.details.some((detail) => detail.includes('recurso')),
+    `the 400 has to name the offending field: ${JSON.stringify(outsideEnum.body.details)}`,
+  );
+
+  const missingField = await request(
+    ctx,
+    'POST',
+    `/v1/sessions/${opened.body.id}/permission-denials`,
+    { recurso: 'rede' },
+  );
+  assert.equal(missingField.status, 400, 'ferramenta and motivo are required');
+
+  const unknown = await request(ctx, 'POST', '/v1/sessions/98765/permission-denials', {
+    recurso: 'rede',
+    ferramenta: 'WebFetch',
+    motivo: 'a sessão não existe',
+  });
+  assert.equal(unknown.status, 404);
+});

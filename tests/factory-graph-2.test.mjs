@@ -13,6 +13,10 @@
  *   depends on t109 (see the bundle's README).
  * - **FR7** — the metrics recorded are process metrics, never a financial
  *   outcome (D14: "P&L is slow validation, never a round's metric").
+ * - **FR10** (t145) — the bundle's README is executable documentation: every
+ *   path it points at exists, and the command it publishes under `Como validar`
+ *   runs green from the bundle directory. The two are separate tests because a
+ *   dead link and a dead command are different failures to read.
  *
  * The hash procedure is reimplemented HERE, straight from the specification
  * (`especificacoes/formatos/manifesto-skill.md`, "Identificação" section),
@@ -31,7 +35,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -39,6 +50,7 @@ import test from 'node:test';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BUNDLE_DIR = path.join(ROOT, 'grafos-de-fabrica', 'bets-assimetricas');
 const SKILLS_DIR = path.join(BUNDLE_DIR, 'skills');
+const README_PATH = path.join(BUNDLE_DIR, 'README.md');
 const GRAPH_PATH = path.join(BUNDLE_DIR, 'grafo.json');
 const GRAPH_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validar-grafo.mjs');
 const BUNDLE_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-factory-bundle.mjs');
@@ -631,4 +643,79 @@ test('AT12 — the validator CLI approves the bundle and rejects a tampered hash
     `${bad.stdout}${bad.stderr}`.includes('red-team'),
     `the report has to name the diverging node:\n${bad.stdout}${bad.stderr}`,
   );
+});
+
+/**
+ * Resolves a path the README names, the way a reader following it does.
+ *
+ * A `./` or `../` reference is relative to the bundle; a bare one is relative
+ * to the repo root when its first segment is a repo entry (`tests/…`,
+ * `docs/…`), and to the bundle otherwise (`skills/…`). The `#anchor` and the
+ * `file.md:172` line suffix are cut before resolving.
+ */
+function resolveReference(reference) {
+  const target = reference.replace(/[:#].*$/, '');
+  if (target.startsWith('.')) return path.resolve(BUNDLE_DIR, target);
+  const [head] = target.split('/');
+  const base = readdirSync(ROOT).includes(head) ? ROOT : BUNDLE_DIR;
+  return path.resolve(base, target);
+}
+
+/**
+ * Every path the README points at, in the three shapes that carry one: a
+ * markdown link target, a backticked inline reference, and the script of a
+ * fenced `node …` command.
+ *
+ * A reference with a `<placeholder>` in it (`grafos-de-fabrica/<classe>/`) is
+ * a shape, not a path, and is skipped. So is an external URL.
+ */
+function referencesIn(text) {
+  const found = new Set();
+  for (const [, target] of text.matchAll(/\]\(([^)\s]+)\)/g)) found.add(target);
+  for (const [, target] of text.matchAll(/`([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\/?(?::\d+)?)`/g)) {
+    found.add(target);
+  }
+  for (const [, script] of text.matchAll(/^\s*node\s+(\S+)/gm)) found.add(script);
+
+  return [...found].filter(
+    (reference) => !reference.includes('<') && !/^[a-z]+:\/\//.test(reference),
+  );
+}
+
+/** The first fenced block under a heading, as its lines. */
+function fencedBlockUnder(text, heading) {
+  const index = text.indexOf(heading);
+  assert.notEqual(index, -1, `the README no longer has a "${heading}" section`);
+  const block = text.slice(index + heading.length).match(/```[a-z]*\n([\s\S]*?)```/);
+  assert.ok(block, `the "${heading}" section has no fenced block in it`);
+  return block[1].split('\n');
+}
+
+test('FR10 — every path the README points at exists', () => {
+  const text = readFileSync(README_PATH, 'utf8');
+  const references = referencesIn(text);
+  assert.ok(references.length >= 10, `only ${references.length} references read; the sweep is blind`);
+
+  const dead = references.filter((reference) => !existsSync(resolveReference(reference)));
+
+  assert.deepEqual(dead, [], `the README points at files that do not exist:\n${dead.join('\n')}`);
+});
+
+test('FR10 — the command the README documents under "Como validar" runs green', () => {
+  const text = readFileSync(README_PATH, 'utf8');
+  const documented = fencedBlockUnder(text, '## Como validar')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('node '));
+
+  assert.ok(documented.length > 0, 'the "Como validar" block no longer documents a node command');
+
+  for (const command of documented) {
+    const [, ...argv] = command.split(/\s+/);
+    const run = spawnSync(process.execPath, argv, { cwd: BUNDLE_DIR, encoding: 'utf8' });
+    assert.equal(
+      run.status,
+      0,
+      `\`${command}\` has to exit 0 from the bundle dir:\n${run.stdout}${run.stderr}`,
+    );
+  }
 });

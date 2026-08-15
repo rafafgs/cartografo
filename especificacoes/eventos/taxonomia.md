@@ -17,8 +17,8 @@ implementação.
 | Arquivo | O que é |
 |---|---|
 | `schemas/envelope.schema.json` | Os campos que existem em todo evento |
-| `schemas/<tipo>.schema.json` | Um por tipo de evento (16) |
-| `exemplos/log-exemplo.jsonl` | Uma execução ponta a ponta, com os 16 tipos |
+| `schemas/<tipo>.schema.json` | Um por tipo de evento (17) |
+| `exemplos/log-exemplo.jsonl` | Uma execução ponta a ponta, com os 17 tipos |
 | `exemplos/estado-final-esperado.json` | O estado que aquele log reconstrói |
 | `reducers/reconstruir-estado.mjs` | A dobra do log até esse estado |
 | `tests/` | Runner nativo do Node, sem `package.json` e sem dependência |
@@ -38,9 +38,10 @@ acima.
 > **Contagem.** A v1 nasceu com **15 tipos + o envelope = 16 arquivos** em
 > `schemas/` (a ficha t98 falava em "16 tipos"; valeu a tabela normativa dela).
 > O intake de duas fases acrescentou o 16º tipo,
-> `trabalho.dependencia_declarada` (t122) — crescer é aditivo, e é isso que a
-> regra de "tipo desconhecido é ignorado" compra. Hoje: **16 tipos + o
-> envelope = 17 arquivos**.
+> `trabalho.dependencia_declarada` (t122), e o enforcement de permissão de
+> skill acrescentou o 17º, `sessao.permissao_negada` (t125) — crescer é
+> aditivo, e é isso que a regra de "tipo desconhecido é ignorado" compra. Hoje:
+> **17 tipos + o envelope = 18 arquivos**.
 
 ## Envelope
 
@@ -110,7 +111,7 @@ Três consequências que atravessam esta ficha inteira:
 
 ## Catálogo
 
-16 tipos, em 5 grupos. "Quem emite" é o `ator.tipo` esperado; os exemplos
+17 tipos, em 5 grupos. "Quem emite" é o `ator.tipo` esperado; os exemplos
 mostram o conteúdo de `dados` e saíram do `log-exemplo.jsonl`.
 
 ### Trabalho
@@ -233,6 +234,36 @@ saudável (`pausada_cota` — sem combustível, retomável), um ref inválido
 
 `uso` é `null` quando o engine não reportou nada — **nunca colapsar em zero**.
 Não há campo de custo: custo é vocabulário de engine, e o log é neutro.
+
+#### `sessao.permissao_negada` — [schema](schemas/sessao.permissao_negada.schema.json)
+
+Emitido quando a sessão tenta usar uma ferramenta que a política de permissão
+dela negava (t125). Ator: `sistema` (o runner, que é quem vê a recusa passar no
+stream do engine). `recurso` ∈ `filesystem`, `rede` — os dois eixos que o
+manifesto de skill declara.
+
+```json
+{"recurso":"rede","ferramenta":"WebFetch",
+ "motivo":"Claude requested permissions to use WebFetch, but you have not granted it."}
+```
+
+**É incidente, não desfecho.** Não há `UPDATE` na linha da sessão e não há
+transição de status: a sessão continua, e pode ser negada de novo — o log é
+append-only e uma segunda negação é um segundo fato. Encerrar sessão por
+negação repetida seria política de escalada, e ninguém decidiu isso ainda.
+
+`ferramenta` carrega vocabulário de engine dentro do log de propósito
+(`WebFetch`, `Bash(curl *)`). É a exceção que a regra "o log é neutro" aceita
+pelo mesmo motivo que `sessao.aberta` carrega `engine`: sem o nome exato que
+foi negado, a negação não é auditável.
+
+**O que este evento não promete.** Ele registra o que o gating por nome de
+ferramenta pegou, não tudo que a sessão tentou. Medido contra a CLI real: uma
+ferramenta negada por nome nem chega a ser oferecida ao modelo, então nunca há
+tentativa e nunca há evento — quem aparece aqui é a negação de um *padrão*
+(`Bash(curl *)`), que é recusada na chamada. Ausência de evento significa "não
+tentou ou não foi oferecida", jamais "nada foi barrado". A lacuna residual está
+escrita em `docs/formatos/engine-adapter.md`, "Permissões da sessão".
 
 ### Pergunta
 

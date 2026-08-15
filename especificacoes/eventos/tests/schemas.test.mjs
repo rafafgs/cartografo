@@ -60,6 +60,15 @@ export const TABELA = {
     obrigatorios: ['status'],
     opcionais: ['exit_code', 'uso'],
   },
+  // O 17º tipo entrou com o enforcement de permissão (t125): toda tentativa de
+  // usar uma ferramenta que a política da sessão negou vira telemetria. Os três
+  // campos são obrigatórios — uma negação sem recurso, sem ferramenta ou sem
+  // motivo não é auditável, e este log existe para ser auditado.
+  'sessao.permissao_negada': {
+    entidade: 'sessao',
+    obrigatorios: ['recurso', 'ferramenta', 'motivo'],
+    opcionais: [],
+  },
   'pergunta.criada': {
     entidade: 'pergunta',
     obrigatorios: ['trabalho_id', 'tipo', 'pergunta', 'auto_aprovavel'],

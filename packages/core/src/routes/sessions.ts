@@ -13,7 +13,12 @@ import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { integerFromQuery } from '../repositories/common.ts';
-import { openSession, finishSession, listSessions } from '../repositories/session.ts';
+import {
+  openSession,
+  finishSession,
+  listSessions,
+  recordPermissionDenial,
+} from '../repositories/session.ts';
 import { withValidation, routeId, notFound } from './common.ts';
 
 /**
@@ -35,6 +40,19 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
   app.patch('/sessions/:id/finish', async (request, reply) =>
     withValidation(reply, () => {
       const session = finishSession(
+        db,
+        routeId(request.params),
+        (request.body ?? {}) as Record<string, unknown>,
+      );
+      return session ?? notFound(reply, 'session');
+    }),
+  );
+
+  // 200 and not 201: what this appends is an event, and the body that comes
+  // back is the session — unchanged, because a denial does not move it (t125).
+  app.post('/sessions/:id/permission-denials', async (request, reply) =>
+    withValidation(reply, () => {
+      const session = recordPermissionDenial(
         db,
         routeId(request.params),
         (request.body ?? {}) as Record<string, unknown>,

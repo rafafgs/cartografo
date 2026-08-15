@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sessao.permissao_negada.schema.json",
+  "title": "sessao.permissao_negada",
+  "description": "A sessão tentou usar uma ferramenta que a política de permissão dela negava. É incidente, não desfecho: a sessão continua, e pode ser negada de novo. Sem paridade no flowpilot — nasce com o enforcement de permissão de skill (D4).",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "properties": {
+    "tipo": { "const": "sessao.permissao_negada" },
+    "entidade": {
+      "type": "object",
+      "properties": { "tipo": { "const": "sessao" } }
+    },
+    "dados": {
+      "type": "object",
+      "required": ["recurso", "ferramenta", "motivo"],
+      "properties": {
+        "recurso": {
+          "enum": ["filesystem", "rede"],
+          "description": "Qual eixo da política respondeu pela negação. Os dois eixos são os que o manifesto de skill declara em permissoes."
+        },
+        "ferramenta": {
+          "type": "string",
+          "description": "A entrada negada, no vocabulário que o adapter passou ao engine: um nome (WebFetch) ou um nome com padrão (Bash(curl *)). É vocabulário de engine dentro do log de propósito — sem ele a negação não é auditável."
+        },
+        "motivo": {
+          "type": "string",
+          "description": "O que o engine respondeu, quando respondeu algo legível. A negação é reconhecida por correlação estrutural, nunca por este texto: a prosa muda de versão, o formato do frame não."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

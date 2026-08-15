@@ -197,10 +197,6 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
 - **Política de auto-resposta.** O campo `auto_aprovavel` é gravado como `true`
   pelo despacho, e nada o lê para responder sozinho. A rota
   `/auto_resolucao` existe e funciona; quem a chama é gente, por enquanto.
-- **Guarda contra responder duas vezes a mesma pergunta.** `responder` não
-  checa `status === 'respondida'` antes de sobrescrever — gap herdado do
-  `t102`, não introduzido aqui. Hoje a consequência ficou um pouco maior: uma
-  segunda resposta grava um segundo `trabalho.desbloqueado`.
 - **Atualizar `engine_session_ref` depois da abertura.** `sessao.aberta` é
   gravado assim que a sessão sobe, e o ref que o engine revela no primeiro
   quadro chega depois disso — não existe endpoint de PATCH para preenchê-lo.

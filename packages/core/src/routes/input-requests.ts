@@ -10,18 +10,19 @@
  * migration columns (t127, FR8).
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { integerFromQuery } from '../repositories/common.ts';
 import {
   autoResolveInputRequest,
   createInputRequest,
+  getInputRequest,
   getPrecedents,
   listInputRequests,
   answerInputRequest,
 } from '../repositories/input-request.ts';
-import { withValidation, routeId, notFound } from './common.ts';
+import { withValidation, routeId, notFound, conflict, type ErrorResponse } from './common.ts';
 
 /**
  * Registers the input-request routes in the `/v1` scope.
@@ -42,11 +43,39 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
     }),
   );
 
+  /**
+   * The door both ways of answering pass through: the input request has to exist
+   * and still be PENDING (t149).
+   *
+   * Answering twice is not a harmless repeat. The second write would overwrite
+   * `resposta`/`origem` — turning a decision taken by a person into one taken by
+   * the system, which is exactly the distinction the two routes exist to keep —
+   * append a contradictory second answer event, and unblock a job that may by
+   * then be waiting on a DIFFERENT pending question, recreating the ask-forever
+   * loop the block itself exists to prevent.
+   *
+   * @param reply Fastify reply, marked with the status when it refuses.
+   * @param id Input-request id.
+   * @returns The error body to return, or `null` when the route may proceed.
+   */
+  const refuseUnlessPending = (reply: FastifyReply, id: number): ErrorResponse | null => {
+    const current = getInputRequest(db, id);
+    if (current === null) return notFound(reply, 'input request');
+    if (current.status !== 'pendente') {
+      return conflict(reply, `input request ${id} is already "${current.status}"`);
+    }
+    return null;
+  };
+
   app.patch('/input-requests/:id/answer', async (request, reply) =>
     withValidation(reply, () => {
+      const id = routeId(request.params);
+      const refusal = refuseUnlessPending(reply, id);
+      if (refusal !== null) return refusal;
+
       const inputRequest = answerInputRequest(
         db,
-        routeId(request.params),
+        id,
         (request.body ?? {}) as Record<string, unknown>,
       );
       return inputRequest ?? notFound(reply, 'input request');
@@ -55,9 +84,13 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
 
   app.patch('/input-requests/:id/auto-resolution', async (request, reply) =>
     withValidation(reply, () => {
+      const id = routeId(request.params);
+      const refusal = refuseUnlessPending(reply, id);
+      if (refusal !== null) return refusal;
+
       const inputRequest = autoResolveInputRequest(
         db,
-        routeId(request.params),
+        id,
         (request.body ?? {}) as Record<string, unknown>,
       );
       return inputRequest ?? notFound(reply, 'input request');

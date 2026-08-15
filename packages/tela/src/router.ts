@@ -36,6 +36,26 @@
  * (`packages/core/src/cli/url.ts`): `--url` > `CARTOGRAFO_URL` >
  * `http://127.0.0.1:4317`. That way whoever starts the control plane on another
  * port does not have to repeat the configuration in two different vocabularies.
+ *
+ * ## Nothing a request does may end the process (t151)
+ *
+ * The handler runs inside a floating async call: nobody awaits it, so a
+ * rejection in there reaches no `catch` at all, and since Node 15 an unhandled
+ * rejection kills the process. One tab dropping an upload mid-body would take
+ * both halves of D11 down for every other tab — which is exactly what happened
+ * before this became one outer `try/catch` around the whole handler.
+ *
+ * So the discipline here is in two layers, and the second one is not a
+ * substitute for the first:
+ *
+ * 1. the handler catches EVERYTHING and turns it into an answer, a closed
+ *    socket, and a line on stderr — `ClientAbortedError` is the label for the
+ *    case where there is no longer anyone to answer;
+ * 2. `installCrashGuard` is the last line of defence for whatever still escapes
+ *    the process, installed by the two ENTRY POINTS only, never by
+ *    `createScreenRouter` — a listener registered on import would leak from one
+ *    test file into the next, and every test in this package starts the screen
+ *    in process.
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -104,6 +124,55 @@ export class UsageError extends Error {
 }
 
 /**
+ * The client went away before the screen finished reading its request (t151).
+ *
+ * A type of its own because this is NOT a failure of the screen and must never
+ * be diagnosed as one: `for await (const chunk of request)` rejects with a raw
+ * `Error: aborted` (`code: ECONNRESET`) that says nothing about who gave up,
+ * and an unlabelled rejection in the request handler is what used to end the
+ * process. Labelled, it becomes what it is — a connection that died — logged
+ * once and dropped.
+ */
+export class ClientAbortedError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'ClientAbortedError';
+  }
+}
+
+/** One line about a failure, for stderr: name and message, never a stack. */
+function describeError(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+/**
+ * Keeps the screen alive when a rejection escapes every `catch` in the way.
+ *
+ * Node's default since v15 is to end the process on an unhandled rejection.
+ * For a CLI that is right; for a server that both halves of D11 share, it means
+ * one bad request closing the screen for everyone — so here the rejection is
+ * logged and the screen keeps serving. It is a net under the handler's own
+ * `try/catch`, not a replacement for it: whatever lands here is a bug to fix at
+ * the source, and the stderr line is how it gets found.
+ *
+ * Called by the ENTRY POINTS only (`runScreenCli`, and `main` in `server.ts`),
+ * never on import: a process-wide listener installed by `createScreenRouter`
+ * would follow the test runner from one file into the next.
+ *
+ * @returns A function that removes the listener again.
+ */
+export function installCrashGuard(): () => void {
+  const guard = (reason: unknown): void => {
+    process.stderr.write(`cartografo-tela: unhandled rejection — ${describeError(reason)}\n`);
+  };
+
+  process.on('unhandledRejection', guard);
+  return () => {
+    process.off('unhandledRejection', guard);
+  };
+}
+
+/**
  * Resolves the port the screen listens on.
  *
  * @param env Environment to read `CARTOGRAFO_TELA_PORT` from.
@@ -163,11 +232,19 @@ async function readForm(request: IncomingMessage): Promise<URLSearchParams> {
   const chunks: Buffer[] = [];
   let size = 0;
 
-  for await (const chunk of request) {
-    const block = chunk as Buffer;
-    size += block.length;
-    if (size > BODY_LIMIT) throw new UsageError('formulário grande demais');
-    chunks.push(block);
+  try {
+    for await (const chunk of request) {
+      const block = chunk as Buffer;
+      size += block.length;
+      if (size > BODY_LIMIT) throw new UsageError('formulário grande demais');
+      chunks.push(block);
+    }
+  } catch (cause) {
+    // The ceiling is this screen refusing a body it does not want, and it keeps
+    // saying so with a 400. Anything else coming out of the iteration is the
+    // connection dying underneath it.
+    if (cause instanceof UsageError) throw cause;
+    throw new ClientAbortedError('o formulário parou de chegar no meio', { cause });
   }
 
   return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
@@ -179,16 +256,28 @@ type RouteResult = Page | { redirect: string };
 /**
  * Turns an API failure into a page, without inventing success.
  *
- * The three translations, and why each one:
+ * The translations, and why each one:
  * - **an API 404 becomes a screen 404** — the entity does not exist, and lying
  *   here would hide the one case where the user typed the wrong address;
  * - **any other control plane error becomes a 502** — the one that failed is
  *   the server behind, and the browser needs to know it was not itself;
  * - **not reaching the control plane becomes a 502 with the command that fixes
  *   it** — this screen's characteristic failure is being opened with no control
- *   plane running.
+ *   plane running;
+ * - **a client that gave up becomes a 499** — nginx's "client closed request",
+ *   and nobody will ever read it, because the socket that would receive it is
+ *   precisely the one that died. It exists so that the translation is TOTAL:
+ *   every error the handler can catch has a page here, including the one whose
+ *   page is never delivered (t151).
  */
-function failurePage(error: unknown, controlPlaneUrl: string): Page {
+export function failurePage(error: unknown, controlPlaneUrl: string): Page {
+  if (error instanceof ClientAbortedError) {
+    return errorPage(
+      499,
+      'cliente desconectado',
+      'A conexão caiu antes de a tela terminar de ler o pedido. Nada foi alterado.',
+    );
+  }
   if (error instanceof NetworkError) {
     return errorPage(
       502,
@@ -337,10 +426,59 @@ function isApiPath(pathname: string): boolean {
 /** Reads a request's whole body; the proxy forwards bytes, not a stream. */
 async function readBody(request: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+  try {
+    for await (const chunk of request) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+    }
+  } catch (cause) {
+    throw new ClientAbortedError('o corpo do pedido parou de chegar no meio', { cause });
   }
   return Buffer.concat(chunks);
+}
+
+/**
+ * Last stop of a request that failed: log it, then answer it or hang up.
+ *
+ * The order matters. The log comes FIRST and unconditionally, because the
+ * common case is that there is no longer anyone to answer — without this line,
+ * an aborted upload would be indistinguishable from a request that never
+ * arrived. Only then does it try to answer, and only while the answer can still
+ * go anywhere: after `writeHead` there is a status the browser already read,
+ * and writing a second one over it would corrupt the response instead of
+ * explaining it.
+ *
+ * @param error What the handler threw.
+ * @param response The response, which may already be half written or dead.
+ * @param controlPlaneUrl Control plane, for the message `failurePage` writes.
+ */
+function reportRequestFailure(
+  error: unknown,
+  response: ServerResponse,
+  controlPlaneUrl: string,
+): void {
+  process.stderr.write(`cartografo-tela: pedido falhou — ${describeError(error)}\n`);
+
+  if (response.headersSent || response.writableEnded || response.destroyed) {
+    response.destroy();
+    return;
+  }
+
+  // Writing to a socket the client already dropped must not become the NEXT
+  // crash: the stream can report the failure asynchronously, and an `error`
+  // event with no listener is an uncaught exception — the same bug one layer
+  // down.
+  response.on('error', () => undefined);
+
+  try {
+    const page = failurePage(error, controlPlaneUrl);
+    response.writeHead(page.status, {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+    });
+    response.end(page.html);
+  } catch {
+    response.destroy();
+  }
 }
 
 /**
@@ -361,53 +499,65 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
 
   return createServer((request: IncomingMessage, response: ServerResponse) => {
     void (async () => {
-      const target = request.url ?? '/';
-      const { pathname } = new URL(target, 'http://tela.local');
-
-      // 1. The API belongs to the control plane; the screen only forwards it.
-      if (isApiPath(pathname)) {
-        const forwarded: ProxiedResponse = await forwardRequest(
-          controlPlaneUrl,
-          {
-            method: request.method ?? 'GET',
-            target,
-            headers: request.headers,
-            body: await readBody(request),
-          },
-          { doFetch: options.doFetch, token },
-        );
-        response.writeHead(forwarded.status, forwarded.headers);
-        response.end(forwarded.body);
-        return;
-      }
-
-      // 2. A file from `src/public/` — the inbox page and its modules.
-      if (resolveStaticFile(pathname) !== null) {
-        const file = await serveStatic(pathname);
-        response.writeHead(file.status, file.headers);
-        response.end(file.body);
-        return;
-      }
-
-      // 3. What is left is a view rendered here.
-      let result: RouteResult;
+      // Nobody awaits this call, so this `try` is the only thing between a
+      // failed request and the end of the process (t151). It covers the URL
+      // parsing too: `new URL` throws on a request target the browser is free
+      // to send, and it throws before there is any branch to blame.
       try {
-        result = await route(client, request);
+        const target = request.url ?? '/';
+        const { pathname } = new URL(target, 'http://tela.local');
+
+        // 1. The API belongs to the control plane; the screen only forwards it.
+        if (isApiPath(pathname)) {
+          const forwarded: ProxiedResponse = await forwardRequest(
+            controlPlaneUrl,
+            {
+              method: request.method ?? 'GET',
+              target,
+              headers: request.headers,
+              body: await readBody(request),
+            },
+            { doFetch: options.doFetch, token },
+          );
+          response.writeHead(forwarded.status, forwarded.headers);
+          response.end(forwarded.body);
+          return;
+        }
+
+        // 2. A file from `src/public/` — the inbox page and its modules.
+        if (resolveStaticFile(pathname) !== null) {
+          const file = await serveStatic(pathname);
+          response.writeHead(file.status, file.headers);
+          response.end(file.body);
+          return;
+        }
+
+        // 3. What is left is a view rendered here.
+        let result: RouteResult;
+        try {
+          result = await route(client, request);
+        } catch (error) {
+          // A dead client is not a page. It goes up to the guard, which logs it
+          // and hangs up — rendering HTML for a socket nobody is holding would
+          // spend the failure without telling anyone it happened.
+          if (error instanceof ClientAbortedError) throw error;
+          result = failurePage(error, controlPlaneUrl);
+        }
+
+        if ('redirect' in result) {
+          response.writeHead(303, { location: result.redirect });
+          response.end();
+          return;
+        }
+
+        response.writeHead(result.status, {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+        });
+        response.end(result.html);
       } catch (error) {
-        result = failurePage(error, controlPlaneUrl);
+        reportRequestFailure(error, response, controlPlaneUrl);
       }
-
-      if ('redirect' in result) {
-        response.writeHead(303, { location: result.redirect });
-        response.end();
-        return;
-      }
-
-      response.writeHead(result.status, {
-        'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-      });
-      response.end(result.html);
     })();
   });
 }
@@ -468,6 +618,10 @@ export function urlFromArgs(args: string[]): string | undefined {
  * plane's startup, so that a supervisor (or a test) knows the screen is up and
  * against which control plane.
  *
+ * This is one of the two places `installCrashGuard` is installed (the other is
+ * `main` in `server.ts`): a process that is going to stay up serving strangers
+ * is exactly where Node's "die on an unhandled rejection" is the wrong default.
+ *
  * @param args Arguments after the command name.
  * @param env Environment to read the configuration from.
  */
@@ -475,6 +629,8 @@ export async function runScreenCli(
   args: string[] = [],
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
+  installCrashGuard();
+
   const screen = await startScreenRouter({
     controlPlaneUrl: resolveControlPlaneAddress(urlFromArgs(args), env),
     token: resolveControlPlaneToken(env),

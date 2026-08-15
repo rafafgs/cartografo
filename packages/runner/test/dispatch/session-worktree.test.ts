@@ -176,13 +176,13 @@ test('AT3 — a retry of the same job gets a new directory on the same branch, w
 
   // What the first session committed is what the second one continues from —
   // the whole reason a retry keeps the branch instead of minting another.
+  const subject = 'trabalho da primeira sessão';
   writeFileSync(path.join(first.path, 'nota.md'), 'o que a primeira sessão fez\n');
   git(first.path, 'add', '.');
-  git(first.path, 'commit', '--quiet', '-m', 'trabalho da primeira sessão');
+  git(first.path, 'commit', '--quiet', '-m', subject);
 
-  assert.match(
-    git(second.path, 'log', '--format=%s'),
-    /trabalho da primeira sessão/,
+  assert.ok(
+    git(second.path, 'log', '--format=%s').includes(subject),
     'the retry does not see the commit of the session before it',
   );
 });

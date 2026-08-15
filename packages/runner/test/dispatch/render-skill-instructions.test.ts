@@ -185,8 +185,8 @@ test('AT7 — an unregistered skill refuses to render at all', async () => {
       );
       assert.equal(error.nodeId, 'conferir');
       assert.equal(error.skillId, SKILL_ID);
-      assert.match(error.message, /conferir/);
-      assert.match(error.message, new RegExp(SKILL_ID));
+      assert.ok(error.message.includes('conferir'), error.message);
+      assert.ok(error.message.includes(SKILL_ID), error.message);
       return true;
     },
   );
@@ -261,7 +261,7 @@ test('AT10 — the manifest permissions become the session permissions', async (
 
   // A closed network carries no domains: the manifest's own rule is that
   // `dominios` is ignored when `permitido` is false, and carrying it here would
-  // make the policy resolver refuse a session the manifest never restricted.
+  // make the policy resolution refuse a session the manifest never restricted.
   const closed = await renderSkillInstructions(
     resolvedNode(SINGLE_EDGE),
     (

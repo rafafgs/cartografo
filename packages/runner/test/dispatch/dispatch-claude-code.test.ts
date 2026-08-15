@@ -2936,8 +2936,9 @@ test("t161 — the node's skill drives the session, and the session advances the
         ["aprovado", "retrabalho"],
         "the human is offered the edges that actually leave this node",
       );
-      assert.match(String(body.pergunta), /conferir/);
-      assert.match(String(body.pergunta), /escala/);
+      const askedText = String(body.pergunta);
+      assert.ok(askedText.includes("conferir"), askedText);
+      assert.ok(askedText.includes("escala"), askedText);
 
       const after = await api<Work>(
         baseUrl,

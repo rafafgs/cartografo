@@ -44,10 +44,10 @@ function build(payload: unknown): NodeResult | null {
   // move the work on a value no edge can ever carry.
   if (typeof raw !== 'string') return null;
 
-  const resultado = raw.trim();
-  if (resultado === '') return null;
+  const label = raw.trim();
+  if (label === '') return null;
 
-  return { resultado };
+  return { resultado: label };
 }
 
 /**

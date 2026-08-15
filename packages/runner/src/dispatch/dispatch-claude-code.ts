@@ -570,6 +570,14 @@ export function createClaudeCodeDispatch(
   ): Promise<void> => {
     const labels = edges.map((edge) => edge.condicao ?? '').filter((label) => label !== '');
     const seen = observed === null ? 'nenhum' : `"${observed}"`;
+    // Built with concatenation and not with a nested template literal: the D18
+    // sweep's masking scanner reads one backtick at a time, and a template
+    // inside a `${…}` silently desyncs it for the whole rest of the file
+    // (`test/no-portuguese-identifiers.test.ts`, "one backtick in a comment can
+    // swallow the quoted strings that follow it").
+    const routes = edges
+      .map((edge) => '`' + (edge.condicao ?? '') + '` → `' + edge.para + '`')
+      .join(', ');
 
     await call('/v1/input-requests', 'POST', {
       trabalho_id: job.id,
@@ -580,8 +588,7 @@ export function createClaudeCodeDispatch(
         `nenhuma delas: o resultado observado foi ${seen}, e ele não casa com ` +
         'aresta nenhuma deste nó. Por qual aresta o trabalho segue?',
       contexto:
-        `Arestas que saem de \`${job.no_atual}\`: ` +
-        `${edges.map((edge) => `\`${edge.condicao ?? ''}\` → \`${edge.para}\``).join(', ')}. ` +
+        `Arestas que saem de \`${job.no_atual}\`: ${routes}. ` +
         'A sessão terminou sem falhar; o que falta é a decisão de rota.',
       opcoes: labels,
       recomendacao: null,

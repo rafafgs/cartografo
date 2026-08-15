@@ -114,8 +114,8 @@ export interface RenderedSkill {
    * does not allow on the way in, so it only happens for a projection that
    * changed shape underneath us. Absent means "declared nothing", which is the
    * behaviour every session had before the field existed; it never means
-   * "anything goes" further down, because the adapter's own resolver reads
-   * absence the same way.
+   * "anything goes" further down, because the adapter's own policy resolution
+   * reads absence the same way.
    */
   permissions: SessionPermissions | undefined;
 }
@@ -210,8 +210,8 @@ function textList(value: unknown): string[] {
  * `dominios` is dropped when the network is closed, which is the manifest
  * format's own rule ("`rede.permitido: false` closes the network; `dominios` is
  * ignored in that case"). Carrying it anyway would make the adapter's policy
- * resolver REFUSE the session — it cannot express a per-domain allowlist — for a
- * declaration that restricted nothing.
+ * resolution REFUSE the session — it cannot express a per-domain allowlist —
+ * for a declaration that restricted nothing.
  *
  * @param permissoes The manifest's declaration.
  * @returns The session policy, or `undefined` when nothing readable was

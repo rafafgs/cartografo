@@ -146,9 +146,9 @@ function readManifests() {
 /**
  * Refuses to spend a single session on a graph whose skills cannot be enforced.
  *
- * The check is the adapter's own resolver, not a copy of its rules: whatever
- * `startSession` would refuse, this refuses first — with the node and the skill
- * named, which is the difference between a diagnosis and a stack trace on the
+ * The check is the adapter's own policy resolution, not a copy of its rules:
+ * whatever `startSession` would refuse, this refuses first — with the node and
+ * the skill named, which is the difference between a diagnosis and a trace on the
  * fourth node of five.
  */
 function preflightPermissions(document, manifests) {
@@ -392,8 +392,8 @@ async function main() {
         // is the operator being a HUMAN, not a driver: it answers and stands
         // back, and the next tick re-enters the same node with the answer
         // already in the prompt.
-        const { perguntas } = await api(url, 'GET', '/v1/input-requests?status=pendente');
-        const pending = perguntas.find((question) => question.trabalho_id === job.id);
+        const { perguntas: questions } = await api(url, 'GET', '/v1/input-requests?status=pendente');
+        const pending = questions.find((question) => question.trabalho_id === job.id);
         if (pending === undefined) die(`job ${job.id} is blocked with no pending question`);
 
         const answer = pending.resposta_padrao ?? pending.recomendacao ?? 'Siga com o caminho mais simples.';

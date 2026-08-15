@@ -359,8 +359,13 @@ async function main() {
     if (current.bloqueado) {
       // A question is the one thing a crossing legitimately stops for, and
       // answering it is a person's job — not this driver's.
-      const { perguntas } = await api(url, token, 'GET', '/v1/input-requests?status=pendente');
-      const pending = perguntas.filter((question) => question.trabalho_id === job.id);
+      const { perguntas: questions } = await api(
+        url,
+        token,
+        'GET',
+        '/v1/input-requests?status=pendente',
+      );
+      const pending = questions.filter((question) => question.trabalho_id === job.id);
       die(
         `the work is blocked on ${pending.length} pending question(s) and needs a person: ` +
           `${pending.map((question) => `#${question.id} "${question.pergunta}"`).join(' | ')}`,

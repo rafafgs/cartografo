@@ -374,7 +374,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     'the gate reproved, and the rework edge is a real edge like any other',
   );
 
-  // --- 4. round two: implementar → conferir → publicar ----------------------
+  // --- 4. round two: the same two nodes, and then the final one -------------
   currentLines = QUIET;
   assert.ok(await controller.tick());
   assert.equal((await nodeNow()).no_atual, 'conferir');

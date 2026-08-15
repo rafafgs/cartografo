@@ -137,7 +137,9 @@ function watchUnhandledRejections(t: Cleanup): unknown[] {
     collected.push(reason);
   };
   process.on('unhandledRejection', collect);
-  t.after(() => process.off('unhandledRejection', collect));
+  t.after(() => {
+    process.off('unhandledRejection', collect);
+  });
   return collected;
 }
 
@@ -315,10 +317,22 @@ test('AT6 — installCrashGuard logs to stderr and keeps the process alive', asy
     process.exit = originalExit;
   });
 
+  // The emit below reaches EVERY listener, and the test runner registers one of
+  // its own that rethrows what it cannot attribute to a test — the harness, not
+  // the product. So the guard is measured alone: the runner's listeners step
+  // aside for this one assertion and are put back right after.
+  const others = process.listeners('unhandledRejection');
+  process.removeAllListeners('unhandledRejection');
+
   // The guard is removed again: this file starts the screen in process, and a
   // listener left behind would follow the runner into the next test file.
   const remove = installCrashGuard();
-  t.after(() => remove());
+  t.after(() => {
+    remove();
+    for (const listener of others) {
+      process.on('unhandledRejection', listener as (...args: unknown[]) => void);
+    }
+  });
 
   const settled = Promise.reject(new Error('teste')).catch(() => undefined);
   assert.doesNotThrow(() => {

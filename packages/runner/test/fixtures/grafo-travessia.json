@@ -1,0 +1,141 @@
+{
+  "classe": "travessia-automatica",
+  "linhagem": {
+    "tipo": "base"
+  },
+  "metadata": {
+    "nome": "Travessia automática — três nós",
+    "descricao": "O menor grafo que exercita as três decisões de avanço de nó da t161: saída única (implementar → conferir), portão com duas saídas rotuladas (conferir → publicar | implementar) e nó final sem saída nenhuma (publicar). O ciclo de retrabalho é deliberado: é o que prova que uma travessia volta atrás sem operador.",
+    "versao_schema": "1.0.0",
+    "criado_em": "2026-08-15",
+    "origem": "fixture da t161"
+  },
+  "nos": [
+    {
+      "id": "implementar",
+      "papel": "desenvolvedor",
+      "tipo_no": "trabalho",
+      "descricao": "Produz o artefato da travessia.",
+      "skill_ref": {
+        "id": "travessia-fazer",
+        "versao": "1.0.0",
+        "hash": "sha256:b700a0abed5288c25b232a92e8ef83b04f544a631e0f593b41fc22c8054d9793"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": ["pedido"],
+          "properties": {
+            "pedido": { "type": "string", "minLength": 1 }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": ["nota"],
+          "properties": {
+            "nota": { "type": "string", "minLength": 1 }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "deterministico",
+            "comando": "test -s saida.md",
+            "descricao": "O artefato existe e não está vazio."
+          }
+        ]
+      }
+    },
+    {
+      "id": "conferir",
+      "papel": "tester",
+      "tipo_no": "portao",
+      "descricao": "Confere o artefato e roteia: aprovado publica, retrabalho volta para implementar.",
+      "skill_ref": {
+        "id": "travessia-conferir",
+        "versao": "1.0.0",
+        "hash": "sha256:53b74abeaeec44120d8264d0cacf9a997dc0945b35c37d2f6c8ef277f76844ca"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": ["nota"],
+          "properties": {
+            "nota": { "type": "string", "minLength": 1 }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": ["resultado"],
+          "properties": {
+            "resultado": { "enum": ["aprovado", "retrabalho"] },
+            "evidencia": { "type": "string", "minLength": 1 }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "agentico",
+            "instrucao": "O artefato atende ao que a etapa anterior prometeu? Anexe o trecho que você leu.",
+            "evidencia_obrigatoria": true,
+            "descricao": "Portão agêntico confere com evidência própria."
+          }
+        ]
+      }
+    },
+    {
+      "id": "publicar",
+      "papel": "deployer",
+      "tipo_no": "trabalho",
+      "descricao": "Publica o que foi aprovado e encerra a travessia.",
+      "skill_ref": {
+        "id": "travessia-fazer",
+        "versao": "1.0.0",
+        "hash": "sha256:b700a0abed5288c25b232a92e8ef83b04f544a631e0f593b41fc22c8054d9793"
+      },
+      "contrato": {
+        "entrada_schema": {
+          "type": "object",
+          "required": ["nota"],
+          "properties": {
+            "nota": { "type": "string", "minLength": 1 }
+          }
+        },
+        "saida_schema": {
+          "type": "object",
+          "required": ["nota"],
+          "properties": {
+            "nota": { "type": "string", "minLength": 1 }
+          }
+        },
+        "verificacoes": [
+          {
+            "tipo": "deterministico",
+            "comando": "test -s saida.md",
+            "descricao": "O artefato publicado existe."
+          }
+        ]
+      }
+    }
+  ],
+  "arestas": [
+    {
+      "de": "implementar",
+      "para": "conferir",
+      "condicao": "sempre",
+      "descricao": "Saída única: o que foi implementado sempre vai para conferência."
+    },
+    {
+      "de": "conferir",
+      "para": "publicar",
+      "condicao": "aprovado",
+      "descricao": "O portão aprovou: segue para publicação."
+    },
+    {
+      "de": "conferir",
+      "para": "implementar",
+      "condicao": "retrabalho",
+      "descricao": "O portão reprovou: volta para implementação. É o ciclo de retrabalho."
+    }
+  ],
+  "no_inicial": "implementar",
+  "nos_finais": ["publicar"]
+}

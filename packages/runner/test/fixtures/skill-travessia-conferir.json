@@ -1,0 +1,72 @@
+{
+  "id": "travessia-conferir",
+  "versao": "1.0.0",
+  "hash": "sha256:53b74abeaeec44120d8264d0cacf9a997dc0945b35c37d2f6c8ef277f76844ca",
+  "papel": "portao",
+  "descricao": "Confere o artefato da etapa anterior com evidência própria e roteia a travessia.",
+  "entrada": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "nota"
+    ],
+    "properties": {
+      "nota": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "saida": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "resultado",
+      "evidencia"
+    ],
+    "properties": {
+      "resultado": {
+        "type": "string",
+        "enum": [
+          "passou",
+          "falhou",
+          "escalar_humano"
+        ],
+        "description": "obrigatório em toda skill de papel portao; a aresta que o executor toma vem do resultado que o contrato do NÓ declara."
+      },
+      "evidencia": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "pre_condicoes": [
+    "a etapa anterior deixou o artefato no diretório da sessão"
+  ],
+  "checks": [
+    {
+      "id": "conferencia-com-evidencia",
+      "tipo": "agentico",
+      "descricao": "Portão agêntico confere com evidência própria, nunca com o relato de quem produziu.",
+      "instrucao": "Leia o artefato da etapa anterior e diga se ele atende ao que foi pedido. Anexe o trecho que você leu.",
+      "evidencia_obrigatoria": [
+        "saida.md"
+      ]
+    }
+  ],
+  "permissoes": {
+    "filesystem": {
+      "leitura": [
+        "**"
+      ],
+      "escrita": []
+    },
+    "rede": {
+      "permitido": false
+    }
+  },
+  "instrucoes": "# Conferir uma etapa da travessia\n\nLeia o que a etapa anterior produziu e julgue com evidência sua: o relato\nde quem produziu não conta como prova.\n\nVocê não escreve arquivo nenhum. Sua saída é o veredito.",
+  "origem": {
+    "tipo": "nativa"
+  }
+}

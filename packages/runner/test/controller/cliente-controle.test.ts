@@ -105,6 +105,7 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
               titulo: 'liberado',
               no_atual: 'implementar',
               bloqueado: false,
+              concluido: false,
               execucao_id: 9,
               grafo_versao_id: 'sha256:abc',
             },
@@ -113,6 +114,7 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
               titulo: 'bloqueado',
               no_atual: 'revisar',
               bloqueado: true,
+              concluido: false,
               execucao_id: 9,
               grafo_versao_id: 'sha256:abc',
             },
@@ -121,6 +123,7 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
               titulo: 'também liberado',
               no_atual: 'implementar',
               bloqueado: false,
+              concluido: false,
               execucao_id: 9,
               grafo_versao_id: 'sha256:abc',
             },
@@ -199,6 +202,50 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
   });
 
   assert.equal(chamadas.length, 5, 'nenhuma chamada a mais do que as cinco do contrato');
+});
+
+test('t161 — trabalho concluído deixa de ser candidato, mesmo desbloqueado', async () => {
+  const { ClienteControle } = await carregarCliente();
+
+  // `concluido` sai de `GET /v1/jobs` desde a t152: é derivado do `no_atual`
+  // contra os `nos_finais` da versão do trabalho. Sem este filtro, um trabalho
+  // que chega ao nó final continua liberado para sempre — e o controller o
+  // redespacha em laço, que é a lacuna 3 da t161.
+  const { buscar } = fetchFalso(() => ({
+    status: 200,
+    corpo: {
+      trabalhos: [
+        {
+          id: 1,
+          titulo: 'ainda andando',
+          no_atual: 'implementar',
+          bloqueado: false,
+          concluido: false,
+          execucao_id: 9,
+          grafo_versao_id: 'sha256:abc',
+        },
+        {
+          id: 2,
+          titulo: 'chegou no nó final',
+          no_atual: 'publicar',
+          bloqueado: false,
+          concluido: true,
+          execucao_id: 9,
+          grafo_versao_id: 'sha256:abc',
+        },
+      ],
+    },
+  }));
+
+  const cliente = new ClienteControle({ urlBase: URL_BASE, buscar });
+  const liberados = await cliente.listarTrabalhosLiberados();
+
+  assert.deepEqual(
+    liberados.map((trabalho) => trabalho.id),
+    [1],
+    'trabalho no nó final não volta para a fila de despacho',
+  );
+  assert.equal(liberados[0].concluido, false, 'o campo chega ao chamador, não só ao filtro');
 });
 
 test('AT13 — recusa de lease chega ao chamador como motivo, não como erro', async () => {

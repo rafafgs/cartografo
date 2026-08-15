@@ -41,6 +41,24 @@ function read(file: string): string {
   return readFileSync(file, 'utf8');
 }
 
+/**
+ * The object literal a named call is made with, as written.
+ *
+ * A scanner and not a regex: these calls carry other calls inside them
+ * (`instructions: nodeInstructions(node, task)`), and a pattern bounded by the
+ * next parenthesis stops in the middle of the argument it is supposed to read.
+ *
+ * @param source File contents.
+ * @param callee Text right before the `({` — a name, or `new` plus a name.
+ * @returns The `({ … })` span, or `null` when the call is not there at all.
+ */
+function objectArgument(source: string, callee: string): string | null {
+  const start = source.indexOf(`${callee}({`);
+  if (start === -1) return null;
+  const end = source.indexOf('})', start);
+  return end === -1 ? null : source.slice(start, end + 2);
+}
+
 test('AT8 — the manual proof takes the token the control plane printed on boot', () => {
   const source = read(SPIKE_PATH);
 
@@ -68,14 +86,14 @@ test('AT9 — no call in the manual proof reaches the control plane anonymously'
 
   // The two other doors out of this script: the HTTP client the surveyor gets,
   // and the dispatch that writes the telemetry of the two crossing sessions.
-  const construction = source.match(/new ClienteControle\(\{[^)]*\}\)/s);
+  const construction = objectArgument(source, 'new ClienteControle');
   assert.ok(construction !== null, 'the proof no longer builds a ClienteControle at all');
-  assert.match(construction[0], /token/, 'the surveyor client is still built with no token');
+  assert.match(construction, /token/, 'the surveyor client is still built with no token');
 
-  const dispatch = source.match(/createClaudeCodeDispatch\(\{[^)]*\}\)/s);
+  const dispatch = objectArgument(source, 'createClaudeCodeDispatch');
   assert.ok(dispatch !== null, 'the proof no longer dispatches a session at all');
   assert.match(
-    dispatch[0],
+    dispatch,
     /doFetch/,
     'the two real sessions write their telemetry through the dispatch, which has no token of its ' +
       'own: it has to receive the arming fetch through its seam',

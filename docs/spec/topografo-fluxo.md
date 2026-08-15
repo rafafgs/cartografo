@@ -208,12 +208,21 @@ que continua sendo a única porta HTTP do processo.
 O comando é manual, e é assim de propósito (§8):
 
 ```
-npm run surveyor --workspace @cartografo/runner -- <execucao_id> [url] [dir]
+npm run surveyor --workspace @cartografo/runner -- <execucao_id> [url] [dir] [--token <token>]
 ```
 
+A credencial não é opcional na prática: desde a `t124` nenhuma rota de `/v1`
+responde anônima, e as quatro que este comando usa recusam com `401`. Ela vem
+de `--token` ou de `CARTOGRAFO_TOKEN` — mesma precedência da CLI `cartografo`
+([`cli/url.ts`](../../packages/core/src/cli/url.ts)) e do topógrafo de custo —,
+e é o token impresso na linha de prontidão da primeira partida do control
+plane. Sem ela o comando não degrada: ele é negado, e diz numa linha o que
+fazer a respeito.
+
 Códigos de saída: `0` quando gravou a proposta (o id vai para stdout) **ou**
-quando não havia o que propor; `1` quando a sessão falhou ou não devolveu
-`operacoes` utilizáveis — e nesse caso nada foi gravado.
+quando não havia o que propor; `1` quando a sessão falhou, não devolveu
+`operacoes` utilizáveis ou teve a credencial recusada — e nesse caso nada foi
+gravado.
 
 A prova manual contra a CLI real é
 [`scripts/spike-surveyor-flow.mjs`](../../packages/runner/scripts/spike-surveyor-flow.mjs)
@@ -221,7 +230,9 @@ A prova manual contra a CLI real é
 trabalho atravessar dois nós com duas sessões `claude` reais, bloqueia e
 desbloqueia o trabalho, e só então roda o topógrafo. Não é teste de CI e não
 deve virar um — a suíte roda contra o fake engine justamente para não depender
-de binário instalado.
+de binário instalado. Ela não pede nada do ambiente: como sobe o próprio
+control plane contra um banco novo, o token que apresenta em toda chamada é o
+que aquela partida imprimiu.
 
 ---
 
@@ -253,8 +264,11 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   manual única.
 - **Escopo de credencial** na rota nova e no comando. A `t124` autenticou todas
   as rotas de `/v1`, esta inclusive, e o comando apresenta o token
-  (`CARTOGRAFO_TOKEN` ou `--token`); recortar o que cada credencial alcança é
-  outra ficha.
+  (`CARTOGRAFO_TOKEN` ou `--token`, §7 — foi a `t146` que fechou essa metade);
+  o que ele apresenta é credencial de operador, porque as quatro rotas do
+  topógrafo estão fora da superfície que a `t143` abriu para credencial de
+  runner. Recortar uma credencial que alcance exatamente estas rotas é outra
+  ficha.
 
 [D10]: ../../DECISOES.md
 [D11]: ../../DECISOES.md

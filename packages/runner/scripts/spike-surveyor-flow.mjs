@@ -31,6 +31,12 @@
  * The evidence printed at the end is the control plane's own record, read back
  * from the API — not this script's opinion of what happened.
  *
+ * Every one of those calls presents a credential (t124, t146): the operator
+ * token this proof's own control plane prints on its readiness line, since it
+ * boots against a database that never existed before. Nothing has to be
+ * exported into the environment to run it, and nothing here would work if it
+ * did not — `/v1` has answered nothing anonymously since t124.
+ *
  * Usage: npm run spike:surveyor --workspace @cartografo/runner
  */
 
@@ -63,6 +69,37 @@ function die(message) {
   process.exit(1);
 }
 
+/**
+ * The credential of the control plane this proof boots (t124, t146).
+ *
+ * A module-level value and not a parameter threaded through eight calls, for
+ * the reason `packages/core/src/cli/url.ts` records about its own: there is
+ * exactly one control plane in this process, the token is one more thing about
+ * reaching it, and setting it is the boot's job, once.
+ *
+ * It stays `null` only in the impossible case — this proof always boots against
+ * a fresh disposable database, so its startup is always the one that mints and
+ * prints the operator credential.
+ */
+let operatorToken = null;
+
+/**
+ * The only `fetch` of this script, and the one that arms the request.
+ *
+ * `ClienteControle` carries its own token, so it does not come through here;
+ * the dispatch does, through its `doFetch` seam, because it has no notion of a
+ * credential of its own and giving it one is another ficha.
+ *
+ * @param {string | URL | Request} input Target of the request.
+ * @param {RequestInit} [init] The rest of the request.
+ * @returns {Promise<Response>} What the control plane answered.
+ */
+function authorizedFetch(input, init) {
+  const headers = new Headers(init?.headers);
+  if (operatorToken !== null) headers.set('authorization', `Bearer ${operatorToken}`);
+  return fetch(input, { ...init, headers });
+}
+
 /** Disposable git repository — the `workingDir` of the crossing. */
 function createDisposableRepo() {
   const root = mkdtempSync(join(tmpdir(), 'cartografo-spike-t110-'));
@@ -80,7 +117,7 @@ function createDisposableRepo() {
   return { root, repo };
 }
 
-/** Boots the real control plane and returns the URL it announced. */
+/** Boots the real control plane, arming this process with what it announced. */
 async function startControlPlane() {
   if (!existsSync(BIN_PATH)) die(`the control plane binary does not exist: ${BIN_PATH}`);
 
@@ -106,7 +143,17 @@ async function startControlPlane() {
       .split('\n')
       .map((text) => text.trim())
       .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) return { url: JSON.parse(line).url, child, base };
+    if (line !== undefined) {
+      const ready = JSON.parse(line);
+      // The database is brand new, so this startup is the one that minted the
+      // operator credential and this line is the only place it will ever be
+      // legible: the table keeps a digest, and every `/v1` route wants it.
+      if (typeof ready.bootstrapToken !== 'string' || ready.bootstrapToken === '') {
+        die('the control plane started without announcing a token; nothing here could authenticate');
+      }
+      operatorToken = ready.bootstrapToken;
+      return { url: ready.url, child, base };
+    }
     await delay(50);
   }
   die(`the control plane was not ready within ${DEADLINE_MS}ms`);
@@ -114,7 +161,7 @@ async function startControlPlane() {
 
 /** Talks JSON with the control plane, dying on an unexpected status. */
 async function api(url, method, route, body, expected = 200) {
-  const response = await fetch(`${url}${route}`, {
+  const response = await authorizedFetch(`${url}${route}`, {
     method,
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -178,6 +225,7 @@ async function main() {
         workingDir: repo,
         timeoutSeconds: TIMEOUT_SECONDS,
         instructions: nodeInstructions(node, task),
+        doFetch: authorizedFetch,
       })(job.id);
 
     log('real session #1 — node "redigir"...');
@@ -209,7 +257,7 @@ async function main() {
     log('real session #3 — the surveyor chooses the operations...');
 
     const result = await proposeFlowImprovement({
-      client: new ClienteControle({ urlBase: url }),
+      client: new ClienteControle({ urlBase: url, token: operatorToken }),
       adapter,
       executionId: EXECUTION_ID,
       workingDir: surveyorRepo,

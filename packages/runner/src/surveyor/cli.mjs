@@ -18,24 +18,37 @@
  *
  * - `0` — a proposal was created (its id is printed), OR the run had no signal
  *   and there was nothing to propose. Both are successful outcomes;
- * - `1` — the session failed, timed out, or returned no usable `operacoes`.
- *   Nothing was posted.
+ * - `1` — the session failed, timed out, returned no usable `operacoes`, or the
+ *   control plane refused the credential. Nothing was posted.
+ *
+ * This file is wiring and nothing else: the command line — argv, the
+ * environment, the credential and the messages — lives in `command-line.ts`,
+ * where a test reaches it without spawning a process. What stays here is what
+ * genuinely needs one: the engine, the scratch directory, stdout and the exit
+ * code.
  *
  * Usage:
- *   npm run surveyor --workspace @cartografo/runner -- <execucao_id> [url] [dir]
+ *   npm run surveyor --workspace @cartografo/runner -- \
+ *     <execucao_id> [url] [dir] [--token <token>]
  *
- * Defaults: url `http://127.0.0.1:4317`, dir a fresh temporary directory.
+ * Defaults: url `http://127.0.0.1:4317`, dir a fresh temporary directory,
+ * token the `CARTOGRAFO_TOKEN` of the environment. Every `/v1` route this
+ * command touches demands one (t124), so without it the run is denied.
  */
 
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ClienteControle } from '../controller/cliente-controle.ts';
 import { ClaudeCodeAdapter } from '../engine/claude-code-adapter.ts';
+import {
+  USAGE,
+  createClient,
+  deniedMessage,
+  isDenied,
+  parseArguments,
+} from './command-line.ts';
 import { SurveyorError, proposeFlowImprovement } from './proposal.ts';
-
-const DEFAULT_URL = 'http://127.0.0.1:4317';
 
 const log = (message) => console.log(`[surveyor] ${message}`);
 
@@ -46,19 +59,21 @@ function die(message, details = []) {
   process.exit(1);
 }
 
+/** A command line that was typed wrong: the reason, and then how to type it. */
+function dieWithUsage(message) {
+  console.error(`\n[surveyor] FAILED: ${message}\n`);
+  console.error(`${USAGE}\n`);
+  process.exit(1);
+}
+
 async function main() {
-  const [rawId, url = DEFAULT_URL, dir] = process.argv.slice(2);
+  const parsed = parseArguments(process.argv.slice(2));
+  if (parsed.kind === 'usage') dieWithUsage(parsed.message);
 
-  const executionId = Number(rawId);
-  if (!Number.isInteger(executionId)) {
-    die(
-      'usage: npm run surveyor --workspace @cartografo/runner -- <execucao_id> [url] [dir]',
-      [`execucao_id has to be an integer (got: ${JSON.stringify(rawId)})`],
-    );
-  }
-
-  const workingDir = dir ?? mkdtempSync(join(tmpdir(), 'cartografo-surveyor-'));
-  const client = new ClienteControle({ urlBase: url });
+  const { executionId, url } = parsed.options;
+  const workingDir =
+    parsed.options.workingDir ?? mkdtempSync(join(tmpdir(), 'cartografo-surveyor-'));
+  const client = createClient(parsed.options);
   const adapter = new ClaudeCodeAdapter();
 
   const probe = await adapter.verifyCli();
@@ -69,13 +84,23 @@ async function main() {
 
   log(`execution ${executionId} · control plane ${url} · workdir ${workingDir}`);
 
-  const result = await proposeFlowImprovement({
-    client,
-    adapter,
-    executionId,
-    workingDir,
-    log,
-  });
+  let result;
+  try {
+    result = await proposeFlowImprovement({
+      client,
+      adapter,
+      executionId,
+      workingDir,
+      log,
+    });
+  } catch (error) {
+    // A 401 is never a domain answer here: no route this command calls means
+    // anything by it, and the person reading the failure has exactly one thing
+    // to do about it. Saying which is the difference between a broken command
+    // and a command waiting for a token.
+    if (isDenied(error)) die(deniedMessage(url));
+    throw error;
+  }
 
   if (result.gargalo === null) {
     // Zero proposals is not a failure: a run with no measurable cost has

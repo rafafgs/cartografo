@@ -142,14 +142,14 @@ export function registerLeases(
     if (caller !== null && caller !== runnerId) {
       reply.code(403);
       return outOfScope(
-        `credencial do runner "${caller}" não pede lease para "${runnerId}": ela vale por uma identidade só`,
+        `the credential of runner "${caller}" does not ask for a lease for "${runnerId}": it is good for one identity only`,
       );
     }
 
     for (const field of ['projeto_id', 'trabalho_id', 'teto_runner', 'teto_projeto'] as const) {
       if (!isInteger(body[field])) {
         reply.code(400);
-        return { erro: 'corpo_invalido', campo: field, mensagem: `${field} precisa ser inteiro` };
+        return { erro: 'corpo_invalido', campo: field, mensagem: `${field} has to be an integer` };
       }
     }
 
@@ -158,7 +158,7 @@ export function registerLeases(
       return {
         erro: 'corpo_invalido',
         campo: 'ttl_segundos',
-        mensagem: 'ttl_segundos precisa ser inteiro positivo: lease sem prazo não expira',
+        mensagem: 'ttl_segundos has to be a positive integer: a lease with no deadline never expires',
       };
     }
 
@@ -204,7 +204,7 @@ export function registerLeases(
     if (beating !== null && beating !== lease.runner_id) {
       reply.code(403);
       return outOfScope(
-        `lease ${lease.id} é do runner "${lease.runner_id}"; a credencial apresentada é do runner "${beating}"`,
+        `lease ${lease.id} belongs to runner "${lease.runner_id}"; the credential presented belongs to runner "${beating}"`,
       );
     }
 
@@ -212,7 +212,7 @@ export function registerLeases(
       reply.code(409);
       return {
         erro: 'lease_nao_ativa',
-        mensagem: `só lease ativa recebe heartbeat; esta está "${lease.status}"`,
+        mensagem: `only an active lease takes a heartbeat; this one is "${lease.status}"`,
         status: lease.status,
       };
     }
@@ -239,7 +239,7 @@ export function registerLeases(
     if (releasing !== null && releasing !== lease.runner_id) {
       reply.code(403);
       return outOfScope(
-        `lease ${lease.id} é do runner "${lease.runner_id}"; a credencial apresentada é do runner "${releasing}"`,
+        `lease ${lease.id} belongs to runner "${lease.runner_id}"; the credential presented belongs to runner "${releasing}"`,
       );
     }
 
@@ -247,7 +247,7 @@ export function registerLeases(
       reply.code(409);
       return {
         erro: 'lease_nao_ativa',
-        mensagem: `só lease ativa pode ser liberada; esta está "${lease.status}"`,
+        mensagem: `only an active lease can be released; this one is "${lease.status}"`,
         status: lease.status,
       };
     }
@@ -276,7 +276,7 @@ export function registerLeases(
     if (looking !== null && runner !== undefined && runner !== looking) {
       reply.code(403);
       return outOfScope(
-        `credencial do runner "${looking}" não lista leases de "${runner}": ela vale por uma identidade só`,
+        `the credential of runner "${looking}" does not list leases of "${runner}": it is good for one identity only`,
       );
     }
 

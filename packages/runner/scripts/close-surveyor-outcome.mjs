@@ -127,9 +127,9 @@ try {
   });
 
   console.log('\n===== outcome =====');
-  console.log(`proposta:    ${written.id} (${written.status})`);
-  console.log(`versão:      ${written.versao_aplicada_id}`);
-  console.log(`resultado:   ${JSON.stringify(written.resultado)}`);
+  console.log(`proposal:    ${written.id} (${written.status})`);
+  console.log(`version:     ${written.versao_aplicada_id}`);
+  console.log(`outcome:     ${JSON.stringify(written.resultado)}`);
   console.log('===================\n');
   log('the hypothesis is closed — verdict computed by the control plane, from real numbers');
 } catch (error) {

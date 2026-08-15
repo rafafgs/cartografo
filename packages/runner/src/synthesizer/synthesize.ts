@@ -25,9 +25,10 @@
  * a base lineage is the proposal flow (D13, t118) and finding that out after
  * burning a session is finding it out too late.
  *
- * English per D18; the flags, the exit-code messages that echo the API's own
- * vocabulary (`classe_ja_registrada`) and the draft file name stay in
- * Portuguese, because they are the published surface a person types and reads.
+ * English per D18, and since t180 that includes everything this command PRINTS.
+ * What stays Portuguese is the surface a person types or a machine matches: the
+ * flags (`--classe`, `--saida`), the error codes that echo the API's own
+ * vocabulary (`classe_ja_registrada`) and the draft file name.
  */
 
 import { writeFileSync } from 'node:fs';
@@ -131,47 +132,48 @@ export function resolveOutputPath(
 
 /** The whole flow, in the shape `--help` prints it. */
 export const HELP = [
-  'synthesize — propõe um grafo para uma classe nova, para você editar (D10).',
+  'synthesize — proposes a graph for a new class, for you to edit (D10).',
   '',
-  'Uso:',
+  'Usage:',
   '  npm run synthesize --workspace @cartografo/runner -- \\',
-  '    "<declaração do problema>" --classe <nome> [opções]',
+  '    "<problem declaration>" --classe <name> [options]',
   '',
-  'Argumentos:',
-  '  <declaração>        obrigatória, posicional: o problema em linguagem natural.',
-  '  --classe <nome>     obrigatória: o nome da classe. Quem nomeia a classe é',
-  '                      você (D8) — este comando nunca inventa um nome.',
+  'Arguments:',
+  '  <declaration>       required, positional: the problem in natural language.',
+  '  --classe <name>     required: the name of the class. Naming it is yours to',
+  '                      do (D8) — this command never invents a name.',
   '',
-  'Opções:',
+  'Options:',
   `  --url <url>         control plane (default ${DEFAULT_URL}).`,
-  '  --saida <caminho>   onde gravar o rascunho (default',
-  `                      <classe>${DRAFT_SUFFIX} no diretório atual).`,
-  `  --timeout <seg>     limite da sessão (default ${DEFAULT_TIMEOUT_SECONDS}).`,
-  `  --token <token>     credencial do control plane (env ${ENV_TOKEN}); ela é`,
-  '                      impressa na linha de prontidão do control plane na',
-  '                      primeira vez que ele sobe. Sem credencial nenhuma, toda',
-  '                      leitura aqui responde 401.',
-  '  --help              esta ajuda.',
+  '  --saida <path>      where to write the draft (default',
+  `                      <classe>${DRAFT_SUFFIX} in the current directory).`,
+  `  --timeout <sec>     limit of the session (default ${DEFAULT_TIMEOUT_SECONDS}).`,
+  `  --token <token>     control plane credential (env ${ENV_TOKEN}); it is`,
+  '                      printed on the readiness line of the control plane the',
+  '                      first time it starts. With no credential at all, every',
+  '                      read here answers 401.',
+  '  --help              this help.',
   '',
-  'O que o comando faz:',
+  'What the command does:',
   '',
-  '  1. consulta GET /v1/classes. Se a classe já tem grafo base, recusa e sai 1:',
-  '     estender linhagem existente é fluxo de proposta, não de síntese.',
-  '  2. pontua a declaração contra as classes registradas e imprime as até',
-  `     ${SUGGESTION_LIMIT} mais parecidas — sugestão, nunca decisão.`,
-  '  3. consulta GET /v1/skills e monta o catálogo de capacidades.',
-  '  4. abre UMA sessão de agente, que devolve um documento de grafo.',
-  '  5. grava esse documento como RASCUNHO e para aí.',
+  '  1. reads GET /v1/classes. If the class already has a base graph, it refuses',
+  '     and exits 1: extending an existing lineage is the proposal flow, not',
+  '     synthesis.',
+  '  2. scores the declaration against the registered classes and prints the',
+  `     ${SUGGESTION_LIMIT} closest ones — a suggestion, never a decision.`,
+  '  3. reads GET /v1/skills and assembles the catalogue of capabilities.',
+  '  4. opens ONE agent session, which gives back a graph document.',
+  '  5. writes that document as a DRAFT and stops there.',
   '',
-  'O que o comando NÃO faz, e você precisa fazer à mão depois:',
+  'What the command does NOT do, and you have to do by hand afterwards:',
   '',
-  '  - editar o rascunho. A sua edição é o portão inteiro (D10);',
-  '  - registrar o grafo:',
+  '  - edit the draft. Your edit is the whole gate (D10);',
+  '  - register the graph:',
   '',
-  '      cartografo import <arquivo>',
+  '      cartografo import <file>',
   '',
-  '    é ele que roda o portão de estrutura e soundness e cria a linhagem base.',
-  '    Enquanto você não rodar, nada disso existe para o control plane.',
+  '    that is what runs the structure and soundness gate and creates the base',
+  '    lineage. Until you run it, none of this exists for the control plane.',
 ].join('\n');
 
 /**
@@ -210,7 +212,7 @@ export function parseArguments(
     const name = token.slice(2);
     const value = argv[index + 1];
     if (value === undefined || value.startsWith('--')) {
-      return { kind: 'usage', message: `a opção --${name} precisa de um valor` };
+      return { kind: 'usage', message: `option --${name} needs a value` };
     }
     flags.set(name, value);
     index += 1;
@@ -218,12 +220,12 @@ export function parseArguments(
 
   const declaration = positional[0];
   if (declaration === undefined || declaration.trim() === '') {
-    return { kind: 'usage', message: 'falta a declaração do problema (primeiro argumento)' };
+    return { kind: 'usage', message: 'the problem declaration is missing (first argument)' };
   }
   if (positional.length > 1) {
     return {
       kind: 'usage',
-      message: `a declaração é UM argumento; veio ${positional.length} (aspas em volta dela?)`,
+      message: `the declaration is ONE argument; got ${positional.length} (quotes around it?)`,
     };
   }
 
@@ -231,14 +233,14 @@ export function parseArguments(
   if (className === undefined || className.trim() === '') {
     return {
       kind: 'usage',
-      message: '--classe é obrigatória: quem nomeia a classe é você, não o sintetizador (D8)',
+      message: '--classe is required: you name the class, not the synthesizer (D8)',
     };
   }
 
   const rawTimeout = flags.get('timeout');
   const timeoutSeconds = rawTimeout === undefined ? DEFAULT_TIMEOUT_SECONDS : Number(rawTimeout);
   if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
-    return { kind: 'usage', message: `--timeout precisa ser um número de segundos: ${rawTimeout}` };
+    return { kind: 'usage', message: `--timeout has to be a number of seconds: ${rawTimeout}` };
   }
 
   const outputPath = flags.get('saida');
@@ -380,19 +382,19 @@ export async function runSynthesis(options: SynthesisOptions): Promise<number> {
   const classes = await options.client.fetchClasses();
   if (classes.some((entry) => entry.classe === options.className)) {
     writeError(
-      `synthesize: classe_ja_registrada — a classe "${options.className}" já tem um grafo base.\n` +
-        '  Versão nova sobre linhagem existente é fluxo de proposta (D13), não de síntese.\n',
+      `synthesize: classe_ja_registrada — class "${options.className}" already has a base graph.\n` +
+        '  A new version over an existing lineage is the proposal flow (D13), not synthesis.\n',
     );
     return 1;
   }
 
   const precedents = await rankPrecedents(options.declaration, options.client, classes);
   for (const item of precedents) {
-    write(`synthesize: classe parecida — ${item.classe} (${item.score.toFixed(2)}) ${item.nome}\n`);
+    write(`synthesize: similar class — ${item.classe} (${item.score.toFixed(2)}) ${item.nome}\n`);
   }
 
   const skills = await options.client.fetchSkills();
-  write(`synthesize: ${skills.length} skill(s) no registro; abrindo a sessão de síntese\n`);
+  write(`synthesize: ${skills.length} skill(s) in the registry; opening the synthesis session\n`);
 
   const outcome = await runSession(options, skills, precedents);
   const document: GraphProposal | null =
@@ -402,11 +404,11 @@ export async function runSynthesis(options: SynthesisOptions): Promise<number> {
   // same either way: read what the session actually said.
   if (document === null) {
     writeError(
-      `synthesize: a sessão terminou como "${outcome.status}" (exit ${String(outcome.exitCode)}) ` +
-        `sem um bloco \`grafo-proposto\` válido; nada foi gravado.\n`,
+      `synthesize: the session ended as "${outcome.status}" (exit ${String(outcome.exitCode)}) ` +
+        `with no valid \`grafo-proposto\` block; nothing was written.\n`,
     );
-    writeError('----- saída bruta da sessão -----\n');
-    writeError(outcome.output === '' ? '(a sessão não imprimiu nada)\n' : `${outcome.output}\n`);
+    writeError('----- raw session output -----\n');
+    writeError(outcome.output === '' ? '(the session printed nothing)\n' : `${outcome.output}\n`);
     writeError('---------------------------------\n');
     return 1;
   }
@@ -420,11 +422,11 @@ export async function runSynthesis(options: SynthesisOptions): Promise<number> {
   const edges = Array.isArray(document.arestas) ? document.arestas.length : 0;
   const suggestion =
     precedents.length === 0
-      ? 'sem classe parecida'
-      : `parecidas: ${precedents.map((item) => item.classe).join(', ')}`;
+      ? 'no similar class'
+      : `similar: ${precedents.map((item) => item.classe).join(', ')}`;
 
   write(`${target}\n`);
-  write(`synthesize: ${nodes} nó(s), ${edges} aresta(s), ${suggestion}\n`);
-  write(`synthesize: edite o rascunho e registre com \`cartografo import ${target}\`\n`);
+  write(`synthesize: ${nodes} node(s), ${edges} edge(s), ${suggestion}\n`);
+  write(`synthesize: edit the draft and register it with \`cartografo import ${target}\`\n`);
   return 0;
 }

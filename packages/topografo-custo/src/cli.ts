@@ -38,28 +38,37 @@ import {
 import { agregarCusto, linhasIdentificadas } from './custo.ts';
 import { avaliarPoliticas } from './politica.ts';
 
-/** Texto de uso. É o mesmo em `--help` (stdout) e em erro de uso (stderr). */
-export const USO = `uso: topografo-custo avaliar --url <url> --execucao <id> [opções]
+/**
+ * Texto de uso. É o mesmo em `--help` (stdout) e em erro de uso (stderr).
+ *
+ * Em inglês desde a t180, como toda saída de comando do repositório. O que uma
+ * pessoa DIGITA — o subcomando `avaliar` e as opções `--teto-tokens`,
+ * `--tier-minimo-nos`, ... — continua como está: é superfície publicada, e
+ * renomeá-la é outra ficha, com a varredura de identificadores deste pacote.
+ */
+export const USO = `usage: topografo-custo avaliar --url <url> --execucao <id> [options]
 
-subcomandos:
-  avaliar                lê a telemetria de uma execução, agrega custo por
-                         (versão de grafo, nó) e cria uma proposta pendente por
-                         candidata de política. Nunca aplica proposta.
+subcommands:
+  avaliar                reads the telemetry of an execution, aggregates cost by
+                         (graph version, node) and creates one pending proposal
+                         per policy candidate. It never applies a proposal.
 
-opções:
-  --url <url>            control plane a consultar (obrigatória)
-  --execucao <id>        execução a avaliar (obrigatória)
-  --teto-tokens <n>      candidata quando tokens_total do nó passa de <n>
-  --teto-segundos <n>    candidata quando tempo_total_segundos do nó passa de <n>
-  --tier-fator <n>       múltiplo da mediana da versão que caracteriza outlier
+options:
+  --url <url>            control plane to query (required)
+  --execucao <id>        execution to evaluate (required)
+  --teto-tokens <n>      a candidate when tokens_total of the node passes <n>
+  --teto-segundos <n>    a candidate when tempo_total_segundos of the node
+                         passes <n>
+  --tier-fator <n>       multiple of the version median that makes an outlier
                          (default 3)
-  --tier-minimo-nos <n>  mínimo de nós medidos na versão para avaliar tier
-                         (default 3)
-  --token <token>        credencial do control plane (env CARTOGRAFO_TOKEN);
-                         ela é impressa na primeira partida do control plane
-  -h, --help             este texto
+  --tier-minimo-nos <n>  fewest measured nodes in a version for tier to be
+                         evaluated (default 3)
+  --token <token>        control plane credential (env CARTOGRAFO_TOKEN); it is
+                         printed the first time the control plane starts
+  -h, --help             this text
 
-Sem nenhum teto declarado, a política de teto não roda: não há o que exceder.`;
+With no ceiling declared, the ceiling policy does not run: there is nothing to
+exceed.`;
 
 /** A linha de comando está errada. Sai 2, como em `cartografo`. */
 export class ErroDeUso extends Error {
@@ -118,7 +127,7 @@ function extrairValor(argumentos: string[], nome: string): Extracao {
     if (atual === nome) {
       const proximo = argumentos[indice + 1];
       if (proximo === undefined || proximo.startsWith('--')) {
-        throw new ErroDeUso(`${nome} precisa de um valor`);
+        throw new ErroDeUso(`${nome} needs a value`);
       }
       valor = proximo;
       indice += 1;
@@ -126,7 +135,7 @@ function extrairValor(argumentos: string[], nome: string): Extracao {
     }
     if (atual.startsWith(`${nome}=`)) {
       valor = atual.slice(nome.length + 1);
-      if (valor === '') throw new ErroDeUso(`${nome} precisa de um valor`);
+      if (valor === '') throw new ErroDeUso(`${nome} needs a value`);
       continue;
     }
     restante.push(atual);
@@ -140,7 +149,7 @@ function comoNumero(nome: string, bruto: string | undefined): number | undefined
   if (bruto === undefined) return undefined;
   const numero = Number(bruto);
   if (!Number.isFinite(numero) || numero < 0) {
-    throw new ErroDeUso(`${nome} precisa de um número não negativo, veio "${bruto}"`);
+    throw new ErroDeUso(`${nome} needs a non-negative number, got "${bruto}"`);
   }
   return numero;
 }
@@ -224,7 +233,7 @@ export async function avaliarExecucao(opcoes: OpcoesDeAvaliacao): Promise<Propos
 
 /** Uma linha de relatório por proposta criada. */
 function linhaDeRelatorio(criada: PropostaCriada): string {
-  return `proposta ${criada.id} · nó ${criada.no_id} · ${criada.tipo} · ${criada.status}\n`;
+  return `proposal ${criada.id} · node ${criada.no_id} · ${criada.tipo} · ${criada.status}\n`;
 }
 
 /**
@@ -251,7 +260,7 @@ export async function executarCli(
   const subcomando = argumentos[0];
   if (subcomando !== 'avaliar') {
     process.stderr.write(
-      `topografo-custo: subcomando desconhecido: "${subcomando ?? ''}"\n${USO}\n`,
+      `topografo-custo: unknown subcommand: "${subcomando ?? ''}"\n${USO}\n`,
     );
     return 2;
   }
@@ -261,7 +270,7 @@ export async function executarCli(
     const criadas = await avaliarExecucao(opcoes);
 
     if (criadas.length === 0) {
-      escrever('nenhuma candidata: a telemetria desta execução não estourou nenhuma política\n');
+      escrever('no candidate: the telemetry of this execution broke no policy\n');
       return 0;
     }
     for (const criada of criadas) escrever(linhaDeRelatorio(criada));
@@ -269,7 +278,7 @@ export async function executarCli(
   } catch (erro) {
     if (erro instanceof ErroDeUso) {
       process.stderr.write(`topografo-custo: ${erro.message}\n`);
-      process.stderr.write('topografo-custo: rode `topografo-custo --help` para o uso\n');
+      process.stderr.write('topografo-custo: run `topografo-custo --help` for the usage\n');
       return 2;
     }
     if (erro instanceof ErroDaApi) {
@@ -282,7 +291,7 @@ export async function executarCli(
     // resultado negativo (servidor fora), não bug — e é o caso mais comum de
     // todos na primeira vez que alguém roda o comando.
     if (erro instanceof TypeError) {
-      process.stderr.write(`topografo-custo: não consegui falar com o control plane: ${erro.message}\n`);
+      process.stderr.write(`topografo-custo: could not reach the control plane: ${erro.message}\n`);
       return 1;
     }
     throw erro;
@@ -334,16 +343,16 @@ function interpretarArgumentos(
 
   if (doMinimo.restante.length > 0) {
     throw new ErroDeUso(
-      `avaliar não entende: ${doMinimo.restante.map((extra) => `"${extra}"`).join(', ')}`,
+      `avaliar does not understand: ${doMinimo.restante.map((extra) => `"${extra}"`).join(', ')}`,
     );
   }
 
-  if (daUrl.valor === undefined) throw new ErroDeUso('avaliar precisa de --url');
-  if (daExecucao.valor === undefined) throw new ErroDeUso('avaliar precisa de --execucao');
+  if (daUrl.valor === undefined) throw new ErroDeUso('avaliar needs --url');
+  if (daExecucao.valor === undefined) throw new ErroDeUso('avaliar needs --execucao');
 
   const execucaoId = Number(daExecucao.valor);
   if (!Number.isInteger(execucaoId)) {
-    throw new ErroDeUso(`--execucao precisa de um id inteiro, veio "${daExecucao.valor}"`);
+    throw new ErroDeUso(`--execucao needs an integer id, got "${daExecucao.valor}"`);
   }
 
   return {

@@ -277,3 +277,24 @@ test('AT6 — a cycle in one component does not hide the problems of another', a
     'shape problems and graph problems come back in the same report',
   );
 });
+
+test('t180 — the cycle and missing-field problems are reported in English', async () => {
+  const { validateItems } = await loadIntake();
+
+  const cycle = validateItems([
+    { ref: 'a', titulo: 'a', depende_de: ['b'] },
+    { ref: 'b', titulo: 'b', depende_de: ['a'] },
+  ]);
+  const closed = cycle.problemas.find((problem) => problem.codigo === 'ciclo_de_dependencia');
+  assert.ok(closed !== undefined, 'the cycle has to be reported');
+  assert.equal(closed.mensagem, 'the dependencies close a cycle: a → b → a');
+
+  const missing = validateItems([{ ref: 'a' }]);
+  const field = missing.problemas.find((problem) => problem.codigo === 'campo_obrigatorio_ausente');
+  assert.ok(field !== undefined, 'a missing titulo has to be reported');
+  assert.equal(
+    field.mensagem,
+    'required field missing from item "a": "titulo"',
+    'the field name is the wire key and stays as it is (FR2)',
+  );
+});

@@ -26,8 +26,8 @@
  * Like the other subcommands, these are pure HTTP clients of the public API
  * (D1, D11): they open no database and have no privilege the screen does not
  * have. The manifest they write is the format's own vocabulary, in Portuguese —
- * D18 leaves data-format keys out of the rename, and the prose inside the draft
- * is what the reviewer reads.
+ * D18 leaves data-format keys out of the rename. What this file PRINTS, and the
+ * checklist it puts in front of the reviewer, is English since t180.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -104,16 +104,16 @@ const IMPORT_VERSION = '0.1.0';
 const IMPORT_NODE = 'importar-skill';
 
 /** What the reviewer signs (`manifesto-skill.md`, "O que o revisor humano assina"). */
-const REVIEW_CHECKLIST = `O que você assina ao aprovar (manifesto-skill.md, "O que o revisor humano assina"):
+const REVIEW_CHECKLIST = `What you sign off on by approving (manifesto-skill.md, "O que o revisor humano assina"):
 
-  1. que o \`papel\` está certo — skill de fazer registrada como portão vira um portão que não confere nada;
-  2. que \`entrada\`/\`saida\` descrevem o que a skill de fato consome e produz;
-  3. que existe pelo menos um check, e que todo check agêntico exige evidência própria;
-  4. que as \`permissoes\` são o mínimo necessário;
-  5. que as \`instrucoes\` revisadas não carregam instrução hostil — referência a arquivo residente no repo alvo, documento externo que a origem controla, pedido de credencial, exfiltração ou execução de conteúdo baixado.
+  1. that \`papel\` is right — a doing skill registered as a gate becomes a gate that checks nothing;
+  2. that \`entrada\`/\`saida\` describe what the skill really consumes and produces;
+  3. that there is at least one check, and that every agentic check demands evidence of its own;
+  4. that \`permissoes\` are the minimum needed;
+  5. that the reviewed \`instrucoes\` carry no hostile instruction — a reference to a file resident in the target repo, an external document the source controls, a request for a credential, exfiltration or execution of downloaded content.
 
-Para APROVAR: responda com o manifesto final em JSON, com \`origem.revisado_por\` preenchido.
-Para RECUSAR: responda com \`rejeitar: <motivo>\`.`;
+To APPROVE: answer with the final manifest in JSON, with \`origem.revisado_por\` filled in.
+To REFUSE: answer with \`rejeitar: <reason>\`.`;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -223,7 +223,7 @@ export function deriveChecks(body: string): DerivedCheck[] {
     return {
       id: candidate,
       tipo: 'deterministico',
-      descricao: `Comando citado em bloco de código do SKILL.md de origem: \`${command}\`. Confirmar que ainda é o comando certo antes de aprovar.`,
+      descricao: `Command quoted in a code block of the source SKILL.md: \`${command}\`. Confirm it is still the right command before approving.`,
       comando: command,
     };
   });
@@ -338,10 +338,10 @@ export async function runProposeSkill(options: ProposeSkillOptions): Promise<num
   }
   if (!isObject(manifest)) throw new UsageError(`"${target}" is not a manifest object`);
 
-  const id = typeof manifest.id === 'string' ? manifest.id : '(sem id)';
+  const id = typeof manifest.id === 'string' ? manifest.id : '(no id)';
   const origin = isObject(manifest.origem) ? manifest.origem : {};
-  const repo = typeof origin.repo === 'string' ? origin.repo : '(origem não declarada)';
-  const ref = typeof origin.ref === 'string' ? origin.ref : '(ref não declarada)';
+  const repo = typeof origin.repo === 'string' ? origin.repo : '(origin not declared)';
+  const ref = typeof origin.ref === 'string' ? origin.ref : '(ref not declared)';
 
   const job = await requestJson(`${options.url}/v1/jobs`, {
     method: 'POST',
@@ -360,7 +360,7 @@ export async function runProposeSkill(options: ProposeSkillOptions): Promise<num
     body: {
       trabalho_id: jobId,
       tipo: 'aprovacao',
-      pergunta: `Aprovar importação da skill ${id}?`,
+      pergunta: `Approve importing skill ${id}?`,
       contexto: `${JSON.stringify(manifest, null, 2)}\n\n${REVIEW_CHECKLIST}`,
       // Never auto-approvable, in any circumstance: D4's gate is a person.
       auto_aprovavel: false,

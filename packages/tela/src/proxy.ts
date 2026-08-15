@@ -104,7 +104,7 @@ export function parsePortFromEnv(env: NodeJS.ProcessEnv, name: string, fallback:
 
   const port = Number(configured);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error(`${name} inválida: "${configured}" (esperado um inteiro de 0 a 65535)`);
+    throw new Error(`${name} invalid: "${configured}" (expected an integer from 0 to 65535)`);
   }
   return port;
 }
@@ -132,11 +132,11 @@ export function resolveControlPlaneUrl(env: NodeJS.ProcessEnv = process.env): st
     parsed = new URL(chosen);
   } catch {
     throw new Error(
-      `${CONTROL_PLANE_URL_ENV} inválida: "${chosen}" (esperado algo como http://127.0.0.1:4317)`,
+      `${CONTROL_PLANE_URL_ENV} invalid: "${chosen}" (expected something like http://127.0.0.1:4317)`,
     );
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`${CONTROL_PLANE_URL_ENV} precisa ser http ou https: "${chosen}"`);
+    throw new Error(`${CONTROL_PLANE_URL_ENV} has to be http or https: "${chosen}"`);
   }
 
   return chosen.replace(/\/+$/, '');
@@ -172,7 +172,9 @@ export function resolveControlPlaneToken(
  * The answer for a control plane that did not answer.
  *
  * Same `erro` / `mensagem` shape every error of the core uses, so the page has
- * one way to show a failure instead of two. The cause is deliberately dropped:
+ * one way to show a failure instead of two — and, since t180, the same English
+ * prose: this body is API plumbing, not the rendered copy t133 keeps in
+ * Portuguese on purpose. The cause is deliberately dropped:
  * `ECONNREFUSED` and a stack trace say nothing to whoever is looking at the
  * inbox, and the actionable half is the address plus what to run.
  *
@@ -182,7 +184,7 @@ export function resolveControlPlaneToken(
 export function unavailableResponse(baseUrl: string): ProxiedResponse {
   return jsonResponse(502, {
     erro: UPSTREAM_DOWN_CODE,
-    mensagem: `não deu para falar com o control plane em ${baseUrl} — rode \`npx cartografo\` primeiro (ou aponte outro endereço com ${CONTROL_PLANE_URL_ENV})`,
+    mensagem: `could not reach the control plane at ${baseUrl} — run \`npx cartografo\` first (or point somewhere else with ${CONTROL_PLANE_URL_ENV})`,
   });
 }
 

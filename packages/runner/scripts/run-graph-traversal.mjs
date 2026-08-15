@@ -319,7 +319,7 @@ async function main() {
     },
     201,
   );
-  log(`job ${job.id} created on node "${job.no_atual}" (execução ${plan.execucao_id})`);
+  log(`job ${job.id} created on node "${job.no_atual}" (execution ${plan.execucao_id})`);
 
   const engines = {
     [DEFAULT_ENGINE]: { adapter: claudeAdapter, decodeSessionText: decodeClaudeCodeSessionText },

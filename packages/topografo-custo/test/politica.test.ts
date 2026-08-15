@@ -159,11 +159,52 @@ test('t158 — teto de tempo cita a amostra de tempo, não a de tokens', async (
 
   const { para } = candidatas[0].operacoes[0];
   assert.ok(
-    para.includes('2 sessões com tempo reportado'),
+    para.includes('2 sessions with time reported'),
     `a recomendação de tempo se apoia na amostra de tempo; veio: ${para}`,
   );
   assert.ok(
-    !para.includes('5 sessões'),
+    !para.includes('5 sessions'),
     'a amostra de tokens não sustenta uma recomendação de teto de tempo',
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t180 — o texto que uma pessoa lê na proposta é inglês; as chaves, não.      */
+/* -------------------------------------------------------------------------- */
+
+test('t180 — a marca e as recomendações de teto e tier estão em inglês', async () => {
+  const { avaliarPoliticas, MARCA } = await carregar();
+
+  assert.equal(MARCA, '[cost-surveyor]', 'a marca usa o termo de glossário de topógrafo');
+
+  const candidatas = avaliarPoliticas([linha('a', 100), linha('b', 100), linha('c', 9000)], {
+    tetoTokens: 1000,
+    tierFator: 3,
+    tierMinimoNos: 3,
+  });
+
+  const teto = candidatas.find((candidata) => candidata.tipo === 'teto');
+  assert.ok(teto !== undefined, 'o cenário tem de produzir uma candidata de teto');
+  assert.equal(
+    teto.operacoes[0].para,
+    '[cost-surveyor] token ceiling exceeded: 9000 tokens observed against a ceiling of 1000, ' +
+      'over 1 sessions with usage reported. Reduce the scope of this node, split it, or revisit the ceiling.',
+  );
+  assert.equal(
+    teto.metrica_esperada.descricao,
+    'tokens_total of node "c" goes back under the declared ceiling',
+    'o nome da métrica é chave de formato e não se traduz',
+  );
+
+  const tier = candidatas.find((candidata) => candidata.tipo === 'tier');
+  assert.ok(tier !== undefined, 'o cenário tem de produzir uma candidata de tier');
+  assert.equal(
+    tier.operacoes[0].para,
+    '[cost-surveyor] cost out of line in this version: 9000 tokens, 90.0x the median of 100 ' +
+      'across the 3 measured nodes (factor 3). Candidate for a cheaper model tier, or for a split into smaller nodes.',
+  );
+  assert.equal(
+    tier.metrica_esperada.descricao,
+    'tokens_total of node "c" falls below 3x the version median',
   );
 });

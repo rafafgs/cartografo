@@ -22,7 +22,8 @@
  *
  * The report's keys and codes stay in Portuguese: this report IS the body of the
  * 400 the intake routes answer, the same convention as the graph report
- * (t127, FR8).
+ * (t127, FR8). The message text around them is English since t180 — the codes
+ * are what a caller branches on, the prose is what a person reads.
  */
 
 /** An item of the draft, already normalized. */
@@ -114,7 +115,7 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
   if (!isObject(raw)) {
     note({
       codigo: PROBLEM_CODES.ITEM,
-      mensagem: `o item na posição ${index} precisa ser um objeto {ref, titulo, ...}`,
+      mensagem: `the item at position ${index} has to be an object {ref, titulo, ...}`,
       alvo: index,
     });
     return { item: null, ref: null, depende_de: null };
@@ -124,7 +125,7 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
   if (reference === null) {
     note({
       codigo: PROBLEM_CODES.MISSING_FIELD,
-      mensagem: `campo obrigatório ausente no item na posição ${index}: "ref" (é o que depende_de cita)`,
+      mensagem: `required field missing from the item at position ${index}: "ref" (it is what depende_de cites)`,
       alvo: index,
     });
   }
@@ -136,7 +137,7 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
   if (!isFilledText(raw.titulo)) {
     note({
       codigo: PROBLEM_CODES.MISSING_FIELD,
-      mensagem: `campo obrigatório ausente no item "${String(target)}": "titulo"`,
+      mensagem: `required field missing from item "${String(target)}": "titulo"`,
       alvo: target,
     });
     broken = true;
@@ -145,7 +146,7 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
   if (!isAbsent(raw.corpo) && typeof raw.corpo !== 'string') {
     note({
       codigo: PROBLEM_CODES.INVALID_FIELD,
-      mensagem: `"corpo" do item "${String(target)}" precisa ser texto`,
+      mensagem: `"corpo" of item "${String(target)}" has to be text`,
       alvo: target,
     });
     broken = true;
@@ -157,7 +158,7 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
   if (!criteriaValid) {
     note({
       codigo: PROBLEM_CODES.INVALID_FIELD,
-      mensagem: `"criterios_de_aceite" do item "${String(target)}" precisa ser uma lista de textos preenchidos`,
+      mensagem: `"criterios_de_aceite" of item "${String(target)}" has to be a list of filled texts`,
       alvo: target,
     });
     broken = true;
@@ -169,7 +170,7 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
   if (!dependenciesValid) {
     note({
       codigo: PROBLEM_CODES.INVALID_FIELD,
-      mensagem: `"depende_de" do item "${String(target)}" precisa ser uma lista de refs do próprio lote`,
+      mensagem: `"depende_de" of item "${String(target)}" has to be a list of refs from the batch itself`,
       alvo: target,
     });
     broken = true;
@@ -251,7 +252,7 @@ export function validateItems(raw: unknown): ItemsReport {
       problemas: [
         {
           codigo: PROBLEM_CODES.LIST,
-          mensagem: '"itens" precisa ser uma lista não vazia: o intake quebra trabalho em tickets',
+          mensagem: '"itens" has to be a non-empty list: intake breaks work down into tickets',
           alvo: null,
         },
       ],
@@ -271,7 +272,7 @@ export function validateItems(raw: unknown): ItemsReport {
       if (!alreadyReported.has(entry.ref)) {
         note({
           codigo: PROBLEM_CODES.DUPLICATE_REF,
-          mensagem: `duas fichas do lote usam o mesmo ref: "${entry.ref}"`,
+          mensagem: `two items of the batch use the same ref: "${entry.ref}"`,
           alvo: entry.ref,
         });
         alreadyReported.add(entry.ref);
@@ -296,7 +297,7 @@ export function validateItems(raw: unknown): ItemsReport {
       if (dependency === entry.ref) {
         note({
           codigo: PROBLEM_CODES.SELF_DEPENDENCY,
-          mensagem: `o item "${entry.ref}" declara depender de si mesmo`,
+          mensagem: `item "${entry.ref}" declares that it depends on itself`,
           alvo: entry.ref,
         });
         continue;
@@ -304,7 +305,7 @@ export function validateItems(raw: unknown): ItemsReport {
       if (!known.has(dependency)) {
         note({
           codigo: PROBLEM_CODES.UNKNOWN_DEPENDENCY,
-          mensagem: `o item "${entry.ref}" depende de "${dependency}", que não é ref de nenhum item deste lote`,
+          mensagem: `item "${entry.ref}" depends on "${dependency}", which is not the ref of any item in this batch`,
           alvo: { ref: entry.ref, depende_de: dependency },
         });
         continue;
@@ -316,7 +317,7 @@ export function validateItems(raw: unknown): ItemsReport {
   for (const cycle of findCycles(edges, order)) {
     note({
       codigo: PROBLEM_CODES.CYCLE,
-      mensagem: `as dependências fecham um ciclo: ${cycle.join(' → ')}`,
+      mensagem: `the dependencies close a cycle: ${cycle.join(' → ')}`,
       alvo: cycle,
     });
   }

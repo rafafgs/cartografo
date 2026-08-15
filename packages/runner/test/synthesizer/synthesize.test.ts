@@ -400,3 +400,30 @@ test('t148 — a frame with no block prints the decoded prose, not the raw frame
     'a raw frame under "saída bruta da sessão" is unreadable exactly when it matters',
   );
 });
+
+test('t180 — the run refuses and reports in English, quoting the API vocabulary', async (t) => {
+  const { runSynthesis } = await loadSynthesis();
+
+  const client = fakeClient([{ classe: 'nota-curta', versao_corrente_id: EXISTING_VERSION.id }]);
+  const dir = scratch(t, 'classe-ja-registrada');
+
+  const err: string[] = [];
+  const code = await runSynthesis({
+    declaration: DECLARATION,
+    className: 'nota-curta',
+    client,
+    adapter: fakeAdapter([]),
+    workingDir: dir,
+    cwd: dir,
+    write: () => undefined,
+    writeError: (text) => err.push(text),
+  });
+
+  assert.equal(code, 1);
+  assert.equal(
+    err.join(''),
+    'synthesize: classe_ja_registrada — class "nota-curta" already has a base graph.\n' +
+      '  A new version over an existing lineage is the proposal flow (D13), not synthesis.\n',
+    'the code echoes the API and is frozen; the sentence around it is English (FR2)',
+  );
+});

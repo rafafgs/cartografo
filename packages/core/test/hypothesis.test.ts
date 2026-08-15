@@ -98,3 +98,17 @@ test('AT-U6 — a metric that is not an object, or whose "de" is not a number, i
   assert.equal(textualBaseline.valid, false, '"de" is the number the verdict compares against');
   assert.equal(textualBaseline.verdict, null);
 });
+
+test('t180 — the direcao problem is reported in English, quoting the frozen values', async () => {
+  const { validateExpectedMetric } = await loadHypothesis();
+
+  const problems = validateExpectedMetric({ ...FALLING, direcao: 'lado' });
+  const direction = problems.find((problem) => problem.code === 'direcao_invalida');
+
+  assert.ok(direction !== undefined, 'an unknown direcao is a problem');
+  assert.equal(
+    direction.message,
+    'metrica_esperada.direcao has to be "sobe" or "cai", got "lado"',
+    'the prose is English; "sobe"/"cai" are the stored values and are not translated (FR2)',
+  );
+});

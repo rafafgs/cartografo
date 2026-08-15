@@ -209,3 +209,45 @@ test('t124 AT — GET /health keeps answering with no credential at all', async 
   assert.equal(response.status, 200, 'the liveness probe is polled before any credential exists');
   assert.deepEqual(await response.json(), { status: 'ok', db: 'ok' });
 });
+
+/* -------------------------------------------------------------------------- */
+/* t180 — the three refusals of the gate, in the words a person reads.         */
+/*                                                                            */
+/* Pinned whole, not by length: a refusal that says nothing useful is exactly  */
+/* as long as one that does, and the point of these bodies is that whoever     */
+/* reads them knows what to do next.                                          */
+/* -------------------------------------------------------------------------- */
+
+test('t180 — the two 401 bodies say, in English, what to do about them', async (t) => {
+  const ctx = await startControlPlane(t);
+
+  const missing = await raw(ctx, '/v1/jobs');
+  assert.equal(missing.status, 401);
+  assert.equal(
+    missing.body.mensagem,
+    'this route requires `Authorization: Bearer <token>` — use the token printed when the control plane starts (CARTOGRAFO_TOKEN, or --token on the command)',
+  );
+
+  const dead = await raw(ctx, '/v1/jobs', 'Bearer garbage');
+  assert.equal(dead.status, 401);
+  assert.equal(
+    dead.body.mensagem,
+    'the credential presented is no longer valid (unknown or revoked) — ask whoever administers this control plane for another one',
+  );
+});
+
+test('t180 — the 403 of a runner outside its surface names the surface in English', async (t) => {
+  const ctx = await startControlPlane(t);
+  const token = await pairedRunnerToken(ctx, 'runner-a');
+
+  const denied = await call(ctx, 'POST', '/v1/jobs', token, {
+    titulo: 'trabalho que um runner não cria',
+    no_entrada_id: 'refinar',
+  });
+
+  assert.equal(denied.status, 403);
+  assert.equal(
+    denied.body.mensagem,
+    'a runner credential reaches only GET /v1/jobs, POST /v1/leases, POST /v1/leases/:id/heartbeats, POST /v1/leases/:id/releases, GET /v1/leases — "POST /v1/jobs" requires a user credential',
+  );
+});

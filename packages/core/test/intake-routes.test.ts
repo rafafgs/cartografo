@@ -784,3 +784,35 @@ test('t139 — the confirmation and POST /v1/jobs refuse the same ator in the sa
     'the same broken envelope, refused by the same validator, in the same body',
   );
 });
+
+test('t180 — the intake refusals are English prose around Portuguese wire keys', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  await registerFactoryGraph(ctx);
+
+  const missing = await request<{ erro: string; mensagem: string }>(ctx, 'POST', '/v1/intake', {
+    itens: [{ ref: 'a', titulo: 'uma ficha' }],
+  });
+  assert.equal(missing.status, 400);
+  assert.equal(missing.body.erro, 'campo_obrigatorio_ausente', 'the code is frozen (FR2)');
+  assert.equal(missing.body.mensagem, '"classe" and "pedido" are required texts');
+
+  const cycle = await request<{ problemas: { codigo: string; mensagem: string }[] }>(
+    ctx,
+    'POST',
+    '/v1/intake',
+    {
+      classe: CLASS,
+      pedido: 'quebrar o pedido em fichas',
+      itens: [
+        { ref: 'a', titulo: 'a', depende_de: ['b'] },
+        { ref: 'b', titulo: 'b', depende_de: ['a'] },
+      ],
+    },
+  );
+  assert.equal(cycle.status, 400);
+  assert.equal(
+    cycle.body.problemas.find((problem) => problem.codigo === 'ciclo_de_dependencia')?.mensagem,
+    'the dependencies close a cycle: a → b → a',
+  );
+});

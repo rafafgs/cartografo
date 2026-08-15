@@ -43,7 +43,7 @@ async function main() {
 
   if (parsed.kind === 'usage') {
     process.stderr.write(`synthesize: ${parsed.message}\n`);
-    process.stderr.write('synthesize: rode `--help` para o fluxo inteiro.\n');
+    process.stderr.write('synthesize: run `--help` for the whole flow.\n');
     return USAGE_EXIT_CODE;
   }
 
@@ -51,7 +51,7 @@ async function main() {
   const probe = await adapter.verifyCli();
   if (!probe.available) {
     process.stderr.write(
-      'synthesize: a CLI `claude` não respondeu a --version — instale antes de sintetizar\n',
+      'synthesize: the `claude` CLI did not answer --version — install it before synthesizing\n',
     );
     return 1;
   }

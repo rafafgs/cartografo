@@ -18,10 +18,12 @@ import { createServer, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import test from 'node:test';
 
+import type * as ProxyModule from '../src/proxy.ts';
 import type * as ScreenServerModule from '../src/server.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const SERVER_PATH = path.join(PACKAGE_ROOT, 'src', 'server.ts');
+const PROXY_PATH = path.join(PACKAGE_ROOT, 'src', 'proxy.ts');
 
 /** Minimal shape of the test context this file uses (same idiom as the core). */
 interface Cleanup {
@@ -29,6 +31,7 @@ interface Cleanup {
 }
 
 let cache: typeof ScreenServerModule | null = null;
+let proxyCache: typeof ProxyModule | null = null;
 
 async function loadServer(): Promise<typeof ScreenServerModule> {
   assert.ok(existsSync(SERVER_PATH), 'artifact does not exist yet: packages/tela/src/server.ts');
@@ -36,6 +39,14 @@ async function loadServer(): Promise<typeof ScreenServerModule> {
     new URL('../src/server.ts', import.meta.url).href
   )) as typeof ScreenServerModule;
   return cache;
+}
+
+async function loadProxy(): Promise<typeof ProxyModule> {
+  assert.ok(existsSync(PROXY_PATH), 'artifact does not exist yet: packages/tela/src/proxy.ts');
+  proxyCache ??= (await import(
+    new URL('../src/proxy.ts', import.meta.url).href
+  )) as typeof ProxyModule;
+  return proxyCache;
 }
 
 /** A port nothing is listening on: reserved by the OS, then released. */
@@ -309,4 +320,52 @@ test('AT5 — an unreachable control plane becomes 502 control_plane_indisponive
     'the message says which address did not answer',
   );
   assert.doesNotMatch(body.mensagem, /\n\s*at |Error:|ECONNREFUSED/);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t180 — the two surfaces of the screen that are API plumbing, not UI copy.   */
+/*                                                                            */
+/* t133's decision stands whole: the screen RENDERS its pages in Portuguese on */
+/* purpose, and the wire vocabulary it reads (`erro`, `mensagem`, `pendente`)  */
+/* is frozen. What moves here is the prose of the two failures the screen      */
+/* answers by itself, which a person meets as an API body and not as a page.   */
+/* -------------------------------------------------------------------------- */
+
+test('t180 — the 502 and the static 404 keep their shape and say it in English', async (t) => {
+  const { unavailableResponse } = await loadProxy();
+
+  const down = unavailableResponse('http://127.0.0.1:4317');
+  assert.equal(down.status, 502);
+  const body = JSON.parse(down.body.toString('utf8')) as { erro: string; mensagem: string };
+  assert.equal(body.erro, 'control_plane_indisponivel', 'the code is frozen');
+  assert.equal(
+    body.mensagem,
+    'could not reach the control plane at http://127.0.0.1:4317 — run `npx cartografo` first (or point somewhere else with CARTOGRAFO_URL)',
+  );
+
+  const screen = await startScreenFor(t, { CARTOGRAFO_URL: 'http://127.0.0.1:4317' });
+  const missing = await fetch(`${screen.url}/nao-existe.js`);
+  assert.equal(missing.status, 404);
+  const notFound = (await missing.json()) as { erro: string; mensagem: string };
+  assert.equal(notFound.erro, 'arquivo_nao_encontrado', 'the code is frozen');
+  assert.equal(notFound.mensagem, 'the screen does not serve "/nao-existe.js"');
+});
+
+test('t180 — a bad configuration fails at startup in English', async () => {
+  const { parsePortFromEnv, resolveControlPlaneUrl, CONTROL_PLANE_URL_ENV } = await loadProxy();
+
+  assert.throws(
+    () => parsePortFromEnv({ CARTOGRAFO_PORT: 'não é porta' }, 'CARTOGRAFO_PORT', 4317),
+    { message: 'CARTOGRAFO_PORT invalid: "não é porta" (expected an integer from 0 to 65535)' },
+  );
+
+  assert.throws(
+    () => resolveControlPlaneUrl({ [CONTROL_PLANE_URL_ENV]: 'nem url é' }),
+    { message: 'CARTOGRAFO_URL invalid: "nem url é" (expected something like http://127.0.0.1:4317)' },
+  );
+
+  assert.throws(
+    () => resolveControlPlaneUrl({ [CONTROL_PLANE_URL_ENV]: 'ftp://127.0.0.1:4317' }),
+    { message: 'CARTOGRAFO_URL has to be http or https: "ftp://127.0.0.1:4317"' },
+  );
 });

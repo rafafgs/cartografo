@@ -36,8 +36,13 @@ export const TIER_FATOR_PADRAO = 3;
 /** Mínimo de nós medidos numa versão para que "outlier" queira dizer algo. */
 export const TIER_MINIMO_NOS_PADRAO = 3;
 
-/** Prefixo da recomendação anexada à descrição. É o que a torna reconhecível. */
-export const MARCA = '[topógrafo-custo]';
+/**
+ * Prefixo da recomendação anexada à descrição. É o que a torna reconhecível.
+ *
+ * `cost-surveyor` desde a t180: o texto da proposta é lido por uma pessoa e por
+ * isso está em inglês, e `surveyor` é o termo de glossário para `topógrafo`.
+ */
+export const MARCA = '[cost-surveyor]';
 
 /**
  * `alterar_campo_no` sobre `descricao`, com a inversa que a desfaz.
@@ -201,7 +206,7 @@ function candidatasDeTeto(
     const teto = (estourouTokens ? tetoTokens : tetoSegundos) as number;
     const observado = estourouTokens ? linha.tokens_total : linha.tempo_total_segundos;
     const metrica = estourouTokens ? 'tokens_total' : 'tempo_total_segundos';
-    const unidade = estourouTokens ? 'tokens' : 'segundos';
+    const unidade = estourouTokens ? 'tokens' : 'seconds';
     // A amostra segue o teto que estourou, como todo o resto da linha. Uma
     // sessão pode ter reportado `uso` e não ter os dois carimbos de tempo, e
     // vice-versa (`custo.ts`), então os dois contadores divergem de propósito:
@@ -209,7 +214,10 @@ function candidatasDeTeto(
     // do teto não tem. O nome da amostra vai junto do número para que a frase
     // não possa ficar dizendo uma coisa e contando outra.
     const amostra = estourouTokens ? linha.sessoes_com_uso : linha.sessoes_com_tempo;
-    const amostraDe = estourouTokens ? 'uso' : 'tempo';
+    const amostraDe = estourouTokens ? 'usage' : 'time';
+    // `excedido` é valor de formato (`evidencia.teto_excedido`) e não vira
+    // prosa; o rótulo da frase é dele apartado por isso.
+    const rotulo = estourouTokens ? 'token' : 'time';
 
     candidatas.push(
       montarCandidata(
@@ -219,10 +227,10 @@ function candidatasDeTeto(
         operacaoDeRecomendacao(
           linha.no_id,
           descricaoAtual(linha.grafo_versao_id, linha.no_id),
-          `teto de ${excedido} excedido: ${observado} ${unidade} observados contra teto de ${teto}, em ${amostra} sessões com ${amostraDe} reportado. Reduzir o escopo deste nó, dividi-lo, ou rever o teto.`,
+          `${rotulo} ceiling exceeded: ${observado} ${unidade} observed against a ceiling of ${teto}, over ${amostra} sessions with ${amostraDe} reported. Reduce the scope of this node, split it, or revisit the ceiling.`,
         ),
         {
-          descricao: `${metrica} do nó "${linha.no_id}" volta a ficar dentro do teto declarado`,
+          descricao: `${metrica} of node "${linha.no_id}" goes back under the declared ceiling`,
           alvo: teto,
           teto_ou_fator: teto,
         },
@@ -278,10 +286,10 @@ function candidatasDeTier(
           operacaoDeRecomendacao(
             linha.no_id,
             descricaoAtual(linha.grafo_versao_id, linha.no_id),
-            `custo fora de esquadro nesta versão: ${linha.tokens_total} tokens, ${vezes}x a mediana de ${central} entre os ${grupo.length} nós medidos (fator ${fator}). Candidato a tier de modelo mais barato, ou a divisão em nós menores.`,
+            `cost out of line in this version: ${linha.tokens_total} tokens, ${vezes}x the median of ${central} across the ${grupo.length} measured nodes (factor ${fator}). Candidate for a cheaper model tier, or for a split into smaller nodes.`,
           ),
           {
-            descricao: `tokens_total do nó "${linha.no_id}" cai abaixo de ${fator}x a mediana da versão`,
+            descricao: `tokens_total of node "${linha.no_id}" falls below ${fator}x the version median`,
             alvo: limiar,
             teto_ou_fator: fator,
           },

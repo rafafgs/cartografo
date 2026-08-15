@@ -571,3 +571,30 @@ test('t140 FR9 — a lineage with no current version is a 409, not a crash', asy
 
   assert.equal(proposalCount(ctx), before);
 });
+
+test('t180 — the promote and offer guards refuse in English', async (t) => {
+  const ctx = await start(t);
+  const { graph } = await registerBase(ctx);
+  await fork(ctx, graph.id, 'variante-a');
+
+  const hypothesis = { evidencia: EVIDENCE, metrica_esperada: EXPECTED_METRIC };
+
+  const basePromoting = await promote(ctx, graph.id, hypothesis);
+  assert.equal(basePromoting.status, 400);
+  assert.equal((basePromoting.body as { erro: string }).erro, 'variante_invalida');
+  assert.equal(
+    (basePromoting.body as { mensagem: string }).mensagem,
+    'only a variant has something to promote; a base does not promote to itself (D13)',
+  );
+
+  const variantOffering = await offer(ctx, 'variante-a', {
+    ...hypothesis,
+    variante_id: 'variante-a',
+  });
+  assert.equal(variantOffering.status, 400);
+  assert.equal((variantOffering.body as { erro: string }).erro, 'base_invalida');
+  assert.equal(
+    (variantOffering.body as { mensagem: string }).mensagem,
+    'only a base lineage offers an improvement to its variants (D13)',
+  );
+});

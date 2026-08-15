@@ -85,7 +85,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
   /** The 409 of anything that only holds while the draft is pending. */
   const notPending = (draft: Draft): Record<string, unknown> => ({
     erro: 'rascunho_nao_pendente',
-    mensagem: `só rascunho pendente aceita esta operação; este está "${draft.status}"`,
+    mensagem: `only a pending draft accepts this operation; this one is "${draft.status}"`,
     status: draft.status,
   });
 
@@ -96,7 +96,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'campo_obrigatorio_ausente',
-        mensagem: '"classe" e "pedido" são textos obrigatórios',
+        mensagem: '"classe" and "pedido" are required texts',
         classe: body.classe ?? null,
       };
     }
@@ -109,7 +109,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       reply.code(404);
       return {
         erro: 'grafo_desconhecido',
-        mensagem: `a classe "${body.classe}" não tem grafo base registrado`,
+        mensagem: `class "${body.classe}" has no base graph registered`,
         classe: body.classe,
       };
     }
@@ -123,12 +123,12 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
     const projectId = body.projeto_id;
     if (projectId !== undefined && projectId !== null && !Number.isInteger(projectId)) {
       reply.code(400);
-      return { erro: 'campo_invalido', mensagem: '"projeto_id" precisa ser inteiro' };
+      return { erro: 'campo_invalido', mensagem: '"projeto_id" has to be an integer' };
     }
     const executionId = body.execucao_id;
     if (executionId !== undefined && executionId !== null && !Number.isInteger(executionId)) {
       reply.code(400);
-      return { erro: 'campo_invalido', mensagem: '"execucao_id" precisa ser inteiro' };
+      return { erro: 'campo_invalido', mensagem: '"execucao_id" has to be an integer' };
     }
 
     const draft = createDraft(db, {
@@ -151,7 +151,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       projectId = Number(query.projeto_id);
       if (!Number.isInteger(projectId)) {
         reply.code(400);
-        return { erro: 'campo_invalido', mensagem: '"projeto_id" precisa ser inteiro' };
+        return { erro: 'campo_invalido', mensagem: '"projeto_id" has to be an integer' };
       }
     }
 
@@ -246,7 +246,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
         reply.code(404);
         return {
           erro: 'grafo_desconhecido',
-          mensagem: `a classe "${draft.classe}" não tem versão de grafo vigente`,
+          mensagem: `class "${draft.classe}" has no graph version in force`,
           classe: draft.classe,
         };
       }

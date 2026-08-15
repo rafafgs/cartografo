@@ -193,3 +193,63 @@ test('AT5 — --url and --timeout are optional and parsed when given', async () 
   assert.equal(parsed.options.url, 'http://127.0.0.1:9999');
   assert.equal(parsed.options.timeoutSeconds, 120);
 });
+
+/* -------------------------------------------------------------------------- */
+/* t180 — what the command prints is English; the flags it documents are not.  */
+/* -------------------------------------------------------------------------- */
+
+test('t180 — --help is English, and still names the Portuguese flags and the draft', () => {
+  const result = runCli(['--help']);
+
+  assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
+  assert.match(result.stdout, /^synthesize — proposes a graph for a new class, for you to edit \(D10\)\./m);
+  assert.match(result.stdout, /^Usage:$/m);
+  assert.match(result.stdout, /^Options:$/m);
+  assert.match(
+    result.stdout,
+    /What the command does NOT do, and you have to do by hand afterwards:/,
+    'the manual half of D10 is the point of the text',
+  );
+  // The published surface a person types is untouched (D18 carve-out).
+  assert.match(result.stdout, new RegExp('--classe <name>'));
+  assert.match(result.stdout, new RegExp('--saida <path>'));
+  assert.match(result.stdout, /\.grafo\.rascunho\.json/);
+});
+
+test('t180 — the usage refusals are English', async () => {
+  const { parseArguments } = await loadSynthesis();
+
+  const noClass = parseArguments(['uma declaração'], {});
+  assert.ok(noClass.kind === 'usage');
+  assert.equal(
+    noClass.message,
+    '--classe is required: you name the class, not the synthesizer (D8)',
+  );
+
+  const noDeclaration = parseArguments(['--classe', 'artigo-revisado'], {});
+  assert.ok(noDeclaration.kind === 'usage');
+  assert.equal(noDeclaration.message, 'the problem declaration is missing (first argument)');
+
+  const dangling = parseArguments(['uma declaração', '--classe', '--url'], {});
+  assert.ok(dangling.kind === 'usage');
+  assert.equal(dangling.message, 'option --classe needs a value');
+});
+
+test('t180 — a missing `claude` CLI says so in English', () => {
+  assert.ok(existsSync(CLI_PATH), 'artifact does not exist yet: packages/runner/src/synthesizer/cli.mjs');
+
+  // An empty PATH is the cheapest honest way to have the probe fail: `node` is
+  // spawned by absolute path and `tsx` resolves as a module, so the only thing
+  // that goes missing is the engine the probe looks for.
+  const result = spawnSync(
+    process.execPath,
+    ['--import', 'tsx', CLI_PATH, 'uma declaração', '--classe', 'classe-nova'],
+    { cwd: PACKAGE_ROOT, encoding: 'utf8', env: { ...process.env, PATH: '' } },
+  );
+
+  assert.equal(result.status, 1, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.equal(
+    result.stderr,
+    'synthesize: the `claude` CLI did not answer --version — install it before synthesizing\n',
+  );
+});

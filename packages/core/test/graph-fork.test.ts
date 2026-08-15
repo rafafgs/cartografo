@@ -476,3 +476,27 @@ test('t118 AT15 — the ordinary proposal flow evolves the variant, base untouch
     'and the base pointer did not: the two lineages evolve apart',
   );
 });
+
+test('t180 — the fork guards refuse in English', async (t) => {
+  const ctx = await start(t);
+  const { graph } = await registerBase(ctx);
+
+  const noId = await fork(ctx, graph.id, {});
+  assert.equal(noId.status, 400);
+  assert.equal((noId.body as { erro: string }).erro, 'campo_obrigatorio_ausente');
+  assert.equal(
+    (noId.body as { mensagem: string }).mensagem,
+    'the fork requires "id": it is the identity of the lineage being born',
+  );
+
+  const variant = await fork(ctx, graph.id, { id: 'variante-a' });
+  assert.equal(variant.status, 201, JSON.stringify(variant.body));
+
+  const ofVariant = await fork(ctx, 'variante-a', { id: 'variante-b' });
+  assert.equal(ofVariant.status, 400);
+  assert.equal((ofVariant.body as { erro: string }).erro, 'base_invalida');
+  assert.equal(
+    (ofVariant.body as { mensagem: string }).mensagem,
+    'only a base lineage can be forked; a variant of a variant is out (D13)',
+  );
+});

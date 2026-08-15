@@ -806,7 +806,7 @@ test('t159 AT5 — the transcript stays OUT of the sessao.finalizada event', asy
 });
 
 /** The migration that gives the session its second budget and the cause (t163). */
-const T163_MIGRATION = 'migrations/0010_sessao_orcamento_silencio.sql';
+const T163_MIGRATION = 'migrations/0011_sessao_orcamento_silencio.sql';
 
 test('t163 — POST /v1/sessions persists and returns the silence budget', async (t) => {
   requireArtifacts(...ARTIFACTS, T163_MIGRATION);

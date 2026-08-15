@@ -20,11 +20,13 @@
  * the same reason (t127, FR8).
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
+import { diffGraphs } from '../domain/diff.ts';
 import { validateGraph, type GraphDocument } from '../domain/graph.ts';
 import { hashSnapshot } from '../domain/hash.ts';
+import type { Operation } from '../domain/operations.ts';
 import {
   forkVariant,
   getClassBase,
@@ -35,8 +37,9 @@ import {
   listGraphs,
   listVersions,
   registerBaseGraph,
+  type GraphRow,
 } from '../repositories/graphs.ts';
-import { getProposal } from '../repositories/proposals.ts';
+import { createProposal, getProposal } from '../repositories/proposals.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -44,6 +47,95 @@ interface IdParam {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The refusal body when the hypothesis fields are missing, or `undefined`.
+ *
+ * Same demand and same shape as `POST /proposals` (`routes/proposals.ts`):
+ * presence only, never the shape of what is inside. Promotion and offer are
+ * proposals like any other, and validating them harder here than at the route
+ * everyone already uses would be two different contracts for one table.
+ */
+function missingHypothesis(body: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (body.evidencia !== undefined && body.metrica_esperada !== undefined) return undefined;
+  return {
+    erro: 'campo_obrigatorio_ausente',
+    mensagem:
+      'proposta é hipótese: evidencia e metrica_esperada são obrigatórias (D15, nota de aprendizado)',
+  };
+}
+
+/** The direction of a promotion or an offer, once the route knows which is which. */
+interface Direction {
+  /** Lineage that RECEIVES the pending proposal. */
+  target: GraphRow;
+  /** Lineage whose current snapshot the target would come to match. */
+  source: GraphRow;
+  evidencia: unknown;
+  metrica_esperada: unknown;
+}
+
+/**
+ * Tail shared by `/promote` and `/offer`: diff the two current snapshots in the
+ * chosen direction and open the pending proposal.
+ *
+ * Both refusals happen before any write, like everywhere else in this file. The
+ * empty diff is a `422` and not a silent `201`: a proposal with no operation
+ * would be a hypothesis about nothing, and it would sit in the human queue
+ * asking for a decision that changes no document.
+ *
+ * @param db Already open database (D1).
+ * @param reply Fastify reply, used only to set the status code.
+ * @param data Target, source and the two hypothesis fields, already checked for presence.
+ * @returns The body to return — the created proposal, or the refusal.
+ */
+function openProposal(
+  db: Database,
+  reply: FastifyReply,
+  data: Direction,
+): Record<string, unknown> {
+  const { target, source } = data;
+
+  // Defensive invariant, the same one the fork route guards: a lineage with no
+  // pointer is a graph that exists without holding, which no path here creates.
+  const to = current(db, source);
+  const from = current(db, target);
+  if (to === undefined || from === undefined) {
+    reply.code(409);
+    return {
+      erro: 'grafo_sem_versao_corrente',
+      mensagem: 'as duas linhagens precisam apontar para uma versão corrente para haver diff',
+      grafo_id: from === undefined ? target.id : source.id,
+    };
+  }
+
+  const operations: Operation[] = diffGraphs(from, to);
+  if (operations.length === 0) {
+    reply.code(422);
+    return {
+      erro: 'diff_sem_efeito',
+      mensagem: 'os dois snapshots já concordam em "nos" e "arestas"; não há diff a propor',
+      grafo_id: target.id,
+    };
+  }
+
+  const proposal = createProposal(db, {
+    grafo_id: target.id,
+    versao_alvo: target.versao_corrente_id as string,
+    operacoes: operations,
+    evidencia: data.evidencia,
+    metrica_esperada: data.metrica_esperada,
+  });
+
+  reply.code(201);
+  return { proposta: proposal };
+}
+
+/** The document that holds today for a lineage, or `undefined` if the pointer is empty. */
+function current(db: Database, graph: GraphRow): GraphDocument | undefined {
+  if (graph.versao_corrente_id === null) return undefined;
+  return getVersion(db, graph.versao_corrente_id)?.snapshot;
 }
 
 /**
@@ -231,6 +323,125 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
     });
     reply.code(201);
     return { grafo: graph, grafo_versao: version };
+  });
+
+  /**
+   * `POST /graphs/:id/promote` is D13's first pending direction: the diff of a
+   * variant that beats the base becomes a promotion proposal FOR the base.
+   *
+   * It proposes and never applies. What comes out is an ordinary pending
+   * proposal, judged at the same human gate as any other (README, princípio 5),
+   * and applied by the same `POST /proposals/:id/apply` with no special case —
+   * the diff never touches `classe`/`linhagem`, so the base stays the base.
+   */
+  app.post<IdParam>('/graphs/:id/promote', async (request, reply) => {
+    const variant = getGraph(db, request.params.id);
+    if (variant === undefined) {
+      reply.code(404);
+      return { erro: 'grafo_desconhecido', id: request.params.id };
+    }
+
+    if (variant.linhagem_tipo !== 'variante') {
+      reply.code(400);
+      return {
+        erro: 'variante_invalida',
+        mensagem: 'só uma variante tem o que promover; base não promove para si mesmo (D13)',
+        linhagem_tipo: variant.linhagem_tipo,
+      };
+    }
+
+    // D13: the variant shares the class of the base it was forked from, so the
+    // class IS the pointer back to the base — there is no second column to read.
+    const base = getClassBase(db, variant.classe);
+    if (base === undefined) {
+      reply.code(404);
+      return {
+        erro: 'grafo_desconhecido',
+        mensagem: 'a classe desta variante não tem linhagem base; não há para onde promover',
+        classe: variant.classe,
+      };
+    }
+
+    const body = isObject(request.body) ? request.body : {};
+    const missing = missingHypothesis(body);
+    if (missing !== undefined) {
+      reply.code(400);
+      return missing;
+    }
+
+    return openProposal(db, reply, {
+      target: base,
+      source: variant,
+      evidencia: body.evidencia,
+      metrica_esperada: body.metrica_esperada,
+    });
+  });
+
+  /**
+   * `POST /graphs/:id/offer` is the other direction, and the asymmetry is the
+   * whole point of D13: an improvement in the base is OFFERED to a variant,
+   * never forced on it. The offer lands as a pending proposal ON the variant,
+   * which is exactly what makes refusing it a no-op — nobody has to undo
+   * anything.
+   *
+   * One named `variante_id` per call: fanning out to every variant of a base is
+   * another decision, and it is not this route's to take silently.
+   */
+  app.post<IdParam>('/graphs/:id/offer', async (request, reply) => {
+    const base = getGraph(db, request.params.id);
+    if (base === undefined) {
+      reply.code(404);
+      return { erro: 'grafo_desconhecido', id: request.params.id };
+    }
+
+    if (base.linhagem_tipo !== 'base') {
+      reply.code(400);
+      return {
+        erro: 'base_invalida',
+        mensagem: 'só uma linhagem base oferece melhoria às suas variantes (D13)',
+        linhagem_tipo: base.linhagem_tipo,
+      };
+    }
+
+    const body = isObject(request.body) ? request.body : {};
+
+    const variantId = body.variante_id;
+    if (typeof variantId !== 'string' || variantId.trim() === '') {
+      reply.code(400);
+      return {
+        erro: 'campo_obrigatorio_ausente',
+        mensagem: 'a oferta exige "variante_id": é a variante que recebe a proposta, uma por chamada',
+      };
+    }
+
+    const variant = getGraph(db, variantId);
+    if (variant === undefined) {
+      reply.code(404);
+      return { erro: 'grafo_desconhecido', id: variantId };
+    }
+
+    if (variant.linhagem_tipo !== 'variante' || variant.base_classe !== base.classe) {
+      reply.code(400);
+      return {
+        erro: 'variante_invalida',
+        mensagem: `"${variantId}" não é variante desta linhagem base`,
+        base_classe: variant.base_classe,
+        classe: base.classe,
+      };
+    }
+
+    const missing = missingHypothesis(body);
+    if (missing !== undefined) {
+      reply.code(400);
+      return missing;
+    }
+
+    return openProposal(db, reply, {
+      target: variant,
+      source: base,
+      evidencia: body.evidencia,
+      metrica_esperada: body.metrica_esperada,
+    });
   });
 
   app.get('/classes', async () => ({ classes: listClasses(db) }));

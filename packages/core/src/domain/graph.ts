@@ -177,7 +177,19 @@ export function validateStructure(doc: unknown): StructureReport {
         );
       }
     }
-    if (!isFilledText(node.id)) return;
+    if (!isFilledText(node.id)) {
+      // Present but not a filled text: the loop above only catches the ABSENT
+      // id, and without this the node would leave the scene in silence —
+      // never entering `knownIds`, never being checked by soundness.
+      if (node.id !== undefined && node.id !== null) {
+        note(
+          'id_invalido',
+          `o id do nó na posição ${index} precisa ser um texto preenchido: ${JSON.stringify(node.id)}`,
+          index,
+        );
+      }
+      return;
+    }
     if (knownIds.has(node.id)) {
       if (!alreadyReportedIds.has(node.id)) {
         note('id_no_duplicado', `id de nó repetido no documento: "${node.id}"`, node.id);
@@ -205,7 +217,17 @@ export function validateStructure(doc: unknown): StructureReport {
     }
     for (const end of ['de', 'para']) {
       const target = edge[end];
-      if (isFilledText(target) && !knownIds.has(target)) {
+      if (!isFilledText(target)) {
+        if (target !== undefined && target !== null) {
+          note(
+            'id_invalido',
+            `a aresta #${index} precisa de um texto preenchido em "${end}": ${JSON.stringify(target)}`,
+            { de: edge.de ?? null, para: edge.para ?? null },
+          );
+        }
+        continue;
+      }
+      if (!knownIds.has(target)) {
         note(
           'aresta_no_inexistente',
           `a aresta #${index} referencia em "${end}" um nó que não existe: "${target}"`,
@@ -215,7 +237,18 @@ export function validateStructure(doc: unknown): StructureReport {
     }
   });
 
-  if (isFilledText(doc.no_inicial) && !knownIds.has(doc.no_inicial)) {
+  // The two are mutually exclusive: an id of the wrong type is not an id
+  // pointing at a missing node, and only the second one gets to be a reference
+  // problem.
+  if (!isFilledText(doc.no_inicial)) {
+    if (doc.no_inicial !== undefined && doc.no_inicial !== null) {
+      note(
+        'id_invalido',
+        `no_inicial precisa ser um texto preenchido: ${JSON.stringify(doc.no_inicial)}`,
+        'no_inicial',
+      );
+    }
+  } else if (!knownIds.has(doc.no_inicial)) {
     note(
       'no_inicial_inexistente',
       `no_inicial referencia um nó que não existe: "${doc.no_inicial}"`,
@@ -227,11 +260,21 @@ export function validateStructure(doc: unknown): StructureReport {
   if (Array.isArray(doc.nos_finais) && finals.length === 0) {
     note('campo_invalido', '"nos_finais" precisa listar pelo menos um nó', 'nos_finais');
   }
-  for (const final of finals) {
-    if (isFilledText(final) && !knownIds.has(final)) {
+  // No required-fields loop covers an entry of the array, so here the absent
+  // value (`null`, `undefined`) is an invalid id like any other.
+  finals.forEach((final, index) => {
+    if (!isFilledText(final)) {
+      note(
+        'id_invalido',
+        `o id de nos_finais na posição ${index} precisa ser um texto preenchido: ${JSON.stringify(final)}`,
+        index,
+      );
+      return;
+    }
+    if (!knownIds.has(final)) {
       note('no_final_inexistente', `nos_finais referencia um nó que não existe: "${final}"`, final);
     }
-  }
+  });
 
   return { valido: errors.length === 0, erros: errors };
 }

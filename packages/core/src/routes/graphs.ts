@@ -62,7 +62,7 @@ function missingHypothesis(body: Record<string, unknown>): Record<string, unknow
   return {
     erro: 'campo_obrigatorio_ausente',
     mensagem:
-      'proposta é hipótese: evidencia e metrica_esperada são obrigatórias (D15, nota de aprendizado)',
+      'a proposal is a hypothesis: evidencia and metrica_esperada are required (D15, learning note)',
   };
 }
 
@@ -105,7 +105,7 @@ function openProposal(
     reply.code(409);
     return {
       erro: 'grafo_sem_versao_corrente',
-      mensagem: 'as duas linhagens precisam apontar para uma versão corrente para haver diff',
+      mensagem: 'both lineages have to point at a current version for there to be a diff',
       grafo_id: from === undefined ? target.id : source.id,
     };
   }
@@ -115,7 +115,7 @@ function openProposal(
     reply.code(422);
     return {
       erro: 'diff_sem_efeito',
-      mensagem: 'os dois snapshots já concordam em "nos" e "arestas"; não há diff a propor',
+      mensagem: 'the two snapshots already agree on "nos" and "arestas"; there is no diff to propose',
       grafo_id: target.id,
     };
   }
@@ -169,7 +169,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
           erros: [
             {
               codigo: 'campo_invalido',
-              mensagem: '"classe" precisa ser um texto preenchido: é a identidade da linhagem (D8)',
+              mensagem: '"classe" has to be a filled text: it is the identity of the lineage (D8)',
               alvo: 'classe',
             },
           ],
@@ -184,7 +184,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       return {
         erro: 'linhagem_nao_base',
         mensagem:
-          'esta rota registra apenas grafo base; variante nasce de POST /v1/graphs/:id/fork (D13)',
+          'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
         linhagem_tipo: lineage.tipo ?? null,
       };
     }
@@ -193,7 +193,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'classe_ja_registrada',
-        mensagem: `a classe "${className}" já tem um grafo base; versão nova sobre linhagem existente é fluxo de proposta`,
+        mensagem: `class "${className}" already has a base graph; a new version over an existing lineage is the proposal flow`,
         classe: className,
       };
     }
@@ -224,7 +224,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'base_invalida',
-        mensagem: 'só uma linhagem base pode ser bifurcada; variante de variante está fora (D13)',
+        mensagem: 'only a base lineage can be forked; a variant of a variant is out (D13)',
         linhagem_tipo: base.linhagem_tipo,
       };
     }
@@ -238,7 +238,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'campo_obrigatorio_ausente',
-        mensagem: 'a bifurcação exige "id": é a identidade da linhagem que nasce',
+        mensagem: 'the fork requires "id": it is the identity of the lineage being born',
       };
     }
 
@@ -246,7 +246,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'id_ja_registrado',
-        mensagem: `já existe uma linhagem com o id "${id}"`,
+        mensagem: `a lineage with the id "${id}" already exists`,
         id,
       };
     }
@@ -261,7 +261,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
         reply.code(400);
         return {
           erro: 'origem_proposta_id_invalido',
-          mensagem: 'origem_proposta_id precisa ser um inteiro positivo',
+          mensagem: 'origem_proposta_id has to be a positive integer',
           origem_proposta_id: rawOrigin,
         };
       }
@@ -269,7 +269,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
         reply.code(400);
         return {
           erro: 'origem_proposta_desconhecida',
-          mensagem: 'origem_proposta_id não referencia nenhuma proposta',
+          mensagem: 'origem_proposta_id references no proposal',
           origem_proposta_id: rawOrigin,
         };
       }
@@ -284,7 +284,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'grafo_sem_versao_corrente',
-        mensagem: 'a linhagem base não aponta para uma versão corrente; não há de onde bifurcar',
+        mensagem: 'the base lineage does not point at a current version; there is nothing to fork from',
         id: base.id,
       };
     }
@@ -309,7 +309,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'bifurcacao_sem_efeito',
-        mensagem: 'esta bifurcação produz um snapshot que já existe; nada seria registrado',
+        mensagem: 'this fork produces a snapshot that already exists; nothing would be recorded',
         versao_existente: versionId,
       };
     }
@@ -345,7 +345,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'variante_invalida',
-        mensagem: 'só uma variante tem o que promover; base não promove para si mesmo (D13)',
+        mensagem: 'only a variant has something to promote; a base does not promote to itself (D13)',
         linhagem_tipo: variant.linhagem_tipo,
       };
     }
@@ -357,7 +357,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(404);
       return {
         erro: 'grafo_desconhecido',
-        mensagem: 'a classe desta variante não tem linhagem base; não há para onde promover',
+        mensagem: 'the class of this variant has no base lineage; there is nowhere to promote to',
         classe: variant.classe,
       };
     }
@@ -398,7 +398,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'base_invalida',
-        mensagem: 'só uma linhagem base oferece melhoria às suas variantes (D13)',
+        mensagem: 'only a base lineage offers an improvement to its variants (D13)',
         linhagem_tipo: base.linhagem_tipo,
       };
     }
@@ -410,7 +410,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'campo_obrigatorio_ausente',
-        mensagem: 'a oferta exige "variante_id": é a variante que recebe a proposta, uma por chamada',
+        mensagem: 'the offer requires "variante_id": it is the variant that receives the proposal, one per call',
       };
     }
 
@@ -424,7 +424,7 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'variante_invalida',
-        mensagem: `"${variantId}" não é variante desta linhagem base`,
+        mensagem: `"${variantId}" is not a variant of this base lineage`,
         base_classe: variant.base_classe,
         classe: base.classe,
       };

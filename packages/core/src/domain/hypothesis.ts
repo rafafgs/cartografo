@@ -84,12 +84,12 @@ export function validateExpectedMetric(expectedMetric: unknown): MetricError[] {
   };
 
   if (!isObject(expectedMetric)) {
-    note('metrica_esperada_invalida', 'metrica_esperada precisa ser um objeto JSON');
+    note('metrica_esperada_invalida', 'metrica_esperada has to be a JSON object');
     return errors;
   }
 
   if (typeof expectedMetric.nome !== 'string' || expectedMetric.nome.trim() === '') {
-    note('nome_invalido', 'metrica_esperada.nome precisa ser o nome da métrica, preenchido');
+    note('nome_invalido', 'metrica_esperada.nome has to be the metric name, filled in');
   }
 
   if (
@@ -98,13 +98,13 @@ export function validateExpectedMetric(expectedMetric: unknown): MetricError[] {
   ) {
     note(
       'direcao_invalida',
-      `metrica_esperada.direcao precisa ser ${METRIC_DIRECTIONS.map((direcao) => `"${direcao}"`).join(' ou ')}, veio ${JSON.stringify(expectedMetric.direcao)}`,
+      `metrica_esperada.direcao has to be ${METRIC_DIRECTIONS.map((direcao) => `"${direcao}"`).join(' or ')}, got ${JSON.stringify(expectedMetric.direcao)}`,
     );
   }
 
   for (const campo of ['de', 'para']) {
     if (!isNumber(expectedMetric[campo])) {
-      note('valor_invalido', `metrica_esperada.${campo} precisa ser um número finito`);
+      note('valor_invalido', `metrica_esperada.${campo} has to be a finite number`);
     }
   }
 

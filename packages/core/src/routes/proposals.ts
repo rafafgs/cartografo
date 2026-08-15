@@ -75,7 +75,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'versao_alvo_desconhecida',
-        mensagem: 'versao_alvo precisa existir e pertencer a grafo_id',
+        mensagem: 'versao_alvo has to exist and belong to grafo_id',
         versao_alvo: targetVersion ?? null,
       };
     }
@@ -85,14 +85,14 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       return {
         erro: 'campo_obrigatorio_ausente',
         mensagem:
-          'proposta é hipótese: evidencia e metrica_esperada são obrigatórias (D15, nota de aprendizado)',
+          'a proposal is a hypothesis: evidencia and metrica_esperada are required (D15, learning note)',
       };
     }
 
     const rawOperations = body.operacoes;
     if (!Array.isArray(rawOperations) || rawOperations.length === 0) {
       reply.code(400);
-      return { erro: 'operacoes_invalidas', mensagem: 'operacoes precisa ser uma lista não vazia' };
+      return { erro: 'operacoes_invalidas', mensagem: 'operacoes has to be a non-empty list' };
     }
 
     const problems = rawOperations
@@ -132,7 +132,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'proposta_nao_pendente',
-        mensagem: `só proposta pendente pode ser aprovada; esta está "${proposal.status}"`,
+        mensagem: `only a pending proposal can be approved; this one is "${proposal.status}"`,
         status: proposal.status,
       };
     }
@@ -160,7 +160,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       return {
         erro: 'motivo_obrigatorio',
         mensagem:
-          'rejeitar exige motivo: proposta rejeitada é conhecimento negativo para o topógrafo, e sem o porquê não é',
+          'rejecting requires a reason: a rejected proposal is negative knowledge for the surveyor, and without the why it is not',
       };
     }
 
@@ -168,7 +168,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'proposta_nao_pendente',
-        mensagem: `só proposta pendente pode ser rejeitada; esta está "${proposal.status}"`,
+        mensagem: `only a pending proposal can be rejected; this one is "${proposal.status}"`,
         status: proposal.status,
       };
     }
@@ -191,7 +191,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'proposta_nao_aprovada',
-        mensagem: `só proposta aprovada pode ser aplicada; esta está "${proposal.status}"`,
+        mensagem: `only an approved proposal can be applied; this one is "${proposal.status}"`,
         status: proposal.status,
       };
     }
@@ -206,7 +206,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'proposta_desatualizada',
-        mensagem: 'a base mudou desde que a proposta foi escrita; refazer o diff é do topógrafo',
+        mensagem: 'the base moved since the proposal was written; redoing the diff is up to the surveyor',
         versao_alvo: proposal.versao_alvo,
         versao_corrente: graph.versao_corrente_id,
       };
@@ -252,7 +252,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       // known version is not a new version, it is a proposal with no effect.
       const noEffect = {
         erro: 'versao_sem_efeito',
-        mensagem: 'as operações produzem um snapshot que já existe na linhagem',
+        mensagem: 'the operations produce a snapshot that already exists in the lineage',
         versao_existente: versionId,
       };
       reply.code(422);
@@ -284,7 +284,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'motivo_obrigatorio',
-        mensagem: 'reverter exige motivo: é a evidência cruzada com a telemetria da versão abandonada',
+        mensagem: 'reverting requires a reason: it is the evidence crossed with the telemetry of the abandoned version',
       };
     }
 
@@ -292,7 +292,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'proposta_nao_aplicada',
-        mensagem: `só proposta aplicada pode ser revertida; esta está "${proposal.status}"`,
+        mensagem: `only an applied proposal can be reverted; this one is "${proposal.status}"`,
         status: proposal.status,
       };
     }
@@ -310,7 +310,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'proposta_desatualizada',
-        mensagem: 'a versão aplicada por esta proposta não é mais a corrente',
+        mensagem: 'the version this proposal applied is no longer the current one',
         versao_aplicada_id: proposal.versao_aplicada_id,
         versao_corrente: graph.versao_corrente_id,
       };
@@ -341,7 +341,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       return {
         erro: 'campo_obrigatorio_ausente',
         mensagem:
-          'fechar o experimento exige execucao_id (inteiro) e depois (número): quem calcula a métrica é quem chama',
+          'closing the experiment requires execucao_id (an integer) and depois (a number): whoever computes the metric is whoever calls',
       };
     }
 
@@ -349,7 +349,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'proposta_nao_aplicada',
-        mensagem: `só proposta aplicada tem experimento a fechar; esta está "${proposal.status}"`,
+        mensagem: `only an applied proposal has an experiment to close; this one is "${proposal.status}"`,
         status: proposal.status,
       };
     }
@@ -360,7 +360,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'proposta_ja_avaliada',
-        mensagem: 'o resultado desta hipótese já foi gravado pela primeira execução seguinte',
+        mensagem: 'the outcome of this hypothesis was already recorded by the first next execution',
         resultado: proposal.resultado,
       };
     }
@@ -374,7 +374,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       return {
         erro: 'metrica_esperada_invalida',
         mensagem:
-          'metrica_esperada precisa ter a forma {nome, direcao: "sobe"|"cai", de, para} para haver veredito',
+          'metrica_esperada has to have the shape {nome, direcao: "sobe"|"cai", de, para} for there to be a verdict',
         detalhes: validateExpectedMetric(metric).map((problem) => problem.message),
       };
     }
@@ -393,7 +393,7 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(422);
       return {
         erro: 'execucao_sem_evidencia',
-        mensagem: 'nenhum trabalho desta execução rodou sob a versão que a proposta aplicou',
+        mensagem: 'no work item of this execution ran under the version the proposal applied',
         execucao_id: executionId,
         versao_aplicada_id: appliedVersion,
       };

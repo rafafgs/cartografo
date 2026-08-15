@@ -146,7 +146,7 @@ export function registerAuth(app: FastifyInstance, db: Database): void {
       await reply.code(401).send({
         erro: MISSING_CREDENTIAL,
         mensagem:
-          'esta rota exige `Authorization: Bearer <token>` — use o token impresso na partida do control plane (CARTOGRAFO_TOKEN, ou --token no comando)',
+          'this route requires `Authorization: Bearer <token>` — use the token printed when the control plane starts (CARTOGRAFO_TOKEN, or --token on the command)',
       });
       return;
     }
@@ -156,7 +156,7 @@ export function registerAuth(app: FastifyInstance, db: Database): void {
       await reply.code(401).send({
         erro: INVALID_CREDENTIAL,
         mensagem:
-          'a credencial apresentada não vale mais (desconhecida ou revogada) — peça outra a quem administra este control plane',
+          'the credential presented is no longer valid (unknown or revoked) — ask whoever administers this control plane for another one',
       });
       return;
     }
@@ -168,7 +168,7 @@ export function registerAuth(app: FastifyInstance, db: Database): void {
     if (credential.tipo === 'runner' && !RUNNER_SURFACE.has(route)) {
       await reply.code(403).send(
         outOfScope(
-          `credencial de runner alcança apenas ${[...RUNNER_SURFACE].join(', ')} — "${route}" exige credencial de usuário`,
+          `a runner credential reaches only ${[...RUNNER_SURFACE].join(', ')} — "${route}" requires a user credential`,
         ),
       );
       return;

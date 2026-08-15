@@ -54,14 +54,14 @@ export function registerRunners(app: FastifyInstance, db: Database): void {
       reply.code(400);
       return {
         erro: 'id_obrigatorio',
-        mensagem: 'runner declara a própria identidade: id precisa ser uma string não vazia',
+        mensagem: 'a runner declares its own identity: id has to be a non-empty string',
       };
     }
 
     const name = body.nome;
     if (name !== undefined && name !== null && typeof name !== 'string') {
       reply.code(400);
-      return { erro: 'nome_invalido', mensagem: 'nome, quando enviado, precisa ser string' };
+      return { erro: 'nome_invalido', mensagem: 'nome, when sent, has to be a string' };
     }
 
     const { runner, created } = registerRunner(db, { id, nome: name ?? null });

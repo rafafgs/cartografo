@@ -32,6 +32,11 @@
  * the four rule-name values — are frozen here. Everything else in the file is
  * English, like the rest of the repository from D18 onward.
  *
+ * The message text under `mensagem` is NOT part of that freeze, and moved to
+ * English with t180. It moved in lockstep with the port, because it has to:
+ * the parity test compares the two reports whole, so a sentence rewritten on
+ * one side and not the other fails here, loudly, on the next run.
+ *
  * CLI use: `node scripts/validar-grafo.mjs schema/exemplos/*.json`
  */
 
@@ -78,24 +83,24 @@ export function validarEstrutura(doc) {
     erros.push({ codigo: code, mensagem: message, alvo: target });
 
   if (!isObject(doc)) {
-    annotate('documento_invalido', 'documento de grafo precisa ser um objeto JSON');
+    annotate('documento_invalido', 'graph document has to be a JSON object');
     return { valido: false, erros };
   }
 
   for (const field of REQUIRED_DOC_FIELDS) {
     if (doc[field] === undefined || doc[field] === null) {
-      annotate('campo_obrigatorio_ausente', `campo obrigatório ausente no documento: "${field}"`, field);
+      annotate('campo_obrigatorio_ausente', `required field missing from the document: "${field}"`, field);
     }
   }
 
   if (doc.nos !== undefined && !Array.isArray(doc.nos)) {
-    annotate('campo_invalido', '"nos" precisa ser uma lista', 'nos');
+    annotate('campo_invalido', '"nos" has to be a list', 'nos');
   }
   if (doc.arestas !== undefined && !Array.isArray(doc.arestas)) {
-    annotate('campo_invalido', '"arestas" precisa ser uma lista', 'arestas');
+    annotate('campo_invalido', '"arestas" has to be a list', 'arestas');
   }
   if (doc.nos_finais !== undefined && !Array.isArray(doc.nos_finais)) {
-    annotate('campo_invalido', '"nos_finais" precisa ser uma lista', 'nos_finais');
+    annotate('campo_invalido', '"nos_finais" has to be a list', 'nos_finais');
   }
 
   const nodes = Array.isArray(doc.nos) ? doc.nos : [];
@@ -104,14 +109,14 @@ export function validarEstrutura(doc) {
 
   nodes.forEach((node, index) => {
     if (!isObject(node)) {
-      annotate('no_invalido', `o nó na posição ${index} precisa ser um objeto`, index);
+      annotate('no_invalido', `the node at position ${index} has to be an object`, index);
       return;
     }
     for (const field of REQUIRED_NODE_FIELDS) {
       if (node[field] === undefined || node[field] === null) {
         annotate(
           'campo_obrigatorio_ausente',
-          `campo obrigatório ausente no nó "${node.id ?? `#${index}`}": "${field}"`,
+          `required field missing from node "${node.id ?? `#${index}`}": "${field}"`,
           node.id ?? index,
         );
       }
@@ -123,7 +128,7 @@ export function validarEstrutura(doc) {
       if (node.id !== undefined && node.id !== null) {
         annotate(
           'id_invalido',
-          `o id do nó na posição ${index} precisa ser um texto preenchido: ${JSON.stringify(node.id)}`,
+          `the id of the node at position ${index} has to be a filled text: ${JSON.stringify(node.id)}`,
           index,
         );
       }
@@ -131,7 +136,7 @@ export function validarEstrutura(doc) {
     }
     if (knownIds.has(node.id)) {
       if (!reportedIds.has(node.id)) {
-        annotate('id_no_duplicado', `id de nó repetido no documento: "${node.id}"`, node.id);
+        annotate('id_no_duplicado', `duplicate node id in the document: "${node.id}"`, node.id);
         reportedIds.add(node.id);
       }
       return;
@@ -142,14 +147,14 @@ export function validarEstrutura(doc) {
   const edges = Array.isArray(doc.arestas) ? doc.arestas : [];
   edges.forEach((edge, index) => {
     if (!isObject(edge)) {
-      annotate('aresta_invalida', `a aresta na posição ${index} precisa ser um objeto`, index);
+      annotate('aresta_invalida', `the edge at position ${index} has to be an object`, index);
       return;
     }
     for (const field of REQUIRED_EDGE_FIELDS) {
       if (edge[field] === undefined || edge[field] === null) {
         annotate(
           'campo_obrigatorio_ausente',
-          `campo obrigatório ausente na aresta #${index}: "${field}"`,
+          `required field missing from edge #${index}: "${field}"`,
           { de: edge.de ?? null, para: edge.para ?? null },
         );
       }
@@ -160,7 +165,7 @@ export function validarEstrutura(doc) {
         if (target !== undefined && target !== null) {
           annotate(
             'id_invalido',
-            `a aresta #${index} precisa de um texto preenchido em "${side}": ${JSON.stringify(target)}`,
+            `edge #${index} needs a filled text in "${side}": ${JSON.stringify(target)}`,
             { de: edge.de ?? null, para: edge.para ?? null },
           );
         }
@@ -169,7 +174,7 @@ export function validarEstrutura(doc) {
       if (!knownIds.has(target)) {
         annotate(
           'aresta_no_inexistente',
-          `a aresta #${index} referencia em "${side}" um nó que não existe: "${target}"`,
+          `edge #${index} references in "${side}" a node that does not exist: "${target}"`,
           { de: edge.de ?? null, para: edge.para ?? null },
         );
       }
@@ -183,17 +188,17 @@ export function validarEstrutura(doc) {
     if (doc.no_inicial !== undefined && doc.no_inicial !== null) {
       annotate(
         'id_invalido',
-        `no_inicial precisa ser um texto preenchido: ${JSON.stringify(doc.no_inicial)}`,
+        `no_inicial has to be a filled text: ${JSON.stringify(doc.no_inicial)}`,
         'no_inicial',
       );
     }
   } else if (!knownIds.has(doc.no_inicial)) {
-    annotate('no_inicial_inexistente', `no_inicial referencia um nó que não existe: "${doc.no_inicial}"`, doc.no_inicial);
+    annotate('no_inicial_inexistente', `no_inicial references a node that does not exist: "${doc.no_inicial}"`, doc.no_inicial);
   }
 
   const finals = Array.isArray(doc.nos_finais) ? doc.nos_finais : [];
   if (Array.isArray(doc.nos_finais) && finals.length === 0) {
-    annotate('campo_invalido', '"nos_finais" precisa listar pelo menos um nó', 'nos_finais');
+    annotate('campo_invalido', '"nos_finais" has to list at least one node', 'nos_finais');
   }
   // No required-fields loop covers an entry of the array, so here the absent
   // value (`null`, `undefined`) is an invalid id like any other.
@@ -201,13 +206,13 @@ export function validarEstrutura(doc) {
     if (!isFilledText(finalId)) {
       annotate(
         'id_invalido',
-        `o id de nos_finais na posição ${index} precisa ser um texto preenchido: ${JSON.stringify(finalId)}`,
+        `the id in nos_finais at position ${index} has to be a filled text: ${JSON.stringify(finalId)}`,
         index,
       );
       return;
     }
     if (!knownIds.has(finalId)) {
-      annotate('no_final_inexistente', `nos_finais referencia um nó que não existe: "${finalId}"`, finalId);
+      annotate('no_final_inexistente', `nos_finais references a node that does not exist: "${finalId}"`, finalId);
     }
   });
 

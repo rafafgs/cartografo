@@ -260,6 +260,18 @@ test('AT9 — propose-skill opens a blocking human gate, never auto-approvable',
   assert.ok(pending.contexto !== null, 'whoever answers has to see the manifest');
   assert.match(pending.contexto, /"id": "feature-dev"/, 'the manifest goes in pretty-printed');
   assert.match(pending.contexto, /permissoes/, 'the checklist covers what the reviewer signs');
+
+  // t180 — the question and the checklist are what a person READS, so they are
+  // English; the manifest keys quoted inside them are the format's own (FR2).
+  assert.equal(pending.pergunta, 'Approve importing skill feature-dev?');
+  assert.ok(
+    pending.contexto.includes('What you sign off on by approving'),
+    `the checklist header is English; came:\n${pending.contexto}`,
+  );
+  assert.ok(
+    pending.contexto.includes('To APPROVE: answer with the final manifest in JSON'),
+    'so is the instruction that closes it',
+  );
 });
 
 test('AT10 — scan, complete, propose, approve, register: the whole D4 gate', { timeout: 300_000 }, async (t) => {

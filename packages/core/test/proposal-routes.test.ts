@@ -1115,3 +1115,26 @@ test('t165 AT6 — the read routes expose motivo_rejeicao', async (t) => {
   assert.equal((await fetch(`${address}/v1/proposals/999`)).status, 404);
   assert.equal((await fetch(`${address}/v1/proposals/nao-numerico`)).status, 404);
 });
+
+test('t180 — the human gate refuses in English, with the frozen status quoted', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+  const proposal = await createProposal(address, graph.id, version.id, passingOperations());
+
+  const noReason = await post(address, `/v1/proposals/${proposal.id}/reject`, {});
+  assert.equal(noReason.status, 400);
+  const refused = await jsonBody<{ erro: string; mensagem: string }>(noReason);
+  assert.equal(refused.erro, 'motivo_obrigatorio', 'the code is frozen (FR2)');
+  assert.equal(
+    refused.mensagem,
+    'rejecting requires a reason: a rejected proposal is negative knowledge for the surveyor, and without the why it is not',
+  );
+
+  await approve(address, proposal.id);
+  const twice = await post(address, `/v1/proposals/${proposal.id}/approve`, {});
+  assert.equal(twice.status, 409);
+  const conflict = await jsonBody<{ erro: string; mensagem: string; status: string }>(twice);
+  assert.equal(conflict.erro, 'proposta_nao_pendente');
+  assert.equal(conflict.status, 'aprovada', 'the status value is stored data, never translated (FR2)');
+  assert.equal(conflict.mensagem, 'only a pending proposal can be approved; this one is "aprovada"');
+});

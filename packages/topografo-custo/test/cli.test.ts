@@ -304,3 +304,63 @@ test('AT9 — avaliar toca só as quatro rotas do contrato, e nunca /aplicar', a
     'aplicar proposta é decisão humana no portão, nunca do topógrafo',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t180 — a saída do comando é inglês; o subcomando e as opções continuam      */
+/* como estão, porque é o que uma pessoa digita.                               */
+/* -------------------------------------------------------------------------- */
+
+test('t180 — --help imprime o uso em inglês, ainda nomeando avaliar e as opções', async () => {
+  const { executarCli, USO } = await carregarCli();
+
+  const impresso: string[] = [];
+  const codigo = await executarCli(['--help'], { escrever: (texto) => impresso.push(texto) });
+
+  assert.equal(codigo, 0);
+  assert.equal(impresso.join(''), `${USO}\n`);
+  assert.match(USO, /^usage: topografo-custo avaliar --url <url> --execucao <id> \[options\]$/m);
+  assert.match(USO, /^subcommands:$/m);
+  assert.match(USO, /^options:$/m);
+  assert.match(USO, /control plane to query \(required\)/);
+  assert.match(USO, /With no ceiling declared, the ceiling policy does not run/);
+  // O que a pessoa digita não muda (D18 deixa a superfície publicada de fora).
+  assert.match(USO, new RegExp('--teto-tokens <n>'));
+  assert.match(USO, new RegExp('--tier-minimo-nos <n>'));
+});
+
+test('t180 — os erros de uso de avaliar são inglês', async () => {
+  const { executarCli } = await carregarCli();
+
+  assert.equal(
+    await stderrDe(() => executarCli(['avaliar', '--execucao', '7'], { escrever: () => undefined })),
+    'topografo-custo: avaliar needs --url\ntopografo-custo: run `topografo-custo --help` for the usage\n',
+  );
+
+  assert.equal(
+    await stderrDe(() =>
+      executarCli(['avaliar', '--url', 'http://127.0.0.1:1'], { escrever: () => undefined }),
+    ),
+    'topografo-custo: avaliar needs --execucao\ntopografo-custo: run `topografo-custo --help` for the usage\n',
+  );
+});
+
+/**
+ * Roda algo e devolve o que foi para stderr.
+ *
+ * `executarCli` nunca propaga `ErroDeUso` — ele imprime e devolve 2 —, então o
+ * texto que importa é exatamente o que uma pessoa vê no terminal.
+ */
+async function stderrDe(acao: () => Promise<number>): Promise<string> {
+  const pedacos: string[] = [];
+  const original = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((texto: string) => {
+    pedacos.push(String(texto));
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    assert.equal(await acao(), 2, 'erro de uso sai 2, como em `cartografo`');
+  } finally {
+    process.stderr.write = original;
+  }
+  return pedacos.join('');
+}

@@ -327,3 +327,32 @@ test('t127 — the old Portuguese graph paths no longer exist', async (t) => {
     404,
   );
 });
+
+test('t180 — the register guards refuse in English, quoting the class', async (t) => {
+  const address = await startApp(t);
+  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+
+  const first = await post(address, '/v1/graphs', document);
+  assert.equal(first.status, 201, JSON.stringify(await jsonBody(first)));
+
+  const again = await post(address, '/v1/graphs', document);
+  assert.equal(again.status, 409);
+  const taken = await jsonBody<{ erro: string; mensagem: string }>(again);
+  assert.equal(taken.erro, 'classe_ja_registrada', 'the code is frozen (FR2)');
+  assert.equal(
+    taken.mensagem,
+    `class "${String(document.classe)}" already has a base graph; a new version over an existing lineage is the proposal flow`,
+  );
+
+  const asVariant = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+  asVariant.classe = 'outra-classe';
+  asVariant.linhagem = { tipo: 'variante', base_classe: String(document.classe) };
+  const refused = await post(address, '/v1/graphs', asVariant);
+  assert.equal(refused.status, 400);
+  const notBase = await jsonBody<{ erro: string; mensagem: string }>(refused);
+  assert.equal(notBase.erro, 'linhagem_nao_base');
+  assert.equal(
+    notBase.mensagem,
+    'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
+  );
+});

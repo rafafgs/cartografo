@@ -814,3 +814,25 @@ test('AT12 — the cap is respected under simultaneous calls', async (t) => {
     'no job received two leases in the race',
   );
 });
+
+test('t180 — a lease of another runner is refused in English, quoting both ids', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a', 'runner-b');
+  const tokenA = await runnerToken(db, 'runner-a');
+  const tokenB = await runnerToken(db, 'runner-b');
+
+  const granted = await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1 }, tokenA);
+  assert.equal(granted.status, 201);
+  const { lease } = (await granted.json()) as { lease: { id: number } };
+
+  for (const action of ['heartbeats', 'releases'] as const) {
+    const foreign = await leaseAction(address, lease.id, action, tokenB);
+    assert.equal(foreign.status, 403);
+    const body = (await foreign.json()) as { erro: string; mensagem: string };
+    assert.equal(body.erro, 'credencial_fora_de_escopo', 'the code is frozen (FR2)');
+    assert.equal(
+      body.mensagem,
+      `lease ${lease.id} belongs to runner "runner-a"; the credential presented belongs to runner "runner-b"`,
+    );
+  }
+});

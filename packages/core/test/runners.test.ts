@@ -451,3 +451,27 @@ test('t164 AT — GET /v1/runners answers the fleet to an operator and 403 to a 
     'a live runner credential outside its own four routes is out of scope, not invalid',
   );
 });
+
+test('t180 — the two registration refusals are English', async (t) => {
+  const { address } = await start(t);
+
+  const noId = await fetch(`${address}/v1/runners`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(noId.status, 400);
+  const missing = (await noId.json()) as { erro: string; mensagem: string };
+  assert.equal(missing.erro, 'id_obrigatorio', 'the code is frozen (FR2)');
+  assert.equal(missing.mensagem, 'a runner declares its own identity: id has to be a non-empty string');
+
+  const badName = await fetch(`${address}/v1/runners`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: 'runner-a', nome: 7 }),
+  });
+  assert.equal(badName.status, 400);
+  const wrong = (await badName.json()) as { erro: string; mensagem: string };
+  assert.equal(wrong.erro, 'nome_invalido');
+  assert.equal(wrong.mensagem, 'nome, when sent, has to be a string');
+});

@@ -295,3 +295,28 @@ test('AT2 — the two valid graphs keep passing both validations', async () => {
     assert.deepEqual(report.soundness.violacoes, []);
   }
 });
+
+/**
+ * t180 — the report's PROSE is English; its keys, codes and rule names are not.
+ *
+ * The parity of AT1 is what makes this a two-file claim: the same sentence has
+ * to come out of `scripts/validar-grafo.mjs`, or `deepEqual` says so above.
+ */
+test('t180 — a structure message is English, and the frozen vocabulary around it is not', async () => {
+  const ported = await loadDomainGraph();
+  const reference = await loadReference();
+
+  const document = minimalGraph();
+  document.nos = 'nem lista nem nada';
+  const report = ported.validateStructure(document);
+
+  assert.deepEqual(report, reference.validarEstrutura(document), 'the two validators still agree');
+
+  const listProblem = report.erros.find((item) => item.alvo === 'nos');
+  assert.ok(listProblem !== undefined, 'a "nos" that is not a list has to be reported');
+  assert.equal(listProblem.codigo, 'campo_invalido', 'the machine-readable code is frozen (FR2)');
+  assert.equal(listProblem.mensagem, '"nos" has to be a list');
+
+  // The rule labels are data two validators compare on, not prose (FR2).
+  assert.equal(ported.RULES.REACHABLE, 'alcançável');
+});

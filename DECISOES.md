@@ -153,3 +153,11 @@ antes desta decisão é regularizado por um ticket de refactor dedicado.
 Fica de fora, como decisão separada ainda não tomada: as CHAVES dos formatos
 de dados em português (manifesto de skill, bundle de grafo) — mudar chave de
 formato é mudar especificação (t96–t99), não estilo de código.
+
+## D18 (2026-08-15) — Documentação funcional viva
+
+`docs/o-que-e-o-cartografo.md` explica o produto em linguagem simples e é
+documento vivo: toda entrega que mudar comportamento visível do produto
+atualiza o arquivo na mesma entrega (vale como critério de aceite implícito
+desses tickets). Marcações *(em construção)* saem conforme as features
+chegam.

@@ -174,6 +174,59 @@ congelar.
 
 Implementação: [`packages/core/src/dominio/operacoes.ts`](../../packages/core/src/dominio/operacoes.ts).
 
+### 3.1 O diff semântico entre dois documentos
+
+`applyOperations` é a metade de ida — documento mais operações dá documento
+novo. `diffGraphs(from, to)` é o par inverso: dois documentos completos dão a
+lista de operações que leva um ao outro, no mesmo vocabulário de cinco acima. É
+o motor que a promoção e a oferta (§6) precisavam para existir.
+
+Três fronteiras, todas deliberadas:
+
+- **Só `nos` e `arestas` entram no diff.** `classe`, `linhagem`, `metadata`,
+  `no_inicial` e `nos_finais` não têm operação que os expresse, e
+  `applyOperations` também nunca os toca. É por construção que uma proposta de
+  promoção/oferta preserva a identidade do **alvo**: base continua base,
+  variante continua variante.
+- **A comparação é canônica.** Nunca `===` nem `JSON.stringify` cru: ordem de
+  chave não significa nada em um documento de grafo (§2), então dois nós que
+  diferem só nela são o mesmo nó, e emitir operação aí seria inventar diff.
+- **Sem ponto de bifurcação, sem merge de três vias.** O motor enxerga os dois
+  snapshots que recebeu e nada mais.
+
+Como cada diferença vira operação:
+
+| Diferença | Operações |
+|---|---|
+| Nó só em `from` | `remover_no` |
+| Nó só em `to` | `adicionar_no` |
+| Mesmo `id`, muda só `papel`/`descricao`/`skill_ref`/`contrato` | um `alterar_campo_no` por campo, na ordem fixa `papel`, `descricao`, `skill_ref`, `contrato` |
+| Mesmo `id`, muda `tipo_no` ou qualquer chave fora dessas quatro | `remover_no` + `adicionar_no` (troca inteira) |
+| Aresta (`de`, `para`) só em um lado | `remover_aresta` / `adicionar_aresta` |
+| Mesmas pontas, muda `condicao` (ou qualquer chave) | `remover_aresta` + `adicionar_aresta` |
+
+Um campo alterável presente de um lado e ausente do outro também cai na troca
+inteira: `alterar_campo_no` grava a chave, nunca a apaga, e uma operação com
+`para: undefined` perde a chave ao ser serializada em `proposta.operacoes` e
+volta malformada.
+
+A ordem de emissão é fixa e faz parte do contrato: (a) remoções de nó em ordem
+de `from`, (b) adições de nó em ordem de `to`, (c) `alterar_campo_no` em ordem
+de `to`, (d) remoções de aresta em ordem de `from`, (e) adições de aresta em
+ordem de `to`. Remoção antes de adição é o que deixa a troca (remover e re-somar
+o mesmo `id`) aplicar sem esbarrar em `no_duplicado`; ler cada lista na ordem
+dela é o que faz o ida-e-volta reproduzir `to`, porque canonicalizar ordena
+chaves, não posições de lista.
+
+Daí sai a propriedade que o motor promete: `applyOperations(from,
+diffGraphs(from, to))` não estoura e devolve `nos`/`arestas` canonicamente
+iguais aos de `to`, e toda operação emitida passa por `validarOperacao` sem
+retoque.
+
+Implementação: [`packages/core/src/domain/diff.ts`](../../packages/core/src/domain/diff.ts)
+— arquivo nascido depois da D18, então o caminho aqui já é o real, em inglês,
+diferente dos demais links deste documento.
+
 ---
 
 ## 4. O portão de validação
@@ -245,7 +298,9 @@ Duas consequências que o desenho assume de propósito:
 - **O parentesco atravessa a linhagem.** `versao_pai` da primeira versão da
   variante é a versão corrente do **base**. O schema permite: `versao_pai` só
   referencia `grafo_versao(id)`, sem exigir o mesmo `grafo_id`. É esse ponteiro
-  que vai ancorar o diff entre linhagens quando promoção e oferta existirem.
+  que registra o ponto de bifurcação — a promoção e a oferta ainda **não** o
+  usam (o diff delas compara os dois snapshots correntes, §3.1), e é dele que
+  um merge de três vias vai sair quando existir (§7).
 - **O hash é global, não escopado por linhagem.** Duas bifurcações do mesmo base
   com a mesma origem (ou ambas sem origem) produziriam o mesmo documento, e
   `grafo_versao.grafo_id` é coluna única — uma linha não pode pertencer a duas
@@ -396,6 +451,8 @@ implementada foi renomeada para inglês pelo `t127` (D18), e é ela que vale:
 |---|---|---|
 | `POST` | `/v1/grafos` | Registra uma linhagem **base** nova a partir do documento completo (corpo cru, sem envelope). |
 | `POST` | `/v1/grafos/:id/fork` | Bifurca um base em uma **variante** (§5). Corpo: `{id, origem_proposta_id?}`. |
+| `POST` | `/v1/grafos/:id/promote` | `:id` é uma **variante**: abre proposta pendente **no base da classe** com `diffGraphs(base, variante)` (D13, §3.1). Corpo: `{evidencia, metrica_esperada}`. |
+| `POST` | `/v1/grafos/:id/offer` | `:id` é um **base**: abre proposta pendente **na variante nomeada** com `diffGraphs(variante, base)` (D13, §3.1). Corpo: `{variante_id, evidencia, metrica_esperada}`. |
 | `GET` | `/v1/classes` | Catálogo de classes registradas. |
 | `GET` | `/v1/grafos` | Todas as linhagens. |
 | `GET` | `/v1/grafos/:id` | Uma linhagem, com o ponteiro de versão corrente. |
@@ -419,8 +476,12 @@ Códigos de erro, por rota:
 | `id` da variante já é uma linhagem | `409` | `id_ja_registrado` |
 | `origem_proposta_id` não é inteiro positivo | `400` | `origem_proposta_id_invalido` |
 | `origem_proposta_id` sem proposta correspondente | `400` | `origem_proposta_desconhecida` |
-| Base sem `versao_corrente_id` (invariante defensivo) | `409` | `grafo_sem_versao_corrente` |
+| Base sem `versao_corrente_id`, dos dois lados de um diff também (invariante defensivo) | `409` | `grafo_sem_versao_corrente` |
 | Bifurcação que produz um snapshot já existente | `409` | `bifurcacao_sem_efeito` |
+| Promover o que não é variante, ou oferecer a variante de outra classe | `400` | `variante_invalida` |
+| Oferecer a partir do que não é linhagem `base` | `400` | `base_invalida` |
+| `variante_id` ausente ou vazio na oferta | `400` | `campo_obrigatorio_ausente` |
+| Promoção/oferta cujos dois snapshots já concordam em `nos`/`arestas` | `422` | `diff_sem_efeito` |
 | `versao_alvo` inexistente ou de outro grafo | `400` | `versao_alvo_desconhecida` |
 | Operação de tipo desconhecido, sem inversa ou malformada | `400` | `operacoes_invalidas` |
 | Aplicar/reverter proposta em estado errado | `409` | `proposta_nao_pendente` / `proposta_nao_aplicada` |
@@ -452,13 +513,15 @@ aberto.
 
 Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 
-- **Variantes** (D13) — **promover** o diff da variante para o base e
-  **oferecer** melhoria do base às variantes. Criar já existe:
-  `POST /v1/grafos/:id/fork` (§5); `POST /v1/grafos` continua recusando
-  `linhagem.tipo: "variante"` com `400`, porque variante nasce de fork, não de
-  registro. As duas pendentes dependem de um motor de diff semântico entre dois
-  documentos completos (o par inverso de `applyOperations`), que ainda não
-  existe.
+- **Merge de três vias entre variante e base** (D13). Promover e oferecer já
+  existem (`/promote` e `/offer`, §6), mas em cima de um diff entre os **dois
+  snapshots correntes** e nada mais: o motor não conhece o ponto de bifurcação.
+  A consequência é assimétrica e vale dizer em voz alta — uma oferta
+  **sobrescreve** os nós e arestas em que a variante já tinha divergido, em vez
+  de sobrepor só o incremento próprio do base. Enquanto isso não mudar, oferecer
+  a uma variante que andou por conta própria é decisão de quem aprova a
+  proposta, não detalhe de implementação. Um diff ancorado no ancestral
+  (`base-na-bifurcação` → `base-corrente`) é trabalho futuro real.
 - **Executar a inversa** de uma operação — aqui só a forma é validada (`t118`).
 - **Registrar versão manual nova sobre linhagem existente**, fora do fluxo de
   proposta.

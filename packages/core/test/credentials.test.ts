@@ -168,3 +168,54 @@ test('t124 AT — verifyToken resolves a live credential and refuses everything 
   );
   assert.equal(verifyToken(db, issued.token), null, 'a revoked credential no longer resolves');
 });
+
+test('t143 AT — revokeRunnerCredentials revokes every live credential of one runner and counts them', async (t) => {
+  const db = await openMigrated(t);
+  const { issueCredential, revokeRunnerCredentials, verifyToken } = await loadRepository();
+
+  // `credencial.runner_id` REFERENCES `runner(id)`: a credential of a runner
+  // that does not exist is refused by the schema itself, so the rows come first.
+  for (const id of ['runner-a', 'runner-b']) {
+    db.prepare('INSERT INTO runner (id, nome, registrado_em) VALUES (?, NULL, ?)').run(
+      id,
+      new Date().toISOString(),
+    );
+  }
+
+  // Two for the same runner, because the count has to be about the ROWS and not
+  // about the runner: FR1 mints at most one, but a hand-issued second one is
+  // exactly the case a sweep that stops at the first match would miss.
+  const first = issueCredential(db, { tipo: 'runner', runnerId: 'runner-a' });
+  const second = issueCredential(db, { tipo: 'runner', runnerId: 'runner-a' });
+  const other = issueCredential(db, { tipo: 'runner', runnerId: 'runner-b' });
+  const operator = issueCredential(db, { tipo: 'usuario' });
+
+  assert.equal(revokeRunnerCredentials(db, 'runner-a'), 2, 'it returns what it revoked');
+
+  assert.equal(verifyToken(db, first.token), null, 'a revoked runner token stops resolving');
+  assert.equal(verifyToken(db, second.token), null);
+  assert.ok(verifyToken(db, other.token) !== null, 'another runner keeps its credential');
+  assert.ok(
+    verifyToken(db, operator.token) !== null,
+    'revoking a runner cannot touch the operator credential — that is the whole point (FR4)',
+  );
+
+  for (const id of [first.id, second.id]) {
+    const row = db.prepare('SELECT revogada_em FROM credencial WHERE id = ?').get(id) as {
+      revogada_em: string | null;
+    };
+    assert.equal(typeof row.revogada_em, 'string');
+    assert.ok(!Number.isNaN(Date.parse(row.revogada_em ?? '')), 'revogada_em is an ISO instant');
+  }
+
+  assert.equal(
+    revokeRunnerCredentials(db, 'runner-a'),
+    0,
+    'revoking again is not an error: there was simply nothing live left to revoke',
+  );
+  assert.equal(
+    revokeRunnerCredentials(db, 'runner-que-nunca-existiu'),
+    0,
+    'an unknown runner has no live credential either; the repository does not judge that',
+  );
+});

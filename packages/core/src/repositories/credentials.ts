@@ -19,7 +19,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Database } from '../db/connection.ts';
 import { now } from './common.ts';
 
-/** What a credential is for. `runner` is issued at pairing — the next ticket. */
+/** What a credential is for. `runner` is issued at pairing (t143, FR1). */
 export type CredentialType = 'usuario' | 'runner';
 
 /** A credential, as the table holds it — the raw token is not part of it. */
@@ -99,6 +99,34 @@ export function verifyToken(db: Database, rawToken: string): CredentialRow | nul
     .get(hashToken(rawToken)) as CredentialRow | undefined;
 
   return found ?? null;
+}
+
+/**
+ * Revokes every live credential of one runner (t143, FR4).
+ *
+ * A date and not a `DELETE`: "when did it stop being valid" is an audit question
+ * a removed row cannot answer, and nothing in this system is ever deleted
+ * (D15/D2). `verifyToken` already treats revoked and never-existed identically,
+ * so the very next request of a killed token gets the same `401` as garbage.
+ *
+ * Plural by design, even though FR1 mints at most one per runner: what the
+ * operator asks for is "this machine stops having access", and a sweep that
+ * stopped at the first row would leave that promise depending on how many rows
+ * happen to be there.
+ *
+ * @param db Open database.
+ * @param runnerId Runner whose credentials die.
+ * @returns How many rows THIS call revoked — zero when there was nothing live,
+ *   which is a legitimate answer and not an error (the route is idempotent).
+ */
+export function revokeRunnerCredentials(db: Database, runnerId: string): number {
+  const result = db
+    .prepare(
+      "UPDATE credencial SET revogada_em = ? WHERE tipo = 'runner' AND runner_id = ? AND revogada_em IS NULL",
+    )
+    .run(now(), runnerId);
+
+  return result.changes;
 }
 
 /**

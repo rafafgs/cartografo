@@ -20,6 +20,18 @@
  *   once there is a concrete consumer (the screen, a project whose runners are
  *   all idle).
  *
+ * Since t143 these four verbs are the only ones a `runner`-type credential may
+ * reach (`auth.ts`), and inside them it may act **only as itself** (FR3): being
+ * on the allowlist says which routes, and the checks below say which runner.
+ * Without the second half the first is nearly worthless — one live runner token
+ * could grant leases as any other runner, kill their heartbeats and release
+ * their work, which is exactly the blast radius issuing one credential per
+ * runner exists to shrink.
+ *
+ * `runner_id` is compared and never inferred: the body keeps declaring it, so
+ * an operator credential (and the clock-injected assembly in the tests, which
+ * has no gate at all) behaves exactly as it did before.
+ *
  * `trabalho_id` is an opaque integer here: the `trabalho` table belongs to t102
  * and this route does not read it. Whoever filters eligibility is the
  * controller, through `GET /v1/jobs`.
@@ -31,6 +43,7 @@
 
 import type { FastifyInstance } from 'fastify';
 
+import { credentialRunnerId, outOfScope } from '../auth.ts';
 import type { Database } from '../db/connection.ts';
 import {
   getLease,
@@ -90,6 +103,17 @@ export function registerLeases(
       return { erro: 'corpo_invalido', campo: 'runner_id' };
     }
 
+    // Before the rest of the body is even looked at: whether the caller may
+    // speak for this runner is a question about the credential, and it does not
+    // become more or less true depending on the TTL being an integer (FR3).
+    const caller = credentialRunnerId(request);
+    if (caller !== null && caller !== runnerId) {
+      reply.code(403);
+      return outOfScope(
+        `credencial do runner "${caller}" não pede lease para "${runnerId}": ela vale por uma identidade só`,
+      );
+    }
+
     for (const field of ['projeto_id', 'trabalho_id', 'teto_runner', 'teto_projeto'] as const) {
       if (!isInteger(body[field])) {
         reply.code(400);
@@ -140,6 +164,14 @@ export function registerLeases(
       return { erro: 'lease_desconhecida', id: request.params.id };
     }
 
+    const beating = credentialRunnerId(request);
+    if (beating !== null && beating !== lease.runner_id) {
+      reply.code(403);
+      return outOfScope(
+        `lease ${lease.id} é do runner "${lease.runner_id}"; a credencial apresentada é do runner "${beating}"`,
+      );
+    }
+
     if (lease.status !== 'ativa') {
       reply.code(409);
       return {
@@ -167,6 +199,14 @@ export function registerLeases(
       return { erro: 'lease_desconhecida', id: request.params.id };
     }
 
+    const releasing = credentialRunnerId(request);
+    if (releasing !== null && releasing !== lease.runner_id) {
+      reply.code(403);
+      return outOfScope(
+        `lease ${lease.id} é do runner "${lease.runner_id}"; a credencial apresentada é do runner "${releasing}"`,
+      );
+    }
+
     if (lease.status !== 'ativa') {
       reply.code(409);
       return {
@@ -192,7 +232,20 @@ export function registerLeases(
       filters.projeto_id = parsed;
     }
 
-    if (runner !== undefined) filters.runner_id = runner;
+    // A runner listing leases lists its OWN: an omitted filter is filled in
+    // silently (there is only one answer it could have wanted), and naming
+    // somebody else is refused instead of quietly rewritten — a listing that
+    // answers a question different from the one asked is worse than a 403.
+    const looking = credentialRunnerId(request);
+    if (looking !== null && runner !== undefined && runner !== looking) {
+      reply.code(403);
+      return outOfScope(
+        `credencial do runner "${looking}" não lista leases de "${runner}": ela vale por uma identidade só`,
+      );
+    }
+
+    if (looking !== null) filters.runner_id = looking;
+    else if (runner !== undefined) filters.runner_id = runner;
 
     if (status !== undefined) {
       if (!VALID_STATUSES.includes(status as LeaseStatus)) {

@@ -19,10 +19,19 @@
  * bodies are the `erro`/`mensagem` shape the rest of the API answers with, so
  * the screen and the CLI have one failure format, not two (t127, FR8).
  *
- * What this hook does NOT do is authorization: a valid token opens the whole
- * `/v1` surface. Scoping a credential to a subset of routes is what the runner
- * pairing ticket needs, and it is deferred there together with the runner
- * credential itself.
+ * Since t143 the hook also authorizes, and the second check is a different
+ * question from the first: authentication asks "does this token resolve", and
+ * authorization asks "may THIS credential be here". A `usuario` credential is
+ * unrestricted, as it always was; a `runner` credential opens only the five
+ * routes a runner really calls (FR2) and is refused everywhere else with
+ * `credencial_fora_de_escopo` (403) — a third refusal, deliberately distinct
+ * from the two 401s, because "your token is dead" and "your token is alive and
+ * has no business here" send whoever reads it to opposite places.
+ *
+ * The allowlist is a literal list of `METHOD /v1/route`, not a prefix rule, and
+ * that is the point: a route family born tomorrow under `/v1/leases` is denied
+ * to runners until somebody writes it down here. The failure mode of a prefix
+ * is silent inclusion; the failure mode of a list is a 403 somebody notices.
  */
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -36,8 +45,32 @@ export const MISSING_CREDENTIAL = 'credencial_ausente';
 /** Error code of a request whose credential does not resolve. */
 export const INVALID_CREDENTIAL = 'credencial_invalida';
 
+/** Error code of a live credential presented outside the routes it may use. */
+export const OUT_OF_SCOPE_CREDENTIAL = 'credencial_fora_de_escopo';
+
 /** The `Authorization` scheme this API speaks, and the only one. */
 const SCHEME = 'bearer';
+
+/**
+ * The whole surface a `runner`-type credential may reach (t143, FR2).
+ *
+ * It is exactly what `ClienteControle` calls to dispatch
+ * (`docs/spec/runner-e-controller.md` §5) minus `POST /v1/runners`: pairing is
+ * the operator provisioning a machine, and a runner that could pair would be
+ * able to mint itself a second identity — with a credential of its own — the
+ * moment the first one is revoked.
+ *
+ * Everything else is denied by omission, including the routes a runner might
+ * plausibly want one day (the event stream, sessions, input requests): widening
+ * this list is a decision somebody takes on purpose, in one place.
+ */
+const RUNNER_SURFACE: ReadonlySet<string> = new Set([
+  'GET /v1/jobs',
+  'POST /v1/leases',
+  'POST /v1/leases/:id/heartbeats',
+  'POST /v1/leases/:id/releases',
+  'GET /v1/leases',
+]);
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -71,6 +104,36 @@ export function bearerToken(header: string | undefined): string | null {
 }
 
 /**
+ * The runner a request speaks for, when it speaks for one (t143, FR3).
+ *
+ * `null` covers two different situations on purpose, and both mean the same
+ * thing to a route: an operator credential (which is nobody's runner) and a
+ * scope with no gate at all — which is how `test/leases.test.ts` assembles the
+ * lease routes with a controlled clock. A route asking this question wants to
+ * know whether to narrow itself, and in both cases the answer is no.
+ *
+ * @param request Request already past the gate.
+ * @returns The `runner_id` of a `runner`-type credential, or `null`.
+ */
+export function credentialRunnerId(request: FastifyRequest): string | null {
+  const credential = request.credential;
+  return credential !== undefined && credential.tipo === 'runner' ? credential.runner_id : null;
+}
+
+/**
+ * Body of the refusal a route sends when a runner reaches for another runner.
+ *
+ * It lives here, next to the hook that answers the same code for a route out of
+ * scope, so the two halves of FR2/FR3 cannot drift into two vocabularies.
+ *
+ * @param detail What was out of scope, in one clause.
+ * @returns The `erro`/`mensagem` body, ready to return.
+ */
+export function outOfScope(detail: string): { erro: string; mensagem: string } {
+  return { erro: OUT_OF_SCOPE_CREDENTIAL, mensagem: detail };
+}
+
+/**
  * Registers the gate on a scope — every route born inside it needs a credential.
  *
  * @param app The `/v1` scope, before any route is registered on it.
@@ -95,6 +158,19 @@ export function registerAuth(app: FastifyInstance, db: Database): void {
         mensagem:
           'a credencial apresentada não vale mais (desconhecida ou revogada) — peça outra a quem administra este control plane',
       });
+      return;
+    }
+
+    // Authorization (t143, FR2). `routeOptions.url` is the route's PATTERN —
+    // `/v1/leases/:id/heartbeats` — and not the concrete path, which is what
+    // makes the list above finite instead of one entry per lease id.
+    const route = `${request.method.toUpperCase()} ${request.routeOptions.url ?? request.url}`;
+    if (credential.tipo === 'runner' && !RUNNER_SURFACE.has(route)) {
+      await reply.code(403).send(
+        outOfScope(
+          `credencial de runner alcança apenas ${[...RUNNER_SURFACE].join(', ')} — "${route}" exige credencial de usuário`,
+        ),
+      );
       return;
     }
 

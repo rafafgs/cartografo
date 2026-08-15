@@ -300,9 +300,15 @@ não termina, então esse caminho está listado na §10.
 
 O que **não** existe nesta versão: entrega garantida (se ninguém estiver
 conectado, ninguém recebe — o log é que é a fonte da verdade, e ele continua
-lá), limite de conexões simultâneas, e escopo de credencial — o token que abre
-o stream é o mesmo que abre toda a `/v1` (`t124`), não um credenciamento só de
-leitura.
+lá), limite de conexões simultâneas, e credencial só de leitura.
+
+Escopo de credencial passou a existir na `t143`, e não é este: a credencial de
+runner, emitida no pareamento, alcança uma lista literal de cinco rotas de
+despacho ([runner-e-controller.md](runner-e-controller.md) §5) — e esta rota não
+está nela. Um runner apresentando o token dele aqui toma `403
+credencial_fora_de_escopo`. Quem abre o stream continua sendo a credencial de
+operador, a mesma que abre toda a `/v1`; um credenciamento de leitura, que
+distinguisse "ler o log" de "escrever no control plane", segue sem existir.
 
 ---
 

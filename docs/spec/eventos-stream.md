@@ -308,10 +308,11 @@ leitura.
 
 ## 10. O que ainda não existe
 
-**Webhooks assinados, com retentativa** — o transporte *push*, para quem não
-quer manter uma conexão aberta. É ficha dependente desta, e é o que falta para
-fechar o ponto de extensão nº 5. Até lá, o stream é o transporte oficial para
-fora.
+O transporte *push* passou a existir: **webhooks assinados, com retentativa**
+([`docs/spec/webhooks-eventos.md`](webhooks-eventos.md), `t142`), para quem não
+quer manter uma conexão aberta. Com ele, o ponto de extensão nº 5 está fechado
+pelas duas metades — este documento é a de *pull*. A §1 daquele compara as duas
+e diz quando cada uma serve.
 
 **O stream atravessando a tela** — o repasse `/v1/*` de `packages/tela` lê a
 resposta inteira antes de devolvê-la, o que serve para JSON e não serve para um

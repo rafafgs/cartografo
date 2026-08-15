@@ -492,12 +492,15 @@ Quatro decisões do reducer que são, na prática, decisões do formato:
 - **Eventos de proposta/topógrafo** (`proposta.*`) — o topógrafo está fora da
   PoC (D6, D16). Ficha da onda 2.
 - **`service_class`** (urgência) — D16 não a pede na PoC.
-- **Webhooks assinados/com retry** para clientes externos — o *stream* saiu
-  daqui: `GET /v1/events/stream` entrega este mesmo envelope por SSE, com
-  filtro por `projeto_id`/`tipo` e reconexão pelo `id`
-  ([`docs/spec/eventos-stream.md`](../../docs/spec/eventos-stream.md), t123).
-  O que continua não existindo é o transporte *push*, com assinatura e
-  retentativa — ficha dependente daquela.
+- **Transporte para fora** — saiu daqui, pelas duas metades, e nenhuma delas
+  mexeu neste envelope: `GET /v1/events/stream` entrega este mesmo objeto por
+  SSE, com filtro por `projeto_id`/`tipo` e reconexão pelo `id`
+  ([`docs/spec/eventos-stream.md`](../../docs/spec/eventos-stream.md), t123), e
+  os webhooks assinados o entregam por `POST`, com HMAC-SHA256 do corpo cru e
+  retentativa com backoff
+  ([`docs/spec/webhooks-eventos.md`](../../docs/spec/webhooks-eventos.md),
+  t142). Os dois são consumidores do mesmo `listEvents`, e nenhum deles escreve
+  no log.
 - **Tabela SQL e endpoints** que gravem isto de verdade — D6.
 - **Hash/versão do próprio schema de eventos** — isto é a v1; congela só
   depois de dois consumidores reais (regra dos dois consumidores). Até lá,

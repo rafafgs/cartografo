@@ -41,10 +41,14 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
+import { CodexAdapter } from '../../src/engine/codex-adapter.ts';
+import { buildCommand as buildCodexCommand } from '../../src/engine/codex-command.ts';
 import { buildCommand } from '../../src/engine/command.ts';
+import { decodeClaudeCodeSessionText } from '../../src/dispatch/session-text.ts';
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
 import type * as DispatchModule from '../../src/dispatch/dispatch-claude-code.ts';
+import type * as SessionTextModule from '../../src/dispatch/session-text.ts';
 
 import { authorizeGlobalFetch } from '../authorized-fetch.ts';
 
@@ -54,6 +58,7 @@ const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
 const DISPATCH_MODULE = 'src/dispatch/dispatch-claude-code.ts';
+const SESSION_TEXT_MODULE = 'src/dispatch/session-text.ts';
 
 /** Deadline for anything this test waits on. Wide on purpose. */
 const DEADLINE_MS = 30_000;
@@ -369,7 +374,7 @@ test('t106 — question, block, answer, unblock and re-dispatch, over real HTTP'
 
   const dispatchOptions = {
     urlBase: baseUrl,
-    adapter,
+    engines: claudeOnly(adapter),
     workingDir: workDir,
     timeoutSeconds: 60,
   };
@@ -571,7 +576,7 @@ test('t125 — a denied tool becomes one permission-denial call, and does not fa
 
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
-    adapter,
+    engines: claudeOnly(adapter),
     workingDir: workDir,
     timeoutSeconds: 60,
     doFetch,
@@ -618,6 +623,15 @@ function fakeAdapter(): ClaudeCodeAdapter {
 }
 
 /**
+ * The one-engine registry, which is what every test that is NOT about routing
+ * passes — and what production passed implicitly until t141 replaced the single
+ * `adapter` with a table.
+ */
+function claudeOnly(adapter: ClaudeCodeAdapter): Record<string, DispatchModule.EngineRoute> {
+  return { 'claude-code': { adapter, decodeSessionText: decodeClaudeCodeSessionText } };
+}
+
+/**
  * Boots a control plane for a t147 test and hands back what it announced.
  *
  * No `authorizeGlobalFetch`, and that absence is the test device: with the
@@ -659,7 +673,7 @@ test('t147 — with no token, the dispatch is refused 401 on its very first call
   // Everything a working dispatch gets, minus the credential.
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
-    adapter: fakeAdapter(),
+    engines: claudeOnly(fakeAdapter()),
     workingDir: workDir,
     timeoutSeconds: 60,
     envOverrides: { FAKE_ENGINE_RECORD: record, FAKE_ENGINE_LINES: linesWithoutBlock() },
@@ -721,7 +735,7 @@ test('t147 — with a token, the dispatch crosses every route it uses', async (t
   // (`packages/core/src/auth.ts`), so a pairing token would be refused 403.
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
-    adapter: fakeAdapter(),
+    engines: claudeOnly(fakeAdapter()),
     workingDir: workDir,
     timeoutSeconds: 60,
     token,
@@ -776,4 +790,347 @@ test('t147 — with a token, the dispatch crosses every route it uses', async (t
     timeline.eventos.some((event) => event.tipo === 'sessao.permissao_negada'),
     'the denial reached POST /v1/sessions/:id/permission-denials',
   );
+});
+
+// --- t141: per-node engine routing ------------------------------------------
+
+/** A node's contract, in the smallest shape the schema and soundness accept. */
+function contract(): Record<string, unknown> {
+  return {
+    entrada_schema: { type: 'object' },
+    saida_schema: { type: 'object' },
+    verificacoes: [
+      { tipo: 'deterministico', comando: 'test -s saida.md', descricao: 'A saída existe.' },
+    ],
+  };
+}
+
+/** A `trabalho` node, with `engine` only when the routing test declares one. */
+function node(id: string, engine?: string): Record<string, unknown> {
+  return {
+    id,
+    papel: 'desenvolvedor',
+    tipo_no: 'trabalho',
+    descricao: `Nó ${id} da prova de roteamento por nó.`,
+    skill_ref: {
+      id: 'cartografo/fazer',
+      versao: '1.0.0',
+      hash: `sha256:${'0'.repeat(64)}`,
+    },
+    contrato: contract(),
+    ...(engine === undefined ? {} : { engine }),
+  };
+}
+
+/**
+ * A registrable two-node graph: the first node says nothing about an engine, the
+ * second declares one. It is the smallest document that can tell a default from
+ * a route.
+ */
+function twoEngineGraph(className: string, engine: string | undefined): Record<string, unknown> {
+  return {
+    classe: className,
+    linhagem: { tipo: 'base' },
+    metadata: {
+      nome: 'Prova de roteamento por nó',
+      descricao: 'Dois nós de trabalho numa aresta, um deles declarando engine.',
+      versao_schema: '1.0.0',
+      criado_em: '2026-08-15',
+      origem: 'fixture da t141',
+    },
+    nos: [node('implementar'), node('revisar', engine)],
+    arestas: [{ de: 'implementar', para: 'revisar', condicao: 'sempre' }],
+    no_inicial: 'implementar',
+    nos_finais: ['revisar'],
+  };
+}
+
+/** The `codex` adapter, pointed at the fake engine through its own argv seam. */
+function fakeCodexAdapter(): CodexAdapter {
+  return new CodexAdapter({
+    commandBuilder: (spec) => ({
+      command: process.execPath,
+      args: [FAKE_ENGINE, ...buildCodexCommand(spec).args],
+    }),
+    graceMs: 300,
+  });
+}
+
+/** Registers the graph and returns the version id a job can point at. */
+async function registerGraph(
+  baseUrl: string,
+  token: string,
+  document: Record<string, unknown>,
+): Promise<string> {
+  const registered = await api<{ grafo_versao: { id: string } }>(
+    baseUrl,
+    'POST',
+    '/v1/graphs',
+    document,
+    201,
+    token,
+  );
+  return registered.grafo_versao.id;
+}
+
+test('AT3 — a node declaring engine "codex" is dispatched through the codex route', async (t) => {
+  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { decodeCodexSessionText } = await loadModule<typeof SessionTextModule>(SESSION_TEXT_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t141-codex-workdir-'));
+  const claudeRecord = path.join(workDir, 'nunca-despachado.json');
+  const codexRecord = path.join(workDir, 'despacho-codex.json');
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const versionId = await registerGraph(
+    baseUrl,
+    token,
+    twoEngineGraph('roteamento-por-no-at3', 'codex'),
+  );
+
+  // The work is created ON the node that declares the engine: the dispatch
+  // resolves the CURRENT node, not the entry one.
+  const work = await api<Work>(
+    baseUrl,
+    'POST',
+    '/v1/jobs',
+    {
+      titulo: 'ficha cujo nó declara codex',
+      no_entrada_id: 'revisar',
+      execucao_id: 141,
+      grafo_versao_id: versionId,
+    },
+    201,
+    token,
+  );
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    engines: {
+      'claude-code': {
+        adapter: fakeAdapter(),
+        decodeSessionText: decodeClaudeCodeSessionText,
+      },
+      codex: {
+        adapter: fakeCodexAdapter(),
+        decodeSessionText: decodeCodexSessionText,
+      },
+    },
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    envOverrides: { FAKE_ENGINE_RECORD: codexRecord, FAKE_ENGINE_LINES: linesWithoutBlock() },
+  });
+
+  await dispatch(work.id);
+
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    'GET',
+    '/v1/sessions?execucao_id=141',
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(sessions.sessoes.length, 1);
+  assert.equal(
+    sessions.sessoes[0].engine,
+    'codex',
+    'the engine the node declared is the engine the telemetry records',
+  );
+  assert.equal(sessions.sessoes[0].no_id, 'revisar');
+
+  // ...and the route that ran is the codex one, by the only channel that
+  // proves it: the argv the fake engine received.
+  assert.ok(existsSync(codexRecord), 'the codex route never started a session');
+  assert.ok(!existsSync(claudeRecord), 'the default route must not have run');
+  const received = JSON.parse(readFileSync(codexRecord, 'utf8')) as FakeRecord;
+  assert.ok(
+    received.argv.includes('exec') && received.argv.includes('--skip-git-repo-check'),
+    `the argv is the one codex's own command builder produces:\n${received.argv.join(' ')}`,
+  );
+});
+
+test('AT4 — with no graph version, and with a node that declares nothing, the default runs', async (t) => {
+  const { createClaudeCodeDispatch, DEFAULT_ENGINE } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t141-default-workdir-'));
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  assert.equal(DEFAULT_ENGINE, 'claude-code', 'the default is named, never silently implied');
+
+  const engines = {
+    [DEFAULT_ENGINE]: {
+      adapter: fakeAdapter(),
+      decodeSessionText: decodeClaudeCodeSessionText,
+    },
+  };
+
+  // --- 1. no `grafo_versao_id` at all: today's behaviour, byte for byte ------
+  const bare = await api<Work>(
+    baseUrl,
+    'POST',
+    '/v1/jobs',
+    { titulo: 'ficha sem grafo', no_entrada_id: 'implementar', execucao_id: 1410 },
+    201,
+    token,
+  );
+
+  await createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    engines,
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    envOverrides: {
+      FAKE_ENGINE_RECORD: path.join(workDir, 'sem-grafo.json'),
+      FAKE_ENGINE_LINES: linesWithoutBlock(),
+    },
+  })(bare.id);
+
+  // --- 2. a graph whose current node declares no engine ---------------------
+  const versionId = await registerGraph(
+    baseUrl,
+    token,
+    twoEngineGraph('roteamento-por-no-at4', undefined),
+  );
+  const onGraph = await api<Work>(
+    baseUrl,
+    'POST',
+    '/v1/jobs',
+    {
+      titulo: 'ficha cujo nó não declara engine',
+      no_entrada_id: 'implementar',
+      execucao_id: 1411,
+      grafo_versao_id: versionId,
+    },
+    201,
+    token,
+  );
+
+  await createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    engines,
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    envOverrides: {
+      FAKE_ENGINE_RECORD: path.join(workDir, 'no-sem-engine.json'),
+      FAKE_ENGINE_LINES: linesWithoutBlock(),
+    },
+  })(onGraph.id);
+
+  for (const executionId of [1410, 1411]) {
+    const sessions = await api<{ sessoes: Session[] }>(
+      baseUrl,
+      'GET',
+      `/v1/sessions?execucao_id=${executionId}`,
+      undefined,
+      200,
+      token,
+    );
+    assert.equal(sessions.sessoes.length, 1, `execution ${executionId} dispatched exactly once`);
+    assert.equal(
+      sessions.sessoes[0].engine,
+      DEFAULT_ENGINE,
+      `execution ${executionId} must fall back to the default engine`,
+    );
+    assert.equal(sessions.sessoes[0].status, 'concluida');
+  }
+});
+
+test('AT5 — a node declaring an engine nobody registered fails before any session opens', async (t) => {
+  const { createClaudeCodeDispatch, UnknownEngineError } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t141-unknown-workdir-'));
+  const record = path.join(workDir, 'nunca-despachado.json');
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const versionId = await registerGraph(
+    baseUrl,
+    token,
+    twoEngineGraph('roteamento-por-no-at5', 'gemini'),
+  );
+  const work = await api<Work>(
+    baseUrl,
+    'POST',
+    '/v1/jobs',
+    {
+      titulo: 'ficha cujo nó pede um engine que ninguém registrou',
+      no_entrada_id: 'revisar',
+      execucao_id: 1412,
+      grafo_versao_id: versionId,
+    },
+    201,
+    token,
+  );
+
+  // A spy that counts, so "before any session opens" is a measured claim and
+  // not an inference from the absence of a row.
+  const posts: string[] = [];
+  const doFetch: typeof fetch = async (input, init) => {
+    if ((init?.method ?? 'GET') === 'POST') posts.push(String(input).slice(baseUrl.length));
+    return fetch(input, init);
+  };
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    doFetch,
+    engines: {
+      'claude-code': {
+        adapter: fakeAdapter(),
+        decodeSessionText: decodeClaudeCodeSessionText,
+      },
+    },
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    envOverrides: { FAKE_ENGINE_RECORD: record, FAKE_ENGINE_LINES: linesWithoutBlock() },
+  });
+
+  await assert.rejects(
+    async () => dispatch(work.id),
+    (error: unknown) => {
+      assert.ok(
+        error instanceof UnknownEngineError,
+        `expected UnknownEngineError, got: ${String(error)}`,
+      );
+      assert.equal(error.engine, 'gemini');
+      assert.equal(error.nodeId, 'revisar');
+      return true;
+    },
+  );
+
+  // Never a silent fallback: a session recorded against another engine would
+  // make the telemetry lie about what actually ran.
+  assert.deepEqual(
+    posts.filter((route) => route === '/v1/sessions'),
+    [],
+    'POST /v1/sessions must never be reached for an engine that has no route',
+  );
+  assert.ok(!existsSync(record), 'no engine process may have been spawned');
+
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    'GET',
+    '/v1/sessions?execucao_id=1412',
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(sessions.sessoes.length, 0);
 });

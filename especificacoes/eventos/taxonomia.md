@@ -182,9 +182,9 @@ flowpilot. Quem quer o texto novo lê o trabalho.
 
 Emitido na **confirmação do intake**, uma vez por aresta declarada entre dois
 trabalhos do mesmo lote (t122). Ator: `usuario` — é um portão humano, e quando
-quem confirma se identifica é o login dele que fica no `ator.ref`; sem
-autenticação (t124) o control plane grava honestamente `sistema`/`intake` em
-vez de inventar um usuário.
+quem confirma se identifica é o login dele que fica no `ator.ref`; a t124
+autenticou a API, mas um token prova posse e não pessoa, então o control plane
+segue gravando honestamente `sistema`/`intake` em vez de inventar um usuário.
 
 ```json
 {"depende_de_trabalho_id":101}

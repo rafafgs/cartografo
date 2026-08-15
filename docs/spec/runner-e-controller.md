@@ -207,8 +207,9 @@ dois é a porta HTTP.
 
 ## 5. Endpoints
 
-Todos sob `/v1`. Nenhum exige autenticação (`t124`) e nenhum emite evento de
-telemetria (`t102`).
+Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`
+— o runner apresenta uma credencial em toda chamada, como qualquer outro cliente
+da API. Nenhum emite evento de telemetria (`t102`).
 
 | Método | Rota | O que faz |
 |---|---|---|
@@ -307,4 +308,7 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 - **Varredura de expiradas dissociada do despacho** (§3).
 - **WIP limit por estágio do grafo** — aqui só existe o teto bruto de sessões
   concorrentes.
-- **Autenticação** no pareamento de runner (`t124`).
+- **Credencial própria de runner**, emitida no pareamento e revogável. A `t124`
+  trouxe a credencial da API — uma só, de operador, que abre `/v1` inteiro —, e o
+  runner a apresenta hoje como qualquer outro cliente; emitir uma por runner, com
+  escopo nas rotas dele, é a ficha seguinte, dependente daquela.

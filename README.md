@@ -23,13 +23,20 @@ entre execuções, com o humano trabalhando nas exceções.
 Do checkout limpo ao primeiro grafo registrado, em três comandos:
 
 ```bash
-npm install                                                          # 1
-npx cartografo                                                       # 2 (deixe rodando)
-npx cartografo import grafos-de-fabrica/desenvolvimento-de-software  # 3 (outro terminal)
+npm install                                                            # 1
+npx cartografo                                                         # 2 (deixe rodando)
+CARTOGRAFO_TOKEN=<o token do passo 2> \
+  npx cartografo import grafos-de-fabrica/desenvolvimento-de-software  # 3 (outro terminal)
 ```
 
 O passo 2 é o control plane inteiro em um comando: cria `.cartografo/cartografo.db`,
-aplica as migrações pendentes, sobe o HTTP e imprime a linha `cartografo.pronto`.
+aplica as migrações pendentes, sobe o HTTP e imprime a linha `cartografo.ready`.
+Na PRIMEIRA partida contra um banco novo, essa linha traz também um
+`bootstrapToken`: é a credencial de operador, e é a única vez que ela aparece —
+o banco guarda só o hash dela. Toda rota `/v1/*` exige essa credencial; `/health`
+não exige nenhuma, porque é sonda de infraestrutura. Perdeu o token? Apague
+`.cartografo/` e suba de novo, que outro é emitido.
+
 O passo 3 registra o grafo de fábrica 1 (D14) como linhagem base — conferindo
 antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a
 `grafo_versao.id` que ficou gravada. Ao final, `GET /v1/classes` lista
@@ -65,10 +72,17 @@ separada em fila, agente trabalhando e esperando humano
 As duas são cliente comum da API pública, sem privilégio nenhum sobre o control
 plane: outro processo, outra porta, nenhum acesso ao banco.
 
-Configuração: `CARTOGRAFO_PORT` e `CARTOGRAFO_DB_PATH` na partida;
-`CARTOGRAFO_URL` (ou `--url`) para apontar os outros subcomandos — e a tela — a
-um control plane que não esteja no default `http://127.0.0.1:4317`;
-`CARTOGRAFO_TELA_PORT` para mudar a porta da tela.
+Configuração: `CARTOGRAFO_PORT`, `CARTOGRAFO_DB_PATH` e `CARTOGRAFO_HOST` na
+partida — o último decide o endereço de escuta, e o default segue sendo
+`127.0.0.1`, porque abrir a porta para a rede é decisão de quem opera, não do
+comando; `CARTOGRAFO_URL` (ou `--url`) para apontar os outros subcomandos — e a
+tela — a um control plane que não esteja no default `http://127.0.0.1:4317`;
+`CARTOGRAFO_TOKEN` (ou `--token`) para a credencial que os subcomandos
+apresentam; `CARTOGRAFO_TELA_PORT` para mudar a porta da tela e
+`CARTOGRAFO_TELA_TOKEN` para dar à tela uma credencial própria — sem ela, a tela
+usa a do `CARTOGRAFO_TOKEN`. A tela apresenta essa credencial ao control plane em
+toda chamada e não pede nenhuma ao navegador: ela é cliente sem privilégio da API
+(D11), e é por isso que escuta em loopback.
 
 ## O buraco que ele ocupa
 

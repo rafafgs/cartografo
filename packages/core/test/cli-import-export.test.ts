@@ -97,7 +97,7 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
   let importedVersion = '';
 
   await t.test('importing the factory bundle registers the class', async () => {
-    const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url]);
+    const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url], { token: first.token });
     assert.equal(result.code, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
     assert.match(result.stdout, new RegExp(FACTORY_CLASS));
     importedVersion = firstHash(result.stdout);
@@ -128,14 +128,14 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
   });
 
   await t.test('importing the same bundle again is refused with classe_ja_registrada', async () => {
-    const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url]);
+    const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url], { token: first.token });
     assert.notEqual(result.code, 0, 'reimporting over an existing lineage cannot exit 0');
     assert.match(result.stderr, /classe_ja_registrada/);
     assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
   });
 
   await t.test('reimporting is idempotent for the registry: the 409s are not errors', async () => {
-    const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url]);
+    const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url], { token: first.token });
 
     assert.notEqual(result.code, 0, 'the class is still already registered');
     assert.match(result.stderr, /classe_ja_registrada/);
@@ -163,7 +163,7 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
       exportedFile,
       '--url',
       first.url,
-    ]);
+    ], { token: first.token });
     assert.equal(result.code, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
 
     const text = readFileSync(exportedFile, 'utf8');
@@ -178,6 +178,7 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
 
   await t.test('exporting an unknown class exits non-zero with grafo_desconhecido', async () => {
     const result = await runCli(['export', 'classe-que-nao-existe', '--url', first.url], {
+      token: first.token,
       cwd: base,
     });
     assert.notEqual(result.code, 0);
@@ -190,7 +191,7 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
       databasePath: path.join(base, 'segundo', 'cartografo.db'),
     });
 
-    const result = await runCli(['import', exportedFile, '--url', second.url]);
+    const result = await runCli(['import', exportedFile, '--url', second.url], { token: second.token });
     assert.equal(result.code, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
     assert.equal(
       firstHash(result.stdout),
@@ -206,7 +207,7 @@ test('AT6 — importing an invalid graph prints the violations of the 422', { ti
     databasePath: path.join(base, 'cartografo.db'),
   });
 
-  const result = await runCli(['import', INVALID_GRAPH, '--url', controlPlane.url]);
+  const result = await runCli(['import', INVALID_GRAPH, '--url', controlPlane.url], { token: controlPlane.token });
 
   assert.notEqual(result.code, 0, 'an invalid graph cannot exit 0');
   assert.match(result.stderr, /grafo_invalido/);
@@ -253,7 +254,7 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
   assert.ok(repinned > 0, 'the fixture assumes some node pins refinar-ticket');
   writeFileSync(graphPath, `${JSON.stringify(document, null, 2)}\n`);
 
-  const result = await runCli(['import', bundle, '--url', controlPlane.url]);
+  const result = await runCli(['import', bundle, '--url', controlPlane.url], { token: controlPlane.token });
 
   assert.notEqual(result.code, 0, 'a manifest the registry refuses cannot exit 0');
   assert.match(result.stderr, /refinar-ticket/, 'the output names the manifest that was refused');

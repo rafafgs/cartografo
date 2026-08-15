@@ -36,6 +36,7 @@ test('AT8 — status --json against an empty control plane has a pinned shape', 
   });
 
   const result = await runCli(['status', '--json'], {
+    token: controlPlane.token,
     env: { CARTOGRAFO_URL: controlPlane.url },
   });
 
@@ -52,11 +53,15 @@ test('AT9 — after importing, status --json lists the class with its current ve
     databasePath: path.join(base, 'cartografo.db'),
   });
 
-  const importResult = await runCli(['import', FACTORY_BUNDLE, '--url', controlPlane.url]);
+  const importResult = await runCli(['import', FACTORY_BUNDLE, '--url', controlPlane.url], {
+    token: controlPlane.token,
+  });
   assert.equal(importResult.code, 0, `stderr:\n${importResult.stderr}`);
   const version = firstHash(importResult.stdout);
 
-  const result = await runCli(['status', '--json', '--url', controlPlane.url]);
+  const result = await runCli(['status', '--json', '--url', controlPlane.url], {
+    token: controlPlane.token,
+  });
   assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
 
   const report = JSON.parse(result.stdout) as {
@@ -70,7 +75,9 @@ test('AT9 — after importing, status --json lists the class with its current ve
   assert.equal(report.jobs, null);
   assert.equal(report.pendingInputRequests, null);
 
-  const table = await runCli(['status', '--url', controlPlane.url]);
+  const table = await runCli(['status', '--url', controlPlane.url], {
+    token: controlPlane.token,
+  });
   assert.equal(table.code, 0, `stderr:\n${table.stderr}`);
   assert.match(table.stdout, /server: ok/);
   assert.match(table.stdout, new RegExp(FACTORY_CLASS));

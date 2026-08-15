@@ -16,6 +16,8 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+import { authorizeGlobalFetch } from './authorized-fetch.ts';
+
 /** Root of the `cartografo` package (packages/core). */
 export const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -50,6 +52,8 @@ export interface ReadinessLine {
   database: string;
   migrationsApplied: number;
   url: string;
+  /** Operator credential, printed only on the boot that mints it (t124, FR4). */
+  bootstrapToken: string | null;
 }
 
 /** Control plane running, from the point of view of an HTTP-only client. */
@@ -57,6 +61,12 @@ export interface RunningControlPlane {
   url: string;
   port: number;
   readiness: ReadinessLine;
+  /**
+   * The credential this control plane announced. Every database here is brand
+   * new, so there is always one — and it is what the subcommands and the direct
+   * `fetch`es of these suites authenticate with (t124).
+   */
+  token: string;
   shutdown: () => Promise<void>;
 }
 
@@ -106,20 +116,32 @@ export const COMMAND_TIMEOUT_MS = 30_000;
  * starts a server by mistake, it does not write `.cartografo/` at the repo root.
  *
  * @param args Arguments after the command name.
- * @param options Working directory, extra environment and deadline.
+ * @param options Working directory, credential, extra environment and deadline.
  * @returns Exit code, stdout and stderr.
  */
 export async function runCli(
   args: string[],
-  options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
+  options: {
+    cwd?: string;
+    /** Credential of the control plane the subcommand will talk to (t124). */
+    token?: string;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+  } = {},
 ): Promise<CommandResult> {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    CARTOGRAFO_DB_PATH: path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-t108-cli-')), 'cartografo.db'),
+  };
+  // A `CARTOGRAFO_TOKEN` exported in whoever runs the suite's own shell must not
+  // decide the result of a test about NOT having a credential (t124).
+  delete env.CARTOGRAFO_TOKEN;
+  if (options.token !== undefined) env.CARTOGRAFO_TOKEN = options.token;
+  Object.assign(env, options.env);
+
   const child = spawn(process.execPath, [BIN_PATH, ...args], {
     cwd: options.cwd ?? REPO_ROOT,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-t108-cli-')), 'cartografo.db'),
-      ...options.env,
-    },
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   }) as CommandChild;
 
@@ -154,6 +176,12 @@ export async function runCli(
 
 /**
  * Starts a control plane through the command itself and waits for the readiness line.
+ *
+ * The credential it announces is presented on every direct `fetch` this test
+ * makes at it (t124) — these suites check the RESULT of a subcommand against the
+ * server, and re-proving the gate on each of those checks would say nothing that
+ * `test/auth.test.ts` does not already say. The subcommands themselves get the
+ * token through `runCli`'s `token` option, as a person would.
  *
  * @param t Test context, used to shut the process down at the end.
  * @param options Database and arguments (`[]` = implicit start, `['up']` = explicit).
@@ -209,7 +237,9 @@ export async function startControlPlane(
       .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
     if (line !== undefined) {
       const readiness = JSON.parse(line) as ReadinessLine;
-      return { url: readiness.url, port, readiness, shutdown };
+      const token = readiness.bootstrapToken ?? '';
+      authorizeGlobalFetch(t, { baseUrl: readiness.url, token });
+      return { url: readiness.url, port, readiness, token, shutdown };
     }
     await sleep(100);
   }

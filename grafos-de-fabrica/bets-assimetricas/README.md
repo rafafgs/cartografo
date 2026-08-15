@@ -119,7 +119,7 @@ contra.
 
 ```bash
 # grafo + manifestos + pinos de hash, tudo de uma vez
-node ../../scripts/validar-bundle-fabrica.mjs .
+node ../../scripts/validate-factory-bundle.mjs .
 
 # checagem cruzada do formato dos manifestos, com um validador de terceiro
 npx --yes ajv-cli@5 validate \
@@ -134,7 +134,7 @@ hash recalculado do conteúdo de cada manifesto bate com o que o `skill_ref` do
 nó correspondente pina (D4).
 
 Os testes de aceite deste bundle estão em
-[`tests/grafo-fabrica-2.test.mjs`](../../tests/grafo-fabrica-2.test.mjs)
+[`tests/factory-graph-2.test.mjs`](../../tests/factory-graph-2.test.mjs)
 (`node --test`), com o fixture de travessia em
 [`tests/fixtures/tese-exemplo-bets-assimetricas.json`](../../tests/fixtures/tese-exemplo-bets-assimetricas.json).
 
@@ -205,7 +205,7 @@ quem vier depois.
    prova a travessia no nível que já é verificável hoje: um fixture de tese real
    em que a saída conforme de cada nó alimenta a entrada do próximo, contrato a
    contrato, até `decisao`, onde nenhuma aresta é seguida sem resposta humana
-   registrada (`tests/grafo-fabrica-2.test.mjs`, AT11). Quando a `t109` existir,
+   registrada (`tests/factory-graph-2.test.mjs`, AT11). Quando a `t109` existir,
    um teste de execução real pelo runner é mais forte que este e vale escrever.
 
 ## O formato de aresta não cresceu

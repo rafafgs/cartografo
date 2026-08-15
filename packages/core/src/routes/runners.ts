@@ -6,9 +6,10 @@
  * (knowing whether a runner is new is information), never for the runner — which
  * treats both as success and moves on to the queue.
  *
- * Authenticating the pairing is t124: in this phase the id is declared by the
- * runner itself, like the rest of the pre-authorization API (the same cut as
- * t101/t102).
+ * Since t124 this route demands a credential, like every other under `/v1` —
+ * but the credential is the operator's, not the runner's: the id is still
+ * DECLARED by whoever calls, and a credential scoped to one runner (issued at
+ * pairing, revocable) is the follow-up ticket.
  *
  * The request/response field names stay in Portuguese: they mirror the untouched
  * migration columns (t127, FR8).

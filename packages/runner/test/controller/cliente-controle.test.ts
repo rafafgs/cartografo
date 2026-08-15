@@ -261,3 +261,62 @@ test('AT13 — a URL base tolera barra no fim, como o cliente da tela', async ()
   assert.equal(chamadas[0].url, `${URL_BASE}/v1/runners`);
   assert.deepEqual(chamadas[0].corpo, { id: 'runner-a' }, 'nome ausente não vira null no corpo');
 });
+
+/**
+ * `fetch` falso que registra os CABEÇALHOS de cada chamada (t124).
+ *
+ * Separado do `fetchFalso` acima de propósito: aquele fixa verbo, caminho e
+ * corpo, e é o contrato que o t103 congelou. O que esta ficha acrescenta é
+ * ortogonal — o mesmo pedido, com credencial —, e um `fetch` falso que registra
+ * tudo tornaria a comparação por `deepEqual` daquele teste refém deste.
+ */
+function fetchQueRegistraCabecalhos(): {
+  buscar: typeof fetch;
+  autorizacoes: Array<string | null>;
+} {
+  const autorizacoes: Array<string | null> = [];
+  const buscar: typeof fetch = async (entrada, init) => {
+    autorizacoes.push(new Headers(init?.headers).get('authorization'));
+    return new Response(
+      JSON.stringify(
+        String(entrada).endsWith('/v1/jobs')
+          ? { trabalhos: [] }
+          : { runner: { id: 'runner-a', nome: null, registrado_em: '2026-08-14T12:00:00.000Z' } },
+      ),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  };
+  return { buscar, autorizacoes };
+}
+
+test('t124 — com `token` configurado, toda chamada leva o cabeçalho Bearer', async () => {
+  const { ClienteControle } = await carregarCliente();
+
+  const { buscar, autorizacoes } = fetchQueRegistraCabecalhos();
+  const cliente = new ClienteControle({ urlBase: URL_BASE, buscar, token: 'token-do-runner' });
+
+  await cliente.registrarRunner('runner-a');
+  await cliente.listarTrabalhosLiberados();
+
+  assert.deepEqual(
+    autorizacoes,
+    ['Bearer token-do-runner', 'Bearer token-do-runner'],
+    'o POST e o GET carregam a credencial: não existe rota de negócio isenta',
+  );
+});
+
+test('t124 — sem `token`, o cliente não inventa cabeçalho nenhum', async () => {
+  const { ClienteControle } = await carregarCliente();
+
+  const { buscar, autorizacoes } = fetchQueRegistraCabecalhos();
+  const cliente = new ClienteControle({ urlBase: URL_BASE, buscar });
+
+  await cliente.registrarRunner('runner-a');
+  await cliente.listarTrabalhosLiberados();
+
+  assert.deepEqual(
+    autorizacoes,
+    [null, null],
+    'um cliente sem credencial toma 401 do control plane — e não um cabeçalho vazio que parece credencial',
+  );
+});

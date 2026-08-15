@@ -76,9 +76,11 @@ dependência do pacote core, e essa é justamente a fronteira que a D11 pede.
 Duplicada e pinada por teste, como o validador de grafo de
 [`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs).
 
-Escuta em `127.0.0.1`, como o core: a tela não tem autenticação (`t124`) e
-proxeia para o único escritor do sistema — expor a interface externa é decisão
-da ticket que trouxer autorização.
+Escuta em `127.0.0.1`, e continua ali depois da `t124`: a tela não pede
+credencial ao navegador — ela CARREGA a sua (`CARTOGRAFO_TELA_TOKEN`, com
+`CARTOGRAFO_TOKEN` de reserva) e a apresenta ao control plane em toda chamada,
+inclusive nas que o proxy repassa. Quem quiser expor a tela numa interface
+externa está decidindo abrir o único escritor do sistema a quem alcançar a porta.
 
 Subir: `npm start --workspace @cartografo/tela`. Imprime uma linha de prontidão
 em stdout, no espírito de `cartografo.pronto`:
@@ -210,7 +212,9 @@ Cada item é escopo declarado de outra ticket, não esquecimento:
   conteúdo da D11.
 - **Impedir reproposição de proposta rejeitada** — comportamento do topógrafo
   (`t110`); aqui o histórico é só leitura.
-- **Autenticação/autorização**, na tela e no proxy (`t124`).
+- **Login no navegador e autorização por rota.** A `t124` autenticou o control
+  plane e a tela repassa a credencial dela; o que fica de fora é pedir credencial
+  ao navegador e recortar o que cada credencial alcança.
 - **Paginação ou virtualização** da lista — aceitável na escala da PoC.
 - **Atualização em tempo real** (websocket, polling) — a lista anda por ação do
   usuário.

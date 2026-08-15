@@ -18,7 +18,12 @@
  *
  * The request/response field names and the error codes stay in Portuguese: they
  * mirror the untouched migration columns and follow the wire vocabulary of the
- * graph and proposal routes (t127, FR8).
+ * graph and proposal routes (t127, FR8). The one exception is what this layer
+ * does not decide: a broken EVENT envelope is refused by the same
+ * `validateEvent` as every other route, so it comes back through
+ * `withValidation` in the same `validation_failed` words it comes back for them
+ * — a caller that has to fix its own `ator` should not need to learn a second
+ * error shape to know it (t139).
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -37,6 +42,7 @@ import {
   INTAKE_ACTOR,
   type Draft,
 } from '../repositories/intake.ts';
+import { withValidation } from './common.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -212,43 +218,49 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
     return { rascunho: discarded };
   });
 
-  app.post<IdParam>('/intake/:id/confirmations', async (request, reply) => {
-    const draft = load(db, request.params.id);
-    if (draft === undefined) {
-      reply.code(404);
-      return unknownDraft(request.params.id);
-    }
-    if (draft.status !== 'pendente') {
-      reply.code(409);
-      return notPending(draft);
-    }
+  // The only intake route that writes an EVENT, and therefore the only one whose
+  // body reaches `validateEvent`: `withValidation` is what turns the refusal of a
+  // malformed `ator` into the 400 every other route of this API answers with,
+  // instead of letting the domain validator's message escape as a 500 (t139).
+  app.post<IdParam>('/intake/:id/confirmations', async (request, reply) =>
+    withValidation(reply, () => {
+      const draft = load(db, request.params.id);
+      if (draft === undefined) {
+        reply.code(404);
+        return unknownDraft(request.params.id);
+      }
+      if (draft.status !== 'pendente') {
+        reply.code(409);
+        return notPending(draft);
+      }
 
-    // The pointer is read HERE, at confirmation time, and not when the draft was
-    // opened: between proposing a breakdown and accepting it the class may have
-    // gained a version, and the travellers belong to the one that holds now.
-    const graph = getClassBase(db, draft.classe);
-    const version =
-      graph?.versao_corrente_id === null || graph?.versao_corrente_id === undefined
-        ? undefined
-        : getVersion(db, graph.versao_corrente_id);
-    if (graph === undefined || version === undefined) {
-      reply.code(404);
-      return {
-        erro: 'grafo_desconhecido',
-        mensagem: `a classe "${draft.classe}" não tem versão de grafo vigente`,
-        classe: draft.classe,
-      };
-    }
+      // The pointer is read HERE, at confirmation time, and not when the draft was
+      // opened: between proposing a breakdown and accepting it the class may have
+      // gained a version, and the travellers belong to the one that holds now.
+      const graph = getClassBase(db, draft.classe);
+      const version =
+        graph?.versao_corrente_id === null || graph?.versao_corrente_id === undefined
+          ? undefined
+          : getVersion(db, graph.versao_corrente_id);
+      if (graph === undefined || version === undefined) {
+        reply.code(404);
+        return {
+          erro: 'grafo_desconhecido',
+          mensagem: `a classe "${draft.classe}" não tem versão de grafo vigente`,
+          classe: draft.classe,
+        };
+      }
 
-    const body = isObject(request.body) ? request.body : {};
-    const confirmation = confirmDraft(db, {
-      draft,
-      no_inicial: version.snapshot.no_inicial,
-      grafo_versao_id: version.id,
-      ator: resolveActor(body.ator, INTAKE_ACTOR),
-    });
+      const body = isObject(request.body) ? request.body : {};
+      const confirmation = confirmDraft(db, {
+        draft,
+        no_inicial: version.snapshot.no_inicial,
+        grafo_versao_id: version.id,
+        ator: resolveActor(body.ator, INTAKE_ACTOR),
+      });
 
-    reply.code(201);
-    return confirmation;
-  });
+      reply.code(201);
+      return confirmation;
+    }),
+  );
 }

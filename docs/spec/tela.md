@@ -137,10 +137,12 @@ Duas escolhas de fronteira:
 - **Resposta em branco é recusada pela tela** (400), antes da rede. O schema de
   `pergunta.respondida` aceita string vazia; gravar um fato sem conteúdo
   poluiria a auditoria com uma decisão que não decide nada.
-- **`respondido_por` cai em `"tela"`** quando o campo vem vazio. Não há
-  autenticação (`t124`), e registrar honestamente a porta por onde a resposta
-  entrou é tudo o que o sistema de fato sabe; inventar um usuário seria pior,
-  porque `pergunta.respondida` é evento de auditoria.
+- **`respondido_por` cai em `"tela"`** quando o campo vem vazio. A `t124`
+  autenticou a API, mas a tela carrega UMA credencial de serviço e não pede
+  nenhuma ao navegador: o token prova posse, não pessoa. Registrar honestamente a
+  porta por onde a resposta entrou segue sendo tudo o que o sistema de fato sabe;
+  inventar um usuário seria pior, porque `pergunta.respondida` é evento de
+  auditoria.
 
 O campo de resposta tem `<label>` visível amarrado ao `<textarea>` por
 `for`/`id`, e não apenas placeholder — placeholder é dica, some no primeiro
@@ -249,8 +251,12 @@ Cada item é escopo declarado de outra ficha, não esquecimento:
 - **Inbox de aprovação de propostas** (entidade `proposta`, distinta de
   `pergunta`) — é a outra metade do pacote, entregue pela `t111` e servida em
   `/` ([`tela-inbox-propostas.md`](tela-inbox-propostas.md)).
-- **Autenticação** — `t124`. Enquanto não houver, a tela escuta em loopback e
-  `respondido_por` cai em `"tela"`.
+- **Login no navegador** — a `t124` autenticou a API e deu à tela uma credencial
+  de serviço (`CARTOGRAFO_TELA_TOKEN`, com `CARTOGRAFO_TOKEN` de reserva), que ela
+  apresenta em toda chamada ao control plane. O navegador continua chegando à tela
+  sem credencial nenhuma, a tela segue em loopback e `respondido_por` cai em
+  `"tela"`: pela D11 a tela é cliente sem privilégio da API, não uma segunda
+  fronteira de identidade.
 - **Retomada de verdade da sessão ao responder** — do control plane, pela
   `t106` (§3); a tela só escreve o fato.
 - **Rótulo de nó com `papel`/`descricao` do snapshot do grafo** — o quadro

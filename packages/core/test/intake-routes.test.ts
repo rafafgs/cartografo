@@ -18,6 +18,12 @@
  *
  * The JSON field names stay in Portuguese: they mirror the untouched migration
  * columns (t127, FR8). Only the route paths and the code identifiers are English.
+ *
+ * The t139 block at the bottom adds what the alpha round caught: the confirmation
+ * gate is the only intake route that can raise a `ValidationError` — it is the
+ * only one that writes an EVENT — and it was answering one with a raw 500 that
+ * leaked the domain validator's message. A caller that can fix its own body
+ * deserves the 400 every other route of this API gives it.
  */
 
 import assert from 'node:assert/strict';
@@ -26,6 +32,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  countEvents,
   requireArtifacts,
   request,
   startControlPlane,
@@ -673,4 +680,107 @@ test('FR6 — GET /v1/intake lists drafts, with filters, and 404s on a stranger'
     assert.equal(response.status, 404, `${method} ${routePath} should be 404`);
     assert.equal(response.body.erro, 'rascunho_desconhecido');
   }
+});
+
+/* ---------------------------------------------------------------------------
+ * t139 — the confirmation gate answers a bad envelope like the rest of the API.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The validation envelope of [`routes/common.ts`](../src/routes/common.ts) —
+ * English keys, unlike the intake's own `erro` bodies.
+ *
+ * The two shapes live side by side on purpose and this file asserts both: the
+ * intake's OWN refusals (an unknown class, a malformed item, a draft that is no
+ * longer pending) are its Portuguese wire vocabulary, while a broken EVENT
+ * envelope is refused by the same `validateEvent` that serves every other route,
+ * and so has to come back in the same words it comes back for them (t127, FR7).
+ */
+interface ValidationFailure {
+  error: string;
+  details?: string[];
+}
+
+/** A malformed `ator`: a bare string where the envelope demands `{tipo, ref}`. */
+const MALFORMED_ACTOR = 'tester';
+
+/** The one message `validateActor` produces for it. */
+const MALFORMED_ACTOR_DETAIL = 'ator has to be an object {tipo, ref}';
+
+test('t139 — a malformed ator on the confirmation is 400 validation_failed, not 500', async (t) => {
+  requireArtifacts(...ARTIFACTS, 'src/routes/common.ts');
+  const ctx = await startControlPlane(t);
+  await registerFactoryGraph(ctx);
+
+  const draft = await createDraft(ctx, {
+    itens: [
+      { ref: 'a', titulo: 'a primeira', depende_de: ['b'] },
+      { ref: 'b', titulo: 'a segunda' },
+    ],
+  });
+
+  const eventsBefore = countEvents(ctx);
+
+  const response = await request<ValidationFailure>(
+    ctx,
+    'POST',
+    `/v1/intake/${draft.id}/confirmations`,
+    { ator: MALFORMED_ACTOR },
+  );
+
+  assert.equal(
+    response.status,
+    400,
+    'a body the caller can fix is a 400, never a 500 leaking the domain validator',
+  );
+  assert.equal(response.body.error, 'validation_failed');
+  assert.deepEqual(response.body.details, [MALFORMED_ACTOR_DETAIL]);
+
+  // The gate refused; nothing on the other side of it exists.
+  assert.equal(countJobs(ctx), 0, 'a refused confirmation creates no traveller');
+  assert.equal(dependencyRows(ctx).length, 0);
+  assert.equal(countEvents(ctx), eventsBefore, 'and writes no line to the log');
+
+  const stored = await request<DraftResponse>(ctx, 'GET', `/v1/intake/${draft.id}`);
+  assert.equal(stored.body.rascunho.status, 'pendente', 'the draft is still open');
+  assert.equal(stored.body.rascunho.trabalhos_criados, null);
+
+  // ...and still confirmable, which is what makes the 400 honest: whoever sends
+  // the envelope right the second time gets the batch they asked for.
+  const retry = await request<ConfirmationResponse>(
+    ctx,
+    'POST',
+    `/v1/intake/${draft.id}/confirmations`,
+    { ator: { tipo: 'usuario', ref: 'rafael' } },
+  );
+  assert.equal(retry.status, 201);
+  assert.equal(retry.body.trabalhos.length, 2);
+});
+
+test('t139 — the confirmation and POST /v1/jobs refuse the same ator in the same words', async (t) => {
+  requireArtifacts(...ARTIFACTS, 'src/routes/common.ts');
+  const ctx = await startControlPlane(t);
+  await registerFactoryGraph(ctx);
+
+  const draft = await createDraft(ctx, { itens: [{ ref: 'a', titulo: 'uma ficha' }] });
+
+  const confirmation = await request<ValidationFailure>(
+    ctx,
+    'POST',
+    `/v1/intake/${draft.id}/confirmations`,
+    { ator: MALFORMED_ACTOR },
+  );
+  const job = await request<ValidationFailure>(ctx, 'POST', '/v1/jobs', {
+    titulo: 'uma ficha à mão',
+    no_entrada_id: entryNode(),
+    ator: MALFORMED_ACTOR,
+  });
+
+  assert.equal(job.status, 400, 'the reference behaviour this ticket converges on');
+  assert.equal(confirmation.status, job.status);
+  assert.deepEqual(
+    confirmation.body,
+    job.body,
+    'the same broken envelope, refused by the same validator, in the same body',
+  );
 });

@@ -82,8 +82,17 @@ async function loadController(): Promise<typeof ControllerModule> {
   return controllerCache;
 }
 
-/** Boots the real control plane and returns the URL it announced. */
-async function startControlPlane(t: TestHook): Promise<string> {
+/**
+ * The real control plane, as this test reaches it: an address and the operator
+ * credential it minted on first boot (t124, FR4).
+ */
+interface RunningControlPlane {
+  urlBase: string;
+  token: string;
+}
+
+/** Boots the real control plane and returns the URL and token it announced. */
+async function startControlPlane(t: TestHook): Promise<RunningControlPlane> {
   assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
 
   const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t103-e2e-'));
@@ -131,7 +140,15 @@ async function startControlPlane(t: TestHook): Promise<string> {
       .split('\n')
       .map((text) => text.trim())
       .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) return (JSON.parse(line) as { url: string }).url;
+    if (line !== undefined) {
+      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
+      assert.equal(
+        typeof readiness.bootstrapToken,
+        'string',
+        'a brand-new database announces the credential this test authenticates with',
+      );
+      return { urlBase: readiness.url, token: readiness.bootstrapToken ?? '' };
+    }
     await delay(50);
   }
 
@@ -175,11 +192,14 @@ test('AT17 — a runner dies, the lease expires and the other runner takes the s
   const { ClienteControle } = await loadClient();
   const { Controller } = await loadController();
 
-  const urlBase = await startControlPlane(t);
+  const { urlBase, token } = await startControlPlane(t);
   const doFetch = fetchWithSeededQueue();
 
-  const clientA = new ClienteControle({ urlBase, buscar: doFetch });
-  const clientB = new ClienteControle({ urlBase, buscar: doFetch });
+  // The token is the bootstrap credential, not a runner-scoped one: issuing a
+  // credential at pairing is the follow-up ticket. What this test needs is the
+  // minimum to keep speaking to an API that no longer answers anonymously.
+  const clientA = new ClienteControle({ urlBase, buscar: doFetch, token });
+  const clientB = new ClienteControle({ urlBase, buscar: doFetch, token });
   await clientA.registrarRunner('runner-a', 'the one that dies');
   await clientB.registrarRunner('runner-b', 'the one that inherits');
 
@@ -244,7 +264,9 @@ test('AT17 — a runner dies, the lease expires and the other runner takes the s
   assert.equal(inherited.jobId, JOB_ID);
   assert.deepEqual(dispatched, [JOB_ID], 'runner-b dispatched the re-queued work');
 
-  const response = await fetch(`${urlBase}/v1/leases?projeto_id=3`);
+  const response = await fetch(`${urlBase}/v1/leases?projeto_id=3`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
   assert.equal(response.status, 200);
   const all = (await response.json()) as { leases: LeaseRow[] };
   const leases = all.leases.filter((lease) => lease.trabalho_id === JOB_ID);

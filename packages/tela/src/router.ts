@@ -41,7 +41,12 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 import { ApiClient, ApiError, NetworkError } from './client.ts';
-import { API_PREFIX, forwardRequest, type ProxiedResponse } from './proxy.ts';
+import {
+  API_PREFIX,
+  forwardRequest,
+  resolveControlPlaneToken,
+  type ProxiedResponse,
+} from './proxy.ts';
 import { resolveStaticFile, serveStatic } from './static.ts';
 import {
   DEFAULT_ANSWERED_BY,
@@ -66,7 +71,12 @@ export const URL_ENV = 'CARTOGRAFO_URL';
 /** Default control plane address. */
 export const DEFAULT_CONTROL_PLANE_URL = 'http://127.0.0.1:4317';
 
-/** Listening address. Loopback, like the control plane: there is no auth (t124). */
+/**
+ * Listening address. Loopback, and it stays loopback even now that the control
+ * plane authenticates (t124): the screen takes no credential from the browser,
+ * so its own port is the boundary. `CARTOGRAFO_HOST` moves the control plane,
+ * not this.
+ */
 export const DEFAULT_HOST = '127.0.0.1';
 
 /**
@@ -305,6 +315,12 @@ export interface RunningScreen {
 export interface ScreenOptions {
   /** Control plane to read. Default: `resolveControlPlaneAddress`'s precedence. */
   controlPlaneUrl?: string;
+  /**
+   * Credential presented to the control plane (t124, FR7). Default:
+   * `resolveControlPlaneToken`'s precedence — `CARTOGRAFO_TELA_TOKEN` first,
+   * `CARTOGRAFO_TOKEN` after.
+   */
+  token?: string;
   /** Listening port. `0` asks the system for a free one (test use). */
   port?: number;
   /** Listening address. */
@@ -340,7 +356,8 @@ async function readBody(request: IncomingMessage): Promise<Buffer> {
  */
 export function createScreenRouter(options: ScreenOptions = {}): Server {
   const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneAddress();
-  const client = new ApiClient({ baseUrl: controlPlaneUrl, doFetch: options.doFetch });
+  const token = options.token ?? resolveControlPlaneToken();
+  const client = new ApiClient({ baseUrl: controlPlaneUrl, token, doFetch: options.doFetch });
 
   return createServer((request: IncomingMessage, response: ServerResponse) => {
     void (async () => {
@@ -349,12 +366,16 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
 
       // 1. The API belongs to the control plane; the screen only forwards it.
       if (isApiPath(pathname)) {
-        const forwarded: ProxiedResponse = await forwardRequest(controlPlaneUrl, {
-          method: request.method ?? 'GET',
-          target,
-          headers: request.headers,
-          body: await readBody(request),
-        });
+        const forwarded: ProxiedResponse = await forwardRequest(
+          controlPlaneUrl,
+          {
+            method: request.method ?? 'GET',
+            target,
+            headers: request.headers,
+            body: await readBody(request),
+          },
+          { doFetch: options.doFetch, token },
+        );
         response.writeHead(forwarded.status, forwarded.headers);
         response.end(forwarded.body);
         return;
@@ -456,6 +477,7 @@ export async function runScreenCli(
 ): Promise<void> {
   const screen = await startScreenRouter({
     controlPlaneUrl: resolveControlPlaneAddress(urlFromArgs(args), env),
+    token: resolveControlPlaneToken(env),
     port: screenPortFromEnv(env),
   });
 

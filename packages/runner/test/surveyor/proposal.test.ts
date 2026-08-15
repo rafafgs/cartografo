@@ -47,6 +47,8 @@ import type {
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
 import type * as ProposalModule from '../../src/surveyor/proposal.ts';
 
+import { authorizeGlobalFetch } from '../authorized-fetch.ts';
+
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
@@ -181,7 +183,13 @@ async function startControlPlane(t: TestHook): Promise<string> {
       .split('\n')
       .map((text) => text.trim())
       .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) return (JSON.parse(line) as { url: string }).url;
+    if (line !== undefined) {
+      // Since t124 the API answers nothing without a credential; the control
+      // plane prints the one it minted, and this suite presents it from here on.
+      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
+      authorizeGlobalFetch(t, { baseUrl: readiness.url, token: readiness.bootstrapToken ?? '' });
+      return readiness.url;
+    }
     await delay(50);
   }
 

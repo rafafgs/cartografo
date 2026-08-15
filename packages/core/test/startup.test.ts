@@ -27,6 +27,12 @@ interface ReadinessLine {
   database: string;
   migrationsApplied: number;
   url: string;
+  /**
+   * The operator credential, printed the ONE time it is minted (t124, FR4).
+   * `null` on every later startup against the same database: the raw value is
+   * not recoverable from the table, so there is nothing left to print.
+   */
+  bootstrapToken: string | null;
 }
 
 /** `stdio: ['ignore', 'pipe', 'pipe']` — no stdin, stdout/stderr read. */
@@ -61,6 +67,7 @@ async function start(options: {
   cwd: string;
   databasePath: string;
   port: number;
+  env?: NodeJS.ProcessEnv;
 }): Promise<Startup> {
   const child = spawn(process.execPath, [BIN_PATH], {
     cwd: options.cwd,
@@ -68,6 +75,7 @@ async function start(options: {
       ...process.env,
       CARTOGRAFO_DB_PATH: options.databasePath,
       CARTOGRAFO_PORT: String(options.port),
+      ...options.env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -138,16 +146,43 @@ test(
         'the first startup has to apply at least the initial migration',
       );
       assert.equal(typeof first.readiness.url, 'string');
+      assert.equal(
+        first.readiness.url,
+        `http://127.0.0.1:${port}`,
+        'with CARTOGRAFO_HOST unset, the control plane stays on loopback (t124, FR5)',
+      );
       assert.deepEqual(
         Object.keys(first.readiness).sort(),
-        ['database', 'event', 'migrationsApplied', 'url'],
-        'the readiness line carries exactly the four English keys (D18, t127 FR6)',
+        ['bootstrapToken', 'database', 'event', 'migrationsApplied', 'url'],
+        'the readiness line carries exactly the five English keys (D18, t127 FR6; t124 FR4)',
       );
       assert.ok(existsSync(databasePath), 'the database file has to exist at the configured path');
 
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { status: 'ok', db: 'ok' });
+
+      // The token is the only thing this line prints that cannot be recovered
+      // later: if it does not authenticate right now, it never will (t124, FR4).
+      assert.equal(typeof first.readiness.bootstrapToken, 'string');
+      assert.ok(
+        (first.readiness.bootstrapToken ?? '').length > 0,
+        'the first startup against a brand-new database mints an operator credential',
+      );
+      assert.equal(
+        (await fetch(`http://127.0.0.1:${port}/v1/jobs`)).status,
+        401,
+        'without the token the API denies everything (t124, Goal)',
+      );
+      assert.equal(
+        (
+          await fetch(`http://127.0.0.1:${port}/v1/jobs`, {
+            headers: { authorization: `Bearer ${first.readiness.bootstrapToken ?? ''}` },
+          })
+        ).status,
+        200,
+        'the token printed on the readiness line authenticates a /v1 call',
+      );
     } finally {
       await first.shutdown();
     }
@@ -160,11 +195,117 @@ test(
         0,
         'idempotent startup: an already migrated database reapplies no migration',
       );
+      assert.equal(
+        second.readiness.bootstrapToken,
+        null,
+        'a database that already has an operator credential mints no second one',
+      );
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { status: 'ok', db: 'ok' });
+
+      assert.equal(
+        (
+          await fetch(`http://127.0.0.1:${port}/v1/jobs`, {
+            headers: { authorization: `Bearer ${first.readiness.bootstrapToken ?? ''}` },
+          })
+        ).status,
+        200,
+        'the credential survives the restart: it lives in the database, not in the process',
+      );
     } finally {
       await second.shutdown();
+    }
+  },
+);
+
+test(
+  't124 AT — a startup that cannot listen does not burn the bootstrap token',
+  { timeout: 180_000 },
+  async (t) => {
+    assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
+
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t124-busy-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const databasePath = path.join(base, 'cartografo.db');
+
+    // Somebody else is already on the port. This is not an exotic case: it is
+    // the first `npx cartografo` of anyone who left another one running, and it
+    // happens BEFORE the operator has ever seen a token.
+    const squatter = createServer();
+    const port = await new Promise<number>((resolve, reject) => {
+      squatter.on('error', reject);
+      squatter.listen(0, '127.0.0.1', () => {
+        const address = squatter.address();
+        if (address === null || typeof address === 'string') {
+          reject(new Error('could not hold a port'));
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+
+    const failed = spawn(process.execPath, [BIN_PATH], {
+      cwd: base,
+      env: { ...process.env, CARTOGRAFO_DB_PATH: databasePath, CARTOGRAFO_PORT: String(port) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const code = await new Promise<number | null>((resolve) => failed.on('close', resolve));
+    assert.notEqual(code, 0, 'a control plane that cannot listen has to fail');
+
+    await new Promise<void>((resolve) => squatter.close(() => resolve()));
+
+    // The database survived that attempt — migrated. The credential must NOT
+    // have: a token minted and never printed is a token nobody can ever use, and
+    // it would make this second startup announce `null` with no way back.
+    const startup = await start({ cwd: base, databasePath, port });
+    try {
+      assert.equal(
+        typeof startup.readiness.bootstrapToken,
+        'string',
+        'the first startup that actually serves is the one that mints the credential',
+      );
+      assert.equal(
+        (
+          await fetch(`http://127.0.0.1:${port}/v1/jobs`, {
+            headers: { authorization: `Bearer ${startup.readiness.bootstrapToken ?? ''}` },
+          })
+        ).status,
+        200,
+      );
+    } finally {
+      await startup.shutdown();
+    }
+  },
+);
+
+test(
+  't124 AT — CARTOGRAFO_HOST decides the bind address, and the announced url says so',
+  { timeout: 180_000 },
+  async (t) => {
+    assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
+
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t124-host-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+
+    // `localhost` and not an external interface: what FR5 asks is that the
+    // address stops being hardcoded, and a test that binds 0.0.0.0 would expose
+    // the only writer of the system on whatever machine runs the suite.
+    const startup = await start({
+      cwd: base,
+      databasePath,
+      port,
+      env: { CARTOGRAFO_HOST: 'localhost' },
+    });
+    try {
+      assert.equal(startup.readiness.url, `http://localhost:${port}`);
+      assert.equal((await fetch(`http://localhost:${port}/health`)).status, 200);
+    } finally {
+      await startup.shutdown();
     }
   },
 );

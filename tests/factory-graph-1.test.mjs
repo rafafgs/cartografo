@@ -333,6 +333,132 @@ test('AT10 — the validator CLI approves the bundle and rejects a tampered hash
   );
 });
 
+/**
+ * Collapses every whitespace run, so a phrase the source wraps across lines
+ * still reads as one string. Without it, "never do X" would silently stop
+ * matching the moment someone rewrapped the paragraph it lives in.
+ */
+const oneLine = (text) => text.replace(/\s+/g, ' ');
+
+/** The check with this id, asserted present before anything reads into it. */
+function checkById(file, id) {
+  const found = readManifest(file).checks.find((item) => item.id === id);
+  assert.ok(found, `${file} has to keep the "${id}" check`);
+  return found;
+}
+
+/** The graph node with this id, asserted present. */
+function nodeById(id) {
+  const found = readJson(GRAPH_PATH).nos.find((item) => item.id === id);
+  assert.ok(found, `grafo.json has to keep the "${id}" node`);
+  return found;
+}
+
+test('AT11 — ordem-tdd demands a red that failed for the right reason', () => {
+  const check = checkById('desenvolver-ticket.json', 'ordem-tdd');
+  const instruction = oneLine(check.instrucao);
+
+  assert.match(instruction, /motivo certo/, 'the check has to ask WHY the red run failed');
+  assert.match(
+    instruction,
+    /implementação ausente/,
+    'a valid red is missing implementation — not a broken import, a typo or a broken fixture',
+  );
+  assert.match(
+    instruction,
+    /não prova a ordem/,
+    'one commit carrying tests and implementation together still cannot pass',
+  );
+
+  const evidence = check.evidencia_obrigatoria;
+  assert.ok(
+    evidence.some((item) => /saida_do_comando_de_testes/.test(item) && /commit/.test(item)),
+    'ordem-tdd needs the test-command output taken at the tests-only commit',
+  );
+  assert.ok(
+    evidence.some((item) => /implementacao_ausente/.test(item)),
+    'ordem-tdd needs evidence that the red failed for missing implementation',
+  );
+});
+
+test('AT12 — portao-de-especificacao demands the DoD anchor, TDD exceptions and INVEST', () => {
+  const check = checkById('refinar-ticket.json', 'portao-de-especificacao');
+  const instruction = oneLine(check.instrucao);
+
+  assert.match(
+    instruction,
+    /primeiro item da Definição de pronto/i,
+    'the gate has to read the first item of the definition of done',
+  );
+  assert.match(
+    instruction,
+    /Exceções ao TDD/,
+    'anything not driveable by a test has to be listed, with its reason',
+  );
+  assert.match(instruction, /INVEST/, 'the gate has to check INVEST was really applied');
+  assert.doesNotMatch(
+    instruction,
+    /responda três coisas/,
+    'the gate now asks five questions, not three',
+  );
+  assert.doesNotMatch(
+    instruction,
+    /das três respostas/,
+    'the closing count has to follow the new questions',
+  );
+
+  const evidence = check.evidencia_obrigatoria;
+  for (const [what, wanted] of [
+    ['the first item of the definition of done', /definicao_de_pronto/],
+    ['the justification of each TDD exception', /excecoes_ao_tdd/],
+    ['what supports each INVEST property', /invest/],
+  ]) {
+    assert.ok(evidence.some((item) => wanted.test(item)), `evidence missing: ${what}`);
+  }
+});
+
+test('AT13 — integrar-branch says the session never performs the final merge', () => {
+  const instructions = oneLine(readManifest('integrar-branch.json').instrucoes);
+
+  assert.match(
+    instructions,
+    /você nunca executa o merge final/i,
+    'session proposes, flow disposes: the absolute rule has to be stated',
+  );
+  assert.doesNotMatch(
+    instructions,
+    /conclua a integração com a linha principal apontando para o resultado/i,
+    'the reconciliation step cannot tell the session to move the main line',
+  );
+});
+
+test('AT14 — the refinar node requires nota in its output contract', () => {
+  const shape = nodeById('refinar').contrato.saida_schema;
+
+  assert.ok(
+    shape.required.includes('nota'),
+    "the refinar node has to mirror the manifest and require the session's note",
+  );
+});
+
+test('AT15 — the testar node mirrors the manifest: per-criterion verdicts and typed bugs', () => {
+  const shape = nodeById('testar').contrato.saida_schema;
+
+  assert.ok(shape.properties.vereditos, 'the testar node has to declare vereditos');
+  assert.ok(shape.properties.bugs, 'the testar node has to declare bugs');
+  assert.ok(shape.required.includes('vereditos'), 'a verdict per criterion is not optional');
+  assert.deepEqual(shape.properties.vereditos.items.required, ['ref', 'veredito', 'evidencia']);
+  assert.ok(
+    shape.properties.bugs.items.required.includes('severidade'),
+    'a bug without severity cannot be scheduled by the executor',
+  );
+  assert.deepEqual(
+    shape.properties.resultado.enum,
+    ['aprovado', 'retrabalho', 'escala'],
+    'the edge vocabulary stays as it is — that is divergence 2, out of scope here',
+  );
+});
+
 // --------------------------------------------------------------------------
 // t176 — one source of truth for how a node verifies itself
 //

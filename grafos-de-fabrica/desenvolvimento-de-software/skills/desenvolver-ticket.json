@@ -1,7 +1,7 @@
 {
   "id": "desenvolver-ticket",
   "versao": "1.0.0",
-  "hash": "sha256:f5862b4664f1d0fed5c747b8eb7686a061d87e1fd3ee1ba51c698477900993c1",
+  "hash": "sha256:fa92367d51a5d15bae71700e9c895796280b2b35c6fab174771c31e96f7e2f87",
   "papel": "fazer",
   "descricao": "Implementa uma especificação refinada num checkout isolado, com os testes de aceite escritos e confirmados vermelhos antes da implementação, e commita no branch do trabalho.",
   "entrada": {
@@ -211,10 +211,11 @@
       "id": "ordem-tdd",
       "tipo": "agentico",
       "descricao": "Verifica a ordem do TDD pelo histórico do branch, não pelo relato de quem desenvolveu. É o único fato desta skill que nenhum comando decide sozinho.",
-      "instrucao": "Os testes de aceite foram commitados ANTES da implementação, e cobrem os critérios da especificação?\n\nCaminhe pelo histórico do branch, do commit mais antigo para o mais novo, e responda com o log na mão: existe um commit que só adiciona ou altera arquivos de teste e é anterior ao commit que traz a implementação? Os testes que ele adiciona correspondem, um a um, aos critérios de aceite da especificação — ou algum critério ficou sem teste?\n\nA evidência é o histórico: hashes dos commits e o diff do commit de testes. A nota da sessão e o campo gates que ela preencheu são autorrelato e não sustentam este veredito. Um único commit contendo testes e implementação juntos não prova a ordem, e por isso não passa.",
+      "instrucao": "Os testes de aceite foram commitados ANTES da implementação, falharam pelo motivo certo, e cobrem os critérios da especificação?\n\nCaminhe pelo histórico do branch, do commit mais antigo para o mais novo, e responda com o log na mão: existe um commit que só adiciona ou altera arquivos de teste e é anterior ao commit que traz a implementação? Os testes que ele adiciona correspondem, um a um, aos critérios de aceite da especificação — ou algum critério ficou sem teste?\n\nE o vermelho foi vermelho pelo motivo certo? Rode o comando de testes do projeto com a árvore no commit que só adiciona testes e leia a saída: cada teste novo tem que falhar por implementação ausente — asserção que não bate, símbolo, rota ou função que ainda não existe — e não por erro de import, typo, dependência faltando ou fixture quebrada. Falha pelo motivo errado não é vermelho válido: ela passa a mesma sensação de segurança sem prova nenhuma, e é assim que uma feature inteira nasce construída em cima de um engano.\n\nA evidência é o histórico e essa saída: hashes dos commits, o diff do commit de testes e a saída da rodada vermelha. A nota da sessão e o campo gates que ela preencheu são autorrelato e não sustentam este veredito. Um único commit contendo testes e implementação juntos não prova a ordem, e por isso não passa.",
       "evidencia_obrigatoria": [
         "hash_do_commit_de_testes_e_hash_do_commit_de_implementacao",
         "diff_do_commit_de_testes",
+        "saida_do_comando_de_testes_no_commit_so_de_testes_mostrando_falha_por_implementacao_ausente",
         "mapeamento_criterio_de_aceite_para_o_teste_que_o_cobre"
       ]
     }

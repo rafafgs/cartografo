@@ -114,7 +114,7 @@ importação. O caminho pela API tem cobertura própria em
 ## Divergências registradas
 
 Dois lugares onde este porte se afasta do que a fonte faz ou do que o rascunho
-do `t96` sugeria, mais um que já foi reconciliado. Ficam escritas porque
+do `t96` sugeria, mais dois que já foram reconciliados. Ficam escritas porque
 divergência não registrada vira armadilha para quem vier depois.
 
 1. **`implantar` é nó agêntico e não deveria ser.** No flowpilot esta etapa
@@ -151,11 +151,40 @@ item agêntico é reescrito em cada formato em vez de copiado — a disciplina q
 a divergir na estrutura agora derruba o validador, sem depender de revisão
 manual de paridade.
 
+**Fechada (t177, 2026-08-15): o `saida_schema` desatualizado de `refinar` e
+`testar`.** Era a mesma classe de divergência que o `t176` reconciliou logo
+acima, um campo ao lado — a cópia do exemplo-mestre do `t96` envelhecendo
+enquanto o manifesto, que é o que vale, seguia em frente. O nó `testar` declarava `evidencia` como string única e
+`defeitos` como lista de strings; agora declara `vereditos` (um por critério,
+`{ref, veredito, evidencia}`, obrigatório) e `bugs` com `severidade`,
+espelhando o `saida` de `testar-alpha.json`. O nó `refinar` passou a exigir
+`nota` e a declarar `tier_modelo` e `gotchas`, espelhando `refinar-ticket.json`.
+O `resultado` do nó e seu enum `aprovado`/`retrabalho`/`escala` continuam como
+estão: é vocabulário de aresta, e traduzi-lo é a divergência 2, ainda aberta.
+Quem reconcilia é quem primeiro nota a diferença — foi isto.
+
+**Dois critérios de paridade que já estavam fechados.** A revisão de paridade
+de 2026-08-15 listou como ausentes duas regras que os manifestos já traziam, e
+a nota fica aqui para a próxima revisão não repetir o engano: a regra do "mesmo
+portão falha três vezes seguidas pelo mesmo motivo → pare e pergunte" está em
+`desenvolver-ticket.json` e em `integrar-branch.json`, na seção "## Quando
+travar de verdade" de cada um; e "nunca enfraqueça um check para ele passar"
+está no passo 4 de "## Reconciliando", em `integrar-branch.json`. Comparar com
+`development.py:105-109`, `integration.py:117-121` e `integration.py:107-110`
+do flowpilot (D17: referência de comportamento, sem dependência de código).
+Ler só o resumo de `grafo.json` não basta — a comparação é contra o manifesto.
+
 E uma consequência que vale explicitar: **escalar para humano não é aresta**.
 As cinco skills carregam o mesmo contrato de escalação (o bloco
-`input-request`), e uma sessão que precisa do fundador pausa em vez de rotear —
-o trabalho fica bloqueado, a pergunta entra na fila de escalação, e ao ser
-respondida a sessão retoma e só então resolve. `escalar_humano` existe no enum
-porque o formato de portão exige os três valores, mas neste grafo nenhuma
-sessão o emite: as únicas decisões em voo são saídas de portão sobre arestas já
-declaradas.
+`input-request`) — não só o portão de teste, e é isso que a `AT8` de
+[`tests/factory-graph-1.test.mjs`](../../tests/factory-graph-1.test.mjs)
+verifica nos cinco manifestos —, e uma sessão que precisa do fundador pausa em
+vez de rotear: o trabalho fica bloqueado, a pergunta entra na fila de
+escalação, e ao ser respondida a sessão retoma e só então resolve. Vale para os
+cinco nós, e é por isso que continua não sendo aresta: escalação é entidade de
+primeira classe (`input_requests`), não um caso especial de roteamento, e
+declarar uma aresta "escala" saindo de cada nó duplicaria esse mecanismo dentro
+da topologia — cinco arestas que nenhuma sessão percorre. `escalar_humano`
+existe no enum porque o formato de portão exige os três valores, mas neste
+grafo nenhuma sessão o emite: as únicas decisões em voo são saídas de portão
+sobre arestas já declaradas.

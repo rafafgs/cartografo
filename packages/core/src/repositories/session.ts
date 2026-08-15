@@ -60,8 +60,16 @@ export interface Session {
   working_dir: string;
   prompt: string;
   timeout_seconds: number | null;
+  /**
+   * Inactivity budget the session was opened with (t163). `null` is "this
+   * session declares no policy" — which is also what every row from before the
+   * second watchdog existed reads as, and never a budget of zero seconds.
+   */
+  silence_seconds: number | null;
   status: string;
   exit_code: number | null;
+  /** Which watchdog stopped it, when one did (t163). `null` = not applicable. */
+  timeout_reason: string | null;
   uso: SessionUsage | null;
   transcricao: string | null;
   transcricao_truncada: boolean;
@@ -77,8 +85,9 @@ interface SessionRow extends Omit<Session, 'uso' | 'transcricao_truncada'> {
 
 const COLUMNS = `
   id, trabalho_id, execucao_id, no_id, engine, engine_session_ref, working_dir,
-  prompt, timeout_seconds, status, exit_code, uso, transcricao,
-  transcricao_truncada, transcricao_tamanho_original, aberta_em, finalizada_em
+  prompt, timeout_seconds, silence_seconds, status, exit_code, timeout_reason,
+  uso, transcricao, transcricao_truncada, transcricao_tamanho_original,
+  aberta_em, finalizada_em
 `;
 
 function toSession(row: SessionRow): Session {
@@ -209,6 +218,7 @@ export interface OpenSessionInput {
   working_dir?: unknown;
   prompt?: unknown;
   timeout_seconds?: unknown;
+  silence_seconds?: unknown;
   execucao_id?: unknown;
   projeto_id?: unknown;
   ator?: unknown;
@@ -236,6 +246,7 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
     working_dir: input.working_dir,
     prompt: input.prompt,
     timeout_seconds: input.timeout_seconds,
+    silence_seconds: input.silence_seconds,
   });
 
   const jobId = data.trabalho_id as number | null;
@@ -257,8 +268,9 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
       .prepare(
         `INSERT INTO sessao (
            trabalho_id, execucao_id, no_id, engine, engine_session_ref, working_dir,
-           prompt, timeout_seconds, status, exit_code, uso, aberta_em, finalizada_em
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'aberta', NULL, NULL, ?, NULL)`,
+           prompt, timeout_seconds, silence_seconds, status, exit_code, uso,
+           aberta_em, finalizada_em
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'aberta', NULL, NULL, ?, NULL)`,
       )
       .run(
         jobId,
@@ -269,6 +281,7 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
         data.working_dir as string,
         data.prompt as string,
         data.timeout_seconds as number | null,
+        data.silence_seconds as number | null,
         timestamp,
       );
 
@@ -293,6 +306,7 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
 export interface FinishSessionInput {
   status?: unknown;
   exit_code?: unknown;
+  timeout_reason?: unknown;
   uso?: unknown;
   transcricao?: unknown;
   ator?: unknown;
@@ -331,6 +345,7 @@ export function finishSession(
   const data = requireValidData('sessao.finalizada', {
     status: input.status,
     exit_code: input.exit_code,
+    timeout_reason: input.timeout_reason,
     uso: input.uso,
   });
   const usage = data.uso as SessionUsage | null;
@@ -342,13 +357,17 @@ export function finishSession(
     const timestamp = now();
     const effect = db
       .prepare(
-        `UPDATE sessao SET status = ?, exit_code = ?, uso = ?, transcricao = ?,
-                transcricao_truncada = ?, transcricao_tamanho_original = ?, finalizada_em = ?
+        `UPDATE sessao SET status = ?, exit_code = ?, timeout_reason = ?, uso = ?,
+                transcricao = ?, transcricao_truncada = ?,
+                transcricao_tamanho_original = ?, finalizada_em = ?
           WHERE id = ? AND status = 'aberta'`,
       )
       .run(
         data.status as string,
         data.exit_code as number | null,
+        // NULL is "no watchdog stopped this session" — for a natural end, for a
+        // cancel somebody drove, and for an adapter that reported no cause.
+        data.timeout_reason as string | null,
         // An absent `uso` writes a real NULL, never an object of zeros.
         usage === null ? null : JSON.stringify(usage),
         // ...and the same reading for the transcript: NULL is "nothing was

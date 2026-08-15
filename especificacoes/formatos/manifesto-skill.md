@@ -66,7 +66,7 @@ Duas coisas que o formato precisa carregar, e carrega em campo, não em prosa:
 
 O hash é calculado sobre a serialização JSON canônica (chaves ordenadas, sem
 espaço insignificante — RFC 8785) do subconjunto
-`{instrucoes, entrada, saida, checks, permissoes}`:
+`{instrucoes, entrada, saida, checks, permissoes, orcamentos}`:
 
 ```bash
 node -e '
@@ -75,22 +75,30 @@ const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
 const canon=v=>Array.isArray(v)?v.map(canon):(v&&typeof v==="object"
   ?Object.keys(v).sort().reduce((o,k)=>(o[k]=canon(v[k]),o),{}):v);
 const sub={instrucoes:m.instrucoes,entrada:m.entrada,saida:m.saida,
-           checks:m.checks,permissoes:m.permissoes};
+           checks:m.checks,permissoes:m.permissoes,orcamentos:m.orcamentos};
 console.log("sha256:"+c.createHash("sha256")
   .update(JSON.stringify(canon(sub)),"utf8").digest("hex"));
 ' especificacoes/formatos/exemplos/manifesto-skill.develop.json
 ```
 
 (Os dois exemplos deste diretório carregam o hash de verdade: o comando acima
-reproduz o valor gravado em cada um.)
+reproduz o valor gravado em cada um, e
+[`manifesto-skill.test.mjs`](./manifesto-skill.test.mjs) confere isso a cada
+`npm test`, junto com os quatro comandos de validação da seção *Como validar*.)
 
 O que está **dentro** do hash é comportamento: o texto que vai ser injetado na
-sessão, o contrato de dados e o que a skill pode tocar. O que está **fora**
-(`id`, `versao`, `descricao`, `origem`) é metadado de catálogo. Renomear a
-skill ou corrigir a descrição não invalida o pin; mudar uma linha das
-instruções, afrouxar um check ou abrir uma permissão muda o hash — que é
-exatamente a mudança que D4 quer travar. Um manifesto cujo hash não bate com
-o próprio conteúdo é manifesto adulterado: não roda.
+sessão, o contrato de dados, o que a skill pode tocar e por quanto tempo ela
+pode rodar. O que está **fora** (`id`, `versao`, `descricao`, `origem`) é
+metadado de catálogo. Renomear a skill ou corrigir a descrição não invalida o
+pin; mudar uma linha das instruções, afrouxar um check, abrir uma permissão ou
+esticar um orçamento muda o hash — que é exatamente a mudança que D4 quer
+travar. Um manifesto cujo hash não bate com o próprio conteúdo é manifesto
+adulterado: não roda.
+
+Crescer o subconjunto é barato de propósito: campo ausente serializa como
+nada (`JSON.stringify` derruba chave com valor `undefined`), então só um
+manifesto que passa a declarar o campo novo muda de hash. Foi assim que
+`orcamentos` entrou sem tocar no pin de nenhum manifesto já registrado.
 
 ### `papel`
 
@@ -180,6 +188,34 @@ enforcement em runtime (sandbox de filesystem e rede) é t125. Até lá o campo
 vale como contrato revisável e como base do diff de permissão entre versões —
 uma skill que abre uma permissão nova muda de hash e reaparece no portão
 humano.
+
+### `orcamentos`
+
+Opcional, e cada eixo dentro dele também: `tempo_esgotado_s` (relógio de
+parede) e `silencio_s` (segundos sem nenhuma saída). Ambos inteiros, mínimo 1
+— um orçamento de zero não é orçamento, e o schema recusa.
+
+São dois cães de guarda **independentes**, porque medem coisas diferentes:
+uma sessão pode ficar viva e produtiva por uma hora, e outra pode travar em
+dois minutos com o processo de pé. O relógio de parede responde "isto já
+custou demais"; o de silêncio responde "isto parou de acontecer". O de
+silêncio reinicia a cada saída do processo, então uma sessão que fala não é
+morta por ele nunca.
+
+**Declarar encurta, nunca alonga.** O que a skill não declara herda o teto do
+servidor; o que ela declara vale se for MENOR que esse teto, e é ignorado se
+for maior (`resolveBudget`, `packages/runner/src/engine/resolve-budget.ts`).
+Uma skill não afrouxa a própria rede de segurança — nem por engano nem de
+propósito —, e é por isso que `orcamentos` entra no hash junto com
+`permissoes`: os dois são declaração de comportamento, e mudança de
+comportamento reaparece no portão humano.
+
+**Estado hoje, sem maquiagem:** nada lê `orcamentos` de uma skill registrada
+para dentro de um despacho, pela mesma razão que nada lê `instrucoes` ainda —
+o pipeline de renderização não existe (ver *Renderização e injeção*, e a nota
+no topo desta doc). O que existe é o contrato aqui, o mecanismo do teto no
+runner, e o enforcement nos dois adapters (caso C9 do kit de conformidade).
+Até lá toda sessão roda com os tetos do servidor.
 
 ### `instrucoes`
 
@@ -308,6 +344,13 @@ npx --yes ajv-cli@5 validate -s especificacoes/formatos/manifesto-skill.schema.j
 
 Os três primeiros saem com exit 0; o quarto sai com exit diferente de 0 — é o
 que prova que o schema não é permissivo demais.
+
+Os quatro rodam automaticamente em `npm test`, por
+[`manifesto-skill.test.mjs`](./manifesto-skill.test.mjs), com `ajv` importado
+direto em vez de por `npx`: portão que precisa de rede é portão vermelho no
+avião. O arquivo confere também o que nenhum `ajv` conferiria — que o `hash`
+gravado em cada exemplo reproduz o próprio conteúdo, e que a receita de hash
+desta doc e o subconjunto pinado não se separaram.
 
 ### O fixture negativo
 

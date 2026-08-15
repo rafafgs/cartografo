@@ -33,7 +33,7 @@
     "hash": {
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$",
-      "description": "pin de conteúdo (D4): sha256 da serialização JSON canônica de {instrucoes, entrada, saida, checks, permissoes}"
+      "description": "pin de conteúdo (D4): sha256 da serialização JSON canônica de {instrucoes, entrada, saida, checks, permissoes, orcamentos}"
     },
     "papel": {
       "type": "string",
@@ -64,6 +64,7 @@
       "description": "verificação tipada do que a skill produz (D9)"
     },
     "permissoes": { "$ref": "#/$defs/permissoes" },
+    "orcamentos": { "$ref": "#/$defs/orcamentos" },
     "instrucoes": {
       "type": "string",
       "minLength": 1,
@@ -136,6 +137,23 @@
             "permitido": { "type": "boolean" },
             "dominios": { "type": "array", "items": { "type": "string" } }
           }
+        }
+      }
+    },
+    "orcamentos": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "tetos de execução que a skill declara para si; cada eixo é opcional, e o que não é declarado herda o teto do servidor. Uma skill só encurta a própria coleira: declarar mais que o teto não a alonga",
+      "properties": {
+        "tempo_esgotado_s": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "relógio de parede, em segundos; passando dele a sessão é morta"
+        },
+        "silencio_s": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "segundos sem nenhuma saída antes de a sessão ser considerada travada; o relógio reinicia a cada saída"
         }
       }
     },

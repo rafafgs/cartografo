@@ -189,6 +189,10 @@ const RULES: Record<string, TypeRule> = {
       working_dir: required('string'),
       prompt: required('string'),
       timeout_seconds: optional('integer', { min: 0 }),
+      // The second watchdog (t163). Optional and floored at 0 exactly like the
+      // wall clock beside it: absent is "this session declares no policy", and
+      // that is a different fact from a budget of zero seconds.
+      silence_seconds: optional('integer', { min: 0 }),
     },
   },
   'sessao.finalizada': {
@@ -206,6 +210,11 @@ const RULES: Record<string, TypeRule> = {
       }),
       exit_code: optional('integer'),
       uso: optional('usage'),
+      // Which of the two watchdogs stopped the session (t163). A field and not
+      // a seventh `status`: both land on `tempo_esgotado`, and the cause rides
+      // in the payload — the same reasoning that kept quota states out of the
+      // adapter's own status vocabulary.
+      timeout_reason: optional('string', { values: ['wall_clock', 'silence'] }),
     },
   },
   'sessao.permissao_negada': {

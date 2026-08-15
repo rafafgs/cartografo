@@ -340,7 +340,13 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   API ([escalacao-humana.md](escalacao-humana.md)). O controller continua sem
   saber que engine existe: nada neste arquivo mudou para isso acontecer, que
   era o ponto da costura. O que segue pendente é a instrução do nó vir do
-  grafo registrado em vez de um literal (`t109`).
+  grafo registrado em vez de um literal (`t109`) — e, pelo mesmo buraco, o
+  **orçamento declarado pela skill** vir do registro: a `t163` deu à sessão dois
+  cães de guarda (relógio de parede e silêncio), com o manifesto declarando
+  `orcamentos` e o runner resolvendo pelo menor dos dois
+  ([`resolveBudget`](../../packages/runner/src/engine/resolve-budget.ts)), mas
+  quem despacha ainda usa o teto do runner porque campo nenhum de manifesto —
+  nem `instrucoes` — é renderizado para dentro de uma sessão hoje.
 - **Modo local** (avaliar um diretório sem control plane): não tem schema nem
   critério de aceite escrito em lugar nenhum do repo. Revisitar quando houver
   caso de uso concreto.

@@ -25,9 +25,13 @@
  * - **The end is decided on `close`, not on `exit`.** `close` only arrives once
  *   the pipes are closed, and that is what guarantees invariant 4 (every line
  *   emitted reaches `onOutput`) before invariant 1 (`onFinished` exactly once).
- * - **The clock is ours.** This CLI has no timeout flag either
- *   (`engine-adapter.md:407`), so the adapter arms it, escalates SIGTERM→SIGKILL
- *   and disarms it.
+ * - **The clocks are ours.** This CLI has no timeout flag either
+ *   (`engine-adapter.md:407`), so the adapter arms them, escalates
+ *   SIGTERM→SIGKILL and disarms them. Since t163 there are two: the wall clock,
+ *   armed once, and the inactivity watchdog, re-armed on every chunk the process
+ *   writes. They are independent because they answer different questions — "this
+ *   already cost too much" and "this stopped happening" — and whichever fires
+ *   first wins outright.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -49,6 +53,7 @@ import {
   type CliProbe,
   type EngineAdapter,
   type EngineCapabilities,
+  type SessionFinishDetail,
   type SessionListener,
   type SessionSpec,
   type SessionStatus,
@@ -108,16 +113,31 @@ export interface CodexAdapterOptions {
   readonly credentialsPath?: string;
 }
 
+/** Which of the two watchdogs stopped a session, when one of ours did. */
+type TimeoutReason = NonNullable<SessionFinishDetail['timeoutReason']>;
+
 /** Local state of a live session. The adapter persists nothing (D1). */
 interface Session {
+  /** This adapter's own handle, so a timer can order a stop by it. */
+  readonly id: string;
   readonly child: ChildProcess;
   readonly listener: SessionListener;
   status: SessionStatus;
   /** Terminal status asked for by whoever ordered the stop (cancel or clock). */
   requestedStatus: SessionStatus | null;
+  /**
+   * Which watchdog of OURS ordered the stop. `null` for a `cancel()` somebody
+   * else drove — the caller knows their own reason, and inventing one here
+   * would put a cause in the telemetry that nobody measured.
+   */
+  timeoutReason: TimeoutReason | null;
   finished: boolean;
   refSent: boolean;
   clock: NodeJS.Timeout | null;
+  /** Inactivity watchdog, re-armed on every raw chunk (t163). */
+  silence: NodeJS.Timeout | null;
+  /** Silence tolerated, in milliseconds. `0` = this session has no inactivity watchdog. */
+  readonly silenceMs: number;
   escalation: NodeJS.Timeout | null;
   safetyNet: NodeJS.Timeout | null;
   leftovers: { stdout: string; stderr: string };
@@ -196,13 +216,22 @@ export class CodexAdapter implements EngineAdapter {
 
     const id = randomUUID();
     const session: Session = {
+      id,
       child,
       listener,
       status: 'pending',
       requestedStatus: null,
+      timeoutReason: null,
       finished: false,
       refSent: false,
       clock: null,
+      silence: null,
+      // Same `> 0` posture the wall clock has: absent, zero or negative is no
+      // watchdog at all, which is what every session had before this existed.
+      silenceMs:
+        typeof spec.silenceSeconds === 'number' && spec.silenceSeconds > 0
+          ? spec.silenceSeconds * 1_000
+          : 0,
       escalation: null,
       safetyNet: null,
       leftovers: { stdout: '', stderr: '' },
@@ -258,11 +287,15 @@ export class CodexAdapter implements EngineAdapter {
       );
     }
 
+    // Two watchdogs, armed independently and cleared together. Whichever fires
+    // first wins outright: `#stop` is a complete no-op once a stop is in
+    // flight, which is the same discipline C8 already demands of `cancel()`.
     if (spec.timeoutSeconds > 0) {
       session.clock = setTimeout(() => {
-        this.#stop(id, 'timed_out');
+        this.#stop(id, 'timed_out', 'wall_clock');
       }, spec.timeoutSeconds * 1_000);
     }
+    this.#armSilence(session);
 
     return id;
   }
@@ -322,8 +355,28 @@ export class CodexAdapter implements EngineAdapter {
     return session;
   }
 
+  /**
+   * (Re)arms the inactivity watchdog, if this session has one.
+   *
+   * Called at the start and on every raw chunk, which is what makes "silence"
+   * mean what it says: the session is alive while the process is producing,
+   * whatever the produce happens to parse into.
+   */
+  #armSilence(session: Session): void {
+    if (session.silenceMs <= 0 || session.finished) return;
+    if (session.silence) clearTimeout(session.silence);
+    session.silence = setTimeout(() => {
+      this.#stop(session.id, 'timed_out', 'silence');
+    }, session.silenceMs);
+  }
+
   /** Splits the stream into lines, keeping the `\n`-less tail for the next chunk. */
   #pump(session: Session, channel: 'stdout' | 'stderr', chunk: string): void {
+    // On the RAW chunk, before any line-splitting: an engine that writes one
+    // long unbroken line is producing output, and judging it silent because no
+    // `\n` arrived yet would kill a session that is working.
+    this.#armSilence(session);
+
     const accumulated = session.leftovers[channel] + chunk;
     const parts = accumulated.split('\n');
     session.leftovers[channel] = parts.pop() ?? '';
@@ -365,8 +418,16 @@ export class CodexAdapter implements EngineAdapter {
     this.#finish(id, status, code);
   }
 
-  /** Asks for a stop: SIGTERM to the group, SIGKILL after the grace. */
-  #stop(id: string, status: SessionStatus): void {
+  /**
+   * Asks for a stop: SIGTERM to the group, SIGKILL after the grace.
+   *
+   * @param id The session's handle.
+   * @param status Terminal status to report.
+   * @param timeoutReason Which watchdog of ours ordered it, when one did. A
+   *   `cancel()` from outside passes nothing: reporting a cause the caller
+   *   never gave would be telemetry this adapter made up.
+   */
+  #stop(id: string, status: SessionStatus, timeoutReason: TimeoutReason | null = null): void {
     const session = this.#sessions.get(id);
     if (!session || session.finished) return;
     // A stop is already in flight: this call is a COMPLETE no-op — it does not
@@ -381,6 +442,7 @@ export class CodexAdapter implements EngineAdapter {
     if (session.escalation) return;
 
     session.requestedStatus = status;
+    session.timeoutReason = timeoutReason;
     this.#signalGroup(session, 'SIGTERM');
 
     session.escalation = setTimeout(() => {
@@ -406,11 +468,19 @@ export class CodexAdapter implements EngineAdapter {
     // Invariant 3: the status only turns terminal together with onFinished,
     // never before.
     session.status = status;
-    session.listener.onFinished(status, exitCode);
+    // The cause only travels when one of our own watchdogs produced it; it is
+    // set beside `requestedStatus`, so it can only ever accompany the status
+    // that watchdog asked for.
+    const reason = session.timeoutReason;
+    session.listener.onFinished(
+      status,
+      exitCode,
+      reason === null ? undefined : { timeoutReason: reason },
+    );
   }
 
   #disarm(session: Session): void {
-    for (const name of ['clock', 'escalation', 'safetyNet'] as const) {
+    for (const name of ['clock', 'silence', 'escalation', 'safetyNet'] as const) {
       const timer = session[name];
       if (timer) clearTimeout(timer);
       session[name] = null;

@@ -5,7 +5,8 @@
 > *implementados* antes de travar o formato, e os dois existem:
 > `packages/runner/src/engine/claude-code-adapter.ts` (t104) e
 > `packages/runner/src/engine/codex-adapter.ts` (t119), cada um certificado
-> pelos sete casos do kit contra o fake engine.
+> pelos casos do kit contra o fake engine — sete no congelamento, nove desde
+> que o cão de guarda de inatividade acrescentou o C9 (t163).
 >
 > **Lacuna registrada no congelamento (t119):** a prova manual do adapter do
 > Codex contra a CLI real rodou até o 401 — a máquina não tem credencial
@@ -162,6 +163,19 @@ export interface SessionSpec {
 
   /** Limite de relógio de parede; passando dele a sessão é morta. */
   readonly timeoutSeconds: number;
+
+  /**
+   * Segundos de SILÊNCIO tolerados antes de a sessão ser morta — um segundo
+   * cão de guarda, independente do relógio de parede, e que mede outra coisa:
+   * o relógio diz "isto já custou demais", a inatividade diz "isto parou de
+   * acontecer". Ele reinicia a cada saída do processo, então sessão que fala
+   * nunca é morta por ele.
+   *
+   * Ausente ou `<= 0` significa nenhum cão de guarda de inatividade, que é a
+   * mesma postura que o relógio de parede já tem pela própria guarda `> 0`, e
+   * o comportamento de toda sessão aberta antes deste campo existir.
+   */
+  readonly silenceSeconds?: number;
 
   /**
    * Adições opacas ao ambiente do processo do engine. Deliberadamente sem
@@ -349,6 +363,31 @@ exigida pela D16 é feita.
 
 ```typescript
 /**
+ * O que o adapter sabe sobre um desfecho terminal além do próprio status.
+ *
+ * Existe por um fato só, e é deliberadamente estreito: com dois cães de
+ * guarda, um `timed_out` deixou de dizer qual deles mordeu. Crescer o
+ * `SessionStatus` no lugar disso já foi rejeitado uma vez, para estados de
+ * cota/limite, e o raciocínio vale igual — "o motivo real vive no log de
+ * eventos, que é append-only e não perde nada" (ver *Rejeitado —
+ * `SessionStatus` mais rico*). Um status, uma causa ao lado.
+ *
+ * Opcional em todas as direções: o parâmetro, o campo, e o que um consumidor
+ * faz com ele. Adapter que não tem nada a acrescentar reporta dois
+ * argumentos, como sempre reportou.
+ */
+export interface SessionFinishDetail {
+  /**
+   * Qual cão de guarda parou a sessão, quando quem decidiu parar foi o
+   * PRÓPRIO adapter.
+   *
+   * Ausente num `cancel()` conduzido de fora: quem cancelou conhece o motivo
+   * dele, e inventar um aqui poria na telemetria uma causa que ninguém mediu.
+   */
+  readonly timeoutReason?: "wall_clock" | "silence";
+}
+
+/**
  * Por onde tudo que uma sessão produz sai do adapter.
  *
  * Nada escapa por canal específico de engine: o que o chamador precisa chega
@@ -380,8 +419,17 @@ export interface SessionListener {
    * `exitCode` é `number | null`: em POSIX, processo morto por sinal não tem
    * código de saída, e é precisamente o que acontece nos casos de timeout e
    * cancelamento do kit. `null` é "não houve", não "zero".
+   *
+   * `detail` só é preenchido quando o adapter tem algo que o status não
+   * carrega — hoje, qual dos dois cães de guarda parou a sessão. Consumidor
+   * escrito antes de ele existir continua funcionando: argumento a mais em
+   * callback de dois parâmetros é ignorado.
    */
-  onFinished(status: SessionStatus, exitCode: number | null): void;
+  onFinished(
+    status: SessionStatus,
+    exitCode: number | null,
+    detail?: SessionFinishDetail,
+  ): void;
 }
 ```
 
@@ -502,9 +550,12 @@ comando do adapter — de modo que o CI nunca precise da CLI real instalada nem
 autenticada. Rodar contra a CLI de verdade é portão manual, separado.
 
 Os seis primeiros casos são obrigatórios. C7 vem junto porque é a única
-verificação do contrato de erro e custa uma linha, e C8 porque é a única que
-prova o contrato do `cancel()` sob concorrência — os dois chamadores de parada
-(relógio e `cancel()`) disputando a mesma sessão.
+verificação do contrato de erro e custa uma linha, C8 porque é a única que
+prova o contrato do `cancel()` sob concorrência — os chamadores de parada
+(relógio, cão de guarda de inatividade e `cancel()`) disputando a mesma
+sessão —, e C9 porque o segundo cão de guarda (t163) é a única coisa neste
+adapter que só se prova pelo tempo: que ele rearma a cada saída, e que morde
+quando a saída para.
 
 | Nome | Setup | Resultado esperado |
 |---|---|---|
@@ -516,6 +567,7 @@ prova o contrato do `cancel()` sob concorrência — os dois chamadores de parad
 | **C6 — Colheita de eventos** | Fake engine emite uma sequência conhecida de linhas — incluindo uma que não é frame estruturado — e sai com código não-zero. | Todas as linhas chegam ao `onOutput`, **na ordem original e sem parse**; `onFinished` reporta `"failed"` com o exit code exato. A variante com saída 0 reporta `"completed"` com 0. |
 | **C7 — Handle desconhecido** | Handle nunca iniciado neste adapter. | `getStatus` e `cancel` rejeitam com `UnknownSessionError`. Nenhum dos dois inventa status. |
 | **C8 — Corrida de parada** | Fake engine que ignora SIGTERM e nunca termina sozinho; `timeoutSeconds` longo, para que o relógio interno nunca dispare por conta própria. Duas paradas seguidas, sem sleep entre elas, com status diferentes — a segunda cai dentro da janela de grace da primeira: `cancel(handle, "timed_out")` e depois `cancel(handle, "cancelled")`. | Vence a PRIMEIRA: `onFinished` e `getStatus` reportam `"timed_out"`, não importa se o processo morreu no SIGTERM ou no SIGKILL. A segunda parada é no-op completo — não sobrescreve o status, não sinaliza de novo, não rearma escalação nem rede de segurança (`onFinished` uma única vez). Repetido com os status trocados, o esperado vira `"cancelled"`: o que vence é a ordem, não o literal. |
+| **C9 — Inatividade** | Fake engine emite um batimento a cada `silenceSeconds / 2`, atravessando duas janelas inteiras, e depois cala para sempre sem sair; `timeoutSeconds` longo, para que o relógio de parede nunca dispare por conta própria. | `onFinished("timed_out", null, {timeoutReason: "silence"})` uma única vez, dentro de uma janela de `silenceSeconds` contada a partir do ÚLTIMO batimento — nunca a partir do início da sessão, que é o que um cão de guarda sem rearme faria. Todos os batimentos chegaram ao `onOutput` antes disso. Nenhum órfão. `cancel()` depois é no-op silencioso. |
 
 Notas de execução:
 
@@ -635,6 +687,23 @@ um formato-produto começa a acumular campo morto. O que a divergência
 produziu foi a **regra normativa** da separação, que agora está escrita, e o
 caso C2 do kit, que a verifica pelo que o processo recebeu.
 
+5. **`SessionSpec.silenceSeconds` e o terceiro argumento do `onFinished`**
+   (t163). O primeiro crescimento aditivo depois do congelamento em v1 que
+   toca o listener, e ele obedece à mesma regra que `SessionSpec.permissions`
+   obedeceu: campo opcional, parâmetro opcional, nenhum símbolo publicado
+   mudando de nome ou de forma. Um adapter de terceiro que ignora
+   `silenceSeconds` continua compilando e continua passando C1–C8; o que ele
+   não passa é C9, que é exatamente o que "esta capacidade é nova" tem de
+   significar num kit de certificação.
+
+   O par vem junto por necessidade: com dois cães de guarda, `"timed_out"`
+   deixou de dizer qual mordeu, e essa é uma pergunta operacional real ("a
+   sessão custou demais" e "a sessão parou de acontecer" pedem reações
+   diferentes). A resposta NÃO foi um status novo — ver o parágrafo logo
+   abaixo, que rejeitou isso por conta própria — e sim uma causa opcional ao
+   lado do status, que morre no log de eventos como
+   `sessao.finalizada.dados.timeout_reason`.
+
 **Rejeitado — `SessionStatus` mais rico.** Codex e Claude Code têm ambos
 estados próprios de quota/limite (o `Reconnecting... n/5` acima é um deles).
 Tentador promover ao baseline; errado por ora. Um terceiro engine sem
@@ -642,6 +711,13 @@ conceito de janela de quota teria que fingir, e a regra dos dois consumidores
 vale para o vocabulário de status tanto quanto para os métodos. Fica
 `failed`, e o motivo real vive no log de eventos, que é append-only e não
 perde nada.
+
+A t163 aplicou este mesmo raciocínio a um caso que não era de engine nenhum,
+e sim nosso: o segundo cão de guarda. Um `stalled`/`travada` separado de
+`timed_out` era o porte óbvio do flowpilot e teria sido a decisão errada pela
+razão idêntica — o que muda entre as duas paradas não é o desfecho, é a
+causa, e causa é dado, não vocabulário. `SessionStatus` continua com seis
+membros.
 
 ## Fora de escopo (v0)
 

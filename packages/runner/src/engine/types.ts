@@ -70,6 +70,19 @@ export interface SessionSpec {
   readonly timeoutSeconds: number;
 
   /**
+   * Seconds of SILENCE tolerated before the session is killed — a second
+   * watchdog, independent of the wall clock, and measuring something else: the
+   * clock says "this already cost too much", inactivity says "this stopped
+   * happening". It restarts at every output of the process, so a session that
+   * keeps talking is never stopped by it.
+   *
+   * Absent or `<= 0` means no inactivity watchdog, which is the posture the
+   * wall clock already has through its own `> 0` guard, and the behaviour of
+   * every session opened before this field existed.
+   */
+  readonly silenceSeconds?: number;
+
+  /**
    * Opaque additions to the engine process's environment. Deliberately
    * untyped from this layer's point of view: what the keys mean is the
    * engine's business.
@@ -162,6 +175,31 @@ export function resolveCapabilities(
 }
 
 /**
+ * What the adapter knows about a terminal outcome, beyond the status itself.
+ *
+ * It exists for one fact and is deliberately narrow: with two watchdogs, a
+ * `timed_out` no longer says which one bit. Growing `SessionStatus` instead was
+ * already rejected once, for quota/limit states, and the reasoning applies
+ * unchanged — "the real reason lives in the event log, which is append-only and
+ * loses nothing" (`engine-adapter.md`, "Rejeitado — `SessionStatus` mais rico").
+ * One status, one cause beside it.
+ *
+ * Optional in every direction: the parameter, the field, and what a consumer
+ * does with it. An adapter that has nothing to add reports two arguments, as it
+ * always did.
+ */
+export interface SessionFinishDetail {
+  /**
+   * Which watchdog stopped the session, when the ADAPTER itself decided to.
+   *
+   * Absent for a `cancel()` an external caller drove: whoever cancelled knows
+   * their own reason, and inventing one here would put a cause in the telemetry
+   * that nobody measured.
+   */
+  readonly timeoutReason?: 'wall_clock' | 'silence';
+}
+
+/**
  * The one way everything a session produces leaves the adapter.
  *
  * Nothing escapes through an engine-specific channel: what the caller needs
@@ -195,8 +233,17 @@ export interface SessionListener {
    * `exitCode` is `number | null`: in POSIX, a process killed by a signal has
    * no exit code, and that is precisely what happens in the kit's timeout and
    * cancellation cases. `null` is "there was none", not "zero".
+   *
+   * `detail` is populated only when the adapter has something the status does
+   * not carry — today, which of the two watchdogs stopped the session. A
+   * consumer written before it existed keeps working: an extra argument to a
+   * two-parameter callback is ignored.
    */
-  onFinished(status: SessionStatus, exitCode: number | null): void;
+  onFinished(
+    status: SessionStatus,
+    exitCode: number | null,
+    detail?: SessionFinishDetail,
+  ): void;
 }
 
 /** Result of the CLI preflight, consumed by the install wizard. */

@@ -1,0 +1,44 @@
+-- 0010_sessao_orcamento_silencio — o segundo orçamento da sessão, e a causa da
+-- parada (t163).
+--
+-- Até aqui a sessão tinha um cão de guarda só: `timeout_seconds`, relógio de
+-- parede, armado na abertura. Sessão travada com o processo de pé corria o
+-- orçamento inteiro — uma hora, no padrão do despacho — sem que nada olhasse
+-- para "isto ainda está produzindo alguma coisa?". As duas colunas abaixo são
+-- o outro eixo e o que ele deixa como rastro.
+--
+-- - `silence_seconds` é o teto de INATIVIDADE com que a sessão foi aberta, em
+--   segundos, e é independente de `timeout_seconds` de propósito: os dois
+--   medem coisas diferentes. O relógio responde "isto já custou demais"; o
+--   silêncio responde "isto parou de acontecer". Uma sessão pode ficar viva e
+--   produtiva por uma hora, e outra pode travar em dois minutos com o processo
+--   de pé — e só o segundo eixo enxerga a segunda.
+-- - `timeout_reason` é qual dos dois mordeu: `wall_clock` ou `silence`. É
+--   `CHECK`ada porque um terceiro valor aqui não é dado novo, é erro de quem
+--   escreveu — e a projeção é lida por gente decidindo se investiga.
+--
+-- **Por que a causa é campo e não status.** `sessao.finalizada.status` continua
+-- com os seis valores que tinha: as duas paradas nossas desembocam em
+-- `tempo_esgotado`, distinguidas por esta coluna. Crescer o vocabulário de
+-- status foi rejeitado uma vez, para estados de cota, com o raciocínio que vale
+-- igual aqui — "o motivo real vive no log de eventos, que é append-only e não
+-- perde nada" (`docs/formatos/engine-adapter.md`, *Rejeitado — `SessionStatus`
+-- mais rico*). E `travada`, que a taxonomia descrevia como "parada por
+-- silêncio", nunca foi isso na prática: é o slot de quem não tem slot
+-- (`pending`/`running`/`cancelled`). A prosa foi corrigida junto desta ficha.
+--
+-- As duas colunas são anuláveis e sem backfill, como `timeout_seconds` já era:
+-- linha anterior a esta migração lê `NULL`/`NULL`, que é exatamente o que ela
+-- é — "não declarou política" e "não se aplica". Não há valor a inventar para
+-- uma sessão que terminou antes de o segundo cão de guarda existir.
+--
+-- Nomes de coluna seguem em português, como o resto de `sessao`: a D18 escopa a
+-- regra de inglês a identificadores de código, e schema aqui é vocabulário de
+-- dado. Os dois VALORES de `timeout_reason` são inglês por serem vocabulário da
+-- interface do EngineAdapter, que é inglês inteira e é quem os produz.
+--
+-- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+
+ALTER TABLE sessao ADD COLUMN silence_seconds INTEGER;  -- NULO = sem política própria
+ALTER TABLE sessao ADD COLUMN timeout_reason  TEXT
+  CHECK (timeout_reason IN ('wall_clock', 'silence'));  -- NULO = nenhum cão de guarda mordeu

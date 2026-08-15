@@ -264,11 +264,11 @@ function canonicalize(value) {
 /**
  * Content hash of the manifest, by the procedure in
  * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
- * `{instrucoes, entrada, saida, checks, permissoes}`.
+ * `{instrucoes, entrada, saida, checks, permissoes, orcamentos}`.
  *
  * What is left out (`id`, `versao`, `descricao`, `origem`) is catalogue
  * metadata: renaming the skill does not invalidate the pin, changing a line of
- * the instructions or loosening a check does.
+ * the instructions, loosening a check or stretching a budget does.
  *
  * @param {object} manifest Manifest, already parsed.
  * @returns {string} `sha256:` followed by 64 hex characters.
@@ -280,6 +280,7 @@ export function manifestHash(manifest) {
     saida: manifest.saida,
     checks: manifest.checks,
     permissoes: manifest.permissoes,
+    orcamentos: manifest.orcamentos,
   };
   const digest = createHash('sha256')
     .update(JSON.stringify(canonicalize(subset)), 'utf8')

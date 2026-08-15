@@ -52,7 +52,7 @@ export const MANIFEST_ROLES = ['fazer', 'portao'];
 /**
  * Content hash of a skill manifest, by the procedure of
  * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
- * `{instrucoes, entrada, saida, checks, permissoes}`.
+ * `{instrucoes, entrada, saida, checks, permissoes, orcamentos}`.
  *
  * It covers only that subset — and not the whole manifest, as the graph version
  * hash does — because catalogue metadata (`id`, `versao`, `descricao`, `origem`)
@@ -60,6 +60,13 @@ export const MANIFEST_ROLES = ['fazer', 'portao'];
  * The practical consequence at the import gate is worth stating: the reviewer's
  * signature (`origem.revisado_por`) lands OUTSIDE the hash, so signing an
  * approved manifest never invalidates the pin the reviewer just approved.
+ *
+ * `orcamentos` joined the subset in t163 for the reason `permissoes` was always
+ * in it: a watchdog budget is a declaration of behaviour, and behaviour may not
+ * move without the pin moving with it. Growing the subset costs nothing to the
+ * manifests already registered — an absent key serializes to nothing, because
+ * `JSON.stringify` drops a key whose value is `undefined` — so only a manifest
+ * that actually declares budgets gets a different hash than it had.
  *
  * @param manifest Already parsed manifest.
  * @returns `sha256:` followed by 64 hex characters.
@@ -71,6 +78,7 @@ export function manifestHash(manifest: Record<string, unknown>): string {
     saida: manifest.saida,
     checks: manifest.checks,
     permissoes: manifest.permissoes,
+    orcamentos: manifest.orcamentos,
   };
   const digest = createHash('sha256')
     .update(JSON.stringify(canonicalize(subset)), 'utf8')

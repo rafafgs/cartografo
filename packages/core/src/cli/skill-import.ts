@@ -309,7 +309,7 @@ export async function runScanSkill(options: ScanSkillOptions): Promise<number> {
   process.stdout.write('\nwhat only a human can write is still a placeholder:\n');
   process.stdout.write(line('entrada/saida', 'write the JSON Schema of what the skill consumes and produces'));
   process.stdout.write(line('instrucoes', 'review the body as an injection vector before approving'));
-  process.stdout.write(line('hash', 'recompute it after editing — the pin covers the five content fields'));
+  process.stdout.write(line('hash', 'recompute it after editing — the pin covers the content fields'));
   process.stdout.write(`\nnext: cartografo propose-skill ${destination}\n`);
   return 0;
 }

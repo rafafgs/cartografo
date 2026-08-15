@@ -211,8 +211,14 @@ Emitido quando o runner despacha a sessão. Ator: `sistema` (`ref` = o runner).
 ```json
 {"trabalho_id":101,"no_id":"refinamento","engine":"claude-code",
  "engine_session_ref":"cc-9f2b41d0","working_dir":"/Users/rafael/cartografo-ticket-98",
- "prompt":"Refine o trabalho 101 contra as convencoes do projeto.","timeout_seconds":5400}
+ "prompt":"Refine o trabalho 101 contra as convencoes do projeto.","timeout_seconds":5400,
+ "silence_seconds":900}
 ```
+
+Os dois orçamentos são independentes e opcionais (t163): `timeout_seconds` é
+relógio de parede, `silence_seconds` é quanto tempo a sessão pode ficar sem
+produzir saída nenhuma. `null` em qualquer um deles é "não declara política
+própria", nunca "zero".
 
 `engine_session_ref` é o id da sessão no vocabulário do próprio engine, e é o
 que torna o retomar possível depois de uma pausa por cota — por isso é
@@ -224,13 +230,30 @@ Emitido no fim da vida da sessão. Ator: `sistema`. `status` ∈ `concluida`,
 `falhou`, `travada`, `tempo_esgotado`, `pausada_cota`, `retomada_falhou`.
 
 ```json
-{"status":"travada","exit_code":null,"uso":null}
+{"status":"tempo_esgotado","exit_code":null,"uso":null,"timeout_reason":"silence"}
 ```
 
 Os quatro status além de concluída/falhou existem para que um desfecho
 saudável (`pausada_cota` — sem combustível, retomável), um ref inválido
-(`retomada_falhou`) e uma parada nossa (`travada` por silêncio,
-`tempo_esgotado` por relógio) nunca sejam lidos como bug a investigar.
+(`retomada_falhou`) e uma parada nossa (`tempo_esgotado`) nunca sejam lidos
+como bug a investigar.
+
+**As duas paradas nossas são uma só no `status`.** O runner tem dois cães de
+guarda independentes — relógio de parede e silêncio (t163) — e ambos
+desembocam em `tempo_esgotado`. Quem os separa é `dados.timeout_reason`
+(`wall_clock` | `silence` | `null`), não um status a mais: crescer o
+vocabulário de status foi rejeitado uma vez, para estados de cota, e o
+raciocínio vale igual — "o motivo real vive no log de eventos, que é
+append-only e não perde nada" (`docs/formatos/engine-adapter.md`, *Rejeitado
+— `SessionStatus` mais rico*).
+
+Correção de rota, registrada em vez de apagada: até a t163 esta seção
+descrevia `travada` como "parada por silêncio", em porte 1:1 do `STALLED` do
+flowpilot. Esse porte nunca foi construído, e o único lugar que produz
+`travada` hoje (`TAXONOMY_STATUS`, `packages/runner/src/dispatch/`) o usa
+como o slot de quem não tem slot — `pending`, `running` e `cancelled` não têm
+correspondente aqui. `travada` não tem relação nenhuma com silêncio, e a
+frase que dizia o contrário era aspiração documentada como se fosse fato.
 
 `uso` é `null` quando o engine não reportou nada — **nunca colapsar em zero**.
 Não há campo de custo: custo é vocabulário de engine, e o log é neutro.
@@ -419,11 +442,12 @@ estrutural desta ficha.
 | criação da linha (`pending`) | `sessao.aberta` | ≠ | Evento, não linha mutável. |
 | `status` terminal | `sessao.finalizada.status` | ≠ | 6 valores contra 9: `pending`/`running` não são desfechos (a abertura já é evento própria). |
 | `SessionStatus.COMPLETED/FAILED` | `concluida`/`falhou` | = | |
-| `STALLED`/`TIMED_OUT` | `travada`/`tempo_esgotado` | = | |
+| `STALLED`/`TIMED_OUT` | `tempo_esgotado` + `dados.timeout_reason` | ≠ | Dois status lá, um status e uma causa aqui (t163). `travada` **não** é o porte de `STALLED`: é o slot de `pending`/`running`/`cancelled`, que não têm um. |
 | `PAUSED_QUOTA`/`RESUME_FAILED` | `pausada_cota`/`retomada_falhou` | = | |
 | `CANCELLED` | — | | **Sem porte na v1** (não está na tabela da ficha). Se a PoC precisar cancelar sessão, é acréscimo aditivo ao enum. |
 | `engine`, `engine_session_ref` | idem em `sessao.aberta` | = | A fronteira de independência de LLM. |
 | `working_dir`, `prompt`, `timeout_seconds` | idem | = | |
+| `last_output_at` (relógio de silêncio) | `sessao.aberta.silence_seconds` + `sessao.finalizada.timeout_reason` | ≠ | Lá é um instante atualizado na linha e varrido por fora; aqui é o orçamento na abertura e a causa no fim, sem nada mutável no meio. |
 | `stage` (estado do fluxo) | `no_id` | ≠ | Nó do grafo, mesma razão de `trabalho.transicao`. |
 | `ticket_id` | `trabalho_id` (opcional) | = | Opcional lá e aqui: nem toda sessão serve um trabalho. |
 | `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` | `uso.{...}` | = | Nomes idênticos, de propósito. `null` ≠ zero, também de propósito. |

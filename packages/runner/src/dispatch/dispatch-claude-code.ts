@@ -62,8 +62,10 @@
 
 import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
 import { resolvePermissions } from '../engine/permission-policy.ts';
+import { resolveBudget } from '../engine/resolve-budget.ts';
 import type {
   EngineAdapter,
+  SessionFinishDetail,
   SessionPermissions,
   SessionSpec,
   SessionStatus,
@@ -263,6 +265,19 @@ export interface ClaudeCodeDispatchOptions {
   worktrees: WorktreeManager;
   /** Wall-clock limit of the session. Default: one hour. */
   timeoutSeconds?: number;
+  /**
+   * Silence tolerated before the session is stopped (t163, FR9).
+   *
+   * The second watchdog, and the second budget: it resolves through
+   * {@link resolveBudget} against {@link DEFAULT_SILENCE_SECONDS}, so declaring
+   * a shorter one shortens it and declaring a longer one does nothing. Zero and
+   * negative are "no override", never "no watchdog".
+   *
+   * This is where a skill's declared `orcamentos.silencio_s` will arrive when
+   * something finally renders a registered manifest into a dispatch — the same
+   * seam `permissions` below already is, and for the same missing pipeline.
+   */
+  silenceSeconds?: number;
   /** Node instructions. Default: {@link DEFAULT_INSTRUCTIONS}. */
   instructions?: string;
   /** Opaque additions to the engine's environment. */
@@ -328,6 +343,22 @@ export class UnknownEngineError extends Error {
 
 /** Default wall-clock limit, in seconds. */
 const DEFAULT_TIMEOUT_SECONDS = 3_600;
+
+/**
+ * Server ceiling for silence, in seconds (t163, FR9).
+ *
+ * 300s is flowpilot's own `DEFAULT_SILENCE_SECONDS`: short enough that a stuck
+ * session is noticed while somebody still cares, long enough that a session
+ * thinking hard between two tool calls is not murdered for it. Exported because
+ * it IS the ceiling — whoever reads a skill's declared budget resolves against
+ * this number, and a ceiling nobody can name is a ceiling nobody can check.
+ *
+ * "Server config" in the ticket's sense is exactly this: a constant plus a
+ * dispatch option, the same shape {@link DEFAULT_TIMEOUT_SECONDS} has had since
+ * t106. There is no configuration subsystem in `packages/core` to put it in, and
+ * inventing one for two numbers is how a knob nobody turns gets born.
+ */
+export const DEFAULT_SILENCE_SECONDS = 300;
 
 /**
  * `ator.ref` of a permission denial.
@@ -407,6 +438,13 @@ export function buildPrompt(
 interface Outcome {
   status: SessionStatus;
   exitCode: number | null;
+  /**
+   * Which watchdog stopped it, when the adapter itself stopped it (t163).
+   *
+   * Absent means the adapter reported no cause, and that is what gets recorded:
+   * `null`, never one of the two picked because it looked likely.
+   */
+  timeoutReason?: SessionFinishDetail['timeoutReason'];
 }
 
 /**
@@ -422,6 +460,7 @@ export function createClaudeCodeDispatch(
   const urlBase = options.urlBase.replace(/\/+$/, '');
   const doFetch = options.doFetch ?? fetch;
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+  const silenceSeconds = resolveBudget(options.silenceSeconds, DEFAULT_SILENCE_SECONDS);
 
   // Headers of every call: the body's `content-type`, when there is a body, and
   // the credential. Built once — the seven routes below are one client, and a
@@ -547,6 +586,7 @@ export function createClaudeCodeDispatch(
         instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
         prompt,
         timeoutSeconds,
+        silenceSeconds,
         ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
         ...(options.permissions === undefined ? {} : { permissions: options.permissions }),
       };
@@ -611,8 +651,8 @@ export function createClaudeCodeDispatch(
         onEngineRef(ref) {
           engineRef = ref;
         },
-        onFinished(status, exitCode) {
-          announceEnd({ status, exitCode });
+        onFinished(status, exitCode, detail) {
+          announceEnd({ status, exitCode, timeoutReason: detail?.timeoutReason });
         },
       });
 
@@ -631,6 +671,7 @@ export function createClaudeCodeDispatch(
           working_dir: spec.workingDir,
           prompt: spec.prompt,
           timeout_seconds: spec.timeoutSeconds,
+          silence_seconds: spec.silenceSeconds,
         });
 
         sessionId = session.id;
@@ -679,6 +720,11 @@ export function createClaudeCodeDispatch(
         await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
           status: TAXONOMY_STATUS[outcome.status],
           exit_code: outcome.exitCode,
+          // Both watchdogs land on `tempo_esgotado`; this is what tells them
+          // apart. `null` is "the adapter reported no cause" — for a cancel
+          // somebody else drove, or for an adapter that predates the field —
+          // and it may never be filled in with a guess.
+          timeout_reason: outcome.timeoutReason ?? null,
           // The v0 interface reports no token usage (out of scope). `null` is
           // "the engine reported nothing" and must never collapse into zero.
           uso: null,

@@ -24,11 +24,15 @@
             "pausada_cota",
             "retomada_falhou"
           ],
-          "description": "Como terminou. Os quatro além de concluida/falhou existem para que um desfecho saudável (pausada_cota), um ref inválido (retomada_falhou) e uma parada nossa (travada por silêncio, tempo_esgotado por relógio) nunca sejam lidos como bug a investigar."
+          "description": "Como terminou. Os quatro além de concluida/falhou existem para que um desfecho saudável (pausada_cota), um ref inválido (retomada_falhou) e uma parada nossa (tempo_esgotado) nunca sejam lidos como bug a investigar. As duas paradas nossas — relógio de parede e silêncio — desembocam ambas em tempo_esgotado, e quem as separa é timeout_reason; travada não tem relação com silêncio, é o slot de quem não tem slot (pending/running/cancelled)."
         },
         "exit_code": {
           "type": ["integer", "null"],
           "description": "Código de saída do processo do engine, quando houve processo com saída."
+        },
+        "timeout_reason": {
+          "enum": ["wall_clock", "silence", null],
+          "description": "Qual cão de guarda parou a sessão, quando quem parou foi o adapter. wall_clock = estourou o relógio de parede; silence = ficou o orçamento inteiro sem produzir saída. null quando não se aplica, ou quando o adapter não reportou causa — nunca preenchido por palpite. Os valores são ingleses por serem vocabulário da interface do EngineAdapter, que é quem os produz."
         },
         "uso": {
           "type": ["object", "null"],

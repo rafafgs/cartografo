@@ -1,7 +1,7 @@
 {
   "id": "develop",
   "versao": "1.0.0",
-  "hash": "sha256:50973b7555df289000d3813b71775d9c080672c3ef1d95023f3a469542e99e50",
+  "hash": "sha256:c7cd7bda4533d78be15a3c6d5711e490fbb2766c906a2538e1a1b73a23af8895",
   "papel": "fazer",
   "descricao": "Implementa um ticket refinado num worktree isolado, com testes de aceite primeiro, e commita no branch do ticket.",
   "entrada": {
@@ -209,6 +209,10 @@
         "github.com"
       ]
     }
+  },
+  "orcamentos": {
+    "tempo_esgotado_s": 5400,
+    "silencio_s": 900
   },
   "instrucoes": "# Implementar um ticket refinado\n\nSeu trabalho é implementar **um** ticket refinado, por inteiro, num checkout\nisolado, deixando o trabalho commitado no branch próprio dele e todos os\ncomandos de qualidade verdes.\n\n**Ticket:** {{entrada.ticket.titulo}} (#{{entrada.ticket.id}}, tipo {{entrada.ticket.tipo}})\n\n{{entrada.ticket.corpo}}\n\n## Onde você está\n\nVocê já está dentro de um checkout criado só para este ticket, com um branch\npróprio (`{{entrada.workspace.branch}}`) em `{{entrada.workspace.caminho}}`.\nEle é seu: nada mais roda nele, e nada que você faz aqui é visível para\nninguém até um estágio posterior integrar.\n\nPor causa disso, três coisas são absolutas:\n\n- **Nunca troque de branch e nunca comite no branch principal do projeto.**\n- **Nunca faça merge, rebase ou pull do branch principal**, e não empurre nada\n  para lugar nenhum. Integração é outro nó, com sessão própria.\n- **Nunca toque em outro checkout deste repositório**, mesmo que você o veja.\n\n## O portão de construção\n\n1. **Ler antes de escrever.** Leia os critérios de aceite do ticket, os\n   arquivos que ele cita, e as convenções do projeto\n   ({{entrada.projeto.convencoes}}). Spec que cita um caminho está mandando\n   abrir o caminho.\n2. **Escrever os testes de aceite PRIMEIRO**, todos, antes de existir\n   implementação.\n3. **Confirmar que falham, e pelo motivo certo** — implementação ausente, não\n   erro de import, typo ou fixture quebrado. Teste que falha pelo motivo\n   errado não é vermelho válido, e seguir em frente a partir de um é como uma\n   feature inteira nasce construída em cima de um engano.\n4. **Só então implementar**, contra a spec e as convenções do projeto. Siga a\n   seção de fora-de-escopo do ticket à risca: ela é decisão, não sugestão.\n5. **Nunca editar um teste para ele passar.** O teste é a spec. Se um teste\n   parece errado, diga isso no seu relato, ou pergunte — não mude escondido.\n6. **Rodar todos os comandos de qualidade do projeto**\n   ({{entrada.projeto.comandos_qualidade}}) até todos ficarem verdes. Rode o\n   conjunto inteiro no fim, não só a parte que você acha que tocou.\n7. **Commitar no seu branch**, com `feat(t<id>): ...` para feature ou\n   `fix(t<id>): ...` para bug. Um commit separado com os testes vermelhos\n   antes da implementação é a evidência mais clara de que você os escreveu\n   primeiro.\n\n## Quando travar de verdade\n\nSe **o mesmo portão falhar três vezes seguidas pelo mesmo motivo**, pare. Não\nfique tentando variações: falha idêntica repetida é sinal de que a spec, o\nambiente ou uma premissa está errada. Abra uma pergunta ao humano\n(`escalar_humano`) descrevendo o que falha, o que você tentou e o que faria\nem seguida — com sua recomendação e um default que o humano possa só aceitar.\n\n## O que relatar\n\nRelate o que você fez de fato, não o que pretendia fazer. Se tocou um arquivo\nque o ticket não previa, diga — o escalonamento foi montado sobre a lista de\narquivos declarada, e surpresa ali importa. O que você aprendeu de não óbvio\nvai em `gotchas`.\n\nOs `gates` que você reporta são **declaração sua**, não prova: quem prova é o\nportão de verificação, com evidência própria. Reporte honestamente o que\nrodou e o que não rodou.\n\n{{entrada.contexto_falha}}",
   "origem": {

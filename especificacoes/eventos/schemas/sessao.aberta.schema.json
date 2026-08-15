@@ -43,6 +43,11 @@
           "type": ["integer", "null"],
           "minimum": 0,
           "description": "Orçamento de relógio de parede com que a sessão foi aberta. null significa que a sessão não declara política própria."
+        },
+        "silence_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Orçamento de inatividade com que a sessão foi aberta: segundos sem nenhuma saída antes de ela ser parada. Independente do relógio de parede, porque mede outra coisa — sessão pode ficar viva e produtiva por uma hora, e pode travar em dois minutos com o processo de pé. null significa que a sessão não declara política própria."
         }
       },
       "additionalProperties": false

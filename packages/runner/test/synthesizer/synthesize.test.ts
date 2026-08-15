@@ -191,6 +191,20 @@ function proposedGraph(className: string): Record<string, unknown> {
 
 const DECLARATION = 'Quero um fluxo que redige e revisa uma nota curta sobre um tema declarado.';
 
+/**
+ * One line of what a REAL `ClaudeCodeAdapter` session prints (t148).
+ *
+ * The adapter hands `onOutput` whatever the `claude` CLI put on stdout, and with
+ * `--output-format stream-json` that is one frame per line: the answer's own
+ * quotes arrive as `\"` and its newlines as `\n`, inside `result`. Every fake
+ * engine in this file prints prose instead, which is precisely why a synthesizer
+ * that fed raw lines to the fence scanner stayed green here and exited 1 on
+ * every real run.
+ */
+function resultFrame(answer: string): string {
+  return JSON.stringify({ type: 'result', subtype: 'success', result: answer });
+}
+
 test('AT4a — a class that already has a base graph is refused without opening a session', async (t) => {
   const { runSynthesis } = await loadSynthesis();
 
@@ -309,4 +323,80 @@ test('AT4c — a valid block lands the draft file and the one-line summary', asy
   // import`, run by a human after the edit (D10).
   assert.ok(client.calls.includes('GET /v1/skills'));
   assert.ok(client.calls.includes(`GET /v1/graph-versions/${EXISTING_VERSION.id}`));
+});
+
+test('t148 — a block that arrives inside a stream-json frame lands the draft too', async (t) => {
+  const { runSynthesis } = await loadSynthesis();
+
+  const document = proposedGraph('artigo-revisado');
+  const client = fakeClient([{ classe: 'nota-curta', versao_corrente_id: EXISTING_VERSION.id }]);
+  // ONE line, exactly as the real adapter emits it: the whole answer, fence and
+  // all, JSON-escaped inside the final frame.
+  const adapter = new CountingAdapter(
+    fakeAdapter([
+      resultFrame(
+        [
+          'Composed from the registered capabilities:',
+          '```grafo-proposto',
+          JSON.stringify(document, null, 2),
+          '```',
+        ].join('\n'),
+      ),
+    ]),
+  );
+  const dir = scratch(t, 'quadro-sucesso');
+
+  const out: string[] = [];
+  const code = await runSynthesis({
+    declaration: DECLARATION,
+    className: 'artigo-revisado',
+    client,
+    adapter,
+    workingDir: dir,
+    cwd: dir,
+    write: (text) => out.push(text),
+    writeError: (text) => out.push(text),
+  });
+
+  assert.equal(code, 0, `the run failed against the real engine's own shape:\n${out.join('')}`);
+
+  const draft = path.join(dir, 'artigo-revisado.grafo.rascunho.json');
+  assert.ok(existsSync(draft), 'the draft is written from the DECODED text');
+  assert.deepEqual(JSON.parse(readFileSync(draft, 'utf8')), document);
+});
+
+test('t148 — a frame with no block prints the decoded prose, not the raw frame', async (t) => {
+  const { runSynthesis } = await loadSynthesis();
+
+  const client = fakeClient([{ classe: 'nota-curta', versao_corrente_id: EXISTING_VERSION.id }]);
+  const adapter = new CountingAdapter(
+    fakeAdapter([
+      resultFrame('Li o catálogo e não consegui compor uma topologia com o que existe.'),
+    ]),
+  );
+  const dir = scratch(t, 'quadro-sem-bloco');
+
+  const err: string[] = [];
+  const code = await runSynthesis({
+    declaration: DECLARATION,
+    className: 'artigo-revisado',
+    client,
+    adapter,
+    workingDir: dir,
+    cwd: dir,
+    write: () => undefined,
+    writeError: (text) => err.push(text),
+  });
+
+  assert.equal(code, 1);
+  const printed = err.join('');
+  assert.match(
+    printed,
+    /não consegui compor uma topologia/,
+    'the person reads what the session said, in the words it said them',
+  );
+  assert.ok(
+    !printed.includes('"subtype"'),
+    'a raw frame under "saída bruta da sessão" is unreadable exactly when it matters',
+  );
 });

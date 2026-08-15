@@ -202,6 +202,14 @@ function candidatasDeTeto(
     const observado = estourouTokens ? linha.tokens_total : linha.tempo_total_segundos;
     const metrica = estourouTokens ? 'tokens_total' : 'tempo_total_segundos';
     const unidade = estourouTokens ? 'tokens' : 'segundos';
+    // A amostra segue o teto que estourou, como todo o resto da linha. Uma
+    // sessão pode ter reportado `uso` e não ter os dois carimbos de tempo, e
+    // vice-versa (`custo.ts`), então os dois contadores divergem de propósito:
+    // citar `sessoes_com_uso` num teto de tempo declara uma base que a métrica
+    // do teto não tem. O nome da amostra vai junto do número para que a frase
+    // não possa ficar dizendo uma coisa e contando outra.
+    const amostra = estourouTokens ? linha.sessoes_com_uso : linha.sessoes_com_tempo;
+    const amostraDe = estourouTokens ? 'uso' : 'tempo';
 
     candidatas.push(
       montarCandidata(
@@ -211,7 +219,7 @@ function candidatasDeTeto(
         operacaoDeRecomendacao(
           linha.no_id,
           descricaoAtual(linha.grafo_versao_id, linha.no_id),
-          `teto de ${excedido} excedido: ${observado} ${unidade} observados contra teto de ${teto}, em ${linha.sessoes_com_uso} sessões com uso reportado. Reduzir o escopo deste nó, dividi-lo, ou rever o teto.`,
+          `teto de ${excedido} excedido: ${observado} ${unidade} observados contra teto de ${teto}, em ${amostra} sessões com ${amostraDe} reportado. Reduzir o escopo deste nó, dividi-lo, ou rever o teto.`,
         ),
         {
           descricao: `${metrica} do nó "${linha.no_id}" volta a ficar dentro do teto declarado`,

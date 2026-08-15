@@ -26,13 +26,16 @@
  * entry precisely because the schema cannot navigate inside an arbitrary JSON
  * Schema document.
  *
- * The fourth, `instrucao` + `evidencia_obrigatoria` on an agentic check (t135,
- * FR1), applies to everyone for a simpler reason: it is the schema's own
- * conditional (`manifesto-skill.schema.json:113-115`), and the schema does not
- * ask where the manifest came from. This validator ports the schema by hand —
- * there is no ajv here, for the reason `db/event-validation.ts:9` gives — so
- * every rule that matters has to be ported deliberately, and this one had been
- * missed.
+ * The fourth is the per-check contract, and it applies to everyone for a simpler
+ * reason: it is the schema's own, and the schema does not ask where the manifest
+ * came from. `manifesto-skill.schema.json:83` requires `id`, `tipo` and
+ * `descricao` of every check; line 91 closes `tipo` to `deterministico` or
+ * `agentico`; lines 108-111 require `comando` of the first, lines 112-116
+ * `instrucao` + `evidencia_obrigatoria` of the second. This validator ports the
+ * schema by hand — there is no ajv here, for the reason `db/event-validation.ts:9`
+ * gives — so every rule that matters has to be ported deliberately, and this one
+ * was ported twice by halves: t135 brought the agentic conditional, t155 the rest
+ * of the contract that its early return had been skipping.
  *
  * No telemetry event is emitted. `skill` is not a member of the taxonomy's
  * `entidade.tipo` enum (`especificacoes/eventos/schemas/envelope.schema.json`),
@@ -115,6 +118,9 @@ export class SkillRejected extends Error {
 /** The three values a gate has to be able to return, so the executor can route. */
 const GATE_OUTCOMES = ['passou', 'falhou', 'escalar_humano'];
 
+/** The two things a check can be (`manifesto-skill.schema.json:91`), and no third. */
+const CHECK_TYPES = ['deterministico', 'agentico'];
+
 const COLUMNS = `
   id, versao, hash, papel, descricao, entrada, saida, pre_condicoes,
   checks, permissoes, instrucoes, origem, registrado_em
@@ -178,7 +184,9 @@ function checkShape(manifest: Record<string, unknown>, problems: string[]): void
   if (!Array.isArray(manifest.checks) || manifest.checks.some((item) => !isObject(item))) {
     problems.push('checks: has to be a list of check objects');
   } else {
-    for (const check of manifest.checks) checkAgentic(check as Record<string, unknown>, problems);
+    manifest.checks.forEach((check, index) =>
+      checkCheck(check as Record<string, unknown>, index, problems),
+    );
   }
 
   checkPermissions(manifest.permissoes, problems);
@@ -191,34 +199,77 @@ function checkShape(manifest: Record<string, unknown>, problems: string[]): void
 }
 
 /**
- * An agentic check says what to judge and what the verdict has to cite.
+ * The whole per-check contract, the same for every check (t155, FR1-FR3).
  *
- * `manifesto-skill.schema.json:113-115`: `tipo: "agentico"` requires both
- * `instrucao` and `evidencia_obrigatoria`. The rule is the format's, not an
- * import rule, so it applies to every manifest — a judgment nobody has to
- * evidence concludes on the self-report of whoever produced the artifact, which
- * is what D9 exists to forbid, and a native gate can get that wrong exactly as
- * easily as an imported one.
+ * `manifesto-skill.schema.json:83` makes `id`, `tipo` and `descricao` required
+ * of EVERY check, and line 91 closes `tipo` to two values. Then each half of the
+ * enum has its own conditional: `deterministico` requires `comando`
+ * (lines 108-111), `agentico` requires `instrucao` and `evidencia_obrigatoria`
+ * (lines 112-116). All four rules are the format's own, not import rules, so
+ * they apply to every manifest — D9 defines a check as either a deterministic
+ * command or an agentic instruction with mandatory evidence, and a check that is
+ * neither is one the runner reaches with nothing to execute.
+ *
+ * The rule this function used to be, `checkAgentic`, enforced only the agentic
+ * conditional and returned early for everything else. That early return is what
+ * t155 was: a check shaped `{tipo: "deterministico"}`, an unrecognized `tipo`,
+ * or a check missing all three required fields all registered.
  *
  * `evidencia_obrigatoria` is a LIST of artifacts (the schema's `minItems: 1`),
  * not a sentence: the check is supposed to name what it will go read.
  *
  * @param check One entry of `checks`, already known to be an object.
+ * @param index Its position, which names the check while `id` is still missing.
  * @param problems Accumulator; the offending check's `id` names each message.
  */
-function checkAgentic(check: Record<string, unknown>, problems: string[]): void {
-  if (check.tipo !== 'agentico') return;
+function checkCheck(check: Record<string, unknown>, index: number, problems: string[]): void {
+  const label = `checks[${isText(check.id) ? check.id : `#${index}`}]`;
 
-  const label = `checks[${isText(check.id) ? check.id : '?'}]`;
-  if (!isText(check.instrucao)) {
-    problems.push(`${label}: tipo "agentico" requires "instrucao" — the judgment being asked for`);
+  if (!isText(check.id)) {
+    problems.push(
+      `${label}: required field missing: "id" — the key telemetry aggregates the check by`,
+    );
+  }
+  if (!isText(check.descricao)) {
+    problems.push(`${label}: required field missing: "descricao" — a non-empty string`);
   }
 
-  const evidence = check.evidencia_obrigatoria;
-  if (!Array.isArray(evidence) || evidence.length === 0 || evidence.some((item) => !isText(item))) {
+  if (check.tipo === undefined) {
     problems.push(
-      `${label}: tipo "agentico" requires "evidencia_obrigatoria" — a non-empty list of the artifacts the verdict has to cite; without it the check concludes on a self-report (D9)`,
+      `${label}: required field missing: "tipo" — has to be ${CHECK_TYPES.map((type) => `"${type}"`).join(' or ')}`,
     );
+    return;
+  }
+  if (!isText(check.tipo) || !CHECK_TYPES.includes(check.tipo)) {
+    problems.push(
+      `${label}: tipo ${JSON.stringify(check.tipo)} is not a check type — has to be ${CHECK_TYPES.map(
+        (type) => `"${type}"`,
+      ).join(' or ')}; a check the runner cannot execute is not a check (D9)`,
+    );
+    return;
+  }
+
+  if (check.tipo === 'deterministico' && !isText(check.comando)) {
+    problems.push(
+      `${label}: tipo "deterministico" requires "comando" — the command whose exit code is the verdict; without it the runner reaches this check with nothing to run (D9)`,
+    );
+  }
+
+  if (check.tipo === 'agentico') {
+    if (!isText(check.instrucao)) {
+      problems.push(`${label}: tipo "agentico" requires "instrucao" — the judgment being asked for`);
+    }
+
+    const evidence = check.evidencia_obrigatoria;
+    if (
+      !Array.isArray(evidence) ||
+      evidence.length === 0 ||
+      evidence.some((item) => !isText(item))
+    ) {
+      problems.push(
+        `${label}: tipo "agentico" requires "evidencia_obrigatoria" — a non-empty list of the artifacts the verdict has to cite; without it the check concludes on a self-report (D9)`,
+      );
+    }
   }
 }
 

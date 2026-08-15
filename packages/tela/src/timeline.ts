@@ -37,9 +37,18 @@
  *   totals: closing a segment with the clock of whoever opened the page would
  *   invent a fact the log does not have.
  *
- * **A finished job** is derived, because the API has no terminal-state field:
- * no open session, no pending question and no block. That criterion — and only
- * it — closes the last queue segment.
+ * **A finished job** is the control plane's `concluido` AND nothing open AND no
+ * block (t152). The flag is the real terminal signal — the job's current node is
+ * a final node of its own graph version — and it comes READ from
+ * `GET /v1/jobs/:id`, because `nos_finais` lives in the graph snapshot and the
+ * screen has no way to reach it. The other two conditions are what the screen
+ * does know and the projection does not: an open session or a pending question
+ * keeps a job open however terminal its node is. Until t152 the flag did not
+ * exist and the derivation was "nothing open and no block" alone — which any
+ * job one event old satisfies, and which is why a job that had barely been
+ * created was reported here as finished.
+ *
+ * That criterion — and only it — closes the last queue segment.
  *
  * The function is pure and never looks at the clock: same three answers, same
  * timeline, today and a month from now. That is what makes it testable without
@@ -108,15 +117,23 @@ export interface Timeline {
   totals: BucketTotals;
   /** Block flag, reduced from the log (not read from the projection). */
   blocked: boolean;
-  /** No open session, no pending question and no block. */
+  /** Arrived at a final node, with no open session, no pending question and no block. */
   done: boolean;
 }
 
-/** The three HTTP answers all of this comes from. */
+/** The three HTTP answers all of this comes from, plus the terminal flag. */
 export interface TimelineSources {
   events: TimelineEvent[];
   sessions: TimelineSession[];
   questions: TimelineQuestion[];
+  /**
+   * `concluido` of `GET /v1/jobs/:id` — the server's answer, not a guess here.
+   *
+   * Required, and not optional with a default: a caller that forgets it would
+   * silently get back the old heuristic's verdict, and this field exists
+   * precisely because that verdict was wrong (t152).
+   */
+  concluido: boolean;
 }
 
 /** Tie-break order when two segments start at the same instant. */
@@ -250,8 +267,11 @@ export function buildTimeline(sources: TimelineSources): Timeline {
     }),
   ];
 
+  // The server says the job arrived; the screen says nobody is holding it. Both
+  // halves are needed: a session still open on a final node is an agent that has
+  // not handed the work back yet (t152).
   const hasOpen = occupancies.some((occupancy) => occupancy.end === null);
-  const done = !hasOpen && !blocked && (sources.events.length > 0 || occupancies.length > 0);
+  const done = sources.concluido && !hasOpen && !blocked;
 
   const known = [
     ...sources.events.map((event) => instant(event.ocorrido_em)),

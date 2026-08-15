@@ -137,6 +137,18 @@ todos se acham dentro do teto, e todos gravam. O teto de concorrência viraria
 uma sugestão. A garantia é a mesma — e no mesmo formato, `db.transaction()`
 síncrona — que `aplicarProposta` usa no `t101`.
 
+**Provado com dois runners de verdade.** Até a `t164` todo teste de teto
+chamava o repositório ou a rota **em processo**, um chamador de cada vez: a
+garantia acima era propriedade do código que ninguém tinha visto acontecer.
+[`multi-runner-fleet.e2e.test.ts`](../../packages/runner/test/controller/multi-runner-fleet.e2e.test.ts)
+põe dois `Controller` independentes, com credencial cada um, disputando a mesma
+fila pelo endereço IPv4 real da máquina — e cobra as três consequências: nenhum
+trabalho despachado duas vezes, nenhum dos dois runners deixado de fora, e o
+teto de projeto sem nunca somar acima do configurado, mesmo sob pedidos
+concorrentes de clientes distintos. O teto é do **projeto**, não do runner: a
+contagem de `teto_projeto` não filtra por `runner_id`, e é por isso que ela
+segura a frota inteira e não cada máquina em separado.
+
 **Por que reivindicar é o primeiro passo, e não uma rotina à parte.** Quem pede
 trabalho é exatamente quem tem interesse em descobrir que uma lease morreu. Na
 mesma transação, o pedido que encontra a lease vencida é o pedido que a
@@ -221,13 +233,18 @@ Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`
 da API. Nenhum emite evento de telemetria (`t102`).
 
 Desde a `t143` a credencial do runner é **dele**, emitida no pareamento, e a
-coluna "quem chama" abaixo é contrato, não convenção: quem faz o pareamento e a
-revogação é o operador (credencial `usuario`), e o runner só alcança as quatro
-rotas do próprio despacho mais `GET /v1/jobs`.
+coluna "quem chama" abaixo é contrato, não convenção: quem pareia, revoga e
+enxerga a frota inteira é o operador (credencial `usuario`), e o runner só
+alcança as quatro rotas do próprio despacho mais `GET /v1/jobs`. A lista de
+rotas do runner é literal ([`auth.ts`](../../packages/core/src/auth.ts)): rota
+nova nasce fora dela, e é assim que `GET /v1/runners` é do operador sem que
+nada tenha sido escrito para recusá-la — pela mesma porta por onde
+`GET /v1/executions` e `GET /v1/sessions` já ficam de fora.
 
 | Método | Rota | Quem chama | O que faz |
 |---|---|---|---|
 | `POST` | `/v1/runners` | operador | Pareia um runner. `201` na primeira vez — com `token`, a credencial do runner, devolvida uma única vez —, `200` (idempotente) com `token: null` se o `id` já existe. |
+| `GET` | `/v1/runners` | operador | Lista a frota com a saúde de cada runner: `leases_ativas`, `ultimo_heartbeat` (o maior `heartbeat_em` de **qualquer** lease que ele já teve) e `ultima_expiracao` (`{trabalho_id, expira_em, motivo_expiracao}` da última que venceu, ou `null`). Tudo derivado da tabela `lease`; não existe ping de runner. |
 | `POST` | `/v1/runners/:id/revocations` | operador | Revoga toda credencial viva daquele runner. `200 {revogadas: <quantas>}`, inclusive `0`: chamar de novo não é erro. |
 | `POST` | `/v1/leases` | runner ou operador | Reivindica expiradas e tenta conceder. `201` com a lease, ou `200` com `{lease: null, motivo}`. |
 | `POST` | `/v1/leases/:id/heartbeats` | runner ou operador | Renova o prazo. Corpo opcional `{ttl_segundos}`; sem ele, mantém o TTL da lease. |
@@ -345,7 +362,17 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   critério de aceite escrito em lugar nenhum do repo. Revisitar quando houver
   caso de uso concreto.
 - **Tabela de configuração de teto** por runner ou por projeto (§5).
-- **Varredura de expiradas dissociada do despacho** (§3).
+- **Varredura de expiradas dissociada do despacho** (§3). O que a `t164` fechou
+  aqui não é o gatilho e sim a **visibilidade**: `GET /v1/runners` (§5) e a
+  página `/runners` da tela mostram, por runner, quantas leases ele segura,
+  quando foi ouvido pela última vez e qual trabalho perdeu para o TTL — e
+  [`multi-runner-fleet.e2e.test.ts`](../../packages/runner/test/controller/multi-runner-fleet.e2e.test.ts)
+  cobra o ciclo inteiro com um runner que para de bater. Uma rotina que varra
+  sem ninguém pedir trabalho continua sendo escopo de outra ficha.
+- **Sinal de vida independente da lease.** `ultimo_heartbeat` e
+  `ultima_expiracao` saem só da tabela `lease`: um runner pareado que nunca
+  pegou trabalho é, para este control plane, indistinguível de um que está
+  fora do ar. Um ping de runner é aditivo, e cabe à ficha que sentir a dor.
 - **WIP limit por estágio do grafo** — aqui só existe o teto bruto de sessões
   concorrentes.
 - **Reemissão de credencial para um `id` já pareado.** A `t143` fechou a

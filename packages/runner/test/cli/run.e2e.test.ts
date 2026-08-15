@@ -1,5 +1,5 @@
 /**
- * Acceptance tests of the packaged composition (t162, AT8–AT13).
+ * Acceptance tests of the packaged composition (t162, AT8–AT13; t179 AT1).
  *
  * `runRunner` is the spike written down: `ClienteControle` + `Controller` +
  * `createClaudeCodeDispatch` + one `EngineAdapter`, plus the loop and the clean
@@ -16,6 +16,14 @@
  * `scripts/spike-two-engine-traversal.mjs` draws for the real CLIs: the suite
  * must not depend on an installed, authenticated binary.
  *
+ * **A real repository per subtest that dispatches (t179).** `runRunner` now
+ * builds a `GitWorktreeManager` out of `repoRoot` and `worktreesRoot`, so a
+ * dispatch runs `git worktree add` for real; the fixture below hands each
+ * subtest a repository with one commit and a SIBLING root for its worktrees,
+ * never a directory inside it. The two cases that never dispatch (AT8, AT12)
+ * get plain directories, because a repository they never cut from would only be
+ * fixture nobody reads.
+ *
  * **One control plane for the whole file, and every subtest cleans up after
  * itself.** `GET /v1/jobs` is not scoped by project, so a job left released by
  * one subtest is a candidate for the next subtest's runner — which is how a
@@ -28,8 +36,17 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFileSync, spawn, type ChildProcessByStdio } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
@@ -108,6 +125,72 @@ async function loadModule<T>(relative: string): Promise<T> {
     `artifact does not exist yet: packages/runner/${relative}`,
   );
   return (await import(new URL(`../../${relative}`, import.meta.url).href)) as T;
+}
+
+/** Runs git in a directory and gives back its stdout, trimmed. */
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', args, { cwd, stdio: 'pipe', encoding: 'utf8' }).trim();
+}
+
+/** The three directories one subtest of this file works in (t179). */
+interface Workspace {
+  /** What `--working-dir` names: the repository worktrees are cut from. */
+  repoRoot: string;
+  /**
+   * What `--worktrees-root` names: where those worktrees land.
+   *
+   * A sibling of {@link repoRoot} and deliberately NOT created — creating it is
+   * `GitWorktreeManager`'s job on the first dispatch.
+   */
+  worktreesRoot: string;
+  /**
+   * Where the TEST writes what it needs to read back.
+   *
+   * Never inside {@link repoRoot}: a sidecar dropped in the repository would be
+   * a new entry in it, which is exactly what t179 AT1 measures.
+   */
+  scratch: string;
+}
+
+/**
+ * A base temp directory holding the three paths above, cleaned up as a unit.
+ *
+ * `realpathSync` on the base, and this is not decoration: on macOS `mkdtemp`
+ * hands out `/var/folders/...` while a process started inside it reports
+ * `/private/var/folders/...` as its cwd. t179 AT1 compares the session's
+ * recorded cwd against `worktreesRoot`, and the two have to be the same string
+ * for that comparison to mean anything.
+ */
+function workspace(t: TestHook, label: string): Workspace {
+  const base = realpathSync(mkdtempSync(path.join(tmpdir(), `cartografo-${label}-`)));
+  t.after(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  const repoRoot = path.join(base, 'repo');
+  mkdirSync(repoRoot);
+  return { repoRoot, worktreesRoot: path.join(base, 'worktrees'), scratch: base };
+}
+
+/**
+ * The same, with `repoRoot` made into a real repository with one commit.
+ *
+ * Real git, mirroring `test/dispatch/session-worktree.test.ts:101-117`, because
+ * what a dispatch does now is `git worktree add`: a fixture that only looked
+ * like a repository would prove this file's opinion of git instead of the
+ * wiring under test.
+ */
+function initRepo(t: TestHook, label: string): Workspace {
+  const space = workspace(t, label);
+
+  git(space.repoRoot, 'init', '--quiet');
+  git(space.repoRoot, 'config', 'user.email', 'fixture@cartografo.local');
+  git(space.repoRoot, 'config', 'user.name', 'Fixture t179');
+  writeFileSync(path.join(space.repoRoot, 'README.md'), '# Repo de fixture da t179\n');
+  git(space.repoRoot, 'add', '.');
+  git(space.repoRoot, 'commit', '--quiet', '-m', 'inicial');
+
+  return space;
 }
 
 /** The real control plane, as this file reaches it. */
@@ -356,10 +439,9 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     assert.equal(before.status, 404, `an unpaired runner gets a 404: ${before.body}`);
     assert.match(before.body, /runner_desconhecido/);
 
-    const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-at8-'));
-    t.after(() => {
-      rmSync(workDir, { recursive: true, force: true });
-    });
+    // Plain directories: this case pairs and never dispatches, so no worktree
+    // is ever cut and a real repository would be fixture nobody reads.
+    const { repoRoot, worktreesRoot } = workspace(t, 't162-at8');
 
     const runner = await startRunner(t, runRunner, {
       url: plane.baseUrl,
@@ -367,7 +449,8 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       projectId,
       runnerId,
       engine: 'claude-code',
-      workingDir: workDir,
+      repoRoot,
+      worktreesRoot,
       runnerCap: 1,
       projectCap: 4,
       intervalMs: 200,
@@ -398,11 +481,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
   await parent.test('AT9 — a released job is dispatched and the lease goes back', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-at9-'));
-    const record = path.join(workDir, 'despacho.json');
+    const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't162-at9');
+    const record = path.join(scratch, 'despacho.json');
     t.after(async () => {
       await blockEveryJob(plane);
-      rmSync(workDir, { recursive: true, force: true });
     });
 
     const job = await api<Job>(
@@ -419,7 +501,8 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       projectId: 1,
       runnerId: 'runner-t162-at9',
       engine: 'claude-code',
-      workingDir: workDir,
+      repoRoot,
+      worktreesRoot,
       runnerCap: 1,
       projectCap: 4,
       intervalMs: 500,
@@ -455,11 +538,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
   await parent.test('AT10 — --engine codex wires the codex adapter', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-at10-'));
-    const record = path.join(workDir, 'despacho-codex.json');
+    const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't162-at10');
+    const record = path.join(scratch, 'despacho-codex.json');
     t.after(async () => {
       await blockEveryJob(plane);
-      rmSync(workDir, { recursive: true, force: true });
     });
 
     // Created ON the node that declares `codex`: the engine is a property of
@@ -483,7 +565,8 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       projectId: 1,
       runnerId: 'runner-t162-at10',
       engine: 'codex',
-      workingDir: workDir,
+      repoRoot,
+      worktreesRoot,
       runnerCap: 1,
       projectCap: 4,
       intervalMs: 500,
@@ -534,10 +617,12 @@ test('t162 — the packaged runner, against a real control plane', async (parent
   await parent.test('AT11 — a tick that blows up is logged and the loop keeps turning', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-at11-'));
+    // A real repository, for the SECOND job: the poison one never reaches a
+    // worktree (`UnknownEngineError` is thrown before `acquire`), but the
+    // healthy one that proves the loop survived is dispatched for real.
+    const { repoRoot, worktreesRoot } = initRepo(t, 't162-at11');
     t.after(async () => {
       await blockEveryJob(plane);
-      rmSync(workDir, { recursive: true, force: true });
     });
 
     // Recorded and swallowed: the lines below are the failure under test, and
@@ -574,7 +659,8 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       projectId: 1,
       runnerId: 'runner-t162-at11',
       engine: 'claude-code',
-      workingDir: workDir,
+      repoRoot,
+      worktreesRoot,
       runnerCap: 1,
       projectCap: 4,
       intervalMs: 200,
@@ -627,10 +713,8 @@ test('t162 — the packaged runner, against a real control plane', async (parent
   await parent.test('AT12 — aborting while idle stops the loop within one tick', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-at12-'));
-    t.after(() => {
-      rmSync(workDir, { recursive: true, force: true });
-    });
+    // Plain directories, for AT8's reason: an idle loop cuts no worktree.
+    const { repoRoot, worktreesRoot } = workspace(t, 't162-at12');
 
     const intervalMs = 2_000;
     const aborter = new AbortController();
@@ -640,7 +724,8 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       projectId: 1,
       runnerId: 'runner-t162-at12',
       engine: 'claude-code',
-      workingDir: workDir,
+      repoRoot,
+      worktreesRoot,
       runnerCap: 1,
       projectCap: 4,
       intervalMs,
@@ -680,10 +765,9 @@ test('t162 — the packaged runner, against a real control plane', async (parent
   await parent.test('AT13 — aborting mid-dispatch waits for the lease to go back', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
-    const workDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-at13-'));
+    const { repoRoot, worktreesRoot } = initRepo(t, 't162-at13');
     t.after(async () => {
       await blockEveryJob(plane);
-      rmSync(workDir, { recursive: true, force: true });
     });
 
     const job = await api<Job>(
@@ -701,7 +785,8 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       projectId: 1,
       runnerId: 'runner-t162-at13',
       engine: 'claude-code',
-      workingDir: workDir,
+      repoRoot,
+      worktreesRoot,
       runnerCap: 1,
       projectCap: 4,
       intervalMs: 200,
@@ -758,6 +843,84 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       [...new Set(sessions.map((session) => session.status))],
       ['concluida'],
       'no session was killed halfway: the one in flight finished on its own',
+    );
+  });
+
+  await parent.test('t179 AT1 — the session runs in a worktree, never in the operator\'s checkout', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't179-at1');
+    const record = path.join(scratch, 'despacho.json');
+    t.after(async () => {
+      await blockEveryJob(plane);
+    });
+
+    // What the operator's own checkout looks like before any session runs. Gap
+    // #6 of the first dogfood — "the session works in the shared checkout; the
+    // OPERATOR itself became a concurrent writer" — is the failure this
+    // comparison exists to catch coming back.
+    const before = readdirSync(repoRoot).sort();
+
+    await api<Job>(
+      plane,
+      'POST',
+      '/v1/jobs',
+      { titulo: 'trabalho que prova o isolamento do worktree', no_entrada_id: DEFAULT_NODE, execucao_id: 17_901 },
+      201,
+    );
+
+    const runner = await startRunner(t, runRunner, {
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId: 1,
+      runnerId: 'runner-t179-at1',
+      engine: 'claude-code',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 500,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({
+        FAKE_ENGINE_LINES: QUIET_LINES,
+        FAKE_ENGINE_RECORD: record,
+      }),
+    });
+
+    await waitFor('the job being dispatched to completion', async () => {
+      const { sessoes: sessions } = await api<{ sessoes: Session[] }>(
+        plane,
+        'GET',
+        '/v1/sessions?execucao_id=17901',
+      );
+      return sessions.some((session) => session.status === 'concluida');
+    });
+
+    await runner.stop();
+
+    // The session's own account of where it ran — the only witness that cannot
+    // be satisfied by a stub that merely stops the `TypeError`.
+    assert.ok(existsSync(record), 'the session never ran through the fake engine');
+    const received = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string };
+
+    assert.ok(
+      received.cwd.startsWith(worktreesRoot + path.sep),
+      `the session ran outside the root it was given: ${received.cwd}`,
+    );
+    assert.ok(
+      received.cwd !== repoRoot && !received.cwd.startsWith(repoRoot + path.sep),
+      `the session wrote in the repository the worktree was cut from: ${received.cwd}`,
+    );
+
+    assert.deepEqual(
+      readdirSync(repoRoot).sort(),
+      before,
+      'the run left new entries in the repository it was cut from',
+    );
+    assert.equal(
+      git(repoRoot, 'status', '--porcelain'),
+      '',
+      'the operator\'s checkout has to be exactly as clean as it was before the dispatch',
     );
   });
 });

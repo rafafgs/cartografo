@@ -86,6 +86,8 @@ const CLIENT_SYMBOLS = Object.freeze([
   'metricasPorVersao',
   'buscarVersaoDeGrafo',
   'criarProposta',
+  'buscarProposta',
+  'fecharResultadoDeProposta',
 ]);
 
 /**

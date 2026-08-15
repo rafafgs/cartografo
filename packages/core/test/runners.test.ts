@@ -23,6 +23,7 @@ import test from 'node:test';
 
 import type * as ConnectionModule from '../src/db/connection.ts';
 import type * as MigrateModule from '../src/db/migrate.ts';
+import type * as LeasesModule from '../src/repositories/leases.ts';
 import type * as RunnersModule from '../src/repositories/runners.ts';
 import type * as ServerModule from '../src/server.ts';
 import type * as CredentialsModule from '../src/repositories/credentials.ts';
@@ -82,6 +83,12 @@ async function loadRunners(): Promise<typeof RunnersModule> {
     new URL('../src/repositories/runners.ts', import.meta.url).href
   )) as typeof RunnersModule;
   return runnersCache;
+}
+
+async function loadLeases(): Promise<typeof LeasesModule> {
+  return (await import(
+    new URL('../src/repositories/leases.ts', import.meta.url).href
+  )) as typeof LeasesModule;
 }
 
 /** Ephemeral control plane: a database in a temporary directory, port 0. */
@@ -292,4 +299,155 @@ test('t143 AT — revoking an id that was never paired is 404 runner_desconhecid
     'the same vocabulary the lease route already uses for the same condition',
   );
   assert.equal(body.runner_id, 'runner-fantasma');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t164 — fleet health, read off the lease table.                              */
+/* -------------------------------------------------------------------------- */
+
+/** Project every lease below belongs to; a lease declares its own (t103, §1). */
+const PROJECT_ID = 3;
+
+/** Well above anything these fixtures ask for: the caps are not what is under test. */
+const NO_CAP = 50;
+
+/** What `GET /v1/runners` answers, and what `listRunnersWithHealth` returns. */
+interface RunnerHealth extends RunnerRow {
+  leases_ativas: number;
+  ultimo_heartbeat: string | null;
+  ultima_expiracao: {
+    trabalho_id: number;
+    expira_em: string;
+    motivo_expiracao: string | null;
+  } | null;
+}
+
+/**
+ * An instant of the fixed morning these fixtures reason about.
+ *
+ * The clock is injected into every lease call, so the history below is written
+ * in the order the assertions need it — not in the order a wall clock would
+ * have allowed.
+ */
+function at(minute: number): string {
+  return `2026-08-15T10:${String(minute).padStart(2, '0')}:00.000Z`;
+}
+
+test('t164 AT — listRunnersWithHealth counts live leases and reads liveness off the whole history', async (t) => {
+  const { db } = await start(t);
+  const { registerRunner, listRunnersWithHealth } = await loadRunners();
+  const { grantLease, renewLease, releaseLease, claimExpired } = await loadLeases();
+
+  registerRunner(db, { id: 'runner-a', nome: 'o que trabalha' });
+  registerRunner(db, { id: 'runner-b', nome: null });
+  registerRunner(db, { id: 'runner-c', nome: 'o que nunca pegou trabalho' });
+
+  const ask = (
+    runnerId: string,
+    jobId: number,
+    ttl: number,
+    moment: string,
+  ): LeasesModule.LeaseRow => {
+    const { lease } = grantLease(
+      db,
+      {
+        runner_id: runnerId,
+        projeto_id: PROJECT_ID,
+        trabalho_id: jobId,
+        teto_runner: NO_CAP,
+        teto_projeto: NO_CAP,
+        ttl_segundos: ttl,
+      },
+      { now: () => moment },
+    );
+    assert.ok(lease !== null, `the fixture lease of ${runnerId} for job ${jobId} was refused`);
+    return lease;
+  };
+
+  // Two deaths, so that "the most recent one" is a choice and not the only row.
+  // The first was never renewed (`expirou`), the second beat once and went
+  // quiet (`heartbeat_perdido`) — and it is the later deadline of the two.
+  ask('runner-a', 12, 60, at(2));
+  const abandoned = ask('runner-a', 13, 120, at(4));
+  renewLease(db, { id: abandoned.id }, { now: () => at(5) });
+  claimExpired(db, { now: () => at(8) });
+
+  // The latest heartbeat of all is on a lease that is no longer active: a
+  // runner between jobs is not a runner that went blank.
+  const finished = ask('runner-a', 10, 86_400, at(9));
+  ask('runner-a', 11, 86_400, at(10));
+  renewLease(db, { id: finished.id }, { now: () => at(20) });
+  releaseLease(db, finished.id, { now: () => at(21) });
+
+  ask('runner-b', 20, 86_400, at(11));
+
+  const fleet = listRunnersWithHealth(db) as RunnerHealth[];
+  assert.deepEqual(
+    fleet.map((runner) => runner.id),
+    ['runner-a', 'runner-b', 'runner-c'],
+    'the same order as listRunners: registrado_em, then id',
+  );
+
+  const [first, second, third] = fleet;
+
+  assert.equal(first.nome, 'o que trabalha', 'the health row carries the runner itself');
+  assert.equal(first.leases_ativas, 1, 'only the `ativa` rows of THAT runner count');
+  assert.equal(
+    first.ultimo_heartbeat,
+    at(20),
+    'the last heartbeat comes from every lease it ever held, whatever the status',
+  );
+  assert.deepEqual(
+    first.ultima_expiracao,
+    { trabalho_id: 13, expira_em: at(7), motivo_expiracao: 'heartbeat_perdido' },
+    'the stale-sweep signal is the most recently expired lease, not the first one',
+  );
+
+  assert.equal(second.leases_ativas, 1, "runner-b's count is its own");
+  assert.equal(second.ultimo_heartbeat, at(11));
+  assert.equal(second.ultima_expiracao, null, 'runner-b never lost a lease');
+
+  assert.equal(third.leases_ativas, 0);
+  assert.equal(
+    third.ultimo_heartbeat,
+    null,
+    'a runner that never held a lease has no liveness to show — and says so',
+  );
+  assert.equal(third.ultima_expiracao, null);
+});
+
+test('t164 AT — GET /v1/runners answers the fleet to an operator and 403 to a runner', async (t) => {
+  const { address } = await start(t);
+
+  const first = await pair(address, 'runner-a', 'o primeiro pareado');
+  await pair(address, 'runner-b');
+
+  const response = await fetch(`${address}/v1/runners`);
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { runners: RunnerHealth[] };
+  assert.deepEqual(
+    body.runners.map((runner) => runner.id),
+    ['runner-a', 'runner-b'],
+    'one row per paired runner, in pairing order',
+  );
+  assert.deepEqual(body.runners[0], {
+    id: 'runner-a',
+    nome: 'o primeiro pareado',
+    registrado_em: first.body.runner.registrado_em,
+    leases_ativas: 0,
+    ultimo_heartbeat: null,
+    ultima_expiracao: null,
+  });
+
+  // Fleet-wide health is the operator's view, exactly like `GET /v1/executions`
+  // and `GET /v1/sessions`: the route simply never joins the runner allowlist.
+  const asRunner = await fetch(`${address}/v1/runners`, {
+    headers: { authorization: `Bearer ${first.body.token ?? ''}` },
+  });
+  assert.equal(asRunner.status, 403);
+  assert.equal(
+    ((await asRunner.json()) as { erro?: string }).erro,
+    'credencial_fora_de_escopo',
+    'a live runner credential outside its own four routes is out of scope, not invalid',
+  );
 });

@@ -34,11 +34,13 @@ import { getGraph, getVersion } from '../repositories/graphs.ts';
 import { metricsByVersion } from '../repositories/job.ts';
 import {
   applyProposal,
+  approveProposal,
   getProposal,
   createProposal,
   listProposals,
   recordVerdict,
   rejectProposal,
+  rejectProposalByHuman,
   revertProposal,
   type ProposalRow,
 } from '../repositories/proposals.ts';
@@ -114,7 +116,12 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
     return { proposta: proposal };
   });
 
-  app.post<IdParam>('/proposals/:id/apply', async (request, reply) => {
+  /* ------------------------------------------------------------------------ */
+  /* t165 — the human gate. The tela has offered `Aprovar`/`Rejeitar` since    */
+  /* t111 against routes that did not exist; these are them.                   */
+  /* ------------------------------------------------------------------------ */
+
+  app.post<IdParam>('/proposals/:id/approve', async (request, reply) => {
     const proposal = load(db, request.params.id);
     if (proposal === undefined) {
       reply.code(404);
@@ -125,7 +132,66 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
       reply.code(409);
       return {
         erro: 'proposta_nao_pendente',
-        mensagem: `só proposta pendente pode ser aplicada; esta está "${proposal.status}"`,
+        mensagem: `só proposta pendente pode ser aprovada; esta está "${proposal.status}"`,
+        status: proposal.status,
+      };
+    }
+
+    // Approving writes the decision and stops there. Applying is a second,
+    // deliberate act — the safety ladder of princípio 5 is that separation, and
+    // collapsing the two here would be undoing it in the name of one click less.
+    return { proposta: approveProposal(db, proposal.id) };
+  });
+
+  app.post<IdParam>('/proposals/:id/reject', async (request, reply) => {
+    const proposal = load(db, request.params.id);
+    if (proposal === undefined) {
+      reply.code(404);
+      return { erro: 'proposta_desconhecida', id: request.params.id };
+    }
+
+    // Reason before status, like `revert`: a rejected proposal is negative
+    // knowledge for the topographer, and "no" with no reason is the half of the
+    // fact nobody can learn from.
+    const body = isObject(request.body) ? request.body : {};
+    const reason = body.motivo;
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      reply.code(400);
+      return {
+        erro: 'motivo_obrigatorio',
+        mensagem:
+          'rejeitar exige motivo: proposta rejeitada é conhecimento negativo para o topógrafo, e sem o porquê não é',
+      };
+    }
+
+    if (proposal.status !== 'pendente') {
+      reply.code(409);
+      return {
+        erro: 'proposta_nao_pendente',
+        mensagem: `só proposta pendente pode ser rejeitada; esta está "${proposal.status}"`,
+        status: proposal.status,
+      };
+    }
+
+    return { proposta: rejectProposalByHuman(db, proposal.id, reason.trim()) };
+  });
+
+  app.post<IdParam>('/proposals/:id/apply', async (request, reply) => {
+    const proposal = load(db, request.params.id);
+    if (proposal === undefined) {
+      reply.code(404);
+      return { erro: 'proposta_desconhecida', id: request.params.id };
+    }
+
+    // `aprovada`, not `pendente` (t165): a change to the graph passes a human
+    // gate, and a proposal that skipped it has to fail loudly. The code is its
+    // own — `proposta_nao_pendente` now describes approve/reject's precondition,
+    // and reusing it here would say the wrong thing about which step is missing.
+    if (proposal.status !== 'aprovada') {
+      reply.code(409);
+      return {
+        erro: 'proposta_nao_aprovada',
+        mensagem: `só proposta aprovada pode ser aplicada; esta está "${proposal.status}"`,
         status: proposal.status,
       };
     }
@@ -354,6 +420,20 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
         veredito: optionalFilter(filter.veredito),
       }),
     };
+  });
+
+  // The detail read the tela has assumed since t111
+  // (`docs/spec/tela-inbox-propostas.md` §2) and that closing the gate finally
+  // needs: whoever is about to approve reads ONE proposal, and the script that
+  // closes the experiment reads the `metrica_esperada` of ONE proposal (t165,
+  // FR5/FR9). Same row the listing returns, `motivo_rejeicao` included.
+  app.get<IdParam>('/proposals/:id', async (request, reply) => {
+    const proposal = load(db, request.params.id);
+    if (proposal === undefined) {
+      reply.code(404);
+      return { erro: 'proposta_desconhecida', id: request.params.id };
+    }
+    return { proposta: proposal };
   });
 }
 

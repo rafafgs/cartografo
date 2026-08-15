@@ -443,6 +443,17 @@ test('t118 AT15 — the ordinary proposal flow evolves the variant, base untouch
   const variantVersion = forked.body.grafo_versao.id;
 
   const proposal = await createProposal(ctx, VARIANT_ID, variantVersion);
+
+  // The gate of princípio 5 stands between the two, since t165: `apply` demands
+  // `aprovada`, and a variant's proposal is a proposal like any other.
+  const approved = await request<{ proposta: ProposalRow }>(
+    ctx,
+    'POST',
+    `/v1/proposals/${proposal.id}/approve`,
+    {},
+  );
+  assert.equal(approved.status, 200, JSON.stringify(approved.body));
+
   const applied = await request<{ proposta: ProposalRow; grafo_versao: VersionRow }>(
     ctx,
     'POST',

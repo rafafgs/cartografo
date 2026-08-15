@@ -118,9 +118,15 @@ test('t162 — the runner is an installable command, started by plain node', asy
 
   const planeDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-bin-plane-'));
   const runnerDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-bin-runner-'));
+  // Required since t179, and a sibling of the runner's own `--working-dir`
+  // (which defaults to `runnerDir`): the command exits 2 at argument zero
+  // without it, long before it could pair. Nothing is released on this control
+  // plane, so no worktree is ever actually cut in it.
+  const worktreesDir = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-bin-worktrees-'));
   parent.after(() => {
     rmSync(planeDir, { recursive: true, force: true });
     rmSync(runnerDir, { recursive: true, force: true });
+    rmSync(worktreesDir, { recursive: true, force: true });
   });
 
   const plane = spawnWatched(parent, [CONTROL_PLANE_BIN], {
@@ -142,7 +148,7 @@ test('t162 — the runner is an installable command, started by plain node', asy
 
   const runner = spawnWatched(
     parent,
-    [RUNNER_BIN, '--url', baseUrl, '--token', token, '--project', '1'],
+    [RUNNER_BIN, '--url', baseUrl, '--token', token, '--project', '1', '--worktrees-root', worktreesDir],
     { cwd: runnerDir, env: plainEnv },
   );
 

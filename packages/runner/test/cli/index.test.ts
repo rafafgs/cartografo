@@ -1,11 +1,13 @@
 /**
- * Acceptance tests of the runner command's command line (t162, AT1–AT7).
+ * Acceptance tests of the runner command's command line (t162, AT1–AT7; t179).
  *
  * Pure parsing: nothing here opens a socket, and that is half of what is being
  * proven. A command line the CLI cannot read must die before the first request
  * — a runner that dials a control plane and only then discovers that
  * `--project abc` is not a number has already spent a round trip to say
- * something it knew at argument zero.
+ * something it knew at argument zero. Nothing here touches the filesystem
+ * either: the paths below name directories that do not exist, because deciding
+ * where worktrees go is reading a command line, not inspecting a disk.
  *
  * The seam that makes "no HTTP call" checkable is the third parameter of
  * `runRunnerCli`: whoever calls it may hand in what actually runs the loop.
@@ -17,6 +19,7 @@
 
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -31,6 +34,31 @@ const CLIENT_MODULE = 'src/controller/cliente-controle.ts';
 
 /** The address the runner falls back to when nobody says otherwise. */
 const DEFAULT_URL = 'http://127.0.0.1:4317';
+
+/**
+ * The repository a case names when it does not care which one (t179).
+ *
+ * Under `tmpdir()` and not under the package, so that it is nowhere near the
+ * `process.cwd()` `--working-dir` falls back to: a case about `--project` must
+ * not fail over a path that happens to overlap.
+ */
+const SOME_REPO = path.join(tmpdir(), 'cartografo-t179-repo');
+
+/**
+ * ...and its worktrees root, a SIBLING of it, exactly as the founder's answer
+ * spells the layout (`--working-dir ~/proj --worktrees-root ~/proj-worktrees`).
+ *
+ * The name is deliberate: as a string it starts with {@link SOME_REPO}, so a
+ * nesting guard written as a bare `startsWith` would reject the one layout the
+ * usage text recommends.
+ */
+const SOME_WORKTREES = `${SOME_REPO}-worktrees`;
+
+/**
+ * `--worktrees-root`, required since t179, for the cases that are about
+ * something else entirely.
+ */
+const ELSEWHERE = ['--worktrees-root', SOME_WORKTREES];
 
 async function loadModule<T>(relative: string): Promise<T> {
   assert.ok(
@@ -107,16 +135,16 @@ test('AT1 — --help and -h print the usage on stdout, exit 0 and dial nothing',
 test('AT2 — with no --url and no CARTOGRAFO_URL, the address is the local default', async () => {
   const { parseRunnerOptions } = await loadModule<typeof CliModule>(CLI_MODULE);
 
-  assert.equal(parseRunnerOptions([], {}).url, DEFAULT_URL);
+  assert.equal(parseRunnerOptions([...ELSEWHERE], {}).url, DEFAULT_URL);
 
   // ...and the precedence above that default, in the two steps it has.
   assert.equal(
-    parseRunnerOptions([], { CARTOGRAFO_URL: 'http://127.0.0.1:5000' }).url,
+    parseRunnerOptions([...ELSEWHERE], { CARTOGRAFO_URL: 'http://127.0.0.1:5000' }).url,
     'http://127.0.0.1:5000',
     'the environment beats the default',
   );
   assert.equal(
-    parseRunnerOptions(['--url', 'http://127.0.0.1:6000'], {
+    parseRunnerOptions(['--url', 'http://127.0.0.1:6000', ...ELSEWHERE], {
       CARTOGRAFO_URL: 'http://127.0.0.1:5000',
     }).url,
     'http://127.0.0.1:6000',
@@ -129,12 +157,17 @@ test('AT3 — --token beats CARTOGRAFO_TOKEN, and with neither there is no crede
   const { ClienteControle } = await loadModule<typeof ClientModule>(CLIENT_MODULE);
 
   assert.equal(
-    parseRunnerOptions(['--token', 'from-the-flag'], { CARTOGRAFO_TOKEN: 'from-the-env' }).token,
+    parseRunnerOptions(['--token', 'from-the-flag', ...ELSEWHERE], {
+      CARTOGRAFO_TOKEN: 'from-the-env',
+    }).token,
     'from-the-flag',
   );
-  assert.equal(parseRunnerOptions([], { CARTOGRAFO_TOKEN: 'from-the-env' }).token, 'from-the-env');
+  assert.equal(
+    parseRunnerOptions([...ELSEWHERE], { CARTOGRAFO_TOKEN: 'from-the-env' }).token,
+    'from-the-env',
+  );
 
-  const options = parseRunnerOptions([], {});
+  const options = parseRunnerOptions([...ELSEWHERE], {});
   assert.equal(options.token, undefined, 'no flag and no variable is no credential at all');
 
   // And "no credential" has to mean an absent header, never an empty one: the
@@ -163,7 +196,7 @@ test('AT4 — a non-integer where a number is required is a usage error, before 
   const stderr = captureStream('stderr');
   let code: number;
   try {
-    code = await runRunnerCli(['--project', 'abc'], {}, { run: spy.run });
+    code = await runRunnerCli(['--project', 'abc', ...ELSEWHERE], {}, { run: spy.run });
   } finally {
     stderr.restore();
   }
@@ -184,7 +217,7 @@ test('AT5 — an unknown --engine exits 2 and the message lists the engines ther
   const stderr = captureStream('stderr');
   let code: number;
   try {
-    code = await runRunnerCli(['--engine', 'bogus'], {}, { run: spy.run });
+    code = await runRunnerCli(['--engine', 'bogus', ...ELSEWHERE], {}, { run: spy.run });
   } finally {
     stderr.restore();
   }
@@ -198,7 +231,11 @@ test('AT5 — an unknown --engine exits 2 and the message lists the engines ther
 test('AT6 — an unrecognized flag and an extra positional argument both exit 2', async () => {
   const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
 
-  for (const args of [['--turbo'], ['start'], ['--url', 'http://127.0.0.1:4317', 'extra']]) {
+  for (const args of [
+    ['--turbo', ...ELSEWHERE],
+    ['start', ...ELSEWHERE],
+    ['--url', 'http://127.0.0.1:4317', 'extra', ...ELSEWHERE],
+  ]) {
     const spy = spyRun();
     const stderr = captureStream('stderr');
     let code: number;
@@ -237,7 +274,7 @@ test('a runner that could not run exits 1, saying which control plane and what t
     const stderr = captureStream('stderr');
     let code: number;
     try {
-      code = await runRunnerCli(['--url', 'http://127.0.0.1:4999'], {}, {
+      code = await runRunnerCli(['--url', 'http://127.0.0.1:4999', ...ELSEWHERE], {}, {
         run: async () => {
           throw failure.thrown;
         },
@@ -260,14 +297,18 @@ test('a runner that could not run exits 1, saying which control plane and what t
 test('AT7 — every optional flag left out resolves to the documented default', async () => {
   const { parseRunnerOptions } = await loadModule<typeof CliModule>(CLI_MODULE);
 
-  const options = parseRunnerOptions([], {});
+  // `--worktrees-root` is the one flag that has no default and cannot get one
+  // (t179): where a session may write is the operator's call. Everything else
+  // below is what "left out" resolves to.
+  const options = parseRunnerOptions([...ELSEWHERE], {});
 
   assert.equal(options.projectId, 1, 'the same project every other part of the system falls back to');
   assert.equal(options.runnerCap, 1);
   assert.equal(options.projectCap, 4);
   assert.equal(options.intervalMs, 2000);
   assert.equal(options.leaseTtlSeconds, 60);
-  assert.equal(options.workingDir, process.cwd());
+  assert.equal(options.repoRoot, process.cwd(), 'the repository the worktrees are cut from');
+  assert.equal(options.worktreesRoot, SOME_WORKTREES, 'and the root they are created under');
   assert.equal(options.engine, 'claude-code', 'the default engine is named, never implied');
   assert.notEqual(options.runnerId, '', 'a runner without an identity cannot pair');
 
@@ -281,6 +322,7 @@ test('AT7 — every optional flag left out resolves to the documented default', 
       '--interval-ms', '250',
       '--lease-ttl-seconds', '30',
       '--working-dir', path.join(PACKAGE_ROOT, 'src'),
+      '--worktrees-root', path.join(PACKAGE_ROOT, 'test'),
       '--runner-id', 'runner-at7',
       '--engine', 'codex',
     ],
@@ -292,7 +334,89 @@ test('AT7 — every optional flag left out resolves to the documented default', 
   assert.equal(given.projectCap, 9);
   assert.equal(given.intervalMs, 250);
   assert.equal(given.leaseTtlSeconds, 30);
-  assert.equal(given.workingDir, path.join(PACKAGE_ROOT, 'src'));
+  assert.equal(given.repoRoot, path.join(PACKAGE_ROOT, 'src'));
+  assert.equal(given.worktreesRoot, path.join(PACKAGE_ROOT, 'test'));
   assert.equal(given.runnerId, 'runner-at7');
   assert.equal(given.engine, 'codex');
+});
+
+test('t179 AT1 — a command line with no --worktrees-root exits 2 and dials nothing', async () => {
+  const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  const spy = spyRun();
+  const stderr = captureStream('stderr');
+  let code: number;
+  try {
+    // Otherwise impeccable, and that is the point: the only thing wrong here is
+    // the flag that has no default, and a runner started without it would
+    // otherwise discover it one `acquire` into its first dispatch.
+    code = await runRunnerCli(['--url', DEFAULT_URL, '--project', '1'], {}, { run: spy.run });
+  } finally {
+    stderr.restore();
+  }
+
+  assert.equal(code, 2, 'a required flag left out is a wrong command line, never a failed run');
+  assert.deepEqual(spy.seen, [], 'nothing may be dialled without somewhere to put the worktrees');
+
+  const written = stderr.written();
+  assert.equal(
+    written.split('\n').filter((line) => line !== '').length,
+    1,
+    `one line, not a stack trace:\n${written}`,
+  );
+  assert.match(written, /--worktrees-root/, 'the line names the flag that is missing');
+});
+
+test('t179 AT2 — --worktrees-root inside --working-dir is refused; a sibling is taken', async () => {
+  const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  // The same directory, spelled three ways: verbatim, one level down, and a
+  // path that only becomes the repository itself once it is resolved.
+  const overlapping = [SOME_REPO, path.join(SOME_REPO, 'worktrees'), path.join(SOME_REPO, 'src', '..')];
+
+  for (const worktreesRoot of overlapping) {
+    const spy = spyRun();
+    const stderr = captureStream('stderr');
+    let code: number;
+    try {
+      code = await runRunnerCli(
+        ['--working-dir', SOME_REPO, '--worktrees-root', worktreesRoot],
+        {},
+        { run: spy.run },
+      );
+    } finally {
+      stderr.restore();
+    }
+
+    assert.equal(code, 2, `"${worktreesRoot}" is inside the repository it would be cut from`);
+    assert.deepEqual(spy.seen, [], `"${worktreesRoot}" must not start a runner`);
+
+    const written = stderr.written();
+    assert.equal(
+      written.split('\n').filter((line) => line !== '').length,
+      1,
+      `one actionable line for "${worktreesRoot}":\n${written}`,
+    );
+    assert.match(written, /--worktrees-root/, 'the line names the flag that is wrong');
+    assert.match(written, /--working-dir/, 'and the one it overlaps with');
+    assert.match(
+      written,
+      /git status/,
+      `the line says what the overlap costs, not just that it is refused:\n${written}`,
+    );
+  }
+
+  // ...and the layout the usage text recommends goes through, name prefix and
+  // all: `~/proj-worktrees` is a sibling of `~/proj`, never a child of it.
+  const spy = spyRun();
+  const code = await runRunnerCli(
+    ['--working-dir', SOME_REPO, '--worktrees-root', SOME_WORKTREES],
+    {},
+    { run: spy.run },
+  );
+
+  assert.equal(code, 0, 'a sibling worktrees root is the documented layout');
+  assert.equal(spy.seen.length, 1, 'the runner really did start');
+  assert.equal(spy.seen[0].repoRoot, SOME_REPO);
+  assert.equal(spy.seen[0].worktreesRoot, SOME_WORKTREES);
 });

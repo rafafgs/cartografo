@@ -25,10 +25,18 @@
  *   route for is exactly that kind of local failure.
  * - **Shutdown waits for the dispatch in flight.** Aborting stops the loop from
  *   SCHEDULING, never mid-session: killing a live session from out here would
- *   leave a process writing in the working dir with nobody left to report what
- *   it did. A dispatch that is already running finishes (or fails) through the
- *   paths `dispatch-claude-code.ts` already has, and only then does the promise
- *   this function returns resolve.
+ *   leave a process writing in its worktree with nobody left to report what it
+ *   did — and nobody left to give the worktree back. A dispatch that is already
+ *   running finishes (or fails) through the paths `dispatch-claude-code.ts`
+ *   already has, and only then does the promise this function returns resolve.
+ * - **The worktree manager is built here, out of two paths the operator gave**
+ *   (t179). `createClaudeCodeDispatch` requires a `WorktreeManager` and has no
+ *   default for it, and `GitWorktreeManager` has no default for either of its
+ *   paths — deliberately, both of them: where a session may write is the
+ *   operator's decision, and a location guessed in code is how the first
+ *   dogfood run ended up with sessions writing in the operator's own checkout
+ *   (`notas/2026-08-15-primeira-execucao.md`, gap #6). This function is the
+ *   last place that could have invented one, and it does not.
  *
  * The `engineFactory` seam is the same shape `commandBuilder` already is on
  * both adapters (`engine/claude-code-adapter.ts:82`): production gets the real
@@ -47,6 +55,7 @@ import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,
 } from '../dispatch/session-text.ts';
+import { GitWorktreeManager } from '../dispatch/session-worktree.ts';
 import { ClaudeCodeAdapter } from '../engine/claude-code-adapter.ts';
 import { CodexAdapter } from '../engine/codex-adapter.ts';
 
@@ -83,8 +92,26 @@ export interface RunnerOptions {
   runnerId: string;
   /** The one engine every session of this process opens on. */
   engine: EngineName;
-  /** Directory the sessions run in — a shared checkout, until worktrees exist. */
-  workingDir: string;
+  /**
+   * The git repository each session's worktree is cut from (t179).
+   *
+   * `--working-dir` on the command line, and NOT what a session writes in: the
+   * directory a session actually gets is a worktree of this repository, minted
+   * per dispatch (`SessionSpec.workingDir`, `session-worktree.ts`). The two
+   * were the same string until t160, which is what the first dogfood run paid
+   * for; the names are different now so that the code cannot confuse them
+   * again.
+   */
+  repoRoot: string;
+  /**
+   * The directory those worktrees are created under.
+   *
+   * A sibling of {@link repoRoot} and never inside it: a worktree cut into the
+   * repository it came from shows up as untracked content in that repository's
+   * own `git status`. Required, with no default — `--worktrees-root` on the
+   * command line, and the CLI is where that is enforced.
+   */
+  worktreesRoot: string;
   /** Cap of simultaneous sessions this runner declares for itself. */
   runnerCap: number;
   /** Cap of simultaneous sessions declared for the project. */
@@ -160,7 +187,12 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
       urlBase: options.url,
       token: options.token,
       engines,
-      workingDir: options.workingDir,
+      // One manager for the whole process, and one worktree per dispatch out of
+      // it: the isolation is per session, never per runner (t160, FR6).
+      worktrees: new GitWorktreeManager({
+        repoRoot: options.repoRoot,
+        worktreesRoot: options.worktreesRoot,
+      }),
     }),
   });
 

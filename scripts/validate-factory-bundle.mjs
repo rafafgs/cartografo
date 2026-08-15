@@ -15,6 +15,13 @@
  *    stops a skill's content from being swapped silently under an
  *    already-validated graph — and it is the verifiable stand-in for "import it
  *    through the API" while the control plane does not exist (D6).
+ * 4. **The two declarations of how a node verifies itself line up** (t176) —
+ *    `contrato.verificacoes` in the graph and `checks` in the pinned manifest
+ *    are two FORMATS for the same verification, so they have to state the same
+ *    list: same item count, same sequence of `tipo`, same `comando` on every
+ *    deterministic item. Without this, a bundle can ship a node whose graph
+ *    says "run the test suite" and whose manifest says the opposite, and the
+ *    runner has no way to know which of the two to apply.
  *
  * Zero dependencies: only Node built-ins. The embedded JSON Schema validator
  * deliberately covers only the subset of keywords the manifest schema uses
@@ -289,6 +296,34 @@ export function manifestHash(manifest) {
 }
 
 // --------------------------------------------------------------------------
+// Graph ↔ manifest parity (t176)
+// --------------------------------------------------------------------------
+
+/**
+ * The part of one verification that has to be identical on both sides.
+ *
+ * Reads an entry of the manifest's `checks` or of the graph's
+ * `contrato.verificacoes` — the two spell `tipo` and `comando` the same way,
+ * which is exactly the subset that carries the meaning of the verification.
+ * Everything else is free to differ: `evidencia_obrigatoria` is a list of
+ * artifacts in the manifest and the literal `true` in the graph, and the prose
+ * of an agentic item is REWRITTEN in each format rather than copied — the
+ * discipline `packages/runner/src/synthesizer/prompt.ts` states for the
+ * synthesizer and `bets-assimetricas` already follows.
+ *
+ * @param {unknown} entry One check, or one verification.
+ * @returns {{tipo: string|null, comando: string|null}}
+ */
+export function verificationShape(entry) {
+  const kind = isObject(entry) && typeof entry.tipo === 'string' ? entry.tipo : null;
+  const command = isObject(entry) && typeof entry.comando === 'string' ? entry.comando : null;
+  return { tipo: kind, comando: kind === 'deterministico' ? command : null };
+}
+
+const sameShape = (left, right) =>
+  JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+
+// --------------------------------------------------------------------------
 // Bundle validation
 // --------------------------------------------------------------------------
 
@@ -399,6 +434,24 @@ export function validateBundle(bundleDir) {
     if (found.manifest.hash !== recomputed) {
       fail(`the manifest declares hash ${found.manifest.hash}, but its content is ${recomputed}`);
     }
+
+    const declared = Array.isArray(node?.contrato?.verificacoes) ? node.contrato.verificacoes : [];
+    const checks = Array.isArray(found.manifest.checks) ? found.manifest.checks : [];
+    if (declared.length !== checks.length) {
+      fail(
+        `the node declares ${declared.length} verification(s) and the manifest ${checks.length} ` +
+          'check(s): each verification restates one check, in the same order',
+      );
+    }
+    checks.slice(0, declared.length).forEach((check, index) => {
+      const expected = verificationShape(check);
+      const actual = verificationShape(declared[index]);
+      if (sameShape(actual, expected)) return;
+      fail(
+        `verification #${index + 1} does not restate check "${check?.id}": the node declares ` +
+          `${JSON.stringify(actual)}, the manifest ${JSON.stringify(expected)}`,
+      );
+    });
   }
 
   for (const [id, { file }] of byId) {

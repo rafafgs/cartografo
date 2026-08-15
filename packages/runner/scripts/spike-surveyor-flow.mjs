@@ -103,6 +103,32 @@ function authorizedFetch(input, init) {
   return fetch(input, { ...init, headers });
 }
 
+/**
+ * The `WorktreeManager` this proof hands the dispatch (t160, FR10).
+ *
+ * A minimal fake and not the real `GitWorktreeManager`, which the ficha allows
+ * explicitly — and here it is the only thing that keeps the proof proving what
+ * it proves. The two crossing sessions are two NODES of one work: the second
+ * reads the `nota.md` the first wrote, neither commits anything ("não commite,
+ * não crie branch, não rode git" is their instruction), and the evidence
+ * printed at the end is read out of that same directory after both are gone.
+ * A real worktree per session would break all three on something this proof is
+ * not about.
+ *
+ * Isolation itself has its own proof, against real git and with no `claude` in
+ * sight: `test/dispatch/session-worktree.test.ts`.
+ *
+ * @param {string} repo The disposable repository every session runs in.
+ * @returns {{acquire: (jobId: number) => Promise<{path: string, branch: string}>,
+ *            release: () => Promise<void>}} The manager.
+ */
+function sharedWorktree(repo) {
+  return {
+    acquire: (jobId) => Promise.resolve({ path: repo, branch: `ticket-${jobId}` }),
+    release: () => Promise.resolve(),
+  };
+}
+
 /** Disposable git repository — the `workingDir` of the crossing. */
 function createDisposableRepo() {
   const root = mkdtempSync(join(tmpdir(), 'cartografo-spike-t110-'));
@@ -204,6 +230,7 @@ async function main() {
     log(`graph "${graph.id}" registered at version ${version.id}`);
 
     const { root, repo } = createDisposableRepo();
+    const worktrees = sharedWorktree(repo);
     log(`workingDir of the crossing: ${repo}`);
 
     // --- 2. a real work, in execution 110 -------------------------------------
@@ -225,7 +252,7 @@ async function main() {
       createClaudeCodeDispatch({
         urlBase: url,
         engines: { [DEFAULT_ENGINE]: { adapter, decodeSessionText: decodeClaudeCodeSessionText } },
-        workingDir: repo,
+        worktrees,
         timeoutSeconds: TIMEOUT_SECONDS,
         instructions: nodeInstructions(node, task),
         token: operatorToken,

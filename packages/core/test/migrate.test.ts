@@ -276,14 +276,18 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
   // rejected (its story is in `resultado`) and one still pending.
   const moment = '2026-08-15T12:00:00.000Z';
   const versionId = `sha256:${'a'.repeat(64)}`;
+  // Lineage first with a null pointer, then the version, then the pointer: the
+  // three tables reference each other in a circle (`0002`), so with the foreign
+  // keys on there is no other order that ever satisfies all of them.
   db.prepare(
     `INSERT INTO grafo (id, classe, linhagem_tipo, versao_corrente_id, criado_em)
-     VALUES ('redacao', 'redacao', 'base', ?, ?)`,
-  ).run(versionId, moment);
+     VALUES ('redacao', 'redacao', 'base', NULL, ?)`,
+  ).run(moment);
   db.prepare(
     `INSERT INTO grafo_versao (id, grafo_id, versao_pai, snapshot, origem, criado_em)
      VALUES (?, 'redacao', NULL, '{}', 'manual', ?)`,
   ).run(versionId, moment);
+  db.prepare('UPDATE grafo SET versao_corrente_id = ? WHERE id = ?').run(versionId, 'redacao');
   const seed = db.prepare(
     `INSERT INTO proposta (grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada,
                            status, motivo_reversao, resultado, criado_em, atualizado_em)

@@ -93,13 +93,22 @@ export interface EntradaDeProposta {
   metrica_esperada: unknown;
 }
 
-/** Uma proposta, no recorte que o runner precisa da resposta. */
+/**
+ * Uma proposta, no recorte que o runner precisa da resposta.
+ *
+ * `metrica_esperada` e `resultado` chegam como `unknown` de propósito: a forma
+ * das duas é do control plane (`hypothesis.ts`), e o runner só as repassa ou
+ * lê o `nome` de dentro — declarar a forma aqui seria duplicar um contrato do
+ * outro lado da fronteira.
+ */
 export interface Proposta {
   id: number;
   grafo_id: string;
   versao_alvo: string;
   status: string;
   versao_aplicada_id: string | null;
+  metrica_esperada?: unknown;
+  resultado?: unknown;
 }
 
 /** Um runner pareado. */
@@ -354,6 +363,54 @@ export class ClienteControle {
    */
   async criarProposta(entrada: EntradaDeProposta): Promise<Proposta> {
     const { proposta } = await this.#post<{ proposta: Proposta }>('/v1/proposals', entrada);
+    return proposta;
+  }
+
+  /**
+   * Uma proposta, pelo id (t165, FR9).
+   *
+   * Quem vai fechar o experimento precisa da `metrica_esperada` que a hipótese
+   * declarou — é o `nome` dela que diz QUAL número medir na rodada seguinte.
+   *
+   * @param id Id da proposta.
+   * @returns A proposta, no recorte que o runner consome.
+   * @throws {ErroDoControlPlane} 404 quando a proposta não existe.
+   */
+  async buscarProposta(id: number): Promise<Proposta> {
+    const { proposta } = await this.#get<{ proposta: Proposta }>(`/v1/proposals/${id}`);
+    return proposta;
+  }
+
+  /**
+   * Fecha o experimento de uma proposta aplicada (t165, FR7).
+   *
+   * Este é o ÚNICO write que esta ficha acrescenta ao cliente, e a razão de ele
+   * poder existir é que fechar um resultado é relatar um fato medido, não tomar
+   * uma decisão com portão. Continua não existindo `aplicar`, `reverter`,
+   * `aprovar` nem `rejeitar` aqui, pela mesma razão que `criarProposta` já
+   * documenta: essas quatro são decisão humana (README, princípio 5), moram na
+   * tela ou no `curl` do operador, e um cliente que não tem o botão não o aperta
+   * por engano.
+   *
+   * O `depois` é de quem chama: não existe motor de métricas nomeadas na v1
+   * (`docs/spec/entidades-versionamento.md` §5). Quem calcula é o topógrafo, com
+   * `measureForExpectedMetric` sobre a telemetria da rodada seguinte.
+   *
+   * @param id Proposta aplicada.
+   * @param entrada Execução seguinte e o número medido nela.
+   * @returns A proposta com o veredito já gravado.
+   * @throws {ErroDoControlPlane} 409 quando o resultado já foi gravado
+   *   (`proposta_ja_avaliada`) ou a proposta não está aplicada; 422 quando
+   *   nenhum trabalho daquela execução rodou sob a versão aplicada.
+   */
+  async fecharResultadoDeProposta(
+    id: number,
+    entrada: { execucao_id: number; depois: number },
+  ): Promise<Proposta> {
+    const { proposta } = await this.#post<{ proposta: Proposta }>(
+      `/v1/proposals/${id}/outcome`,
+      entrada,
+    );
     return proposta;
   }
 

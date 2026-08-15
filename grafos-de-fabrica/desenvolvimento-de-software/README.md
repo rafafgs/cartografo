@@ -38,12 +38,14 @@ de retrabalho `testar → desenvolver`.
 
 O `grafo.json` **parte de**
 [`schema/exemplos/grafo-valido-flowpilot.json`](../../schema/exemplos/grafo-valido-flowpilot.json)
-— o exemplo-mestre do `t96`, lido como referência e **nunca modificado**. A
-única diferença entre os dois arquivos é o `skill_ref` de cada nó: no exemplo
-os hashes são placeholders reprodutíveis (nenhuma skill real existia para
-pinar) e os ids carregam um prefixo ilustrativo `cartografo/`; aqui os ids são
-kebab-case puro, iguais ao `id` de cada manifesto, e os hashes são os hashes
-reais do conteúdo pinado.
+— o exemplo-mestre do `t96`, lido como referência e **nunca modificado**. Dois
+lugares diferem dele. O `skill_ref` de cada nó: no exemplo os hashes são
+placeholders reprodutíveis (nenhuma skill real existia para pinar) e os ids
+carregam um prefixo ilustrativo `cartografo/`; aqui os ids são kebab-case puro,
+iguais ao `id` de cada manifesto, e os hashes são os hashes reais do conteúdo
+pinado. E o `contrato.verificacoes` de cada nó, que no exemplo ilustrava o
+formato com comandos de uma stack inventada (`make check`, `make smoke`) e aqui
+restata os `checks` do manifesto pinado — ver "Divergências registradas".
 
 Por D17 o flowpilot é **referência de comportamento, sem dependência de
 código**: o porte é reimplementação, e nada neste bundle lê nada de lá em tempo
@@ -52,8 +54,8 @@ de execução.
 ## Como validar
 
 ```bash
-# grafo + manifestos + pinos de hash, tudo de uma vez
-node ../../scripts/validar-bundle-fabrica.mjs .
+# grafo + manifestos + pinos de hash + paridade das verificações, tudo de uma vez
+node ../../scripts/validate-factory-bundle.mjs .
 
 # checagem cruzada do formato dos manifestos, com um validador de terceiro
 npx --yes ajv-cli@5 validate \
@@ -61,11 +63,14 @@ npx --yes ajv-cli@5 validate \
   -d './skills/*.json' --spec=draft2020
 ```
 
-O primeiro comando confere as três coisas que fazem disto um bundle e não um
+O primeiro comando confere as quatro coisas que fazem disto um bundle e não um
 punhado de JSON no mesmo diretório: o grafo é sound pelas quatro regras do
-`t96`, cada manifesto vale contra o schema do `t97`, e **cada pino fecha** — o
+`t96`, cada manifesto vale contra o schema do `t97`, **cada pino fecha** — o
 hash recalculado do conteúdo de cada manifesto bate com o que o `skill_ref` do
-nó correspondente pina (D4).
+nó correspondente pina (D4) — e **as duas declarações de como cada nó se
+verifica batem**: `contrato.verificacoes` no grafo e `checks` no manifesto
+pinado trazem a mesma quantidade de itens, a mesma sequência de `tipo` e o
+mesmo `comando` em todo item determinístico (`t176`).
 
 O hash é o do procedimento canônico da especificação do manifesto: `sha256` do
 JSON canônico de `{instrucoes, entrada, saida, checks, permissoes}`. Mexeu numa
@@ -74,8 +79,9 @@ o bundle para de validar até o `skill_ref` do nó ser atualizado — que é
 exatamente a mudança que D4 quer trazer de volta ao portão humano.
 
 Os testes de aceite deste bundle estão em
-[`tests/grafo-fabrica-1.test.mjs`](../../tests/grafo-fabrica-1.test.mjs)
-(`node --test`).
+[`tests/factory-graph-1.test.mjs`](../../tests/factory-graph-1.test.mjs)
+(`node --test`), e os do validador em
+[`scripts/validate-factory-bundle.test.mjs`](../../scripts/validate-factory-bundle.test.mjs).
 
 ## Convenção de diretório
 
@@ -107,9 +113,9 @@ importação. O caminho pela API tem cobertura própria em
 
 ## Divergências registradas
 
-Três lugares onde este porte se afasta do que a fonte faz ou do que o rascunho
-do `t96` sugeria. Ficam escritas porque divergência não registrada vira
-armadilha para quem vier depois.
+Dois lugares onde este porte se afasta do que a fonte faz ou do que o rascunho
+do `t96` sugeria, mais um que já foi reconciliado. Ficam escritas porque
+divergência não registrada vira armadilha para quem vier depois.
 
 1. **`implantar` é nó agêntico e não deveria ser.** No flowpilot esta etapa
    nunca abre sessão: é uma varredura 100% determinística (uma pergunta de
@@ -120,22 +126,30 @@ armadilha para quem vier depois.
    reais pressionando. O porte deixa o nó agêntico com checks 100%
    determinísticos e instruções triviais; quando houver um segundo caso real,
    o tipo novo entra com dois consumidores para provar o formato.
-2. **`testar` não tem check determinístico, e o nó do grafo ainda declara
-   um.** A skill de teste do flowpilot proíbe explicitamente rerodar os gates
-   de qualidade na validação — a integração já rodou todos contra esta mesma
-   árvore, e repetir é estação redundante. `testar-alpha.json` segue o
-   comportamento real (só o check agêntico de caminhada semântica); o
-   `contrato.verificacoes` do nó `testar` em `grafo.json` continua idêntico ao
-   exemplo do `t96`, `make check` incluído, porque esta ticket não reabre o
-   conteúdo do exemplo-mestre. Onde os dois discordam, **o manifesto é o que
-   vale**: é ele que o runner injeta na sessão. Reconciliar os dois é trabalho
-   de quem primeiro tiver um executor para notar a diferença.
-3. **Dois vocabulários para o resultado do portão.** O `saida_schema` do nó
+2. **Dois vocabulários para o resultado do portão.** O `saida_schema` do nó
    `testar` (herdado do exemplo) usa `aprovado`/`retrabalho`/`escala`, que são
    os rótulos das arestas; o manifesto usa o enum que o formato de portão
    exige, `passou`/`falhou`/`escalar_humano`. O mapeamento é direto e está
    escrito nas `instrucoes` de `testar-alpha`: `passou` → aresta `aprovado`,
    `falhou` → aresta `retrabalho`.
+
+**Reconciliada pelo `t176` — o manifesto é a única fonte que declara COMO um nó
+se verifica.** O grafo nascia do exemplo-mestre do `t96` com `make check` em
+`desenvolver`, `integrar` e `testar` e `make smoke` em `implantar`: tecnologia
+hardcoded, e no caso do `testar` o **oposto** do que o manifesto manda — a
+skill de teste proíbe explicitamente rerodar os gates que a integração já rodou
+contra esta mesma árvore (`flowpilot testing.py:77`, "NEVER re-run the quality
+gates as the validation"). Onde os dois discordavam, valeu o manifesto: é ele
+que o runner injeta na sessão. Hoje o `contrato.verificacoes` de cada nó
+restata os `checks` do manifesto que o nó pina — mesma quantidade, mesma
+sequência de `tipo`, mesmo `comando` nos determinísticos — e o `testar` ficou
+só com a caminhada semântica. Os dois continuam sendo **formatos distintos para
+a mesma verificação**, não o mesmo campo duplicado: `evidencia_obrigatoria` é
+lista de artefatos no manifesto e o literal `true` no grafo, e o texto de um
+item agêntico é reescrito em cada formato em vez de copiado — a disciplina que
+`packages/runner/src/synthesizer/prompt.ts` já instrui ao sintetizador. Voltar
+a divergir na estrutura agora derruba o validador, sem depender de revisão
+manual de paridade.
 
 E uma consequência que vale explicitar: **escalar para humano não é aresta**.
 As cinco skills carregam o mesmo contrato de escalação (o bloco

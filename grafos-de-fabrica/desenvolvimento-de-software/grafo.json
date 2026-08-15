@@ -150,8 +150,18 @@
         "verificacoes": [
           {
             "tipo": "deterministico",
-            "comando": "make check",
-            "descricao": "Suíte, lint e typecheck verdes no branch da ticket."
+            "comando": "{{entrada.projeto.comando_testes}}",
+            "descricao": "A suíte do projeto passa no checkout isolado do trabalho."
+          },
+          {
+            "tipo": "deterministico",
+            "comando": "{{entrada.projeto.comandos_qualidade}}",
+            "descricao": "Todo comando de qualidade que o perfil declara, e não só o que a sessão acha que tocou."
+          },
+          {
+            "tipo": "deterministico",
+            "comando": "git diff --quiet && git diff --cached --quiet",
+            "descricao": "Nada ficou fora do commit: o nó seguinte só enxerga o branch."
           },
           {
             "tipo": "agentico",
@@ -211,8 +221,18 @@
         "verificacoes": [
           {
             "tipo": "deterministico",
-            "comando": "make check",
+            "comando": "{{entrada.projeto.comando_testes}}",
             "descricao": "A suíte passa na árvore mesclada, não só no branch isolado."
+          },
+          {
+            "tipo": "deterministico",
+            "comando": "{{entrada.projeto.comandos_qualidade}}",
+            "descricao": "Última estação determinística do fluxo: o portão de teste não reroda nada disto."
+          },
+          {
+            "tipo": "deterministico",
+            "comando": "git diff --quiet && git diff --cached --quiet",
+            "descricao": "Nenhuma sobra de merge pela metade escondida na árvore."
           }
         ]
       }
@@ -280,11 +300,6 @@
         },
         "verificacoes": [
           {
-            "tipo": "deterministico",
-            "comando": "make check",
-            "descricao": "Reverificação determinística antes de qualquer julgamento."
-          },
-          {
             "tipo": "agentico",
             "instrucao": "Rode o comportamento entregue e confira cada critério de aceite na aplicação real. Anexe a saída de cada execução; relato do desenvolvedor não conta como evidência.",
             "evidencia_obrigatoria": true,
@@ -340,8 +355,13 @@
         "verificacoes": [
           {
             "tipo": "deterministico",
-            "comando": "make smoke",
-            "descricao": "Smoke test contra o ambiente publicado."
+            "comando": "git -C {{entrada.projeto.repo}} rev-parse --verify --quiet {{entrada.referencia.commit}}^{commit}",
+            "descricao": "A referência existe como commit: sem isso, \"não contém\" seria indistinguível de \"não sei\"."
+          },
+          {
+            "tipo": "deterministico",
+            "comando": "git -C {{entrada.projeto.repo}} merge-base --is-ancestor {{entrada.artefato.merge_commit}} {{entrada.referencia.commit}}",
+            "descricao": "A pergunta inteira da etapa: o merge commit do trabalho é ancestral da referência publicada."
           }
         ]
       }

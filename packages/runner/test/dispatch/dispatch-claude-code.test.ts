@@ -143,6 +143,8 @@ interface Event {
 
 /** What the fake engine recorded about the process it was given. */
 interface FakeRecord {
+  /** The engine process's own pid, which is how the t148 tests find it again. */
+  pid: number;
   argv: string[];
   env: Record<string, string>;
   cwd: string;
@@ -1366,4 +1368,285 @@ test("t141 — the engine is resolved from the node the work is standing on", as
       assert.equal(sessions.sessoes.length, 0);
     },
   );
+});
+
+// --- t148: a control-plane call that fails must not leak the session --------
+
+/**
+ * `true` while the pid exists; `EPERM` counts as alive (it exists, and is not
+ * ours to signal).
+ *
+ * A local copy of what `src/engine/conformance-kit.ts:163-180` already does.
+ * The kit does not export it, and one caller outside the kit is not yet the two
+ * consumers this project asks for before it moves anything into a shared
+ * surface — when the second one shows up, this is the pair to extract.
+ */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Polls until the pid is gone, and fails the test if it never is. */
+async function requireProcessDead(
+  pid: number,
+  label: string,
+  deadlineMs = 5_000,
+): Promise<void> {
+  const limit = Date.now() + deadlineMs;
+  while (Date.now() < limit) {
+    if (!isProcessAlive(pid)) return;
+    await delay(25);
+  }
+  assert.fail(
+    `${label}: process ${pid} was still alive ${deadlineMs}ms after the dispatch settled (leaked session)`,
+  );
+}
+
+/**
+ * SIGKILLs whatever is left of an engine process, group first.
+ *
+ * The cleanup half of the acceptance criteria: whichever way these two tests
+ * end — green, red or thrown — no fake engine of theirs may outlive them. The
+ * engine comes up `detached`, so the group is the honest target and the direct
+ * pid is only the fallback.
+ */
+function killIfAlive(pid: number): void {
+  if (!isProcessAlive(pid)) return;
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* it died between the check and the signal; nothing to do */
+    }
+  }
+}
+
+/**
+ * Waits for the fake engine's sidecar and reads it.
+ *
+ * `startSession` resolves on the process's `spawn` event, which happens long
+ * before the fake engine has run a line of its own — so "the engine is up" and
+ * "the engine has recorded itself" are two different instants, and only the
+ * second one has a pid in it.
+ */
+async function waitForRecord(
+  recordPath: string,
+  deadlineMs = DEADLINE_MS,
+): Promise<FakeRecord> {
+  const limit = Date.now() + deadlineMs;
+  while (Date.now() < limit) {
+    if (existsSync(recordPath)) {
+      try {
+        return JSON.parse(readFileSync(recordPath, "utf8")) as FakeRecord;
+      } catch {
+        /* caught the file mid-write; read it again on the next turn */
+      }
+    }
+    await delay(25);
+  }
+  throw new Error(
+    `the fake engine never recorded itself at ${recordPath} within ${deadlineMs}ms`,
+  );
+}
+
+/** The body a control plane that fell over would send back. */
+function serverError(): Response {
+  return new Response(JSON.stringify({ erro: "o control plane caiu" }), {
+    status: 500,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+test("t148 — POST /v1/sessions fails after the engine started: the session is cancelled, not leaked", async (t) => {
+  const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
+    "src/controller/cliente-controle.ts",
+  );
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t148-leak-"));
+  const recordPath = path.join(workDir, "despacho-que-vazou.json");
+  let enginePid: number | null = null;
+  t.after(() => {
+    if (enginePid !== null) killIfAlive(enginePid);
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha cujo POST /v1/sessions cai com o engine já de pé",
+      no_entrada_id: "implementar",
+      execucao_id: 148,
+    },
+    201,
+    token,
+  );
+
+  // Everything reaches the real control plane except the one call this test is
+  // about, which never gets there: it fails outright, the way a 500 or a
+  // dropped connection fails.
+  //
+  // Waiting for the sidecar before answering is what makes the race a
+  // certainty instead of a coincidence — the failure has to land while the
+  // engine process is provably up and writing in `workingDir`.
+  const doFetch: typeof fetch = async (input, init) => {
+    const target = String(input);
+    if ((init?.method ?? "GET") === "POST" && target.endsWith("/v1/sessions")) {
+      enginePid = (await waitForRecord(recordPath)).pid;
+      return serverError();
+    }
+    return fetch(input, init);
+  };
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    doFetch,
+    engines: claudeOnly(fakeAdapter()),
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    envOverrides: {
+      FAKE_ENGINE_RECORD: recordPath,
+      // The session never ends on its own: if it dies, somebody killed it, and
+      // this test is about who.
+      FAKE_ENGINE_HANG: "1",
+      FAKE_ENGINE_LINES: linesWithoutBlock(),
+    },
+  });
+
+  await assert.rejects(
+    async () => dispatch(work.id),
+    (error: unknown) => {
+      assert.ok(
+        error instanceof ErroDoControlPlane,
+        `the original failure must be what propagates, got: ${String(error)}`,
+      );
+      assert.equal(error.status, 500);
+      assert.equal(
+        error.message,
+        "POST /v1/sessions answered 500",
+        "cancelling the session may not replace the error that caused it",
+      );
+      return true;
+    },
+  );
+
+  // The controller's `finally` has already given the lease back by now, so the
+  // work is a candidate again: an engine still alive in this working dir is a
+  // second session about to be dispatched on top of the first.
+  assert.ok(
+    enginePid !== null,
+    "the fake engine must have recorded itself before the call failed",
+  );
+  await requireProcessDead(enginePid, "t148 (engine process)");
+
+  // ...and nothing was left half-open on the other side either.
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    "GET",
+    "/v1/sessions?execucao_id=148",
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(
+    sessions.sessoes.length,
+    0,
+    "the call that failed is the one that would have created the row",
+  );
+});
+
+test("t148 — the finish PATCH fails after the session ended: the escalation question is still posted", async (t) => {
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t148-finish-"));
+  const recordPath = path.join(workDir, "despacho-sem-fechamento.json");
+  t.after(() => {
+    if (existsSync(recordPath)) {
+      const { pid } = JSON.parse(
+        readFileSync(recordPath, "utf8"),
+      ) as FakeRecord;
+      killIfAlive(pid);
+    }
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha que pergunta e cujo fechamento de sessão cai",
+      no_entrada_id: "implementar",
+      execucao_id: 1481,
+    },
+    201,
+    token,
+  );
+
+  // Only the finish PATCH fails. The session itself ended `completed` with a
+  // block in its output, so the question is real, parsed and owed to a human.
+  const doFetch: typeof fetch = async (input, init) => {
+    const target = String(input);
+    if (
+      (init?.method ?? "GET") === "PATCH" &&
+      /\/v1\/sessions\/\d+\/finish$/.test(target)
+    ) {
+      return serverError();
+    }
+    return fetch(input, init);
+  };
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    doFetch,
+    engines: claudeOnly(fakeAdapter()),
+    workingDir: workDir,
+    timeoutSeconds: 60,
+    envOverrides: {
+      FAKE_ENGINE_RECORD: recordPath,
+      FAKE_ENGINE_LINES: linesWithBlock(),
+    },
+  });
+
+  // Failing is right — the runner owes the control plane a write it could not
+  // make. Failing BEFORE asking is not: "asking is not failing" is the whole
+  // invariant, and a question dropped here is a human who is never called.
+  await assert.rejects(async () => dispatch(work.id));
+
+  const questions = await api<{ perguntas: Question[] }>(
+    baseUrl,
+    "GET",
+    "/v1/input-requests",
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(
+    questions.perguntas.length,
+    1,
+    "the question the session asked has to reach POST /v1/input-requests anyway",
+  );
+  const question = questions.perguntas[0];
+  assert.equal(question.trabalho_id, work.id);
+  assert.equal(question.pergunta, ESCALATION.question);
+  assert.equal(question.contexto, ESCALATION.context);
+  assert.deepEqual(question.opcoes, ESCALATION.options);
+  assert.equal(question.recomendacao, ESCALATION.recommendation);
+  assert.equal(question.resposta_padrao, ESCALATION.default);
 });

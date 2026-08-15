@@ -14,7 +14,7 @@
  * - **FR7** — the metrics recorded are process metrics, never a financial
  *   outcome (D14: "P&L is slow validation, never a round's metric").
  * - **FR10** (t145) — the bundle's README is executable documentation: every
- *   path it points at exists, and the command it publishes under "Como validar"
+ *   path it points at exists, and the command it publishes under `Como validar`
  *   runs green from the bundle directory. The two are separate tests because a
  *   dead link and a dead command are different failures to read.
  *

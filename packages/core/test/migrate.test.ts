@@ -12,7 +12,15 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -192,6 +200,32 @@ test('AT4 — a .sql file without a numeric prefix and a duplicated number fail 
   writeMigration(duplicated, '0001_init.sql', CONTROL_TABLE_SQL);
   writeMigration(duplicated, '0001_outra.sql', 'CREATE TABLE outra (id TEXT PRIMARY KEY);');
   assert.throws(() => listMigrations(duplicated), /0001/);
+});
+
+test('t182 AT — the shipped migrations directory has no repeated number', async () => {
+  const { listMigrations } = await loadMigrate();
+
+  // Counted straight off the disk, NOT through `listMigrations`: this is the
+  // guard for the collision that two merged lines produce (0010 twice), and it
+  // has to keep biting even if the runner one day stops throwing on its own.
+  const byNumber = new Map<number, string[]>();
+  for (const file of readdirSync(REAL_MIGRATIONS_DIR)) {
+    if (!file.endsWith('.sql')) continue;
+    const match = /^(\d+)_/.exec(file);
+    assert.ok(match, `migration named outside the "<number>_<name>.sql" pattern: "${file}"`);
+    const number = Number.parseInt(match[1], 10);
+    byNumber.set(number, [...(byNumber.get(number) ?? []), file]);
+  }
+
+  const collisions = [...byNumber.entries()].filter(([, files]) => files.length > 1);
+  assert.deepEqual(
+    collisions,
+    [],
+    'two migrations sharing a number make the application order ambiguous, and the control plane refuses to start',
+  );
+
+  // And the consequence the ticket is actually about: this directory boots.
+  assert.doesNotThrow(() => listMigrations(REAL_MIGRATIONS_DIR));
 });
 
 test('AT5 — the package 0001_init.sql creates schema_migrations with id and applied_at', async (t) => {

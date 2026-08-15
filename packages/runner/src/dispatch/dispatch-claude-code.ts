@@ -29,6 +29,14 @@
  *    something, posts the question — which blocks the work inside the control
  *    plane, in the same transaction (t106, FR1).
  *
+ * **And every session gets a tree of its own** (t160). The directory a session
+ * runs in is its entire write scope (`docs/formatos/engine-adapter.md`,
+ * invariant 7), so it is acquired per dispatch from a `WorktreeManager` and
+ * given back on every path out of here — kept for diagnosis unless the session
+ * completed. There is no static working directory left to fall back to, which
+ * is the point: with one, every session of every job wrote in the same tree as
+ * the operator.
+ *
  * **Asking is not failing, and neither is being denied.** A dispatch that ends
  * with a pending question and a blocked work resolves normally: the lease goes
  * back through the controller's `finally`, and the work simply stops being a
@@ -63,6 +71,7 @@ import type {
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
 import { PermissionDenialTracker, type PermissionDenial } from './parse-permission-denial.ts';
 import { decodeClaudeCodeSessionText } from './session-text.ts';
+import type { WorktreeManager } from './session-worktree.ts';
 
 /**
  * `SessionStatus` (the interface's vocabulary) -> the taxonomy's `status`
@@ -238,8 +247,20 @@ export interface ClaudeCodeDispatchOptions {
    * than being resolved from the engine name in two different places.
    */
   engines: Record<string, EngineRoute>;
-  /** Where the session runs — typically an isolated git worktree. */
-  workingDir: string;
+  /**
+   * Who gives each session the directory it runs in (t160, FR6).
+   *
+   * It replaced a static `workingDir: string`, and the replacement IS the
+   * enforcement: while that field existed, every session this dispatch ever
+   * opened wrote in the same tree — including the operator's own checkout — and
+   * any "isolate it" logic would have had a value to quietly fall back to.
+   * There is no such value here anymore.
+   *
+   * Required, with no default: a manager chosen by this module would be a guess
+   * about which repository sessions may write in, and that guess is what gap #6
+   * of the first dogfood run cost.
+   */
+  worktrees: WorktreeManager;
   /** Wall-clock limit of the session. Default: one hour. */
   timeoutSeconds?: number;
   /** Node instructions. Default: {@link DEFAULT_INSTRUCTIONS}. */
@@ -473,215 +494,264 @@ export function createClaudeCodeDispatch(
       throw new UnknownEngineError(engineName, job.no_atual, Object.keys(options.engines));
     }
 
-    const { eventos: events } = await call<{ eventos: Event[] }>(
-      `/v1/jobs/${jobId}/events`,
-      'GET',
-    );
-    const { perguntas: questions } = await call<{ perguntas: Question[] }>(
-      '/v1/input-requests?status=respondida',
-      'GET',
-    );
+    // The whole write scope of this session, minted here and nowhere else
+    // (FR7). After the engine check, because the cheapest failure stays first,
+    // and before anything is read for the prompt: from this line on there is a
+    // directory that has to be given back, whichever way this callback settles.
+    const worktree = await options.worktrees.acquire(job.id);
 
-    const prompt = buildPrompt(
-      job,
-      events,
-      questions.filter((question) => question.trabalho_id === jobId),
-    );
+    let released = false;
+    let releaseFailure: unknown = null;
 
-    const spec: SessionSpec = {
-      workingDir: options.workingDir,
-      instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
-      prompt,
-      timeoutSeconds,
-      ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
-      ...(options.permissions === undefined ? {} : { permissions: options.permissions }),
-    };
-
-    const lines: string[] = [];
-    let engineRef: string | null = null;
-    let announceEnd: (outcome: Outcome) => void = () => undefined;
-    const end = new Promise<Outcome>((resolve) => {
-      announceEnd = resolve;
-    });
-
-    // The tracker watches for exactly what this session denied — the same list
-    // the adapter handed the engine, resolved from the same policy (t125, FR6).
-    const tracker = new PermissionDenialTracker(
-      resolvePermissions(options.permissions).deniedTools,
-    );
-
-    // A denial can happen before `POST /v1/sessions` has answered, and there is
-    // no id to post it against until then. It waits here, and the queue is
-    // drained as soon as the id exists.
-    const queued: PermissionDenial[] = [];
-    let sessionId: number | null = null;
-    let denialWrites: Promise<void> = Promise.resolve();
-    let denialFailure: unknown = null;
-
-    const recordDenial = (denial: PermissionDenial): void => {
-      const id = sessionId;
-      if (id === null) {
-        queued.push(denial);
-        return;
-      }
-      // Serialized, and with the catch attached right here: a rejection with
-      // nobody listening yet would take the whole process down as an unhandled
-      // rejection, long before anyone could report it.
-      denialWrites = denialWrites
-        .then(() =>
-          call(`/v1/sessions/${id}/permission-denials`, 'POST', {
-            recurso: denial.recurso,
-            ferramenta: denial.ferramenta,
-            motivo: denial.motivo,
-            ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
-          }),
-        )
-        .then(() => undefined)
-        .catch((error: unknown) => {
-          denialFailure ??= error;
-        });
-    };
-
-    // `startSession` rejects with `SessionStartError` when the session did not
-    // come up. That one propagates untouched: it is a dispatch that never
-    // happened, and the controller's `finally` gives the lease back anyway.
-    //
-    // The handle it resolves with is kept, and that is the whole point: from
-    // here on there is a live process in `spec.workingDir`, and the only thing
-    // that can stop it is this handle (t148, FR1).
-    const handle = await route.adapter.startSession(spec, {
-      onOutput(line) {
-        lines.push(line);
-        for (const denial of tracker.observe(line)) recordDenial(denial);
-      },
-      onEngineRef(ref) {
-        engineRef = ref;
-      },
-      onFinished(status, exitCode) {
-        announceEnd({ status, exitCode });
-      },
-    });
-
-    let session: Session;
-    let outcome: Outcome;
-    try {
-      // Recorded as soon as the session is up, with whatever ref is known by
-      // then. There is no endpoint to fill `engine_session_ref` in later (out
-      // of scope), so `null` here means "the engine had not said it yet" and
-      // never "this engine has no ref".
-      session = await call<Session>('/v1/sessions', 'POST', {
-        trabalho_id: job.id,
-        no_id: job.no_atual,
-        engine: route.adapter.engineName,
-        engine_session_ref: engineRef,
-        working_dir: spec.workingDir,
-        prompt: spec.prompt,
-        timeout_seconds: spec.timeoutSeconds,
-      });
-
-      sessionId = session.id;
-      for (const denial of queued.splice(0)) recordDenial(denial);
-
-      outcome = await end;
-    } catch (error) {
-      // Everything between the session coming up and its outcome being known
-      // runs with a process alive on the other side, and the controller's
-      // `finally` gives the lease back however this promise settles
-      // (`controller.ts:122-136`). Rejecting from here without taking the
-      // session down puts the work back in the pool with an engine still
-      // writing in its working dir, for up to `timeoutSeconds` — and the next
-      // tick would dispatch a second one into the same directory (t148, FR2).
-      //
-      // No explicit status: `cancel` defaults to `"cancelled"`
-      // (`engine/types.ts:236-245`), which is what happened. The clock did not
-      // run out and the engine did not crash; a control-plane call did.
+    /**
+     * Gives the worktree back, exactly once, on whatever path leaves here.
+     *
+     * Idempotent because the paths overlap on purpose: the terminal path
+     * releases with the fate the outcome earned, and the catch below releases
+     * whatever it finds still held — including what the terminal path already
+     * handed over on its way to throwing.
+     *
+     * The failure is captured, never thrown from here, exactly as
+     * `denialFailure` and `finishFailure` are: a cleanup that could not be done
+     * is a fault worth reporting, and never a reason to replace the error that
+     * is already unwinding with a symptom of it.
+     */
+    const release = async (keep: boolean): Promise<void> => {
+      if (released) return;
+      released = true;
       try {
-        await route.adapter.cancel(handle);
-      } catch {
-        // Swallowed on purpose, and only here: the original failure is the one
-        // that explains the dispatch, and a secondary error from the cleanup
-        // would replace a cause with a symptom.
+        await options.worktrees.release(worktree, { keep });
+      } catch (error) {
+        releaseFailure = error;
       }
-      throw error;
-    }
+    };
 
-    // Past this line the session is terminal on its own account and `cancel` is
-    // never called again (FR3): what is left is telemetry the runner owes, and
-    // each write is attempted even when the one before it failed.
-
-    // Drained BEFORE the end of the session, so the log reads in the order
-    // things happened: the session opened, it was denied, it finished. A
-    // failure here is remembered and surfaced at the very end — telemetry of an
-    // incident may not cost the session its closure nor its question.
-    await denialWrites;
-
-    // Captured rather than thrown, exactly as `denialFailure` already is: a
-    // closure the control plane refused may not cancel the question that comes
-    // after it. "Asking is not failing" is not a rule about happy paths — a
-    // question dropped here is a human who is never called, and the work stays
-    // unblocked with nobody knowing what it needed.
-    let finishFailure: unknown = null;
     try {
-      await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
-        status: TAXONOMY_STATUS[outcome.status],
-        exit_code: outcome.exitCode,
-        // The v0 interface reports no token usage (out of scope). `null` is
-        // "the engine reported nothing" and must never collapse into zero.
-        uso: null,
-        // The raw stream, exactly as `onOutput` reported it — undecoded, frames
-        // and dying screams alike (t159). `decodeSessionText` below is a READER
-        // of this same buffer, and its frame-decoding is lossy by design: what
-        // gets persisted is the material before that, because a session that
-        // died is diagnosed from what it printed, not from what parsed.
-        transcricao: lines.join('\n'),
-      });
-    } catch (error) {
-      finishFailure = error;
-    }
-
-    const request: InputRequest | null = parseInputRequest(route.decodeSessionText(lines));
-    if (request !== null) {
-      // This POST is what blocks the work, inside the control plane and in the
-      // same transaction as `pergunta.criada` (FR1). The runner never posts a
-      // block of its own — two owners for one flag is how a work ends up
-      // blocked with nothing pending.
-      await call('/v1/input-requests', 'POST', {
-        trabalho_id: job.id,
-        sessao_id: session.id,
-        tipo: 'pergunta',
-        pergunta: request.question,
-        contexto: request.context ?? null,
-        opcoes: request.options ?? null,
-        recomendacao: request.recommendation ?? null,
-        resposta_padrao: request.default ?? null,
-        // The field exists since t102; nothing reads it to answer on its own —
-        // the auto-answer policy is still outside the PoC.
-        auto_aprovavel: true,
-        ator: { tipo: 'agente', ref: job.no_atual === '' ? 'sessao' : job.no_atual },
-      });
-    }
-
-    // A write that could not be made is not the session's fault, but it is a
-    // fault: the control plane refused something the runner owes it, and a
-    // silent swallow here would leave the log claiming a clean session.
-    //
-    // The FIRST one captured is the one that surfaces — a denial happens during
-    // the session, the closure after it — which is the precedent `denialFailure`
-    // already set when it was alone. Reporting more than one at a time is a
-    // multi-error type nobody has needed yet.
-    const failure = denialFailure ?? finishFailure;
-    if (failure !== null) throw failure;
-
-    // Asking is a successful dispatch — the question is already recorded above,
-    // and the work is already blocked. What is NOT successful is a session that
-    // died: reporting that as a normal dispatch would hide a broken engine
-    // behind a work that simply stopped moving.
-    if (outcome.status !== 'completed') {
-      throw new DispatchError(
-        `the session of job ${job.id} ended as "${outcome.status}" (exit ${String(outcome.exitCode)})`,
-        outcome.status,
-        outcome.exitCode,
+      const { eventos: events } = await call<{ eventos: Event[] }>(
+        `/v1/jobs/${jobId}/events`,
+        'GET',
       );
+      const { perguntas: questions } = await call<{ perguntas: Question[] }>(
+        '/v1/input-requests?status=respondida',
+        'GET',
+      );
+
+      const prompt = buildPrompt(
+        job,
+        events,
+        questions.filter((question) => question.trabalho_id === jobId),
+      );
+
+      const spec: SessionSpec = {
+        workingDir: worktree.path,
+        instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
+        prompt,
+        timeoutSeconds,
+        ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
+        ...(options.permissions === undefined ? {} : { permissions: options.permissions }),
+      };
+
+      const lines: string[] = [];
+      let engineRef: string | null = null;
+      let announceEnd: (outcome: Outcome) => void = () => undefined;
+      const end = new Promise<Outcome>((resolve) => {
+        announceEnd = resolve;
+      });
+
+      // The tracker watches for exactly what this session denied — the same list
+      // the adapter handed the engine, resolved from the same policy (t125, FR6).
+      const tracker = new PermissionDenialTracker(
+        resolvePermissions(options.permissions).deniedTools,
+      );
+
+      // A denial can happen before `POST /v1/sessions` has answered, and there is
+      // no id to post it against until then. It waits here, and the queue is
+      // drained as soon as the id exists.
+      const queued: PermissionDenial[] = [];
+      let sessionId: number | null = null;
+      let denialWrites: Promise<void> = Promise.resolve();
+      let denialFailure: unknown = null;
+
+      const recordDenial = (denial: PermissionDenial): void => {
+        const id = sessionId;
+        if (id === null) {
+          queued.push(denial);
+          return;
+        }
+        // Serialized, and with the catch attached right here: a rejection with
+        // nobody listening yet would take the whole process down as an unhandled
+        // rejection, long before anyone could report it.
+        denialWrites = denialWrites
+          .then(() =>
+            call(`/v1/sessions/${id}/permission-denials`, 'POST', {
+              recurso: denial.recurso,
+              ferramenta: denial.ferramenta,
+              motivo: denial.motivo,
+              ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+            }),
+          )
+          .then(() => undefined)
+          .catch((error: unknown) => {
+            denialFailure ??= error;
+          });
+      };
+
+      // `startSession` rejects with `SessionStartError` when the session did not
+      // come up. That one propagates untouched: it is a dispatch that never
+      // happened, and the controller's `finally` gives the lease back anyway.
+      //
+      // The handle it resolves with is kept, and that is the whole point: from
+      // here on there is a live process in `spec.workingDir`, and the only thing
+      // that can stop it is this handle (t148, FR1).
+      const handle = await route.adapter.startSession(spec, {
+        onOutput(line) {
+          lines.push(line);
+          for (const denial of tracker.observe(line)) recordDenial(denial);
+        },
+        onEngineRef(ref) {
+          engineRef = ref;
+        },
+        onFinished(status, exitCode) {
+          announceEnd({ status, exitCode });
+        },
+      });
+
+      let session: Session;
+      let outcome: Outcome;
+      try {
+        // Recorded as soon as the session is up, with whatever ref is known by
+        // then. There is no endpoint to fill `engine_session_ref` in later (out
+        // of scope), so `null` here means "the engine had not said it yet" and
+        // never "this engine has no ref".
+        session = await call<Session>('/v1/sessions', 'POST', {
+          trabalho_id: job.id,
+          no_id: job.no_atual,
+          engine: route.adapter.engineName,
+          engine_session_ref: engineRef,
+          working_dir: spec.workingDir,
+          prompt: spec.prompt,
+          timeout_seconds: spec.timeoutSeconds,
+        });
+
+        sessionId = session.id;
+        for (const denial of queued.splice(0)) recordDenial(denial);
+
+        outcome = await end;
+      } catch (error) {
+        // Everything between the session coming up and its outcome being known
+        // runs with a process alive on the other side, and the controller's
+        // `finally` gives the lease back however this promise settles
+        // (`controller.ts:122-136`). Rejecting from here without taking the
+        // session down puts the work back in the pool with an engine still
+        // writing in its working dir, for up to `timeoutSeconds` — and the next
+        // tick would dispatch a second one into the same directory (t148, FR2).
+        //
+        // No explicit status: `cancel` defaults to `"cancelled"`
+        // (`engine/types.ts:236-245`), which is what happened. The clock did not
+        // run out and the engine did not crash; a control-plane call did.
+        try {
+          await route.adapter.cancel(handle);
+        } catch {
+          // Swallowed on purpose, and only here: the original failure is the one
+          // that explains the dispatch, and a secondary error from the cleanup
+          // would replace a cause with a symptom.
+        }
+        throw error;
+      }
+
+      // Past this line the session is terminal on its own account and `cancel` is
+      // never called again (FR3): what is left is telemetry the runner owes, and
+      // each write is attempted even when the one before it failed.
+
+      // Drained BEFORE the end of the session, so the log reads in the order
+      // things happened: the session opened, it was denied, it finished. A
+      // failure here is remembered and surfaced at the very end — telemetry of an
+      // incident may not cost the session its closure nor its question.
+      await denialWrites;
+
+      // Captured rather than thrown, exactly as `denialFailure` already is: a
+      // closure the control plane refused may not cancel the question that comes
+      // after it. "Asking is not failing" is not a rule about happy paths — a
+      // question dropped here is a human who is never called, and the work stays
+      // unblocked with nobody knowing what it needed.
+      let finishFailure: unknown = null;
+      try {
+        await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
+          status: TAXONOMY_STATUS[outcome.status],
+          exit_code: outcome.exitCode,
+          // The v0 interface reports no token usage (out of scope). `null` is
+          // "the engine reported nothing" and must never collapse into zero.
+          uso: null,
+          // The raw stream, exactly as `onOutput` reported it — undecoded, frames
+          // and dying screams alike (t159). `decodeSessionText` below is a READER
+          // of this same buffer, and its frame-decoding is lossy by design: what
+          // gets persisted is the material before that, because a session that
+          // died is diagnosed from what it printed, not from what parsed.
+          transcricao: lines.join('\n'),
+        });
+      } catch (error) {
+        finishFailure = error;
+      }
+
+      const request: InputRequest | null = parseInputRequest(route.decodeSessionText(lines));
+      if (request !== null) {
+        // This POST is what blocks the work, inside the control plane and in the
+        // same transaction as `pergunta.criada` (FR1). The runner never posts a
+        // block of its own — two owners for one flag is how a work ends up
+        // blocked with nothing pending.
+        await call('/v1/input-requests', 'POST', {
+          trabalho_id: job.id,
+          sessao_id: session.id,
+          tipo: 'pergunta',
+          pergunta: request.question,
+          contexto: request.context ?? null,
+          opcoes: request.options ?? null,
+          recomendacao: request.recommendation ?? null,
+          resposta_padrao: request.default ?? null,
+          // The field exists since t102; nothing reads it to answer on its own —
+          // the auto-answer policy is still outside the PoC.
+          auto_aprovavel: true,
+          ator: { tipo: 'agente', ref: job.no_atual === '' ? 'sessao' : job.no_atual },
+        });
+      }
+
+      // The tree goes back before this callback settles, and the OUTCOME is what
+      // decides its fate (FR8): what a completed session produced is already in
+      // its branch's history, so the directory is scratch; anything else is the
+      // only evidence there is of what went wrong, and it stays on disk until a
+      // human — or a later ficha — decides otherwise.
+      await release(outcome.status !== 'completed');
+
+      // A write that could not be made is not the session's fault, but it is a
+      // fault: the control plane refused something the runner owes it, and a
+      // silent swallow here would leave the log claiming a clean session.
+      //
+      // The FIRST one captured is the one that surfaces — a denial happens during
+      // the session, the closure after it, the cleanup last of all — which is the
+      // precedent `denialFailure` already set when it was alone. Reporting more
+      // than one at a time is a multi-error type nobody has needed yet.
+      const failure = denialFailure ?? finishFailure ?? releaseFailure;
+      if (failure !== null) throw failure;
+
+      // Asking is a successful dispatch — the question is already recorded above,
+      // and the work is already blocked. What is NOT successful is a session that
+      // died: reporting that as a normal dispatch would hide a broken engine
+      // behind a work that simply stopped moving.
+      if (outcome.status !== 'completed') {
+        throw new DispatchError(
+          `the session of job ${job.id} ended as "${outcome.status}" (exit ${String(outcome.exitCode)})`,
+          outcome.status,
+          outcome.exitCode,
+        );
+      }
+    } catch (error) {
+      // Every exit that is not the terminal one lands here — a read that
+      // failed before the session opened, the control-plane failure that
+      // cancels a live session, a throw from the telemetry the runner owes.
+      // None of them is a completed session, so the tree stays on disk: it is
+      // the only place the evidence of what went wrong still exists (FR8).
+      await release(true);
+      throw error;
     }
   };
 }

@@ -1,0 +1,409 @@
+/**
+ * Router of the `cartografo-runner` command (t162, FR2–FR4, FR8).
+ *
+ * The product's fourth command, and its own binary rather than a subcommand of
+ * `cartografo`, for the same reason the screen has one (D11): the runner is
+ * another process, on another machine as often as not, holding no privilege
+ * over the control plane. Two binaries is what that boundary looks like from
+ * the outside.
+ *
+ * Everything this file does happens before the first packet: it reads a command
+ * line, resolves the configuration, and hands `runRunner` a settled decision.
+ * A command line it cannot read dies here with a `2` and one line — dialling a
+ * control plane to discover that `--project abc` is not a number spends a round
+ * trip on something that was knowable at argument zero.
+ *
+ * The exit-code convention is `packages/core/src/cli/index.ts`'s, unchanged:
+ *
+ * - `0` — the runner ran and was asked to stop;
+ * - `1` — the runner could not run (control plane down, credential refused);
+ * - `2` — the command line is wrong.
+ *
+ * Address precedence, also the core's: `--url` > `CARTOGRAFO_URL` >
+ * `http://127.0.0.1:4317`. The default is REDECLARED here and not imported from
+ * `@cartografo/core`: the runner imports nothing from the control plane's
+ * package (D1), which is the boundary `cliente-controle.ts`'s own header states
+ * and `packages/tela/src/router.ts:83-92` already set the precedent for. The
+ * price is a constant in two places; the alternative is a package boundary that
+ * only holds while nobody looks.
+ *
+ * English per D18.
+ */
+
+import { hostname } from 'node:os';
+import path from 'node:path';
+
+import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
+import {
+  DEFAULT_ENGINE_NAME,
+  ENGINE_NAMES,
+  runRunner,
+  type EngineName,
+  type RunnerOptions,
+} from './run.ts';
+
+/** Environment variable that points at the control plane (the CLI's own). */
+export const URL_ENV = 'CARTOGRAFO_URL';
+
+/** Environment variable that carries the credential of the control plane. */
+export const TOKEN_ENV = 'CARTOGRAFO_TOKEN';
+
+/** Default control plane address. */
+export const DEFAULT_CONTROL_PLANE_URL = 'http://127.0.0.1:4317';
+
+/**
+ * Project the leases are asked under when nobody says otherwise.
+ *
+ * The same `1` every other part of the system falls back to
+ * (`DEFAULT_PROJECT`, `packages/core/src/repositories/common.ts:25`), spelled
+ * out here for the same boundary reason the URL is.
+ */
+export const DEFAULT_PROJECT = 1;
+
+/** Cap of simultaneous sessions of this runner, when nothing is asked for. */
+export const DEFAULT_RUNNER_CAP = 1;
+
+/** Cap of simultaneous sessions of the project, when nothing is asked for. */
+export const DEFAULT_PROJECT_CAP = 4;
+
+/** Wait between ticks, in milliseconds, when nothing is asked for. */
+export const DEFAULT_INTERVAL_MS = 2_000;
+
+/** Term of the lease asked for, in seconds, when nothing is asked for. */
+export const DEFAULT_LEASE_TTL_SECONDS = 60;
+
+/** Name of the readiness event printed on stdout, once the runner has paired. */
+export const READY_EVENT = 'cartografo.runner.ready';
+
+/** Usage text. The same in `--help` (stdout) and on a wrong command line (stderr). */
+export const USAGE = `usage: cartografo-runner [options]
+
+Starts a runner: it pairs with the control plane and, from then on, asks for
+released work, takes a lease and dispatches a session for it — one tick every
+--interval-ms, until SIGINT or SIGTERM.
+
+options:
+  --url <url>               control plane to dial (env ${URL_ENV};
+                            default ${DEFAULT_CONTROL_PLANE_URL})
+  --token <token>           credential of the control plane (env ${TOKEN_ENV});
+                            it is printed when the control plane first starts
+  --project <id>            project the leases are asked under
+                            (default ${DEFAULT_PROJECT})
+  --runner-id <id>          identity this runner declares at pairing
+                            (default: this host and this pid)
+  --engine <${ENGINE_NAMES.join('|')}>
+                            engine every session of this runner opens on
+                            (default ${DEFAULT_ENGINE_NAME}); one per process
+  --working-dir <path>      directory the sessions run in (default: the current one)
+  --runner-cap <n>          simultaneous sessions of this runner
+                            (default ${DEFAULT_RUNNER_CAP})
+  --project-cap <n>         simultaneous sessions of the project
+                            (default ${DEFAULT_PROJECT_CAP})
+  --interval-ms <n>         wait between ticks, in milliseconds
+                            (default ${DEFAULT_INTERVAL_MS})
+  --lease-ttl-seconds <n>   term of the lease asked for
+                            (default ${DEFAULT_LEASE_TTL_SECONDS})
+  -h, --help                this text
+
+exit codes: 0 the runner ran and was asked to stop, 1 it could not run,
+2 the command line is wrong.`;
+
+/** Wrong use of the command — becomes one line, never a stack trace. */
+export class UsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UsageError';
+  }
+}
+
+/** Every option this command takes a value for. */
+const VALUE_OPTIONS = [
+  '--url',
+  '--token',
+  '--project',
+  '--runner-id',
+  '--engine',
+  '--working-dir',
+  '--runner-cap',
+  '--project-cap',
+  '--interval-ms',
+  '--lease-ttl-seconds',
+] as const;
+
+/** The two signals that ask a runner to stop. */
+const STOP_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
+
+/**
+ * Reads the command line into `--name` → value, refusing anything else.
+ *
+ * Both spellings, `--name value` and `--name=value`, because whoever wires a
+ * runner into a supervisor uses the second one and would otherwise find out at
+ * runtime. Anything that is not one of the known options — a flag nobody
+ * declared, a stray positional — is a usage error rather than a silent
+ * ignore: a runner started with a typo would otherwise run happily against the
+ * wrong control plane.
+ *
+ * @param args `process.argv.slice(2)`.
+ * @returns The value of each option that was given.
+ * @throws {UsageError} On an unknown option, a stray argument or a missing value.
+ */
+function readOptions(args: string[]): Map<string, string> {
+  const given = new Map<string, string>();
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    const equals = argument.startsWith('--') ? argument.indexOf('=') : -1;
+    const name = equals === -1 ? argument : argument.slice(0, equals);
+
+    if (!(VALUE_OPTIONS as readonly string[]).includes(name)) {
+      throw new UsageError(`does not understand "${argument}"`);
+    }
+
+    let value: string | undefined;
+    if (equals === -1) {
+      value = args[index + 1];
+      if (value === undefined || value.startsWith('--')) {
+        throw new UsageError(`${name} needs a value`);
+      }
+      index += 1;
+    } else {
+      value = argument.slice(equals + 1);
+    }
+
+    if (value === '') throw new UsageError(`${name} needs a value`);
+    given.set(name, value);
+  }
+
+  return given;
+}
+
+/**
+ * Resolves the control plane's address.
+ *
+ * @param option Value of `--url`, when it came on the command line.
+ * @param env Environment to read `CARTOGRAFO_URL` from.
+ * @returns Base URL with no trailing slash.
+ */
+export function resolveControlPlaneUrl(option: string | undefined, env: NodeJS.ProcessEnv): string {
+  const fromEnv = env[URL_ENV]?.trim();
+  const chosen =
+    option !== undefined && option.trim() !== ''
+      ? option.trim()
+      : fromEnv !== undefined && fromEnv !== ''
+        ? fromEnv
+        : DEFAULT_CONTROL_PLANE_URL;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(chosen);
+  } catch {
+    throw new UsageError(`invalid URL: "${chosen}" (expected something like ${DEFAULT_CONTROL_PLANE_URL})`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new UsageError(`the URL has to be http or https: "${chosen}"`);
+  }
+
+  return chosen.replace(/\/+$/, '');
+}
+
+/**
+ * Resolves the credential the runner presents.
+ *
+ * @param option Value of `--token`, when it came on the command line.
+ * @param env Environment to read `CARTOGRAFO_TOKEN` from.
+ * @returns The token, or `undefined` when there is none to present — which is
+ *   honest: an empty header would look like a credential.
+ */
+export function resolveToken(
+  option: string | undefined,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  const chosen = option?.trim() !== undefined && option.trim() !== '' ? option.trim() : env[TOKEN_ENV]?.trim();
+  return chosen === undefined || chosen === '' ? undefined : chosen;
+}
+
+/**
+ * Reads an option that has to be a positive integer.
+ *
+ * @param name Option name, for the message.
+ * @param raw Value as it came, or `undefined`.
+ * @param fallback What it means to leave it out.
+ * @returns The number to use.
+ * @throws {UsageError} When the value is not a positive integer.
+ */
+function positiveInteger(name: string, raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new UsageError(`${name} has to be a positive integer (got: "${raw}")`);
+  }
+  return parsed;
+}
+
+/**
+ * The identity a runner declares when it was not given one.
+ *
+ * Host plus pid, and regenerated every run: a persisted identity is a config
+ * file this ficha deliberately does not add (Out of Scope), and pairing is
+ * idempotent on the server, so a name that changes per restart costs nothing
+ * but a row.
+ */
+function defaultRunnerId(): string {
+  return `${hostname()}-${process.pid}`;
+}
+
+/**
+ * Turns a command line into the decision `runRunner` executes.
+ *
+ * Exported for the tests, and not only for them: this is the whole of what the
+ * command decides, and it decides it without touching the network.
+ *
+ * @param args `process.argv.slice(2)`.
+ * @param env Process environment.
+ * @returns Everything one runner process needs to know about itself.
+ * @throws {UsageError} On any command line this command cannot read.
+ */
+export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): RunnerOptions {
+  const given = readOptions(args);
+
+  const engine = given.get('--engine') ?? DEFAULT_ENGINE_NAME;
+  if (!(ENGINE_NAMES as readonly string[]).includes(engine)) {
+    throw new UsageError(`--engine has to be one of ${ENGINE_NAMES.join(', ')} (got: "${engine}")`);
+  }
+
+  const workingDir = given.get('--working-dir');
+  const runnerId = given.get('--runner-id');
+
+  return {
+    url: resolveControlPlaneUrl(given.get('--url'), env),
+    token: resolveToken(given.get('--token'), env),
+    projectId: positiveInteger('--project', given.get('--project'), DEFAULT_PROJECT),
+    runnerId: runnerId === undefined ? defaultRunnerId() : runnerId,
+    engine: engine as EngineName,
+    workingDir: workingDir === undefined ? process.cwd() : path.resolve(workingDir),
+    runnerCap: positiveInteger('--runner-cap', given.get('--runner-cap'), DEFAULT_RUNNER_CAP),
+    projectCap: positiveInteger('--project-cap', given.get('--project-cap'), DEFAULT_PROJECT_CAP),
+    intervalMs: positiveInteger('--interval-ms', given.get('--interval-ms'), DEFAULT_INTERVAL_MS),
+    leaseTtlSeconds: positiveInteger(
+      '--lease-ttl-seconds',
+      given.get('--lease-ttl-seconds'),
+      DEFAULT_LEASE_TTL_SECONDS,
+    ),
+  };
+}
+
+/** Test seams of the router. Production passes none of them. */
+export interface CliSeams {
+  /** What actually runs the loop. Default: {@link runRunner}. */
+  run?: (options: RunnerOptions) => Promise<void>;
+}
+
+/** One line about a failure, for stderr: name and message, never a stack. */
+function describeError(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
+/**
+ * The one line a runner that could not run leaves behind.
+ *
+ * Its characteristic failure is being started against a control plane that is
+ * not there, or with a credential it will not take — and `TypeError: fetch
+ * failed` describes the stack instead of the situation. Same discipline
+ * `packages/core/src/cli/url.ts` states for the same two cases, and the same
+ * reason: whoever ran this in a clean terminal did not fail for lack of a
+ * server, they failed for not knowing they needed to start one.
+ *
+ * The raw description rides along in parentheses on the unrecognized path, so
+ * that a real bug in here is still legible instead of being dressed up as a
+ * control plane that is down.
+ *
+ * @param error What the startup threw.
+ * @param url Address the runner was pointed at.
+ * @returns One line for stderr.
+ */
+export function failureMessage(error: unknown, url: string): string {
+  if (error instanceof ErroDoControlPlane) {
+    return error.status === 401 || error.status === 403
+      ? `the control plane at ${url} refused the credential (${error.status}) — set ${TOKEN_ENV} or pass --token with the token printed when the control plane started`
+      : `the control plane at ${url} refused the pairing — ${error.message}`;
+  }
+  return `could not talk to the control plane at ${url} — run \`npx cartografo\` first, or point somewhere else with --url (${describeError(error)})`;
+}
+
+/**
+ * Entry point of the command: runs a runner and returns the exit code.
+ *
+ * It does not call `process.exit`, on the same grounds as the core's router:
+ * the `bin` records the code and lets the process end when there is nothing
+ * left to do. Here that matters twice over — the stop is asynchronous by
+ * construction, and an `exit` would cut off the very dispatch this shutdown
+ * exists to wait for.
+ *
+ * @param args `process.argv.slice(2)`.
+ * @param env Process environment.
+ * @param seams Test seams; production passes nothing.
+ * @returns Exit code.
+ */
+export async function runRunnerCli(
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  seams: CliSeams = {},
+): Promise<number> {
+  if (args.some((argument) => argument === '--help' || argument === '-h')) {
+    process.stdout.write(`${USAGE}\n`);
+    return 0;
+  }
+
+  let options: RunnerOptions;
+  try {
+    options = parseRunnerOptions(args, env);
+  } catch (error) {
+    if (!(error instanceof UsageError)) throw error;
+    // One line, and it carries the way out: a second line saying "see --help"
+    // is a line nobody reads twice.
+    process.stderr.write(
+      `cartografo-runner: ${error.message} — run \`cartografo-runner --help\` for usage\n`,
+    );
+    return 2;
+  }
+
+  const run = seams.run ?? runRunner;
+  const aborter = new AbortController();
+  const stop = (): void => {
+    aborter.abort();
+  };
+
+  // Registered on the real process, and removed again on the way out: a
+  // listener left behind would keep answering for a runner that no longer
+  // exists — which is exactly what a test process would find out the hard way.
+  for (const signal of STOP_SIGNALS) process.once(signal, stop);
+
+  try {
+    await run({
+      ...options,
+      signal: aborter.signal,
+      onReady: () => {
+        process.stdout.write(
+          `${JSON.stringify({
+            event: READY_EVENT,
+            url: options.url,
+            runnerId: options.runnerId,
+            projectId: options.projectId,
+            engine: options.engine,
+            workingDir: options.workingDir,
+          })}\n`,
+        );
+      },
+    });
+    return 0;
+  } catch (error) {
+    // Everything that reaches here happened before or instead of the loop —
+    // the pairing being refused, the control plane being down. A tick that
+    // fails never gets this far: the loop logs it and carries on.
+    process.stderr.write(`cartografo-runner: ${failureMessage(error, options.url)}\n`);
+    return 1;
+  } finally {
+    for (const signal of STOP_SIGNALS) process.off(signal, stop);
+  }
+}

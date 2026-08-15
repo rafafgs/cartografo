@@ -8,7 +8,15 @@
   "engines": {
     "node": ">=20.11.0"
   },
+  "bin": {
+    "cartografo-runner": "./bin/cartografo-runner.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
   "scripts": {
+    "start": "node bin/cartografo-runner.mjs",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "spike": "node --import tsx scripts/spike-real-session.mjs",

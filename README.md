@@ -42,6 +42,22 @@ antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a
 `grafo_versao.id` que ficou gravada. Ao final, `GET /v1/classes` lista
 `desenvolvimento-de-software`.
 
+E do grafo registrado ao trabalho andando, um quarto comando:
+
+```bash
+CARTOGRAFO_TOKEN=<o token do passo 2> \
+  npx cartografo-runner --project 1                                    # 4 (outro terminal)
+```
+
+O passo 4 sobe um runner: ele se pareia com o control plane, imprime a linha
+`cartografo.runner.ready` e, a partir daí, pede trabalho liberado, toma a lease
+e despacha uma sessão de agente para cada trabalho que pegar — um tick a cada
+`--interval-ms` (default 2000), até um SIGINT ou SIGTERM, que espera a sessão em
+voo terminar antes de sair. Um engine por processo
+(`--engine claude-code|codex`, default `claude-code`), e é o CLI desse engine,
+já instalado e autenticado na máquina, que roda de fato; as sessões trabalham no
+diretório atual (`--working-dir`). `npx cartografo-runner --help` lista o resto.
+
 Os outros dois subcomandos, para conferir e levar o grafo embora:
 
 ```bash
@@ -79,10 +95,10 @@ comando; `CARTOGRAFO_LEASE_CAP_RUNNER` e `CARTOGRAFO_LEASE_CAP_PROJECT`
 (default 50 cada) para o teto de leases simultâneas que o servidor impõe — o
 runner declara o teto que quer e vale o MENOR dos dois, porque quem decide
 concorrência é o control plane, não o pedido (D1); `CARTOGRAFO_URL` (ou `--url`)
-para apontar os outros subcomandos — e a tela — a um control plane que não
-esteja no default `http://127.0.0.1:4317`;
-`CARTOGRAFO_TOKEN` (ou `--token`) para a credencial que os subcomandos
-apresentam; `CARTOGRAFO_TELA_PORT` para mudar a porta da tela e
+para apontar os outros subcomandos — e a tela, e o runner — a um control plane
+que não esteja no default `http://127.0.0.1:4317`;
+`CARTOGRAFO_TOKEN` (ou `--token`) para a credencial que os subcomandos e o
+runner apresentam; `CARTOGRAFO_TELA_PORT` para mudar a porta da tela e
 `CARTOGRAFO_TELA_TOKEN` para dar à tela uma credencial própria — sem ela, a tela
 usa a do `CARTOGRAFO_TOKEN`. A tela apresenta essa credencial ao control plane em
 toda chamada e não pede nenhuma ao navegador: ela é cliente sem privilégio da API

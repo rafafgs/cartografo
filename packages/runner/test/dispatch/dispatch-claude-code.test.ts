@@ -34,6 +34,7 @@ import assert from "node:assert/strict";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -50,11 +51,16 @@ import { ClaudeCodeAdapter } from "../../src/engine/claude-code-adapter.ts";
 import { CodexAdapter } from "../../src/engine/codex-adapter.ts";
 import { buildCommand as buildCodexCommand } from "../../src/engine/codex-command.ts";
 import { buildCommand } from "../../src/engine/command.ts";
+import type {
+  EngineAdapter,
+  SessionStatus,
+} from "../../src/engine/types.ts";
 import { decodeClaudeCodeSessionText } from "../../src/dispatch/session-text.ts";
 import type * as ClientModule from "../../src/controller/cliente-controle.ts";
 import type * as ControllerModule from "../../src/controller/controller.ts";
 import type * as DispatchModule from "../../src/dispatch/dispatch-claude-code.ts";
 import type * as SessionTextModule from "../../src/dispatch/session-text.ts";
+import type * as WorktreeModule from "../../src/dispatch/session-worktree.ts";
 
 import { authorizeGlobalFetch } from "../authorized-fetch.ts";
 
@@ -426,7 +432,7 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
   const dispatchOptions = {
     urlBase: baseUrl,
     engines: claudeOnly(adapter),
-    workingDir: workDir,
+    worktrees: fakeWorktrees(workDir),
     timeoutSeconds: 60,
   };
 
@@ -698,7 +704,7 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
     engines: claudeOnly(adapter),
-    workingDir: workDir,
+    worktrees: fakeWorktrees(workDir),
     timeoutSeconds: 60,
     doFetch,
     permissions: { filesystem: { write: ["**"] }, network: { allowed: false } },
@@ -791,7 +797,7 @@ test("t159 — what the engine printed is what the finish call ships, and what a
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
     engines: claudeOnly(fakeAdapter()),
-    workingDir: workDir,
+    worktrees: fakeWorktrees(workDir),
     timeoutSeconds: 60,
     doFetch,
     envOverrides: { FAKE_ENGINE_LINES: linesWithoutBlock() },
@@ -848,6 +854,59 @@ test("t159 — what the engine printed is what the finish call ships, and what a
     Buffer.byteLength(printed, "utf8"),
   );
 });
+
+/** One `release`, as {@link fakeWorktrees} recorded it. */
+interface ReleaseCall {
+  path: string;
+  branch: string;
+  keep: boolean;
+}
+
+/** A `WorktreeManager` that records what it was asked, and creates nothing. */
+interface FakeWorktrees extends WorktreeModule.WorktreeManager {
+  /** The job ids `acquire` was called with, in order. */
+  readonly acquisitions: number[];
+  /** Every `release`, in order — the ledger AT10 reads. */
+  readonly releases: ReleaseCall[];
+}
+
+/**
+ * The worktree manager every test in this file passes (t160, FR6).
+ *
+ * It hands out ONE directory the test already owns, instead of a real
+ * `git worktree`: what these tests are about is the dispatch, and a real
+ * manager would put a `git worktree add` in front of every one of them for no
+ * assertion's sake. The real one is proven against real git in
+ * `session-worktree.test.ts`.
+ *
+ * The directory is created on `acquire` because it has to exist by the time the
+ * engine process is spawned into it — the same guarantee the real manager gives
+ * by checking out a worktree there.
+ *
+ * @param dir The path `acquire` hands back.
+ * @returns The manager, with its ledger attached.
+ */
+function fakeWorktrees(dir: string): FakeWorktrees {
+  const acquisitions: number[] = [];
+  const releases: ReleaseCall[] = [];
+  return {
+    acquisitions,
+    releases,
+    acquire: (jobId) => {
+      acquisitions.push(jobId);
+      mkdirSync(dir, { recursive: true });
+      return Promise.resolve({ path: dir, branch: `ticket-${jobId}` });
+    },
+    release: (worktree, outcome) => {
+      releases.push({
+        path: worktree.path,
+        branch: worktree.branch,
+        keep: outcome.keep,
+      });
+      return Promise.resolve();
+    },
+  };
+}
 
 /** The fake engine, wired the way every test in this file wires it. */
 function fakeAdapter(): ClaudeCodeAdapter {
@@ -925,7 +984,7 @@ test("t147 — with no token, the dispatch is refused 401 on its very first call
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
     engines: claudeOnly(fakeAdapter()),
-    workingDir: workDir,
+    worktrees: fakeWorktrees(workDir),
     timeoutSeconds: 60,
     envOverrides: {
       FAKE_ENGINE_RECORD: record,
@@ -1000,7 +1059,7 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
     engines: claudeOnly(fakeAdapter()),
-    workingDir: workDir,
+    worktrees: fakeWorktrees(workDir),
     timeoutSeconds: 60,
     token,
     permissions: { filesystem: { write: ["**"] }, network: { allowed: false } },
@@ -1224,7 +1283,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
             decodeSessionText: decodeCodexSessionText,
           },
         },
-        workingDir: workDir,
+        worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
         envOverrides: {
           FAKE_ENGINE_RECORD: codexRecord,
@@ -1315,7 +1374,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         urlBase: baseUrl,
         token,
         engines,
-        workingDir: workDir,
+        worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
         envOverrides: {
           FAKE_ENGINE_RECORD: path.join(workDir, "sem-grafo.json"),
@@ -1347,7 +1406,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         urlBase: baseUrl,
         token,
         engines,
-        workingDir: workDir,
+        worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
         envOverrides: {
           FAKE_ENGINE_RECORD: path.join(workDir, "no-sem-engine.json"),
@@ -1431,7 +1490,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
             decodeSessionText: decodeClaudeCodeSessionText,
           },
         },
-        workingDir: workDir,
+        worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
         envOverrides: {
           FAKE_ENGINE_RECORD: record,
@@ -1613,12 +1672,13 @@ test("t148 — POST /v1/sessions fails after the engine started: the session is 
     return fetch(input, init);
   };
 
+  const worktrees = fakeWorktrees(workDir);
   const dispatch = createClaudeCodeDispatch({
     urlBase: baseUrl,
     token,
     doFetch,
     engines: claudeOnly(fakeAdapter()),
-    workingDir: workDir,
+    worktrees,
     timeoutSeconds: 60,
     envOverrides: {
       FAKE_ENGINE_RECORD: recordPath,
@@ -1668,6 +1728,15 @@ test("t148 — POST /v1/sessions fails after the engine started: the session is 
     sessions.sessoes.length,
     0,
     "the call that failed is the one that would have created the row",
+  );
+
+  // t160, AT10 — the other half of FR8, on the one exit path only this test
+  // reaches: a failure with the session already open. Nothing about this
+  // dispatch is `completed`, so the tree is kept, and it is kept exactly once.
+  assert.deepEqual(
+    worktrees.releases.map((release) => release.keep),
+    [true],
+    "a dispatch that died with the engine up has to release its worktree once, keeping it for diagnosis",
   );
 });
 
@@ -1720,7 +1789,7 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
     token,
     doFetch,
     engines: claudeOnly(fakeAdapter()),
-    workingDir: workDir,
+    worktrees: fakeWorktrees(workDir),
     timeoutSeconds: 60,
     envOverrides: {
       FAKE_ENGINE_RECORD: recordPath,
@@ -1753,4 +1822,312 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
   assert.deepEqual(question.opcoes, ESCALATION.options);
   assert.equal(question.recomendacao, ESCALATION.recommendation);
   assert.equal(question.resposta_padrao, ESCALATION.default);
+});
+
+// --- t160: one worktree per session -----------------------------------------
+
+/**
+ * An adapter that ends the session with the terminal status the test asked for.
+ *
+ * A stub and not the fake engine, for one case only the interface can produce:
+ * `cancelled` never comes out of a fake engine this dispatch drives — the
+ * dispatch cancels exactly once, on a path where it never awaits the outcome
+ * (t148). AT10's claim is about the dispatch's bookkeeping per outcome status,
+ * so the honest fixture is the status itself, delivered through the listener the
+ * interface defines.
+ *
+ * @param status What `onFinished` reports.
+ * @returns The adapter, with the rest of the interface answering trivially.
+ */
+function stubAdapter(status: SessionStatus): EngineAdapter {
+  return {
+    engineName: "claude-code",
+    startSession: (_spec, listener) => {
+      // On the next turn of the loop, never inside `startSession`: the dispatch
+      // is entitled to have its handle before the outcome lands.
+      queueMicrotask(() => {
+        listener.onFinished(status, status === "completed" ? 0 : 1);
+      });
+      return Promise.resolve("stub-session");
+    },
+    getStatus: () => Promise.resolve(status),
+    cancel: () => Promise.resolve(),
+    capabilities: () => ({}),
+    verifyCli: () =>
+      Promise.resolve({ available: true, version: "stub", authenticated: true }),
+  };
+}
+
+test("t160 AT8 — the session runs in the directory the worktree manager handed out", async (t) => {
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t160-at8-"));
+  // The path the manager hands out is NOT the directory the test happens to
+  // own: with the static option gone, the only way the engine can end up here
+  // is through `acquire` (FR6, FR7).
+  const worktreePath = path.join(workDir, "worktree-da-sessao");
+  const record = path.join(workDir, "despacho-em-worktree.json");
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha que roda no worktree que o runner criou",
+      no_entrada_id: "implementar",
+      execucao_id: 160,
+    },
+    201,
+    token,
+  );
+
+  const worktrees = fakeWorktrees(worktreePath);
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    engines: claudeOnly(fakeAdapter()),
+    worktrees,
+    timeoutSeconds: 60,
+    envOverrides: {
+      FAKE_ENGINE_RECORD: record,
+      FAKE_ENGINE_LINES: linesWithoutBlock(),
+    },
+  });
+
+  await dispatch(work.id);
+
+  assert.deepEqual(
+    worktrees.acquisitions,
+    [work.id],
+    "the worktree is acquired once, for the job being dispatched",
+  );
+
+  // The only channel that proves it: where the engine PROCESS actually ran.
+  // `realpathSync` because macOS hands out `/var/folders/...` temp dirs that the
+  // child reports as `/private/var/folders/...`.
+  const received = JSON.parse(readFileSync(record, "utf8")) as FakeRecord;
+  assert.equal(
+    received.cwd,
+    realpathSync(worktreePath),
+    "the engine ran somewhere other than the worktree it was given",
+  );
+
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    "GET",
+    "/v1/sessions?execucao_id=160",
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(sessions.sessoes.length, 1);
+  assert.equal(
+    sessions.sessoes[0].working_dir,
+    worktreePath,
+    "the telemetry has to record the directory the session really had",
+  );
+});
+
+test("t160 AT9 — a worktree that cannot be created blocks the dispatch before any session opens", async (t) => {
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      titulo: "ficha cujo worktree não pôde ser criado",
+      no_entrada_id: "implementar",
+      execucao_id: 1601,
+    },
+    201,
+    token,
+  );
+
+  const failure = new Error("git worktree add exited 128");
+  const releases: unknown[] = [];
+  const worktrees: WorktreeModule.WorktreeManager = {
+    acquire: () => Promise.reject(failure),
+    release: (worktree, outcome) => {
+      releases.push({ worktree, outcome });
+      return Promise.resolve();
+    },
+  };
+
+  // A counting adapter, so "no session opened" is measured at the interface and
+  // not inferred from the absence of a row.
+  const real = fakeAdapter();
+  let starts = 0;
+  const counting: EngineAdapter = {
+    engineName: real.engineName,
+    startSession: (spec, listener) => {
+      starts += 1;
+      return real.startSession(spec, listener);
+    },
+    getStatus: (id) => real.getStatus(id),
+    cancel: (id, status) => real.cancel(id, status),
+    capabilities: () => real.capabilities(),
+    verifyCli: () => real.verifyCli(),
+  };
+
+  const posts: string[] = [];
+  const doFetch: typeof fetch = async (input, init) => {
+    if ((init?.method ?? "GET") === "POST")
+      posts.push(String(input).slice(baseUrl.length));
+    return fetch(input, init);
+  };
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    doFetch,
+    engines: {
+      "claude-code": {
+        adapter: counting,
+        decodeSessionText: decodeClaudeCodeSessionText,
+      },
+    },
+    worktrees,
+    timeoutSeconds: 60,
+  });
+
+  await assert.rejects(
+    async () => dispatch(work.id),
+    (error: unknown) => {
+      assert.equal(
+        error,
+        failure,
+        `the manager's own error is what a human has to read, got: ${String(error)}`,
+      );
+      return true;
+    },
+  );
+
+  assert.equal(
+    starts,
+    0,
+    "a session was opened without an isolated directory to open it in",
+  );
+  assert.deepEqual(
+    posts.filter((route) => route === "/v1/sessions"),
+    [],
+    "POST /v1/sessions must never be reached when there is no worktree",
+  );
+  assert.deepEqual(
+    releases,
+    [],
+    "nothing was acquired, so there is nothing to release",
+  );
+
+  const sessions = await api<{ sessoes: Session[] }>(
+    baseUrl,
+    "GET",
+    "/v1/sessions?execucao_id=1601",
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(sessions.sessoes.length, 0);
+});
+
+/**
+ * AT10 — the outcome, and only the outcome, decides whether the tree is kept.
+ *
+ * Four outcomes through one control plane, for the reason the t141 block above
+ * records: booting a real server per subtest is not free, and nothing is shared
+ * between them except the server.
+ *
+ * The fifth path of FR8 — a control-plane failure with the session already open
+ * — lives in the t148 test above, which is the one that produces it.
+ */
+test("t160 AT10 — the outcome decides whether the worktree is kept", async (parent) => {
+  const { createClaudeCodeDispatch, DispatchError } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  const cases = [
+    { status: "completed", keep: false },
+    { status: "failed", keep: true },
+    { status: "timed_out", keep: true },
+    { status: "cancelled", keep: true },
+  ] as const;
+
+  for (const [index, scenario] of cases.entries()) {
+    await parent.test(
+      `a session that ends "${scenario.status}" releases with keep: ${String(scenario.keep)}`,
+      async (t) => {
+        const workDir = mkdtempSync(
+          path.join(tmpdir(), `cartografo-t160-at10-${scenario.status}-`),
+        );
+        t.after(() => {
+          rmSync(workDir, { recursive: true, force: true });
+        });
+
+        const executionId = 1610 + index;
+        const work = await api<Work>(
+          baseUrl,
+          "POST",
+          "/v1/jobs",
+          {
+            titulo: `ficha cuja sessão termina como ${scenario.status}`,
+            no_entrada_id: "implementar",
+            execucao_id: executionId,
+          },
+          201,
+          token,
+        );
+
+        const worktrees = fakeWorktrees(workDir);
+        const dispatch = createClaudeCodeDispatch({
+          urlBase: baseUrl,
+          token,
+          engines: {
+            "claude-code": {
+              adapter: stubAdapter(scenario.status),
+              decodeSessionText: decodeClaudeCodeSessionText,
+            },
+          },
+          worktrees,
+          timeoutSeconds: 60,
+        });
+
+        if (scenario.status === "completed") {
+          await dispatch(work.id);
+        } else {
+          await assert.rejects(
+            async () => dispatch(work.id),
+            (error: unknown) => {
+              assert.ok(
+                error instanceof DispatchError,
+                `expected DispatchError, got: ${String(error)}`,
+              );
+              assert.equal(error.status, scenario.status);
+              return true;
+            },
+          );
+        }
+
+        assert.deepEqual(
+          worktrees.releases.map((release) => release.keep),
+          [scenario.keep],
+          `a "${scenario.status}" dispatch must release exactly once, with keep: ${String(scenario.keep)}`,
+        );
+        assert.equal(
+          worktrees.releases[0].branch,
+          `ticket-${work.id}`,
+          "the worktree released is the one this job acquired",
+        );
+      },
+    );
+  }
 });

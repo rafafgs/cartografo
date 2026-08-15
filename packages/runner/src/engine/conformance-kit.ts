@@ -141,8 +141,50 @@ class Collector implements SessionListener {
 interface Scenario {
   readonly workingDir: string;
   readonly recordPath: string;
-  readRecord(): FakeRecord;
+  readRecord(deadlineMs?: number): Promise<FakeRecord>;
   cleanup(): void;
+}
+
+/**
+ * How long the fake's sidecar may take to appear.
+ *
+ * Same 5s `requireProcessDead` allows, and for the same reason: it is the ceiling
+ * on a wait that normally ends in milliseconds, not an expected duration.
+ */
+const RECORD_DEADLINE_MS = 5_000;
+
+/**
+ * The fake's sidecar, once it is readable on disk.
+ *
+ * This is a wait for something that MUST happen, so by this kit's own rule it is
+ * deadline-based with an explicit failure — never a fixed sleep. A fixed 300ms
+ * one used to stand at C4's call site, and on a loaded machine it was not enough
+ * for a freshly spawned `node` to boot, read its stdin, fork the grandchild and
+ * write the JSON: the case died with a bare `ENOENT ... record.json` naming
+ * neither the case nor what it was checking. Retrying also closes a second race
+ * the fixed wait could not see — the write is not atomic, so the file can exist
+ * while still being half a JSON document.
+ *
+ * @param recordPath Where the fake was told to write it.
+ * @param deadlineMs Ceiling on the wait.
+ * @returns What the process recorded about what it received.
+ */
+async function awaitRecord(recordPath: string, deadlineMs: number): Promise<FakeRecord> {
+  const limit = Date.now() + deadlineMs;
+  let lastError: unknown;
+  for (;;) {
+    try {
+      return JSON.parse(readFileSync(recordPath, 'utf8')) as FakeRecord;
+    } catch (error) {
+      lastError = error;
+    }
+    if (Date.now() >= limit) break;
+    await sleep(25);
+  }
+  return assert.fail(
+    `the fake engine did not write a readable ${recordPath} within ${deadlineMs}ms ` +
+      `(last failure: ${String(lastError)})`,
+  );
 }
 
 function buildScenario(): Scenario {
@@ -155,7 +197,7 @@ function buildScenario(): Scenario {
   return {
     workingDir,
     recordPath,
-    readRecord: () => JSON.parse(readFileSync(recordPath, 'utf8')) as FakeRecord,
+    readRecord: async (deadlineMs = RECORD_DEADLINE_MS) => await awaitRecord(recordPath, deadlineMs),
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
 }
@@ -263,7 +305,7 @@ export function runConformanceKit(
           'C1: no onOutput may arrive after onFinished (invariant 2)',
         );
 
-        const record = scenario.readRecord();
+        const record = await scenario.readRecord();
         assert.equal(
           record.stdin,
           '',
@@ -305,7 +347,7 @@ export function runConformanceKit(
 
         // An assertion the specification forbids: inspecting the SessionSpec.
         // Only what the PROCESS received counts.
-        const received = everythingTheProcessReceived(scenario.readRecord());
+        const received = everythingTheProcessReceived(await scenario.readRecord());
         assert.ok(
           received.includes(marker),
           'C2: the instructions marker did not reach the process by any path ' +
@@ -341,7 +383,7 @@ export function runConformanceKit(
         requireBaselineStatus(end.status, 'C3');
         assert.equal(await adapter.getStatus(handle), 'timed_out');
 
-        await requireProcessDead(scenario.readRecord().pid, 'C3');
+        await requireProcessDead((await scenario.readRecord()).pid, 'C3');
 
         // Past twice the original deadline, the clock must not fire again.
         await sleep(1_000 + SETTLE_MS);
@@ -372,9 +414,10 @@ export function runConformanceKit(
       try {
         const handle = await adapter.startSession(spec, collector);
         // The sidecar exists as soon as the process came up; reading it before
-        // killing guarantees both pids.
-        await sleep(SETTLE_MS);
-        const record = scenario.readRecord();
+        // killing guarantees both pids. Waiting for it to APPEAR, rather than
+        // for a fixed window, is what keeps this case about process death
+        // instead of about how loaded the machine is.
+        const record = await scenario.readRecord();
 
         await adapter.cancel(handle);
         const end = await collector.awaitEnd('C4', deadline);

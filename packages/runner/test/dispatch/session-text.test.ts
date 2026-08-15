@@ -94,6 +94,60 @@ test('AT1 — the escaped block of a real frame comes back parseable', () => {
   assert.equal(request.question, 'Renumerar para 0003?');
 });
 
+// --- t148: the cases the synthesizer's own copy of this decoder had pinned ---
+//
+// t148 extracted the same Claude Code decoder a second time, into
+// `engine/claude-code-frames.ts`, because the synthesizer had shipped the exact
+// bug the decoder prevents. t141 landed first and went further — one decoder per
+// engine, routed by the dispatcher — so the merge keeps t141's module as the one
+// definition and moves here the four claims only t148's copy was pinning.
+
+test('t148 — a JSON object that is not a frame of THIS engine passes through raw', () => {
+  // The Claude Code decoder recognizes `result` and `message.content[]` and
+  // nothing else. Unlike Codex's, a bare `type` is not enough to claim the line,
+  // so an unknown object stays visible instead of being silently dropped.
+  assert.equal(decodeClaudeCodeSessionText(['{"type":"unknown-to-us"}']), '{"type":"unknown-to-us"}');
+  assert.equal(decodeClaudeCodeSessionText(['{ not json after all']), '{ not json after all');
+});
+
+test('t148 — a tool call between two text blocks does not break the text apart', () => {
+  const frame = JSON.stringify({
+    type: 'assistant',
+    session_id: 'cc-t148',
+    message: {
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'first' },
+        { type: 'tool_use', id: 'toolu_t148', name: 'Read', input: { file_path: '/tmp/x' } },
+        { type: 'text', text: 'second' },
+      ],
+    },
+  });
+
+  assert.equal(decodeClaudeCodeSessionText([frame]), 'first\nsecond');
+});
+
+test('t148 — frames and plain lines interleave, joined by a newline', () => {
+  const decoded = decodeClaudeCodeSessionText([
+    'prose',
+    JSON.stringify({ type: 'result', subtype: 'success', result: 'from the frame' }),
+    'more prose',
+  ]);
+
+  assert.equal(decoded, 'prose\nfrom the frame\nmore prose');
+});
+
+test('t148 — a fenced `grafo-proposto` block inside a frame comes back fenced', () => {
+  // The synthesizer's own consumer, at the decoder level: `parseGraphProposal`
+  // matches real backticks and real newlines, and a frame carries neither until
+  // this step runs.
+  const answer = 'Composto do catálogo:\n```grafo-proposto\n{\n  "classe": "x"\n}\n```';
+  const frame = JSON.stringify({ type: 'result', subtype: 'success', result: answer });
+
+  assert.ok(!frame.includes('\n'), 'a frame is ONE line: the newlines arrive escaped');
+  assert.equal(decodeClaudeCodeSessionText([frame]), answer);
+});
+
 // --- AT2: the Codex decoder, pinned on real transcripts ----------------------
 
 test('AT2 — status frames alone carry no block, and no raw JSON leaks as prose', () => {

@@ -117,6 +117,65 @@ test('AT5 — the default draft path is <classe>.grafo.rascunho.json in the curr
   );
 });
 
+/**
+ * An environment with no credential in it (t148).
+ *
+ * Passed explicitly by every token test: reading the real `process.env` would
+ * make the result depend on whether whoever runs the suite happens to have
+ * exported `CARTOGRAFO_TOKEN`, and a test that passes for that reason is not a
+ * test.
+ */
+const EMPTY_ENV: NodeJS.ProcessEnv = {};
+
+test('t148 — --token is read into the run options', async () => {
+  const { parseArguments } = await loadSynthesis();
+
+  const parsed = parseArguments(
+    ['uma declaração', '--classe', 'artigo-revisado', '--token', 'ct_abc'],
+    EMPTY_ENV,
+  );
+
+  assert.ok(parsed.kind === 'run');
+  assert.equal(parsed.options.token, 'ct_abc');
+});
+
+test('t148 — CARTOGRAFO_TOKEN is the fallback, and --token wins over it', async () => {
+  const { parseArguments } = await loadSynthesis();
+
+  const fromEnv = parseArguments(['uma declaração', '--classe', 'artigo-revisado'], {
+    CARTOGRAFO_TOKEN: 'ct_do_ambiente',
+  });
+  assert.ok(fromEnv.kind === 'run');
+  assert.equal(fromEnv.options.token, 'ct_do_ambiente');
+
+  const both = parseArguments(
+    ['uma declaração', '--classe', 'artigo-revisado', '--token', 'ct_da_linha'],
+    { CARTOGRAFO_TOKEN: 'ct_do_ambiente' },
+  );
+  assert.ok(both.kind === 'run');
+  assert.equal(
+    both.options.token,
+    'ct_da_linha',
+    'the same precedence the surveyor and the cost lens already use',
+  );
+
+  const neither = parseArguments(['uma declaração', '--classe', 'artigo-revisado'], EMPTY_ENV);
+  assert.ok(neither.kind === 'run');
+  assert.equal(
+    neither.options.token,
+    undefined,
+    'no credential anywhere means no header at all, and an honest 401',
+  );
+});
+
+test('t148 — --help accounts for the credential too', async () => {
+  const result = runCli(['--help']);
+
+  assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
+  assert.match(result.stdout, /--token/, 'the flag a person has to type is documented');
+  assert.match(result.stdout, /CARTOGRAFO_TOKEN/, 'so is the variable that spares them typing it');
+});
+
 test('AT5 — --url and --timeout are optional and parsed when given', async () => {
   const { parseArguments } = await loadSynthesis();
 

@@ -177,17 +177,61 @@ export async function fetchSkills(
   return skills;
 }
 
+/** What a reader needs beyond the address (t148). */
+export interface ControlPlaneReaderOptions {
+  /**
+   * Credential presented on every read.
+   *
+   * Since t124 there is no open mode: `/v1` answers 401 to a request with no
+   * usable bearer, so a synthesizer with no token here does not degrade — it is
+   * denied on its very first call, which is how `cartografo synthesize` shipped.
+   *
+   * With no token no header goes out, and that is the honest outcome rather
+   * than an oversight: an empty `Authorization` would read as a credential in
+   * the server's log instead of as the absence of one
+   * (`controller/cliente-controle.ts`).
+   */
+  token?: string;
+  /** `fetch` implementation. Default: the global one. Test seam only. */
+  fetchImpl?: typeof fetch;
+}
+
 /**
- * Binds a base URL to the three reads.
+ * Wraps a `fetch` so every request it carries presents the credential.
+ *
+ * Wrapped ONCE here, rather than threading a `token` through `getJson` and the
+ * three reads below it: those are one client with one door out, and a read that
+ * assembled its own headers is a read that could forget them — the same
+ * reasoning `dispatch-claude-code.ts`'s single `headers()` records.
+ *
+ * @param fetchImpl What actually performs the request.
+ * @param token The credential, when there is one.
+ * @returns `fetchImpl` untouched when there is no token; otherwise a `fetch`
+ *   that adds `Authorization` without overwriting one already on the request.
+ */
+function withAuthorization(fetchImpl: typeof fetch, token: string | undefined): typeof fetch {
+  if (token === undefined) return fetchImpl;
+
+  return async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    if (!headers.has('authorization')) headers.set('authorization', `Bearer ${token}`);
+    return await fetchImpl(input, { ...init, headers });
+  };
+}
+
+/**
+ * Binds a base URL and a credential to the three reads.
  *
  * @param baseUrl Base URL of the control plane.
- * @param fetchImpl Injectable for tests.
+ * @param options Credential to present, and the `fetch` seam for the suite.
  * @returns A reader the synthesis run can be handed.
  */
 export function createControlPlaneReader(
   baseUrl: string,
-  fetchImpl: typeof fetch = fetch,
+  options: ControlPlaneReaderOptions = {},
 ): ControlPlaneReader {
+  const fetchImpl = withAuthorization(options.fetchImpl ?? fetch, options.token);
+
   return {
     fetchClasses: async () => await fetchClasses(baseUrl, fetchImpl),
     fetchClassVersion: async (versionId: string) =>

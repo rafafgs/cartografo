@@ -233,3 +233,167 @@ test('AT5 — the package 0001_init.sql creates schema_migrations with id and ap
   assert.equal(appliedAt.type.toUpperCase(), 'TEXT');
   assert.equal(appliedAt.notnull, 1, 'applied_at is NOT NULL');
 });
+
+test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows already there', async (t) => {
+  const { openDatabase, applyPragmas } = await loadConnection();
+  const { listMigrations, migrate } = await loadMigrate();
+
+  const base = temporaryArea(t);
+
+  // The database is taken up to `0009` only — the schema as it was before this
+  // ficha — and the row is seeded THERE, so what is asserted afterwards is a
+  // real rebuild of a populated table and not a fresh CREATE.
+  const upTo0009 = path.join(base, 'ate-0009');
+  mkdirSync(upTo0009);
+  const all = listMigrations(REAL_MIGRATIONS_DIR);
+  const rebuild = all.find((migration) => migration.id.startsWith('0010_'));
+  assert.ok(rebuild, 'artifact does not exist yet: packages/core/migrations/0010_proposta_aprovada.sql');
+  assert.doesNotMatch(
+    readFileSync(rebuild.path, 'utf8'),
+    /\b(BEGIN|COMMIT|ROLLBACK)\b/i,
+    'the migration does not open a transaction of its own: the runner is what transacts',
+  );
+
+  const earlier = all.filter((migration) => migration.number < 10);
+  for (const migration of earlier) {
+    writeMigration(upTo0009, migration.file, readFileSync(migration.path, 'utf8'));
+  }
+
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  t.after(() => db.close());
+  applyPragmas(db);
+  migrate(db, upTo0009);
+
+  const before = db.prepare("SELECT name FROM pragma_table_info('proposta')").all() as Array<{
+    name: string;
+  }>;
+  assert.ok(
+    !before.some((column) => column.name === 'motivo_rejeicao'),
+    'the point of the test is that the column is NOT there before 0010',
+  );
+
+  // A lineage, a version and two proposals — one that the soundness gate
+  // rejected (its story is in `resultado`) and one still pending.
+  const moment = '2026-08-15T12:00:00.000Z';
+  const versionId = `sha256:${'a'.repeat(64)}`;
+  // Lineage first with a null pointer, then the version, then the pointer: the
+  // three tables reference each other in a circle (`0002`), so with the foreign
+  // keys on there is no other order that ever satisfies all of them.
+  db.prepare(
+    `INSERT INTO grafo (id, classe, linhagem_tipo, versao_corrente_id, criado_em)
+     VALUES ('redacao', 'redacao', 'base', NULL, ?)`,
+  ).run(moment);
+  db.prepare(
+    `INSERT INTO grafo_versao (id, grafo_id, versao_pai, snapshot, origem, criado_em)
+     VALUES (?, 'redacao', NULL, '{}', 'manual', ?)`,
+  ).run(versionId, moment);
+  db.prepare('UPDATE grafo SET versao_corrente_id = ? WHERE id = ?').run(versionId, 'redacao');
+  const seed = db.prepare(
+    `INSERT INTO proposta (grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada,
+                           status, motivo_reversao, resultado, criado_em, atualizado_em)
+     VALUES ('redacao', ?, '[]', '{"fonte":"telemetria"}', '{"nome":"x"}', ?, NULL, ?, ?, ?)`,
+  );
+  seed.run(versionId, 'rejeitada', '{"soundness":{"valido":false}}', moment, moment);
+  seed.run(versionId, 'pendente', null, moment, moment);
+
+  // And rows POINTING AT a proposal, which is the case the rebuild has to
+  // survive and the only reason the migration defers the foreign keys: a
+  // version born of a proposal, and a lineage that declares its origin. Without
+  // these two the drop/rename would pass for a reason that does not hold in a
+  // real database.
+  const bornOfProposal = `sha256:${'b'.repeat(64)}`;
+  db.prepare(
+    `INSERT INTO grafo_versao (id, grafo_id, versao_pai, snapshot, origem, proposta_id, criado_em)
+     VALUES (?, 'redacao', ?, '{}', 'proposta', 1, ?)`,
+  ).run(bornOfProposal, versionId, moment);
+  db.prepare('UPDATE grafo SET origem_proposta_id = 2 WHERE id = ?').run('redacao');
+
+  const previous = db
+    .prepare('SELECT id, grafo_id, status, resultado, criado_em FROM proposta ORDER BY id')
+    .all();
+  assert.equal(previous.length, 2);
+
+  // ...and now the rebuild.
+  assert.deepEqual(migrate(db, REAL_MIGRATIONS_DIR), [rebuild.id], 'only 0010 was pending');
+
+  assert.deepEqual(
+    db.prepare('SELECT id, grafo_id, status, resultado, criado_em FROM proposta ORDER BY id').all(),
+    previous,
+    'every existing row survives the rebuild identical to itself',
+  );
+  assert.deepEqual(
+    db.prepare('SELECT motivo_rejeicao FROM proposta ORDER BY id').all(),
+    [{ motivo_rejeicao: null }, { motivo_rejeicao: null }],
+    'no backfill: a gate-rejected row was never rejected by a human',
+  );
+
+  // The new vocabulary is accepted, and the old constraint still bites.
+  db.prepare("UPDATE proposta SET status = 'aprovada' WHERE status = 'pendente'").run();
+  assert.equal(
+    (db.prepare("SELECT count(*) AS n FROM proposta WHERE status = 'aprovada'").get() as {
+      n: number;
+    }).n,
+    1,
+  );
+  assert.throws(
+    () => db.prepare("UPDATE proposta SET status = 'inventada' WHERE id = 1").run(),
+    /CHECK/i,
+    'the rebuilt table still refuses a status outside the vocabulary',
+  );
+
+  // The index the rebuild had to recreate, and the identity column it kept.
+  const indexes = db
+    .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'proposta'")
+    .all() as Array<{ name: string }>;
+  assert.ok(
+    indexes.some((index) => index.name === 'proposta_por_grafo'),
+    'proposta_por_grafo goes away with the dropped table and has to come back',
+  );
+
+  const inserted = db
+    .prepare(
+      `INSERT INTO proposta (grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada,
+                             status, criado_em, atualizado_em)
+       VALUES ('redacao', ?, '[]', '{}', '{}', 'pendente', ?, ?)`,
+    )
+    .run(versionId, moment, moment);
+  assert.equal(
+    Number(inserted.lastInsertRowid),
+    3,
+    'AUTOINCREMENT keeps counting from where the seeded rows left it',
+  );
+
+  // And the rows that point AT a proposal still point at the SAME ones. This is
+  // the assertion the rebuild was rewritten for: the first version of the
+  // migration deferred the foreign keys instead of detaching these two
+  // references, and a database with a single applied proposal did not migrate
+  // at all.
+  assert.deepEqual(
+    db.prepare('SELECT id, proposta_id FROM grafo_versao ORDER BY id').all(),
+    [
+      { id: versionId, proposta_id: null },
+      { id: bornOfProposal, proposta_id: 1 },
+    ],
+    'a version born of a proposal still names it',
+  );
+  assert.equal(
+    (db.prepare('SELECT origem_proposta_id FROM grafo').get() as { origem_proposta_id: number })
+      .origem_proposta_id,
+    2,
+    'and so does a lineage that declares its origin',
+  );
+  assert.equal(
+    db.prepare('PRAGMA foreign_key_check').all().length,
+    0,
+    'no dangling reference survives the drop/rename',
+  );
+  assert.equal(
+    (
+      db
+        .prepare("SELECT count(*) AS n FROM sqlite_temp_schema WHERE name LIKE 'referencia_%'")
+        .get() as { n: number }
+    ).n,
+    0,
+    'the scaffolding tables do not survive the migration',
+  );
+});

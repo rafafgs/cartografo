@@ -93,18 +93,17 @@ em stdout, no espírito de `cartografo.pronto`:
 
 ## 2. Contrato assumido do control plane (`t111`)
 
-A tela **não cria rota nenhuma** em `packages/core`. Ela consome quatro
-endpoints; dois já existem, dois são escopo declarado do `t111`
-([`entidades-versionamento.md` §7](entidades-versionamento.md)). Quem refinar o
-lado do core confere contra esta seção.
+A tela **não cria rota nenhuma** em `packages/core`. Ela consome seis endpoints,
+e desde a `t165` todos os seis existem. Quem mexer no lado do core confere
+contra esta seção.
 
 | Método | Rota | Estado | O que a tela usa |
 |---|---|---|---|
-| `GET` | `/v1/proposals` | **assumida** | Lista para as duas seções. Idealmente filtrável por `?status=`; a tela hoje pede tudo e separa no cliente. |
-| `GET` | `/v1/proposals/:id` | **assumida** | Detalhe: `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao`, `motivo_rejeicao`. |
-| `POST` | `/v1/proposals/:id/approve` | **assumida** | `pendente` → `aprovada`. Sem corpo. |
-| `POST` | `/v1/proposals/:id/reject` | **assumida** | `{motivo}` obrigatório → `rejeitada`. |
-| `POST` | `/v1/proposals/:id/apply` | existe | Executa o fluxo do §5 de `entidades-versionamento.md`. |
+| `GET` | `/v1/proposals` | existe | Lista para as duas seções. Idealmente filtrável por `?status=`; a tela hoje pede tudo e separa no cliente. |
+| `GET` | `/v1/proposals/:id` | existe (`t165`) | Detalhe: `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao`, `motivo_rejeicao`. |
+| `POST` | `/v1/proposals/:id/approve` | existe (`t165`) | `pendente` → `aprovada`. Sem corpo. |
+| `POST` | `/v1/proposals/:id/reject` | existe (`t165`) | `{motivo}` obrigatório → `rejeitada`, gravado em `motivo_rejeicao`. |
+| `POST` | `/v1/proposals/:id/apply` | existe | Executa o fluxo do §5 de `entidades-versionamento.md`. Exige `aprovada`. |
 | `POST` | `/v1/proposals/:id/revert` | existe | `{motivo}` obrigatório; move o ponteiro de volta. |
 
 Os caminhos são os da superfície `/v1` em inglês (D18, renomeada pelo `t127`);
@@ -120,13 +119,16 @@ Envelope de resposta que a tela espera — e como ela se protege de estar errada
   `{grafo_versao: {id}}` no `apply`, que é o que a linha passa a exibir;
 - erro: `{erro, mensagem}`, em qualquer status não-2xx.
 
-**A incompatibilidade que o `t111` precisa resolver.** Hoje
-[`routes/proposals.ts`](../../packages/core/src/routes/proposals.ts) exige
-`status === 'pendente'` para aplicar, porque o estado `aprovada` ainda não
-existe. Esta tela assume o contrário: `pendente` só oferece Aprovar/Rejeitar, e
-Aplicar aparece em `aprovada`. Enquanto o `t111` não mudar essa guarda, aplicar
-pela tela devolve `409 proposta_nao_pendente` — que a tela mostra inline, sem
-quebrar, mas o ciclo completo só fecha com os dois lados no mesmo vocabulário.
+**A incompatibilidade que a `t165` resolveu.** Até ela,
+[`routes/proposals.ts`](../../packages/core/src/routes/proposals.ts) exigia
+`status === 'pendente'` para aplicar e o estado `aprovada` não existia nem no
+`CHECK` da migração — então o botão Aplicar, que esta tela só mostra em
+`aprovada`, aparecia num estado inalcançável e a inbox era inutilizável para a
+decisão que ela existe para tomar. Hoje os dois lados falam o mesmo vocabulário:
+`aprovar` leva a `aprovada`, `aplicar` exige `aprovada` e recusa qualquer outra
+coisa com `409 proposta_nao_aprovada` — que a tela mostra inline, sem quebrar.
+O ciclo inteiro (`pendente` → `aprovada` → `aplicada` → resultado → `revertida`)
+já foi percorrido por esta tela sobre telemetria real.
 
 ---
 

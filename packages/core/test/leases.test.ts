@@ -203,10 +203,17 @@ interface LeaseRequestBody {
   ttl_segundos?: number;
 }
 
-async function requestLease(address: string, request: LeaseRequestBody): Promise<Response> {
+async function requestLease(
+  address: string,
+  request: LeaseRequestBody,
+  token?: string,
+): Promise<Response> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token !== undefined) headers.authorization = `Bearer ${token}`;
+
   return await fetch(`${address}/v1/leases`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify({
       projeto_id: 1,
       teto_runner: 8,
@@ -532,6 +539,121 @@ test('AT11 — motivo_expiracao tells never-renewed apart from heartbeat-lost', 
     'heartbeat_perdido',
     'renewed at least once and then silent: it is the heartbeat that was lost',
   );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t143 — a runner credential acts as ITSELF, not as any runner (FR3).         */
+/* -------------------------------------------------------------------------- */
+
+/** Mints a `runner`-type credential straight against the database under test. */
+async function runnerToken(db: ConnectionModule.Database, runnerId: string): Promise<string> {
+  const { issueCredential } = (await import(
+    new URL('../src/repositories/credentials.ts', import.meta.url).href
+  )) as typeof CredentialsModule;
+  return issueCredential(db, { tipo: 'runner', runnerId }).token;
+}
+
+/** A heartbeat or a release, with the credential handed in explicitly. */
+async function leaseAction(
+  address: string,
+  leaseId: number,
+  action: 'heartbeats' | 'releases',
+  token: string,
+): Promise<Response> {
+  return await fetch(`${address}/v1/leases/${leaseId}/${action}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({}),
+  });
+}
+
+test('t143 AT — POST /v1/leases with a runner credential can only ask on its own behalf', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a', 'runner-b');
+  const tokenA = await runnerToken(db, 'runner-a');
+
+  const impersonated = await requestLease(
+    address,
+    { runner_id: 'runner-b', trabalho_id: 1 },
+    tokenA,
+  );
+  assert.equal(
+    impersonated.status,
+    403,
+    'a route family is not a scope: within it, a runner credential is still only that runner',
+  );
+  assert.equal(
+    ((await impersonated.json()) as { erro?: string }).erro,
+    'credencial_fora_de_escopo',
+  );
+  assert.equal((await listLeasesHttp(address)).length, 0, 'a refused request grants nothing');
+
+  const own = await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1 }, tokenA);
+  assert.equal(own.status, 201, 'asking for itself is exactly what the credential is for');
+});
+
+test('t143 AT — a heartbeat or a release over somebody else\'s lease is refused', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a', 'runner-b');
+  const tokenA = await runnerToken(db, 'runner-a');
+  const tokenB = await runnerToken(db, 'runner-b');
+
+  const granted = (await (
+    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1 }, tokenA)
+  ).json()) as GrantResponse;
+  assert.ok(granted.lease !== null);
+  const leaseId = granted.lease.id;
+
+  for (const action of ['heartbeats', 'releases'] as const) {
+    const intruder = await leaseAction(address, leaseId, action, tokenB);
+    assert.equal(intruder.status, 403, `${action} over a lease of another runner is refused`);
+    assert.equal(((await intruder.json()) as { erro?: string }).erro, 'credencial_fora_de_escopo');
+  }
+
+  const beat = await leaseAction(address, leaseId, 'heartbeats', tokenA);
+  assert.equal(beat.status, 200, 'the owner renews its own lease');
+
+  const released = await leaseAction(address, leaseId, 'releases', tokenA);
+  assert.equal(released.status, 200);
+  assert.equal(((await released.json()) as { lease: LeaseRow }).lease.status, 'liberada');
+});
+
+test('t143 AT — GET /v1/leases with a runner credential sees only its own leases', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-a', 'runner-b');
+  const tokenA = await runnerToken(db, 'runner-a');
+
+  // Seeded with the operator credential, which stays unrestricted.
+  assert.equal((await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1 })).status, 201);
+  assert.equal((await requestLease(address, { runner_id: 'runner-b', trabalho_id: 2 })).status, 201);
+  assert.equal(
+    (await listLeasesHttp(address)).length,
+    2,
+    'the operator credential keeps seeing the whole pool',
+  );
+
+  const mine = await fetch(`${address}/v1/leases`, {
+    headers: { authorization: `Bearer ${tokenA}` },
+  });
+  assert.equal(mine.status, 200);
+  const leases = ((await mine.json()) as { leases: LeaseRow[] }).leases;
+  assert.deepEqual(
+    leases.map((lease) => lease.runner_id),
+    ['runner-a'],
+    'an omitted runner_id is filled in with the credential\'s own, silently',
+  );
+
+  const foreign = await fetch(`${address}/v1/leases?runner_id=runner-b`, {
+    headers: { authorization: `Bearer ${tokenA}` },
+  });
+  assert.equal(foreign.status, 403, 'naming somebody else is a refusal, not a silent rewrite');
+  assert.equal(((await foreign.json()) as { erro?: string }).erro, 'credencial_fora_de_escopo');
+
+  const explicit = await fetch(`${address}/v1/leases?runner_id=runner-a&status=ativa`, {
+    headers: { authorization: `Bearer ${tokenA}` },
+  });
+  assert.equal(explicit.status, 200, 'naming ITSELF is allowed, and composes with the other filters');
+  assert.equal(((await explicit.json()) as { leases: LeaseRow[] }).leases.length, 1);
 });
 
 test('AT12 — the cap is respected under simultaneous calls', async (t) => {

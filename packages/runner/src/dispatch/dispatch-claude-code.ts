@@ -40,6 +40,7 @@
  */
 
 import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
+import { sessionText } from '../engine/claude-code-frames.ts';
 import { resolvePermissions } from '../engine/permission-policy.ts';
 import type {
   EngineAdapter,
@@ -204,72 +205,6 @@ const DEFAULT_TIMEOUT_SECONDS = 3_600;
  * on purpose — two spellings for one actor is how a log stops being groupable.
  */
 const RUNNER_ACTOR_REF = 'runner';
-
-/** One text block of an assistant message frame. */
-interface TextBlock {
-  type: string;
-  text: string;
-}
-
-const isTextBlock = (value: unknown): value is TextBlock =>
-  typeof value === 'object' &&
-  value !== null &&
-  (value as TextBlock).type === 'text' &&
-  typeof (value as TextBlock).text === 'string';
-
-/**
- * The text a `stream-json` frame carries, or `null` when the line is not a
- * frame this engine emits.
- *
- * Without this step the parser would be reading JSON-ESCAPED text: a real
- * Claude Code session prints frames, so the block's own quotes arrive as `\"`
- * and its newlines as `\n`, and no fenced JSON would ever parse. The fake
- * engine of the suite prints plain lines, which fall through untouched — which
- * is exactly why this trap survives CI and only the manual spike catches it.
- */
-function frameText(line: string): string[] | null {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith('{')) return null;
-
-  let frame: unknown;
-  try {
-    frame = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-  if (typeof frame !== 'object' || frame === null) return null;
-
-  const { type, result, message } = frame as {
-    type?: unknown;
-    result?: unknown;
-    message?: unknown;
-  };
-
-  // The final frame carries the whole last answer; it is the most reliable
-  // place the block shows up whole.
-  if (type === 'result' && typeof result === 'string') return [result];
-
-  if (typeof message === 'object' && message !== null) {
-    const { content } = message as { content?: unknown };
-    // An assistant turn with only tool calls yields an empty list — and an
-    // empty list is still a recognized frame, so the raw JSON is dropped
-    // instead of being fed to the parser as if it were prose.
-    if (Array.isArray(content)) return content.filter(isTextBlock).map((block) => block.text);
-  }
-
-  return null;
-}
-
-/** Everything the session said, with engine frames decoded back into text. */
-export function sessionText(lines: readonly string[]): string {
-  const parts: string[] = [];
-  for (const line of lines) {
-    const texts = frameText(line);
-    if (texts === null) parts.push(line);
-    else parts.push(...texts);
-  }
-  return parts.join('\n');
-}
 
 /**
  * The prompt of a dispatch: what to do, plus what was already asked and

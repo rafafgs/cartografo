@@ -24,7 +24,9 @@
 >
 > Congelada significa aditivo daqui para frente: campo novo entra opcional
 > (é para isso que `EngineCapabilities` já é toda opcional), e símbolo
-> publicado não muda de nome nem de forma sem uma decisão registrada. Onde a
+> publicado não muda de nome nem de forma sem uma decisão registrada. O
+> primeiro crescimento sob essa regra foi `SessionSpec.permissions` (t125),
+> opcional e sem tocar em símbolo nenhum dos que já existiam. Onde a
 > análise de viabilidade abaixo e "Fora de escopo (v0)" discordarem, **a
 > decisão de escopo é a que vale**: a tabela é levantamento exploratório de
 > uma CLI, não promessa de superfície. O caso vivo é `hasResume` — o
@@ -132,6 +134,12 @@ export interface SessionSpec {
    * assunto do engine.
    */
   readonly envOverrides?: Readonly<Record<string, string>>;
+
+  /**
+   * O que esta sessão pode tocar. Ausente = nenhuma restrição, que é o
+   * comportamento de toda sessão aberta antes deste campo existir.
+   */
+  readonly permissions?: SessionPermissions;
 }
 ```
 
@@ -171,6 +179,71 @@ export function composeWithSystemPromptFlag(spec: SessionSpec): string[] {
 Corolário para o kit: o caso de injeção de skill se verifica pelo que o
 **processo do engine efetivamente recebeu**, nunca pelo que foi montado no
 `SessionSpec` — checar o spec testaria o teste.
+
+### Permissões da sessão
+
+Este é o campo que a tensão 1 desta especificação registrou como faltante e
+deixou "para a ticket da D4" (t125). Ele é **aditivo e opcional**, pela mesma
+razão de compatibilidade das capacidades: um adapter de terceiro que constrói
+o `SessionSpec` literalmente não pode parar de compilar porque a política de
+permissão nasceu.
+
+```typescript
+export interface SessionPermissions {
+  readonly filesystem: { readonly write: readonly string[] };
+  readonly network: { readonly allowed: boolean; readonly domains?: readonly string[] };
+}
+```
+
+O vocabulário vem do manifesto de skill (`permissoes.filesystem.escrita`,
+`permissoes.rede`), com uma ausência deliberada: `permissoes.filesystem.leitura`
+**não** tem contrapartida aqui. Nenhum dos dois engines analisados restringe
+leitura abaixo do workspace sem quebrar skill comum, e declarar um campo que
+nenhum adapter aplica seria a capacidade morta que a rejeição de
+`hasNativeSystemPrompt` já recusou uma vez.
+
+**O que um adapter faz com isto é assunto dele — inclusive recusar.** Um engine
+que não consegue expressar a política pedida tem de dizer isso ANTES de abrir a
+sessão, com `SessionStartError`; abrir uma sessão que aplica em silêncio menos
+do que foi pedido é o desfecho que esta interface proíbe. Quem chama fica com
+três respostas possíveis, todas honestas: a sessão sobe com a política
+aplicada, a sessão sobe sem restrição (política ausente), ou a sessão não sobe.
+
+**Estado hoje, sem maquiagem:** só o `claude-code` lê este campo. O
+`CodexAdapter` o **ignora** — nem aplica, nem recusa — e nesse estado ele não
+cumpre a regra do parágrafo acima. Isso é tolerável só porque nada popula
+`permissions` ainda: quem vai populá-lo é o pipeline de renderização de skill
+(`especificacoes/formatos/manifesto-skill.md:18-20`), que não existe. A ficha
+que der um produtor real ao campo tem de fechar isto junto, e a resposta certa
+para o Codex não é reusar o gating por nome de ferramenta daqui: ele tem
+`-s, --sandbox` nativo, que é garantia de outra natureza (ver a tensão 1).
+
+#### O que o adapter de referência garante
+
+O `claude-code` não tem sandbox de SO (não há equivalente ao
+`-s, --sandbox` do `codex exec`); o que existe é **gating por nome de
+ferramenta** (`--disallowedTools`, com o padrão `"Bash(git *)"` documentado no
+próprio `claude --help`). Cada eixo, e o que acontece com ele:
+
+| Política declarada | Desfecho | Como |
+|---|---|---|
+| `rede.permitido: true` sem `dominios` | passa direto | nada a aplicar |
+| `rede.permitido: true` com `dominios` | **recusa** | allowlist por domínio exigiria proxy de egress, que o engine não tem |
+| `rede.permitido: false` | aplica | nega `WebFetch`, `WebSearch` e os padrões `Bash(curl *)`, `Bash(wget *)`, `Bash(nc *)`, `Bash(netcat *)`, `Bash(ssh *)`, `Bash(scp *)`, `Bash(telnet *)` |
+| `escrita: []` | aplica | nega `Edit`, `Write`, `NotebookEdit` |
+| `escrita: ["**"]` | passa direto | o workspace inteiro é gravável |
+| `escrita` mais estreita | **recusa** | traduzir glob para regra fina de ferramenta é ficha futura |
+
+**A lacuna residual, escrita porque existe.** `Bash` continua sendo um caminho
+de rede e de escrita que nenhuma lista de nomes fecha por completo: `python -c`,
+um script do próprio repo ou um utilitário que os padrões acima não nomeiam
+alcançam a rede com a política de rede "aplicada". Isto é *best-effort no que o
+engine permite* — a régua que `notas/2026-08-14-extensao-e-qualidade.md:43-44`
+já fixou ("sandbox onde o engine permitir") — e **não** é isolamento de
+processo. Fechar a lacuna de verdade exige sandbox de SO por plataforma
+(`sandbox-exec`, namespace de rede, contêiner), que é mudança de mecanismo e
+ficha própria. Toda tentativa negada vira evento `sessao.permissao_negada` no
+log: o que o gating não impede, a telemetria pelo menos registra.
 
 ### Capacidades
 
@@ -360,6 +433,12 @@ Todas verificadas pelo kit abaixo:
 6. **`stdin` do processo do engine é fechado ou redirecionado para
    `/dev/null` pelo adapter.** Não é detalhe de implementação — ver "Ajustes
    feitos na revisão", item 1.
+7. **O adapter nunca dá ao engine acesso a diretório além do
+   `spec.workingDir`.** No `claude-code` isso é `--add-dir`, que o adapter não
+   monta em nenhum caminho; em outro engine será outra flag. A invariante é a
+   mesma: um diretório extra devolve, numa flag só, o escopo de escrita que a
+   política acabou de fechar — e o `workingDir` é o único lugar que uma sessão
+   tem direito de tocar.
 
 ## Kit de conformidade
 
@@ -518,7 +597,11 @@ Registrado para quem ler depois não presumir esquecimento:
   captura a chave que o resume vai precisar. Continua fora no v1: o
   `codex exec resume` existe e segue não declarado nas `capabilities` dos dois
   adapters, justamente por isto.
-- **Sandboxing e permissões de skill (D4)** — ver a tensão registrada abaixo.
+- **Sandbox de sistema operacional.** Permissões de skill **saíram** desta
+  lista na t125 (ver "Permissões da sessão" e a tensão 1, agora resolvida); o
+  que continua fora é o isolamento de processo — `sandbox-exec`, namespace de
+  rede, contêiner. O que existe hoje é gating por nome de ferramenta, no que o
+  engine permitir, com a lacuna residual escrita.
 - **SDK vs subprocess.** Assumido subprocess de CLI, alinhado à D17 e ao
   precedente do flowpilot.
 
@@ -539,26 +622,46 @@ primeiro" (é o que este documento acabou de fazer).
   portada; o que veio de lá foram as decisões e as cicatrizes.
 - **D9 (formato do contrato)** — tensão registrada, não decidida aqui, na
   seção abaixo.
-- **D4 (portão de importação de skill)** — idem.
+- **D4 (portão de importação de skill)** — a tensão 1 abaixo saiu do papel na
+  t125: o campo existe, o adapter de referência aplica o que consegue e recusa
+  o que não consegue.
 
 ### Tensões encontradas (para o portão humano, não decididas aqui)
 
-1. **D4 × ausência de política de permissão no `SessionSpec`.** As duas CLIs
-   têm controle de permissão de primeira classe — `codex exec` traz
-   `-s, --sandbox <read-only|workspace-write|danger-full-access>`,
-   `--approve-for-me` e `--dangerously-bypass-approvals-and-sandbox`; o
-   `claude` traz `--permission-mode` com
-   `acceptEdits|auto|bypassPermissions|manual|dontAsk|plan`. Cuidado com o
-   `-a, --ask-for-approval`: ele é do `codex` **interativo** (nível superior)
-   e não existe no subcomando `exec`, que morre com
-   `error: unexpected argument '-a' found` — a aprovação não-interativa do
-   exec são os dois flags acima. O `SessionSpec` v0 **não tem onde expressar
-   isso**: hoje a política só pode vir de default codificado no adapter ou de
-   `envOverrides`, que é opaco por definição e portanto inauditável. Quando a
-   D4 sair do papel — permissões declaradas no manifesto da skill, com pin por
-   hash — vai faltar exatamente este campo, e ele é aditivo mas não é neutro
-   (define quem responde pela política: o manifesto ou o adapter). Fica para a
-   ticket de D4.
+1. **D4 × ausência de política de permissão no `SessionSpec` — RESOLVIDA na
+   t125.** O campo é `permissions?: SessionPermissions` (ver "Permissões da
+   sessão"), e a pergunta que a tensão dizia não ser neutra — quem responde
+   pela política, o manifesto ou o adapter — foi respondida assim: **o
+   manifesto declara, o adapter aplica ou recusa**. O default do adapter deixa
+   de valer no instante em que a política chega; onde ela não chega, o
+   comportamento é o de antes. Resolver a segunda metade (buscar `permissoes`
+   do manifesto registrado a partir do `skill_ref` do nó e popular o campo) é
+   do pipeline de renderização de skill, que ainda não existe. O registro
+   original, que continua verdadeiro sobre as CLIs, fica abaixo.
+
+   > *Como estava registrado, antes da t125:* as duas CLIs têm controle de
+   > permissão de primeira classe — `codex exec` traz
+   > `-s, --sandbox <read-only|workspace-write|danger-full-access>`,
+   > `--approve-for-me` e `--dangerously-bypass-approvals-and-sandbox`; o
+   > `claude` traz `--permission-mode` com
+   > `acceptEdits|auto|bypassPermissions|manual|dontAsk|plan`. Cuidado com o
+   > `-a, --ask-for-approval`: ele é do `codex` **interativo** (nível superior)
+   > e não existe no subcomando `exec`, que morre com
+   > `error: unexpected argument '-a' found` — a aprovação não-interativa do
+   > exec são os dois flags acima. O `SessionSpec` v0 **não tem onde expressar
+   > isso**: hoje a política só pode vir de default codificado no adapter ou de
+   > `envOverrides`, que é opaco por definição e portanto inauditável. Quando a
+   > D4 sair do papel — permissões declaradas no manifesto da skill, com pin por
+   > hash — vai faltar exatamente este campo, e ele é aditivo mas não é neutro
+   > (define quem responde pela política: o manifesto ou o adapter). Fica para a
+   > ticket de D4.
+
+   Uma coisa daquele registro **não** foi resolvida e vale como aviso: o
+   `-s/--sandbox` do `codex exec` é sandbox de verdade, de outra natureza que o
+   gating por nome de ferramenta do `claude-code`. O adapter do Codex não ganha
+   permissão nesta ficha justamente por isso — reusar a lógica de gating ali
+   seria traduzir uma garantia dura para uma fraca sem ninguém pedir, e a regra
+   dos dois consumidores manda esperar o segundo consumidor real.
 2. **D9 × a forma deste contrato.** A D9 manda contrato ser JSON Schema de
    entrada/saída mais checks tipados. Esta especificação é tipo TS mais uma
    tabela de conformidade em prosa. A leitura adotada aqui é que a D9 governa

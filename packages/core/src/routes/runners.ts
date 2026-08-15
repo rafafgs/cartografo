@@ -29,7 +29,7 @@ import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { issueCredential, revokeRunnerCredentials } from '../repositories/credentials.ts';
-import { getRunner, registerRunner } from '../repositories/runners.ts';
+import { getRunner, listRunnersWithHealth, registerRunner } from '../repositories/runners.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -74,6 +74,14 @@ export function registerRunners(app: FastifyInstance, db: Database): void {
     reply.code(created ? 201 : 200);
     return { runner, token };
   });
+
+  // The fleet, with the liveness the lease table already recorded (t164, FR1).
+  // Operator-only, and by omission: it is not in `auth.ts`'s runner allowlist,
+  // exactly like `GET /v1/executions` and `GET /v1/sessions` — a runner has no
+  // operational need to read how the rest of the fleet is doing, and a
+  // credential that could would turn one compromised machine into a map of
+  // every other one.
+  app.get('/runners', async () => ({ runners: listRunnersWithHealth(db) }));
 
   app.post<IdParam>('/runners/:id/revocations', async (request, reply) => {
     const { id } = request.params;

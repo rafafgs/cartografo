@@ -23,7 +23,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -32,6 +32,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const BUNDLE_DIR = path.join(ROOT, 'grafos-de-fabrica', 'desenvolvimento-de-software');
 const SKILLS_DIR = path.join(BUNDLE_DIR, 'skills');
 const GRAPH_PATH = path.join(BUNDLE_DIR, 'grafo.json');
+const README_PATH = path.join(BUNDLE_DIR, 'README.md');
 const GRAPH_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validar-grafo.mjs');
 const BUNDLE_VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validate-factory-bundle.mjs');
 const MANIFEST_SCHEMA_PATH = path.join(
@@ -329,5 +330,208 @@ test('AT10 — the validator CLI approves the bundle and rejects a tampered hash
   assert.ok(
     `${bad.stdout}${bad.stderr}`.includes('testar'),
     `the report has to name the diverging node:\n${bad.stdout}${bad.stderr}`,
+  );
+});
+
+// --------------------------------------------------------------------------
+// t176 — one source of truth for how a node verifies itself
+//
+// The manifest is the only place that declares HOW a node checks its own work;
+// `contrato.verificacoes` restates the same list in the graph's format, item by
+// item. What has to line up is structure — count, sequence of `tipo`, and the
+// `comando` of every deterministic item; the prose of an agentic item is
+// rewritten on each side on purpose (`packages/runner/src/synthesizer/prompt.ts`).
+// --------------------------------------------------------------------------
+
+/** One node of the graph, by id, failing with the id when it is gone. */
+function nodeOf(doc, id) {
+  const found = doc.nos.find((candidate) => candidate.id === id);
+  assert.ok(found, `the graph no longer has a node "${id}"`);
+  return found;
+}
+
+/** The `comando` of every deterministic item, in order. */
+const commandsOf = (items) =>
+  items.filter((item) => item.tipo === 'deterministico').map((item) => item.comando);
+
+/** The verifications a node declares, and the checks of the skill it pins. */
+function bothSidesOf(id, file) {
+  const declared = nodeOf(readJson(GRAPH_PATH), id).contrato.verificacoes;
+  return { declared, checks: readManifest(file).checks };
+}
+
+test('t176 AT4 — the bundle validator CLI exits 0 for this bundle', () => {
+  const run = runCli(path.relative(ROOT, BUNDLE_DIR));
+  assert.equal(run.status, 0, `the bundle has to validate clean:\n${run.stdout}${run.stderr}`);
+});
+
+test('t176 AT5 — "testar" verifies with the semantic walkthrough alone', () => {
+  const { declared, checks } = bothSidesOf('testar', 'testar-alpha.json');
+
+  assert.equal(declared.length, 1, 'the gate rerunning the quality commands is a redundant station');
+  assert.equal(declared[0].tipo, 'agentico');
+  assert.deepEqual(
+    declared.map((item) => item.tipo),
+    checks.map((check) => check.tipo),
+  );
+});
+
+test('t176 AT6 — "implantar" declares the two git checks of implantar-release', () => {
+  const { declared, checks } = bothSidesOf('implantar', 'implantar-release.json');
+
+  assert.equal(declared.length, 2);
+  assert.deepEqual(
+    declared.map((item) => item.tipo),
+    ['deterministico', 'deterministico'],
+  );
+  assert.deepEqual(commandsOf(declared), commandsOf(checks));
+});
+
+test('t176 AT7 — "desenvolver" declares the four checks of desenvolver-ticket', () => {
+  const { declared, checks } = bothSidesOf('desenvolver', 'desenvolver-ticket.json');
+
+  assert.equal(declared.length, 4);
+  assert.deepEqual(
+    declared.map((item) => item.tipo),
+    ['deterministico', 'deterministico', 'deterministico', 'agentico'],
+  );
+  assert.deepEqual(commandsOf(declared), commandsOf(checks));
+});
+
+test('t176 AT8 — "integrar" declares the three checks of integrar-branch', () => {
+  const { declared, checks } = bothSidesOf('integrar', 'integrar-branch.json');
+
+  assert.equal(declared.length, 3);
+  assert.deepEqual(
+    declared.map((item) => item.tipo),
+    ['deterministico', 'deterministico', 'deterministico'],
+  );
+  assert.deepEqual(commandsOf(declared), commandsOf(checks));
+});
+
+test('t176 AT9 — no command in the graph names a stack tool of its own', () => {
+  const text = readFileSync(GRAPH_PATH, 'utf8');
+
+  for (const forbidden of ['make check', 'make smoke']) {
+    assert.ok(
+      !text.includes(forbidden),
+      `"${forbidden}" is hardcoded technology copied from the master example; ` +
+        "every deterministic command is a profile template or a command the manifest already runs",
+    );
+  }
+});
+
+test('t176 AT10 — the five manifests record flowpilot as a behavioural reference', () => {
+  for (const file of Object.keys(SKILLS)) {
+    const { origem } = readManifest(file);
+    assert.equal(origem.tipo, 'nativa', `${file}: no code was imported (D4 would demand its gate)`);
+    assert.equal(
+      origem.referencia_comportamental,
+      'flowpilot',
+      `${file}: the port has to name the behaviour it came from (D17)`,
+    );
+  }
+
+  const gate = readManifest('testar-alpha.json');
+  assert.ok(
+    (gate.origem.nota ?? '').includes('testing.py:77'),
+    "testar-alpha has to cite the source rule that settles the contradiction",
+  );
+});
+
+test('t176 AT11 — the declared hash of each manifest still matches its content', () => {
+  for (const file of Object.keys(SKILLS)) {
+    const manifest = readManifest(file);
+    assert.equal(
+      manifest.hash,
+      hashOfManifest(manifest),
+      `${file}: touching "origem" cannot invalidate the pin — it is outside the hashed subset`,
+    );
+  }
+});
+
+/**
+ * Resolves a path the README names, the way a reader following it does.
+ *
+ * A `./` or `../` reference is relative to the bundle; a bare one is relative
+ * to the repo root when its first segment is a repo entry (`tests/…`,
+ * `docs/…`), and to the bundle otherwise (`skills/…`). The `#anchor` and the
+ * `file.md:172` line suffix are cut before resolving.
+ */
+function resolveReference(reference) {
+  const target = reference.replace(/[:#].*$/, '');
+  if (target.startsWith('.')) return path.resolve(BUNDLE_DIR, target);
+  const [head] = target.split('/');
+  const base = readdirSync(ROOT).includes(head) ? ROOT : BUNDLE_DIR;
+  return path.resolve(base, target);
+}
+
+/**
+ * Every path the README points at, in the three shapes that carry one: a
+ * markdown link target, a backticked inline reference, and the script of a
+ * fenced `node …` command.
+ *
+ * A reference with a `<placeholder>` in it (`grafos-de-fabrica/<classe>/`) is
+ * a shape, not a path, and is skipped. So is an external URL.
+ */
+function referencesIn(text) {
+  const found = new Set();
+  for (const [, target] of text.matchAll(/\]\(([^)\s]+)\)/g)) found.add(target);
+  for (const [, target] of text.matchAll(/`([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\/?(?::\d+)?)`/g)) {
+    found.add(target);
+  }
+  for (const [, script] of text.matchAll(/^\s*node\s+(\S+)/gm)) found.add(script);
+
+  return [...found].filter(
+    (reference) => !reference.includes('<') && !/^[a-z]+:\/\//.test(reference),
+  );
+}
+
+/** The first fenced block under a heading, as its lines. */
+function fencedBlockUnder(text, heading) {
+  const index = text.indexOf(heading);
+  assert.notEqual(index, -1, `the README no longer has a "${heading}" section`);
+  const block = text.slice(index + heading.length).match(/```[a-z]*\n([\s\S]*?)```/);
+  assert.ok(block, `the "${heading}" section has no fenced block in it`);
+  return block[1].split('\n');
+}
+
+test('t176 AT12 — every path the README points at exists', () => {
+  const text = readFileSync(README_PATH, 'utf8');
+  const references = referencesIn(text);
+  assert.ok(references.length >= 10, `only ${references.length} references read; the sweep is blind`);
+
+  const dead = references.filter((reference) => !existsSync(resolveReference(reference)));
+
+  assert.deepEqual(dead, [], `the README points at files that do not exist:\n${dead.join('\n')}`);
+});
+
+test('t176 AT12 — the command the README documents under "Como validar" runs green', () => {
+  const text = readFileSync(README_PATH, 'utf8');
+  const documented = fencedBlockUnder(text, '## Como validar')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('node '));
+
+  assert.ok(documented.length > 0, 'the "Como validar" block no longer documents a node command');
+
+  for (const command of documented) {
+    const [, ...argv] = command.split(/\s+/);
+    const run = spawnSync(process.execPath, argv, { cwd: BUNDLE_DIR, encoding: 'utf8' });
+    assert.equal(
+      run.status,
+      0,
+      `\`${command}\` has to exit 0 from the bundle dir:\n${run.stdout}${run.stderr}`,
+    );
+  }
+});
+
+test('t176 AT13 — the README no longer claims the contradiction is open', () => {
+  // Wrapping is collapsed first: the sentence is broken across two lines in the
+  // README, and a raw `includes` would pass without the claim ever leaving.
+  const text = readFileSync(README_PATH, 'utf8').replace(/\s+/g, ' ');
+
+  assert.ok(
+    !text.includes('porque esta ticket não reabre o conteúdo do exemplo-mestre'),
+    'the divergence was reconciled in favour of the manifest; the README has to say so',
   );
 });

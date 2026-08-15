@@ -308,10 +308,19 @@ test('AT13 — PATCH /v1/input-requests/:id/auto-resolution records the automati
     'the audit ALWAYS separates approved-by-user from approved-by-system',
   );
 
+  // The enum is checked against a STILL PENDING input request, and not against
+  // the one closed above: since t149 an already answered one is refused with a
+  // 409 before the body is ever read, which would hide the 400 this asserts.
+  const pending = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
+    trabalho_id: job.id,
+    ...FULL_BODY,
+  });
+  assert.equal(pending.status, 201);
+
   const invalid = await request(
     ctx,
     'PATCH',
-    `/v1/input-requests/${created.body.id}/auto-resolution`,
+    `/v1/input-requests/${pending.body.id}/auto-resolution`,
     { resposta: 'seja lá o que for', baseada_em: 'palpite' },
   );
   assert.equal(invalid.status, 400, 'baseada_em is a closed enum');

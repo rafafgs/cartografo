@@ -154,7 +154,18 @@ Fica de fora, como decisão separada ainda não tomada: as CHAVES dos formatos
 de dados em português (manifesto de skill, bundle de grafo) — mudar chave de
 formato é mudar especificação (t96–t99), não estilo de código.
 
-## D18 (2026-08-15) — Documentação funcional viva
+**Emenda (2026-08-15, Rafael):** a decisão separada foi tomada. As chaves dos
+formatos de dados, os manifestos de skill (instruções, nomes de arquivo), o
+conteúdo dos bundles de fábrica e o restante da superfície do produto
+(subcomandos de CLI, nomes de entidade na API) também convergem para o
+inglês; tickets e especificações produzidos no quadro, idem. Mudar chave de
+formato é mudança de especificação: o ticket dedicado emenda t96–t99 e
+regulariza os bundles. Permanecem em português: o nome-marca cartografo, os
+documentos internos do repo (DECISOES.md, notas/) e
+docs/o-que-e-o-cartografo.md (a versão EN nasce na preparação open source,
+t121).
+
+## D19 (2026-08-15) — Documentação funcional viva
 
 `docs/o-que-e-o-cartografo.md` explica o produto em linguagem simples e é
 documento vivo: toda entrega que mudar comportamento visível do produto

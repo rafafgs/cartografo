@@ -76,6 +76,7 @@ import {
   executionsPage,
   jobPage,
   questionsPage,
+  runnersPage,
   type Page,
 } from './pages.ts';
 
@@ -318,6 +319,7 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
     if (pathname === '/quadro') return await boardPage(client);
     if (pathname === '/execucoes') return await executionsPage(client);
     if (pathname === '/perguntas') return await questionsPage(client);
+    if (pathname === '/runners') return await runnersPage(client);
 
     const executionMatch = /^\/execucoes\/([^/]+)$/.exec(pathname);
     if (executionMatch !== null) {

@@ -37,6 +37,16 @@
  * repeated denials is a decision nobody has taken yet. Only a session that
  * could not start or did not reach `completed` rejects.
  *
+ * **And a dispatch never settles with a live session.** The lease goes back
+ * through that same `finally` however this callback settles, so a rejection
+ * with the engine still running hands the work to the next tick while a process
+ * is still writing in the same working dir — two sessions, one directory. So
+ * anything that fails between the session coming up and its outcome being known
+ * cancels it before rethrowing (t148). Once the outcome IS known the session is
+ * terminal on its own account, and what is left is telemetry the runner owes:
+ * the closure and the question are attempted write by write, so that neither
+ * one can swallow the other.
+ *
  * English per D18. The prompt and instruction CONTENT stays in Portuguese: it
  * stands in for the skill manifest the graph will inject (t101/t105), and those
  * are written in Portuguese (`especificacoes/formatos/exemplos/`).
@@ -535,7 +545,11 @@ export function createClaudeCodeDispatch(
     // `startSession` rejects with `SessionStartError` when the session did not
     // come up. That one propagates untouched: it is a dispatch that never
     // happened, and the controller's `finally` gives the lease back anyway.
-    await route.adapter.startSession(spec, {
+    //
+    // The handle it resolves with is kept, and that is the whole point: from
+    // here on there is a live process in `spec.workingDir`, and the only thing
+    // that can stop it is this handle (t148, FR1).
+    const handle = await route.adapter.startSession(spec, {
       onOutput(line) {
         lines.push(line);
         for (const denial of tracker.observe(line)) recordDenial(denial);
@@ -548,24 +562,52 @@ export function createClaudeCodeDispatch(
       },
     });
 
-    // Recorded as soon as the session is up, with whatever ref is known by
-    // then. There is no endpoint to fill `engine_session_ref` in later (out of
-    // scope), so `null` here means "the engine had not said it yet" and never
-    // "this engine has no ref".
-    const session = await call<Session>('/v1/sessions', 'POST', {
-      trabalho_id: job.id,
-      no_id: job.no_atual,
-      engine: route.adapter.engineName,
-      engine_session_ref: engineRef,
-      working_dir: spec.workingDir,
-      prompt: spec.prompt,
-      timeout_seconds: spec.timeoutSeconds,
-    });
+    let session: Session;
+    let outcome: Outcome;
+    try {
+      // Recorded as soon as the session is up, with whatever ref is known by
+      // then. There is no endpoint to fill `engine_session_ref` in later (out
+      // of scope), so `null` here means "the engine had not said it yet" and
+      // never "this engine has no ref".
+      session = await call<Session>('/v1/sessions', 'POST', {
+        trabalho_id: job.id,
+        no_id: job.no_atual,
+        engine: route.adapter.engineName,
+        engine_session_ref: engineRef,
+        working_dir: spec.workingDir,
+        prompt: spec.prompt,
+        timeout_seconds: spec.timeoutSeconds,
+      });
 
-    sessionId = session.id;
-    for (const denial of queued.splice(0)) recordDenial(denial);
+      sessionId = session.id;
+      for (const denial of queued.splice(0)) recordDenial(denial);
 
-    const outcome = await end;
+      outcome = await end;
+    } catch (error) {
+      // Everything between the session coming up and its outcome being known
+      // runs with a process alive on the other side, and the controller's
+      // `finally` gives the lease back however this promise settles
+      // (`controller.ts:122-136`). Rejecting from here without taking the
+      // session down puts the work back in the pool with an engine still
+      // writing in its working dir, for up to `timeoutSeconds` — and the next
+      // tick would dispatch a second one into the same directory (t148, FR2).
+      //
+      // No explicit status: `cancel` defaults to `"cancelled"`
+      // (`engine/types.ts:236-245`), which is what happened. The clock did not
+      // run out and the engine did not crash; a control-plane call did.
+      try {
+        await route.adapter.cancel(handle);
+      } catch {
+        // Swallowed on purpose, and only here: the original failure is the one
+        // that explains the dispatch, and a secondary error from the cleanup
+        // would replace a cause with a symptom.
+      }
+      throw error;
+    }
+
+    // Past this line the session is terminal on its own account and `cancel` is
+    // never called again (FR3): what is left is telemetry the runner owes, and
+    // each write is attempted even when the one before it failed.
 
     // Drained BEFORE the end of the session, so the log reads in the order
     // things happened: the session opened, it was denied, it finished. A
@@ -573,19 +615,29 @@ export function createClaudeCodeDispatch(
     // incident may not cost the session its closure nor its question.
     await denialWrites;
 
-    await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
-      status: TAXONOMY_STATUS[outcome.status],
-      exit_code: outcome.exitCode,
-      // The v0 interface reports no token usage (out of scope). `null` is "the
-      // engine reported nothing" and must never collapse into zero.
-      uso: null,
-      // The raw stream, exactly as `onOutput` reported it — undecoded, frames
-      // and dying screams alike (t159). `decodeSessionText` below is a READER
-      // of this same buffer, and its frame-decoding is lossy by design: what
-      // gets persisted is the material before that, because a session that
-      // died is diagnosed from what it printed, not from what parsed.
-      transcricao: lines.join('\n'),
-    });
+    // Captured rather than thrown, exactly as `denialFailure` already is: a
+    // closure the control plane refused may not cancel the question that comes
+    // after it. "Asking is not failing" is not a rule about happy paths — a
+    // question dropped here is a human who is never called, and the work stays
+    // unblocked with nobody knowing what it needed.
+    let finishFailure: unknown = null;
+    try {
+      await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
+        status: TAXONOMY_STATUS[outcome.status],
+        exit_code: outcome.exitCode,
+        // The v0 interface reports no token usage (out of scope). `null` is
+        // "the engine reported nothing" and must never collapse into zero.
+        uso: null,
+        // The raw stream, exactly as `onOutput` reported it — undecoded, frames
+        // and dying screams alike (t159). `decodeSessionText` below is a READER
+        // of this same buffer, and its frame-decoding is lossy by design: what
+        // gets persisted is the material before that, because a session that
+        // died is diagnosed from what it printed, not from what parsed.
+        transcricao: lines.join('\n'),
+      });
+    } catch (error) {
+      finishFailure = error;
+    }
 
     const request: InputRequest | null = parseInputRequest(route.decodeSessionText(lines));
     if (request !== null) {
@@ -609,10 +661,16 @@ export function createClaudeCodeDispatch(
       });
     }
 
-    // A denial that could not be recorded is not the session's fault, but it is
-    // a fault: the control plane refused a write the runner owes it, and a
+    // A write that could not be made is not the session's fault, but it is a
+    // fault: the control plane refused something the runner owes it, and a
     // silent swallow here would leave the log claiming a clean session.
-    if (denialFailure !== null) throw denialFailure;
+    //
+    // The FIRST one captured is the one that surfaces — a denial happens during
+    // the session, the closure after it — which is the precedent `denialFailure`
+    // already set when it was alone. Reporting more than one at a time is a
+    // multi-error type nobody has needed yet.
+    const failure = denialFailure ?? finishFailure;
+    if (failure !== null) throw failure;
 
     // Asking is a successful dispatch — the question is already recorded above,
     // and the work is already blocked. What is NOT successful is a session that

@@ -502,7 +502,9 @@ comando do adapter — de modo que o CI nunca precise da CLI real instalada nem
 autenticada. Rodar contra a CLI de verdade é portão manual, separado.
 
 Os seis primeiros casos são obrigatórios. C7 vem junto porque é a única
-verificação do contrato de erro e custa uma linha.
+verificação do contrato de erro e custa uma linha, e C8 porque é a única que
+prova o contrato do `cancel()` sob concorrência — os dois chamadores de parada
+(relógio e `cancel()`) disputando a mesma sessão.
 
 | Nome | Setup | Resultado esperado |
 |---|---|---|
@@ -513,6 +515,7 @@ verificação do contrato de erro e custa uma linha.
 | **C5 — Cancelamento** | Sessão longa; chamar `cancel(handle, "timed_out")` no meio. | O status reportado ao `onFinished` é **o que foi passado**, `"timed_out"`, não um `"cancelled"` fixo. Repetir com `cancel(handle)` sem argumento deve dar `"cancelled"`. Chamar `cancel` numa sessão já terminal é no-op silencioso, não erro. |
 | **C6 — Colheita de eventos** | Fake engine emite uma sequência conhecida de linhas — incluindo uma que não é frame estruturado — e sai com código não-zero. | Todas as linhas chegam ao `onOutput`, **na ordem original e sem parse**; `onFinished` reporta `"failed"` com o exit code exato. A variante com saída 0 reporta `"completed"` com 0. |
 | **C7 — Handle desconhecido** | Handle nunca iniciado neste adapter. | `getStatus` e `cancel` rejeitam com `UnknownSessionError`. Nenhum dos dois inventa status. |
+| **C8 — Corrida de parada** | Fake engine que ignora SIGTERM e nunca termina sozinho; `timeoutSeconds` longo, para que o relógio interno nunca dispare por conta própria. Duas paradas seguidas, sem sleep entre elas, com status diferentes — a segunda cai dentro da janela de grace da primeira: `cancel(handle, "timed_out")` e depois `cancel(handle, "cancelled")`. | Vence a PRIMEIRA: `onFinished` e `getStatus` reportam `"timed_out"`, não importa se o processo morreu no SIGTERM ou no SIGKILL. A segunda parada é no-op completo — não sobrescreve o status, não sinaliza de novo, não rearma escalação nem rede de segurança (`onFinished` uma única vez). Repetido com os status trocados, o esperado vira `"cancelled"`: o que vence é a ordem, não o literal. |
 
 Notas de execução:
 

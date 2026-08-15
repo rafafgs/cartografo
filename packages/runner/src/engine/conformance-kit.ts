@@ -1,5 +1,5 @@
 /**
- * EngineAdapter conformance kit — the seven C1–C7 cases of the table in
+ * EngineAdapter conformance kit — the eight C1–C8 cases of the table in
  * `docs/formatos/engine-adapter.md`, as `node:test` tests parameterized by any
  * implementation of the interface.
  *
@@ -141,8 +141,50 @@ class Collector implements SessionListener {
 interface Scenario {
   readonly workingDir: string;
   readonly recordPath: string;
-  readRecord(): FakeRecord;
+  readRecord(deadlineMs?: number): Promise<FakeRecord>;
   cleanup(): void;
+}
+
+/**
+ * How long the fake's sidecar may take to appear.
+ *
+ * Same 5s `requireProcessDead` allows, and for the same reason: it is the ceiling
+ * on a wait that normally ends in milliseconds, not an expected duration.
+ */
+const RECORD_DEADLINE_MS = 5_000;
+
+/**
+ * The fake's sidecar, once it is readable on disk.
+ *
+ * This is a wait for something that MUST happen, so by this kit's own rule it is
+ * deadline-based with an explicit failure — never a fixed sleep. A fixed 300ms
+ * one used to stand at C4's call site, and on a loaded machine it was not enough
+ * for a freshly spawned `node` to boot, read its stdin, fork the grandchild and
+ * write the JSON: the case died with a bare `ENOENT ... record.json` naming
+ * neither the case nor what it was checking. Retrying also closes a second race
+ * the fixed wait could not see — the write is not atomic, so the file can exist
+ * while still being half a JSON document.
+ *
+ * @param recordPath Where the fake was told to write it.
+ * @param deadlineMs Ceiling on the wait.
+ * @returns What the process recorded about what it received.
+ */
+async function awaitRecord(recordPath: string, deadlineMs: number): Promise<FakeRecord> {
+  const limit = Date.now() + deadlineMs;
+  let lastError: unknown;
+  for (;;) {
+    try {
+      return JSON.parse(readFileSync(recordPath, 'utf8')) as FakeRecord;
+    } catch (error) {
+      lastError = error;
+    }
+    if (Date.now() >= limit) break;
+    await sleep(25);
+  }
+  return assert.fail(
+    `the fake engine did not write a readable ${recordPath} within ${deadlineMs}ms ` +
+      `(last failure: ${String(lastError)})`,
+  );
 }
 
 function buildScenario(): Scenario {
@@ -155,7 +197,7 @@ function buildScenario(): Scenario {
   return {
     workingDir,
     recordPath,
-    readRecord: () => JSON.parse(readFileSync(recordPath, 'utf8')) as FakeRecord,
+    readRecord: async (deadlineMs = RECORD_DEADLINE_MS) => await awaitRecord(recordPath, deadlineMs),
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
 }
@@ -197,7 +239,7 @@ function requireBaselineStatus(status: SessionStatus, label: string): void {
 }
 
 /**
- * Registers the seven conformance cases against an adapter.
+ * Registers the eight conformance cases against an adapter.
  *
  * @param makeAdapter Factory returning a NEW adapter (clean state), already
  *   seamed to run `fakeEnginePath` in place of the real binary.
@@ -263,7 +305,7 @@ export function runConformanceKit(
           'C1: no onOutput may arrive after onFinished (invariant 2)',
         );
 
-        const record = scenario.readRecord();
+        const record = await scenario.readRecord();
         assert.equal(
           record.stdin,
           '',
@@ -305,7 +347,7 @@ export function runConformanceKit(
 
         // An assertion the specification forbids: inspecting the SessionSpec.
         // Only what the PROCESS received counts.
-        const received = everythingTheProcessReceived(scenario.readRecord());
+        const received = everythingTheProcessReceived(await scenario.readRecord());
         assert.ok(
           received.includes(marker),
           'C2: the instructions marker did not reach the process by any path ' +
@@ -341,7 +383,7 @@ export function runConformanceKit(
         requireBaselineStatus(end.status, 'C3');
         assert.equal(await adapter.getStatus(handle), 'timed_out');
 
-        await requireProcessDead(scenario.readRecord().pid, 'C3');
+        await requireProcessDead((await scenario.readRecord()).pid, 'C3');
 
         // Past twice the original deadline, the clock must not fire again.
         await sleep(1_000 + SETTLE_MS);
@@ -372,9 +414,10 @@ export function runConformanceKit(
       try {
         const handle = await adapter.startSession(spec, collector);
         // The sidecar exists as soon as the process came up; reading it before
-        // killing guarantees both pids.
-        await sleep(SETTLE_MS);
-        const record = scenario.readRecord();
+        // killing guarantees both pids. Waiting for it to APPEAR, rather than
+        // for a fixed window, is what keeps this case about process death
+        // instead of about how loaded the machine is.
+        const record = await scenario.readRecord();
 
         await adapter.cancel(handle);
         const end = await collector.awaitEnd('C4', deadline);
@@ -517,6 +560,82 @@ export function runConformanceKit(
         UnknownSessionError,
         'C7: cancel has to throw for an unknown handle',
       );
+    });
+
+    test('C8 — stop race (the first stop wins)', async () => {
+      // Two independent callers can order a stop: the adapter's own clock and
+      // `cancel()`. Whoever gets there FIRST decides the terminal status —
+      // "recording the reason HERE is what takes the watchdog out of the race
+      // with the adapter's own streaming thread" (`types.ts:239-241`). A second
+      // stop landing while the SIGTERM→SIGKILL escalation is still armed has to
+      // be a complete no-op, or the reported status depends on which internal
+      // path (the natural close, or the escalation's safety net) happens to fire.
+      const raceSpec = (scenario: Scenario): SessionSpec => ({
+        workingDir: scenario.workingDir,
+        instructions: 'node instructions',
+        prompt: 'work that resists SIGTERM',
+        // Generous on purpose: the internal clock must never fire on its own,
+        // so the only two stops in play are the ones the case orders.
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: scenario.recordPath,
+          FAKE_ENGINE_HANG: '1',
+          // Surviving the SIGTERM is what keeps the grace window open long
+          // enough for the second stop to land INSIDE it.
+          FAKE_ENGINE_IGNORE_SIGTERM: '1',
+        },
+      });
+
+      const race = async (
+        label: string,
+        first: SessionStatus,
+        second: SessionStatus,
+      ): Promise<void> => {
+        const scenario = buildScenario();
+        const collector = new Collector();
+        const adapter = newAdapter();
+
+        try {
+          const handle = await adapter.startSession(raceSpec(scenario), collector);
+          // The fake installs the SIGTERM handler right after writing the
+          // sidecar; stopping before that would kill it with the first signal
+          // and there would be no grace window to race inside (the same reason
+          // C4 waits here). Between the two stops there is NO wait at all.
+          const record = await scenario.readRecord();
+
+          await adapter.cancel(handle, first);
+          await adapter.cancel(handle, second);
+
+          const end = await collector.awaitEnd(label, deadline);
+          assert.equal(
+            end.status,
+            first,
+            `${label}: the status reported is the SECOND stop's, not the first one's`,
+          );
+          requireBaselineStatus(end.status, label);
+          assert.equal(
+            await adapter.getStatus(handle),
+            first,
+            `${label}: getStatus disagrees with the status delivered to onFinished`,
+          );
+
+          // Mirrors C4: whichever stop won, the process still has to die.
+          await requireProcessDead(record.pid, label);
+
+          await sleep(SETTLE_MS);
+          assert.equal(
+            collector.endings.length,
+            1,
+            `${label}: the second stop must not arm a second escalation/safety net`,
+          );
+        } finally {
+          scenario.cleanup();
+        }
+      };
+
+      await race('C8 (timed_out, then cancelled)', 'timed_out', 'cancelled');
+      // Swapped: proves "the first one wins" and not "'timed_out' wins".
+      await race('C8 (cancelled, then timed_out)', 'cancelled', 'timed_out');
     });
   });
 }

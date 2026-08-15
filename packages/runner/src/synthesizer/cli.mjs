@@ -21,7 +21,8 @@
  *
  * Usage:
  *   npm run synthesize --workspace @cartografo/runner -- \
- *     `"<declaração>" --classe <nome> [--url <url>] [--saida <caminho>] [--timeout <seg>]`
+ *     `"<declaração>" --classe <nome> [--url <url>] [--saida <caminho>]` \
+ *     `[--timeout <seg>] [--token <token>]`
  */
 
 import { mkdtempSync } from 'node:fs';
@@ -63,7 +64,7 @@ async function main() {
   return await runSynthesis({
     declaration: parsed.options.declaration,
     className: parsed.options.className,
-    client: createControlPlaneReader(parsed.options.url),
+    client: createControlPlaneReader(parsed.options.url, { token: parsed.options.token }),
     adapter,
     workingDir,
     outputPath: parsed.options.outputPath,

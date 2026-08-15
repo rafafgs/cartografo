@@ -195,9 +195,12 @@ test('AT17 — a runner dies, the lease expires and the other runner takes the s
   const { urlBase, token } = await startControlPlane(t);
   const doFetch = fetchWithSeededQueue();
 
-  // The token is the bootstrap credential, not a runner-scoped one: issuing a
-  // credential at pairing is the follow-up ticket. What this test needs is the
-  // minimum to keep speaking to an API that no longer answers anonymously.
+  // The token is the bootstrap credential, not a runner-scoped one, and stays
+  // that way on purpose: what this test needs is the minimum to keep speaking
+  // to an API that no longer answers anonymously, and the scenario below is
+  // about a lease outliving its owner — not about who authenticated. The
+  // runner credential that t143 mints at pairing is exercised end to end in
+  // `cross-machine-dispatch.e2e.test.ts`.
   const clientA = new ClienteControle({ urlBase, buscar: doFetch, token });
   const clientB = new ClienteControle({ urlBase, buscar: doFetch, token });
   await clientA.registrarRunner('runner-a', 'the one that dies');

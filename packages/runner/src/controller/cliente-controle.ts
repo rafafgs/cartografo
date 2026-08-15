@@ -154,13 +154,15 @@ export interface OpcoesDoCliente {
   /** URL base do control plane (ex.: `http://127.0.0.1:4317`). */
   urlBase: string;
   /**
-   * Credencial apresentada em toda chamada (t124).
+   * Credencial apresentada em toda chamada (t124, t143).
    *
-   * Genérica de propósito: é um token qualquer que o control plane aceite, e não
-   * ainda a credencial de runner emitida no pareamento — essa, com escopo e
-   * revogação, é a ficha seguinte. Sem ela o cliente não manda cabeçalho nenhum
-   * e toma 401, que é o comportamento honesto: um cabeçalho vazio se pareceria
-   * com credencial.
+   * Genérica de propósito: é um token qualquer que o control plane aceite. Em
+   * produção é a credencial que o pareamento emitiu para ESTE runner (`token`
+   * no `201` de `POST /v1/runners`), que só alcança as rotas de despacho e só
+   * como este `runner_id`; a de operador serve, e é o que os testes mais
+   * antigos usam, mas dá ao runner acesso que ele não precisa ter. Sem token
+   * nenhum o cliente não manda cabeçalho e toma 401, que é o comportamento
+   * honesto: um cabeçalho vazio se pareceria com credencial.
    */
   token?: string;
   /** Implementação de `fetch` a usar. Default: o `fetch` global. */

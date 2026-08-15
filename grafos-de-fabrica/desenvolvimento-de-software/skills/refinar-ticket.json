@@ -1,7 +1,7 @@
 {
   "id": "refinar-ticket",
   "versao": "1.0.0",
-  "hash": "sha256:2af61665b994e6a73fe02779e33dedc3c37a4f14c5d0546fa92ea6ad33b01249",
+  "hash": "sha256:598262e114039af85da7109cd3bd4f0e6a28a76d21b3d62c7d7b58ba7afbb9c1",
   "papel": "fazer",
   "descricao": "Transforma um pedido bruto em especificação executável: seções obrigatórias, critérios de aceite verificáveis e escopo negativo explícito.",
   "entrada": {
@@ -189,11 +189,14 @@
       "id": "portao-de-especificacao",
       "tipo": "agentico",
       "descricao": "O defeito mais caro do refino é o critério de aceite que não dá para verificar: ele contamina toda etapa seguinte, e nenhum comando o detecta. É o único check desta skill porque é o único julgamento que ela produz.",
-      "instrucao": "Leia a especificação produzida e responda três coisas, uma a uma, citando o trecho exato que sustenta cada resposta.\n\n1. Cada critério de aceite é verificável por um teste concreto que alguém poderia escrever direto da frase, sem perguntar nada? \"Funciona direito\" não é critério; \"GET /x devolve 404 para id desconhecido\" é. Aponte por número os que não são.\n2. As onze seções obrigatórias existem, na ordem, e a declaração de superfície de conflito é a primeira linha do corpo, em UMA linha? Cite o começo de cada seção encontrada.\n3. Todo arquivo citado na superfície declarada e na tabela de mudanças de código existe no repositório, ou é declarado explicitamente como novo? Abra cada caminho e anexe o que encontrou — caminho inventado é o modo mais barato de o refino quebrar o desenvolvimento.\n\nJulgue pelo texto da especificação, nunca pelo relato da sessão que a escreveu. Se qualquer uma das três respostas for não, o check falhou.",
+      "instrucao": "Leia a especificação produzida e responda cinco coisas, uma a uma, citando o trecho exato que sustenta cada resposta.\n\n1. Cada critério de aceite é verificável por um teste concreto que alguém poderia escrever direto da frase, sem perguntar nada? \"Funciona direito\" não é critério; \"GET /x devolve 404 para id desconhecido\" é. Aponte por número os que não são.\n2. As onze seções obrigatórias existem, na ordem, e a declaração de superfície de conflito é a primeira linha do corpo, em UMA linha? Cite o começo de cada seção encontrada.\n3. Todo arquivo citado na superfície declarada e na tabela de mudanças de código existe no repositório, ou é declarado explicitamente como novo? Abra cada caminho e anexe o que encontrou — caminho inventado é o modo mais barato de o refino quebrar o desenvolvimento.\n4. O primeiro item da Definição de pronto é exatamente \"testes de aceite escritos primeiro e confirmados vermelhos antes da implementação\" — ou uma frase equivalente, com a mesma força — e toda parte do trabalho que genuinamente não se deixa dirigir por teste está na subseção \"Exceções ao TDD\", com o motivo? Cite o primeiro item como ele está escrito e cada exceção junto da justificativa que a acompanha. Parte não testável que não aparece nessa subseção é TDD dispensado em silêncio, e é isso que este item existe para pegar.\n5. A validação INVEST foi de fato aplicada? Para cada uma das seis propriedades — independente, negociável, valioso, estimável, pequeno, testável — cite o trecho da especificação ou a entrada do log de refino que a sustenta. Checklist marcado sem trecho que o sustente não conta: o que vale é a decisão registrada, não a caixa marcada.\n\nJulgue pelo texto da especificação, nunca pelo relato da sessão que a escreveu. Se qualquer uma das cinco respostas for não, o check falhou.",
       "evidencia_obrigatoria": [
         "trecho_citado_de_cada_secao_obrigatoria",
         "caminho_conferido_de_cada_arquivo_citado_na_superficie_declarada",
-        "para_cada_criterio_de_aceite_o_teste_concreto_que_o_provaria"
+        "para_cada_criterio_de_aceite_o_teste_concreto_que_o_provaria",
+        "primeiro_item_da_definicao_de_pronto_citado_como_esta_escrito",
+        "cada_uma_das_excecoes_ao_tdd_com_a_justificativa_que_a_acompanha",
+        "para_cada_uma_das_seis_propriedades_invest_o_trecho_que_a_sustenta"
       ]
     }
   ],

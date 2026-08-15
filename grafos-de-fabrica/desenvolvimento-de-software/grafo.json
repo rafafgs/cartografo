@@ -19,7 +19,7 @@
       "skill_ref": {
         "id": "refinar-ticket",
         "versao": "1.0.0",
-        "hash": "sha256:2af61665b994e6a73fe02779e33dedc3c37a4f14c5d0546fa92ea6ad33b01249"
+        "hash": "sha256:598262e114039af85da7109cd3bd4f0e6a28a76d21b3d62c7d7b58ba7afbb9c1"
       },
       "contrato": {
         "entrada_schema": {
@@ -47,7 +47,8 @@
           "required": [
             "especificacao",
             "criterios_de_aceite",
-            "arquivos_tocados"
+            "arquivos_tocados",
+            "nota"
           ],
           "properties": {
             "especificacao": {
@@ -73,6 +74,25 @@
               "items": {
                 "type": "string"
               }
+            },
+            "tier_modelo": {
+              "type": "string",
+              "enum": [
+                "padrao",
+                "forte"
+              ],
+              "description": "força de modelo que o trabalho pede; nunca um modelo nem um fornecedor nomeado"
+            },
+            "nota": {
+              "type": "string",
+              "minLength": 1,
+              "description": "uma linha com o que a sessão decidiu e todo default que tomou; é o que torna um default revisável"
+            },
+            "gotchas": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         },
@@ -94,7 +114,7 @@
       "skill_ref": {
         "id": "desenvolver-ticket",
         "versao": "1.0.0",
-        "hash": "sha256:f5862b4664f1d0fed5c747b8eb7686a061d87e1fd3ee1ba51c698477900993c1"
+        "hash": "sha256:fa92367d51a5d15bae71700e9c895796280b2b35c6fab174771c31e96f7e2f87"
       },
       "contrato": {
         "entrada_schema": {
@@ -170,7 +190,7 @@
       "skill_ref": {
         "id": "integrar-branch",
         "versao": "1.0.0",
-        "hash": "sha256:c917f54d7a014329fde9185d24627e2581132bcfa2d27e1171b3b7222c99e041"
+        "hash": "sha256:982955800480ed9856b7a174ac172cf04b697a6c621ab05af6396163bd5a9906"
       },
       "contrato": {
         "entrada_schema": {
@@ -256,7 +276,7 @@
           "type": "object",
           "required": [
             "resultado",
-            "evidencia"
+            "vereditos"
           ],
           "properties": {
             "resultado": {
@@ -266,14 +286,72 @@
                 "escala"
               ]
             },
-            "evidencia": {
-              "type": "string",
-              "minLength": 1
-            },
-            "defeitos": {
+            "vereditos": {
               "type": "array",
+              "minItems": 1,
+              "description": "um por critério de aceite, com a evidência que ESTE portão produziu; critério não exercitado tem entrada honesta, nunca é pulado",
               "items": {
-                "type": "string"
+                "type": "object",
+                "required": [
+                  "ref",
+                  "veredito",
+                  "evidencia"
+                ],
+                "properties": {
+                  "ref": {
+                    "type": "string"
+                  },
+                  "veredito": {
+                    "enum": [
+                      "passou",
+                      "falhou",
+                      "nao_exercitado"
+                    ]
+                  },
+                  "evidencia": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "bugs": {
+              "type": "array",
+              "description": "o que a caminhada encontrou; a severidade é o que deixa o executor agendar o conserto",
+              "items": {
+                "type": "object",
+                "required": [
+                  "severidade",
+                  "titulo",
+                  "criterio",
+                  "repro"
+                ],
+                "properties": {
+                  "severidade": {
+                    "enum": [
+                      "simples",
+                      "complexo"
+                    ]
+                  },
+                  "titulo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "criterio": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "repro": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "arquivos": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
               }
             }
           }

@@ -18,6 +18,7 @@
 import type { Database } from '../db/connection.ts';
 import { listEvents, recordEvent } from '../db/events.ts';
 import { requireValidData, type Actor, type Event } from '../db/event-validation.ts';
+import { getVersion } from './graphs.ts';
 import {
   API_ACTOR,
   DEFAULT_PROJECT,
@@ -52,6 +53,16 @@ export interface Job {
   motivo_bloqueio: string | null;
   /** Graph version the job runs under. Loose: `grafo_versao` belongs to t101 (D15). */
   grafo_versao_id: string | null;
+  /**
+   * The job arrived: its current node is a final node of its graph version
+   * (t152).
+   *
+   * Derived at read time, never stored — see `isAtFinalNode`. It is the only
+   * terminal signal this system has: the log has no `trabalho.concluido` event,
+   * and "nothing is open right now" is a state a job one event old already
+   * satisfies.
+   */
+  concluido: boolean;
   criado_em: string;
   atualizado_em: string;
 }
@@ -71,7 +82,7 @@ export interface ExecutionSummary {
   perguntas_pendentes: number;
 }
 
-interface JobRow extends Omit<Job, 'bloqueado' | 'criterios_de_aceite'> {
+interface JobRow extends Omit<Job, 'bloqueado' | 'criterios_de_aceite' | 'concluido'> {
   bloqueado: number;
   /** JSON in a TEXT column, like `sessao.uso` and `pergunta.opcoes`. */
   criterios_de_aceite: string | null;
@@ -97,11 +108,43 @@ const JOB_EVENTS = `
           AND json_extract(e.dados, '$.trabalho_id') = t.id)
 `;
 
-function toJob(row: JobRow): Job {
+/**
+ * "The traveller arrived": the job's node is a final node of ITS version (t152).
+ *
+ * Three things say no before the graph is even read. A blocked job is never
+ * done, whatever node it is standing on — the flag stops the report of an end
+ * the same way it stops everything else. A job with no `grafo_versao_id` has no
+ * graph to ask, and so has no terminal state to arrive at. And a version id that
+ * no longer resolves is treated as no graph at all: `trabalho.grafo_versao_id`
+ * is loose text, not a foreign key (a job created with `'v1'` in hand is an
+ * ordinary case here), and inventing a completion out of a version nobody can
+ * read would be worse than admitting ignorance.
+ *
+ * One lookup per job, on purpose: the value is derived on read and never cached,
+ * so a job cannot go on reporting a conclusion its version no longer declares.
+ * On `listJobs` that is a query per row — correctness first; batching by
+ * `grafo_versao_id` is the follow-up if a board ever grows enough to feel it.
+ *
+ * @param db Open handle.
+ * @param row The job's row, as it is in the table.
+ * @returns Whether the job is standing on a final node, unblocked.
+ */
+function isAtFinalNode(db: Database, row: JobRow): boolean {
+  if (asBoolean(row.bloqueado)) return false;
+  if (row.grafo_versao_id === null) return false;
+
+  const version = getVersion(db, row.grafo_versao_id);
+  if (version === undefined) return false;
+
+  return version.snapshot.nos_finais.includes(row.no_atual);
+}
+
+function toJob(db: Database, row: JobRow): Job {
   return {
     ...row,
     bloqueado: asBoolean(row.bloqueado),
     criterios_de_aceite: jsonOrNull<string[]>(row.criterios_de_aceite),
+    concluido: isAtFinalNode(db, row),
   };
 }
 
@@ -120,7 +163,7 @@ function readRow(db: Database, id: number): JobRow | undefined {
  */
 export function getJob(db: Database, id: number): Job | null {
   const row = readRow(db, id);
-  return row === undefined ? null : toJob(row);
+  return row === undefined ? null : toJob(db, row);
 }
 
 /** Body of `POST /v1/jobs`. */
@@ -201,7 +244,7 @@ export function createJob(db: Database, input: CreateJobInput): Job {
       dados: data,
     });
 
-    return toJob(readRow(db, id) as JobRow);
+    return toJob(db, readRow(db, id) as JobRow);
   });
 
   return create();
@@ -249,7 +292,7 @@ function mutate(
       ocorrido_em: timestamp,
       dados: data,
     });
-    return toJob(readRow(db, id) as JobRow);
+    return toJob(db, readRow(db, id) as JobRow);
   });
 
   return apply();
@@ -386,7 +429,7 @@ export function listJobs(
           .prepare(`SELECT ${COLUMNS} FROM trabalho WHERE execucao_id = ? ORDER BY id`)
           .all(filter.execucao_id)
   ) as JobRow[];
-  return rows.map(toJob);
+  return rows.map((row) => toJob(db, row));
 }
 
 /**

@@ -1,13 +1,17 @@
 /**
  * What the domain routes share: translating an error into HTTP.
  *
- * Two failure responses exist in this file, and neither of them is a 500:
+ * Three failure responses exist in this file, and none of them is a 500:
  *
  * - **400** when the body does not match the event's contract. The WHOLE list of
  *   problems goes in the body, not only the first — whoever builds a wrong
  *   envelope usually gets more than one field wrong;
  * - **404** when the entity does not exist. In that case nothing is written:
- *   neither a projection row nor an event (FR5, AT7).
+ *   neither a projection row nor an event (FR5, AT7);
+ * - **409** when the entity exists but has already left the state the operation
+ *   needs — an input request that was answered, a session that has ended
+ *   (t149). Nothing is written here either: the second attempt is a conflict,
+ *   never an overwrite of the first.
  *
  * This envelope is the one error shape D18 does translate (t127, FR7): no other
  * package in the repo parses it, so it is self-contained to core's own tests.
@@ -57,6 +61,22 @@ export async function withValidation<T>(
 export function notFound(reply: FastifyReply, entity: string): ErrorResponse {
   reply.code(404);
   return { error: 'not_found', details: [`${entity} does not exist`] };
+}
+
+/**
+ * Marks the response as a 409.
+ *
+ * The detail is the whole explanation the caller gets, so it names the state
+ * that refused the operation: "already answered" is actionable, "conflict" on
+ * its own only says that something went wrong.
+ *
+ * @param reply Fastify reply.
+ * @param detail What state made the operation impossible.
+ * @returns The 409 body.
+ */
+export function conflict(reply: FastifyReply, detail: string): ErrorResponse {
+  reply.code(409);
+  return { error: 'conflict', details: [detail] };
 }
 
 /** Reads a route's `:id` as an integer. */

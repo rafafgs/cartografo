@@ -33,6 +33,14 @@ export interface Job {
   bloqueado: boolean;
   motivo_bloqueio: string | null;
   grafo_versao_id: string | null;
+  /**
+   * The control plane's own answer to "did this job arrive?" (t152).
+   *
+   * Derived over there, out of the job's node and its graph version's
+   * `nos_finais` — data the screen has no way to reach, which is exactly why it
+   * is read and not recomputed here.
+   */
+  concluido: boolean;
   criado_em: string;
   atualizado_em: string;
 }

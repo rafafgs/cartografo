@@ -327,6 +327,71 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
   assert.equal(getEventsByEntity(ctx.db, 'sessao', session.id).length, 3);
 });
 
+test('t149 AT5 — finishing an already finished session is a 409, and the first end stands', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    execucao_id: 7,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'faça algo',
+  });
+  assert.equal(opened.status, 201);
+  const session = opened.body;
+
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
+    status: 'concluida',
+    exit_code: 0,
+    uso: USAGE,
+  });
+  assert.equal(finished.status, 200);
+
+  // The retry carries a DIFFERENT ending and no usage at all: if it went
+  // through, the only cost record the PoC keeps would be gone.
+  const retry = await request<{ error: string; details: string[] }>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    { status: 'falhou', exit_code: 1 },
+  );
+  assert.equal(retry.status, 409, 'a session ends once');
+  assert.equal(retry.body.error, 'conflict');
+  assert.ok(
+    retry.body.details.some((detail) => detail.includes('concluida')),
+    `the 409 has to say what state refused it: ${JSON.stringify(retry.body.details)}`,
+  );
+
+  const listed = await request<{ sessoes: Session[] }>(ctx, 'GET', '/v1/sessions?execucao_id=7');
+  assert.equal(listed.status, 200);
+  const stored = listed.body.sessoes.find((item) => item.id === session.id);
+  assert.ok(stored !== undefined, 'the session disappeared from the listing');
+  assert.equal(stored.status, 'concluida');
+  assert.equal(stored.exit_code, 0);
+  assert.deepEqual(stored.uso, USAGE, 'the refused retry never NULLs the usage of the first end');
+  assert.equal(stored.finalizada_em, finished.body.finalizada_em);
+
+  const events = getEventsByEntity(ctx.db, 'sessao', session.id);
+  assert.deepEqual(
+    events.map((event: Event) => event.tipo),
+    ['sessao.aberta', 'sessao.finalizada'],
+    'the refused retry writes NOTHING: no second end in the log',
+  );
+});
+
+test('t149 AT6 — finishing a session that does not exist is still a 404', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const unknown = await request<{ error: string }>(ctx, 'PATCH', '/v1/sessions/98765/finish', {
+    status: 'concluida',
+    exit_code: 0,
+  });
+  assert.equal(unknown.status, 404, 'reading before writing did not turn a 404 into a 409');
+  assert.equal(unknown.body.error, 'not_found');
+});
+
 test('t125 — a denial outside the contract is a 400, and an unknown session a 404', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);

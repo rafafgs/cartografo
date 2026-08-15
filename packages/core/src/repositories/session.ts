@@ -186,11 +186,18 @@ export interface FinishSessionInput {
 /**
  * Closes the session and records `sessao.finalizada` (FR11).
  *
+ * Closing is exactly-once: the `UPDATE` is guarded by `status = 'aberta'` and a
+ * lost claim throws before anything is appended, the same shape the sibling
+ * repositories already use (t149). A second finish would rewrite the terminal
+ * status and NULL the `uso` this whole file exists to protect — so it is refused
+ * with a 409 by the route, and never silently applied.
+ *
  * @param db Open handle.
  * @param id Session id.
  * @param input Request body.
  * @returns The closed session, or `null` if it does not exist.
  * @throws {ValidationError} When the status is outside the enum or `uso` does not match.
+ * @throws {Error} When the session stopped being open mid-flight.
  */
 export function finishSession(
   db: Database,
@@ -214,16 +221,27 @@ export function finishSession(
 
   const close = db.transaction((): Session => {
     const timestamp = now();
-    db.prepare(
-      `UPDATE sessao SET status = ?, exit_code = ?, uso = ?, finalizada_em = ? WHERE id = ?`,
-    ).run(
-      data.status as string,
-      data.exit_code as number | null,
-      // An absent `uso` writes a real NULL, never an object of zeros.
-      usage === null ? null : JSON.stringify(usage),
-      timestamp,
-      id,
-    );
+    const effect = db
+      .prepare(
+        `UPDATE sessao SET status = ?, exit_code = ?, uso = ?, finalizada_em = ?
+          WHERE id = ? AND status = 'aberta'`,
+      )
+      .run(
+        data.status as string,
+        data.exit_code as number | null,
+        // An absent `uso` writes a real NULL, never an object of zeros.
+        usage === null ? null : JSON.stringify(usage),
+        timestamp,
+        id,
+      );
+
+    // The whole transaction falls if the session stopped being open between the
+    // route's check and this UPDATE: finishing twice is a 409, never a second
+    // ending over the first (t149). Throwing HERE is what keeps the second
+    // `sessao.finalizada` out of the log.
+    if (effect.changes !== 1) {
+      throw new Error(`session ${id} stopped being open during the finish`);
+    }
 
     recordEvent(db, {
       tipo: 'sessao.finalizada',

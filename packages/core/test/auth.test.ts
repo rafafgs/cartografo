@@ -20,7 +20,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { startControlPlane, type TestContext } from './support.ts';
+import { request, startControlPlane, type TestContext } from './support.ts';
 
 /** An answer, already decoded, from a request built header by header. */
 interface RawResponse {
@@ -108,6 +108,98 @@ test('t124 AT — a valid token reaches the handler and the route behaves exactl
   // Case-insensitive scheme: `Authorization: bearer <token>` is the same header.
   const again = await raw(ctx, '/v1/jobs', `bearer ${ctx.token}`);
   assert.equal(again.status, 201, 'the scheme name is not case sensitive (RFC 7235)');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t143 — authorization: a runner credential opens the runner's surface only.  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One request, built verb by verb, with the credential handed in explicitly.
+ *
+ * `raw()` above is POST-only and carries a job body; this ticket needs the same
+ * credential presented to different verbs and routes, which is exactly what
+ * separates "authenticated" from "authorized".
+ *
+ * @param ctx Control plane running.
+ * @param method HTTP verb.
+ * @param routePath Path, already carrying the `/v1` prefix.
+ * @param token Raw token to present.
+ * @param body JSON body, when the route takes one.
+ * @returns Status and decoded body.
+ */
+async function call(
+  ctx: TestContext,
+  method: string,
+  routePath: string,
+  token: string,
+  body?: unknown,
+): Promise<RawResponse> {
+  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+  if (body !== undefined) headers['content-type'] = 'application/json';
+
+  const response = await fetch(`${ctx.url}${routePath}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  return {
+    status: response.status,
+    body: (text === '' ? {} : JSON.parse(text)) as RawResponse['body'],
+  };
+}
+
+/** Pairs a runner with the operator credential and returns its own token (t143, FR1). */
+async function pairedRunnerToken(ctx: TestContext, id: string): Promise<string> {
+  const paired = await request<{ token: string | null }>(ctx, 'POST', '/v1/runners', { id });
+  assert.equal(paired.status, 201);
+  assert.equal(typeof paired.body.token, 'string', 'pairing is where a runner credential comes from');
+  return paired.body.token ?? '';
+}
+
+test('t143 AT — a runner credential is refused outside its route family', async (t) => {
+  const ctx = await startControlPlane(t);
+  const token = await pairedRunnerToken(ctx, 'runner-a');
+
+  const denied = await call(ctx, 'POST', '/v1/jobs', token, {
+    titulo: 'trabalho que um runner não cria',
+    no_entrada_id: 'refinar',
+  });
+  assert.equal(denied.status, 403, 'authenticated is not authorized: the token is valid and refused');
+  assert.equal(denied.body.erro, 'credencial_fora_de_escopo');
+  assert.ok((denied.body.mensagem ?? '').length > 0, 'the refusal says what the credential may do');
+
+  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM trabalho').get() as { total: number };
+  assert.equal(rows.total, 0, 'a refused request writes nothing');
+
+  const allowed = await call(ctx, 'GET', '/v1/jobs', token);
+  assert.equal(allowed.status, 200, 'the same credential reads the queue: that is its whole job');
+});
+
+test('t143 AT — a runner credential cannot revoke, not even its own', async (t) => {
+  const ctx = await startControlPlane(t);
+  const token = await pairedRunnerToken(ctx, 'runner-a');
+
+  const denied = await call(ctx, 'POST', '/v1/runners/runner-a/revocations', token);
+  assert.equal(
+    denied.status,
+    403,
+    'decommissioning a runner is the operator\'s act; a compromised runner does not get to hide',
+  );
+  assert.equal(denied.body.erro, 'credencial_fora_de_escopo');
+
+  const stillAlive = await call(ctx, 'GET', '/v1/jobs', token);
+  assert.equal(stillAlive.status, 200, 'the refused revocation did not revoke anything');
+});
+
+test('t143 AT — a runner credential cannot pair another runner', async (t) => {
+  const ctx = await startControlPlane(t);
+  const token = await pairedRunnerToken(ctx, 'runner-a');
+
+  const denied = await call(ctx, 'POST', '/v1/runners', token, { id: 'runner-inventado' });
+  assert.equal(denied.status, 403, 'a runner never pairs itself, nor anybody else (FR1/FR2)');
+  assert.equal(denied.body.erro, 'credencial_fora_de_escopo');
 });
 
 test('t124 AT — GET /health keeps answering with no credential at all', async (t) => {

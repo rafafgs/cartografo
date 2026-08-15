@@ -75,6 +75,12 @@ export interface SessionSpec {
    * engine's business.
    */
   readonly envOverrides?: Readonly<Record<string, string>>;
+
+  /**
+   * What this session is allowed to touch. Absent = no restriction, which is
+   * the behaviour of every session opened before this field existed.
+   */
+  readonly permissions?: SessionPermissions;
 }
 
 /**
@@ -92,6 +98,28 @@ export function composeSingleArgument(spec: SessionSpec): string {
  */
 export function composeWithSystemPromptFlag(spec: SessionSpec): string[] {
   return ["--system-prompt", spec.instructions, spec.prompt];
+}
+
+/**
+ * The permission policy of one session, as the skill manifest declares it (D4).
+ *
+ * The field the specification recorded as missing and left "for the D4 ticket"
+ * (`engine-adapter.md`, tension 1). It is OPTIONAL for the same compatibility
+ * reason as `EngineCapabilities`: growth of a published format is additive, and
+ * a session that says nothing keeps the behaviour it had.
+ *
+ * `filesystem.leitura` of the manifest has no counterpart here on purpose:
+ * declaring a field no adapter enforces would be exactly the dead capability
+ * the specification refuses to accumulate.
+ *
+ * What an adapter does with this is ITS business, and it may legitimately be
+ * "refuse the session": an engine unable to express a policy has to say so
+ * before opening, never open a session that quietly enforces less than what was
+ * asked.
+ */
+export interface SessionPermissions {
+  readonly filesystem: { readonly write: readonly string[] };
+  readonly network: { readonly allowed: boolean; readonly domains?: readonly string[] };
 }
 
 /**

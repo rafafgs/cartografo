@@ -95,6 +95,14 @@ export function reconstruirEstado(eventos) {
         };
         break;
 
+      // `sessao.permissao_negada` é incidente, não desfecho: a sessão continua
+      // exatamente onde estava, e nenhuma projeção daqui se move. Está listado
+      // em vez de cair no `default` porque a diferença entre "ignorado de
+      // propósito" e "esquecido" é justamente o que este arquivo existe para
+      // registrar. Quem quiser contar negações lê o log, que não perde nada.
+      case 'sessao.permissao_negada':
+        break;
+
       // --- pergunta ---------------------------------------------------------
       case 'pergunta.criada':
         estado.perguntas[id] = { status: 'pendente', resposta: null, origem: null };

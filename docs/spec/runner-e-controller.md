@@ -203,6 +203,15 @@ roda no lint sobre o repositório inteiro, e é exercida no teste fim a fim: o
 control plane sobe como **processo separado**, e a única superfície entre os
 dois é a porta HTTP.
 
+E, desde a `t143`, em outra **máquina**: [`cross-machine-dispatch.e2e.test.ts`](../../packages/runner/test/controller/cross-machine-dispatch.e2e.test.ts)
+sobe o binário com `CARTOGRAFO_HOST=0.0.0.0`, alcança-o pelo endereço IPv4 real
+da interface (não `127.0.0.1`) e roda o ciclo inteiro — concessão, heartbeat,
+liberação — apresentando **só** a credencial que o pareamento emitiu. É o que
+transforma o `CARTOGRAFO_HOST` configurável da `t124` em caminho provado, e não
+em opção que ninguém nunca exercitou. Onde a máquina não tem interface IPv4
+externa, o teste pula em vez de falhar: o que ele reportaria ali é a ausência de
+rede, não uma regressão.
+
 ---
 
 ## 5. Endpoints
@@ -211,13 +220,41 @@ Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`
 — o runner apresenta uma credencial em toda chamada, como qualquer outro cliente
 da API. Nenhum emite evento de telemetria (`t102`).
 
-| Método | Rota | O que faz |
-|---|---|---|
-| `POST` | `/v1/runners` | Pareia um runner. `201` na primeira vez, `200` (idempotente) se o `id` já existe. |
-| `POST` | `/v1/leases` | Reivindica expiradas e tenta conceder. `201` com a lease, ou `200` com `{lease: null, motivo}`. |
-| `POST` | `/v1/leases/:id/heartbeats` | Renova o prazo. Corpo opcional `{ttl_segundos}`; sem ele, mantém o TTL da lease. |
-| `POST` | `/v1/leases/:id/liberacoes` | Encerra a lease e devolve a vaga na hora. |
-| `GET` | `/v1/leases` | Lista, com filtros `projeto_id`, `runner_id` e `status`. Sem paginação nesta fase. |
+Desde a `t143` a credencial do runner é **dele**, emitida no pareamento, e a
+coluna "quem chama" abaixo é contrato, não convenção: quem faz o pareamento e a
+revogação é o operador (credencial `usuario`), e o runner só alcança as quatro
+rotas do próprio despacho mais `GET /v1/jobs`.
+
+| Método | Rota | Quem chama | O que faz |
+|---|---|---|---|
+| `POST` | `/v1/runners` | operador | Pareia um runner. `201` na primeira vez — com `token`, a credencial do runner, devolvida uma única vez —, `200` (idempotente) com `token: null` se o `id` já existe. |
+| `POST` | `/v1/runners/:id/revocations` | operador | Revoga toda credencial viva daquele runner. `200 {revogadas: <quantas>}`, inclusive `0`: chamar de novo não é erro. |
+| `POST` | `/v1/leases` | runner ou operador | Reivindica expiradas e tenta conceder. `201` com a lease, ou `200` com `{lease: null, motivo}`. |
+| `POST` | `/v1/leases/:id/heartbeats` | runner ou operador | Renova o prazo. Corpo opcional `{ttl_segundos}`; sem ele, mantém o TTL da lease. |
+| `POST` | `/v1/leases/:id/releases` | runner ou operador | Encerra a lease e devolve a vaga na hora. |
+| `GET` | `/v1/leases` | runner ou operador | Lista, com filtros `projeto_id`, `runner_id` e `status`. Sem paginação nesta fase. |
+
+### O escopo da credencial de runner
+
+A credencial nasce em `POST /v1/runners` (`201`), no formato do token de
+bootstrap: 32 bytes aleatórios em hex, devolvidos uma vez, guardados só como
+digest SHA-256. Ela é recusada com `403 credencial_fora_de_escopo` em duas
+situações, e a diferença entre elas importa:
+
+- **Fora da lista de rotas** — a lista é literal, em
+  [`auth.ts`](../../packages/core/src/auth.ts), e vale para todo o resto da
+  `/v1`: propostas, importação de skill, mutação de grafo, o stream de eventos.
+  Rota nova não entra por prefixo; entra porque alguém a escreveu ali.
+- **Fora da própria identidade** — dentro daquelas rotas, a credencial vale por
+  **um** `runner_id`. Pedir lease para outro runner, bater heartbeat ou liberar
+  a lease de outro, ou listar as leases de outro, são `403`. `GET /v1/leases`
+  sem filtro é preenchido em silêncio com o runner da credencial; com o filtro
+  apontando para outro, é recusado.
+
+Revogar (`POST /v1/runners/:id/revocations`) carimba `revogada_em` e nada mais:
+o token morto cai no `401 credencial_invalida` já na requisição seguinte, junto
+com os tokens que nunca existiram. Não há reemissão sob o mesmo `id` — recuperar
+o acesso de um runner revogado é pareá-lo com um `id` novo.
 
 Corpo de `POST /v1/leases`:
 
@@ -244,8 +281,9 @@ Códigos de erro:
 | `id` de runner ausente ou vazio | `400` | `id_obrigatorio` |
 | Campo de pedido ausente ou de tipo errado | `400` | `corpo_invalido` (com `campo`) |
 | Filtro de listagem inválido | `400` | `filtro_invalido` (com `campo`) |
-| `runner_id` não pareado | `404` | `runner_desconhecido` |
+| `runner_id` não pareado (pedido de lease ou revogação) | `404` | `runner_desconhecido` |
 | Lease inexistente | `404` | `lease_desconhecida` |
+| Credencial de runner fora das rotas dela, ou agindo por outro runner | `403` | `credencial_fora_de_escopo` |
 | Heartbeat ou liberação sobre lease não `ativa` | `409` | `lease_nao_ativa` (com `status`) |
 
 Recusa por teto ou por trabalho já leased **não** aparece nesta tabela: é `200`
@@ -253,8 +291,10 @@ com `motivo`, pelas razões do §3.
 
 Implementação: [`routes/runners.ts`](../../packages/core/src/routes/runners.ts),
 [`routes/leases.ts`](../../packages/core/src/routes/leases.ts),
-[`repositorios/runners.ts`](../../packages/core/src/repositorios/runners.ts),
-[`repositorios/leases.ts`](../../packages/core/src/repositorios/leases.ts),
+[`auth.ts`](../../packages/core/src/auth.ts),
+[`repositories/runners.ts`](../../packages/core/src/repositories/runners.ts),
+[`repositories/leases.ts`](../../packages/core/src/repositories/leases.ts),
+[`repositories/credentials.ts`](../../packages/core/src/repositories/credentials.ts),
 [`controller/`](../../packages/runner/src/controller). Só `src/db/` toca o driver
 do SQLite (D1); repositórios e rotas recebem o banco já aberto.
 
@@ -308,7 +348,12 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 - **Varredura de expiradas dissociada do despacho** (§3).
 - **WIP limit por estágio do grafo** — aqui só existe o teto bruto de sessões
   concorrentes.
-- **Credencial própria de runner**, emitida no pareamento e revogável. A `t124`
-  trouxe a credencial da API — uma só, de operador, que abre `/v1` inteiro —, e o
-  runner a apresenta hoje como qualquer outro cliente; emitir uma por runner, com
-  escopo nas rotas dele, é a ficha seguinte, dependente daquela.
+- **Reemissão de credencial para um `id` já pareado.** A `t143` fechou a
+  emissão no pareamento e a revogação (§5), mas só o caminho do `201` emite:
+  runner revogado ou que perdeu o token volta pareando um `id` novo. Uma rota de
+  rotação é aditiva, e cabe à ficha que sentir a dor na prática.
+- **Escopo por projeto ou por nó do grafo.** O escopo da credencial de runner
+  para em "esta família de rotas, como este runner". Um runner pareado continua
+  podendo disputar trabalho de qualquer `projeto_id` que ele declare.
+- **Limite de tentativas** (rate limiting, bloqueio depois de N credenciais
+  inválidas ou fora de escopo). Nada nesta camada conta tentativas.

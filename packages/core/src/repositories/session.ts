@@ -241,6 +241,63 @@ export function finishSession(
   return close();
 }
 
+/** Body of `POST /v1/sessions/:id/permission-denials`. */
+export interface PermissionDenialInput {
+  recurso?: unknown;
+  ferramenta?: unknown;
+  motivo?: unknown;
+  ator?: unknown;
+}
+
+/**
+ * Records an attempt at a tool the session's permission policy denied
+ * (t125, FR9).
+ *
+ * **Event only: the `sessao` row does not move.** A denial is an incident, not
+ * an outcome — the session goes on, and may be denied again. Writing a status
+ * here would turn "it tried a closed door" into "it ended", which is a
+ * different fact about a session that is still running.
+ *
+ * @param db Open handle.
+ * @param id Session id.
+ * @param input Request body.
+ * @returns The session, unchanged, or `null` if it does not exist.
+ * @throws {ValidationError} When the resource is outside the enum or a field is missing.
+ */
+export function recordPermissionDenial(
+  db: Database,
+  id: number,
+  input: PermissionDenialInput,
+): Session | null {
+  const row = readRow(db, id);
+  if (row === undefined) return null;
+
+  const data = requireValidData('sessao.permissao_negada', {
+    recurso: input.recurso,
+    ferramenta: input.ferramenta,
+    motivo: input.motivo,
+  });
+  const actor = resolveActor(input.ator, RUNNER_ACTOR);
+
+  const project = db
+    .prepare('SELECT projeto_id FROM trabalho WHERE id = ?')
+    .get(row.trabalho_id) as { projeto_id: number } | undefined;
+
+  // No transaction: there is a single append and nothing to keep atomic with
+  // it. `finishSession` needs one because it also moves the projection row.
+  recordEvent(db, {
+    tipo: 'sessao.permissao_negada',
+    projeto_id: project?.projeto_id ?? DEFAULT_PROJECT,
+    execucao_id: row.execucao_id,
+    entidade: { tipo: 'sessao', id },
+    ator: actor,
+    ocorrido_em: now(),
+    dados: data,
+  });
+
+  return toSession(row);
+}
+
 /**
  * The sessions of one execution, or of one job (FR12; t107 FR2).
  *

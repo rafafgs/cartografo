@@ -123,3 +123,114 @@ test('stdin of the engine process is closed by default', () => {
   assert.equal(ENGINE_STDIO[0], 'ignore');
   assert.deepEqual([...ENGINE_STDIO], ['ignore', 'pipe', 'pipe']);
 });
+
+/* --- permission enforcement (t125, FR4/FR5) -------------------------------- */
+
+/** The network entries the closed-network policy resolves to. */
+const NETWORK_DENIED = [
+  'WebFetch',
+  'WebSearch',
+  'Bash(curl *)',
+  'Bash(wget *)',
+  'Bash(nc *)',
+  'Bash(netcat *)',
+  'Bash(ssh *)',
+  'Bash(scp *)',
+  'Bash(telnet *)',
+];
+
+/** ...and the writing ones. */
+const WRITE_DENIED = ['Edit', 'Write', 'NotebookEdit'];
+
+/** The values between `--disallowedTools` and the next flag. */
+function disallowedTools(args: string[]): string[] {
+  const position = args.indexOf('--disallowedTools');
+  if (position === -1) return [];
+  const rest = args.slice(position + 1);
+  const end = rest.findIndex((argument) => argument.startsWith('--'));
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+test('a session with no permissions produces exactly the argv of today', () => {
+  // The regression that matters most in this ticket: enforcement is opt-in per
+  // session, and a caller that says nothing has to keep getting the command it
+  // was getting before the field existed.
+  const { args } = buildCommand(spec(), {});
+
+  assert.deepEqual(args, [
+    '--print',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--permission-mode',
+    'bypassPermissions',
+    '--system-prompt',
+    INSTRUCTIONS,
+    PROMPT,
+  ]);
+});
+
+test('a closed network becomes --disallowedTools with the network entries', () => {
+  const { args } = buildCommand(
+    spec({ permissions: { filesystem: { write: ['**'] }, network: { allowed: false } } }),
+    {},
+  );
+
+  const denied = disallowedTools(args);
+  for (const tool of NETWORK_DENIED) {
+    assert.ok(denied.includes(tool), `--disallowedTools does not carry ${JSON.stringify(tool)}`);
+  }
+  for (const tool of WRITE_DENIED) {
+    assert.ok(!denied.includes(tool), `the whole workspace is writable: ${tool} must not be denied`);
+  }
+});
+
+test('an empty write scope becomes --disallowedTools with the writing entries', () => {
+  const { args } = buildCommand(
+    spec({ permissions: { filesystem: { write: [] }, network: { allowed: true } } }),
+    {},
+  );
+
+  const denied = disallowedTools(args);
+  for (const tool of WRITE_DENIED) {
+    assert.ok(denied.includes(tool), `--disallowedTools does not carry ${JSON.stringify(tool)}`);
+  }
+  assert.ok(!denied.includes('WebFetch'), 'the network was allowed: WebFetch must not be denied');
+});
+
+test('each denied entry is one argv element, whole', () => {
+  // `--disallowedTools <tools...>` is variadic, and the help itself uses
+  // `"Bash(git *) Edit"` — an entry that carries a space. One element per entry
+  // is what keeps `Bash(curl *)` from arriving split in half.
+  const { args } = buildCommand(
+    spec({ permissions: { filesystem: { write: [] }, network: { allowed: false } } }),
+    {},
+  );
+
+  assert.ok(args.includes('Bash(curl *)'), 'the pattern did not survive as a single argument');
+  assert.equal(args.indexOf('--disallowedTools') + 1, args.indexOf('Edit'));
+  assert.ok(
+    args.indexOf('--system-prompt') > args.indexOf('--disallowedTools'),
+    'the denied list has to end before the system prompt, or the variadic swallows it',
+  );
+  assert.equal(args.at(-1), PROMPT, 'the prompt stays the last element of the argv');
+});
+
+test('no command ever carries --add-dir', () => {
+  // Invariant 7: the session sees `workingDir` and nothing else. An extra
+  // directory here would hand back, in one flag, the write scope the policy
+  // above just closed.
+  const specs = [
+    spec(),
+    spec({ permissions: { filesystem: { write: [] }, network: { allowed: false } } }),
+    spec({ permissions: { filesystem: { write: ['**'] }, network: { allowed: true } } }),
+  ];
+
+  for (const candidate of specs) {
+    const { args } = buildCommand(candidate, {});
+    assert.ok(
+      !args.some((argument) => argument === '--add-dir' || argument.startsWith('--add-dir=')),
+      `the command carries --add-dir: ${JSON.stringify(args)}`,
+    );
+  }
+});

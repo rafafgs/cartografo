@@ -77,8 +77,49 @@ Uma etapa do grafo. Tudo que executa no sistema é skill com contrato; o que mud
 | `papel` | sim | Quem faz o trabalho, na linguagem do domínio: `arquiteto`, `desenvolvedor`, `red-team`. |
 | `tipo_no` | sim | `trabalho` ou `portao`. |
 | `descricao` | não | O que o nó faz, em uma frase. |
+| `engine` | não | Qual engine executa este nó. Ausente = o engine default do runner. Ver abaixo. |
 | `skill_ref` | sim | Ponteiro para a skill do registro, pinado. |
 | `contrato` | sim | Entrada, saída e verificações. |
+
+### `engine`: qual engine executa este nó
+
+Um grafo pode misturar engines, e a escolha é **por nó** (t141). Um nó que
+declara `"engine": "codex"` roda no Codex; o nó seguinte, que não declara nada,
+roda no default.
+
+```json
+{
+  "id": "conferir",
+  "papel": "revisor",
+  "tipo_no": "trabalho",
+  "engine": "codex",
+  "skill_ref": { "id": "cartografo/revisar-nota", "versao": "1.0.0", "hash": "sha256:2df09e…" },
+  "contrato": { "entrada_schema": {}, "saida_schema": {}, "verificacoes": [] }
+}
+```
+
+Três coisas que o campo decide, e que valem mais escritas do que inferidas:
+
+- **Ausência tem nome.** Um nó sem `engine` roda no engine default do runner,
+  que é `claude-code` — a constante `DEFAULT_ENGINE` de
+  `packages/runner/src/dispatch/dispatch-claude-code.ts`. É default nomeado e
+  não implícito: a telemetria da sessão registra o engine que rodou, e ninguém
+  precisa adivinhar qual foi. Por isso todo grafo escrito antes deste campo
+  continua válido e continua se comportando exatamente como antes.
+- **A resolução é no despacho, nunca na validação.** Quem lê `engine` é o
+  runner, na hora de despachar, olhando o nó em que o trabalho está *agora*
+  (`no_atual` contra `snapshot.nos`). O validador de grafo não sabe quais
+  engines existem naquela máquina, e não é trabalho dele saber.
+- **É texto livre, e a recusa é do runner.** Não há enum fechado no schema, pela
+  mesma razão que `papel` e `skill_ref.id` também são texto livre: um enum
+  obrigaria a editar o schema a cada adapter novo, e o formato é aditivo. Um nó
+  que pede um engine para o qual o runner não tem rota **falha o despacho** com
+  `UnknownEngineError`, antes de qualquer sessão abrir — nunca cai
+  silenciosamente em outro engine, o que faria a telemetria mentir sobre o que
+  de fato rodou.
+
+Exemplo completo:
+[`grafo-valido-dois-engines.json`](../../schema/exemplos/grafo-valido-dois-engines.json).
 
 ### `tipo_no`: por que portão é nó
 
@@ -312,6 +353,7 @@ Todos em [`schema/exemplos/`](../../schema/exemplos/), todos exercitados por
 |---|---|
 | [`grafo-valido-minimo.json`](../../schema/exemplos/grafo-valido-minimo.json) | O menor documento sound: um nó de trabalho, um portão terminal, uma aresta `"sempre"`. Esqueleto para o primeiro grafo. |
 | [`grafo-valido-flowpilot.json`](../../schema/exemplos/grafo-valido-flowpilot.json) | **Exemplo-mestre.** Ver abaixo. |
+| [`grafo-valido-dois-engines.json`](../../schema/exemplos/grafo-valido-dois-engines.json) | Dois nós de trabalho numa aresta, um sem `engine` e outro com `"engine": "codex"`: o menor documento que distingue um default de uma rota (§2). |
 | `grafo-invalido-*.json` | Um contraexemplo por regra de soundness (§6). |
 
 ### O exemplo-mestre: o fluxo do flowpilot

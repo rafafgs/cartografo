@@ -35,7 +35,7 @@ const ROUTER_PATH = path.join(PACKAGE_ROOT, 'src', 'router.ts');
 const SURFACE_HEADING = '## 1.';
 const API_GAPS_HEADING = '## 4.';
 
-/** `| \`GET /quadro\` | … |` — the method and path of one table row. */
+/** Method and path in the first cell of a route-table row, as in `GET /quadro`. */
 const TABLE_ROW = /^\|\s*`(GET|POST|PUT|PATCH|DELETE)\s+([^`]+)`\s*\|/;
 
 /** The numerals this spec spells out, and what each one is worth. */

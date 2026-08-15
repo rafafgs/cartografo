@@ -59,7 +59,7 @@ entre elas, nesta ordem:
 |---|---|
 | `/v1/*` | Proxy **verbatim** para o control plane, para o inbox poder falar same-origin (§1 de [`tela-inbox-propostas.md`](tela-inbox-propostas.md)). |
 | Arquivo de `src/public/` — `/`, `/inbox.js`, `/style.css`, … | O inbox de propostas: página estática e módulos ES nativos. |
-| Qualquer outro | As seis rotas desta especificação, renderizadas no servidor. |
+| Qualquer outro | As sete rotas desta especificação, renderizadas no servidor. |
 
 A ordem é o contrato. O estático vem antes do render porque `resolveStaticFile`
 só devolve caminho para extensão conhecida, e é justamente o `null` dele que

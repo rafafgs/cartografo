@@ -21,7 +21,7 @@
 import type { Server } from 'node:http';
 
 import { parsePortFromEnv, resolveControlPlaneToken, resolveControlPlaneUrl } from './proxy.ts';
-import { createScreenRouter, READY_EVENT } from './router.ts';
+import { createScreenRouter, installCrashGuard, READY_EVENT } from './router.ts';
 
 export { INDEX_FILE, PUBLIC_DIR, resolveStaticFile } from './static.ts';
 
@@ -123,8 +123,16 @@ export async function startScreen(env: NodeJS.ProcessEnv = process.env): Promise
  *
  * Prints one JSON readiness line, in the same spirit as `cartografo.ready`:
  * where the screen is, and which control plane it is showing.
+ *
+ * The crash guard goes up BEFORE the port does, and here rather than inside
+ * `createScreenServer`, for the reason `installCrashGuard` documents: this is
+ * an entry point, and only an entry point may install a process-wide listener
+ * (t151). `startScreen` is imported by tests, and a listener leaking out of it
+ * would follow the runner from one file into the next.
  */
 export async function main(): Promise<void> {
+  installCrashGuard();
+
   const screen = await startScreen();
 
   process.stdout.write(

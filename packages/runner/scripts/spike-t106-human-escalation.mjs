@@ -39,7 +39,12 @@ import { fileURLToPath } from 'node:url';
 
 import { ClienteControle } from '../src/controller/cliente-controle.ts';
 import { Controller } from '../src/controller/controller.ts';
-import { createClaudeCodeDispatch, DEFAULT_INSTRUCTIONS } from '../src/dispatch/dispatch-claude-code.ts';
+import {
+  createClaudeCodeDispatch,
+  DEFAULT_ENGINE,
+  DEFAULT_INSTRUCTIONS,
+} from '../src/dispatch/dispatch-claude-code.ts';
+import { decodeClaudeCodeSessionText } from '../src/dispatch/session-text.ts';
 import { ClaudeCodeAdapter } from '../src/engine/claude-code-adapter.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -190,7 +195,7 @@ async function main() {
 
     const dispatch = createClaudeCodeDispatch({
       urlBase: plane.url,
-      adapter,
+      engines: { [DEFAULT_ENGINE]: { adapter, decodeSessionText: decodeClaudeCodeSessionText } },
       workingDir: repo,
       timeoutSeconds: TIMEOUT_SECONDS,
       instructions: INSTRUCTIONS,

@@ -16,10 +16,11 @@ import { integerFromQuery } from '../repositories/common.ts';
 import {
   openSession,
   finishSession,
+  getSession,
   listSessions,
   recordPermissionDenial,
 } from '../repositories/session.ts';
-import { withValidation, routeId, notFound } from './common.ts';
+import { withValidation, routeId, notFound, conflict } from './common.ts';
 
 /**
  * Registers the session routes in the `/v1` scope.
@@ -37,13 +38,20 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
     }),
   );
 
+  // A session ends ONCE (t149). The retry of a `/finish` that already went
+  // through would rewrite the terminal status and erase the `uso` reported the
+  // first time — the only cost record the PoC keeps — so a session that is no
+  // longer open is a 409, decided here, before the repository is called.
   app.patch('/sessions/:id/finish', async (request, reply) =>
     withValidation(reply, () => {
-      const session = finishSession(
-        db,
-        routeId(request.params),
-        (request.body ?? {}) as Record<string, unknown>,
-      );
+      const id = routeId(request.params);
+      const current = getSession(db, id);
+      if (current === null) return notFound(reply, 'session');
+      if (current.status !== 'aberta') {
+        return conflict(reply, `session ${id} is already "${current.status}"`);
+      }
+
+      const session = finishSession(db, id, (request.body ?? {}) as Record<string, unknown>);
       return session ?? notFound(reply, 'session');
     }),
   );

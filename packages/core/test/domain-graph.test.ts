@@ -8,9 +8,12 @@
  * between the two, fixture by fixture, instead of trusting the copy stays
  * faithful.
  *
- * That parity is also why the report keys, codes and messages stay in
+ * That parity is also why the report keys, codes and rule labels stay in
  * Portuguese: the reference validator is outside the D18 rename scope (t127,
- * FR8), and this test compares the two reports with `deepEqual`.
+ * FR8), and this test compares the two reports with `deepEqual`. The DOCUMENT's
+ * own keys are English since t178 — the 2026-08-15 D18 amendment lifted that
+ * carve-out — which is why the fixtures below are read with `nodes`/`edges` and
+ * the report is still read with `erros`/`violacoes`.
  *
  * Repo convention (the same as `migrate.test.ts`): the module under test is
  * imported on demand, after an explicit `existsSync`, so that the initial red
@@ -75,24 +78,26 @@ function minimalGraph(): Record<string, unknown> {
 
 /** Node list of a parsed fixture, typed loosely because the cases put junk in it. */
 function nodesOf(doc: Record<string, unknown>): Array<Record<string, unknown>> {
-  return doc.nos as Array<Record<string, unknown>>;
+  return doc.nodes as Array<Record<string, unknown>>;
 }
 
 /** Edge list of a parsed fixture, same reason. */
 function edgesOf(doc: Record<string, unknown>): Array<Record<string, unknown>> {
-  return doc.arestas as Array<Record<string, unknown>>;
+  return doc.edges as Array<Record<string, unknown>>;
 }
 
 /**
  * An id that is PRESENT but is not a filled string, at each of the four places
- * the document names a node: the node itself, an edge endpoint, `no_inicial`
- * and an entry of `nos_finais` (t153).
+ * the document names a node: the node itself, an edge endpoint, `initial_node`
+ * and an entry of `final_nodes` (t153).
  *
  * `targets` are the `alvo`s of the expected `id_invalido` errors, in order:
- * the node's index, `{de, para}` for an edge, the field name for `no_inicial`,
- * the entry's index for `nos_finais`. `quoted` is the offending value as the
- * message has to show it, and `absent` is the code that must NOT fire in its
- * place.
+ * the node's index, `{de, para}` for an edge, the field name for `initial_node`,
+ * the entry's index for `final_nodes`. The `alvo` of an edge keeps the report's
+ * own `de`/`para` spelling even now that the document says `from`/`to`: the
+ * report is the frozen 422 wire format, and only the document moved (t178).
+ * `quoted` is the offending value as the message has to show it, and `absent` is
+ * the code that must NOT fire in its place.
  */
 const INVALID_ID_CASES: Array<{
   name: string;
@@ -134,47 +139,47 @@ const INVALID_ID_CASES: Array<{
     quoted: '"   "',
   },
   {
-    name: 'no_inicial = 1 (numeric), every node id still a valid string',
+    name: 'initial_node = 1 (numeric), every node id still a valid string',
     mutate: (doc) => {
-      doc.no_inicial = 1;
+      doc.initial_node = 1;
     },
-    targets: ['no_inicial'],
+    targets: ['initial_node'],
     quoted: '1',
     // An invalid id is not an id pointing at a missing node: only ONE of the
     // two fires.
     absent: 'no_inicial_inexistente',
   },
   {
-    name: 'nos_finais = [null] (null inside the array)',
+    name: 'final_nodes = [null] (null inside the array)',
     mutate: (doc) => {
-      doc.nos_finais = [null];
+      doc.final_nodes = [null];
     },
     targets: [0],
     quoted: 'null',
     absent: 'no_final_inexistente',
   },
   {
-    name: 'nos_finais = [1] (numeric inside the array)',
+    name: 'final_nodes = [1] (numeric inside the array)',
     mutate: (doc) => {
-      doc.nos_finais = [1];
+      doc.final_nodes = [1];
     },
     targets: [0],
     quoted: '1',
     absent: 'no_final_inexistente',
   },
   {
-    name: 'edge "de" = true (boolean)',
+    name: 'edge "from" = true (boolean)',
     mutate: (doc) => {
-      edgesOf(doc)[0].de = true;
+      edgesOf(doc)[0].from = true;
     },
     targets: [{ de: true, para: 'revisar' }],
     quoted: 'true',
     absent: 'aresta_no_inexistente',
   },
   {
-    name: 'edge "para" = 1 (numeric)',
+    name: 'edge "to" = 1 (numeric)',
     mutate: (doc) => {
-      edgesOf(doc)[0].para = 1;
+      edgesOf(doc)[0].to = 1;
     },
     targets: [{ de: 'redigir', para: 1 }],
     quoted: '1',
@@ -282,7 +287,7 @@ test('t153 — a node whose id is invalid never enters the known ids', async () 
   // And it is not registered either: every reference to "redigir" now dangles,
   // which is exactly what used to be swallowed in silence.
   assert.ok(codes.includes('aresta_no_inexistente'), 'the edge referencing it has to dangle');
-  assert.ok(codes.includes('no_inicial_inexistente'), 'no_inicial referencing it has to dangle');
+  assert.ok(codes.includes('no_inicial_inexistente'), 'initial_node referencing it has to dangle');
 });
 
 test('AT2 — the two valid graphs keep passing both validations', async () => {
@@ -307,15 +312,15 @@ test('t180 — a structure message is English, and the frozen vocabulary around 
   const reference = await loadReference();
 
   const document = minimalGraph();
-  document.nos = 'nem lista nem nada';
+  document.nodes = 'nem lista nem nada';
   const report = ported.validateStructure(document);
 
   assert.deepEqual(report, reference.validarEstrutura(document), 'the two validators still agree');
 
-  const listProblem = report.erros.find((item) => item.alvo === 'nos');
-  assert.ok(listProblem !== undefined, 'a "nos" that is not a list has to be reported');
+  const listProblem = report.erros.find((item) => item.alvo === 'nodes');
+  assert.ok(listProblem !== undefined, 'a "nodes" that is not a list has to be reported');
   assert.equal(listProblem.codigo, 'campo_invalido', 'the machine-readable code is frozen (FR2)');
-  assert.equal(listProblem.mensagem, '"nos" has to be a list');
+  assert.equal(listProblem.mensagem, '"nodes" has to be a list');
 
   // The rule labels are data two validators compare on, not prose (FR2).
   assert.equal(ported.RULES.REACHABLE, 'alcançável');

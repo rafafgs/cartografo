@@ -7,16 +7,18 @@
  * Zero dependencies: only `node:test`, `node:assert`, `node:fs` and `node:path`
  * (FR9).
  *
- * The Portuguese names below are data, not code: the schema's top-level keys,
- * the fixture file names, the validator's pinned exports and its report
- * vocabulary are all frozen by D18's own carve-out and by
- * `packages/core/test/domain-graph.test.ts` (t133, exception 5).
+ * The schema's own keys are English since t178: the 2026-08-15 D18 amendment
+ * lifted the carve-out that used to keep the two data formats in Portuguese.
+ * What stays Portuguese here is what that amendment did NOT reopen — the
+ * fixture file names, the reference validator's pinned exports and its report
+ * vocabulary, frozen by `packages/core/test/domain-graph.test.ts`
+ * (t133, exception 5) and by their own separate decision.
  *
  * Run with: `node --test tests/`
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -26,13 +28,13 @@ const VALIDATOR_PATH = path.join(ROOT, 'scripts', 'validar-grafo.mjs');
 const EXAMPLES_DIR = path.join(ROOT, 'schema', 'exemplos');
 
 const TOP_LEVEL_KEYS = [
-  'classe',
-  'linhagem',
+  'problem_class',
+  'lineage',
   'metadata',
-  'nos',
-  'arestas',
-  'no_inicial',
-  'nos_finais',
+  'nodes',
+  'edges',
+  'initial_node',
+  'final_nodes',
 ];
 
 /** Reads a JSON file from the repo, failing with its relative path if missing. */
@@ -77,6 +79,26 @@ test('AT1 — the schema is valid JSON, declares draft 2020-12, $id and the seve
     assert.ok(Object.hasOwn(schema.properties, key), `properties has to declare "${key}"`);
     assert.ok(schema.required.includes(key), `required has to list "${key}"`);
   }
+  // Exactly these, in this order (t178): a leftover Portuguese key would still
+  // satisfy the loop above, and it is precisely what the rename cannot leave.
+  assert.deepEqual([...schema.required].sort(), [...TOP_LEVEL_KEYS].sort());
+  assert.deepEqual(Object.keys(schema.properties).sort(), [...TOP_LEVEL_KEYS].sort());
+});
+
+test('AT1 — every fixture in schema/exemplos validates against the schema', async () => {
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+  const schema = readJson(SCHEMA_PATH);
+  const names = readdirSync(EXAMPLES_DIR).filter((name) => name.endsWith('.json')).sort();
+
+  assert.equal(names.length, 7, `expected the seven t96 fixtures, found ${names.length}`);
+  for (const name of names) {
+    // The four counterexamples are SEMANTICALLY broken (an unreachable node, an
+    // edge with no condition); their SHAPE has to stay valid, or they would be
+    // proving the wrong rule.
+    assert.deepEqual(validateAgainstSchema(readExample(name), schema), [], `${name}: shape`);
+  }
 });
 
 test('AT2 — the minimal example passes validarEstrutura and validarSoundness', async () => {
@@ -103,7 +125,7 @@ test('AT2 — the minimal example passes validarEstrutura and validarSoundness',
  * scheduling plumbing and never become a node. Collapsed, FIVE activity →
  * activity pairs remain. The ticket says "6 edges" in its acceptance criteria;
  * the sixth would be `deploying -> done`, but `done` is not an activity state
- * and FR7 pins `nos_finais: ["implantar"]` — so there is no destination node
+ * and FR7 pins `final_nodes: ["implantar"]` — so there is no destination node
  * for it.
  */
 const FLOWPILOT_NODE_BY_STATE = {
@@ -138,24 +160,24 @@ test('AT3 — the flowpilot graph is sound and maps 1:1 onto the activity states
   assert.deepEqual(validarSoundness(doc).violacoes, []);
 
   const expectedIds = Object.values(FLOWPILOT_NODE_BY_STATE).sort();
-  assert.deepEqual(doc.nos.map((node) => node.id).sort(), expectedIds);
+  assert.deepEqual(doc.nodes.map((node) => node.id).sort(), expectedIds);
 
-  for (const node of doc.nos) {
-    assert.equal(node.papel, FLOWPILOT_ROLE_BY_NODE[node.id], `expected role for node "${node.id}"`);
+  for (const node of doc.nodes) {
+    assert.equal(node.role, FLOWPILOT_ROLE_BY_NODE[node.id], `expected role for node "${node.id}"`);
   }
 
   const expectedEdges = FLOWPILOT_ACTIVITY_TRANSITIONS.map(
     ([from, to]) => `${FLOWPILOT_NODE_BY_STATE[from]}>${FLOWPILOT_NODE_BY_STATE[to]}`,
   ).sort();
-  const docEdges = doc.arestas.map((edge) => `${edge.de}>${edge.para}`).sort();
+  const docEdges = doc.edges.map((edge) => `${edge.from}>${edge.to}`).sort();
   assert.deepEqual(docEdges, expectedEdges);
 
   assert.ok(
     docEdges.includes('testar>desenvolver'),
     'the rework cycle testar → desenvolver has to exist',
   );
-  assert.equal(doc.no_inicial, 'refinar');
-  assert.deepEqual(doc.nos_finais, ['implantar']);
+  assert.equal(doc.initial_node, 'refinar');
+  assert.deepEqual(doc.final_nodes, ['implantar']);
 });
 
 test('AT4 — an unreachable node produces exactly one "alcançável" violation', async () => {
@@ -167,11 +189,11 @@ test('AT4 — an unreachable node produces exactly one "alcançável" violation'
   assert.equal(violations.length, 1);
   assert.equal(violations[0].regra, 'alcançável');
   assert.ok(
-    doc.nos.some((node) => node.id === violations[0].alvo),
+    doc.nodes.some((node) => node.id === violations[0].alvo),
     'the target has to be the id of a node in the document',
   );
   assert.ok(
-    !doc.arestas.some((edge) => edge.para === violations[0].alvo),
+    !doc.edges.some((edge) => edge.to === violations[0].alvo),
     'the target has to be the orphan node (with no incoming edge)',
   );
 });
@@ -187,15 +209,15 @@ test('AT5 — a node stuck in a cycle with no way out produces a "termina" viola
 
   const stuck = violations[0].alvo;
   assert.ok(
-    doc.nos.some((node) => node.id === stuck),
+    doc.nodes.some((node) => node.id === stuck),
     'the target has to be the id of a node in the document',
   );
   assert.ok(
-    !doc.nos_finais.includes(stuck),
+    !doc.final_nodes.includes(stuck),
     'a final node can never be the target of the "termina" rule',
   );
   assert.ok(
-    doc.arestas.some((edge) => edge.de === stuck && edge.para === stuck),
+    doc.edges.some((edge) => edge.from === stuck && edge.to === stuck),
     'the stuck node is the one in the cycle with no way out',
   );
 });
@@ -208,12 +230,12 @@ test('AT6 — an edge with no condition produces an "aresta_com_condicao" violat
   assert.equal(valid, false);
   assert.equal(violations.length, 1);
 
-  const withoutCondition = doc.arestas.find(
-    (edge) => typeof edge.condicao !== 'string' || edge.condicao.trim() === '',
+  const withoutCondition = doc.edges.find(
+    (edge) => typeof edge.condition !== 'string' || edge.condition.trim() === '',
   );
   assert.deepEqual(violations[0], {
     regra: 'aresta_com_condicao',
-    alvo: { de: withoutCondition.de, para: withoutCondition.para },
+    alvo: { de: withoutCondition.from, para: withoutCondition.to },
   });
 });
 
@@ -225,7 +247,7 @@ test('AT7 — a node with no contract produces a "no_com_contrato" violation', a
   assert.equal(valid, false);
   assert.equal(violations.length, 1);
 
-  const withoutContract = doc.nos.find((node) => node.contrato == null || node.skill_ref == null);
+  const withoutContract = doc.nodes.find((node) => node.contract == null || node.skill_ref == null);
   assert.deepEqual(violations[0], {
     regra: 'no_com_contrato',
     alvo: withoutContract.id,
@@ -237,19 +259,19 @@ test('AT8 — validarEstrutura rejects a duplicate id and an edge pointing at a 
   const base = readExample('grafo-valido-minimo.json');
 
   const withDuplicateId = structuredClone(base);
-  withDuplicateId.nos.push(structuredClone(withDuplicateId.nos[0]));
+  withDuplicateId.nodes.push(structuredClone(withDuplicateId.nodes[0]));
   const duplicate = validarEstrutura(withDuplicateId);
   assert.equal(duplicate.valido, false);
   const duplicateError = duplicate.erros.find((e) => e.codigo === 'id_no_duplicado');
   assert.ok(duplicateError, 'expected identifiable error: id_no_duplicado');
-  assert.equal(duplicateError.alvo, base.nos[0].id);
+  assert.equal(duplicateError.alvo, base.nodes[0].id);
   assert.ok(
-    duplicateError.mensagem.includes(base.nos[0].id),
+    duplicateError.mensagem.includes(base.nodes[0].id),
     'the message has to name the duplicated id',
   );
 
   const withDanglingEdge = structuredClone(base);
-  withDanglingEdge.arestas[0].para = 'no_que_nao_existe';
+  withDanglingEdge.edges[0].to = 'no_que_nao_existe';
   const dangling = validarEstrutura(withDanglingEdge);
   assert.equal(dangling.valido, false);
   const danglingError = dangling.erros.find((e) => e.codigo === 'aresta_no_inexistente');

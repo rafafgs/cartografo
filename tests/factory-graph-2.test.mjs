@@ -24,10 +24,11 @@
  * implementation it checks, a bug in the canonicalizer would go unnoticed on
  * both sides.
  *
- * The Portuguese names below are data: the bundle's directory, the schema keys
- * (`nos`, `arestas`, `skill_ref`, `instrucoes`, `permissoes`, …), the node ids
- * and the enum values are all frozen by D18's own carve-out, and so are the
- * reference validator's pinned exports (t133, exception 5).
+ * The schema keys are English since t178: the 2026-08-15 D18 amendment lifted
+ * the carve-out that used to keep the graph-document and skill-manifest keys in
+ * Portuguese. What is still Portuguese below is data the amendment did not
+ * reopen — the bundle's directory, the node ids, the domain roles and the edge
+ * labels — and the reference validator's pinned exports (t133, exception 5).
  *
  * Run with: `node --test tests/`
  */
@@ -68,55 +69,55 @@ const THESIS_FIXTURE_PATH = path.join(
   'tese-exemplo-bets-assimetricas.json',
 );
 
-/** D14's seven nodes: node -> { papel, tipo_no, skill }. */
+/** D14's seven nodes: node -> { role, node_type, skill }. */
 const NODES = {
-  triagem: { papel: 'triador', tipo_no: 'portao', skill: 'triar-tese' },
-  'coleta-fundamentos': { papel: 'pesquisador', tipo_no: 'trabalho', skill: 'coletar-fundamentos' },
-  'analise-assimetria': { papel: 'analista', tipo_no: 'trabalho', skill: 'analisar-assimetria' },
-  'red-team': { papel: 'red-team', tipo_no: 'portao', skill: 'derrubar-tese' },
+  triagem: { role: 'triador', node_type: 'gate', skill: 'triar-tese' },
+  'coleta-fundamentos': { role: 'pesquisador', node_type: 'work', skill: 'coletar-fundamentos' },
+  'analise-assimetria': { role: 'analista', node_type: 'work', skill: 'analisar-assimetria' },
+  'red-team': { role: 'red-team', node_type: 'gate', skill: 'derrubar-tese' },
   'dimensionamento-risco': {
-    papel: 'gestor-de-risco',
-    tipo_no: 'trabalho',
+    role: 'gestor-de-risco',
+    node_type: 'work',
     skill: 'dimensionar-risco',
   },
-  decisao: { papel: 'decisor', tipo_no: 'portao', skill: 'escalar-decisao' },
+  decisao: { role: 'decisor', node_type: 'gate', skill: 'escalar-decisao' },
   'registro-monitoramento': {
-    papel: 'registrador',
-    tipo_no: 'trabalho',
+    role: 'registrador',
+    node_type: 'work',
     skill: 'registrar-travessia',
   },
 };
 
-/** manifest file -> { id, papel } (the manifest's role, not the node's). */
+/** manifest file -> { id, role } (the manifest's role, not the node's). */
 const SKILLS = {
-  'triar-tese.json': { id: 'triar-tese', papel: 'portao' },
-  'coletar-fundamentos.json': { id: 'coletar-fundamentos', papel: 'fazer' },
-  'analisar-assimetria.json': { id: 'analisar-assimetria', papel: 'fazer' },
-  'derrubar-tese.json': { id: 'derrubar-tese', papel: 'portao' },
-  'dimensionar-risco.json': { id: 'dimensionar-risco', papel: 'fazer' },
-  'escalar-decisao.json': { id: 'escalar-decisao', papel: 'portao' },
-  'registrar-travessia.json': { id: 'registrar-travessia', papel: 'fazer' },
+  'triar-tese.json': { id: 'triar-tese', role: 'gate' },
+  'coletar-fundamentos.json': { id: 'coletar-fundamentos', role: 'work' },
+  'analisar-assimetria.json': { id: 'analisar-assimetria', role: 'work' },
+  'derrubar-tese.json': { id: 'derrubar-tese', role: 'gate' },
+  'dimensionar-risco.json': { id: 'dimensionar-risco', role: 'work' },
+  'escalar-decisao.json': { id: 'escalar-decisao', role: 'gate' },
+  'registrar-travessia.json': { id: 'registrar-travessia', role: 'work' },
 };
 
 const FILE_BY_SKILL = Object.fromEntries(
   Object.entries(SKILLS).map(([file, { id }]) => [id, file]),
 );
 
-/** The three gate skills, by the mandatory enum of `saida.resultado`. */
+/** The three gate skills, by the mandatory enum of `output.outcome`. */
 const GATES = ['triar-tese.json', 'derrubar-tese.json', 'escalar-decisao.json'];
-const GATE_RESULTS = ['passou', 'falhou', 'escalar_humano'];
+const GATE_RESULTS = ['pass', 'fail', 'escalate_human'];
 
 /** FR2's nine edges. Two leave `decisao` towards the same final node. */
 const EXPECTED_EDGES = [
-  { de: 'triagem', para: 'coleta-fundamentos', condicao: 'aprofundar' },
-  { de: 'triagem', para: 'registro-monitoramento', condicao: 'descartar' },
-  { de: 'coleta-fundamentos', para: 'analise-assimetria', condicao: 'sempre' },
-  { de: 'analise-assimetria', para: 'red-team', condicao: 'sempre' },
-  { de: 'red-team', para: 'dimensionamento-risco', condicao: 'sobrevive' },
-  { de: 'red-team', para: 'registro-monitoramento', condicao: 'morta' },
-  { de: 'dimensionamento-risco', para: 'decisao', condicao: 'sempre' },
-  { de: 'decisao', para: 'registro-monitoramento', condicao: 'aprovado' },
-  { de: 'decisao', para: 'registro-monitoramento', condicao: 'recusado' },
+  { from: 'triagem', to: 'coleta-fundamentos', condition: 'aprofundar' },
+  { from: 'triagem', to: 'registro-monitoramento', condition: 'descartar' },
+  { from: 'coleta-fundamentos', to: 'analise-assimetria', condition: 'sempre' },
+  { from: 'analise-assimetria', to: 'red-team', condition: 'sempre' },
+  { from: 'red-team', to: 'dimensionamento-risco', condition: 'sobrevive' },
+  { from: 'red-team', to: 'registro-monitoramento', condition: 'morta' },
+  { from: 'dimensionamento-risco', to: 'decisao', condition: 'sempre' },
+  { from: 'decisao', to: 'registro-monitoramento', condition: 'aprovado' },
+  { from: 'decisao', to: 'registro-monitoramento', condition: 'recusado' },
 ];
 
 /** The crossing order AT11 proves, from `triagem` to `decisao`. */
@@ -155,15 +156,15 @@ function canonicalize(value) {
 /**
  * Canonical hash of the manifest, by the procedure in
  * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
- * `{instrucoes, entrada, saida, checks, permissoes}`.
+ * `{instructions, input, output, checks, permissions}`.
  */
 function hashOfManifest(manifest) {
   const subset = {
-    instrucoes: manifest.instrucoes,
-    entrada: manifest.entrada,
-    saida: manifest.saida,
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
     checks: manifest.checks,
-    permissoes: manifest.permissoes,
+    permissions: manifest.permissions,
   };
   const digest = createHash('sha256')
     .update(JSON.stringify(canonicalize(subset)), 'utf8')
@@ -203,7 +204,7 @@ function runCli(directory) {
 }
 
 /** The graph document's node, by id. */
-const findNode = (doc, id) => doc.nos.find((node) => node.id === id);
+const findNode = (doc, id) => doc.nodes.find((node) => node.id === id);
 
 /** Lines of a text that contain every given fragment. */
 function linesWith(text, fragments) {
@@ -231,24 +232,24 @@ test("AT1 — grafo.json passes validarEstrutura, validarSoundness and t96's sch
 test('AT2 — the 7 nodes and 9 edges match the FR1-FR2 tables exactly', () => {
   const doc = readJson(GRAPH_PATH);
 
-  assert.deepEqual(doc.nos.map((node) => node.id).sort(), Object.keys(NODES).sort());
+  assert.deepEqual(doc.nodes.map((node) => node.id).sort(), Object.keys(NODES).sort());
   for (const [id, expected] of Object.entries(NODES)) {
     const node = findNode(doc, id);
-    assert.equal(node.papel, expected.papel, `expected role for node "${id}"`);
-    assert.equal(node.tipo_no, expected.tipo_no, `expected tipo_no for node "${id}"`);
+    assert.equal(node.role, expected.role, `expected role for node "${id}"`);
+    assert.equal(node.node_type, expected.node_type, `expected node_type for node "${id}"`);
     assert.equal(node.skill_ref.id, expected.skill, `expected skill_ref.id for node "${id}"`);
   }
 
   // The key includes the condition: two edges out of `decisao` go to the same
   // final node, and a from/to-only key would collapse both into one.
-  const key = (edge) => `${edge.de}>${edge.para}>${edge.condicao}`;
-  assert.equal(doc.arestas.length, EXPECTED_EDGES.length);
-  assert.deepEqual(doc.arestas.map(key).sort(), EXPECTED_EDGES.map(key).sort());
+  const key = (edge) => `${edge.from}>${edge.to}>${edge.condition}`;
+  assert.equal(doc.edges.length, EXPECTED_EDGES.length);
+  assert.deepEqual(doc.edges.map(key).sort(), EXPECTED_EDGES.map(key).sort());
 
-  assert.equal(doc.no_inicial, 'triagem');
-  assert.deepEqual(doc.nos_finais, ['registro-monitoramento']);
-  assert.equal(doc.classe, 'bets-assimetricas');
-  assert.equal(doc.linhagem.tipo, 'base');
+  assert.equal(doc.initial_node, 'triagem');
+  assert.deepEqual(doc.final_nodes, ['registro-monitoramento']);
+  assert.equal(doc.problem_class, 'bets-assimetricas');
+  assert.equal(doc.lineage.type, 'base');
 });
 
 test('AT3 — the seven manifests validate against manifesto-skill.schema.json', async () => {
@@ -283,7 +284,7 @@ test('AT4 — the seven manifests exist with the expected kebab-case id and role
   for (const [file, expected] of Object.entries(SKILLS)) {
     const manifest = readManifest(file);
     assert.equal(manifest.id, expected.id, `${file}: id`);
-    assert.equal(manifest.papel, expected.papel, `${file}: papel`);
+    assert.equal(manifest.role, expected.role, `${file}: role`);
     assert.ok(
       /^[a-z0-9]+(-[a-z0-9]+)*$/.test(manifest.id),
       `${file}: the id has to be pure kebab-case, with no namespace prefix`,
@@ -296,18 +297,18 @@ test('AT4 — the seven manifests exist with the expected kebab-case id and role
   }
 });
 
-test("AT5 — the three gates declare saida.resultado with the enum's three values", () => {
+test("AT5 — the three gates declare output.outcome with the enum's three values", () => {
   for (const file of GATES) {
     const manifest = readManifest(file);
-    assert.equal(manifest.papel, 'portao', `${file}: papel`);
+    assert.equal(manifest.role, 'gate', `${file}: role`);
     assert.deepEqual(
-      manifest.saida.properties.resultado.enum,
+      manifest.output.properties.outcome.enum,
       GATE_RESULTS,
-      `${file}: saida.resultado enum`,
+      `${file}: output.outcome enum`,
     );
     assert.ok(
-      manifest.saida.required.includes('resultado'),
-      `${file}: resultado has to be required in the gate's output`,
+      manifest.output.required.includes('outcome'),
+      `${file}: outcome has to be required in the gate's output`,
     );
   }
 });
@@ -321,11 +322,11 @@ test("AT6 — the recomputed hash of each manifest matches the node's skill_ref"
     }),
   );
 
-  assert.equal(doc.nos.length, 7);
-  for (const node of doc.nos) {
+  assert.equal(doc.nodes.length, 7);
+  for (const node of doc.nodes) {
     const manifest = byId.get(node.skill_ref.id);
     assert.ok(manifest, `no manifest with id "${node.skill_ref.id}" (node "${node.id}")`);
-    assert.equal(manifest.versao, node.skill_ref.versao, `node "${node.id}": pinned version`);
+    assert.equal(manifest.version, node.skill_ref.version, `node "${node.id}": pinned version`);
     assert.equal(
       hashOfManifest(manifest),
       node.skill_ref.hash,
@@ -347,16 +348,16 @@ test('AT7 — no deterministic check; every manifest has an agentic check with e
   for (const file of Object.keys(SKILLS)) {
     const manifest = readManifest(file);
     assert.deepEqual(
-      manifest.checks.filter((check) => check.tipo === 'deterministico'),
+      manifest.checks.filter((check) => check.type === 'deterministic'),
       [],
       `${file}: this problem class has no shop-floor command`,
     );
-    const agentic = manifest.checks.filter((check) => check.tipo === 'agentico');
+    const agentic = manifest.checks.filter((check) => check.type === 'agentic');
     assert.ok(agentic.length >= 1, `${file}: needs at least one agentic check`);
     for (const check of agentic) {
       assert.ok(
-        Array.isArray(check.evidencia_obrigatoria) && check.evidencia_obrigatoria.length > 0,
-        `${file}: check "${check.id}" needs a non-empty evidencia_obrigatoria`,
+        Array.isArray(check.required_evidence) && check.required_evidence.length > 0,
+        `${file}: check "${check.id}" needs a non-empty required_evidence`,
       );
     }
   }
@@ -364,9 +365,9 @@ test('AT7 — no deterministic check; every manifest has an agentic check with e
   // The graph document cannot reintroduce from behind the deterministic check
   // the manifests refuse.
   const doc = readJson(GRAPH_PATH);
-  for (const node of doc.nos) {
+  for (const node of doc.nodes) {
     assert.deepEqual(
-      node.contrato.verificacoes.filter((check) => check.tipo === 'deterministico'),
+      node.contract.checks.filter((check) => check.type === 'deterministic'),
       [],
       `node "${node.id}": the contract cannot declare a deterministic check`,
     );
@@ -375,16 +376,16 @@ test('AT7 — no deterministic check; every manifest has an agentic check with e
   // The structural limit that does exist is imposed by JSON Schema, not by a
   // manufactured check (FR8).
   const sizing = readManifest('dimensionar-risco.json');
-  const size = sizing.saida.properties.dimensionamento.properties.tamanho_posicao_pct;
+  const size = sizing.output.properties.dimensionamento.properties.tamanho_posicao_pct;
   assert.equal(typeof size.maximum, 'number', 'the position ceiling is a schema maximum');
   assert.ok(size.maximum > 0);
 });
 
-test('AT8 — derrubar-tese forbids "passou" with a high objection the thesis never answered', () => {
+test('AT8 — derrubar-tese forbids "pass" with a high objection the thesis never answered', () => {
   const manifest = readManifest('derrubar-tese.json');
 
-  const objections = manifest.saida.properties.objecoes;
-  assert.ok(manifest.saida.required.includes('objecoes'), 'objecoes is required in the output');
+  const objections = manifest.output.properties.objecoes;
+  assert.ok(manifest.output.required.includes('objecoes'), 'objecoes is required in the output');
   assert.deepEqual(
     objections.items.required.sort(),
     ['gravidade', 'objecao', 'resposta_da_tese'],
@@ -396,8 +397,8 @@ test('AT8 — derrubar-tese forbids "passou" with a high objection the thesis ne
     'resposta_da_tese is null when the thesis did not answer',
   );
 
-  const prohibition = linesWith(manifest.instrucoes, [
-    'passou',
+  const prohibition = linesWith(manifest.instructions, [
+    'pass',
     'sobrevive',
     'gravidade',
     'alta',
@@ -405,12 +406,12 @@ test('AT8 — derrubar-tese forbids "passou" with a high objection the thesis ne
   ]).filter((line) => /NUNCA|nunca|jamais/.test(line));
   assert.ok(
     prohibition.length >= 1,
-    'instrucoes has to explicitly forbid concluding "passou" (edge "sobrevive") while a high-severity objection has no resposta_da_tese',
+    'instructions has to explicitly forbid concluding "pass" (edge "sobrevive") while a high-severity objection has no resposta_da_tese',
   );
 
   const counterEvidence = manifest.checks
-    .filter((check) => check.tipo === 'agentico')
-    .flatMap((check) => check.evidencia_obrigatoria);
+    .filter((check) => check.type === 'agentic')
+    .flatMap((check) => check.required_evidence);
   assert.ok(
     counterEvidence.some((item) => /contra_evidencia|contra-evidencia/.test(item)),
     'the agentic check demands specific researched counter-evidence, not a reread of the analysis',
@@ -421,30 +422,31 @@ test('AT9 — escalar-decisao never produces a result without a recorded human a
   const manifest = readManifest('escalar-decisao.json');
 
   assert.ok(
-    manifest.entrada.required.includes('perguntas_respondidas'),
+    manifest.input.required.includes('perguntas_respondidas'),
     'the input has to require perguntas_respondidas',
   );
   assert.deepEqual(
-    manifest.entrada.properties.perguntas_respondidas.items.required.sort(),
+    manifest.input.properties.perguntas_respondidas.items.required.sort(),
     ['id', 'pergunta', 'resposta'],
     'every answered question carries id, pergunta and resposta',
   );
 
-  const prohibition = linesWith(manifest.instrucoes, ['perguntas_respondidas', 'resultado']).filter(
-    (line) => /NUNCA|nunca|jamais/.test(line),
-  );
+  const prohibition = linesWith(manifest.instructions, [
+    'perguntas_respondidas',
+    'outcome',
+  ]).filter((line) => /NUNCA|nunca|jamais/.test(line));
   assert.ok(
     prohibition.length >= 1,
-    'instrucoes has to forbid producing a result without an allocation answer in perguntas_respondidas',
+    'instructions has to forbid producing a result without an allocation answer in perguntas_respondidas',
   );
   assert.ok(
-    manifest.instrucoes.includes('```input-request'),
+    manifest.instructions.includes('```input-request'),
     'a session with no recorded answer ends its turn with an input-request block',
   );
 
   const evidence = manifest.checks
-    .filter((check) => check.tipo === 'agentico')
-    .flatMap((check) => check.evidencia_obrigatoria);
+    .filter((check) => check.type === 'agentic')
+    .flatMap((check) => check.required_evidence);
   assert.ok(
     evidence.some((item) => /id_da_pergunta/.test(item)),
     "the mandatory evidence has to cite the allocation question's id",
@@ -455,30 +457,30 @@ test('AT9 — escalar-decisao never produces a result without a recorded human a
   );
 });
 
-test('AT10 — every instrucoes carries the escalation block; only coletar-fundamentos opens the network', () => {
+test('AT10 — every instructions carries the escalation block; only coletar-fundamentos opens the network', () => {
   for (const file of Object.keys(SKILLS)) {
     const manifest = readManifest(file);
     assert.ok(
-      manifest.instrucoes.includes('```input-request'),
-      `${file}: instrucoes has to contain the \`\`\`input-request marker`,
+      manifest.instructions.includes('```input-request'),
+      `${file}: instructions has to contain the \`\`\`input-request marker`,
     );
     assert.deepEqual(
-      manifest.permissoes.filesystem.escrita,
+      manifest.permissions.filesystem.write,
       [],
       `${file}: no node of this graph writes to the investor's repository`,
     );
   }
 
   const research = readManifest('coletar-fundamentos.json');
-  assert.equal(research.permissoes.rede.permitido, true, 'coletar-fundamentos needs the network');
+  assert.equal(research.permissions.network.allowed, true, 'coletar-fundamentos needs the network');
   assert.equal(
-    research.permissoes.rede.dominios,
+    research.permissions.network.domains,
     undefined,
     'unrestricted network: a fixed allowlist does not cover fundamentals research (native skill)',
   );
 
   for (const file of Object.keys(SKILLS).filter((name) => name !== 'coletar-fundamentos.json')) {
-    assert.equal(readManifest(file).permissoes.rede.permitido, false, `${file}: network closed`);
+    assert.equal(readManifest(file).permissions.network.allowed, false, `${file}: network closed`);
   }
 });
 
@@ -501,24 +503,24 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
     const node = findNode(doc, step.no);
     const manifest = readManifestOfSkill(NODES[step.no].skill);
     assert.deepEqual(
-      validateAgainstSchema(step.entrada, node.contrato.entrada_schema),
+      validateAgainstSchema(step.entrada, node.contract.input_schema),
       [],
-      `node "${step.no}": input against the graph's entrada_schema`,
+      `node "${step.no}": input against the graph's input_schema`,
     );
     assert.deepEqual(
-      validateAgainstSchema(step.entrada, manifest.entrada),
+      validateAgainstSchema(step.entrada, manifest.input),
       [],
-      `node "${step.no}": input against the manifest's entrada`,
+      `node "${step.no}": input against the manifest's input`,
     );
     assert.deepEqual(
-      validateAgainstSchema(step.saida, node.contrato.saida_schema),
+      validateAgainstSchema(step.saida, node.contract.output_schema),
       [],
-      `node "${step.no}": output against the graph's saida_schema`,
+      `node "${step.no}": output against the graph's output_schema`,
     );
     assert.deepEqual(
-      validateAgainstSchema(step.saida, manifest.saida),
+      validateAgainstSchema(step.saida, manifest.output),
       [],
-      `node "${step.no}": output against the manifest's saida`,
+      `node "${step.no}": output against the manifest's output`,
     );
   }
 
@@ -527,7 +529,7 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
   for (let i = 0; i < steps.length - 1; i += 1) {
     const previous = steps[i];
     const next = steps[i + 1];
-    const declared = Object.keys(readManifestOfSkill(NODES[next.no].skill).entrada.properties);
+    const declared = Object.keys(readManifestOfSkill(NODES[next.no].skill).input.properties);
     const carried = Object.keys(previous.saida).filter((key) => declared.includes(key));
     assert.ok(
       carried.length >= 1,
@@ -544,9 +546,9 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
 
   // 3. Each gate's routing is a declared edge, never a free choice.
   const edgeFrom = (from, condition) =>
-    doc.arestas.find((edge) => edge.de === from && edge.condicao === condition);
+    doc.edges.find((edge) => edge.from === from && edge.condition === condition);
   const redTeam = steps.find((step) => step.no === 'red-team');
-  assert.equal(redTeam.saida.resultado, 'passou', 'in the fixture the thesis survives the red team');
+  assert.equal(redTeam.saida.outcome, 'pass', 'in the fixture the thesis survives the red team');
   assert.ok(edgeFrom('red-team', 'sobrevive'), 'passing the red team follows the "sobrevive" edge');
 
   // 4. No edge out of `decisao` is followed without a human answer.
@@ -561,11 +563,11 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
     'the no-human-answer variant reaches the node with an empty question queue',
   );
   assert.deepEqual(
-    validateAgainstSchema(withoutAnswer.entrada, decisionManifest.entrada),
+    validateAgainstSchema(withoutAnswer.entrada, decisionManifest.input),
     [],
     'entering `decisao` without a human answer is legal — the session pauses, it does not fail',
   );
-  const errors = validateAgainstSchema(withoutAnswer.saida_tentada, decisionManifest.saida);
+  const errors = validateAgainstSchema(withoutAnswer.saida_tentada, decisionManifest.output);
   assert.ok(
     errors.length > 0 && errors.some((error) => /decisao_humana/.test(error.message)),
     `a result without the recorded human decision has to be refused by the contract: ${JSON.stringify(errors)}`,
@@ -590,9 +592,9 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
 
 test('FR7 — registrar-travessia records process metrics, never a financial outcome', () => {
   const manifest = readManifest('registrar-travessia.json');
-  const metrics = manifest.saida.properties.metricas_processo;
+  const metrics = manifest.output.properties.metricas_processo;
 
-  assert.ok(manifest.saida.required.includes('metricas_processo'));
+  assert.ok(manifest.output.required.includes('metricas_processo'));
   for (const field of [
     'red_team_executado',
     'fracao_premissas_com_fonte',
@@ -612,7 +614,7 @@ test('FR7 — registrar-travessia records process metrics, never a financial out
   assert.deepEqual(metrics.properties.desfecho_final.enum, ['monitorando', 'arquivado']);
 
   // D14: "P&L is slow long-term validation, never a round's metric".
-  const serialized = JSON.stringify(manifest.saida);
+  const serialized = JSON.stringify(manifest.output);
   for (const forbidden of ['p_l', 'pnl', 'lucro', 'retorno_realizado', 'resultado_financeiro']) {
     assert.ok(
       !serialized.includes(`"${forbidden}"`),

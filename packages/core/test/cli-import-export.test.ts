@@ -53,7 +53,7 @@ const FACTORY_SKILL_IDS = [
 /** A registered skill, in the part these tests read. */
 interface RegisteredSkill {
   id: string;
-  origem: { tipo: string };
+  origin: { type: string };
 }
 
 /** Sorts keys recursively — same canonicalization the format's hash is defined over. */
@@ -71,11 +71,11 @@ function canonical(value: unknown): unknown {
 /** The pin, recomputed here on purpose (see `skill-routes.test.ts`). */
 function contentHash(manifest: Record<string, unknown>): string {
   const subset = {
-    instrucoes: manifest.instrucoes,
-    entrada: manifest.entrada,
-    saida: manifest.saida,
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
     checks: manifest.checks,
-    permissoes: manifest.permissoes,
+    permissions: manifest.permissions,
   };
   return `sha256:${createHash('sha256').update(JSON.stringify(canonical(subset)), 'utf8').digest('hex')}`;
 }
@@ -123,7 +123,7 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
       'importing the bundle registers every manifest in skills/',
     );
     for (const skill of skills) {
-      assert.equal(skill.origem.tipo, 'nativa', `${skill.id} is in-repo content, not an import`);
+      assert.equal(skill.origin.type, 'native', `${skill.id} is in-repo content, not an import`);
     }
   });
 
@@ -168,7 +168,7 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
 
     const text = readFileSync(exportedFile, 'utf8');
     assert.ok(text.endsWith('\n'), 'the exported file ends with a line break');
-    assert.match(text, /\n {2}"classe"/, 'the exported file is indented JSON');
+    assert.match(text, /\n {2}"problem_class"/, 'the exported file is indented JSON');
     assert.deepEqual(
       JSON.parse(text),
       JSON.parse(readFileSync(FACTORY_GRAPH, 'utf8')),
@@ -226,7 +226,7 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
   });
 
   // A bundle whose local check passes and whose REGISTRY check does not: the
-  // agentic check loses its `evidencia_obrigatoria`, and both pins — the
+  // agentic check loses its `required_evidence`, and both pins — the
   // manifest's own and the node's `skill_ref` — are regenerated over the
   // mutation, which is exactly what `verifyBundle` looks at. What is left for
   // the control plane to catch is the schema rule the CLI never checked.
@@ -236,16 +236,16 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
   const manifestPath = path.join(bundle, 'skills', 'refinar-ticket.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
   const checks = manifest.checks as Record<string, unknown>[];
-  const broken = checks.find((check) => check.tipo === 'agentico');
+  const broken = checks.find((check) => check.type === 'agentic');
   assert.ok(broken !== undefined, 'the fixture assumes refinar-ticket has an agentic check');
-  delete broken.evidencia_obrigatoria;
+  delete broken.required_evidence;
   manifest.hash = contentHash(manifest);
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   const graphPath = path.join(bundle, 'grafo.json');
   const document = JSON.parse(readFileSync(graphPath, 'utf8')) as Record<string, unknown>;
   let repinned = 0;
-  for (const node of document.nos as Record<string, unknown>[]) {
+  for (const node of document.nodes as Record<string, unknown>[]) {
     const ref = node.skill_ref as Record<string, unknown> | undefined;
     if (ref?.id !== 'refinar-ticket') continue;
     ref.hash = manifest.hash;
@@ -258,7 +258,7 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
 
   assert.notEqual(result.code, 0, 'a manifest the registry refuses cannot exit 0');
   assert.match(result.stderr, /refinar-ticket/, 'the output names the manifest that was refused');
-  assert.match(result.stderr, /evidencia_obrigatoria/, "the registry's own reason comes out");
+  assert.match(result.stderr, /required_evidence/, "the registry's own reason comes out");
   assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
 
   const classes = await fetch(`${controlPlane.url}/v1/classes`);

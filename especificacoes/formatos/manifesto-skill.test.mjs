@@ -18,8 +18,12 @@
  * conhecidos*). Nothing here depends on strict-mode diagnostics; what is being
  * checked is acceptance and refusal.
  *
- * English identifiers per D18; the manifest's own keys are data and stay in
- * Portuguese.
+ * English identifiers per D18 — and, since the 2026-08-15 amendment (t178), the
+ * manifest's own KEYS too: the carve-out that used to leave data-format keys in
+ * Portuguese is exactly what that amendment lifted. `additionalProperties:
+ * false` is what turns the rename into a one-way door, and the last test here is
+ * what proves it: a manifest carrying any single old key is refused like any
+ * other unknown key, with no dual-key window.
  */
 
 import assert from 'node:assert/strict';
@@ -43,11 +47,31 @@ const NEGATIVE = 'manifesto-skill.invalido.fixture.json';
 /**
  * The subset the pin covers, in the document's own order.
  *
- * `orcamentos` joined it in t163 for the reason `permissoes` is already there:
- * it is behaviour-affecting, and D4's whole point is that behaviour cannot move
+ * `budgets` joined it in t163 for the reason `permissions` is already there: it
+ * is behaviour-affecting, and D4's whole point is that behaviour cannot move
  * without the hash moving with it.
  */
-const PINNED_FIELDS = ['instrucoes', 'entrada', 'saida', 'checks', 'permissoes', 'orcamentos'];
+const PINNED_FIELDS = ['instructions', 'input', 'output', 'checks', 'permissions', 'budgets'];
+
+/**
+ * Every key the rename retired, with the new name it answers to (t178).
+ *
+ * The map is the test's, not the schema's: it is what lets the last test feed
+ * the schema a manifest that is correct in every way EXCEPT one key, one key at
+ * a time, and demand a refusal for each.
+ */
+const RETIRED_KEYS = Object.freeze({
+  versao: 'version',
+  papel: 'role',
+  descricao: 'description',
+  entrada: 'input',
+  saida: 'output',
+  pre_condicoes: 'preconditions',
+  permissoes: 'permissions',
+  orcamentos: 'budgets',
+  instrucoes: 'instructions',
+  origem: 'origin',
+});
 
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 
@@ -88,11 +112,11 @@ function compileSchema() {
   return ajv.compile(readJson(SCHEMA_PATH));
 }
 
-/** A valid manifest with `orcamentos` replaced by whatever the case is about. */
+/** A valid manifest with `budgets` replaced by whatever the case is about. */
 function withBudgets(budgets) {
   const manifest = example(EXAMPLES[1]);
-  if (budgets === undefined) delete manifest.orcamentos;
-  else manifest.orcamentos = budgets;
+  if (budgets === undefined) delete manifest.budgets;
+  else manifest.budgets = budgets;
   return manifest;
 }
 
@@ -114,10 +138,8 @@ test('the negative fixture is refused, and for its one deliberate violation', ()
   const validate = compileSchema();
   assert.equal(validate(example(NEGATIVE)), false, `${NEGATIVE} was accepted by the schema`);
   assert.ok(
-    validate.errors.some(
-      (error) => error.params?.missingProperty === 'evidencia_obrigatoria',
-    ),
-    'the refusal has to point at the missing evidencia_obrigatoria, not at some other field: ' +
+    validate.errors.some((error) => error.params?.missingProperty === 'required_evidence'),
+    'the refusal has to point at the missing required_evidence, not at some other field: ' +
       JSON.stringify(validate.errors),
   );
 });
@@ -146,39 +168,105 @@ test("the document's hash recipe names exactly the pinned subset", () => {
   );
 });
 
-test('orcamentos accepts a partial declaration', () => {
+test('budgets accepts a partial declaration', () => {
   const validate = compileSchema();
-  for (const budgets of [{ tempo_esgotado_s: 5400 }, { silencio_s: 900 }, {}]) {
+  for (const budgets of [{ timeout_s: 5400 }, { silence_s: 900 }, {}]) {
     assert.ok(
       validate(withBudgets(budgets)),
-      `orcamentos: ${JSON.stringify(budgets)} was refused: ${JSON.stringify(validate.errors)}`,
+      `budgets: ${JSON.stringify(budgets)} was refused: ${JSON.stringify(validate.errors)}`,
     );
   }
 });
 
-test('orcamentos refuses a non-positive budget', () => {
+test('budgets refuses a non-positive budget', () => {
   const validate = compileSchema();
-  for (const budgets of [{ tempo_esgotado_s: 0 }, { silencio_s: 0 }, { silencio_s: -1 }]) {
+  for (const budgets of [{ timeout_s: 0 }, { silence_s: 0 }, { silence_s: -1 }]) {
     assert.equal(
       validate(withBudgets(budgets)),
       false,
-      `orcamentos: ${JSON.stringify(budgets)} was accepted — a budget of zero is not a budget`,
+      `budgets: ${JSON.stringify(budgets)} was accepted — a budget of zero is not a budget`,
     );
   }
 });
 
-test('orcamentos refuses an unknown key', () => {
+test('budgets refuses an unknown key', () => {
   const validate = compileSchema();
   assert.equal(
-    validate(withBudgets({ silencio_s: 900, silencio_ms: 900_000 })),
+    validate(withBudgets({ silence_s: 900, silence_ms: 900_000 })),
     false,
     'an unknown budget key was accepted; a typo has to be refused, never ignored',
   );
 });
 
-test('a manifest that declares no orcamentos at all is still valid', () => {
+test('a manifest that declares no budgets at all is still valid', () => {
   const validate = compileSchema();
   const manifest = withBudgets(undefined);
-  assert.ok(!('orcamentos' in manifest), 'the fixture itself has to carry no orcamentos');
+  assert.ok(!('budgets' in manifest), 'the fixture itself has to carry no budgets');
   assert.ok(validate(manifest), `refused: ${JSON.stringify(validate.errors)}`);
+});
+
+test('t178 — the schema declares the English key vocabulary and nothing else', () => {
+  const schema = readJson(SCHEMA_PATH);
+
+  assert.deepEqual(schema.required, [
+    'id',
+    'version',
+    'hash',
+    'role',
+    'description',
+    'input',
+    'output',
+    'preconditions',
+    'checks',
+    'permissions',
+    'instructions',
+    'origin',
+  ]);
+  assert.deepEqual(schema.properties.role.enum, ['work', 'gate']);
+  assert.deepEqual(schema.$defs.check.required, ['id', 'type', 'description']);
+  assert.deepEqual(schema.$defs.check.properties.type.enum, ['deterministic', 'agentic']);
+  assert.deepEqual(schema.$defs.permissions.required, ['filesystem', 'network']);
+  assert.deepEqual(schema.$defs.permissions.properties.filesystem.required, ['read', 'write']);
+  assert.deepEqual(schema.$defs.origin.properties.type.enum, ['native', 'imported']);
+
+  for (const retired of Object.keys(RETIRED_KEYS)) {
+    assert.ok(
+      !Object.hasOwn(schema.properties, retired),
+      `the schema still declares the retired key "${retired}"`,
+    );
+  }
+});
+
+test('t178 — a manifest that still uses any single old key is refused', () => {
+  const validate = compileSchema();
+  const valid = example(EXAMPLES[1]);
+  assert.ok(validate(valid), `the baseline stopped validating: ${JSON.stringify(validate.errors)}`);
+
+  let checked = 0;
+  for (const [old, current] of Object.entries(RETIRED_KEYS)) {
+    const manifest = example(EXAMPLES[1]);
+    assert.ok(
+      Object.hasOwn(manifest, current),
+      `the example does not carry "${current}", so this case would prove nothing`,
+    );
+    manifest[old] = manifest[current];
+    delete manifest[current];
+    checked += 1;
+
+    assert.equal(
+      validate(manifest),
+      false,
+      `"${old}" was accepted in place of "${current}": additionalProperties has to close the door`,
+    );
+    assert.ok(
+      validate.errors.some(
+        (error) =>
+          error.params?.additionalProperty === old || error.params?.missingProperty === current,
+      ),
+      `the refusal of "${old}" has to name it, or name the "${current}" it left missing: ${JSON.stringify(
+        validate.errors,
+      )}`,
+    );
+  }
+  assert.equal(checked, Object.keys(RETIRED_KEYS).length, 'every retired key has to be exercised');
 });

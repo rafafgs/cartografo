@@ -1,0 +1,172 @@
+/**
+ * The rename map, pinned against the two schemas that define it (t178, AT8).
+ *
+ * `packages/core/src/domain/{manifest,graph}.ts` is a hand-written port of two
+ * JSON Schemas that live outside this package —
+ * `especificacoes/formatos/manifesto-skill.schema.json` and
+ * `schema/grafo.schema.json`. Nothing compiles the port against the schema, so
+ * until this file existed the only thing keeping the two in step was that
+ * whoever edited one remembered the other. That is exactly the failure mode a
+ * key rename produces: a field renamed in the schema and not in the port passes
+ * every other test in the suite, because the fixtures were renamed with the
+ * schema and the port simply stops finding a key it never asked about.
+ *
+ * So the claim here is deliberately narrow and total: the field NAMES the domain
+ * code knows are, exactly and in order, the field names the schemas declare
+ * `required`. Not a subset, not a superset.
+ *
+ * The hash subset (FR4) gets the same treatment, but behaviourally: the covered
+ * fields are not a constant anybody can read, they are whatever `manifestHash`
+ * actually serializes. Touching each one has to move the pin, and touching a
+ * catalogue field must not — which is the property D4 depends on and the one a
+ * rename can silently break by leaving an old key name in the subset literal,
+ * where it would serialize as `undefined` and simply vanish.
+ */
+
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+
+import {
+  REQUIRED_DOCUMENT_FIELDS,
+  REQUIRED_EDGE_FIELDS,
+  REQUIRED_NODE_FIELDS,
+} from '../src/domain/graph.ts';
+import { MANIFEST_FIELDS, MANIFEST_ROLES, manifestHash } from '../src/domain/manifest.ts';
+
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+
+const MANIFEST_SCHEMA_PATH = path.join(
+  REPO_ROOT,
+  'especificacoes',
+  'formatos',
+  'manifesto-skill.schema.json',
+);
+const GRAPH_SCHEMA_PATH = path.join(REPO_ROOT, 'schema', 'grafo.schema.json');
+
+interface JsonSchema {
+  required?: string[];
+  properties?: Record<string, JsonSchema>;
+  enum?: string[];
+  $defs?: Record<string, JsonSchema>;
+}
+
+function readSchema(filePath: string): JsonSchema {
+  return JSON.parse(readFileSync(filePath, 'utf8')) as JsonSchema;
+}
+
+/** A `$defs` entry, asserted present before anything reads into it. */
+function definition(schema: JsonSchema, name: string): JsonSchema {
+  const found = schema.$defs?.[name];
+  assert.ok(found !== undefined, `the schema no longer declares $defs.${name}`);
+  return found;
+}
+
+test('AT8 — MANIFEST_FIELDS is exactly the manifest schema\'s required list', () => {
+  const schema = readSchema(MANIFEST_SCHEMA_PATH);
+
+  assert.deepEqual(MANIFEST_FIELDS, schema.required);
+  for (const field of MANIFEST_FIELDS) {
+    assert.ok(
+      Object.hasOwn(schema.properties ?? {}, field),
+      `the schema declares "${field}" required but never declares the property`,
+    );
+  }
+});
+
+test('AT8 — MANIFEST_ROLES is exactly the schema\'s role enum', () => {
+  const schema = readSchema(MANIFEST_SCHEMA_PATH);
+
+  assert.deepEqual(MANIFEST_ROLES, schema.properties?.role?.enum);
+});
+
+test('AT8 — the document, node and edge field sets are exactly the graph schema\'s', () => {
+  const schema = readSchema(GRAPH_SCHEMA_PATH);
+
+  assert.deepEqual(REQUIRED_DOCUMENT_FIELDS, schema.required);
+  assert.deepEqual(
+    [...REQUIRED_DOCUMENT_FIELDS].sort(),
+    Object.keys(schema.properties ?? {}).sort(),
+    'the document has no optional top-level key: required and properties are the same set',
+  );
+
+  assert.deepEqual(REQUIRED_NODE_FIELDS, definition(schema, 'node').required);
+  assert.deepEqual(REQUIRED_EDGE_FIELDS, definition(schema, 'edge').required);
+
+  for (const [fields, name] of [
+    [REQUIRED_NODE_FIELDS, 'node'],
+    [REQUIRED_EDGE_FIELDS, 'edge'],
+  ] as const) {
+    const declared = Object.keys(definition(schema, name).properties ?? {});
+    for (const field of fields) {
+      assert.ok(declared.includes(field), `$defs.${name} requires "${field}" but never declares it`);
+    }
+  }
+});
+
+/** A manifest with every field the pin covers, plus the catalogue fields it does not. */
+function pinnableManifest(): Record<string, unknown> {
+  return {
+    id: 'exemplo',
+    version: '1.0.0',
+    hash: `sha256:${'0'.repeat(64)}`,
+    role: 'work',
+    description: 'Uma skill de exemplo.',
+    input: { type: 'object' },
+    output: { type: 'object' },
+    preconditions: [],
+    checks: [
+      { id: 'suite', type: 'deterministic', description: 'A suíte passa.', command: 'make test' },
+    ],
+    permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: false } },
+    budgets: { timeout_s: 1800 },
+    instructions: '# Exemplo',
+    origin: { type: 'native' },
+  };
+}
+
+test('AT8 — the hash covers the six content fields by their new names, and nothing else', () => {
+  const baseline = manifestHash(pinnableManifest());
+
+  // Covered: touching any one of the six has to move the pin. A field left in
+  // the subset under its OLD name would serialize to nothing and the mutation
+  // below would come back with the same hash.
+  const covered: Array<[string, unknown]> = [
+    ['instructions', '# Outro corpo'],
+    ['input', { type: 'string' }],
+    ['output', { type: 'string' }],
+    ['checks', []],
+    ['permissions', { filesystem: { read: [], write: [] }, network: { allowed: false } }],
+    ['budgets', { timeout_s: 60 }],
+  ];
+  for (const [field, value] of covered) {
+    const manifest = pinnableManifest();
+    manifest[field] = value;
+    assert.notEqual(
+      manifestHash(manifest),
+      baseline,
+      `"${field}" is inside the pinned subset: changing it has to change the hash (D4)`,
+    );
+  }
+
+  // Not covered: catalogue metadata. Renaming a skill or signing its import
+  // cannot invalidate the pin the reviewer just approved.
+  const catalogue: Array<[string, unknown]> = [
+    ['id', 'outro-id'],
+    ['version', '2.0.0'],
+    ['description', 'outra descrição'],
+    ['role', 'gate'],
+    ['origin', { type: 'imported', reviewed_by: 'rafael' }],
+  ];
+  for (const [field, value] of catalogue) {
+    const manifest = pinnableManifest();
+    manifest[field] = value;
+    assert.equal(
+      manifestHash(manifest),
+      baseline,
+      `"${field}" is catalogue metadata: changing it cannot move the pin`,
+    );
+  }
+});

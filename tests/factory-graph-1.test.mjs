@@ -12,10 +12,11 @@
  * implementation it checks, a bug in the canonicalizer would go unnoticed on
  * both sides.
  *
- * The Portuguese names below are data: the bundle's directory, the schema keys
- * (`nos`, `arestas`, `skill_ref`, `instrucoes`, `permissoes`, …), the node ids
- * and the enum values are all frozen by D18's own carve-out, and so are the
- * reference validator's pinned exports (t133, exception 5).
+ * The schema keys are English since t178: the 2026-08-15 D18 amendment lifted
+ * the carve-out that used to keep the graph-document and skill-manifest keys in
+ * Portuguese. What is still Portuguese below is data the amendment did not
+ * reopen — the bundle's directory, the node ids, the domain roles and the edge
+ * labels — and the reference validator's pinned exports (t133, exception 5).
  *
  * Run with: `node --test tests/`
  */
@@ -42,13 +43,13 @@ const MANIFEST_SCHEMA_PATH = path.join(
   'manifesto-skill.schema.json',
 );
 
-/** The bundle's five manifests: file -> { id, papel, node }. */
+/** The bundle's five manifests: file -> { id, role, node }. */
 const SKILLS = {
-  'refinar-ticket.json': { id: 'refinar-ticket', papel: 'fazer', node: 'refinar' },
-  'desenvolver-ticket.json': { id: 'desenvolver-ticket', papel: 'fazer', node: 'desenvolver' },
-  'integrar-branch.json': { id: 'integrar-branch', papel: 'fazer', node: 'integrar' },
-  'testar-alpha.json': { id: 'testar-alpha', papel: 'portao', node: 'testar' },
-  'implantar-release.json': { id: 'implantar-release', papel: 'fazer', node: 'implantar' },
+  'refinar-ticket.json': { id: 'refinar-ticket', role: 'work', node: 'refinar' },
+  'desenvolver-ticket.json': { id: 'desenvolver-ticket', role: 'work', node: 'desenvolver' },
+  'integrar-branch.json': { id: 'integrar-branch', role: 'work', node: 'integrar' },
+  'testar-alpha.json': { id: 'testar-alpha', role: 'gate', node: 'testar' },
+  'implantar-release.json': { id: 'implantar-release', role: 'work', node: 'implantar' },
 };
 
 /**
@@ -65,11 +66,11 @@ const ROLE_BY_NODE = {
   implantar: 'deployer',
 };
 const EXPECTED_EDGES = [
-  { de: 'refinar', para: 'desenvolver', condicao: 'sempre' },
-  { de: 'desenvolver', para: 'integrar', condicao: 'sempre' },
-  { de: 'integrar', para: 'testar', condicao: 'sempre' },
-  { de: 'testar', para: 'implantar', condicao: 'aprovado' },
-  { de: 'testar', para: 'desenvolver', condicao: 'retrabalho' },
+  { from: 'refinar', to: 'desenvolver', condition: 'sempre' },
+  { from: 'desenvolver', to: 'integrar', condition: 'sempre' },
+  { from: 'integrar', to: 'testar', condition: 'sempre' },
+  { from: 'testar', to: 'implantar', condition: 'aprovado' },
+  { from: 'testar', to: 'desenvolver', condition: 'retrabalho' },
 ];
 
 /** Reads a JSON file from the repo, failing with its relative path if missing. */
@@ -97,15 +98,15 @@ function canonicalize(value) {
 /**
  * Canonical hash of the manifest, by the procedure in
  * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
- * `{instrucoes, entrada, saida, checks, permissoes}`.
+ * `{instructions, input, output, checks, permissions}`.
  */
 function hashOfManifest(manifest) {
   const subset = {
-    instrucoes: manifest.instrucoes,
-    entrada: manifest.entrada,
-    saida: manifest.saida,
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
     checks: manifest.checks,
-    permissoes: manifest.permissoes,
+    permissions: manifest.permissions,
   };
   const digest = createHash('sha256')
     .update(JSON.stringify(canonicalize(subset)), 'utf8')
@@ -157,21 +158,21 @@ test('AT1 — grafo.json passes validarEstrutura and validarSoundness', async ()
 test('AT2 — ids, roles and edges match the topology pinned by t96', () => {
   const doc = readJson(GRAPH_PATH);
 
-  assert.deepEqual(doc.nos.map((node) => node.id).sort(), EXPECTED_NODES);
-  for (const node of doc.nos) {
-    assert.equal(node.papel, ROLE_BY_NODE[node.id], `expected role for node "${node.id}"`);
+  assert.deepEqual(doc.nodes.map((node) => node.id).sort(), EXPECTED_NODES);
+  for (const node of doc.nodes) {
+    assert.equal(node.role, ROLE_BY_NODE[node.id], `expected role for node "${node.id}"`);
   }
 
-  const key = (edge) => `${edge.de}>${edge.para}`;
-  assert.deepEqual(doc.arestas.map(key).sort(), EXPECTED_EDGES.map(key).sort());
+  const key = (edge) => `${edge.from}>${edge.to}`;
+  assert.deepEqual(doc.edges.map(key).sort(), EXPECTED_EDGES.map(key).sort());
   for (const expected of EXPECTED_EDGES) {
-    const edge = doc.arestas.find((e) => e.de === expected.de && e.para === expected.para);
-    assert.equal(edge.condicao, expected.condicao, `expected condition of edge ${key(expected)}`);
+    const edge = doc.edges.find((e) => e.from === expected.from && e.to === expected.to);
+    assert.equal(edge.condition, expected.condition, `expected condition of edge ${key(expected)}`);
   }
 
-  assert.equal(doc.no_inicial, 'refinar');
-  assert.deepEqual(doc.nos_finais, ['implantar']);
-  assert.equal(doc.classe, 'desenvolvimento-de-software');
+  assert.equal(doc.initial_node, 'refinar');
+  assert.deepEqual(doc.final_nodes, ['implantar']);
+  assert.equal(doc.problem_class, 'desenvolvimento-de-software');
 });
 
 test('AT3 — the five manifests validate against manifesto-skill.schema.json', async () => {
@@ -206,7 +207,7 @@ test('AT4 — the five manifests exist with the expected id and role', () => {
   for (const [file, expected] of Object.entries(SKILLS)) {
     const manifest = readManifest(file);
     assert.equal(manifest.id, expected.id, `${file}: id`);
-    assert.equal(manifest.papel, expected.papel, `${file}: papel`);
+    assert.equal(manifest.role, expected.role, `${file}: role`);
     assert.ok(
       /^[a-z0-9]+(-[a-z0-9]+)*$/.test(manifest.id),
       `${file}: the id has to be pure kebab-case, with no namespace prefix`,
@@ -219,16 +220,12 @@ test('AT4 — the five manifests exist with the expected id and role', () => {
   }
 });
 
-test('AT5 — testar-alpha declares saida.resultado with the gate\'s three values', () => {
+test('AT5 — testar-alpha declares output.outcome with the gate\'s three values', () => {
   const manifest = readManifest('testar-alpha.json');
-  assert.deepEqual(manifest.saida.properties.resultado.enum, [
-    'passou',
-    'falhou',
-    'escalar_humano',
-  ]);
+  assert.deepEqual(manifest.output.properties.outcome.enum, ['pass', 'fail', 'escalate_human']);
   assert.ok(
-    manifest.saida.required.includes('resultado'),
-    "resultado has to be required in the gate's output",
+    manifest.output.required.includes('outcome'),
+    "outcome has to be required in the gate's output",
   );
 });
 
@@ -241,11 +238,11 @@ test('AT6 — the recomputed hash of each manifest matches the node\'s skill_ref
     }),
   );
 
-  assert.equal(doc.nos.length, 5);
-  for (const node of doc.nos) {
+  assert.equal(doc.nodes.length, 5);
+  for (const node of doc.nodes) {
     const manifest = byId.get(node.skill_ref.id);
     assert.ok(manifest, `no manifest with id "${node.skill_ref.id}" (node "${node.id}")`);
-    assert.equal(manifest.versao, node.skill_ref.versao, `node "${node.id}": pinned version`);
+    assert.equal(manifest.version, node.skill_ref.version, `node "${node.id}": pinned version`);
     assert.equal(
       hashOfManifest(manifest),
       node.skill_ref.hash,
@@ -261,22 +258,22 @@ test('AT6 — the recomputed hash of each manifest matches the node\'s skill_ref
 
 test('AT7 — testar-alpha does not rerun the quality gate; integrar and desenvolver do', () => {
   const gate = readManifest('testar-alpha.json');
-  const deterministic = gate.checks.filter((check) => check.tipo === 'deterministico');
+  const deterministic = gate.checks.filter((check) => check.type === 'deterministic');
   assert.deepEqual(
     deterministic,
     [],
     'testar-alpha cannot have a deterministic check: rerunning integration gates is a redundant station',
   );
   assert.ok(
-    gate.checks.some((check) => check.tipo === 'agentico'),
+    gate.checks.some((check) => check.type === 'agentic'),
     'testar-alpha needs the agentic semantic-walkthrough check',
   );
 
   const runsProjectCommand = (manifest) =>
     manifest.checks.some(
       (check) =>
-        check.tipo === 'deterministico' &&
-        /\{\{entrada\.projeto\.(comando_testes|comandos_qualidade)\}\}/.test(check.comando ?? ''),
+        check.type === 'deterministic' &&
+        /\{\{input\.projeto\.(comando_testes|comandos_qualidade)\}\}/.test(check.command ?? ''),
     );
   for (const file of ['integrar-branch.json', 'desenvolver-ticket.json']) {
     assert.ok(
@@ -286,26 +283,26 @@ test('AT7 — testar-alpha does not rerun the quality gate; integrar and desenvo
   }
 });
 
-test('AT8 — every instrucoes carries the escalation contract (input-request block)', () => {
+test('AT8 — every instructions carries the escalation contract (input-request block)', () => {
   for (const file of Object.keys(SKILLS)) {
     const manifest = readManifest(file);
     assert.ok(
-      manifest.instrucoes.includes('```input-request'),
-      `${file}: instrucoes has to contain the \`\`\`input-request marker`,
+      manifest.instructions.includes('```input-request'),
+      `${file}: instructions has to contain the \`\`\`input-request marker`,
     );
   }
 });
 
 test('AT9 — only testar-alpha opens the network, and only to loopback', () => {
   const gate = readManifest('testar-alpha.json');
-  assert.equal(gate.permissoes.rede.permitido, true);
+  assert.equal(gate.permissions.network.allowed, true);
   assert.ok(
-    Array.isArray(gate.permissoes.rede.dominios) && gate.permissoes.rede.dominios.length > 0,
+    Array.isArray(gate.permissions.network.domains) && gate.permissions.network.domains.length > 0,
     'testar-alpha has to restrict the network to a list of domains',
   );
 
   for (const file of Object.keys(SKILLS).filter((name) => name !== 'testar-alpha.json')) {
-    assert.equal(readManifest(file).permissoes.rede.permitido, false, `${file}: network closed`);
+    assert.equal(readManifest(file).permissions.network.allowed, false, `${file}: network closed`);
   }
 });
 
@@ -349,14 +346,14 @@ function checkById(file, id) {
 
 /** The graph node with this id, asserted present. */
 function nodeById(id) {
-  const found = readJson(GRAPH_PATH).nos.find((item) => item.id === id);
+  const found = readJson(GRAPH_PATH).nodes.find((item) => item.id === id);
   assert.ok(found, `grafo.json has to keep the "${id}" node`);
   return found;
 }
 
 test('AT11 — ordem-tdd demands a red that failed for the right reason', () => {
   const check = checkById('desenvolver-ticket.json', 'ordem-tdd');
-  const instruction = oneLine(check.instrucao);
+  const instruction = oneLine(check.instruction);
 
   assert.match(instruction, /motivo certo/, 'the check has to ask WHY the red run failed');
   assert.match(
@@ -370,7 +367,7 @@ test('AT11 — ordem-tdd demands a red that failed for the right reason', () => 
     'one commit carrying tests and implementation together still cannot pass',
   );
 
-  const evidence = check.evidencia_obrigatoria;
+  const evidence = check.required_evidence;
   assert.ok(
     evidence.some((item) => /saida_do_comando_de_testes/.test(item) && /commit/.test(item)),
     'ordem-tdd needs the test-command output taken at the tests-only commit',
@@ -383,7 +380,7 @@ test('AT11 — ordem-tdd demands a red that failed for the right reason', () => 
 
 test('AT12 — portao-de-especificacao demands the DoD anchor, TDD exceptions and INVEST', () => {
   const check = checkById('refinar-ticket.json', 'portao-de-especificacao');
-  const instruction = oneLine(check.instrucao);
+  const instruction = oneLine(check.instruction);
 
   assert.match(
     instruction,
@@ -407,7 +404,7 @@ test('AT12 — portao-de-especificacao demands the DoD anchor, TDD exceptions an
     'the closing count has to follow the new questions',
   );
 
-  const evidence = check.evidencia_obrigatoria;
+  const evidence = check.required_evidence;
   for (const [what, wanted] of [
     ['the first item of the definition of done', /definicao_de_pronto/],
     ['the justification of each TDD exception', /excecoes_ao_tdd/],
@@ -418,7 +415,7 @@ test('AT12 — portao-de-especificacao demands the DoD anchor, TDD exceptions an
 });
 
 test('AT13 — integrar-branch says the session never performs the final merge', () => {
-  const instructions = oneLine(readManifest('integrar-branch.json').instrucoes);
+  const instructions = oneLine(readManifest('integrar-branch.json').instructions);
 
   assert.match(
     instructions,
@@ -433,7 +430,7 @@ test('AT13 — integrar-branch says the session never performs the final merge',
 });
 
 test('AT14 — the refinar node requires nota in its output contract', () => {
-  const shape = nodeById('refinar').contrato.saida_schema;
+  const shape = nodeById('refinar').contract.output_schema;
 
   assert.ok(
     shape.required.includes('nota'),
@@ -442,7 +439,7 @@ test('AT14 — the refinar node requires nota in its output contract', () => {
 });
 
 test('AT15 — the testar node mirrors the manifest: per-criterion verdicts and typed bugs', () => {
-  const shape = nodeById('testar').contrato.saida_schema;
+  const shape = nodeById('testar').contract.output_schema;
 
   assert.ok(shape.properties.vereditos, 'the testar node has to declare vereditos');
   assert.ok(shape.properties.bugs, 'the testar node has to declare bugs');
@@ -463,26 +460,26 @@ test('AT15 — the testar node mirrors the manifest: per-criterion verdicts and 
 // t176 — one source of truth for how a node verifies itself
 //
 // The manifest is the only place that declares HOW a node checks its own work;
-// `contrato.verificacoes` restates the same list in the graph's format, item by
-// item. What has to line up is structure — count, sequence of `tipo`, and the
-// `comando` of every deterministic item; the prose of an agentic item is
+// `contract.checks` restates the same list in the graph's format, item by
+// item. What has to line up is structure — count, sequence of `type`, and the
+// `command` of every deterministic item; the prose of an agentic item is
 // rewritten on each side on purpose (`packages/runner/src/synthesizer/prompt.ts`).
 // --------------------------------------------------------------------------
 
 /** One node of the graph, by id, failing with the id when it is gone. */
 function nodeOf(doc, id) {
-  const found = doc.nos.find((candidate) => candidate.id === id);
+  const found = doc.nodes.find((candidate) => candidate.id === id);
   assert.ok(found, `the graph no longer has a node "${id}"`);
   return found;
 }
 
-/** The `comando` of every deterministic item, in order. */
+/** The `command` of every deterministic item, in order. */
 const commandsOf = (items) =>
-  items.filter((item) => item.tipo === 'deterministico').map((item) => item.comando);
+  items.filter((item) => item.type === 'deterministic').map((item) => item.command);
 
 /** The verifications a node declares, and the checks of the skill it pins. */
 function bothSidesOf(id, file) {
-  const declared = nodeOf(readJson(GRAPH_PATH), id).contrato.verificacoes;
+  const declared = nodeOf(readJson(GRAPH_PATH), id).contract.checks;
   return { declared, checks: readManifest(file).checks };
 }
 
@@ -495,10 +492,10 @@ test('t176 AT5 — "testar" verifies with the semantic walkthrough alone', () =>
   const { declared, checks } = bothSidesOf('testar', 'testar-alpha.json');
 
   assert.equal(declared.length, 1, 'the gate rerunning the quality commands is a redundant station');
-  assert.equal(declared[0].tipo, 'agentico');
+  assert.equal(declared[0].type, 'agentic');
   assert.deepEqual(
-    declared.map((item) => item.tipo),
-    checks.map((check) => check.tipo),
+    declared.map((item) => item.type),
+    checks.map((check) => check.type),
   );
 });
 
@@ -507,8 +504,8 @@ test('t176 AT6 — "implantar" declares the two git checks of implantar-release'
 
   assert.equal(declared.length, 2);
   assert.deepEqual(
-    declared.map((item) => item.tipo),
-    ['deterministico', 'deterministico'],
+    declared.map((item) => item.type),
+    ['deterministic', 'deterministic'],
   );
   assert.deepEqual(commandsOf(declared), commandsOf(checks));
 });
@@ -518,8 +515,8 @@ test('t176 AT7 — "desenvolver" declares the four checks of desenvolver-ticket'
 
   assert.equal(declared.length, 4);
   assert.deepEqual(
-    declared.map((item) => item.tipo),
-    ['deterministico', 'deterministico', 'deterministico', 'agentico'],
+    declared.map((item) => item.type),
+    ['deterministic', 'deterministic', 'deterministic', 'agentic'],
   );
   assert.deepEqual(commandsOf(declared), commandsOf(checks));
 });
@@ -529,8 +526,8 @@ test('t176 AT8 — "integrar" declares the three checks of integrar-branch', () 
 
   assert.equal(declared.length, 3);
   assert.deepEqual(
-    declared.map((item) => item.tipo),
-    ['deterministico', 'deterministico', 'deterministico'],
+    declared.map((item) => item.type),
+    ['deterministic', 'deterministic', 'deterministic'],
   );
   assert.deepEqual(commandsOf(declared), commandsOf(checks));
 });
@@ -549,10 +546,10 @@ test('t176 AT9 — no command in the graph names a stack tool of its own', () =>
 
 test('t176 AT10 — the five manifests record flowpilot as a behavioural reference', () => {
   for (const file of Object.keys(SKILLS)) {
-    const { origem } = readManifest(file);
-    assert.equal(origem.tipo, 'nativa', `${file}: no code was imported (D4 would demand its gate)`);
+    const { origin } = readManifest(file);
+    assert.equal(origin.type, 'native', `${file}: no code was imported (D4 would demand its gate)`);
     assert.equal(
-      origem.referencia_comportamental,
+      origin.referencia_comportamental,
       'flowpilot',
       `${file}: the port has to name the behaviour it came from (D17)`,
     );
@@ -560,7 +557,7 @@ test('t176 AT10 — the five manifests record flowpilot as a behavioural referen
 
   const gate = readManifest('testar-alpha.json');
   assert.ok(
-    (gate.origem.nota ?? '').includes('testing.py:77'),
+    (gate.origin.nota ?? '').includes('testing.py:77'),
     "testar-alpha has to cite the source rule that settles the contradiction",
   );
 });
@@ -571,7 +568,7 @@ test('t176 AT11 — the declared hash of each manifest still matches its content
     assert.equal(
       manifest.hash,
       hashOfManifest(manifest),
-      `${file}: touching "origem" cannot invalidate the pin — it is outside the hashed subset`,
+      `${file}: touching "origin" cannot invalidate the pin — it is outside the hashed subset`,
     );
   }
 });

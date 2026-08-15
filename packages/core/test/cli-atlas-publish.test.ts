@@ -22,9 +22,10 @@
  * pointed at `/dev/null`), so the round trip does not depend on how the machine
  * running the suite happens to be set up.
  *
- * The Portuguese names below are data: the class names, the bundle directories
- * and the schema keys of the graph and manifest formats are frozen by D18's own
- * carve-out.
+ * The class names and the bundle directories below are still Portuguese: they
+ * are data, and renaming a directory belongs to the downstream slice. The
+ * schema KEYS are English since t178, when the 2026-08-15 D18 amendment lifted
+ * the carve-out that used to keep the two data formats out of the rename.
  */
 
 import assert from 'node:assert/strict';
@@ -79,11 +80,11 @@ function canonical(value: unknown): unknown {
  */
 function contentHash(manifest: Record<string, unknown>): string {
   const subset = {
-    instrucoes: manifest.instrucoes,
-    entrada: manifest.entrada,
-    saida: manifest.saida,
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
     checks: manifest.checks,
-    permissoes: manifest.permissoes,
+    permissions: manifest.permissions,
   };
   return `sha256:${createHash('sha256').update(JSON.stringify(canonical(subset)), 'utf8').digest('hex')}`;
 }

@@ -12,12 +12,13 @@
  * implementation what the right answer is proves only that the implementation
  * agrees with itself — and the hash is precisely the value D4 says nobody should
  * take on trust. The procedure is short enough to write twice:
- * `sha256` of the canonical JSON of `{instrucoes, entrada, saida, checks, permissoes}`
+ * `sha256` of the canonical JSON of `{instructions, input, output, checks, permissions}`
  * (`especificacoes/formatos/manifesto-skill.md`).
  *
- * The manifest field names stay in Portuguese: they are the skill-manifest
- * format's own vocabulary, which the D18 rename explicitly leaves out
- * (`DECISOES.md:153-155`).
+ * The manifest field names are English since t178 (the 2026-08-15 D18
+ * amendment). What is still Portuguese in the payloads below is free content —
+ * a description, an instruction, the prose of a check — which that amendment
+ * deliberately did not touch.
  */
 
 import assert from 'node:assert/strict';
@@ -65,17 +66,17 @@ const ARTIFACTS = Object.values(T117_ARTIFACTS);
 /** A registered skill, as the API returns it — the contract this test demands. */
 interface Skill {
   id: string;
-  versao: string;
+  version: string;
   hash: string;
-  papel: string;
-  descricao: string;
-  entrada: Record<string, unknown>;
-  saida: Record<string, unknown>;
-  pre_condicoes: string[];
+  role: string;
+  description: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  preconditions: string[];
   checks: Record<string, unknown>[];
-  permissoes: Record<string, unknown>;
-  instrucoes: string;
-  origem: Record<string, unknown>;
+  permissions: Record<string, unknown>;
+  instructions: string;
+  origin: Record<string, unknown>;
   registrado_em: string;
 }
 
@@ -100,27 +101,27 @@ function canonical(value: unknown): unknown {
 /** The pin: `sha256:` over the canonical JSON of the five content fields. */
 function contentHash(manifest: Record<string, unknown>): string {
   const subset = {
-    instrucoes: manifest.instrucoes,
-    entrada: manifest.entrada,
-    saida: manifest.saida,
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
     checks: manifest.checks,
-    permissoes: manifest.permissoes,
+    permissions: manifest.permissions,
   };
   return `sha256:${createHash('sha256').update(JSON.stringify(canonical(subset)), 'utf8').digest('hex')}`;
 }
 
 /** The D4 safe default: read the workspace, write nothing, no network. */
 const SAFE_PERMISSIONS = {
-  filesystem: { leitura: ['**'], escrita: [] },
-  rede: { permitido: false },
+  filesystem: { read: ['**'], write: [] },
+  network: { allowed: false },
 };
 
 const ONE_CHECK = [
   {
     id: 'suite-verde',
-    tipo: 'deterministico',
-    descricao: 'A suíte do projeto passa.',
-    comando: 'make test',
+    type: 'deterministic',
+    description: 'A suíte do projeto passa.',
+    command: 'make test',
   },
 ];
 
@@ -134,23 +135,23 @@ const ONE_CHECK = [
 function importedManifest(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const manifest: Record<string, unknown> = {
     id: 'feature-dev',
-    versao: '0.1.0',
+    version: '0.1.0',
     hash: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
-    papel: 'fazer',
-    descricao: 'Orchestrates new feature development following the full 4-phase protocol',
-    entrada: { type: 'object', properties: { ticket: { type: 'string' } } },
-    saida: { type: 'object', properties: { nota: { type: 'string' } } },
-    pre_condicoes: ['ticket refinado'],
+    role: 'work',
+    description: 'Orchestrates new feature development following the full 4-phase protocol',
+    input: { type: 'object', properties: { ticket: { type: 'string' } } },
+    output: { type: 'object', properties: { nota: { type: 'string' } } },
+    preconditions: ['ticket refinado'],
     checks: ONE_CHECK,
-    permissoes: SAFE_PERMISSIONS,
-    instrucoes: '# Feature Development Orchestrator\n\nSiga o protocolo.',
-    origem: {
-      tipo: 'importada',
+    permissions: SAFE_PERMISSIONS,
+    instructions: '# Feature Development Orchestrator\n\nSiga o protocolo.',
+    origin: {
+      type: 'imported',
       repo: 'https://github.com/rafaelgomes/flowpilot',
       ref: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
-      importado_por: 'rafael',
-      importado_em: '2026-08-14',
-      revisado_por: 'rafael',
+      imported_by: 'rafael',
+      imported_at: '2026-08-14',
+      reviewed_by: 'rafael',
     },
     ...overrides,
   };
@@ -184,15 +185,15 @@ test('AT1 — a valid imported manifest is registered and comes back whole', asy
   const read = await request<Skill>(ctx, 'GET', '/v1/skills/feature-dev');
   assert.equal(read.status, 200);
   assert.equal(read.body.hash, manifest.hash);
-  assert.equal(read.body.versao, '0.1.0');
-  assert.equal(read.body.papel, 'fazer');
-  assert.deepEqual(read.body.entrada, manifest.entrada);
-  assert.deepEqual(read.body.saida, manifest.saida);
+  assert.equal(read.body.version, '0.1.0');
+  assert.equal(read.body.role, 'work');
+  assert.deepEqual(read.body.input, manifest.input);
+  assert.deepEqual(read.body.output, manifest.output);
   assert.deepEqual(read.body.checks, manifest.checks);
-  assert.deepEqual(read.body.permissoes, manifest.permissoes);
-  assert.deepEqual(read.body.pre_condicoes, manifest.pre_condicoes);
-  assert.deepEqual(read.body.origem, manifest.origem);
-  assert.equal(read.body.instrucoes, manifest.instrucoes);
+  assert.deepEqual(read.body.permissions, manifest.permissions);
+  assert.deepEqual(read.body.preconditions, manifest.preconditions);
+  assert.deepEqual(read.body.origin, manifest.origin);
+  assert.equal(read.body.instructions, manifest.instructions);
 
   const listed = await request<{ skills: Skill[] }>(ctx, 'GET', '/v1/skills');
   assert.equal(listed.status, 200);
@@ -232,23 +233,49 @@ test('AT3 — an imported skill with no check does not enter the registry (D4)',
   assert.match(reason(refused.body), /no derivable check/i);
 });
 
-test('AT4 — a gate whose saida does not declare resultado is refused, naming the field', async (t) => {
+test('AT4 — a gate whose output does not declare outcome is refused, naming the field', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
   const refused = await post(
     ctx,
     importedManifest({
-      papel: 'portao',
-      saida: { type: 'object', properties: { nota: { type: 'string' } } },
+      role: 'gate',
+      output: { type: 'object', properties: { nota: { type: 'string' } } },
     }),
   );
   assert.ok(
     refused.status >= 400 && refused.status < 500,
     `expected a 4xx, got ${refused.status}`,
   );
-  assert.match(reason(refused.body), /resultado/);
-  assert.match(reason(refused.body), /passou/, 'the message has to say which enum is expected');
+  assert.match(reason(refused.body), /outcome/);
+  assert.match(
+    reason(refused.body),
+    /escalate_human/,
+    'the message has to say which enum is expected',
+  );
+});
+
+test('AT4 — a gate whose output declares the renamed outcome enum is accepted (t178)', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const created = await post(
+    ctx,
+    importedManifest({
+      role: 'gate',
+      output: {
+        type: 'object',
+        required: ['outcome'],
+        properties: { outcome: { enum: ['pass', 'fail', 'escalate_human'] } },
+      },
+    }),
+  );
+  assert.equal(
+    created.status,
+    201,
+    `the renamed gate vocabulary has to register: ${created.status} ${JSON.stringify(created.body)}`,
+  );
 });
 
 test('AT5 — an imported skill with unrestricted network is refused (D4)', async (t) => {
@@ -258,9 +285,9 @@ test('AT5 — an imported skill with unrestricted network is refused (D4)', asyn
   const refused = await post(
     ctx,
     importedManifest({
-      permissoes: {
-        filesystem: { leitura: ['**'], escrita: [] },
-        rede: { permitido: true },
+      permissions: {
+        filesystem: { read: ['**'], write: [] },
+        network: { allowed: true },
       },
     }),
   );
@@ -278,17 +305,17 @@ test('AT6 — an imported manifest with incomplete provenance is refused', async
   const refused = await post(
     ctx,
     importedManifest({
-      origem: {
-        tipo: 'importada',
+      origin: {
+        type: 'imported',
         repo: 'https://github.com/rafaelgomes/flowpilot',
         ref: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
-        importado_por: 'rafael',
-        importado_em: '2026-08-14',
+        imported_by: 'rafael',
+        imported_at: '2026-08-14',
       },
     }),
   );
   assert.equal(refused.status, 422, `expected 422, got ${refused.status}: ${JSON.stringify(refused.body)}`);
-  assert.match(reason(refused.body), /revisado_por/);
+  assert.match(reason(refused.body), /reviewed_by/);
 });
 
 test('AT7 — registering the same id twice is a conflict', async (t) => {
@@ -298,14 +325,14 @@ test('AT7 — registering the same id twice is a conflict', async (t) => {
   const first = await post(ctx, importedManifest());
   assert.equal(first.status, 201);
 
-  const second = await post(ctx, importedManifest({ descricao: 'outra descrição para o mesmo id' }));
+  const second = await post(ctx, importedManifest({ description: 'outra descrição para o mesmo id' }));
   assert.equal(second.status, 409, `expected 409, got ${second.status}: ${JSON.stringify(second.body)}`);
   assert.match(reason(second.body), /feature-dev/);
 
   const read = await request<Skill>(ctx, 'GET', '/v1/skills/feature-dev');
   assert.equal(read.status, 200);
   assert.equal(
-    read.body.descricao,
+    read.body.description,
     'Orchestrates new feature development following the full 4-phase protocol',
     'the conflict cannot have overwritten the registered manifest',
   );
@@ -324,7 +351,7 @@ test('AT8 — the specification\'s negative fixture is refused, naming the field
     `expected 422, got ${refused.status}: ${JSON.stringify(refused.body)}`,
   );
   const message = reason(refused.body);
-  assert.match(message, /evidencia_obrigatoria/, 'the message has to name the missing field');
+  assert.match(message, /required_evidence/, 'the message has to name the missing field');
   assert.match(
     message,
     /criterios-atendidos/,
@@ -335,14 +362,14 @@ test('AT8 — the specification\'s negative fixture is refused, naming the field
   assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');
 });
 
-test('AT9 — the same manifest with evidencia_obrigatoria declared registers (t135)', async (t) => {
+test('AT9 — the same manifest with required_evidence declared registers (t135)', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
   const fixture = JSON.parse(readFileSync(INVALID_FIXTURE, 'utf8')) as Record<string, unknown>;
   const checks = (fixture.checks as Record<string, unknown>[]).map((check) =>
-    check.tipo === 'agentico'
-      ? { ...check, evidencia_obrigatoria: ['trecho_citado_do_criterio_de_aceite'] }
+    check.type === 'agentic'
+      ? { ...check, required_evidence: ['trecho_citado_do_criterio_de_aceite'] }
       : check,
   );
   const repaired: Record<string, unknown> = { ...fixture, checks };
@@ -360,14 +387,14 @@ test('AT9 — the same manifest with evidencia_obrigatoria declared registers (t
   assert.deepEqual(read.body.checks, checks);
 });
 
-test('AT10 — a deterministic check with no comando is refused, naming the field and the check (t155)', async (t) => {
+test('AT10 — a deterministic check with no command is refused, naming the field and the check (t155)', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
   const refused = await post(
     ctx,
     importedManifest({
-      checks: [{ id: 'suite-verde', tipo: 'deterministico', descricao: 'A suíte do projeto passa.' }],
+      checks: [{ id: 'suite-verde', type: 'deterministic', description: 'A suíte do projeto passa.' }],
     }),
   );
   assert.equal(
@@ -376,7 +403,7 @@ test('AT10 — a deterministic check with no comando is refused, naming the fiel
     `expected 422, got ${refused.status}: ${JSON.stringify(refused.body)}`,
   );
   const message = reason(refused.body);
-  assert.match(message, /comando/, 'the message has to name the missing field');
+  assert.match(message, /command/, 'the message has to name the missing field');
   assert.match(
     message,
     /suite-verde/,
@@ -387,14 +414,14 @@ test('AT10 — a deterministic check with no comando is refused, naming the fiel
   assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');
 });
 
-test('AT11 — a check whose tipo is not one of the two is refused, naming the value and the enum (t155)', async (t) => {
+test('AT11 — a check whose type is not one of the two is refused, naming the value and the enum (t155)', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
   const refused = await post(
     ctx,
     importedManifest({
-      checks: [{ id: 'x', tipo: 'nao-existe', descricao: 'Um check que ninguém sabe executar.' }],
+      checks: [{ id: 'x', type: 'nao-existe', description: 'Um check que ninguém sabe executar.' }],
     }),
   );
   assert.equal(
@@ -405,14 +432,14 @@ test('AT11 — a check whose tipo is not one of the two is refused, naming the v
   const message = reason(refused.body);
   assert.match(message, /nao-existe/, 'the message has to quote the value it refused');
   assert.match(message, /\bx\b/, 'the message has to name the offending check');
-  assert.match(message, /deterministico/, 'the message has to say which types exist');
-  assert.match(message, /agentico/, 'the message has to say which types exist');
+  assert.match(message, /deterministic/, 'the message has to say which types exist');
+  assert.match(message, /agentic/, 'the message has to say which types exist');
 
   const read = await request<Skill>(ctx, 'GET', '/v1/skills/feature-dev');
   assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');
 });
 
-test('AT12 — a check with no id, tipo or descricao is refused, naming all three (t155)', async (t) => {
+test('AT12 — a check with no id, type or description is refused, naming all three (t155)', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
@@ -424,8 +451,8 @@ test('AT12 — a check with no id, tipo or descricao is refused, naming all thre
   );
   const message = reason(refused.body);
   assert.match(message, /"id"/, 'the message has to name "id" as missing');
-  assert.match(message, /"tipo"/, 'the message has to name "tipo" as missing');
-  assert.match(message, /"descricao"/, 'the message has to name "descricao" as missing');
+  assert.match(message, /"type"/, 'the message has to name "type" as missing');
+  assert.match(message, /"description"/, 'the message has to name "description" as missing');
 
   const read = await request<Skill>(ctx, 'GET', '/v1/skills/feature-dev');
   assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');

@@ -16,8 +16,11 @@
  * unmodified external skill without depending on that checkout existing on the
  * machine running `npm test`.
  *
- * The manifest field names stay in Portuguese: they are the skill-manifest
- * format's own vocabulary (`DECISOES.md:153-155`).
+ * The manifest field names are English since t178: the 2026-08-15 D18 amendment
+ * pulled the skill-manifest format's keys into the rename the original decision
+ * had left them out of. The `--role` flag is unchanged — it was already English
+ * (t127) — but the VALUE it takes now maps straight onto `role`, with no
+ * translation step in between.
  */
 
 import assert from 'node:assert/strict';
@@ -45,20 +48,20 @@ const SOURCE_REF = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 /** The draft `scan-skill` writes — the contract this test demands of it. */
 interface Draft {
   id: string;
-  versao: string;
+  version: string;
   hash: string;
-  papel: string;
-  descricao: string;
-  entrada: Record<string, unknown>;
-  saida: Record<string, unknown>;
-  pre_condicoes: string[];
-  checks: { id: string; tipo: string; descricao: string; comando?: string }[];
-  permissoes: {
-    filesystem: { leitura: string[]; escrita: string[] };
-    rede: { permitido: boolean; dominios?: string[] };
+  role: string;
+  description: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  preconditions: string[];
+  checks: { id: string; type: string; description: string; command?: string }[];
+  permissions: {
+    filesystem: { read: string[]; write: string[] };
+    network: { allowed: boolean; domains?: string[] };
   };
-  instrucoes: string;
-  origem: Record<string, unknown>;
+  instructions: string;
+  origin: Record<string, unknown>;
 }
 
 /** Sorts keys recursively — same canonicalization the format's hash is defined over. */
@@ -76,11 +79,11 @@ function canonical(value: unknown): unknown {
 /** The pin, recomputed here on purpose (see `skill-routes.test.ts`). */
 function contentHash(manifest: Record<string, unknown>): string {
   const subset = {
-    instrucoes: manifest.instrucoes,
-    entrada: manifest.entrada,
-    saida: manifest.saida,
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
     checks: manifest.checks,
-    permissoes: manifest.permissoes,
+    permissions: manifest.permissions,
   };
   return `sha256:${createHash('sha256').update(JSON.stringify(canonical(subset)), 'utf8').digest('hex')}`;
 }
@@ -90,7 +93,7 @@ async function scan(
   source: string,
   destination: string,
   controlPlane: RunningControlPlane,
-  role = 'fazer',
+  role = 'work',
 ): Promise<Draft> {
   const result = await runCli([
     'scan-skill',
@@ -121,17 +124,17 @@ async function scan(
 function complete(draft: Draft, extra: Partial<Draft> = {}): Record<string, unknown> {
   const manifest: Record<string, unknown> = {
     ...draft,
-    entrada: {
+    input: {
       type: 'object',
       required: ['ticket'],
       properties: { ticket: { type: 'string' } },
     },
-    saida: {
+    output: {
       type: 'object',
       required: ['nota'],
       properties: { nota: { type: 'string' } },
     },
-    origem: { ...(draft.origem as Record<string, unknown>), revisado_por: 'rafael' },
+    origin: { ...(draft.origin as Record<string, unknown>), reviewed_by: 'rafael' },
     ...extra,
   };
   manifest.hash = contentHash(manifest);
@@ -162,32 +165,32 @@ test('AT8 — scan-skill derives what it can from a real external SKILL.md and g
   const draft = await scan(FEATURE_DEV, path.join(base, 'feature-dev.manifest.json'), controlPlane);
 
   assert.equal(draft.id, 'feature-dev', 'the id is the kebab-case of the frontmatter name');
-  assert.equal(draft.versao, '0.1.0', 'a new import is always 0.1.0 (D4)');
-  assert.equal(draft.papel, 'fazer', 'papel is the --role flag, verbatim');
+  assert.equal(draft.version, '0.1.0', 'a new import is always 0.1.0 (D4)');
+  assert.equal(draft.role, 'work', 'role is the --role flag, verbatim');
   assert.equal(
-    draft.descricao,
+    draft.description,
     'Orchestrates new feature development following the full 4-phase protocol',
-    'descricao comes from the frontmatter description',
+    'description comes from the frontmatter description',
   );
 
   // What only a human can write is a placeholder, never a guess.
-  assert.deepEqual(draft.entrada, { $comment: 'revisor humano escreve o JSON Schema aqui' });
-  assert.deepEqual(draft.saida, { $comment: 'revisor humano escreve o JSON Schema aqui' });
+  assert.deepEqual(draft.input, { $comment: 'revisor humano escreve o JSON Schema aqui' });
+  assert.deepEqual(draft.output, { $comment: 'revisor humano escreve o JSON Schema aqui' });
 
-  assert.deepEqual(draft.permissoes, {
-    filesystem: { leitura: ['**'], escrita: [] },
-    rede: { permitido: false },
+  assert.deepEqual(draft.permissions, {
+    filesystem: { read: ['**'], write: [] },
+    network: { allowed: false },
   });
 
-  assert.deepEqual(draft.origem, {
-    tipo: 'importada',
+  assert.deepEqual(draft.origin, {
+    type: 'imported',
     repo: SOURCE_REPO,
     ref: SOURCE_REF,
-    importado_por: 'rafael',
-    importado_em: new Date().toISOString().slice(0, 10),
+    imported_by: 'rafael',
+    imported_at: new Date().toISOString().slice(0, 10),
   });
   assert.equal(
-    (draft.origem as { revisado_por?: string }).revisado_por,
+    (draft.origin as { reviewed_by?: string }).reviewed_by,
     undefined,
     'nobody has reviewed the draft yet, so it cannot claim a reviewer',
   );
@@ -195,20 +198,20 @@ test('AT8 — scan-skill derives what it can from a real external SKILL.md and g
   // The fenced `bash` block of Phase 4 has four commands; the `git` block has none
   // that the derivation recognizes, and no check is ever invented.
   assert.deepEqual(
-    draft.checks.map((check) => check.comando),
+    draft.checks.map((check) => check.command),
     ['make test', 'make test-front', 'make typecheck', 'make lint'],
   );
   for (const check of draft.checks) {
-    assert.equal(check.tipo, 'deterministico');
-    assert.ok(check.descricao.length > 0, 'a check with no description is not a contract');
+    assert.equal(check.type, 'deterministic');
+    assert.ok(check.description.length > 0, 'a check with no description is not a contract');
   }
 
   assert.ok(
-    draft.instrucoes.includes('# Feature Development Orchestrator'),
-    'instrucoes is the Markdown body of the source',
+    draft.instructions.includes('# Feature Development Orchestrator'),
+    'instructions is the Markdown body of the source',
   );
   assert.equal(
-    draft.instrucoes.includes('name: feature-dev'),
+    draft.instructions.includes('name: feature-dev'),
     false,
     'the frontmatter is metadata, not part of the instructions',
   );
@@ -259,7 +262,7 @@ test('AT9 — propose-skill opens a blocking human gate, never auto-approvable',
   assert.match(pending.pergunta, /feature-dev/);
   assert.ok(pending.contexto !== null, 'whoever answers has to see the manifest');
   assert.match(pending.contexto, /"id": "feature-dev"/, 'the manifest goes in pretty-printed');
-  assert.match(pending.contexto, /permissoes/, 'the checklist covers what the reviewer signs');
+  assert.match(pending.contexto, /permissions/, 'the checklist covers what the reviewer signs');
 
   // t180 — the question and the checklist are what a person READS, so they are
   // English; the manifest keys quoted inside them are the format's own (FR2).
@@ -316,14 +319,14 @@ test('AT10 — scan, complete, propose, approve, register: the whole D4 gate', {
   const registered = (await response.json()) as {
     id: string;
     hash: string;
-    origem: { tipo: string; revisado_por: string; ref: string };
+    origin: { type: string; reviewed_by: string; ref: string };
     checks: unknown[];
   };
   assert.equal(registered.id, 'feature-dev');
   assert.equal(registered.hash, finalized.hash);
-  assert.equal(registered.origem.tipo, 'importada');
-  assert.equal(registered.origem.revisado_por, 'rafael', 'the signature of the D4 gate is stored');
-  assert.equal(registered.origem.ref, SOURCE_REF);
+  assert.equal(registered.origin.type, 'imported');
+  assert.equal(registered.origin.reviewed_by, 'rafael', 'the signature of the D4 gate is stored');
+  assert.equal(registered.origin.ref, SOURCE_REF);
   assert.equal(registered.checks.length, 4);
 
   const job = (await (await fetch(`${controlPlane.url}/v1/jobs/${ids.job}`)).json()) as {

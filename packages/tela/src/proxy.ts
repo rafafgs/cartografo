@@ -10,10 +10,14 @@
  *
  * "Forward" here means verbatim. Method, path, query and body cross unchanged,
  * and the upstream status comes back as it is — a `409 proposta_nao_pendente`
- * is an answer the inbox must show, not an error for the proxy to reshape. The
- * one thing this module does invent is the reply for a control plane that is
+ * is an answer the inbox must show, not an error for the proxy to reshape. Two
+ * replies this module invents rather than forwards: the control plane that is
  * down (`502 control_plane_indisponivel`), because the alternative is a socket
- * error reaching the browser as a blank page.
+ * error reaching the browser as a blank page, and the write that did not start
+ * on this screen's page (`403 origem_nao_confiavel`, t192), because a forwarded
+ * request carries the operator's credential and a page on another site must not
+ * get to spend it. The second one is a decision ABOUT forwarding, so it is a
+ * check the router runs before the pipe, never a branch inside it.
  *
  * The address resolution repeats `packages/core/src/cli/url.ts` on purpose: the
  * screen declares no dependency on the core package (that is the whole point of
@@ -43,8 +47,20 @@ export const DEFAULT_CONTROL_PLANE_HOST = '127.0.0.1';
 /** Prefix of every business route; everything else on the screen is static. */
 export const API_PREFIX = '/v1';
 
-/** Error code of the only failure this proxy invents. */
+/** Error code of the failure this proxy invents when the core does not answer. */
 export const UPSTREAM_DOWN_CODE = 'control_plane_indisponivel';
+
+/** Error code of a state-changing request that did not start on this screen. */
+export const UNTRUSTED_ORIGIN_CODE = 'origem_nao_confiavel';
+
+/**
+ * What a browser looks like when it says nothing else about itself.
+ *
+ * Deliberately generous — every engine in use puts one of these tokens in its
+ * `User-Agent`, and the cost of a false positive here is a script on this same
+ * machine having to stop pretending to be a browser.
+ */
+const BROWSER_AGENT = /Mozilla\/|Chrome\/|Safari\/|Firefox\/|Edg\//;
 
 /**
  * Headers that describe THIS hop and must not be forwarded: they belong to the
@@ -185,6 +201,95 @@ export function unavailableResponse(baseUrl: string): ProxiedResponse {
   return jsonResponse(502, {
     erro: UPSTREAM_DOWN_CODE,
     mensagem: `could not reach the control plane at ${baseUrl} — run \`npx cartografo\` first (or point somewhere else with ${CONTROL_PLANE_URL_ENV})`,
+  });
+}
+
+/** Reads one header, collapsing a repeated one into the value it really sent. */
+function headerOf(headers: NodeJS.Dict<string | string[]>, name: string): string | undefined {
+  const raw = headers[name];
+  if (raw === undefined) return undefined;
+  // A repeated `Origin` or `Sec-Fetch-Site` is not something a browser does. It
+  // stays joined on purpose: the joined value matches none of the accepted ones,
+  // so the ambiguous case falls on the refusing side without a branch of its own.
+  return Array.isArray(raw) ? raw.join(', ') : raw;
+}
+
+/**
+ * Did this state-changing request start on the screen's own page? (t192)
+ *
+ * The screen's `/v1/*` proxy stamps the operator's credential onto everything it
+ * forwards (t124), and the control plane's write routes are satisfied by an
+ * empty body. A `fetch(…, {method:'POST', mode:'no-cors'})` is a "simple"
+ * request — no preflight — so, without this gate, any page open in the same
+ * browser could apply a proposal with the operator's token just by knowing the
+ * port. That is the hole; this is the whole of the fix.
+ *
+ * It reads fetch metadata, and nothing else, because `Sec-Fetch-Site` and
+ * `Origin` are written by the browser's own network stack and are forbidden to
+ * page script — a hostile page cannot forge them even in `no-cors` mode. Three
+ * refusals, in order:
+ *
+ * 1. **`Sec-Fetch-Site` present and neither `same-origin` nor `none`** — the
+ *    browser is telling us this came from somewhere else (or from a form on
+ *    another site, which reads `cross-site`). `none` is a typed address or a
+ *    bookmark, which is the screen's own page too.
+ * 2. **`Origin` present and not exactly `http://<Host>`** — the standard
+ *    Origin-vs-Host check, and no configuration to keep in sync: both headers
+ *    are set honestly by the browser for a real cross-origin request. Plain
+ *    `http`, since nothing in this stack terminates TLS.
+ * 3. **Neither header, but a browser-shaped `User-Agent`** — a browser that
+ *    predates fetch metadata is still a browser, and gets no free pass.
+ *
+ * What is left — no `Sec-Fetch-Site`, no `Origin`, no browser signature — is
+ * `curl`, a script, or Node's own `fetch`, and it is trusted DELIBERATELY. The
+ * boundary for a local process is D11's loopback port, not this function: a
+ * hostile process on this machine forges any header it likes, and closing that
+ * would take a credential the browser presents, which is a decision the founder
+ * has not taken.
+ *
+ * @param headers Request headers, as Node lower-cases them.
+ * @param host The request's own `Host` header.
+ * @returns `true` when the request may be forwarded.
+ */
+export function isTrustedScreenOrigin(
+  headers: NodeJS.Dict<string | string[]>,
+  host: string | undefined,
+): boolean {
+  const site = headerOf(headers, 'sec-fetch-site');
+  if (site !== undefined) {
+    const declared = site.trim().toLowerCase();
+    if (declared !== 'same-origin' && declared !== 'none') return false;
+  }
+
+  const origin = headerOf(headers, 'origin');
+  if (origin !== undefined) {
+    if (host === undefined) return false;
+    if (origin.trim().toLowerCase() !== `http://${host.trim().toLowerCase()}`) return false;
+  }
+
+  if (site === undefined && origin === undefined) {
+    const agent = headerOf(headers, 'user-agent');
+    if (agent !== undefined && BROWSER_AGENT.test(agent)) return false;
+  }
+
+  return true;
+}
+
+/**
+ * The answer for a write that came from somewhere else (t192).
+ *
+ * Same `erro` / `mensagem` shape as `unavailableResponse`, and English for the
+ * same reason (t180): this body is proxy plumbing, met as an API response, not
+ * the rendered copy the screen keeps in Portuguese. The way out is in the
+ * message, because the two people who will ever read it are whoever reloaded a
+ * stale tab and whoever is scripting against the wrong port.
+ *
+ * @returns A complete `403` response.
+ */
+export function untrustedOriginResponse(): ProxiedResponse {
+  return jsonResponse(403, {
+    erro: UNTRUSTED_ORIGIN_CODE,
+    mensagem: `this proxy only forwards writes that started on the screen's own page — reload the tab, or call the control plane directly (${DEFAULT_CONTROL_PLANE_HOST}:${DEFAULT_CONTROL_PLANE_PORT} by default)`,
   });
 }
 

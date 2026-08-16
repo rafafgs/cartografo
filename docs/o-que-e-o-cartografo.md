@@ -88,6 +88,16 @@ mapa é segredo de quem lê o mapa. Se o destino não responder, o ticket não
 trava — ele segue o caminho dele, e a falha do aviso vira um registro que você
 consegue ver.
 
+**Desligar sem deixar rastro.** O que executa os trabalhos é um processo à
+parte, que você inicia e para quando quiser. Pedir para ele parar sempre
+termina: ele deixa de pegar trabalho novo, dá um tempo (dois minutos, por
+padrão) para o que já estava rodando terminar sozinho e, esgotado esse tempo —
+ou se você pedir de novo —, encerra a sessão em andamento. Nenhum agente que ele
+tenha iniciado continua rodando depois que ele sai, e o trabalho interrompido não
+fica preso: ele volta para a fila e alguém o pega de novo. A única exceção é
+matar o processo à força, no talho (`kill -9`), que não dá chance a ninguém de
+limpar nada — e mesmo aí o trabalho volta para a fila sozinho.
+
 **Enxergar tudo.** O quadro mostra onde cada trabalho está; cada ticket tem
 linha do tempo (agente trabalhando, esperando você, fila); cada pergunta tem
 contexto para responder sem abrir o repo; o histórico permite reconstruir

@@ -1,0 +1,59 @@
+# Integração contínua: lint, tipos e a suíte inteira, a cada push e a cada PR.
+#
+# Existe porque dois tickets mergearam verdes isolados e deixaram a `main`
+# vermelha sem ninguém saber: fora da máquina de quem desenvolve, nada rodava a
+# suíte. A matriz cobre as duas pontas que o repo declara — 24 é o pino do
+# `.nvmrc`, 22 é o LTS mais próximo acima do piso `>=20.11.0` de `engines`.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Uma versão vermelha não cancela a outra: saber se o problema é das duas
+      # ou só de uma é metade do diagnóstico.
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          # Cacheia `~/.npm` com chave no `package-lock.json`, sem passo de
+          # `actions/cache` na mão.
+          cache: npm
+
+      # `npm ci`, nunca `npm install`: instala o que o lockfile diz, e falha se
+      # ele divergir do `package.json` em vez de resolver a diferença em
+      # silêncio — foi um `node_modules` velho que derrubou 314 testes numa
+      # máquina sem ninguém entender por quê.
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      # Os dois grupos (workspaces e raiz) rodam sempre, um depois do outro:
+      # `scripts/run-all-tests.mjs` é quem garante que um vermelho não esconde
+      # o estado do outro.
+      - run: npm test
+
+      # Forma determinística de "nenhum teste escreve fora de `os.tmpdir()`":
+      # qualquer escrita dentro do checkout aparece aqui como arquivo novo ou
+      # modificado. O que é artefato legítimo já está no `.gitignore`.
+      - name: Nenhuma escrita de teste dentro do checkout
+        run: |
+          changed="$(git status --porcelain)"
+          if [ -n "$changed" ]; then
+            echo "A suíte escreveu dentro do checkout:"
+            echo "$changed"
+            exit 1
+          fi

@@ -29,13 +29,24 @@ CARTOGRAFO_TOKEN=<o token do passo 2> \
   npx cartografo import grafos-de-fabrica/desenvolvimento-de-software  # 3 (outro terminal)
 ```
 
+O passo 1 é `npm install` porque um checkout de trabalho é onde o lockfile
+muda. Já uma instalação **reproduzível** — o CI, ou qualquer máquina que precise
+do mesmo `node_modules` de novo — pede `npm ci`: ele instala exatamente o que o
+`package-lock.json` diz e **falha** quando lockfile e `package.json` discordam,
+em vez de acomodar a diferença em silêncio. Foi um `node_modules` velho, mais
+antigo que uma dependência recém-adicionada, que derrubou 314 testes e o
+`typecheck` num checkout sem ninguém entender por quê.
+
 O passo 2 é o control plane inteiro em um comando: cria `.cartografo/cartografo.db`,
 aplica as migrações pendentes, sobe o HTTP e imprime a linha `cartografo.ready`.
 Na PRIMEIRA partida contra um banco novo, essa linha traz também um
 `bootstrapToken`: é a credencial de operador, e é a única vez que ela aparece —
 o banco guarda só o hash dela. Toda rota `/v1/*` exige essa credencial; `/health`
 não exige nenhuma, porque é sonda de infraestrutura. Perdeu o token? Apague
-`.cartografo/` e suba de novo, que outro é emitido.
+`.cartografo/` e suba de novo, que outro é emitido. Um segundo `npx cartografo`
+contra o mesmo banco sai com 1 e uma linha só, dizendo o pid do que já está
+rodando e o arquivo `<banco>.lock` que ele segura — só o servidor escreve no
+banco (D1), e isso vale entre processos, não só dentro de um.
 
 O passo 3 registra o grafo de fábrica 1 (D14) como linhagem base — conferindo
 antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a

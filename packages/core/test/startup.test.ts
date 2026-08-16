@@ -9,8 +9,8 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { spawn, spawnSync, type ChildProcessByStdio } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import type { Readable } from 'node:stream';
@@ -274,6 +274,155 @@ test(
         ).status,
         200,
       );
+    } finally {
+      await startup.shutdown();
+    }
+  },
+);
+
+/** The pid the `<db>.lock` sidecar names (t209, FR2). */
+function lockOwner(databasePath: string): number {
+  const contents = JSON.parse(readFileSync(`${databasePath}.lock`, 'utf8')) as { pid?: unknown };
+  assert.equal(typeof contents.pid, 'number', 'the lock file has to name a pid');
+  return contents.pid as number;
+}
+
+/** A pid that is certainly not running: a child already exited AND reaped. */
+function deadPid(): number {
+  const finished = spawnSync(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  const pid = finished.pid;
+  assert.ok(typeof pid === 'number' && pid > 0, 'the short-lived child had no pid');
+  assert.throws(
+    () => process.kill(pid, 0),
+    /ESRCH/,
+    'fixture broken: the child spawnSync already reaped is still alive',
+  );
+  return pid;
+}
+
+test(
+  't209 AT — a second control plane against the same database is refused before touching it',
+  { timeout: 180_000 },
+  async (t) => {
+    assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
+
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t209-segundo-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+
+    const first = await start({ cwd: base, databasePath, port });
+    try {
+      assert.equal(lockOwner(databasePath), first.child.pid, 'a live control plane owns the lock');
+
+      // A DIFFERENT free port on purpose: on the same one the refusal would be
+      // "the address is busy" — the case t124's test already covers — and
+      // nothing would be proven about the database. What has to fail here is
+      // the second process's claim over the FILE.
+      const otherPort = await freePort();
+      const refused = spawn(process.execPath, [BIN_PATH], {
+        cwd: base,
+        env: {
+          ...process.env,
+          CARTOGRAFO_DB_PATH: databasePath,
+          CARTOGRAFO_PORT: String(otherPort),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+      let stderr = '';
+      refused.stdout.setEncoding('utf8');
+      refused.stderr.setEncoding('utf8');
+      refused.stdout.on('data', (chunk: string) => {
+        stdout += chunk;
+      });
+      refused.stderr.on('data', (chunk: string) => {
+        stderr += chunk;
+      });
+
+      const code = await new Promise<number | null>((resolve) => {
+        const giveUp = setTimeout(() => refused.kill('SIGKILL'), 30_000);
+        refused.on('close', (exitCode) => {
+          clearTimeout(giveUp);
+          resolve(exitCode);
+        });
+      });
+
+      assert.equal(code, 1, `the second control plane has to die\nstdout:\n${stdout}\nstderr:\n${stderr}`);
+      assert.ok(
+        stderr.includes(String(first.child.pid)),
+        `the refusal has to name the pid already running:\n${stderr}`,
+      );
+      assert.ok(
+        stderr.includes(`${databasePath}.lock`),
+        `the refusal has to name the lock file:\n${stderr}`,
+      );
+      assert.ok(
+        !stderr.includes('startup failed'),
+        `a held lock is one line, not the generic dump (FR4):\n${stderr}`,
+      );
+      assert.equal(stdout.trim(), '', 'a startup that was refused announces nothing');
+
+      // The proof that it stopped BEFORE the database: the first control plane
+      // is intact, and its credential — the one thing a second minting would
+      // have made ambiguous — still authenticates.
+      assert.equal(lockOwner(databasePath), first.child.pid, 'the refused attempt took no lock');
+      const health = await fetch(`http://127.0.0.1:${port}/health`);
+      assert.equal(health.status, 200);
+      assert.deepEqual(await health.json(), { status: 'ok', db: 'ok' });
+      assert.equal(
+        (
+          await fetch(`http://127.0.0.1:${port}/v1/jobs`, {
+            headers: { authorization: `Bearer ${first.readiness.bootstrapToken ?? ''}` },
+          })
+        ).status,
+        200,
+        'the credential of the first startup is still the only one there is',
+      );
+    } finally {
+      await first.shutdown();
+    }
+
+    assert.equal(
+      existsSync(`${databasePath}.lock`),
+      false,
+      'the shutdown gives the lock back: the next startup finds nothing to take over',
+    );
+  },
+);
+
+test(
+  't209 AT — a startup over a lock naming a dead process takes it over and comes up',
+  { timeout: 180_000 },
+  async (t) => {
+    assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/core/bin/cartografo.mjs');
+
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t209-orfao-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    const databasePath = path.join(base, 'cartografo.db');
+    const port = await freePort();
+
+    // What a `kill -9` leaves behind. Refusing to start over it would turn one
+    // hard kill into a manual cleanup step — the opposite of a one-command
+    // start, and for no gain: nobody is holding anything.
+    writeFileSync(
+      `${databasePath}.lock`,
+      `${JSON.stringify({ pid: deadPid(), since: '2026-08-16T12:00:00.000Z' })}\n`,
+      'utf8',
+    );
+
+    const startup = await start({ cwd: base, databasePath, port });
+    try {
+      assert.equal(startup.readiness.event, 'cartografo.ready');
+      assert.ok(
+        startup.readiness.migrationsApplied >= 1,
+        'the abandoned lock did not stop the migrations of a brand-new database',
+      );
+      assert.equal(lockOwner(databasePath), startup.child.pid, 'the lock now names the live process');
+      assert.equal((await fetch(`http://127.0.0.1:${port}/health`)).status, 200);
     } finally {
       await startup.shutdown();
     }

@@ -64,6 +64,14 @@ export function openDatabase(filePath: string): Database {
 export function applyPragmas(db: Database): void {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  // A few milliseconds of patience instead of an immediate `SQLITE_BUSY`: the
+  // file gets locked for an instant by things that are not a second writer — an
+  // operator's read-only inspection, a backup — and a control plane that gives
+  // up on those is reporting a failure that never happened. Written out even
+  // though the driver's current default is this same 5000: the wait the control
+  // plane depends on is a decision of this file, not of whichever driver is
+  // underneath it (t209, FR1).
+  db.pragma('busy_timeout = 5000');
 }
 
 /**

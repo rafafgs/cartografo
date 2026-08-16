@@ -194,9 +194,12 @@ interface RegisteredBody extends LineageBody {
   grafo_versao: { id: string };
 }
 
-/** Registers the base graph and returns its lineage and first version. */
-async function registerBase(cp: RunningControlPlane): Promise<RegisteredBody> {
-  const created = await api<RegisteredBody>(cp, 'POST', '/v1/graphs', baseGraph());
+/** Registers a graph — the base one unless another document is handed in. */
+async function registerBase(
+  cp: RunningControlPlane,
+  document: Record<string, unknown> = baseGraph(),
+): Promise<RegisteredBody> {
+  const created = await api<RegisteredBody>(cp, 'POST', '/v1/graphs', document);
   assert.equal(created.status, 201, `POST /v1/graphs returned ${created.status}`);
   return created.body;
 }
@@ -275,6 +278,108 @@ test('AC1 — the page produces the same version the API would, through the same
   assert.ok(doc.require('result').textContent.includes(applied), 'the new version is not on the page (FR7)');
 
   // The same body, sent by hand to a control plane the page never touched.
+  const sent = log.find((call) => shapeOf(call) === 'POST /v1/proposals');
+  assert.ok(sent !== undefined, 'the page never created a proposal');
+
+  const created = await api<{ proposta: { id: number } }>(replayed, 'POST', '/v1/proposals', sent.body);
+  assert.equal(created.status, 201, `POST /v1/proposals returned ${created.status}`);
+  const proposalId = created.body.proposta.id;
+
+  const approved = await api(replayed, 'POST', `/v1/proposals/${proposalId}/approve`, {});
+  assert.equal(approved.status, 200, `approve returned ${approved.status}`);
+
+  const done = await api<{ grafo_versao: { id: string } }>(
+    replayed,
+    'POST',
+    `/v1/proposals/${proposalId}/apply`,
+    {},
+  );
+  assert.equal(done.status, 200, `apply returned ${done.status}`);
+
+  assert.equal(
+    applied,
+    done.body.grafo_versao.id,
+    'the page and the raw API produced different versions of the same edit',
+  );
+});
+
+/* ------------------------------------------- AC1, with parallel edges (t205) */
+
+/**
+ * The base graph with two edges between the same two nodes.
+ *
+ * Sound, and always was: nothing in `grafo.schema.json` or in the four
+ * soundness rules forbids two transitions between the same pair — they are two
+ * different outcomes of the same step, which is exactly what a gate produces.
+ */
+function parallelBaseGraph(): Record<string, unknown> {
+  const graph = baseGraph();
+  graph.edges = [
+    { from: 'redigir', to: 'revisar', condition: 'aprovado' },
+    { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+  ];
+  return graph;
+}
+
+/** Clicks a card's own remove button, the way a person would. */
+function removeCard(card: FakeElement, label: string): void {
+  const buttons = card.byTag('button').filter((node) => node.textContent === label);
+  assert.equal(buttons.length, 1, `expected one "${label}" button in the card, found ${buttons.length}`);
+  buttons[0].click();
+}
+
+/** The `condition` of every edge of a version's snapshot, in document order. */
+function conditionsOf(snapshot: Record<string, unknown>): string[] {
+  const edges = snapshot.edges as Record<string, unknown>[];
+  return edges.map((edge) => String(edge.condition));
+}
+
+test('AC1 — two parallel edges stay two edges, from the cards to the version id', async (t) => {
+  const [driven, replayed] = await Promise.all([startControlPlane(t), startControlPlane(t)]);
+  const screen = await startScreen(t, driven);
+
+  const registered = await registerBase(driven, parallelBaseGraph());
+  await registerBase(replayed, parallelBaseGraph());
+
+  const { doc, editor, log } = await openEditor(screen.url, registered.grafo.id);
+
+  const drawn = cards(doc, 'edge-list', 'data-edge');
+  assert.equal(drawn.length, 2, 'the page did not draw one card per parallel edge');
+
+  // Remove the second of the pair and add a third condition in its place. The
+  // two operations name the same two ends, so nothing but `condition` can tell
+  // the removal from the addition — or from the sibling that has to survive.
+  removeCard(drawn[1], 'Remover aresta');
+
+  doc.require('add-edge').click();
+  fillCard(cards(doc, 'edge-list', 'data-edge').at(-1) as FakeElement, {
+    from: 'redigir',
+    to: 'revisar',
+    condition: 'escala',
+  });
+
+  await editor.save();
+
+  const applied = editor.state().appliedVersionId;
+  assert.ok(typeof applied === 'string' && applied !== '', 'the page did not record a new version');
+
+  // What was actually written: the sibling the person never touched, and the
+  // edge they typed. Keyed by the two ends alone, the diff removed whichever
+  // parallel edge came first and this read came back `reprovado, escala`.
+  const version = await api<{ grafo_versao: { snapshot: Record<string, unknown> } }>(
+    driven,
+    'GET',
+    `/v1/graph-versions/${encodeURIComponent(applied)}`,
+  );
+  assert.equal(version.status, 200, `GET /v1/graph-versions returned ${version.status}`);
+  assert.deepEqual(
+    conditionsOf(version.body.grafo_versao.snapshot),
+    ['aprovado', 'escala'],
+    'the version kept the wrong half of the parallel pair',
+  );
+
+  // And the same parity as AC1: the page's own body, replayed by hand against a
+  // control plane it never touched, lands on the same id.
   const sent = log.find((call) => shapeOf(call) === 'POST /v1/proposals');
   assert.ok(sent !== undefined, 'the page never created a proposal');
 

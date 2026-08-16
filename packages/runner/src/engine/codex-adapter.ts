@@ -182,6 +182,11 @@ interface Session {
   readonly silenceMs: number;
   escalation: NodeJS.Timeout | null;
   safetyNet: NodeJS.Timeout | null;
+  /**
+   * The `process.on('exit')` listener that takes this session's group down with
+   * the runner, while it is live (t193, FR11). `null` once it is not.
+   */
+  exitBackstop: (() => void) | null;
   leftovers: { stdout: string; stderr: string };
 }
 
@@ -286,6 +291,7 @@ export class CodexAdapter implements EngineAdapter {
           : 0,
       escalation: null,
       safetyNet: null,
+      exitBackstop: null,
       leftovers: { stdout: '', stderr: '' },
     };
     this.#sessions.set(id, session);
@@ -302,6 +308,7 @@ export class CodexAdapter implements EngineAdapter {
     child.once('spawn', () => {
       started = true;
       session.status = 'running';
+      this.#armExitBackstop(session);
       announceStart(null);
     });
 
@@ -549,6 +556,36 @@ export class CodexAdapter implements EngineAdapter {
       if (timer) clearTimeout(timer);
       session[name] = null;
     }
+    if (session.exitBackstop !== null) {
+      process.off('exit', session.exitBackstop);
+      session.exitBackstop = null;
+    }
+  }
+
+  /**
+   * Takes this session's process group down with the runner (t193, FR11).
+   *
+   * Hand-duplicated from `claude-code-adapter.ts`, like the rest of this
+   * lifecycle and for the reason this file's header records: with two adapters
+   * there is still no evidence of what the shared abstraction should look like,
+   * and this change follows that precedent rather than reopening it.
+   *
+   * The backstop, and only that: t193 gave the runner an explicit shutdown that
+   * cancels a live session through {@link CodexAdapter.cancel}, and this covers
+   * every OTHER way the process can end — an uncaught exception somewhere else,
+   * a bare `process.exit()`, a `finally` that never ran.
+   *
+   * SIGTERM only, and no escalation: `'exit'` is the last synchronous turn this
+   * process gets, there is no event loop left for a SIGKILL five seconds later,
+   * and `await` is not allowed here. The one honest limit stays a limit: a
+   * `SIGKILL` of the runner itself runs no JavaScript at all, `'exit'` never
+   * fires, and nothing in this process can prevent that orphan.
+   */
+  #armExitBackstop(session: Session): void {
+    session.exitBackstop = () => {
+      this.#signalGroup(session, 'SIGTERM');
+    };
+    process.on('exit', session.exitBackstop);
   }
 
   /**

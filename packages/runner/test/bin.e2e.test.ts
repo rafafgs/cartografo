@@ -17,18 +17,31 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync, spawn, type ChildProcessByStdio } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
+
+import { DEFAULT_GRACE_MS } from '../src/engine/claude-code-adapter.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const CONTROL_PLANE_BIN = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
 const RUNNER_BIN = path.join(PACKAGE_ROOT, 'bin', 'cartografo-runner.mjs');
+const FAKE_ENGINE = fileURLToPath(new URL('fixtures/fake-engine.mjs', import.meta.url));
 
 /** Deadline for the two startups. Wide slack, on purpose. */
 const DEADLINE_MS = 30_000;
@@ -110,6 +123,98 @@ async function awaitReadiness(watched: WatchedChild, event: string): Promise<Rec
   throw new Error(
     `"${event}" was not announced within ${DEADLINE_MS}ms\nstdout:\n${watched.out()}\nstderr:\n${watched.err()}`,
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* t193 — what a hard stop needs beyond a runner that pairs and goes away.     */
+/* -------------------------------------------------------------------------- */
+
+/** One JSON call with the credential handed in explicitly, asserting the status. */
+async function api<T>(
+  baseUrl: string,
+  token: string,
+  method: string,
+  route: string,
+  body?: unknown,
+  expected = 200,
+): Promise<T> {
+  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+  if (body !== undefined) headers['content-type'] = 'application/json';
+
+  const response = await fetch(`${baseUrl}${route}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  assert.equal(response.status, expected, `${method} ${route} answered ${response.status}: ${text}`);
+  return (text === '' ? undefined : JSON.parse(text)) as T;
+}
+
+/** Waits for something to become true, with a deadline and a message of its own. */
+async function waitFor(label: string, check: () => Promise<boolean> | boolean): Promise<void> {
+  const deadline = Date.now() + DEADLINE_MS;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await delay(50);
+  }
+  throw new Error(`${label} did not happen within ${DEADLINE_MS}ms`);
+}
+
+/**
+ * A repository with one commit, for a runner that really cuts worktrees.
+ *
+ * The two cases above never dispatch and get plain directories; this one does,
+ * so `git worktree add` has to have something to cut from.
+ */
+function initRepo(base: string): string {
+  const repoRoot = path.join(base, 'repo');
+  mkdirSync(repoRoot, { recursive: true });
+  const git = (...args: string[]): string =>
+    execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe', encoding: 'utf8' }).trim();
+
+  git('init', '--quiet');
+  git('config', 'user.email', 'fixture@cartografo.local');
+  git('config', 'user.name', 'Fixture t193');
+  writeFileSync(path.join(repoRoot, 'README.md'), '# Repositório de fixture da t193\n');
+  git('add', '.');
+  git('commit', '--quiet', '-m', 'inicial');
+
+  return repoRoot;
+}
+
+/**
+ * Puts the fake engine on the PATH under the name the real adapter spawns.
+ *
+ * The bin under test is the REAL one, so there is no `engineFactory` seam to
+ * reach from out here: `buildCommand` spawns `claude`, full stop. A shim named
+ * `claude`, first on the child's PATH, is what lets this file exercise the
+ * production wiring end to end without an installed, authenticated CLI — the
+ * same division `docs/formatos/engine-adapter.md:363-366` records, applied to
+ * the one seam a separate process has.
+ *
+ * @returns The directory to prepend to PATH.
+ */
+function fakeEngineOnPath(base: string): string {
+  const dir = path.join(base, 'bin');
+  mkdirSync(dir, { recursive: true });
+  const shim = path.join(dir, 'claude');
+  writeFileSync(
+    shim,
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(FAKE_ENGINE)} "$@"\n`,
+  );
+  chmodSync(shim, 0o755);
+  return dir;
+}
+
+/** Is this pid still there? A zombie answers yes until it is reaped. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
 }
 
 test('t162 — the runner is an installable command, started by plain node', async (parent) => {
@@ -205,4 +310,145 @@ test('t162 — the runner is an installable command, started by plain node', asy
       `asking a runner to stop is not an error (took ${Date.now() - asked}ms)\nstderr:\n${runner.err()}`,
     );
   });
+
+  await parent.test(
+    't193 AT16 — a stop with a live session is bounded, and orphans no engine process',
+    async (t) => {
+      // The grace is short here for the same reason every other number in this
+      // file is wide: what is being measured is that the stop is BOUNDED, and a
+      // real 120s default would only make the measurement slower, never
+      // different. The engine going down after it is the adapter's own
+      // SIGTERM→SIGKILL escalation, which is why the deadline carries
+      // `DEFAULT_GRACE_MS` too.
+      const shutdownGraceSeconds = 1;
+
+      const base = realpathSync(mkdtempSync(path.join(tmpdir(), 'cartografo-t193-at16-')));
+      t.after(() => {
+        rmSync(base, { recursive: true, force: true });
+      });
+
+      const repoRoot = initRepo(base);
+      const worktreesRoot = path.join(base, 'worktrees');
+      const record = path.join(base, 'engine-record.json');
+      const shimDir = fakeEngineOnPath(base);
+
+      const job = await api<{ id: number }>(
+        baseUrl,
+        token,
+        'POST',
+        '/v1/jobs',
+        { titulo: 'trabalho com sessão viva', no_entrada_id: 'fazer', execucao_id: 193016 },
+        201,
+      );
+      t.after(async () => {
+        await api(baseUrl, token, 'POST', `/v1/jobs/${job.id}/blocks`, {
+          motivo: 'fim do caso de teste',
+        });
+      });
+
+      const runner = spawnWatched(
+        parent,
+        [
+          RUNNER_BIN,
+          '--url', baseUrl,
+          '--token', token,
+          '--project', '1',
+          '--runner-id', 'runner-t193-at16',
+          '--working-dir', repoRoot,
+          '--worktrees-root', worktreesRoot,
+          '--interval-ms', '200',
+          '--lease-ttl-seconds', '30',
+          '--shutdown-grace-seconds', String(shutdownGraceSeconds),
+        ],
+        {
+          cwd: repoRoot,
+          env: {
+            ...(() => {
+              const plain = { ...process.env };
+              delete plain.NODE_OPTIONS;
+              return plain;
+            })(),
+            PATH: `${shimDir}${path.delimiter}${process.env.PATH ?? ''}`,
+            // The session the stop has to interrupt: a process that would
+            // outlive the runner by an hour, holding a child of its own that
+            // ignores SIGTERM — which is what makes the escalation to the whole
+            // group the only thing that can end it.
+            FAKE_ENGINE_DELAY_MS: '3600000',
+            FAKE_ENGINE_SPAWN_CHILD: '1',
+            FAKE_ENGINE_IGNORE_SIGTERM: '1',
+            FAKE_ENGINE_RECORD: record,
+          },
+        },
+      );
+
+      await awaitReadiness(runner, 'cartografo.runner.ready');
+
+      // The session row is written as soon as the engine is up, which is the
+      // earliest moment this test can know a dispatch is in flight — the same
+      // wait `cli/run.e2e.test.ts`'s AT13 uses.
+      await waitFor('a session being opened', async () => {
+        const { sessoes: sessions } = await api<{ sessoes: unknown[] }>(
+          baseUrl,
+          token,
+          'GET',
+          '/v1/sessions?execucao_id=193016',
+        );
+        return sessions.length > 0;
+      });
+      await waitFor('the engine writing its sidecar', () => existsSync(record));
+
+      const engine = JSON.parse(readFileSync(record, 'utf8')) as {
+        pid: number;
+        grandchildPid: number | null;
+      };
+      assert.equal(typeof engine.pid, 'number');
+      assert.equal(typeof engine.grandchildPid, 'number', 'the session left a child behind');
+      const pids = [engine.pid, engine.grandchildPid as number];
+      for (const pid of pids) assert.ok(alive(pid), `pid ${pid} should be running before the stop`);
+
+      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+        (resolve) => {
+          runner.child.once('exit', (code, signal) => resolve({ code, signal }));
+        },
+      );
+
+      // The bound: the grace the runner was given, plus the escalation the
+      // adapter itself spends going from SIGTERM to SIGKILL, plus slack for the
+      // control-plane writes the dispatch still owes on its way out.
+      const bound = shutdownGraceSeconds * 1_000 + DEFAULT_GRACE_MS + 5_000;
+
+      const asked = Date.now();
+      runner.child.kill('SIGTERM');
+
+      const outcome = await Promise.race([exited, delay(bound).then(() => null)]);
+      const took = Date.now() - asked;
+
+      assert.ok(
+        outcome !== null,
+        `the runner did not stop within ${bound}ms of SIGTERM with a session in flight — ` +
+          `a stop that waits out the session waits up to an hour\nstderr:\n${runner.err()}`,
+      );
+      assert.equal(outcome.signal, null, 'a bounded stop is an exit, not a death by signal');
+      assert.equal(
+        outcome.code,
+        0,
+        `asking a runner to stop is not an error (took ${took}ms)\nstderr:\n${runner.err()}`,
+      );
+
+      // ...and this is the half a bounded exit alone does not prove: what the
+      // runner started is not still running once the runner is gone. The short
+      // poll is for the REAPING and nothing else — a process killed while its
+      // parent was still up stays a zombie for as long as it takes the kernel
+      // to reparent it, and a zombie answers `kill(pid, 0)` like the living.
+      for (let attempt = 0; attempt < 20 && pids.some((pid) => alive(pid)); attempt += 1) {
+        await delay(100);
+      }
+      for (const pid of pids) {
+        assert.ok(
+          !alive(pid),
+          `pid ${pid} outlived the runner: a session nobody can report on, writing in a worktree nobody will give back`,
+        );
+      }
+    },
+  );
 });

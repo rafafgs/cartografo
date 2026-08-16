@@ -27,7 +27,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -171,6 +171,16 @@ interface Session {
    * the runner, while it is live (t193, FR11). `null` once it is not.
    */
   exitBackstop: (() => void) | null;
+  /**
+   * Absolute path of the ephemeral system-prompt file this session wrote, when
+   * its content was too large to travel in the argv (t203). `null` for every
+   * ordinary session, which is almost all of them.
+   *
+   * Kept on the session because the removal happens somewhere else entirely
+   * from the writing: the file is written before the spawn and deleted in
+   * `#finish`, which is the one funnel every terminal path goes through.
+   */
+  ephemeralFilePath: string | null;
   leftovers: { stdout: string; stderr: string };
 }
 
@@ -317,18 +327,56 @@ export class ClaudeCodeAdapter implements EngineAdapter {
 
     const command = this.#commandBuilder(spec);
 
+    // BEFORE the spawn, because the engine reads it as it comes up (t203). Mode
+    // 0600 and then a `chmod` on top of it: `writeFileSync`'s mode only applies
+    // when the file is CREATED, so a leftover from a session that died between
+    // the write and the cleanup would keep whatever permissions it had. The
+    // content is a node's instructions, in a directory a session runs commands
+    // in — world-readable would be a skill leaking to every process on the box.
+    let ephemeralFilePath: string | null = null;
+    if (command.ephemeralFile) {
+      ephemeralFilePath = join(spec.workingDir, command.ephemeralFile.relativePath);
+      writeFileSync(ephemeralFilePath, command.ephemeralFile.content, {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+      chmodSync(ephemeralFilePath, 0o600);
+    }
+
+    // `stdin` piped only when there is something to write into it. Invariant 6
+    // forbids the third shape — a pipe open with nothing written and nothing
+    // closing it — and that is exactly what is avoided by deciding here instead
+    // of piping unconditionally: the write below is unconditional TOO, and the
+    // two conditions are the same one.
+    const stdio = [...ENGINE_STDIO] as Array<'ignore' | 'pipe'>;
+    if (command.stdin !== undefined) stdio[0] = 'pipe';
+
     let child: ChildProcess;
     try {
       child = spawn(command.command, [...command.args], {
         cwd: spec.workingDir,
         env: this.#environmentBuilder(spec),
-        stdio: [...ENGINE_STDIO],
+        stdio,
         // Its own group: that is what allows signalling grandchildren along
         // with the parent.
         detached: true,
       });
     } catch (cause) {
+      this.#removeEphemeralFile(ephemeralFilePath);
       throw new SessionStartError(`could not start "${command.command}"`, { cause });
+    }
+
+    // Synchronously, right after the spawn, and the error listener FIRST: an
+    // engine that exits before reading its stdin breaks the pipe, and an
+    // unhandled `'error'` on a stream is an uncaught exception — the runner
+    // dying over one session's fast exit. A broken pipe is not a session
+    // failure; the process's own exit is the outcome, and it is already
+    // reported through `close`.
+    if (command.stdin !== undefined && child.stdin) {
+      child.stdin.on('error', () => {
+        /* the engine went away without reading; its exit is the real outcome */
+      });
+      child.stdin.end(command.stdin, 'utf8');
     }
 
     const id = randomUUID();
@@ -354,6 +402,7 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       escalation: null,
       safetyNet: null,
       exitBackstop: null,
+      ephemeralFilePath,
       leftovers: { stdout: '', stderr: '' },
     };
     this.#sessions.set(id, session);
@@ -402,6 +451,10 @@ export class ClaudeCodeAdapter implements EngineAdapter {
     const failure = await start;
     if (failure) {
       this.#sessions.delete(id);
+      // A session that never came up never reaches `#finish`, so the cleanup
+      // that lives there never runs. Without this, a failing binary would leave
+      // the node's instructions behind in the worktree on every attempt.
+      this.#removeEphemeralFile(session.ephemeralFilePath);
       throw new SessionStartError(
         `could not open a session with "${command.command}" in "${spec.workingDir}"`,
         { cause: failure },
@@ -606,6 +659,12 @@ export class ClaudeCodeAdapter implements EngineAdapter {
     if (!session || session.finished) return;
 
     this.#disarm(session);
+    // Here and not on any single path, because this is the funnel every one of
+    // them goes through: natural completion, either watchdog, a `cancel()`, the
+    // escalation's safety net and the post-spawn `error`. A file left behind is
+    // a skill sitting in a worktree that gets handed back to somebody else.
+    this.#removeEphemeralFile(session.ephemeralFilePath);
+    session.ephemeralFilePath = null;
     session.finished = true;
     // Invariant 3: the status only turns terminal together with onFinished,
     // never before.
@@ -631,6 +690,25 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       exitCode,
       Object.keys(detail).length === 0 ? undefined : detail,
     );
+  }
+
+  /**
+   * Removes the ephemeral system-prompt file, if this session wrote one.
+   *
+   * Best effort by design: the failure modes are a file the session itself
+   * deleted, a directory already torn down by whoever owns the worktree, or a
+   * permission the runner lost. None of them is a reason to throw out of a
+   * terminal path and cost the session its `onFinished` — invariant 1 outranks
+   * a leftover file, and the leftover is what this method is trying to prevent
+   * in the first place.
+   */
+  #removeEphemeralFile(path: string | null): void {
+    if (path === null) return;
+    try {
+      rmSync(path, { force: true });
+    } catch {
+      /* the file is gone, or was never ours to remove */
+    }
   }
 
   #disarm(session: Session): void {

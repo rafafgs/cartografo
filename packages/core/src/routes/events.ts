@@ -259,8 +259,31 @@ export function registerEvents(
   // running `onClose`, so a stream nobody closed would hold the shutdown
   // forever. Here the connections are ended first, and the shutdown proceeds
   // (FR7).
+  //
+  // Ending them is not enough, and t218 is the bug that proved it. `close()`
+  // waits for EVERY socket the server has accepted — including one that never
+  // carried a request, which is precisely what an abandoned stream leaves
+  // behind: the client's connection pool drops the socket it was streaming on
+  // and immediately re-dials the origin. Through Node 22 (undici 6) that fresh
+  // socket stays in the pool and sits there mute; from Node 24 on (undici 7)
+  // the client closes it by itself, which is the entire reason this only ever
+  // went red on the 22 leg of the matrix.
+  //
+  // No `release` in `open` owns that socket, so no amount of teardown here
+  // reaches it, and `closeIdleConnections()` does not see it either: a
+  // connection only counts as idle once its parser has read a message, and this
+  // one never sent a byte. Destroying what is left is the only thing that gets
+  // there — and it is safe by this point, because Fastify has already closed
+  // the router and is answering 503 to anything new.
   app.addHook('preClose', async () => {
     for (const release of [...open]) release();
+    // One turn of the loop before the sockets go, so the `end()` above reaches
+    // the wire: a consumer still connected gets its last bytes and a clean end
+    // of stream, instead of a reset in the middle of an event.
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    app.server.closeAllConnections();
   });
 
   app.get('/events/stream', async (request, reply) =>

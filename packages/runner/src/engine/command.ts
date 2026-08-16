@@ -109,10 +109,73 @@ export const TRIVIAL_MODEL_VARIABLE = 'CLAUDE_TRIVIAL_MODEL';
  */
 export const ENGINE_STDIO = ['ignore', 'pipe', 'pipe'] as const;
 
+/**
+ * End-of-options marker, immediately before the trailing prompt positional.
+ *
+ * The whole fix for a bug that costs a session and explains nothing: measured
+ * against `claude 2.1.233`, `claude --print "-1 apples remain"` answers
+ * `error: unknown option '-1 apples remain'` and never opens. A node's
+ * instructions are prose written by somebody else — a bullet list, a diff, a
+ * negative number — and there is no rule of ours that keeps a `-` out of the
+ * first column. After `--` the CLI stops looking for flags, which is the only
+ * version of this the caller cannot get wrong.
+ *
+ * It goes ONLY here, immediately before the positional. Every flag of this argv
+ * (`--resume`, `--model`, `--disallowedTools`, `--system-prompt`) is assembled
+ * before it and is unaffected — verified against the real CLI for each one.
+ */
+const END_OF_OPTIONS = '--';
+
+/**
+ * Combined `instructions` + `prompt` byte size past which the content leaves
+ * the argv.
+ *
+ * 64 KiB, with room on both sides of the two real ceilings: Linux caps a SINGLE
+ * argv element at 128 KiB (`MAX_ARG_STRLEN`) and macOS caps the whole argv+envp
+ * block (`ARG_MAX`). The margin is for everything else in the block — the other
+ * flags, and an environment this adapter merges but does not control.
+ *
+ * **Bytes, never `.length`.** The content this project produces is Portuguese
+ * prose: every accented character is two bytes in UTF-8 and one UTF-16 unit in
+ * JavaScript, so a `.length` check undercounts by up to half, on exactly the
+ * input that matters. What the kernel copies is bytes.
+ *
+ * Past it, nothing fails and nothing is truncated: `instructions` and `prompt`
+ * take a channel with no practical ceiling. The limit is where the mechanism
+ * changes, not where the session stops working.
+ */
+export const ARGV_INLINE_LIMIT_BYTES = 64 * 1024;
+
+/**
+ * Name of the ephemeral file the oversized path writes under `spec.workingDir`.
+ *
+ * Dotted and namespaced because it lands in a directory somebody else's work
+ * lives in: this is the runner's file, it exists for the length of one session,
+ * and the adapter removes it at the end. `--system-prompt-file` is what reads
+ * it — a flag `claude --help` does not list on its own, but which `--bare`'s own
+ * description cites (`--system-prompt[-file]`) and which was measured working
+ * against `claude 2.1.233`.
+ */
+export const SYSTEM_PROMPT_FILE_NAME = '.cartografo-system-prompt';
+
+/** The flag that reads the system prompt from a file instead of from the argv. */
+export const SYSTEM_PROMPT_FILE_FLAG = '--system-prompt-file';
+
 /** A command ready for `spawn`, with no shell in between. */
 export interface EngineCommand {
   readonly command: string;
   readonly args: string[];
+  /**
+   * What the adapter writes to the process's stdin, when the content did not
+   * fit in the argv. Absent means stdin stays closed, which is invariant 6's
+   * default and what every session below the limit gets.
+   */
+  readonly stdin?: string;
+  /**
+   * A file the adapter writes under `spec.workingDir` before spawning and
+   * removes when the session ends. Absent on every path but the oversized one.
+   */
+  readonly ephemeralFile?: { readonly relativePath: string; readonly content: string };
 }
 
 /** The permission mode in force: the environment variable, or the default. */
@@ -183,6 +246,17 @@ export function resolveModel(
  * told; a model id landing there would be read as one more denied tool, or as a
  * trailing positional the composition owns. Before both, each flag closes on
  * its own value and changes nothing else.
+ *
+ * **The trailer has two shapes since t203, chosen by SIZE and by nothing else.**
+ * Below {@link ARGV_INLINE_LIMIT_BYTES} it is the one it always was, plus the
+ * `--` guard; at or above it, `instructions` becomes an ephemeral file and
+ * `prompt` becomes stdin, and no positional is assembled at all. Both shapes
+ * come out of `composeWithSystemPromptFlag` — the specification's own function
+ * — so the normative rule (`instructions` and `prompt` NEVER concatenated)
+ * still holds by construction on both, and the caller above the boundary
+ * cannot tell which one ran. That is the whole point, and the specification
+ * says so itself: each adapter decides how it injects — the engine's flag, its
+ * stdin, or an ephemeral file (`engine-adapter.md:277-279`).
  */
 export function buildCommand(
   spec: SessionSpec,
@@ -190,30 +264,61 @@ export function buildCommand(
 ): EngineCommand {
   const { deniedTools } = resolvePermissions(spec.permissions);
   const model = resolveModel(spec, env);
+  // The document's own function, on both branches: rewriting the triple here
+  // would satisfy the same assertions while quietly forking the format.
+  const composed = composeWithSystemPromptFlag(spec);
+  const inline = combinedBytes(spec) < ARGV_INLINE_LIMIT_BYTES;
+
+  const args = [
+    '--print',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--permission-mode',
+    resolvePermissionMode(env),
+    // Absent field, absent flag — and an empty ref counts as absent: a bare
+    // `--resume` would take the next token as its value, which is the exact
+    // accident the position below exists to prevent.
+    ...(spec.resumeFrom ? [RESUME_FLAG, spec.resumeFrom] : []),
+    // Absent model AND no trivial tier, absent flag: the engine resolves its
+    // own default, and the argv is what it was before either field existed.
+    // Exactly one flag, whatever the two fields say — see `resolveModel`.
+    ...(model === undefined ? [] : [MODEL_FLAG, model]),
+    // Absent policy, absent flag: a session that declared nothing produces
+    // exactly the argv it produced before this field existed.
+    ...(deniedTools.length === 0 ? [] : [DISALLOWED_TOOLS_FLAG, ...deniedTools]),
+    ...(inline
+      ? // `--system-prompt`, the instructions, the guard, the prompt. Sliced
+        // rather than indexed so the `--` can only ever land between the flag's
+        // VALUE and the positional, never between the flag and its value.
+        [...composed.slice(0, 2), END_OF_OPTIONS, ...composed.slice(2)]
+      : // No trailing positional at all: with `-p` and nothing positional, the
+        // CLI reads the whole prompt from stdin (measured, `claude 2.1.233`).
+        // Leaving an empty positional behind would be the one shape that breaks
+        // it — the CLI would take the empty string as the prompt and never read
+        // the pipe.
+        [SYSTEM_PROMPT_FILE_FLAG, SYSTEM_PROMPT_FILE_NAME]),
+  ];
+
+  if (inline) return { command: CLAUDE_BINARY, args };
 
   return {
     command: CLAUDE_BINARY,
-    args: [
-      '--print',
-      '--output-format',
-      'stream-json',
-      '--verbose',
-      '--permission-mode',
-      resolvePermissionMode(env),
-      // Absent field, absent flag — and an empty ref counts as absent: a bare
-      // `--resume` would take the next token as its value, which is the exact
-      // accident the position below exists to prevent.
-      ...(spec.resumeFrom ? [RESUME_FLAG, spec.resumeFrom] : []),
-      // Absent model AND no trivial tier, absent flag: the engine resolves its
-      // own default, and the argv is what it was before either field existed.
-      // Exactly one flag, whatever the two fields say — see `resolveModel`.
-      ...(model === undefined ? [] : [MODEL_FLAG, model]),
-      // Absent policy, absent flag: a session that declared nothing produces
-      // exactly the argv it produced before this field existed.
-      ...(deniedTools.length === 0 ? [] : [DISALLOWED_TOOLS_FLAG, ...deniedTools]),
-      ...composeWithSystemPromptFlag(spec),
-    ],
+    args,
+    stdin: spec.prompt,
+    ephemeralFile: { relativePath: SYSTEM_PROMPT_FILE_NAME, content: spec.instructions },
   };
+}
+
+/**
+ * What the two fields weigh together, in the unit the kernel counts.
+ *
+ * Together and not one at a time: the ceiling that matters on macOS is on the
+ * whole block, and measuring only the larger of the two would let a pair of
+ * 40 KiB fields through as if they were 40 KiB.
+ */
+function combinedBytes(spec: SessionSpec): number {
+  return Buffer.byteLength(spec.instructions, 'utf8') + Buffer.byteLength(spec.prompt, 'utf8');
 }
 
 /**

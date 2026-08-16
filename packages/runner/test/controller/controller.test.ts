@@ -473,3 +473,96 @@ test('t193 — a heartbeat still in flight is skipped, never overlapped', async 
   await yieldEventLoop();
   assert.equal(beats.length, 2, 'skipping a beat may not stop the heartbeat for good');
 });
+
+/* -------------------------------------------------------------------------- */
+/* t208 — a ceiling refusal ends the tick; a per-job refusal only skips a job. */
+/* -------------------------------------------------------------------------- */
+
+/** A candidate as `GET /v1/jobs` describes one, for the fakes below. */
+const candidate = (id: number): ClientModule.Trabalho => ({
+  id,
+  titulo: `implementar t208 #${id}`,
+  no_atual: 'implementar',
+  bloqueado: false,
+  concluido: false,
+  execucao_id: 9,
+  grafo_versao_id: null,
+});
+
+/**
+ * A client with a queue of candidates and a scripted answer per lease request.
+ *
+ * Hand-built and not {@link environment}'s: what these cases are about is WHICH
+ * refusal came back, and a `fetch` fake that answers the happy path has no way
+ * of saying that.
+ */
+function refusingClient(
+  candidates: number[],
+  answers: ClientModule.RespostaDeConcessao[],
+): { client: ClientModule.ClienteControle; asked: () => number[] } {
+  const asked: number[] = [];
+
+  const client = {
+    listarTrabalhosLiberados: async () => candidates.map(candidate),
+    pedirLease: async (pedido: ClientModule.PedidoDeLease) => {
+      asked.push(pedido.trabalho_id);
+      return answers[asked.length - 1] ?? { lease: null };
+    },
+    heartbeat: async () => LEASE,
+    liberar: async () => LEASE,
+  } as unknown as ClientModule.ClienteControle;
+
+  return { client, asked: () => asked };
+}
+
+for (const motivo of ['teto_runner', 'teto_projeto'] as const) {
+  test(`t208 — tick() stops asking after a \`${motivo}\` refusal, even with candidates left`, async () => {
+    const { Controller } = await loadController();
+
+    // Three released candidates and a ceiling that is already full: every one of
+    // them would come back with this same answer, so the two POSTs after the
+    // first are round trips spent learning something the first one said.
+    const { client, asked } = refusingClient([1, 2, 3], [{ lease: null, motivo }]);
+
+    const controller = new Controller({
+      ...BASE_OPTIONS,
+      client,
+      dispatch: async () => {
+        throw new Error('a refused lease may never dispatch');
+      },
+    });
+
+    assert.equal(await controller.tick(), null, 'a tick that won nothing won nothing');
+    assert.deepEqual(
+      asked(),
+      [1],
+      `"${motivo}" is about this runner's or this project's capacity, not about job 1: ` +
+        'the tick has nothing left to ask for',
+    );
+  });
+}
+
+test('t208 — tick() still tries the next candidate after `trabalho_ja_leased`', async () => {
+  const { Controller } = await loadController();
+
+  // The regression guard of the case above: this refusal says another runner got
+  // to THAT job first, which is the healthy pool's common answer and says
+  // nothing at all about the next candidate.
+  const { client, asked } = refusingClient(
+    [1, 2],
+    [{ lease: null, motivo: 'trabalho_ja_leased' }, { lease: LEASE }],
+  );
+
+  const dispatched: number[] = [];
+  const controller = new Controller({
+    ...BASE_OPTIONS,
+    client,
+    dispatch: async (jobId: number) => {
+      dispatched.push(jobId);
+    },
+  });
+
+  assert.deepEqual(await controller.tick(), { jobId: 2, leaseId: LEASE.id });
+  assert.deepEqual(asked(), [1, 2], 'a job with an owner is one job, never the whole queue');
+  assert.deepEqual(dispatched, [2], 'and the one dispatched is the one that yielded a lease');
+});

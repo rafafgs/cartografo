@@ -317,7 +317,7 @@ test('AT7 — every optional flag left out resolves to the documented default', 
   const given = parseRunnerOptions(
     [
       '--project', '7',
-      '--runner-cap', '3',
+      '--declared-runner-cap', '3',
       '--project-cap', '9',
       '--interval-ms', '250',
       '--lease-ttl-seconds', '30',
@@ -559,4 +559,40 @@ test('t193 — --shutdown-grace-seconds and --request-timeout-ms are documented,
   }
   assert.match(USAGE, /120/, 'and the grace default has to be stated there');
   assert.match(USAGE, /30000|30_000/, 'and so does the request deadline default');
+});
+
+test('t208 — the old --runner-cap spelling is a command line this command does not understand', async () => {
+  const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  const spy = spyRun();
+  const stderr = captureStream('stderr');
+  let code: number;
+  try {
+    code = await runRunnerCli(
+      ['--runner-cap', '1', '--working-dir', SOME_REPO, ...ELSEWHERE],
+      {},
+      { run: spy.run },
+    );
+  } finally {
+    stderr.restore();
+  }
+
+  // No alias and no deprecation warning: the repository is still private (D7),
+  // so there is no caller out there to break — and a flag that keeps working
+  // while its name says something else is exactly what t208 exists to end.
+  assert.equal(code, 2, 'the old spelling is a wrong command line, like any other unknown flag');
+  assert.deepEqual(spy.seen, [], 'and nothing may be started on it');
+  assert.match(stderr.written(), /does not understand "--runner-cap"/);
+});
+
+test('t208 — USAGE names --declared-runner-cap and no longer promises simultaneous sessions', async () => {
+  const { USAGE } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  assert.match(USAGE, /--declared-runner-cap/, 'the flag is documented under the name it has');
+  assert.doesNotMatch(
+    USAGE,
+    /simultaneous sessions of this runner/,
+    'the value is a ceiling declared to the control plane, and this process ' +
+      'dispatches one session at a time whatever it says',
+  );
 });

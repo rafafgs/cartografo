@@ -72,10 +72,10 @@ options:
                          it is printed when the control plane first starts
   --out <path>           (export) output file; default ./<class>.grafo.json
                          (scan-skill) draft file; default ./<id>.manifest.json
-  --repo <repo>          (scan-skill) source repository, for origem.repo
+  --repo <repo>          (scan-skill) source repository, for origin.repo
   --ref <ref>            (scan-skill) commit or tag — never a branch (D4)
   --role work|gate       (scan-skill) role of the skill; always explicit
-  --by <name>            (scan-skill) who is importing, for origem.importado_por
+  --by <name>            (scan-skill) who is importing, for origin.imported_by
   --job <id>             (register-skill) job the approval was opened on
   --json                 (status) prints the report as a single JSON object
   -h, --help             this text

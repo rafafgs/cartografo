@@ -9,6 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -70,5 +71,58 @@ test('AT4 — an unknown subcommand exits non-zero and prints the usage on stder
   assert.ok(
     unknown.stderr.includes(help.stdout.trim()),
     'the usage printed on stderr has to be literally the same text as --help',
+  );
+});
+
+/**
+ * Where the manifest's field names are actually declared (t178, FR5).
+ *
+ * The help text is the one place in this package that spells a manifest field
+ * out in prose for a person to read, and prose is exactly what a key rename
+ * walks past: every fixture and every validator moved to `origin.imported_by`
+ * while `--help` kept telling people to fill in `origem.importado_por`, and no
+ * test noticed because no test read the help text as a claim about the format.
+ * So this one does not hardcode the new names — it pins them to the schema, the
+ * same way `domain-manifest-fields.test.ts` pins the domain port.
+ */
+const ORIGIN_PROPERTIES: readonly string[] = (() => {
+  const schemaPath = path.resolve(
+    import.meta.dirname,
+    '..',
+    '..',
+    '..',
+    'especificacoes',
+    'formatos',
+    'manifesto-skill.schema.json',
+  );
+  const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as {
+    $defs?: { origin?: { properties?: Record<string, unknown> } };
+  };
+  const properties = schema.$defs?.origin?.properties;
+  assert.ok(properties !== undefined, 'the manifest schema has to declare $defs.origin.properties');
+  return Object.keys(properties);
+})();
+
+test('AT5 — `--help` cites the scan-skill options by their schema field names', { timeout: 60_000 }, async () => {
+  const help = await runCli(['--help']);
+  assert.equal(help.code, 0, `stderr:\n${help.stderr}`);
+
+  // The two options that carry provenance into the manifest, by the names the
+  // schema declares — `--repo` fills `origin.repo`, `--by` fills the field the
+  // schema calls `imported_by`.
+  assert.ok(ORIGIN_PROPERTIES.includes('repo') && ORIGIN_PROPERTIES.includes('imported_by'));
+  assert.match(help.stdout, /--repo <repo>[^\n]*\borigin\.repo\b/);
+  assert.match(help.stdout, /--by <name>[^\n]*\borigin\.imported_by\b/);
+
+  // And nothing in the help text names a field of `origin` that the schema does
+  // not have: `origem.repo` and `origin.importado_por` both fail here.
+  const cited = [...help.stdout.matchAll(/\b(?:origin|origem)\.([A-Za-z_][A-Za-z0-9_]*)/g)];
+  const unknownFields = cited
+    .filter((match) => !match[0].startsWith('origin.') || !ORIGIN_PROPERTIES.includes(match[1]))
+    .map((match) => match[0]);
+  assert.deepEqual(
+    unknownFields,
+    [],
+    `--help names fields that $defs.origin does not declare: ${unknownFields.join(', ')}`,
   );
 });

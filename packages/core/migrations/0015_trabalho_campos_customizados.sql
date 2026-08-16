@@ -1,8 +1,11 @@
--- 0013_trabalho_campos_customizados — os campos que a CLASSE declara na ficha (t168).
+-- 0015_trabalho_campos_customizados — os campos que a CLASSE declara na ficha (t168).
 --
--- Renumerada de 0012 para 0013: a 0012_motor_modelo (t166) chegou antes na
--- branch, e `src/db/migrate.ts` falha alto em número repetido. Nenhuma ordem de
--- dependência entre as duas — esta só mexe em `trabalho`.
+-- Renumerada duas vezes, de 0012 para 0013 e de 0013 para 0015 (t187): a
+-- 0012_motor_modelo (t166) chegou antes na branch, e o 0013 seguinte foi
+-- reivindicado em paralelo por mais dois tickets — ficou com a
+-- `0013_sessao_modelos` (t172), e a `0014_pergunta_no_id` (t167) veio depois.
+-- `src/db/migrate.ts` falha alto em número repetido. Nenhuma ordem de
+-- dependência entre elas — esta só mexe em `trabalho`.
 --
 -- A classe de bets assimétricas (D14) precisa de `downside`, `upside` e
 -- `premise_source` na ficha; desenvolvimento de software não precisa de nenhum

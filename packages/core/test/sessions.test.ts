@@ -930,8 +930,16 @@ test('t163 — GET /v1/sessions surfaces both new fields on the projection', asy
 /* t172 — which models ran the session, and what they cost in tokens.         */
 /* -------------------------------------------------------------------------- */
 
-/** The migration that gives the session somewhere to record its models (t172). */
-const T172_MIGRATION = 'migrations/0013_sessao_modelos.sql';
+/**
+ * The migration that gives the session somewhere to record its models (t172).
+ *
+ * Renumbered from `0013_` to `0014_` in t169: t167 and t172 each landed a
+ * migration numbered 0013 on the same branch, and `listMigrations` refuses a
+ * repeated prefix outright (`src/db/migrate.ts:63-69`) — with both present, no
+ * database in this repository could be migrated at all. Only the number moved;
+ * the `ALTER TABLE` inside it is untouched.
+ */
+const T172_MIGRATION = 'migrations/0014_sessao_modelos.sql';
 
 /** What a real `claude` run reported: two models on one single-turn session. */
 const MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-5'];

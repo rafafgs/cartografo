@@ -122,6 +122,49 @@ export interface Proposta {
   resultado?: unknown;
 }
 
+/**
+ * O que `POST /v1/intake` exige (t122): a classe, o pedido e a quebra em itens.
+ *
+ * `itens` é `unknown[]` de propósito, como `operacoes` em
+ * {@link EntradaDeProposta}. A forma de um item é do control plane
+ * (`domain/intake.ts`, `validateItems`), que devolve o relatório inteiro de
+ * problemas num 400 — e um rascunho ruim é barato e reversível, então espelhar
+ * aquele julgamento aqui seria uma segunda cópia que pode divergir.
+ *
+ * `projeto_id` e `execucao_id` não aparecem: a rota tem default para os dois, e
+ * o campo entra no dia em que alguém precisar dele.
+ */
+export interface EntradaDeIntake {
+  /** Classe cujo grafo registrado o lote vai atravessar. */
+  classe: string;
+  /** O pedido em linguagem natural, como chegou. */
+  pedido: string;
+  /** A quebra proposta, exatamente como quem a escreveu a declarou. */
+  itens: readonly unknown[];
+}
+
+/**
+ * Um rascunho de intake, como a API o devolve (t122).
+ *
+ * Projeção completa de `intake_rascunho`, porque é ela que chega no `201`.
+ * `itens` chega como objeto aberto pela mesma razão de {@link EntradaDeIntake}:
+ * o contrato do item é do outro lado da fronteira.
+ */
+export interface Rascunho {
+  id: number;
+  projeto_id: number;
+  execucao_id: number | null;
+  classe: string;
+  pedido: string;
+  itens: Array<Record<string, unknown>>;
+  /** `pendente` ao nascer; `confirmado`/`descartado` só por decisão humana. */
+  status: string;
+  /** `ref` → `trabalho.id` real; `null` enquanto ninguém confirmou. */
+  trabalhos_criados: Record<string, number> | null;
+  criado_em: string;
+  atualizado_em: string;
+}
+
 /** Um runner pareado. */
 export interface Runner {
   id: string;
@@ -481,6 +524,31 @@ export class ClienteControle {
       entrada,
     );
     return proposta;
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* t144 — a única escrita que a geração de intake acrescenta.                */
+  /* ------------------------------------------------------------------------ */
+
+  /**
+   * Propõe um rascunho de intake — que nasce, sempre, `pendente`.
+   *
+   * Não existe par `confirmar`, `emendar` nem `descartar` neste cliente, e a
+   * razão é a mesma que {@link ClienteControle.criarProposta} já documenta:
+   * confirmar é o portão humano da camada de intake (`docs/spec/intake.md` §1),
+   * e um cliente que não tem o método não toma a decisão por engano. O que este
+   * método grava é uma proposta de quebra que qualquer pessoa ainda pode editar
+   * por `PATCH`, descartar, ou simplesmente ignorar: nada nele cria trabalho e
+   * nada nele emite evento.
+   *
+   * @param entrada Classe, pedido e a quebra em itens.
+   * @returns O rascunho gravado.
+   * @throws {ErroDoControlPlane} 404 quando a classe não tem grafo base; 400
+   *   quando `itens` não passa na validação do server (`itens_invalidos`).
+   */
+  async criarIntake(entrada: EntradaDeIntake): Promise<Rascunho> {
+    const { rascunho } = await this.#post<{ rascunho: Rascunho }>('/v1/intake', entrada);
+    return rascunho;
   }
 
   /** Cabeçalhos de uma chamada: o `content-type` do corpo, se houver, e a credencial. */

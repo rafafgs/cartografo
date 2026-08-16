@@ -433,3 +433,97 @@ test('t156 (não-regressão) — corpo vazio em resposta de erro continua chegan
     },
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t144 — the one write the intake generation command adds (AT4).              */
+/*                                                                            */
+/* English from here down, per D18: what came before is pre-decision code that */
+/* a dedicated refactor regularizes, and a new test is new code.               */
+/* -------------------------------------------------------------------------- */
+
+/** The two items of a batch, in the shape `domain/intake.ts` validates. */
+const INTAKE_ITEMS = [
+  { ref: 'migracao', titulo: 'Migracao do intake' },
+  { ref: 'rotas', titulo: 'Rotas do intake', depende_de: ['migracao'] },
+];
+
+test('AT4 — criarIntake posts the body to /v1/intake and resolves the draft', async () => {
+  const { ClienteControle } = await carregarCliente();
+
+  const rascunho = {
+    id: 9,
+    projeto_id: 3,
+    execucao_id: null,
+    classe: 'desenvolvimento-de-software',
+    pedido: 'fechar a camada de intake',
+    itens: INTAKE_ITEMS,
+    status: 'pendente',
+    trabalhos_criados: null,
+    criado_em: '2026-08-16T12:00:00.000Z',
+    atualizado_em: '2026-08-16T12:00:00.000Z',
+  };
+
+  const { buscar, chamadas } = fetchFalso(() => ({ status: 201, corpo: { rascunho } }));
+  const cliente = new ClienteControle({ urlBase: URL_BASE, buscar });
+
+  const criado = await cliente.criarIntake({
+    classe: 'desenvolvimento-de-software',
+    pedido: 'fechar a camada de intake',
+    itens: INTAKE_ITEMS,
+  });
+
+  assert.deepEqual(chamadas, [
+    {
+      url: `${URL_BASE}/v1/intake`,
+      metodo: 'POST',
+      corpo: {
+        classe: 'desenvolvimento-de-software',
+        pedido: 'fechar a camada de intake',
+        itens: INTAKE_ITEMS,
+      },
+    },
+  ]);
+  assert.deepEqual(criado, rascunho, 'the draft comes out of `{rascunho}`, unwrapped');
+  assert.equal(criado.status, 'pendente', 'a draft is born pending; confirming it is the human gate');
+});
+
+test('AT4 — a refused write carries the status, like every other call of this door', async () => {
+  const { ClienteControle, ErroDoControlPlane } = await carregarCliente();
+
+  const { buscar } = fetchFalso(() => ({
+    status: 404,
+    corpo: { erro: 'grafo_desconhecido', classe: 'nao-registrada' },
+  }));
+  const cliente = new ClienteControle({ urlBase: URL_BASE, buscar });
+
+  await assert.rejects(
+    () =>
+      cliente.criarIntake({
+        classe: 'nao-registrada',
+        pedido: 'qualquer coisa',
+        itens: INTAKE_ITEMS,
+      }),
+    (erro: unknown) => {
+      assert.ok(erro instanceof ErroDoControlPlane);
+      assert.equal(erro.status, 404);
+      assert.deepEqual(erro.corpo, { erro: 'grafo_desconhecido', classe: 'nao-registrada' });
+      return true;
+    },
+  );
+});
+
+test('AT4 — the client has no confirm, amend or discard: those are the human gate', async () => {
+  const { ClienteControle } = await carregarCliente();
+
+  const cliente = new ClienteControle({ urlBase: URL_BASE, buscar: fetchFalso(() => ({ status: 200, corpo: {} })).buscar });
+
+  // The same reasoning `criarProposta` records: a client that does not have the
+  // method cannot take the decision by accident (README, princípio 5).
+  for (const ausente of ['confirmarIntake', 'emendarIntake', 'descartarIntake']) {
+    assert.equal(
+      (cliente as unknown as Record<string, unknown>)[ausente],
+      undefined,
+      `${ausente} would put t122's human gate inside the runner`,
+    );
+  }
+});

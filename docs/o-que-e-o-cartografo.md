@@ -30,7 +30,7 @@ registradas; você edita; o sistema valida formalmente; o mapa entra
 registrado e versionado.
 
 **O trabalho entra e atravessa sozinho.** Você faz um pedido; o intake
-propõe a quebra em tickets *(em construção)* e você confirma. Os tickets
+propõe a quebra em tickets e você confirma. Os tickets
 atravessam o mapa: agentes de CLI executam cada etapa com instruções e
 contratos vindos do banco, portões verificam cada passagem com evidência, e
 decisão que não é de máquina chega na tela e espera você.

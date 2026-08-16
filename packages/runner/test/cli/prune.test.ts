@@ -169,46 +169,36 @@ function controlPlane(jobs: Record<number, JobAnswer>): {
   return { fetchImpl, routes };
 }
 
-/** Everything written to a standard stream, while it is armed. */
-interface Capture {
-  written: () => string;
-  restore: () => void;
-}
-
-/** Swallows and records what the command writes on a standard stream. */
-function captureStream(name: 'stdout' | 'stderr'): Capture {
-  const stream = process[name];
-  const original = stream.write.bind(stream);
-  let written = '';
-
-  stream.write = ((chunk: string | Uint8Array): boolean => {
-    written += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
-    return true;
-  }) as typeof stream.write;
-
+/** A collector for one of the command's two output seams. */
+function collector(): { lines: string[]; write: (line: string) => void; text: () => string } {
+  const lines: string[] = [];
   return {
-    written: () => written,
-    restore: () => {
-      stream.write = original;
+    lines,
+    write: (line) => {
+      lines.push(line);
     },
+    text: () => lines.join('\n'),
   };
 }
 
-/** Runs the command with both streams captured. */
+/**
+ * Runs the command with both of its report seams collected.
+ *
+ * Through the seams and NOT by patching `process.stdout.write`: this command
+ * reports line by line while it awaits git and the control plane, and a global
+ * patched for that whole window swallows whatever the test runner prints in it —
+ * which is how six of these cases once disappeared from the report while
+ * passing.
+ */
 async function run(
   args: string[],
   seams: PruneModule.PruneSeams,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const { runPruneCli } = await loadModule<typeof PruneModule>(PRUNE_MODULE);
-  const out = captureStream('stdout');
-  const err = captureStream('stderr');
-  try {
-    const code = await runPruneCli(args, {}, seams);
-    return { code, stdout: out.written(), stderr: err.written() };
-  } finally {
-    out.restore();
-    err.restore();
-  }
+  const out = collector();
+  const err = collector();
+  const code = await runPruneCli(args, {}, { ...seams, out: out.write, err: err.write });
+  return { code, stdout: out.text(), stderr: err.text() };
 }
 
 test('AT1 — a prune with no --worktrees-root dies with a 2 before it dials anything', async (t) => {
@@ -340,6 +330,44 @@ test('AT4 — a concluded job whose branch nobody merged loses the tree and keep
   );
 });
 
+test('AT4b — a branch checked out somewhere this run does not sweep is kept, not failed', async (t) => {
+  const { repoRoot, worktreesRoot, worktreeFor } = fixture(t, 'at4b');
+
+  // The tree of a concluded job, living OUTSIDE --worktrees-root: an operator's
+  // own checkout, or a root that moved. The branch is found by the ref sweep,
+  // the directory is not found by the directory sweep, and git refuses to
+  // delete a branch a worktree still has checked out.
+  //
+  // Found by running the real binary against a real control plane, where this
+  // came out as an exit 1 — a prune on a cron going red over a layout nobody
+  // said was wrong.
+  const outside = path.join(path.dirname(worktreesRoot), 'checkout-do-operador');
+  git(repoRoot, 'worktree', 'add', '--force', '-b', 'ticket-1', outside, 'HEAD');
+  worktreeFor(2);
+
+  const plane = controlPlane({
+    1: { bloqueado: false, concluido: true },
+    2: { bloqueado: false, concluido: true },
+  });
+
+  const { code, stdout } = await run(
+    ['--url', SOME_URL, '--working-dir', repoRoot, '--worktrees-root', worktreesRoot],
+    { fetchImpl: plane.fetchImpl },
+  );
+
+  assert.equal(code, 0, `a branch that is merely in use is not a failed removal:\n${stdout}`);
+  assert.match(
+    stdout,
+    /kept branch ticket-1: .*used by worktree/,
+    `the refusal has to be reported as a keep, not as a failure:\n${stdout}`,
+  );
+  assert.ok(existsSync(outside), 'a directory outside --worktrees-root was removed');
+  assert.ok(branchExists(repoRoot, 'ticket-1'), 'a branch still in use was deleted');
+
+  // ...and the candidate that WAS this run's to collect still went.
+  assert.ok(!branchExists(repoRoot, 'ticket-2'), 'the collectable branch was left behind');
+});
+
 test('AT5 — a directory this command does not recognize is reported and left alone', async (t) => {
   const { repoRoot, worktreesRoot, worktreeFor } = fixture(t, 'at5');
 
@@ -436,37 +464,31 @@ test('AT8 — `prune` is a subcommand of the runner binary, and every other line
   // The router has to reach the prune module rather than choking on a bare
   // positional — `readOptions` refuses "a flag nobody declared, a stray
   // positional", and `prune` is neither once this ficha lands.
-  const stderr = captureStream('stderr');
-  let code: number;
-  try {
-    code = await runRunnerCli(['prune'], {}, { run: async () => undefined });
-  } finally {
-    stderr.restore();
-  }
+  const err = collector();
+  let code = await runRunnerCli(
+    ['prune'],
+    {},
+    { run: async () => undefined, out: () => undefined, err: err.write },
+  );
 
   assert.equal(code, 2, 'a prune with no --worktrees-root is a usage error, not an unknown option');
   assert.match(
-    stderr.written(),
+    err.text(),
     /--worktrees-root is required/,
-    `the router reached the prune parser, not the runner one:\n${stderr.written()}`,
+    `the router reached the prune parser, not the runner one:\n${err.text()}`,
   );
 
   // ...and the flags-only invocation this binary has always taken is untouched.
   const seen: unknown[] = [];
-  const stdout = captureStream('stdout');
-  try {
-    code = await runRunnerCli(
-      ['--worktrees-root', path.join(tmpdir(), 'cartografo-t207c-elsewhere')],
-      {},
-      {
-        run: async (options) => {
-          seen.push(options);
-        },
+  code = await runRunnerCli(
+    ['--worktrees-root', path.join(tmpdir(), 'cartografo-t207c-elsewhere')],
+    {},
+    {
+      run: async (options) => {
+        seen.push(options);
       },
-    );
-  } finally {
-    stdout.restore();
-  }
+    },
+  );
 
   assert.equal(code, 0, 'the ordinary runner invocation stopped working');
   assert.equal(seen.length, 1, 'the ordinary runner invocation did not start a runner');

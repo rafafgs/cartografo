@@ -79,7 +79,34 @@ aparece como conteúdo não rastreado no `git status` desse repositório. Sem a
 flag, ou com as duas se sobrepondo, o comando sai com 2 e uma linha, antes de
 falar com o control plane. `npx cartografo-runner --help` lista o resto.
 
-Os outros dois subcomandos, para conferir e levar o grafo embora:
+Sessão que termina limpa tem o worktree removido; sessão que falha, estoura o
+relógio ou é cancelada tem o dela **retido**, porque é o único lugar onde ainda
+existe o que ela fez — e desde a t207 uma sessão que termina bem mas deixa
+trabalho **não commitado** também retém a árvore e **bloqueia o trabalho** com
+o caminho dela no motivo, em vez de apagar em silêncio. Isso acumula
+diretórios e branches, e quem recolhe é o `prune`:
+
+```bash
+npx cartografo-runner prune --working-dir ~/proj \
+  --worktrees-root ~/proj-worktrees --dry-run     # lista o que recolheria
+npx cartografo-runner prune --working-dir ~/proj \
+  --worktrees-root ~/proj-worktrees               # recolhe de verdade
+```
+
+Ele varre duas fontes — os diretórios `ticket-<id>-<hex>` sob
+`--worktrees-root` que o `git worktree list` reconhece, e os branches
+`ticket-<id>` do repositório — e pergunta ao control plane, por trabalho, se
+ele está **concluído**. Só o que está concluído é recolhido: `bloqueado` não é
+estado terminal (um trabalho desbloqueado continua do mesmo nó, com uma árvore
+nova). O branch sai com `git branch -d`, **nunca `-D`** — concluído quer dizer
+que a travessia chegou a um nó final do grafo, o que não diz nada sobre os
+commits terem sido mergeados; branch não mergeado é recusado, reportado e não
+muda o código de saída. `--older-than <dias>` restringe a recolha ao que já
+está parado há esse tempo, e qualquer diretório que o comando não reconheça é
+reportado e nunca tocado. `npx cartografo-runner prune --help` lista o resto.
+
+Os outros dois subcomandos do `cartografo`, para conferir e levar o grafo
+embora:
 
 ```bash
 npx cartografo status                                   # servidor e projetos registrados

@@ -35,6 +35,14 @@ import path from 'node:path';
 
 import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from '../controller/http-client.ts';
+// TYPE-only, and the subcommand itself is loaded with a dynamic `import()`
+// below. `prune.ts` imports the resolvers and the two environment-variable
+// names from THIS file, so a static import here would close a cycle — and a
+// cycle whose modules both build a usage string at evaluation time is not the
+// benign kind: whichever side loads second reads the other's `const`s in their
+// temporal dead zone and throws before a single test runs. A type import is
+// erased, and the dynamic one happens when this file is long since evaluated.
+import type { PruneSeams } from './prune.ts';
 import {
   DEFAULT_ENGINE_NAME,
   ENGINE_NAMES,
@@ -87,8 +95,12 @@ export const DEFAULT_SHUTDOWN_GRACE_SECONDS = 120;
 /** Name of the readiness event printed on stdout, once the runner has paired. */
 export const READY_EVENT = 'cartografo.runner.ready';
 
+/** The one subcommand this binary has, and the only bare word it accepts. */
+export const PRUNE_SUBCOMMAND = 'prune';
+
 /** Usage text. The same in `--help` (stdout) and on a wrong command line (stderr). */
 export const USAGE = `usage: cartografo-runner [options]
+       cartografo-runner ${PRUNE_SUBCOMMAND} [options]
 
 Starts a runner: it pairs with the control plane and, from then on, asks for
 released work, takes a lease and dispatches a session for it — each session in
@@ -140,6 +152,12 @@ options:
 
 Only --url and --token read an environment variable; every other flag above,
 these two included, is command line only.
+
+subcommands:
+  ${PRUNE_SUBCOMMAND}                     collects the session worktrees and
+                            \`ticket-<id>\` branches of jobs the control plane
+                            reports as concluded; \`cartografo-runner
+                            ${PRUNE_SUBCOMMAND} --help\` for its own options
 
 exit codes: 0 the runner ran and was asked to stop, 1 it could not run,
 2 the command line is wrong.`;
@@ -306,7 +324,7 @@ function positiveInteger(name: string, raw: string | undefined, fallback: number
  * @returns The repository and the root, both absolute.
  * @throws {UsageError} `--worktrees-root` absent, or overlapping the repository.
  */
-function resolveWorktreePaths(
+export function resolveWorktreePaths(
   workingDir: string | undefined,
   worktreesRoot: string | undefined,
 ): { repoRoot: string; worktreesRoot: string } {
@@ -407,7 +425,7 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
 }
 
 /** Test seams of the router. Production passes none of them. */
-export interface CliSeams {
+export interface CliSeams extends PruneSeams {
   /** What actually runs the loop. Default: {@link runRunner}. */
   run?: (options: RunnerOptions) => Promise<void>;
 }
@@ -463,6 +481,20 @@ export async function runRunnerCli(
   env: NodeJS.ProcessEnv = process.env,
   seams: CliSeams = {},
 ): Promise<number> {
+  // The subcommand is decided BEFORE `--help`, and that order is the whole
+  // difference between one help text and two: `prune --help` has to reach the
+  // subcommand's own usage rather than this one's.
+  //
+  // The same shape `packages/core/src/cli/index.ts:285` already uses — an
+  // explicit subcommand when the first argument is a known bare word, the
+  // flags-only invocation otherwise. It is backwards compatible by
+  // construction: no option of this command is a bare word, so nothing that
+  // used to run a runner can be read as a subcommand now.
+  if (args[0] === PRUNE_SUBCOMMAND) {
+    const { runPruneCli } = await import('./prune.ts');
+    return await runPruneCli(args.slice(1), env, seams);
+  }
+
   if (args.some((argument) => argument === '--help' || argument === '-h')) {
     process.stdout.write(`${USAGE}\n`);
     return 0;

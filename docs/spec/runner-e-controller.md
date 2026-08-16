@@ -477,6 +477,36 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   `no_atual` contra os `nos_finais` da versão, e sem lê-lo um trabalho que
   pousava no nó final continuava candidato para sempre — o controller o
   redespachava para o mesmo nó a cada tick.
+- **Higiene de ciclo de vida do runner** — **fechada pela `t207`**, e citada
+  aqui porque as três metades eram lacunas desta camada. (1) Cada
+  `EngineAdapter` solta o estado pesado da sessão assim que ela termina —
+  `ChildProcess`, listener do chamador, buffers e timers — guardando só o
+  `SessionStatus` terminal por id, que é o que o invariante 3 do contrato
+  congelado (`getStatus` responde depois do `onFinished`) exige de fato; um
+  runner de vida longa parou de crescer com cada trabalho despachado. (2)
+  `GitWorktreeManager.release()` roda `git status --porcelain` antes de
+  remover: sessão que termina **concluída mas com árvore suja** tem a árvore
+  **retida** e o trabalho **bloqueado** por
+  [`POST /v1/jobs/:id/blocks`](../../packages/runner/src/dispatch/dispatch-claude-code.ts)
+  com o caminho da árvore no motivo, e não avança — a premissa antiga ("o que
+  foi commitado já vive no histórico do branch") só valia enquanto a sessão
+  commitasse, e nada obriga que ela commite. Nenhum campo novo no `/finish`: o
+  vocabulário daquela rota é da `t213` (D20). (3)
+  [`cartografo-runner prune`](../../packages/runner/src/cli/prune.ts) recolhe o
+  que sobra — diretórios `ticket-<id>-<hex>` que o `git worktree list`
+  reconhece e branches `ticket-<id>` —, perguntando por trabalho ao control
+  plane se ele está `concluido` (D1: o runner pergunta, nunca adivinha).
+  `bloqueado` **não** é sinal de fim: trabalho desbloqueado continua do mesmo
+  nó, com árvore nova. Branch sai com `git branch -d` e nunca `-D` —
+  `concluido` diz que a travessia chegou a um nó final, e não diz nada sobre os
+  commits terem sido mergeados —, e uma recusa por "não mergeado" é resultado
+  ordinário, reportado e sem efeito no código de saída. **O que continua fora:**
+  TTL/expiração para o mapa de status terminais dos adapters, reconciliar
+  sozinho uma sessão suja (commitar ou descartar em nome de alguém), saída
+  `--json` do `prune` e agendamento embutido dele — quem opera arma o cron por
+  fora, mesma postura do resto deste CLI. E `git worktree prune`, do próprio
+  git, continua sendo outro comando: ele reconcilia registro órfão de
+  diretório apagado à mão, que este aqui não faz.
 - **Modo local** (avaliar um diretório sem control plane): não tem schema nem
   critério de aceite escrito em lugar nenhum do repo. Revisitar quando houver
   caso de uso concreto.

@@ -1,5 +1,5 @@
 /**
- * The `ClaudeCodeAdapter` running the whole conformance kit (C1–C7).
+ * The `ClaudeCodeAdapter` running the whole conformance kit (C1–C10).
  *
  * The kit knows nothing about this adapter: it receives a factory and a path to
  * a fake engine. Every Claude Code specificity lives in this file — the seam
@@ -54,14 +54,16 @@ test('engineName is the stable identifier persisted on the session row', () => {
 });
 
 test('capabilities declares only what has a consumer', () => {
-  // `hasStructuredOutput` because `stream-json` is parseable. The other two
-  // stay ABSENT, not explicitly `false`: neither has a consumer in v0, and
-  // "declaring the fourth, fifth and sixth before anybody reads them is how a
-  // format rots" (`docs/formatos/engine-adapter.md:160-165`). Absent already
+  // `hasStructuredOutput` because `stream-json` is parseable, and `hasResume`
+  // since t173, because `SessionSpec.resumeFrom` gave the flag the consumer it
+  // had been waiting for — the CLI's `-r, --resume [value]` was always there.
+  // `reportsUsage` stays ABSENT, not explicitly `false`: it has no consumer,
+  // and "declaring the fourth, fifth and sixth before anybody reads them is how
+  // a format rots" (`docs/formatos/engine-adapter.md:160-165`). Absent already
   // means `false` through `resolveCapabilities`.
   const declared = new ClaudeCodeAdapter().capabilities();
 
-  assert.deepEqual(declared, { hasStructuredOutput: true });
-  assert.ok(!('hasResume' in declared));
+  assert.deepEqual(declared, { hasStructuredOutput: true, hasResume: true });
+  assert.equal(declared.hasResume, true);
   assert.ok(!('reportsUsage' in declared));
 });

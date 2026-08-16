@@ -83,6 +83,26 @@ export interface SessionSpec {
   readonly silenceSeconds?: number;
 
   /**
+   * An earlier session's `engineRef`, to be continued instead of started
+   * fresh — the same opaque string `onEngineRef` reported for it.
+   *
+   * Absent (or empty) means a brand-new session, which is the behaviour of
+   * every session opened before this field existed. Present means the caller
+   * is asking for that session's context back, and an adapter that cannot do
+   * it has to REFUSE before opening — same honesty rule as `permissions`
+   * below. Losing this field silently is the one failure nothing downstream
+   * can detect: a session that resumed nothing looks exactly like a session
+   * that resumed.
+   *
+   * What continuing requires beyond the ref is the engine's business, and it
+   * is not always only the ref. Measured on `claude-code` (t173, and it
+   * contradicted what the ficha assumed): there the ref is enough, and
+   * `workingDir` does not participate — the same ref recalled the same context
+   * from a directory that session had never seen.
+   */
+  readonly resumeFrom?: string;
+
+  /**
    * Which model of the engine runs this session, when the node pinned one.
    *
    * Absent means the ENGINE'S OWN default: no model flag is assembled at all,
@@ -159,9 +179,10 @@ export interface SessionPermissions {
  * that builds the object literally. Absent is `false` — the safe direction to
  * be wrong in.
  *
- * None of these flags has a consumer in v0; the three name exactly the
- * capabilities deferred in "Fora de escopo". Declaring the fourth, fifth and
- * sixth before anybody reads them is how a format rots.
+ * `hasResume` got its consumer in t173 (`SessionSpec.resumeFrom`); the other
+ * two still name capabilities deferred in "Fora de escopo", and stay undeclared
+ * until something reads them. Declaring the fourth, fifth and sixth before
+ * anybody reads them is how a format rots.
  */
 export interface EngineCapabilities {
   /** Continues an earlier session from an `engineRef`. */
@@ -237,9 +258,10 @@ export interface SessionListener {
    * The identifier the engine itself gave the session, as soon as it is known.
    *
    * Optional and an opaque string: every CLI calls this something else and
-   * none guarantees the format. Captured today only for telemetry and audit —
-   * resume is out of scope. It exists now because it is cheap to add before
-   * there is a published adapter and expensive to bolt on afterwards.
+   * none guarantees the format. It was captured for telemetry and audit before
+   * anything could use it, "cheap to add before there is a published adapter
+   * and expensive to bolt on afterwards" — and t173 cashed that in: this is the
+   * value that goes back into `SessionSpec.resumeFrom` to continue a session.
    */
   onEngineRef?(engineRef: string): void;
 

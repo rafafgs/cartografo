@@ -331,13 +331,18 @@ export class ClaudeCodeAdapter implements EngineAdapter {
   }
 
   /**
-   * `stream-json` is parseable, hence `hasStructuredOutput`. The other two stay
-   * absent (default `false`): resume and usage accounting are out of v0 and
-   * have no consumer — "declaring the fourth, fifth and sixth before anybody
-   * reads them is how a format rots" (`engine-adapter.md:160-165`).
+   * `stream-json` is parseable, hence `hasStructuredOutput`; `-r, --resume` is
+   * real and `SessionSpec.resumeFrom` reaches it, hence `hasResume` (t173).
+   *
+   * The flag existed on the CLI all along — what it lacked, and what this
+   * adapter refused to declare without, was a consumer. `resumeFrom` is that
+   * consumer. `reportsUsage` stays absent (default `false`) for the reason this
+   * one just stopped having: usage accounting is out of v0 and nothing reads
+   * it, and "declaring the fourth, fifth and sixth before anybody reads them is
+   * how a format rots" (`engine-adapter.md:160-165`).
    */
   capabilities(): EngineCapabilities {
-    return { hasStructuredOutput: true };
+    return { hasStructuredOutput: true, hasResume: true };
   }
 
   async verifyCli(): Promise<CliProbe> {

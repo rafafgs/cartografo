@@ -216,6 +216,91 @@ test('each denied entry is one argv element, whole', () => {
   assert.equal(args.at(-1), PROMPT, 'the prompt stays the last element of the argv');
 });
 
+/* --- session continuation (t173, FR3/FR4) ---------------------------------- */
+
+/** An engine ref in the shape `onEngineRef` reports for this engine. */
+const ENGINE_REF = 'engine-session-ref-abc123';
+
+test('--resume carries the engine ref of the session being continued', () => {
+  const { args } = buildCommand(spec({ resumeFrom: ENGINE_REF }), {});
+
+  const position = args.indexOf('--resume');
+  assert.notEqual(position, -1, 'a spec with resumeFrom has to ask the CLI to resume');
+  assert.equal(
+    args[position + 1],
+    ENGINE_REF,
+    'the engine ref goes verbatim: it is opaque, and reformatting it is inventing an id',
+  );
+});
+
+test('--resume is placed where neither variadic can swallow it', () => {
+  // Two things in this argv eat what follows them: the `--disallowedTools
+  // <tools...>` list and the `--system-prompt <prompt> <prompt>` trailer. The
+  // ref landing inside either one would arrive as a denied tool or as part of
+  // the prompt, and the CLI would open a fresh session without saying so.
+  const { args } = buildCommand(
+    spec({
+      resumeFrom: ENGINE_REF,
+      permissions: { filesystem: { write: [] }, network: { allowed: false } },
+    }),
+    {},
+  );
+
+  const position = args.indexOf('--resume');
+  assert.equal(args[position + 1], ENGINE_REF);
+  assert.ok(
+    position < args.indexOf('--disallowedTools'),
+    'the ref falls inside the denied list, which is variadic and swallows it',
+  );
+  assert.ok(
+    position < args.indexOf('--system-prompt'),
+    'the ref falls after the system-prompt flag, which is the trailer of the argv',
+  );
+  assert.deepEqual(
+    disallowedTools(args),
+    [...WRITE_DENIED, ...NETWORK_DENIED],
+    'the denied list changed shape because of the resume flag',
+  );
+  assert.equal(args.at(-1), PROMPT, 'the prompt stays the last element of the argv');
+});
+
+test('a session with no resumeFrom produces exactly the argv of before the field existed', () => {
+  // FR4, the regression pin: continuation is opt-in per session, and a caller
+  // that says nothing has to keep getting the command it was getting before.
+  assert.deepEqual(buildCommand(spec(), {}).args, [
+    '--print',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--permission-mode',
+    'bypassPermissions',
+    '--system-prompt',
+    INSTRUCTIONS,
+    PROMPT,
+  ]);
+
+  // ...and the same with a policy declared, which is the argv that has the two
+  // variadics the flag had to be placed around.
+  assert.deepEqual(
+    buildCommand(spec({ permissions: { filesystem: { write: [] }, network: { allowed: false } } }), {})
+      .args,
+    [
+      '--print',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--permission-mode',
+      'bypassPermissions',
+      '--disallowedTools',
+      ...WRITE_DENIED,
+      ...NETWORK_DENIED,
+      '--system-prompt',
+      INSTRUCTIONS,
+      PROMPT,
+    ],
+  );
+});
+
 test('no command ever carries --add-dir', () => {
   // Invariant 7: the session sees `workingDir` and nothing else. An extra
   // directory here would hand back, in one flag, the write scope the policy

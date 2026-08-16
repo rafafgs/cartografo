@@ -91,5 +91,6 @@
     }
   ],
   "initial_node": "redigir",
-  "final_nodes": ["publicar"]
+  "final_nodes": ["publicar"],
+  "custom_fields": []
 }

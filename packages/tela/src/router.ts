@@ -32,6 +32,13 @@
  * pipe — and the only two doors it covers are the ones that write: `/v1/*` with
  * a method other than `GET`/`HEAD`, and the answer form below.
  *
+ * **And one more, for the same reason (t206):** how much of a body it agrees to
+ * hold. The proxy forwards bytes and not a stream, so it buffers the whole body
+ * before deciding anything — and `PROXY_BODY_LIMIT` is what stops whoever
+ * reaches this loopback port from choosing that number. Both checks live on this
+ * side of the pipe, and both refuse without the control plane ever learning the
+ * request existed.
+ *
  * The D11 boundary reads whole here: no import from `packages/core`, no
  * database driver, no file path. The screen starts on another port, in another
  * process, and can die without the control plane noticing — that is the proof,
@@ -42,8 +49,13 @@
  *
  * Control plane address precedence, the same as the core's CLI
  * (`packages/core/src/cli/url.ts`): `--url` > `CARTOGRAFO_URL` >
- * `http://127.0.0.1:4317`. That way whoever starts the control plane on another
- * port does not have to repeat the configuration in two different vocabularies.
+ * `http://127.0.0.1:CARTOGRAFO_PORT` > `http://127.0.0.1:4317`. That way whoever
+ * starts the control plane on another port does not have to repeat the
+ * configuration in two different vocabularies. Since t199 (FR6) this file no
+ * longer resolves it itself: `proxy.ts`'s `resolveControlPlaneUrl` is the single
+ * resolver, and the `--url` flag reaches it as the explicit override. The two
+ * used to be separate functions, and the one the command actually ran was the
+ * one that dropped `CARTOGRAFO_PORT` on the floor.
  *
  * ## Nothing a request does may end the process (t151)
  *
@@ -71,9 +83,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { ApiClient, ApiError, NetworkError } from './client.ts';
 import {
   API_PREFIX,
+  bodyTooLargeResponse,
   forwardRequest,
   isTrustedScreenOrigin,
+  parsePortFromEnv,
   resolveControlPlaneToken,
+  resolveControlPlaneUrl,
   untrustedOriginResponse,
   type ProxiedResponse,
 } from './proxy.ts';
@@ -95,12 +110,6 @@ export const DEFAULT_PORT = 4318;
 
 /** Environment variable that overrides the screen's port. */
 export const PORT_ENV = 'CARTOGRAFO_TELA_PORT';
-
-/** Environment variable that points at the control plane (the CLI's own). */
-export const URL_ENV = 'CARTOGRAFO_URL';
-
-/** Default control plane address. */
-export const DEFAULT_CONTROL_PLANE_URL = 'http://127.0.0.1:4317';
 
 /**
  * Listening address. Loopback, and it stays loopback even now that the control
@@ -125,6 +134,23 @@ export const READY_EVENT = 'cartografo.tela.ready';
 
 /** A form body larger than this is refused without being read whole. */
 const BODY_LIMIT = 64 * 1024;
+
+/**
+ * A `/v1/*` body larger than this is refused before anything is forwarded (t206).
+ *
+ * 1 MiB, which is Fastify's own default and therefore the control plane's:
+ * `packages/core/src/server.ts` builds the server without overriding
+ * `bodyLimit`, and the single route that raises it — `PATCH /sessions/:id/finish`,
+ * at 32 MiB — is dispatched by the runner and never by this screen's page. So
+ * this ceiling refuses nothing the core would have accepted through a door a
+ * browser tab can reach through here.
+ *
+ * Separate from `BODY_LIMIT` on purpose, and an order of magnitude above it: the
+ * form is this screen's own surface with one small field in it, this is a pipe
+ * to somebody else's API, and one number for both would tie the screen's copy of
+ * the core's limit to a decision about a text area.
+ */
+export const PROXY_BODY_LIMIT = 1_048_576;
 
 /**
  * Methods that change nothing upstream, and are therefore not gated (t192).
@@ -159,6 +185,23 @@ export class ClientAbortedError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = 'ClientAbortedError';
+  }
+}
+
+/**
+ * The client sent more than the proxy is willing to hold in memory (t206).
+ *
+ * A type of its own, and deliberately NOT a `ClientAbortedError`, because the
+ * two say opposite things about how the request ended: one client gave up, the
+ * other sent too much. They meet the same `catch` blocks and land on the same
+ * stderr line, so collapsing them would make the ceiling invisible in the one
+ * place it can be observed — and would diagnose a refusal by this screen as a
+ * connection that died.
+ */
+export class PayloadTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PayloadTooLargeError';
   }
 }
 
@@ -197,49 +240,16 @@ export function installCrashGuard(): () => void {
 /**
  * Resolves the port the screen listens on.
  *
+ * Delegates to `parsePortFromEnv`, which `server.ts` already uses for the same
+ * variable (t199, FR6): two readers of `CARTOGRAFO_TELA_PORT` that refuse a bad
+ * value with two different messages, one of them in Portuguese, is the same
+ * split this ticket closes on the control plane's address.
+ *
  * @param env Environment to read `CARTOGRAFO_TELA_PORT` from.
  * @returns A valid port.
  */
 export function screenPortFromEnv(env: NodeJS.ProcessEnv = process.env): number {
-  const configured = env[PORT_ENV]?.trim();
-  if (configured === undefined || configured === '') return DEFAULT_PORT;
-
-  const port = Number(configured);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new UsageError(`${PORT_ENV} inválida: "${configured}" (esperado um inteiro de 0 a 65535)`);
-  }
-  return port;
-}
-
-/**
- * Resolves the control plane's address.
- *
- * @param option Value of `--url`, when it came on the command line.
- * @param env Environment to read `CARTOGRAFO_URL` from.
- * @returns Base URL with no trailing slash.
- */
-export function resolveControlPlaneAddress(
-  option?: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const fromEnv = env[URL_ENV]?.trim();
-  const chosen =
-    option !== undefined && option.trim() !== ''
-      ? option.trim()
-      : fromEnv !== undefined && fromEnv !== ''
-        ? fromEnv
-        : DEFAULT_CONTROL_PLANE_URL;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(chosen);
-  } catch {
-    throw new UsageError(`URL inválida: "${chosen}" (esperado algo como ${DEFAULT_CONTROL_PLANE_URL})`);
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new UsageError(`URL precisa ser http ou https: "${chosen}"`);
-  }
-  return chosen.replace(/\/+$/, '');
+  return parsePortFromEnv(env, PORT_ENV, DEFAULT_PORT);
 }
 
 /** Reads a route `:id` as a positive integer; `null` when it is not one. */
@@ -437,7 +447,7 @@ export interface RunningScreen {
 
 /** Startup options for the screen. */
 export interface ScreenOptions {
-  /** Control plane to read. Default: `resolveControlPlaneAddress`'s precedence. */
+  /** Control plane to read. Default: `resolveControlPlaneUrl`'s precedence. */
   controlPlaneUrl?: string;
   /**
    * Credential presented to the control plane (t124, FR7). Default:
@@ -458,14 +468,35 @@ function isApiPath(pathname: string): boolean {
   return pathname === API_PREFIX || pathname.startsWith(`${API_PREFIX}/`);
 }
 
-/** Reads a request's whole body; the proxy forwards bytes, not a stream. */
-async function readBody(request: IncomingMessage): Promise<Buffer> {
+/**
+ * Reads a request's whole body, with a ceiling; the proxy forwards bytes, not a
+ * stream.
+ *
+ * The ceiling is checked AS the body arrives, the same shape `readForm` uses
+ * above, and not on what was read: the whole point of a limit is that the bytes
+ * past it are never held, and a read-then-check would have already buffered
+ * everything it then refuses.
+ *
+ * @param request The request being read.
+ * @param limit Bytes this screen is willing to hold before refusing.
+ * @returns The body, whole.
+ */
+async function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let size = 0;
+
   try {
     for await (const chunk of request) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+      const block = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+      size += block.length;
+      if (size > limit) throw new PayloadTooLargeError(`corpo maior que ${limit} bytes`);
+      chunks.push(block);
     }
   } catch (cause) {
+    // The ceiling is this screen refusing a body it does not want, and it keeps
+    // saying so. Anything else out of the iteration is the connection dying
+    // underneath it.
+    if (cause instanceof PayloadTooLargeError) throw cause;
     throw new ClientAbortedError('o corpo do pedido parou de chegar no meio', { cause });
   }
   return Buffer.concat(chunks);
@@ -528,7 +559,7 @@ function reportRequestFailure(
  * @returns A server ready to `listen`.
  */
 export function createScreenRouter(options: ScreenOptions = {}): Server {
-  const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneAddress();
+  const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneUrl();
   const token = options.token ?? resolveControlPlaneToken();
   const client = new ApiClient({ baseUrl: controlPlaneUrl, token, doFetch: options.doFetch });
 
@@ -561,14 +592,28 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
             return;
           }
 
+          // …nor a body bigger than this screen agreed to hold for somebody
+          // else's API (t206). The body is read HERE, before `forwardRequest`,
+          // so that the refusal happens on the same side of the pipe as the
+          // origin gate above it: a request the screen will not carry must not
+          // become a request the control plane has to answer.
+          let body: Buffer;
+          try {
+            body = await readBody(request, PROXY_BODY_LIMIT);
+          } catch (error) {
+            // Only the ceiling is answered here. A client that vanished mid-body
+            // goes up to the outer guard exactly as before — there is no longer
+            // anyone holding the socket that would read this 413.
+            if (!(error instanceof PayloadTooLargeError)) throw error;
+            const refused = bodyTooLargeResponse(PROXY_BODY_LIMIT);
+            response.writeHead(refused.status, refused.headers);
+            response.end(refused.body);
+            return;
+          }
+
           const forwarded: ProxiedResponse = await forwardRequest(
             controlPlaneUrl,
-            {
-              method,
-              target,
-              headers: request.headers,
-              body: await readBody(request),
-            },
+            { method, target, headers: request.headers, body },
             { doFetch: options.doFetch, token },
           );
           response.writeHead(forwarded.status, forwarded.headers);
@@ -621,7 +666,7 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
  * @returns The screen, up, with what it takes to shut it down.
  */
 export async function startScreenRouter(options: ScreenOptions = {}): Promise<RunningScreen> {
-  const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneAddress();
+  const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneUrl();
   const host = options.host ?? DEFAULT_HOST;
   const server = createScreenRouter({ ...options, controlPlaneUrl });
 
@@ -659,7 +704,7 @@ export function urlFromArgs(args: string[]): string | undefined {
     return inline?.slice('--url='.length);
   }
   const value = args[index + 1];
-  if (value === undefined || value.startsWith('-')) throw new UsageError('--url exige um endereço');
+  if (value === undefined || value.startsWith('-')) throw new UsageError('--url needs an address');
   return value;
 }
 
@@ -684,7 +729,7 @@ export async function runScreenCli(
   installCrashGuard();
 
   const screen = await startScreenRouter({
-    controlPlaneUrl: resolveControlPlaneAddress(urlFromArgs(args), env),
+    controlPlaneUrl: resolveControlPlaneUrl(env, urlFromArgs(args)),
     token: resolveControlPlaneToken(env),
     port: screenPortFromEnv(env),
   });

@@ -18,9 +18,10 @@
  * - it never picks a base ref: the branch is cut from whatever `repoRoot` has
  *   checked out, because no field in the job or graph schema names one yet;
  * - it never reuses a directory. Every `acquire` mints a fresh one, including a
- *   retry of the same job. Kept trees (`release` with `keep: true`) accumulate
- *   until a human or a later ficha prunes them — this module only decides that
- *   they are kept, never how they eventually go away;
+ *   retry of the same job. Kept trees — `release` with `keep: true`, and since
+ *   t207 also a tree whose session left uncommitted work in it — accumulate
+ *   until a human or `cartografo-runner prune` takes them away; this module only
+ *   decides that they are kept, never how they eventually go away;
  * - it has no default for `repoRoot` nor for `worktreesRoot`. A default
  *   location is a silent guess about which repository a session may write in,
  *   and that is precisely the guess this ficha exists to remove.
@@ -73,8 +74,16 @@ export interface WorktreeManager {
    * `keep: true` removes nothing — a session that did not end well is diagnosed
    * from the directory it left behind, and there is no second chance to look at
    * it once it is gone.
+   *
+   * `keep: false` is a REQUEST and not an order (t207): a manager may find work
+   * in the tree that exists nowhere else and retain it anyway. That is what the
+   * answer is for — the caller cannot tell "removed" from "retained" by looking
+   * at anything else, and a caller that assumed removal is exactly how a
+   * session's uncommitted output used to disappear in silence.
+   *
+   * @returns `kept: true` when the directory is still on disk after this call.
    */
-  release(worktree: SessionWorktree, outcome: { keep: boolean }): Promise<void>;
+  release(worktree: SessionWorktree, outcome: { keep: boolean }): Promise<{ kept: boolean }>;
 }
 
 /**
@@ -237,16 +246,51 @@ export class GitWorktreeManager implements WorktreeManager {
   /**
    * Removes the tree, or leaves it exactly as the session left it.
    *
-   * `--force` on the removal because cleanup discards scratch: an uncommitted
-   * file is the ordinary end of a session, and committed work already lives in
-   * the branch's history no matter what happens to this directory.
+   * Until t207 the removal ran on the premise that "committed work already
+   * lives in the branch's history no matter what happens to this directory".
+   * That premise is only true while the session committed, and nothing enforces
+   * that it did: a skill that forgot the `git commit`, or a node whose contract
+   * never asked for one, ends `completed` with its whole output sitting here
+   * untracked — and `--force` used to throw it away without anybody being told.
+   *
+   * So a removal now asks `git status --porcelain` first, and a dirty tree is
+   * RETAINED. The judgement of what that means belongs to whoever called: this
+   * module still only decides that a tree is kept, never why or for how long
+   * (the header's own rule).
+   *
+   * `--force` survives on the removal path. What it covers is not the dirt —
+   * there is none left by the time it runs — but the ordinary refusals git
+   * raises about a tree it has its own opinion of, and losing it would turn a
+   * clean cleanup into a failure on the machine of whoever has a `.gitignore`.
    *
    * @param worktree What {@link acquire} handed out.
    * @param outcome `keep: true` removes nothing at all.
-   * @throws {WorktreeError} git refused to remove it.
+   * @returns `kept: true` when the directory is still there afterwards.
+   * @throws {WorktreeError} git refused to remove it, or could not report on it.
    */
-  async release(worktree: SessionWorktree, outcome: { keep: boolean }): Promise<void> {
-    if (outcome.keep) return;
+  async release(
+    worktree: SessionWorktree,
+    outcome: { keep: boolean },
+  ): Promise<{ kept: boolean }> {
+    if (outcome.keep) return { kept: true };
+
+    // In the worktree and not in `repoRoot`: what is being asked about is what
+    // THIS session left behind, and the repository the tree was cut from has a
+    // status of its own that has nothing to do with it.
+    const statusArgs = ['status', '--porcelain'];
+    const status = await runGit(worktree.path, statusArgs);
+    if (status.code !== 0) {
+      // A git that cannot answer is not an answer: treating the failure as
+      // "clean" would delete on exactly the reading this check exists to make,
+      // and treating it as "dirty" would silently retain every tree the moment
+      // git broke. It is a fault, and it is reported as one.
+      throw new WorktreeError(
+        `the worktree of branch ${worktree.branch} could not be inspected before removal`,
+        describe(worktree.path, statusArgs),
+        status.stderr,
+      );
+    }
+    if (status.stdout.trim() !== '') return { kept: true };
 
     const args = ['worktree', 'remove', worktree.path, '--force'];
     const removed = await runGit(this.#repoRoot, args);
@@ -257,5 +301,7 @@ export class GitWorktreeManager implements WorktreeManager {
         removed.stderr,
       );
     }
+
+    return { kept: false };
   }
 }

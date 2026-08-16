@@ -738,6 +738,39 @@ export function createClaudeCodeDispatch(
   };
 
   /**
+   * Stops the work because a session that finished left work it never committed
+   * (t207-B).
+   *
+   * The same route and the same actor as {@link blockWithNobodyToAsk}, and a
+   * function of its own all the same: the two reasons a dispatch stops a work on
+   * its own account are different facts — one is a node with nobody to ask, the
+   * other is output that exists in exactly one directory — and a single helper
+   * taking a string would make them indistinguishable at every call site.
+   *
+   * No new field on `/finish` and no new schema: `POST /v1/jobs/:id/blocks` has
+   * existed since t102 and takes a free `motivo`, and the finish route's
+   * vocabulary is the t213/D20 migration's to touch, not this one's.
+   *
+   * The reason names the tree, because that path is the whole point — whoever
+   * opens the work reads `trabalho.motivo_bloqueio` first, and what they have to
+   * do next is go and look at that directory.
+   *
+   * @param job The work being dispatched.
+   * @param worktreePath The tree that was retained, absolute.
+   */
+  const blockForUncommittedWork = async (job: Job, worktreePath: string): Promise<void> => {
+    await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
+      motivo:
+        `A sessão do nó \`${job.no_atual}\` terminou como concluída, mas deixou ` +
+        `trabalho não commitado em \`${worktreePath}\` — o \`git status\` da árvore ` +
+        'não estava limpo. A árvore foi RETIDA em vez de removida, e o trabalho ' +
+        'não avançou: o que essa sessão produziu só existe nesse diretório. ' +
+        'Commite o que valer a pena, descarte o resto e desbloqueie.',
+      ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+    });
+  };
+
+  /**
    * Asks a human which way the work goes (FR9).
    *
    * Reached when a node with more than one way out finished without naming one
@@ -899,6 +932,17 @@ export function createClaudeCodeDispatch(
     let releaseFailure: unknown = null;
 
     /**
+     * What the manager ANSWERED, when it answered at all (t207-B).
+     *
+     * `null` while no release has completed — including a release that threw.
+     * That distinction is the point: a `true` here is the manager saying "I
+     * looked and I kept it", which is what the work gets blocked on below, and a
+     * release that blew up is a fault with an owner already (`releaseFailure`).
+     * Collapsing the two would block a work over a broken `git`.
+     */
+    let keptByManager: boolean | null = null;
+
+    /**
      * Gives the worktree back, exactly once, on whatever path leaves here.
      *
      * Idempotent because the paths overlap on purpose: the terminal path
@@ -915,7 +959,7 @@ export function createClaudeCodeDispatch(
       if (released) return;
       released = true;
       try {
-        await options.worktrees.release(worktree, { keep });
+        keptByManager = (await options.worktrees.release(worktree, { keep })).kept;
       } catch (error) {
         releaseFailure = error;
       }
@@ -1102,6 +1146,30 @@ export function createClaudeCodeDispatch(
       // never called again (FR3): what is left is telemetry the runner owes, and
       // each write is attempted even when the one before it failed.
 
+      // The tree goes back HERE, the moment the outcome is known and before a
+      // single decision is taken on top of it (t207-B). It used to happen at the
+      // very end, after the advance, and the order was not neutral: what the
+      // manager answers — did the directory survive? — is an input to that
+      // advance, and a decision taken before the answer exists is a decision
+      // that cannot use it.
+      //
+      // The OUTCOME is still what decides the fate asked for (FR8): what a
+      // completed session produced belongs in its branch's history, so the
+      // directory is scratch; anything else is the only evidence there is of
+      // what went wrong, and it stays on disk until a human — or
+      // `cartografo-runner prune` — decides otherwise.
+      await release(outcome.status !== 'completed');
+
+      // A session that ended `completed` and whose tree was kept ANYWAY: the
+      // manager looked at `git status --porcelain` and found work nobody
+      // committed (`session-worktree.ts`). The premise the old cleanup ran on —
+      // "committed work already lives in the branch's history" — is false for
+      // this session, and everything it produced exists in exactly one
+      // directory. It is not the machine's to reconcile: no commit and no
+      // discard is made on anybody's behalf, uniformly, whether the dirt is a
+      // forgotten `git commit` or scratch the node legitimately produces.
+      const dirtyDespiteCompleted = outcome.status === 'completed' && keptByManager === true;
+
       // Drained BEFORE the end of the session, so the log reads in the order
       // things happened: the session opened, it was denied, it finished. A
       // failure here is remembered and surfaced at the very end — telemetry of an
@@ -1186,31 +1254,41 @@ export function createClaudeCodeDispatch(
         });
       }
 
+      // The other reason a dispatch stops a work on its own account (t207-B).
+      // Only when nothing has stopped it already: an ordinary escalation is
+      // ALREADY a block, posted by the control plane in the same transaction as
+      // `pergunta.criada`, and a second one on top of it would be two owners for
+      // one flag — which is how a work ends up blocked with nothing pending.
+      if (dirtyDespiteCompleted && request === null) {
+        await blockForUncommittedWork(job, worktree.path);
+      }
+
       // And here is where a traversal stops needing an operator (FR7-FR10).
       //
-      // Three conditions, and each one is a different way of not having earned
+      // Four conditions, and each one is a different way of not having earned
       // an advance. No resolved node: there is no graph to say where "next"
       // even is. A session that did not complete: recording progress for work
       // that died would make the log claim something that did not happen. A
       // session that asked: it is blocked behind a person now, and the next
       // dispatch re-enters this same node with the answer already in the
       // prompt — moving it on would answer its question by walking away from
-      // it (`docs/spec/escalacao-humana.md`).
+      // it (`docs/spec/escalacao-humana.md`). And, since t207-B, a session whose
+      // tree was retained: its output is uncommitted, so advancing would move
+      // the work off a node whose result lives nowhere the next node can read
+      // it — and would clear the very state a human has to look at.
       //
-      // BEFORE the release and before the captured failures are rethrown, on
-      // purpose: a denial or a closure the control plane refused is telemetry
-      // the runner owes, and letting either of them strand a work that finished
-      // cleanly would trade the recoverable problem for the unrecoverable one.
-      if (resolved !== null && outcome.status === 'completed' && request === null) {
+      // BEFORE the captured failures are rethrown, on purpose: a denial or a
+      // closure the control plane refused is telemetry the runner owes, and
+      // letting either of them strand a work that finished cleanly would trade
+      // the recoverable problem for the unrecoverable one.
+      if (
+        resolved !== null &&
+        outcome.status === 'completed' &&
+        request === null &&
+        !dirtyDespiteCompleted
+      ) {
         await advance(job, resolved, session.id, output);
       }
-
-      // The tree goes back before this callback settles, and the OUTCOME is what
-      // decides its fate (FR8): what a completed session produced is already in
-      // its branch's history, so the directory is scratch; anything else is the
-      // only evidence there is of what went wrong, and it stays on disk until a
-      // human — or a later ficha — decides otherwise.
-      await release(outcome.status !== 'completed');
 
       // A write that could not be made is not the session's fault, but it is a
       // fault: the control plane refused something the runner owes it, and a
@@ -1235,13 +1313,19 @@ export function createClaudeCodeDispatch(
         );
       }
     } catch (error) {
-      // Every exit that is not the terminal one lands here — a read that
-      // failed before the session opened, the control-plane failure that
-      // cancels a live session, a throw from the telemetry the runner owes, and
-      // since t161 a transition the control plane refused. The tree stays on
-      // disk for all of them, including that last one: a work whose advance did
-      // not record is a work standing on a node it already finished, and the
-      // directory is the only place what it did still exists (FR8).
+      // Every exit that is not the terminal one lands here — a read that failed
+      // before the session opened, the control-plane failure that cancels a live
+      // session, a throw from the telemetry the runner owes, and since t161 a
+      // transition the control plane refused. The tree stays on disk for all of
+      // them: a work whose advance did not record is a work standing on a node
+      // it already finished (FR8).
+      //
+      // A no-op for anything that threw AFTER the terminal release above, which
+      // since t207-B includes the refused transition: that release already ran
+      // with the outcome's own fate, and a clean tree it removed took nothing
+      // with it — what that session produced is in the branch. The one case
+      // where the directory really was the only copy is the dirty one, and that
+      // one is retained by the manager before any of this is reached.
       await release(true);
       throw error;
     }

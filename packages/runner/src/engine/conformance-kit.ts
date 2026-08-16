@@ -1,5 +1,5 @@
 /**
- * EngineAdapter conformance kit — the nine C1–C9 cases of the table in
+ * EngineAdapter conformance kit — the ten C1–C10 cases of the table in
  * `docs/formatos/engine-adapter.md`, as `node:test` tests parameterized by any
  * implementation of the interface.
  *
@@ -27,11 +27,13 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  resolveCapabilities,
+  SessionStartError,
   type EngineAdapter,
   type SessionFinishDetail,
   type SessionListener,
@@ -161,7 +163,14 @@ class Collector implements SessionListener {
 interface Scenario {
   readonly workingDir: string;
   readonly recordPath: string;
+  /**
+   * A second sidecar, for the only case that opens TWO sessions in the same
+   * workdir (C10). Separate files because each process writes its own, and one
+   * path would leave the case reading whichever wrote last.
+   */
+  readonly secondRecordPath: string;
   readRecord(deadlineMs?: number): Promise<FakeRecord>;
+  readSecondRecord(deadlineMs?: number): Promise<FakeRecord>;
   cleanup(): void;
 }
 
@@ -214,10 +223,14 @@ function buildScenario(): Scenario {
   // The sidecar lives OUTSIDE the workdir: inside, it would itself show up in
   // the file list case C2 inspects.
   const recordPath = join(root, 'record.json');
+  const secondRecordPath = join(root, 'record-2.json');
   return {
     workingDir,
     recordPath,
+    secondRecordPath,
     readRecord: async (deadlineMs = RECORD_DEADLINE_MS) => await awaitRecord(recordPath, deadlineMs),
+    readSecondRecord: async (deadlineMs = RECORD_DEADLINE_MS) =>
+      await awaitRecord(secondRecordPath, deadlineMs),
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
 }
@@ -259,7 +272,7 @@ function requireBaselineStatus(status: SessionStatus, label: string): void {
 }
 
 /**
- * Registers the eight conformance cases against an adapter.
+ * Registers the ten conformance cases against an adapter.
  *
  * @param makeAdapter Factory returning a NEW adapter (clean state), already
  *   seamed to run `fakeEnginePath` in place of the real binary.
@@ -745,6 +758,137 @@ export function runConformanceKit(
           collector.linesAfterEnd,
           0,
           'C9: no onOutput may arrive after onFinished (invariant 2)',
+        );
+      } finally {
+        scenario.cleanup();
+      }
+    });
+
+    test('C10 — session continuation', async () => {
+      // The first case whose EXPECTED OUTCOME depends on what the adapter
+      // declares: `hasResume` split the engines in two, and both halves are
+      // conformant. What is not conformant is a third answer — accepting
+      // `resumeFrom` and opening a fresh session anyway. That is the same
+      // failure `permissions` already forbids ("an engine unable to express a
+      // policy has to say so before opening, never open a session that quietly
+      // enforces less than what was asked", `types.ts:126-131`), applied to the
+      // one field whose silent loss nothing downstream can detect: a session
+      // that resumed nothing looks exactly like a session that resumed.
+      const adapter = newAdapter();
+      const supportsResume = resolveCapabilities(adapter.capabilities()).hasResume;
+
+      if (!supportsResume) {
+        const scenario = buildScenario();
+        const collector = new Collector();
+        try {
+          await assert.rejects(
+            () =>
+              adapter.startSession(
+                {
+                  workingDir: scenario.workingDir,
+                  instructions: 'node instructions',
+                  prompt: 'a turn that continues something',
+                  timeoutSeconds: 30,
+                  resumeFrom: 'ref-of-a-session-this-engine-cannot-continue',
+                  envOverrides: {
+                    FAKE_ENGINE_RECORD: scenario.recordPath,
+                    FAKE_ENGINE_EXIT_CODE: '0',
+                  },
+                },
+                collector,
+              ),
+            SessionStartError,
+            'C10: an engine that does not declare hasResume has to refuse the session, ' +
+              'not drop resumeFrom on the floor',
+          );
+
+          // Refusing AFTER the spawn would already have cost a process, an
+          // output and a row somewhere. The sidecar is the proof: the fake
+          // engine writes it as its first act, so its absence is the absence of
+          // a process.
+          await sleep(SETTLE_MS);
+          assert.equal(
+            existsSync(scenario.recordPath),
+            false,
+            'C10: the refusal came after the engine process was already spawned',
+          );
+          assert.equal(
+            collector.endings.length,
+            0,
+            'C10: a session that never opened must not report an outcome',
+          );
+        } finally {
+          scenario.cleanup();
+        }
+        return;
+      }
+
+      const scenario = buildScenario();
+      try {
+        const first = new Collector();
+        const opening: FakeLine[] = [];
+        if (options.engineRefFrame) {
+          opening.push({ stream: 'stdout', text: options.engineRefFrame.line });
+        }
+
+        const firstHandle = await adapter.startSession(
+          {
+            workingDir: scenario.workingDir,
+            instructions: 'node instructions',
+            prompt: 'the first turn',
+            timeoutSeconds: 30,
+            envOverrides: {
+              FAKE_ENGINE_RECORD: scenario.recordPath,
+              FAKE_ENGINE_LINES: linesForEnv(opening),
+              FAKE_ENGINE_EXIT_CODE: '0',
+            },
+          },
+          first,
+        );
+        await first.awaitEnd('C10 (first session)', deadline);
+
+        // The ref the ENGINE gave, as `onEngineRef` reported it — which is what
+        // a caller would have to hand back. The fallback keeps the case
+        // engine-agnostic: an adapter whose engine announces no ref still has
+        // to carry an opaque string through.
+        const engineRef = first.refs[0] ?? 'ref-captured-from-a-previous-session';
+
+        const second = new Collector();
+        const secondHandle = await adapter.startSession(
+          {
+            // The SAME directory on purpose: the continuation of a session is
+            // continuation of the work it was doing, and an engine that keys
+            // its transcript by cwd finds nothing anywhere else.
+            workingDir: scenario.workingDir,
+            instructions: 'node instructions',
+            prompt: 'the turn that continues the first one',
+            timeoutSeconds: 30,
+            resumeFrom: engineRef,
+            envOverrides: {
+              FAKE_ENGINE_RECORD: scenario.secondRecordPath,
+              FAKE_ENGINE_EXIT_CODE: '0',
+            },
+          },
+          second,
+        );
+        const end = await second.awaitEnd('C10 (continued session)', deadline);
+
+        assert.equal(end.status, 'completed', 'C10: the continued session did not complete');
+        assert.notEqual(
+          secondHandle,
+          firstHandle,
+          'C10: continuing a session is a NEW local handle — the engine ref is the ' +
+            "engine's, the handle is the adapter's, and the two are not the same thing",
+        );
+
+        // C2's discipline: only what the PROCESS received counts. Checking the
+        // `SessionSpec` here would be testing the test.
+        const received = everythingTheProcessReceived(await scenario.readSecondRecord());
+        assert.ok(
+          received.includes(engineRef),
+          'C10: the engine ref did not reach the process by any path ' +
+            '(argument, environment, stdin or ephemeral file), so the session ' +
+            'declared as continued started fresh',
         );
       } finally {
         scenario.cleanup();

@@ -1,5 +1,5 @@
 /**
- * The `CodexAdapter` running the whole conformance kit (C1–C7).
+ * The `CodexAdapter` running the whole conformance kit (C1–C10).
  *
  * This file is the proof that the kit is what it claims to be. It is the SAME
  * `runConformanceKit` the Claude Code adapter runs, imported and not copied:
@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { CodexAdapter } from '../../src/engine/codex-adapter.ts';
 import { buildCommand } from '../../src/engine/codex-command.ts';
 import { runConformanceKit } from '../../src/engine/conformance-kit.ts';
+import { resolveCapabilities } from '../../src/engine/types.ts';
 
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
@@ -66,4 +67,11 @@ test('capabilities declares only what has a consumer in v0', () => {
   assert.deepEqual(declared, { hasStructuredOutput: true });
   assert.ok(!('hasResume' in declared));
   assert.ok(!('reportsUsage' in declared));
+
+  // The other half of the same statement, and the one C10 branches on: absent
+  // IS false, through the document's own normalizer. t173 lit `hasResume` up
+  // for the `claude-code` adapter and left this one alone on purpose —
+  // `codex exec resume` is a subcommand, not a flag, so it is a different
+  // mechanism and a ficha of its own.
+  assert.equal(resolveCapabilities(declared).hasResume, false);
 });

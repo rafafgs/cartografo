@@ -28,7 +28,7 @@ import { createHmac } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
@@ -38,7 +38,7 @@ import { migrate } from '../src/db/migrate.ts';
 import type { GraphDocument } from '../src/domain/graph.ts';
 import { registerBaseGraph } from '../src/repositories/graphs.ts';
 import { blockJob, createJob, transitionJob, type Job } from '../src/repositories/job.ts';
-import { MIGRATIONS_DIR, PACKAGE_ROOT, requireArtifacts, type TestHook } from './support.ts';
+import { MIGRATIONS_DIR, PACKAGE_ROOT, requireArtifacts } from './support.ts';
 
 /** Artifacts this ticket creates; every test requires the ones it exercises. */
 const T169_ARTIFACTS = Object.freeze({
@@ -72,6 +72,27 @@ const SECRET_REF = 'gancho-do-grafo-169';
 
 /** Instant every injected clock starts from. */
 const START = '2026-08-16T12:00:00.000Z';
+
+/**
+ * Interval the dispatcher ticks on here — mocked since t201, so it costs nothing.
+ *
+ * `createPollingDispatcher` (`src/util/polling-dispatcher.ts`) registers exactly
+ * ONE `setInterval`, non-recursive, on the app's `onReady`. That is what makes
+ * `t.mock.timers` the simple case here: the whole background clock of this file
+ * is that one timer, and every tick below is fired on purpose.
+ */
+const TICK_INTERVAL_MS = 10;
+
+/**
+ * Ticks a "and then nothing else happened" assertion drives before claiming it.
+ *
+ * It replaces a flat `setTimeout(150)` — 15 real ticks' worth of wall clock,
+ * hoped for rather than observed. A sleep racing a timer is exactly what flakes
+ * on a loaded CI box: the assertion "only one attempt was made" was really
+ * asserting "the second attempt did not fit in 150ms of somebody else's
+ * machine". Fifteen ticks FIRED is the same margin, made of counted events.
+ */
+const SETTLE_TICKS = 15;
 
 /** t142's published backoff schedule, which this dispatcher reuses whole. */
 const BACKOFF_MS = [10_000, 60_000, 300_000, 1_800_000, 7_200_000];
@@ -178,7 +199,7 @@ function hook(
  * @returns Open database, recorded attempts and the injected clock.
  */
 async function startDispatcher(
-  t: TestHook,
+  t: TestContext,
   options: { respond: Responder; tickIntervalMs?: number },
 ): Promise<DispatchContext> {
   requireArtifacts(
@@ -207,9 +228,14 @@ async function startDispatcher(
   const calls: DeliveryCall[] = [];
   const clock = { value: START };
 
+  // Before `app.ready()`, because that is where the `onReady` hook arms the
+  // dispatcher's one `setInterval`. From here on nothing in this file ticks by
+  // itself: `drive` and `waitFor` below fire every single tick, by hand.
+  t.mock.timers.enable({ apis: ['setInterval'] });
+
   const app = Fastify({ logger: false });
   registerHookDispatcher(app, db, {
-    tickIntervalMs: options.tickIntervalMs ?? 10,
+    tickIntervalMs: options.tickIntervalMs ?? TICK_INTERVAL_MS,
     now: () => clock.value,
     fetchImpl: async (url, init) => {
       const call: DeliveryCall = { url, method: init.method, headers: init.headers, body: init.body };
@@ -275,18 +301,63 @@ function headerValue(headers: Record<string, string>, name: string): string | un
   return Object.entries(headers).find(([key]) => key.toLowerCase() === name)?.[1];
 }
 
-/** Waits for a condition, failing with a readable message instead of a timeout. */
-async function waitFor(condition: () => boolean, description: string, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (condition()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  assert.fail(`timed out waiting for ${description}`);
+/**
+ * Fires the dispatcher's interval once and lets that tick run to the end.
+ *
+ * The two `setImmediate` turns are the whole reason this is not a one-liner.
+ * `tick()` only RUNS the timer callback; the work it starts — a read of the due
+ * rows, the injected transport, the row write that records the outcome — is a
+ * promise chain, and a macrotask turn is what drains it. Firing the next tick
+ * before that chain finished would hit the loop's own overlap guard and be
+ * dropped, so "twenty ticks" would silently mean something else.
+ *
+ * @param t Test context, whose mocked timers this drives.
+ */
+async function tickOnce(t: TestContext): Promise<void> {
+  t.mock.timers.tick(TICK_INTERVAL_MS);
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
-/** Sleeps for several ticks, for the "and then nothing else happened" assertions. */
-const settle = (ms = 150): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Drives the dispatcher forward a fixed, counted number of its own ticks.
+ *
+ * This is the "and then nothing else happened" device: the claim is not that
+ * some milliseconds passed, it is that the dispatcher had N chances to act and
+ * did not take them.
+ *
+ * @param t Test context, whose mocked timers this drives.
+ * @param ticks How many firings to give it.
+ */
+async function drive(t: TestContext, ticks: number = SETTLE_TICKS): Promise<void> {
+  for (let fired = 0; fired < ticks; fired += 1) await tickOnce(t);
+}
+
+/**
+ * Drives ticks until the condition holds, failing with a readable message.
+ *
+ * The positive counterpart of {@link drive}, and tick-driven for the same
+ * reason: with the interval mocked, the dispatcher only ever runs when this
+ * file says so, and a poll on wall-clock time would wait for a tick that is
+ * never coming.
+ *
+ * @param t Test context, whose mocked timers this drives.
+ * @param condition Checked before every firing.
+ * @param description What the failure message should say was expected.
+ * @param maxTicks Ceiling, so a broken expectation fails instead of hanging.
+ */
+async function waitFor(
+  t: TestContext,
+  condition: () => boolean,
+  description: string,
+  maxTicks = 500,
+): Promise<void> {
+  for (let fired = 0; fired < maxTicks; fired += 1) {
+    if (condition()) return;
+    await tickOnce(t);
+  }
+  assert.fail(`timed out waiting for ${description} (drove ${maxTicks} ticks)`);
+}
 
 test('AT8 — the delivery carries the triggering event, signed with the hook\'s own secret', async (t) => {
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 200 }) });
@@ -294,7 +365,9 @@ test('AT8 — the delivery carries the triggering event, signed with the hook\'s
   const job = jobOn(ctx.db, [hook('avisar-revisao', 'node_entered', 'revisar', 'https://exemplo.invalid/gancho')]);
   transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
 
-  await waitFor(() => ctx.calls.length >= 1, 'the hook to be POSTed');
+  await waitFor(
+t,
+() => ctx.calls.length >= 1, 'the hook to be POSTed');
   const [call] = ctx.calls;
 
   assert.equal(call.url, 'https://exemplo.invalid/gancho');
@@ -326,8 +399,10 @@ test('AT9 — a 2xx closes the delivery in silence: no event is recorded', async
   blockJob(ctx.db, job.id, { motivo: 'a redação parou esperando o tema' }, { now: () => ctx.clock.value });
   const recorded = listEvents(ctx.db).length;
 
-  await waitFor(() => only(deliveries(ctx.db)).status === 'entregue', 'the 2xx to close the delivery');
-  await settle();
+  await waitFor(
+t,
+() => only(deliveries(ctx.db)).status === 'entregue', 'the 2xx to close the delivery');
+  await drive(t);
 
   const delivered = only(deliveries(ctx.db));
   assert.equal(delivered.tentativas, 1);
@@ -350,7 +425,9 @@ test('AT10 — a failed attempt is rescheduled by t142\'s backoff step, and retr
   const job = jobOn(ctx.db, [hook('avisar-revisao', 'node_entered', 'revisar', 'https://exemplo.invalid/gancho')]);
   transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
 
-  await waitFor(() => only(deliveries(ctx.db)).tentativas === 1, 'the first attempt to be recorded');
+  await waitFor(
+t,
+() => only(deliveries(ctx.db)).tentativas === 1, 'the first attempt to be recorded');
 
   const failed = only(deliveries(ctx.db));
   assert.equal(failed.status, 'pendente', 'a failure does not end the delivery');
@@ -361,11 +438,13 @@ test('AT10 — a failed attempt is rescheduled by t142\'s backoff step, and retr
     `the failure is recorded: ${String(failed.ultimo_erro)}`,
   );
 
-  await settle();
+  await drive(t);
   assert.equal(ctx.calls.length, 1, 'nothing is retried before the step has passed');
 
   advance(ctx.clock, BACKOFF_MS[0]);
-  await waitFor(() => only(deliveries(ctx.db)).tentativas === 2, 'the second attempt to be recorded');
+  await waitFor(
+t,
+() => only(deliveries(ctx.db)).tentativas === 2, 'the second attempt to be recorded');
 
   assert.equal(
     only(deliveries(ctx.db)).proxima_tentativa_em,
@@ -384,6 +463,7 @@ test('AT11 — the sixth failed attempt gives up and records one trabalho.gancho
   // Six attempts in total: the first one, plus one per step of the schedule.
   for (let attempt = 1; attempt <= BACKOFF_MS.length + 1; attempt += 1) {
     await waitFor(
+      t,
       () => only(deliveries(ctx.db)).tentativas >= attempt,
       `the result of attempt number ${attempt}`,
     );
@@ -414,7 +494,7 @@ test('AT11 — the sixth failed attempt gives up and records one trabalho.gancho
   // and it never records a second incident.
   const spent = ctx.calls.length;
   advance(ctx.clock, 365 * 24 * 60 * 60 * 1000);
-  await settle();
+  await drive(t);
   assert.equal(ctx.calls.length, spent, 'an esgotada delivery is never attempted again');
   assert.equal(failureEvents(ctx.db).length, 1);
 });
@@ -434,7 +514,9 @@ test('AT12 — a dead hook does not hold up another hook of the same batch', asy
   transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
 
   // One event, two hooks, two independent deliveries (FR5).
-  await waitFor(() => deliveries(ctx.db).length === 2, 'both hooks to be enqueued');
+  await waitFor(
+t,
+() => deliveries(ctx.db).length === 2, 'both hooks to be enqueued');
   const [first, second] = deliveries(ctx.db);
   assert.equal(first.evento_id, second.evento_id, 'the same event fired both');
 
@@ -444,7 +526,9 @@ test('AT12 — a dead hook does not hold up another hook of the same batch', asy
     return found;
   };
 
-  await waitFor(() => healthy().status === 'entregue', 'the healthy hook to be delivered');
+  await waitFor(
+t,
+() => healthy().status === 'entregue', 'the healthy hook to be delivered');
   assert.equal(healthy().ultimo_erro, null);
 
   const broken = deliveries(ctx.db).find((row) => row.gancho_id === 'avisar-morto');
@@ -468,8 +552,10 @@ test('t194 — a secret_ref that resolves to nothing enqueues nothing, and is si
   ]);
   transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
 
-  await waitFor(() => ctx.calls.length >= 1, 'the resolvable hook to be POSTed');
-  await settle();
+  await waitFor(
+t,
+() => ctx.calls.length >= 1, 'the resolvable hook to be POSTed');
+  await drive(t);
 
   // Zero rows and zero error, the same answer the repository already gives for a
   // job with no version, a version that does not resolve and a snapshot with no

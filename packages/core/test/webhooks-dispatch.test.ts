@@ -35,14 +35,14 @@ import { createHmac } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import { applyPragmas, openDatabase, type Database } from '../src/db/connection.ts';
 import { getEventsByEntity, recordEvent } from '../src/db/events.ts';
 import { migrate } from '../src/db/migrate.ts';
-import { MIGRATIONS_DIR, requireArtifacts, type Event, type TestHook } from './support.ts';
+import { MIGRATIONS_DIR, requireArtifacts, type Event } from './support.ts';
 
 /** Artifacts this ticket creates; every test requires the ones it exercises. */
 const T142_ARTIFACTS = Object.freeze({
@@ -63,6 +63,28 @@ const SECRET = 'segredo-do-consumidor-142';
 const START = '2026-08-15T12:00:00.000Z';
 
 /** The published backoff schedule: five retries, six attempts in total. */
+/**
+ * Interval the dispatcher ticks on here — mocked since t201, so it costs nothing.
+ *
+ * `createPollingDispatcher` (`src/util/polling-dispatcher.ts`) registers exactly
+ * ONE `setInterval`, non-recursive, on the app's `onReady`. That is what makes
+ * `t.mock.timers` the simple case here: the whole background clock of this file
+ * is that one timer, and every tick below is fired on purpose.
+ */
+const TICK_INTERVAL_MS = 10;
+
+/**
+ * Ticks a "and then nothing else happened" assertion drives before claiming it.
+ *
+ * They replace flat `setTimeout(150)` / `setTimeout(200)` sleeps — 15 and 20
+ * real ticks' worth of wall clock, hoped for rather than observed. A sleep
+ * racing a timer is exactly what flakes on a loaded CI box: the assertion "only
+ * one attempt was made" was really asserting "the second attempt did not fit in
+ * 150ms of somebody else's machine". The same margins, made of counted events.
+ */
+const SETTLE_TICKS = 15;
+const LONG_SETTLE_TICKS = 20;
+
 const BACKOFF_MS = [10_000, 60_000, 300_000, 1_800_000, 7_200_000];
 
 /** One delivery attempt, as the injected `fetch` saw it. */
@@ -151,7 +173,7 @@ type Responder = (call: DeliveryCall) => Promise<{ status: number }>;
  * @returns Open database, base URL, recorded attempts and the injected clock.
  */
 async function startDispatcher(
-  t: TestHook,
+  t: TestContext,
   options: { respond: Responder; tickIntervalMs?: number },
 ): Promise<DispatchContext> {
   requireArtifacts(
@@ -174,10 +196,17 @@ async function startDispatcher(
   const calls: DeliveryCall[] = [];
   const clock = { value: START };
 
+  // Before `app.listen()` — which readies the app — because that is where the
+  // `onReady` hook arms the dispatcher's one `setInterval`. From here on nothing
+  // in this file ticks by itself: `drive` and `waitFor` fire every single tick.
+  // Only `setInterval` is mocked, so the HTTP server this file really listens on
+  // and really talks to keeps its own timers.
+  t.mock.timers.enable({ apis: ['setInterval'] });
+
   const app = Fastify({ logger: false });
   app.register(async (scope) => registerWebhooks(scope, db), { prefix: '/v1' });
   registerWebhookDispatcher(app, db, {
-    tickIntervalMs: options.tickIntervalMs ?? 10,
+    tickIntervalMs: options.tickIntervalMs ?? TICK_INTERVAL_MS,
     now: () => clock.value,
     fetchImpl: async (url, init) => {
       const call: DeliveryCall = {
@@ -282,22 +311,63 @@ function headerValue(headers: Record<string, string>, name: string): string | un
   return found?.[1];
 }
 
-/** Waits for a condition, failing with a readable message instead of a timeout. */
-async function waitFor(
-  condition: () => boolean,
-  description: string,
-  timeoutMs = 5000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (condition()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  assert.fail(`timed out waiting for ${description}`);
+/**
+ * Fires the dispatcher's interval once and lets that tick run to the end.
+ *
+ * The two `setImmediate` turns are the whole reason this is not a one-liner.
+ * `tick()` only RUNS the timer callback; the work it starts — the fan-out over
+ * the subscriptions, the injected transport, the row writes that record each
+ * outcome — is a promise chain, and a macrotask turn is what drains it. Firing
+ * the next tick before that chain finished would hit the loop's own overlap
+ * guard and be dropped, so "twenty ticks" would silently mean something else.
+ *
+ * @param t Test context, whose mocked timers this drives.
+ */
+async function tickOnce(t: TestContext): Promise<void> {
+  t.mock.timers.tick(TICK_INTERVAL_MS);
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
-/** Sleeps for several ticks, for the "and then nothing else happened" assertions. */
-const settle = (ms = 150): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Drives the dispatcher forward a fixed, counted number of its own ticks.
+ *
+ * This is the "and then nothing else happened" device: the claim is not that
+ * some milliseconds passed, it is that the dispatcher had N chances to act and
+ * did not take them.
+ *
+ * @param t Test context, whose mocked timers this drives.
+ * @param ticks How many firings to give it.
+ */
+async function drive(t: TestContext, ticks: number = SETTLE_TICKS): Promise<void> {
+  for (let fired = 0; fired < ticks; fired += 1) await tickOnce(t);
+}
+
+/**
+ * Drives ticks until the condition holds, failing with a readable message.
+ *
+ * The positive counterpart of {@link drive}, and tick-driven for the same
+ * reason: with the interval mocked, the dispatcher only ever runs when this
+ * file says so, and a poll on wall-clock time would wait for a tick that is
+ * never coming.
+ *
+ * @param t Test context, whose mocked timers this drives.
+ * @param condition Checked before every firing.
+ * @param description What the failure message should say was expected.
+ * @param maxTicks Ceiling, so a broken expectation fails instead of hanging.
+ */
+async function waitFor(
+  t: TestContext,
+  condition: () => boolean,
+  description: string,
+  maxTicks = 500,
+): Promise<void> {
+  for (let fired = 0; fired < maxTicks; fired += 1) {
+    if (condition()) return;
+    await tickOnce(t);
+  }
+  assert.fail(`timed out waiting for ${description} (drove ${maxTicks} ticks)`);
+}
 
 test('AT5 — the event is pushed with the envelope and a verifiable signature', async (t) => {
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 200 }) });
@@ -308,7 +378,7 @@ test('AT5 — the event is pushed with the envelope and a verifiable signature',
   });
   recordJobCreated(ctx.db, 1, 'primeiro fato da rodada');
 
-  await waitFor(() => ctx.calls.length >= 1, 'the recorded event to be pushed');
+  await waitFor(t, () => ctx.calls.length >= 1, 'the recorded event to be pushed');
   const [call] = ctx.calls;
 
   assert.equal(call.url, 'https://exemplo.invalid/hook');
@@ -328,6 +398,7 @@ test('AT5 — the event is pushed with the envelope and a verifiable signature',
   );
 
   await waitFor(
+    t,
     () => only(deliveries(ctx.db, subscription.id)).status === 'entregue',
     'the 2xx to close the delivery',
   );
@@ -352,8 +423,8 @@ test('AT6 — a subscription never replays what was already in the log', async (
 
   const fresh = recordJobCreated(ctx.db, 2, 'depois da assinatura');
 
-  await waitFor(() => ctx.calls.length >= 1, 'the new event to be pushed');
-  await settle();
+  await waitFor(t, () => ctx.calls.length >= 1, 'the new event to be pushed');
+  await drive(t);
 
   assert.equal(ctx.calls.length, 1, 'history is not replayed by accident');
   assert.equal((JSON.parse(ctx.calls[0].body) as Event).id, fresh.id);
@@ -375,8 +446,8 @@ test('AT7 — tipos filters the fan-out down to the asked types', async (t) => {
   recordJobMoved(ctx.db, 1, 'revisao');
   recordJobCreated(ctx.db, 2, 'entra também');
 
-  await waitFor(() => ctx.calls.length >= 2, 'the two matching events to be pushed');
-  await settle();
+  await waitFor(t, () => ctx.calls.length >= 2, 'the two matching events to be pushed');
+  await drive(t);
 
   assert.deepEqual(
     ctx.calls.map((call) => (JSON.parse(call.body) as Event).tipo),
@@ -399,10 +470,12 @@ test('AT8 — a failed attempt is rescheduled by the backoff step, and retried',
   recordJobCreated(ctx.db, 1, 'para retentar');
 
   await waitFor(
+    t,
     () => deliveries(ctx.db, subscription.id).length === 1,
     'the delivery to be enqueued',
   );
   await waitFor(
+    t,
     () => only(deliveries(ctx.db, subscription.id)).tentativas === 1,
     'the first attempt to be recorded',
   );
@@ -416,12 +489,13 @@ test('AT8 — a failed attempt is rescheduled by the backoff step, and retried',
     `the failure is recorded: ${String(failed.ultimo_erro)}`,
   );
 
-  await settle();
+  await drive(t);
   assert.equal(ctx.calls.length, 1, 'nothing is retried before the step has passed');
 
   advance(ctx.clock, BACKOFF_MS[0]);
-  await waitFor(() => ctx.calls.length >= 2, 'the retry once the step has passed');
+  await waitFor(t, () => ctx.calls.length >= 2, 'the retry once the step has passed');
   await waitFor(
+    t,
     () => only(deliveries(ctx.db, subscription.id)).tentativas === 2,
     'the second attempt to be recorded',
   );
@@ -448,8 +522,9 @@ test('AT9 — past the last step the delivery is esgotada, and never tried again
 
   // Six attempts in total: the first one, plus one per step of the schedule.
   for (let attempt = 1; attempt <= BACKOFF_MS.length + 1; attempt += 1) {
-    await waitFor(() => ctx.calls.length >= attempt, `attempt number ${attempt}`);
+    await waitFor(t, () => ctx.calls.length >= attempt, `attempt number ${attempt}`);
     await waitFor(
+      t,
       () => only(deliveries(ctx.db, subscription.id)).tentativas >= attempt,
       `the result of attempt number ${attempt}`,
     );
@@ -466,7 +541,7 @@ test('AT9 — past the last step the delivery is esgotada, and never tried again
   // However far the clock goes, a terminal delivery is not a delivery any more.
   const spent = ctx.calls.length;
   advance(ctx.clock, 365 * 24 * 60 * 60 * 1000);
-  await settle();
+  await drive(t);
   assert.equal(ctx.calls.length, spent, 'an esgotada delivery is never attempted again');
 });
 
@@ -489,6 +564,7 @@ test('AT10 — a broken subscriber does not hold up a healthy one', async (t) =>
   recordJobCreated(ctx.db, 1, 'para os dois');
 
   await waitFor(
+    t,
     () => deliveries(ctx.db, healthy.id).some((delivery) => delivery.status === 'entregue'),
     "the healthy subscriber's delivery",
   );
@@ -514,6 +590,7 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
   const pushed = recordJobCreated(ctx.db, 1, 'antes da desativação');
 
   await waitFor(
+    t,
     () => deliveries(ctx.db, subscription.id).some((delivery) => delivery.tentativas === 1),
     'the first attempt, so there is a pending retry to stop',
   );
@@ -531,7 +608,7 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
   // Matching events keep arriving and the clock walks past every backoff step.
   recordJobCreated(ctx.db, 2, 'depois da desativação');
   advance(ctx.clock, 24 * 60 * 60 * 1000);
-  await settle(200);
+  await drive(t, LONG_SETTLE_TICKS);
 
   assert.equal(ctx.calls.length, spent, 'a deactivated subscription is never called again');
   assert.deepEqual(

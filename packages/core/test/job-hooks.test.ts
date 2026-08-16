@@ -191,6 +191,32 @@ function only(rows: HookDelivery[]): HookDelivery {
   return rows[0];
 }
 
+/**
+ * Waits for a condition, failing with a readable message instead of a timeout.
+ *
+ * The one thing this file waits on is "the background tick eventually ran", and
+ * before t201 that was a flat 100ms sleep. A sleep is a race dressed as a wait:
+ * on a loaded machine the tick lands at 120ms and the suite goes red for no
+ * reason, and on a fast one the other 90ms are pure idle. This polls the thing
+ * that was actually being claimed. The ceiling is a ceiling, never a wait.
+ *
+ * @param condition Checked on every poll.
+ * @param description What the failure message should say was expected.
+ * @param timeoutMs Ceiling on the wait.
+ */
+async function waitFor(
+  condition: () => boolean,
+  description: string,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.fail(`timed out waiting for ${description}`);
+}
+
 test('AT4 — entering a node with a matching node_entered hook enqueues one delivery', async (t) => {
   requireArtifacts(T169_ARTIFACTS.migration, T169_ARTIFACTS.repository);
   const db = openWorld(t);
@@ -352,7 +378,7 @@ test('AT7 — the write path answers 200 even when the hook destination rejects'
   // The delivery exists and is retried in the background; the response above did
   // not wait for a single one of those attempts.
   assert.equal(only(hookDeliveries(db)).gancho_id, ON_ENTER);
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await waitFor(() => attempts >= 1, 'the background dispatcher to attempt the delivery');
   assert.ok(attempts >= 1, 'and the dispatcher does attempt it, after the answer went out');
   assert.equal(only(hookDeliveries(db)).status, 'pendente', 'a failed attempt is not terminal');
 });

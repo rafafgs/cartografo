@@ -192,18 +192,24 @@ test('t166 AT — one engine\'s report never touches another engine\'s catalog',
   );
 });
 
-test('t166 AT — an empty report is how an engine says it offers nothing', async (t) => {
+test('t166 AT — an empty report clears the engine, and says so in its own answer', async (t) => {
   requireArtifacts(...Object.values(T166_ARTIFACTS));
   const ctx = await startControlPlane(t);
 
   await report(ctx, 'claude-code', [{ modelo_id: 'claude-opus-5', origem: 'catalog' }]);
-  await report(ctx, 'claude-code', []);
+  const cleared = await report(ctx, 'claude-code', []);
 
-  assert.deepEqual(
-    (await listEngines(ctx)).map((engine) => [engine.motor, engine.modelos.length]),
-    [['claude-code', 0]],
-    'the engine stays known, and known to offer nothing — that is information, not absence',
-  );
+  // The report's OWN answer names the engine, which is the only place an empty
+  // catalog stays visible...
+  assert.deepEqual(cleared, { motor: 'claude-code', modelos: [] });
+
+  // ...and the listing loses the engine entirely. That is the stated price of
+  // `motor_modelo` being rows-of-models and not rows-of-engines (FR12): with no
+  // model row there is nothing left to carry the name, so an engine that offers
+  // nothing is indistinguishable from one that never reported. Closing that
+  // would take a second table, and nothing in this ficha needs it — a runner
+  // whose adapter has no catalog is a runner with no models to dispatch on.
+  assert.deepEqual(await listEngines(ctx), []);
 });
 
 test('t166 AT — a malformed report is refused, and writes nothing', async (t) => {

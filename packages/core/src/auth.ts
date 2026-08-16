@@ -70,6 +70,12 @@ const RUNNER_SURFACE: ReadonlySet<string> = new Set([
   'POST /v1/leases/:id/heartbeats',
   'POST /v1/leases/:id/releases',
   'GET /v1/leases',
+  // t166. Reporting which models THIS machine's engine offers is a runner
+  // telling the control plane what it found — the same act as pairing, and the
+  // only route of the discovery pair a runner reaches. `GET /v1/engines` is
+  // deliberately NOT here: reading the whole fleet's menu is the operator's,
+  // for the reason `GET /v1/runners` already states.
+  'POST /v1/engines/:name/models',
 ]);
 
 declare module 'fastify' {

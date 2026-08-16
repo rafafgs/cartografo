@@ -34,6 +34,7 @@ import { hostname } from 'node:os';
 import path from 'node:path';
 
 import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
+import { DEFAULT_REQUEST_TIMEOUT_MS } from '../controller/http-client.ts';
 import {
   DEFAULT_ENGINE_NAME,
   ENGINE_NAMES,
@@ -72,6 +73,17 @@ export const DEFAULT_INTERVAL_MS = 2_000;
 /** Term of the lease asked for, in seconds, when nothing is asked for. */
 export const DEFAULT_LEASE_TTL_SECONDS = 60;
 
+/**
+ * How long a stop waits for the session in flight, in seconds, by default.
+ *
+ * Two minutes, and the number is a compromise with a name at each end: shorter
+ * kills sessions that were about to finish and would have reported their own
+ * outcome; longer is indistinguishable, to whoever is watching a terminal or a
+ * supervisor, from a runner that hung. Anybody who knows their own sessions
+ * better says so with the flag.
+ */
+export const DEFAULT_SHUTDOWN_GRACE_SECONDS = 120;
+
 /** Name of the readiness event printed on stdout, once the runner has paired. */
 export const READY_EVENT = 'cartografo.runner.ready';
 
@@ -109,7 +121,18 @@ options:
                             (default ${DEFAULT_INTERVAL_MS})
   --lease-ttl-seconds <n>   term of the lease asked for
                             (default ${DEFAULT_LEASE_TTL_SECONDS})
+  --request-timeout-ms <n>  how long any one call to the control plane may
+                            take before it is given up on
+                            (default ${DEFAULT_REQUEST_TIMEOUT_MS})
+  --shutdown-grace-seconds <n>
+                            how long a stop waits for the session in flight
+                            before taking it down (default
+                            ${DEFAULT_SHUTDOWN_GRACE_SECONDS}); a second SIGINT
+                            or SIGTERM does not wait at all
   -h, --help                this text
+
+Only --url and --token read an environment variable; every other flag above,
+these two included, is command line only.
 
 exit codes: 0 the runner ran and was asked to stop, 1 it could not run,
 2 the command line is wrong.`;
@@ -135,6 +158,8 @@ const VALUE_OPTIONS = [
   '--project-cap',
   '--interval-ms',
   '--lease-ttl-seconds',
+  '--request-timeout-ms',
+  '--shutdown-grace-seconds',
 ] as const;
 
 /** The two signals that ask a runner to stop. */
@@ -357,6 +382,16 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
       given.get('--lease-ttl-seconds'),
       DEFAULT_LEASE_TTL_SECONDS,
     ),
+    requestTimeoutMs: positiveInteger(
+      '--request-timeout-ms',
+      given.get('--request-timeout-ms'),
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    ),
+    shutdownGraceSeconds: positiveInteger(
+      '--shutdown-grace-seconds',
+      given.get('--shutdown-grace-seconds'),
+      DEFAULT_SHUTDOWN_GRACE_SECONDS,
+    ),
   };
 }
 
@@ -437,19 +472,83 @@ export async function runRunnerCli(
 
   const run = seams.run ?? runRunner;
   const aborter = new AbortController();
+
+  /**
+   * The live session's cancel, or `null` when there is none (t193, FR7).
+   *
+   * Valid only between `onSessionStarted` and `onSessionEnded`, which is what
+   * keeps it from ever being stale: outside that window there is no process to
+   * take down, and `null` is a no-op rather than a call into a dead handle.
+   */
+  let liveCancel: (() => Promise<void>) | null = null;
+  let stopping = false;
+  let grace: NodeJS.Timeout | null = null;
+
+  /** Takes the live session down now, if there is one. Idempotent, by the `null`. */
+  const forceDown = (): void => {
+    if (grace !== null) {
+      clearTimeout(grace);
+      grace = null;
+    }
+    const cancel = liveCancel;
+    liveCancel = null;
+    if (cancel === null) return;
+
+    // Not awaited, and it cannot be: this runs on a signal handler, and what
+    // resumes after the cancel is the dispatch itself — reporting the outcome,
+    // giving the worktree back and settling the promise `run` is already
+    // awaiting below. A failure here is swallowed for the same reason the
+    // dispatch swallows its own cleanup errors: the session is going down
+    // either way, and there is nobody left up here to tell.
+    void cancel().catch(() => undefined);
+  };
+
+  /**
+   * What a stop signal does — and it does something different the second time.
+   *
+   * The first one aborts the loop, so nothing new is scheduled, and starts a
+   * clock. The second one, or that clock running out, ends the session in
+   * flight instead of waiting for it. Before t193 there was only the first
+   * half, registered with `process.once`: a second signal found no listener and
+   * killed the process under Node's default disposition, with the engine still
+   * running in a worktree nobody was left to give back.
+   */
   const stop = (): void => {
+    if (stopping) {
+      forceDown();
+      return;
+    }
+    stopping = true;
     aborter.abort();
+
+    // `unref`ed: a runner whose session already ended has no reason to stay up
+    // waiting out a grace it no longer needs.
+    const graceSeconds = options.shutdownGraceSeconds ?? DEFAULT_SHUTDOWN_GRACE_SECONDS;
+    grace = setTimeout(forceDown, graceSeconds * 1_000);
+    grace.unref();
   };
 
   // Registered on the real process, and removed again on the way out: a
   // listener left behind would keep answering for a runner that no longer
   // exists — which is exactly what a test process would find out the hard way.
-  for (const signal of STOP_SIGNALS) process.once(signal, stop);
+  // `on` and not `once` (t193): the second signal is the one that stops waiting.
+  for (const signal of STOP_SIGNALS) process.on(signal, stop);
 
   try {
     await run({
       ...options,
       signal: aborter.signal,
+      onSessionStarted: (cancel) => {
+        liveCancel = cancel;
+        // A session that came up AFTER the stop was asked for — the tick that
+        // was already in flight when the signal landed. It gets no grace of its
+        // own: the clock started with the signal, and if it has already run out
+        // this session is taken down as soon as it exists.
+        if (stopping && grace === null) forceDown();
+      },
+      onSessionEnded: () => {
+        liveCancel = null;
+      },
       onReady: () => {
         process.stdout.write(
           `${JSON.stringify({
@@ -473,5 +572,6 @@ export async function runRunnerCli(
     return 1;
   } finally {
     for (const signal of STOP_SIGNALS) process.off(signal, stop);
+    if (grace !== null) clearTimeout(grace);
   }
 }

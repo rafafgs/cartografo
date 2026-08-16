@@ -19,6 +19,12 @@
  * server do t102.
  */
 
+import {
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  decodeErrorBody,
+  requestJson,
+} from './http-client.ts';
+
 /**
  * Um trabalho, como `GET /v1/jobs` (t102) o devolve.
  *
@@ -255,6 +261,16 @@ export interface OpcoesDoCliente {
   token?: string;
   /** Implementação de `fetch` a usar. Default: o `fetch` global. */
   buscar?: typeof fetch;
+  /**
+   * Prazo de cada chamada, em milissegundos (t193, FR2).
+   *
+   * Default: {@link DEFAULT_REQUEST_TIMEOUT_MS}. O que ele existe para pegar
+   * não é control plane fora do ar — esse responde, e cada método aqui já sabe
+   * o que fazer com a resposta —, e sim um que aceita a conexão e não escreve
+   * nada: sem prazo, a chamada espera para sempre, e com ela o tick que a fez,
+   * o loop que espera o tick e o desligamento que espera o loop.
+   */
+  requestTimeoutMs?: number;
 }
 
 /**
@@ -276,42 +292,19 @@ export class ErroDoControlPlane extends Error {
   }
 }
 
-/**
- * Decodifica o corpo de uma resposta de ERRO, sem nunca estourar (t156).
- *
- * Quem responde um erro nem sempre é o control plane: um proxy reverso no meio
- * do caminho responde 502/504 com uma página HTML, e aí o `JSON.parse` estoura
- * um `SyntaxError` cru — que não carrega o status nem o texto, e não é o erro
- * que este módulo promete. Falhar em decodificar o corpo de um erro não é uma
- * segunda falha: é o corpo, do jeito que veio.
- *
- * Não vale para o caminho de sucesso, de propósito: corpo malformado num 2xx é
- * violação de contrato do control plane, e essa tem que aparecer.
- *
- * @param texto O corpo da resposta, como texto.
- * @returns `undefined` para corpo vazio, o valor decodificado quando é JSON, e
- *   o próprio texto cru quando não é.
- */
-function corpoDeErro(texto: string): unknown {
-  if (texto === '') return undefined;
-  try {
-    return JSON.parse(texto);
-  } catch {
-    return texto;
-  }
-}
-
 /** Cliente fino da API do control plane. */
 export class ClienteControle {
   /** URL base já normalizada, sem barra no fim. */
   readonly urlBase: string;
   readonly #buscar: typeof fetch;
   readonly #token: string | undefined;
+  readonly #requestTimeoutMs: number;
 
   constructor(opcoes: OpcoesDoCliente) {
     this.urlBase = opcoes.urlBase.replace(/\/+$/, '');
     this.#buscar = opcoes.buscar ?? fetch;
     this.#token = opcoes.token;
+    this.#requestTimeoutMs = opcoes.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
   /**
@@ -390,13 +383,19 @@ export class ClienteControle {
    *
    * @param leaseId Lease ativa.
    * @param ttlSegundos TTL novo; sem ele, o server mantém o da própria lease.
+   * @param timeoutMs Prazo DESTA chamada, em milissegundos (t193, FR3). Sem
+   *   ele, o do cliente. Existe porque a batida é a única chamada deste cliente
+   *   que tem um prazo natural mais curto que o geral: quem a arma sabe de
+   *   quanto em quanto tempo a próxima vence, e uma batida que ainda estivesse
+   *   no ar quando a seguinte vencesse é uma que já não serve para nada.
    * @returns A lease renovada.
    */
-  async heartbeat(leaseId: number, ttlSegundos?: number): Promise<Lease> {
+  async heartbeat(leaseId: number, ttlSegundos?: number, timeoutMs?: number): Promise<Lease> {
     const corpo = ttlSegundos === undefined ? {} : { ttl_segundos: ttlSegundos };
     const { lease } = await this.#post<{ lease: Lease }>(
       `/v1/leases/${leaseId}/heartbeats`,
       corpo,
+      timeoutMs,
     );
     return lease;
   }
@@ -559,35 +558,48 @@ export class ClienteControle {
     return cabecalhos;
   }
 
-  async #get<T>(caminho: string): Promise<T> {
-    const resposta = await this.#buscar(`${this.urlBase}${caminho}`, {
-      headers: this.#cabecalhos(false),
-    });
-    return await this.#interpretar(caminho, 'GET', resposta);
+  async #get<T>(caminho: string, timeoutMs?: number): Promise<T> {
+    return await this.#chamar<T>('GET', caminho, undefined, timeoutMs);
   }
 
-  async #post<T>(caminho: string, corpo: unknown): Promise<T> {
-    const resposta = await this.#buscar(`${this.urlBase}${caminho}`, {
-      method: 'POST',
-      headers: this.#cabecalhos(true),
-      body: JSON.stringify(corpo),
-    });
-    return await this.#interpretar(caminho, 'POST', resposta);
+  async #post<T>(caminho: string, corpo: unknown, timeoutMs?: number): Promise<T> {
+    return await this.#chamar<T>('POST', caminho, corpo, timeoutMs);
   }
 
-  async #interpretar<T>(caminho: string, verbo: string, resposta: Response): Promise<T> {
-    const texto = await resposta.text();
-
-    // O status vem ANTES de qualquer decodificação: sobre um erro, o corpo é
-    // material de log e nunca motivo para uma exceção diferente da desta porta.
-    if (!resposta.ok) {
-      throw new ErroDoControlPlane(
-        `${verbo} ${caminho} respondeu ${resposta.status}`,
-        resposta.status,
-        corpoDeErro(texto),
-      );
-    }
-
-    return (texto === '' ? undefined : JSON.parse(texto)) as T;
+  /**
+   * A única porta de saída desta classe (t193, FR2).
+   *
+   * A mecânica — prazo, status antes do corpo, decodificação — mora em
+   * `http-client.ts`, e o que sobra aqui é o que é DESTE cliente: a URL base, os
+   * cabeçalhos e o {@link ErroDoControlPlane} que ele promete. O `corpoDeErro`
+   * que vivia neste arquivo desde a t156 virou `decodeErrorBody` lá, com a mesma
+   * regra e um dono só.
+   *
+   * @param verbo Verbo HTTP.
+   * @param caminho Caminho a partir da URL base.
+   * @param corpo Corpo a enviar, quando há um.
+   * @param timeoutMs Prazo desta chamada. Sem ele, o do cliente.
+   * @returns O corpo decodificado da resposta.
+   */
+  async #chamar<T>(
+    verbo: string,
+    caminho: string,
+    corpo: unknown,
+    timeoutMs?: number,
+  ): Promise<T> {
+    return await requestJson<T>({
+      url: `${this.urlBase}${caminho}`,
+      method: verbo,
+      headers: this.#cabecalhos(corpo !== undefined),
+      body: corpo,
+      timeoutMs: timeoutMs ?? this.#requestTimeoutMs,
+      fetchImpl: this.#buscar,
+      buildError: ({ status, body }) =>
+        new ErroDoControlPlane(
+          `${verbo} ${caminho} respondeu ${status}`,
+          status,
+          decodeErrorBody(body),
+        ),
+    });
   }
 }

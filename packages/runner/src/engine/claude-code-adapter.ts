@@ -166,6 +166,11 @@ interface Session {
   readonly silenceMs: number;
   escalation: NodeJS.Timeout | null;
   safetyNet: NodeJS.Timeout | null;
+  /**
+   * The `process.on('exit')` listener that takes this session's group down with
+   * the runner, while it is live (t193, FR11). `null` once it is not.
+   */
+  exitBackstop: (() => void) | null;
   leftovers: { stdout: string; stderr: string };
 }
 
@@ -348,6 +353,7 @@ export class ClaudeCodeAdapter implements EngineAdapter {
           : 0,
       escalation: null,
       safetyNet: null,
+      exitBackstop: null,
       leftovers: { stdout: '', stderr: '' },
     };
     this.#sessions.set(id, session);
@@ -364,6 +370,7 @@ export class ClaudeCodeAdapter implements EngineAdapter {
     child.once('spawn', () => {
       started = true;
       session.status = 'running';
+      this.#armExitBackstop(session);
       announceStart(null);
     });
 
@@ -632,6 +639,37 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       if (timer) clearTimeout(timer);
       session[name] = null;
     }
+    if (session.exitBackstop !== null) {
+      process.off('exit', session.exitBackstop);
+      session.exitBackstop = null;
+    }
+  }
+
+  /**
+   * Takes this session's process group down with the runner (t193, FR11).
+   *
+   * The backstop, and only that: t193 gave the runner an explicit shutdown that
+   * cancels a live session through {@link ClaudeCodeAdapter.cancel}, and this
+   * covers every OTHER way the process can end — an uncaught exception
+   * somewhere else, a bare `process.exit()`, a `finally` that never ran. Without
+   * it, the engine is reparented to init and goes on writing in a worktree
+   * nobody is left to give back.
+   *
+   * SIGTERM only, and no escalation: `'exit'` is the last synchronous turn this
+   * process gets. There is no event loop left for a SIGKILL five seconds later,
+   * `await` is not allowed here, and a listener that pretended otherwise would
+   * be a promise nobody could keep. An engine that ignores SIGTERM survives
+   * this path — which is precisely why it is the backstop and not the plan.
+   *
+   * The one honest limit stays a limit: a `SIGKILL` of the runner itself runs
+   * no JavaScript at all, `'exit'` never fires, and nothing in this process can
+   * prevent that orphan.
+   */
+  #armExitBackstop(session: Session): void {
+    session.exitBackstop = () => {
+      this.#signalGroup(session, 'SIGTERM');
+    };
+    process.on('exit', session.exitBackstop);
   }
 
   /**

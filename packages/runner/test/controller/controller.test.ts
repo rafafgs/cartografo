@@ -193,8 +193,17 @@ test('AT14 — with the dispatch in flight, the heartbeat beats at an interval s
 
   // A whole TTL window minus 1ms: if the interval were >= the TTL, the lease
   // would have expired on the server without a single beat.
-  t.mock.timers.tick(BASE_OPTIONS.ttlSeconds * 1000 - 1);
-  await yieldEventLoop();
+  //
+  // Advanced in slices, with the event loop yielded between them, and since
+  // t193 that is not decoration: a beat that has not answered yet is skipped
+  // rather than overlapped, and a single synchronous jump of a whole TTL is a
+  // clock no runner ever meets — it fires every window before the first beat's
+  // promise has had a turn to settle. The window under test is unchanged.
+  const window = BASE_OPTIONS.ttlSeconds * 1000 - 1;
+  for (let elapsed = 0; elapsed < window; elapsed += 1000) {
+    t.mock.timers.tick(Math.min(1000, window - elapsed));
+    await yieldEventLoop();
+  }
 
   assert.ok(
     heartbeats() >= 2,

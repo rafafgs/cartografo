@@ -72,6 +72,11 @@
  */
 
 import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
+import {
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  decodeErrorBody,
+  requestJson,
+} from '../controller/http-client.ts';
 import { resolvePermissions } from '../engine/permission-policy.ts';
 import { resolveBudget } from '../engine/resolve-budget.ts';
 import type {
@@ -370,6 +375,45 @@ export interface ClaudeCodeDispatchOptions {
   permissions?: SessionPermissions;
   /** `fetch` implementation. Default: the global one. Test seam only. */
   doFetch?: typeof fetch;
+  /**
+   * Deadline of every control-plane call this dispatch makes, in milliseconds
+   * (t193, FR4). Default: {@link DEFAULT_REQUEST_TIMEOUT_MS}.
+   *
+   * The session's own budgets are elsewhere and stay there
+   * ({@link timeoutSeconds}, {@link silenceSeconds}): this one is about the
+   * seven HTTP calls around the session, none of which had a deadline before —
+   * a control plane that accepted the connection and went quiet used to hang
+   * the dispatch between two writes it owed, with an engine still running.
+   */
+  requestTimeoutMs?: number;
+  /**
+   * Called the moment a session is live, with the one function that can take it
+   * down (t193, FR9).
+   *
+   * It exists for the shutdown and for nothing else. Whoever owns the process
+   * (`cli/index.ts`) has to be able to end a session that is already running —
+   * a stop that could only wait would wait up to {@link timeoutSeconds}, and a
+   * process that just died would leave the engine writing in a worktree nobody
+   * is left to give back.
+   *
+   * The cancel handed over goes through `EngineAdapter.cancel`, so everything
+   * downstream of it is the path this module already has for an adapter-driven
+   * end: `cancelled` is recorded as `travada`, the worktree is KEPT (a session
+   * that was cancelled did not complete), the lease goes back through the
+   * controller's own `finally`, and the dispatch rejects with the
+   * {@link DispatchError} the loop already logs and moves past. No new way of
+   * closing out a session is invented here — only a new caller of the one that
+   * exists.
+   */
+  onSessionStarted?: (cancel: () => Promise<void>) => void;
+  /**
+   * Called once the session's outcome is known, on every path (t193, FR9).
+   *
+   * The other half of {@link onSessionStarted}, and the half that makes the
+   * reference safe to hold: between the two calls there is a live process, and
+   * outside them there is nothing to cancel.
+   */
+  onSessionEnded?: () => void;
 }
 
 /** A session that started but did not end well. */
@@ -546,6 +590,7 @@ export function createClaudeCodeDispatch(
 ): (jobId: number) => Promise<void> {
   const urlBase = options.urlBase.replace(/\/+$/, '');
   const doFetch = options.doFetch ?? fetch;
+  const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const silenceSeconds = resolveBudget(options.silenceSeconds, DEFAULT_SILENCE_SECONDS);
   const resolveInput = options.resolveInput ?? ((): Record<string, unknown> => ({}));
@@ -560,23 +605,31 @@ export function createClaudeCodeDispatch(
     return built;
   };
 
-  const call = async <T>(route: string, method: string, body?: unknown): Promise<T> => {
-    const response = await doFetch(`${urlBase}${route}`, {
+  /**
+   * The one door out of this module, and since t193 it is the SHARED one.
+   *
+   * What it used to be was a second copy of `ClienteControle`'s mechanic, and
+   * the copy had drifted: it decoded the body before it looked at the status,
+   * so a 502 with an HTML page from a proxy came out of here as a raw
+   * `SyntaxError` — carrying neither the status nor the text — while the very
+   * same answer came out of the other client as an `ErroDoControlPlane`. That
+   * is exactly the regression t156 had already fixed once, in the other file.
+   */
+  const call = async <T>(route: string, method: string, body?: unknown): Promise<T> =>
+    await requestJson<T>({
+      url: `${urlBase}${route}`,
       method,
       headers: headers(body !== undefined),
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body,
+      timeoutMs: requestTimeoutMs,
+      fetchImpl: doFetch,
+      buildError: ({ status, body: text }) =>
+        new ErroDoControlPlane(
+          `${method} ${route} answered ${status}`,
+          status,
+          decodeErrorBody(text),
+        ),
     });
-    const text = await response.text();
-    const decoded: unknown = text === '' ? undefined : JSON.parse(text);
-    if (!response.ok) {
-      throw new ErroDoControlPlane(
-        `${method} ${route} answered ${response.status}`,
-        response.status,
-        decoded,
-      );
-    }
-    return decoded as T;
-  };
 
   /**
    * Which engine handles the node this work is sitting on RIGHT NOW (t141, FR3).
@@ -982,6 +1035,20 @@ export function createClaudeCodeDispatch(
         },
       });
 
+      // Announced the moment there is something to announce, and taken back
+      // once there is not (t193, FR9). The two calls bracket the whole window in
+      // which a process is alive on the other side — which is the only window in
+      // which cancelling means anything.
+      let ended = false;
+      const announceSessionEnd = (): void => {
+        if (ended) return;
+        ended = true;
+        options.onSessionEnded?.();
+      };
+      options.onSessionStarted?.(async () => {
+        await route.adapter.cancel(handle);
+      });
+
       let session: Session;
       let outcome: Outcome;
       try {
@@ -1004,6 +1071,7 @@ export function createClaudeCodeDispatch(
         for (const denial of queued.splice(0)) recordDenial(denial);
 
         outcome = await end;
+        announceSessionEnd();
       } catch (error) {
         // Everything between the session coming up and its outcome being known
         // runs with a process alive on the other side, and the controller's
@@ -1023,6 +1091,10 @@ export function createClaudeCodeDispatch(
           // that explains the dispatch, and a secondary error from the cleanup
           // would replace a cause with a symptom.
         }
+        // After the cancel and not before it: what the hook says is "there is no
+        // live session to take down anymore", and until that line there still
+        // was one.
+        announceSessionEnd();
         throw error;
       }
 

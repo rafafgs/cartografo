@@ -387,13 +387,13 @@ test('t162 — the runner is an installable command, started by plain node', asy
       // earliest moment this test can know a dispatch is in flight — the same
       // wait `cli/run.e2e.test.ts`'s AT13 uses.
       await waitFor('a session being opened', async () => {
-        const { sessoes } = await api<{ sessoes: unknown[] }>(
+        const { sessoes: sessions } = await api<{ sessoes: unknown[] }>(
           baseUrl,
           token,
           'GET',
           '/v1/sessions?execucao_id=193016',
         );
-        return sessoes.length > 0;
+        return sessions.length > 0;
       });
       await waitFor('the engine writing its sidecar', () => existsSync(record));
 

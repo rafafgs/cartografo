@@ -136,7 +136,7 @@ test('t193 AT1 — an empty error body is still the caller\'s error, and the suc
 
   const empty = await requestJson<undefined>({
     url: URL_UNDER_TEST,
-    fetchImpl: async () => new Response('', { status: 204 }),
+    fetchImpl: async () => new Response('', { status: 200 }),
     buildError: (failure) => new CallerError(failure),
   });
   assert.equal(empty, undefined, 'a 2xx with no body is `undefined`, never an exception');

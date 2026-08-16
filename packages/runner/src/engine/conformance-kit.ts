@@ -923,9 +923,10 @@ export function runConformanceKit(
       // adapter that stops working at a size nobody declared.
       //
       // Which channel it uses is deliberately not asserted. The normative rule
-      // already leaves it open ("cada adapter decide como injeta — flag/stdin/
-      // arquivo efêmero do engine") and `everythingTheProcessReceived` accepts
-      // all four, exactly as C2 does.
+      // already leaves that open — each adapter decides how it injects, by the
+      // engine's flag, its stdin or an ephemeral file
+      // (`engine-adapter.md:277-279`) — and `everythingTheProcessReceived`
+      // accepts all four, exactly as C2 does.
       const scenario = buildScenario();
       const collector = new Collector();
       const adapter = newAdapter();

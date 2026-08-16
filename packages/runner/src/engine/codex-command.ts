@@ -75,10 +75,45 @@ export const MODEL_FLAG = '-m';
  */
 export const TRIVIAL_MODEL_VARIABLE = 'CODEX_TRIVIAL_MODEL';
 
+/**
+ * End-of-options marker, immediately before the trailing composed positional.
+ *
+ * Measured against `codex-cli 0.147.0`: `codex exec "-1 apples"` answers
+ * `error: unexpected argument '-1' found` and never opens; the same call with
+ * `--` before the positional succeeds. The composition starts with the node's
+ * instructions, which are prose somebody else wrote — a bullet list is enough.
+ */
+const END_OF_OPTIONS = '--';
+
+/**
+ * Combined `instructions` + `prompt` byte size past which the composition
+ * leaves the argv.
+ *
+ * The same 64 KiB the first adapter takes, and DUPLICATED rather than shared,
+ * which is this pair of modules' standing precedent (`codex-adapter.ts:12-17`):
+ * with two adapters there is still no evidence of what the shared abstraction
+ * should look like, and the number is a margin against an operating-system
+ * ceiling, not a contract between the two files. It bites harder here than
+ * there — this engine has no system-prompt flag, so the two fields travel
+ * composed in ONE argv element, and that element is what meets Linux's 128 KiB
+ * `MAX_ARG_STRLEN` first.
+ *
+ * Bytes and never `.length`, for the reason `command.ts` records: the content
+ * is Portuguese, and an accented character is two bytes to the kernel and one
+ * unit to JavaScript.
+ */
+export const ARGV_INLINE_LIMIT_BYTES = 64 * 1024;
+
 /** A command ready for `spawn`, with no shell in between. */
 export interface EngineCommand {
   readonly command: string;
   readonly args: string[];
+  /**
+   * What the adapter writes to the process's stdin, when the composition did
+   * not fit in the argv. Absent means stdin stays closed, which is invariant
+   * 6's default and what every session below the limit gets.
+   */
+  readonly stdin?: string;
 }
 
 /**
@@ -99,12 +134,22 @@ export interface EngineCommand {
  *   an ephemeral `AGENTS.md` risks colliding with a real one in the target
  *   repository, and `-c base_instructions=…` depends on a configuration key
  *   whose full effect was never measured against the binary.
- * - **The composed argument is the LAST positional, never stdin.** Coherent
- *   with stdin closed, and it is what dodges the `<stdin>` block the CLI would
- *   otherwise append. `-m` (t166) therefore goes BEFORE it, like every other
- *   flag: a flag after the positional would either be read as part of the
- *   prompt or move the prompt out of last place, and one of those two is
- *   always true.
+ * - **The composed argument is the LAST positional, never stdin — while it
+ *   fits.** Coherent with stdin closed, and it is what dodges the `<stdin>`
+ *   block the CLI would otherwise append. `-m` (t166) therefore goes BEFORE it,
+ *   like every other flag: a flag after the positional would either be read as
+ *   part of the prompt or move the prompt out of last place, and one of those
+ *   two is always true.
+ *
+ *   Past {@link ARGV_INLINE_LIMIT_BYTES} it goes to stdin instead, and the
+ *   positional goes away WITH it (t203). The two halves are one move, not two:
+ *   `codex exec --help` says stdin is appended as a `<stdin>` block "if stdin
+ *   is piped **and a prompt is also provided**", so keeping both would deliver
+ *   the content twice, one of them wrapped in a marker nobody asked for.
+ *   Omitting the positional entirely was measured reading the prompt clean,
+ *   with no artifact — which is exactly the shape the same help documents for
+ *   `-`. The composition is still `composeSingleArgument`, byte for byte; only
+ *   its destination changed.
  * - **The sandbox flags come from the declared policy, resolved HERE** (t195).
  *   The classification is `codex-permission-policy.ts`'s business and the
  *   spelling is this module's; `resolveCodexPermissions` is called a second
@@ -120,28 +165,33 @@ export function buildCommand(
 ): EngineCommand {
   const model = resolveModel(spec, env);
   const { sandboxArgs } = resolveCodexPermissions(spec.permissions);
+  const composed = composeSingleArgument(spec);
+  const inline =
+    Buffer.byteLength(spec.instructions, 'utf8') + Buffer.byteLength(spec.prompt, 'utf8') <
+    ARGV_INLINE_LIMIT_BYTES;
 
-  return {
-    command: CODEX_BINARY,
-    args: [
-      CODEX_SUBCOMMAND,
-      '--json',
-      '--skip-git-repo-check',
-      // Before `-C`: the tier and its override configure the sandbox the
-      // working root will live inside, and reading the argv in that order is
-      // how a person checks it against `codex exec --help`. Absent policy,
-      // absent flags — the argv of a spec that declares nothing is the one it
-      // had before this field was ever read.
-      ...sandboxArgs,
-      '-C',
-      spec.workingDir,
-      // Absent model and no trivial model to fall back on, absent flag: the CLI
-      // resolves its own default, and the argv is what it was before either
-      // field existed. Exactly one flag, whatever the two say.
-      ...(model === undefined ? [] : [MODEL_FLAG, model]),
-      composeSingleArgument(spec),
-    ],
-  };
+  const args = [
+    CODEX_SUBCOMMAND,
+    '--json',
+    '--skip-git-repo-check',
+    // Before `-C`: the tier and its override configure the sandbox the
+    // working root will live inside, and reading the argv in that order is
+    // how a person checks it against `codex exec --help`. Absent policy,
+    // absent flags — the argv of a spec that declares nothing is the one it
+    // had before this field was ever read.
+    ...sandboxArgs,
+    '-C',
+    spec.workingDir,
+    // Absent model and no trivial model to fall back on, absent flag: the CLI
+    // resolves its own default, and the argv is what it was before either
+    // field existed. Exactly one flag, whatever the two say.
+    ...(model === undefined ? [] : [MODEL_FLAG, model]),
+    // Above the limit the two go away together, and the marker goes with the
+    // positional it guards: there is nothing left after it to be misread.
+    ...(inline ? [END_OF_OPTIONS, composed] : []),
+  ];
+
+  return inline ? { command: CODEX_BINARY, args } : { command: CODEX_BINARY, args, stdin: composed };
 }
 
 /**

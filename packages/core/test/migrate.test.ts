@@ -296,6 +296,16 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
   const db = openDatabase(path.join(base, 'cartografo.db'));
   t.after(() => db.close());
   applyPragmas(db);
+
+  // t209, FR1: the operating pragmas include a wait. Without it, a connection
+  // that finds the file locked for a millisecond — an operator's read-only
+  // inspection, a backup — gets SQLITE_BUSY in the face instead of waiting.
+  assert.equal(
+    db.pragma('busy_timeout', { simple: true }),
+    5000,
+    'applyPragmas has to set busy_timeout = 5000 (t209, FR1)',
+  );
+
   migrate(db, upTo0009);
 
   const before = db.prepare("SELECT name FROM pragma_table_info('proposta')").all() as Array<{

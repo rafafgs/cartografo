@@ -9,7 +9,7 @@
  * **Structure, never prose.** A denial is recognized by correlating a
  * `tool_use` (`id`, `name`) with the `tool_result` that answers it
  * (`tool_use_id`, `is_error`) — the same block decomposition
- * `dispatch-claude-code.ts` already does for text. The sentence the CLI writes
+ * `dispatch.ts` already does for text. The sentence the CLI writes
  * to explain a refusal changes between versions; the frame contract does not.
  *
  * **No false positive, by construction.** Only a tool THIS session denied is

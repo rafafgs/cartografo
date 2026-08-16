@@ -446,7 +446,7 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   decisão é de quem ligar a emissão; esta ficha não mexe na taxonomia.
 - **Abrir sessão de verdade** pelo `EngineAdapter` — `despachar` é callback
   injetado (`t106`/`t109`). **Construído pela `t106`:**
-  [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch-claude-code.ts)
+  [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch.ts)
   é uma implementação desse callback — abre a sessão, grava `sessao.aberta` e
   `sessao.finalizada`, e transforma um pedido de escalação em pergunta pela
   API ([escalacao-humana.md](escalacao-humana.md)). O controller continua sem
@@ -487,7 +487,7 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   `GitWorktreeManager.release()` roda `git status --porcelain` antes de
   remover: sessão que termina **concluída mas com árvore suja** tem a árvore
   **retida** e o trabalho **bloqueado** por
-  [`POST /v1/jobs/:id/blocks`](../../packages/runner/src/dispatch/dispatch-claude-code.ts)
+  [`POST /v1/jobs/:id/blocks`](../../packages/runner/src/dispatch/dispatch.ts)
   com o caminho da árvore no motivo, e não avança — a premissa antiga ("o que
   foi commitado já vive no histórico do branch") só valia enquanto a sessão
   commitasse, e nada obriga que ela commite. Nenhum campo novo no `/finish`: o

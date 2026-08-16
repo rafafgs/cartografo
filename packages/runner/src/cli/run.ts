@@ -28,7 +28,7 @@
  *   session from out here would leave a process writing in its worktree with
  *   nobody left to report what it did — and nobody left to give the worktree
  *   back. A dispatch that is already running finishes (or fails) through the
- *   paths `dispatch-claude-code.ts` already has, and only then does the promise
+ *   paths `dispatch.ts` already has, and only then does the promise
  *   this function returns resolve. What t193 added is the bound: waiting was
  *   the ONLY thing a stop could do, and an hour is how long that wait could
  *   last. The session is now cancellable from outside, through
@@ -56,7 +56,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { ClienteControle } from '../controller/cliente-controle.ts';
 import { Controller } from '../controller/controller.ts';
-import { createClaudeCodeDispatch, type EngineRoute } from '../dispatch/dispatch-claude-code.ts';
+import { createClaudeCodeDispatch, type EngineRoute } from '../dispatch/dispatch.ts';
 import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,

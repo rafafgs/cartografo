@@ -61,7 +61,7 @@ import { decodeClaudeCodeSessionText } from "../../src/dispatch/session-text.ts"
 import type * as ClientModule from "../../src/controller/cliente-controle.ts";
 import type * as ControllerModule from "../../src/controller/controller.ts";
 import type * as BudgetModule from "../../src/engine/resolve-budget.ts";
-import type * as DispatchModule from "../../src/dispatch/dispatch-claude-code.ts";
+import type * as DispatchModule from "../../src/dispatch/dispatch.ts";
 import type * as SessionTextModule from "../../src/dispatch/session-text.ts";
 import type * as WorktreeModule from "../../src/dispatch/session-worktree.ts";
 
@@ -80,7 +80,7 @@ const FAKE_ENGINE = fileURLToPath(
   new URL("../fixtures/fake-engine.mjs", import.meta.url),
 );
 
-const DISPATCH_MODULE = "src/dispatch/dispatch-claude-code.ts";
+const DISPATCH_MODULE = "src/dispatch/dispatch.ts";
 const SESSION_TEXT_MODULE = "src/dispatch/session-text.ts";
 
 /** Deadline for anything this test waits on. Wide on purpose. */

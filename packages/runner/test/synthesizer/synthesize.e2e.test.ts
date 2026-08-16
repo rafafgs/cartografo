@@ -25,7 +25,7 @@
  * What is left faked is the model's judgement, which is the one thing no test
  * can assert about anyway.
  *
- * The boot helper is copied from `test/dispatch/dispatch-claude-code.test.ts`
+ * The boot helper is copied from `test/dispatch/dispatch.test.ts`
  * rather than shared, for the reason that file already records about its own
  * copy: it belongs to another ticket's surface.
  *

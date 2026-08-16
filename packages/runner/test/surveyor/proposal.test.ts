@@ -18,7 +18,7 @@
  * 3. a flat run posts nothing AND never opens a session at all.
  *
  * The control-plane boot is the same pattern as
- * `test/dispatch/dispatch-claude-code.test.ts`: spawn the real binary, wait for
+ * `test/dispatch/dispatch.test.ts`: spawn the real binary, wait for
  * the readiness line, never `sleep` and hope. It is duplicated rather than
  * extracted because that file belongs to another ticket's surface.
  *

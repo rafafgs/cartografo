@@ -65,30 +65,44 @@
  * node's input yet, so a skill with placeholders fails closed instead of
  * opening a session on a half-written prompt.
  *
+ * **And since t202 this file is the ORCHESTRATOR and nothing else.** It had
+ * grown to 1,333 lines owning five different jobs at once, and every ficha that
+ * touched dispatch touched it. What is left here is resolution (engine, model,
+ * skill), the worktree bracketing, the session's own lifecycle and the SEQUENCE
+ * — the order the writes happen in and the precedence of what failed, which is
+ * the part with the load-bearing guarantees (t148, t207-B). The three pieces
+ * that were only ever passengers moved out and are imported back: the prompt
+ * (`prompt.ts`), the HTTP client (`control-plane-client.ts`) and every write the
+ * runner owes once an outcome is known (`report.ts`). No export was renamed and
+ * no behaviour changed; the file it is defined in is all that moved.
+ *
  * English per D18. The prompt and instruction CONTENT stays in Portuguese: it
  * is — since t161 — the registered skill manifest itself, and those are written
  * in Portuguese (`especificacoes/formatos/exemplos/`); what is left of the old
  * fixed literal is {@link DEFAULT_INSTRUCTIONS}, for a work with no graph.
  */
 
-import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
-import {
-  DEFAULT_REQUEST_TIMEOUT_MS,
-  decodeErrorBody,
-  requestJson,
-} from '../controller/http-client.ts';
 import { resolvePermissions } from '../engine/permission-policy.ts';
 import { resolveBudget } from '../engine/resolve-budget.ts';
 import type {
   EngineAdapter,
-  SessionFinishDetail,
   SessionPermissions,
   SessionSpec,
   SessionStatus,
 } from '../engine/types.ts';
+import { createDispatchControlPlaneClient } from './control-plane-client.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
-import { parseNodeResult } from './parse-node-result.ts';
-import { PermissionDenialTracker, type PermissionDenial } from './parse-permission-denial.ts';
+import { PermissionDenialTracker } from './parse-permission-denial.ts';
+import { buildPrompt, type Event, type Question } from './prompt.ts';
+import {
+  PermissionDenialReporter,
+  advance,
+  blockForUncommittedWork,
+  blockWithNobodyToAsk,
+  finishSession,
+  postSessionQuestion,
+  type Outcome,
+} from './report.ts';
 import {
   ESCALATION_PROTOCOL,
   renderSkillInstructions,
@@ -98,8 +112,6 @@ import {
 import {
   resolveEscalationPolicy,
   resolveNode,
-  type EscalationPolicy,
-  type GraphEdge,
   type GraphVersionBody,
   type ResolvedNode,
 } from './resolve-node.ts';
@@ -114,6 +126,15 @@ export {
 } from './render-skill-instructions.ts';
 
 /**
+ * The taxonomy table every session closure is recorded through (t98).
+ *
+ * Defined in `report.ts`, where the write that uses it lives, and re-exported
+ * here unchanged: it was part of this module's surface before the t202 split,
+ * and the split renames nothing (FR1).
+ */
+export { TAXONOMY_STATUS } from './report.ts';
+
+/**
  * Which escalation policy governs the node being dispatched (t167, FR4).
  *
  * Re-exported here, where {@link DEFAULT_ENGINE} and `resolveEngine` live,
@@ -126,24 +147,6 @@ export {
  */
 export { resolveEscalationPolicy, DEFAULT_ESCALATION_POLICY } from './resolve-node.ts';
 export type { EscalationPolicy } from './resolve-node.ts';
-
-/**
- * `SessionStatus` (the interface's vocabulary) -> the taxonomy's `status`
- * (t98). Two vocabularies on purpose: one is the minimum every headless CLI
- * expresses, the other describes the outcome of the WORK.
- *
- * `cancelled` lands on `travada` for want of anything better — the taxonomy has
- * no "cancelled". Same table `scripts/spike-real-session.mjs` already uses; if
- * it ever grows a third copy, it belongs in a module of its own.
- */
-export const TAXONOMY_STATUS: Readonly<Record<SessionStatus, string>> = Object.freeze({
-  pending: 'travada',
-  running: 'travada',
-  completed: 'concluida',
-  failed: 'falhou',
-  cancelled: 'travada',
-  timed_out: 'tempo_esgotado',
-});
 
 /**
  * The instruction of a work with NO resolvable node, fixed and literal, exactly
@@ -197,25 +200,6 @@ export interface Job {
    * classified it — and neither means `trivial`.
    */
   tier?: 'trivial' | 'standard' | null;
-}
-
-/** One envelope of the work's timeline. */
-interface Event {
-  id: number;
-  tipo: string;
-  entidade: { tipo: string; id: number | string };
-  dados: Record<string, unknown>;
-}
-
-/** A question, as `GET /v1/input-requests` projects it. */
-interface Question {
-  id: number;
-  trabalho_id: number;
-  pergunta: string;
-  status: string;
-  resposta: string | null;
-  respondido_por: string | null;
-  origem: string | null;
 }
 
 /** A session, as `POST /v1/sessions` gives it back. */
@@ -481,16 +465,6 @@ const DEFAULT_TIMEOUT_SECONDS = 3_600;
 export const DEFAULT_SILENCE_SECONDS = 300;
 
 /**
- * `ator.ref` of a permission denial.
- *
- * `sistema` and not `agente`: the fact being recorded is not something the
- * session decided, it is the wiring reporting what the engine refused. Same
- * `ref` the control plane uses by default for a write coming from the runner,
- * on purpose — two spellings for one actor is how a log stops being groupable.
- */
-const RUNNER_ACTOR_REF = 'runner';
-
-/**
  * Everything the session said, with Claude Code's frames decoded back into text.
  *
  * @deprecated Moved to `./session-text.ts` as `decodeClaudeCodeSessionText`
@@ -498,85 +472,6 @@ const RUNNER_ACTOR_REF = 'runner';
  * to decode. Re-exported here, unchanged, so nothing that imported it breaks.
  */
 export const sessionText = decodeClaudeCodeSessionText;
-
-/**
- * The prompt of a dispatch: what to do, plus what was already asked and
- * answered.
- *
- * @param job The work being dispatched.
- * @param events Its timeline, in log order.
- * @param answered Questions already answered, from the projection.
- * @returns The prompt text.
- */
-export function buildPrompt(
-  job: Job,
-  events: readonly Event[],
-  answered: readonly Question[],
-): string {
-  const parts = [
-    `# Trabalho #${job.id} — ${job.titulo}`,
-    '',
-    `Nó atual: \`${job.no_atual}\`.`,
-    '',
-    'Faça o que este nó pede neste trabalho, no diretório em que você está.',
-  ];
-
-  const byId = new Map(answered.map((question) => [question.id, question]));
-  const alreadyClosed: Question[] = [];
-
-  // The ORDER comes from the log — the only total ordering there is — and the
-  // ANSWER from the projection: `pergunta.respondida` carries no `trabalho_id`,
-  // so the work's timeline structurally cannot show it (t102,
-  // `packages/core/src/db/events.ts`, `EventFilter`).
-  for (const event of events) {
-    if (event.tipo !== 'pergunta.criada') continue;
-    const question = byId.get(Number(event.entidade.id));
-    if (question !== undefined && question.resposta !== null) alreadyClosed.push(question);
-  }
-
-  if (alreadyClosed.length > 0) {
-    parts.push(
-      '',
-      '## O que você já perguntou, e o que responderam',
-      '',
-      'Isto já foi decidido. Não pergunte de novo: siga a resposta.',
-    );
-    for (const question of alreadyClosed) {
-      const who = question.origem === 'auto' ? 'a resposta automática' : (question.respondido_por ?? 'a pessoa');
-      parts.push(
-        '',
-        `- **Você perguntou:** ${question.pergunta}`,
-        `  **${who} respondeu:** ${question.resposta ?? ''}`,
-      );
-    }
-  }
-
-  return parts.join('\n');
-}
-
-/** What the session reported when it ended. */
-interface Outcome {
-  status: SessionStatus;
-  exitCode: number | null;
-  /**
-   * Which watchdog stopped it, when the adapter itself stopped it (t163).
-   *
-   * Absent means the adapter reported no cause, and that is what gets recorded:
-   * `null`, never one of the two picked because it looked likely.
-   */
-  timeoutReason?: SessionFinishDetail['timeoutReason'];
-  /**
-   * The tokens the engine reported, when it reported any (t172).
-   *
-   * Same reading as the field above, applied to the number this whole ficha is
-   * about: absent is "the engine counted nothing", it is recorded as `null`, and
-   * it is never completed with zeros. An engine whose adapter does not declare
-   * `reportsUsage` lands here absent, which is exactly what it is.
-   */
-  usage?: SessionFinishDetail['usage'];
-  /** Which models ran it, when the engine named them (t172). */
-  models?: SessionFinishDetail['models'];
-}
 
 /**
  * Builds the controller's `dispatch` callback (t103), with a real engine behind
@@ -588,48 +483,15 @@ interface Outcome {
 export function createClaudeCodeDispatch(
   options: ClaudeCodeDispatchOptions,
 ): (jobId: number) => Promise<void> {
-  const urlBase = options.urlBase.replace(/\/+$/, '');
-  const doFetch = options.doFetch ?? fetch;
-  const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const silenceSeconds = resolveBudget(options.silenceSeconds, DEFAULT_SILENCE_SECONDS);
   const resolveInput = options.resolveInput ?? ((): Record<string, unknown> => ({}));
 
-  // Headers of every call: the body's `content-type`, when there is a body, and
-  // the credential. Built once — the seven routes below are one client, and a
-  // route that assembled its own headers is a route that could forget them.
-  const headers = (withBody: boolean): Record<string, string> => {
-    const built: Record<string, string> = {};
-    if (withBody) built['content-type'] = 'application/json';
-    if (options.token !== undefined) built.authorization = `Bearer ${options.token}`;
-    return built;
-  };
-
-  /**
-   * The one door out of this module, and since t193 it is the SHARED one.
-   *
-   * What it used to be was a second copy of `ClienteControle`'s mechanic, and
-   * the copy had drifted: it decoded the body before it looked at the status,
-   * so a 502 with an HTML page from a proxy came out of here as a raw
-   * `SyntaxError` — carrying neither the status nor the text — while the very
-   * same answer came out of the other client as an `ErroDoControlPlane`. That
-   * is exactly the regression t156 had already fixed once, in the other file.
-   */
-  const call = async <T>(route: string, method: string, body?: unknown): Promise<T> =>
-    await requestJson<T>({
-      url: `${urlBase}${route}`,
-      method,
-      headers: headers(body !== undefined),
-      body,
-      timeoutMs: requestTimeoutMs,
-      fetchImpl: doFetch,
-      buildError: ({ status, body: text }) =>
-        new ErroDoControlPlane(
-          `${method} ${route} answered ${status}`,
-          status,
-          decodeErrorBody(text),
-        ),
-    });
+  // ONE client, built once and handed to everything that writes (t202, FR3).
+  // The seven routes below and the nine in `report.ts` are the same client on
+  // purpose: a route that assembled its own headers is a route that could
+  // forget the credential.
+  const call = createDispatchControlPlaneClient(options);
 
   /**
    * Which engine handles the node this work is sitting on RIGHT NOW (t141, FR3).
@@ -680,208 +542,6 @@ export function createClaudeCodeDispatch(
     const declared = resolved?.node.model;
     if (typeof declared !== 'string' || declared.trim() === '') return undefined;
     return declared;
-  };
-
-  /**
-   * Moves the work along the edge the traversal chose (FR10).
-   *
-   * The one write of this whole ficha that PROPAGATES on failure, and the
-   * asymmetry with the denial and the closure is deliberate: those are telemetry
-   * the runner owes after the fact, and a work that keeps moving with a gap in
-   * its log is recoverable. A transition that was not recorded is a work that
-   * stopped, standing on a node it already finished, with nobody able to tell
-   * that from a work that is merely slow. That is the single failure mode this
-   * ficha exists to close, so it may not be swallowed into a report at the end.
-   *
-   * @param job The work being dispatched.
-   * @param edge The edge to take.
-   */
-  const transition = async (job: Job, edge: GraphEdge): Promise<void> => {
-    await call(`/v1/jobs/${job.id}/transitions`, 'POST', {
-      para_no_id: edge.to,
-      ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
-    });
-  };
-
-  /**
-   * Stops the work with a reason, for a node that has nobody to ask (t167, FR6).
-   *
-   * The other half of `never`, and the half that is deterministic: the rendered
-   * instructions ask the session not to write an escalation block, and this is
-   * what happens when one shows up anyway — or when the wiring itself has no
-   * rule to apply. `POST /v1/jobs/:id/blocks` is an unconditional, reason-
-   * carrying block that has existed since t102, so nothing new is invented here;
-   * what is chosen at dispatch time is WHICH of the two existing mechanisms
-   * stops the work.
-   *
-   * The difference that matters is what is NOT created: no row in `pergunta`,
-   * no `pergunta.criada`, nothing in anybody's queue. A node that declares it has
-   * nobody to ask may not put a line in the queue of someone who is not there —
-   * that queue is the list of things a person is expected to answer, and a
-   * question nobody owns sitting in it forever is exactly the state `never`
-   * exists to avoid.
-   *
-   * The actor is `sistema/runner`, like every other write this module makes on
-   * its own account: the wiring stopped the work, not the session and not a
-   * person.
-   *
-   * @param job The work being dispatched.
-   * @param motivo Why it stopped — it quotes the node and what walled the
-   *   session, because `trabalho.motivo_bloqueio` is what whoever opens the work
-   *   reads first.
-   */
-  const blockWithNobodyToAsk = async (job: Job, motivo: string): Promise<void> => {
-    await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
-      motivo,
-      ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
-    });
-  };
-
-  /**
-   * Stops the work because a session that finished left work it never committed
-   * (t207-B).
-   *
-   * The same route and the same actor as {@link blockWithNobodyToAsk}, and a
-   * function of its own all the same: the two reasons a dispatch stops a work on
-   * its own account are different facts — one is a node with nobody to ask, the
-   * other is output that exists in exactly one directory — and a single helper
-   * taking a string would make them indistinguishable at every call site.
-   *
-   * No new field on `/finish` and no new schema: `POST /v1/jobs/:id/blocks` has
-   * existed since t102 and takes a free `motivo`, and the finish route's
-   * vocabulary is the t213/D20 migration's to touch, not this one's.
-   *
-   * The reason names the tree, because that path is the whole point — whoever
-   * opens the work reads `trabalho.motivo_bloqueio` first, and what they have to
-   * do next is go and look at that directory.
-   *
-   * @param job The work being dispatched.
-   * @param worktreePath The tree that was retained, absolute.
-   */
-  const blockForUncommittedWork = async (job: Job, worktreePath: string): Promise<void> => {
-    await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
-      motivo:
-        `A sessão do nó \`${job.no_atual}\` terminou como concluída, mas deixou ` +
-        `trabalho não commitado em \`${worktreePath}\` — o \`git status\` da árvore ` +
-        'não estava limpo. A árvore foi RETIDA em vez de removida, e o trabalho ' +
-        'não avançou: o que essa sessão produziu só existe nesse diretório. ' +
-        'Commite o que valer a pena, descarte o resto e desbloqueie.',
-      ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
-    });
-  };
-
-  /**
-   * Asks a human which way the work goes (FR9).
-   *
-   * Reached when a node with more than one way out finished without naming one
-   * of them: no block, a malformed block, or a result that matches no edge —
-   * the last of which is a real case and not a defect. The reference graph's own
-   * gate declares `escala` in its `saida_schema` and has no edge for it, on
-   * purpose: some outcomes are not the machine's to route.
-   *
-   * `ator.tipo` is `sistema` and not `agente`, which is the only thing that
-   * tells this question apart from one the SESSION wrote: that one is a model
-   * asking for a decision, this one is the wiring reporting that it has no rule
-   * to apply. Two spellings for two different facts, in a log somebody has to be
-   * able to group.
-   *
-   * At a `never` node it stops the work instead of asking (t167, FR6). The
-   * missing routing decision is just as real, and the work stops just as hard —
-   * what changes is that nobody is called for it, which is what the node
-   * declared.
-   */
-  const escalateRouting = async (
-    job: Job,
-    sessionId: number,
-    edges: readonly GraphEdge[],
-    observed: string | null,
-    policy: EscalationPolicy,
-  ): Promise<void> => {
-    const labels = edges.map((edge) => edge.condition ?? '').filter((label) => label !== '');
-    const seen = observed === null ? 'nenhum' : `"${observed}"`;
-    // Built with concatenation and not with a nested template literal: the D18
-    // sweep's masking scanner reads one backtick at a time, and a template
-    // inside a `${…}` silently desyncs it for the whole rest of the file
-    // (`test/no-portuguese-identifiers.test.ts`, "one backtick in a comment can
-    // swallow the quoted strings that follow it").
-    const routes = edges
-      .map((edge) => '`' + (edge.condition ?? '') + '` → `' + edge.to + '`')
-      .join(', ');
-
-    const question =
-      `O nó \`${job.no_atual}\` tem mais de uma saída e a sessão não escolheu ` +
-      `nenhuma delas: o resultado observado foi ${seen}, e ele não casa com ` +
-      'aresta nenhuma deste nó. Por qual aresta o trabalho segue?';
-
-    if (policy === 'never') {
-      await blockWithNobodyToAsk(job, `${question} Este nó não tem a quem perguntar.`);
-      return;
-    }
-
-    await call('/v1/input-requests', 'POST', {
-      trabalho_id: job.id,
-      sessao_id: sessionId,
-      tipo: 'pergunta',
-      pergunta: question,
-      contexto:
-        `Arestas que saem de \`${job.no_atual}\`: ${routes}. ` +
-        'A sessão terminou sem falhar; o que falta é a decisão de rota.',
-      opcoes: labels,
-      recomendacao: null,
-      resposta_padrao: null,
-      // Written as `true` since t102, and nothing reads it to answer on its own:
-      // a routing escalation is resolved by a person, same as every other
-      // pending question today.
-      auto_aprovavel: true,
-      ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
-    });
-  };
-
-  /**
-   * Advances the work to the next node, or asks (FR8/FR9).
-   *
-   * Only ever called for a session that ended `completed` AND asked nothing:
-   * advancing a work that escalated would answer its own question by walking
-   * away from it, and advancing one whose session died would record progress
-   * that never happened.
-   *
-   * @param job The work being dispatched.
-   * @param resolved Its node and the edges leaving it.
-   * @param sessionId The session that just finished, for the question's trail.
-   * @param output Everything the session printed, decoded.
-   */
-  const advance = async (
-    job: Job,
-    resolved: ResolvedNode,
-    sessionId: number,
-    output: string,
-  ): Promise<void> => {
-    const { edges } = resolved;
-
-    // Nothing to do: a node with no way out is a final node by the graph's own
-    // `termina` soundness rule, and the work has arrived. What marks it as
-    // finished is `concluido`, derived by the control plane from this very
-    // position (t152) — the runner records no arrival of its own.
-    if (edges.length === 0) return;
-
-    // Deterministic by construction: one way out is taken whatever the label
-    // says. Every non-gate node of the reference graph labels it `sempre`, and
-    // that string is not special-cased — a node with a single edge has no
-    // decision to report, so asking it for one would invent a decision and then
-    // escalate for the lack of an answer to it.
-    if (edges.length === 1) {
-      await transition(job, edges[0]);
-      return;
-    }
-
-    const observed = parseNodeResult(output)?.resultado ?? null;
-    const chosen = edges.find((edge) => edge.condition === observed);
-    if (chosen === undefined) {
-      await escalateRouting(job, sessionId, edges, observed, resolveEscalationPolicy(resolved));
-      return;
-    }
-
-    await transition(job, chosen);
   };
 
   return async (jobId: number): Promise<void> => {
@@ -1022,36 +682,9 @@ export function createClaudeCodeDispatch(
       const tracker = new PermissionDenialTracker(resolvePermissions(permissions).deniedTools);
 
       // A denial can happen before `POST /v1/sessions` has answered, and there is
-      // no id to post it against until then. It waits here, and the queue is
-      // drained as soon as the id exists.
-      const queued: PermissionDenial[] = [];
-      let sessionId: number | null = null;
-      let denialWrites: Promise<void> = Promise.resolve();
-      let denialFailure: unknown = null;
-
-      const recordDenial = (denial: PermissionDenial): void => {
-        const id = sessionId;
-        if (id === null) {
-          queued.push(denial);
-          return;
-        }
-        // Serialized, and with the catch attached right here: a rejection with
-        // nobody listening yet would take the whole process down as an unhandled
-        // rejection, long before anyone could report it.
-        denialWrites = denialWrites
-          .then(() =>
-            call(`/v1/sessions/${id}/permission-denials`, 'POST', {
-              recurso: denial.recurso,
-              ferramenta: denial.ferramenta,
-              motivo: denial.motivo,
-              ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
-            }),
-          )
-          .then(() => undefined)
-          .catch((error: unknown) => {
-            denialFailure ??= error;
-          });
-      };
+      // no id to post it against until then. It waits inside the reporter, and
+      // the queue is drained as soon as the id exists (`report.ts`).
+      const denials = new PermissionDenialReporter(call);
 
       // `startSession` rejects with `SessionStartError` when the session did not
       // come up. That one propagates untouched: it is a dispatch that never
@@ -1063,7 +696,7 @@ export function createClaudeCodeDispatch(
       const handle = await route.adapter.startSession(spec, {
         onOutput(line) {
           lines.push(line);
-          for (const denial of tracker.observe(line)) recordDenial(denial);
+          for (const denial of tracker.observe(line)) denials.record(denial);
         },
         onEngineRef(ref) {
           engineRef = ref;
@@ -1111,8 +744,7 @@ export function createClaudeCodeDispatch(
           silence_seconds: spec.silenceSeconds,
         });
 
-        sessionId = session.id;
-        for (const denial of queued.splice(0)) recordDenial(denial);
+        denials.bindSession(session.id);
 
         outcome = await end;
         announceSessionEnd();
@@ -1174,48 +806,25 @@ export function createClaudeCodeDispatch(
       // things happened: the session opened, it was denied, it finished. A
       // failure here is remembered and surfaced at the very end — telemetry of an
       // incident may not cost the session its closure nor its question.
-      await denialWrites;
+      await denials.drain();
 
-      // Captured rather than thrown, exactly as `denialFailure` already is: a
-      // closure the control plane refused may not cancel the question that comes
-      // after it. "Asking is not failing" is not a rule about happy paths — a
-      // question dropped here is a human who is never called, and the work stays
-      // unblocked with nobody knowing what it needed.
-      let finishFailure: unknown = null;
-      try {
-        await call(`/v1/sessions/${session.id}/finish`, 'PATCH', {
-          status: TAXONOMY_STATUS[outcome.status],
-          exit_code: outcome.exitCode,
-          // Both watchdogs land on `tempo_esgotado`; this is what tells them
-          // apart. `null` is "the adapter reported no cause" — for a cancel
-          // somebody else drove, or for an adapter that predates the field —
-          // and it may never be filled in with a guess.
-          timeout_reason: outcome.timeoutReason ?? null,
-          // What the session actually cost, as the engine counted it (t172).
-          // Until this ficha these two lines were a hardcoded `uso: null` and no
-          // `modelos` key at all, and every session this system ever ran
-          // recorded zero cost data — with the placeholder reading exactly like
-          // an honest absence, which is why it survived so long.
-          //
-          // `null` still means "the engine reported nothing", and it must never
-          // collapse into zero: an engine with no accounting, a session that
-          // died before its terminal frame and a session that genuinely spent
-          // nothing are three different facts, and only the third is a number.
-          // The key is SENT, present and null — same posture as
-          // `timeout_reason` above, so that what the runner claims is legible in
-          // the call itself and not only in the row it produces.
-          uso: outcome.usage ?? null,
-          modelos: outcome.models ?? null,
-          // The raw stream, exactly as `onOutput` reported it — undecoded, frames
-          // and dying screams alike (t159). `decodeSessionText` below is a READER
-          // of this same buffer, and its frame-decoding is lossy by design: what
-          // gets persisted is the material before that, because a session that
-          // died is diagnosed from what it printed, not from what parsed.
-          transcricao: lines.join('\n'),
-        });
-      } catch (error) {
-        finishFailure = error;
-      }
+      // Captured rather than thrown, exactly as the denials' failure already is:
+      // a closure the control plane refused may not cancel the question that
+      // comes after it. "Asking is not failing" is not a rule about happy paths
+      // — a question dropped here is a human who is never called, and the work
+      // stays unblocked with nobody knowing what it needed. So `report.ts` hands
+      // the failure back rather than throwing it, and it surfaces below.
+      const finishFailure = await finishSession(
+        call,
+        session.id,
+        outcome,
+        // The raw stream, exactly as `onOutput` reported it — undecoded, frames
+        // and dying screams alike (t159). `decodeSessionText` below is a READER
+        // of this same buffer, and its frame-decoding is lossy by design: what
+        // gets persisted is the material before that, because a session that
+        // died is diagnosed from what it printed, not from what parsed.
+        lines.join('\n'),
+      );
 
       // Decoded ONCE and read twice: the escalation block and the routing block
       // are two readings of the same text, and decoding it a second time would
@@ -1229,29 +838,17 @@ export function createClaudeCodeDispatch(
         // question in a queue nobody is watching. There is exactly one owner for
         // the flag here too: this route blocks and nothing else does.
         await blockWithNobodyToAsk(
+          call,
           job,
           `O nó \`${job.no_atual}\` não tem a quem perguntar, e a sessão travou em: ` +
             request.question,
         );
       } else if (request !== null) {
-        // This POST is what blocks the work, inside the control plane and in the
+        // That POST is what blocks the work, inside the control plane and in the
         // same transaction as `pergunta.criada` (FR1). The runner never posts a
         // block of its own for an ordinary question — two owners for one flag is
         // how a work ends up blocked with nothing pending.
-        await call('/v1/input-requests', 'POST', {
-          trabalho_id: job.id,
-          sessao_id: session.id,
-          tipo: 'pergunta',
-          pergunta: request.question,
-          contexto: request.context ?? null,
-          opcoes: request.options ?? null,
-          recomendacao: request.recommendation ?? null,
-          resposta_padrao: request.default ?? null,
-          // The field exists since t102; nothing reads it to answer on its own —
-          // the auto-answer policy is still outside the PoC.
-          auto_aprovavel: true,
-          ator: { tipo: 'agente', ref: job.no_atual === '' ? 'sessao' : job.no_atual },
-        });
+        await postSessionQuestion(call, job, session.id, request);
       }
 
       // The other reason a dispatch stops a work on its own account (t207-B).
@@ -1260,7 +857,7 @@ export function createClaudeCodeDispatch(
       // `pergunta.criada`, and a second one on top of it would be two owners for
       // one flag — which is how a work ends up blocked with nothing pending.
       if (dirtyDespiteCompleted && request === null) {
-        await blockForUncommittedWork(job, worktree.path);
+        await blockForUncommittedWork(call, job, worktree.path);
       }
 
       // And here is where a traversal stops needing an operator (FR7-FR10).
@@ -1287,7 +884,7 @@ export function createClaudeCodeDispatch(
         request === null &&
         !dirtyDespiteCompleted
       ) {
-        await advance(job, resolved, session.id, output);
+        await advance(call, job, resolved, session.id, output);
       }
 
       // A write that could not be made is not the session's fault, but it is a
@@ -1296,9 +893,9 @@ export function createClaudeCodeDispatch(
       //
       // The FIRST one captured is the one that surfaces — a denial happens during
       // the session, the closure after it, the cleanup last of all — which is the
-      // precedent `denialFailure` already set when it was alone. Reporting more
-      // than one at a time is a multi-error type nobody has needed yet.
-      const failure = denialFailure ?? finishFailure ?? releaseFailure;
+      // precedent the denials' failure already set when it was alone. Reporting
+      // more than one at a time is a multi-error type nobody has needed yet.
+      const failure = denials.failure ?? finishFailure ?? releaseFailure;
       if (failure !== null) throw failure;
 
       // Asking is a successful dispatch — the question is already recorded above,

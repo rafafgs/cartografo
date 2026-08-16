@@ -38,7 +38,7 @@ import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 import { buildCommand } from '../../src/engine/command.ts';
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
-import type * as DispatchModule from '../../src/dispatch/dispatch-claude-code.ts';
+import type * as DispatchModule from '../../src/dispatch/dispatch.ts';
 import type * as WorktreeModule from '../../src/dispatch/session-worktree.ts';
 import { decodeClaudeCodeSessionText } from '../../src/dispatch/session-text.ts';
 
@@ -251,7 +251,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   );
   const { Controller } = await loadModule<typeof ControllerModule>('src/controller/controller.ts');
   const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(
-    'src/dispatch/dispatch-claude-code.ts',
+    'src/dispatch/dispatch.ts',
   );
 
   const { baseUrl, token } = await startControlPlane(t);

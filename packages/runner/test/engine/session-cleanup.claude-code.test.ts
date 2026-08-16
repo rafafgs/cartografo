@@ -5,7 +5,7 @@
  * Until this ficha every one of them left a full `Session` behind in the
  * adapter's map — the `ChildProcess`, the caller's `SessionListener` (which in
  * the real dispatch closes over the whole transcript buffer,
- * `dispatch-claude-code.ts`'s `lines: string[]`), the timers, the leftovers —
+ * `dispatch.ts`'s `lines: string[]`), the timers, the leftovers —
  * because `#finish` marked `finished = true` and never deleted the entry. The
  * map only ever grew.
  *

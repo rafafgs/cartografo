@@ -44,7 +44,7 @@ interface TestHook {
 /**
  * Imports the module under test, failing with its path while it does not exist.
  *
- * The idiom `dispatch-claude-code.test.ts` already uses: in the red phase the
+ * The idiom `dispatch.test.ts` already uses: in the red phase the
  * failure has to read as "the implementation is missing", never as a module
  * resolution stack trace.
  */

@@ -4,7 +4,7 @@
  * A session that cannot finish without a decision ends its turn with one fenced
  * block and stops — it does not sit alive waiting for an answer. This module is
  * the only thing that knows the block's shape; what to DO with it belongs to
- * the dispatch (`dispatch-claude-code.ts`) and, past the API, to the question
+ * the dispatch (`dispatch.ts`) and, past the API, to the question
  * entity in the control plane.
  *
  * The behaviour contract is inherited from flowpilot's

@@ -3,7 +3,7 @@
  *
  * A decoder turns what an engine PRINTED back into what the model SAID. It is
  * the step without which the escalation parser reads JSON-escaped text and no
- * fenced block ever parses — the trap `dispatch-claude-code.ts` recorded when it
+ * fenced block ever parses — the trap `dispatch.ts` recorded when it
  * had only one engine to decode, and the reason this module exists at all now
  * that it has two.
  *

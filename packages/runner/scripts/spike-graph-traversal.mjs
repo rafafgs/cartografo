@@ -74,7 +74,7 @@ import { fileURLToPath } from 'node:url';
 
 import { ClienteControle } from '../src/controller/cliente-controle.ts';
 import { Controller } from '../src/controller/controller.ts';
-import { createClaudeCodeDispatch, DEFAULT_ENGINE } from '../src/dispatch/dispatch-claude-code.ts';
+import { createClaudeCodeDispatch, DEFAULT_ENGINE } from '../src/dispatch/dispatch.ts';
 import { resolveSkillPermissions } from '../src/dispatch/render-skill-instructions.ts';
 import { decodeClaudeCodeSessionText } from '../src/dispatch/session-text.ts';
 import { ClaudeCodeAdapter } from '../src/engine/claude-code-adapter.ts';

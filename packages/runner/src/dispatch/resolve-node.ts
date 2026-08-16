@@ -164,7 +164,7 @@ const ESCALATION_POLICIES: readonly string[] = Object.freeze([
  * It lives HERE, beside the field it reads, rather than beside the dispatch that
  * consumes it: `render-skill-instructions.ts` needs the same answer to compose
  * the right paragraph, and the two modules would otherwise have had to import it
- * from each other. `dispatch-claude-code.ts` re-exports it, the same way it
+ * from each other. `dispatch.ts` re-exports it, the same way it
  * already re-exports `ESCALATION_PROTOCOL`.
  *
  * @param resolved The node this dispatch resolved, or `null`.

@@ -310,7 +310,7 @@ que não resolve recusa o despacho antes de qualquer sessão —, e não resolve
 contexto por nó: nenhum evento e nenhuma tabela carrega a saída estruturada de
 um nó, então nada monta o objeto que o `input` do nó seguinte declara. O
 despacho expõe a costura (`resolveInput`, em
-[`dispatch-claude-code.ts`](../../packages/runner/src/dispatch/dispatch-claude-code.ts))
+[`dispatch.ts`](../../packages/runner/src/dispatch/dispatch.ts))
 e, sem ninguém para preenchê-la, passa `{}` — ou seja, **hoje toda skill com
 placeholder recusa em produção**, alto e determinístico, em vez de abrir sessão
 com o token cru no prompt como fazia até a `t204`. Encadear a saída de um nó na

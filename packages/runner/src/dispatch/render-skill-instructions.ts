@@ -67,7 +67,7 @@ import { resolveEscalationPolicy, type GraphEdge, type ResolvedNode } from './re
  * The escalation paragraph, which travels with EVERY instruction this runner
  * ever dispatches.
  *
- * It lives here and not in `dispatch-claude-code.ts` (which re-exports it, so
+ * It lives here and not in `dispatch.ts` (which re-exports it, so
  * the constant is still reachable where `DEFAULT_INSTRUCTIONS` is) for one
  * reason: this module is the one that would have dropped it. A session that does
  * not know how to escalate never escalates, and the whole cycle t106 built —

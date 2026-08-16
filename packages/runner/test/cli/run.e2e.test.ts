@@ -55,7 +55,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import type * as RunModule from '../../src/cli/run.ts';
-import type { EngineRoute } from '../../src/dispatch/dispatch-claude-code.ts';
+import type { EngineRoute } from '../../src/dispatch/dispatch.ts';
 import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,

@@ -199,7 +199,7 @@ quem vier depois.
 5. **A travessia é provada por contrato, não por execução ao vivo.** O critério
    original pedia "uma tese real atravessa até a decisão humana". Puxar a skill
    do `grafo_versao` registrado para dentro da sessão é escopo da `t109`
-   (`packages/runner/src/dispatch/dispatch-claude-code.ts:62`), que não tem
+   (`packages/runner/src/dispatch/dispatch.ts`), que não tem
    commit em `main`. Este bundle segue o precedente do bundle 1 — cujo critério
    de aceite também é o validador determinístico, e não "importa pela API" — e
    prova a travessia no nível que já é verificável hoje: um fixture de tese real

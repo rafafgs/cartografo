@@ -105,7 +105,7 @@ Três coisas que o campo decide, e que valem mais escritas do que inferidas:
 
 - **Ausência tem nome.** Um nó sem `engine` roda no engine default do runner,
   que é `claude-code` — a constante `DEFAULT_ENGINE` de
-  `packages/runner/src/dispatch/dispatch-claude-code.ts`. É default nomeado e
+  `packages/runner/src/dispatch/dispatch.ts`. É default nomeado e
   não implícito: a telemetria da sessão registra o engine que rodou, e ninguém
   precisa adivinhar qual foi. Por isso todo grafo escrito antes deste campo
   continua válido e continua se comportando exatamente como antes.

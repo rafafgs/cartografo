@@ -253,7 +253,7 @@ export interface ControlPlaneReaderOptions {
  * Wrapped ONCE here, rather than threading a `token` through `getJson` and the
  * three reads below it: those are one client with one door out, and a read that
  * assembled its own headers is a read that could forget them — the same
- * reasoning `dispatch-claude-code.ts`'s single `headers()` records.
+ * reasoning `dispatch/control-plane-client.ts`'s single `headers()` records.
  *
  * @param fetchImpl What actually performs the request.
  * @param token The credential, when there is one.

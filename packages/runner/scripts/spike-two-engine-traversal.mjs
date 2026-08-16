@@ -81,7 +81,7 @@ import formatsModule from 'ajv-formats';
 
 import { ClienteControle } from '../src/controller/cliente-controle.ts';
 import { Controller } from '../src/controller/controller.ts';
-import { createClaudeCodeDispatch, DEFAULT_ENGINE } from '../src/dispatch/dispatch-claude-code.ts';
+import { createClaudeCodeDispatch, DEFAULT_ENGINE } from '../src/dispatch/dispatch.ts';
 import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,

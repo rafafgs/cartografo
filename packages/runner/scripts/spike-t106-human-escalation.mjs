@@ -43,7 +43,7 @@ import {
   createClaudeCodeDispatch,
   DEFAULT_ENGINE,
   DEFAULT_INSTRUCTIONS,
-} from '../src/dispatch/dispatch-claude-code.ts';
+} from '../src/dispatch/dispatch.ts';
 import { decodeClaudeCodeSessionText } from '../src/dispatch/session-text.ts';
 import { ClaudeCodeAdapter } from '../src/engine/claude-code-adapter.ts';
 

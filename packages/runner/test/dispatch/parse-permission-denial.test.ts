@@ -6,7 +6,7 @@
  * That is a decision recorded in the ticket's refinement log: the sentence the
  * CLI writes to explain a refusal changes between versions, while `id` /
  * `tool_use_id` / `is_error` are the frame contract
- * (`dispatch-claude-code.ts:204-210` already decomposes the same blocks).
+ * (`dispatch.ts:204-210` already decomposes the same blocks).
  *
  * Two properties matter as much as the detection itself:
  *

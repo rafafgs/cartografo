@@ -810,10 +810,10 @@ O que a revisão *mudou* está na seção seguinte.
 
 ## Ajustes feitos na revisão
 
-Sete mudanças e duas rejeições explícitas — quatro da revisão original, mais o
+Oito mudanças e duas rejeições explícitas — quatro da revisão original, mais o
 que cresceu depois do congelamento em v1 (item 5, t163; item 6, t166; item 7,
-t173). Nada aqui é decorativo: os itens 1, 3, 6 e 7 saíram de rodar as CLIs,
-não de ler documentação.
+t173; item 8, t172). Nada aqui é decorativo: os itens 1, 3, 6, 7 e 8 saíram de
+rodar as CLIs, não de ler documentação.
 
 1. **`stdin` fechado virou invariante normativa (novo).** Rodando
    `codex exec` com stdin não-TTY, a CLI imprimiu
@@ -936,6 +936,67 @@ caso C2 do kit, que a verifica pelo que o processo recebeu.
      `engine_session_ref` **não** identifica uma execução, identifica a
      conversa, e uma tabela que o tratar como chave única de sessão colide na
      segunda continuação.
+
+8. **`SessionFinishDetail.usage` e `SessionFinishDetail.models`, e o frame que
+   os mediu** (t172, 2026-08-16; evidência fixada aqui na t174). Mesmo
+   crescimento aditivo dos anteriores: dois campos opcionais num tipo que já
+   existia, nenhum símbolo publicado mudando de nome ou de forma, `EngineAdapter`
+   e a assinatura de `onFinished` intocados. E o segundo caso seguido de uma
+   capacidade declarada no congelamento ganhando finalmente um leitor —
+   `reportsUsage` estava na interface desde então e adapter nenhum a declarava,
+   pelo mesmo motivo que `hasResume`: a CLI sabia contar o tempo todo, o que
+   faltava era alguém ler.
+
+   **Medido contra a CLI real** (`claude 2.1.233`, roteiro em
+   `packages/runner/scripts/spike-real-session.mjs`, rodado em 2026-08-16). O
+   `usage` do frame `result` terminal, verbatim — é este objeto que
+   `packages/runner/test/engine/conformance.claude-code.test.ts` usa como
+   fixture, e é por ele estar inteiro, e não recortado nas quatro chaves, que o
+   teste consegue distinguir um adapter que ESCOLHE de um que repassa:
+
+   ```json
+   {
+     "input_tokens": 2,
+     "cache_creation_input_tokens": 3022,
+     "cache_read_input_tokens": 15688,
+     "output_tokens": 5,
+     "output_tokens_details": { "thinking_tokens": 0 },
+     "server_tool_use": { "web_search_requests": 0, "web_fetch_requests": 0 },
+     "service_tier": "standard",
+     "cache_creation": { "ephemeral_1h_input_tokens": 3022, "ephemeral_5m_input_tokens": 0 },
+     "inference_geo": "not_available",
+     "speed": "standard"
+   }
+   ```
+
+   Dez chaves onde o `uso` da taxonomia aceita quatro e fecha
+   `additionalProperties`. O adapter ESCOLHE as quatro, e o destino das outras
+   seis fica decidido aqui, por escrito, em vez de implícito no código:
+
+   - **`cache_creation` NÃO é somado a `cache_creation_input_tokens`.** É o
+     mesmo número quebrado por TTL — 3022 = 3022 (1h) + 0 (5m). O campo plano
+     já é o total, e somar o detalhamento por cima contaria o cache duas vezes;
+   - **`output_tokens_details.thinking_tokens` também não**, pela mesma
+     aritmética: é subdivisão do `output_tokens`, já contida nele;
+   - **`service_tier`, `inference_geo`, `speed` e `server_tool_use` não são
+     contagem de token** de nenhuma das quatro naturezas, e não existe para
+     onde dobrá-las sem inventar. Ficam de fora, e ficam de fora nomeadas: quem
+     descobrir mapeamento honesto para alguma delas muda esta lista antes de
+     mudar o código.
+
+   O mesmo frame trouxe `modelUsage` com DOIS modelos numa sessão de um turno
+   só — o do turno principal e o de um auxiliar mais barato. Os totais por
+   modelo **não fecham** com o `usage` de cima (`input_tokens` 2 no topo, contra
+   523 + 2 no detalhamento): o topo descreve o turno principal, o detalhamento
+   descreve todo modelo que rodou. Por isso `models` carrega IDENTIDADE e nunca
+   uma segunda contabilidade — somar ali produziria um total que discorda do
+   próprio frame que o originou.
+
+   **Ausência continua ausência.** Frame sem `usage`, `usage` a que falte
+   qualquer uma das quatro contagens, ou sessão que morreu antes do frame
+   terminal não reportam campo nenhum. Zero é medição; completar o silêncio com
+   zeros é a única leitura proibida, e é a mesma regra que o `uso` da taxonomia
+   carrega desde a t98.
 
 **Rejeitado — `SessionStatus` mais rico.** Codex e Claude Code têm ambos
 estados próprios de quota/limite (o `Reconnecting... n/5` acima é um deles).

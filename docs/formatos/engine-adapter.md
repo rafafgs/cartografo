@@ -6,7 +6,8 @@
 > `packages/runner/src/engine/claude-code-adapter.ts` (t104) e
 > `packages/runner/src/engine/codex-adapter.ts` (t119), cada um certificado
 > pelos casos do kit contra o fake engine — sete no congelamento, nove desde
-> que o cão de guarda de inatividade acrescentou o C9 (t163).
+> que o cão de guarda de inatividade acrescentou o C9 (t163), dez desde que a
+> continuação de sessão acrescentou o C10 (t173).
 >
 > **Lacuna registrada no congelamento (t119):** a prova manual do adapter do
 > Codex contra a CLI real rodou até o 401 — a máquina não tem credencial
@@ -60,14 +61,31 @@
 >
 > Congelada significa aditivo daqui para frente: campo novo entra opcional
 > (é para isso que `EngineCapabilities` já é toda opcional), e símbolo
-> publicado não muda de nome nem de forma sem uma decisão registrada. O
-> primeiro crescimento sob essa regra foi `SessionSpec.permissions` (t125),
-> opcional e sem tocar em símbolo nenhum dos que já existiam. Onde a
-> análise de viabilidade abaixo e "Fora de escopo (v0)" discordarem, **a
-> decisão de escopo é a que vale**: a tabela é levantamento exploratório de
-> uma CLI, não promessa de superfície. O caso vivo é `hasResume` — o
-> `codex exec resume` existe, a tabela sugere declará-lo, e nenhum dos dois
-> adapters declara, porque resume está fora do v0.
+> publicado não muda de nome nem de forma sem uma decisão registrada. Os
+> crescimentos sob essa regra, em ordem, cada um opcional e sem tocar em
+> símbolo nenhum dos que já existiam:
+>
+> - **`SessionSpec.permissions`** (t125) — política de permissão declarada,
+>   com o adapter aplicando o que consegue e recusando o que não consegue.
+> - **`SessionSpec.silenceSeconds` e o terceiro argumento do `onFinished`**
+>   (t163) — o segundo cão de guarda, e a causa ao lado do status.
+> - **`SessionSpec.model`, `listModels()`, `EngineModel` e `ModelCatalog`**
+>   (t166) — o modelo pinado por nó, e o catálogo que cada adapter publica.
+>   O primeiro crescimento que acrescentou um MÉTODO, e por isso opcional no
+>   próprio membro (`listModels?()`), não só nos campos.
+> - **`SessionSpec.resumeFrom`** (t173) — continuar uma sessão anterior a
+>   partir do `engineRef` que o `onEngineRef` já capturava. É o crescimento que
+>   deu consumidor a uma capacidade declarada e nunca implementada: o
+>   `claude-code` passou a declarar `hasResume`, o `codex` continua recusando
+>   o campo na porta, e o C10 certifica os dois lados.
+>
+> Onde a análise de viabilidade abaixo e "Fora de escopo (v0)" discordarem,
+> **a decisão de escopo é a que vale**: a tabela é levantamento exploratório
+> de uma CLI, não promessa de superfície. O caso vivo continua sendo
+> `hasResume`, agora só do lado do Codex — o `codex exec resume` existe, a
+> tabela sugere declará-lo, e aquele adapter continua não declarando, porque
+> ali resume é um **subcomando** que substitui o `exec` no argv, e não uma
+> flag que se acrescenta a ele: mecanismo diferente, ficha própria.
 >
 > **Portão deste documento:** `scripts/check-engine-adapter-spec.sh`.
 > Ele verifica estrutura e sintaxe (headings, cobertura do kit, citação de
@@ -176,6 +194,40 @@ export interface SessionSpec {
    * o comportamento de toda sessão aberta antes deste campo existir.
    */
   readonly silenceSeconds?: number;
+
+  /**
+   * O `engineRef` de uma sessão anterior, para ser continuada em vez de
+   * começada do zero — a mesma string opaca que o `onEngineRef` reportou
+   * para ela.
+   *
+   * Ausente (ou vazio) significa sessão nova em folha, que é o comportamento
+   * de toda sessão aberta antes deste campo existir. Presente significa que o
+   * chamador está pedindo o contexto daquela sessão de volta, e um adapter
+   * que não consegue fazer isso tem de RECUSAR antes de abrir — a mesma regra
+   * de honestidade de `permissions` abaixo. Perder este campo em silêncio é a
+   * única falha que ninguém rio abaixo consegue detectar: uma sessão que não
+   * continuou nada é idêntica, por fora, a uma que continuou.
+   *
+   * O que continuar exige além do ref é assunto do engine, e nem sempre é só
+   * o ref. Medido no `claude-code` (t173, ver "Ajustes feitos na revisão",
+   * item 7): ali o ref basta, e o `workingDir` não participa.
+   */
+  readonly resumeFrom?: string;
+
+  /**
+   * Qual modelo do engine roda esta sessão, quando o nó pinou um.
+   *
+   * Ausente significa o default DO PRÓPRIO ENGINE: nenhuma flag de modelo é
+   * montada, e o argv sai idêntico ao de antes deste campo existir — a mesma
+   * disciplina de `silenceSeconds` e `permissions`. É o único default honesto:
+   * esta camada não tem como saber a que modelos uma instalação tem acesso, e
+   * inventar um aqui poria na telemetria uma escolha que ninguém fez.
+   *
+   * Id desconhecido ou digitado errado é recusado pelo próprio engine, na
+   * abertura da sessão, como `SessionStartError` ou sessão que falha. O
+   * catálogo de `listModels()` é descoberta, nunca portão.
+   */
+  readonly model?: string;
 
   /**
    * Adições opacas ao ambiente do processo do engine. Deliberadamente sem
@@ -323,12 +375,17 @@ log: o que o gating não impede, a telemetria pelo menos registra.
  * adapter de terceiro que constrói o objeto literalmente. Ausente é `false`
  * — a direção segura de errar.
  *
- * Nenhuma destas flags tem consumidor no v0; as três nomeiam exatamente as
- * capacidades adiadas em "Fora de escopo". Declarar a quarta, quinta e sexta
- * antes de alguém ler é como o formato apodrece.
+ * `hasResume` ganhou consumidor na t173 (`SessionSpec.resumeFrom`); as outras
+ * duas continuam nomeando capacidades adiadas em "Fora de escopo", e ficam sem
+ * ser declaradas até alguém lê-las. Declarar a quarta, quinta e sexta antes de
+ * alguém ler é como o formato apodrece.
  */
 export interface EngineCapabilities {
-  /** Continua uma sessão anterior a partir de um `engineRef`. */
+  /**
+   * Continua uma sessão anterior a partir de um `engineRef` — o que o
+   * `SessionSpec.resumeFrom` pede. Um adapter que não declara isto tem de
+   * recusar aquele campo, nunca ignorá-lo.
+   */
   readonly hasResume?: boolean;
   /** Emite frames legíveis por máquina, não só texto. */
   readonly hasStructuredOutput?: boolean;
@@ -407,9 +464,11 @@ export interface SessionListener {
    * O identificador que o próprio engine deu à sessão, assim que conhecido.
    *
    * Opcional e string opaca: cada CLI chama isso de uma coisa e nenhuma
-   * garante o formato. Capturado hoje só para telemetria e auditoria — resume
-   * está fora de escopo. Existe agora porque é barato de adicionar antes de
-   * haver adapter publicado e caro de aparafusar depois.
+   * garante o formato. Foi capturado para telemetria e auditoria antes de
+   * qualquer um poder usá-lo, "barato de adicionar antes de haver adapter
+   * publicado e caro de aparafusar depois" — e a t173 cobrou essa aposta: é
+   * este o valor que volta no `SessionSpec.resumeFrom` para continuar uma
+   * sessão.
    */
   onEngineRef?(engineRef: string): void;
 
@@ -436,6 +495,38 @@ export interface SessionListener {
 ### O adapter
 
 ```typescript
+/**
+ * Um modelo que o engine oferece.
+ *
+ * `id` é o identificador que vai depois da flag de modelo do engine — a string
+ * que o `model` de um nó precisa casar — e nada mais: não é nome de exibição,
+ * nem apelido de família que a CLI por acaso resolve. `label` é o que uma
+ * pessoa lê, quando o adapter tem um para dar.
+ *
+ * `origin` é o campo que mantém o catálogo honesto. `cli` significa que o
+ * binário foi perguntado e respondeu; `catalog` significa que o adapter está
+ * recitando uma lista que ele carrega. Juntar os dois faria de "estes são os
+ * modelos" uma afirmação que ninguém consegue pesar — o mesmo rebaixamento que
+ * `CliProbe.authenticated` já levou, e pela mesma razão.
+ */
+export interface EngineModel {
+  readonly id: string;
+  readonly label?: string;
+  readonly origin: "cli" | "catalog";
+}
+
+/**
+ * Tudo que um engine diz que consegue rodar, num instante.
+ *
+ * `resolvedAt` não é decoração: catálogo estático e resposta de CLI envelhecem
+ * de forma diferente, e um consumidor sem carimbo não distingue relato fresco
+ * de relato que um runner deixou para trás antes de morrer.
+ */
+export interface ModelCatalog {
+  readonly models: readonly EngineModel[];
+  readonly resolvedAt: string;
+}
+
 /** Resultado do preflight da CLI, consumido pelo wizard de instalação. */
 export interface CliProbe {
   /** O binário existe e responde. */
@@ -488,6 +579,21 @@ export interface EngineAdapter {
 
   /** Preflight sem gastar quota. */
   verifyCli(): Promise<CliProbe>;
+
+  /**
+   * Quais modelos este engine consegue rodar, até onde o adapter sabe.
+   *
+   * O MÉTODO é opcional, e não só os campos dele — essa é a afirmação de
+   * compatibilidade: um adapter de terceiro escrito antes disto existir
+   * continua compilando, que é o que "crescimento de formato publicado é
+   * aditivo" tem de significar depois do congelamento em v1. Quem consome
+   * checa o método antes de chamar e pula o adapter que não o tem.
+   *
+   * Descoberta, nunca imposição: nada valida o `model` declarado num nó contra
+   * esta lista, e um engine de catálogo desatualizado continua recusando id
+   * ruim sozinho, que é onde a verdade de fato mora.
+   */
+  listModels?(): Promise<ModelCatalog>;
 }
 ```
 
@@ -557,6 +663,15 @@ sessão —, e C9 porque o segundo cão de guarda (t163) é a única coisa neste
 adapter que só se prova pelo tempo: que ele rearma a cada saída, e que morde
 quando a saída para.
 
+C10 (t173) entra por outro motivo, e é o primeiro caso cujo desfecho esperado
+**depende do que o adapter declara**: `hasResume` parte os engines em dois, e
+os dois lados são conformes — continuar, ou recusar. O que não é conforme é a
+terceira resposta, aceitar `resumeFrom` e abrir uma sessão nova assim mesmo, e
+ela é justamente a que nenhum consumidor consegue detectar sozinho: uma sessão
+que não continuou nada é idêntica, por fora, a uma que continuou. É a mesma
+regra de honestidade que `permissions` já tornou normativa, aplicada ao campo
+onde a perda silenciosa custa mais.
+
 | Nome | Setup | Resultado esperado |
 |---|---|---|
 | **C1 — Sessão básica** | Fake engine emite N linhas e sai com 0. | `getStatus` é `"running"` logo após o start; `onFinished("completed", 0)` uma vez; `getStatus` passa a `"completed"`. Nenhum `onOutput` depois do `onFinished`. |
@@ -568,6 +683,7 @@ quando a saída para.
 | **C7 — Handle desconhecido** | Handle nunca iniciado neste adapter. | `getStatus` e `cancel` rejeitam com `UnknownSessionError`. Nenhum dos dois inventa status. |
 | **C8 — Corrida de parada** | Fake engine que ignora SIGTERM e nunca termina sozinho; `timeoutSeconds` longo, para que o relógio interno nunca dispare por conta própria. Duas paradas seguidas, sem sleep entre elas, com status diferentes — a segunda cai dentro da janela de grace da primeira: `cancel(handle, "timed_out")` e depois `cancel(handle, "cancelled")`. | Vence a PRIMEIRA: `onFinished` e `getStatus` reportam `"timed_out"`, não importa se o processo morreu no SIGTERM ou no SIGKILL. A segunda parada é no-op completo — não sobrescreve o status, não sinaliza de novo, não rearma escalação nem rede de segurança (`onFinished` uma única vez). Repetido com os status trocados, o esperado vira `"cancelled"`: o que vence é a ordem, não o literal. |
 | **C9 — Inatividade** | Fake engine emite um batimento a cada `silenceSeconds / 2`, atravessando duas janelas inteiras, e depois cala para sempre sem sair; `timeoutSeconds` longo, para que o relógio de parede nunca dispare por conta própria. | `onFinished("timed_out", null, {timeoutReason: "silence"})` uma única vez, dentro de uma janela de `silenceSeconds` contada a partir do ÚLTIMO batimento — nunca a partir do início da sessão, que é o que um cão de guarda sem rearme faria. Todos os batimentos chegaram ao `onOutput` antes disso. Nenhum órfão. `cancel()` depois é no-op silencioso. |
+| **C10 — Continuação de sessão** | Uma sessão, e depois outra com `resumeFrom` valendo o `engineRef` que a primeira reportou, no MESMO `workingDir`. O caso lê `capabilities().hasResume` e cobra o desfecho correspondente — nunca crava qual adapter está rodando. | Declarando `hasResume`: o ref chega ao **processo** por algum caminho legítimo (a disciplina do C2 — inspecionar o `SessionSpec` testaria o teste), a sessão continuada completa, e o handle local é OUTRO, porque o ref é do engine e o handle é do adapter. Não declarando: `startSession` rejeita com `SessionStartError` **antes do spawn** — nenhum processo, nenhum sidecar, nenhum `onFinished`. |
 
 Notas de execução:
 
@@ -641,8 +757,10 @@ O que a revisão *mudou* está na seção seguinte.
 
 ## Ajustes feitos na revisão
 
-Quatro mudanças e duas rejeições explícitas. Nada aqui é decorativo: os itens
-1 e 3 saíram de rodar as CLIs, não de ler documentação.
+Sete mudanças e duas rejeições explícitas — quatro da revisão original, mais o
+que cresceu depois do congelamento em v1 (item 5, t163; item 6, t166; item 7,
+t173). Nada aqui é decorativo: os itens 1, 3, 6 e 7 saíram de rodar as CLIs,
+não de ler documentação.
 
 1. **`stdin` fechado virou invariante normativa (novo).** Rodando
    `codex exec` com stdin não-TTY, a CLI imprimiu
@@ -704,6 +822,68 @@ caso C2 do kit, que a verifica pelo que o processo recebeu.
    lado do status, que morre no log de eventos como
    `sessao.finalizada.dados.timeout_reason`.
 
+6. **`SessionSpec.model`, `listModels()`, `EngineModel` e `ModelCatalog`**
+   (t166). O segundo crescimento aditivo depois do congelamento em v1, e ele
+   obedece à mesma regra que `permissions` (t125) e `silenceSeconds` (t163)
+   obedeceram: campo opcional, nenhum símbolo publicado mudando de nome ou de
+   forma. A diferença é que desta vez o que cresceu foi um MÉTODO da interface,
+   e por isso `listModels?()` é opcional no próprio membro, não só nos campos —
+   um adapter de terceiro que nunca ouviu falar de catálogo continua compilando
+   e continua passando o kit inteiro. Nenhum caso cobra `listModels`: é
+   capacidade opcional, não linha de base que todo adapter tem de cumprir, e
+   teste unitário por adapter dá conta. (O C10 que o kit ganhou é do item
+   seguinte, de continuação de sessão, e não tem relação com catálogo.)
+
+   O par `model`/`listModels` vem junto porque um sem o outro é meia entrega:
+   pinar modelo por nó sem publicar quais existem obriga quem escreve grafo a
+   adivinhar identificador, e publicar catálogo sem poder pinar é um cardápio
+   sem pedido.
+
+   **A lacuna, escrita porque existe.** `claude --help` tem `--model <model>` e
+   `codex exec --help` tem `-m, --model <MODEL>` — os dois DEFINEM modelo, e
+   nenhum dos dois expõe subcomando ou flag que LISTE os disponíveis (rodado
+   contra os dois binários nesta ficha). O caminho `cli` de `listModels()` está
+   na interface para o engine futuro que tiver um; os dois adapters de hoje
+   resolvem sempre para o catálogo estático deles, sempre `origin: 'catalog'`.
+   É o mesmo tipo de honestidade escrita que `CliProbe.authenticated` já
+   carrega — "melhor esforço, nunca garantia" — e é para isso que `origin`
+   existe: sem ele, "estes são os modelos" seria afirmação que ninguém
+   consegue pesar.
+
+7. **`SessionSpec.resumeFrom`, e o que a CLI real respondeu sobre ele**
+   (t173, 2026-08-16). Mesmo crescimento aditivo dos três anteriores: campo
+   opcional, nenhum símbolo publicado mudando de nome ou de forma, e um caso
+   novo no kit (C10) para o que passou a existir. A diferença é que este campo
+   deu consumidor a uma capacidade que a interface declarava desde o
+   congelamento e nenhum adapter implementava — `hasResume` era exatamente o
+   tipo de flag que a nota acima manda não declarar antes de alguém ler, e a
+   partir daqui alguém lê.
+
+   **Medido contra a CLI real** (`claude 2.1.233`, roteiro em
+   `packages/runner/scripts/spike-session-resume.mjs`, duas rodadas em
+   2026-08-16). O roteiro conta um marcador único à sessão A, captura o
+   `engineRef` dela, e pergunta o marcador de volta numa sessão B cujo prompt
+   nunca o menciona:
+
+   - **resume carrega contexto de verdade.** A sessão B respondeu o marcador
+     que nunca lhe foi dito, medido no frame `result` — não numa linha de
+     transcript reproduzida, que seria eco e não memória;
+   - **e NÃO exige o mesmo `workingDir`** — o que **contradiz o que a ficha
+     assumiu**. A t173 partiu da leitura de
+     `packages/runner/src/dispatch/session-worktree.ts:16-26` (todo despacho
+     cria um worktree novo) supondo que o resume do Claude Code fosse chaveado
+     por diretório, e portanto inútil em produção até alguém reusar o
+     diretório. Não é: com o mesmo ref, de um diretório que aquela sessão
+     nunca viu, a sessão B recitou o marcador igual. As duas rodadas
+     concordaram. Quem for despachar resume tem uma dependência a menos do que
+     esta ficha imaginava;
+   - **a sessão continuada reporta o MESMO `engineRef`.** Não é um id novo com
+     ponteiro para o anterior: o `session_id` do stream de B é, literalmente, o
+     de A. Consequência para quem for modelar telemetria de sessão reciclada —
+     `engine_session_ref` **não** identifica uma execução, identifica a
+     conversa, e uma tabela que o tratar como chave única de sessão colide na
+     segunda continuação.
+
 **Rejeitado — `SessionStatus` mais rico.** Codex e Claude Code têm ambos
 estados próprios de quota/limite (o `Reconnecting... n/5` acima é um deles).
 Tentador promover ao baseline; errado por ora. Um terceiro engine sem
@@ -723,12 +903,23 @@ membros.
 
 Registrado para quem ler depois não presumir esquecimento:
 
-- **`continueSession` / resume**, contagem de uso (`SessionUsage`) e projeção
-  de transcript. Existem no flowpilot; a régua da PoC (D16) pede sessões
-  despachadas e telemetria completa, e não menciona resume. `onEngineRef` já
-  captura a chave que o resume vai precisar. Continua fora no v1: o
-  `codex exec resume` existe e segue não declarado nas `capabilities` dos dois
-  adapters, justamente por isto.
+- **Contagem de uso (`SessionUsage`) e projeção de transcript.** Existem no
+  flowpilot; a régua da PoC (D16) pede sessões despachadas e telemetria
+  completa, e não menciona nenhuma das duas.
+
+  **Resume SAIU desta lista na t173, só para o `claude-code`** (registrado
+  aqui em vez de sumir sem rastro, como as duas entradas do congelamento
+  abaixo). O `onEngineRef` capturava desde sempre "a chave que o resume vai
+  precisar", e a t173 devolveu essa chave pelo `SessionSpec.resumeFrom`: o
+  adapter de referência declara `hasResume` e monta `--resume <ref>`. O que
+  continua fora, e continua não declarado, é o resume do **Codex**: o
+  `codex exec resume` existe, mas é subcomando e não flag — mecanismo de
+  outra natureza, ficha própria — e até lá aquele adapter recusa `resumeFrom`
+  na porta, que é a resposta honesta e o que o C10 cobra dele. Também
+  continuam fora as camadas ACIMA do adapter que a hipótese original queria:
+  telemetria N:M entre sessão e item de trabalho, política de reciclagem como
+  dado do grafo e reúso de worktree entre despachos. Nada no `dispatch` chama
+  `resumeFrom` ainda.
 - **Sandbox de sistema operacional.** Permissões de skill **saíram** desta
   lista na t125 (ver "Permissões da sessão" e a tensão 1, agora resolvida); o
   que continua fora é o isolamento de processo — `sandbox-exec`, namespace de

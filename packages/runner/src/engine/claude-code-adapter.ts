@@ -46,6 +46,8 @@ import {
   type CliProbe,
   type EngineAdapter,
   type EngineCapabilities,
+  type EngineModel,
+  type ModelCatalog,
   type SessionFinishDetail,
   type SessionListener,
   type SessionSpec,
@@ -81,6 +83,35 @@ export const CREDENTIAL_VARIABLES = [
  * fix". The reasons after it come from `permission-policy.ts` verbatim.
  */
 export const PERMISSION_REFUSAL_PREFIX = 'permission policy unsupported: ';
+
+/**
+ * The models this adapter knows the `claude` CLI can be pointed at (t166).
+ *
+ * Static, and `origin: 'catalog'` on every entry, because there is nothing to
+ * ask: `claude --help` documents `--model <model>` — which SETS a model — and
+ * exposes no subcommand or flag that LISTS the available ones (run against
+ * `claude 2.1.233` for this ficha, subcommand list included). The CLI-query
+ * branch of `listModels()` exists in the interface for a future engine that has
+ * one; this adapter never takes it, and says so in the field rather than
+ * dressing a hardcoded list as a measurement.
+ *
+ * The identifiers are the full names the CLI's own help gives as its example
+ * form ("a model's full name (e.g. 'claude-fable-5')"), not the aliases it also
+ * accepts (`opus`, `sonnet`): an alias resolves to whatever is latest, and a
+ * graph that pinned one would silently change model under a node that was
+ * never re-proposed. Pinning is the whole point of the field.
+ *
+ * The list ages, and that is expected: it is a catalog, refreshed by restarting
+ * the runner against a newer adapter, and a node may name a model that is not
+ * here — nothing validates against this list (Out of Scope), and the CLI is
+ * what refuses an identifier it does not know.
+ */
+export const CLAUDE_CODE_MODELS: readonly EngineModel[] = [
+  { id: 'claude-fable-5', label: 'Claude Fable 5', origin: 'catalog' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5', origin: 'catalog' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', origin: 'catalog' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', origin: 'catalog' },
+];
 
 export interface ClaudeCodeAdapterOptions {
   /** Test seam: swaps the real binary for the kit's fake engine. */
@@ -300,13 +331,18 @@ export class ClaudeCodeAdapter implements EngineAdapter {
   }
 
   /**
-   * `stream-json` is parseable, hence `hasStructuredOutput`. The other two stay
-   * absent (default `false`): resume and usage accounting are out of v0 and
-   * have no consumer — "declaring the fourth, fifth and sixth before anybody
-   * reads them is how a format rots" (`engine-adapter.md:160-165`).
+   * `stream-json` is parseable, hence `hasStructuredOutput`; `-r, --resume` is
+   * real and `SessionSpec.resumeFrom` reaches it, hence `hasResume` (t173).
+   *
+   * The flag existed on the CLI all along — what it lacked, and what this
+   * adapter refused to declare without, was a consumer. `resumeFrom` is that
+   * consumer. `reportsUsage` stays absent (default `false`) for the reason this
+   * one just stopped having: usage accounting is out of v0 and nothing reads
+   * it, and "declaring the fourth, fifth and sixth before anybody reads them is
+   * how a format rots" (`engine-adapter.md:160-165`).
    */
   capabilities(): EngineCapabilities {
-    return { hasStructuredOutput: true };
+    return { hasStructuredOutput: true, hasResume: true };
   }
 
   async verifyCli(): Promise<CliProbe> {
@@ -316,6 +352,18 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       version,
       authenticated: this.#looksAuthenticated(),
     };
+  }
+
+  /**
+   * The static catalog, stamped now (t166).
+   *
+   * `async` with nothing to await, and it stays that way: the interface returns
+   * a promise because the engine that HAS a query path will need one, and an
+   * adapter that narrowed the signature to fit its own shortcut would be a
+   * consumer breaking the format it implements.
+   */
+  async listModels(): Promise<ModelCatalog> {
+    return { models: CLAUDE_CODE_MODELS, resolvedAt: new Date().toISOString() };
   }
 
   #requireSession(sessionId: string): Session {

@@ -35,6 +35,13 @@ atravessam o mapa: agentes de CLI executam cada etapa com instruções e
 contratos vindos do banco, portões verificam cada passagem com evidência, e
 decisão que não é de máquina chega na tela e espera você.
 
+**Escolher o motor e o modelo etapa por etapa.** Cada etapa do mapa pode dizer
+em qual agente de CLI ela roda e com qual modelo — o nó que escreve usa o
+modelo grande, o portão que confere usa um menor e mais barato. Quem não diz
+nada roda no default, e trocar essa escolha é uma proposta como qualquer
+outra: vira versão nova do mapa, com evidência e com volta. Os modelos que cada
+motor oferece aparecem na API, com a informação de onde a lista veio.
+
 **Decidir, etapa por etapa, quando você quer ser chamado.** Cada etapa do
 mapa diz o quanto insiste em falar com você: sempre (chama antes de fechar,
 mesmo achando que sabe), quando travar (o padrão), ou nunca — e aí travar

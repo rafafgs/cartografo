@@ -78,6 +78,7 @@ Uma etapa do grafo. Tudo que executa no sistema é skill com contrato; o que mud
 | `tipo_no` | sim | `trabalho` ou `portao`. |
 | `descricao` | não | O que o nó faz, em uma frase. |
 | `engine` | não | Qual engine executa este nó. Ausente = o engine default do runner. Ver abaixo. |
+| `model` | não | Qual modelo daquele engine executa este nó. Ausente = o default do próprio engine. Ver abaixo. |
 | `escalation_policy` | não | Quando este nó chama gente: `always`, `on_uncertainty`, `never`. Ausente = `on_uncertainty`. Ver abaixo. |
 | `escalation_recipient` | não | Quem deveria ser chamado quando este nó escala. Texto livre. Ver abaixo. |
 | `skill_ref` | sim | Ponteiro para a skill do registro, pinado. |
@@ -122,6 +123,55 @@ Três coisas que o campo decide, e que valem mais escritas do que inferidas:
 
 Exemplo completo:
 [`grafo-valido-dois-engines.json`](../../schema/exemplos/grafo-valido-dois-engines.json).
+
+### `model`: qual modelo daquele engine executa este nó
+
+Escolher o engine é metade da decisão; a outra metade é **quanto** de modelo o
+nó precisa (t166). Um portão que confere um diff não pede o mesmo modelo que o
+nó que escreveu o diff, e `model` é onde essa diferença fica escrita — por nó,
+no grafo, e não numa flag de máquina.
+
+```json
+{
+  "id": "conferir",
+  "papel": "revisor",
+  "tipo_no": "portao",
+  "engine": "codex",
+  "model": "gpt-5.6-luna",
+  "skill_ref": { "id": "cartografo/revisar-nota", "versao": "1.0.0", "hash": "sha256:2df09e…" },
+  "contrato": { "entrada_schema": {}, "saida_schema": {}, "verificacoes": [] }
+}
+```
+
+Quatro coisas que o campo decide, e que valem mais escritas do que inferidas:
+
+- **Ausência tem nome, e aqui o nome não é nosso.** Um nó sem `model` roda no
+  default **do próprio engine** — não existe `DEFAULT_MODEL` no runner, de
+  propósito. O runner não tem como saber a que modelos aquela instalação tem
+  acesso, e uma constante aqui poria em toda sessão uma escolha que nenhum
+  grafo fez. Na prática: nenhuma flag de modelo é montada, e o argv sai
+  idêntico ao de antes deste campo existir. Todo grafo escrito antes da t166
+  continua válido e continua se comportando exatamente como antes.
+- **É texto livre, e a recusa é do engine.** Não há enum fechado no schema,
+  pela mesma razão de `engine`: um enum obrigaria a editar o schema a cada
+  modelo novo. Um `model` desconhecido ou digitado errado é recusado pela
+  própria CLI na abertura da sessão — sessão que falha, e não erro novo de
+  validação. O catálogo que a API publica (`GET /v1/engines`) é **descoberta,
+  não validação**: serve para quem escreve grafo saber o que existe, e nada
+  compara o nó contra ele antes do despacho.
+- **Trocar o modelo é mudança de versão.** `model` é dado de grafo, então
+  mudá-lo é proposta: `alterar_campo_no` com `campo: "model"` passa pelo
+  mesmo caminho de sempre — aplicar, validar soundness, gravar `grafo_versao`
+  nova, mover o ponteiro (D15) — e vale para `engine` do mesmo jeito desde a
+  t166. Vem com inversa e com evidência, como qualquer outra proposta, e o que
+  rodou sob qual decisão fica no histórico.
+- **Vale na travessia seguinte, não na que está correndo.** O grafo é congelado
+  durante a execução: um trabalho continua na versão em que entrou, com o
+  modelo que ela declarava, e quem lê o modelo novo é o despacho que acontecer
+  sob a versão nova.
+
+Exemplo completo:
+[`grafo-valido-modelo.json`](../../schema/exemplos/grafo-valido-modelo.json).
 
 ### `escalation_policy`: quando este nó chama gente
 

@@ -319,3 +319,82 @@ test('AT5 — applying an operation over a missing target throws instead of a si
     (error: unknown) => error instanceof ApplicationError && error.code === 'no_duplicado',
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t166 — engine and model become proposable fields.                           */
+/*                                                                            */
+/* No new operation type: `alterar_campo_no` already validates the shape and   */
+/* the inverse, so what this ficha changes is one allowlist. The regression    */
+/* half matters as much as the addition — a `campo` outside the list has to    */
+/* stay refused, or the allowlist has stopped being one.                       */
+/* -------------------------------------------------------------------------- */
+
+/** A swap of one node field, with the inverse `alterar_campo_no` demands. */
+function swapField(field: string, from: unknown, to: unknown): unknown {
+  return {
+    tipo: 'alterar_campo_no',
+    no_id: 'revisar',
+    campo: field,
+    de: from,
+    para: to,
+    inversa: { tipo: 'alterar_campo_no', no_id: 'revisar', campo: field, de: to, para: from },
+  };
+}
+
+test('t166 AT — alterar_campo_no accepts engine and model, with a well-formed inverse', async () => {
+  const { validateOperation, CHANGEABLE_FIELDS } = await loadOperations();
+
+  for (const field of ['engine', 'model'] as const) {
+    assert.ok(
+      CHANGEABLE_FIELDS.includes(field),
+      `CHANGEABLE_FIELDS has to carry "${field}" — a field nobody can propose is a field nobody can version`,
+    );
+  }
+
+  const engine = validateOperation(swapField('engine', 'claude-code', 'codex'));
+  assert.deepEqual(engine, { valido: true, erros: [] });
+
+  // `null` for the before-value of a node that declared nothing: `de` has to be
+  // PRESENT (the shape check demands the key), and JSON — which is how a
+  // proposal actually arrives — has no way to carry `undefined`.
+  const model = validateOperation(swapField('model', null, 'claude-haiku-4-5'));
+  assert.deepEqual(model, { valido: true, erros: [] });
+
+  // The surveyor's own use case: a smaller model on the gate. `de: undefined`
+  // above is the node that declared nothing; here the node had one already.
+  const downgrade = validateOperation(swapField('model', 'claude-opus-5', 'claude-haiku-4-5'));
+  assert.deepEqual(downgrade, { valido: true, erros: [] });
+});
+
+test('t166 AT — a campo outside CHANGEABLE_FIELDS is still refused (regression)', async () => {
+  const { validateOperation, CHANGEABLE_FIELDS } = await loadOperations();
+
+  for (const field of ['id', 'node_type', 'motor', 'modelo']) {
+    assert.ok(!CHANGEABLE_FIELDS.includes(field), `the guard is vacuous: "${field}" is allowed`);
+    const report = validateOperation(swapField(field, 'antes', 'depois'));
+    assert.equal(report.valido, false, `"${field}" must not be swappable by alterar_campo_no`);
+    assert.ok(report.erros.some((error) => error.codigo === 'campo_nao_alteravel'));
+  }
+});
+
+test('t166 AT — applying an engine/model swap changes that field and nothing else', async () => {
+  const { applyOperations } = await loadOperations();
+
+  const input = minimalGraph();
+  assert.equal(requireNode(input, 'revisar').model, undefined, 'the fixture declares no model');
+
+  const result = applyOperations(input, [
+    swapField('engine', null, 'codex'),
+    swapField('model', null, 'gpt-5.6-luna'),
+  ] as OperationsModule.Operation[]);
+
+  assert.equal(requireNode(result, 'revisar').engine, 'codex');
+  assert.equal(requireNode(result, 'revisar').model, 'gpt-5.6-luna');
+  assert.deepEqual(
+    result.nodes.map((node) => node.id),
+    input.nodes.map((node) => node.id),
+    'changing a field does not touch the topology',
+  );
+  assert.equal(requireNode(result, 'redigir').model, undefined, 'only the target node moves');
+  assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
+});

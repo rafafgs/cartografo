@@ -49,6 +49,28 @@ export const PERMISSION_MODE_VARIABLE = 'CLAUDE_PERMISSION_MODE';
 export const DISALLOWED_TOOLS_FLAG = '--disallowedTools';
 
 /**
+ * The flag that continues an earlier session, by the id the engine gave it.
+ *
+ * `claude --help` spells it `-r, --resume [value]` — the value is OPTIONAL
+ * there, which is precisely why the position of the flag in the argv is not a
+ * matter of taste: with no value of its own, it takes whatever token follows.
+ * Confirmed against `claude 2.1.233`, the version the specification's own
+ * real-CLI proofs used.
+ */
+export const RESUME_FLAG = '--resume';
+
+/**
+ * The flag that pins the model of one session.
+ *
+ * `--model <model>`, measured against the CLI's own help: it takes "an alias
+ * for the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full
+ * name (e.g. 'claude-fable-5')". Nothing here interprets which of the two a
+ * node declared — resolving an alias is the CLI's business, and a runner that
+ * expanded one would be pinning a model the graph did not ask for.
+ */
+export const MODEL_FLAG = '--model';
+
+/**
  * `stdio` of the engine process: stdin on `/dev/null`, stdout and stderr piped.
  *
  * Invariant 6 of the specification, and the only one in the document that came
@@ -91,6 +113,15 @@ export function resolvePermissionMode(env: NodeJS.ProcessEnv = process.env): str
  *   follows closes the variadic — after the prompt, it would swallow it.
  * - **`--add-dir` is never assembled, on any path** (invariant 7). An extra
  *   directory hands back, in one flag, the write scope the policy just closed.
+ *
+ * `--resume` (t173) and `--model` (t166) obey the same ordering discipline, for
+ * the same reason read from the other end: both go BEFORE the denied list and
+ * before the system-prompt trailer, because both of those swallow what follows
+ * them. A ref landing inside either would arrive as a denied tool or as part of
+ * the prompt, and the CLI would open a fresh session without anybody being
+ * told; a model id landing there would be read as one more denied tool, or as a
+ * trailing positional the composition owns. Before both, each flag closes on
+ * its own value and changes nothing else.
  */
 export function buildCommand(
   spec: SessionSpec,
@@ -107,6 +138,13 @@ export function buildCommand(
       '--verbose',
       '--permission-mode',
       resolvePermissionMode(env),
+      // Absent field, absent flag — and an empty ref counts as absent: a bare
+      // `--resume` would take the next token as its value, which is the exact
+      // accident the position below exists to prevent.
+      ...(spec.resumeFrom ? [RESUME_FLAG, spec.resumeFrom] : []),
+      // Absent model, absent flag: the engine resolves its own default, and the
+      // argv is what it was before the field existed.
+      ...(spec.model === undefined ? [] : [MODEL_FLAG, spec.model]),
       // Absent policy, absent flag: a session that declared nothing produces
       // exactly the argv it produced before this field existed.
       ...(deniedTools.length === 0 ? [] : [DISALLOWED_TOOLS_FLAG, ...deniedTools]),

@@ -58,6 +58,13 @@ export interface GraphNode {
    */
   engine?: unknown;
   /**
+   * The model declared for this node (t166, FR4). Optional by design, and
+   * `unknown` for exactly the reason `engine` is: the schema leaves it free
+   * text, and what a snapshot carries is whatever was valid when it was frozen
+   * — this layer reads it, it does not vouch for it.
+   */
+  model?: unknown;
+  /**
    * When this node calls a human (t167, FR3). Optional and `unknown` for exactly
    * the same reason `engine` is: what constrains the value is the schema's enum,
    * not this layer, and absence is resolved at dispatch by

@@ -1200,3 +1200,92 @@ test('t180 — the human gate refuses in English, with the frozen status quoted'
   assert.equal(conflict.status, 'aprovada', 'the status value is stored data, never translated (FR2)');
   assert.equal(conflict.mensagem, 'only a pending proposal can be approved; this one is "aprovada"');
 });
+
+/* -------------------------------------------------------------------------- */
+/* t166 — changing a node's engine/model is a versioned graph mutation (D15).  */
+/*                                                                            */
+/* No new machinery is proven here, and that IS the claim: `alterar_campo_no`  */
+/* over the two new fields rides the pipeline the rest of this file already    */
+/* exercises — apply, soundness, new `grafo_versao`, pointer moved — and the   */
+/* previous version stays readable, because nothing is ever deleted (D15).     */
+/* -------------------------------------------------------------------------- */
+
+/** Swaps one field of the `revisar` node, with its inverse. */
+function swapNodeField(field: string, from: unknown, to: unknown): OperationsModule.Operation {
+  return {
+    tipo: 'alterar_campo_no',
+    no_id: 'revisar',
+    campo: field,
+    de: from,
+    para: to,
+    inversa: { tipo: 'alterar_campo_no', no_id: 'revisar', campo: field, de: to, para: from },
+  } as OperationsModule.Operation;
+}
+
+/** The snapshot of one version, as `GET /v1/graph-versions/:id` returns it. */
+async function readSnapshot(address: string, versionId: string): Promise<GraphDocument> {
+  const response = await fetch(`${address}/v1/graph-versions/${encodeURIComponent(versionId)}`);
+  const body = await jsonBody<{ grafo_versao: { snapshot: GraphDocument } }>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  return body.grafo_versao.snapshot;
+}
+
+test('t166 AT — applying a model change writes a new version and moves the pointer', async (t) => {
+  const address = await startApp(t);
+  const { hashSnapshot } = await loadHash();
+  const { applyOperations } = await loadOperations();
+
+  const { document, graph, version } = await registerBase(address);
+  assert.equal(requireNode(document, 'revisar').model, undefined, 'the fixture declares no model');
+
+  // `null` and not `undefined` for the before-value: JSON has no `undefined`,
+  // so a proposal that says "this node declared nothing" has to say it in a
+  // word the wire can carry — and `alterar_campo_no` demands `de` be present.
+  const operations = [swapNodeField('model', null, 'claude-haiku-4-5')];
+  const proposal = await createProposal(address, graph.id, version.id, operations);
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+
+  const expected = hashSnapshot(applyOperations(document, operations));
+  assert.ok(body.grafo_versao !== undefined);
+  assert.equal(body.grafo_versao.id, expected, 'the new version is the hash of the resulting document');
+  assert.notEqual(body.grafo_versao.id, version.id, 'a field swap is a NEW version, never an edit');
+  assert.equal(body.grafo_versao.versao_pai, version.id);
+
+  assert.equal(
+    (await getGraph(address, graph.id)).versao_corrente_id,
+    expected,
+    'the pointer has to have moved',
+  );
+
+  // The new snapshot carries the model...
+  assert.equal(requireNode(await readSnapshot(address, expected), 'revisar').model, 'claude-haiku-4-5');
+  // ...and the previous one is still readable, still without it (D15).
+  assert.equal(requireNode(await readSnapshot(address, version.id), 'revisar').model, undefined);
+});
+
+test('t166 AT — applying an engine change writes a new version and moves the pointer', async (t) => {
+  const address = await startApp(t);
+
+  const { document, graph, version } = await registerBase(address);
+  assert.equal(requireNode(document, 'revisar').engine, undefined, 'the fixture declares no engine');
+
+  const proposal = await createProposal(address, graph.id, version.id, [
+    swapNodeField('engine', null, 'codex'),
+  ]);
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.ok(body.grafo_versao !== undefined);
+
+  const current = (await getGraph(address, graph.id)).versao_corrente_id;
+  assert.equal(current, body.grafo_versao.id);
+  assert.ok(current !== null);
+  assert.equal(requireNode(await readSnapshot(address, current), 'revisar').engine, 'codex');
+  assert.equal(requireNode(await readSnapshot(address, version.id), 'revisar').engine, undefined);
+});

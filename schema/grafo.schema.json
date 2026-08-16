@@ -149,6 +149,12 @@
           "description": "Qual engine executa este nó (t141). Opcional: ausente significa o engine default do runner (claude-code), resolvido na hora do despacho e nunca na validação — é por isso que todo grafo escrito antes deste campo continua válido sem tocar em nada. Texto livre de propósito, como role e skill_ref.id: quem recusa um engine desconhecido é o runner, com UnknownEngineError, e não um enum fechado que precisaria de edição de schema a cada adapter novo.",
           "examples": ["claude-code", "codex"]
         },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Qual modelo do engine executa este nó (t166). Opcional: ausente significa o default do próprio engine — nenhuma flag de modelo é montada, e o argv sai idêntico ao de antes deste campo existir. Texto livre de propósito, pela mesma razão que engine: um enum fechado obrigaria a editar o schema a cada modelo novo, e quem recusa um id desconhecido é a CLI do engine, na abertura da sessão. O catálogo que a API publica é descoberta, não validação.",
+          "examples": ["claude-haiku-4-5", "gpt-5.6-luna"]
+        },
         "escalation_policy": {
           "enum": ["always", "on_uncertainty", "never"],
           "description": "Quando este nó chama gente (t167). always: escala antes de fechar o nó, mesmo achando que sabe a resposta. on_uncertainty: escala quando trava — o comportamento que todo nó sempre teve. never: não existe a quem perguntar aqui; travar é falha do contrato do nó, e o runner bloqueia o trabalho com motivo em vez de abrir pergunta. Opcional: ausente significa on_uncertainty, resolvido na hora do despacho e nunca na validação, exatamente como engine. Enum fechado, ao contrário de engine, porque aqui os três valores SÃO o vocabulário: um quarto valor não é adapter novo, é erro de quem escreveu.",

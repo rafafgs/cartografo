@@ -11,6 +11,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerAuth } from './auth.ts';
 import type { Database } from './db/connection.ts';
+import { registerEngines } from './routes/engines.ts';
 import { registerEvents } from './routes/events.ts';
 import { registerExecutions } from './routes/executions.ts';
 import { registerGraphs } from './routes/graphs.ts';
@@ -78,6 +79,7 @@ export function createApp(options: AppOptions): FastifyInstance {
       scope.register(async (inner) => registerInputRequests(inner, options.db));
       scope.register(async (inner) => registerExecutions(inner, options.db));
       scope.register(async (inner) => registerRunners(inner, options.db));
+      scope.register(async (inner) => registerEngines(inner, options.db));
       scope.register(async (inner) =>
         registerLeases(inner, options.db, { leaseCeilings: options.leaseCeilings }),
       );

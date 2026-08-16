@@ -41,16 +41,29 @@ import type { GraphEdge, GraphDocument, GraphNode } from './graph.ts';
 /**
  * Node fields that `alterar_campo_no` is allowed to swap.
  *
+ * `engine` and `model` joined the list in t166, and the reason is the same for
+ * both: they are execution POLICY carried as graph data, so changing one has to
+ * be a versioned mutation with evidence and a way back (D15) — not a flag
+ * somebody edits on a runner, where nothing records what ran under which
+ * decision. `engine` had been a node field since t141 and was never proposable;
+ * that was an omission, not a boundary.
+ *
  * `escalation_policy` and `escalation_recipient` are here since t167, and being
  * here is the ENTIRE mechanism by which a node's escalation policy is versioned:
  * changing one produces a new `grafo_versao` and re-validates the whole
  * document, because that is what applying a proposal already does for every
  * other field on this list. A mutation path of their own would have been a
  * second way to change a node, with its own rules about what gets versioned.
+ *
+ * What stays out is unchanged and deliberate: `id` and `node_type` are the
+ * node's identity, and swapping either is an operation of its own — edges,
+ * telemetry and past proposals all point at an id.
  */
 export const CHANGEABLE_FIELDS = Object.freeze([
   'role',
   'description',
+  'engine',
+  'model',
   'skill_ref',
   'contract',
   'escalation_policy',
@@ -61,6 +74,8 @@ export const CHANGEABLE_FIELDS = Object.freeze([
 export type ChangeableField =
   | 'role'
   | 'description'
+  | 'engine'
+  | 'model'
   | 'skill_ref'
   | 'contract'
   | 'escalation_policy'

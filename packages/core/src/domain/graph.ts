@@ -51,6 +51,29 @@ export interface GraphNode {
   role: string;
   node_type: string;
   description?: string;
+  /** Which engine runs this node (t141). Absent = the runner's default. */
+  engine?: string;
+  /**
+   * Which model of that engine runs this node (t166). Absent = the engine's
+   * own default, and no model flag is assembled at all.
+   *
+   * Named here even though the open drawer below would already carry it: the
+   * field is PROPOSABLE (`CHANGEABLE_FIELDS`), and a field a proposal can swap
+   * is a field this package has an opinion about.
+   */
+  model?: string;
+  /**
+   * When this node calls a human (t167). Absent = `on_uncertainty`, which is
+   * what every node did before the field existed.
+   *
+   * Named here for the same reason `model` is, and typed `string` rather than
+   * the closed union for the same reason too: what refuses a fourth value is
+   * `schema/grafo.schema.json`, on the way in, and this package reads snapshots
+   * that were already validated by it.
+   */
+  escalation_policy?: string;
+  /** Who should be called when this node escalates (t167). Free text. */
+  escalation_recipient?: string;
   skill_ref: unknown;
   contract: unknown;
   [key: string]: unknown;

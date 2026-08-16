@@ -83,6 +83,42 @@ export interface SessionSpec {
   readonly silenceSeconds?: number;
 
   /**
+   * An earlier session's `engineRef`, to be continued instead of started
+   * fresh — the same opaque string `onEngineRef` reported for it.
+   *
+   * Absent (or empty) means a brand-new session, which is the behaviour of
+   * every session opened before this field existed. Present means the caller
+   * is asking for that session's context back, and an adapter that cannot do
+   * it has to REFUSE before opening — same honesty rule as `permissions`
+   * below. Losing this field silently is the one failure nothing downstream
+   * can detect: a session that resumed nothing looks exactly like a session
+   * that resumed.
+   *
+   * What continuing requires beyond the ref is the engine's business, and it
+   * is not always only the ref. Measured on `claude-code` (t173, and it
+   * contradicted what the ficha assumed): there the ref is enough, and
+   * `workingDir` does not participate — the same ref recalled the same context
+   * from a directory that session had never seen.
+   */
+  readonly resumeFrom?: string;
+
+  /**
+   * Which model of the engine runs this session, when the node pinned one.
+   *
+   * Absent means the ENGINE'S OWN default: no model flag is assembled at all,
+   * and the argv is byte-identical to what it was before this field existed.
+   * That is the same discipline `silenceSeconds` and `permissions` follow, and
+   * it is the only honest default — this layer has no way to know which models
+   * a given installation has access to, and inventing one here would put a
+   * choice nobody made into the telemetry.
+   *
+   * An unknown or mistyped identifier is refused by the engine itself, at
+   * session start, as an ordinary `SessionStartError` or a failed session. The
+   * catalog `listModels()` publishes is advisory discovery, never a gate.
+   */
+  readonly model?: string;
+
+  /**
    * Opaque additions to the engine process's environment. Deliberately
    * untyped from this layer's point of view: what the keys mean is the
    * engine's business.
@@ -143,9 +179,10 @@ export interface SessionPermissions {
  * that builds the object literally. Absent is `false` — the safe direction to
  * be wrong in.
  *
- * None of these flags has a consumer in v0; the three name exactly the
- * capabilities deferred in "Fora de escopo". Declaring the fourth, fifth and
- * sixth before anybody reads them is how a format rots.
+ * `hasResume` got its consumer in t173 (`SessionSpec.resumeFrom`); the other
+ * two still name capabilities deferred in "Fora de escopo", and stay undeclared
+ * until something reads them. Declaring the fourth, fifth and sixth before
+ * anybody reads them is how a format rots.
  */
 export interface EngineCapabilities {
   /** Continues an earlier session from an `engineRef`. */
@@ -221,9 +258,10 @@ export interface SessionListener {
    * The identifier the engine itself gave the session, as soon as it is known.
    *
    * Optional and an opaque string: every CLI calls this something else and
-   * none guarantees the format. Captured today only for telemetry and audit —
-   * resume is out of scope. It exists now because it is cheap to add before
-   * there is a published adapter and expensive to bolt on afterwards.
+   * none guarantees the format. It was captured for telemetry and audit before
+   * anything could use it, "cheap to add before there is a published adapter
+   * and expensive to bolt on afterwards" — and t173 cashed that in: this is the
+   * value that goes back into `SessionSpec.resumeFrom` to continue a session.
    */
   onEngineRef?(engineRef: string): void;
 
@@ -244,6 +282,39 @@ export interface SessionListener {
     exitCode: number | null,
     detail?: SessionFinishDetail,
   ): void;
+}
+
+/**
+ * One model an engine offers.
+ *
+ * `id` is the identifier that goes after the engine's model flag — the string
+ * a node's `model` has to match — and nothing else: not a display name, not a
+ * family alias the CLI happens to resolve. `label` is what a person reads, when
+ * the adapter has one to give.
+ *
+ * `origin` is the field that keeps the catalog honest. `cli` means the binary
+ * was asked and answered; `catalog` means the adapter is reciting a list it
+ * carries. Collapsing the two would make "these are the models" a claim nobody
+ * can weigh, which is the same demotion `CliProbe.authenticated` already took —
+ * and both adapters answer `catalog` today, because neither CLI exposes a
+ * listing surface (measured, not assumed).
+ */
+export interface EngineModel {
+  readonly id: string;
+  readonly label?: string;
+  readonly origin: 'cli' | 'catalog';
+}
+
+/**
+ * Everything an engine says it can run, at one instant.
+ *
+ * `resolvedAt` is not decoration: a static catalog and a CLI answer age
+ * differently, and a consumer with no timestamp cannot tell a fresh report from
+ * one a runner left behind before it died.
+ */
+export interface ModelCatalog {
+  readonly models: readonly EngineModel[];
+  readonly resolvedAt: string;
 }
 
 /** Result of the CLI preflight, consumed by the install wizard. */
@@ -300,6 +371,21 @@ export interface EngineAdapter {
 
   /** Preflight without spending quota. */
   verifyCli(): Promise<CliProbe>;
+
+  /**
+   * Which models this engine can run, as far as the adapter can tell.
+   *
+   * The METHOD is optional, not just its fields, and that is the compatibility
+   * claim: a third-party adapter written before this existed keeps compiling,
+   * which is what "growth of a published format is additive" has to mean once
+   * the interface is frozen at v1. A consumer checks for the method before
+   * calling it and skips the adapter that does not have one.
+   *
+   * Discovery, never enforcement: nothing validates a node's declared model
+   * against this list, and an engine whose catalog is stale still refuses a
+   * bad identifier itself, where the truth actually lives.
+   */
+  listModels?(): Promise<ModelCatalog>;
 }
 
 export class EngineError extends Error {}

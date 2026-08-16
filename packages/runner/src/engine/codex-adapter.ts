@@ -53,6 +53,8 @@ import {
   type CliProbe,
   type EngineAdapter,
   type EngineCapabilities,
+  type EngineModel,
+  type ModelCatalog,
   type SessionFinishDetail,
   type SessionListener,
   type SessionSpec,
@@ -97,6 +99,46 @@ export const CODEX_CREDENTIAL_VARIABLES = [
   'CODEX_API_KEY',
   'CODEX_ACCESS_TOKEN',
 ] as const;
+
+/**
+ * Refusal of a session asked to continue an earlier one (t173).
+ *
+ * Stable and prefix-shaped for the same reason as the `claude-code` adapter's
+ * permission refusal: it is what lets a caller tell "the session did not come
+ * up" from "the session was never going to come up, and here is the field to
+ * fix".
+ */
+export const RESUME_REFUSAL_MESSAGE =
+  'session continuation unsupported: the codex adapter does not implement ' +
+  'SessionSpec.resumeFrom — `codex exec resume` is a subcommand, not a flag, ' +
+  'and wiring it is a ficha of its own; open the session without resumeFrom';
+
+/**
+ * The models this adapter knows the `codex` CLI can be pointed at (t166).
+ *
+ * Static, and `origin: 'catalog'` on every entry, for the same measured reason
+ * the first adapter's list is: `codex exec --help` documents `-m, --model
+ * <MODEL>` — which SETS a model — and neither `codex --help` nor the exec
+ * subcommand exposes anything that LISTS them. The CLI-query branch of
+ * `listModels()` is written for a future engine that has one.
+ *
+ * Not invented: these are the presets the distributed binary itself carries,
+ * read out of `codex-cli 0.147.0` — the four its own model list marks
+ * `visibility: "list"`, in the priority order it gives them, with the display
+ * names it ships. The one it hides (`gpt-5.4`) is left out for the same reason
+ * the CLI hides it. That is why the labels look the way they do rather than
+ * following any convention of ours.
+ *
+ * The list ages like the other one, and nothing validates against it: an id
+ * this catalog never heard of is refused by the CLI at session start, which is
+ * where the truth about a given account's access actually lives.
+ */
+export const CODEX_MODELS: readonly EngineModel[] = [
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', origin: 'catalog' },
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', origin: 'catalog' },
+  { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna', origin: 'catalog' },
+  { id: 'gpt-5.5', label: 'GPT-5.5', origin: 'catalog' },
+];
 
 export interface CodexAdapterOptions {
   /** Test seam: swaps the real binary for the kit's fake engine. */
@@ -198,6 +240,16 @@ export class CodexAdapter implements EngineAdapter {
   }
 
   async startSession(spec: SessionSpec, listener: SessionListener): Promise<string> {
+    // BEFORE the spawn, and for the same reason the `claude-code` adapter
+    // refuses a policy it cannot express: an engine that cannot do what was
+    // asked has to say so before opening, never open a session that quietly
+    // does less. Silently dropping `resumeFrom` is the worst version of that —
+    // a session that continued nothing is indistinguishable, from the outside,
+    // from one that continued everything.
+    if (spec.resumeFrom) {
+      throw new SessionStartError(RESUME_REFUSAL_MESSAGE);
+    }
+
     const command = this.#commandBuilder(spec);
 
     let child: ChildProcess;
@@ -317,12 +369,14 @@ export class CodexAdapter implements EngineAdapter {
    *
    * `hasResume` stays ABSENT even though `codex exec resume [SESSION_ID]` exists
    * for real and the feasibility table suggests declaring it
-   * (`engine-adapter.md:415`). The table is exploratory analysis; the decision
-   * that rules is "Fora de escopo (v0)" (`:487-491`), which lists resume
-   * explicitly outside. Lighting up a field with no consumer rots a published
-   * format exactly the way inventing one does — "declaring the fourth, fifth and
-   * sixth before anybody reads them" (`engine-adapter.md:160-165`) — and the
-   * day resume lands, this is one line and a kit case, not a migration.
+   * (`engine-adapter.md:415`). t173 gave the flag a consumer and the
+   * `claude-code` adapter lit it up; this one did not, and the reason is not
+   * scope any more, it is mechanism: `resume` there is a SUBCOMMAND that
+   * replaces `exec` in the argv, not a flag added to it, so it rewrites the
+   * command of an adapter already certified in C1–C10 and it is a ficha of its
+   * own. Until then the honest posture is the one `startSession` takes — refuse
+   * `resumeFrom` at the door — which is exactly what C10 certifies for an
+   * engine on this side of the split.
    */
   capabilities(): EngineCapabilities {
     return { hasStructuredOutput: true };
@@ -335,6 +389,16 @@ export class CodexAdapter implements EngineAdapter {
       version,
       authenticated: this.#looksAuthenticated(),
     };
+  }
+
+  /**
+   * The static catalog, stamped now (t166).
+   *
+   * `async` with nothing to await, on the same terms as the first adapter: the
+   * promise belongs to the interface, not to this implementation's shortcut.
+   */
+  async listModels(): Promise<ModelCatalog> {
+    return { models: CODEX_MODELS, resolvedAt: new Date().toISOString() };
   }
 
   /**

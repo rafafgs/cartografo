@@ -16,17 +16,20 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
+import net from 'node:net';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import test from 'node:test';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import type * as ProxyModule from '../src/proxy.ts';
+import type * as RouterModule from '../src/router.ts';
 import type * as ScreenServerModule from '../src/server.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const SERVER_PATH = path.join(PACKAGE_ROOT, 'src', 'server.ts');
 const PROXY_PATH = path.join(PACKAGE_ROOT, 'src', 'proxy.ts');
+const ROUTER_PATH = path.join(PACKAGE_ROOT, 'src', 'router.ts');
 
 /** The command that actually ships — what `npm start` and `npx` both run. */
 const BIN_PATH = path.join(PACKAGE_ROOT, 'bin', 'tela.mjs');
@@ -38,6 +41,7 @@ interface Cleanup {
 
 let cache: typeof ScreenServerModule | null = null;
 let proxyCache: typeof ProxyModule | null = null;
+let routerCache: typeof RouterModule | null = null;
 
 async function loadServer(): Promise<typeof ScreenServerModule> {
   assert.ok(existsSync(SERVER_PATH), 'artifact does not exist yet: packages/tela/src/server.ts');
@@ -53,6 +57,14 @@ async function loadProxy(): Promise<typeof ProxyModule> {
     new URL('../src/proxy.ts', import.meta.url).href
   )) as typeof ProxyModule;
   return proxyCache;
+}
+
+async function loadRouter(): Promise<typeof RouterModule> {
+  assert.ok(existsSync(ROUTER_PATH), 'artifact does not exist yet: packages/tela/src/router.ts');
+  routerCache ??= (await import(
+    new URL('../src/router.ts', import.meta.url).href
+  )) as typeof RouterModule;
+  return routerCache;
 }
 
 /** A port nothing is listening on: reserved by the OS, then released. */
@@ -524,6 +536,159 @@ test('t199 AT — a bad --url and a bad CARTOGRAFO_TELA_PORT both fail in Englis
   assert.notEqual(badPort.code, 0);
   assert.match(badPort.stderr, /CARTOGRAFO_TELA_PORT invalid/);
   assert.doesNotMatch(badPort.stderr, /inválida|esperado um inteiro/);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t206 — the ceiling on what the screen will hold for somebody else's API.    */
+/*                                                                            */
+/* The proxy buffers a `/v1/*` body whole before it forwards it, because it    */
+/* forwards bytes and not a stream. Without a ceiling, anything that reaches   */
+/* this loopback port decides how much memory the screen spends, and the       */
+/* control plane never even learns it was asked. The ceiling matches Fastify's */
+/* own default (1 MiB), so it refuses nothing the core would have accepted     */
+/* through a door this screen's page can reach.                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Sends a `/v1/*` POST of `size` bytes over a raw socket and waits for the end.
+ *
+ * Raw, and not `fetch`, because the assertion is about the CONNECTION: `fetch`
+ * hands back a response and says nothing about whether the socket under it
+ * survived, which is the whole of what `connection: close` promises.
+ *
+ * The body goes out in two writes with a pause between them so that the byte
+ * crossing the ceiling is the last one on the wire. That is not cosmetic: the
+ * screen answers and hangs up without draining what it did not read, and a
+ * socket closed with bytes still unread is reset rather than finished — which
+ * on a much bigger body can throw away the very answer it is sending.
+ *
+ * @param port Screen port.
+ * @param size Body size in bytes, announced honestly in `Content-Length`.
+ * @returns Everything read back, and whether the screen hung up.
+ */
+async function postRawBody(
+  port: number,
+  size: number,
+  timeoutMs = 5_000,
+): Promise<{ data: string; closed: boolean }> {
+  const socket = net.connect(port, '127.0.0.1');
+  let data = '';
+
+  await new Promise<void>((resolve, reject) => {
+    socket.once('connect', () => {
+      socket.removeListener('error', reject);
+      resolve();
+    });
+    socket.once('error', reject);
+  });
+
+  const ended = new Promise<boolean>((resolve) => {
+    const finish = (closed: boolean): void => {
+      clearTimeout(timer);
+      resolve(closed);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    socket.on('data', (chunk: Buffer) => {
+      data += chunk.toString('utf8');
+    });
+    socket.on('close', () => finish(true));
+    // Writing into a socket the screen already hung up on is the expected end of
+    // this exchange, not a failure of it.
+    socket.on('error', () => finish(true));
+  });
+
+  socket.write(
+    [
+      'POST /v1/algum-caminho HTTP/1.1',
+      `Host: 127.0.0.1:${port}`,
+      'Content-Type: application/json',
+      `Content-Length: ${size}`,
+      '',
+      '',
+    ].join('\r\n'),
+  );
+  socket.write('a'.repeat(size - 1));
+  await wait(150);
+  socket.write('a');
+
+  const closed = await ended;
+  socket.destroy();
+  return { data, closed };
+}
+
+test('AT6 — a /v1 body past PROXY_BODY_LIMIT is refused with 413, and never forwarded', async (t) => {
+  const { PROXY_BODY_LIMIT } = await loadRouter();
+  assert.equal(PROXY_BODY_LIMIT, 1_048_576, 'the ceiling is Fastify’s own default, in bytes');
+
+  const upstream = await startFakeUpstream(t, (_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{"o upstream nunca deveria ver isto":true}');
+  });
+
+  const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
+
+  const refused = await fetch(`${screen.url}/v1/algum-caminho`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: 'a'.repeat(PROXY_BODY_LIMIT + 1),
+  });
+
+  assert.equal(refused.status, 413);
+  assert.match(refused.headers.get('content-type') ?? '', /^application\/json/);
+  assert.equal(
+    refused.headers.get('connection'),
+    'close',
+    'what was not read must not be parsed as the next request on a kept-alive socket',
+  );
+
+  const body = (await refused.json()) as { erro: string; mensagem: string };
+  assert.equal(body.erro, 'corpo_grande_demais', 'the code is Portuguese, like its two siblings');
+  assert.ok(
+    body.mensagem.includes(String(PROXY_BODY_LIMIT)),
+    `the message has to name the ceiling that was crossed, got: ${body.mensagem}`,
+  );
+  assert.doesNotMatch(
+    body.mensagem,
+    /[áâãàçéêíóôõú]/i,
+    'this body is API plumbing, and t180 keeps that in English',
+  );
+
+  // The header above is a promise about the connection; this is the connection
+  // keeping it.
+  const raw = await postRawBody(screen.port, PROXY_BODY_LIMIT + 1);
+  assert.match(raw.data, /^HTTP\/1\.1 413 /);
+  assert.ok(raw.closed, 'the screen hangs up instead of holding a socket it stopped reading');
+
+  assert.deepEqual(upstream.requests, [], 'a body the screen refuses never reaches the control plane');
+});
+
+test('AT7 — a /v1 body of exactly PROXY_BODY_LIMIT bytes still goes through, whole', async (t) => {
+  const { PROXY_BODY_LIMIT } = await loadRouter();
+
+  const upstream = await startFakeUpstream(t, (_request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end('{"aceito":true}');
+  });
+
+  const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
+
+  const body = 'a'.repeat(PROXY_BODY_LIMIT);
+  const accepted = await fetch(`${screen.url}/v1/algum-caminho`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body,
+  });
+
+  assert.equal(accepted.status, 200);
+  assert.equal(await accepted.text(), '{"aceito":true}');
+
+  assert.equal(upstream.requests.length, 1, 'the body at the ceiling is forwarded, not refused');
+  assert.equal(
+    upstream.requests[0].body.length,
+    PROXY_BODY_LIMIT,
+    'the ceiling is a ceiling, not a ceiling minus one',
+  );
+  assert.equal(upstream.requests[0].body, body, 'and it crosses whole, not truncated to the ceiling');
 });
 
 test('t199 AT — the surviving resolver takes the explicit override as its first choice', async () => {

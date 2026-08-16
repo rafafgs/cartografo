@@ -32,6 +32,10 @@ const FACTORY_CLASS = 'desenvolvimento-de-software';
 const FACTORY_GRAPH = path.join(FACTORY_BUNDLE, 'grafo.json');
 const INVALID_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-invalido-no-inalcancavel.json');
 
+/** The fixture that declares hooks, and the class it registers as (t194). */
+const HOOKS_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-com-ganchos.json');
+const HOOKS_CLASS = 'nota-curta-com-ganchos';
+
 /**
  * The five manifests of the factory bundle, in the order `GET /v1/skills`
  * returns them (t135, FR4).
@@ -270,6 +274,72 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
 
   const refused = await fetch(`${controlPlane.url}/v1/skills/refinar-ticket`);
   assert.equal(refused.status, 404, 'the refused manifest cannot have been registered');
+});
+
+/*
+ * t194 — the leak check at the FILE boundary.
+ *
+ * `export` writes the snapshot byte for byte, and `scripts/publish-atlas-bundle.mjs`
+ * copies that same file into a git-tracked atlas that D7 says goes public. So the
+ * question "does a hook secret reach disk?" is answered once, here: the value is
+ * registered through `PUT /v1/hook-secrets/:nome`, the document that goes in
+ * carries only the name, and the written file is grepped for the value.
+ *
+ * The atlas path needs no test of its own precisely because it copies this file
+ * without reading it — a guarantee about `saida.grafo.json` is a guarantee about
+ * every artifact built out of it.
+ */
+test('t194 — `cartografo export` writes the reference and never the secret', { timeout: 180_000 }, async (t) => {
+  const base = temporaryArea(t);
+  const controlPlane = await startControlPlane(t, {
+    databasePath: path.join(base, 'cartografo.db'),
+  });
+
+  const document = JSON.parse(readFileSync(HOOKS_GRAPH, 'utf8')) as {
+    hooks: Array<{ destination: { secret_ref: string } }>;
+  };
+  assert.ok(document.hooks.length > 0, 'the fixture has to declare hooks');
+
+  const registered = new Map<string, string>();
+  for (const hook of document.hooks) {
+    const reference = hook.destination.secret_ref;
+    assert.equal(typeof reference, 'string', 'the document carries a reference, never a value');
+    const value = `chave-hmac-de-${reference}`;
+    registered.set(reference, value);
+
+    const response = await fetch(`${controlPlane.url}/v1/hook-secrets/${reference}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ valor: value }),
+    });
+    assert.ok(
+      response.status === 201 || response.status === 200,
+      `registering ${reference} answered ${response.status}`,
+    );
+  }
+
+  const imported = await runCli(['import', HOOKS_GRAPH, '--url', controlPlane.url], {
+    token: controlPlane.token,
+  });
+  assert.equal(imported.code, 0, `stdout:\n${imported.stdout}\nstderr:\n${imported.stderr}`);
+
+  const exportedFile = path.join(base, 'ganchos.grafo.json');
+  const exported = await runCli(
+    ['export', HOOKS_CLASS, '--out', exportedFile, '--url', controlPlane.url],
+    { token: controlPlane.token },
+  );
+  assert.equal(exported.code, 0, `stdout:\n${exported.stdout}\nstderr:\n${exported.stderr}`);
+
+  const text = readFileSync(exportedFile, 'utf8');
+  assert.doesNotMatch(text, /"secret"\s*:/, 'the old plaintext field cannot survive a round trip');
+  for (const [reference, value] of registered) {
+    assert.ok(!text.includes(value), `the exported file leaked the secret of "${reference}"`);
+    assert.match(
+      text,
+      new RegExp(`"secret_ref":\\s*"${reference}"`),
+      `the exported file still names "${reference}", which is what the enqueue resolves`,
+    );
+  }
 });
 
 test('AT7 — importing with no control plane running points at `cartografo up`, with no stack trace', { timeout: 60_000 }, async () => {

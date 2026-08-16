@@ -47,14 +47,28 @@ const T169_ARTIFACTS = Object.freeze({
   dispatcher: 'src/hooks/dispatcher.ts',
 });
 
+/** Where the key itself lives since t194 — the document only names it. */
+const T194_ARTIFACTS = Object.freeze({
+  migration: 'migrations/0018_segredo_gancho.sql',
+  repository: 'src/repositories/hook-secrets.ts',
+});
+
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
 
 /** Header the delivery carries; HTTP header names are case-insensitive. */
 const SIGNATURE_HEADER = 'x-cartografo-assinatura';
 
-/** The secret the graph's author chose — the server never generates one. */
+/**
+ * The HMAC key itself — registered in `segredo_gancho`, never in the document.
+ *
+ * The signature assertion below is unchanged by t194 and that is the point: what
+ * moved is where the key is READ from, not what it signs.
+ */
 const SECRET = 'segredo-declarado-no-grafo-169';
+
+/** The name the document carries in `destination.secret_ref` (t194). */
+const SECRET_REF = 'gancho-do-grafo-169';
 
 /** Instant every injected clock starts from. */
 const START = '2026-08-16T12:00:00.000Z';
@@ -93,7 +107,12 @@ interface DeclaredHook {
   id: string;
   trigger: 'node_entered' | 'node_blocked';
   node_id: string;
-  destination: { type: 'webhook'; url: string; secret: string };
+  destination: { type: 'webhook'; url: string; secret_ref: string };
+}
+
+/** The slice of `src/repositories/hook-secrets.ts` this suite writes through. */
+interface HookSecretsModule {
+  setHookSecret: (db: Database, data: { nome: string; valor: string }) => unknown;
 }
 
 /** One row of `entrega_gancho`, read straight from the table. */
@@ -129,9 +148,26 @@ function graphWith(hooks: DeclaredHook[]): GraphDocument {
   return { ...document, hooks } as GraphDocument;
 }
 
-/** A webhook-destination hook, spelled the way the schema declares it. */
-function hook(id: string, trigger: DeclaredHook['trigger'], nodeId: string, url: string): DeclaredHook {
-  return { id, trigger, node_id: nodeId, destination: { type: 'webhook', url, secret: SECRET } };
+/**
+ * A webhook-destination hook, spelled the way the schema declares it.
+ *
+ * `secretRef` defaults to the one name `startDispatcher` registers, so every
+ * test that does not care about resolution gets a hook that resolves; passing
+ * another name is how the "reference points at nothing" case is built.
+ */
+function hook(
+  id: string,
+  trigger: DeclaredHook['trigger'],
+  nodeId: string,
+  url: string,
+  secretRef: string = SECRET_REF,
+): DeclaredHook {
+  return {
+    id,
+    trigger,
+    node_id: nodeId,
+    destination: { type: 'webhook', url, secret_ref: secretRef },
+  };
 }
 
 /**
@@ -149,15 +185,24 @@ async function startDispatcher(
     T169_ARTIFACTS.migration,
     T169_ARTIFACTS.repository,
     T169_ARTIFACTS.dispatcher,
+    T194_ARTIFACTS.migration,
+    T194_ARTIFACTS.repository,
   );
   const { registerHookDispatcher } = (await import(
     '../src/hooks/dispatcher.ts'
   )) as HookDispatcherModule;
+  const { setHookSecret } = (await import(
+    '../src/repositories/hook-secrets.ts'
+  )) as HookSecretsModule;
 
   const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t169d-'));
   const db = openDatabase(path.join(base, 'cartografo.db'));
   applyPragmas(db);
   migrate(db, MIGRATIONS_DIR);
+
+  // The deployment's half of the contract (t194): the document names the key,
+  // this registers it. Without it every hook below would resolve to nothing.
+  setHookSecret(db, { nome: SECRET_REF, valor: SECRET });
 
   const calls: DeliveryCall[] = [];
   const clock = { value: START };
@@ -406,4 +451,43 @@ test('AT12 — a dead hook does not hold up another hook of the same batch', asy
   assert.ok(broken !== undefined);
   assert.equal(broken.status, 'pendente', 'the dead one keeps its own failure');
   assert.ok(broken.tentativas >= 1);
+});
+
+test('t194 — a secret_ref that resolves to nothing enqueues nothing, and is silent about it', async (t) => {
+  const ctx = await startDispatcher(t, { respond: async () => ({ status: 200 }) });
+
+  const job = jobOn(ctx.db, [
+    hook(
+      'avisar-sem-chave',
+      'node_entered',
+      'revisar',
+      'https://exemplo.invalid/sem-chave',
+      'nome-que-ninguem-registrou',
+    ),
+    hook('avisar-vivo', 'node_entered', 'revisar', 'https://exemplo.invalid/vivo'),
+  ]);
+  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
+
+  await waitFor(() => ctx.calls.length >= 1, 'the resolvable hook to be POSTed');
+  await settle();
+
+  // Zero rows and zero error, the same answer the repository already gives for a
+  // job with no version, a version that does not resolve and a snapshot with no
+  // `hooks` — a reference the deployment never registered is the same kind of
+  // "nothing to look this up in".
+  assert.deepEqual(
+    deliveries(ctx.db).map((row) => row.gancho_id),
+    ['avisar-vivo'],
+    'a hook with no live secret produces no delivery row at all',
+  );
+  assert.deepEqual(
+    ctx.calls.map((call) => call.url),
+    ['https://exemplo.invalid/vivo'],
+    'and the healthy hook of the same batch goes out untouched',
+  );
+  assert.deepEqual(
+    failureEvents(ctx.db),
+    [],
+    'observability for an unresolvable reference is a separate ticket, on purpose',
+  );
 });

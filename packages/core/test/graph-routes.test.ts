@@ -356,3 +356,74 @@ test('t180 — the register guards refuse in English, quoting the class', async 
     'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
   );
 });
+
+/*
+ * t194 — the leak check at the API boundary.
+ *
+ * A graph version is content-addressed and served whole, so anything the
+ * document carries is readable by every client that can read the version. This
+ * is that property turned into a test: the hook's key is registered through
+ * `PUT /v1/hook-secrets/:nome`, the document carries only the NAME, and the two
+ * routes that serve version data are grepped for the raw value.
+ *
+ * The assertion is on the raw JSON text and not on a parsed field, for the same
+ * reason `webhooks-routes.test.ts` does it: a nested copy would slip past a
+ * lookup by key, and "the secret is nowhere in this response" is the claim.
+ */
+test('t194 — a hook secret never comes back out of the version routes', async (t) => {
+  const address = await startApp(t);
+  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-com-ganchos.json'));
+
+  const hooks = document.hooks as Array<{ destination: { secret_ref: string } }>;
+  assert.ok(hooks.length > 0, 'the fixture has to declare hooks');
+
+  const registered = new Map<string, string>();
+  for (const hook of hooks) {
+    const reference = hook.destination.secret_ref;
+    assert.equal(typeof reference, 'string', 'the document carries a reference, never a value');
+    const value = `chave-hmac-de-${reference}`;
+    registered.set(reference, value);
+
+    const response = await fetch(`${address}/v1/hook-secrets/${reference}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ valor: value }),
+    });
+    assert.ok(
+      response.status === 201 || response.status === 200,
+      `registering ${reference} answered ${response.status}`,
+    );
+  }
+
+  const creation = await post(address, '/v1/graphs', document);
+  assert.equal(creation.status, 201, JSON.stringify(await jsonBody(creation)));
+  const { grafo_versao: version } = await jsonBody<{ grafo_versao: VersionRow }>(creation);
+
+  const listed = await jsonBody(
+    await fetch(`${address}/v1/graphs/${String(document.problem_class)}/versions`),
+  );
+  const byId = await jsonBody<{ grafo_versao: VersionRow & { snapshot: unknown } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(version.id)}`),
+  );
+
+  for (const [what, body] of [
+    ['GET /v1/graphs/:id/versions', listed],
+    ['GET /v1/graph-versions/:id', byId],
+  ] as const) {
+    const text = JSON.stringify(body);
+    for (const [reference, value] of registered) {
+      assert.ok(!text.includes(value), `${what} leaked the secret of "${reference}": ${text}`);
+    }
+  }
+
+  // And the document that comes back is still the whole document: what was
+  // removed is the value, not the declaration.
+  const snapshot = JSON.stringify(byId.grafo_versao.snapshot);
+  assert.ok(!snapshot.includes('"secret"'), 'no snapshot carries a plaintext secret field');
+  for (const reference of registered.keys()) {
+    assert.ok(
+      snapshot.includes(`"secret_ref":"${reference}"`),
+      `the snapshot still names "${reference}", which is what the enqueue resolves`,
+    );
+  }
+});

@@ -7,6 +7,10 @@
  * one corrupted on purpose, to prove `/health` really checks.
  */
 
+import { readFileSync } from 'node:fs';
+
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerAuth } from './auth.ts';
@@ -34,6 +38,25 @@ import { registerWebhookDispatcher } from './webhooks/dispatcher.ts';
  */
 export const API_PREFIX = '/v1';
 
+/** Title the public document carries; it is the API's name to a third party. */
+export const OPENAPI_TITLE = 'cartografo control plane API';
+
+/**
+ * Version the document publishes, read from this package's own manifest (t171,
+ * FR1).
+ *
+ * Read, and not written down a second time: a hardcoded version drifts the
+ * moment somebody bumps the package, and a document that lies about which
+ * control plane it describes is worse than no document. `package.json` travels
+ * in every tarball regardless of the `files` list, so this resolves the same way
+ * installed as it does in the repository.
+ */
+const PACKAGE_VERSION = (
+  JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+    version: string;
+  }
+).version;
+
 /** Options of the app factory. */
 export interface AppOptions {
   /** Already open database; the app never opens its own. */
@@ -60,6 +83,43 @@ export function createApp(options: AppOptions): FastifyInstance {
   const app = Fastify({ logger: options.logger ?? false });
 
   registerHealth(app, options.db);
+
+  // The public contract of the API (t171), and D11's missing artifact: until it
+  // existed, the only way to know the shape of `/v1` was to read the route
+  // files. It is GENERATED and not written — `@fastify/swagger` listens on
+  // `onRoute`, so a route family added below cannot fail to appear in it, which
+  // is what makes "the document diverging from the code" a state the app cannot
+  // reach instead of a rule somebody has to keep.
+  //
+  // Both endpoints sit OUTSIDE the versioned scope, next to `/health` and
+  // unauthenticated for the same reason it is (`routes/health.ts`): a schema and
+  // a static page are not data, so the single-writer/credential boundary (D1,
+  // t124) has nothing to guard here.
+  //
+  // The plugin has to come BEFORE the versioned scope, and that order is
+  // load-bearing: `onRoute` fires as each route is DECLARED, so a hook installed
+  // afterwards sees nothing that already exists.
+  //
+  // The same rule is what keeps `/openapi.json` and `/health` out of the
+  // document, with no `schema.hide` anywhere: both are declared straight on this
+  // instance, which runs their `onRoute` hooks synchronously, while `register`
+  // is lazy and only loads the plugin when the app is readied. Their absence is
+  // not an oversight — `servers` below says every documented path hangs off
+  // `/v1`, and neither of those two does, so documenting them would publish an
+  // address no client can call.
+  app.get('/openapi.json', async () => app.swagger());
+
+  app.register(fastifySwagger, {
+    openapi: {
+      info: { title: OPENAPI_TITLE, version: PACKAGE_VERSION },
+      // The declared server IS the existing prefix, so `servers` + path is the
+      // address a client really calls, and the documented paths stay free of a
+      // version somebody would otherwise have to strip by hand.
+      servers: [{ url: API_PREFIX }],
+    },
+  });
+
+  app.register(fastifySwaggerUi, { routePrefix: '/docs' });
 
   // Versioned scope: every business route is born inside it, and so does the
   // credential gate (t124) — ONE `onRequest` hook, before the first route, is

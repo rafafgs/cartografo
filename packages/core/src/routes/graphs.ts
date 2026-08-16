@@ -132,6 +132,55 @@ function openProposal(
   return { proposta: proposal };
 }
 
+/**
+ * Contract of `POST /graphs` in the public document (t171, FR4).
+ *
+ * The body stays `{type: 'object'}` and nothing more, on purpose: the header of
+ * this file explains why no ajv schema is declared against
+ * `schema/grafo.schema.json`, and pointing a draft-07 compiler at a draft
+ * 2020-12 document would reopen exactly that. What goes in is "a JSON object";
+ * whether it is a GRAPH is `validateGraph`'s judgement and stays so.
+ *
+ * The four statuses are the ones the handler already answers — `201` with the
+ * lineage and its first version, `422` with the validator's report, `400` for a
+ * lineage that is not base, `409` for a class already registered. The refusal
+ * bodies are this file's own `{erro, mensagem, ...}` shape and not the
+ * `{error, details}` envelope of `routes/common.ts`, so they are declared here.
+ *
+ * Only `erro` and `mensagem` are typed, and only because every refusal below
+ * builds them as string literals. The rest travels through
+ * `additionalProperties: true`: a Fastify `response` schema serializes, so a
+ * declared type is a COERCION — `linhagem_tipo` echoes back whatever the body
+ * carried, and typing it would turn a number into a string on the wire (FR6).
+ */
+const REFUSAL_SCHEMA = {
+  type: 'object',
+  properties: {
+    erro: { type: 'string' },
+    mensagem: { type: 'string' },
+  },
+  required: ['erro'],
+  additionalProperties: true,
+} as const;
+
+const REGISTER_GRAPH_SCHEMA = {
+  body: { type: 'object', additionalProperties: true },
+  response: {
+    201: {
+      type: 'object',
+      properties: {
+        grafo: { type: 'object', additionalProperties: true },
+        grafo_versao: { type: 'object', additionalProperties: true },
+      },
+      required: ['grafo', 'grafo_versao'],
+      additionalProperties: true,
+    },
+    400: REFUSAL_SCHEMA,
+    409: REFUSAL_SCHEMA,
+    422: REFUSAL_SCHEMA,
+  },
+} as const;
+
 /** The document that holds today for a lineage, or `undefined` if the pointer is empty. */
 function current(db: Database, graph: GraphRow): GraphDocument | undefined {
   if (graph.versao_corrente_id === null) return undefined;
@@ -145,7 +194,7 @@ function current(db: Database, graph: GraphRow): GraphDocument | undefined {
  * @param db Already open database; the routes never open their own (D1).
  */
 export function registerGraphs(app: FastifyInstance, db: Database): void {
-  app.post('/graphs', async (request, reply) => {
+  app.post('/graphs', { schema: REGISTER_GRAPH_SCHEMA }, async (request, reply) => {
     const document = request.body;
 
     const report = validateGraph(document);

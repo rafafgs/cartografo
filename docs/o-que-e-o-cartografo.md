@@ -79,6 +79,18 @@ linha do tempo (agente trabalhando, esperando você, fila); cada pergunta tem
 contexto para responder sem abrir o repo; o histórico permite reconstruir
 qualquer execução.
 
+**Construir por cima, sem ler o código.** Tudo que a tela faz passa por uma API
+pública — e essa API se descreve sozinha: o servidor publica o documento
+`/openapi.json` e uma página navegável em `/docs`, gerados das rotas que ele
+realmente registra. Não é um documento escrito à mão que envelhece: rota nova
+aparece ali no mesmo instante em que passa a existir. Quem quiser integrar
+outra ferramenta aponta um cliente para o documento e já sabe o que existe. As
+chamadas do fluxo básico — registrar um mapa, criar um ticket, responder uma
+pergunta — já trazem o formato de entrada e saída escrito; as demais aparecem
+listadas e ganham contrato aos poucos. O documento e a página não pedem
+credencial, porque um esquema não é dado; tudo que é dado continua atrás do
+token.
+
 **O mapa melhora sozinho, com a sua mão no portão** *(em construção)*. Ao
 fim de cada rodada, avaliadores leem o histórico e depositam propostas na
 sua caixa de entrada, cada uma com o diff, a evidência e a métrica que

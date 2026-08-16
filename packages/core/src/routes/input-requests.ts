@@ -22,7 +22,44 @@ import {
   listInputRequests,
   answerInputRequest,
 } from '../repositories/input-request.ts';
-import { withValidation, routeId, notFound, conflict, type ErrorResponse } from './common.ts';
+import {
+  withValidation,
+  routeId,
+  notFound,
+  conflict,
+  ERROR_RESPONSE_SCHEMA,
+  OPEN_OBJECT_SCHEMA,
+  type ErrorResponse,
+} from './common.ts';
+
+/**
+ * Contract of `PATCH /input-requests/:id/answer` in the public document (t171,
+ * FR4).
+ *
+ * The four statuses are the ones the handler already answers: `200` with the
+ * projection, `404` from `notFound`, `409` from `refuseUnlessPending` and `400`
+ * from `withValidation`.
+ *
+ * `id` is declared a STRING, and that is not a slip: on the wire a path segment
+ * is text, and Fastify's ajv would happily coerce and then refuse one before
+ * `routeId` ever ran — turning this route's own `{error, details}` refusal into
+ * a differently-shaped `400` from the framework. Documenting the wire type
+ * keeps the route's validation the only one there is (FR5).
+ */
+const ANSWER_SCHEMA = {
+  params: {
+    type: 'object',
+    properties: { id: { type: 'string' } },
+    required: ['id'],
+  },
+  body: OPEN_OBJECT_SCHEMA,
+  response: {
+    200: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
+    409: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
 
 /**
  * Registers the input-request routes in the `/v1` scope.
@@ -67,7 +104,7 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
     return null;
   };
 
-  app.patch('/input-requests/:id/answer', async (request, reply) =>
+  app.patch('/input-requests/:id/answer', { schema: ANSWER_SCHEMA }, async (request, reply) =>
     withValidation(reply, () => {
       const id = routeId(request.params);
       const refusal = refuseUnlessPending(reply, id);

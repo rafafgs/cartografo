@@ -31,6 +31,40 @@ export interface ErrorResponse {
 }
 
 /**
+ * The envelope above, as a response schema for the public document (t171, FR4).
+ *
+ * `additionalProperties: true` is not decoration and must not be tightened: a
+ * Fastify `response` schema is a SERIALIZATION filter (fast-json-stringify), so
+ * a narrower whitelist would silently drop fields from the wire instead of
+ * merely failing to document them — a behaviour change disguised as
+ * documentation (FR6). For the same reason nothing here declares a type it
+ * cannot guarantee: `error` and `details` are the two the three helpers below
+ * always build themselves.
+ */
+export const ERROR_RESPONSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    error: { type: 'string' },
+    details: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['error'],
+  additionalProperties: true,
+} as const;
+
+/**
+ * A body this ticket documents by PRESENCE and not by shape (t171, FR5/FR6).
+ *
+ * Used for the request bodies and the success responses of the three routes the
+ * basic flow crosses. It says "a JSON object goes here" and stops: on the
+ * request side anything narrower would put Fastify's ajv in front of handlers
+ * that validate by hand today — which is exactly the draft-2020-12/draft-07
+ * conflict `routes/graphs.ts` already documents — and on the response side
+ * anything narrower would strip fields. Writing the real contract of each
+ * endpoint is a follow-up, grouped by route family.
+ */
+export const OPEN_OBJECT_SCHEMA = { type: 'object', additionalProperties: true } as const;
+
+/**
  * Runs a route body translating `ValidationError` into an invalid-body status.
  *
  * `invalidStatus` is a parameter and not a constant because of exactly one

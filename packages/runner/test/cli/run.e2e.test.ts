@@ -61,12 +61,21 @@ import {
   decodeCodexSessionText,
 } from '../../src/dispatch/session-text.ts';
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
-import { CodexAdapter } from '../../src/engine/codex-adapter.ts';
+import { CODEX_MODELS, CodexAdapter } from '../../src/engine/codex-adapter.ts';
 import {
   buildCommand as buildCodexCommand,
   buildEnvironment as buildCodexEnvironment,
 } from '../../src/engine/codex-command.ts';
-import { buildCommand, buildEnvironment } from '../../src/engine/command.ts';
+import { buildCommand, buildEnvironment, type EngineCommand } from '../../src/engine/command.ts';
+import type {
+  CliProbe,
+  EngineAdapter,
+  EngineCapabilities,
+  ModelCatalog,
+  SessionListener,
+  SessionSpec,
+  SessionStatus,
+} from '../../src/engine/types.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
@@ -320,6 +329,20 @@ async function blockEveryJob(plane: RunningControlPlane): Promise<void> {
 }
 
 /**
+ * The preflight command every adapter built here runs, on the fake binary.
+ *
+ * It is the same seam as `commandBuilder`, applied to the other spawn an
+ * adapter does. Since t186 the runner PROBES before it reports its catalog, so
+ * an adapter left with the real `claude --version`/`codex --version` would make
+ * this file's startup path depend on an installed CLI — exactly what the header
+ * says the suite must never do.
+ */
+const FAKE_PROBE = (): EngineCommand => ({
+  command: process.execPath,
+  args: [FAKE_ENGINE, '--version'],
+});
+
+/**
  * The `engineFactory` seam, pointed at the fake engine.
  *
  * Only the BINARY changes: the argv each adapter's own command builder produces
@@ -327,9 +350,14 @@ async function blockEveryJob(plane: RunningControlPlane): Promise<void> {
  * a test of a command nobody issues. The fake engine is configured through the
  * environment — its only channel — so the overrides ride the adapter's
  * `environmentBuilder`, the seam that exists for exactly this.
+ *
+ * @param overrides Environment the fake engine is configured through.
+ * @param probeCommandBuilder What the preflight probe runs. Default: the fake
+ *   engine answering `--version`, i.e. a CLI that is there.
  */
 function fakeEngineFactory(
   overrides: Record<string, string>,
+  probeCommandBuilder: () => EngineCommand = FAKE_PROBE,
 ): (engine: RunModule.EngineName) => EngineRoute {
   return (engine) =>
     engine === 'codex'
@@ -341,6 +369,7 @@ function fakeEngineFactory(
             }),
             environmentBuilder: (spec) => ({ ...buildCodexEnvironment(spec), ...overrides }),
             graceMs: 300,
+            probeCommandBuilder,
           }),
           decodeSessionText: decodeCodexSessionText,
         }
@@ -352,6 +381,7 @@ function fakeEngineFactory(
             }),
             environmentBuilder: (spec) => ({ ...buildEnvironment(spec), ...overrides }),
             graceMs: 300,
+            probeCommandBuilder,
           }),
           decodeSessionText: decodeClaudeCodeSessionText,
         };
@@ -974,6 +1004,269 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       git(repoRoot, 'status', '--porcelain'),
       '',
       'the operator\'s checkout has to be exactly as clean as it was before the dispatch',
+    );
+  });
+});
+
+/* --- t186: FR11's precondition — the probe comes before the catalog --------- */
+
+/** One engine's catalog, as `GET /v1/engines` gives it back. */
+interface ReportedCatalog {
+  motor: string;
+  modelos: Array<{ modelo_id: string; rotulo: string | null; origem: string }>;
+}
+
+/** A preflight command that cannot answer, because the binary is not there. */
+const MISSING_PROBE = (): EngineCommand => ({
+  command: path.join(tmpdir(), 'cartografo-binary-that-does-not-exist-186'),
+  args: ['--version'],
+});
+
+/**
+ * Wraps an adapter and records the two calls FR11 puts in an order.
+ *
+ * It delegates everything and decides nothing: what it adds is the ledger the
+ * ordering assertion reads, plus one sample of the control plane taken FROM
+ * INSIDE the probe — the only moment at which "after the pairing" is a question
+ * with an answer.
+ */
+class RecordingAdapter implements EngineAdapter {
+  readonly engineName: string;
+  /** The calls the runner made, in order. */
+  readonly calls: string[] = [];
+  /** Was this runner already paired when the probe ran? `null` = never probed. */
+  pairedAtProbe: boolean | null = null;
+  readonly #inner: EngineAdapter;
+  readonly #paired: () => Promise<boolean>;
+
+  constructor(inner: EngineAdapter, paired: () => Promise<boolean>) {
+    this.#inner = inner;
+    this.#paired = paired;
+    this.engineName = inner.engineName;
+  }
+
+  async startSession(spec: SessionSpec, listener: SessionListener): Promise<string> {
+    return await this.#inner.startSession(spec, listener);
+  }
+
+  async getStatus(sessionId: string): Promise<SessionStatus> {
+    return await this.#inner.getStatus(sessionId);
+  }
+
+  async cancel(sessionId: string, status?: SessionStatus): Promise<void> {
+    await this.#inner.cancel(sessionId, status);
+  }
+
+  capabilities(): EngineCapabilities {
+    return this.#inner.capabilities();
+  }
+
+  async verifyCli(): Promise<CliProbe> {
+    this.pairedAtProbe = await this.#paired();
+    this.calls.push('verifyCli');
+    return await this.#inner.verifyCli();
+  }
+
+  async listModels(): Promise<ModelCatalog> {
+    this.calls.push('listModels');
+    const inner = this.#inner.listModels?.bind(this.#inner);
+    assert.ok(inner, `${this.engineName} lost its listModels() on the way through the wrapper`);
+    return await inner();
+  }
+}
+
+/**
+ * The precondition FR11 states and t162 never implemented (t186).
+ *
+ * "The runner reports its model catalog after pairing and `verifyCli()`
+ * succeed" was written as one sentence with two halves, and only the first
+ * half was ever wired: `runRunner` paired and then reported, with no probe
+ * anywhere in the chain. What these cases pin is the missing half — that the
+ * probe RUNS, that it runs in the right place in the sequence, and that its
+ * answer is what decides whether a catalog goes out at all.
+ *
+ * A control plane of its own, and the two engines carry the two answers: the
+ * reported catalog is global (`GET /v1/engines` is not scoped by runner or by
+ * project), so a case asserting an engine has NO catalog can only be trusted on
+ * a plane where nothing else reported one for it.
+ *
+ * What is deliberately NOT asserted here: that a failed probe stops the runner.
+ * It must not — the catalog is discovery, never a gate (`engine/types.ts`,
+ * `listModels`), and a machine that refuses to work because a preflight could
+ * not find a binary is a machine that does no work at all while its sessions
+ * would have failed one by one with an exact message. AT2 measures the
+ * opposite: the probe fails and the runner comes up anyway.
+ */
+test('t186 — the catalog is reported only after the CLI probe answers', async (parent) => {
+  const plane = await bootControlPlane(parent);
+
+  /** Every engine catalog the control plane is holding right now. */
+  const catalogs = async (): Promise<ReportedCatalog[]> => {
+    const { motores } = await api<{ motores: ReportedCatalog[] }>(plane, 'GET', '/v1/engines');
+    return motores;
+  };
+
+  /** Is this runner already known to the control plane? */
+  const isPaired = async (runnerId: string): Promise<boolean> => {
+    const { runners } = await api<{ runners: Array<{ id: string }> }>(plane, 'GET', '/v1/runners');
+    return runners.some((runner) => runner.id === runnerId);
+  };
+
+  await parent.test('AT1 — the probe runs after the pairing and before the catalog', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    // Plain directories, for AT8's reason: this case never dispatches.
+    const { repoRoot, worktreesRoot } = workspace(t, 't186-at1');
+    const runnerId = 'runner-t186-at1';
+
+    const adapter = new RecordingAdapter(
+      new ClaudeCodeAdapter({ probeCommandBuilder: FAKE_PROBE, graceMs: 300 }),
+      () => isPaired(runnerId),
+    );
+
+    let announce: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+
+    const runner = await startRunner(t, runRunner, {
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId: 1,
+      runnerId,
+      engine: 'claude-code',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: () => ({ adapter, decodeSessionText: decodeClaudeCodeSessionText }),
+      onReady: () => announce(),
+    });
+
+    await ready;
+    await runner.stop();
+
+    assert.deepEqual(
+      adapter.calls,
+      ['verifyCli', 'listModels'],
+      'the startup path probes the CLI, and only then asks it for a catalog',
+    );
+    assert.equal(
+      adapter.pairedAtProbe,
+      true,
+      'the probe ran before the pairing, so the report it gates would land in the dark',
+    );
+
+    const reported = (await catalogs()).find((entry) => entry.motor === 'claude-code');
+    assert.ok(reported, 'a probe that answered has to end in a reported catalog');
+    assert.ok(reported.modelos.length > 0, 'the reported catalog is the adapter\'s, not an empty list');
+  });
+
+  await parent.test('AT2 — a probe that finds no CLI reports no catalog, and the runner still comes up', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    const { repoRoot, worktreesRoot } = workspace(t, 't186-at2');
+    const runnerId = 'runner-t186-at2';
+
+    // Recorded and swallowed, on AT11's terms: the line below is the skip under
+    // test, and letting it through would read as the suite itself breaking.
+    const logged: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      logged.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
+      return true;
+    }) as typeof process.stderr.write;
+    t.after(() => {
+      process.stderr.write = original;
+    });
+
+    assert.equal(
+      (await catalogs()).some((entry) => entry.motor === 'codex'),
+      false,
+      'nothing has reported a codex catalog to this control plane yet',
+    );
+
+    let announce: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+
+    const runner = await startRunner(t, runRunner, {
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId: 1,
+      runnerId,
+      engine: 'codex',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }, MISSING_PROBE),
+      onReady: () => announce(),
+    });
+
+    await ready;
+
+    // Two full intervals with the loop turning: a runner that only reached
+    // readiness and then died would prove nothing about "still comes up".
+    await delay(500);
+    await runner.stop();
+
+    assert.equal(
+      (await catalogs()).some((entry) => entry.motor === 'codex'),
+      false,
+      'the catalog went out although the CLI the models belong to never answered',
+    );
+    assert.equal(
+      await isPaired(runnerId),
+      true,
+      'a failed probe stopped the runner from being a runner at all',
+    );
+    assert.ok(
+      logged.some((line) => line.includes('codex')),
+      `the skip is silent; an operator has no way to learn why the menu is empty: ${JSON.stringify(logged)}`,
+    );
+  });
+
+  await parent.test('AT3 — a probe that answers reports the catalog the adapter offers', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    const { repoRoot, worktreesRoot } = workspace(t, 't186-at3');
+
+    let announce: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      announce = resolve;
+    });
+
+    const runner = await startRunner(t, runRunner, {
+      url: plane.baseUrl,
+      token: plane.token,
+      projectId: 1,
+      runnerId: 'runner-t186-at3',
+      engine: 'codex',
+      repoRoot,
+      worktreesRoot,
+      runnerCap: 1,
+      projectCap: 4,
+      intervalMs: 200,
+      leaseTtlSeconds: 10,
+      engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }),
+      onReady: () => announce(),
+    });
+
+    await ready;
+    await runner.stop();
+
+    const reported = (await catalogs()).find((entry) => entry.motor === 'codex');
+    assert.ok(reported, 'the probe answered, so the catalog had to go out');
+    assert.deepEqual(
+      reported.modelos.map((model) => model.modelo_id).sort(),
+      CODEX_MODELS.map((model) => model.id).sort(),
+      'what was reported is this adapter\'s own catalog, entry for entry',
     );
   });
 });

@@ -60,11 +60,15 @@ test('t124 AT — --token and CARTOGRAFO_TOKEN both authenticate, with --token w
 
   const withFlag = await runCli(['status', '--json', '--url', controlPlane.url, '--token', token]);
   assert.equal(withFlag.code, 0, `stderr:\n${withFlag.stderr}`);
+  // The two counts are `0` and not `null` since t199 (FR1): the control plane is
+  // brand new, so the honest answer is "queried, and empty". What this test is
+  // about is the credential, and the whole report is compared only because an
+  // authenticated `status` has to come back complete.
   assert.deepEqual(JSON.parse(withFlag.stdout.trim()), {
     server: 'ok',
     projects: [],
-    jobs: null,
-    pendingInputRequests: null,
+    jobs: 0,
+    pendingInputRequests: 0,
   });
 
   const withEnv = await runCli(['status', '--json', '--url', controlPlane.url], {

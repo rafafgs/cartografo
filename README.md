@@ -129,8 +129,11 @@ partida — o último decide o endereço de escuta, e o default segue sendo
 `127.0.0.1`, porque abrir a porta para a rede é decisão de quem opera, não do
 comando; `CARTOGRAFO_LEASE_CAP_RUNNER` e `CARTOGRAFO_LEASE_CAP_PROJECT`
 (default 50 cada) para o teto de leases simultâneas que o servidor impõe — o
-runner declara o teto que quer e vale o MENOR dos dois, porque quem decide
-concorrência é o control plane, não o pedido (D1); `CARTOGRAFO_URL` (ou `--url`)
+runner declara o teto que quer em `--declared-runner-cap` e vale o MENOR dos
+dois, porque quem decide concorrência é o control plane, não o pedido (D1); esse
+número declarado não muda o que um processo de runner faz, que é despachar **uma
+sessão por tick**, qualquer que seja o valor: mais vazão é mais processos de
+runner sob o mesmo projeto; `CARTOGRAFO_URL` (ou `--url`)
 para apontar os outros subcomandos — e a tela, e o runner — a um control plane
 que não esteja no default `http://127.0.0.1:4317`;
 `CARTOGRAFO_TOKEN` (ou `--token`) para a credencial que os subcomandos e o

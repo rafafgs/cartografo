@@ -174,7 +174,8 @@ Um `tick()` é uma passada completa do loop de despacho:
 GET /v1/trabalhos  → filtra bloqueado === false
         ↓
 para cada candidato, em ordem: POST /v1/leases
-        ↓ (recusado: tenta o próximo)
+        ↓ (recusa por trabalho_ja_leased: tenta o próximo)
+        ↓ (recusa por teto_runner ou teto_projeto: encerra o tick)
 lease concedida
         ↓
 arma o heartbeat periódico  ─────────────┐
@@ -184,7 +185,19 @@ arma o heartbeat periódico  ─────────────┐
 para o heartbeat + POST /v1/leases/:id/liberacoes
 ```
 
-Três decisões de projeto sustentam esse desenho:
+Quatro decisões de projeto sustentam esse desenho:
+
+**Nem toda recusa quer dizer a mesma coisa (`t208`).** O `motivo` da recusa é
+que decide se o loop continua. `trabalho_ja_leased` é sobre a posse **daquele**
+trabalho — outro runner chegou antes —, não diz nada sobre o próximo candidato,
+e é a resposta comum de um pool saudável: tenta o seguinte. `teto_runner` e
+`teto_projeto` são sobre **capacidade**, e a capacidade é deste runner ou deste
+projeto, não deste trabalho: todo candidato restante da mesma passada voltaria
+com a resposta idêntica. O tick termina ali. Antes da `t208` ele seguia
+perguntando, e um projeto cheio custava um `POST /v1/leases` por candidato para
+ouvir de novo o que o primeiro já tinha dito. Encerrar cedo não é desistir — o
+loop pergunta de novo no próximo intervalo, e até lá alguma lease pode ter sido
+liberada ou vencido.
 
 **A lease é sempre devolvida.** A liberação está em `finally`, não no caminho
 feliz: um despacho que estoura devolve a lease exatamente como um que termina
@@ -207,6 +220,22 @@ expirar debaixo do despacho.
 [`EngineAdapter`](../formatos/engine-adapter.md) (`t104`): esta camada não abre
 sessão nenhuma. Quem fechar o ciclo com sessão de verdade (`t106`/`t109`) passa
 o adapter por aqui sem tocar no controller.
+
+**Um processo, uma sessão por vez — e a flag diz isso (`t208`).** O `tick()`
+pede **uma** lease por passada e espera o despacho inteiro antes de a passada
+seguinte existir: um processo de runner nunca segura mais de uma lease ativa.
+`--declared-runner-cap` (`teto_runner` no pedido, `runnerCap` nas opções) é o
+teto que este runner **declara** ao control plane para o próprio `runner_id`, e
+não a concorrência dentro do processo — o server tira o MENOR entre ele e o teto
+configurado (`CARTOGRAFO_LEASE_CAP_RUNNER`) e é quem impõe o resultado (D1). Até
+a `t208` a flag se chamava `--runner-cap` e o `--help` prometia "simultaneous
+sessions of this runner", o que nunca foi verdade. Escalar continua sendo
+**horizontal**: mais processos de runner sob o mesmo projeto, disputando o teto
+de projeto pela transação do server — o caminho que
+[`multi-runner-fleet.e2e.test.ts`](../../packages/runner/test/controller/multi-runner-fleet.e2e.test.ts)
+já prova (§3). Rodar N sessões dentro de um processo foi recusado pelo founder
+na `t208`, e continua reversível por outra decisão se a necessidade aparecer
+concreta.
 
 ### Toda chamada tem prazo (`t193`)
 

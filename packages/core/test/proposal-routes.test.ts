@@ -335,6 +335,66 @@ test('AT11 — applying a proposal creates a new version with the right parent a
   assert.deepEqual(versionBody.grafo_versao.snapshot, applyOperations(document, operations));
 });
 
+test('t167 — changing a node escalation_policy is a proposal, and it produces a version', async (t) => {
+  const address = await startApp(t);
+
+  const { document, graph, version } = await registerBase(address);
+  assert.ok(
+    !Object.hasOwn(requireNode(document, 'revisar'), 'escalation_policy'),
+    'the base fixture declares nothing: absent is the default this ficha keeps',
+  );
+
+  const proposal = await createProposal(address, graph.id, version.id, [
+    {
+      tipo: 'alterar_campo_no',
+      no_id: 'revisar',
+      campo: 'escalation_policy',
+      de: null,
+      para: 'never',
+      inversa: {
+        tipo: 'alterar_campo_no',
+        no_id: 'revisar',
+        campo: 'escalation_policy',
+        de: 'never',
+        para: null,
+      },
+    },
+  ]);
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.ok(body.grafo_versao !== undefined);
+  assert.notEqual(
+    body.grafo_versao.id,
+    version.id,
+    'changing a node policy is a new version, like any other node field',
+  );
+  assert.equal(body.grafo_versao.versao_pai, version.id);
+
+  const changed = await jsonBody<{ grafo_versao: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(body.grafo_versao.id)}`),
+  );
+  assert.equal(
+    (requireNode(changed.grafo_versao.snapshot, 'revisar') as unknown as Record<string, unknown>)
+      .escalation_policy,
+    'never',
+    'the new snapshot carries the declared policy',
+  );
+
+  // Append-only: the version somebody already ran under does not learn the new
+  // policy retroactively (D15).
+  const parent = await jsonBody<{ grafo_versao: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(version.id)}`),
+  );
+  assert.deepEqual(
+    parent.grafo_versao.snapshot,
+    document,
+    'the parent version has to be byte-for-byte what it always was',
+  );
+});
+
 test('AT12 — reverting restores the pointer and the history stays whole', async (t) => {
   const address = await startApp(t);
 

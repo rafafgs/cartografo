@@ -175,6 +175,53 @@ test('AT4 — alterar_campo_no swaps the declared field and nothing else', async
   assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
 });
 
+test('t167 — escalation_policy and escalation_recipient are fields alterar_campo_no may swap', async () => {
+  const { CHANGEABLE_FIELDS, validateOperation, applyOperations } = await loadOperations();
+
+  assert.ok(
+    CHANGEABLE_FIELDS.includes('escalation_policy'),
+    `escalation_policy has to be changeable, got ${CHANGEABLE_FIELDS.join(', ')}`,
+  );
+  assert.ok(
+    CHANGEABLE_FIELDS.includes('escalation_recipient'),
+    `escalation_recipient has to be changeable, got ${CHANGEABLE_FIELDS.join(', ')}`,
+  );
+
+  // Whether a node ever asks a human is node data like any other, so it changes
+  // through the machinery that already versions and re-validates — no second
+  // mutation path, which is the whole point of FR2.
+  const cases = [
+    { campo: 'escalation_policy' as const, de: null, para: 'never' },
+    { campo: 'escalation_recipient' as const, de: null, para: 'editor-de-plantao' },
+  ];
+
+  for (const { campo, de, para } of cases) {
+    const operation = {
+      tipo: 'alterar_campo_no' as const,
+      no_id: 'revisar',
+      campo,
+      de,
+      para,
+      inversa: { tipo: 'alterar_campo_no' as const, no_id: 'revisar', campo, de: para, para: de },
+    };
+
+    assert.deepEqual(
+      validateOperation(operation),
+      { valido: true, erros: [] },
+      `"${campo}" has to be accepted, with its inverse`,
+    );
+
+    const input = minimalGraph();
+    const result = applyOperations(input, [operation]);
+    assert.equal(
+      (requireNode(result, 'revisar') as unknown as Record<string, unknown>)[campo],
+      para,
+      `applying has to write "${campo}" on the target node`,
+    );
+    assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
+  }
+});
+
 test('AT5 — an unknown type, a missing inverse and an incompatible inverse fail with an identifiable error', async () => {
   const { validateOperation } = await loadOperations();
 

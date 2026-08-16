@@ -92,7 +92,7 @@ test('AT1 — every fixture in schema/exemplos validates against the schema', as
   const schema = readJson(SCHEMA_PATH);
   const names = readdirSync(EXAMPLES_DIR).filter((name) => name.endsWith('.json')).sort();
 
-  assert.equal(names.length, 7, `expected the seven t96 fixtures, found ${names.length}`);
+  assert.equal(names.length, 8, `expected the eight committed fixtures, found ${names.length}`);
 
   // Two of the counterexamples break SHAPE as well as soundness, and they do it
   // on purpose: an edge whose condition is the empty string trips `minLength`,
@@ -264,6 +264,47 @@ test('AT7 — a node with no contract produces a "no_com_contrato" violation', a
     regra: 'no_com_contrato',
     alvo: withoutContract.id,
   });
+});
+
+test('t167 — escalation_policy is an optional enum on the node, and recipient is free text', async () => {
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+  const schema = readJson(SCHEMA_PATH);
+
+  // 1. Absence is the whole backward-compatibility story: a graph written before
+  // the field existed declares nothing and stays valid, exactly as `engine` did.
+  const before = readExample('grafo-valido-minimo.json');
+  assert.ok(
+    before.nodes.every((node) => !Object.hasOwn(node, 'escalation_policy')),
+    'the minimal fixture must keep declaring nothing: it is the "absent" case',
+  );
+  assert.deepEqual(validateAgainstSchema(before, schema), []);
+
+  // 2. The new fixture declares both fields on one node, and nothing else moved.
+  const document = readExample('grafo-valido-escalacao-nunca.json');
+  assert.deepEqual(
+    validateAgainstSchema(document, schema).map((error) => error.pointer),
+    [],
+    'the fixture that declares the new fields has to validate whole',
+  );
+  const position = document.nodes.findIndex((node) => node.escalation_policy === 'never');
+  assert.ok(position !== -1, 'the fixture has to carry a node declaring "never"');
+  assert.equal(
+    typeof document.nodes[position].escalation_recipient,
+    'string',
+    'and the recipient beside it, as free text — no format is enforced',
+  );
+
+  // 3. A fourth value is a SHAPE error, and it is the only one: the enum is what
+  // constrains the policy, and it is checked before any runner reads it.
+  const bogus = structuredClone(document);
+  bogus.nodes[position].escalation_policy = 'maybe';
+  assert.deepEqual(
+    validateAgainstSchema(bogus, schema).map((error) => error.pointer),
+    [`/nodes/${position}/escalation_policy`],
+    'only the three declared values pass',
+  );
 });
 
 test('AT8 — validarEstrutura rejects a duplicate id and an edge pointing at a missing node', async () => {

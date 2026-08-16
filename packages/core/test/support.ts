@@ -131,6 +131,8 @@ export interface InputRequest {
   sessao_id: number | null;
   execucao_id: number | null;
   tipo: string;
+  /** The node the job was standing on when it asked; `null` if it had none (t167). */
+  no_id: string | null;
   pergunta: string;
   contexto: string | null;
   opcoes: string[] | null;

@@ -1,0 +1,141 @@
+{
+  "problem_class": "nota-curta-gancho-pendurado",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "Nota curta — gancho apontando para nó inexistente",
+    "description": "Contraexemplo da t169: a rede de workflow é sound e a forma passa no JSON Schema, mas um gancho aponta para um nó que o documento não tem. É defeito de integridade referencial, e por isso ele sai na passagem ESTRUTURAL do validador, não entre as quatro regras de soundness.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-16",
+    "source": "porte manual (exemplo da especificação)"
+  },
+  "nodes": [
+    {
+      "id": "redigir",
+      "role": "redator",
+      "node_type": "work",
+      "description": "Escreve a nota a partir do tema declarado.",
+      "skill_ref": {
+        "id": "cartografo/redigir-nota",
+        "version": "1.0.0",
+        "hash": "sha256:2745f9d87a5b35e77dc5a73b8db71039cdfdae5a4c647f2f4122c1f3fb384b18"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "tema"
+          ],
+          "properties": {
+            "tema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "texto"
+          ],
+          "properties": {
+            "texto": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s nota.md",
+            "description": "A nota existe e não está vazia."
+          }
+        ]
+      }
+    },
+    {
+      "id": "revisar",
+      "role": "revisor",
+      "node_type": "gate",
+      "description": "Confere a nota contra o tema declarado e encerra a travessia.",
+      "skill_ref": {
+        "id": "cartografo/revisar-nota",
+        "version": "1.0.0",
+        "hash": "sha256:2df09e19d5917210efc074a4d3c9d5f4c8e20e29e479f524afdcbbc9859b3e55"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": [
+            "tema",
+            "texto"
+          ],
+          "properties": {
+            "tema": {
+              "type": "string"
+            },
+            "texto": {
+              "type": "string"
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "outcome",
+            "evidencia"
+          ],
+          "properties": {
+            "outcome": {
+              "enum": [
+                "passou",
+                "falhou",
+                "escala"
+              ]
+            },
+            "evidencia": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "checks": [
+          {
+            "type": "agentic",
+            "instruction": "A nota responde ao tema declarado sem afirmação sem fonte? Cite o trecho que sustenta o veredito.",
+            "required_evidence": true,
+            "description": "Julgamento de aderência ao tema, com evidência própria."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "redigir",
+      "to": "revisar",
+      "condition": "sempre",
+      "description": "Saída única: a nota redigida sempre segue para revisão."
+    }
+  ],
+  "initial_node": "redigir",
+  "final_nodes": [
+    "revisar"
+  ],
+  "custom_fields": [],
+  "hooks": [
+    {
+      "id": "avisar-revisao",
+      "trigger": "node_entered",
+      "node_id": "no_que_nao_existe",
+      "destination": {
+        "type": "webhook",
+        "url": "https://exemplo.invalid/ganchos/revisao",
+        "secret": "segredo-declarado-neste-grafo"
+      },
+      "description": "Aponta para um nó que não existe: é isso que o validador estrutural recusa."
+    }
+  ]
+}

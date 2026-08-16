@@ -31,6 +31,7 @@ import test from 'node:test';
 import {
   REQUIRED_DOCUMENT_FIELDS,
   REQUIRED_EDGE_FIELDS,
+  REQUIRED_HOOK_FIELDS,
   REQUIRED_NODE_FIELDS,
 } from '../src/domain/graph.ts';
 import { MANIFEST_FIELDS, MANIFEST_ROLES, manifestHash } from '../src/domain/manifest.ts';
@@ -82,22 +83,38 @@ test('AT8 — MANIFEST_ROLES is exactly the schema\'s role enum', () => {
   assert.deepEqual(MANIFEST_ROLES, schema.properties?.role?.enum);
 });
 
-test('AT8 — the document, node and edge field sets are exactly the graph schema\'s', () => {
+/**
+ * Top-level keys the document declares but never requires.
+ *
+ * Until t169 this list was empty, and the assertion below could simply demand
+ * that `required` and `properties` be the same set. `hooks` broke that by
+ * design: it is optional so that every graph written before it stays valid
+ * untouched, the same non-breaking posture `engine` already had on the node.
+ *
+ * Naming it here instead of loosening the check to a subset keeps the claim
+ * total — a top-level key that is neither required nor listed here still fails,
+ * which is the property that catches a rename or a stray addition.
+ */
+const OPTIONAL_DOCUMENT_FIELDS = ['hooks'];
+
+test('AT8 — the document, node, edge and hook field sets are exactly the graph schema\'s', () => {
   const schema = readSchema(GRAPH_SCHEMA_PATH);
 
   assert.deepEqual(REQUIRED_DOCUMENT_FIELDS, schema.required);
   assert.deepEqual(
-    [...REQUIRED_DOCUMENT_FIELDS].sort(),
+    [...REQUIRED_DOCUMENT_FIELDS, ...OPTIONAL_DOCUMENT_FIELDS].sort(),
     Object.keys(schema.properties ?? {}).sort(),
-    'the document has no optional top-level key: required and properties are the same set',
+    'every top-level key is either required or a declared optional one',
   );
 
   assert.deepEqual(REQUIRED_NODE_FIELDS, definition(schema, 'node').required);
   assert.deepEqual(REQUIRED_EDGE_FIELDS, definition(schema, 'edge').required);
+  assert.deepEqual(REQUIRED_HOOK_FIELDS, definition(schema, 'hook').required);
 
   for (const [fields, name] of [
     [REQUIRED_NODE_FIELDS, 'node'],
     [REQUIRED_EDGE_FIELDS, 'edge'],
+    [REQUIRED_HOOK_FIELDS, 'hook'],
   ] as const) {
     const declared = Object.keys(definition(schema, name).properties ?? {});
     for (const field of fields) {

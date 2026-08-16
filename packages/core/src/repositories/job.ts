@@ -29,6 +29,7 @@ import {
   type ScalarMap,
 } from '../domain/custom-fields.ts';
 import { getVersion } from './graphs.ts';
+import { enqueueHookDeliveries } from './hooks.ts';
 import {
   API_ACTOR,
   DEFAULT_PROJECT,
@@ -290,6 +291,12 @@ export function createJob(db: Database, input: CreateJobInput): Job {
  * The template of FR5–FR7: load the row (a 404 becomes `null` without writing
  * anything), validate the payload, and only then open the transaction in which
  * projection and event land together.
+ *
+ * `announce` runs inside that same transaction, right after the event exists —
+ * it is where a fact turns into the reactions the GRAPH declared for it (t169).
+ * Inside and not after, so that a rolled-back transition takes its queued hooks
+ * down with it; and queuing only, never delivering, so that the write path
+ * cannot wait on anybody's socket.
  */
 function mutate(
   db: Database,
@@ -302,6 +309,7 @@ function mutate(
     sql: string;
     values: unknown[];
   },
+  announce?: (row: JobRow, data: Record<string, unknown>, event: Event) => void,
 ): Job | null {
   const row = readRow(db, id);
   if (row === undefined) return null;
@@ -317,7 +325,7 @@ function mutate(
       timestamp,
       id,
     );
-    recordEvent(db, {
+    const event = recordEvent(db, {
       tipo: type,
       projeto_id: row.projeto_id,
       execucao_id: row.execucao_id,
@@ -326,6 +334,7 @@ function mutate(
       ocorrido_em: timestamp,
       dados: data,
     });
+    announce?.(row, data, event);
     return toJob(db, readRow(db, id) as JobRow);
   });
 
@@ -393,6 +402,12 @@ function requireFieldsOfNode(db: Database, row: JobRow): void {
  * that does not exist is still a 404 and a refusal writes nothing: no projection
  * row, no event.
  *
+ * It is also where a `node_entered` hook fires (t169): the node the job ARRIVED
+ * at is the match key, which is why a hook on `initial_node` structurally never
+ * fires — that placement is a `trabalho.criado`, never a transition. The hook is
+ * enqueued from `announce`, downstream of the t168 gate: a transition the gate
+ * refuses never happened, so it fires nothing.
+ *
  * @param db Open handle.
  * @param id Job id.
  * @param input Request body.
@@ -414,14 +429,34 @@ export function transitionJob(
       )
       .get(String(id)) !== undefined;
 
-  return mutate(db, id, 'trabalho.transicao', input.ator, API_ACTOR, (row) => {
-    requireFieldsOfNode(db, row);
-    return {
-      data: { de_no_id: alreadyWalked ? row.no_atual : null, para_no_id: input.para_no_id },
-      sql: 'no_atual = ?',
-      values: [input.para_no_id],
-    };
-  });
+  return mutate(
+    db,
+    id,
+    'trabalho.transicao',
+    input.ator,
+    API_ACTOR,
+    (row) => {
+      requireFieldsOfNode(db, row);
+      return {
+        data: { de_no_id: alreadyWalked ? row.no_atual : null, para_no_id: input.para_no_id },
+        sql: 'no_atual = ?',
+        values: [input.para_no_id],
+      };
+    },
+    // The node comes from the VALIDATED payload, so what the hook matches on is
+    // the same string the log records — never the raw request body.
+    (row, data, event) => {
+      enqueueHookDeliveries(db, {
+        trigger: 'node_entered',
+        no_id: data.para_no_id as string,
+        trabalho_id: id,
+        projeto_id: row.projeto_id,
+        execucao_id: row.execucao_id,
+        grafo_versao_id: row.grafo_versao_id,
+        evento_id: event.id,
+      });
+    },
+  );
 }
 
 /** Body of `POST /v1/jobs/:id/blocks`. */
@@ -434,6 +469,8 @@ export interface BlockInput {
  * Raises the blocked flag and records `trabalho.bloqueado` (FR6).
  *
  * Blocking is a flag fact, not a movement fact: the job does not leave the node.
+ * That is exactly why a `node_blocked` hook matches on `no_atual` (t169): the
+ * node the job is standing on when the flag goes up is the node it blocked on.
  *
  * @param db Open handle.
  * @param id Job id.
@@ -441,11 +478,29 @@ export interface BlockInput {
  * @returns The updated job, or `null` if it does not exist.
  */
 export function blockJob(db: Database, id: number, input: BlockInput): Job | null {
-  return mutate(db, id, 'trabalho.bloqueado', input.ator, API_ACTOR, () => ({
-    data: { motivo: input.motivo },
-    sql: 'bloqueado = ?, motivo_bloqueio = ?',
-    values: [asInteger(true), input.motivo],
-  }));
+  return mutate(
+    db,
+    id,
+    'trabalho.bloqueado',
+    input.ator,
+    API_ACTOR,
+    () => ({
+      data: { motivo: input.motivo },
+      sql: 'bloqueado = ?, motivo_bloqueio = ?',
+      values: [asInteger(true), input.motivo],
+    }),
+    (row, _data, event) => {
+      enqueueHookDeliveries(db, {
+        trigger: 'node_blocked',
+        no_id: row.no_atual,
+        trabalho_id: id,
+        projeto_id: row.projeto_id,
+        execucao_id: row.execucao_id,
+        grafo_versao_id: row.grafo_versao_id,
+        evento_id: event.id,
+      });
+    },
+  );
 }
 
 /** Body of `POST /v1/jobs/:id/unblocks`. */

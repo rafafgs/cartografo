@@ -302,6 +302,78 @@ test('AT2 — the two valid graphs keep passing both validations', async () => {
 });
 
 /**
+ * t169 — a hook is graph DATA, so a hook that points nowhere is a shape defect.
+ *
+ * It lands in the structural pass and not among the four soundness rules on
+ * purpose: soundness is a property of the workflow net (reachable, terminates,
+ * labelled edges, contracted nodes), and a dangling `node_id` in a reaction says
+ * nothing about the net. The two assertions below are that decision, written
+ * down: the structure report names the problem, and `violacoes` stays empty.
+ */
+test('t169 — a hook pointing at a node that does not exist is a structure error', async () => {
+  const ported = await loadDomainGraph();
+  const reference = await loadReference();
+
+  const document = readExample('grafo-invalido-gancho-no-desconhecido.json');
+  const report = ported.validateStructure(document);
+
+  assert.deepEqual(
+    report,
+    reference.validarEstrutura(document),
+    'structure diverged on the dangling-hook fixture',
+  );
+  assert.equal(report.valido, false, 'a hook that points nowhere refuses the document');
+
+  const dangling = report.erros.filter((item) => item.codigo === 'gancho_no_inexistente');
+  assert.equal(dangling.length, 1, 'exactly one hook of the fixture dangles');
+  assert.ok(
+    dangling[0].mensagem.includes('no_que_nao_existe'),
+    `the message has to name the missing node: ${dangling[0].mensagem}`,
+  );
+
+  assert.deepEqual(
+    ported.validateSoundness(document).violacoes,
+    [],
+    'the net itself is sound: a dangling hook is shape, never a workflow-net rule',
+  );
+});
+
+test('t169 — a duplicate hook id is a structure error, and the valid fixture has none', async () => {
+  const ported = await loadDomainGraph();
+  const reference = await loadReference();
+
+  const document = readExample('grafo-valido-com-ganchos.json') as Record<string, unknown>;
+  assert.deepEqual(
+    ported.validateGraph(document),
+    { valido: true, estrutura: { valido: true, erros: [] }, soundness: { valido: true, violacoes: [] } },
+    'the fixture that declares hooks has to pass both validations whole',
+  );
+
+  const hooks = document.hooks as Array<Record<string, unknown>>;
+  assert.ok(hooks.length >= 1, 'the fixture has to declare at least one hook');
+
+  const repeated = structuredClone(document);
+  const repeatedHooks = repeated.hooks as Array<Record<string, unknown>>;
+  repeatedHooks.push(structuredClone(repeatedHooks[0]));
+
+  const report = ported.validateStructure(repeated);
+  assert.deepEqual(
+    report,
+    reference.validarEstrutura(repeated),
+    'structure diverged on the duplicate-hook-id case',
+  );
+  assert.equal(report.valido, false);
+
+  const duplicated = report.erros.filter((item) => item.codigo === 'id_gancho_duplicado');
+  assert.equal(duplicated.length, 1, 'a repeated id is reported once, not once per repetition');
+  assert.equal(duplicated[0].alvo, hooks[0].id);
+  assert.ok(
+    duplicated[0].mensagem.includes(hooks[0].id as string),
+    'the message has to name the duplicated id',
+  );
+});
+
+/**
  * t168 — `custom_fields` is a required key, and both validators say so.
  *
  * The point of running it through the pair is the parity of AT1: a rule added

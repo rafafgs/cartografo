@@ -52,6 +52,17 @@ export const TABELA = {
     obrigatorios: ['depende_de_trabalho_id'],
     opcionais: [],
   },
+  // O 18º tipo entrou com os ganchos declarados no grafo (t169): quando a
+  // entrega de um gancho esgota as seis tentativas, o único rastro observável
+  // fora da tabela de entregas é este evento. Os quatro campos são
+  // obrigatórios pela mesma razão dos de `sessao.permissao_negada` — sem saber
+  // QUAL gancho, de QUAL nó, para QUAL url e com QUAL erro, o incidente não é
+  // auditável, e este log existe para ser auditado.
+  'trabalho.gancho_falhou': {
+    entidade: 'trabalho',
+    obrigatorios: ['gancho_id', 'no_id', 'url', 'ultimo_erro'],
+    opcionais: [],
+  },
   // `silence_seconds` entrou com o segundo cão de guarda (t163): a sessão passa
   // a declarar dois orçamentos independentes — relógio de parede e silêncio —
   // e ambos são opcionais pela mesma razão, ausência = sem política própria.

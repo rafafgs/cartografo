@@ -192,6 +192,21 @@ const RULES: Record<string, TypeRule> = {
       depende_de_trabalho_id: required('integer'),
     },
   },
+  // The graph-declared hook that gave up (t169). It is an incident and not an
+  // outcome — the same reading as `sessao.permissao_negada`: nothing about the
+  // job's traversal changes, and the only reason the type exists is that a hook
+  // nobody registered is a hook nobody is polling. Every field is required
+  // because a failure that does not say which hook, from which node, to which
+  // URL and with which error is not auditable.
+  'trabalho.gancho_falhou': {
+    entity: 'trabalho',
+    fields: {
+      gancho_id: required('string'),
+      no_id: required('string'),
+      url: required('string'),
+      ultimo_erro: required('string'),
+    },
+  },
   'sessao.aberta': {
     entity: 'sessao',
     fields: {

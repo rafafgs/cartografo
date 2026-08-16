@@ -41,6 +41,14 @@ const TOP_LEVEL_KEYS = [
   'custom_fields',
 ];
 
+/**
+ * Top-level keys the document MAY carry, and that `required` never lists.
+ *
+ * `hooks` entered with t169 and is optional for the same reason `engine` was on
+ * the node: every graph written before it stays valid without being touched.
+ */
+const OPTIONAL_TOP_LEVEL_KEYS = ['hooks'];
+
 /** Reads a JSON file from the repo, failing with its relative path if missing. */
 function readJson(filePath) {
   assert.ok(existsSync(filePath), `artifact does not exist yet: ${path.relative(ROOT, filePath)}`);
@@ -86,7 +94,16 @@ test('AT1 — the schema is valid JSON, declares draft 2020-12, $id and the eigh
   // Exactly these, in this order (t178): a leftover Portuguese key would still
   // satisfy the loop above, and it is precisely what the rename cannot leave.
   assert.deepEqual([...schema.required].sort(), [...TOP_LEVEL_KEYS].sort());
-  assert.deepEqual(Object.keys(schema.properties).sort(), [...TOP_LEVEL_KEYS].sort());
+  assert.deepEqual(
+    Object.keys(schema.properties).sort(),
+    [...TOP_LEVEL_KEYS, ...OPTIONAL_TOP_LEVEL_KEYS].sort(),
+  );
+  for (const key of OPTIONAL_TOP_LEVEL_KEYS) {
+    assert.ok(
+      !schema.required.includes(key),
+      `"${key}" is optional: a document written before it has to stay valid`,
+    );
+  }
 });
 
 test('AT1 — every fixture in schema/exemplos validates against the schema', async () => {
@@ -96,11 +113,11 @@ test('AT1 — every fixture in schema/exemplos validates against the schema', as
   const schema = readJson(SCHEMA_PATH);
   const names = readdirSync(EXAMPLES_DIR).filter((name) => name.endsWith('.json')).sort();
 
-  // Seven from t96, plus the `model` fixture t166 added and the
-  // `escalation_policy` one t167 added. The count is asserted instead of merely
-  // iterated so that a fixture dropped by accident shows up here, and not as a
-  // silently smaller loop.
-  assert.equal(names.length, 9, `expected the nine committed fixtures, found ${names.length}`);
+  // Seven from t96, plus the `model` fixture t166 added, the
+  // `escalation_policy` one t167 added and the two `hooks` ones t169 added. The
+  // count is asserted instead of merely iterated so that a fixture dropped by
+  // accident shows up here, and not as a silently smaller loop.
+  assert.equal(names.length, 11, `expected the eleven committed fixtures, found ${names.length}`);
 
   // Two of the counterexamples break SHAPE as well as soundness, and they do it
   // on purpose: an edge whose condition is the empty string trips `minLength`,
@@ -377,6 +394,97 @@ test('t166 AT — the model fixture is shape-clean, sound, and exercises both pr
   assert.ok(
     doc.nodes.some((node) => node.model === undefined),
     'a node WITHOUT model has to ride along: absence is the default, and it stays valid',
+  );
+});
+
+/*
+ * t169 — `hooks` as document data.
+ *
+ * The claim has three halves, and the fixture only carries the first: a graph
+ * that DECLARES hooks is shape-clean. The other two are what
+ * `additionalProperties: false` and the single-value enum buy — a hook with no
+ * `url` and a hook whose destination is a type nobody implements are both
+ * refused before any dispatcher ever reads the document, which is the whole
+ * reason the reaction can be versioned with the graph.
+ */
+test('t169 AT — the hooks fixture is shape-clean, and both validators pass it', async () => {
+  const { validarEstrutura, validarSoundness } = await loadValidator();
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+  const doc = readExample('grafo-valido-com-ganchos.json');
+
+  assert.deepEqual(
+    validateAgainstSchema(doc, readJson(SCHEMA_PATH)).map((error) => error.pointer),
+    [],
+    'the fixture has to validate against the schema unchanged',
+  );
+  assert.deepEqual(validarEstrutura(doc).erros, []);
+  assert.deepEqual(validarSoundness(doc).violacoes, []);
+
+  // One of each trigger, which is the whole trigger vocabulary of this ticket.
+  assert.deepEqual(
+    doc.hooks.map((hook) => hook.trigger).sort(),
+    ['node_blocked', 'node_entered'],
+  );
+  for (const hook of doc.hooks) {
+    assert.equal(hook.destination.type, 'webhook');
+    assert.ok(
+      doc.nodes.some((node) => node.id === hook.node_id),
+      `hook "${hook.id}" has to point at a node of the document`,
+    );
+  }
+
+  // Absence is the backward-compatibility story: the minimal fixture declares
+  // no hooks at all and stays valid, exactly as it did before this ticket.
+  const before = readExample('grafo-valido-minimo.json');
+  assert.ok(!Object.hasOwn(before, 'hooks'), 'the minimal fixture is the "absent" case');
+  assert.deepEqual(validateAgainstSchema(before, readJson(SCHEMA_PATH)), []);
+});
+
+test('t169 AT — a hook with no url, or an unknown destination type, is a shape error', async () => {
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+  const schema = readJson(SCHEMA_PATH);
+  const doc = readExample('grafo-valido-com-ganchos.json');
+
+  const withoutUrl = structuredClone(doc);
+  delete withoutUrl.hooks[0].destination.url;
+  assert.deepEqual(
+    validateAgainstSchema(withoutUrl, schema).map((error) => error.pointer),
+    ['/hooks/0/destination'],
+    'url is required: a webhook destination with nowhere to POST is not a destination',
+  );
+
+  const unknownType = structuredClone(doc);
+  unknownType.hooks[0].destination.type = 'local_command';
+  assert.deepEqual(
+    validateAgainstSchema(unknownType, schema).map((error) => error.pointer),
+    ['/hooks/0/destination/type'],
+    'the single-value enum is what keeps a destination nobody implements out of a valid graph',
+  );
+});
+
+test('t169 AT — $defs.hook declares the trigger vocabulary and closes the object', () => {
+  const schema = readJson(SCHEMA_PATH);
+  const hook = schema.$defs.hook;
+
+  assert.deepEqual([...hook.required].sort(), ['destination', 'id', 'node_id', 'trigger']);
+  assert.equal(hook.additionalProperties, false);
+  assert.deepEqual(
+    [...hook.properties.trigger.enum].sort(),
+    ['node_blocked', 'node_entered'],
+    'two triggers and no third: every other one is out of scope for this ticket',
+  );
+
+  const destination = schema.$defs.hook_destination;
+  assert.deepEqual([...destination.required].sort(), ['secret', 'type', 'url']);
+  assert.equal(destination.additionalProperties, false);
+  assert.deepEqual(
+    destination.properties.type.enum,
+    ['webhook'],
+    'a single-value enum today, so a second variant is additive tomorrow',
   );
 });
 

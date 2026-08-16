@@ -65,6 +65,15 @@ quem deveria ser chamado, para quando existirem papéis. Mudar isso é uma
 proposta como qualquer outra: nasce versão nova do mapa, e dá para voltar
 atrás. E o relatório da rodada mostra quantas perguntas cada etapa fez.
 
+**Fazer o mapa avisar sozinho quando algo acontece.** Uma etapa do mapa pode
+dizer "quando um ticket entrar aqui, avise este endereço" ou "quando ele travar
+aqui, chame aquele" — e o aviso sai assinado, com retentativa, para o serviço
+que você indicar. O aviso mora dentro do mapa, e não numa configuração à parte:
+ele viaja junto quando você exporta o mapa, muda por proposta como qualquer
+outra parte dele e volta atrás junto com a versão que o introduziu. Se o
+destino não responder, o ticket não trava — ele segue o caminho dele, e a falha
+do aviso vira um registro que você consegue ver.
+
 **Enxergar tudo.** O quadro mostra onde cada trabalho está; cada ticket tem
 linha do tempo (agente trabalhando, esperando você, fila); cada pergunta tem
 contexto para responder sem abrir o repo; o histórico permite reconstruir

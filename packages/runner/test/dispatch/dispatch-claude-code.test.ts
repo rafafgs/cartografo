@@ -3159,3 +3159,289 @@ test("t161 — the node's skill drives the session, and the session advances the
     },
   );
 });
+
+// --- t166: per-node model selection ------------------------------------------
+
+/**
+ * A `trabalho` node that may declare an engine, a model, both or neither.
+ *
+ * Separate from `node()` above on purpose: that one is the t141 routing
+ * fixture and its two callers care about engines, not models. Growing its
+ * signature would make every routing test read as if it were about this ficha.
+ */
+function modelNode(
+  id: string,
+  declared: { engine?: string; model?: string } = {},
+): Record<string, unknown> {
+  return {
+    id,
+    role: "desenvolvedor",
+    node_type: "work",
+    description: `Nó ${id} da prova de seleção de modelo.`,
+    skill_ref: skillPin(WORK_SKILL),
+    contract: contract(),
+    ...(declared.engine === undefined ? {} : { engine: declared.engine }),
+    ...(declared.model === undefined ? {} : { model: declared.model }),
+  };
+}
+
+/** Two nodes on one edge: the first declares nothing, the second may. */
+function modelGraph(
+  className: string,
+  declared: { engine?: string; model?: string },
+): Record<string, unknown> {
+  return {
+    problem_class: className,
+    lineage: { type: "base" },
+    metadata: {
+      name: "Prova de seleção de modelo por nó",
+      description: "Dois nós de trabalho numa aresta, um deles declarando model.",
+      schema_version: "1.0.0",
+      created_at: "2026-08-16",
+      source: "fixture da t166",
+    },
+    nodes: [modelNode("implementar"), modelNode("revisar", declared)],
+    edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
+    initial_node: "implementar",
+    final_nodes: ["revisar"],
+  };
+}
+
+/** Registers a graph and hands back BOTH ids — the proposal needs the lineage. */
+async function registerLineage(
+  baseUrl: string,
+  token: string,
+  document: Record<string, unknown>,
+): Promise<{ graphId: string; versionId: string }> {
+  const registered = await api<{
+    grafo: { id: string };
+    grafo_versao: { id: string };
+  }>(baseUrl, "POST", "/v1/graphs", document, 201, token);
+  return { graphId: registered.grafo.id, versionId: registered.grafo_versao.id };
+}
+
+/**
+ * The adapter every test below runs, wrapped so the `SessionSpec` it received
+ * can be read back.
+ *
+ * The spec and not the argv, deliberately: what FR5 claims is that the DISPATCH
+ * puts the node's model on the spec, and `command.test.ts` already owns the
+ * other half — that a spec carrying a model becomes `--model <value>`. Asserting
+ * the argv here would prove the two halves at once and leave neither of them
+ * located when it breaks.
+ */
+function capturingAdapter(seen: SessionSpec[]): EngineAdapter {
+  const inner = fakeAdapter();
+  return {
+    engineName: inner.engineName,
+    startSession: (spec, listener) => {
+      seen.push(spec);
+      return inner.startSession(spec, listener);
+    },
+    getStatus: (id) => inner.getStatus(id),
+    cancel: (id, status) => inner.cancel(id, status),
+    capabilities: () => inner.capabilities(),
+    verifyCli: () => inner.verifyCli(),
+  };
+}
+
+test("t166 — the model is resolved from the node the work is standing on", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+  await registerSkill(baseUrl, token, WORK_SKILL);
+
+  /** Dispatches one work on `revisar` of the given version, capturing the spec. */
+  const dispatchOn = async (
+    t: TestHook,
+    options: { versionId: string; executionId: number; title: string },
+  ): Promise<SessionSpec> => {
+    const { createClaudeCodeDispatch } =
+      await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+    const workDir = mkdtempSync(
+      path.join(tmpdir(), `cartografo-t166-${options.executionId}-`),
+    );
+    t.after(() => {
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    const work = await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        titulo: options.title,
+        no_entrada_id: "revisar",
+        execucao_id: options.executionId,
+        grafo_versao_id: options.versionId,
+      },
+      201,
+      token,
+    );
+
+    const seen: SessionSpec[] = [];
+    await createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      engines: {
+        "claude-code": {
+          adapter: capturingAdapter(seen),
+          decodeSessionText: decodeClaudeCodeSessionText,
+        },
+      },
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+      envOverrides: {
+        FAKE_ENGINE_RECORD: path.join(workDir, "despacho.json"),
+        FAKE_ENGINE_LINES: linesWithoutBlock(),
+      },
+    })(work.id);
+
+    assert.equal(seen.length, 1, "exactly one session per dispatch");
+    return seen[0]!;
+  };
+
+  await parent.test(
+    "AT — a node declaring model dispatches a SessionSpec carrying it",
+    async (t) => {
+      const { versionId } = await registerLineage(
+        baseUrl,
+        token,
+        modelGraph("selecao-de-modelo-declarado", { model: "claude-haiku-4-5" }),
+      );
+
+      const spec = await dispatchOn(t, {
+        versionId,
+        executionId: 1660,
+        title: "ficha cujo nó declara model",
+      });
+
+      assert.equal(spec.model, "claude-haiku-4-5");
+    },
+  );
+
+  await parent.test(
+    "AT — a node declaring no model dispatches a SessionSpec with model undefined",
+    async (t) => {
+      const { versionId } = await registerLineage(
+        baseUrl,
+        token,
+        modelGraph("selecao-de-modelo-ausente", {}),
+      );
+
+      const spec = await dispatchOn(t, {
+        versionId,
+        executionId: 1661,
+        title: "ficha cujo nó não declara model",
+      });
+
+      // `undefined`, never a hardcoded fallback: "absence has a name" for every
+      // other optional field of the spec, and the engine's own default is the
+      // name this one has.
+      assert.equal(spec.model, undefined);
+      assert.ok(
+        !Object.values(spec).includes("claude-haiku-4-5"),
+        "a default leaked into the spec from somewhere",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT — an empty or non-string model on the node is the same as declaring none",
+    async (t) => {
+      const { versionId } = await registerLineage(
+        baseUrl,
+        token,
+        modelGraph("selecao-de-modelo-vazio", { model: "   " }),
+      );
+
+      const spec = await dispatchOn(t, {
+        versionId,
+        executionId: 1662,
+        title: "ficha cujo nó declara model em branco",
+      });
+
+      assert.equal(
+        spec.model,
+        undefined,
+        "blank is not a model identifier: it would reach the CLI as an empty --model",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT — the dispatch under the version a proposal wrote picks up the new model",
+    async (t) => {
+      const { graphId, versionId } = await registerLineage(
+        baseUrl,
+        token,
+        modelGraph("selecao-de-modelo-proposta", {}),
+      );
+
+      // The whole point of the ficha, end to end: `model` is graph DATA, so
+      // changing it is a proposal — apply → soundness → new version → pointer
+      // (D15) — and not a runner flag somebody edits on the machine.
+      // `null` and not `undefined` on the before-side: JSON has no `undefined`,
+      // and `alterar_campo_no` demands `de` be present.
+      const swap = {
+        tipo: "alterar_campo_no",
+        no_id: "revisar",
+        campo: "model",
+        de: null,
+        para: "claude-haiku-4-5",
+        inversa: {
+          tipo: "alterar_campo_no",
+          no_id: "revisar",
+          campo: "model",
+          de: "claude-haiku-4-5",
+          para: null,
+        },
+      };
+      const created = await api<{ proposta: { id: number } }>(
+        baseUrl,
+        "POST",
+        "/v1/proposals",
+        {
+          grafo_id: graphId,
+          versao_alvo: versionId,
+          operacoes: [swap],
+          evidencia: { fonte: "telemetria", observacao: "o portão não precisa do modelo grande" },
+          metrica_esperada: {
+            nome: "custo_por_travessia",
+            direcao: "cai",
+            de: 1,
+            para: 0.4,
+          },
+        },
+        201,
+        token,
+      );
+      await api(baseUrl, "POST", `/v1/proposals/${created.proposta.id}/approve`, {}, 200, token);
+      const applied = await api<{ grafo_versao: { id: string } }>(
+        baseUrl,
+        "POST",
+        `/v1/proposals/${created.proposta.id}/apply`,
+        {},
+        200,
+        token,
+      );
+      assert.notEqual(applied.grafo_versao.id, versionId, "applying writes a NEW version");
+
+      const after = await dispatchOn(t, {
+        versionId: applied.grafo_versao.id,
+        executionId: 1663,
+        title: "ficha sob a versão que a proposta escreveu",
+      });
+      assert.equal(after.model, "claude-haiku-4-5");
+
+      // ...and the version the proposal targeted is untouched, which is what
+      // "frozen during execution, versioned between executions" means: a work
+      // still traversing the old version keeps the model it started with.
+      const before = await dispatchOn(t, {
+        versionId,
+        executionId: 1664,
+        title: "ficha que ficou na versão anterior",
+      });
+      assert.equal(before.model, undefined);
+    },
+  );
+});

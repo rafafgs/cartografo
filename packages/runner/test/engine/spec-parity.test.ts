@@ -110,3 +110,78 @@ test('the value symbols of the document really exist at runtime', async () => {
     );
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* t166 — model discovery grew the frozen-but-additive interface.             */
+/*                                                                            */
+/* The two tests above already demand SYMBOL parity, so `EngineModel` and     */
+/* `ModelCatalog` are covered the moment they exist on either side. What they */
+/* do NOT cover is a MEMBER: `listModels` is a method of `EngineAdapter`, and */
+/* an interface member is invisible to an export scan. Growth of a published  */
+/* format that nothing checks is exactly the drift this file exists to catch. */
+/* -------------------------------------------------------------------------- */
+
+const MODULE_SOURCE = readFileSync(TYPES, 'utf8');
+const DOCUMENT_TYPESCRIPT = typescriptBlocks(sectionBody(readFileSync(DOC, 'utf8'), SECTION));
+
+/** The body of an `export interface <name> { … }`, brace-matched. */
+function interfaceBody(source: string, name: string): string {
+  const start = source.indexOf(`export interface ${name}`);
+  assert.notEqual(start, -1, `interface "${name}" not found`);
+  const open = source.indexOf('{', start);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1;
+    else if (source[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, index);
+    }
+  }
+  throw new Error(`interface "${name}" is not closed`);
+}
+
+test('t166 — the document and types.ts both declare EngineModel and ModelCatalog', () => {
+  for (const name of ['EngineModel', 'ModelCatalog']) {
+    assert.equal(
+      fromDocument.get(name),
+      'interface',
+      `"${name}" did not come from the document as an interface`,
+    );
+  }
+});
+
+test('t166 — listModels is an OPTIONAL member of EngineAdapter, on both sides', () => {
+  for (const [side, source] of [
+    ['docs/formatos/engine-adapter.md', DOCUMENT_TYPESCRIPT],
+    ['src/engine/types.ts', MODULE_SOURCE],
+  ] as const) {
+    const body = interfaceBody(source, 'EngineAdapter');
+    assert.match(
+      body,
+      /\blistModels\?\s*\(\s*\)\s*:\s*Promise<ModelCatalog>/,
+      `${side}: EngineAdapter has to declare \`listModels?(): Promise<ModelCatalog>\` — ` +
+        'the QUESTION MARK is the compatibility claim, and without it every third-party ' +
+        'adapter stops compiling',
+    );
+  }
+});
+
+test('t166 — EngineModel keeps id and origin required, and label optional', () => {
+  for (const [side, source] of [
+    ['docs/formatos/engine-adapter.md', DOCUMENT_TYPESCRIPT],
+    ['src/engine/types.ts', MODULE_SOURCE],
+  ] as const) {
+    const body = interfaceBody(source, 'EngineModel');
+    assert.match(body, /\bid\s*:\s*string/, `${side}: EngineModel.id has to be a required string`);
+    assert.match(body, /\blabel\?\s*:\s*string/, `${side}: EngineModel.label has to be optional`);
+    assert.match(
+      body,
+      /\borigin\s*:\s*("cli"|'cli')\s*\|\s*("catalog"|'catalog')/,
+      `${side}: EngineModel.origin has to be the closed pair 'cli' | 'catalog'`,
+    );
+
+    const catalog = interfaceBody(source, 'ModelCatalog');
+    assert.match(catalog, /\bmodels\s*:\s*readonly EngineModel\[\]/, `${side}: ModelCatalog.models`);
+    assert.match(catalog, /\bresolvedAt\s*:\s*string/, `${side}: ModelCatalog.resolvedAt`);
+  }
+});

@@ -234,3 +234,58 @@ test('no command ever carries --add-dir', () => {
     );
   }
 });
+
+/* --- model selection (t166, FR7) -------------------------------------------- */
+
+test('t166 — --model carries spec.model, and only when the spec declares one', () => {
+  const { args } = buildCommand(spec({ model: 'claude-haiku-4-5' }), {});
+
+  const position = args.indexOf('--model');
+  assert.notEqual(position, -1, 'the command does not pass the declared model to the CLI');
+  assert.equal(args[position + 1], 'claude-haiku-4-5');
+  assert.equal(
+    args.filter((argument) => argument === '--model').length,
+    1,
+    'the flag goes exactly once',
+  );
+
+  assert.ok(
+    !buildCommand(spec(), {}).args.includes('--model'),
+    'absent model, absent flag: the CLI resolves its own default',
+  );
+});
+
+test('t166 — a spec with no model produces byte-identical argv to before the field existed', () => {
+  // The regression that matters: `model` is opt-in per node, and a dispatch
+  // that says nothing has to keep getting the command it was getting.
+  assert.deepEqual(buildCommand(spec({ model: undefined }), {}).args, buildCommand(spec(), {}).args);
+});
+
+test('t166 — --model neither swallows the denied list nor gets swallowed by the prompt', () => {
+  const { args } = buildCommand(
+    spec({
+      model: 'claude-haiku-4-5',
+      permissions: { filesystem: { write: [] }, network: { allowed: false } },
+    }),
+    {},
+  );
+
+  // `--disallowedTools` is variadic: the model flag has to close before it
+  // starts, or `--model` and its value end up inside the tool list.
+  assert.ok(
+    args.indexOf('--model') < args.indexOf('--disallowedTools'),
+    'the model flag has to come before the variadic denied list',
+  );
+
+  const denied = disallowedTools(args);
+  assert.ok(!denied.includes('--model'), 'the denied list swallowed the model flag');
+  assert.ok(!denied.includes('claude-haiku-4-5'), 'the denied list swallowed the model value');
+  for (const tool of [...NETWORK_DENIED, ...WRITE_DENIED]) {
+    assert.ok(denied.includes(tool), `the denied list lost ${JSON.stringify(tool)}`);
+  }
+
+  // ...and the trailing positionals stay trailing.
+  assert.equal(args.at(-1), PROMPT, 'the prompt stays the last element of the argv');
+  assert.equal(args.at(-2), INSTRUCTIONS);
+  assert.ok(args.indexOf('--model') < args.indexOf('--system-prompt'));
+});

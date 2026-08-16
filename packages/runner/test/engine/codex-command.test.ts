@@ -123,3 +123,40 @@ test('buildEnvironment merges envOverrides on top of the base environment', () =
 test('buildEnvironment with no envOverrides returns the base environment', () => {
   assert.deepEqual(buildEnvironment(spec(), { PATH: '/usr/bin' }), { PATH: '/usr/bin' });
 });
+
+/* --- model selection (t166, FR8) -------------------------------------------- */
+
+test('t166 — -m carries spec.model, and only when the spec declares one', () => {
+  // `-m, --model <MODEL>` — measured against `codex exec --help` on
+  // codex-cli 0.147.0, the same version the specification cites.
+  const { args } = buildCommand(spec({ model: 'gpt-5.6-luna' }));
+
+  const position = args.indexOf('-m');
+  assert.notEqual(position, -1, 'the command does not pass the declared model to the CLI');
+  assert.equal(args[position + 1], 'gpt-5.6-luna');
+  assert.equal(args.filter((argument) => argument === '-m').length, 1, 'the flag goes exactly once');
+
+  assert.ok(
+    !buildCommand(spec()).args.includes('-m'),
+    'absent model, absent flag: the CLI resolves its own default',
+  );
+});
+
+test('t166 — a spec with no model produces byte-identical argv to before the field existed', () => {
+  assert.deepEqual(buildCommand(spec({ model: undefined })).args, buildCommand(spec()).args);
+});
+
+test('t166 — -m comes before the composed positional, which stays last', () => {
+  const subject = spec({ model: 'gpt-5.6-luna' });
+  const { args } = buildCommand(subject);
+
+  assert.ok(
+    args.indexOf('-m') < args.length - 1,
+    'the flag has to sit before the trailing positional prompt',
+  );
+  assert.equal(
+    args.at(-1),
+    composeSingleArgument(subject),
+    'the composed argument stays the LAST positional, whatever else the argv carries',
+  );
+});

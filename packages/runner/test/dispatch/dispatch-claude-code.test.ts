@@ -3169,6 +3169,283 @@ test("t161 — the node's skill drives the session, and the session advances the
   );
 });
 
+// --- t167: a node that has nobody to ask blocks instead of asking ---
+
+/**
+ * The traversal fixture with one node declaring an escalation policy.
+ *
+ * Built from the same committed graph the t161 cases use: what changes between
+ * the two halves of this proof is ONE field on ONE node, and nothing else.
+ */
+function graphWithPolicy(
+  className: string,
+  nodeId: string,
+  policy: string,
+): Record<string, unknown> {
+  const document = traversalGraph(className);
+  const nodes = (document.nodes as Array<Record<string, unknown>>).map((node) =>
+    node.id === nodeId ? { ...node, escalation_policy: policy } : node,
+  );
+  return { ...document, nodes };
+}
+
+test("t167 — a node with nobody to ask blocks the work instead of raising a question", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  await registerSkill(baseUrl, token, GATE_SKILL);
+
+  /** One call the dispatch made, as the spy in front of `fetch` saw it. */
+  interface Call {
+    method: string;
+    route: string;
+    body: unknown;
+  }
+
+  /** A spy that records every call and delegates to the real control plane. */
+  function spy(): { doFetch: typeof fetch; calls: Call[] } {
+    const calls: Call[] = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        route: String(input).slice(baseUrl.length),
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return fetch(input, init);
+    };
+    return { doFetch, calls };
+  }
+
+  /** The bodies posted to one route, in order. */
+  function posted(calls: Call[], route: string): Record<string, unknown>[] {
+    return calls
+      .filter((call) => call.method === "POST" && call.route === route)
+      .map((call) => call.body as Record<string, unknown>);
+  }
+
+  /** The questions the control plane actually recorded for one job. */
+  async function questionsOf(jobId: number): Promise<Question[]> {
+    const body = await api<{ perguntas: Question[] }>(
+      baseUrl,
+      "GET",
+      `/v1/input-requests?trabalho_id=${jobId}`,
+      undefined,
+      200,
+      token,
+    );
+    return body.perguntas;
+  }
+
+  await parent.test(
+    "AT1 — a session that asks at a never node is blocked, and no pergunta exists",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t167-never-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        graphWithPolicy("travessia-t167-at1", "implementar", "never"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha num nó que não tem a quem perguntar",
+          no_entrada_id: "implementar",
+          execucao_id: 1671,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: linesWithBlock() },
+      })(job.id);
+
+      assert.deepEqual(
+        posted(calls, "/v1/input-requests"),
+        [],
+        "a node that declares never must not raise a question anybody has to answer",
+      );
+
+      const blocks = posted(calls, `/v1/jobs/${job.id}/blocks`);
+      assert.equal(blocks.length, 1, "it blocks unconditionally instead, through the route that already exists");
+      assert.deepEqual(
+        blocks[0].ator,
+        { tipo: "sistema", ref: "runner" },
+        "the wiring raised this block, not the session and not a person",
+      );
+      const motivo = String(blocks[0].motivo);
+      assert.ok(motivo.includes("implementar"), motivo);
+      assert.ok(motivo.includes(ESCALATION.question), motivo);
+
+      assert.deepEqual(
+        await questionsOf(job.id),
+        [],
+        "no pergunta row is ever created for an escalation at a never node",
+      );
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.bloqueado, true, "the work stops all the same");
+      assert.equal(after.motivo_bloqueio, motivo);
+      assert.equal(after.no_atual, "implementar", "and it never advanced past the node that got stuck");
+    },
+  );
+
+  await parent.test(
+    "AT2 — the same session output at an on_uncertainty node still asks",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t167-asks-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      // The DEFAULT case, spelled out: the node declares the policy every graph
+      // written before this ficha has implicitly.
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        graphWithPolicy("travessia-t167-at2", "implementar", "on_uncertainty"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha num nó que pergunta como sempre perguntou",
+          no_entrada_id: "implementar",
+          execucao_id: 1672,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: linesWithBlock() },
+      })(job.id);
+
+      const asked = posted(calls, "/v1/input-requests");
+      assert.equal(asked.length, 1, "the cycle t106 built has to be untouched by this ficha");
+      assert.equal(asked[0].pergunta, ESCALATION.question);
+      assert.deepEqual(
+        posted(calls, `/v1/jobs/${job.id}/blocks`),
+        [],
+        "the block of an ordinary question comes from the control plane, not from the runner",
+      );
+
+      const questions = await questionsOf(job.id);
+      assert.equal(questions.length, 1);
+      assert.equal(questions[0].status, "pendente");
+    },
+  );
+
+  await parent.test(
+    "AT3 — a routing question at a never node goes through /blocks too",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t167-rota-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        graphWithPolicy("travessia-t167-at3", "conferir", "never"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha num portão que não sabe rotear e não tem a quem perguntar",
+          no_entrada_id: "conferir",
+          execucao_id: 1673,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+      // "escala" is declared by the gate's own output schema and has no edge:
+      // the wiring has no rule to apply, and at a never node it has nobody to
+      // ask for one either.
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: linesWithResult("escala") },
+      })(job.id);
+
+      assert.deepEqual(posted(calls, "/v1/input-requests"), []);
+      assert.deepEqual(
+        calls
+          .filter((call) => call.method === "POST" && call.route.endsWith("/transitions"))
+          .map((call) => (call.body as { para_no_id: string }).para_no_id),
+        [],
+        "an unroutable result still moves nothing",
+      );
+
+      const blocks = posted(calls, `/v1/jobs/${job.id}/blocks`);
+      assert.equal(blocks.length, 1);
+      const motivo = String(blocks[0].motivo);
+      assert.ok(motivo.includes("conferir"), motivo);
+      assert.ok(motivo.includes("escala"), motivo);
+
+      assert.deepEqual(await questionsOf(job.id), []);
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.bloqueado, true);
+      assert.equal(after.no_atual, "conferir");
+    },
+  );
+});
+
 // --- t166: per-node model selection ------------------------------------------
 
 /**

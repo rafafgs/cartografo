@@ -283,6 +283,85 @@ test('AT10 — the manifest permissions become the session permissions', async (
   });
 });
 
+/* -------------------------------------------------------------------------- */
+/* t167 — the escalation paragraph is per node, not one paragraph for all      */
+/* -------------------------------------------------------------------------- */
+
+/** The same node as above, declaring a policy (or deliberately declaring none). */
+function nodeWithPolicy(policy: string | undefined): ResolveModule.ResolvedNode {
+  const resolved = resolvedNode(SINGLE_EDGE);
+  if (policy !== undefined) {
+    (resolved.node as unknown as Record<string, unknown>).escalation_policy = policy;
+  }
+  return resolved;
+}
+
+/** Renders one node against the standard manifest. */
+async function renderPolicy(policy: string | undefined): Promise<string> {
+  const { renderSkillInstructions } = await loadModule();
+  const rendered = await renderSkillInstructions(
+    nodeWithPolicy(policy),
+    (await makeReader(registeredSkill())).read,
+  );
+  assert.ok(rendered !== null);
+  return rendered.instructions;
+}
+
+test('t167 — a "never" node is told it has nobody to ask, and never how to ask', async () => {
+  const { NEVER_ESCALATION_PROTOCOL } = await loadModule();
+  const text = await renderPolicy('never');
+
+  assert.ok(
+    text.includes(NEVER_ESCALATION_PROTOCOL),
+    'the session has to be told, in words, that this node has nobody to ask',
+  );
+  assert.ok(
+    !text.includes('```input-request'),
+    'and it must not be handed the template for a block the runner will not turn into a question',
+  );
+  assert.ok(
+    !NEVER_ESCALATION_PROTOCOL.includes('```input-request'),
+    'the paragraph itself is what replaces the fence, not something that carries it',
+  );
+});
+
+test('t167 — an "always" node keeps the block and is told to use it before closing', async () => {
+  const { ESCALATION_PROTOCOL, ALWAYS_ESCALATION_PROTOCOL } = await loadModule();
+  const text = await renderPolicy('always');
+
+  assert.ok(
+    text.includes(ESCALATION_PROTOCOL),
+    'always still escalates through the same block: the addition is on top of it',
+  );
+  assert.ok(
+    text.includes(ALWAYS_ESCALATION_PROTOCOL),
+    'plus the sentence that makes it escalate even when it believes it knows',
+  );
+});
+
+test('t167 — a node with no policy renders exactly what it rendered before', async () => {
+  const { ESCALATION_PROTOCOL, ALWAYS_ESCALATION_PROTOCOL, NEVER_ESCALATION_PROTOCOL } =
+    await loadModule();
+
+  const absent = await renderPolicy(undefined);
+  const declared = await renderPolicy('on_uncertainty');
+
+  assert.equal(
+    absent,
+    declared,
+    'declaring the default has to be indistinguishable from declaring nothing',
+  );
+
+  // The regression pin: today's text opens with the escalation protocol and the
+  // separator, and neither of the two new paragraphs appears anywhere in it.
+  assert.ok(
+    absent.startsWith(`${ESCALATION_PROTOCOL}\n\n---\n\n`),
+    'nothing may be inserted around the paragraph every session already had',
+  );
+  assert.ok(!absent.includes(ALWAYS_ESCALATION_PROTOCOL));
+  assert.ok(!absent.includes(NEVER_ESCALATION_PROTOCOL));
+});
+
 test('AT11 — a node that declares no skill_ref renders nothing, instead of inventing one', async () => {
   const { renderSkillInstructions } = await loadModule();
   const { read, routes } = await makeReader(registeredSkill());

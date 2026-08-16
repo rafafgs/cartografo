@@ -189,6 +189,85 @@ test('t107 AT1 — with no job at all, GET /v1/executions returns an empty list'
   assert.deepEqual(response.body.execucoes, []);
 });
 
+/** One row of `perguntas_por_no`, beside `metricas` on the same route (t167). */
+interface QuestionsByNode {
+  no_id: string | null;
+  perguntas: number;
+}
+
+test('t167 — the execution report counts the questions each node raised', async (t) => {
+  requireArtifacts(
+    T102_ARTIFACTS.migration,
+    T102_ARTIFACTS.inputRequestRepository,
+    T102_ARTIFACTS.inputRequestRoutes,
+    T102_ARTIFACTS.executionRoutes,
+  );
+  const ctx = await startControlPlane(t);
+
+  const ask = async (jobId: number, question: string): Promise<void> => {
+    const response = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
+      trabalho_id: jobId,
+      tipo: 'pergunta',
+      pergunta: question,
+      auto_aprovavel: false,
+    });
+    assert.equal(response.status, 201);
+  };
+
+  // Two jobs of the same round: one asks twice from `revisar`, the other once
+  // from `redigir`. A third node exists in nobody's question at all.
+  const twice = await createJob(ctx, {
+    titulo: 'trava duas vezes na revisão',
+    no_entrada_id: 'revisar',
+    execucao_id: 1670,
+  });
+  await ask(twice.id, 'sigo com a nota curta?');
+  await request(ctx, 'POST', `/v1/jobs/${twice.id}/unblocks`, {});
+  await ask(twice.id, 'e o título, mantenho?');
+
+  const once = await createJob(ctx, {
+    titulo: 'trava uma vez na redação',
+    no_entrada_id: 'redigir',
+    execucao_id: 1670,
+  });
+  await ask(once.id, 'qual fonte vale?');
+
+  // Another round, same nodes: nothing of it may leak into this report.
+  const elsewhere = await createJob(ctx, {
+    titulo: 'de outra rodada',
+    no_entrada_id: 'revisar',
+    execucao_id: 1671,
+  });
+  await ask(elsewhere.id, 'pergunta de outra rodada');
+
+  const response = await request<{
+    execucao_id: number;
+    metricas: MetricByVersion[];
+    perguntas_por_no: QuestionsByNode[];
+  }>(ctx, 'GET', '/v1/executions/1670/metrics-by-version');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    response.body.perguntas_por_no,
+    [
+      { no_id: 'redigir', perguntas: 1 },
+      { no_id: 'revisar', perguntas: 2 },
+    ],
+    'one row per node that asked something; a node with zero questions is simply absent',
+  );
+  assert.ok(
+    Array.isArray(response.body.metricas),
+    'it rides beside the metrics that were already there, not instead of them',
+  );
+
+  const empty = await request<{ perguntas_por_no: QuestionsByNode[] }>(
+    ctx,
+    'GET',
+    '/v1/executions/99/metrics-by-version',
+  );
+  assert.deepEqual(empty.body.perguntas_por_no, [], 'a round nobody asked anything in is empty');
+});
+
 test('t127 — the old Portuguese execution path no longer exists', async (t) => {
   requireArtifacts(T102_ARTIFACTS.migration, T102_ARTIFACTS.executionRoutes);
   const ctx = await startControlPlane(t);

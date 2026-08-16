@@ -50,7 +50,7 @@
 
 import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
 import type { SessionPermissions } from '../engine/types.ts';
-import type { GraphEdge, ResolvedNode } from './resolve-node.ts';
+import { resolveEscalationPolicy, type GraphEdge, type ResolvedNode } from './resolve-node.ts';
 
 /**
  * The escalation paragraph, which travels with EVERY instruction this runner
@@ -84,6 +84,50 @@ export const ESCALATION_PROTOCOL = [
   'de novo — com a pergunta e a resposta já escritas no prompt. Não existe',
   'retomada de sessão: cada despacho é uma sessão nova que foi informada do que',
   'aconteceu antes.',
+].join('\n');
+
+/**
+ * What an `always` node is told, on top of {@link ESCALATION_PROTOCOL} (t167).
+ *
+ * It ADDS to the standard paragraph instead of replacing it: the block, the
+ * fields and what happens after are identical — what changes is when the session
+ * is expected to reach for it. A node declares `always` when the decision it
+ * takes is one a person wants to see even when the session is sure, and "even
+ * when you are sure" is the only sentence that carries that.
+ *
+ * Instruction and not enforcement, like every other line of this file: whether a
+ * session was actually certain is not machine-checkable, and pretending
+ * otherwise would put a gate in front of a judgement nobody can make.
+ */
+export const ALWAYS_ESCALATION_PROTOCOL = [
+  '**Neste nó, escalar não é último recurso.** Antes de fechar o nó, use o bloco',
+  'acima mesmo que você ache que sabe a resposta: a decisão deste nó é de uma',
+  'pessoa, e a sua convicção não substitui a passagem por ela. Se depois de',
+  'olhar não houver decisão nenhuma a tomar, aí sim siga sem perguntar.',
+].join('\n');
+
+/**
+ * What a `never` node is told, INSTEAD of {@link ESCALATION_PROTOCOL} (t167).
+ *
+ * The one policy that replaces the paragraph rather than adding to it, and the
+ * reason is not stylistic: at this node the runner turns an `input-request` into
+ * an ordinary block, so a session handed the template would be writing a block
+ * nobody will ever answer as a question. Giving it the fence and then ignoring
+ * the fence is how a prompt starts lying about what the wiring does.
+ *
+ * What replaces it is the honest instruction: a wall here is a failure of THIS
+ * node's own contract, and it is reported as one.
+ */
+export const NEVER_ESCALATION_PROTOCOL = [
+  'Este nó não tem a quem perguntar. Não existe pessoa esperando do outro lado',
+  'dele, então não escreva bloco de pergunta nenhum: ele não vira pergunta para',
+  'ninguém, e ficar esperando resposta é esperar por uma resposta que não vem.',
+  '',
+  'Se alguma coisa que o trabalho não resolve travar você, isso é falha do',
+  'contrato DESTE nó, e é assim que se relata: termine seu turno dizendo, no',
+  'resultado do nó, o que travou e por quê. Não chute para preencher, e não',
+  'invente saída — um nó que não conseguiu cumprir o contrato dele é um fato',
+  'que alguém precisa ler, e o trabalho para aqui até alguém olhar.',
 ].join('\n');
 
 /** A registered skill, as `GET /v1/skills/:id` projects it. */
@@ -247,9 +291,32 @@ function fenced(title: string, value: unknown): string[] {
  * would invent a decision it does not have — and then escalate to a human when
  * the session, correctly, did not make one.
  */
-function routingProtocol(edges: readonly GraphEdge[]): string[] {
+function routingProtocol(edges: readonly GraphEdge[], canAsk: boolean): string[] {
   const labels = edges.map((edge) => edge.condition ?? '').filter((label) => label !== '');
   const list = labels.map((label) => `\`${label}\``).join(', ');
+
+  // The two sentences that describe what happens when the session does NOT name
+  // an edge have to agree with the paragraph at the top: at a `never` node the
+  // wiring blocks the work instead of raising a question, and a session sent
+  // back to a block that will not become a question is a prompt lying about the
+  // wiring it runs under (t167).
+  const whenNothingMatches = canAsk
+    ? [
+        'O valor precisa ser um desses, literalmente. Qualquer outra coisa — ou',
+        'nenhum bloco — não roteia nada: vira uma pergunta para uma pessoa, e o',
+        'trabalho para até alguém responder.',
+        '',
+        'Se o que trava você é a decisão em si, use o bloco `input-request` acima em',
+        'vez de chutar um resultado.',
+      ]
+    : [
+        'O valor precisa ser um desses, literalmente. Qualquer outra coisa — ou',
+        'nenhum bloco — não roteia nada: o trabalho é bloqueado com o motivo, e',
+        'para até alguém olhar.',
+        '',
+        'Se o que trava você é a decisão em si, relate isso como falha do contrato',
+        'deste nó, com o motivo — nunca chute um resultado para sair andando.',
+      ];
 
   return [
     '## Como fechar o turno: este nó decide para onde o trabalho vai',
@@ -262,13 +329,29 @@ function routingProtocol(edges: readonly GraphEdge[]): string[] {
     `{"resultado": "<um de: ${labels.join(', ')}>"}`,
     '```',
     '',
-    'O valor precisa ser um desses, literalmente. Qualquer outra coisa — ou',
-    'nenhum bloco — não roteia nada: vira uma pergunta para uma pessoa, e o',
-    'trabalho para até alguém responder.',
-    '',
-    'Se o que trava você é a decisão em si, use o bloco `input-request` acima em',
-    'vez de chutar um resultado.',
+    ...whenNothingMatches,
   ];
+}
+
+/**
+ * The escalation paragraph of THIS node (t167, FR5).
+ *
+ * Until this ficha there was one paragraph, composed into every session
+ * whatever node it was on. The three answers here are the same fact made per
+ * node: `on_uncertainty` is the text verbatim — every graph written before the
+ * field existed renders byte-for-byte what it always rendered — `always` adds a
+ * sentence to it, and `never` replaces it, because at that node the block would
+ * not become a question.
+ */
+function escalationProtocol(resolved: ResolvedNode): string {
+  switch (resolveEscalationPolicy(resolved)) {
+    case 'never':
+      return NEVER_ESCALATION_PROTOCOL;
+    case 'always':
+      return `${ESCALATION_PROTOCOL}\n\n${ALWAYS_ESCALATION_PROTOCOL}`;
+    default:
+      return ESCALATION_PROTOCOL;
+  }
 }
 
 /** The whole instruction text of a session running this node with this skill. */
@@ -277,7 +360,7 @@ function render(resolved: ResolvedNode, skill: RegisteredSkill): string {
   const contract = node.contract ?? {};
 
   const parts = [
-    ESCALATION_PROTOCOL,
+    escalationProtocol(resolved),
     '',
     '---',
     '',
@@ -309,7 +392,9 @@ function render(resolved: ResolvedNode, skill: RegisteredSkill): string {
     'isso é uma pergunta, não um obstáculo para driblar.',
   ];
 
-  if (edges.length >= 2) parts.push('', '---', '', ...routingProtocol(edges));
+  if (edges.length >= 2) {
+    parts.push('', '---', '', ...routingProtocol(edges, resolveEscalationPolicy(resolved) !== 'never'));
+  }
 
   return parts.join('\n');
 }

@@ -155,6 +155,16 @@
           "description": "Qual modelo do engine executa este nó (t166). Opcional: ausente significa o default do próprio engine — nenhuma flag de modelo é montada, e o argv sai idêntico ao de antes deste campo existir. Texto livre de propósito, pela mesma razão que engine: um enum fechado obrigaria a editar o schema a cada modelo novo, e quem recusa um id desconhecido é a CLI do engine, na abertura da sessão. O catálogo que a API publica é descoberta, não validação.",
           "examples": ["claude-haiku-4-5", "gpt-5.6-luna"]
         },
+        "escalation_policy": {
+          "enum": ["always", "on_uncertainty", "never"],
+          "description": "Quando este nó chama gente (t167). always: escala antes de fechar o nó, mesmo achando que sabe a resposta. on_uncertainty: escala quando trava — o comportamento que todo nó sempre teve. never: não existe a quem perguntar aqui; travar é falha do contrato do nó, e o runner bloqueia o trabalho com motivo em vez de abrir pergunta. Opcional: ausente significa on_uncertainty, resolvido na hora do despacho e nunca na validação, exatamente como engine. Enum fechado, ao contrário de engine, porque aqui os três valores SÃO o vocabulário: um quarto valor não é adapter novo, é erro de quem escreveu.",
+          "examples": ["never"]
+        },
+        "escalation_recipient": {
+          "type": "string",
+          "description": "Quem deveria ser chamado quando este nó escala (t167). Texto livre e sem formato imposto, como resposta_padrao e respondido_por: não existe sistema de identidade nem de papéis neste repositório para validar contra. Guardado no grafo e devolvido pelo snapshot; nada envia nada para ele ainda — entregar é ficha futura, quando papéis existirem.",
+          "examples": ["editor-de-plantao", "arquiteto"]
+        },
         "skill_ref": { "$ref": "#/$defs/skill_ref" },
         "contract": { "$ref": "#/$defs/contract" }
       }

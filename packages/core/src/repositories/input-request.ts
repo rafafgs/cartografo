@@ -42,6 +42,15 @@ export interface InputRequest {
   trabalho_id: number;
   sessao_id: number | null;
   execucao_id: number | null;
+  /**
+   * The node the owning job was standing on when it asked (t167).
+   *
+   * `null` is ordinary and never a defect: a row written before the column
+   * existed, or a job with no position at all. It is stamped by the server from
+   * the job, never by the caller — a question that declared its own node would
+   * be a question able to lie about where the work was.
+   */
+  no_id: string | null;
   tipo: string;
   pergunta: string;
   contexto: string | null;
@@ -63,8 +72,8 @@ interface InputRequestRow extends Omit<InputRequest, 'opcoes' | 'auto_aprovavel'
 }
 
 const COLUMNS = `
-  id, trabalho_id, sessao_id, execucao_id, tipo, pergunta, contexto, opcoes,
-  recomendacao, resposta_padrao, auto_aprovavel, status, resposta,
+  id, trabalho_id, sessao_id, execucao_id, no_id, tipo, pergunta, contexto,
+  opcoes, recomendacao, resposta_padrao, auto_aprovavel, status, resposta,
   respondido_por, origem, criada_em, respondida_em
 `;
 
@@ -143,10 +152,21 @@ export function createInputRequest(
   });
 
   const jobId = data.trabalho_id as number;
+  // `no_atual` rides along with `projeto_id`/`execucao_id` — one lookup, one
+  // trust boundary: everything an input request says about its owner comes from
+  // the owner's row, and nothing from the body (t167).
   const owner = db
-    .prepare('SELECT projeto_id, execucao_id FROM trabalho WHERE id = ?')
-    .get(jobId) as { projeto_id: number; execucao_id: number | null } | undefined;
+    .prepare('SELECT projeto_id, execucao_id, no_atual FROM trabalho WHERE id = ?')
+    .get(jobId) as
+    | { projeto_id: number; execucao_id: number | null; no_atual: string | null }
+    | undefined;
   if (owner === undefined) return null;
+
+  // A job with no position is recorded as having none. The column is NOT NULL,
+  // so this only happens for a row that never got a real node — and the entry
+  // node would be exactly the guess this stays away from.
+  const nodeId =
+    typeof owner.no_atual === 'string' && owner.no_atual !== '' ? owner.no_atual : null;
 
   const options = data.opcoes as string[] | null;
   const actor = resolveActor(input.ator, API_ACTOR);
@@ -156,15 +176,16 @@ export function createInputRequest(
     const result = db
       .prepare(
         `INSERT INTO pergunta (
-           trabalho_id, sessao_id, execucao_id, tipo, pergunta, contexto, opcoes,
-           recomendacao, resposta_padrao, auto_aprovavel, status, resposta,
+           trabalho_id, sessao_id, execucao_id, no_id, tipo, pergunta, contexto,
+           opcoes, recomendacao, resposta_padrao, auto_aprovavel, status, resposta,
            respondido_por, origem, criada_em, respondida_em
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', NULL, NULL, NULL, ?, NULL)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', NULL, NULL, NULL, ?, NULL)`,
       )
       .run(
         jobId,
         data.sessao_id as number | null,
         owner.execucao_id,
+        nodeId,
         data.tipo as string,
         data.pergunta as string,
         data.contexto as string | null,
@@ -183,7 +204,11 @@ export function createInputRequest(
       entidade: { tipo: 'pergunta', id },
       ator: actor,
       ocorrido_em: timestamp,
-      dados: data,
+      // The node goes into the payload here and not into `requireValidData`
+      // above, for the ordinary reason: it is not known until the owner has been
+      // read, and the owner is read after the body has been judged. `recordEvent`
+      // revalidates the whole envelope anyway, this field included.
+      dados: { ...data, no_id: nodeId },
     });
 
     // The reason quotes the input request's id (the taxonomy's own example):
@@ -402,6 +427,50 @@ export function listInputRequests(
     .prepare(`SELECT ${COLUMNS} FROM pergunta ${where} ORDER BY id`)
     .all(...values) as InputRequestRow[];
   return rows.map(toInputRequest);
+}
+
+/** One row of the per-node question count of an execution (t167). */
+export interface QuestionsByNode {
+  /** The node that asked; `null` groups the rows that never recorded one. */
+  no_id: string | null;
+  perguntas: number;
+}
+
+/**
+ * How many questions each node raised, in one execution (t167).
+ *
+ * The counterpart of `metricsByVersion` (t102, FR17) on the other axis: that one
+ * answers "did v2 behave better than v1?", this one answers "which step keeps
+ * stopping to ask?" — which is the number a per-node escalation policy is judged
+ * by. Without it, "this node asks too much" is an impression.
+ *
+ * A node with no question is simply absent: this counts what happened, and a row
+ * of zeroes for every node of the graph would require reading the graph, which
+ * this query deliberately does not do — it groups the questions that exist.
+ *
+ * Questions with no recorded node fall into a `null` group instead of vanishing,
+ * exactly as `metricsByVersion` does with versionless jobs: a report that hides
+ * what it cannot classify lies about the total.
+ *
+ * @param db Open handle.
+ * @param executionId Execution to group.
+ * @returns One row per node, in node order, with `null` last.
+ */
+export function questionsByNode(db: Database, executionId: number): QuestionsByNode[] {
+  const rows = db
+    .prepare(
+      `SELECT no_id AS no_id, COUNT(*) AS perguntas
+         FROM pergunta
+        WHERE execucao_id = ?
+        GROUP BY no_id`,
+    )
+    .all(executionId) as QuestionsByNode[];
+
+  return rows.sort((a, b) => {
+    if (a.no_id === null) return 1;
+    if (b.no_id === null) return -1;
+    return a.no_id.localeCompare(b.no_id);
+  });
 }
 
 /**

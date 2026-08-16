@@ -134,6 +134,9 @@ test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owni
     recomendacao: FULL_BODY.recomendacao,
     resposta_padrao: FULL_BODY.resposta_padrao,
     auto_aprovavel: true,
+    // Stamped by the server from the job's position, never sent by the caller
+    // (t167). Its own test is below; here it only keeps the payload whole.
+    no_id: 'entrada',
   });
 
   // The job's timeline: the creation, and right after it the block. The order is
@@ -154,6 +157,85 @@ test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owni
     'the wiring raises the flag, not the human nor the agent that asked',
   );
   assert.equal(block.ator.ref, 'escalacao-humana');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t167 — which node asked                                                     */
+/*                                                                            */
+/* The per-node escalation policy is graph data, and this column is what lets  */
+/* anyone cross a pending question with the node that raised it — the fact a   */
+/* future auto-answer gate reads, and the grouping `perguntas_por_no` counts.  */
+/* -------------------------------------------------------------------------- */
+
+test('t167 — the created pergunta is stamped with the node the job is standing on', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const job = await createJob(ctx, {
+    titulo: 'que pergunta de um nó específico',
+    no_entrada_id: 'redigir',
+    execucao_id: 167,
+  });
+  // The CURRENT node, not the entry one: a job moves, and the question belongs
+  // to the step that raised it.
+  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { para_no_id: 'revisar' });
+
+  const response = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
+    trabalho_id: job.id,
+    ...FULL_BODY,
+    // Sent on purpose, and it has to be ignored: `no_id` comes from the job the
+    // server looked up, the same trust boundary `projeto_id`/`execucao_id` have.
+    no_id: 'um-no-que-ninguem-visitou',
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(response.body.no_id, 'revisar', 'the position of the job is what gets stamped');
+
+  const events = getEventsByEntity(ctx.db, 'pergunta', response.body.id);
+  assert.equal(events[0].tipo, 'pergunta.criada');
+  assert.equal(
+    events[0].dados.no_id,
+    'revisar',
+    'and the event carries it too, or the log cannot answer "which node asked?"',
+  );
+
+  const listed = await request<{ perguntas: InputRequest[] }>(
+    ctx,
+    'GET',
+    `/v1/input-requests?trabalho_id=${job.id}`,
+  );
+  assert.deepEqual(
+    listed.body.perguntas.map((pending) => pending.no_id),
+    ['revisar'],
+    'the projection returns it like any other column',
+  );
+});
+
+test('t167 — a job with no current node stamps no_id null, never a guess', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, {
+    titulo: 'que pergunta sem nó nenhum',
+    no_entrada_id: 'redigir',
+    execucao_id: 167,
+  });
+
+  // `trabalho.no_atual` is NOT NULL, so "no current node" is the empty string —
+  // a state the API cannot produce and the only reason this test writes to the
+  // database directly. What is under test is the reading: absent position is
+  // recorded as `null`, the same way `sessao.engine_session_ref` treats "not
+  // known yet", and never backfilled with the entry node.
+  ctx.db.prepare('UPDATE trabalho SET no_atual = ? WHERE id = ?').run('', job.id);
+
+  const response = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
+    trabalho_id: job.id,
+    ...FULL_BODY,
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(response.body.no_id, null);
 });
 
 test('t106 — PATCH /answer unblocks the job, with the actor of whoever answered', async (t) => {

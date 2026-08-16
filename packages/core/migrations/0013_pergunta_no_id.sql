@@ -1,0 +1,33 @@
+-- 0013_pergunta_no_id — de qual nó veio a pergunta (t167).
+--
+-- Até aqui uma pergunta sabia de qual TRABALHO ela era, e de qual execução, mas
+-- não de qual NÓ: `pergunta` carregava `trabalho_id` e `execucao_id`, e a
+-- posição do trabalho ficava só na linha do tempo, misturada com todas as
+-- transições que vieram depois. Quem quisesse responder "quais nós mais param
+-- pedindo gente?" tinha de reconstruir a travessia evento a evento e torcer
+-- para nenhuma transição ter acontecido entre a pergunta e a leitura.
+--
+-- A política de escalação passa a ser dado do nó nesta mesma ficha, e é isso
+-- que torna a coluna necessária e não apenas conveniente: uma política por nó
+-- que ninguém consegue cruzar com as perguntas daquele nó é uma política que
+-- ninguém consegue avaliar. `perguntas_por_no` (a rota de execução) e qualquer
+-- portão futuro de auto-resposta leem daqui.
+--
+-- **Quem escreve é o servidor, a partir do `no_atual` do trabalho dono** — nunca
+-- o corpo da requisição, a mesma fronteira de confiança que `projeto_id` e
+-- `execucao_id` já têm. Uma pergunta que declarasse o próprio nó seria uma
+-- pergunta capaz de mentir sobre onde o trabalho estava.
+--
+-- Anulável e sem backfill, como `sessao.engine_session_ref` já é: linha
+-- anterior a esta migração lê `NULL`, que é exatamente o que ela é — "não se
+-- sabe de qual nó veio". Não há valor a inventar para uma pergunta feita antes
+-- de a coluna existir, e o nó de entrada do trabalho seria justamente o palpite
+-- que a coluna existe para não precisar dar.
+--
+-- Nome de coluna em português, como o resto de `pergunta`: a D18 escopa a regra
+-- de inglês a identificadores de código, e schema aqui é vocabulário de dado.
+-- `no_id` é o mesmo nome que `sessao.no_id` já usa para o mesmo fato.
+--
+-- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+
+ALTER TABLE pergunta ADD COLUMN no_id TEXT;  -- NULO = não se sabe de qual nó veio

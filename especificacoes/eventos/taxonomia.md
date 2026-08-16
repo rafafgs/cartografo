@@ -334,7 +334,7 @@ Emitido quando um agente precisa de algo do humano para continuar. Ator:
 manual quer um OK sobre um artefato) — mesmo animal, mesma fila, mesmo loop.
 
 ```json
-{"trabalho_id":101,"sessao_id":5001,"tipo":"pergunta",
+{"trabalho_id":101,"sessao_id":5001,"no_id":"refinar","tipo":"pergunta",
  "pergunta":"Unifico o trio de tabelas do flowpilot num log de eventos so, ou porto as tres separadas?",
  "contexto":"D15 exige cruzar versao de grafo com telemetria por join, o que fica mais barato com um log unico.",
  "opcoes":["Unificar num log so","Portar as tres separadas"],
@@ -346,6 +346,14 @@ manual quer um OK sobre um artefato) — mesmo animal, mesma fila, mesmo loop.
 `auto_aprovavel` é carregado explicitamente porque "sem opções e sem padrão"
 nunca foi bom proxy para inaprovável: uma pergunta cuja resposta só o humano
 pode dar precisa dizer isso, não torcer para que o formato dela sugira.
+
+`no_id` é de qual **nó** a pergunta veio, carimbado pelo servidor a partir da
+posição do trabalho dono — nunca vindo do corpo do pedido. Sem ele, "quais
+etapas mais param para pedir gente?" só se responde reconstruindo a travessia
+evento a evento, e a política de escalação por nó
+([grafo.md](../../docs/spec/grafo.md), §2) seria uma política que ninguém
+consegue avaliar. Opcional: `null` é "não se sabe de qual nó veio" — trabalho
+sem posição, ou pergunta gravada antes de o campo existir.
 
 #### `pergunta.respondida` — [schema](schemas/pergunta.respondida.schema.json)
 

@@ -62,6 +62,18 @@ export interface GraphNode {
    * is a field this package has an opinion about.
    */
   model?: string;
+  /**
+   * When this node calls a human (t167). Absent = `on_uncertainty`, which is
+   * what every node did before the field existed.
+   *
+   * Named here for the same reason `model` is, and typed `string` rather than
+   * the closed union for the same reason too: what refuses a fourth value is
+   * `schema/grafo.schema.json`, on the way in, and this package reads snapshots
+   * that were already validated by it.
+   */
+  escalation_policy?: string;
+  /** Who should be called when this node escalates (t167). Free text. */
+  escalation_recipient?: string;
   skill_ref: unknown;
   contract: unknown;
   [key: string]: unknown;

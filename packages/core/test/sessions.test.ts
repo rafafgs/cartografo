@@ -21,6 +21,7 @@ import {
   request,
   startControlPlane,
   type Event,
+  type Job,
   type Session,
   type TestContext,
 } from './support.ts';
@@ -916,4 +917,250 @@ test('t163 — GET /v1/sessions surfaces both new fields on the projection', asy
   assert.equal(listed.body.sessoes.length, 1);
   assert.equal(listed.body.sessoes[0].silence_seconds, 300);
   assert.equal(listed.body.sessoes[0].timeout_reason, 'silence');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t172 — which models ran the session, and what they cost in tokens.         */
+/* -------------------------------------------------------------------------- */
+
+/** The migration that gives the session somewhere to record its models (t172). */
+const T172_MIGRATION = 'migrations/0013_sessao_modelos.sql';
+
+/** What a real `claude` run reported: two models on one single-turn session. */
+const MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-5'];
+
+test('t172 — modelos round-trips through the projection; absent reads null, never []', async (t) => {
+  requireArtifacts(...ARTIFACTS, T172_MIGRATION);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const reported = await openBareSession(ctx);
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${reported.id}/finish`, {
+    status: 'concluida',
+    exit_code: 0,
+    uso: USAGE,
+    modelos: MODELS,
+  });
+  assert.equal(finished.status, 200);
+  assert.deepEqual(finished.body.modelos, MODELS, 'the single-session projection carries it');
+
+  const silent = await openBareSession(ctx);
+  const withoutModels = await request<Session>(ctx, 'PATCH', `/v1/sessions/${silent.id}/finish`, {
+    status: 'concluida',
+    exit_code: 0,
+  });
+  assert.equal(withoutModels.status, 200);
+  assert.equal(
+    withoutModels.body.modelos,
+    null,
+    'the engine named no model: null, and never an empty list',
+  );
+  assert.notDeepEqual(
+    withoutModels.body.modelos,
+    [],
+    '[] would read as "it ran under zero models", which is a claim nobody measured',
+  );
+  assert.equal(withoutModels.body.uso, null, 'and the same discipline `uso` already had');
+
+  const listed = await request<{ sessoes: Session[] }>(ctx, 'GET', '/v1/sessions?execucao_id=7');
+  assert.equal(listed.status, 200);
+  const byId = new Map(listed.body.sessoes.map((session) => [session.id, session]));
+  assert.deepEqual(byId.get(reported.id)?.modelos, MODELS, 'and the listing carries it too');
+  assert.equal(byId.get(silent.id)?.modelos, null);
+
+  // The log is where the fact lives; the row is a projection of it (t102).
+  const events = getEventsByEntity(ctx.db, 'sessao', reported.id);
+  assert.deepEqual(events[1].dados, {
+    status: 'concluida',
+    exit_code: 0,
+    uso: USAGE,
+    timeout_reason: null,
+    modelos: MODELS,
+  });
+  assert.deepEqual(
+    getEventsByEntity(ctx.db, 'sessao', silent.id)[1].dados.modelos,
+    null,
+    'the normalized payload says the absence out loud, as it does for every optional field',
+  );
+});
+
+test('t172 — a modelos that is not a list of non-empty strings is refused', async (t) => {
+  requireArtifacts(...ARTIFACTS, T172_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  for (const refused of [
+    { label: 'a bare string', value: 'claude-sonnet-5' },
+    { label: 'a list with a number in it', value: ['claude-sonnet-5', 5] },
+    { label: 'a list with an empty string', value: ['claude-sonnet-5', ''] },
+    { label: 'an empty list', value: [] },
+  ]) {
+    const session = await openBareSession(ctx);
+    const response = await request<{ error: string }>(
+      ctx,
+      'PATCH',
+      `/v1/sessions/${session.id}/finish`,
+      { status: 'concluida', exit_code: 0, modelos: refused.value },
+    );
+    assert.equal(
+      response.status,
+      400,
+      `${refused.label} has to be a 400, the same shape a malformed \`uso\` gets`,
+    );
+    assert.equal(response.body.error, 'validation_error');
+
+    // ...and nothing was written: the session is still open, so a retry with a
+    // well-formed body can still close it.
+    const still = await request<{ sessoes: Session[] }>(ctx, 'GET', '/v1/sessions?execucao_id=7');
+    const row = still.body.sessoes.find((item) => item.id === session.id);
+    assert.equal(row?.status, 'aberta', `${refused.label} left a trace on the row`);
+  }
+});
+
+test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, version and model', async (t) => {
+  requireArtifacts(...ARTIFACTS, T102_ARTIFACTS.jobRepository, T102_ARTIFACTS.jobRoutes, T172_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const EXECUTION = 1720;
+  const V1 = 'sha256:v1';
+  const V2 = 'sha256:v2';
+  const HAIKU = 'claude-haiku-4-5';
+  const SONNET = 'claude-sonnet-5';
+
+  /** A `uso` whose total is the sum of its four counts — the lens's own rule. */
+  const usage = (total: number): Record<string, number> => ({
+    input_tokens: total,
+    output_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+  });
+
+  const jobOne = await createJob(ctx, {
+    titulo: 'ficha na v1',
+    no_entrada_id: 'implementar',
+    execucao_id: EXECUTION,
+    grafo_versao_id: V1,
+  });
+  const jobTwo = await createJob(ctx, {
+    titulo: 'ficha na v2',
+    no_entrada_id: 'implementar',
+    execucao_id: EXECUTION,
+    grafo_versao_id: V2,
+  });
+
+  /** Opens a session on a job's node and closes it with the given accounting. */
+  const spend = async (
+    jobId: number,
+    nodeId: string,
+    tokens: number,
+    models: string[],
+  ): Promise<void> => {
+    const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
+      trabalho_id: jobId,
+      no_id: nodeId,
+      engine: 'claude-code',
+      working_dir: '/tmp/cartografo',
+      prompt: `trabalhe em ${nodeId}`,
+    });
+    assert.equal(opened.status, 201);
+    const closed = await request<Session>(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
+      status: 'concluida',
+      exit_code: 0,
+      uso: usage(tokens),
+      modelos: models,
+    });
+    assert.equal(closed.status, 200);
+  };
+
+  await spend(jobOne.id, 'implementar', 100, [SONNET]);
+  await spend(jobOne.id, 'revisar', 10, [HAIKU]);
+  await spend(jobTwo.id, 'implementar', 1000, [SONNET, HAIKU]);
+  // A session the engine told nothing about: it may not move a single total.
+  await spend(jobTwo.id, 'revisar', 0, [HAIKU]);
+  const silent = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    trabalho_id: jobTwo.id,
+    no_id: 'revisar',
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'sessão que morreu sem reportar nada',
+  });
+  await request<Session>(ctx, 'PATCH', `/v1/sessions/${silent.body.id}/finish`, {
+    status: 'falhou',
+    exit_code: 1,
+  });
+
+  // --- the two GETs, and the join done in the client. This IS the claim: no
+  // aggregation route was added, and none is needed (FR10, Out of Scope).
+  const sessions = await request<{ sessoes: Session[] }>(
+    ctx,
+    'GET',
+    `/v1/sessions?execucao_id=${EXECUTION}`,
+  );
+  assert.equal(sessions.status, 200);
+  const jobs = await request<{ trabalhos: Job[] }>(
+    ctx,
+    'GET',
+    `/v1/jobs?execucao_id=${EXECUTION}`,
+  );
+  assert.equal(jobs.status, 200);
+
+  const versionOf = new Map(jobs.body.trabalhos.map((job) => [job.id, job.grafo_versao_id]));
+  const total = (uso: Session['uso']): number =>
+    uso === null
+      ? 0
+      : uso.input_tokens +
+        uso.output_tokens +
+        uso.cache_creation_input_tokens +
+        uso.cache_read_input_tokens;
+
+  /** Sums tokens per key, ignoring what nobody reported — absence is not zero. */
+  const groupBy = (key: (session: Session) => readonly (string | number | null)[]): Map<string, number> => {
+    const totals = new Map<string, number>();
+    for (const session of sessions.body.sessoes) {
+      if (session.uso === null) continue;
+      for (const bucket of key(session)) {
+        const name = String(bucket);
+        totals.set(name, (totals.get(name) ?? 0) + total(session.uso));
+      }
+    }
+    return totals;
+  };
+
+  assert.deepEqual(
+    Object.fromEntries(groupBy((session) => [session.trabalho_id])),
+    { [jobOne.id]: 110, [jobTwo.id]: 1000 },
+    'by ticket',
+  );
+  assert.deepEqual(
+    Object.fromEntries(groupBy((session) => [session.no_id])),
+    { implementar: 1100, revisar: 10 },
+    'by node',
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      groupBy((session) => [versionOf.get(session.trabalho_id ?? -1) ?? null]),
+    ),
+    { [V1]: 110, [V2]: 1000 },
+    'by graph version — the join `topografo-custo` already performs',
+  );
+  // By model, a session with two of them counts in BOTH: the CLI reports which
+  // models ran, never how the four counts split between them, and inventing a
+  // split would be this test making up a number the engine did not give.
+  assert.deepEqual(
+    Object.fromEntries(groupBy((session) => session.modelos ?? [])),
+    { [SONNET]: 1100, [HAIKU]: 1010 },
+    'by model',
+  );
+
+  // The honest denominator: the sessions that reported nothing are countable,
+  // and they are not folded into any of the four totals above.
+  assert.equal(
+    sessions.body.sessoes.filter((session) => session.uso === null).length,
+    1,
+    'exactly one session reported no usage',
+  );
+  assert.equal(
+    sessions.body.sessoes.filter((session) => session.modelos === null).length,
+    1,
+    'and the same one reported no model',
+  );
 });

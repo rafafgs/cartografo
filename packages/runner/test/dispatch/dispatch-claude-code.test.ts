@@ -143,6 +143,15 @@ interface Session {
   silence_seconds: number | null;
   /** Which watchdog stopped it, when one did (t163). */
   timeout_reason: string | null;
+  /** The four token counts the engine reported, or `null` for nothing (t172). */
+  uso: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens: number;
+    cache_read_input_tokens: number;
+  } | null;
+  /** Which models ran the session, or `null` for nothing reported (t172). */
+  modelos: string[] | null;
   finalizada_em: string | null;
 }
 
@@ -3442,6 +3451,136 @@ test("t166 — the model is resolved from the node the work is standing on", asy
         title: "ficha que ficou na versão anterior",
       });
       assert.equal(before.model, undefined);
+    },
+  );
+});
+
+// --- t172: the tokens and the models a session really spent -----------------
+
+/**
+ * The `/finish` body of one dispatch whose adapter ended however the case says.
+ *
+ * The stub is {@link recordingAdapter}, unchanged and shared with t163, for the
+ * reason that ficha already recorded: what is under test is not the parsing (the
+ * conformance suite owns that, against the real frame shape) but what the
+ * DISPATCH does with a detail it was handed. A fake engine would prove the two
+ * halves at once and locate neither when one breaks.
+ */
+test('t172 — the tokens and the models the adapter reported reach the finish call', async (parent) => {
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  /** The `/finish` body of one dispatch, plus the session it closed. */
+  const finishBodyOf = async (
+    t: TestHook,
+    executionId: number,
+    detail: SessionFinishDetail | undefined,
+  ): Promise<{ body: Record<string, unknown>; sessionId: number }> => {
+    const workDir = mkdtempSync(
+      path.join(tmpdir(), `cartografo-t172-${String(executionId)}-`),
+    );
+    t.after(() => {
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    const work = await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        titulo: "ficha que reporta uso e modelo",
+        no_entrada_id: "implementar",
+        execucao_id: executionId,
+      },
+      201,
+      token,
+    );
+
+    const bodies: Array<{ route: string; body: unknown }> = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      bodies.push({
+        route: String(input).slice(baseUrl.length),
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return fetch(input, init);
+    };
+
+    const probe = recordingAdapter({
+      status: "completed",
+      exitCode: 0,
+      ...(detail === undefined ? {} : { detail }),
+    });
+
+    await createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      doFetch,
+      engines: {
+        "claude-code": {
+          adapter: probe.adapter,
+          decodeSessionText: decodeClaudeCodeSessionText,
+        },
+      },
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+    })(work.id);
+
+    const call = bodies.find((candidate) => candidate.route.endsWith("/finish"));
+    assert.ok(call, "the dispatch never called PATCH /v1/sessions/:id/finish");
+    const id = Number(/\/v1\/sessions\/(\d+)\/finish$/.exec(call.route)?.[1]);
+    return { body: call.body as Record<string, unknown>, sessionId: id };
+  };
+
+  const USAGE = {
+    input_tokens: 2,
+    output_tokens: 5,
+    cache_creation_input_tokens: 3022,
+    cache_read_input_tokens: 15688,
+  };
+
+  await parent.test(
+    "AT — a reported usage and model land in the finish body, value for value",
+    async (t) => {
+      const { body, sessionId } = await finishBodyOf(t, 1720, {
+        usage: USAGE,
+        models: ["claude-haiku-4-5-20251001", "claude-sonnet-5"],
+      });
+
+      assert.deepEqual(body.uso, USAGE, "the four counts cross untouched");
+      assert.deepEqual(body.modelos, ["claude-haiku-4-5-20251001", "claude-sonnet-5"]);
+
+      // ...and the control plane accepted them: a body the schema refuses would
+      // have been a 400 the dispatch swallows into `finishFailure`, and the row
+      // would read `null` with every assertion above still green.
+      const { sessoes } = await api<{ sessoes: Session[] }>(
+        baseUrl,
+        "GET",
+        `/v1/sessions?execucao_id=1720`,
+        undefined,
+        200,
+        token,
+      );
+      const stored = sessoes.find((session) => session.id === sessionId);
+      assert.ok(stored, "the session the dispatch closed is not in the projection");
+      assert.deepEqual(stored.uso, USAGE);
+      assert.deepEqual(stored.modelos, ["claude-haiku-4-5-20251001", "claude-sonnet-5"]);
+    },
+  );
+
+  await parent.test(
+    "AT — an adapter that reported neither sends uso: null and modelos: null",
+    async (t) => {
+      const { body } = await finishBodyOf(t, 1721, undefined);
+
+      // Present-and-null, never absent: the same posture `timeout_reason` has
+      // had since t163. An absent key and a null one read the same to the
+      // server, and differently to whoever is reading the runner's calls.
+      assert.ok("uso" in body, "the key has to be sent, not omitted");
+      assert.ok("modelos" in body, "the key has to be sent, not omitted");
+      assert.equal(body.uso, null);
+      assert.equal(body.modelos, null);
+      assert.notEqual(body.uso, 0, "absence never collapses into zero");
     },
   );
 });

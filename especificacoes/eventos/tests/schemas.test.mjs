@@ -70,7 +70,13 @@ export const TABELA = {
     // `timeout_reason` (t163) é o que separa as duas paradas nossas sem que o
     // enum de `status` cresça: os dois cães de guarda desembocam em
     // `tempo_esgotado`, e a causa viaja no payload.
-    opcionais: ['exit_code', 'uso', 'timeout_reason'],
+    //
+    // `modelos` (t172) é a identidade que faltava para a pergunta "custo por
+    // modelo": até aqui o log dizia qual MOTOR rodou (`sessao.aberta.engine`) e
+    // nunca qual modelo. É lista porque uma sessão roda mais de um — medido
+    // contra a CLI real, um turno só devolveu dois — e colapsar em "o" modelo
+    // atribuiria a conta inteira ao errado.
+    opcionais: ['exit_code', 'uso', 'timeout_reason', 'modelos'],
   },
   // O 17º tipo entrou com o enforcement de permissão (t125): toda tentativa de
   // usar uma ferramenta que a política da sessão negou vira telemetria. Os três

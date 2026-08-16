@@ -157,9 +157,58 @@ function describeError(error: unknown): string {
 }
 
 /**
- * Tells the control plane which models this runner's engine offers (t166, FR11).
+ * Runs the engine's preflight, and answers whether it is worth asking anything
+ * else of that CLI (t186, FR11).
+ *
+ * FR11 states the catalog is reported "after pairing and `verifyCli()`
+ * succeed", and until t186 the second half of that sentence had no code: the
+ * probe existed, was tested, and was reached only from three diagnostic
+ * commands — never from the daemon's own startup. This is that gate, and it
+ * decides one thing only.
  *
  * Three decisions, each with a plausible opposite:
+ *
+ * - **`available` is the whole question, and `authenticated` is not part of
+ *   it.** The specification demoted `authenticated` to best effort in writing —
+ *   there is an engine whose credential failure only shows up in the middle of
+ *   the first session (`engine/types.ts`, `CliProbe`). Gating on a field that
+ *   promises no more than "I found no reason to fail" would hide the catalog of
+ *   installations that work, which is a false negative bought with nothing.
+ * - **A probe that THROWS is a probe that failed.** Neither adapter's
+ *   `verifyCli` rejects today — a missing binary resolves `available: false` —
+ *   but the interface is published and a third-party adapter may reject. Read
+ *   here as "no", never as an exception travelling up into the startup path.
+ * - **Never fatal, and that is deliberate.** The runner comes up either way.
+ *   The catalog is discovery, never enforcement (`engine/types.ts`,
+ *   `listModels`), so a preflight that found nothing costs a menu — while
+ *   refusing to start costs every job this machine would have taken, including
+ *   the ones a probe can be wrong about.
+ *
+ * @param engine Name this runner's engine answers to.
+ * @param adapter The adapter to probe.
+ * @returns `true` when the CLI answered.
+ */
+async function verifyEngineCli(engine: string, adapter: EngineAdapter): Promise<boolean> {
+  try {
+    const probe = await adapter.verifyCli();
+    if (probe.available) return true;
+
+    process.stderr.write(
+      `cartografo-runner: the "${engine}" CLI did not answer the preflight — no model catalog will be reported\n`,
+    );
+    return false;
+  } catch (error) {
+    process.stderr.write(
+      `cartografo-runner: the "${engine}" preflight failed — ${describeError(error)}\n`,
+    );
+    return false;
+  }
+}
+
+/**
+ * Tells the control plane which models this runner's engine offers (t166, FR11).
+ *
+ * Four decisions, each with a plausible opposite:
  *
  * - **Never fatal.** A catalog that could not be reported is a menu an operator
  *   cannot read; a runner that refused to start over it is a machine that does
@@ -170,6 +219,12 @@ function describeError(error: unknown): string {
  *   catalog nobody can attribute to a known runner would be reporting into the
  *   dark. Before the first tick because that is when the process knows what it
  *   is and has not started spending.
+ * - **After the CLI answered, and not before** (t186). A catalog is what a
+ *   binary CAN run, and an adapter whose binary is not there is reciting a menu
+ *   for a kitchen nobody found: the operator picking a model off it in a graph
+ *   would have their choice refused at the first session, one node too late.
+ *   The probe is cheap and spends no quota — that is what the interface
+ *   promises of it — so the honest order costs one `--version` per process.
  * - **Skipped, silently, for an adapter that does not implement it.**
  *   `listModels` is optional ON THE MEMBER (`engine/types.ts`), and an adapter
  *   without one is a legitimate adapter, not a broken one. There is nothing to
@@ -189,6 +244,11 @@ async function reportModels(
   adapter: EngineAdapter,
 ): Promise<void> {
   if (adapter.listModels === undefined) return;
+
+  // The probe comes first and the order is the point: an adapter with no
+  // listModels is asked for nothing at all, so the preflight only runs for an
+  // engine that actually has a catalog to report (t186).
+  if (!(await verifyEngineCli(engine, adapter))) return;
 
   try {
     const catalog = await adapter.listModels();
@@ -228,8 +288,10 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   const route = (options.engineFactory ?? defaultEngineFactory)(options.engine);
   const engines: Record<string, EngineRoute> = { [options.engine]: route };
 
-  // Discovery, and it is not on the critical path: a failure here is logged and
-  // the runner goes on to work (t166, FR11).
+  // Preflight and then discovery, in that order and after the pairing — the
+  // whole of FR11's precondition, in one call (t166, t186). Neither half is on
+  // the critical path: a CLI that did not answer and a report that was refused
+  // are both logged, and the runner goes on to work.
   await reportModels(client, options.engine, route.adapter);
 
   const controller = new Controller({

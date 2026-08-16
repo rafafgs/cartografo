@@ -24,6 +24,14 @@
  * precisely its `null` that hands `/execucoes` and `/trabalhos/7` to the views
  * instead of 404-ing them as a missing file.
  *
+ * **One thing this handler decides before forwarding anything (t192):** whether
+ * a WRITE came from this screen's own page. Everything it forwards carries the
+ * operator's credential (t124), so a proxy that forwards indiscriminately hands
+ * that credential to any page open in the same browser. `isTrustedScreenOrigin`
+ * is the gate, it runs here and not inside `forwardRequest` — which stays a dumb
+ * pipe — and the only two doors it covers are the ones that write: `/v1/*` with
+ * a method other than `GET`/`HEAD`, and the answer form below.
+ *
  * The D11 boundary reads whole here: no import from `packages/core`, no
  * database driver, no file path. The screen starts on another port, in another
  * process, and can die without the control plane noticing — that is the proof,
@@ -64,7 +72,9 @@ import { ApiClient, ApiError, NetworkError } from './client.ts';
 import {
   API_PREFIX,
   forwardRequest,
+  isTrustedScreenOrigin,
   resolveControlPlaneToken,
+  untrustedOriginResponse,
   type ProxiedResponse,
 } from './proxy.ts';
 import { resolveStaticFile, serveStatic } from './static.ts';
@@ -115,6 +125,17 @@ export const READY_EVENT = 'cartografo.tela.ready';
 
 /** A form body larger than this is refused without being read whole. */
 const BODY_LIMIT = 64 * 1024;
+
+/**
+ * Methods that change nothing upstream, and are therefore not gated (t192).
+ *
+ * `OPTIONS` is deliberately NOT in here. It changes nothing either, but no page
+ * of this screen ever sends one, and the gate's default is to refuse: a
+ * cross-site preflight then dies against this screen's 403 instead of against
+ * the control plane's answer, which is the same dead end seen from the browser
+ * and one request less that the core has to answer for a stranger.
+ */
+const READ_ONLY_METHODS = new Set(['GET', 'HEAD']);
 
 /** A command usage error — becomes a message, never a stack trace. */
 export class UsageError extends Error {
@@ -341,6 +362,18 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
   if (method === 'POST') {
     const answerMatch = /^\/perguntas\/([^/]+)\/resposta$/.exec(pathname);
     if (answerMatch !== null) {
+      // The same gate the proxy gets (t192), and for the same reason: this is a
+      // same-site form post, so a form on any other page can aim at it. It comes
+      // before the id is even read — a request from elsewhere gets one answer,
+      // and not a 404 that tells it which ids exist.
+      if (!isTrustedScreenOrigin(request.headers, request.headers.host)) {
+        return errorPage(
+          403,
+          'origem não confiável',
+          'Este formulário só aceita envios que começaram nesta página. Recarregue e tente de novo.',
+        );
+      }
+
       const id = routeId(answerMatch[1]);
       if (id === null) {
         return errorPage(404, 'pergunta inválida', 'O id de uma pergunta é um inteiro.');
@@ -511,10 +544,27 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
 
         // 1. The API belongs to the control plane; the screen only forwards it.
         if (isApiPath(pathname)) {
+          const method = (request.method ?? 'GET').toUpperCase();
+
+          // …but not a WRITE that started on someone else's page (t192). The
+          // gate runs here, before the body is even read, so a refused request
+          // costs nothing and the control plane never learns it existed. Reads
+          // are not gated: a `no-cors` response body is opaque to the page that
+          // asked for it, so there is nothing to exfiltrate through them.
+          if (
+            !READ_ONLY_METHODS.has(method) &&
+            !isTrustedScreenOrigin(request.headers, request.headers.host)
+          ) {
+            const refused = untrustedOriginResponse();
+            response.writeHead(refused.status, refused.headers);
+            response.end(refused.body);
+            return;
+          }
+
           const forwarded: ProxiedResponse = await forwardRequest(
             controlPlaneUrl,
             {
-              method: request.method ?? 'GET',
+              method,
               target,
               headers: request.headers,
               body: await readBody(request),

@@ -170,15 +170,44 @@ export class Controller {
    * The clock is `unref`ed: a runner waiting for a session to end is no reason
    * for the process to stay up on its own.
    *
+   * Two things the interval decides, and both of them are about a control plane
+   * that stopped answering rather than one that is down (t193):
+   *
+   * - **it is also the beat's own deadline.** A beat given the client's general
+   *   30s while the interval is 20s would still be in the air when the next one
+   *   is due, and what it renews by then is a lease that already expired. It
+   *   fails on its own window instead, which is the honest report — the lease
+   *   goes back to the queue on the server, which is what D5 asks for.
+   * - **a beat still in flight is SKIPPED, never overlapped.** Otherwise a
+   *   stalled control plane collects one open request per interval for as long
+   *   as the session runs, and the runner spends the session leaking sockets to
+   *   ask a question nobody is answering. What a skip costs is one beat, and
+   *   the TTL already tolerates two.
+   *
+   * {@link Controller.lastHeartbeatError} records every failure exactly as it
+   * always did. A skipped window is not one of them: nothing was asked in it,
+   * so there was nothing to fail — and the beat it skipped for is still out
+   * there, and still records if it comes back an error.
+   *
    * @param lease A freshly granted lease.
    * @returns Function that disarms the clock.
    */
   #armHeartbeat(lease: Lease): () => void {
+    const intervalMs = this.heartbeatIntervalMs;
+    let inFlight = false;
+
     const clock = setInterval(() => {
-      void this.#options.client.heartbeat(lease.id).catch((error: unknown) => {
-        this.lastHeartbeatError = error;
-      });
-    }, this.heartbeatIntervalMs);
+      if (inFlight) return;
+      inFlight = true;
+      void this.#options.client
+        .heartbeat(lease.id, undefined, intervalMs)
+        .catch((error: unknown) => {
+          this.lastHeartbeatError = error;
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    }, intervalMs);
 
     if (typeof clock.unref === 'function') clock.unref();
 

@@ -72,6 +72,52 @@ inbox quando esta metade chegou, e trocar isso quebraria os testes de aceite da
 ambas as páginas trazem no topo. É layout, não fronteira — mudar de ideia custa
 uma linha em cada lado.
 
+### O que o proxy recusa
+
+Tudo o que o proxy encaminha sai daqui com a credencial do operador carimbada
+(`t124`), e as rotas de escrita do control plane se contentam com corpo vazio.
+Um `fetch(url, {method:'POST', mode:'no-cors'})` é requisição "simples" — não
+dispara preflight —, então, sem portão, **qualquer página aberta no mesmo
+navegador** aplicaria uma proposta na porta 4318 usando o token de quem abriu a
+tela. O portão fecha exatamente esse buraco (`t192`).
+
+Ele lê **metadado de fetch**, e só: `Sec-Fetch-Site` e `Origin` são escritos
+pela pilha de rede do navegador e proibidos ao script da página — nem em
+`no-cors` uma página hostil consegue forjá-los. São recusadas as escritas
+(`/v1/*` com método diferente de `GET`/`HEAD`, e o `POST /perguntas/:id/resposta`
+desta especificação) quando:
+
+1. **`Sec-Fetch-Site` veio e não é `same-origin` nem `none`** — o próprio
+   navegador está dizendo que o pedido nasceu em outro lugar;
+2. **`Origin` veio e não é exatamente `http://<Host>` do pedido** — a checagem
+   Origin-vs-Host de sempre, sem configuração para manter em dia (a tela serve
+   HTTP puro; nada nesta pilha termina TLS);
+3. **nenhum dos dois veio, mas o `User-Agent` tem cara de navegador**
+   (`Mozilla/`, `Chrome/`, `Safari/`, `Firefox/`, `Edg/`) — navegador anterior ao
+   fetch metadata continua sendo navegador.
+
+A recusa do proxy é `403` com o mesmo envelope `{erro, mensagem}` do `502`, e
+com `mensagem` em inglês pelo mesmo motivo (`t180`: encanamento de API, não
+texto renderizado):
+
+```json
+{"erro": "origem_nao_confiavel", "mensagem": "this proxy only forwards writes that started on the screen's own page — …"}
+```
+
+A do formulário é a página de erro `403` normal da tela, em português como todas
+as outras: **"origem não confiável"**.
+
+O que sobra — sem `Sec-Fetch-Site`, sem `Origin` e sem assinatura de navegador —
+é `curl`, um script ou o `fetch` do próprio Node, e passa **de propósito**: a
+fronteira para processo local é a porta de loopback da D11, não este portão. Um
+processo malicioso na mesma máquina forja qualquer cabeçalho, e fechar isso
+exigiria uma credencial que o navegador apresenta — decisão que ainda não foi
+tomada.
+
+**`GET`/`HEAD` ficam de fora de propósito.** O corpo de uma resposta `no-cors` é
+opaco para a página que pediu, então não há por onde exfiltrar pelo lado da
+leitura: barrar leitura seria complexidade a mais sem risco a menos.
+
 ---
 
 ## 2. A regra dos três baldes

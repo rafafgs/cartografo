@@ -39,20 +39,18 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { networkInterfaces, tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
+
+import { bootCore, type TestHook } from '@cartografo/test-support';
 
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
 
 /** The two machines of this fleet, as they pair themselves. */
 const RUNNER_A = 'runner-a';
@@ -83,11 +81,6 @@ const POLL_MS = 20;
 /** Term of the lease in the reclaim scenario, as in `cross-machine-dispatch`. */
 const TTL_SECONDS = 2;
 
-interface TestHook {
-  after: (fn: () => void | Promise<void>) => void;
-  skip: (message?: string) => void;
-}
-
 interface LeaseRow {
   id: number;
   runner_id: string;
@@ -117,8 +110,6 @@ interface Dispatched {
   runnerId: string;
   jobId: number;
 }
-
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
 
 let clientCache: typeof ClientModule | null = null;
 let controllerCache: typeof ControllerModule | null = null;
@@ -173,82 +164,31 @@ interface RunningControlPlane {
 }
 
 /**
- * Boots the real binary with `CARTOGRAFO_HOST=0.0.0.0` and waits for readiness.
+ * Boots the real binary on every interface, addressed the way a peer would.
+ *
+ * Everything but this file's own two differences is `@cartografo/test-support`'s
+ * since t201. The differences: `CARTOGRAFO_HOST=0.0.0.0` plus whatever the
+ * scenario adds, merged ON TOP of the shared defaults; and the URL that comes
+ * back, which is rebuilt on the machine's REAL address — the readiness line
+ * announces the bind address, and `0.0.0.0` is not somewhere a runner can dial.
  *
  * @param t Test context, so the process is shut down at the end.
  * @param address This machine's external IPv4, already resolved by the caller.
  * @param extraEnv Configuration this scenario needs on top of the defaults.
  * @returns The control plane, up.
  */
-async function startControlPlane(
+async function bootControlPlane(
   t: TestHook,
   address: string,
   extraEnv: Record<string, string> = {},
 ): Promise<RunningControlPlane> {
-  assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
-
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t164-fleet-'));
-  const child: CommandChild = spawn(process.execPath, [BIN_PATH], {
-    cwd: base,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
-      CARTOGRAFO_HOST: '0.0.0.0',
-      ...extraEnv,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
+  const { url, token } = await bootCore(t, {
+    env: { CARTOGRAFO_HOST: '0.0.0.0', ...extraEnv },
   });
 
-  let out = '';
-  let err = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    out += chunk;
-  });
-  child.stderr.on('data', (chunk: string) => {
-    err += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await delay(100);
-      }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
-    rmSync(base, { recursive: true, force: true });
-  });
-
-  const deadline = Date.now() + DEADLINE_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the control plane died before it was ready (code ${child.exitCode})\nstdout:\n${out}\nstderr:\n${err}`,
-      );
-    }
-    const line = out
-      .split('\n')
-      .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) {
-      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
-      assert.equal(
-        typeof readiness.bootstrapToken,
-        'string',
-        'a brand-new database announces the operator credential this test pairs with',
-      );
-      const port = Number(new URL(readiness.url).port);
-      assert.ok(Number.isInteger(port) && port > 0, `unreadable port in "${readiness.url}"`);
-      return { urlBase: `http://${address}:${port}`, bootstrapToken: readiness.bootstrapToken ?? '' };
-    }
-    await delay(50);
-  }
-
-  throw new Error(`the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`);
+  const port = Number(new URL(url).port);
+  assert.ok(Number.isInteger(port) && port > 0, `unreadable port in "${url}"`);
+  return { urlBase: `http://${address}:${port}`, bootstrapToken: token };
 }
 
 /** One JSON call, with the credential handed in explicitly. */
@@ -345,7 +285,7 @@ test('t164 AT — two runners racing over the LAN take every job exactly once, a
   const { ClienteControle } = await loadClient();
   const { Controller } = await loadController();
 
-  const cp = await startControlPlane(t, address);
+  const cp = await bootControlPlane(t, address);
   const tokenA = await pair(cp, RUNNER_A);
   const tokenB = await pair(cp, RUNNER_B);
   const jobIds = await seedJobs(cp, JOB_COUNT);
@@ -487,7 +427,7 @@ test('t164 AT — the per-project ceiling holds across two runners racing withou
   /** How long the two keep racing while the poll watches. */
   const RACE_MS = 1_500;
 
-  const cp = await startControlPlane(t, address, { CARTOGRAFO_LEASE_CAP_PROJECT: String(CEILING) });
+  const cp = await bootControlPlane(t, address, { CARTOGRAFO_LEASE_CAP_PROJECT: String(CEILING) });
   const tokenA = await pair(cp, RUNNER_A);
   const tokenB = await pair(cp, RUNNER_B);
   await seedJobs(cp, POOL);
@@ -575,7 +515,7 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
   const { ClienteControle } = await loadClient();
   const { Controller } = await loadController();
 
-  const cp = await startControlPlane(t, address);
+  const cp = await bootControlPlane(t, address);
   const tokenA = await pair(cp, RUNNER_A);
   const tokenB = await pair(cp, RUNNER_B);
   const [jobId] = await seedJobs(cp, 1);

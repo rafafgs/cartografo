@@ -17,7 +17,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcessByStdio } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -30,16 +30,18 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+// The spawn-and-watch plumbing is shared since t201. This file uses the general
+// pair and never `bootCore`: the process it watches most closely is the RUNNER,
+// which announces `cartografo.runner.ready` and is no control plane at all.
+import { CORE_BIN as CONTROL_PLANE_BIN, awaitReadiness, bootCore, spawnWatched } from '@cartografo/test-support';
+
 import { DEFAULT_GRACE_MS } from '../src/engine/claude-code-adapter.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const CONTROL_PLANE_BIN = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
 const RUNNER_BIN = path.join(PACKAGE_ROOT, 'bin', 'cartografo-runner.mjs');
 const FAKE_ENGINE = fileURLToPath(new URL('fixtures/fake-engine.mjs', import.meta.url));
 
@@ -48,82 +50,6 @@ const DEADLINE_MS = 30_000;
 
 /** Deadline for the shutdown — the one number this file is strict about. */
 const SHUTDOWN_DEADLINE_MS = 5_000;
-
-interface TestHook {
-  after: (fn: () => void | Promise<void>) => void;
-}
-
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
-
-/** A child process whose stdout is being watched for one line. */
-interface WatchedChild {
-  child: CommandChild;
-  /** Everything it wrote on stdout so far. */
-  out: () => string;
-  /** Everything it wrote on stderr so far. */
-  err: () => string;
-}
-
-/** Spawns a command, collecting both streams and killing it at the end. */
-function spawnWatched(
-  t: TestHook,
-  args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv },
-): WatchedChild {
-  const child: CommandChild = spawn(process.execPath, args, {
-    cwd: options.cwd,
-    env: options.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let out = '';
-  let err = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    out += chunk;
-  });
-  child.stderr.on('data', (chunk: string) => {
-    err += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await delay(100);
-      }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
-  });
-
-  return { child, out: () => out, err: () => err };
-}
-
-/** Waits for a JSON readiness line carrying the given event name. */
-async function awaitReadiness(watched: WatchedChild, event: string): Promise<Record<string, unknown>> {
-  const deadline = Date.now() + DEADLINE_MS;
-  while (Date.now() < deadline) {
-    if (watched.child.exitCode !== null) {
-      throw new Error(
-        `the process died before announcing "${event}" (code ${watched.child.exitCode})\n` +
-          `stdout:\n${watched.out()}\nstderr:\n${watched.err()}`,
-      );
-    }
-    const line = watched
-      .out()
-      .split('\n')
-      .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes(event));
-    if (line !== undefined) return JSON.parse(line) as Record<string, unknown>;
-    await delay(50);
-  }
-
-  throw new Error(
-    `"${event}" was not announced within ${DEADLINE_MS}ms\nstdout:\n${watched.out()}\nstderr:\n${watched.err()}`,
-  );
-}
 
 /* -------------------------------------------------------------------------- */
 /* t193 — what a hard stop needs beyond a runner that pairs and goes away.     */
@@ -234,17 +160,7 @@ test('t162 — the runner is an installable command, started by plain node', asy
     rmSync(worktreesDir, { recursive: true, force: true });
   });
 
-  const plane = spawnWatched(parent, [CONTROL_PLANE_BIN], {
-    cwd: planeDir,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(planeDir, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
-    },
-  });
-  const readiness = await awaitReadiness(plane, 'cartografo.ready');
-  const baseUrl = String(readiness.url);
-  const token = String(readiness.bootstrapToken);
+  const { url: baseUrl, token } = await bootCore(parent, { cwd: planeDir });
 
   // The plain environment of the claim: no `--import tsx` on the command line
   // and no loader smuggled in through the environment either.

@@ -30,20 +30,18 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { networkInterfaces, tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
+
+import { bootCore, type TestHook } from '@cartografo/test-support';
 
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
 
 /** Identity this runner declares at pairing. */
 const RUNNER_ID = 'runner-lan';
@@ -54,11 +52,6 @@ const TTL_SECONDS = 2;
 /** Deadline of every wait in this file. Wide slack, on purpose. */
 const DEADLINE_MS = 30_000;
 
-interface TestHook {
-  after: (fn: () => void | Promise<void>) => void;
-  skip: (message?: string) => void;
-}
-
 interface LeaseRow {
   id: number;
   runner_id: string;
@@ -67,8 +60,6 @@ interface LeaseRow {
   concedida_em: string;
   heartbeat_em: string;
 }
-
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
 
 let clientCache: typeof ClientModule | null = null;
 let controllerCache: typeof ControllerModule | null = null;
@@ -121,72 +112,24 @@ interface RunningControlPlane {
   bootstrapToken: string;
 }
 
-/** Boots the real binary with `CARTOGRAFO_HOST=0.0.0.0` and waits for readiness. */
-async function startControlPlane(t: TestHook): Promise<RunningControlPlane> {
-  assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
+/**
+ * Boots the real binary listening on every interface, and reads its port back.
+ *
+ * Everything but the one environment variable under test is
+ * `@cartografo/test-support`'s since t201: `CARTOGRAFO_HOST` is merged ON TOP of
+ * the defaults, so this file says only what makes it different from the other
+ * ten suites that boot the same binary.
+ *
+ * @param t Test context, so the process is shut down at the end.
+ * @returns The port it really bound, and the credential it announced.
+ */
+async function bootControlPlane(t: TestHook): Promise<RunningControlPlane> {
+  // The line under test: every interface, not just loopback.
+  const { url, token } = await bootCore(t, { env: { CARTOGRAFO_HOST: '0.0.0.0' } });
 
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t143-lan-'));
-  const child: CommandChild = spawn(process.execPath, [BIN_PATH], {
-    cwd: base,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
-      // The line under test: every interface, not just loopback.
-      CARTOGRAFO_HOST: '0.0.0.0',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let out = '';
-  let err = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    out += chunk;
-  });
-  child.stderr.on('data', (chunk: string) => {
-    err += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await delay(100);
-      }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
-    rmSync(base, { recursive: true, force: true });
-  });
-
-  const deadline = Date.now() + DEADLINE_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the control plane died before it was ready (code ${child.exitCode})\nstdout:\n${out}\nstderr:\n${err}`,
-      );
-    }
-    const line = out
-      .split('\n')
-      .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) {
-      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
-      assert.equal(
-        typeof readiness.bootstrapToken,
-        'string',
-        'a brand-new database announces the operator credential this test pairs with',
-      );
-      const port = Number(new URL(readiness.url).port);
-      assert.ok(Number.isInteger(port) && port > 0, `unreadable port in "${readiness.url}"`);
-      return { port, bootstrapToken: readiness.bootstrapToken ?? '' };
-    }
-    await delay(50);
-  }
-
-  throw new Error(`the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`);
+  const port = Number(new URL(url).port);
+  assert.ok(Number.isInteger(port) && port > 0, `unreadable port in "${url}"`);
+  return { port, bootstrapToken: token };
 }
 
 /** One JSON call, with the credential handed in explicitly. */
@@ -226,7 +169,7 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
   const { ClienteControle } = await loadClient();
   const { Controller } = await loadController();
 
-  const { port, bootstrapToken } = await startControlPlane(t);
+  const { port, bootstrapToken } = await bootControlPlane(t);
   const urlBase = `http://${address}:${port}`;
 
   // Pairing is the operator's act, and the only place the bootstrap token is

@@ -36,7 +36,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync, spawn, type ChildProcessByStdio } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -49,10 +49,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+
+import { bootCore } from '@cartografo/test-support';
 
 import type * as RunModule from '../../src/cli/run.ts';
 import type { EngineRoute } from '../../src/dispatch/dispatch.ts';
@@ -79,7 +80,6 @@ import type {
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
 const GRAPH_FIXTURE = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-dois-engines.json');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
@@ -125,8 +125,6 @@ interface Event {
   tipo: string;
   dados: Record<string, unknown>;
 }
-
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
 
 async function loadModule<T>(relative: string): Promise<T> {
   assert.ok(
@@ -208,68 +206,16 @@ interface RunningControlPlane {
   token: string;
 }
 
-/** Boots the real binary and returns the address and credential it announced. */
+/**
+ * Boots the real binary and returns the address and credential it announced.
+ *
+ * The spawn, the readiness wait and the teardown are
+ * `@cartografo/test-support`'s since t201; what stays here is the shape the
+ * assertions below already speak.
+ */
 async function bootControlPlane(t: TestHook): Promise<RunningControlPlane> {
-  assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
-
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t162-e2e-'));
-  const child: CommandChild = spawn(process.execPath, [BIN_PATH], {
-    cwd: base,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let out = '';
-  let err = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    out += chunk;
-  });
-  child.stderr.on('data', (chunk: string) => {
-    err += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await delay(100);
-      }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
-    rmSync(base, { recursive: true, force: true });
-  });
-
-  const deadline = Date.now() + DEADLINE_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the control plane died before it was ready (code ${child.exitCode})\nstdout:\n${out}\nstderr:\n${err}`,
-      );
-    }
-    const line = out
-      .split('\n')
-      .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) {
-      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
-      assert.equal(
-        typeof readiness.bootstrapToken,
-        'string',
-        'a brand-new database announces the operator credential this file uses',
-      );
-      return { baseUrl: readiness.url, token: readiness.bootstrapToken ?? '' };
-    }
-    await delay(50);
-  }
-
-  throw new Error(`the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`);
+  const { url, token } = await bootCore(t);
+  return { baseUrl: url, token };
 }
 
 /** One JSON call with the credential handed in explicitly, asserting the status. */

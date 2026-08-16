@@ -21,20 +21,17 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
+
+import { bootCore } from '@cartografo/test-support';
 
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
 
 /** The work both runners will apply for. */
 const JOB_ID = 4242;
@@ -43,10 +40,6 @@ const TTL_SECONDS = 1;
 /** Deadline for the re-queueing wait. Wide slack over the TTL, on purpose. */
 const DEADLINE_MS = 30_000;
 
-interface TestHook {
-  after: (fn: () => void | Promise<void>) => void;
-}
-
 interface LeaseRow {
   id: number;
   runner_id: string;
@@ -54,8 +47,6 @@ interface LeaseRow {
   status: string;
   motivo_expiracao: string | null;
 }
-
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
 
 let clientCache: typeof ClientModule | null = null;
 let controllerCache: typeof ControllerModule | null = null;
@@ -80,79 +71,6 @@ async function loadController(): Promise<typeof ControllerModule> {
     new URL('../../src/controller/controller.ts', import.meta.url).href
   )) as typeof ControllerModule;
   return controllerCache;
-}
-
-/**
- * The real control plane, as this test reaches it: an address and the operator
- * credential it minted on first boot (t124, FR4).
- */
-interface RunningControlPlane {
-  urlBase: string;
-  token: string;
-}
-
-/** Boots the real control plane and returns the URL and token it announced. */
-async function startControlPlane(t: TestHook): Promise<RunningControlPlane> {
-  assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
-
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t103-e2e-'));
-  const child: CommandChild = spawn(process.execPath, [BIN_PATH], {
-    cwd: base,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let out = '';
-  let err = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    out += chunk;
-  });
-  child.stderr.on('data', (chunk: string) => {
-    err += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await delay(100);
-      }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
-    rmSync(base, { recursive: true, force: true });
-  });
-
-  const deadline = Date.now() + DEADLINE_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the control plane died before it was ready (code ${child.exitCode})\nstdout:\n${out}\nstderr:\n${err}`,
-      );
-    }
-    const line = out
-      .split('\n')
-      .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) {
-      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
-      assert.equal(
-        typeof readiness.bootstrapToken,
-        'string',
-        'a brand-new database announces the credential this test authenticates with',
-      );
-      return { urlBase: readiness.url, token: readiness.bootstrapToken ?? '' };
-    }
-    await delay(50);
-  }
-
-  throw new Error(`the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`);
 }
 
 /**
@@ -197,7 +115,7 @@ test('AT17 — a runner dies, the lease expires and the other runner takes the s
   const { ClienteControle } = await loadClient();
   const { Controller } = await loadController();
 
-  const { urlBase, token } = await startControlPlane(t);
+  const { url: urlBase, token } = await bootCore(t);
   const doFetch = fetchWithSeededQueue();
 
   // The token is the bootstrap credential, not a runner-scoped one, and stays

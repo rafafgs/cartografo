@@ -34,14 +34,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import test from 'node:test';
-import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+
+import { bootCore } from '@cartografo/test-support';
 
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 import { buildCommand } from '../../src/engine/command.ts';
@@ -50,15 +49,10 @@ import type * as ClientModule from '../../src/synthesizer/control-plane-client.t
 import type * as SynthesisModule from '../../src/synthesizer/synthesize.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
 const CLIENT_MODULE = 'src/synthesizer/control-plane-client.ts';
 const SYNTHESIS_MODULE = 'src/synthesizer/synthesize.ts';
-
-/** Deadline for anything this test waits on. Wide on purpose. */
-const DEADLINE_MS = 30_000;
 
 const DECLARATION = 'Quero um fluxo que redige e revisa uma nota curta sobre um tema declarado.';
 const CLASS_NAME = 'artigo-revisado';
@@ -66,8 +60,6 @@ const CLASS_NAME = 'artigo-revisado';
 interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
 }
-
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
 
 async function loadModule<T>(relative: string): Promise<T> {
   assert.ok(
@@ -77,79 +69,20 @@ async function loadModule<T>(relative: string): Promise<T> {
   return (await import(new URL(`../../${relative}`, import.meta.url).href)) as T;
 }
 
-/** The readiness line the control plane prints when it is up. */
-interface Readiness {
-  url: string;
-  bootstrapToken: string | null;
-}
-
 /**
- * Boots the real control plane and returns its readiness line, verbatim.
+ * Boots the real control plane and returns its address and credential.
+ *
+ * The spawn, the readiness wait and the teardown are
+ * `@cartografo/test-support`'s since t201; what stays here is the shape the
+ * assertions below already speak.
  *
  * It touches no global, and that absence IS the device: with `globalThis.fetch`
  * untouched, the only credential that can reach the API is one the code under
  * test presented itself.
  */
 async function bootControlPlane(t: TestHook): Promise<{ baseUrl: string; token: string }> {
-  assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
-
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t148-e2e-'));
-  const child: CommandChild = spawn(process.execPath, [BIN_PATH], {
-    cwd: base,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let out = '';
-  let err = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    out += chunk;
-  });
-  child.stderr.on('data', (chunk: string) => {
-    err += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await delay(100);
-      }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
-    rmSync(base, { recursive: true, force: true });
-  });
-
-  const deadline = Date.now() + DEADLINE_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the control plane died before it was ready (code ${child.exitCode})\nstdout:\n${out}\nstderr:\n${err}`,
-      );
-    }
-    const line = out
-      .split('\n')
-      .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) {
-      const readiness = JSON.parse(line) as Readiness;
-      assert.ok(
-        readiness.bootstrapToken !== null && readiness.bootstrapToken !== '',
-        'each test boots a database that never existed, so startup always mints and prints a token',
-      );
-      return { baseUrl: readiness.url, token: readiness.bootstrapToken };
-    }
-    await delay(50);
-  }
-
-  throw new Error(`the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`);
+  const { url, token } = await bootCore(t);
+  return { baseUrl: url, token };
 }
 
 /** A scratch directory that cleans itself up. */

@@ -15,8 +15,10 @@ import { test } from 'node:test';
 import {
   CLAUDE_BINARY,
   DEFAULT_PERMISSION_MODE,
+  DEFAULT_TRIVIAL_MODEL,
   ENGINE_STDIO,
   PERMISSION_MODE_VARIABLE,
+  TRIVIAL_MODEL_VARIABLE,
   buildCommand,
   buildEnvironment,
 } from '../../src/engine/command.ts';
@@ -372,5 +374,108 @@ test('t166 — --model neither swallows the denied list nor gets swallowed by th
   // ...and the trailing positionals stay trailing.
   assert.equal(args.at(-1), PROMPT, 'the prompt stays the last element of the argv');
   assert.equal(args.at(-2), INSTRUCTIONS);
+  assert.ok(args.indexOf('--model') < args.indexOf('--system-prompt'));
+});
+
+/* --- tier-driven model selection (t175, FR6) -------------------------------- */
+
+/**
+ * `modelTier` is the interface's word; `claude-haiku-4-5` is this CLI's.
+ *
+ * That split is the whole reason the tier crosses boundary 1 instead of the
+ * model id: the runner has no business knowing which model is the cheap one for
+ * `claude`, and the dispatch that sets `modelTier` routes to whichever engine
+ * the node resolved to. Each adapter answers "what does trivial cost HERE" in
+ * its own vocabulary — and the Codex one answers "I have no default", which is
+ * why the two files disagree on purpose.
+ */
+test('t175 — a trivial tier pins the documented cheap model when nothing overrides it', () => {
+  const { args } = buildCommand(spec({ modelTier: 'trivial' }), {});
+
+  const position = args.indexOf('--model');
+  assert.notEqual(position, -1, 'a trivial tier has to reach the CLI as a model flag');
+  assert.equal(args[position + 1], DEFAULT_TRIVIAL_MODEL);
+  assert.equal(
+    args.filter((argument) => argument === '--model').length,
+    1,
+    'the flag goes exactly once',
+  );
+});
+
+test('t175 — CLAUDE_TRIVIAL_MODEL overrides the default, same posture as the permission mode', () => {
+  const { args } = buildCommand(spec({ modelTier: 'trivial' }), {
+    [TRIVIAL_MODEL_VARIABLE]: 'claude-sonnet-5',
+  });
+
+  assert.equal(args[args.indexOf('--model') + 1], 'claude-sonnet-5');
+
+  // Blank is not an identifier: it would reach the CLI as an empty `--model`
+  // and kill the session on a flag nobody typed — the same guard `resolveModel`
+  // has on the dispatch side.
+  assert.equal(
+    buildCommand(spec({ modelTier: 'trivial' }), { [TRIVIAL_MODEL_VARIABLE]: '   ' }).args[
+      buildCommand(spec({ modelTier: 'trivial' }), { [TRIVIAL_MODEL_VARIABLE]: '   ' }).args.indexOf(
+        '--model',
+      ) + 1
+    ],
+    DEFAULT_TRIVIAL_MODEL,
+    'a blank override falls back to the default instead of emitting an empty flag',
+  );
+});
+
+test('t175 — standard and absent both produce byte-identical argv to no modelTier at all', () => {
+  const baseline = buildCommand(spec(), {}).args;
+
+  assert.deepEqual(
+    buildCommand(spec({ modelTier: 'standard' }), {}).args,
+    baseline,
+    'standard is "the engine default", not a second model to pin',
+  );
+  assert.deepEqual(
+    buildCommand(spec({ modelTier: undefined }), {}).args,
+    baseline,
+    'and a spec that says nothing gets the command it got before the field existed',
+  );
+
+  // The variable alone changes nothing: it is read only when a tier asked for it.
+  assert.deepEqual(
+    buildCommand(spec(), { [TRIVIAL_MODEL_VARIABLE]: 'claude-sonnet-5' }).args,
+    baseline,
+    'an operator who exported the variable did not thereby re-model every session',
+  );
+});
+
+test('t175 — a node that pinned its own model wins over the tier, and --model still goes once', () => {
+  // The precedence the two fichas together create, and it only has one honest
+  // answer: `spec.model` is what the GRAPH declared for this node (t166), and a
+  // triage heuristic does not get to overrule a decision somebody wrote down.
+  // Getting this wrong is not a preference — two `--model` flags in one argv is
+  // a broken command.
+  const { args } = buildCommand(spec({ model: 'claude-opus-5', modelTier: 'trivial' }), {});
+
+  assert.equal(
+    args.filter((argument) => argument === '--model').length,
+    1,
+    'exactly one --model reaches the CLI, whatever the two fields say',
+  );
+  assert.equal(args[args.indexOf('--model') + 1], 'claude-opus-5', "the node's pin is the one");
+});
+
+test('t175 — the tier flag obeys the same ordering discipline as every other flag', () => {
+  const { args } = buildCommand(
+    spec({
+      modelTier: 'trivial',
+      permissions: { filesystem: { write: [] }, network: { allowed: false } },
+    }),
+    {},
+  );
+
+  assert.ok(
+    args.indexOf('--model') < args.indexOf('--disallowedTools'),
+    'the model flag has to close before the variadic denied list starts',
+  );
+  const denied = disallowedTools(args);
+  assert.ok(!denied.includes(DEFAULT_TRIVIAL_MODEL), 'the denied list swallowed the model value');
+  assert.equal(args.at(-1), PROMPT, 'the prompt stays the last element of the argv');
   assert.ok(args.indexOf('--model') < args.indexOf('--system-prompt'));
 });

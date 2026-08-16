@@ -66,6 +66,8 @@ interface DraftItem {
   criterios_de_aceite: string[] | null;
   /** The class's declared fields, filled in at intake (t168). */
   campos: Record<string, string | number | boolean> | null;
+  /** The triage tier the session proposed (t175); `null` when nobody classified it. */
+  tier: 'trivial' | 'standard' | null;
   depende_de: string[];
 }
 
@@ -88,6 +90,8 @@ interface JobWithContent extends Job {
   corpo: string | null;
   criterios_de_aceite: string[] | null;
   campos: Record<string, string | number | boolean> | null;
+  /** The triage tier carried over from the item (t175). */
+  tier: 'trivial' | 'standard' | null;
 }
 
 interface DraftResponse {
@@ -445,6 +449,58 @@ test('AT12 — confirming creates one job per item, on the current entry node', 
   assert.equal(board.body.trabalhos.length, 2, 'the projection has the same two');
   assert.equal(board.body.trabalhos[0].corpo, 'O corpo preliminar da primeira.');
   assert.deepEqual(dependencyRows(ctx), [], 'no dependency was declared in this batch');
+});
+
+/**
+ * t175 — a mixed-tier batch produces jobs carrying the matching tier each.
+ *
+ * The batch is the interesting case, not the single item: the tier is chosen
+ * per ITEM by the one intake session that already runs, so what has to hold is
+ * that `confirmDraft` carries each item's own classification onto its own job
+ * instead of collapsing the batch onto one value. The third item pins the rule
+ * that makes the whole thing safe to ship — an item nobody triaged becomes a
+ * job with `tier: null`, and nothing about pre-existing job creation changes.
+ */
+test('t175 — confirming a mixed-tier batch carries each item tier onto its own job', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  await registerFactoryGraph(ctx);
+
+  const draft = await createDraft(ctx, {
+    itens: [
+      { ref: 'renomear', titulo: 'Renomear a coluna', tier: 'trivial' },
+      { ref: 'feature', titulo: 'A feature inteira', tier: 'standard' },
+      { ref: 'sem-triagem', titulo: 'Ninguém triou esta' },
+    ],
+  });
+
+  assert.deepEqual(
+    draft.itens.map((item) => item.tier),
+    ['trivial', 'standard', null],
+    'the draft itself keeps the classification the session proposed',
+  );
+
+  const response = await request<ConfirmationResponse>(
+    ctx,
+    'POST',
+    `/v1/intake/${draft.id}/confirmations`,
+    {},
+  );
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(
+    response.body.trabalhos.map((job) => job.tier),
+    ['trivial', 'standard', null],
+    'each job carries the tier of the item it was born from',
+  );
+
+  const board = await request<{ trabalhos: JobWithContent[] }>(ctx, 'GET', '/v1/jobs');
+  assert.equal(board.status, 200);
+  assert.deepEqual(
+    board.body.trabalhos.map((job) => job.tier),
+    ['trivial', 'standard', null],
+    'and the projection the runner reads shows the same three',
+  );
 });
 
 test('AT13 — a declared dependency becomes one row and one event, resolved to real ids', async (t) => {

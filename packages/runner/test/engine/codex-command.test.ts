@@ -23,6 +23,8 @@ import { test } from 'node:test';
 import {
   CODEX_BINARY,
   ENGINE_STDIO,
+  MODEL_FLAG,
+  TRIVIAL_MODEL_VARIABLE,
   buildCommand,
   buildEnvironment,
 } from '../../src/engine/codex-command.ts';
@@ -159,4 +161,80 @@ test('t166 — -m comes before the composed positional, which stays last', () =>
     composeSingleArgument(subject),
     'the composed argument stays the LAST positional, whatever else the argv carries',
   );
+});
+
+/* --- tier-driven model selection (t175, FR7) -------------------------------- */
+
+/**
+ * The documented gap, proven rather than assumed.
+ *
+ * The first adapter answers "trivial costs `claude-haiku-4-5` here"; this one
+ * has no answer to give, because nothing in this repository establishes which
+ * OpenAI model is the cheap one, and a guessed identifier would reach the CLI
+ * as a session that dies on an unknown model. So the tier is still RECORDED on
+ * the job (FR4) and this adapter simply makes no argv change until an operator
+ * names the model themselves.
+ *
+ * That is a real gap and it is tested as one: `CODEX_TRIVIAL_MODEL` unset has
+ * to produce the argv a spec with no tier produces — not a `-m` with an empty
+ * value, and not a silent no-op dressed up as success.
+ */
+test('t175 — a trivial tier is a no-op until CODEX_TRIVIAL_MODEL names a model', () => {
+  const baseline = buildCommand(spec(), {}).args;
+
+  assert.deepEqual(
+    buildCommand(spec({ modelTier: 'trivial' }), {}).args,
+    baseline,
+    'with the variable unset the adapter changes nothing — the documented gap',
+  );
+  assert.deepEqual(
+    buildCommand(spec({ modelTier: 'trivial' }), { [TRIVIAL_MODEL_VARIABLE]: '   ' }).args,
+    baseline,
+    'and a blank one is unset: an empty -m would kill the session',
+  );
+});
+
+test('t175 — with the variable set, a trivial tier pins that model', () => {
+  const { args } = buildCommand(spec({ modelTier: 'trivial' }), {
+    [TRIVIAL_MODEL_VARIABLE]: 'gpt-5.6-mini',
+  });
+
+  const position = args.indexOf(MODEL_FLAG);
+  assert.notEqual(position, -1, 'a named trivial model has to reach the CLI');
+  assert.equal(args[position + 1], 'gpt-5.6-mini');
+  assert.equal(
+    args.filter((argument) => argument === MODEL_FLAG).length,
+    1,
+    'the flag goes exactly once',
+  );
+  assert.equal(
+    args.at(-1),
+    composeSingleArgument(spec({ modelTier: 'trivial' })),
+    'the composed argument stays the LAST positional',
+  );
+});
+
+test('t175 — standard and absent both produce byte-identical argv to no modelTier at all', () => {
+  const env = { [TRIVIAL_MODEL_VARIABLE]: 'gpt-5.6-mini' };
+  const baseline = buildCommand(spec(), env).args;
+
+  assert.deepEqual(buildCommand(spec({ modelTier: 'standard' }), env).args, baseline);
+  assert.deepEqual(buildCommand(spec({ modelTier: undefined }), env).args, baseline);
+  assert.ok(
+    !baseline.includes('gpt-5.6-mini'),
+    'the variable alone re-models nothing: it is read only when a tier asked for it',
+  );
+});
+
+test('t175 — a node that pinned its own model wins over the tier, and -m still goes once', () => {
+  const { args } = buildCommand(spec({ model: 'gpt-5.6-luna', modelTier: 'trivial' }), {
+    [TRIVIAL_MODEL_VARIABLE]: 'gpt-5.6-mini',
+  });
+
+  assert.equal(
+    args.filter((argument) => argument === MODEL_FLAG).length,
+    1,
+    'exactly one -m reaches the CLI, whatever the two fields say',
+  );
+  assert.equal(args[args.indexOf(MODEL_FLAG) + 1], 'gpt-5.6-luna', "the node's pin is the one");
 });

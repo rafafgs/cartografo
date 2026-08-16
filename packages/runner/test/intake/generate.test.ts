@@ -236,6 +236,51 @@ test('AT3b — a well-formed session lands exactly one draft, carrying what it w
   assert.equal(draft.status, 'pendente');
 });
 
+/**
+ * t175 — a tier the session wrote survives the trip to the control plane.
+ *
+ * This orchestrator judges nothing about an item's shape on purpose (AT3b's
+ * "verbatim"), so the claim here is a REGRESSION one: nothing on this path may
+ * start filtering keys it does not recognize. A whitelist introduced here would
+ * drop `tier` on the floor silently — the draft would still be created, the
+ * jobs would still be born, and every one of them would be unclassified with
+ * nothing failing anywhere.
+ */
+test('t175 — an item written with a tier reaches the draft with the tier intact', async (t) => {
+  const { generateIntakeDraft } = await loadGenerate();
+  const { OUTPUT_FILE } = await loadPrompt();
+
+  const triaged: ReadonlyArray<Record<string, unknown>> = Object.freeze([
+    { ref: 'renomear', titulo: 'Renomear a coluna', tier: 'trivial' },
+    { ref: 'feature', titulo: 'A feature inteira', tier: 'standard' },
+    { ref: 'sem-triagem', titulo: 'Ninguem triou esta' },
+  ]);
+
+  const client = new RecordingClient();
+
+  const draft = await generateIntakeDraft({
+    reader: readerWith(CLASS_NAME),
+    client,
+    adapter: fakeAdapter(),
+    request: REQUEST,
+    className: CLASS_NAME,
+    workingDir: scratch(t, 'sessao-com-tier'),
+    timeoutSeconds: 60,
+    envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ itens: triaged })),
+  });
+
+  assert.deepEqual(
+    client.calls,
+    [{ classe: CLASS_NAME, pedido: REQUEST, itens: triaged }],
+    'the items go up exactly as the session wrote them, tier included',
+  );
+  assert.deepEqual(
+    draft.itens.map((item) => item.tier),
+    ['trivial', 'standard', undefined],
+    'and come back on the draft the same way',
+  );
+});
+
 test('AT3c — a session that did not complete posts nothing', async (t) => {
   const { generateIntakeDraft, IntakeError } = await loadGenerate();
   const { OUTPUT_FILE } = await loadPrompt();

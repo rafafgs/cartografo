@@ -3868,3 +3868,162 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
     },
   );
 });
+
+// --- t175: the work item's tier reaches the SessionSpec -----------------------
+
+/**
+ * The dispatch sets `modelTier` from the job, once, for whichever engine the
+ * node resolved to.
+ *
+ * The spec and not the argv, for the same reason the t166 block above gives:
+ * what this ficha claims here is that the DISPATCH carries the job's tier onto
+ * the session it opens, and `command.test.ts` / `codex-command.test.ts` already
+ * own the other half — that a spec carrying a tier becomes the right flag, or
+ * deliberately no flag at all. Asserting the argv here would prove two halves
+ * at once and locate neither when it breaks.
+ *
+ * The `tier: null` case is the one that would rot quietly: an unclassified job
+ * has to produce a spec with NO `modelTier` key at all, not one whose value is
+ * `undefined`. `buildCommand` reads absence, not falsiness — the same
+ * conditional-spread discipline `envOverrides` and `permissions` already follow.
+ */
+test("t175 — the tier of the work item becomes the SessionSpec's modelTier", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+  await registerSkill(baseUrl, token, WORK_SKILL);
+
+  /** Dispatches one work carrying `tier`, and hands back the spec it produced. */
+  const dispatchWithTier = async (
+    t: TestHook,
+    options: { versionId: string; executionId: number; title: string; tier: string | null },
+  ): Promise<SessionSpec> => {
+    const { createClaudeCodeDispatch } =
+      await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+    const workDir = mkdtempSync(
+      path.join(tmpdir(), `cartografo-t175-${options.executionId}-`),
+    );
+    t.after(() => {
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    const work = await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        titulo: options.title,
+        no_entrada_id: "revisar",
+        execucao_id: options.executionId,
+        grafo_versao_id: options.versionId,
+        // Absent, not null: `POST /v1/jobs` treats both as unclassified, and
+        // sending the key at all would prove less about the default path.
+        ...(options.tier === null ? {} : { tier: options.tier }),
+      },
+      201,
+      token,
+    );
+
+    const seen: SessionSpec[] = [];
+    await createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      engines: {
+        "claude-code": {
+          adapter: capturingAdapter(seen),
+          decodeSessionText: decodeClaudeCodeSessionText,
+        },
+      },
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+      envOverrides: {
+        FAKE_ENGINE_RECORD: path.join(workDir, "despacho.json"),
+        FAKE_ENGINE_LINES: linesWithoutBlock(),
+      },
+    })(work.id);
+
+    assert.equal(seen.length, 1, "exactly one session per dispatch");
+    return seen[0]!;
+  };
+
+  await parent.test("AT — a trivial job dispatches modelTier: 'trivial'", async (t) => {
+    const { versionId } = await registerLineage(
+      baseUrl,
+      token,
+      modelGraph("tier-trivial", {}),
+    );
+
+    const spec = await dispatchWithTier(t, {
+      versionId,
+      executionId: 1750,
+      title: "ficha triada como trivial",
+      tier: "trivial",
+    });
+
+    assert.equal(spec.modelTier, "trivial");
+  });
+
+  await parent.test("AT — a standard job dispatches modelTier: 'standard'", async (t) => {
+    const { versionId } = await registerLineage(
+      baseUrl,
+      token,
+      modelGraph("tier-standard", {}),
+    );
+
+    const spec = await dispatchWithTier(t, {
+      versionId,
+      executionId: 1751,
+      title: "ficha triada como standard",
+      tier: "standard",
+    });
+
+    assert.equal(spec.modelTier, "standard");
+  });
+
+  await parent.test(
+    "AT — an unclassified job dispatches a spec with no modelTier key at all",
+    async (t) => {
+      const { versionId } = await registerLineage(
+        baseUrl,
+        token,
+        modelGraph("tier-ausente", {}),
+      );
+
+      const spec = await dispatchWithTier(t, {
+        versionId,
+        executionId: 1752,
+        title: "ficha que ninguém triou",
+        tier: null,
+      });
+
+      assert.ok(
+        !("modelTier" in spec),
+        "a `modelTier: undefined` key is still a key, and absence is what the adapters read",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT — the tier does not disturb the model the node declared",
+    async (t) => {
+      // The two travel together and answer different questions: `model` is what
+      // the GRAPH pinned for this node (t166), `modelTier` is what the intake
+      // said this work costs. The dispatch forwards both; deciding between them
+      // is the adapter's job, below boundary 1, where the model names live.
+      const { versionId } = await registerLineage(
+        baseUrl,
+        token,
+        modelGraph("tier-com-modelo", { model: "claude-opus-5" }),
+      );
+
+      const spec = await dispatchWithTier(t, {
+        versionId,
+        executionId: 1753,
+        title: "ficha trivial num nó que fixou modelo",
+        tier: "trivial",
+      });
+
+      assert.equal(spec.model, "claude-opus-5", "the node's pin survives the tier");
+      assert.equal(spec.modelTier, "trivial", "and the tier survives the pin");
+    },
+  );
+});

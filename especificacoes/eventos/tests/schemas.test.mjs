@@ -24,8 +24,10 @@ export const TABELA = {
     // pode nascer com conteúdo, e os critérios que o intake grava são
     // preliminares — quem tem a palavra final é o nó `refinar`. `campos` entrou
     // com os campos customizados por classe (t168): o que a classe declara no
-    // grafo dela, o trabalho carrega aqui.
-    opcionais: ['corpo', 'criterios_de_aceite', 'campos'],
+    // grafo dela, o trabalho carrega aqui. `tier` entrou com a triagem barata
+    // (t175): quanto o trabalho CUSTA para rodar, nunca por qual aresta ele
+    // sai — o grafo segue congelado.
+    opcionais: ['corpo', 'criterios_de_aceite', 'campos', 'tier'],
   },
   'trabalho.transicao': {
     entidade: 'trabalho',
@@ -238,6 +240,24 @@ for (const [tipo, spec] of Object.entries(TABELA)) {
     );
   });
 }
+
+test('t175 — trabalho.criado.dados.tier fecha o conjunto em trivial, standard e null', () => {
+  // Estrutural, como o resto deste diretório (`exemplos.test.mjs` escreve a
+  // razão): sem ajv, o que se confere é a DECLARAÇÃO — e um enum declarado é
+  // exatamente o que separa "aceita os dois valores e o nulo" de "aceita
+  // qualquer string". A tabela em `src/db/event-validation.ts` é a duplicata
+  // que o servidor cobra em tempo de escrita; as duas têm que andar juntas, e
+  // é a asserção de `opcionais` acima que pega a divergência.
+  const tier = lerSchema('trabalho.criado.schema.json').properties.dados.properties.tier;
+
+  assert.ok(tier, 'trabalho.criado não declara dados.tier');
+  assert.deepEqual([...tier.type].sort(), ['null', 'string'], 'null é resposta válida');
+  assert.deepEqual(
+    [...tier.enum].sort((a, b) => String(a).localeCompare(String(b))),
+    ['standard', 'trivial', null].sort((a, b) => String(a).localeCompare(String(b))),
+    'o enum fecha o conjunto: qualquer outra string é recusada',
+  );
+});
 
 test('nenhum schema descreve update ou delete de evento (append-only)', () => {
   for (const arquivo of arquivosDeSchema()) {

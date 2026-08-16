@@ -185,3 +185,43 @@ test('t166 — EngineModel keeps id and origin required, and label optional', ()
     assert.match(catalog, /\bresolvedAt\s*:\s*string/, `${side}: ModelCatalog.resolvedAt`);
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* t175 — the tier is the eighth growth of the frozen interface.              */
+/*                                                                            */
+/* Same blind spot as `listModels` above, on the other type: `modelTier` is a */
+/* MEMBER of `SessionSpec`, and an interface member is invisible to an export */
+/* scan. The question mark is the compatibility claim — without it every      */
+/* caller that builds a `SessionSpec` literally stops compiling, which is     */
+/* exactly what "growth of a published format is additive" forbids.           */
+/* -------------------------------------------------------------------------- */
+
+test('t175 — modelTier is an OPTIONAL member of SessionSpec, on both sides', () => {
+  for (const [side, source] of [
+    ['docs/formatos/engine-adapter.md', DOCUMENT_TYPESCRIPT],
+    ['src/engine/types.ts', MODULE_SOURCE],
+  ] as const) {
+    const body = interfaceBody(source, 'SessionSpec');
+    assert.match(
+      body,
+      /\bmodelTier\?\s*:\s*("trivial"|'trivial')\s*\|\s*("standard"|'standard')/,
+      `${side}: SessionSpec has to declare \`modelTier?: 'trivial' | 'standard'\` — the ` +
+        'QUESTION MARK is the compatibility claim, and the closed pair is what keeps a ' +
+        'third value from meaning "some engine knows what this is"',
+    );
+  }
+});
+
+test('t175 — the growth list of the document names the tier', () => {
+  // The document's "Ajustes feitos na revisão" section is where a frozen-at-v1
+  // format records what grew after the freeze. `silenceSeconds` (t163),
+  // `SessionSpec.model` (t166) and `resumeFrom` (t173) are all logged there, and
+  // an addition that skips it is an undocumented change to a published format.
+  const document = readFileSync(DOC, 'utf8');
+  const section = sectionBody(document, '## Ajustes feitos na revisão');
+
+  assert.ok(
+    section.includes('modelTier'),
+    'docs/formatos/engine-adapter.md § "Ajustes feitos na revisão" does not mention modelTier',
+  );
+});

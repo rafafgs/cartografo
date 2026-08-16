@@ -144,6 +144,59 @@ test('t168 — an item whose campos is not a map of scalars is rejected', async 
   );
 });
 
+/*
+ * t175 — the triage the intake session does for free.
+ *
+ * `tier` is the narrowest possible instance of a policy surface: it says what a
+ * work item costs to RUN, never which edge it takes. The graph stays frozen
+ * (README princípio 2), and `docs/spec/grafo.md:401-403`'s deliberate omission
+ * of flowpilot's topology shortcuts is not reopened by it.
+ *
+ * The rule that matters most here is the one the absent case pins: absence is
+ * "nobody classified this", never "trivial". Reading the two as the same thing
+ * would silently downgrade the model of every ticket born before this field
+ * existed — which is the same discipline `corpo`, `criterios_de_aceite` and
+ * `campos` already follow, for the same reason.
+ */
+test('t175 — tier accepts the two declared values, and an absent one normalizes to null', async () => {
+  const { validateItems } = await loadIntake();
+
+  const report = validateItems([
+    { ref: 'renomear', titulo: 'Renomear uma variável', tier: 'trivial' },
+    { ref: 'feature', titulo: 'A feature inteira, do zero', tier: 'standard' },
+    { ref: 'sem-triagem', titulo: 'Ninguém triou esta' },
+  ]);
+
+  assert.equal(report.valido, true, asText(report));
+  assert.equal(report.itens[0].tier, 'trivial');
+  assert.equal(report.itens[1].tier, 'standard');
+  assert.equal(
+    report.itens[2].tier,
+    null,
+    'an item nobody classified carries null — absence is never "trivial"',
+  );
+});
+
+test('t175 — a tier outside the two declared values is campo_invalido', async () => {
+  const { validateItems } = await loadIntake();
+
+  const report = validateItems([
+    { ref: 'a', titulo: 'urgência não é tier', tier: 'urgent' },
+    { ref: 'b', titulo: 'nem número', tier: 2 },
+    { ref: 'c', titulo: 'nem string vazia', tier: '' },
+    { ref: 'd', titulo: 'este está bom', tier: 'standard' },
+  ]);
+
+  assert.equal(report.valido, false);
+  assert.deepEqual(codes(report), ['campo_invalido', 'campo_invalido', 'campo_invalido']);
+  assert.deepEqual(
+    report.problemas.map((problem) => problem.alvo),
+    ['a', 'b', 'c'],
+    'each problem names the item it came from, and the well-formed one is silent',
+  );
+  assert.ok(asText(report).includes('tier'), 'the message names the offending field');
+});
+
 test('AT2 — a ref repeated between two items is rejected', async () => {
   const { validateItems } = await loadIntake();
 

@@ -120,6 +120,40 @@ test('AT1 — the output contract is one file, with one key in it', async () => 
   );
 });
 
+/**
+ * t175 — the triage rides the session that already runs.
+ *
+ * No second session is spawned to classify: the intake session is already
+ * reading the request and proposing the breakdown, so asking it to also label
+ * each item costs nothing extra. That makes the PROMPT the whole mechanism —
+ * a value the instructions never teach is a value the session cannot produce,
+ * and the field would silently stay `null` forever with nothing failing.
+ *
+ * Both values are demanded by name, and so is at least one worked case of each
+ * side of the line, because "trivial" and "standard" are judgement words: a
+ * prompt that names them without saying when each applies hands the session a
+ * coin flip.
+ */
+test('t175 — the contract teaches both tier values and when each applies', async () => {
+  const { INTAKE_INSTRUCTIONS } = await loadPrompt();
+
+  assert.ok(
+    INTAKE_INSTRUCTIONS.includes('`tier`'),
+    `nothing in the instructions names the field:\n${INTAKE_INSTRUCTIONS}`,
+  );
+  for (const value of ['trivial', 'standard']) {
+    assert.ok(
+      INTAKE_INSTRUCTIONS.includes(value),
+      `the allowed value "${value}" is never stated:\n${INTAKE_INSTRUCTIONS}`,
+    );
+  }
+  assert.match(
+    INTAKE_INSTRUCTIONS,
+    /opcional/i,
+    'the field has to be stated as optional — an item that omits it stays valid',
+  );
+});
+
 test('AT1 — the session is told it writes the file and nothing else', async () => {
   const { INTAKE_INSTRUCTIONS } = await loadPrompt();
 

@@ -41,6 +41,17 @@ const ARTIFACTS = [
 const GRAPH_ROUTES = 'src/routes/graphs.ts';
 
 /**
+ * The job projection with the column t175 adds.
+ *
+ * Local to this file, like `JobWithContent` in `intake-routes.test.ts`: the
+ * shared `Job` of `support.ts` carries the columns every ficha shares, and
+ * whoever adds one declares it where they assert on it.
+ */
+interface JobWithTier extends Job {
+  tier: 'trivial' | 'standard' | null;
+}
+
+/**
  * The minimal example graph: entry node `redigir`, single final node `revisar`.
  *
  * The real document, not a fixture written here, for the same reason AT6 of
@@ -171,7 +182,68 @@ test('AT1 — POST /v1/jobs creates the job and records trabalho.criado', async 
     // And a third since t168, by the same rule: the class's declared fields,
     // which a job created by hand did not fill either.
     campos: null,
+    // And a fourth since t175: the triage tier. `null` is "nobody classified
+    // this", and reading it as `trivial` would put every unclassified job on a
+    // cheaper model than anyone chose.
+    tier: null,
   });
+});
+
+/**
+ * t175 — the triage tier travels with the job, in the projection AND in the fact.
+ *
+ * `tier` is part of `trabalho.criado` for the same reason `corpo` and
+ * `criterios_de_aceite` are: a job that is born classified has that
+ * classification as part of the fact, and a consumer replaying the log has to
+ * reach the same tier the projection shows. No new route: the field rides the
+ * projection `GET /v1/jobs` and `GET /v1/jobs/:id` already return, which is
+ * what makes it joinable against `GET /v1/sessions` by `trabalho_id` (FR8) the
+ * same way `packages/topografo-custo` already joins for `grafo_versao_id`.
+ */
+test('t175 — POST /v1/jobs round-trips tier through the projection and the fact', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const response = await request<JobWithTier>(ctx, 'POST', '/v1/jobs', {
+    titulo: 'Renomear uma variável',
+    no_entrada_id: 'entrada',
+    tier: 'trivial',
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(response.body.tier, 'trivial', 'the tier is on the projection the write answers');
+
+  const read = await request<JobWithTier>(ctx, 'GET', `/v1/jobs/${response.body.id}`);
+  assert.equal(read.status, 200);
+  assert.equal(read.body.tier, 'trivial', 'and survives the round trip through the column');
+
+  const [event] = await timeline(ctx, response.body.id);
+  assert.equal(event.tipo, 'trabalho.criado');
+  assert.equal(event.dados.tier, 'trivial', 'the fact carries it too, not only the projection');
+
+  const board = await request<{ trabalhos: JobWithTier[] }>(ctx, 'GET', '/v1/jobs');
+  assert.equal(board.status, 200);
+  assert.deepEqual(
+    board.body.trabalhos.map((job) => job.tier),
+    ['trivial'],
+    'the list projection carries it as well — the join surface FR8 asks for',
+  );
+});
+
+test('t175 — a tier outside the two declared values is refused before any write', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const refused = await request<{ erro: string }>(ctx, 'POST', '/v1/jobs', {
+    titulo: 'urgência não é tier',
+    no_entrada_id: 'entrada',
+    tier: 'urgent',
+  });
+
+  assert.equal(refused.status, 400);
+
+  const board = await request<{ trabalhos: JobWithTier[] }>(ctx, 'GET', '/v1/jobs');
+  assert.deepEqual(board.body.trabalhos, [], 'a refused creation consumes no id and writes nothing');
 });
 
 test('AT2 — POST /v1/jobs/:id/transitions walks the graph and records trabalho.transicao', async (t) => {

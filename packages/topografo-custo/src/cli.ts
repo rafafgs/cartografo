@@ -1,52 +1,53 @@
 /**
- * Comando `topografo-custo` (t114, FR5).
+ * The `topografo-custo` command (t114, FR5).
  *
- * Um subcomando só: `avaliar`. Ele lê a telemetria de uma execução pela API
- * pública, agrega custo por `(versão, nó)`, aplica as políticas e cria uma
- * proposta **pendente** por candidata.
+ * A single subcommand: `avaliar`. It reads the telemetry of an execution through
+ * the public API, aggregates cost by `(version, node)`, applies the policies and
+ * creates one **pending** proposal per candidate.
  *
  * ```
  * topografo-custo avaliar --url http://127.0.0.1:4317 --execucao 7 --teto-tokens 200000
  * ```
  *
- * O que ele deliberadamente NÃO faz:
+ * What it deliberately does NOT do:
  *
- * - **não aplica nada.** `POST /v1/proposals/:id/apply` não é chamado em lugar
- *   nenhum deste pacote: aplicar é decisão humana no portão (README, princípio 5),
- *   e o inbox é ficha própria (`t111`).
- * - **não deduplica.** Rodar duas vezes sobre a mesma telemetria cria propostas
- *   repetidas. `GET /v1/proposals` existe e daria para checar, mas idempotência
- *   não é o que esta ficha prova e nada aqui a implementa: fora de escopo
- *   declarado (ficha, §6), não bug silencioso.
+ * - **it applies nothing.** `POST /v1/proposals/:id/apply` is called nowhere in
+ *   this package: applying is a human decision at the gate (README, principle 5),
+ *   and the inbox is a ticket of its own (`t111`).
+ * - **it does not deduplicate.** Running twice over the same telemetry creates
+ *   repeated proposals. `GET /v1/proposals` exists and would allow a check, but
+ *   idempotency is not what this ticket proves and nothing here implements it:
+ *   declared out of scope (ticket, §6), not a silent bug.
  *
- * Códigos de saída, na mesma convenção da CLI `cartografo`
+ * Exit codes, in the same convention as the `cartografo` CLI
  * (`packages/core/src/cli/index.ts`):
  *
- * - `0` — o comando fez o que prometeu (inclusive quando não havia candidata);
- * - `1` — rodou e o resultado foi negativo (servidor fora, API recusou);
- * - `2` — a linha de comando está errada.
+ * - `0` — the command did what it promised (including when there was no candidate);
+ * - `1` — it ran and the result was negative (server down, API refused);
+ * - `2` — the command line is wrong.
  */
 
 import {
-  buscarGrafoVersao,
-  buscarSessoes,
-  buscarTrabalhos,
-  criarProposta,
-  ErroDaApi,
-  type GrafoVersao,
-} from './cliente.ts';
-import { agregarCusto, linhasIdentificadas } from './custo.ts';
-import { avaliarPoliticas } from './politica.ts';
+  ApiError,
+  createProposal,
+  getGraphVersion,
+  getJobs,
+  getSessions,
+  type GraphVersion,
+} from './client.ts';
+import { aggregateCost, identifiedRows } from './cost.ts';
+import { evaluatePolicies } from './policy.ts';
 
 /**
- * Texto de uso. É o mesmo em `--help` (stdout) e em erro de uso (stderr).
+ * Usage text. It is the same on `--help` (stdout) and on a usage error (stderr).
  *
- * Em inglês desde a t180, como toda saída de comando do repositório. O que uma
- * pessoa DIGITA — o subcomando `avaliar` e as opções `--teto-tokens`,
- * `--tier-minimo-nos`, ... — continua como está: é superfície publicada, e
- * renomeá-la é outra ficha, com a varredura de identificadores deste pacote.
+ * In English since t180, like every command output in the repository. What a
+ * person TYPES — the `avaliar` subcommand and the `--teto-tokens`,
+ * `--tier-minimo-nos`, … options — stays as it is: D20 freezes the CLI surface
+ * as wire vocabulary, and it migrates to English only under t213, never under a
+ * per-package D18 sweep.
  */
-export const USO = `usage: topografo-custo avaliar --url <url> --execucao <id> [options]
+export const USAGE = `usage: topografo-custo avaliar --url <url> --execucao <id> [options]
 
 subcommands:
   avaliar                reads the telemetry of an execution, aggregates cost by
@@ -70,28 +71,28 @@ options:
 With no ceiling declared, the ceiling policy does not run: there is nothing to
 exceed.`;
 
-/** A linha de comando está errada. Sai 2, como em `cartografo`. */
-export class ErroDeUso extends Error {
-  constructor(mensagem: string) {
-    super(mensagem);
-    this.name = 'ErroDeUso';
+/** The command line is wrong. Exits 2, as in `cartografo`. */
+export class UsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UsageError';
   }
 }
 
-/** O que `avaliar` precisa saber. */
-export interface OpcoesDeAvaliacao {
+/** What `avaliar` needs to know. */
+export interface EvaluateOptions {
   url: string;
-  execucaoId: number;
-  tetoTokens?: number;
-  tetoSegundos?: number;
-  tierFator?: number;
-  tierMinimoNos?: number;
-  /** Implementação de `fetch` a usar. Default: o `fetch` global. */
-  buscar?: typeof fetch;
+  executionId: number;
+  tokenCeiling?: number;
+  secondCeiling?: number;
+  tierFactor?: number;
+  tierMinNodes?: number;
+  /** `fetch` implementation to use. Default: the global `fetch`. */
+  doFetch?: typeof fetch;
 }
 
-/** Uma proposta que este comando acabou de criar. */
-export interface PropostaCriada {
+/** A proposal this command has just created. */
+export interface CreatedProposal {
   id: number;
   status: string;
   no_id: string;
@@ -99,279 +100,275 @@ export interface PropostaCriada {
   tipo: 'teto' | 'tier';
 }
 
-/** O que dá para injetar na execução do comando. Tudo só para teste. */
-export interface ContextoDaCli {
-  buscar?: typeof fetch;
-  escrever?: (texto: string) => void;
+/** What can be injected into a run of the command. All of it for tests only. */
+export interface CliContext {
+  doFetch?: typeof fetch;
+  write?: (text: string) => void;
 }
 
-/** O que sobrou da linha de comando depois de tirar uma opção. */
-interface Extracao {
-  valor?: string;
-  restante: string[];
+/** What is left of the command line after taking one option out. */
+interface Extraction {
+  value?: string;
+  rest: string[];
 }
 
 /**
- * Tira uma opção com valor (`--nome valor` ou `--nome=valor`) da lista.
+ * Takes an option with a value (`--name value` or `--name=value`) out of the list.
  *
- * @param argumentos Argumentos do subcomando.
- * @param nome Nome longo da opção, com os dois traços.
- * @returns O valor, quando presente, e a lista sem ela.
+ * @param args Arguments of the subcommand.
+ * @param name Long name of the option, with the two dashes.
+ * @returns The value, when present, and the list without it.
  */
-function extrairValor(argumentos: string[], nome: string): Extracao {
-  const restante: string[] = [];
-  let valor: string | undefined;
+function extractValue(args: string[], name: string): Extraction {
+  const rest: string[] = [];
+  let value: string | undefined;
 
-  for (let indice = 0; indice < argumentos.length; indice += 1) {
-    const atual = argumentos[indice];
-    if (atual === nome) {
-      const proximo = argumentos[indice + 1];
-      if (proximo === undefined || proximo.startsWith('--')) {
-        throw new ErroDeUso(`${nome} needs a value`);
+  for (let index = 0; index < args.length; index += 1) {
+    const current = args[index];
+    if (current === name) {
+      const next = args[index + 1];
+      if (next === undefined || next.startsWith('--')) {
+        throw new UsageError(`${name} needs a value`);
       }
-      valor = proximo;
-      indice += 1;
+      value = next;
+      index += 1;
       continue;
     }
-    if (atual.startsWith(`${nome}=`)) {
-      valor = atual.slice(nome.length + 1);
-      if (valor === '') throw new ErroDeUso(`${nome} needs a value`);
+    if (current.startsWith(`${name}=`)) {
+      value = current.slice(name.length + 1);
+      if (value === '') throw new UsageError(`${name} needs a value`);
       continue;
     }
-    restante.push(atual);
+    rest.push(current);
   }
 
-  return { valor, restante };
+  return { value, rest };
 }
 
-/** Converte uma opção numérica, recusando lixo em vez de virar `NaN`. */
-function comoNumero(nome: string, bruto: string | undefined): number | undefined {
-  if (bruto === undefined) return undefined;
-  const numero = Number(bruto);
-  if (!Number.isFinite(numero) || numero < 0) {
-    throw new ErroDeUso(`${nome} needs a non-negative number, got "${bruto}"`);
+/** Converts a numeric option, refusing junk instead of becoming `NaN`. */
+function asNumber(name: string, raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new UsageError(`${name} needs a non-negative number, got "${raw}"`);
   }
-  return numero;
+  return parsed;
 }
 
-/** A descrição atual de um nó dentro de um snapshot já buscado. */
-function descricaoNoSnapshot(versao: GrafoVersao | undefined, noId: string): string {
-  const no = versao?.snapshot?.nodes?.find((candidato) => candidato.id === noId);
-  return no?.description ?? '';
+/** The current description of a node inside an already fetched snapshot. */
+function nodeDescriptionInSnapshot(version: GraphVersion | undefined, nodeId: string): string {
+  const node = version?.snapshot?.nodes?.find((candidate) => candidate.id === nodeId);
+  return node?.description ?? '';
 }
 
 /**
- * O corpo do subcomando `avaliar` (FR5).
+ * The body of the `avaliar` subcommand (FR5).
  *
- * Busca sessões e trabalhos da execução, monta o mapa
- * `trabalho_id -> grafo_versao_id`, agrega, lê o snapshot de cada versão distinta
- * para saber a descrição atual dos nós, avalia as políticas e cria uma proposta
- * por candidata.
+ * Fetches the sessions and jobs of the execution, builds the map
+ * `trabalho_id -> grafo_versao_id`, aggregates, reads the snapshot of each
+ * distinct version to learn the current description of the nodes, evaluates the
+ * policies and creates one proposal per candidate.
  *
- * @param opcoes URL, execução e calibração das políticas.
- * @returns As propostas criadas, na ordem em que foram criadas.
- * @throws {ErroDaApi} Quando a API recusa alguma das chamadas.
+ * @param options URL, execution and policy calibration.
+ * @returns The proposals created, in the order they were created.
+ * @throws {ApiError} When the API refuses any of the calls.
  */
-export async function avaliarExecucao(opcoes: OpcoesDeAvaliacao): Promise<PropostaCriada[]> {
-  const { url, execucaoId, buscar } = opcoes;
-  const filtro = { execucao_id: execucaoId };
+export async function evaluateExecution(options: EvaluateOptions): Promise<CreatedProposal[]> {
+  const { url, executionId, doFetch } = options;
+  const filter = { execucao_id: executionId };
 
-  const [sessoes, trabalhos] = await Promise.all([
-    buscarSessoes(url, filtro, buscar),
-    buscarTrabalhos(url, filtro, buscar),
+  const [sessions, jobs] = await Promise.all([
+    getSessions(url, filter, doFetch),
+    getJobs(url, filter, doFetch),
   ]);
 
-  const versaoPorTrabalho = new Map(
-    trabalhos.map((trabalho) => [trabalho.id, trabalho.grafo_versao_id] as const),
-  );
-  const linhas = linhasIdentificadas(agregarCusto(sessoes, versaoPorTrabalho));
+  const versionByJob = new Map(jobs.map((job) => [job.id, job.grafo_versao_id] as const));
+  const rows = identifiedRows(aggregateCost(sessions, versionByJob));
 
-  // Um snapshot por versão distinta, não um por candidata: a mesma versão
-  // costuma explicar vários nós caros, e buscá-la de novo a cada um seria
-  // barulho na API sem nenhuma informação nova.
-  const snapshots = new Map<string, GrafoVersao>();
-  for (const versaoId of new Set(linhas.map((linha) => linha.grafo_versao_id))) {
-    snapshots.set(versaoId, await buscarGrafoVersao(url, versaoId, buscar));
+  // One snapshot per distinct version, not one per candidate: the same version
+  // usually explains several expensive nodes, and fetching it again for each one
+  // would be noise on the API with no new information.
+  const snapshots = new Map<string, GraphVersion>();
+  for (const versionId of new Set(rows.map((row) => row.grafo_versao_id))) {
+    snapshots.set(versionId, await getGraphVersion(url, versionId, doFetch));
   }
 
-  const candidatas = avaliarPoliticas(linhas, {
-    tetoTokens: opcoes.tetoTokens,
-    tetoSegundos: opcoes.tetoSegundos,
-    tierFator: opcoes.tierFator,
-    tierMinimoNos: opcoes.tierMinimoNos,
-    descricaoAtual: (grafoVersaoId, noId) => descricaoNoSnapshot(snapshots.get(grafoVersaoId), noId),
+  const candidates = evaluatePolicies(rows, {
+    tokenCeiling: options.tokenCeiling,
+    secondCeiling: options.secondCeiling,
+    tierFactor: options.tierFactor,
+    tierMinNodes: options.tierMinNodes,
+    currentDescription: (graphVersionId, nodeId) =>
+      nodeDescriptionInSnapshot(snapshots.get(graphVersionId), nodeId),
   });
 
-  const criadas: PropostaCriada[] = [];
-  for (const candidata of candidatas) {
-    const versao = snapshots.get(candidata.grafo_versao_id);
-    if (versao === undefined) continue;
+  const created: CreatedProposal[] = [];
+  for (const candidate of candidates) {
+    const version = snapshots.get(candidate.grafo_versao_id);
+    if (version === undefined) continue;
 
-    const proposta = await criarProposta(
+    const proposal = await createProposal(
       url,
       {
-        grafo_id: versao.grafo_id,
-        versao_alvo: versao.id,
-        operacoes: candidata.operacoes,
-        evidencia: candidata.evidencia,
-        metrica_esperada: candidata.metrica_esperada,
+        grafo_id: version.grafo_id,
+        versao_alvo: version.id,
+        operacoes: candidate.operacoes,
+        evidencia: candidate.evidencia,
+        metrica_esperada: candidate.metrica_esperada,
       },
-      buscar,
+      doFetch,
     );
 
-    criadas.push({
-      id: proposta.id,
-      status: proposta.status,
-      no_id: candidata.no_id,
-      grafo_versao_id: candidata.grafo_versao_id,
-      tipo: candidata.tipo,
+    created.push({
+      id: proposal.id,
+      status: proposal.status,
+      no_id: candidate.no_id,
+      grafo_versao_id: candidate.grafo_versao_id,
+      tipo: candidate.tipo,
     });
   }
 
-  return criadas;
+  return created;
 }
 
-/** Uma linha de relatório por proposta criada. */
-function linhaDeRelatorio(criada: PropostaCriada): string {
-  return `proposal ${criada.id} · node ${criada.no_id} · ${criada.tipo} · ${criada.status}\n`;
+/** One report line per proposal created. */
+function reportLine(created: CreatedProposal): string {
+  return `proposal ${created.id} · node ${created.no_id} · ${created.tipo} · ${created.status}\n`;
 }
 
 /**
- * Ponto de entrada do comando: decide o subcomando e devolve o código de saída.
+ * Entry point of the command: decides the subcommand and returns the exit code.
  *
- * Não chama `process.exit`: quem decide isso é quem invoca — mesma escolha de
- * `executarCli` do pacote core.
+ * It does not call `process.exit`: whoever invokes decides that — the same
+ * choice as `runCli` in the core package.
  *
- * @param argumentos `process.argv.slice(2)`.
- * @param contexto Injeções de teste (`fetch` e escritor de saída).
- * @returns Código de saída.
+ * @param args `process.argv.slice(2)`.
+ * @param context Test injections (`fetch` and output writer).
+ * @returns Exit code.
  */
-export async function executarCli(
-  argumentos: string[],
-  contexto: ContextoDaCli = {},
-): Promise<number> {
-  const escrever = contexto.escrever ?? ((texto: string) => void process.stdout.write(texto));
+export async function runCli(args: string[], context: CliContext = {}): Promise<number> {
+  const write = context.write ?? ((text: string) => void process.stdout.write(text));
 
-  if (argumentos.some((argumento) => argumento === '--help' || argumento === '-h')) {
-    escrever(`${USO}\n`);
+  if (args.some((argument) => argument === '--help' || argument === '-h')) {
+    write(`${USAGE}\n`);
     return 0;
   }
 
-  const subcomando = argumentos[0];
-  if (subcomando !== 'avaliar') {
-    process.stderr.write(
-      `topografo-custo: unknown subcommand: "${subcomando ?? ''}"\n${USO}\n`,
-    );
+  const subcommand = args[0];
+  if (subcommand !== 'avaliar') {
+    process.stderr.write(`topografo-custo: unknown subcommand: "${subcommand ?? ''}"\n${USAGE}\n`);
     return 2;
   }
 
   try {
-    const opcoes = interpretarArgumentos(argumentos.slice(1), contexto.buscar);
-    const criadas = await avaliarExecucao(opcoes);
+    const options = parseArguments(args.slice(1), context.doFetch);
+    const created = await evaluateExecution(options);
 
-    if (criadas.length === 0) {
-      escrever('no candidate: the telemetry of this execution broke no policy\n');
+    if (created.length === 0) {
+      write('no candidate: the telemetry of this execution broke no policy\n');
       return 0;
     }
-    for (const criada of criadas) escrever(linhaDeRelatorio(criada));
+    for (const proposal of created) write(reportLine(proposal));
     return 0;
-  } catch (erro) {
-    if (erro instanceof ErroDeUso) {
-      process.stderr.write(`topografo-custo: ${erro.message}\n`);
+  } catch (error) {
+    if (error instanceof UsageError) {
+      process.stderr.write(`topografo-custo: ${error.message}\n`);
       process.stderr.write('topografo-custo: run `topografo-custo --help` for the usage\n');
       return 2;
     }
-    if (erro instanceof ErroDaApi) {
+    if (error instanceof ApiError) {
       process.stderr.write(
-        `topografo-custo: ${erro.message}\n${JSON.stringify(erro.corpo ?? null)}\n`,
+        `topografo-custo: ${error.message}\n${JSON.stringify(error.body ?? null)}\n`,
       );
       return 1;
     }
-    // `fetch` estoura TypeError quando não há ninguém escutando na porta. É
-    // resultado negativo (servidor fora), não bug — e é o caso mais comum de
-    // todos na primeira vez que alguém roda o comando.
-    if (erro instanceof TypeError) {
-      process.stderr.write(`topografo-custo: could not reach the control plane: ${erro.message}\n`);
+    // `fetch` throws a TypeError when nobody is listening on the port. That is a
+    // negative result (server down), not a bug — and it is the most common case
+    // of all the first time somebody runs the command.
+    if (error instanceof TypeError) {
+      process.stderr.write(`topografo-custo: could not reach the control plane: ${error.message}\n`);
       return 1;
     }
-    throw erro;
+    throw error;
   }
 }
 
 /**
- * Variável de ambiente que carrega a credencial do control plane (t124).
+ * Environment variable that carries the control plane credential (t124).
  *
- * A mesma do `cartografo`: quem exporta o token uma vez no shell usa o comando
- * daquele control plane sem repetir nada.
+ * The same one as `cartografo`: whoever exports the token once in the shell uses
+ * the command of that control plane without repeating anything.
  */
 export const ENV_TOKEN = 'CARTOGRAFO_TOKEN';
 
 /**
- * Envolve o `fetch` para apresentar a credencial em toda chamada (t124).
+ * Wraps `fetch` so that the credential is presented on every call (t124).
  *
- * O ponto de injeção já existia — `buscar` — e é por ele que a credencial entra:
- * as quatro funções de `cliente.ts` continuam sem saber que existe autenticação,
- * do mesmo jeito que não sabem que existe rede além do `fetch` que recebem.
+ * The injection point already existed — `doFetch` — and it is through it that
+ * the credential comes in: the four functions of `client.ts` still know nothing
+ * about authentication existing, the same way they do not know there is a network
+ * beyond the `fetch` they receive.
  *
- * @param buscar Implementação base (default: o `fetch` global).
- * @param token Token a apresentar; sem ele, nada é acrescentado ao pedido.
- * @returns O `fetch` que a lente vai usar.
+ * @param doFetch Base implementation (default: the global `fetch`).
+ * @param token Token to present; without it, nothing is added to the request.
+ * @returns The `fetch` the lens is going to use.
  */
-export function comCredencial(buscar: typeof fetch = fetch, token?: string): typeof fetch {
-  if (token === undefined || token === '') return buscar;
+export function withCredential(doFetch: typeof fetch = fetch, token?: string): typeof fetch {
+  if (token === undefined || token === '') return doFetch;
 
-  return async (entrada, init) => {
-    const cabecalhos = new Headers(init?.headers);
-    cabecalhos.set('authorization', `Bearer ${token}`);
-    return await buscar(entrada, { ...init, headers: cabecalhos });
+  return async (input, init) => {
+    const headers = new Headers(init?.headers);
+    headers.set('authorization', `Bearer ${token}`);
+    return await doFetch(input, { ...init, headers });
   };
 }
 
-/** Lê as opções de `avaliar`, recusando o que não entende. */
-function interpretarArgumentos(
-  argumentos: string[],
-  buscar?: typeof fetch,
-  ambiente: NodeJS.ProcessEnv = process.env,
-): OpcoesDeAvaliacao {
-  const daUrl = extrairValor(argumentos, '--url');
-  const doToken = extrairValor(daUrl.restante, '--token');
-  const daExecucao = extrairValor(doToken.restante, '--execucao');
-  const doTetoTokens = extrairValor(daExecucao.restante, '--teto-tokens');
-  const doTetoSegundos = extrairValor(doTetoTokens.restante, '--teto-segundos');
-  const doFator = extrairValor(doTetoSegundos.restante, '--tier-fator');
-  const doMinimo = extrairValor(doFator.restante, '--tier-minimo-nos');
+/** Reads the options of `avaliar`, refusing what it does not understand. */
+function parseArguments(
+  args: string[],
+  doFetch?: typeof fetch,
+  env: NodeJS.ProcessEnv = process.env,
+): EvaluateOptions {
+  const fromUrl = extractValue(args, '--url');
+  const fromToken = extractValue(fromUrl.rest, '--token');
+  const fromExecution = extractValue(fromToken.rest, '--execucao');
+  const fromTokenCeiling = extractValue(fromExecution.rest, '--teto-tokens');
+  const fromSecondCeiling = extractValue(fromTokenCeiling.rest, '--teto-segundos');
+  const fromFactor = extractValue(fromSecondCeiling.rest, '--tier-fator');
+  const fromMinNodes = extractValue(fromFactor.rest, '--tier-minimo-nos');
 
-  if (doMinimo.restante.length > 0) {
-    throw new ErroDeUso(
-      `avaliar does not understand: ${doMinimo.restante.map((extra) => `"${extra}"`).join(', ')}`,
+  if (fromMinNodes.rest.length > 0) {
+    throw new UsageError(
+      `avaliar does not understand: ${fromMinNodes.rest.map((extra) => `"${extra}"`).join(', ')}`,
     );
   }
 
-  if (daUrl.valor === undefined) throw new ErroDeUso('avaliar needs --url');
-  if (daExecucao.valor === undefined) throw new ErroDeUso('avaliar needs --execucao');
+  if (fromUrl.value === undefined) throw new UsageError('avaliar needs --url');
+  if (fromExecution.value === undefined) throw new UsageError('avaliar needs --execucao');
 
-  const execucaoId = Number(daExecucao.valor);
-  if (!Number.isInteger(execucaoId)) {
-    throw new ErroDeUso(`--execucao needs an integer id, got "${daExecucao.valor}"`);
+  const executionId = Number(fromExecution.value);
+  if (!Number.isInteger(executionId)) {
+    throw new UsageError(`--execucao needs an integer id, got "${fromExecution.value}"`);
   }
 
   return {
-    url: daUrl.valor,
-    execucaoId,
-    tetoTokens: comoNumero('--teto-tokens', doTetoTokens.valor),
-    tetoSegundos: comoNumero('--teto-segundos', doTetoSegundos.valor),
-    tierFator: comoNumero('--tier-fator', doFator.valor),
-    tierMinimoNos: comoNumero('--tier-minimo-nos', doMinimo.valor),
-    buscar: comCredencial(buscar, doToken.valor?.trim() ?? ambiente[ENV_TOKEN]?.trim()),
+    url: fromUrl.value,
+    executionId,
+    tokenCeiling: asNumber('--teto-tokens', fromTokenCeiling.value),
+    secondCeiling: asNumber('--teto-segundos', fromSecondCeiling.value),
+    tierFactor: asNumber('--tier-fator', fromFactor.value),
+    tierMinNodes: asNumber('--tier-minimo-nos', fromMinNodes.value),
+    doFetch: withCredential(doFetch, fromToken.value?.trim() ?? env[ENV_TOKEN]?.trim()),
   };
 }
 
-// O caminho de produção é o `bin` do pacote — `npx topografo-custo avaliar
-// --url ... --execucao ...` (t199, FR3) —, e ele importa este módulo em vez de
-// executá-lo. A guarda continua aqui por causa da OUTRA metade: sem ela,
-// qualquer `import { executarCli }` (é o que `test/cli.test.ts` faz) rodaria a
-// CLI só por ter carregado o arquivo. De quebra, `node --import tsx src/cli.ts`
-// segue funcionando para quem estiver depurando o pacote de dentro.
+// The production path is the package's own `bin` (t199, FR3), and it imports
+// this module rather than executing it:
+// `npx topografo-custo avaliar --url ... --execucao ...`.
+// The guard stays here for the OTHER half: without it, any `import { runCli }`
+// (which is what `test/cli.test.ts` does) would run the CLI just by loading the
+// file. As a bonus, `node --import tsx src/cli.ts` keeps working for whoever is
+// debugging the package from the inside.
 if (import.meta.filename === process.argv[1]) {
-  process.exitCode = await executarCli(process.argv.slice(2));
+  process.exitCode = await runCli(process.argv.slice(2));
 }

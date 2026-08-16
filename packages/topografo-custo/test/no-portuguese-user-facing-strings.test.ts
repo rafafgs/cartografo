@@ -10,12 +10,16 @@
  *
  * Two halves, and they cannot be collapsed:
  *
- * - **What is scanned.** The two files t180's Code Changes table names: the
- *   command and the policies whose recommendation text ends up in a proposal a
- *   person reads. This package has never been through a D18 identifier sweep —
- *   its functions, variables and doc comments are still Portuguese on purpose
- *   (t180, FR5), and that is a separate, larger ticket. Scanning only literals
- *   is what keeps the two apart with no extra rule.
+ * - **What is scanned.** The two files t180's Code Changes table names — the
+ *   command and the policies, whose recommendation text ends up in a proposal a
+ *   person reads — plus the client, which t211 added. The client was the gap:
+ *   `ApiError`'s message reaches stderr through the command's error path, and
+ *   for as long as the file sat outside {@link SCANNED_FILES} the one guard whose
+ *   whole job is to catch a Portuguese message could not see it. t211 swept the
+ *   package's identifiers, file names and comments (D18), so the split between
+ *   the two guards is no longer "identifiers are still Portuguese here": it is
+ *   only literals versus everything else, which is what keeps them apart with no
+ *   extra rule.
  * - **What is not Portuguese prose even though it is spelled in Portuguese.**
  *   A message that quotes a wire name is still English: `"nos" has to be a list`
  *   is one English sentence about a field called `nos`. So before the scan, the
@@ -39,8 +43,11 @@ import test from 'node:test';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 
-/** The surfaces t180 converts in this package: CLI output and proposal text. */
-const SCANNED_FILES = Object.freeze(['src/cli.ts', 'src/politica.ts']);
+/**
+ * The surfaces t180 converts in this package — CLI output and proposal text —
+ * plus the client's error message, which t211 brought in.
+ */
+const SCANNED_FILES = Object.freeze(['src/cli.ts', 'src/client.ts', 'src/policy.ts']);
 
 /** Any of these in a message means the sentence around it is Portuguese. */
 const DIACRITICS = /[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/;
@@ -69,6 +76,10 @@ const STOPWORDS = Object.freeze([
   'mas',
   'esta',
   'este',
+  // t211: the only Portuguese word of `ApiError`'s message, which reaches
+  // stderr through the command's error path and was invisible to this gate for
+  // as long as `src/cliente.ts` sat outside SCANNED_FILES.
+  'respondeu',
 ]);
 
 /**
@@ -302,6 +313,8 @@ test('t180 — the sweep bites on real Portuguese prose', () => {
     'nenhuma candidata: a telemetria desta execução não estourou nenhuma política',
     'nao consegui falar com o control plane',
     'custo fora de esquadro nesta versao: candidato a um tier mais barato',
+    // the shape `ApiError` used to build, chunk by chunk (t211)
+    ' respondeu ',
   ];
   for (const text of caught) {
     assert.ok(offendersIn(text).length > 0, `the sweep missed Portuguese prose: ${text}`);

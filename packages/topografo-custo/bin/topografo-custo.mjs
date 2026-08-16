@@ -1,37 +1,38 @@
 #!/usr/bin/env node
 /**
- * O comando da lente de custo: `topografo-custo`.
+ * The cost lens's command: `topografo-custo`.
  *
- * Casca fina, no mesmo molde de `packages/runner/bin/cartografo-runner.mjs` e
- * `packages/tela/bin/tela.mjs`: o executável é `.mjs` (e não `.ts`) para não
- * depender de nenhuma flag do Node — ele registra o carregador tsx em processo e
- * só então importa `src/cli.ts`. Quem roda `npx topografo-custo` não precisa
- * saber que tsx existe, que é exatamente o que faltava enquanto o único caminho
- * era `node --import tsx src/cli.ts avaliar …`.
+ * A thin shell, in the same mould as `packages/runner/bin/cartografo-runner.mjs`
+ * and `packages/tela/bin/tela.mjs`: the executable is `.mjs` (and not `.ts`) so
+ * it depends on no Node flag at all — it registers the tsx loader in process and
+ * only then imports `src/cli.ts`. Whoever runs `npx topografo-custo` does not
+ * have to know that tsx exists, which is exactly what was missing while the only
+ * path was `node --import tsx src/cli.ts avaliar …`.
  *
- * O nome do comando é o que o próprio `USO` do pacote documenta desde a t180
- * (`src/cli.ts`): `topografo-custo avaliar …`. Batizá-lo de outra coisa aqui
- * seria uma segunda instância do desencontro que a t199 existe para fechar.
+ * The command's name is the one the package's own usage text has documented
+ * since t180 (`src/cli.ts`): `topografo-custo avaliar …`. Naming it anything
+ * else here would be a second instance of the very mismatch t199 exists to
+ * close.
  *
- * Só o despacho mora aqui: `executarCli` devolve o código de saída e este
- * arquivo o registra em `process.exitCode` em vez de chamar `process.exit` — a
- * mesma escolha dos outros dois bins, para que a saída em voo termine de ser
- * escrita antes de o processo acabar.
+ * Only the dispatch lives here: `runCli` returns the exit code and this file
+ * records it in `process.exitCode` instead of calling `process.exit` — the same
+ * choice as the other two bins, so that output in flight finishes being written
+ * before the process ends.
  *
- * Uso: `npx topografo-custo avaliar --url <url> --execucao <id> [opções]`.
- * Configuração: `CARTOGRAFO_TOKEN` (credencial do control plane).
+ * Usage: `npx topografo-custo avaliar --url <url> --execucao <id> [options]`.
+ * Configuration: `CARTOGRAFO_TOKEN` (control plane credential).
  */
 
 import { register } from 'tsx/esm/api';
 
 register();
 
-const { executarCli } = await import(new URL('../src/cli.ts', import.meta.url).href);
+const { runCli } = await import(new URL('../src/cli.ts', import.meta.url).href);
 
 try {
-  process.exitCode = await executarCli(process.argv.slice(2));
-} catch (erro) {
+  process.exitCode = await runCli(process.argv.slice(2));
+} catch (error) {
   console.error('topografo-custo: failed to run the command');
-  console.error(erro);
+  console.error(error);
   process.exitCode = 1;
 }

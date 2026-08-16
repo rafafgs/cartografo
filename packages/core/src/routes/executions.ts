@@ -15,6 +15,7 @@ import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { listEvents } from '../db/events.ts';
+import { questionsByNode } from '../repositories/input-request.ts';
 import { listExecutions, metricsByVersion } from '../repositories/job.ts';
 import { withValidation, routeId } from './common.ts';
 
@@ -32,10 +33,26 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
     withValidation(reply, () => ({ execucoes: listExecutions(db) })),
   );
 
+  /**
+   * The round's numbers: per version, and per node.
+   *
+   * `perguntas_por_no` rides here rather than on a route of its own (t167)
+   * because it is the same question the metrics answer, sliced on the other
+   * axis — "which step keeps stopping to ask?" beside "did the new version
+   * behave better?". Whoever is judging a per-node escalation policy reads both,
+   * and two calls to compare two columns is a report split in half.
+   *
+   * The route keeps its name: what it groups by version did not change, and a
+   * rename would break every client for an added field.
+   */
   app.get('/executions/:id/metrics-by-version', async (request, reply) =>
     withValidation(reply, () => {
       const executionId = routeId(request.params);
-      return { execucao_id: executionId, metricas: metricsByVersion(db, executionId) };
+      return {
+        execucao_id: executionId,
+        metricas: metricsByVersion(db, executionId),
+        perguntas_por_no: questionsByNode(db, executionId),
+      };
     }),
   );
 

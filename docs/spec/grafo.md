@@ -79,6 +79,8 @@ Uma etapa do grafo. Tudo que executa no sistema é skill com contrato; o que mud
 | `descricao` | não | O que o nó faz, em uma frase. |
 | `engine` | não | Qual engine executa este nó. Ausente = o engine default do runner. Ver abaixo. |
 | `model` | não | Qual modelo daquele engine executa este nó. Ausente = o default do próprio engine. Ver abaixo. |
+| `escalation_policy` | não | Quando este nó chama gente: `always`, `on_uncertainty`, `never`. Ausente = `on_uncertainty`. Ver abaixo. |
+| `escalation_recipient` | não | Quem deveria ser chamado quando este nó escala. Texto livre. Ver abaixo. |
 | `skill_ref` | sim | Ponteiro para a skill do registro, pinado. |
 | `contrato` | sim | Entrada, saída e verificações. |
 
@@ -170,6 +172,80 @@ Quatro coisas que o campo decide, e que valem mais escritas do que inferidas:
 
 Exemplo completo:
 [`grafo-valido-modelo.json`](../../schema/exemplos/grafo-valido-modelo.json).
+
+### `escalation_policy`: quando este nó chama gente
+
+Até a `t167` a resposta era uma só para o grafo inteiro: todo nó perguntava
+quando travava, e todo pedido de decisão bloqueava o trabalho até alguém
+responder. Isso é o comportamento certo para um nó de arquitetura e o
+comportamento errado para um nó que roda de madrugada sem ninguém do outro lado.
+A política passa a ser **por nó**, e é dado do grafo — versionada, propostável e
+revertível como qualquer outro campo.
+
+```json
+{
+  "id": "publicar",
+  "papel": "publicador",
+  "tipo_no": "trabalho",
+  "escalation_policy": "never",
+  "escalation_recipient": "editor-de-plantao",
+  "skill_ref": { "id": "cartografo/publicar-nota", "versao": "1.0.0", "hash": "sha256:e6952f…" },
+  "contrato": { "entrada_schema": {}, "saida_schema": {}, "verificacoes": [] }
+}
+```
+
+Os três valores:
+
+| Valor | O que o nó faz |
+|---|---|
+| `always` | Escala antes de fechar o nó, **mesmo achando que sabe** a resposta. Para a decisão que uma pessoa quer ver passar por ela. |
+| `on_uncertainty` | Escala quando trava. É o comportamento que todo nó sempre teve, e é o default. |
+| `never` | Não tem a quem perguntar. Travar aqui é falha do contrato do próprio nó — o runner **bloqueia o trabalho com motivo**, e nenhuma pergunta é criada. |
+
+Quatro coisas que o campo decide, e que valem mais escritas do que inferidas:
+
+- **Ausência tem nome, e o nome é `on_uncertainty`.** Um nó sem
+  `escalation_policy` se comporta exatamente como antes de o campo existir, e é
+  por isso que todo grafo já escrito continua válido e continua se comportando
+  igual. Mesma convenção do `engine` acima.
+- **A resolução é no despacho, nunca na validação** — `resolveEscalationPolicy`
+  em [`resolve-node.ts`](../../packages/runner/src/dispatch/resolve-node.ts),
+  olhando o nó em que o trabalho está *agora*. Um valor fora dos três (só
+  possível num snapshot que mudou de forma por baixo) resolve para o default:
+  não é palpite sobre qual dos três era para ser.
+- **Ao contrário do `engine`, aqui o enum é fechado.** `engine` é texto livre
+  porque um enum obrigaria a editar o schema a cada adapter novo; aqui os três
+  valores **são** o vocabulário, e um quarto valor não é capacidade nova, é erro
+  de quem escreveu — pego pelo schema, antes de qualquer runner ler.
+- **Só o `never` é determinístico.** `always` e `on_uncertainty` são instrução no
+  prompt, como todo o resto do texto de sessão: se a sessão estava mesmo
+  "incerta" não é conferível por máquina, e um portão que fingisse conferir isso
+  estaria conferindo nada. `never` é fiação: o runner troca
+  `POST /v1/input-requests` por `POST /v1/jobs/:id/blocks`, e essa troca não
+  depende de a sessão obedecer à instrução.
+
+Trocar a política de um nó é uma proposta `alterar_campo_no` como outra qualquer
+(`packages/core/src/domain/operations.ts`, `CHANGEABLE_FIELDS`): produz uma nova
+`grafo_versao`, revalida o documento inteiro e tem inversa. É de propósito que
+não exista caminho próprio para mudá-la — um segundo jeito de mudar um nó teria
+regras próprias sobre o que é versionado.
+
+Exemplo completo:
+[`grafo-valido-escalacao-nunca.json`](../../schema/exemplos/grafo-valido-escalacao-nunca.json).
+O ciclo inteiro está em [`escalacao-humana.md`](escalacao-humana.md).
+
+### `escalation_recipient`: quem deveria ser chamado
+
+Texto livre, sem formato imposto — pelas mesmas razões que `resposta_padrao` e
+`respondido_por` também são: **não existe sistema de identidade nem de papéis
+neste repositório** para validar contra, e inventar um formato agora seria
+congelar um vocabulário antes do primeiro consumidor.
+
+O campo é guardado no grafo e devolvido pelo snapshot
+(`GET /v1/graph-versions/:id`). **Nada envia nada para ele**, e isso não é
+esquecimento: notificação e papéis são ficha futura, e o campo existe agora para
+que a política e o destinatário nasçam juntos em vez de o grafo ter de ser
+reescrito quando a entrega chegar. Ele nem sequer é lido pelo runner.
 
 ### `tipo_no`: por que portão é nó
 

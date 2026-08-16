@@ -51,7 +51,13 @@ function snapshot(): Record<string, unknown> {
     nodes: [
       { id: 'implementar', role: 'desenvolvedor', node_type: 'work' },
       { id: 'conferir', role: 'tester', node_type: 'gate', engine: 'codex' },
-      { id: 'publicar', role: 'deployer', node_type: 'work' },
+      {
+        id: 'publicar',
+        role: 'deployer',
+        node_type: 'work',
+        escalation_policy: 'never',
+        escalation_recipient: 'plantao-de-publicacao',
+      },
     ],
     edges: [
       { from: 'implementar', to: 'conferir', condition: 'sempre' },
@@ -194,6 +200,55 @@ test('AT4 — a version id that does not resolve propagates, never defaults', as
       return true;
     },
   );
+});
+
+test('t167 — the declared escalation policy travels with the node', async () => {
+  const { resolveNode, resolveEscalationPolicy } = await loadModule();
+  const { ErroDoControlPlane } = await loadClient();
+  const { doFetch } = fakeFetch();
+
+  const resolved = await resolveNode(
+    { no_atual: 'publicar', grafo_versao_id: VERSION_ID },
+    reader(doFetch, ErroDoControlPlane),
+  );
+
+  assert.ok(resolved !== null);
+  assert.equal(
+    resolved.node.escalation_policy,
+    'never',
+    'the raw value comes through untouched: the schema enum is what constrains it',
+  );
+  assert.equal(resolveEscalationPolicy(resolved), 'never');
+});
+
+test('t167 — absence and an unrecognized value are both today\'s behaviour', async () => {
+  const { resolveNode, resolveEscalationPolicy } = await loadModule();
+  const { ErroDoControlPlane } = await loadClient();
+  const { doFetch } = fakeFetch();
+
+  // A node that declares nothing: every graph written before this field existed
+  // keeps behaving exactly as it did.
+  const declaringNothing = await resolveNode(
+    { no_atual: 'implementar', grafo_versao_id: VERSION_ID },
+    reader(doFetch, ErroDoControlPlane),
+  );
+  assert.ok(declaringNothing !== null);
+  assert.equal(declaringNothing.node.escalation_policy, undefined);
+  assert.equal(resolveEscalationPolicy(declaringNothing), 'on_uncertainty');
+
+  // And a value outside the three. The schema refuses it on the way in, so this
+  // is a snapshot that changed shape underneath us — and the answer is the
+  // default, never a guess at which of the three was meant.
+  const unrecognized = {
+    versionId: VERSION_ID,
+    node: { id: 'implementar', escalation_policy: 'maybe' },
+    edges: [],
+  };
+  assert.equal(resolveEscalationPolicy(unrecognized), 'on_uncertainty');
+
+  // A work with no resolvable node at all is the same answer: there is no node
+  // to have declared anything.
+  assert.equal(resolveEscalationPolicy(null), 'on_uncertainty');
 });
 
 test('AT5 — a node with no outgoing edge resolves with an empty edge list', async () => {

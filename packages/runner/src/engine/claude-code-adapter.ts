@@ -52,6 +52,7 @@ import {
   type SessionListener,
   type SessionSpec,
   type SessionStatus,
+  type SessionUsage,
 } from './types.ts';
 
 /** Wait between the SIGTERM and the SIGKILL. */
@@ -146,6 +147,16 @@ interface Session {
    * would put a cause in the telemetry that nobody measured.
    */
   timeoutReason: TimeoutReason | null;
+  /**
+   * What the terminal frame reported, when it arrived (t172).
+   *
+   * Kept on the session and not read at the end from a buffer of lines, for the
+   * same reason `refSent` is: this adapter keeps no transcript — `onOutput` is
+   * the only place a line exists — and holding every line to re-scan it later
+   * would turn a stream into a memory leak measured in megabytes per session.
+   */
+  usage: SessionUsage | null;
+  models: string[] | null;
   finished: boolean;
   refSent: boolean;
   clock: NodeJS.Timeout | null;
@@ -168,6 +179,23 @@ interface Session {
  * classifying it wrong here would produce a made-up `engineRef`.
  */
 export function extractEngineRef(line: string): string | null {
+  const frame = parseFrame(line);
+  if (frame === null) return null;
+
+  const { type, session_id: sessionId } = frame as { type?: unknown; session_id?: unknown };
+  if (typeof type !== 'string' || typeof sessionId !== 'string' || sessionId === '') return null;
+  return sessionId;
+}
+
+/**
+ * A line of the stream as an object, or `null` when it is not a frame at all.
+ *
+ * The same classification `extractEngineRef` has always applied, factored out
+ * once there was a second reader of it: the stream mixes structured frames with
+ * "a dying scream in plain text" (`engine-adapter.md:209-214`), and a line that
+ * merely looks like JSON is not a frame.
+ */
+function parseFrame(line: string): Record<string, unknown> | null {
   const trimmed = line.trim();
   if (!trimmed.startsWith('{')) return null;
 
@@ -177,11 +205,77 @@ export function extractEngineRef(line: string): string | null {
   } catch {
     return null;
   }
-  if (typeof frame !== 'object' || frame === null) return null;
+  if (typeof frame !== 'object' || frame === null || Array.isArray(frame)) return null;
+  return frame as Record<string, unknown>;
+}
 
-  const { type, session_id: sessionId } = frame as { type?: unknown; session_id?: unknown };
-  if (typeof type !== 'string' || typeof sessionId !== 'string' || sessionId === '') return null;
-  return sessionId;
+/** The four counts of the contract, in the order the schema declares them. */
+const USAGE_KEYS = [
+  'input_tokens',
+  'output_tokens',
+  'cache_creation_input_tokens',
+  'cache_read_input_tokens',
+] as const;
+
+/**
+ * The token accounting of the terminal `result` frame (t172, FR2/FR3).
+ *
+ * **It picks the four keys; it never forwards the object.** Measured against
+ * `claude 2.1.233`, the real `usage` carries ten — `service_tier`, `iterations`,
+ * `output_tokens_details`, a `cache_creation` breakdown and more around the four
+ * that matter. The taxonomy's `uso` closes `additionalProperties`, so an adapter
+ * that passed the frame's object through would produce a `/finish` body the
+ * control plane answers 400 to, and every session would land with `uso: null`
+ * anyway — with nothing in the log saying why.
+ *
+ * All four or nothing, and each of them a non-negative integer: a partial
+ * accounting completed with zeros is exactly the "absence read as a
+ * measurement" this whole ficha exists to prevent.
+ *
+ * @param frame A parsed line of the stream.
+ * @returns The four counts, or `null` when this frame does not carry them.
+ */
+export function extractUsage(frame: Record<string, unknown>): SessionUsage | null {
+  const usage = frame.usage;
+  if (typeof usage !== 'object' || usage === null || Array.isArray(usage)) return null;
+
+  const counts = usage as Record<string, unknown>;
+  const picked: Record<string, number> = {};
+  for (const key of USAGE_KEYS) {
+    const value = counts[key];
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return null;
+    picked[key] = value;
+  }
+  return picked as unknown as SessionUsage;
+}
+
+/**
+ * The models named by the terminal frame's `modelUsage` breakdown (t172,
+ * FR4/FR5).
+ *
+ * The KEYS and nothing else: what each model spent is a per-model split the
+ * `uso` contract has no room for, and summing them here would produce a total
+ * that disagrees with the frame's own `usage` (measured: on a one-turn session,
+ * `usage.input_tokens` was 2 while the breakdown's two models added up to 525 —
+ * the top-level counts describe the main turn, the breakdown describes every
+ * model that ran). What travels is identity, not a second accounting.
+ *
+ * The order is the frame's own, never sorted: a ranking of models is a claim,
+ * and this adapter has no basis for one.
+ *
+ * @param frame A parsed line of the stream.
+ * @returns The distinct model identifiers, or `null` when none was reported.
+ */
+export function extractModels(frame: Record<string, unknown>): string[] | null {
+  const breakdown = frame.modelUsage;
+  if (typeof breakdown !== 'object' || breakdown === null || Array.isArray(breakdown)) return null;
+
+  const models = Object.keys(breakdown as Record<string, unknown>).filter(
+    (id) => id.trim() !== '',
+  );
+  // An empty breakdown is not "it ran under no model", it is a frame with
+  // nothing to say — and the absence has a name already.
+  return models.length === 0 ? null : models;
 }
 
 export class ClaudeCodeAdapter implements EngineAdapter {
@@ -240,6 +334,8 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       status: 'pending',
       requestedStatus: null,
       timeoutReason: null,
+      usage: null,
+      models: null,
       finished: false,
       refSent: false,
       clock: null,
@@ -332,17 +428,18 @@ export class ClaudeCodeAdapter implements EngineAdapter {
 
   /**
    * `stream-json` is parseable, hence `hasStructuredOutput`; `-r, --resume` is
-   * real and `SessionSpec.resumeFrom` reaches it, hence `hasResume` (t173).
+   * real and `SessionSpec.resumeFrom` reaches it, hence `hasResume` (t173); the
+   * terminal `result` frame carries `usage` and `SessionFinishDetail.usage`
+   * delivers it, hence `reportsUsage` (t172).
    *
-   * The flag existed on the CLI all along — what it lacked, and what this
-   * adapter refused to declare without, was a consumer. `resumeFrom` is that
-   * consumer. `reportsUsage` stays absent (default `false`) for the reason this
-   * one just stopped having: usage accounting is out of v0 and nothing reads
-   * it, and "declaring the fourth, fifth and sixth before anybody reads them is
-   * how a format rots" (`engine-adapter.md:160-165`).
+   * All three arrived the same way, and the pattern is the point: the CLI had
+   * the capability all along, and what this adapter refused to declare without
+   * was a CONSUMER. Declaring the fourth, the fifth and the sixth before
+   * anybody reads them is still how a format rots
+   * (`engine-adapter.md:160-165`) — the rule did not soften, it got satisfied.
    */
   capabilities(): EngineCapabilities {
-    return { hasStructuredOutput: true, hasResume: true };
+    return { hasStructuredOutput: true, hasResume: true, reportsUsage: true };
   }
 
   async verifyCli(): Promise<CliProbe> {
@@ -405,11 +502,36 @@ export class ClaudeCodeAdapter implements EngineAdapter {
     if (session.finished) return;
     session.listener.onOutput(line);
 
+    this.#harvest(session, line);
+
     if (session.refSent || !session.listener.onEngineRef) return;
     const ref = extractEngineRef(line);
     if (ref === null) return;
     session.refSent = true;
     session.listener.onEngineRef(ref);
+  }
+
+  /**
+   * Keeps whatever accounting a line carries, for the outcome to report (t172).
+   *
+   * Read off EVERY line rather than only the last one, because "the last line"
+   * is not a thing the adapter can identify while streaming — and the terminal
+   * `result` frame is not always the last thing the process writes: a CLI can
+   * print a warning to stderr after it, and the two streams are merged in
+   * arrival order. What is asserted is the frame's TYPE, not its position.
+   *
+   * A later frame with the same accounting wins, which cannot happen in a
+   * session that ends once but is the honest rule if one ever does: the last
+   * report is the one the engine stands by.
+   */
+  #harvest(session: Session, line: string): void {
+    const frame = parseFrame(line);
+    if (frame === null || frame.type !== 'result') return;
+
+    // Independently: a frame may carry the counts without the breakdown, and a
+    // build of the CLI that dropped one has no business erasing the other.
+    session.usage = extractUsage(frame) ?? session.usage;
+    session.models = extractModels(frame) ?? session.models;
   }
 
   /** Natural end of the process: drains what is left and classifies the outcome. */
@@ -481,14 +603,26 @@ export class ClaudeCodeAdapter implements EngineAdapter {
     // Invariant 3: the status only turns terminal together with onFinished,
     // never before.
     session.status = status;
-    // The cause only travels when one of our own watchdogs produced it; it is
-    // set beside `requestedStatus`, so it can only ever accompany the status
-    // that watchdog asked for.
-    const reason = session.timeoutReason;
+    // Three facts, each of which travels only if it happened. The cause is set
+    // beside `requestedStatus`, so it can only ever accompany the status that
+    // watchdog asked for; the accounting is whatever the terminal frame said,
+    // and a session that never reached one reports none of it.
+    //
+    // Assembled by spreading rather than by writing `usage: session.usage`,
+    // because the two are not the same thing: a present key holding `undefined`
+    // survives `JSON.stringify` as an absent key but reads as present to
+    // `'usage' in detail`, and the contract this ficha is about is absence, not
+    // falsiness. `undefined` for the whole object when there is nothing at all
+    // keeps the shape every consumer written before t163 already handles.
+    const detail: SessionFinishDetail = {
+      ...(session.timeoutReason === null ? {} : { timeoutReason: session.timeoutReason }),
+      ...(session.usage === null ? {} : { usage: session.usage }),
+      ...(session.models === null ? {} : { models: session.models }),
+    };
     session.listener.onFinished(
       status,
       exitCode,
-      reason === null ? undefined : { timeoutReason: reason },
+      Object.keys(detail).length === 0 ? undefined : detail,
     );
   }
 

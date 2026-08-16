@@ -21,6 +21,13 @@
  * 4. The listener's callbacks are projected into `sessao.aberta` and
  *    `sessao.finalizada` conforming to the taxonomy (t98) and validated with
  *    ajv against the real schemas.
+ * 5. The token accounting and the models the CLI reported are printed as the
+ *    adapter parsed them, and they ride in `sessao.finalizada` (t172, FR12).
+ *    That is the half no unit test can prove: the suite runs against a fake
+ *    engine whose frames we wrote, so "the adapter parses `usage` correctly"
+ *    is only a claim about a fixture until a real, credentialed CLI produces
+ *    the frame. The fixtures in `test/engine/conformance.claude-code.test.ts`
+ *    are copied from a run of THIS script.
  *
  * The JSONL is a local evidence artifact, not a table: the adapter does not
  * write to a database (D1 — the listener is the only output, and whoever called
@@ -177,8 +184,8 @@ async function main() {
       engineRef = ref;
       log(`onEngineRef: ${ref}`);
     },
-    onFinished(status, exitCode) {
-      outcome = { status, exitCode };
+    onFinished(status, exitCode, detail) {
+      outcome = { status, exitCode, detail };
       resolveEnd();
     },
   });
@@ -206,12 +213,37 @@ async function main() {
   });
   validate('sessao.aberta', opened);
 
+  // The raw terminal frame, straight off the stream — the ONE thing this proof
+  // exists to show for t172, because everything downstream of it is a fixture
+  // somebody wrote. Printed before it is parsed, so a change in the CLI's shape
+  // is visible here even when the parser silently stops recognizing it.
+  const terminal = transcript
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .findLast((frame) => frame !== null && frame.type === 'result');
+
+  console.log('\n===== raw terminal `result` frame (t172, FR12) =====');
+  console.log(`usage:      ${JSON.stringify(terminal?.usage ?? null, null, 2)}`);
+  console.log(`modelUsage: ${JSON.stringify(terminal?.modelUsage ?? null, null, 2)}`);
+  console.log('===================================================\n');
+
+  console.log('===== as the adapter parsed it =====');
+  console.log(`detail.usage:  ${JSON.stringify(outcome.detail?.usage ?? null)}`);
+  console.log(`detail.models: ${JSON.stringify(outcome.detail?.models ?? null)}`);
+  console.log('====================================\n');
+
   const finished = envelope(2, 'sessao.finalizada', {
     status: TAXONOMY_STATUS[outcome.status],
     exit_code: outcome.exitCode,
-    // The v0 interface reports no token usage (out of scope), and null here is
-    // "the engine reported nothing" — never collapse it into zero.
-    uso: null,
+    // What the engine counted, or null when it counted nothing (t172). `null`
+    // is "the engine reported nothing" — never collapse it into zero.
+    uso: outcome.detail?.usage ?? null,
+    modelos: outcome.detail?.models ?? null,
   });
   validate('sessao.finalizada', finished);
 
@@ -225,6 +257,17 @@ async function main() {
   if (transcript.length === 0) die('no line reached onOutput');
   if (engineRef === null) die('onEngineRef never fired — no session_id was recognized in the stream');
 
+  // A completed session whose CLI reported nothing is not a proof of t172, it
+  // is a proof that the frame shape changed under us — which is exactly what
+  // this spike is the gate for. Absence is a legitimate RUNTIME state and never
+  // a legitimate result HERE, against a CLI known to report.
+  if (!outcome.detail?.usage) {
+    die('the terminal frame carried no recognizable `usage` — the parser and the CLI disagree');
+  }
+  if (!outcome.detail?.models) {
+    die('the terminal frame carried no recognizable `modelUsage` — the parser and the CLI disagree');
+  }
+
   const produced = join(repo, REQUESTED_FILE);
   if (!existsSync(produced)) die(`the session did not create ${REQUESTED_FILE} — it exited with 0 without working`);
   const content = readFileSync(produced, 'utf8');
@@ -235,6 +278,8 @@ async function main() {
   console.log(`engineName:     ${adapter.engineName}`);
   console.log(`engineRef:      ${engineRef}`);
   console.log(`outcome:        ${outcome.status} / exit ${outcome.exitCode} / ${elapsed}s`);
+  console.log(`usage:          ${JSON.stringify(outcome.detail.usage)}`);
+  console.log(`models:         ${JSON.stringify(outcome.detail.models)}`);
   console.log(`lines:          ${transcript.length}`);
   console.log(`${REQUESTED_FILE}: ${JSON.stringify(content.trim())}`);
   console.log(`events:         ${jsonl}`);

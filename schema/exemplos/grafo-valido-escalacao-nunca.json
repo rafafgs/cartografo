@@ -1,0 +1,95 @@
+{
+  "problem_class": "prova-escalacao-por-no",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "Escalação por nó: um que pergunta, um que não tem a quem perguntar",
+    "description": "Dois nós de trabalho numa aresta: o primeiro não declara política de escalação e cai no default (on_uncertainty, o comportamento de sempre), o segundo declara \"never\" e nomeia um destinatário. O menor documento que consegue distinguir um default de uma política declarada (t167).",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-16",
+    "source": "porte manual (prova de escalação por nó da t167)"
+  },
+  "nodes": [
+    {
+      "id": "redigir",
+      "role": "redator",
+      "node_type": "work",
+      "description": "Escreve o texto. Não declara política de escalação: pergunta quando trava, como todo nó sempre perguntou.",
+      "skill_ref": {
+        "id": "cartografo/redigir-nota",
+        "version": "1.0.0",
+        "hash": "sha256:2745f9d87a5b35e77dc5a73b8db71039cdfdae5a4c647f2f4122c1f3fb384b18"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["tema"],
+          "properties": {
+            "tema": { "type": "string", "minLength": 1 }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["texto"],
+          "properties": {
+            "texto": { "type": "string", "minLength": 1 }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s nota.md",
+            "description": "A nota existe e não está vazia."
+          }
+        ]
+      }
+    },
+    {
+      "id": "publicar",
+      "role": "publicador",
+      "node_type": "work",
+      "escalation_policy": "never",
+      "escalation_recipient": "editor-de-plantao",
+      "description": "Publica o que foi redigido. Declara \"never\": não existe gente esperando esta etapa, então travar aqui é falha do contrato do nó, nunca pergunta pendente.",
+      "skill_ref": {
+        "id": "cartografo/publicar-nota",
+        "version": "1.0.0",
+        "hash": "sha256:e6952fd4573c085c671e481334146f49438817e93aa86979980327db3b19f26a"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["texto"],
+          "properties": {
+            "texto": { "type": "string", "minLength": 1 }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["publicado"],
+          "properties": {
+            "publicado": { "type": "boolean" }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s publicacao.md",
+            "description": "O registro da publicação existe e não está vazio."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "redigir",
+      "to": "publicar",
+      "condition": "sempre",
+      "description": "Saída única: o texto redigido sempre segue para publicação."
+    }
+  ],
+  "initial_node": "redigir",
+  "final_nodes": ["publicar"]
+}

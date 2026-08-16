@@ -264,6 +264,40 @@ frase que dizia o contrário era aspiração documentada como se fosse fato.
 `uso` é `null` quando o engine não reportou nada — **nunca colapsar em zero**.
 Não há campo de custo: custo é vocabulário de engine, e o log é neutro.
 
+E até a t172 esse `null` era *sempre*: o adapter do Claude Code mandava `uso:
+null` cravado no código, porque contagem de uso estava em "Fora de escopo (v0)"
+do `docs/formatos/engine-adapter.md`. Toda sessão que este sistema já rodou
+registrou zero dado de custo, e o placeholder era indistinguível de uma ausência
+honesta — que é justamente por que ele durou tanto. O frame `result` terminal
+daquela CLI sempre trouxe a contagem; o que faltava era alguém lê-la.
+
+`modelos` (t172) é a identidade que nunca existiu em lugar nenhum desta
+taxonomia: `sessao.aberta.engine` diz qual MOTOR rodou (`claude-code`, `codex`)
+e nada dizia qual modelo. "Custo por modelo" não tinha resposta porque o dado
+nunca foi coletado, não porque faltasse agregação.
+
+```json
+{"status":"concluida","exit_code":0,
+ "uso":{"input_tokens":2,"output_tokens":5,
+        "cache_creation_input_tokens":3022,"cache_read_input_tokens":15688},
+ "timeout_reason":null,
+ "modelos":["claude-haiku-4-5-20251001","claude-sonnet-5"]}
+```
+
+**É lista, e o exemplo acima é de uma execução real.** Um único turno da CLI
+devolveu dois modelos — o do turno principal e o de um auxiliar mais barato — e
+colapsar em "o" modelo atribuiria a conta inteira ao errado, que é o mesmo
+estrago que a regra do `uso` evita para tokens. `null` é "o engine não nomeou
+nenhum"; lista vazia não é resposta, e o schema a recusa (`minItems: 1`). O
+conjunto de valores é aberto: o identificador é o que o engine reportou, e um
+enum fechado pediria mudança de schema a cada modelo novo.
+
+**O que `modelos` não promete.** Ele diz quais modelos rodaram, nunca como as
+quatro contagens de `uso` se dividem entre eles — essa separação existe no frame
+do engine e não atravessa para cá, porque `uso` é um total só. Uma sessão de dois
+modelos entra inteira nos dois quando alguém agrega por modelo, e é isso que a
+lente de custo lê.
+
 #### `sessao.permissao_negada` — [schema](schemas/sessao.permissao_negada.schema.json)
 
 Emitido quando a sessão tenta usar uma ferramenta que a política de permissão
@@ -306,7 +340,7 @@ Emitido quando um agente precisa de algo do humano para continuar. Ator:
 manual quer um OK sobre um artefato) — mesmo animal, mesma fila, mesmo loop.
 
 ```json
-{"trabalho_id":101,"sessao_id":5001,"tipo":"pergunta",
+{"trabalho_id":101,"sessao_id":5001,"no_id":"refinar","tipo":"pergunta",
  "pergunta":"Unifico o trio de tabelas do flowpilot num log de eventos so, ou porto as tres separadas?",
  "contexto":"D15 exige cruzar versao de grafo com telemetria por join, o que fica mais barato com um log unico.",
  "opcoes":["Unificar num log so","Portar as tres separadas"],
@@ -318,6 +352,14 @@ manual quer um OK sobre um artefato) — mesmo animal, mesma fila, mesmo loop.
 `auto_aprovavel` é carregado explicitamente porque "sem opções e sem padrão"
 nunca foi bom proxy para inaprovável: uma pergunta cuja resposta só o humano
 pode dar precisa dizer isso, não torcer para que o formato dela sugira.
+
+`no_id` é de qual **nó** a pergunta veio, carimbado pelo servidor a partir da
+posição do trabalho dono — nunca vindo do corpo do pedido. Sem ele, "quais
+etapas mais param para pedir gente?" só se responde reconstruindo a travessia
+evento a evento, e a política de escalação por nó
+([grafo.md](../../docs/spec/grafo.md), §2) seria uma política que ninguém
+consegue avaliar. Opcional: `null` é "não se sabe de qual nó veio" — trabalho
+sem posição, ou pergunta gravada antes de o campo existir.
 
 #### `pergunta.respondida` — [schema](schemas/pergunta.respondida.schema.json)
 

@@ -228,6 +228,13 @@ const RULES: Record<string, TypeRule> = {
       // in the payload — the same reasoning that kept quota states out of the
       // adapter's own status vocabulary.
       timeout_reason: optional('string', { values: ['wall_clock', 'silence'] }),
+      // Which models ran the session (t172). `minItems: 1` is the same rule the
+      // schema declares, and it is what keeps `[]` out: an empty list is not a
+      // way to say "nothing was reported" — that is what the absence, normalized
+      // to `null` below, already says. Open value set, so no `values` here: the
+      // identifier is whatever the engine reported, and a closed enum would need
+      // a release of this file for every model that ships.
+      modelos: optional('string-list', { minItems: 1 }),
     },
   },
   'sessao.permissao_negada': {
@@ -243,6 +250,10 @@ const RULES: Record<string, TypeRule> = {
     fields: {
       trabalho_id: required('integer'),
       sessao_id: optional('integer'),
+      // The node the owning job was standing on (t167). Optional, and stamped by
+      // the repository from the job — the payload is where the fact is audited,
+      // not where it is declared.
+      no_id: optional('string'),
       tipo: required('string', { values: ['pergunta', 'aprovacao'] }),
       pergunta: required('string'),
       contexto: optional('string'),

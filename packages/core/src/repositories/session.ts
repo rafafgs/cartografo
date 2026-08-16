@@ -71,6 +71,16 @@ export interface Session {
   /** Which watchdog stopped it, when one did (t163). `null` = not applicable. */
   timeout_reason: string | null;
   uso: SessionUsage | null;
+  /**
+   * Which models the engine reported having run this session (t172).
+   *
+   * A list because a session runs more than one — a real single-turn run
+   * already reported two — and collapsing to "the" model would charge the whole
+   * bill to the wrong one. `null` is "the engine named none", which is also
+   * what every row from before this column existed reads as; `[]` is not a way
+   * to say that and never gets stored.
+   */
+  modelos: string[] | null;
   transcricao: string | null;
   transcricao_truncada: boolean;
   transcricao_tamanho_original: number | null;
@@ -78,15 +88,16 @@ export interface Session {
   finalizada_em: string | null;
 }
 
-interface SessionRow extends Omit<Session, 'uso' | 'transcricao_truncada'> {
+interface SessionRow extends Omit<Session, 'uso' | 'modelos' | 'transcricao_truncada'> {
   uso: string | null;
+  modelos: string | null;
   transcricao_truncada: number;
 }
 
 const COLUMNS = `
   id, trabalho_id, execucao_id, no_id, engine, engine_session_ref, working_dir,
   prompt, timeout_seconds, silence_seconds, status, exit_code, timeout_reason,
-  uso, transcricao, transcricao_truncada, transcricao_tamanho_original,
+  uso, modelos, transcricao, transcricao_truncada, transcricao_tamanho_original,
   aberta_em, finalizada_em
 `;
 
@@ -94,6 +105,10 @@ function toSession(row: SessionRow): Session {
   return {
     ...row,
     uso: jsonOrNull<SessionUsage>(row.uso),
+    // Same JSON-in-a-column convention `uso` above already uses, and the same
+    // reading of a NULL: nothing was reported. A row written before t172 lands
+    // here as `null` with no backfill and no special case.
+    modelos: jsonOrNull<string[]>(row.modelos),
     transcricao_truncada: asBoolean(row.transcricao_truncada),
   };
 }
@@ -308,6 +323,7 @@ export interface FinishSessionInput {
   exit_code?: unknown;
   timeout_reason?: unknown;
   uso?: unknown;
+  modelos?: unknown;
   transcricao?: unknown;
   ator?: unknown;
 }
@@ -330,8 +346,8 @@ export interface FinishSessionInput {
  * @param id Session id.
  * @param input Request body.
  * @returns The closed session, or `null` if it does not exist.
- * @throws {ValidationError} When the status is outside the enum, `uso` does not
- *   match, or `transcricao` is present and is not a string.
+ * @throws {ValidationError} When the status is outside the enum, `uso` or
+ *   `modelos` does not match, or `transcricao` is present and is not a string.
  * @throws {Error} When the session stopped being open mid-flight.
  */
 export function finishSession(
@@ -347,8 +363,10 @@ export function finishSession(
     exit_code: input.exit_code,
     timeout_reason: input.timeout_reason,
     uso: input.uso,
+    modelos: input.modelos,
   });
   const usage = data.uso as SessionUsage | null;
+  const models = data.modelos as string[] | null;
   const transcript = capTranscript(input.transcricao);
   const actor = resolveActor(input.ator, RUNNER_ACTOR);
   const projectId = sessionProject(db, id);
@@ -358,7 +376,7 @@ export function finishSession(
     const effect = db
       .prepare(
         `UPDATE sessao SET status = ?, exit_code = ?, timeout_reason = ?, uso = ?,
-                transcricao = ?, transcricao_truncada = ?,
+                modelos = ?, transcricao = ?, transcricao_truncada = ?,
                 transcricao_tamanho_original = ?, finalizada_em = ?
           WHERE id = ? AND status = 'aberta'`,
       )
@@ -370,6 +388,10 @@ export function finishSession(
         data.timeout_reason as string | null,
         // An absent `uso` writes a real NULL, never an object of zeros.
         usage === null ? null : JSON.stringify(usage),
+        // ...and an absent `modelos` writes a real NULL, never an empty list:
+        // "the engine named no model" and "it ran under zero models" are not
+        // the same claim, and only the first one has ever been measured (t172).
+        models === null ? null : JSON.stringify(models),
         // ...and the same reading for the transcript: NULL is "nothing was
         // reported", `''` is "the session printed nothing".
         transcript.text,

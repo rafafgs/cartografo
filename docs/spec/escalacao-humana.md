@@ -190,13 +190,82 @@ que a produziu morreu logo depois.
 
 ---
 
-## 7. O que esta camada ainda não faz
+## 7. Quem pergunta é o nó, não o runner
+
+Tudo acima descreve **um** comportamento: perguntar quando trava, e bloquear até
+alguém responder. Desde a `t167` esse comportamento é o *default*, e não a única
+opção — o nó declara a sua no grafo, em `escalation_policy`
+([grafo.md](grafo.md), §2):
+
+| Política | O que a sessão recebe no prompt | O que a fiação faz com um pedido de escalação |
+|---|---|---|
+| `always` | O bloco `input-request` **mais** a instrução de escalar antes de fechar o nó, mesmo achando que sabe | `POST /v1/input-requests` — o ciclo inteiro descrito acima |
+| `on_uncertainty` (default) | O bloco `input-request`, com o texto de sempre | `POST /v1/input-requests` — o ciclo inteiro descrito acima |
+| `never` | **Nenhum bloco.** No lugar dele, a instrução de que este nó não tem a quem perguntar, e de que travar aqui se relata como falha do contrato do nó | `POST /v1/jobs/:id/blocks`, com motivo citando o nó e o que travou. Nenhuma pergunta é criada |
+
+**Ausente é `on_uncertainty`**, resolvido na hora do despacho: todo grafo escrito
+antes deste campo se comporta exatamente como se comportava, e o texto que a
+sessão recebe é byte a byte o de antes.
+
+### Por que `never` não é só uma frase no prompt
+
+Porque instrução de prompt é obedecida com probabilidade, não com certeza, e o
+que está em jogo aqui é uma pergunta pendente na fila de alguém que não existe.
+Se a única defesa fosse a instrução, a primeira sessão que escrevesse o bloco
+mesmo assim criaria uma `pergunta` que **ninguém** iria responder, com o trabalho
+bloqueado atrás dela para sempre — o pior desfecho possível, e justamente o que a
+política declarou querer evitar.
+
+Então `never` é fiação, não texto: o runner resolve a política do nó antes de
+qualquer escrita e, quando ela é `never`, troca a rota. As duas rotas já
+existiam, e nenhuma delas é nova — `POST /v1/jobs/:id/blocks` é o bloqueio
+incondicional com motivo desde a `t102`. O que a `t167` escolhe é **qual das duas
+mecânicas para o trabalho**, e nada mais.
+
+O trabalho para nos dois casos. A diferença é que num deles alguém é chamado.
+
+Isso vale para as **duas** portas por onde uma pergunta nasce (§2 e §4): a que a
+sessão escreve, e a que a fiação levanta sozinha quando um nó de duas saídas
+termina sem nomear nenhuma. Num nó `never` as duas viram bloqueio com motivo.
+
+`always` e `on_uncertainty` continuam sendo instrução, e isso é deliberado: se a
+sessão estava mesmo incerta não é conferível por máquina, e um portão que
+fingisse conferir isso estaria conferindo nada.
+
+### Trocar a política é uma proposta
+
+`escalation_policy` e `escalation_recipient` entraram em `CHANGEABLE_FIELDS`
+(`packages/core/src/domain/operations.ts`), então mudar a política de um nó é uma
+operação `alterar_campo_no` como outra qualquer: passa pelo portão humano,
+produz uma `grafo_versao` nova, revalida o documento inteiro e tem inversa. Quem
+mudou, quando e para quê fica no histórico — que é o mínimo para uma decisão do
+tipo "este nó para de chamar gente".
+
+### De qual nó veio a pergunta
+
+`pergunta` ganhou a coluna `no_id`, carimbada pelo servidor a partir do
+`no_atual` do trabalho dono — nunca vinda do corpo do pedido, a mesma fronteira
+de confiança que `projeto_id` e `execucao_id` já tinham. O evento
+`pergunta.criada` carrega o mesmo campo, e
+`GET /v1/executions/:id/metrics-by-version` devolve `perguntas_por_no` ao lado
+das métricas por versão.
+
+Sem isso, uma política por nó seria uma política que ninguém consegue avaliar:
+"este nó para demais para perguntar" precisa de um número, e o número precisa
+saber de qual nó a pergunta veio.
+
+---
+
+## 8. O que esta camada ainda não faz
 
 Cada item aqui é escopo declarado de outra ficha, não esquecimento:
 
 - **Política de auto-resposta.** O campo `auto_aprovavel` é gravado como `true`
   pelo despacho, e nada o lê para responder sozinho. A rota
   `/auto_resolucao` existe e funciona; quem a chama é gente, por enquanto.
+  A `t167` não a construiu: o que ela deixou pronto é o **fato** que esse portão
+  vai precisar ler — a política do nó, no snapshot do grafo, e o `no_id` na
+  própria pergunta.
 - **Atualizar `engine_session_ref` depois da abertura.** `sessao.aberta` é
   gravado assim que a sessão sobe, e o ref que o engine revela no primeiro
   quadro chega depois disso — não existe endpoint de PATCH para preenchê-lo.
@@ -225,7 +294,13 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   regra a aplicar —, e duas grafias é o que deixa o log separar os dois.
 - **Timeout de pergunta pendente.** Uma pergunta sem resposta bloqueia o
   trabalho para sempre, por desenho: a alternativa é o sistema decidir sozinho
-  o que declarou não saber decidir.
+  o que declarou não saber decidir. Vale igual para o bloqueio de um nó `never`
+  (§7): ele também espera alguém, e quem o levanta é
+  `POST /v1/jobs/:id/unblocks`, que já existe.
+- **Entregar a escalação a `escalation_recipient`.** O nó pode nomear quem
+  deveria ser chamado, e nada envia nada para esse nome: não existe sistema de
+  notificação nem de papéis neste repositório para entregar a. O campo é dado do
+  grafo, e só ([grafo.md](grafo.md), §2).
 - **Tela da fila** (`t107`) e **identidade de quem responde**: a `t124`
   autenticou estas rotas, mas o token não diz qual pessoa está do outro lado, e
   `respondido_por` segue vindo do corpo.

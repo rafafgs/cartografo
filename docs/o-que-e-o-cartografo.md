@@ -46,6 +46,15 @@ nada roda no default, e trocar essa escolha é uma proposta como qualquer
 outra: vira versão nova do mapa, com evidência e com volta. Os modelos que cada
 motor oferece aparecem na API, com a informação de onde a lista veio.
 
+**Decidir, etapa por etapa, quando você quer ser chamado.** Cada etapa do
+mapa diz o quanto insiste em falar com você: sempre (chama antes de fechar,
+mesmo achando que sabe), quando travar (o padrão), ou nunca — e aí travar
+não vira pergunta na sua fila, vira o trabalho parado com o motivo escrito,
+para etapas que rodam sem ninguém do outro lado. A etapa também pode nomear
+quem deveria ser chamado, para quando existirem papéis. Mudar isso é uma
+proposta como qualquer outra: nasce versão nova do mapa, e dá para voltar
+atrás. E o relatório da rodada mostra quantas perguntas cada etapa fez.
+
 **Enxergar tudo.** O quadro mostra onde cada trabalho está; cada ticket tem
 linha do tempo (agente trabalhando, esperando você, fila); cada pergunta tem
 contexto para responder sem abrir o repo; o histórico permite reconstruir

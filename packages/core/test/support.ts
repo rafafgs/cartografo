@@ -117,6 +117,14 @@ export interface Session {
   /** Which watchdog stopped it, when one did (t163). */
   timeout_reason: string | null;
   uso: SessionUsage | null;
+  /**
+   * Which models the engine reported having run this session (t172).
+   *
+   * `null` is "the engine named none", and it is what every row from before
+   * this column existed reads as. An empty list would be a different claim, and
+   * one nobody has ever measured.
+   */
+  modelos: string[] | null;
   transcricao: string | null;
   transcricao_truncada: boolean;
   transcricao_tamanho_original: number | null;
@@ -131,6 +139,8 @@ export interface InputRequest {
   sessao_id: number | null;
   execucao_id: number | null;
   tipo: string;
+  /** The node the job was standing on when it asked; `null` if it had none (t167). */
+  no_id: string | null;
   pergunta: string;
   contexto: string | null;
   opcoes: string[] | null;

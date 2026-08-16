@@ -13,9 +13,13 @@
  * - **What is scanned.** An explicit file list, not the package tree. Most of
  *   `src/` builds prompts and instruction text for the dispatched agent, which
  *   t180 says out loud is not "user-facing": nobody reads it, a subprocess
- *   consumes it. The four files here are the ones t180's Code Changes table
+ *   consumes it. Four of the files here are the ones t180's Code Changes table
  *   names — the synthesizer command and the two operational scripts an operator
- *   runs by hand.
+ *   runs by hand; the three of `src/intake/` joined them with t144, which is the
+ *   rule applied to a command written after the decision instead of converted by
+ *   it. `src/intake/prompt.ts` is deliberately absent, the same exemption
+ *   `src/synthesizer/prompt.ts` has: its content is agent instruction, not text
+ *   a person reads.
  * - **What is not Portuguese prose even though it is spelled in Portuguese.**
  *   A message that quotes a wire name is still English: `"nos" has to be a list`
  *   is one English sentence about a field called `nos`. So before the scan, the
@@ -43,6 +47,9 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const SCANNED_FILES = Object.freeze([
   'scripts/close-surveyor-outcome.mjs',
   'scripts/run-graph-traversal.mjs',
+  'src/intake/cli.mjs',
+  'src/intake/command-line.ts',
+  'src/intake/generate.ts',
   'src/synthesizer/cli.mjs',
   'src/synthesizer/synthesize.ts',
 ]);

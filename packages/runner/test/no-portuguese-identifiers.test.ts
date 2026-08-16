@@ -88,6 +88,10 @@ const CLIENT_SYMBOLS = Object.freeze([
   'criarProposta',
   'buscarProposta',
   'fecharResultadoDeProposta',
+  // t144 — the one write the intake generation command adds, and its two types.
+  'criarIntake',
+  'EntradaDeIntake',
+  'Rascunho',
 ]);
 
 /**

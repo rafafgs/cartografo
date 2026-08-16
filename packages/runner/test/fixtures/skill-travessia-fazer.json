@@ -1,0 +1,62 @@
+{
+  "id": "travessia-fazer",
+  "version": "1.0.0",
+  "hash": "sha256:fcf5f11345aa82a2ba823734881114f0e7d4d4908d369de123b353d70440dffb",
+  "role": "work",
+  "description": "Produz o artefato que a etapa pede e escreve o que fez, para a etapa seguinte.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "pedido"
+    ],
+    "properties": {
+      "pedido": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "nota"
+    ],
+    "properties": {
+      "nota": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "o diretório da sessão existe e é onde o artefato vai ser escrito"
+  ],
+  "checks": [
+    {
+      "id": "artefato-existe",
+      "type": "deterministic",
+      "description": "O artefato que esta etapa promete existe e não está vazio.",
+      "command": "test -s saida.md",
+      "timeout_s": 60
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": [
+        "**"
+      ]
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Fazer uma etapa da travessia\n\nFaça o que a etapa pede, no diretório em que você está, e nada além disso.\nNão commite, não crie branch e não rode git.\n\nEscreva o que você fez em `saida.md`, em uma frase — é o que a etapa\nseguinte lê.",
+  "origin": {
+    "type": "native"
+  }
+}

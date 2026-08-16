@@ -1,0 +1,75 @@
+{
+  "id": "revisar-nota",
+  "version": "1.0.0",
+  "hash": "sha256:91c7d00ddc153450f20b15fb2990628a20ae96b277d4289a46df860bbb2a2869",
+  "role": "gate",
+  "description": "Lê `nota.md` e escreve o parecer em `parecer.md`, com a linha que o sustenta.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "texto"
+    ],
+    "properties": {
+      "texto": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "outcome",
+      "evidencia"
+    ],
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "escalate_human"
+        ],
+        "description": "obrigatório em toda skill de papel portao; a aresta que o executor toma vem do resultado que o contrato do NÓ declara."
+      },
+      "evidencia": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "`nota.md` existe no diretório da sessão"
+  ],
+  "checks": [
+    {
+      "id": "parecer-com-evidencia",
+      "type": "agentic",
+      "description": "O parecer cita a linha da nota que o sustenta, e não o relato de quem escreveu.",
+      "instruction": "O parecer nomeia a linha de `nota.md` que sustenta o veredito?",
+      "required_evidence": [
+        "parecer.md",
+        "nota.md"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": [
+        "**"
+      ]
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Conferir uma nota curta\n\nLeia `nota.md` no diretório atual e escreva `parecer.md` com o veredito\n(passou ou falhou) e a linha de `nota.md` que sustenta o veredito.\n\nNão crie nenhum outro arquivo. Não commite, não crie branch, não rode git.",
+  "origin": {
+    "type": "native"
+  }
+}

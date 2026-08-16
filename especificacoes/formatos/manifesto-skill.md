@@ -15,8 +15,14 @@ entra junto com o bundle, por `cartografo import <bundle>`; skill de **repo
 externo** entra pelo pipeline com portão humano `cartografo scan-skill` →
 `propose-skill` → `register-skill`. Em ambos os casos o registro reverifica
 tudo por conta própria — pin, forma, proveniência —, porque assinatura humana
-não é verificação. Ainda não implementado: renderizar `instructions` para dentro
-de uma sessão, que é trabalho do runner, e reimportar/versionar uma skill já
+não é verificação. Desde a `t161` o registro também é **lido na hora de
+executar**: o runner busca a skill que o nó pina, recusa o despacho se o hash
+não bate com o do registro, e renderiza `instructions`, `checks` e `permissions`
+para dentro da sessão
+([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
+Ainda não implementado: a interpolação de `{{input.<caminho>}}` dentro de
+`instructions`, que renderiza literal (ver *Limites conhecidos*); ler
+`budgets` para dentro do despacho; e reimportar/versionar uma skill já
 registrada (o registro é create-only por enquanto).
 
 | Arquivo | O que é |
@@ -183,11 +189,23 @@ opcional). Ambos obrigatórios: a ausência de declaração nunca é lida como
 - `network.allowed: true` **sem** `domains` declara rede irrestrita. É legal
   para skill nativa, e é rejeitado na importação (ver *Regra de importação*).
 
-**Declarar não é aplicar.** Esta especificação define a declaração; o
-enforcement em runtime (sandbox de filesystem e rede) é t125. Até lá o campo
-vale como contrato revisável e como base do diff de permissão entre versões —
-uma skill que abre uma permissão nova muda de hash e reaparece no portão
-humano.
+**Declarar não é aplicar** — mas, desde a `t161`, declarar chega ao despacho.
+Esta especificação define a declaração; a t125 construiu o enforcement no
+adapter, e a t161 ligou os dois: o runner resolve `permissoes` da skill
+registrada para dentro da sessão, e o que a skill declarou é o que a sessão
+recebe. Cada eixo continua valendo também como contrato revisável e como base
+do diff de permissão entre versões — uma skill que abre uma permissão nova muda
+de hash e reaparece no portão humano.
+
+**O que o adapter não consegue expressar, ele recusa.** Um eixo que o engine
+não sabe aplicar não abre sessão nenhuma: o `claude-code` expressa "toda a
+escrita ou nenhuma" e "rede aberta ou fechada", e nada entre os dois, então
+`escrita` com glob no meio do caminho ou `rede.permitido: true` **com**
+`dominios` fazem `startSession` recusar antes de gastar qualquer coisa
+(`packages/runner/src/engine/permission-policy.ts`). É o comportamento certo —
+sessão que aplica menos do que foi declarado, em silêncio, é a única saída que
+um sistema de permissão não pode ter — e é uma restrição real sobre o que um
+manifesto pode declarar hoje e ainda rodar.
 
 ### `budgets`
 
@@ -211,11 +229,13 @@ propósito —, e é por isso que `budgets` entra no hash junto com
 comportamento reaparece no portão humano.
 
 **Estado hoje, sem maquiagem:** nada lê `budgets` de uma skill registrada
-para dentro de um despacho, pela mesma razão que nada lê `instructions` ainda —
-o pipeline de renderização não existe (ver *Renderização e injeção*, e a nota
-no topo desta doc). O que existe é o contrato aqui, o mecanismo do teto no
-runner, e o enforcement nos dois adapters (caso C9 do kit de conformidade).
-Até lá toda sessão roda com os tetos do servidor.
+para dentro de um despacho. A razão deixou de ser "o pipeline de renderização
+não existe" — a `t161` o construiu, e `instructions`, `checks` e `permissions`
+já atravessam (ver *Renderização e injeção*) —, e passou a ser simplesmente que
+`budgets` ficou de fora daquela ficha. O que existe é o contrato aqui, o
+mecanismo do teto no runner, e o enforcement nos dois adapters (caso C9 do kit
+de conformidade). Até que alguém ligue o campo, toda sessão roda com os tetos
+do servidor.
 
 ### `instructions`
 
@@ -262,6 +282,25 @@ sistema não depende de `CLAUDE.md` nem de nenhum markdown residente lá:
 Consequência que vale explicitar: como o contrato vive no banco e é renderizado
 por engine, trocar de engine não perde skill nem aprendizado — o que foi
 aprendido está no manifesto versionado, não no contexto de uma sessão.
+
+**Quanto disso roda hoje (`t161`):** os passos 1, 3 e 5 estão implementados e
+cobertos por teste, e o 6 registra na API sem validar `saida` contra o schema.
+O passo 4 renderiza `instrucoes` **literalmente** — placeholder não resolvido
+segue como texto, e não aborta nada. O passo 2 não existe: não há projeção de
+contexto por nó, e é dela que o 4 dependeria. A ordem entre os dois não é
+acidental: interpolar de verdade exige que a saída de um nó vire a entrada do
+seguinte (o `merge_commit` que `testar` pede é produzido por `integrar`), e
+esse encadeamento é uma ficha própria. A regra de **falha fechada** declarada
+acima continua valendo como decisão para quando o motor existir; o que a `t161`
+faz hoje não a contradiz, porque não interpola.
+
+Além dos cinco campos que a renderização cita, o runner injeta na sessão o
+**contrato do próprio nó** (`entrada_schema`, `saida_schema`, `verificacoes`,
+que vivem no grafo e não no manifesto) e, num nó com duas ou mais saídas, o
+protocolo de roteamento: um bloco cercado `resultado` nomeando as `condicao`
+das arestas daquele nó. O vocabulário de rota é o do **grafo**, nunca o
+`resultado` do `saida` da skill — são dois enums diferentes, de propósito
+([`docs/spec/grafo.md`](../../docs/spec/grafo.md)).
 
 ## Regra de importação (D4)
 
@@ -384,9 +423,16 @@ ou fica para outra ticket:
 - **O `hash` corresponder ao conteúdo.** O schema valida o formato
   (`sha256:` + 64 hex), não o valor. Recalcular e comparar é trabalho do
   registro, na importação e a cada leitura do manifesto pelo runner.
-- **Permissão declarada ser permissão aplicada.** Enforcement é t125.
+- **Permissão declarada ser permissão aplicada.** Enforcement é t125, e a
+  `t161` ligou a declaração ao despacho. O limite que sobra é outro, e é do
+  adapter: eixo que ele não sabe expressar recusa a sessão em vez de aplicá-la
+  pela metade (ver `permissions`).
 - **Interpolação.** A convenção `{{input.<caminho>}}` e a regra de falha
-  fechada estão decididas aqui; o motor nasce com o control plane (t100+).
+  fechada estão decididas aqui; o motor não existe. Desde a `t161` o runner
+  renderiza `instructions` **literalmente** — um `{{...}}` não resolvido chega à
+  sessão como texto —, porque interpolar de verdade depende de uma projeção de
+  contexto por nó que encadeie a saída de um nó na entrada do seguinte, e essa
+  é ficha própria (ver *Renderização e injeção*).
 - **Detalhe de ferramenta:** o campo `origin.imported_at` usa `pattern` de
   data ISO em vez de `"format": "date"`. O ajv em modo estrito trata formato
   desconhecido como erro de compilação quando nenhum plugin de formatos está

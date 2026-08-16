@@ -176,6 +176,11 @@ function fetchWithSeededQueue(): typeof fetch {
               titulo: 'trabalho disputado',
               no_atual: 'implementar',
               bloqueado: false,
+              // Derived by the control plane and read by the client since t161:
+              // a work standing on a final node stops being a candidate. The
+              // real route has always answered it; this simulation has to as
+              // well, or the queue it seeds is one the client throws away.
+              concluido: false,
               execucao_id: 1,
               grafo_versao_id: 'sha256:e2e',
             },

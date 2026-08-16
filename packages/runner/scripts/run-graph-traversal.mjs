@@ -22,11 +22,19 @@
  *   never touches SQLite: it is an API client like every other
  *   (`scripts/check-single-writer.mjs` is the gate on that).
  *
- * What it does NOT do: resolve the node's instruction from the registered
- * skill. That is `t109`, still open
- * (`packages/runner/src/dispatch/dispatch-claude-code.ts`), and until it lands
- * the task text of each node is supplied here, exactly as the spike supplied
- * its two.
+ * **What changed under it in `t161`.** The node's instruction now comes from the
+ * registered skill, and the dispatch takes the graph's edges by itself — so this
+ * driver stopped supplying either. `nos` went from being the path it FORCES to
+ * the path it EXPECTS: the loop just ticks, and at the end it compares where the
+ * work actually walked against what the plan said it would. A mismatch is a real
+ * finding about the graph or the sessions, and it is reported rather than
+ * papered over.
+ *
+ * One consequence worth knowing before writing a plan: a work that lands on a
+ * final node is `concluido` and stops being a candidate, so the final node's own
+ * session is not something the loop runs (`t152` derives the flag from the
+ * position alone). A plan whose last entry is the graph's final node will end
+ * with that entry unwalked, and the driver says so.
  *
  * ## What the operator has to have ready
  *
@@ -57,10 +65,12 @@
  * }
  * ```
  *
- * `nos` is the PATH through the graph, in order — the driver creates the job on
- * the first entry and transitions to each of the others in turn. A path and not
- * the node set: a graph with a rework cycle is crossed by naming the same node
- * twice, which is what a real round does.
+ * `nos` is the path through the graph the plan EXPECTS, in order — the driver
+ * creates the job on the first entry and lets the dispatch take it from there.
+ * A path and not the node set: a graph with a rework cycle is crossed by naming
+ * the same node twice, which is what a real round does. `task` and `engine`, if
+ * present, are documentation only since `t161`: the instruction comes from the
+ * registered skill and the engine from the node.
  *
  * `grafo_versao_id` is the field the whole ficha turns on. `POST /v1/jobs`
  * accepts it (`packages/core/src/repositories/job.ts`), and without it the
@@ -157,9 +167,6 @@ function readPlan(file) {
   if (!Array.isArray(plan.nos) || plan.nos.length === 0) die('plan.nos has to be a non-empty list');
   for (const [index, node] of plan.nos.entries()) {
     if (typeof node?.id !== 'string' || node.id === '') die(`plan.nos[${index}].id is required`);
-    if (typeof node.task !== 'string' || node.task.trim() === '') {
-      die(`plan.nos[${index}].task is required — this driver supplies it, t109 does not exist yet`);
-    }
   }
   return plan;
 }
@@ -224,18 +231,6 @@ function sharedWorktree(repo) {
     acquire: (jobId) => Promise.resolve({ path: repo, branch: `ticket-${jobId}` }),
     release: () => Promise.resolve(),
   };
-}
-
-/** The instruction of a node — the stand-in for the skill the graph will inject (t109). */
-function nodeInstructions(node, task) {
-  return [
-    `Você é uma sessão do nó \`${node}\` de um grafo do cartografo.`,
-    '',
-    'Trabalhe no diretório atual, faça exatamente o que se pede e nada além disso.',
-    'Não commite, não crie branch, não rode git.',
-    '',
-    `Tarefa do nó: ${task}`,
-  ].join('\n');
 }
 
 async function main() {
@@ -333,10 +328,9 @@ async function main() {
       : { codex: { adapter: codexAdapter, decodeSessionText: decodeCodexSessionText } }),
   };
 
-  // `current` is what the dispatch factory closes over: which node the work is
-  // standing on decides the instruction, and the engine is resolved from the
-  // node by the dispatch itself — never chosen here.
-  let current = plan.nos[0];
+  // Nothing about the crossing is decided here since t161: the instruction comes
+  // from the node's registered skill, the engine from the node, and the next
+  // node from the graph's edges. This driver creates the work and ticks.
   const controller = new Controller({
     client,
     runnerId: RUNNER_ID,
@@ -344,39 +338,62 @@ async function main() {
     runnerCap: 1,
     projectCap: 2,
     ttlSeconds: TIMEOUT_SECONDS,
-    dispatch: (jobId) =>
-      createClaudeCodeDispatch({
-        urlBase: url,
-        token,
-        engines,
-        worktrees,
-        timeoutSeconds: TIMEOUT_SECONDS,
-        instructions: nodeInstructions(current.id, current.task),
-      })(jobId),
+    dispatch: createClaudeCodeDispatch({
+      urlBase: url,
+      token,
+      engines,
+      worktrees,
+      timeoutSeconds: TIMEOUT_SECONDS,
+    }),
   });
 
+  // One tick per session, plus slack for a rework cycle the plan did not name.
+  const maxTicks = plan.nos.length * 3;
   const walked = [];
-  for (const [index, node] of plan.nos.entries()) {
-    current = node;
-    if (index > 0) {
-      await api(url, token, 'POST', `/v1/jobs/${job.id}/transitions`, { para_no_id: node.id });
-      log(`work transitioned to "${node.id}"`);
+  for (let attempt = 0; attempt < maxTicks; attempt += 1) {
+    const current = await api(url, token, 'GET', `/v1/jobs/${job.id}`);
+    if (current.concluido) {
+      log(`the work arrived at "${current.no_atual}" and is no longer a candidate`);
+      break;
+    }
+    if (current.bloqueado) {
+      // A question is the one thing a crossing legitimately stops for, and
+      // answering it is a person's job — not this driver's.
+      const { perguntas: questions } = await api(
+        url,
+        token,
+        'GET',
+        '/v1/input-requests?status=pendente',
+      );
+      const pending = questions.filter((question) => question.trabalho_id === job.id);
+      die(
+        `the work is blocked on ${pending.length} pending question(s) and needs a person: ` +
+          `${pending.map((question) => `#${question.id} "${question.pergunta}"`).join(' | ')}`,
+      );
     }
 
-    log(`node ${index + 1}/${plan.nos.length}: real session on "${node.id}"...`);
+    log(`session ${walked.length + 1}: real session on "${current.no_atual}"...`);
     const started = Date.now();
     const dispatched = await controller.tick();
-    if (dispatched === null) die(`the tick on "${node.id}" dispatched nothing`);
+    if (dispatched === null) die(`the tick on "${current.no_atual}" dispatched nothing`);
     if (dispatched.jobId !== job.id) {
-      // Belt to the check above's braces: a job released BY somebody else
-      // mid-crossing would land here, and one wrong session is worth stopping
-      // for — the round's telemetry is only worth anything if every session in
-      // it belongs to the same crossing.
-      die(`the tick on "${node.id}" leased job ${dispatched.jobId}, not ${job.id}`);
+      // Belt to the braces of the released-jobs check above: a job released BY
+      // somebody else mid-crossing would land here, and one wrong session is
+      // worth stopping for — the round's telemetry is only worth anything if
+      // every session in it belongs to the same crossing.
+      die(`the tick on "${current.no_atual}" leased job ${dispatched.jobId}, not ${job.id}`);
     }
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
     log(`  dispatched job ${dispatched.jobId} in ${seconds}s`);
-    walked.push({ node: node.id, seconds });
+    walked.push({ node: current.no_atual, seconds });
+  }
+
+  const expected = plan.nos.map((node) => node.id);
+  const actual = walked.map((row) => row.node);
+  if (actual.join(' -> ') !== expected.join(' -> ')) {
+    log(`WARNING: the plan expected ${expected.join(' -> ')}`);
+    log(`         the work actually walked ${actual.join(' -> ')}`);
+    log('         (a plan ending on the graph\'s final node always shows that node unwalked)');
   }
 
   // The crossing is over, so this job stops being a candidate for the next one.

@@ -356,14 +356,32 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   `sessao.finalizada`, e transforma um pedido de escalação em pergunta pela
   API ([escalacao-humana.md](escalacao-humana.md)). O controller continua sem
   saber que engine existe: nada neste arquivo mudou para isso acontecer, que
-  era o ponto da costura. O que segue pendente é a instrução do nó vir do
-  grafo registrado em vez de um literal (`t109`) — e, pelo mesmo buraco, o
-  **orçamento declarado pela skill** vir do registro: a `t163` deu à sessão dois
-  cães de guarda (relógio de parede e silêncio), com o manifesto declarando
-  `orcamentos` e o runner resolvendo pelo menor dos dois
+  era o ponto da costura. **Fechado pela `t161`:** a instrução do nó vem do
+  grafo registrado, não mais de um literal —
+  [`resolve-node.ts`](../../packages/runner/src/dispatch/resolve-node.ts) lê o
+  snapshot uma vez por despacho e
+  [`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)
+  busca a skill pinada, confere o hash (pin que não bate não despacha, D4) e
+  renderiza instruções, contrato do nó, checks e permissões para dentro da
+  sessão. As **permissões** declaradas pelo manifesto passaram a valer no
+  mesmo movimento. O que segue pendente pelo mesmo buraco é o **orçamento
+  declarado pela skill**: a `t163` deu à sessão dois cães de guarda (relógio de
+  parede e silêncio), com o manifesto declarando `orcamentos` e o runner
+  resolvendo pelo menor dos dois
   ([`resolveBudget`](../../packages/runner/src/engine/resolve-budget.ts)), mas
-  quem despacha ainda usa o teto do runner porque campo nenhum de manifesto —
-  nem `instrucoes` — é renderizado para dentro de uma sessão hoje.
+  quem despacha ainda usa o teto do runner — o campo existe no manifesto e
+  ninguém o lê para dentro do despacho. É uma linha na mesma costura que a
+  `t161` abriu, e cabe à ficha que sentir a dor.
+- **Avanço de nó e fim de travessia** — também fechados pela `t161`, e citados
+  aqui porque os dois eram lacunas desta camada. Uma sessão que termina limpa e
+  não escala faz o próprio POST de transição pela aresta que o grafo manda:
+  saída única segue direto, portão com duas ou mais saídas lê o bloco cercado
+  `resultado` que a sessão emitiu, e um resultado que não casa com aresta
+  nenhuma vira pergunta para gente (`ator.tipo: "sistema"`) em vez de falha. E `listarTrabalhosLiberados` passou a filtrar por `concluido` além de
+  `bloqueado`: o campo sai de `GET /v1/jobs` desde a `t152`, derivado do
+  `no_atual` contra os `nos_finais` da versão, e sem lê-lo um trabalho que
+  pousava no nó final continuava candidato para sempre — o controller o
+  redespachava para o mesmo nó a cada tick.
 - **Modo local** (avaliar um diretório sem control plane): não tem schema nem
   critério de aceite escrito em lugar nenhum do repo. Revisitar quando houver
   caso de uso concreto.

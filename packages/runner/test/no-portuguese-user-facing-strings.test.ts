@@ -53,37 +53,21 @@ const SCANNED_FILES = Object.freeze([
  * Pinned by line and not by content because what excuses them is INTENT, which
  * no shape encodes: the same sentence would be in scope if a person read it.
  * A line that moves breaks this list loudly, which is the point — somebody
- * re-reads why the exception exists instead of inheriting it.
+ * re-reads why the exception exists instead of inheriting it. It did its job at
+ * t161: the four pins that excused the driver's hand-typed session instructions
+ * were dropped rather than re-pinned, because that text no longer exists — the
+ * dispatch renders the REGISTERED skill's `instructions` now, and a driver that
+ * types its own is exactly what that ficha removed.
  */
 const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }> = Object.freeze([
   {
     file: 'scripts/run-graph-traversal.mjs',
-    line: 203,
+    line: 210,
     reason: 'content of a throwaway fixture repository, not text printed to an operator',
   },
   {
     file: 'scripts/run-graph-traversal.mjs',
-    line: 232,
-    reason: 'instruction text for the dispatched coding-agent subprocess (t180, Out of Scope)',
-  },
-  {
-    file: 'scripts/run-graph-traversal.mjs',
-    line: 234,
-    reason: 'instruction text for the dispatched coding-agent subprocess (t180, Out of Scope)',
-  },
-  {
-    file: 'scripts/run-graph-traversal.mjs',
-    line: 235,
-    reason: 'instruction text for the dispatched coding-agent subprocess (t180, Out of Scope)',
-  },
-  {
-    file: 'scripts/run-graph-traversal.mjs',
-    line: 237,
-    reason: 'instruction text for the dispatched coding-agent subprocess (t180, Out of Scope)',
-  },
-  {
-    file: 'scripts/run-graph-traversal.mjs',
-    line: 387,
+    line: 404,
     reason: 'a `motivo` sent to the API as data, which the tela renders in Portuguese (t133)',
   },
 ]);

@@ -202,10 +202,27 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   quadro chega depois disso — não existe endpoint de PATCH para preenchê-lo.
   Na prática o campo fica `null`, e `null` aqui significa "o engine ainda não
   tinha dito", nunca "este engine não tem ref".
-- **Instruções do nó vindas do grafo registrado.** O despacho usa uma
-  instrução fixa e literal (`INSTRUCOES_PADRAO`), no mesmo espírito do spike do
-  `t104`. Puxar a skill de verdade do grafo de fábrica é o que a PoC (`t109`)
-  prova.
+- ~~**Instruções do nó vindas do grafo registrado.**~~ **Fechado pela `t161`.**
+  Um trabalho parado num nó de grafo registrado é despachado com a skill
+  daquele nó renderizada para dentro da sessão —
+  [`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)
+  busca o manifesto pinado, recusa o despacho se o hash não bate (D4) e compõe
+  instruções, contrato do nó, checks e permissões. O literal fixo
+  (`DEFAULT_INSTRUCTIONS`) continua existindo, e só para o caso que não tem
+  grafo nenhum para ler.
+  **O que isto acrescenta a esta doc:** o parágrafo do bloco `input-request`
+  virou a constante `ESCALATION_PROTOCOL`, e ele entra nos DOIS textos. Não é
+  arrumação: uma sessão que não sabe escalar nunca escala, e sem essa
+  composição o ciclo inteiro descrito aqui teria sumido em silêncio justamente
+  para os trabalhos que a `t161` passou a dirigir sozinha.
+- **Pergunta levantada pela fiação, não pela sessão.** Ainda na `t161`, um nó
+  com duas ou mais saídas cuja sessão termina sem nomear nenhuma delas — sem
+  bloco, bloco malformado, ou um `resultado` que não casa com aresta alguma —
+  vira pergunta pela mesma rota e com o mesmo efeito de bloqueio descrito aqui.
+  A única diferença está no ator: `{"tipo": "sistema", "ref": "runner"}`, contra
+  o `{"tipo": "agente"}` de uma pergunta que a sessão escreveu. São dois fatos
+  diferentes — um modelo pedindo decisão, e a fiação relatando que não tem
+  regra a aplicar —, e duas grafias é o que deixa o log separar os dois.
 - **Timeout de pergunta pendente.** Uma pergunta sem resposta bloqueia o
   trabalho para sempre, por desenho: a alternativa é o sistema decidir sozinho
   o que declarou não saber decidir.

@@ -138,9 +138,9 @@ async function main() {
   }
 
   const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
-  const instructions = manifest.instrucoes;
+  const instructions = manifest.instructions;
   if (typeof instructions !== 'string' || instructions.length === 0) {
-    die(`the manifest ${MANIFEST} has no "instrucoes" field`);
+    die(`the manifest ${MANIFEST} has no "instructions" field`);
   }
   log(`instructions: ${instructions.length} characters from the skill manifest "${manifest.id}"`);
 

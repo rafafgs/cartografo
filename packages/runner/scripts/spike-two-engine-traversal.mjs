@@ -97,6 +97,7 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
 const GRAPH_FIXTURE = join(REPO_ROOT, 'schema/exemplos/grafo-valido-dois-engines.json');
 const SCHEMAS_DIR = join(REPO_ROOT, 'especificacoes/eventos/schemas');
+const FIXTURES_DIR = join(REPO_ROOT, 'packages/runner/test/fixtures');
 
 const EXECUTION_ID = 141;
 const RUNNER_ID = 'spike-t141';
@@ -115,22 +116,8 @@ const CODEX_BINARY_OVERRIDE = process.env.CODEX_BINARY_PATH?.trim();
  * declared, which is the whole claim under proof.
  */
 const NODES = [
-  {
-    id: 'redigir',
-    engine: DEFAULT_ENGINE,
-    file: 'nota.md',
-    task:
-      'escreva o arquivo `nota.md` com 3 a 5 linhas sobre o que é rotear engine por nó em um ' +
-      'grafo de trabalho. Não crie nenhum outro arquivo.',
-  },
-  {
-    id: 'conferir',
-    engine: 'codex',
-    file: 'parecer.md',
-    task:
-      'leia `nota.md` no diretório atual e escreva `parecer.md` com o veredito (passou ou falhou) ' +
-      'e a linha de `nota.md` que sustenta o veredito. Não crie nenhum outro arquivo.',
-  },
+  { id: 'redigir', engine: DEFAULT_ENGINE, file: 'nota.md', skill: 'skill-redigir-nota.json' },
+  { id: 'conferir', engine: 'codex', file: 'parecer.md', skill: 'skill-revisar-nota.json' },
 ];
 
 const log = (message) => console.log(`[spike] ${message}`);
@@ -265,18 +252,6 @@ async function startControlPlane() {
   return null;
 }
 
-/** The instruction of each node — the stand-in for the skill the graph injects. */
-function nodeInstructions(node, task) {
-  return [
-    `Você é uma sessão do nó \`${node}\` de um grafo do cartografo.`,
-    '',
-    'Trabalhe no diretório atual, faça exatamente o que se pede e nada além disso.',
-    'Não commite, não crie branch, não rode git.',
-    '',
-    `Tarefa do nó: ${task}`,
-  ].join('\n');
-}
-
 /** Validates the taxonomy events, with ajv, against the real schemas (t98). */
 function buildValidator() {
   // `allowUnionTypes` because the taxonomy uses a type union on purpose:
@@ -318,8 +293,30 @@ async function main() {
 
   try {
     // --- 1. the committed fixture becomes data -------------------------------
-    const document = JSON.parse(readFileSync(GRAPH_FIXTURE, 'utf8'));
-    const declared = Object.fromEntries(document.nos.map((no) => [no.id, no.engine ?? null]));
+    // The manifests first: since t161 the dispatch resolves the node's skill and
+    // refuses to open a session for one the registry does not carry, so the
+    // node's task text now lives in a registered manifest instead of in this
+    // script. The fixture's own `skill_ref`s are placeholders that could never be
+    // registered — the registry's ids are kebab-case, with no slash — so the pins
+    // are rewired here to the manifests this package ships.
+    const registered = new Map();
+    for (const node of NODES) {
+      const manifest = JSON.parse(readFileSync(join(FIXTURES_DIR, node.skill), 'utf8'));
+      const skill = await api(url, 'POST', '/v1/skills', manifest, 201);
+      registered.set(node.id, skill);
+      log(`skill "${skill.id}" registered at ${skill.hash}`);
+    }
+
+    const fixture = JSON.parse(readFileSync(GRAPH_FIXTURE, 'utf8'));
+    const document = {
+      ...fixture,
+      nodes: fixture.nodes.map((no) => {
+        const skill = registered.get(no.id);
+        if (skill === undefined) die(`the fixture grew a node this proof has no skill for: "${no.id}"`);
+        return { ...no, skill_ref: { id: skill.id, version: skill.version, hash: skill.hash } };
+      }),
+    };
+    const declared = Object.fromEntries(document.nodes.map((no) => [no.id, no.engine ?? null]));
     log(`fixture declares: ${JSON.stringify(declared)}`);
 
     const { grafo: graph, grafo_versao: version } = await api(
@@ -362,7 +359,14 @@ async function main() {
       },
     };
 
-    let current = NODES[0];
+    const dispatch = createClaudeCodeDispatch({
+      urlBase: url,
+      token: operatorToken,
+      engines,
+      worktrees,
+      timeoutSeconds: TIMEOUT_SECONDS,
+    });
+
     const controller = new Controller({
       client,
       runnerId: RUNNER_ID,
@@ -370,31 +374,39 @@ async function main() {
       runnerCap: 1,
       projectCap: 2,
       ttlSeconds: TIMEOUT_SECONDS,
-      dispatch: (jobId) =>
-        createClaudeCodeDispatch({
-          urlBase: url,
-          token: operatorToken,
-          engines,
-          worktrees,
-          timeoutSeconds: TIMEOUT_SECONDS,
-          instructions: nodeInstructions(current.id, current.task),
-        })(jobId),
+      dispatch,
     });
 
-    // --- 3. two ticks, two engines -------------------------------------------
-    for (const [index, node] of NODES.entries()) {
-      current = node;
-      if (index > 0) {
-        await api(url, 'POST', `/v1/jobs/${job.id}/transitions`, { para_no_id: node.id });
-        log(`work transitioned to "${node.id}"`);
-      }
+    // --- 3. two sessions, two engines ----------------------------------------
+    //
+    // The FIRST goes through the controller, which is the honest path: a lease
+    // is taken and the dispatch moves the work to the second node by itself
+    // (t161) — this script posts no transition, and the second node is reached
+    // without anybody naming it.
+    //
+    // The SECOND is dispatched directly, and the reason is a real property of
+    // the model rather than a shortcut. `conferir` is the fixture's only final
+    // node, so the moment the work lands on it the control plane derives
+    // `concluido: true` (t152) and the controller stops offering it — a
+    // traversal is over when it ARRIVES, and the arrival node's own session is
+    // not something the loop runs. This proof is about which engine executes
+    // which node, so it opens that session itself.
+    log(`session 1: real session on node "${NODES[0].id}" (expecting ${NODES[0].engine})...`);
+    let started = Date.now();
+    const dispatched = await controller.tick();
+    if (dispatched === null) die('the first tick dispatched nothing');
+    log(`  dispatched job ${dispatched.jobId} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
-      log(`tick ${index + 1}: real session on node "${node.id}" (expecting ${node.engine})...`);
-      const started = Date.now();
-      const dispatched = await controller.tick();
-      if (dispatched === null) die(`tick ${index + 1} dispatched nothing`);
-      log(`  dispatched job ${dispatched.jobId} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    const moved = await api(url, 'GET', `/v1/jobs/${job.id}`);
+    if (moved.no_atual !== NODES[1].id) {
+      die(`the dispatch had to advance the work to "${NODES[1].id}"; it is on "${moved.no_atual}"`);
     }
+    log(`the dispatch advanced the work to "${moved.no_atual}" with nobody asking`);
+
+    log(`session 2: real session on node "${NODES[1].id}" (expecting ${NODES[1].engine})...`);
+    started = Date.now();
+    await dispatch(job.id);
+    log(`  done in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 
     // --- 4. the hard proofs, read back from the control plane -----------------
     const validate = buildValidator();

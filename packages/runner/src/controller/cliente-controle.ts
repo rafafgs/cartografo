@@ -31,6 +31,17 @@ export interface Trabalho {
   titulo: string;
   no_atual: string;
   bloqueado: boolean;
+  /**
+   * "O viajante chegou": o `no_atual` é um dos `final_nodes` da versão do
+   * trabalho (t152).
+   *
+   * Derivado na leitura pelo control plane, nunca gravado: um trabalho sem
+   * grafo, ou cuja versão não resolve, não tem estado terminal a que chegar e
+   * responde `false`. Aqui ele existe por um motivo só — é o que tira um
+   * trabalho que terminou da fila de despacho (ver
+   * {@link ClienteControle.listarTrabalhosLiberados}).
+   */
+  concluido: boolean;
   execucao_id: number | null;
   grafo_versao_id: string | null;
 }
@@ -251,15 +262,23 @@ export class ClienteControle {
   /**
    * Trabalhos que estão prontos para serem despachados.
    *
-   * O filtro de `bloqueado` mora aqui, do lado do cliente, para consumir o
-   * contrato do t102 sem depender de parâmetro de consulta que aquela ficha não
-   * prometeu.
+   * Os dois filtros moram aqui, do lado do cliente, para consumir o contrato do
+   * t102 sem depender de parâmetro de consulta que aquela ficha não prometeu.
    *
-   * @returns Só os trabalhos não bloqueados, na ordem em que o server mandou.
+   * `bloqueado` tira quem está esperando uma pessoa; `concluido` tira quem
+   * chegou (t161). O segundo é a diferença entre uma travessia que termina e um
+   * laço: sem ele, um trabalho que pousa num nó final continua liberado para
+   * sempre, e o controller o redespacha para o mesmo nó a cada tick. O campo sai
+   * de `GET /v1/jobs` desde a t152 — o que faltava era alguém lê-lo.
+   *
+   * @returns Só os trabalhos que ainda podem andar, na ordem em que o server
+   *   mandou.
    */
   async listarTrabalhosLiberados(): Promise<Trabalho[]> {
     const { trabalhos } = await this.#get<{ trabalhos: Trabalho[] }>('/v1/jobs');
-    return trabalhos.filter((trabalho) => trabalho.bloqueado === false);
+    return trabalhos.filter(
+      (trabalho) => trabalho.bloqueado === false && trabalho.concluido === false,
+    );
   }
 
   /**

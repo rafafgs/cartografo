@@ -1142,7 +1142,7 @@ function contract(): Record<string, unknown> {
     output_schema: { type: "object" },
     checks: [
       {
-        tipo: "deterministico",
+        type: "deterministic",
         command: "test -s saida.md",
         description: "A saída existe.",
       },
@@ -1150,18 +1150,23 @@ function contract(): Record<string, unknown> {
   };
 }
 
-/** A `trabalho` node, with `engine` only when the routing test declares one. */
+/**
+ * A `trabalho` node, with `engine` only when the routing test declares one.
+ *
+ * The `skill_ref` points at the fixture manifest this file registers, and since
+ * t161 that is not decoration: a dispatch that resolves a node now resolves its
+ * skill too, and refuses to open a session for one the registry does not carry
+ * or whose pin does not match. The placeholder this used to carry
+ * (`cartografo/fazer`, a zero hash) could never have been registered at all —
+ * the registry's ids are kebab-case, with no slash.
+ */
 function node(id: string, engine?: string): Record<string, unknown> {
   return {
     id,
     role: "desenvolvedor",
-    node_type: "trabalho",
+    node_type: "work",
     description: `Nó ${id} da prova de roteamento por nó.`,
-    skill_ref: {
-      id: "cartografo/fazer",
-      version: "1.0.0",
-      hash: `sha256:${"0".repeat(64)}`,
-    },
+    skill_ref: skillPin(WORK_SKILL),
     contract: contract(),
     ...(engine === undefined ? {} : { engine }),
   };
@@ -1222,6 +1227,61 @@ async function registerGraph(
   return registered.grafo_versao.id;
 }
 
+/** The two skill manifests this file registers, read from disk. */
+const WORK_SKILL = "skill-travessia-fazer.json";
+const GATE_SKILL = "skill-travessia-conferir.json";
+
+/** A registered skill, in the recut these tests read. */
+interface RegisteredSkill {
+  id: string;
+  version: string;
+  hash: string;
+  role: string;
+  description: string;
+  instructions: string;
+  checks: Record<string, unknown>[];
+  permissions: Record<string, unknown>;
+}
+
+/** Reads one of the committed manifest fixtures. */
+function manifest(file: string): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(path.join(PACKAGE_ROOT, "test", "fixtures", file), "utf8"),
+  ) as Record<string, unknown>;
+}
+
+/**
+ * The `skill_ref` a graph node carries for one of the fixture manifests.
+ *
+ * Taken from the manifest itself, never typed by hand: the pin is the whole
+ * point, and a hash copied by eye into a fixture is a test that would pass while
+ * the mismatch refusal was broken.
+ */
+function skillPin(file: string): Record<string, unknown> {
+  const document = manifest(file);
+  return {
+    id: document.id,
+    version: document.version,
+    hash: document.hash,
+  };
+}
+
+/** Registers a manifest fixture in the skill registry (idempotent per plane). */
+async function registerSkill(
+  baseUrl: string,
+  token: string,
+  file: string,
+): Promise<RegisteredSkill> {
+  return await api<RegisteredSkill>(
+    baseUrl,
+    "POST",
+    "/v1/skills",
+    manifest(file),
+    201,
+    token,
+  );
+}
+
 /**
  * The three routing acceptance tests share ONE control plane, on purpose.
  *
@@ -1237,6 +1297,11 @@ async function registerGraph(
  */
 test("t141 — the engine is resolved from the node the work is standing on", async (parent) => {
   const { baseUrl, token } = await bootUnpatched(parent);
+
+  // Registered once for the three subtests: since t161 a node with a skill the
+  // registry never heard of does not dispatch at all, so the routing proof
+  // needs a real registration underneath it.
+  await registerSkill(baseUrl, token, WORK_SKILL);
 
   await parent.test(
     'AT3 — a node declaring engine "codex" is dispatched through the codex route',
@@ -2399,6 +2464,697 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
         body.timeout_reason,
         null,
         'an adapter that reported no cause has to read as "unknown", never as one of the two',
+      );
+    },
+  );
+});
+
+// --- t161: the graph drives the session, and the session advances the node ---
+
+/**
+ * The three fixture graphs every t161 case below registers, all built from the
+ * committed fixture on disk.
+ *
+ * A class per case: `POST /v1/graphs` keys the lineage by `problem_class`, and two
+ * subtests registering the same base class collide with each other rather than
+ * with anything this ficha is about.
+ */
+function traversalGraph(className: string): Record<string, unknown> {
+  const document = JSON.parse(
+    readFileSync(
+      path.join(PACKAGE_ROOT, "test", "fixtures", "grafo-travessia.json"),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  return { ...document, problem_class: className };
+}
+
+/** The lines a fake gate session prints when it chooses an edge by name. */
+function linesWithResult(result: string): string {
+  return JSON.stringify([
+    { stream: "stdout", text: "Conferi o artefato contra o que a etapa pedia." },
+    { stream: "stdout", text: "```resultado" },
+    { stream: "stdout", text: JSON.stringify({ resultado: result }) },
+    { stream: "stdout", text: "```" },
+  ]);
+}
+
+test("t161 — the node's skill drives the session, and the session advances the node", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  const workSkill = await registerSkill(baseUrl, token, WORK_SKILL);
+  const gateSkill = await registerSkill(baseUrl, token, GATE_SKILL);
+
+  /** One call the dispatch made, as the spy in front of `fetch` saw it. */
+  interface Call {
+    method: string;
+    route: string;
+    body: unknown;
+  }
+
+  /** A spy that records every call and delegates to the real control plane. */
+  function spy(): { doFetch: typeof fetch; calls: Call[] } {
+    const calls: Call[] = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        route: String(input).slice(baseUrl.length),
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return fetch(input, init);
+    };
+    return { doFetch, calls };
+  }
+
+  /** The transitions a dispatch posted, in order, as `para_no_id` values. */
+  function transitions(calls: Call[]): string[] {
+    return calls
+      .filter(
+        (call) => call.method === "POST" && call.route.endsWith("/transitions"),
+      )
+      .map((call) => (call.body as { para_no_id: string }).para_no_id);
+  }
+
+  await parent.test(
+    "AT12 — a resolvable node dispatches the rendered skill; a graph-less one keeps the literal",
+    async (t) => {
+      const { createClaudeCodeDispatch, DEFAULT_INSTRUCTIONS } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t161-render-"),
+      );
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t161-at12"),
+      );
+
+      const onGraph = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha num nó com skill registrada",
+          no_entrada_id: "publicar",
+          execucao_id: 1612,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+      const bare = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha sem grafo nenhum",
+          no_entrada_id: "publicar",
+          execucao_id: 1612,
+        },
+        201,
+        token,
+      );
+
+      const record = path.join(workDir, "com-grafo.json");
+      const bareRecord = path.join(workDir, "sem-grafo.json");
+      const base = {
+        urlBase: baseUrl,
+        token,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+      };
+
+      await createClaudeCodeDispatch({
+        ...base,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      })(onGraph.id);
+
+      await createClaudeCodeDispatch({
+        ...base,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: bareRecord,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      })(bare.id);
+
+      // The argv is the channel: `buildCommand` puts `instructions` on it, so
+      // what the process received IS what the session was told.
+      const withGraph = (JSON.parse(readFileSync(record, "utf8")) as FakeRecord)
+        .argv.join("\n");
+      const withoutGraph = (
+        JSON.parse(readFileSync(bareRecord, "utf8")) as FakeRecord
+      ).argv.join("\n");
+
+      assert.ok(
+        withGraph.includes(workSkill.instructions),
+        "the session of a node with a registered skill gets the manifest's own instructions",
+      );
+      assert.ok(
+        withGraph.includes(workSkill.description),
+        "...and the description that catalogues it",
+      );
+      assert.ok(
+        !withGraph.includes(
+          "Trabalhe no diretório atual e faça o que o trabalho pede.",
+        ),
+        "the fixed literal is what this ficha replaces, not something it appends to",
+      );
+      assert.ok(
+        withGraph.includes("```input-request"),
+        "the escalation protocol survives the replacement, or the cycle t106 built stops working",
+      );
+
+      assert.ok(
+        withoutGraph.includes(DEFAULT_INSTRUCTIONS),
+        "a work with no graph is dispatched exactly as it was before this ficha",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT13 — a skill-hash mismatch refuses before POST /v1/sessions is reached",
+    async (t) => {
+      const { createClaudeCodeDispatch, SkillPinMismatchError } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t161-pin-"));
+      const record = path.join(workDir, "nunca-despachado.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      // The same graph, with one node's pin tampered with — which is exactly
+      // the supply-chain swap D4 exists to catch: the registry still carries
+      // the skill, and the document points at content nobody registered.
+      const document = traversalGraph("travessia-t161-at13");
+      const nodes = document.nodes as Array<Record<string, unknown>>;
+      const tampered = nodes.map((node) =>
+        node.id === "publicar"
+          ? {
+              ...node,
+              skill_ref: {
+                ...(node.skill_ref as Record<string, unknown>),
+                hash: `sha256:${"f".repeat(64)}`,
+              },
+            }
+          : node,
+      );
+      const versionId = await registerGraph(baseUrl, token, {
+        ...document,
+        nodes: tampered,
+      });
+
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha cujo nó aponta para uma skill adulterada",
+          no_entrada_id: "publicar",
+          execucao_id: 1613,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+      const dispatch = createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      });
+
+      await assert.rejects(
+        async () => dispatch(job.id),
+        (error: unknown) => {
+          assert.ok(
+            error instanceof SkillPinMismatchError,
+            `expected SkillPinMismatchError, got: ${String(error)}`,
+          );
+          assert.equal(error.nodeId, "publicar");
+          assert.equal(error.registered, workSkill.hash);
+          return true;
+        },
+      );
+
+      assert.deepEqual(
+        calls.filter(
+          (call) => call.method === "POST" && call.route === "/v1/sessions",
+        ),
+        [],
+        "POST /v1/sessions must never be reached for a pin that does not match",
+      );
+      assert.ok(
+        !existsSync(record),
+        "and no engine process may have been spawned",
+      );
+
+      const sessions = await api<{ sessoes: Session[] }>(
+        baseUrl,
+        "GET",
+        "/v1/sessions?execucao_id=1613",
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(sessions.sessoes.length, 0);
+    },
+  );
+
+  await parent.test(
+    "AT14 — a single-outgoing-edge node transitions with no operator in the loop",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t161-single-"),
+      );
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t161-at14"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha num nó de saída única",
+          no_entrada_id: "implementar",
+          execucao_id: 1614,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: linesWithoutBlock() },
+      })(job.id);
+
+      assert.deepEqual(
+        transitions(calls),
+        ["conferir"],
+        "a node with one way out takes it, whatever the label on the edge says",
+      );
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.no_atual, "conferir", "the work really moved");
+
+      // Exactly one read of the snapshot: the engine and the edge come from the
+      // same document, and they cost one call between them (FR1).
+      assert.equal(
+        calls.filter(
+          (call) =>
+            call.method === "GET" && call.route.startsWith("/v1/graph-versions/"),
+        ).length,
+        1,
+        "a dispatch reads the graph version once, never twice",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT15 — a gate node takes the edge its ```resultado``` block names",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t161-gate-"));
+      const record = path.join(workDir, "portao.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t161-at15"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha num portão que reprova",
+          no_entrada_id: "conferir",
+          execucao_id: 1615,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithResult("retrabalho"),
+        },
+      })(job.id);
+
+      assert.deepEqual(
+        transitions(calls),
+        ["implementar"],
+        'the "retrabalho" edge is the one this gate named',
+      );
+
+      // ...and the session was told how to name it: the routing protocol is
+      // rendered only for a node with more than one way out.
+      const argv = (
+        JSON.parse(readFileSync(record, "utf8")) as FakeRecord
+      ).argv.join("\n");
+      assert.ok(argv.includes("```resultado"), "the gate was given the protocol");
+      assert.ok(argv.includes(gateSkill.instructions), "and its own skill's instructions");
+    },
+  );
+
+  await parent.test(
+    "AT16 — a result that matches no edge escalates instead of failing",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t161-escala-"),
+      );
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t161-at16"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha num portão que não sabe rotear",
+          no_entrada_id: "conferir",
+          execucao_id: 1616,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+
+      // "escala" is the case the reference fixture already carries: the gate's
+      // own `saida_schema` declares it, and no edge leaves the node for it.
+      // Asking is not failing, so this dispatch resolves normally.
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: linesWithResult("escala") },
+      })(job.id);
+
+      assert.deepEqual(transitions(calls), [], "an unroutable result moves nothing");
+
+      const asked = calls.filter(
+        (call) => call.method === "POST" && call.route === "/v1/input-requests",
+      );
+      assert.equal(asked.length, 1, "it calls a human instead");
+
+      const body = asked[0].body as Record<string, unknown>;
+      assert.deepEqual(
+        body.ator,
+        { tipo: "sistema", ref: "runner" },
+        "the wiring raised this one, not the session — a session-authored one is `agente`",
+      );
+      assert.deepEqual(
+        body.opcoes,
+        ["aprovado", "retrabalho"],
+        "the human is offered the edges that actually leave this node",
+      );
+      const askedText = String(body.pergunta);
+      assert.ok(askedText.includes("conferir"), askedText);
+      assert.ok(askedText.includes("escala"), askedText);
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.no_atual, "conferir", "the work stayed where it was");
+      assert.equal(after.bloqueado, true, "and it is blocked behind the question");
+    },
+  );
+
+  await parent.test(
+    "AT17 — a session that escalates is never advanced, not even on a single-edge node",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t161-asks-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t161-at17"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha cuja sessão pergunta",
+          no_entrada_id: "implementar",
+          execucao_id: 1617,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: linesWithBlock() },
+      })(job.id);
+
+      assert.deepEqual(
+        transitions(calls),
+        [],
+        "advancing a work that asked would answer its own question by walking away from it",
+      );
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.no_atual, "implementar");
+      assert.equal(after.bloqueado, true);
+    },
+  );
+
+  await parent.test(
+    "AT18 — a transition the control plane refuses fails the dispatch",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
+        "src/controller/cliente-controle.ts",
+      );
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t161-refused-"),
+      );
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t161-at18"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha cuja transição o control plane recusa",
+          no_entrada_id: "implementar",
+          execucao_id: 1618,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      // Everything real except the one write under test: an unrecorded
+      // transition is the job silently stuck with nobody able to tell, which is
+      // the single failure mode this whole ficha exists to close.
+      const doFetch: typeof fetch = async (input, init) => {
+        if (String(input).endsWith("/transitions")) return serverError();
+        return fetch(input, init);
+      };
+
+      await assert.rejects(
+        async () =>
+          createClaudeCodeDispatch({
+            urlBase: baseUrl,
+            token,
+            doFetch,
+            engines: claudeOnly(fakeAdapter()),
+            worktrees: fakeWorktrees(workDir),
+            timeoutSeconds: 60,
+            envOverrides: { FAKE_ENGINE_LINES: linesWithoutBlock() },
+          })(job.id),
+        (error: unknown) => {
+          assert.ok(
+            error instanceof ErroDoControlPlane,
+            `expected the control plane's own refusal, got: ${String(error)}`,
+          );
+          assert.equal(error.status, 500);
+          return true;
+        },
+      );
+
+      // The session itself was fine and is closed as such: what failed is the
+      // advance, and the work is still standing where it was.
+      const sessions = await api<{ sessoes: Session[] }>(
+        baseUrl,
+        "GET",
+        "/v1/sessions?execucao_id=1618",
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(sessions.sessoes.length, 1);
+      assert.equal(sessions.sessoes[0].status, "concluida");
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.no_atual, "implementar");
+    },
+  );
+
+  await parent.test(
+    "AT19 — the skill's declared permissions are the session's permissions",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t161-perms-"));
+      const record = path.join(workDir, "portao.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t161-at19"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha num portão que não pode escrever",
+          no_entrada_id: "conferir",
+          execucao_id: 1619,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      // The static option is what a dispatch used to be configured with, and
+      // the opposite of what the gate's manifest declares: whichever one shows
+      // up in the argv is the one that won.
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        permissions: { filesystem: { write: ["**"] }, network: { allowed: true } },
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithResult("aprovado"),
+        },
+      })(job.id);
+
+      const argv = (
+        JSON.parse(readFileSync(record, "utf8")) as FakeRecord
+      ).argv.join("\n");
+      assert.ok(
+        argv.includes("Write") && argv.includes("WebFetch"),
+        `the gate declares no writing and no network, and the argv has to say so:\n${argv}`,
       );
     },
   );

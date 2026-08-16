@@ -4,6 +4,22 @@
 # vermelha sem ninguém saber: fora da máquina de quem desenvolve, nada rodava a
 # suíte. A matriz cobre as duas pontas que o repo declara — 24 é o pino do
 # `.nvmrc`, 22 é o LTS mais próximo acima do piso `>=20.11.0` de `engines`.
+#
+# Duas coisas que a primeira rodada real (t217, execução
+# https://github.com/rafafgs/cartografo/actions/runs/31971354766) ensinou e que
+# mordem quem vier depois:
+#
+# 1. O push que CRIA um branch não dispara este workflow; os pushes seguintes
+#    disparam. Branch novo, então, precisa de um `gh workflow run ci.yml --ref
+#    <branch>` na mão para ter a primeira execução — é exatamente para isso que
+#    o `workflow_dispatch` abaixo está aqui.
+# 2. Os testes de frota e de despacho entre máquinas RODAM de verdade no
+#    `ubuntu-latest`, e passam — não são pulados. O runner tem IPv4 fora de
+#    loopback, então o `t.skip(...)` de
+#    `packages/runner/test/controller/multi-runner-fleet.e2e.test.ts` e de
+#    `packages/runner/test/controller/cross-machine-dispatch.e2e.test.ts` nunca
+#    acontece. A premissa contrária, escrita em t191 e repetida em t217, estava
+#    errada: a CI cobre os caminhos de rede, e um vermelho neles é real.
 name: CI
 
 on:

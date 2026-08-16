@@ -87,8 +87,10 @@ Notas de leitura:
   especificados em
   [`especificacoes/eventos/schemas/`](../../especificacoes/eventos/schemas)
   (`grafo_id`, `versao_pai`, `origem`, `proposta_id`, `motivo`). Nenhuma rota
-  desta camada emite evento — a tabela append-only de eventos é do `t102` — mas
-  quando ela existir, a emissão será mapeamento direto, não tradução.
+  desta camada emite evento, e a tabela append-only de eventos já existe (`t102`,
+  migração `0003`, com `grafo_versao` entre os `entidade_tipo` válidos): ligar a
+  emissão é mapeamento direto, não tradução — e é item aberto da §7, sem ficha
+  dona ainda.
 - **Nada se apaga.** Não existe `DELETE` nem `UPDATE` de `grafo_versao` em
   nenhum caminho de código. O único `UPDATE` de `grafo` é o do ponteiro.
 
@@ -416,7 +418,7 @@ Três garantias em volta do cálculo:
   quem calcula é o topógrafo (`t110`), que já precisou calcular a mesma métrica
   para escrever `metrica_esperada` na criação da proposta.
 - **A execução seguinte é demonstrada, não alegada.** `execucao_id` é conferido
-  contra `metricasPorVersao` (`t102`, FR17): sem ao menos um `trabalho` daquela
+  contra `metricasPorVersao` (entregue pelo `t102`, FR17): sem ao menos um `trabalho` daquela
   execução registrado sob `versao_aplicada_id`, é `422 execucao_sem_evidencia`.
   É o join que prova que a versão aplicada realmente rodou.
 - **Só a primeira chamada conta.** Com `resultado` já preenchido, a rota é
@@ -477,7 +479,8 @@ justificou a reversão.
 ## 6. Endpoints
 
 Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`.
-Nenhum emite evento de telemetria (`t102`).
+**Nenhum emite evento de telemetria**, e não é mais espera pelo `t102`: o log
+append-only existe desde ele. Ligar a emissão é o item aberto da §7.
 
 Os caminhos abaixo estão na grafia em português deste documento; a superfície
 implementada foi renomeada para inglês pelo `t127` (D18), e é ela que vale:
@@ -573,10 +576,12 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 - **Cálculo automático de `depois`** a partir da telemetria, e disparo do
   veredito "quando a execução termina": não existe motor de métricas nomeadas
   nem entidade/evento de execução finalizada na v1
-  ([`routes/execucoes.ts`](../../packages/core/src/routes/execucoes.ts)).
+  ([`routes/executions.ts`](../../packages/core/src/routes/executions.ts)).
   Fechar o experimento é sempre chamada explícita de API (§5).
-- **Emissão de eventos** `grafo_versao.registrada/.aplicada/.revertida` — o
-  `t102` traz a tabela `evento`.
+- **Emissão de eventos** `grafo_versao.registrada/.aplicada/.revertida` — a
+  tabela `evento` que eles pedem já veio com o `t102`, e `grafo_versao` já é um
+  `entidade_tipo` válido; o que falta é a emissão, que nenhuma ficha aberta
+  declara. Enquanto isso, uma versão registrada não deixa rastro no log.
 - **Identidade de quem chama.** A `t124` fechou a autenticação — todas estas
   rotas exigem credencial —, mas um token prova posse, não pessoa: o `ator` dos
   eventos segue sendo `sistema`/componente.

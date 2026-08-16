@@ -34,10 +34,15 @@ runConformanceKit(
       // unedited, handed to the fake engine. Only the binary changes — which is
       // what makes C2 measure the real injection and not a version of it
       // simplified for the test.
-      commandBuilder: (spec) => ({
-        command: process.execPath,
-        args: [fakeEnginePath, ...buildCommand(spec).args],
-      }),
+      //
+      // Spread and not rebuilt from `{command, args}`, since t203: the command
+      // grew an optional `stdin` off the argv, and a seam that dropped it would
+      // be testing an adapter whose oversized content channel the test harness
+      // had removed.
+      commandBuilder: (spec) => {
+        const built = buildCommand(spec);
+        return { ...built, command: process.execPath, args: [fakeEnginePath, ...built.args] };
+      },
       // Short grace: C4 waits for the escalation to SIGKILL inside the case's
       // own deadline.
       graceMs: 300,

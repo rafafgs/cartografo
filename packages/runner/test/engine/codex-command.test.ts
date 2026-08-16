@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  ARGV_INLINE_LIMIT_BYTES,
   CODEX_BINARY,
   ENGINE_STDIO,
   MODEL_FLAG,
@@ -328,6 +329,113 @@ test('t195 — the composed prompt stays the LAST positional under every policy'
       `the composed argument left last place for ${JSON.stringify(permissions)}`,
     );
   }
+});
+
+/* --- oversized content and the end-of-options guard (t203) ------------------ */
+
+/**
+ * The same two bugs `command.test.ts` pins for the other engine, measured
+ * against `codex-cli 0.147.0`:
+ *
+ * - `codex exec "-1 apples"` → `error: unexpected argument '-1' found`, and
+ *   `codex exec ... -- "-1 apples"` succeeds;
+ * - the composed argument is `instructions` + `prompt` in ONE argv element, so
+ *   it is the element that hits `MAX_ARG_STRLEN` first of anything this adapter
+ *   builds.
+ *
+ * The channel above the limit is stdin, and this is the engine whose `<stdin>`
+ * block made invariant 6 normative in the first place — so the branch is only
+ * safe because the positional goes away with it: `codex exec --help` appends
+ * that block only "if stdin is piped **and a prompt is also provided**".
+ * Omitting the positional entirely was measured here to read the prompt clean.
+ */
+const promptBytes = Buffer.byteLength(PROMPT, 'utf8');
+
+/** Instructions sized so that the composed argument crosses `total` bytes. */
+const fillingTo = (total: number): string => 'a'.repeat(total - promptBytes);
+
+test('t203 — the inline limit is 64 KiB, the same margin the other adapter takes', () => {
+  assert.equal(ARGV_INLINE_LIMIT_BYTES, 64 * 1024);
+});
+
+test('t203 — below the limit the composed argument is preceded by `--`', () => {
+  const subject = spec();
+  const { args, stdin } = buildCommand(subject);
+
+  assert.equal(args.at(-1), composeSingleArgument(subject), 'the positional stays last');
+  assert.equal(args.at(-2), '--', 'the end-of-options marker sits immediately before it');
+  assert.equal(stdin, undefined, 'below the limit nothing goes through stdin — invariant 6');
+});
+
+test('t203 — a prompt starting with `-` survives as the last argument, verbatim', () => {
+  const subject = spec({ prompt: '-1 apples remain; --json is not a flag here' });
+  const { args } = buildCommand(subject);
+
+  assert.equal(args.at(-1), composeSingleArgument(subject));
+  assert.equal(
+    args.at(-2),
+    '--',
+    'without the marker the CLI answers `unexpected argument` and the session never opens',
+  );
+});
+
+test('t203 — at the limit the composed argument moves to stdin and leaves the argv', () => {
+  const instructions = fillingTo(ARGV_INLINE_LIMIT_BYTES);
+  const subject = spec({ instructions });
+  const { args, stdin } = buildCommand(subject);
+
+  assert.equal(
+    stdin,
+    composeSingleArgument(subject),
+    'the composition is still `composeSingleArgument` byte for byte — only its destination changed',
+  );
+  assert.ok(
+    !args.some((argument) => argument.includes(instructions) || argument.includes(PROMPT)),
+    'no argv element may still carry the content stdin now carries',
+  );
+
+  // The argv above the limit is the argv below it minus the two trailing
+  // elements: the guard has nothing left to guard once the positional is gone.
+  assert.deepEqual(args, buildCommand(spec()).args.slice(0, -2));
+});
+
+test('t203 — the boundary: one byte below stays inline, the limit itself switches', () => {
+  const below = buildCommand(spec({ instructions: fillingTo(ARGV_INLINE_LIMIT_BYTES - 1) }));
+  assert.equal(below.stdin, undefined, 'one byte under the limit is still an inline argv');
+
+  const at = buildCommand(spec({ instructions: fillingTo(ARGV_INLINE_LIMIT_BYTES) }));
+  assert.notEqual(at.stdin, undefined, 'at the limit the content leaves the argv');
+});
+
+test('t203 — the decision counts UTF-8 bytes, not UTF-16 units', () => {
+  const accented = 'á'.repeat(ARGV_INLINE_LIMIT_BYTES - 2_000);
+  assert.ok(accented.length < ARGV_INLINE_LIMIT_BYTES, 'the fixture is under the limit by .length');
+  assert.ok(
+    Buffer.byteLength(accented, 'utf8') > ARGV_INLINE_LIMIT_BYTES,
+    'the fixture is over the limit by byte length',
+  );
+
+  const subject = spec({ instructions: accented });
+  assert.equal(
+    buildCommand(subject).stdin,
+    composeSingleArgument(subject),
+    'a `.length`-based check would have left this content in the argv',
+  );
+});
+
+test('t203 — the flags of the argv are untouched by the branch', () => {
+  // Everything `-C`, `-m` and `-s` do is decided before the size question, and
+  // the oversized branch may not silently drop any of it.
+  const subject = spec({
+    instructions: fillingTo(ARGV_INLINE_LIMIT_BYTES),
+    model: 'gpt-5.6-luna',
+    permissions: { filesystem: { write: [] }, network: { allowed: false } },
+  });
+  const { args } = buildCommand(subject);
+
+  assert.equal(args[args.indexOf('-C') + 1], subject.workingDir);
+  assert.equal(args[args.indexOf(MODEL_FLAG) + 1], 'gpt-5.6-luna');
+  assert.equal(args[args.indexOf('-s') + 1], 'read-only');
 });
 
 test('t195 — a refused policy adds no flags here; refusing is the adapter\'s job', () => {

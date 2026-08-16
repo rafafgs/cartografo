@@ -362,8 +362,13 @@ function parseArguments(
   };
 }
 
-// Running the file directly is the production path while the package publishes
-// no `bin` of its own: `node --import tsx src/cli.ts avaliar --url ... --execucao ...`.
+// The production path is the package's own `bin` (t199, FR3), and it imports
+// this module rather than executing it:
+// `npx topografo-custo avaliar --url ... --execucao ...`.
+// The guard stays here for the OTHER half: without it, any `import { runCli }`
+// (which is what `test/cli.test.ts` does) would run the CLI just by loading the
+// file. As a bonus, `node --import tsx src/cli.ts` keeps working for whoever is
+// debugging the package from the inside.
 if (import.meta.filename === process.argv[1]) {
   process.exitCode = await runCli(process.argv.slice(2));
 }

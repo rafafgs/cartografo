@@ -10,20 +10,26 @@
  *
  * "Forward" here means verbatim. Method, path, query and body cross unchanged,
  * and the upstream status comes back as it is — a `409 proposta_nao_pendente`
- * is an answer the inbox must show, not an error for the proxy to reshape. Two
- * replies this module invents rather than forwards: the control plane that is
- * down (`502 control_plane_indisponivel`), because the alternative is a socket
- * error reaching the browser as a blank page, and the write that did not start
- * on this screen's page (`403 origem_nao_confiavel`, t192), because a forwarded
- * request carries the operator's credential and a page on another site must not
- * get to spend it. The second one is a decision ABOUT forwarding, so it is a
- * check the router runs before the pipe, never a branch inside it.
+ * is an answer the inbox must show, not an error for the proxy to reshape.
+ * Three replies this module invents rather than forwards: the control plane that
+ * is down (`502 control_plane_indisponivel`), because the alternative is a
+ * socket error reaching the browser as a blank page; the write that did not
+ * start on this screen's page (`403 origem_nao_confiavel`, t192), because a
+ * forwarded request carries the operator's credential and a page on another site
+ * must not get to spend it; and the body too big to hold in memory
+ * (`413 corpo_grande_demais`, t206), because this proxy buffers whole bodies and
+ * an unbounded one is a local page choosing how much memory the screen spends.
+ * The last two are decisions ABOUT forwarding, so they are checks the router
+ * runs before the pipe, never branches inside it.
  *
  * The address resolution repeats `packages/core/src/cli/url.ts` on purpose: the
  * screen declares no dependency on the core package (that is the whole point of
- * D11), so the precedence `CARTOGRAFO_URL` > `http://127.0.0.1:CARTOGRAFO_PORT`
- * is duplicated here rather than imported. Duplicated and pinned by test, like
- * the graph validator in `scripts/validar-grafo.mjs`.
+ * D11), so the precedence `--url` > `CARTOGRAFO_URL` >
+ * `http://127.0.0.1:CARTOGRAFO_PORT` is duplicated here rather than imported.
+ * Duplicated ONCE, and pinned by test, like the graph validator in
+ * `scripts/validar-grafo.mjs`: since t199 this is the package's only resolver,
+ * and both entry points — `startScreen` here and `runScreenCli` in `router.ts` —
+ * come through it.
  */
 
 /** Environment variable that overrides the control plane base URL. */
@@ -52,6 +58,9 @@ export const UPSTREAM_DOWN_CODE = 'control_plane_indisponivel';
 
 /** Error code of a state-changing request that did not start on this screen. */
 export const UNTRUSTED_ORIGIN_CODE = 'origem_nao_confiavel';
+
+/** Error code of a body bigger than this proxy is willing to hold in memory. */
+export const BODY_TOO_LARGE_CODE = 'corpo_grande_demais';
 
 /**
  * What a browser looks like when it says nothing else about itself.
@@ -125,34 +134,60 @@ export function parsePortFromEnv(env: NodeJS.ProcessEnv, name: string, fallback:
   return port;
 }
 
+/** How the `--url` flag names itself in an error message. */
+const URL_OPTION = '--url';
+
 /**
- * Resolves the control plane base URL.
+ * Resolves the control plane base URL — the package's ONLY resolver (t199, FR6).
  *
- * Precedence: `CARTOGRAFO_URL` > `http://127.0.0.1:CARTOGRAFO_PORT` > the
- * default `http://127.0.0.1:4317` — the same order as the CLI, so one
+ * Precedence: `--url` > `CARTOGRAFO_URL` > `http://127.0.0.1:CARTOGRAFO_PORT` >
+ * the default `http://127.0.0.1:4317` — the same order as the CLI, so one
  * `CARTOGRAFO_PORT=5000` in the shell moves the server, the CLI and the screen
  * together.
  *
+ * The `override` parameter is what let this function absorb `router.ts`'s
+ * `resolveControlPlaneAddress`, which was the one `bin/tela.mjs` actually ran
+ * and the one that ignored `CARTOGRAFO_PORT` — the well-tested resolver was not
+ * the shipped resolver, and the shipped one contradicted
+ * `docs/spec/tela-inbox-propostas.md`'s own precedence table. One function now,
+ * reached by both entry points, so there is nowhere left for the two to drift.
+ *
+ * The message names the source of the bad value, because "CARTOGRAFO_URL
+ * invalid" for something typed after `--url` sends whoever reads it to the wrong
+ * place.
+ *
  * @param env Environment to read from.
+ * @param override Address given explicitly on the command line, when there was
+ *   one. Blank counts as absent: `--url ""` and no `--url` mean the same thing.
  * @returns Base URL with no trailing slash.
  */
-export function resolveControlPlaneUrl(env: NodeJS.ProcessEnv = process.env): string {
+export function resolveControlPlaneUrl(
+  env: NodeJS.ProcessEnv = process.env,
+  override?: string,
+): string {
+  const explicit = override?.trim();
   const configured = env[CONTROL_PLANE_URL_ENV]?.trim();
-  const chosen =
-    configured !== undefined && configured !== ''
-      ? configured
-      : `http://${DEFAULT_CONTROL_PLANE_HOST}:${parsePortFromEnv(env, CONTROL_PLANE_PORT_ENV, DEFAULT_CONTROL_PLANE_PORT)}`;
+
+  const [source, chosen] =
+    explicit !== undefined && explicit !== ''
+      ? [URL_OPTION, explicit]
+      : configured !== undefined && configured !== ''
+        ? [CONTROL_PLANE_URL_ENV, configured]
+        : [
+            CONTROL_PLANE_URL_ENV,
+            `http://${DEFAULT_CONTROL_PLANE_HOST}:${parsePortFromEnv(env, CONTROL_PLANE_PORT_ENV, DEFAULT_CONTROL_PLANE_PORT)}`,
+          ];
 
   let parsed: URL;
   try {
     parsed = new URL(chosen);
   } catch {
     throw new Error(
-      `${CONTROL_PLANE_URL_ENV} invalid: "${chosen}" (expected something like http://127.0.0.1:4317)`,
+      `${source} invalid: "${chosen}" (expected something like http://127.0.0.1:4317)`,
     );
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`${CONTROL_PLANE_URL_ENV} has to be http or https: "${chosen}"`);
+    throw new Error(`${source} has to be http or https: "${chosen}"`);
   }
 
   return chosen.replace(/\/+$/, '');
@@ -291,6 +326,32 @@ export function untrustedOriginResponse(): ProxiedResponse {
     erro: UNTRUSTED_ORIGIN_CODE,
     mensagem: `this proxy only forwards writes that started on the screen's own page — reload the tab, or call the control plane directly (${DEFAULT_CONTROL_PLANE_HOST}:${DEFAULT_CONTROL_PLANE_PORT} by default)`,
   });
+}
+
+/**
+ * The answer for a body this proxy refuses to hold (t206).
+ *
+ * Same `erro` / `mensagem` shape as its two siblings above, and English for the
+ * same reason (t180): this is met as an API response, not as the rendered copy
+ * the screen keeps in Portuguese. The ceiling is named in the message because
+ * the only useful reaction is to send less, and nothing else on this screen says
+ * how much less.
+ *
+ * `connection: close` is not decoration. The bytes past the ceiling were never
+ * read off the socket, and a kept-alive connection would parse that leftover as
+ * the beginning of the NEXT request — a refusal that turns into a request the
+ * client never wrote. Hanging up is the whole mitigation: draining what is left
+ * only to throw it away costs the memory the ceiling exists to save.
+ *
+ * @param limitBytes The ceiling that was crossed, in bytes.
+ * @returns A complete `413` response.
+ */
+export function bodyTooLargeResponse(limitBytes: number): ProxiedResponse {
+  const refused = jsonResponse(413, {
+    erro: BODY_TOO_LARGE_CODE,
+    mensagem: `this proxy holds at most ${limitBytes} bytes of request body and forwards nothing bigger — the control plane never saw this request`,
+  });
+  return { ...refused, headers: { ...refused.headers, connection: 'close' } };
 }
 
 /**

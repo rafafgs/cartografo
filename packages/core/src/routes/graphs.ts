@@ -14,10 +14,15 @@
  * the same judgement a proposal suffers when applied, and therefore cannot
  * diverge from it.
  *
- * No route here emits a telemetry event: the append-only event table belongs to
- * t102. The field names are already the ones of the `grafo_versao.*` schemas, so
- * that the future emission is a direct mapping — and they stay in Portuguese for
- * the same reason (t127, FR8).
+ * No route here emits a telemetry event, and that is a real gap, not a
+ * dependency: the append-only log (`src/db/events.ts`) shipped with t102, and
+ * `evento.entidade_tipo` already accepts `grafo_versao`
+ * (`migrations/0003_trabalho_sessao_evento_pergunta.sql`), so registering a
+ * version could be logged today. Nobody owns that yet — no open ticket declares
+ * it — so a graph version born here leaves no trace in the log, and whoever
+ * replays the log will not find it. The field names are already the ones of the
+ * `grafo_versao.*` schemas, so the emission, when someone takes it, is a direct
+ * mapping — and they stay in Portuguese for the same reason (t127, FR8).
  */
 
 import type { FastifyInstance, FastifyReply } from 'fastify';

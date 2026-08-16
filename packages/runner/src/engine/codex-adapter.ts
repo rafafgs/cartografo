@@ -271,18 +271,42 @@ export class CodexAdapter implements EngineAdapter {
 
     const command = this.#commandBuilder(spec);
 
+    // `stdin` piped only when there is something to write into it (t203). This
+    // is the engine that MADE invariant 6 normative, so the conditional is the
+    // invariant and not an exception to it: what the invariant forbids is a
+    // pipe left open with nothing written and nothing closing it, and the write
+    // below runs under exactly the same condition as the pipe above. No
+    // ephemeral file on this side — this CLI has no system-prompt flag to point
+    // at one, and an `AGENTS.md` would collide with a real one in the target
+    // repository (`codex-command.ts`).
+    const stdio = [...ENGINE_STDIO] as Array<'ignore' | 'pipe'>;
+    if (command.stdin !== undefined) stdio[0] = 'pipe';
+
     let child: ChildProcess;
     try {
       child = spawn(command.command, [...command.args], {
         cwd: spec.workingDir,
         env: this.#environmentBuilder(spec),
-        stdio: [...ENGINE_STDIO],
+        stdio,
         // Its own group: that is what allows signalling grandchildren along
         // with the parent.
         detached: true,
       });
     } catch (cause) {
       throw new SessionStartError(`could not start "${command.command}"`, { cause });
+    }
+
+    // Synchronously, right after the spawn, and the error listener FIRST: an
+    // engine that exits before reading its stdin breaks the pipe, and an
+    // unhandled `'error'` on a stream is an uncaught exception — the runner
+    // dying over one session's fast exit. Hand-duplicated from
+    // `claude-code-adapter.ts`, like the rest of this lifecycle and for the
+    // reason this file's header records.
+    if (command.stdin !== undefined && child.stdin) {
+      child.stdin.on('error', () => {
+        /* the engine went away without reading; its exit is the real outcome */
+      });
+      child.stdin.end(command.stdin, 'utf8');
     }
 
     const id = randomUUID();

@@ -167,11 +167,14 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     events.map((event: Event) => event.tipo),
     ['sessao.aberta', 'sessao.finalizada'],
   );
+  // Every optional field the type declares appears normalized, with an explicit
+  // `null` for what the client did not send — `modelos` included since t172.
   assert.deepEqual(events[1].dados, {
     status: 'concluida',
     exit_code: 0,
     uso: USAGE,
     timeout_reason: null,
+    modelos: null,
   });
 
   const withoutUsageEvents = getEventsByEntity(ctx.db, 'sessao', withoutUsage.id);
@@ -180,6 +183,7 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     exit_code: null,
     uso: null,
     timeout_reason: null,
+    modelos: null,
   });
 });
 
@@ -793,12 +797,15 @@ test('t159 AT5 — the transcript stays OUT of the sessao.finalizada event', asy
     ['sessao.aberta', 'sessao.finalizada'],
   );
   // Raw diagnostic material hangs off the projection, not off the append-only
-  // envelope: `dados` carries the contract's own fields and nothing else.
+  // envelope: `dados` carries the contract's own fields and nothing else —
+  // which since t172 includes `modelos`, normalized to null like every other
+  // optional field the caller did not send.
   assert.deepEqual(events[1].dados, {
     status: 'concluida',
     exit_code: 0,
     uso: USAGE,
     timeout_reason: null,
+    modelos: null,
   });
   assert.ok(
     !JSON.stringify(events[1]).includes('transcricao'),
@@ -1006,7 +1013,7 @@ test('t172 — a modelos that is not a list of non-empty strings is refused', as
       400,
       `${refused.label} has to be a 400, the same shape a malformed \`uso\` gets`,
     );
-    assert.equal(response.body.error, 'validation_error');
+    assert.equal(response.body.error, 'validation_failed');
 
     // ...and nothing was written: the session is still open, so a retry with a
     // well-formed body can still close it.

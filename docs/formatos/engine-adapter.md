@@ -375,10 +375,12 @@ log: o que o gating não impede, a telemetria pelo menos registra.
  * adapter de terceiro que constrói o objeto literalmente. Ausente é `false`
  * — a direção segura de errar.
  *
- * `hasResume` ganhou consumidor na t173 (`SessionSpec.resumeFrom`); as outras
- * duas continuam nomeando capacidades adiadas em "Fora de escopo", e ficam sem
- * ser declaradas até alguém lê-las. Declarar a quarta, quinta e sexta antes de
- * alguém ler é como o formato apodrece.
+ * `hasResume` ganhou consumidor na t173 (`SessionSpec.resumeFrom`) e
+ * `reportsUsage` na t172 (`SessionFinishDetail.usage`), pelo mesmo caminho: a
+ * capacidade existia na CLI o tempo todo, e o que faltava era alguém lê-la. As
+ * três têm consumidor agora, e a regra que governou as três continua valendo
+ * para a quarta — declarar a quarta, a quinta e a sexta antes de alguém ler é
+ * como o formato apodrece.
  */
 export interface EngineCapabilities {
   /**
@@ -420,17 +422,43 @@ exigida pela D16 é feita.
 
 ```typescript
 /**
+ * Os totais de token de uma sessão, congelados no fim da vida dela.
+ *
+ * As quatro chaves são exatamente as que o `uso` da taxonomia de eventos já
+ * exigia desde a t98 — este tipo é o lado do adapter da mesma contabilidade, e
+ * a igualdade dos nomes é o que permite atravessar da interface até o log sem
+ * tradução no meio. Não há campo de custo em dinheiro: custo é vocabulário de
+ * engine, e a régua de preço é de quem tem a tabela.
+ *
+ * **Quatro, e só quatro.** Uma CLI real reporta bem mais que isso no frame
+ * terminal (tier de serviço, detalhamento de cache, iterações), e o contrato
+ * do log fecha `additionalProperties`. Quem implementa este tipo ESCOLHE as
+ * quatro; um adapter que repassar o objeto do engine inteiro entrega ao
+ * consumidor um payload que o control plane recusa.
+ */
+export interface SessionUsage {
+  readonly input_tokens: number;
+  readonly output_tokens: number;
+  readonly cache_creation_input_tokens: number;
+  readonly cache_read_input_tokens: number;
+}
+
+/**
  * O que o adapter sabe sobre um desfecho terminal além do próprio status.
  *
- * Existe por um fato só, e é deliberadamente estreito: com dois cães de
+ * Nasceu por um fato só, e deliberadamente estreito: com dois cães de
  * guarda, um `timed_out` deixou de dizer qual deles mordeu. Crescer o
  * `SessionStatus` no lugar disso já foi rejeitado uma vez, para estados de
  * cota/limite, e o raciocínio vale igual — "o motivo real vive no log de
  * eventos, que é append-only e não perde nada" (ver *Rejeitado —
  * `SessionStatus` mais rico*). Um status, uma causa ao lado.
  *
- * Opcional em todas as direções: o parâmetro, o campo, e o que um consumidor
- * faz com ele. Adapter que não tem nada a acrescentar reporta dois
+ * É também o ponto de crescimento aditivo desta interface congelada, e a t172
+ * cobrou isso: os dois campos de contabilidade abaixo entraram aqui sem tocar
+ * na forma de `EngineAdapter` nem na assinatura de `onFinished`.
+ *
+ * Opcional em todas as direções: o parâmetro, cada campo, e o que um consumidor
+ * faz com eles. Adapter que não tem nada a acrescentar reporta dois
  * argumentos, como sempre reportou.
  */
 export interface SessionFinishDetail {
@@ -442,6 +470,30 @@ export interface SessionFinishDetail {
    * dele, e inventar um aqui poria na telemetria uma causa que ninguém mediu.
    */
   readonly timeoutReason?: "wall_clock" | "silence";
+
+  /**
+   * Os tokens que a sessão gastou, quando o engine os reportou (t172).
+   *
+   * Ausente é "o engine não contou" — sessão que morreu antes do frame
+   * terminal, frame malformado, ou build da CLI que não traz a contagem. Um
+   * objeto de zeros no lugar da ausência é a única leitura proibida: zero é
+   * medição, ausência é silêncio, e juntar as duas destrói a métrica de custo
+   * inteira (mesma regra que o `uso` da taxonomia carrega desde a t98).
+   */
+  readonly usage?: SessionUsage;
+
+  /**
+   * Quais modelos rodaram a sessão, quando o engine os nomeou (t172).
+   *
+   * Lista, e não um identificador só, porque uma sessão roda mais de um
+   * modelo: medido contra a CLI real, um único turno já devolveu dois — o do
+   * turno principal e o de um auxiliar mais barato. Colapsar em "o" modelo
+   * atribuiria a conta toda ao errado, que é o mesmo erro que a regra de cima
+   * proíbe para tokens.
+   *
+   * Ausente segue a mesma disciplina de `usage`; lista vazia não é resposta.
+   */
+  readonly models?: readonly string[];
 }
 
 /**
@@ -480,9 +532,10 @@ export interface SessionListener {
    * cancelamento do kit. `null` é "não houve", não "zero".
    *
    * `detail` só é preenchido quando o adapter tem algo que o status não
-   * carrega — hoje, qual dos dois cães de guarda parou a sessão. Consumidor
-   * escrito antes de ele existir continua funcionando: argumento a mais em
-   * callback de dois parâmetros é ignorado.
+   * carrega — qual dos dois cães de guarda parou a sessão, e desde a t172 os
+   * tokens e os modelos que ela consumiu. Consumidor escrito antes de ele
+   * existir continua funcionando: argumento a mais em callback de dois
+   * parâmetros é ignorado.
    */
   onFinished(
     status: SessionStatus,
@@ -903,9 +956,20 @@ membros.
 
 Registrado para quem ler depois não presumir esquecimento:
 
-- **Contagem de uso (`SessionUsage`) e projeção de transcript.** Existem no
+- **Contagem de uso (`SessionUsage`) e projeção de transcript.** Existiam no
   flowpilot; a régua da PoC (D16) pede sessões despachadas e telemetria
-  completa, e não menciona nenhuma das duas.
+  completa, e não mencionava nenhuma das duas.
+
+  **As duas saíram desta lista.** O transcript na t159; a contagem de uso na
+  t172, e também ela **só para o `claude-code`**: o frame `result` terminal
+  daquela CLI sempre trouxe `usage` e `modelUsage`, o adapter de referência
+  agora os lê, declara `reportsUsage` e os entrega pelo `SessionFinishDetail`.
+  O que fica fora é a contagem do **Codex** — o `reportsUsage` dele segue
+  "a confirmar contra corpus real" na tabela de mapeamento abaixo, mesmo depois
+  da spike credenciada da t141, e declarar a capacidade sem ter medido o frame
+  seria exatamente a afirmação sem lastro que este documento recusa em todo
+  lugar. Ficha própria, com o mesmo portão que a t172 usou aqui: rodar a CLI de
+  verdade e olhar o frame.
 
   **Resume SAIU desta lista na t173, só para o `claude-code`** (registrado
   aqui em vez de sumir sem rastro, como as duas entradas do congelamento

@@ -454,6 +454,17 @@ interface Outcome {
    * `null`, never one of the two picked because it looked likely.
    */
   timeoutReason?: SessionFinishDetail['timeoutReason'];
+  /**
+   * The tokens the engine reported, when it reported any (t172).
+   *
+   * Same reading as the field above, applied to the number this whole ficha is
+   * about: absent is "the engine counted nothing", it is recorded as `null`, and
+   * it is never completed with zeros. An engine whose adapter does not declare
+   * `reportsUsage` lands here absent, which is exactly what it is.
+   */
+  usage?: SessionFinishDetail['usage'];
+  /** Which models ran it, when the engine named them (t172). */
+  models?: SessionFinishDetail['models'];
 }
 
 /**
@@ -833,7 +844,13 @@ export function createClaudeCodeDispatch(
           engineRef = ref;
         },
         onFinished(status, exitCode, detail) {
-          announceEnd({ status, exitCode, timeoutReason: detail?.timeoutReason });
+          announceEnd({
+            status,
+            exitCode,
+            timeoutReason: detail?.timeoutReason,
+            usage: detail?.usage,
+            models: detail?.models,
+          });
         },
       });
 
@@ -906,9 +923,21 @@ export function createClaudeCodeDispatch(
           // somebody else drove, or for an adapter that predates the field —
           // and it may never be filled in with a guess.
           timeout_reason: outcome.timeoutReason ?? null,
-          // The v0 interface reports no token usage (out of scope). `null` is
-          // "the engine reported nothing" and must never collapse into zero.
-          uso: null,
+          // What the session actually cost, as the engine counted it (t172).
+          // Until this ficha these two lines were a hardcoded `uso: null` and no
+          // `modelos` key at all, and every session this system ever ran
+          // recorded zero cost data — with the placeholder reading exactly like
+          // an honest absence, which is why it survived so long.
+          //
+          // `null` still means "the engine reported nothing", and it must never
+          // collapse into zero: an engine with no accounting, a session that
+          // died before its terminal frame and a session that genuinely spent
+          // nothing are three different facts, and only the third is a number.
+          // The key is SENT, present and null — same posture as
+          // `timeout_reason` above, so that what the runner claims is legible in
+          // the call itself and not only in the row it produces.
+          uso: outcome.usage ?? null,
+          modelos: outcome.models ?? null,
           // The raw stream, exactly as `onOutput` reported it — undecoded, frames
           // and dying screams alike (t159). `decodeSessionText` below is a READER
           // of this same buffer, and its frame-decoding is lossy by design: what

@@ -179,9 +179,11 @@ export interface SessionPermissions {
  * that builds the object literally. Absent is `false` — the safe direction to
  * be wrong in.
  *
- * `hasResume` got its consumer in t173 (`SessionSpec.resumeFrom`); the other
- * two still name capabilities deferred in "Fora de escopo", and stay undeclared
- * until something reads them. Declaring the fourth, fifth and sixth before
+ * `hasResume` got its consumer in t173 (`SessionSpec.resumeFrom`) and
+ * `reportsUsage` in t172 (`SessionFinishDetail.usage`), by the same road: the
+ * capability was in the CLI all along, and what was missing was somebody
+ * reading it. All three have one now, and the rule that governed all three
+ * still holds for the fourth — declaring the fourth, fifth and sixth before
  * anybody reads them is how a format rots.
  */
 export interface EngineCapabilities {
@@ -212,18 +214,44 @@ export function resolveCapabilities(
 }
 
 /**
+ * The token totals of a session, frozen at the end of its life.
+ *
+ * The four keys are exactly the ones the event taxonomy's `uso` has demanded
+ * since t98 — this type is the adapter's side of the same accounting, and the
+ * names matching is what lets the counts cross from the interface into the log
+ * with no translation in between. There is no money field: cost is engine
+ * vocabulary, and the price list belongs to whoever has one.
+ *
+ * **Four, and only four.** A real CLI reports considerably more than that in
+ * its terminal frame (service tier, cache breakdown, iterations), and the log's
+ * contract closes `additionalProperties`. Whoever implements this type PICKS
+ * the four; an adapter that forwards the engine's whole object hands its
+ * consumer a payload the control plane refuses.
+ */
+export interface SessionUsage {
+  readonly input_tokens: number;
+  readonly output_tokens: number;
+  readonly cache_creation_input_tokens: number;
+  readonly cache_read_input_tokens: number;
+}
+
+/**
  * What the adapter knows about a terminal outcome, beyond the status itself.
  *
- * It exists for one fact and is deliberately narrow: with two watchdogs, a
+ * It was born for one fact and deliberately narrow: with two watchdogs, a
  * `timed_out` no longer says which one bit. Growing `SessionStatus` instead was
  * already rejected once, for quota/limit states, and the reasoning applies
  * unchanged — "the real reason lives in the event log, which is append-only and
  * loses nothing" (`engine-adapter.md`, "Rejeitado — `SessionStatus` mais rico").
  * One status, one cause beside it.
  *
- * Optional in every direction: the parameter, the field, and what a consumer
- * does with it. An adapter that has nothing to add reports two arguments, as it
- * always did.
+ * It is also this frozen interface's additive growth point, and t172 cashed
+ * that in: the two accounting fields below arrived here without touching
+ * `EngineAdapter`'s shape or `onFinished`'s signature.
+ *
+ * Optional in every direction: the parameter, each field, and what a consumer
+ * does with them. An adapter that has nothing to add reports two arguments, as
+ * it always did.
  */
 export interface SessionFinishDetail {
   /**
@@ -234,6 +262,31 @@ export interface SessionFinishDetail {
    * that nobody measured.
    */
   readonly timeoutReason?: 'wall_clock' | 'silence';
+
+  /**
+   * The tokens the session spent, when the engine reported them (t172).
+   *
+   * Absent is "the engine did not count" — a session that died before the
+   * terminal frame, a malformed frame, or a build of the CLI that omits the
+   * accounting. An object of zeros in place of the absence is the one forbidden
+   * reading: zero is a measurement, absence is silence, and merging the two
+   * destroys the whole cost metric (the same rule the taxonomy's `uso` has
+   * carried since t98).
+   */
+  readonly usage?: SessionUsage;
+
+  /**
+   * Which models ran the session, when the engine named them (t172).
+   *
+   * A list, and not a single identifier, because a session runs more than one
+   * model: measured against the real CLI, a single turn already gave back two —
+   * the main turn's, and a cheaper helper's. Collapsing to "the" model would
+   * charge the whole bill to the wrong one, which is the same mistake the rule
+   * above forbids for tokens.
+   *
+   * Absent follows the same discipline as `usage`; an empty list is no answer.
+   */
+  readonly models?: readonly string[];
 }
 
 /**

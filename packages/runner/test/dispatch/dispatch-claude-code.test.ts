@@ -3553,7 +3553,10 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
       // ...and the control plane accepted them: a body the schema refuses would
       // have been a 400 the dispatch swallows into `finishFailure`, and the row
       // would read `null` with every assertion above still green.
-      const { sessoes } = await api<{ sessoes: Session[] }>(
+      // Read by property and never destructured: `sessoes` is a wire key, and a
+      // local binding of that name is a Portuguese identifier D18 forbids in
+      // this package (`test/no-portuguese-identifiers.test.ts`).
+      const listed = await api<{ sessoes: Session[] }>(
         baseUrl,
         "GET",
         `/v1/sessions?execucao_id=1720`,
@@ -3561,7 +3564,7 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
         200,
         token,
       );
-      const stored = sessoes.find((session) => session.id === sessionId);
+      const stored = listed.sessoes.find((session) => session.id === sessionId);
       assert.ok(stored, "the session the dispatch closed is not in the projection");
       assert.deepEqual(stored.uso, USAGE);
       assert.deepEqual(stored.modelos, ["claude-haiku-4-5-20251001", "claude-sonnet-5"]);

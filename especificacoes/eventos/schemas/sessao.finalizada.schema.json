@@ -50,6 +50,12 @@
             "cache_read_input_tokens": { "type": "integer", "minimum": 0 }
           },
           "additionalProperties": false
+        },
+        "modelos": {
+          "type": ["array", "null"],
+          "description": "Quais modelos rodaram a sessão, como o engine os nomeou. Lista porque uma sessão roda mais de um — medido contra a CLI real, um único turno devolveu dois — e colapsar em 'o' modelo atribuiria a conta inteira ao errado. null quando o engine não nomeou nenhum; lista vazia não é resposta, é o null que diz 'nada'. Conjunto de valores aberto de propósito: o identificador é do engine, e um enum fechado pediria mudança de schema a cada modelo novo.",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
         }
       },
       "additionalProperties": false

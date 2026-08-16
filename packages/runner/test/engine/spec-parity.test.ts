@@ -187,7 +187,7 @@ test('t166 — EngineModel keeps id and origin required, and label optional', ()
 });
 
 /* -------------------------------------------------------------------------- */
-/* t175 — the tier is the eighth growth of the frozen interface.              */
+/* t175 — the tier is the ninth growth of the frozen interface.               */
 /*                                                                            */
 /* Same blind spot as `listModels` above, on the other type: `modelTier` is a */
 /* MEMBER of `SessionSpec`, and an interface member is invisible to an export */

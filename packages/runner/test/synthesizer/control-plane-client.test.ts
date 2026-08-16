@@ -127,6 +127,42 @@ test('AT5 — a reader built with no token sends no Authorization at all', async
   }
 });
 
+test('t193 — a control plane that never answers is a rejection on the deadline, not a hang', async () => {
+  const { createControlPlaneReader } = await loadClient();
+
+  // Not a control plane that is down — that one answers, and the reads above
+  // already say what happens then. This is one that accepted the connection and
+  // then said nothing, against which a read with no deadline never comes back
+  // and the command that made it cannot even be interrupted cleanly.
+  const reader = createControlPlaneReader(BASE_URL, {
+    fetchImpl: () => new Promise<Response>(() => undefined),
+    requestTimeoutMs: 150,
+  });
+
+  const started = Date.now();
+  let guard: NodeJS.Timeout | undefined;
+  const outcome = await Promise.race([
+    reader.fetchClasses().then(
+      () => ({ settled: 'resolved' as const, error: null as unknown }),
+      (error: unknown) => ({ settled: 'rejected' as const, error }),
+    ),
+    new Promise<{ settled: 'hung'; error: unknown }>((resolve) => {
+      guard = setTimeout(() => resolve({ settled: 'hung', error: null }), 5_000);
+    }),
+  ]);
+  clearTimeout(guard);
+
+  assert.equal(
+    outcome.settled,
+    'rejected',
+    `the read has to give up on its own (it ${outcome.settled} after ${Date.now() - started}ms)`,
+  );
+  assert.ok(
+    outcome.error instanceof Error && outcome.error.name === 'TimeoutError',
+    `the rejection has to be recognizable as a timeout, got: ${String(outcome.error)}`,
+  );
+});
+
 test('AT4 — the three exported reads keep their `(baseUrl, fetchImpl)` signature', async () => {
   const { fetchClasses, fetchClassVersion, fetchSkills } = await loadClient();
 

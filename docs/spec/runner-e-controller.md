@@ -206,6 +206,68 @@ expirar debaixo do despacho.
 sessão nenhuma. Quem fechar o ciclo com sessão de verdade (`t106`/`t109`) passa
 o adapter por aqui sem tocar no controller.
 
+### Toda chamada tem prazo (`t193`)
+
+O control plane fora do ar responde, e cada método do cliente já sabe o que
+fazer com a resposta. O caso que faltava é outro: um control plane que **aceita
+a conexão e não escreve nada** — um processo travado, um proxy que segurou a
+requisição. Sem prazo, a chamada espera para sempre, e com ela o `tick()` que a
+fez, o loop que espera o tick e o desligamento que espera o loop.
+
+Desde a `t193` existe um único mecanismo HTTP para todo cliente do runner
+([`http-client.ts`](../../packages/runner/src/controller/http-client.ts)), e ele
+faz três coisas: põe um prazo em toda requisição, lê o **status antes** de
+decodificar o corpo (a disciplina da `t156`, agora num dono só — quem responde
+um erro nem sempre é o control plane, e um 502 em HTML não pode virar
+`SyntaxError` cru) e devolve o erro que **quem chamou** construiu.
+
+| Prazo | Default | Quem configura |
+|---|---|---|
+| Qualquer chamada ao control plane | 30 s | `--request-timeout-ms` |
+| Batida de heartbeat | o próprio intervalo do heartbeat (`ttl/3`) | derivado, não configurável |
+
+O heartbeat tem prazo mais curto porque tem uma janela natural: quem o arma sabe
+de quanto em quanto tempo a próxima batida vence, e uma batida ainda no ar
+quando a seguinte vence já não renova nada. Pela mesma razão, **uma batida que
+não voltou é pulada, nunca sobreposta** — senão um control plane travado
+acumularia uma requisição aberta por intervalo, a sessão inteira. Pular custa
+uma batida, e o TTL já tolera duas.
+
+Chamada que estoura o prazo rejeita com o `TimeoutError` do
+`AbortSignal.timeout`, sem tipo novo para ninguém capturar. Nada é retentado
+aqui: o tick falho é registrado e o loop pergunta de novo no próximo intervalo,
+que é o mecanismo de retentativa que já existia.
+
+### Parar sempre termina, e não deixa sessão órfã (`t193`)
+
+Parar um runner é um pedido, e ele tem três estágios:
+
+1. **Primeiro SIGINT/SIGTERM.** O loop para de **agendar**: nenhum tick novo
+   nasce. O despacho em voo continua — matar uma sessão viva de fora deixaria um
+   processo escrevendo na worktree sem ninguém para relatar o que ele fez.
+2. **A carência.** `--shutdown-grace-seconds` (default **120 s**) é quanto esse
+   despacho tem para terminar sozinho. Esgotada, a sessão viva é cancelada.
+3. **Segundo SIGINT/SIGTERM.** Não espera nada: cancela na hora.
+
+Cancelar reusa o caminho que o despacho já tinha para um fim conduzido pelo
+adapter — `cancelled` vira `travada` na taxonomia, a **worktree é preservada**
+(sessão cancelada não concluiu), a lease volta pelo `finally` do controller e o
+erro final é o `DispatchError` que o loop já registra. Nada novo é escrito sobre
+"como uma sessão cancelada é encerrada": só passou a existir mais um chamador do
+que já existia.
+
+Abaixo disso, cada adapter registra um `process.on('exit')` enquanto tem sessão
+viva e sinaliza SIGTERM ao grupo do processo na saída. É a rede de segurança
+para as saídas que os três estágios acima não cobrem — uma exceção não capturada
+em outro lugar, um `process.exit()` seco. É SIGTERM e só: `'exit'` é o último
+turno síncrono do processo, não sobra event loop para escalar para SIGKILL cinco
+segundos depois.
+
+**O limite honesto continua limite:** um `SIGKILL` no próprio runner não roda
+JavaScript nenhum, o `'exit'` não dispara, e nada dentro deste processo impede
+esse órfão. O que existe contra ele é a lease vencendo no server e o trabalho
+voltando para a fila (D5).
+
 ### Zero acesso ao banco
 
 Nada em `packages/runner` importa driver de SQLite ou qualquer módulo de

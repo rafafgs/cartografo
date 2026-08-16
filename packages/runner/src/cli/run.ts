@@ -23,12 +23,18 @@
  *   So what is left to decide is only whether ONE bad job may end a runner's
  *   day, and it may not — a graph node asking for an engine this runner has no
  *   route for is exactly that kind of local failure.
- * - **Shutdown waits for the dispatch in flight.** Aborting stops the loop from
- *   SCHEDULING, never mid-session: killing a live session from out here would
- *   leave a process writing in its worktree with nobody left to report what it
- *   did — and nobody left to give the worktree back. A dispatch that is already
- *   running finishes (or fails) through the paths `dispatch-claude-code.ts`
- *   already has, and only then does the promise this function returns resolve.
+ * - **Shutdown waits for the dispatch in flight — but not forever** (t193).
+ *   Aborting stops the loop from SCHEDULING, never mid-session: killing a live
+ *   session from out here would leave a process writing in its worktree with
+ *   nobody left to report what it did — and nobody left to give the worktree
+ *   back. A dispatch that is already running finishes (or fails) through the
+ *   paths `dispatch-claude-code.ts` already has, and only then does the promise
+ *   this function returns resolve. What t193 added is the bound: waiting was
+ *   the ONLY thing a stop could do, and an hour is how long that wait could
+ *   last. The session is now cancellable from outside, through
+ *   {@link RunnerOptions.onSessionStarted} — and cancelling still travels those
+ *   same paths, so the worktree is given back and the outcome is reported
+ *   exactly as it would have been.
  * - **The worktree manager is built here, out of two paths the operator gave**
  *   (t179). `createClaudeCodeDispatch` requires a `WorktreeManager` and has no
  *   default for it, and `GitWorktreeManager` has no default for either of its
@@ -122,6 +128,26 @@ export interface RunnerOptions {
   /** Term of the lease asked for, in seconds. */
   leaseTtlSeconds: number;
   /**
+   * Deadline of every control-plane call, in milliseconds (t193).
+   *
+   * Threaded to both clients this function builds — `ClienteControle` and the
+   * dispatch's own — because a runner has exactly one control plane and no
+   * reason to give up on it at two different moments. Default:
+   * `DEFAULT_REQUEST_TIMEOUT_MS`.
+   */
+  requestTimeoutMs?: number;
+  /**
+   * How long a stop waits for the session in flight before taking it down, in
+   * seconds (t193).
+   *
+   * Parsed here because this is where a runner's command line becomes a
+   * decision, and CONSUMED by whoever owns the process (`cli/index.ts`): the
+   * loop below stops scheduling on the abort and has nothing else to do with
+   * the number. Same shape {@link onReady} already has, read from the other
+   * end.
+   */
+  shutdownGraceSeconds?: number;
+  /**
    * Stops the loop. Aborting it stops NEW ticks; the one in flight is awaited.
    * Absent, the loop never ends on its own.
    */
@@ -142,6 +168,18 @@ export interface RunnerOptions {
    * function is the only one that knows when that became true.
    */
   onReady?: () => void;
+  /**
+   * Called whenever a session goes live, with the one function that takes it
+   * down (t193, FR8).
+   *
+   * Same shape and same reason as {@link onReady}: the process owner needs a
+   * fact only the layer below knows. Here the fact is "there is an engine
+   * running right now, and this is how it is stopped" — without it, a stop can
+   * only wait the session out, for up to the dispatch's own hour.
+   */
+  onSessionStarted?: (cancel: () => Promise<void>) => void;
+  /** Called once that session's outcome is known: there is nothing to cancel now. */
+  onSessionEnded?: () => void;
 }
 
 /** The real adapters, each paired with the decoder for its own frames. */
@@ -275,7 +313,11 @@ async function reportModels(
  *   dispatched is still in flight.
  */
 export async function runRunner(options: RunnerOptions): Promise<void> {
-  const client = new ClienteControle({ urlBase: options.url, token: options.token });
+  const client = new ClienteControle({
+    urlBase: options.url,
+    token: options.token,
+    requestTimeoutMs: options.requestTimeoutMs,
+  });
 
   // First call of the process, and it is not negotiable: everything below
   // answers 404 for a runner the control plane has never heard of.
@@ -305,6 +347,11 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
       urlBase: options.url,
       token: options.token,
       engines,
+      requestTimeoutMs: options.requestTimeoutMs,
+      // Passed straight through: what this function knows about a live session
+      // is nothing, and what the process owner needs is the handle to it (t193).
+      onSessionStarted: options.onSessionStarted,
+      onSessionEnded: options.onSessionEnded,
       // One manager for the whole process, and one worktree per dispatch out of
       // it: the isolation is per session, never per runner (t160, FR6).
       worktrees: new GitWorktreeManager({

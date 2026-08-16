@@ -44,21 +44,21 @@ function block(payload: string): string {
 /** A graph document, in the shape of `schema/grafo.schema.json`. */
 function graph(className: string): Record<string, unknown> {
   return {
-    classe: className,
-    linhagem: { tipo: 'base' },
-    metadata: { nome: className, versao_schema: '1.0.0' },
-    nos: [
+    problem_class: className,
+    lineage: { tipo: 'base' },
+    metadata: { nome: className, schema_version: '1.0.0' },
+    nodes: [
       {
         id: 'redigir',
-        papel: 'redator',
-        tipo_no: 'trabalho',
+        role: 'redator',
+        node_type: 'work',
         skill_ref: { id: 'cartografo/redigir-nota', versao: '1.0.0', hash: `sha256:${'0'.repeat(64)}` },
-        contrato: { entrada_schema: {}, saida_schema: {}, verificacoes: [] },
+        contract: { input_schema: {}, output_schema: {}, checks: [] },
       },
     ],
-    arestas: [],
-    no_inicial: 'redigir',
-    nos_finais: ['redigir'],
+    edges: [],
+    initial_node: 'redigir',
+    final_nodes: ['redigir'],
   };
 }
 
@@ -133,8 +133,8 @@ test('AT3 — a closing fence inside the JSON does not truncate the block', asyn
   // next fence: a node's `descricao` is prose written by a model, and prose about
   // a graph quotes fenced examples of graphs.
   const document = graph('nota-curta');
-  const nodes = document.nos as Record<string, unknown>[];
-  nodes[0].descricao = 'Escreve a nota. Exemplo de saída:\n```json\n{"texto": "..."}\n```\nE só.';
+  const nodes = document.nodes as Record<string, unknown>[];
+  nodes[0].description = 'Escreve a nota. Exemplo de saída:\n```json\n{"texto": "..."}\n```\nE só.';
 
   assert.deepEqual(parseGraphProposal(block(JSON.stringify(document))), document);
 });

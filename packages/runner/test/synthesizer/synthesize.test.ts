@@ -117,13 +117,13 @@ class CountingAdapter implements EngineAdapter {
 const SKILLS: ClientModule.RegisteredSkill[] = [
   {
     id: 'cartografo/redigir-nota',
-    versao: '1.0.0',
+    version: '1.0.0',
     hash: `sha256:${'a'.repeat(64)}`,
-    papel: 'skill',
-    descricao: 'Escreve a nota a partir do tema declarado.',
-    entrada: { type: 'object' },
-    saida: { type: 'object' },
-    checks: [{ tipo: 'deterministico', comando: 'test -s nota.md' }],
+    role: 'skill',
+    description: 'Escreve a nota a partir do tema declarado.',
+    input: { type: 'object' },
+    output: { type: 'object' },
+    checks: [{ type: 'deterministic', comando: 'test -s nota.md' }],
   },
 ];
 
@@ -133,8 +133,8 @@ const EXISTING_VERSION: ClientModule.GraphVersion = {
   snapshot: {
     metadata: {
       nome: 'Nota curta',
-      descricao: 'Redigir e revisar uma nota curta sobre um tema declarado.',
-      versao_schema: '1.0.0',
+      description: 'Redigir e revisar uma nota curta sobre um tema declarado.',
+      schema_version: '1.0.0',
     },
   },
 };
@@ -164,28 +164,28 @@ function fakeClient(classes: ClientModule.ClassEntry[]): ClientModule.ControlPla
 /** A graph document, in the shape of `schema/grafo.schema.json`. */
 function proposedGraph(className: string): Record<string, unknown> {
   return {
-    classe: className,
-    linhagem: { tipo: 'base' },
-    metadata: { nome: className, versao_schema: '1.0.0' },
-    nos: [
+    problem_class: className,
+    lineage: { tipo: 'base' },
+    metadata: { nome: className, schema_version: '1.0.0' },
+    nodes: [
       {
         id: 'redigir',
-        papel: 'redator',
-        tipo_no: 'trabalho',
-        skill_ref: { id: SKILLS[0].id, versao: SKILLS[0].versao, hash: SKILLS[0].hash },
-        contrato: { entrada_schema: {}, saida_schema: {}, verificacoes: [] },
+        role: 'redator',
+        node_type: 'work',
+        skill_ref: { id: SKILLS[0].id, version: SKILLS[0].version, hash: SKILLS[0].hash },
+        contract: { input_schema: {}, output_schema: {}, checks: [] },
       },
       {
         id: 'revisar',
-        papel: 'revisor',
-        tipo_no: 'portao',
-        skill_ref: { id: SKILLS[0].id, versao: SKILLS[0].versao, hash: SKILLS[0].hash },
-        contrato: { entrada_schema: {}, saida_schema: {}, verificacoes: [] },
+        role: 'revisor',
+        node_type: 'gate',
+        skill_ref: { id: SKILLS[0].id, version: SKILLS[0].version, hash: SKILLS[0].hash },
+        contract: { input_schema: {}, output_schema: {}, checks: [] },
       },
     ],
-    arestas: [{ de: 'redigir', para: 'revisar', condicao: 'sempre' }],
-    no_inicial: 'redigir',
-    nos_finais: ['revisar'],
+    edges: [{ from: 'redigir', to: 'revisar', condition: 'sempre' }],
+    initial_node: 'redigir',
+    final_nodes: ['revisar'],
   };
 }
 
@@ -311,7 +311,10 @@ test('AT4c — a valid block lands the draft file and the one-line summary', asy
 
   const raw = readFileSync(draft, 'utf8');
   assert.deepEqual(JSON.parse(raw), document, 'the document lands exactly as parsed');
-  assert.ok(raw.includes('\n  "classe"'), 'indented with 2 spaces: a human is going to edit it');
+  assert.ok(
+    raw.includes('\n  "problem_class"'),
+    'indented with 2 spaces: a human is going to edit it',
+  );
 
   const printed = out.join('');
   assert.ok(printed.includes(draft), 'the path is printed');

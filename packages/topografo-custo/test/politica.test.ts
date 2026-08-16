@@ -9,7 +9,7 @@
  * AT7 guarda a fronteira desta ficha: nem o documento de grafo nem o manifesto
  * de skill têm campo de custo ou tier hoje, e abrir esses schemas é proibido
  * pelo AC1. Logo, toda candidata é advisória — uma recomendação anexada à
- * `descricao` do nó, com os números de verdade em `evidencia`.
+ * `description` do nó, com os números de verdade em `evidencia`.
  */
 
 import assert from 'node:assert/strict';
@@ -97,7 +97,7 @@ test('AT6 — tier gera candidata sobre a mediana da versão, e só com base amo
   assert.deepEqual(comUmNoCego, [], 'nó sem uso reportado não vira base amostral');
 });
 
-test('AT7 — toda candidata carrega um único alterar_campo_no sobre descricao, com inversa trocada', async () => {
+test('AT7 — toda candidata carrega um único alterar_campo_no sobre description, com inversa trocada', async () => {
   const { avaliarPoliticas } = await carregar();
 
   const candidatas = avaliarPoliticas([linha('a', 100), linha('b', 100), linha('c', 9000)], {
@@ -118,7 +118,7 @@ test('AT7 — toda candidata carrega um único alterar_campo_no sobre descricao,
 
     const operacao = candidata.operacoes[0];
     assert.equal(operacao.tipo, 'alterar_campo_no');
-    assert.equal(operacao.campo, 'descricao');
+    assert.equal(operacao.campo, 'description');
     assert.equal(operacao.no_id, candidata.no_id);
     assert.equal(operacao.de, `descrição de ${candidata.no_id} em sha256:v1`);
     assert.notEqual(operacao.para, operacao.de, 'a recomendação precisa mudar alguma coisa');
@@ -129,7 +129,7 @@ test('AT7 — toda candidata carrega um único alterar_campo_no sobre descricao,
 
     assert.equal(operacao.inversa.tipo, 'alterar_campo_no');
     assert.equal(operacao.inversa.no_id, operacao.no_id);
-    assert.equal(operacao.inversa.campo, 'descricao');
+    assert.equal(operacao.inversa.campo, 'description');
     assert.equal(operacao.inversa.de, operacao.para, 'a inversa desfaz: de/para trocados');
     assert.equal(operacao.inversa.para, operacao.de);
   }

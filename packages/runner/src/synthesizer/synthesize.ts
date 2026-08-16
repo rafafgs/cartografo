@@ -267,7 +267,7 @@ export function parseArguments(
  * The precedents: registered classes whose current version reads like the
  * declaration (FR3).
  *
- * The signal is `metadata.nome` + `metadata.descricao` of the current version,
+ * The signal is `metadata.name` + `metadata.description` of the current version,
  * never the class id on its own — an id like `nota-curta` is two tokens, and two
  * tokens against a sentence produce a score that says nothing. A class with no
  * current version, or whose version cannot be read, is skipped in silence: this
@@ -299,8 +299,8 @@ async function rankPrecedents(
     // `nome`/`descricao` stay spelled in Portuguese as KEYS — they are the
     // frozen wire format of `metadata` — while the locals they land in are
     // English like the rest of the code written from D18 onward.
-    const name = typeof metadata.nome === 'string' ? metadata.nome : '';
-    const description = typeof metadata.descricao === 'string' ? metadata.descricao : '';
+    const name = typeof metadata.name === 'string' ? metadata.name : '';
+    const description = typeof metadata.description === 'string' ? metadata.description : '';
     const score = similarity(declaration, `${name} ${description}`);
     if (score > 0) scored.push({ classe: entry.classe, nome: name, descricao: description, score });
   }
@@ -418,8 +418,8 @@ export async function runSynthesis(options: SynthesisOptions): Promise<number> {
   // opening it in an editor (D10).
   writeFileSync(target, `${JSON.stringify(document, null, 2)}\n`, 'utf8');
 
-  const nodes = Array.isArray(document.nos) ? document.nos.length : 0;
-  const edges = Array.isArray(document.arestas) ? document.arestas.length : 0;
+  const nodes = Array.isArray(document.nodes) ? document.nodes.length : 0;
+  const edges = Array.isArray(document.edges) ? document.edges.length : 0;
   const suggestion =
     precedents.length === 0
       ? 'no similar class'

@@ -13,7 +13,7 @@
  * output contract: EXACTLY one fenced `grafo-proposto` block.
  *
  * The t138 block at the bottom adds the rule the alpha round caught missing:
- * `contrato.verificacoes` carries at least one check. The session runs in an
+ * `contrato.checks` carries at least one check. The session runs in an
  * empty temp directory and never sees `schema/grafo.schema.json`, so a rule the
  * prompt does not state is a rule the session cannot follow — and the draft it
  * writes is refused by `cartografo import` after a person has already edited it.
@@ -58,27 +58,27 @@ const DECLARATION =
 const SKILLS = [
   {
     id: 'cartografo/redigir-nota',
-    versao: '1.0.0',
+    version: '1.0.0',
     hash: `sha256:${'a'.repeat(64)}`,
-    papel: 'skill',
-    descricao: 'Escreve a nota a partir do tema declarado.',
-    entrada: { type: 'object', required: ['tema'] },
-    saida: { type: 'object', required: ['texto'] },
-    checks: [{ tipo: 'deterministico', comando: 'test -s nota.md' }],
+    role: 'skill',
+    description: 'Escreve a nota a partir do tema declarado.',
+    input: { type: 'object', required: ['tema'] },
+    output: { type: 'object', required: ['texto'] },
+    checks: [{ type: 'deterministic', comando: 'test -s nota.md' }],
   },
   {
     id: 'cartografo/revisar-nota',
-    versao: '2.1.0',
+    version: '2.1.0',
     hash: `sha256:${'b'.repeat(64)}`,
-    papel: 'portao',
-    descricao: 'Confere a nota contra o tema e encerra a travessia.',
-    entrada: { type: 'object', required: ['texto'] },
-    saida: { type: 'object', required: ['resultado'] },
+    role: 'portao',
+    description: 'Confere a nota contra o tema e encerra a travessia.',
+    input: { type: 'object', required: ['texto'] },
+    output: { type: 'object', required: ['resultado'] },
     checks: [
       {
-        tipo: 'agentico',
-        instrucao: 'A nota responde ao tema declarado?',
-        evidencia_obrigatoria: ['nota.md'],
+        type: 'agentic',
+        instruction: 'A nota responde ao tema declarado?',
+        required_evidence: ['nota.md'],
       },
     ],
   },
@@ -104,15 +104,15 @@ test('AT2 — the prompt carries the whole skill catalogue, readably', async () 
 
   for (const skill of SKILLS) {
     assert.ok(prompt.includes(skill.id), `catalogue is missing the id ${skill.id}`);
-    assert.ok(prompt.includes(skill.versao), `catalogue is missing the versao of ${skill.id}`);
+    assert.ok(prompt.includes(skill.version), `catalogue is missing the versao of ${skill.id}`);
     assert.ok(prompt.includes(skill.hash), `catalogue is missing the hash of ${skill.id}`);
-    assert.ok(prompt.includes(skill.descricao), `catalogue is missing the descricao of ${skill.id}`);
+    assert.ok(prompt.includes(skill.description), `catalogue is missing the descricao of ${skill.id}`);
     assert.ok(
-      prompt.includes(JSON.stringify(skill.entrada)),
+      prompt.includes(JSON.stringify(skill.input)),
       `catalogue is missing the entrada of ${skill.id}`,
     );
     assert.ok(
-      prompt.includes(JSON.stringify(skill.saida)),
+      prompt.includes(JSON.stringify(skill.output)),
       `catalogue is missing the saida of ${skill.id}`,
     );
     assert.ok(
@@ -139,7 +139,7 @@ test('AT2 — the prompt states the output contract: one `grafo-proposto` block'
   const prompt = buildSynthesisPrompt(DECLARATION, 'artigo-revisado', SIMILAR, SKILLS);
 
   assert.ok(prompt.includes('```grafo-proposto'), 'the fence is named literally');
-  assert.ok(prompt.includes('linhagem'), 'the document is a base lineage (D13: variante is a fork)');
+  assert.ok(prompt.includes('lineage'), 'the document is a base lineage (D13: variante is a fork)');
   assert.ok(prompt.includes('skill_ref'), 'the nodes pin capabilities');
   assert.match(
     prompt,
@@ -168,7 +168,7 @@ test('AT2 — an empty catalogue is stated, not silently rendered as nothing', a
  * ------------------------------------------------------------------------ */
 
 /**
- * A validator for ONE `contrato.verificacoes` entry, compiled from the real
+ * A validator for ONE `contrato.checks` entry, compiled from the real
  * `schema/grafo.schema.json`.
  *
  * Reaching for the file instead of restating the rule here is the whole point.
@@ -180,13 +180,13 @@ test('AT2 — an empty catalogue is stated, not silently rendered as nothing', a
 function verificationValidator(): ValidateFunction {
   const schema = JSON.parse(readFileSync(GRAPH_SCHEMA_PATH, 'utf8')) as { $id: string };
   // `validateFormats: false` because the whole document goes in — `metadata`
-  // declares `format: "date"` — while what comes out is one `verificacao`, which
+  // declares `format: "date"` — while what comes out is one check, which
   // declares no format at all. Loading `ajv-formats` for a subschema that does
   // not use it would be ceremony.
   const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: false });
   ajv.addSchema(schema);
-  const validate = ajv.getSchema(`${schema.$id}#/$defs/verificacao`);
-  assert.ok(validate, 'schema/grafo.schema.json no longer defines $defs/verificacao');
+  const validate = ajv.getSchema(`${schema.$id}#/$defs/check`);
+  assert.ok(validate, 'schema/grafo.schema.json no longer defines $defs/check');
   return validate;
 }
 
@@ -194,13 +194,13 @@ test('t138 — the hard rules say every node carries at least one verificação'
   const { SYNTHESIS_INSTRUCTIONS } = await loadPrompt();
 
   assert.ok(
-    SYNTHESIS_INSTRUCTIONS.includes('verificacoes'),
+    SYNTHESIS_INSTRUCTIONS.includes('`checks`'),
     'the field is named literally, the way it is spelled in the document',
   );
   assert.match(
     SYNTHESIS_INSTRUCTIONS,
     new RegExp('pelo menos uma|ao menos uma|nunca vazia|nunca fica vazia', 'i'),
-    'an empty `verificacoes` has to be forbidden out loud, not left to be inferred',
+    'an empty `contract.checks` has to be forbidden out loud, not left to be inferred',
   );
   assert.ok(
     SYNTHESIS_INSTRUCTIONS.includes('no_com_contrato'),
@@ -214,13 +214,13 @@ test('t138 — the prompt states the rule and shows checks the real schema accep
 
   assert.match(
     buildSynthesisPrompt(DECLARATION, 'artigo-revisado', [], SKILLS),
-    new RegExp('verificacoes[^\\n]*(pelo menos uma|ao menos uma|nunca vazia)', 'i'),
-    'the output contract repeats the rule where it describes `contrato`',
+    new RegExp('checks[^\\n]*(pelo menos uma|ao menos uma|nunca vazia)', 'i'),
+    'the output contract repeats the rule where it describes `contract`',
   );
 
-  const kinds = VERIFICATION_EXAMPLES.map((example) => example.tipo);
-  assert.ok(kinds.includes('deterministico'), 'the deterministic shape is shown');
-  assert.ok(kinds.includes('agentico'), 'and the agentic one, or half the format is untaught');
+  const kinds = VERIFICATION_EXAMPLES.map((example) => example.type);
+  assert.ok(kinds.includes('deterministic'), 'the deterministic shape is shown');
+  assert.ok(kinds.includes('agentic'), 'and the agentic one, or half the format is untaught');
 
   for (const example of VERIFICATION_EXAMPLES) {
     assert.ok(
@@ -242,14 +242,14 @@ test('t138 — the prompt states the rule and shows checks the real schema accep
   }
 });
 
-test('t138 — the prompt keeps the catalogue `checks` apart from `contrato.verificacoes`', async () => {
+test('t138 — the prompt keeps the catalogue `checks` apart from `contrato.checks`', async () => {
   const { buildSynthesisPrompt } = await loadPrompt();
   const validate = verificationValidator();
 
   // The trap is real, and this asserts it rather than assuming it: the two
-  // formats disagree on `evidencia_obrigatoria` — a list of artifacts in the
+  // formats disagree on `required_evidence` — a list of artifacts in the
   // skill manifest, the literal `true` in the graph document — so the catalogue
-  // check printed right above `verificacoes` is refused verbatim.
+  // check printed right above `contract.checks` is refused verbatim.
   const catalogueCheck = SKILLS[1].checks[0];
   assert.ok(
     !validate(catalogueCheck),

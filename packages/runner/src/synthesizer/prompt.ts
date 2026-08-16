@@ -33,11 +33,13 @@
  * format for itself. A rule that lives only in the schema is a rule the session
  * cannot follow. That is how t138 was found — a draft that obeyed every word of
  * this text still came back `grafo_invalido` / `soundness no_com_contrato`,
- * because `contrato.verificacoes` has `minItems: 1` and nothing here said so.
+ * because `contract.checks` has `minItems: 1` and nothing here said so.
  *
- * English per D18; the prompt's own text is Portuguese, like every other agent
- * instruction in the repository, because the domain vocabulary the session has
- * to produce (`classe`, `linhagem`, `nos`, `portao`) is Portuguese.
+ * English per D18; the prompt's own PROSE is Portuguese, like every other agent
+ * instruction in the repository. The key names quoted inside it are not prose —
+ * they are the format the session has to emit, and they moved to English with
+ * t178. A prompt still teaching `nos` would produce documents the import gate
+ * refuses, which is the same failure mode t138 was.
  */
 
 import type { RegisteredSkill } from './control-plane-client.ts';
@@ -46,9 +48,9 @@ import type { RegisteredSkill } from './control-plane-client.ts';
 export interface SimilarClass {
   /** The class id, which is also the lineage id (D8). */
   classe: string;
-  /** `metadata.nome` of its current version. */
+  /** `metadata.name` of its current version. */
   nome: string;
-  /** `metadata.descricao` of its current version; empty when it declares none. */
+  /** `metadata.description` of its current version; empty when it declares none. */
   descricao: string;
   /** Jaccard score in `[0, 1]`. */
   score: number;
@@ -58,7 +60,7 @@ export interface SimilarClass {
 export const PROPOSAL_FENCE = 'grafo-proposto';
 
 /**
- * One entry of `contrato.verificacoes`, in the GRAPH document's format.
+ * One entry of `contract.checks`, in the GRAPH document's format.
  *
  * The open drawer mirrors `domain/graph.ts`: the format has not frozen (rule of
  * two consumers) and this type exists to be rendered, not to constrain.
@@ -66,12 +68,12 @@ export const PROPOSAL_FENCE = 'grafo-proposto';
 export type VerificationExample = Readonly<Record<string, unknown>>;
 
 /**
- * The two shapes a `verificacoes` entry can take, shown to the session verbatim.
+ * The two shapes a `contract.checks` entry can take, shown to the session verbatim.
  *
  * Examples and not prose because of what sits directly above them in the prompt:
  * the skill catalogue, printing each skill's `checks` — and a manifest's check
- * is NOT a graph document's `verificacao`. They disagree on
- * `evidencia_obrigatoria`, which is a non-empty list of the artifacts the
+ * is NOT a graph document's check. They disagree on
+ * `required_evidence`, which is a non-empty list of the artifacts the
  * verdict has to cite in `especificacoes/formatos/manifesto-skill.schema.json`
  * and the literal `true` in `schema/grafo.schema.json`. Tell a session "every
  * node needs a check" with only manifest-shaped checks in front of it and it
@@ -83,15 +85,15 @@ export type VerificationExample = Readonly<Record<string, unknown>>;
  */
 export const VERIFICATION_EXAMPLES: readonly VerificationExample[] = Object.freeze([
   Object.freeze({
-    tipo: 'deterministico',
-    comando: 'npm test',
-    descricao: 'O que este check prova.',
+    type: 'deterministic',
+    command: 'npm test',
+    description: 'O que este check prova.',
   }),
   Object.freeze({
-    tipo: 'agentico',
-    instrucao: 'Pergunta respondível sobre o artefato, conferida com evidência própria.',
-    evidencia_obrigatoria: true,
-    descricao: 'O que este check prova.',
+    type: 'agentic',
+    instruction: 'Pergunta respondível sobre o artefato, conferida com evidência própria.',
+    required_evidence: true,
+    description: 'O que este check prova.',
   }),
 ]);
 
@@ -115,19 +117,19 @@ export const SYNTHESIS_INSTRUCTIONS = [
   '',
   'Regras duras:',
   '',
-  '- a `classe` do documento é a que o usuário deu, literalmente. Você não nomeia',
-  '  classe, não corrige o nome e não sugere outro;',
-  '- `linhagem` é sempre `{"tipo": "base"}`: variante nasce de fork com proposta,',
+  '- a `problem_class` do documento é a que o usuário deu, literalmente. Você não',
+  '  nomeia classe, não corrige o nome e não sugere outro;',
+  '- `lineage` é sempre `{"type": "base"}`: variante nasce de fork com proposta,',
   '  e não é isto aqui;',
-  '- todo nó carrega `skill_ref` copiado LITERALMENTE do catálogo (id, versao e',
+  '- todo nó carrega `skill_ref` copiado LITERALMENTE do catálogo (id, version e',
   '  hash juntos, do mesmo item). Nunca invente id, versão ou hash: o pin é o que',
   '  impede troca silenciosa de capacidade por baixo de um grafo já validado;',
-  '- todo nó precisa de aresta de entrada e de saída, `no_inicial` precisa existir',
-  '  em `nos`, e `nos_finais` também — um grafo que não alcança o fim é reprovado',
-  '  no portão de soundness antes de qualquer humano ler;',
-  '- toda aresta tem `condicao`: o literal `"sempre"` quando a origem tem saída',
+  '- todo nó precisa de aresta de entrada e de saída, `initial_node` precisa',
+  '  existir em `nodes`, e `final_nodes` também — um grafo que não alcança o fim é',
+  '  reprovado no portão de soundness antes de qualquer humano ler;',
+  '- toda aresta tem `condition`: o literal `"sempre"` quando a origem tem saída',
   '  única, e o rótulo do resultado quando tem mais de uma;',
-  '- o `contrato` de todo nó traz `verificacoes` com PELO MENOS UMA verificação, e',
+  '- o `contract` de todo nó traz `checks` com PELO MENOS UMA verificação, e',
   '  isso vale igual para portão, que é nó como outro qualquer. Lista vazia é',
   '  reprovada na regra de soundness `no_com_contrato`, no mesmo portão de',
   '  importação — e onde você não consegue escrever a verificação de uma etapa,',
@@ -140,11 +142,11 @@ function renderSkill(skill: RegisteredSkill): string {
   return [
     `### \`${skill.id}\``,
     '',
-    `- papel: ${skill.papel}`,
-    `- descricao: ${skill.descricao}`,
-    `- skill_ref (copie literalmente): {"id": ${JSON.stringify(skill.id)}, "versao": ${JSON.stringify(skill.versao)}, "hash": ${JSON.stringify(skill.hash)}}`,
-    `- entrada: ${JSON.stringify(skill.entrada)}`,
-    `- saida: ${JSON.stringify(skill.saida)}`,
+    `- role: ${skill.role}`,
+    `- description: ${skill.description}`,
+    `- skill_ref (copie literalmente): {"id": ${JSON.stringify(skill.id)}, "version": ${JSON.stringify(skill.version)}, "hash": ${JSON.stringify(skill.hash)}}`,
+    `- input: ${JSON.stringify(skill.input)}`,
+    `- output: ${JSON.stringify(skill.output)}`,
     `- checks: ${JSON.stringify(skill.checks)}`,
   ].join('\n');
 }
@@ -226,31 +228,31 @@ export function buildSynthesisPrompt(
     'O documento é um JSON no formato de `schema/grafo.schema.json`, com as sete',
     'chaves obrigatórias e nada além delas:',
     '',
-    `- \`classe\`: ${JSON.stringify(className)};`,
-    '- `linhagem`: `{"tipo": "base"}`;',
-    '- `metadata`: com `nome`, `descricao` e `versao_schema` `"1.0.0"`;',
-    '- `nos`: cada um com `id`, `papel`, `tipo_no` (`trabalho` ou `portao`),',
-    '  `skill_ref` e `contrato` (`entrada_schema`, `saida_schema`, `verificacoes`);',
-    '- `arestas`: cada uma com `de`, `para` e `condicao`;',
-    '- `no_inicial` e `nos_finais`.',
+    `- \`problem_class\`: ${JSON.stringify(className)};`,
+    '- `lineage`: `{"type": "base"}`;',
+    '- `metadata`: com `name`, `description` e `schema_version` `"1.0.0"`;',
+    '- `nodes`: cada um com `id`, `role`, `node_type` (`work` ou `gate`),',
+    '  `skill_ref` e `contract` (`input_schema`, `output_schema`, `checks`);',
+    '- `edges`: cada uma com `from`, `to` e `condition`;',
+    '- `initial_node` e `final_nodes`.',
     '',
     'O `skill_ref` de cada nó é copiado literalmente do catálogo acima:',
     'nunca invente id, versão nem hash — um pin inventado é reprovado no portão',
     'de importação e joga fora a edição de quem vier depois de você.',
     '',
-    '## `verificacoes`: pelo menos uma por nó',
+    '## `contract.checks`: pelo menos uma por nó',
     '',
-    '`contrato.verificacoes` é uma lista com PELO MENOS UMA verificação. Lista',
+    '`contract.checks` é uma lista com PELO MENOS UMA verificação. Lista',
     'vazia é reprovada na importação (`no_com_contrato`), e o grafo volta para',
     'quem já tinha editado ele. Cada item é de um destes dois formatos, e nada',
     'além destes campos:',
     '',
     ...VERIFICATION_EXAMPLES.map((example) => `- \`${JSON.stringify(example)}\``),
     '',
-    'Não copie os `checks` do catálogo para dentro de `verificacoes`: eles estão no',
-    'formato do manifesto de skill, que é outro documento. A diferença que reprova',
-    'é `evidencia_obrigatoria` — lista de artefatos no manifesto, o literal `true`',
-    'aqui. Leia os `checks` para saber COMO a capacidade se confere e reescreva a',
-    'verificação nos dois formatos acima.',
+    'Não copie os `checks` do catálogo para dentro de `contract.checks`: eles',
+    'estão no formato do manifesto de skill, que é outro documento. A diferença',
+    'que reprova é `required_evidence` — lista de artefatos no manifesto, o',
+    'literal `true` aqui. Leia os `checks` do catálogo para saber COMO a',
+    'capacidade se confere e reescreva a verificação nos dois formatos acima.',
   ].join('\n');
 }

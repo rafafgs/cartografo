@@ -38,26 +38,26 @@ test('AT6 — one readable line per operation, one per type of the §3 vocabular
   const operations = [
     {
       tipo: 'adicionar_no',
-      no: { id: 'red_team', tipo_no: 'portao', papel: 'conferir', skill_ref: 'red-team@1' },
+      no: { id: 'red_team', node_type: 'gate', role: 'conferir', skill_ref: 'red-team@1' },
     },
     { tipo: 'remover_no', no_id: 'revisar_manual' },
-    { tipo: 'adicionar_aresta', aresta: { de: 'testar', para: 'red_team', condicao: 'aprovado' } },
-    { tipo: 'remover_aresta', aresta: { de: 'testar', para: 'implantar' } },
+    { tipo: 'adicionar_aresta', aresta: { from: 'testar', to: 'red_team', condition: 'aprovado' } },
+    { tipo: 'remover_aresta', aresta: { from: 'testar', to: 'implantar' } },
     {
       tipo: 'alterar_campo_no',
       no_id: 'implementar',
-      campo: 'papel',
+      campo: 'role',
       de: 'fazer',
       para: 'conferir',
     },
   ];
 
   assert.deepEqual(renderOperations(operations), [
-    '+ nó "red_team" (tipo portao)',
+    '+ nó "red_team" (tipo gate)',
     '- nó "revisar_manual"',
     '+ aresta testar → red_team (condição: aprovado)',
     '- aresta testar → implantar',
-    '~ nó "implementar": campo "papel" de "fazer" para "conferir"',
+    '~ nó "implementar": campo "role" de "fazer" para "conferir"',
   ]);
 });
 
@@ -68,7 +68,7 @@ test('AT6 — an operation the screen does not know still renders as prose, neve
     { tipo: 'mover_no', no_id: 'implementar' },
     'isto não é uma operação',
     null,
-    { tipo: 'adicionar_aresta', aresta: { de: 'a', para: 'b' } },
+    { tipo: 'adicionar_aresta', aresta: { from: 'a', to: 'b' } },
   ]);
 
   assert.deepEqual(lines, [

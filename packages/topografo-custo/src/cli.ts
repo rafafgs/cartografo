@@ -156,8 +156,8 @@ function comoNumero(nome: string, bruto: string | undefined): number | undefined
 
 /** A descrição atual de um nó dentro de um snapshot já buscado. */
 function descricaoNoSnapshot(versao: GrafoVersao | undefined, noId: string): string {
-  const no = versao?.snapshot?.nos?.find((candidato) => candidato.id === noId);
-  return no?.descricao ?? '';
+  const no = versao?.snapshot?.nodes?.find((candidato) => candidato.id === noId);
+  return no?.description ?? '';
 }
 
 /**

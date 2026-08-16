@@ -84,7 +84,7 @@ const EXPECTED_INVERSE: Record<string, string> = {
 };
 
 /** Node fields `alterar_campo_no` may swap. */
-const MUTABLE_FIELDS = ['papel', 'descricao', 'skill_ref', 'contrato'];
+const MUTABLE_FIELDS = ['role', 'description', 'skill_ref', 'contract'];
 
 /** The evidence a flow proposal carries into the book. */
 export interface FlowEvidence {
@@ -241,15 +241,15 @@ function checkBody(type: string, body: PlainObject, role: string): string[] {
       break;
     case 'adicionar_aresta':
     case 'remover_aresta':
-      if (!isObject(edge) || !isFilledText(edge.de) || !isFilledText(edge.para)) {
-        problems.push(`${role} "${type}": "aresta" has to have "de" and "para"`);
+      if (!isObject(edge) || !isFilledText(edge.from) || !isFilledText(edge.to)) {
+        problems.push(`${role} "${type}": "aresta" has to have "from" and "to"`);
         break;
       }
-      // `condicao` is only demanded of the edge that ENTERS the document, and
+      // `condition` is only demanded of the edge that ENTERS the document, and
       // as a string (even an empty one): a missing label is the soundness
       // gate's rejection, with the name of the rule, not a generic 400.
-      if (type === 'adicionar_aresta' && typeof edge.condicao !== 'string') {
-        problems.push(`${role} "${type}": "aresta.condicao" has to be a string`);
+      if (type === 'adicionar_aresta' && typeof edge.condition !== 'string') {
+        problems.push(`${role} "${type}": "aresta.condition" has to be a string`);
       }
       break;
     case 'alterar_campo_no':
@@ -277,7 +277,7 @@ function checkBody(type: string, body: PlainObject, role: string): string[] {
 /** The inverse has to undo THE SAME target — another node's inverse is not one. */
 function checkInverseTarget(type: string, operation: PlainObject, inverse: PlainObject): string[] {
   const ends = (value: unknown): string =>
-    isObject(value) ? `${String(value.de)}→${String(value.para)}` : 'invalid';
+    isObject(value) ? `${String(value.from)}→${String(value.to)}` : 'invalid';
 
   switch (type) {
     case 'adicionar_no': {
@@ -395,12 +395,12 @@ export const INSTRUCTIONS = [
   '',
   '- `adicionar_no`    {"tipo","no",     "inversa": {"tipo":"remover_no","no_id"}}',
   '- `remover_no`      {"tipo","no_id",  "inversa": {"tipo":"adicionar_no","no"}}',
-  '- `adicionar_aresta` {"tipo","aresta":{"de","para","condicao"}, "inversa":{"tipo":"remover_aresta","aresta":{"de","para"}}}',
-  '- `remover_aresta`  {"tipo","aresta":{"de","para"}, "inversa":{"tipo":"adicionar_aresta","aresta":{"de","para","condicao"}}}',
+  '- `adicionar_aresta` {"tipo","aresta":{"from","to","condition"}, "inversa":{"tipo":"remover_aresta","aresta":{"from","to"}}}',
+  '- `remover_aresta`  {"tipo","aresta":{"from","to"}, "inversa":{"tipo":"adicionar_aresta","aresta":{"from","to","condition"}}}',
   '- `alterar_campo_no` {"tipo","no_id","campo","de","para", "inversa": a mesma com de/para trocados}',
   '',
-  '`campo` só pode ser papel, descricao, skill_ref ou contrato. Trocar `id` ou',
-  '`tipo_no` não é troca de campo, e não existe operação para isso aqui.',
+  '`campo` só pode ser role, description, skill_ref ou contract. Trocar `id` ou',
+  '`node_type` não é troca de campo, e não existe operação para isso aqui.',
   '',
   'Regras duras:',
   '',
@@ -419,8 +419,8 @@ export const INSTRUCTIONS = [
  * to a session, not code.
  */
 export function buildPrompt(version: VersaoDeGrafo, evidence: FlowEvidence): string {
-  const nodes = version.snapshot.nos ?? [];
-  const edges = version.snapshot.arestas ?? [];
+  const nodes = version.snapshot.nodes ?? [];
+  const edges = version.snapshot.edges ?? [];
 
   const parts = [
     `# Grafo \`${version.grafo_id}\`, versão \`${version.id}\``,
@@ -428,17 +428,17 @@ export function buildPrompt(version: VersaoDeGrafo, evidence: FlowEvidence): str
     '## Nós',
     '',
     ...nodes.map((node) => {
-      const role = typeof node.papel === 'string' ? node.papel : '—';
-      const nodeType = typeof node.tipo_no === 'string' ? node.tipo_no : '—';
-      const description = typeof node.descricao === 'string' ? node.descricao : '';
-      return `- \`${node.id}\` (${nodeType}, papel: ${role}) — ${description}`;
+      const role = typeof node.role === 'string' ? node.role : '—';
+      const nodeType = typeof node.node_type === 'string' ? node.node_type : '—';
+      const description = typeof node.description === 'string' ? node.description : '';
+      return `- \`${node.id}\` (${nodeType}, role: ${role}) — ${description}`;
     }),
     '',
     '## Arestas',
     '',
     ...edges.map(
       (edge) =>
-        `- \`${edge.de}\` → \`${edge.para}\` quando: ${edge.condicao ?? '(sem condição)'}`,
+        `- \`${edge.from}\` → \`${edge.to}\` quando: ${edge.condition ?? '(sem condição)'}`,
     ),
     '',
     `## Medição da execução ${evidence.execucao_id}`,
@@ -611,7 +611,7 @@ export async function proposeFlowImprovement(
   const events = await options.client.listarEventosDaExecucao(options.executionId);
   log(`execution ${options.executionId}: ${events.length} events under version ${versionId}`);
 
-  const nodeIds = (version.snapshot.nos ?? []).map((node) => node.id);
+  const nodeIds = (version.snapshot.nodes ?? []).map((node) => node.id);
   const metrics = calculateFlowMetrics(events, nodeIds);
 
   const bottleneck = metrics.gargalo;

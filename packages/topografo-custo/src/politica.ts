@@ -16,7 +16,7 @@
  * qualquer um dos dois está fora desta ficha por critério de aceite — o ponto a
  * provar é que um segundo topógrafo cabe na API que já existe, sem alterar
  * formato compartilhado. Sobra a única mutação que o vocabulário atual permite
- * sobre um nó sem inventar campo: `alterar_campo_no` em `descricao`, com a
+ * sobre um nó sem inventar campo: `alterar_campo_no` em `description`, com a
  * recomendação em texto. Os números de verdade vão em `evidencia` e
  * `metrica_esperada`, que são JSON livre por design (D15).
  *
@@ -45,7 +45,7 @@ export const TIER_MINIMO_NOS_PADRAO = 3;
 export const MARCA = '[cost-surveyor]';
 
 /**
- * `alterar_campo_no` sobre `descricao`, com a inversa que a desfaz.
+ * `alterar_campo_no` sobre `description`, com a inversa que a desfaz.
  *
  * Declarado aqui em vez de importado de `packages/core/src/dominio/operacoes.ts`
  * de propósito: o topógrafo é cliente comum da API pública e não depende do
@@ -56,13 +56,13 @@ export const MARCA = '[cost-surveyor]';
 export interface AlterarDescricaoDoNo {
   tipo: 'alterar_campo_no';
   no_id: string;
-  campo: 'descricao';
+  campo: 'description';
   de: string;
   para: string;
   inversa: {
     tipo: 'alterar_campo_no';
     no_id: string;
-    campo: 'descricao';
+    campo: 'description';
     de: string;
     para: string;
   };
@@ -140,13 +140,13 @@ function operacaoDeRecomendacao(
   return {
     tipo: 'alterar_campo_no',
     no_id: noId,
-    campo: 'descricao',
+    campo: 'description',
     de: descricaoAtual,
     para,
     inversa: {
       tipo: 'alterar_campo_no',
       no_id: noId,
-      campo: 'descricao',
+      campo: 'description',
       de: para,
       para: descricaoAtual,
     },

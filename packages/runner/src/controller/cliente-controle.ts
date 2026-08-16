@@ -63,13 +63,13 @@ export interface MetricaPorVersao {
 /**
  * O documento de grafo dentro de uma versão.
  *
- * Só `nos` e `arestas` são nomeados: é o que o topógrafo lê para montar o
+ * Só `nodes` e `edges` são nomeados: é o que o topógrafo lê para montar o
  * prompt. O resto do documento chega inteiro e passa direto — o formato é do
  * `schema/grafo.schema.json`, não deste cliente.
  */
 export interface SnapshotDeGrafo {
-  nos?: Array<{ id: string; [chave: string]: unknown }>;
-  arestas?: Array<{ de: string; para: string; condicao?: string; [chave: string]: unknown }>;
+  nodes?: Array<{ id: string; [chave: string]: unknown }>;
+  edges?: Array<{ from: string; to: string; condition?: string; [chave: string]: unknown }>;
   [chave: string]: unknown;
 }
 

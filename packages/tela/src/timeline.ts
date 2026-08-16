@@ -40,7 +40,7 @@
  * **A finished job** is the control plane's `concluido` AND nothing open AND no
  * block (t152). The flag is the real terminal signal — the job's current node is
  * a final node of its own graph version — and it comes READ from
- * `GET /v1/jobs/:id`, because `nos_finais` lives in the graph snapshot and the
+ * `GET /v1/jobs/:id`, because `final_nodes` lives in the graph snapshot and the
  * screen has no way to reach it. The other two conditions are what the screen
  * does know and the projection does not: an open session or a pending question
  * keeps a job open however terminal its node is. Until t152 the flag did not

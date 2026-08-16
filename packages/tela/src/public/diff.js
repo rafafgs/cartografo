@@ -47,7 +47,7 @@ function asId(value) {
 /**
  * A field value in one short piece of text.
  *
- * Strings come quoted, so an empty one is visible; objects (a whole `contrato`)
+ * Strings come quoted, so an empty one is visible; objects (a whole `contract`)
  * come as compact JSON, truncated — that is the VALUE being changed, not the
  * operation, and hiding it entirely would make `alterar_campo_no` unjudgeable.
  *
@@ -77,9 +77,9 @@ function describeValue(value) {
  * @returns {string} Readable text.
  */
 function describeEdge(edge) {
-  const source = isObject(edge) ? asId(edge.de) : MISSING_ID;
-  const target = isObject(edge) ? asId(edge.para) : MISSING_ID;
-  const condition = isObject(edge) ? edge.condicao : undefined;
+  const source = isObject(edge) ? asId(edge.from) : MISSING_ID;
+  const target = isObject(edge) ? asId(edge.to) : MISSING_ID;
+  const condition = isObject(edge) ? edge.condition : undefined;
   const suffix =
     typeof condition === 'string' && condition.trim() !== '' ? ` (condição: ${condition})` : '';
   return `${source} → ${target}${suffix}`;
@@ -98,7 +98,7 @@ function renderOperation(operation) {
     case 'adicionar_no': {
       const node = operation.no;
       const id = asId(isObject(node) ? node.id : undefined);
-      const kind = isObject(node) && typeof node.tipo_no === 'string' ? node.tipo_no : '';
+      const kind = isObject(node) && typeof node.node_type === 'string' ? node.node_type : '';
       return `+ nó "${id}"${kind === '' ? '' : ` (tipo ${kind})`}`;
     }
     case 'remover_no':

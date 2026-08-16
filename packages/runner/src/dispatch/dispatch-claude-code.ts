@@ -152,7 +152,7 @@ interface GraphNode {
 interface GraphVersion {
   grafo_versao: {
     id: string;
-    snapshot?: { nos?: GraphNode[] };
+    snapshot?: { nodes?: GraphNode[] };
   };
 }
 
@@ -513,7 +513,7 @@ export function createClaudeCodeDispatch(
       `/v1/graph-versions/${encodeURIComponent(versionId)}`,
       'GET',
     );
-    const node = version.snapshot?.nos?.find((candidate) => candidate.id === job.no_atual);
+    const node = version.snapshot?.nodes?.find((candidate) => candidate.id === job.no_atual);
     const declared = node?.engine;
     // Free text at the schema level on purpose (Out of Scope: no closed enum),
     // so "declared" means a non-empty string and nothing else.

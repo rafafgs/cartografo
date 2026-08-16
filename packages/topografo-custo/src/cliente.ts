@@ -7,7 +7,7 @@
  * |---|---|
  * | `GET /v1/sessions?execucao_id=` | tokens (`uso`) e tempo (`aberta_em`/`finalizada_em`) por `no_id` |
  * | `GET /v1/jobs?execucao_id=` | o mapa `trabalho_id -> grafo_versao_id` |
- * | `GET /v1/graph-versions/:id` | a `descricao` atual do nó, que vira o `de` da operação |
+ * | `GET /v1/graph-versions/:id` | a `description` atual do nó, que vira o `de` da operação |
  * | `POST /v1/proposals` | a candidata, como proposta pendente |
  *
  * O CAMINHO é inglês (D18, t127); as CHAVES do corpo seguem em português
@@ -39,14 +39,14 @@ export interface TrabalhoObservado {
 /** Um nó do snapshot, no subconjunto que a lente lê. */
 export interface NoDoSnapshot {
   id: string;
-  descricao?: string;
+  description?: string;
 }
 
 /** Uma versão de grafo com o snapshot inteiro, como a rota a devolve. */
 export interface GrafoVersao {
   id: string;
   grafo_id: string;
-  snapshot: { nos?: NoDoSnapshot[] };
+  snapshot: { nodes?: NoDoSnapshot[] };
 }
 
 /** Corpo de `POST /v1/proposals`. As cinco chaves que a rota exige. */
@@ -187,7 +187,7 @@ export async function buscarTrabalhos(
 }
 
 /**
- * O snapshot de uma versão, para ler a `descricao` atual dos nós.
+ * O snapshot de uma versão, para ler a `description` atual dos nós.
  *
  * @param urlBase URL base do control plane.
  * @param id Id da versão (`sha256:...`; os dois-pontos entram escapados).

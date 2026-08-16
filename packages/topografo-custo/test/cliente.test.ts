@@ -94,13 +94,13 @@ test('AT8 — criarProposta faz POST /v1/proposals com as cinco chaves do contra
       {
         tipo: 'alterar_campo_no' as const,
         no_id: 'redigir',
-        campo: 'descricao' as const,
+        campo: 'description' as const,
         de: 'antes',
         para: 'depois',
         inversa: {
           tipo: 'alterar_campo_no' as const,
           no_id: 'redigir',
-          campo: 'descricao' as const,
+          campo: 'description' as const,
           de: 'depois',
           para: 'antes',
         },
@@ -131,7 +131,7 @@ test('AT8 — buscarGrafoVersao lê o snapshot pela rota pública de versão', a
   const { buscarGrafoVersao } = await carregar();
 
   const { chamadas, buscar } = espiao({
-    grafo_versao: { id: 'sha256:v1', grafo_id: 'nota-curta', snapshot: { nos: [] } },
+    grafo_versao: { id: 'sha256:v1', grafo_id: 'nota-curta', snapshot: { nodes: [] } },
   });
   const versao = await buscarGrafoVersao('http://127.0.0.1:4317', 'sha256:v1', buscar);
 

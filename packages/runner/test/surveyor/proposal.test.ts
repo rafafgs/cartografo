@@ -398,13 +398,13 @@ const VALID_OPERATIONS = [
   {
     tipo: 'alterar_campo_no',
     no_id: 'revisar',
-    campo: 'descricao',
+    campo: 'description',
     de: 'Confere a nota contra o tema declarado e encerra a travessia.',
     para: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
     inversa: {
       tipo: 'alterar_campo_no',
       no_id: 'revisar',
-      campo: 'descricao',
+      campo: 'description',
       de: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
       para: 'Confere a nota contra o tema declarado e encerra a travessia.',
     },

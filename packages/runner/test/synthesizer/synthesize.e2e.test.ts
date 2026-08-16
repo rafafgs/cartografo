@@ -163,21 +163,21 @@ function scratch(t: TestHook, label: string): string {
 function proposedGraph(): Record<string, unknown> {
   const pin = { id: 'cartografo/redigir-nota', versao: '1.0.0', hash: `sha256:${'a'.repeat(64)}` };
   const contract = {
-    entrada_schema: {},
-    saida_schema: {},
-    verificacoes: [{ tipo: 'deterministico', comando: 'npm test', descricao: 'Prova.' }],
+    input_schema: {},
+    output_schema: {},
+    checks: [{ type: 'deterministic', comando: 'npm test', descricao: 'Prova.' }],
   };
   return {
-    classe: CLASS_NAME,
-    linhagem: { tipo: 'base' },
-    metadata: { nome: CLASS_NAME, descricao: 'Redige e revisa.', versao_schema: '1.0.0' },
-    nos: [
-      { id: 'redigir', papel: 'redator', tipo_no: 'trabalho', skill_ref: pin, contrato: contract },
-      { id: 'revisar', papel: 'revisor', tipo_no: 'portao', skill_ref: pin, contrato: contract },
+    problem_class: CLASS_NAME,
+    lineage: { tipo: 'base' },
+    metadata: { nome: CLASS_NAME, descricao: 'Redige e revisa.', schema_version: '1.0.0' },
+    nodes: [
+      { id: 'redigir', papel: 'redator', node_type: 'work', skill_ref: pin, contrato: contract },
+      { id: 'revisar', papel: 'revisor', node_type: 'gate', skill_ref: pin, contrato: contract },
     ],
-    arestas: [{ de: 'redigir', para: 'revisar', condicao: 'sempre' }],
-    no_inicial: 'redigir',
-    nos_finais: ['revisar'],
+    edges: [{ from: 'redigir', to: 'revisar', condition: 'sempre' }],
+    initial_node: 'redigir',
+    final_nodes: ['revisar'],
   };
 }
 

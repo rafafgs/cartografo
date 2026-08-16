@@ -37,7 +37,7 @@ export interface Job {
    * The control plane's own answer to "did this job arrive?" (t152).
    *
    * Derived over there, out of the job's node and its graph version's
-   * `nos_finais` — data the screen has no way to reach, which is exactly why it
+   * `final_nodes` — data the screen has no way to reach, which is exactly why it
    * is read and not recomputed here.
    */
   concluido: boolean;

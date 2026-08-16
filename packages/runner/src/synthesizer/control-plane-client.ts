@@ -12,7 +12,7 @@
  * - `GET /v1/classes` (t101, `routes/graphs.ts`) — is this class already a
  *   registered lineage? FR2 refuses on a hit, before opening any session.
  * - `GET /v1/graph-versions/:id` (t101) — the current version of each class, so
- *   its `metadata.nome`/`metadata.descricao` can be scored against the
+ *   its `metadata.name`/`metadata.description` can be scored against the
  *   declaration. The class id alone is too short for a token heuristic with a
  *   3-character floor to say anything.
  * - `GET /v1/skills` (t117, `routes/skills.ts`) — the capability catalogue the
@@ -61,7 +61,7 @@ export interface GraphVersion {
  * A registered skill, as `GET /v1/skills` returns it (t117).
  *
  * The eight fields the prompt renders, out of the thirteen the route projects.
- * `instrucoes`, `permissoes`, `origem`, `pre_condicoes` and `registrado_em` are
+ * `instructions`, `permissions`, `origin`, `preconditions` and `registrado_em` are
  * deliberately absent: the session composes a topology out of contracts, and
  * shipping a skill's whole instruction text into the prompt would both bloat it
  * and hand imported prose to the composing agent — which is precisely the
@@ -69,12 +69,12 @@ export interface GraphVersion {
  */
 export interface RegisteredSkill {
   id: string;
-  versao: string;
+  version: string;
   hash: string;
-  papel: string;
-  descricao: string;
-  entrada: Record<string, unknown>;
-  saida: Record<string, unknown>;
+  role: string;
+  description: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
   checks: Record<string, unknown>[];
 }
 

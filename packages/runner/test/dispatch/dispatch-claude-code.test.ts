@@ -1138,13 +1138,13 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
 /** A node's contract, in the smallest shape the schema and soundness accept. */
 function contract(): Record<string, unknown> {
   return {
-    entrada_schema: { type: "object" },
-    saida_schema: { type: "object" },
-    verificacoes: [
+    input_schema: { type: "object" },
+    output_schema: { type: "object" },
+    checks: [
       {
         tipo: "deterministico",
-        comando: "test -s saida.md",
-        descricao: "A saída existe.",
+        command: "test -s saida.md",
+        description: "A saída existe.",
       },
     ],
   };
@@ -1154,15 +1154,15 @@ function contract(): Record<string, unknown> {
 function node(id: string, engine?: string): Record<string, unknown> {
   return {
     id,
-    papel: "desenvolvedor",
-    tipo_no: "trabalho",
-    descricao: `Nó ${id} da prova de roteamento por nó.`,
+    role: "desenvolvedor",
+    node_type: "trabalho",
+    description: `Nó ${id} da prova de roteamento por nó.`,
     skill_ref: {
       id: "cartografo/fazer",
-      versao: "1.0.0",
+      version: "1.0.0",
       hash: `sha256:${"0".repeat(64)}`,
     },
-    contrato: contract(),
+    contract: contract(),
     ...(engine === undefined ? {} : { engine }),
   };
 }
@@ -1177,20 +1177,20 @@ function twoEngineGraph(
   engine: string | undefined,
 ): Record<string, unknown> {
   return {
-    classe: className,
-    linhagem: { tipo: "base" },
+    problem_class: className,
+    lineage: { type: "base" },
     metadata: {
-      nome: "Prova de roteamento por nó",
-      descricao:
+      name: "Prova de roteamento por nó",
+      description:
         "Dois nós de trabalho numa aresta, um deles declarando engine.",
-      versao_schema: "1.0.0",
-      criado_em: "2026-08-15",
-      origem: "fixture da t141",
+      schema_version: "1.0.0",
+      created_at: "2026-08-15",
+      source: "fixture da t141",
     },
-    nos: [node("implementar"), node("revisar", engine)],
-    arestas: [{ de: "implementar", para: "revisar", condicao: "sempre" }],
-    no_inicial: "implementar",
-    nos_finais: ["revisar"],
+    nodes: [node("implementar"), node("revisar", engine)],
+    edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
+    initial_node: "implementar",
+    final_nodes: ["revisar"],
   };
 }
 

@@ -1,0 +1,395 @@
+/**
+ * Acceptance tests for the graph configuration screen (t170).
+ *
+ * Two real control planes come up here, and the reason is the whole first test:
+ * the editor is only worth having if it produces EXACTLY the version a scripted
+ * API client would have produced with the same operations. A graph version's id
+ * IS the hash of its snapshot, so the same document registered in two fresh
+ * databases yields the same id — which makes "drive the page on one, replay its
+ * own request body on the other, compare the two ids" a byte-for-byte parity
+ * proof rather than a plausibility argument.
+ *
+ * The page runs against a stub DOM (`fake-dom.ts`) for the same reason
+ * `inbox-reason-field.test.ts` does: this package ships native ES modules with
+ * no bundler, and a headless browser is a dependency the screen refuses to
+ * carry. Everything else is real — the screen's own server, its `/v1/*` proxy,
+ * and the control plane as a child process that this package can only reach
+ * over HTTP (D11).
+ *
+ * The wire keys (`grafo_id`, `versao_alvo`, `operacoes`, `grafo_versao`,
+ * `proposta`) and every string the page shows stay in Portuguese: they are the
+ * control plane's format and the product's own surface (t133, exceptions 9
+ * and 10).
+ */
+
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+
+import { FakeDocument, FakeElement } from './fake-dom.ts';
+import { api, openPage, startControlPlane, startScreen, type RunningControlPlane } from './support.ts';
+
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+const PUBLIC_DIR = path.join(PACKAGE_ROOT, 'src', 'public');
+const HTML_PATH = path.join(PUBLIC_DIR, 'graph-editor.html');
+const SCRIPT_PATH = path.join(PUBLIC_DIR, 'graph-editor.js');
+const BASE_GRAPH_PATH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
+
+/** Fields the page may change on a node that already exists (t170, FR2). */
+const EDITABLE_FIELDS = [
+  'contract',
+  'description',
+  'role',
+  'skill_ref.hash',
+  'skill_ref.id',
+  'skill_ref.version',
+];
+
+/** Fields no client can swap on an existing node — only remove and re-add. */
+const FROZEN_FIELDS = ['engine', 'id', 'node_type'];
+
+/** The sentence the page owes next to those three (FR2). */
+const FROZEN_NOTE = 'remova e recrie o nó para mudar isso';
+
+/** Tags that take input from a person. */
+const CONTROL_TAGS = ['input', 'select', 'textarea'];
+
+/* --------------------------------------------------------------- the page */
+
+interface EditorHandle {
+  /** The initial `GET /v1/classes`, so a test can wait for the picker. */
+  ready: Promise<void>;
+  loadClasses: () => Promise<void>;
+  loadGraph: (graphId?: string) => Promise<void>;
+  save: () => Promise<void>;
+  state: () => { graphId: string | null; versionId: string | null; appliedVersionId: string | null };
+}
+
+/**
+ * `mount`, typed for this test.
+ *
+ * Written out instead of imported for the same reason `inbox-reason-field`
+ * writes it out: the page documents its first parameter as `Document`, a type
+ * this package's lib does not have, and the stub is what it is checked against.
+ */
+type Mount = (doc: FakeDocument, request: PageRequest) => EditorHandle;
+
+/** The HTTP client the page is given — the same shape as the browser's `fetch`. */
+type PageRequest = (
+  url: string,
+  options?: { method?: string; headers?: Record<string, string>; body?: string },
+) => Promise<Response>;
+
+async function loadMount(): Promise<Mount> {
+  assert.ok(existsSync(SCRIPT_PATH), 'artifact does not exist yet: packages/tela/src/public/graph-editor.js');
+  const module = (await import(new URL('../src/public/graph-editor.js', import.meta.url).href)) as {
+    mount: Mount;
+  };
+  return module.mount;
+}
+
+/**
+ * A stub document carrying exactly the ids the real page declares.
+ *
+ * Read out of `graph-editor.html` and never copied: an id renamed in the markup
+ * without being renamed in the script is precisely the failure this test would
+ * otherwise stop seeing.
+ */
+function pageDocument(): FakeDocument {
+  assert.ok(existsSync(HTML_PATH), 'artifact does not exist yet: packages/tela/src/public/graph-editor.html');
+  const ids = [...readFileSync(HTML_PATH, 'utf8').matchAll(/\bid="([^"]+)"/g)].map((hit) => hit[1]);
+  assert.ok(ids.length > 0, 'graph-editor.html declares no id for the script to mount into');
+  return new FakeDocument(ids);
+}
+
+/* ------------------------------------------------------------- the driving */
+
+/** One call the page made, as this test wants to read it back. */
+interface RecordedCall {
+  method: string;
+  url: string;
+  body: unknown;
+  /** Filled once the answer arrives; reading it never consumes the body. */
+  status: number;
+}
+
+/** A `fetch` pointed at the screen that keeps a log of what the page asked for. */
+function recordingFetch(screenUrl: string, log: RecordedCall[]): PageRequest {
+  return async (url, options) => {
+    const call: RecordedCall = {
+      method: options?.method ?? 'GET',
+      url,
+      body: options?.body === undefined ? undefined : (JSON.parse(options.body) as unknown),
+      status: 0,
+    };
+    log.push(call);
+
+    const response = await fetch(`${screenUrl}${url}`, {
+      method: options?.method,
+      headers: options?.headers,
+      body: options?.body,
+    });
+    call.status = response.status;
+    return response;
+  };
+}
+
+/** `POST /v1/proposals/7/approve` → `POST /v1/proposals/:id/approve`. */
+function shapeOf(call: RecordedCall): string {
+  return `${call.method} ${call.url.replace(/\/\d+(?=\/|$)/g, '/:id')}`;
+}
+
+/** Every card in a list, in the order the page drew them. */
+function cards(doc: FakeDocument, listId: string, marker: string): FakeElement[] {
+  return doc
+    .require(listId)
+    .descendants()
+    .filter((node) => node.getAttribute(marker) !== null);
+}
+
+/** The control of one field inside a card, or a readable failure. */
+function control(card: FakeElement, field: string): FakeElement {
+  const found = card.descendants().filter((node) => node.getAttribute('data-campo') === field);
+  assert.equal(found.length, 1, `expected exactly one control for "${field}", found ${found.length}`);
+  return found[0];
+}
+
+/** Fills a card the way a person would: one field at a time. */
+function fillCard(card: FakeElement, values: Record<string, string>): void {
+  for (const [field, value] of Object.entries(values)) control(card, field).typeText(value);
+}
+
+/* ------------------------------------------------------------- the fixture */
+
+/** The base graph both control planes register, byte for byte the same. */
+function baseGraph(): Record<string, unknown> {
+  return JSON.parse(readFileSync(BASE_GRAPH_PATH, 'utf8')) as Record<string, unknown>;
+}
+
+/** The node the tests add, as the person would type it into the new card. */
+const NEW_NODE = {
+  id: 'checar_fonte',
+  role: 'conferente',
+  node_type: 'work',
+  description: 'Confere as fontes citadas na nota.',
+  'skill_ref.id': 'cartografo/checar-fonte',
+  'skill_ref.version': '1.0.0',
+  'skill_ref.hash': `sha256:${'4'.repeat(64)}`,
+  contract: JSON.stringify({
+    input_schema: { type: 'object' },
+    output_schema: { type: 'object' },
+    checks: [{ type: 'deterministic', command: 'test -s fontes.md' }],
+  }),
+};
+
+/** The lineage envelope every graph route answers with. */
+interface LineageBody {
+  grafo: { id: string; versao_corrente_id: string | null };
+}
+
+/** `POST /v1/graphs` also hands back the first version it wrote. */
+interface RegisteredBody extends LineageBody {
+  grafo_versao: { id: string };
+}
+
+/** Registers the base graph and returns its lineage and first version. */
+async function registerBase(cp: RunningControlPlane): Promise<RegisteredBody> {
+  const created = await api<RegisteredBody>(cp, 'POST', '/v1/graphs', baseGraph());
+  assert.equal(created.status, 201, `POST /v1/graphs returned ${created.status}`);
+  return created.body;
+}
+
+/**
+ * Mounts the page over a control plane and loads the base graph into it.
+ *
+ * The picker is set and `loadGraph` is called with no argument on purpose: that
+ * is the path the button takes, so the test exercises the same read the page
+ * does rather than a shortcut past it.
+ */
+async function openEditor(
+  screenUrl: string,
+  graphId: string,
+): Promise<{ doc: FakeDocument; editor: EditorHandle; log: RecordedCall[] }> {
+  const mount = await loadMount();
+  const doc = pageDocument();
+  const log: RecordedCall[] = [];
+
+  const editor = mount(doc, recordingFetch(screenUrl, log));
+  await editor.ready;
+
+  doc.require('graph-picker').value = graphId;
+  await editor.loadGraph();
+
+  return { doc, editor, log };
+}
+
+/* ------------------------------------------------------------------ AC1 */
+
+test('AC1 — the page produces the same version the API would, through the same three calls', async (t) => {
+  const [driven, replayed] = await Promise.all([startControlPlane(t), startControlPlane(t)]);
+  const screen = await startScreen(t, driven);
+
+  const registered = await registerBase(driven);
+  await registerBase(replayed);
+
+  const { doc, editor, log } = await openEditor(screen.url, registered.grafo.id);
+
+  doc.require('add-node').click();
+  fillCard(cards(doc, 'node-list', 'data-node').at(-1) as FakeElement, NEW_NODE);
+
+  doc.require('add-edge').click();
+  fillCard(cards(doc, 'edge-list', 'data-edge').at(-1) as FakeElement, {
+    from: 'redigir',
+    to: 'checar_fonte',
+    condition: 'conferir_fontes',
+  });
+
+  doc.require('add-edge').click();
+  fillCard(cards(doc, 'edge-list', 'data-edge').at(-1) as FakeElement, {
+    from: 'checar_fonte',
+    to: 'revisar',
+    condition: 'sempre',
+  });
+
+  await editor.save();
+
+  // FR5: these three, in this order, and no other route. The page has no
+  // shortcut into the core, and this is where that stops being a promise.
+  assert.deepEqual(log.map(shapeOf), [
+    'GET /v1/classes',
+    `GET /v1/graphs/${registered.grafo.id}`,
+    `GET /v1/graph-versions/${registered.grafo.versao_corrente_id ?? ''}`,
+    'POST /v1/proposals',
+    'POST /v1/proposals/:id/approve',
+    'POST /v1/proposals/:id/apply',
+  ]);
+
+  const applied = editor.state().appliedVersionId;
+  assert.ok(typeof applied === 'string' && applied !== '', 'the page did not record a new version');
+  assert.ok(doc.require('result').textContent.includes(applied), 'the new version is not on the page (FR7)');
+
+  // The same body, sent by hand to a control plane the page never touched.
+  const sent = log.find((call) => shapeOf(call) === 'POST /v1/proposals');
+  assert.ok(sent !== undefined, 'the page never created a proposal');
+
+  const created = await api<{ proposta: { id: number } }>(replayed, 'POST', '/v1/proposals', sent.body);
+  assert.equal(created.status, 201, `POST /v1/proposals returned ${created.status}`);
+  const proposalId = created.body.proposta.id;
+
+  const approved = await api(replayed, 'POST', `/v1/proposals/${proposalId}/approve`, {});
+  assert.equal(approved.status, 200, `approve returned ${approved.status}`);
+
+  const done = await api<{ grafo_versao: { id: string } }>(
+    replayed,
+    'POST',
+    `/v1/proposals/${proposalId}/apply`,
+    {},
+  );
+  assert.equal(done.status, 200, `apply returned ${done.status}`);
+
+  assert.equal(
+    applied,
+    done.body.grafo_versao.id,
+    'the page and the raw API produced different versions of the same edit',
+  );
+});
+
+/* ------------------------------------------------------------------ AC2 */
+
+test('AC2 — a soundness failure is shown with its reason, and nothing is written', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const registered = await registerBase(cp);
+
+  const { doc, editor, log } = await openEditor(screen.url, registered.grafo.id);
+
+  // A node with no edge at all: unreachable from the initial node, and with no
+  // path to a final one. Two rules, one edit.
+  doc.require('add-node').click();
+  fillCard(cards(doc, 'node-list', 'data-node').at(-1) as FakeElement, NEW_NODE);
+
+  await editor.save();
+
+  const shown = doc.require('problems').textContent;
+  for (const word of ['alcançável', 'checar_fonte']) {
+    assert.ok(shown.includes(word), `the refusal does not mention "${word}": ${shown}`);
+  }
+  assert.ok(
+    shown.includes('final'),
+    `the refusal does not explain the termination rule: ${shown}`,
+  );
+
+  const last = log[log.length - 1];
+  assert.equal(shapeOf(last), 'POST /v1/proposals/:id/apply', 'the page stopped before the gate ran');
+  assert.equal(last.status, 422, 'the gate did not refuse the unsound document');
+
+  assert.equal(editor.state().appliedVersionId, null, 'the page recorded a version that was refused');
+
+  const after = await api<LineageBody>(cp, 'GET', `/v1/graphs/${registered.grafo.id}`);
+  assert.equal(after.status, 200);
+  assert.equal(
+    after.body.grafo.versao_corrente_id,
+    registered.grafo.versao_corrente_id,
+    'the lineage moved even though the gate refused',
+  );
+});
+
+/* ------------------------------------------------------------------ AC3 */
+
+test('AC3 — an existing node offers no control for `id`, `node_type` or `engine`', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+  const registered = await registerBase(cp);
+
+  const { doc } = await openEditor(screen.url, registered.grafo.id);
+
+  const existing = cards(doc, 'node-list', 'data-node').filter(
+    (card) => card.getAttribute('data-new') === null,
+  );
+  assert.equal(existing.length, 2, 'the page did not render the two nodes of the base graph');
+
+  for (const card of existing) {
+    const fields = card
+      .descendants()
+      .filter((node) => CONTROL_TAGS.includes(node.tagName))
+      .map((node) => node.getAttribute('data-campo'));
+
+    assert.deepEqual(
+      [...fields].sort(),
+      EDITABLE_FIELDS,
+      `node "${card.getAttribute('data-node')}" offers controls the operation vocabulary does not have`,
+    );
+    for (const frozen of FROZEN_FIELDS) {
+      assert.ok(!fields.includes(frozen), `node "${card.getAttribute('data-node')}" still edits "${frozen}"`);
+    }
+    assert.ok(
+      card.textContent.includes(FROZEN_NOTE),
+      `node "${card.getAttribute('data-node')}" does not say what to do instead: ${card.textContent}`,
+    );
+  }
+});
+
+/* ------------------------------------------------------------------ AC4 */
+
+test('AC4 — neither half of the screen is a dead end', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  for (const from of ['/quadro', '/']) {
+    const page = await openPage(screen, from);
+    assert.equal(page.status, 200, `${from} returned ${page.status}`);
+    assert.ok(
+      page.html.includes('href="/graph-editor.html"'),
+      `${from} does not link to the graph editor`,
+    );
+  }
+
+  const editor = await openPage(screen, '/graph-editor.html');
+  assert.equal(editor.status, 200, `/graph-editor.html returned ${editor.status}`);
+  assert.ok(
+    editor.html.includes('href="/quadro"') || editor.html.includes('href="/"'),
+    'the graph editor links back to neither half of the screen',
+  );
+});

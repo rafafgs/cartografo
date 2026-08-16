@@ -1,0 +1,256 @@
+/**
+ * Acceptance tests for the editor's operation diff (t170, FR4).
+ *
+ * The screen never invents a way to change a graph: D15 says a graph moves by
+ * PROPOSAL, and a proposal is a list of typed semantic operations, each one
+ * carrying its own inverse. So what this page really produces is not a new
+ * document — it is the diff between the snapshot it loaded and the state the
+ * person left on screen, expressed in the five operations
+ * `packages/core/src/domain/operations.ts` already accepts.
+ *
+ * That diff is a pure function for the same reason `actions.js` and `diff.js`
+ * are: it runs in the browser and is tested in Node, with no DOM in the way.
+ * It is also the piece that decides whether the editor is a client of the API
+ * or a shortcut around it — every assertion below is about the shape the public
+ * route takes, inverse included.
+ *
+ * The operation keys (`tipo`, `no`, `no_id`, `aresta`, `campo`, `de`, `para`,
+ * `inversa`) are the wire format the core owns and stay in Portuguese, exactly
+ * as they do in `diff.js` (t133, exception 9).
+ */
+
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
+const MODULE_PATH = path.join(PACKAGE_ROOT, 'src', 'public', 'graph-operations.js');
+
+/** One semantic operation, as loose here as it is on the wire. */
+type SemanticOperation = Record<string, unknown>;
+
+/** Anything with `nodes` and `edges` — the only two keys the diff reads. */
+type Document = Record<string, unknown>;
+
+type DiffGraphs = (loaded: Document, edited: Document) => SemanticOperation[];
+
+async function loadDiff(): Promise<DiffGraphs> {
+  assert.ok(
+    existsSync(MODULE_PATH),
+    'artifact does not exist yet: packages/tela/src/public/graph-operations.js',
+  );
+  const module = (await import(
+    new URL('../src/public/graph-operations.js', import.meta.url).href
+  )) as { diffGraphs: DiffGraphs };
+  return module.diffGraphs;
+}
+
+const HASH_A = `sha256:${'a'.repeat(64)}`;
+const HASH_B = `sha256:${'b'.repeat(64)}`;
+const HASH_C = `sha256:${'c'.repeat(64)}`;
+
+function contractFor(what: string): Record<string, unknown> {
+  return {
+    input_schema: { type: 'object' },
+    output_schema: { type: 'object' },
+    checks: [{ type: 'deterministic', command: `test -s ${what}.md` }],
+  };
+}
+
+/**
+ * A whole graph document, fresh on every call.
+ *
+ * Fresh and not shared: every test below mutates its own copy, and a shared
+ * fixture would make the order the tests run in part of the result.
+ */
+function baseDocument(): Document {
+  return {
+    problem_class: 'nota-curta',
+    lineage: { type: 'base' },
+    metadata: { name: 'Nota curta', schema_version: '1.0.0' },
+    nodes: [
+      {
+        id: 'redigir',
+        role: 'redator',
+        node_type: 'work',
+        description: 'Escreve a nota a partir do tema declarado.',
+        skill_ref: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: HASH_A },
+        contract: contractFor('nota'),
+      },
+      {
+        id: 'revisar',
+        role: 'revisor',
+        node_type: 'gate',
+        skill_ref: { id: 'cartografo/revisar-nota', version: '1.0.0', hash: HASH_B },
+        contract: contractFor('revisao'),
+      },
+    ],
+    edges: [{ from: 'redigir', to: 'revisar', condition: 'sempre' }],
+    initial_node: 'redigir',
+    final_nodes: ['revisar'],
+    custom_fields: [],
+  };
+}
+
+/** The nodes of a document, as a list this file may mutate. */
+function nodesOf(document: Document): Record<string, unknown>[] {
+  return document.nodes as Record<string, unknown>[];
+}
+
+/** The edges of a document, as a list this file may mutate. */
+function edgesOf(document: Document): Record<string, unknown>[] {
+  return document.edges as Record<string, unknown>[];
+}
+
+test('AT1 — a new node becomes one `adicionar_no` whose inverse removes that id', async () => {
+  const diffGraphs = await loadDiff();
+
+  const loaded = baseDocument();
+  const edited = baseDocument();
+  const fresh = {
+    id: 'aprovar',
+    role: 'aprovador',
+    node_type: 'gate',
+    description: 'Confere e encerra.',
+    skill_ref: { id: 'cartografo/aprovar-nota', version: '2.0.0', hash: HASH_C },
+    contract: contractFor('aprovacao'),
+  };
+  nodesOf(edited).push(fresh);
+
+  assert.deepEqual(diffGraphs(loaded, edited), [
+    { tipo: 'adicionar_no', no: fresh, inversa: { tipo: 'remover_no', no_id: 'aprovar' } },
+  ]);
+});
+
+test('AT2 — a removed node becomes one `remover_no` whose inverse carries it back whole', async () => {
+  const diffGraphs = await loadDiff();
+
+  const loaded = baseDocument();
+  const edited = baseDocument();
+  const gone = nodesOf(edited).splice(1, 1)[0];
+
+  assert.deepEqual(diffGraphs(loaded, edited), [
+    {
+      tipo: 'remover_no',
+      no_id: 'revisar',
+      // The whole original node, and not just its id: it is the only thing that
+      // can put the node back, and D15 demands the way back exist at the moment
+      // the operation is written.
+      inversa: { tipo: 'adicionar_no', no: gone },
+    },
+  ]);
+});
+
+test('AT3 — one `alterar_campo_no` per changed field, with `de`/`para` and inverse', async () => {
+  const diffGraphs = await loadDiff();
+
+  const loaded = baseDocument();
+  const edited = baseDocument();
+  const target = nodesOf(edited)[0];
+  const newSkill = { id: 'cartografo/redigir-nota', version: '2.0.0', hash: HASH_C };
+  const newContract = contractFor('outra-nota');
+
+  target.role = 'escritor';
+  target.description = 'Outra frase.';
+  target.skill_ref = newSkill;
+  target.contract = newContract;
+
+  assert.deepEqual(diffGraphs(loaded, edited), [
+    {
+      tipo: 'alterar_campo_no',
+      no_id: 'redigir',
+      campo: 'role',
+      de: 'redator',
+      para: 'escritor',
+      inversa: {
+        tipo: 'alterar_campo_no',
+        no_id: 'redigir',
+        campo: 'role',
+        de: 'escritor',
+        para: 'redator',
+      },
+    },
+    {
+      tipo: 'alterar_campo_no',
+      no_id: 'redigir',
+      campo: 'description',
+      de: 'Escreve a nota a partir do tema declarado.',
+      para: 'Outra frase.',
+      inversa: {
+        tipo: 'alterar_campo_no',
+        no_id: 'redigir',
+        campo: 'description',
+        de: 'Outra frase.',
+        para: 'Escreve a nota a partir do tema declarado.',
+      },
+    },
+    {
+      tipo: 'alterar_campo_no',
+      no_id: 'redigir',
+      campo: 'skill_ref',
+      de: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: HASH_A },
+      para: newSkill,
+      inversa: {
+        tipo: 'alterar_campo_no',
+        no_id: 'redigir',
+        campo: 'skill_ref',
+        de: newSkill,
+        para: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: HASH_A },
+      },
+    },
+    {
+      tipo: 'alterar_campo_no',
+      no_id: 'redigir',
+      campo: 'contract',
+      de: contractFor('nota'),
+      para: newContract,
+      inversa: {
+        tipo: 'alterar_campo_no',
+        no_id: 'redigir',
+        campo: 'contract',
+        de: newContract,
+        para: contractFor('nota'),
+      },
+    },
+  ]);
+});
+
+test('AT4 — an added and a removed edge become their two operations, each with its inverse', async () => {
+  const diffGraphs = await loadDiff();
+
+  const loaded = baseDocument();
+  const edited = baseDocument();
+  edgesOf(edited).splice(0, 1);
+  const added = {
+    from: 'revisar',
+    to: 'redigir',
+    condition: 'retrabalho',
+    description: 'A revisão devolve a nota.',
+  };
+  edgesOf(edited).push(added);
+
+  assert.deepEqual(diffGraphs(loaded, edited), [
+    // Removals first: it is the order that keeps the sequence applicable when a
+    // node leaves together with the edges that touched it.
+    {
+      tipo: 'remover_aresta',
+      aresta: { from: 'redigir', to: 'revisar' },
+      inversa: {
+        tipo: 'adicionar_aresta',
+        aresta: { from: 'redigir', to: 'revisar', condition: 'sempre' },
+      },
+    },
+    {
+      tipo: 'adicionar_aresta',
+      aresta: added,
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'revisar', to: 'redigir' } },
+    },
+  ]);
+});
+
+test('AT5 — an untouched document produces no operation at all', async () => {
+  const diffGraphs = await loadDiff();
+
+  assert.deepEqual(diffGraphs(baseDocument(), baseDocument()), []);
+});

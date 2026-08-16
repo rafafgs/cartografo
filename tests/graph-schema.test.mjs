@@ -35,6 +35,10 @@ const TOP_LEVEL_KEYS = [
   'edges',
   'initial_node',
   'final_nodes',
+  // t168 — the fields a class declares on its own tickets. REQUIRED and
+  // possibly empty, so that "the document has no optional top-level key" stays
+  // true (the two assertions at the end of AT1 are what freeze it).
+  'custom_fields',
 ];
 
 /** Reads a JSON file from the repo, failing with its relative path if missing. */
@@ -66,7 +70,7 @@ async function loadValidator() {
   return validatorModule;
 }
 
-test('AT1 — the schema is valid JSON, declares draft 2020-12, $id and the seven top keys', () => {
+test('AT1 — the schema is valid JSON, declares draft 2020-12, $id and the eight top keys', () => {
   const schema = readJson(SCHEMA_PATH);
 
   assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema');
@@ -332,6 +336,92 @@ test('t166 AT — the model fixture is shape-clean, sound, and exercises both pr
     doc.nodes.some((node) => node.model === undefined),
     'a node WITHOUT model has to ride along: absence is the default, and it stays valid',
   );
+});
+
+/*
+ * t168 — the fields a problem class declares on its own tickets.
+ *
+ * The key is REQUIRED and may be empty, which is the whole reason it is worth
+ * asserting separately: a class that declares no field still writes
+ * `"custom_fields": []`, and that is what keeps AT1's "required and properties
+ * are the same set" true for the first optional-looking key this format ever
+ * gained.
+ */
+test('t168 AT — custom_fields is a required top-level list, and a non-list is refused', async () => {
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+  const schema = readJson(SCHEMA_PATH);
+
+  assert.ok(Object.hasOwn(schema.properties, 'custom_fields'));
+  assert.ok(schema.required.includes('custom_fields'));
+  assert.equal(schema.properties.custom_fields.type, 'array');
+
+  const notAList = readExample('grafo-valido-minimo.json');
+  notAList.custom_fields = { premise_source: 'string' };
+  assert.deepEqual(
+    validateAgainstSchema(notAList, schema).map((problem) => problem.pointer),
+    ['/custom_fields'],
+    'a custom_fields that is not a list has to be refused, and only that',
+  );
+
+  const missing = readExample('grafo-valido-minimo.json');
+  delete missing.custom_fields;
+  assert.ok(
+    validateAgainstSchema(missing, schema).length > 0,
+    'the key is required: a document without it does not validate',
+  );
+});
+
+test('t168 AT — $defs.custom_field requires name/type/required_at and refuses an extra key', async () => {
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+  const schema = readJson(SCHEMA_PATH);
+  const definition = schema.$defs.custom_field;
+
+  assert.ok(definition !== undefined, 'the schema has to declare $defs.custom_field');
+  assert.deepEqual([...definition.required].sort(), ['name', 'required_at', 'type']);
+  assert.equal(definition.additionalProperties, false);
+
+  /** The minimal fixture carrying one declaration, ready to validate. */
+  const declaring = (...fields) => {
+    const candidate = readExample('grafo-valido-minimo.json');
+    candidate.custom_fields = fields;
+    return candidate;
+  };
+
+  assert.deepEqual(
+    validateAgainstSchema(
+      declaring(
+        { name: 'premise_source', type: 'string', required_at: 'redigir' },
+        // `required_at: null` is the informational field: declared on the
+        // ticket, demanded by no node. It is a NULL and not an absence because
+        // the key stays required — same discipline as the top-level one.
+        { name: 'downside', type: 'number', required_at: null, description: 'quanto se perde' },
+      ),
+      schema,
+    ),
+    [],
+    'a well-formed pair of declarations validates unchanged',
+  );
+
+  for (const [broken, reason] of [
+    [{ name: 'premise_source', type: 'string' }, 'required_at is required'],
+    [{ type: 'string', required_at: 'redigir' }, 'name is required'],
+    [{ name: 'premise_source', required_at: 'redigir' }, 'type is required'],
+    [
+      { name: 'premise_source', type: 'string', required_at: 'redigir', unidade: 'BRL' },
+      'no extra property',
+    ],
+    [{ name: 'Premise Source', type: 'string', required_at: 'redigir' }, 'name is snake_case'],
+    [{ name: 'premise_source', type: 'date', required_at: 'redigir' }, 'type is one of three'],
+  ]) {
+    assert.ok(
+      validateAgainstSchema(declaring(broken), schema).length > 0,
+      `${JSON.stringify(broken)} should be refused: ${reason}`,
+    );
+  }
 });
 
 test('t166 AT — $defs.node declares model as an optional free-text string, sibling of engine', () => {

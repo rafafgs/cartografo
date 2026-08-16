@@ -64,6 +64,8 @@ interface DraftItem {
   titulo: string;
   corpo: string | null;
   criterios_de_aceite: string[] | null;
+  /** The class's declared fields, filled in at intake (t168). */
+  campos: Record<string, string | number | boolean> | null;
   depende_de: string[];
 }
 
@@ -85,6 +87,7 @@ interface Draft {
 interface JobWithContent extends Job {
   corpo: string | null;
   criterios_de_aceite: string[] | null;
+  campos: Record<string, string | number | boolean> | null;
 }
 
 interface DraftResponse {
@@ -578,7 +581,53 @@ test('AT15 — trabalho.criado of a confirmed job carries corpo and criterios_de
     no_entrada_id: entryNode(),
     corpo: 'O que ela pede, em prosa.',
     criterios_de_aceite: ['o teste de aceite existe'],
+    campos: null,
   });
+});
+
+/**
+ * t168 — the class's declared fields cross the confirmation gate.
+ *
+ * The interesting half is the LOG: the projection carrying `campos` and the
+ * `trabalho.criado` carrying the same map is what makes the value replayable,
+ * and a field that only reached the table would be state the log cannot explain.
+ */
+test('t168 — confirming a draft carries each item\'s campos into the job and into the log', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  await registerFactoryGraph(ctx);
+
+  const filled = { premise_source: 'relatório trimestral 2026Q2', downside: -12.5, upside: 40 };
+  const draft = await createDraft(ctx, {
+    itens: [
+      { ref: 'a', titulo: 'A tese do cobre', campos: filled },
+      { ref: 'b', titulo: 'Sem campo nenhum' },
+    ],
+  });
+  assert.deepEqual(draft.itens[0].campos, filled, 'the draft already stores them');
+  assert.equal(draft.itens[1].campos, null);
+
+  const response = await request<ConfirmationResponse>(
+    ctx,
+    'POST',
+    `/v1/intake/${draft.id}/confirmations`,
+    {},
+  );
+  assert.equal(response.status, 201);
+
+  const [withFields, without] = response.body.trabalhos;
+  assert.deepEqual(withFields.campos, filled);
+  assert.equal(without.campos, null, 'an item with no field creates a job with null, never {}');
+
+  const timeline = await request<{ eventos: Event[] }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${withFields.id}/events`,
+  );
+  assert.equal(timeline.status, 200);
+  const created = timeline.body.eventos.find((event) => event.tipo === 'trabalho.criado');
+  assert.ok(created !== undefined, 'the creation is in the log');
+  assert.deepEqual(created.dados.campos, filled);
 });
 
 test('AT16 — confirming a draft creates no grafo_versao and moves no pointer', async (t) => {

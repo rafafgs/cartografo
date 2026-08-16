@@ -76,6 +76,7 @@ test('t157 FR5 — a list of real strings still passes', () => {
       no_entrada_id: 'y',
       corpo: null,
       criterios_de_aceite: ['a nota cabe em uma tela'],
+      campos: null,
     },
   );
   // An absent optional list is still absent, not an empty-item violation.
@@ -84,7 +85,64 @@ test('t157 FR5 — a list of real strings still passes', () => {
     no_entrada_id: 'y',
     corpo: null,
     criterios_de_aceite: null,
+    campos: null,
   });
+});
+
+/**
+ * t168 — the custom fields a problem class declares, carried by the ticket.
+ *
+ * A new shape in this mirror (`scalar-map`) and not a reuse of `usage`: that one
+ * validates a CLOSED set of four integer totals, while here the keys are
+ * whatever the class declared and the values are the three scalars a person can
+ * type. What the two do share is the discipline every optional field of this
+ * taxonomy follows — absent normalizes to `null`, and `null` is not `{}`.
+ */
+test('t168 — trabalho.criado accepts campos as a map of scalars', () => {
+  const filled = {
+    premise_source: 'relatório trimestral 2026Q2, página 12',
+    downside: -12.5,
+    upside: 40,
+    reviewed: true,
+  };
+
+  assert.deepEqual(
+    requireValidData('trabalho.criado', { titulo: 'x', no_entrada_id: 'y', campos: filled }),
+    {
+      titulo: 'x',
+      no_entrada_id: 'y',
+      corpo: null,
+      criterios_de_aceite: null,
+      campos: filled,
+    },
+  );
+
+  // An empty map is a legitimate value and survives as itself: "the class
+  // declares fields and this ticket filled none" is a statement somebody made,
+  // and it is not the same fact as never having been asked.
+  assert.deepEqual(
+    requireValidData('trabalho.criado', { titulo: 'x', no_entrada_id: 'y', campos: {} }).campos,
+    {},
+  );
+});
+
+test('t168 — a job born with no declared field records null, never an empty map', () => {
+  assert.equal(
+    requireValidData('trabalho.criado', { titulo: 'x', no_entrada_id: 'y' }).campos,
+    null,
+  );
+});
+
+test('t168 — a non-scalar entry in campos is refused', () => {
+  for (const broken of [
+    { premise_source: { pagina: 12 } },
+    { downside: [12] },
+    { premise_source: null },
+    ['premise_source'],
+    'premise_source=x',
+  ]) {
+    refuses('trabalho.criado', { titulo: 'x', no_entrada_id: 'y', campos: broken }, 'campos');
+  }
 });
 
 /** Everything `sessao.aberta` requires, so a case only has to vary its own field. */

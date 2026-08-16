@@ -302,6 +302,39 @@ test('AT2 — the two valid graphs keep passing both validations', async () => {
 });
 
 /**
+ * t168 — `custom_fields` is a required key, and both validators say so.
+ *
+ * The point of running it through the pair is the parity of AT1: a rule added
+ * to the port and not to the reference validator (or the other way round) is a
+ * rule the fixtures would never expose, because a fixture that carries the key
+ * satisfies both.
+ */
+test('t168 — a document with no custom_fields is a structure error in both validators', async () => {
+  const ported = await loadDomainGraph();
+  const reference = await loadReference();
+
+  const document = minimalGraph();
+  delete document.custom_fields;
+  const report = ported.validateStructure(document);
+
+  assert.deepEqual(report, reference.validarEstrutura(document), 'the two validators still agree');
+  assert.equal(report.valido, false, 'the key is required, not optional-with-a-default');
+  const missing = report.erros.find((item) => item.alvo === 'custom_fields');
+  assert.ok(missing !== undefined, 'the missing key has to be reported by name');
+  assert.equal(missing.codigo, 'campo_obrigatorio_ausente');
+
+  const notAList = minimalGraph();
+  notAList.custom_fields = 'nem lista nem nada';
+  const listReport = ported.validateStructure(notAList);
+
+  assert.deepEqual(listReport, reference.validarEstrutura(notAList), 'and they agree here too');
+  const invalid = listReport.erros.find((item) => item.alvo === 'custom_fields');
+  assert.ok(invalid !== undefined, 'a custom_fields that is not a list has to be reported');
+  assert.equal(invalid.codigo, 'campo_invalido');
+  assert.equal(invalid.mensagem, '"custom_fields" has to be a list');
+});
+
+/**
  * t180 — the report's PROSE is English; its keys, codes and rule names are not.
  *
  * The parity of AT1 is what makes this a two-file claim: the same sentence has

@@ -74,6 +74,7 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
       titulo: 'Migração 0005',
       corpo: 'Cria as duas tabelas do intake.',
       criterios_de_aceite: ['a migração roda do zero'],
+      campos: null,
       depende_de: [],
     },
     {
@@ -84,9 +85,63 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
       // node that refines is the one that turns the first into the second.
       corpo: null,
       criterios_de_aceite: null,
+      campos: null,
       depende_de: [],
     },
   ]);
+});
+
+/**
+ * t168 — the fields the class declared, filled in at intake.
+ *
+ * Shape-checked exactly like `criterios_de_aceite` beside it, and for the same
+ * reason: this validator judges FORM, never whether the class actually declares
+ * a field by that name. Cross-checking a value against the class's
+ * `custom_fields` is the transition gate's business, one layer down and one
+ * decision later.
+ */
+test('t168 — campos is accepted when well shaped, and an absent one normalizes to null', async () => {
+  const { validateItems } = await loadIntake();
+
+  const report = validateItems([
+    {
+      ref: 'tese',
+      titulo: 'Comprar a tese do cobre',
+      campos: { premise_source: 'relatório trimestral', downside: -12.5, upside: 40 },
+    },
+    { ref: 'outra', titulo: 'Sem campo nenhum' },
+  ]);
+
+  assert.equal(report.valido, true, asText(report));
+  assert.deepEqual(report.itens[0].campos, {
+    premise_source: 'relatório trimestral',
+    downside: -12.5,
+    upside: 40,
+  });
+  assert.equal(
+    report.itens[1].campos,
+    null,
+    'an item that declares no field carries null, never an empty map',
+  );
+});
+
+test('t168 — an item whose campos is not a map of scalars is rejected', async () => {
+  const { validateItems } = await loadIntake();
+
+  const report = validateItems([
+    { ref: 'a', titulo: 'valor aninhado', campos: { downside: { valor: 12 } } },
+    { ref: 'b', titulo: 'lista no lugar de mapa', campos: ['downside'] },
+    { ref: 'c', titulo: 'texto no lugar de mapa', campos: 'downside=12' },
+    { ref: 'd', titulo: 'este está bom', campos: { downside: 12 } },
+  ]);
+
+  assert.equal(report.valido, false);
+  assert.deepEqual(codes(report), ['campo_invalido', 'campo_invalido', 'campo_invalido']);
+  assert.deepEqual(
+    report.problemas.map((problem) => problem.alvo),
+    ['a', 'b', 'c'],
+    'each problem names the item it came from, and the well-formed one is silent',
+  );
 });
 
 test('AT2 — a ref repeated between two items is rejected', async () => {

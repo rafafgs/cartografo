@@ -63,7 +63,11 @@ const MINIMAL_GRAPH = path.join(
  * Declared here and not in `support.ts` for the same reason the interfaces over
  * there are hand-written: this is the contract THIS file demands of the API.
  */
-type JobProjection = Job & { concluido: boolean };
+type JobProjection = Job & {
+  concluido: boolean;
+  /** The class's declared fields, as this ticket filled them (t168). */
+  campos: Record<string, string | number | boolean> | null;
+};
 
 /**
  * Registers the minimal example graph.
@@ -73,6 +77,34 @@ type JobProjection = Job & { concluido: boolean };
  */
 async function registerMinimalGraph(ctx: TestContext): Promise<string> {
   const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as unknown;
+  const response = await request<{ grafo_versao: { id: string } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(response.status, 201, `POST /v1/graphs returned ${response.status}`);
+  return response.body.grafo_versao.id;
+}
+
+/**
+ * Registers a variant of the minimal graph that demands one field at `redigir`
+ * (t168).
+ *
+ * Its own `problem_class`, because the lineage is keyed by it and the class
+ * `nota-curta` is already taken by the fixture above. `downside` rides along
+ * declared but demanded by nobody: a definition with no `required_at` must not
+ * block anything, and a gate that only ever saw demanding fields would never
+ * prove it.
+ */
+async function registerGraphDemandingField(ctx: TestContext): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  document.problem_class = 'nota-curta-com-campo';
+  document.custom_fields = [
+    { name: 'premise_source', type: 'string', required_at: 'redigir' },
+    { name: 'downside', type: 'number', required_at: null },
+  ];
+
   const response = await request<{ grafo_versao: { id: string } }>(
     ctx,
     'POST',
@@ -136,6 +168,9 @@ test('AT1 — POST /v1/jobs creates the job and records trabalho.criado', async 
     // one `sessao.aberta` has always followed.
     corpo: null,
     criterios_de_aceite: null,
+    // And a third since t168, by the same rule: the class's declared fields,
+    // which a job created by hand did not fill either.
+    campos: null,
   });
 });
 
@@ -537,6 +572,175 @@ test('t152 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id', as
     ],
     'and the value is the derived one, not a constant',
   );
+});
+
+/*
+ * t168 — the fields a problem class declares on its own tickets.
+ *
+ * The gate is on `POST /v1/jobs/:id/transitions` and nowhere else, because that
+ * route is the ONE place a job's position in the graph changes — mirrored by
+ * nothing. That makes "a mandatory field blocks the crossing" a deterministic
+ * check (D9) instead of an instruction injected into a session, which is what
+ * the interpolation engine this repo does not have yet would have cost.
+ */
+test('t168 — POST /v1/jobs stores and returns campos; omitted, it comes back null', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const filled = { premise_source: 'relatório trimestral 2026Q2', downside: -12.5, upside: 40 };
+  const response = await request<JobProjection>(ctx, 'POST', '/v1/jobs', {
+    titulo: 'a tese do cobre',
+    no_entrada_id: 'triagem',
+    campos: filled,
+  });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(response.body.campos, filled);
+  assert.deepEqual(
+    (await readJob(ctx, response.body.id)).campos,
+    filled,
+    'the projection persists what the creation carried, not only the answer body',
+  );
+
+  const events = await timeline(ctx, response.body.id);
+  assert.deepEqual(
+    events[0].dados.campos,
+    filled,
+    'a job born with content has that content as part of the fact (t122 discipline)',
+  );
+
+  const bare = await createJob(ctx, { titulo: 'sem campo', no_entrada_id: 'triagem' });
+  assert.equal(
+    (await readJob(ctx, bare.id)).campos,
+    null,
+    'no declared field is null, never an empty map',
+  );
+});
+
+test('t168 — leaving a node that demands a field is refused while it is empty', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerGraphDemandingField(ctx);
+
+  const job = await createJob(ctx, {
+    titulo: 'a tese sem fonte',
+    no_entrada_id: 'redigir',
+    grafo_versao_id: versionId,
+  });
+  const before = countEvents(ctx);
+
+  const refused = await request<{ error: string; details: string[] }>(
+    ctx,
+    'POST',
+    `/v1/jobs/${job.id}/transitions`,
+    { para_no_id: 'revisar' },
+  );
+
+  assert.equal(refused.status, 400);
+  assert.equal(refused.body.error, 'validation_failed');
+  assert.ok(
+    refused.body.details.some((detail) => detail.includes('premise_source')),
+    `the refusal has to name the missing field: ${JSON.stringify(refused.body.details)}`,
+  );
+  assert.ok(
+    !refused.body.details.some((detail) => detail.includes('downside')),
+    'a field declared with no required_at is never demanded',
+  );
+
+  assert.equal(countEvents(ctx), before, 'a refused transition records no event');
+  assert.equal(
+    (await readJob(ctx, job.id)).no_atual,
+    'redigir',
+    'and it does not move the job either',
+  );
+});
+
+test('t168 — the same transition goes through once PATCH fills the field', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerGraphDemandingField(ctx);
+
+  const job = await createJob(ctx, {
+    titulo: 'a tese que ganhou fonte',
+    no_entrada_id: 'redigir',
+    grafo_versao_id: versionId,
+  });
+  assert.equal(
+    (await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { para_no_id: 'revisar' })).status,
+    400,
+    'it starts refused, so the green below is the amendment and not a permissive gate',
+  );
+
+  const amended = await request<JobProjection>(ctx, 'PATCH', `/v1/jobs/${job.id}`, {
+    campos: { premise_source: 'relatório trimestral 2026Q2, página 12' },
+  });
+  assert.equal(amended.status, 200);
+
+  const moved = await request<JobProjection>(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {
+    para_no_id: 'revisar',
+  });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.body.no_atual, 'revisar');
+
+  const transitions = (await timeline(ctx, job.id)).filter(
+    (event) => event.tipo === 'trabalho.transicao',
+  );
+  assert.equal(transitions.length, 1, 'only the transition that really happened is in the log');
+});
+
+test('t168 — PATCH /v1/jobs/:id amends campos, and an empty body is still a 422', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const job = await createJob(ctx, { titulo: 'a tese', no_entrada_id: 'triagem' });
+
+  const empty = await request<{ error: string; details: string[] }>(
+    ctx,
+    'PATCH',
+    `/v1/jobs/${job.id}`,
+    {},
+  );
+  assert.equal(empty.status, 422, 'a body that changes nothing is unusable, not a no-op');
+  assert.equal(empty.body.error, 'validation_failed');
+
+  const broken = await request<{ error: string }>(ctx, 'PATCH', `/v1/jobs/${job.id}`, {
+    campos: { downside: { valor: 12 } },
+  });
+  assert.equal(broken.status, 422, 'a campos that is not a map of scalars is refused too');
+
+  const response = await request<JobProjection>(ctx, 'PATCH', `/v1/jobs/${job.id}`, {
+    campos: { premise_source: 'relatório trimestral', downside: -12.5 },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.campos, {
+    premise_source: 'relatório trimestral',
+    downside: -12.5,
+  });
+  assert.equal(response.body.titulo, 'a tese', 'amending one field does not touch the other');
+
+  const amendments = (await timeline(ctx, job.id)).filter(
+    (event) => event.tipo === 'trabalho.emendado',
+  );
+  assert.equal(amendments.length, 1);
+  assert.deepEqual(
+    amendments[0].dados,
+    { campos_alterados: ['campos'] },
+    'the log names what was touched, never the new content',
+  );
+  assert.ok(
+    !JSON.stringify(amendments[0].dados).includes('trimestral'),
+    'and the values the person typed stay out of the audit record',
+  );
+
+  const both = await request<JobProjection>(ctx, 'PATCH', `/v1/jobs/${job.id}`, {
+    titulo: 'a tese, revisada',
+    campos: { premise_source: 'outra fonte' },
+  });
+  assert.equal(both.status, 200);
+  const last = (await timeline(ctx, job.id))
+    .filter((event) => event.tipo === 'trabalho.emendado')
+    .at(-1);
+  assert.deepEqual(last?.dados, { campos_alterados: ['titulo', 'campos'] });
 });
 
 test('t127 — the old Portuguese job paths no longer exist', async (t) => {

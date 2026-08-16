@@ -191,7 +191,7 @@ opcional). Ambos obrigatórios: a ausência de declaração nunca é lida como
 
 **Declarar não é aplicar** — mas, desde a `t161`, declarar chega ao despacho.
 Esta especificação define a declaração; a t125 construiu o enforcement no
-adapter, e a t161 ligou os dois: o runner resolve `permissoes` da skill
+adapter, e a t161 ligou os dois: o runner resolve `permissions` da skill
 registrada para dentro da sessão, e o que a skill declarou é o que a sessão
 recebe. Cada eixo continua valendo também como contrato revisável e como base
 do diff de permissão entre versões — uma skill que abre uma permissão nova muda
@@ -200,8 +200,8 @@ de hash e reaparece no portão humano.
 **O que o adapter não consegue expressar, ele recusa.** Um eixo que o engine
 não sabe aplicar não abre sessão nenhuma: o `claude-code` expressa "toda a
 escrita ou nenhuma" e "rede aberta ou fechada", e nada entre os dois, então
-`escrita` com glob no meio do caminho ou `rede.permitido: true` **com**
-`dominios` fazem `startSession` recusar antes de gastar qualquer coisa
+`write` com glob no meio do caminho ou `network.allowed: true` **com**
+`domains` fazem `startSession` recusar antes de gastar qualquer coisa
 (`packages/runner/src/engine/permission-policy.ts`). É o comportamento certo —
 sessão que aplica menos do que foi declarado, em silêncio, é a única saída que
 um sistema de permissão não pode ter — e é uma restrição real sobre o que um
@@ -284,8 +284,8 @@ por engine, trocar de engine não perde skill nem aprendizado — o que foi
 aprendido está no manifesto versionado, não no contexto de uma sessão.
 
 **Quanto disso roda hoje (`t161`):** os passos 1, 3 e 5 estão implementados e
-cobertos por teste, e o 6 registra na API sem validar `saida` contra o schema.
-O passo 4 renderiza `instrucoes` **literalmente** — placeholder não resolvido
+cobertos por teste, e o 6 registra na API sem validar `output` contra o schema.
+O passo 4 renderiza `instructions` **literalmente** — placeholder não resolvido
 segue como texto, e não aborta nada. O passo 2 não existe: não há projeção de
 contexto por nó, e é dela que o 4 dependeria. A ordem entre os dois não é
 acidental: interpolar de verdade exige que a saída de um nó vire a entrada do
@@ -295,11 +295,11 @@ acima continua valendo como decisão para quando o motor existir; o que a `t161`
 faz hoje não a contradiz, porque não interpola.
 
 Além dos cinco campos que a renderização cita, o runner injeta na sessão o
-**contrato do próprio nó** (`entrada_schema`, `saida_schema`, `verificacoes`,
+**contrato do próprio nó** (`input_schema`, `output_schema`, `checks`,
 que vivem no grafo e não no manifesto) e, num nó com duas ou mais saídas, o
-protocolo de roteamento: um bloco cercado `resultado` nomeando as `condicao`
+protocolo de roteamento: um bloco cercado `outcome` nomeando as `condition`
 das arestas daquele nó. O vocabulário de rota é o do **grafo**, nunca o
-`resultado` do `saida` da skill — são dois enums diferentes, de propósito
+`outcome` do `output` da skill — são dois enums diferentes, de propósito
 ([`docs/spec/grafo.md`](../../docs/spec/grafo.md)).
 
 ## Regra de importação (D4)

@@ -102,7 +102,7 @@
       "destination": {
         "type": "webhook",
         "url": "https://exemplo.invalid/ganchos/revisao",
-        "secret": "segredo-declarado-neste-grafo"
+        "secret_ref": "gancho-revisao"
       },
       "description": "Avisa o revisor de plantão quando uma nota chega para revisão."
     },
@@ -113,7 +113,7 @@
       "destination": {
         "type": "webhook",
         "url": "https://exemplo.invalid/ganchos/bloqueio",
-        "secret": "segredo-declarado-neste-grafo"
+        "secret_ref": "gancho-bloqueio"
       },
       "description": "Avisa quando a redação trava, que é onde este grafo costuma parar."
     }

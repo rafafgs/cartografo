@@ -20,6 +20,7 @@ import { registerEvents } from './routes/events.ts';
 import { registerExecutions } from './routes/executions.ts';
 import { registerGraphs } from './routes/graphs.ts';
 import { registerHealth } from './routes/health.ts';
+import { registerHookSecrets } from './routes/hook-secrets.ts';
 import { registerIntake } from './routes/intake.ts';
 import { registerLeases, type LeaseCeilings } from './routes/leases.ts';
 import { registerInputRequests } from './routes/input-requests.ts';
@@ -148,6 +149,7 @@ export function createApp(options: AppOptions): FastifyInstance {
       scope.register(async (inner) => registerSkills(inner, options.db));
       scope.register(async (inner) => registerEvents(inner, options.db));
       scope.register(async (inner) => registerWebhooks(inner, options.db));
+      scope.register(async (inner) => registerHookSecrets(inner, options.db));
     },
     { prefix: API_PREFIX },
   );

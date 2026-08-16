@@ -97,8 +97,22 @@ export interface GraphHookDestination {
   type: string;
   /** Absolute `http:`/`https:` URL the delivery is POSTed to. */
   url: string;
-  /** HMAC key of the delivery, chosen by whoever wrote the graph. */
-  secret: string;
+  /**
+   * NAME of the HMAC key, never the key (t194).
+   *
+   * The document is content-addressed and served, exported and published whole,
+   * so a value written here is a value every reader of the document has. What it
+   * points at lives in `segredo_gancho`, is registered through
+   * `PUT /v1/hook-secrets/:nome`, and is resolved by the control plane at
+   * enqueue time — the same place `url` is copied from, and the same timing
+   * `engine`, `model` and `escalation_policy` already have.
+   *
+   * Deliberately NOT resolved by `validateStructure`: that pass is pure and
+   * DB-free, in byte-for-byte parity with `scripts/validar-grafo.mjs`, and a
+   * check that consulted a database would break the contract for one sibling
+   * and not the other. The CHARSET is the schema's job, as it always was.
+   */
+  secret_ref: string;
   [key: string]: unknown;
 }
 

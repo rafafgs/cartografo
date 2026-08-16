@@ -396,8 +396,9 @@ test('t194 — a hook secret never comes back out of the version routes', async 
   }
 
   const creation = await post(address, '/v1/graphs', document);
-  assert.equal(creation.status, 201, JSON.stringify(await jsonBody(creation)));
-  const { grafo_versao: version } = await jsonBody<{ grafo_versao: VersionRow }>(creation);
+  const created = await jsonBody<{ grafo_versao: VersionRow }>(creation);
+  assert.equal(creation.status, 201, JSON.stringify(created));
+  const { grafo_versao: version } = created;
 
   const listed = await jsonBody(
     await fetch(`${address}/v1/graphs/${String(document.problem_class)}/versions`),

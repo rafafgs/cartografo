@@ -81,9 +81,12 @@ dizer "quando um ticket entrar aqui, avise este endereço" ou "quando ele travar
 aqui, chame aquele" — e o aviso sai assinado, com retentativa, para o serviço
 que você indicar. O aviso mora dentro do mapa, e não numa configuração à parte:
 ele viaja junto quando você exporta o mapa, muda por proposta como qualquer
-outra parte dele e volta atrás junto com a versão que o introduziu. Se o
-destino não responder, o ticket não trava — ele segue o caminho dele, e a falha
-do aviso vira um registro que você consegue ver.
+outra parte dele e volta atrás junto com a versão que o introduziu. A chave que
+assina o aviso é a única coisa que não mora ali: ela é registrada à parte, e o
+mapa guarda só o nome dela — mapa é coisa que se publica, e segredo escrito num
+mapa é segredo de quem lê o mapa. Se o destino não responder, o ticket não
+trava — ele segue o caminho dele, e a falha do aviso vira um registro que você
+consegue ver.
 
 **Enxergar tudo.** O quadro mostra onde cada trabalho está; cada ticket tem
 linha do tempo (agente trabalhando, esperando você, fila); cada pergunta tem

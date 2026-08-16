@@ -40,7 +40,7 @@ import test from 'node:test';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 
 /** The surfaces t180 converts in this package: CLI output and proposal text. */
-const SCANNED_FILES = Object.freeze(['src/cli.ts', 'src/politica.ts']);
+const SCANNED_FILES = Object.freeze(['src/cli.ts', 'src/cliente.ts', 'src/politica.ts']);
 
 /** Any of these in a message means the sentence around it is Portuguese. */
 const DIACRITICS = /[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/;
@@ -69,6 +69,10 @@ const STOPWORDS = Object.freeze([
   'mas',
   'esta',
   'este',
+  // t211: the only Portuguese word of `ApiError`'s message, which reaches
+  // stderr through the command's error path and was invisible to this gate for
+  // as long as `src/cliente.ts` sat outside SCANNED_FILES.
+  'respondeu',
 ]);
 
 /**
@@ -302,6 +306,8 @@ test('t180 — the sweep bites on real Portuguese prose', () => {
     'nenhuma candidata: a telemetria desta execução não estourou nenhuma política',
     'nao consegui falar com o control plane',
     'custo fora de esquadro nesta versao: candidato a um tier mais barato',
+    // the shape `ApiError` used to build, chunk by chunk (t211)
+    ' respondeu ',
   ];
   for (const text of caught) {
     assert.ok(offendersIn(text).length > 0, `the sweep missed Portuguese prose: ${text}`);

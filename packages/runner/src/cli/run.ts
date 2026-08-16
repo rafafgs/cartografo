@@ -119,7 +119,16 @@ export interface RunnerOptions {
    * command line, and the CLI is where that is enforced.
    */
   worktreesRoot: string;
-  /** Cap of simultaneous sessions this runner declares for itself. */
+  /**
+   * The ceiling this runner declares for itself — `--declared-runner-cap`.
+   *
+   * A declaration and nothing else: it travels as `teto_runner`, the server
+   * takes the MIN with its own configured ceiling and the server is what
+   * enforces it (D1). It is NOT the number of sessions this process runs at
+   * once — the loop below dispatches one at a time whatever the value, because
+   * `tick()` awaits the whole dispatch before it can ask for another lease
+   * (t208). More throughput is more runner processes, not a bigger number here.
+   */
   runnerCap: number;
   /** Cap of simultaneous sessions declared for the project. */
   projectCap: number;

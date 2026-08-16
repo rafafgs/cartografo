@@ -41,7 +41,20 @@ export interface ControllerOptions {
   /** Identity of this runner, already paired through `POST /v1/runners`. */
   runnerId: string;
   projectId: number;
-  /** Cap of simultaneous sessions of this runner. */
+  /**
+   * The ceiling this runner DECLARES to the control plane for its own
+   * `runner_id` (`teto_runner`) — `--declared-runner-cap` on the command line.
+   *
+   * It is not, and has never been, a count of sessions this process opens at
+   * once: {@link Controller.tick} asks for at most one lease per pass and awaits
+   * the whole dispatch before the loop can turn again, whatever the number says
+   * (t208). Two things follow from that, and both are the point of the name.
+   * The value is a declaration, and the server decides: it takes the MIN with
+   * its own configured ceiling and is the one that enforces it (D1). And
+   * scaling is horizontal — more runner processes under the same project,
+   * sharing the project's ceiling through the server-side transaction, which is
+   * what `multi-runner-fleet.e2e.test.ts` proves.
+   */
   runnerCap: number;
   /** Cap of simultaneous sessions of the project, across every runner. */
   projectCap: number;
@@ -111,8 +124,21 @@ export class Controller {
    *
    * It tries the candidates in order and stops at the first one that yields a
    * lease: whoever decides whether there is room is the server, so "refused"
-   * here only means another runner got there first or the cap is full — in both
-   * cases trying the next one is the right move.
+   * here means the answer to THIS request, and what to do next depends on which
+   * refusal came back (t208).
+   *
+   * - `trabalho_ja_leased` is about one job's ownership — another runner got
+   *   there first. It says nothing about the next candidate, which is why the
+   *   loop tries it. This is the common answer of a healthy pool.
+   * - `teto_runner` and `teto_projeto` are about capacity, and the capacity is
+   *   this runner's or this project's, not this job's. Every remaining
+   *   candidate in the same tick would come back with the identical answer, so
+   *   the pass ends here: asking anyway spends one POST /v1/leases per
+   *   candidate to be told what the first one already said.
+   *
+   * The pass that stops early is not a pass that gave up. The loop asks again
+   * at the next interval, and by then a lease somewhere may have been released
+   * or expired — which is the retry mechanism this layer already had.
    *
    * @returns The work dispatched and the lease used, or `null` when there was
    *   no released work or no candidate yielded a lease.
@@ -121,7 +147,7 @@ export class Controller {
     const candidates = await this.#options.client.listarTrabalhosLiberados();
 
     for (const job of candidates) {
-      const { lease } = await this.#options.client.pedirLease({
+      const { lease, motivo } = await this.#options.client.pedirLease({
         runner_id: this.#options.runnerId,
         projeto_id: this.#options.projectId,
         trabalho_id: job.id,
@@ -130,7 +156,10 @@ export class Controller {
         ttl_segundos: this.#options.ttlSeconds,
       });
 
-      if (lease === null) continue;
+      if (lease === null) {
+        if (motivo === 'teto_runner' || motivo === 'teto_projeto') break;
+        continue;
+      }
 
       await this.#dispatch(lease, job.id);
       return { jobId: job.id, leaseId: lease.id };

@@ -61,8 +61,8 @@ export const DEFAULT_CONTROL_PLANE_URL = 'http://127.0.0.1:4317';
  */
 export const DEFAULT_PROJECT = 1;
 
-/** Cap of simultaneous sessions of this runner, when nothing is asked for. */
-export const DEFAULT_RUNNER_CAP = 1;
+/** Ceiling this runner declares for itself, when nothing is asked for. */
+export const DEFAULT_DECLARED_RUNNER_CAP = 1;
 
 /** Cap of simultaneous sessions of the project, when nothing is asked for. */
 export const DEFAULT_PROJECT_CAP = 4;
@@ -113,8 +113,15 @@ options:
                             under. A SIBLING of --working-dir, never inside it
                             — e.g. --working-dir ~/proj
                             --worktrees-root ~/proj-worktrees
-  --runner-cap <n>          simultaneous sessions of this runner
-                            (default ${DEFAULT_RUNNER_CAP})
+  --declared-runner-cap <n>
+                            ceiling this runner DECLARES to the control plane
+                            for its own runner id (teto_runner); the server
+                            takes the MIN with its own configured ceiling and
+                            is the one that enforces it (D1). It is not
+                            sessions in flight here: this process dispatches
+                            one at a time whatever the value, because a tick
+                            awaits the whole dispatch before asking again
+                            (default ${DEFAULT_DECLARED_RUNNER_CAP})
   --project-cap <n>         simultaneous sessions of the project
                             (default ${DEFAULT_PROJECT_CAP})
   --interval-ms <n>         wait between ticks, in milliseconds
@@ -154,7 +161,7 @@ const VALUE_OPTIONS = [
   '--engine',
   '--working-dir',
   '--worktrees-root',
-  '--runner-cap',
+  '--declared-runner-cap',
   '--project-cap',
   '--interval-ms',
   '--lease-ttl-seconds',
@@ -374,7 +381,11 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
     engine: engine as EngineName,
     repoRoot,
     worktreesRoot,
-    runnerCap: positiveInteger('--runner-cap', given.get('--runner-cap'), DEFAULT_RUNNER_CAP),
+    runnerCap: positiveInteger(
+      '--declared-runner-cap',
+      given.get('--declared-runner-cap'),
+      DEFAULT_DECLARED_RUNNER_CAP,
+    ),
     projectCap: positiveInteger('--project-cap', given.get('--project-cap'), DEFAULT_PROJECT_CAP),
     intervalMs: positiveInteger('--interval-ms', given.get('--interval-ms'), DEFAULT_INTERVAL_MS),
     leaseTtlSeconds: positiveInteger(

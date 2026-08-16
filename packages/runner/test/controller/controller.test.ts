@@ -498,14 +498,14 @@ const candidate = (id: number): ClientModule.Trabalho => ({
  */
 function refusingClient(
   candidates: number[],
-  answers: ClientModule.RespostaDeConcessao[],
+  answers: Array<{ lease: typeof LEASE | null; motivo?: ClientModule.MotivoDeRecusa }>,
 ): { client: ClientModule.ClienteControle; asked: () => number[] } {
   const asked: number[] = [];
 
   const client = {
     listarTrabalhosLiberados: async () => candidates.map(candidate),
-    pedirLease: async (pedido: ClientModule.PedidoDeLease) => {
-      asked.push(pedido.trabalho_id);
+    pedirLease: async (request: ClientModule.PedidoDeLease) => {
+      asked.push(request.trabalho_id);
       return answers[asked.length - 1] ?? { lease: null };
     },
     heartbeat: async () => LEASE,

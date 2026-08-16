@@ -42,8 +42,13 @@
  *
  * Control plane address precedence, the same as the core's CLI
  * (`packages/core/src/cli/url.ts`): `--url` > `CARTOGRAFO_URL` >
- * `http://127.0.0.1:4317`. That way whoever starts the control plane on another
- * port does not have to repeat the configuration in two different vocabularies.
+ * `http://127.0.0.1:CARTOGRAFO_PORT` > `http://127.0.0.1:4317`. That way whoever
+ * starts the control plane on another port does not have to repeat the
+ * configuration in two different vocabularies. Since t199 (FR6) this file no
+ * longer resolves it itself: `proxy.ts`'s `resolveControlPlaneUrl` is the single
+ * resolver, and the `--url` flag reaches it as the explicit override. The two
+ * used to be separate functions, and the one the command actually ran was the
+ * one that dropped `CARTOGRAFO_PORT` on the floor.
  *
  * ## Nothing a request does may end the process (t151)
  *
@@ -73,7 +78,9 @@ import {
   API_PREFIX,
   forwardRequest,
   isTrustedScreenOrigin,
+  parsePortFromEnv,
   resolveControlPlaneToken,
+  resolveControlPlaneUrl,
   untrustedOriginResponse,
   type ProxiedResponse,
 } from './proxy.ts';
@@ -95,12 +102,6 @@ export const DEFAULT_PORT = 4318;
 
 /** Environment variable that overrides the screen's port. */
 export const PORT_ENV = 'CARTOGRAFO_TELA_PORT';
-
-/** Environment variable that points at the control plane (the CLI's own). */
-export const URL_ENV = 'CARTOGRAFO_URL';
-
-/** Default control plane address. */
-export const DEFAULT_CONTROL_PLANE_URL = 'http://127.0.0.1:4317';
 
 /**
  * Listening address. Loopback, and it stays loopback even now that the control
@@ -197,49 +198,16 @@ export function installCrashGuard(): () => void {
 /**
  * Resolves the port the screen listens on.
  *
+ * Delegates to `parsePortFromEnv`, which `server.ts` already uses for the same
+ * variable (t199, FR6): two readers of `CARTOGRAFO_TELA_PORT` that refuse a bad
+ * value with two different messages, one of them in Portuguese, is the same
+ * split this ticket closes on the control plane's address.
+ *
  * @param env Environment to read `CARTOGRAFO_TELA_PORT` from.
  * @returns A valid port.
  */
 export function screenPortFromEnv(env: NodeJS.ProcessEnv = process.env): number {
-  const configured = env[PORT_ENV]?.trim();
-  if (configured === undefined || configured === '') return DEFAULT_PORT;
-
-  const port = Number(configured);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new UsageError(`${PORT_ENV} inválida: "${configured}" (esperado um inteiro de 0 a 65535)`);
-  }
-  return port;
-}
-
-/**
- * Resolves the control plane's address.
- *
- * @param option Value of `--url`, when it came on the command line.
- * @param env Environment to read `CARTOGRAFO_URL` from.
- * @returns Base URL with no trailing slash.
- */
-export function resolveControlPlaneAddress(
-  option?: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const fromEnv = env[URL_ENV]?.trim();
-  const chosen =
-    option !== undefined && option.trim() !== ''
-      ? option.trim()
-      : fromEnv !== undefined && fromEnv !== ''
-        ? fromEnv
-        : DEFAULT_CONTROL_PLANE_URL;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(chosen);
-  } catch {
-    throw new UsageError(`URL inválida: "${chosen}" (esperado algo como ${DEFAULT_CONTROL_PLANE_URL})`);
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new UsageError(`URL precisa ser http ou https: "${chosen}"`);
-  }
-  return chosen.replace(/\/+$/, '');
+  return parsePortFromEnv(env, PORT_ENV, DEFAULT_PORT);
 }
 
 /** Reads a route `:id` as a positive integer; `null` when it is not one. */
@@ -437,7 +405,7 @@ export interface RunningScreen {
 
 /** Startup options for the screen. */
 export interface ScreenOptions {
-  /** Control plane to read. Default: `resolveControlPlaneAddress`'s precedence. */
+  /** Control plane to read. Default: `resolveControlPlaneUrl`'s precedence. */
   controlPlaneUrl?: string;
   /**
    * Credential presented to the control plane (t124, FR7). Default:
@@ -528,7 +496,7 @@ function reportRequestFailure(
  * @returns A server ready to `listen`.
  */
 export function createScreenRouter(options: ScreenOptions = {}): Server {
-  const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneAddress();
+  const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneUrl();
   const token = options.token ?? resolveControlPlaneToken();
   const client = new ApiClient({ baseUrl: controlPlaneUrl, token, doFetch: options.doFetch });
 
@@ -621,7 +589,7 @@ export function createScreenRouter(options: ScreenOptions = {}): Server {
  * @returns The screen, up, with what it takes to shut it down.
  */
 export async function startScreenRouter(options: ScreenOptions = {}): Promise<RunningScreen> {
-  const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneAddress();
+  const controlPlaneUrl = options.controlPlaneUrl ?? resolveControlPlaneUrl();
   const host = options.host ?? DEFAULT_HOST;
   const server = createScreenRouter({ ...options, controlPlaneUrl });
 
@@ -659,7 +627,7 @@ export function urlFromArgs(args: string[]): string | undefined {
     return inline?.slice('--url='.length);
   }
   const value = args[index + 1];
-  if (value === undefined || value.startsWith('-')) throw new UsageError('--url exige um endereço');
+  if (value === undefined || value.startsWith('-')) throw new UsageError('--url needs an address');
   return value;
 }
 
@@ -684,7 +652,7 @@ export async function runScreenCli(
   installCrashGuard();
 
   const screen = await startScreenRouter({
-    controlPlaneUrl: resolveControlPlaneAddress(urlFromArgs(args), env),
+    controlPlaneUrl: resolveControlPlaneUrl(env, urlFromArgs(args)),
     token: resolveControlPlaneToken(env),
     port: screenPortFromEnv(env),
   });

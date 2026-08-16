@@ -21,9 +21,12 @@
  *
  * The address resolution repeats `packages/core/src/cli/url.ts` on purpose: the
  * screen declares no dependency on the core package (that is the whole point of
- * D11), so the precedence `CARTOGRAFO_URL` > `http://127.0.0.1:CARTOGRAFO_PORT`
- * is duplicated here rather than imported. Duplicated and pinned by test, like
- * the graph validator in `scripts/validar-grafo.mjs`.
+ * D11), so the precedence `--url` > `CARTOGRAFO_URL` >
+ * `http://127.0.0.1:CARTOGRAFO_PORT` is duplicated here rather than imported.
+ * Duplicated ONCE, and pinned by test, like the graph validator in
+ * `scripts/validar-grafo.mjs`: since t199 this is the package's only resolver,
+ * and both entry points — `startScreen` here and `runScreenCli` in `router.ts` —
+ * come through it.
  */
 
 /** Environment variable that overrides the control plane base URL. */
@@ -125,34 +128,60 @@ export function parsePortFromEnv(env: NodeJS.ProcessEnv, name: string, fallback:
   return port;
 }
 
+/** How the `--url` flag names itself in an error message. */
+const URL_OPTION = '--url';
+
 /**
- * Resolves the control plane base URL.
+ * Resolves the control plane base URL — the package's ONLY resolver (t199, FR6).
  *
- * Precedence: `CARTOGRAFO_URL` > `http://127.0.0.1:CARTOGRAFO_PORT` > the
- * default `http://127.0.0.1:4317` — the same order as the CLI, so one
+ * Precedence: `--url` > `CARTOGRAFO_URL` > `http://127.0.0.1:CARTOGRAFO_PORT` >
+ * the default `http://127.0.0.1:4317` — the same order as the CLI, so one
  * `CARTOGRAFO_PORT=5000` in the shell moves the server, the CLI and the screen
  * together.
  *
+ * The `override` parameter is what let this function absorb `router.ts`'s
+ * `resolveControlPlaneAddress`, which was the one `bin/tela.mjs` actually ran
+ * and the one that ignored `CARTOGRAFO_PORT` — the well-tested resolver was not
+ * the shipped resolver, and the shipped one contradicted
+ * `docs/spec/tela-inbox-propostas.md`'s own precedence table. One function now,
+ * reached by both entry points, so there is nowhere left for the two to drift.
+ *
+ * The message names the source of the bad value, because "CARTOGRAFO_URL
+ * invalid" for something typed after `--url` sends whoever reads it to the wrong
+ * place.
+ *
  * @param env Environment to read from.
+ * @param override Address given explicitly on the command line, when there was
+ *   one. Blank counts as absent: `--url ""` and no `--url` mean the same thing.
  * @returns Base URL with no trailing slash.
  */
-export function resolveControlPlaneUrl(env: NodeJS.ProcessEnv = process.env): string {
+export function resolveControlPlaneUrl(
+  env: NodeJS.ProcessEnv = process.env,
+  override?: string,
+): string {
+  const explicit = override?.trim();
   const configured = env[CONTROL_PLANE_URL_ENV]?.trim();
-  const chosen =
-    configured !== undefined && configured !== ''
-      ? configured
-      : `http://${DEFAULT_CONTROL_PLANE_HOST}:${parsePortFromEnv(env, CONTROL_PLANE_PORT_ENV, DEFAULT_CONTROL_PLANE_PORT)}`;
+
+  const [source, chosen] =
+    explicit !== undefined && explicit !== ''
+      ? [URL_OPTION, explicit]
+      : configured !== undefined && configured !== ''
+        ? [CONTROL_PLANE_URL_ENV, configured]
+        : [
+            CONTROL_PLANE_URL_ENV,
+            `http://${DEFAULT_CONTROL_PLANE_HOST}:${parsePortFromEnv(env, CONTROL_PLANE_PORT_ENV, DEFAULT_CONTROL_PLANE_PORT)}`,
+          ];
 
   let parsed: URL;
   try {
     parsed = new URL(chosen);
   } catch {
     throw new Error(
-      `${CONTROL_PLANE_URL_ENV} invalid: "${chosen}" (expected something like http://127.0.0.1:4317)`,
+      `${source} invalid: "${chosen}" (expected something like http://127.0.0.1:4317)`,
     );
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`${CONTROL_PLANE_URL_ENV} has to be http or https: "${chosen}"`);
+    throw new Error(`${source} has to be http or https: "${chosen}"`);
   }
 
   return chosen.replace(/\/+$/, '');

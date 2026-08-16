@@ -255,7 +255,7 @@ async function main() {
     'GET',
     `/v1/graph-versions/${encodeURIComponent(plan.grafo_versao_id)}`,
   );
-  const known = new Set((version.snapshot.nos ?? []).map((no) => no.id));
+  const known = new Set((version.snapshot.nodes ?? []).map((no) => no.id));
   for (const node of plan.nos) {
     if (!known.has(node.id)) {
       die(`node "${node.id}" is not in version ${plan.grafo_versao_id}: ${[...known].join(', ')}`);

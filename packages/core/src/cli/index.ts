@@ -207,7 +207,7 @@ async function runApiClient(
     if (source === undefined) throw new UsageError('scan-skill needs the path of a SKILL.md');
 
     // None of the four has a default, and none gets one: each is either a field
-    // of `origem` — the provenance D4 makes mandatory — or the `papel` the same
+    // of `origin` — the provenance D4 makes mandatory — or the `role` the same
     // decision refuses to have inferred. A default here would be the tool
     // deciding something the gate exists to make a person decide.
     const mandatory = (name: string, value?: string): string => {

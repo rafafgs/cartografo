@@ -92,7 +92,7 @@ try {
   const appliedVersionId = proposal.versao_aplicada_id;
   if (appliedVersionId === null) die(`proposal ${proposalId} has no versao_aplicada_id`);
   const version = await client.buscarVersaoDeGrafo(appliedVersionId);
-  const nodeIds = (version.snapshot.nos ?? []).map((no) => no.id);
+  const nodeIds = (version.snapshot.nodes ?? []).map((no) => no.id);
 
   const events = await client.listarEventosDaExecucao(executionId);
   if (events.length === 0) die(`execution ${executionId} has no events`);

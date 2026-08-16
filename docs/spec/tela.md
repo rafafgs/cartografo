@@ -247,18 +247,24 @@ Os filtros se somam em **AND** com os que já existiam, e um filtro inválido é
 |---|---|---|
 | `CARTOGRAFO_TELA_PORT` | `4318` | Porta em que a tela escuta. |
 | `CARTOGRAFO_URL` (ou `--url`) | `http://127.0.0.1:4317` | Control plane que ela lê. |
+| `CARTOGRAFO_PORT` | `4317` | Porta do control plane no default acima. |
 
-Precedência do endereço: `--url` > `CARTOGRAFO_URL` > default — a mesma da CLI
-do core ([`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts)),
-para que subir o control plane em outra porta não exija configurar duas coisas
-em dois vocabulários. A tela escuta em **loopback**, como o control plane e pela
-mesma razão: não há autenticação nesta fase.
+Precedência do endereço: `--url` > `CARTOGRAFO_URL` >
+`http://127.0.0.1:CARTOGRAFO_PORT` > default — a mesma da CLI do core
+([`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts)), para que
+subir o control plane em outra porta não exija configurar duas coisas em dois
+vocabulários. Quem resolve isso é
+[`resolveControlPlaneUrl`](../../packages/tela/src/proxy.ts), um só para o
+pacote inteiro desde a `t199`: até então havia um segundo resolvedor em
+`router.ts`, sem `CARTOGRAFO_PORT`, e era ele que o `bin/tela.mjs` alcançava. A
+tela escuta em **loopback**, como o control plane e pela mesma razão: não há
+autenticação nesta fase.
 
 Ao subir, imprime uma linha JSON de prontidão em stdout — mesmo contrato da
 partida do control plane:
 
 ```json
-{"evento":"cartografo.tela.pronta","url":"http://127.0.0.1:4318","control_plane":"http://127.0.0.1:4317"}
+{"event":"cartografo.tela.ready","url":"http://127.0.0.1:4318","controlPlane":"http://127.0.0.1:4317"}
 ```
 
 **Quando o control plane está fora do ar**, toda página responde **502** com o

@@ -21,13 +21,18 @@ máquina; tudo que a tela mostra vem de uma API pública que qualquer
 ferramenta pode consumir.
 
 **Começar com mapas prontos.** Grafos de fábrica vêm na caixa: o de
-desenvolvimento de software e o de teses de investimento *(em construção)*.
-Importa com um comando e já tem processo governado.
+desenvolvimento de software e o de teses de investimento. Importa com um
+comando e já tem processo governado.
 
-**Declarar um problema novo e ganhar um mapa** *(em construção)*. Você
-descreve o problema; o sintetizador propõe um mapa usando as skills
-registradas; você edita; o sistema valida formalmente; o mapa entra
-registrado e versionado.
+**Declarar um problema novo e ganhar um mapa** *(em construção: é comando de
+terminal, não fluxo na tela)*. Você descreve o problema; o sintetizador propõe
+um mapa usando as skills registradas; você edita; o sistema valida formalmente;
+o mapa entra registrado e versionado. O que falta é a embalagem, não a peça: o
+sintetizador é um copiloto que se chama pela mão (`npm run synthesize
+--workspace @cartografo/runner`), escreve um rascunho num arquivo e para ali —
+quem lê, corrige e registra com `cartografo import` é você, pelo mesmo portão de
+validação formal por onde passa qualquer outro mapa. Não existe ainda "declarar
+na tela e receber o mapa" sem passar pelo terminal.
 
 **Editar o mapa você mesmo.** Não é só aprovar o que o avaliador propõe: na
 tela dá para acrescentar uma etapa, remover outra, mudar quem faz o quê e como
@@ -115,17 +120,30 @@ listadas e ganham contrato aos poucos. O documento e a página não pedem
 credencial, porque um esquema não é dado; tudo que é dado continua atrás do
 token.
 
-**O mapa melhora sozinho, com a sua mão no portão** *(em construção)*. Ao
-fim de cada rodada, avaliadores leem o histórico e depositam propostas na
-sua caixa de entrada, cada uma com o diff, a evidência e a métrica que
-espera mover. Você aprova, nasce a versão nova; a rodada seguinte mede se a
-hipótese se confirmou. Respostas repetidas viram precedente e, se você
-aprovar, auto-resposta. Projetos que divergem ganham variante própria do
-mapa; o que a variante aprende pode ser promovido ao mapa-base.
+**O mapa melhora, com a sua mão no portão.** Depois de uma rodada, um avaliador
+lê o histórico e deposita propostas na sua caixa de entrada, cada uma com o
+diff, a evidência e a métrica que espera mover. Você aprova, nasce a versão
+nova. Hoje o avaliador que existe é o de custo (tokens e tempo por nó), e ele se
+chama pela mão — `npx topografo-custo avaliar …` —, como o sintetizador.
+Projetos que divergem ganham variante própria do mapa, e o que a variante
+aprende volta ao mapa-base como proposta, pelo mesmo portão.
 
-**Compartilhar o que aprendeu** *(em construção)*. Qualquer mapa exporta
-como arquivo com skills e contratos dentro, com hash de integridade;
-importa em outro cartografo e produz exatamente a mesma versão.
+**O mapa melhorar sozinho** *(em construção)*. Falta o degrau de cima da escada:
+medir automaticamente se a hipótese de uma proposta se confirmou na rodada
+seguinte (hoje quem fecha o experimento é uma chamada explícita, e ela exige
+evidência de execução), e transformar resposta repetida em auto-resposta — a
+API já sabe listar os precedentes de uma pergunta, mas ninguém os lê para
+responder por você. Enquanto isso, nenhuma mudança de mapa acontece sem uma
+aprovação sua, que é a ordem que a escada de segurança pede.
+
+**Compartilhar o que aprendeu.** Qualquer mapa exporta como arquivo, com o
+contrato de cada etapa dentro e as skills fixadas por hash; importa em outro
+cartografo e produz exatamente a mesma versão, porque o id de uma versão é o
+hash canônico do documento. Uma ressalva que vale saber: as INSTRUÇÕES das
+skills não viajam nesse arquivo — ele carrega o pino (id, versão e hash) que
+identifica cada uma. Quem quiser levar as instruções junto leva a pasta do mapa,
+com `grafo.json` e `skills/` lado a lado, que é o formato que os mapas de
+fábrica usam e que o `import` também aceita.
 
 ## O que ele deliberadamente não é
 

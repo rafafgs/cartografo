@@ -250,6 +250,14 @@ test('t162 — the runner is an installable command, started by plain node', asy
   // and no loader smuggled in through the environment either.
   const plainEnv = { ...process.env };
   delete plainEnv.NODE_OPTIONS;
+  // Plain is not the same as beholden to the host (t219). Startup runs an
+  // engine preflight, and an adapter that finds no `claude` warns about it on
+  // stderr — so AT14's "a clean start writes nothing" was really asserting that
+  // whoever ran it had a proprietary CLI installed: green on a laptop, red on
+  // every GitHub-hosted runner. The shim AT16 already relies on answers
+  // `--version`, which is the whole of what the preflight asks; neither of
+  // these two cases ever dispatches, so nothing else about it is exercised.
+  plainEnv.PATH = `${fakeEngineOnPath(runnerDir)}${path.delimiter}${plainEnv.PATH ?? ''}`;
 
   const runner = spawnWatched(
     parent,

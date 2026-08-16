@@ -42,14 +42,11 @@ import {
   INTAKE_ACTOR,
   type Draft,
 } from '../repositories/intake.ts';
+import { isObject } from '../util/is-object.ts';
 import { withValidation } from './common.ts';
 
 interface IdParam {
   Params: { id: string };
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isFilledText(value: unknown): value is string {

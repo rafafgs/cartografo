@@ -9,7 +9,9 @@
  * discipline of this tick is copied, deliberately, from the one background clock
  * this package already had reviewed: the stream's poll
  * (`src/routes/events.ts:195-196`) — bounded burst, `unref`ed timer, tied to the
- * app's lifecycle.
+ * app's lifecycle. That discipline now lives in
+ * `src/util/polling-dispatcher.ts`, shared with the hook dispatcher that copied
+ * it from here (t210); what stays in this file is only what a WEBHOOK tick does.
  *
  * What one tick does, in this order:
  *
@@ -31,7 +33,7 @@
  *   are in flight together, each with its own timeout;
  * - ticks never overlap: while one is in flight the timer's next firing is
  *   dropped. Without that, a subscriber slower than the interval would be
- *   attempted twice for the same delivery.
+ *   attempted twice for the same delivery. That guard is the shared loop's.
  *
  * Every clock, ceiling and the transport itself are injectable, which is what
  * lets `test/webhooks-dispatch.test.ts` prove a two-hour backoff step in
@@ -56,6 +58,7 @@ import {
   recordDeliverySuccess,
   type DeliveryTask,
 } from '../repositories/webhooks.ts';
+import { createPollingDispatcher } from '../util/polling-dispatcher.ts';
 import { SIGNATURE_HEADER, signPayload } from './signature.ts';
 
 /** How often the dispatcher looks for work. */
@@ -246,40 +249,16 @@ export function registerWebhookDispatcher(
     }
   };
 
-  const tick = async (): Promise<void> => {
-    try {
+  // What ONE webhook tick is, and nothing about when it runs: the timer, the
+  // overlap guard, the shutdown wait and the "a failed tick is one tick lost"
+  // rule are the shared loop's (t210).
+  createPollingDispatcher(app, {
+    tickIntervalMs,
+    now: clock.now,
+    name: 'webhook',
+    run: async (moment) => {
       fanout();
-      await deliver(clock.now());
-    } catch (failure) {
-      // A tick that fails is one tick lost, never a process that falls: the
-      // next one starts from the same tables and picks up where this stopped.
-      app.log.error({ err: failure }, 'webhook dispatcher tick failed');
-    }
-  };
-
-  let timer: NodeJS.Timeout | undefined;
-  /** The tick in flight, or `null` — this is what stops two from overlapping. */
-  let inFlight: Promise<void> | null = null;
-
-  const schedule = (): void => {
-    if (inFlight !== null) return;
-    inFlight = tick().finally(() => {
-      inFlight = null;
-    });
-  };
-
-  app.addHook('onReady', async () => {
-    timer = setInterval(schedule, tickIntervalMs);
-    // `unref`ed, like the stream's poll: a dispatcher is no reason for the
-    // process to stay alive on its own.
-    if (typeof timer.unref === 'function') timer.unref();
-  });
-
-  app.addHook('onClose', async () => {
-    if (timer !== undefined) clearInterval(timer);
-    // Waiting for the tick in flight is what makes `app.close()` mean "nothing
-    // of mine is still writing" — a tick is bounded by the delivery timeout.
-    const pending = inFlight;
-    if (pending !== null) await pending;
+      await deliver(moment);
+    },
   });
 }

@@ -26,6 +26,7 @@
  * are what a caller branches on, the prose is what a person reads.
  */
 
+import { isObject } from '../util/is-object.ts';
 import { isScalarMap, type ScalarMap } from './custom-fields.ts';
 
 /** An item of the draft, already normalized. */
@@ -106,12 +107,6 @@ export const PROBLEM_CODES = Object.freeze({
   SELF_DEPENDENCY: 'dependencia_de_si_mesmo',
   CYCLE: 'ciclo_de_dependencia',
 });
-
-type PlainObject = Record<string, unknown>;
-
-function isObject(value: unknown): value is PlainObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function isFilledText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';

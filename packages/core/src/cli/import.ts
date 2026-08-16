@@ -55,6 +55,7 @@ import {
   VERSION_PATTERN,
   manifestHash,
 } from '../domain/manifest.ts';
+import { isObject } from '../util/is-object.ts';
 import { UsageError, requestJson } from './url.ts';
 
 /** A problem found in the local check, already carrying the scope that produced it. */
@@ -69,10 +70,6 @@ export interface ImportOptions {
   path: string;
   /** Base URL of the control plane. */
   url: string;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function readJson(filePath: string): unknown {

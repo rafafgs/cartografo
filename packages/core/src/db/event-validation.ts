@@ -26,6 +26,7 @@
 // that reads it. `domain/` is pure — no database, no clock — so nothing about
 // this direction costs the owner of the connection anything.
 import { isScalarMap } from '../domain/custom-fields.ts';
+import { isObject } from '../util/is-object.ts';
 
 /** Possible subjects of an event (`envelope.schema.json`). */
 export type EntityType = 'trabalho' | 'sessao' | 'pergunta' | 'lease' | 'grafo_versao';
@@ -313,9 +314,6 @@ const USAGE_FIELDS = [
   'cache_creation_input_tokens',
   'cache_read_input_tokens',
 ] as const;
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value);

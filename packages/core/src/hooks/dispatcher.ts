@@ -18,6 +18,9 @@
  * The four rules that keep a bad receiver from being anybody else's problem are
  * t142's, unchanged — each attempt wrapped on its own, the batch through
  * `Promise.allSettled`, a per-attempt timeout, and ticks that never overlap.
+ * The last of those is no longer a copy: since t210 both daemons take the timer,
+ * the overlap guard and the `onReady`/`onClose` pair from the one
+ * `createPollingDispatcher` in `src/util/polling-dispatcher.ts`.
  *
  * The ONE deliberate divergence: on the sixth failure this dispatcher's
  * repository call records a `trabalho.gancho_falhou` event, which t142's tick
@@ -42,6 +45,7 @@ import {
   recordHookDeliverySuccess,
   type HookDeliveryTask,
 } from '../repositories/hooks.ts';
+import { createPollingDispatcher } from '../util/polling-dispatcher.ts';
 import {
   DEFAULT_TICK_INTERVAL_MS,
   DELIVERY_CEILING,
@@ -175,39 +179,13 @@ export function registerHookDispatcher(
     }
   };
 
-  const tick = async (): Promise<void> => {
-    try {
-      await deliver(clock.now());
-    } catch (failure) {
-      // A tick that fails is one tick lost, never a process that falls: the
-      // next one starts from the same table and picks up where this stopped.
-      app.log.error({ err: failure }, 'hook dispatcher tick failed');
-    }
-  };
-
-  let timer: NodeJS.Timeout | undefined;
-  /** The tick in flight, or `null` — this is what stops two from overlapping. */
-  let inFlight: Promise<void> | null = null;
-
-  const schedule = (): void => {
-    if (inFlight !== null) return;
-    inFlight = tick().finally(() => {
-      inFlight = null;
-    });
-  };
-
-  app.addHook('onReady', async () => {
-    timer = setInterval(schedule, tickIntervalMs);
-    // `unref`ed, like the stream's poll and t142's tick: a dispatcher is no
-    // reason for the process to stay alive on its own.
-    if (typeof timer.unref === 'function') timer.unref();
-  });
-
-  app.addHook('onClose', async () => {
-    if (timer !== undefined) clearInterval(timer);
-    // Waiting for the tick in flight is what makes `app.close()` mean "nothing
-    // of mine is still writing" — a tick is bounded by the delivery timeout.
-    const pending = inFlight;
-    if (pending !== null) await pending;
+  // One hook tick is one `deliver`, and there is no fan-out to precede it: the
+  // rows are already in the table, put there inside the transaction of the fact
+  // that fired them. Everything about WHEN it runs is the shared loop's (t210).
+  createPollingDispatcher(app, {
+    tickIntervalMs,
+    now: clock.now,
+    name: 'hook',
+    run: deliver,
   });
 }

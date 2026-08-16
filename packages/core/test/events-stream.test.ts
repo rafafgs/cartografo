@@ -28,6 +28,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { connect } from 'node:net';
 import test from 'node:test';
 
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -422,4 +423,36 @@ test('AT8 — a client that goes away leaves no timer and no error behind', asyn
 
   assert.equal(closed, 'closed', 'app.close() has to resolve once the client is gone');
   assert.deepEqual(failures, [], 'an abandoned stream must not blow up on the server');
+});
+
+test('t218 — a connection that never sent a request does not hold the shutdown', async (t) => {
+  requireArtifacts(T123_ARTIFACTS.streamRoutes);
+  const ctx = await startControlPlane(t);
+  const { url, app } = await startStreamApp(t, ctx, {});
+
+  // AT8 above only catches this on Node 22, because there it is the client's
+  // own connection pool that leaves the socket behind (see the `preClose` hook
+  // in `src/routes/events.ts`). The same handle held open by hand is red on
+  // EVERY runtime, which is what turns "green on one matrix leg" into a
+  // regression this suite can actually keep watching.
+  const { port, hostname } = new URL(url);
+  const mute = connect(Number(port), hostname);
+  // The shutdown destroys this socket from the other side; the reset that
+  // follows is the end of the test, not something to report.
+  mute.on('error', () => {});
+  t.after(() => mute.destroy());
+  await new Promise<void>((resolve, reject) => {
+    mute.once('connect', resolve);
+    mute.once('error', reject);
+  });
+  // The handshake finished on this side; give the server the tick it needs to
+  // have accepted it, so the red below is the leak and never a race.
+  await settle(50);
+
+  const closed = await Promise.race([
+    app.close().then(() => 'closed' as const),
+    new Promise<'hung'>((resolve) => setTimeout(() => resolve('hung'), 3000)),
+  ]);
+
+  assert.equal(closed, 'closed', 'a socket carrying no request must not hold app.close()');
 });

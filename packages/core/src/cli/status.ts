@@ -26,6 +26,7 @@
  * taxonomy and no other package parses it — so D18 translates its keys too.
  */
 
+import { isObject } from '../util/is-object.ts';
 import { NetworkError, serverDownMessage, requestJson } from './url.ts';
 
 /** A registered class, in `status`'s view. */
@@ -53,10 +54,6 @@ export interface StatusOptions {
   url: string;
   /** Prints the report as a single JSON object. */
   json?: boolean;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

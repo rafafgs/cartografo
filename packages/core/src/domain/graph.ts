@@ -33,6 +33,7 @@
  * the 422.
  */
 
+import { isObject } from '../util/is-object.ts';
 import type { CustomFieldDefinition } from './custom-fields.ts';
 
 /** Names of the four soundness rules, in the order they run. */
@@ -209,10 +210,6 @@ export const REQUIRED_DOCUMENT_FIELDS = [
 export const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
 export const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
 export const REQUIRED_HOOK_FIELDS = ['id', 'trigger', 'node_id', 'destination'];
-
-function isObject(value: unknown): value is PlainObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function isFilledText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';

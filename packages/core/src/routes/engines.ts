@@ -33,6 +33,7 @@ import {
   type ModelOrigin,
   type ReportedModel,
 } from '../repositories/engine-models.ts';
+import { isObject } from '../util/is-object.ts';
 
 interface NameParam {
   Params: { name: string };
@@ -42,10 +43,6 @@ interface NameParam {
 interface Refusal {
   erro: string;
   mensagem: string;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isFilledText(value: unknown): value is string {

@@ -63,6 +63,7 @@ import {
   type LeaseStatus,
 } from '../repositories/leases.ts';
 import { getRunner } from '../repositories/runners.ts';
+import { isObject } from '../util/is-object.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -92,10 +93,6 @@ export const DEFAULT_LEASE_CAP_PROJECT = 50;
 export interface LeaseCeilings {
   runner: number;
   projeto: number;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isInteger(value: unknown): value is number {

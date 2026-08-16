@@ -10,11 +10,14 @@
  *
  * The four rule names are the control plane's (`RULES` in
  * `packages/core/src/domain/graph.ts`), and the last test here is what stops
- * this mapping from drifting away from them: the four counterexamples in
- * `schema/exemplos/` go through the repository's reference validator
+ * this mapping from drifting away from them: the counterexamples in
+ * `schema/exemplos/` — at least four, one per soundness rule, plus however many
+ * fail only structurally — go through the repository's reference validator
  * (`scripts/validar-grafo.mjs`, the same one `domain-graph.test.ts` holds the
- * core against) and every violation they produce has to come out as a line
- * naming its own `alvo`. A fifth rule, or a renamed one, fails here.
+ * core against) and every problem they produce has to come out as a line of its
+ * own: a violation naming its `alvo`, a structure error carrying the `mensagem`
+ * the core wrote. A fifth rule, or a renamed one, fails here; a counterexample
+ * that breaks only structure does not, and does not go silent either.
  *
  * The report's keys (`estrutura`, `erros`, `soundness`, `violacoes`, `regra`,
  * `alvo`, `mensagem`) are the wire format of the 422 and stay in Portuguese
@@ -30,6 +33,17 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const MODULE_PATH = path.join(PACKAGE_ROOT, 'src', 'public', 'graph-soundness.js');
 const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'exemplos');
+
+/**
+ * The module's own fallback for a structure error that arrives with no
+ * `mensagem` (`graph-soundness.js`), copied because it is not exported.
+ *
+ * AT4 asserts no counterexample ever renders it: the core writes the prose of
+ * every structure error it can produce, so this line appearing means the screen
+ * went silent on a real problem — a hook pointing at a node that does not
+ * exist, say — and the person editing the graph is left guessing.
+ */
+const UNDECLARED_STRUCTURE_LINE = 'problema de estrutura sem mensagem declarada';
 
 /**
  * The reference validator, reached through a computed specifier.
@@ -163,29 +177,44 @@ test('AT3 — a report with neither renders the explicit empty line', async () =
   assert.deepEqual(renderReport(null), [NO_PROBLEMS_LINE]);
 });
 
-test('AT4 — the four counterexamples, through the reference validator, cover exactly these rules', async () => {
+test('AT4 — the counterexamples, through the reference validator, cover exactly these rules', async () => {
   const { SOUNDNESS_RULES, renderReport } = await loadSoundness();
 
   const names = readdirSync(EXAMPLES_DIR)
     .filter((name) => name.startsWith('grafo-invalido-') && name.endsWith('.json'))
     .sort();
-  assert.ok(names.length >= 4, `expected the four counterexamples in ${EXAMPLES_DIR}, found ${names.length}`);
+  assert.ok(
+    names.length >= 4,
+    `expected at least four counterexamples in ${EXAMPLES_DIR} — one per soundness rule, plus any that fail only structurally — found ${names.length}`,
+  );
 
   const seen = new Set<string>();
 
   for (const name of names) {
     const document = JSON.parse(readFileSync(path.join(EXAMPLES_DIR, name), 'utf8')) as unknown;
     const report = await reportFor(document);
+    const structureErrors = report.estrutura?.erros ?? [];
+    const structureCount = structureErrors.length;
     const violacoes = report.soundness?.violacoes ?? [];
-    assert.ok(violacoes.length > 0, `${name} no longer violates any soundness rule`);
+    assert.ok(
+      structureCount + violacoes.length > 0,
+      `${name} no longer reports any problem, structural or soundness — it stopped being a counterexample`,
+    );
 
     const lines = renderReport(report);
-    const structureCount = report.estrutura?.erros?.length ?? 0;
     assert.equal(
       lines.length,
       structureCount + violacoes.length,
       `${name}: one line per problem, and nothing swallowed:\n${lines.join('\n')}`,
     );
+
+    structureErrors.forEach((problem, index) => {
+      const line = lines[index];
+      assert.ok(
+        line.trim() !== '' && line !== UNDECLARED_STRUCTURE_LINE,
+        `${name}: structure error "${problem.codigo ?? 'sem código'}" renders no prose of its own — the screen went silent on a problem the core had already written: ${line}`,
+      );
+    });
 
     violacoes.forEach((violation, index) => {
       seen.add(violation.regra);

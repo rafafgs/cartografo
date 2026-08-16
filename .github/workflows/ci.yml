@@ -54,7 +54,12 @@ jobs:
       # Forma determinística de "nenhum teste escreve fora de `os.tmpdir()`":
       # qualquer escrita dentro do checkout aparece aqui como arquivo novo ou
       # modificado. O que é artefato legítimo já está no `.gitignore`.
+      # `always()` porque uma suíte vermelha é justamente quando uma escrita
+      # perdida é mais provável — um teste que quebra no meio é o que deixa
+      # arquivo para trás. Sem isto o passo é pulado exatamente no caso que ele
+      # existe para pegar, e o resultado fica invisível.
       - name: Nenhuma escrita de teste dentro do checkout
+        if: always()
         run: |
           changed="$(git status --porcelain)"
           if [ -n "$changed" ]; then

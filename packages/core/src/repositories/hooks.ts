@@ -42,6 +42,7 @@
 import type { Database } from '../db/connection.ts';
 import { recordEvent } from '../db/events.ts';
 import type { GraphHook } from '../domain/graph.ts';
+import { isObject } from '../util/is-object.ts';
 import { getVersion } from './graphs.ts';
 import { resolveHookSecret } from './hook-secrets.ts';
 import { API_ACTOR, now } from './common.ts';
@@ -111,9 +112,6 @@ interface ExhaustedRow {
 function addMilliseconds(instant: string, ms: number): string {
   return new Date(Date.parse(instant) + ms).toISOString();
 }
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isFilledText = (value: unknown): value is string =>
   typeof value === 'string' && value !== '';

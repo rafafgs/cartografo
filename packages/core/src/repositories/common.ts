@@ -49,7 +49,15 @@ export const ESCALATION_ACTOR: Actor = Object.freeze({
   ref: 'escalacao-humana',
 });
 
-/** Instant of the fact, ISO 8601. */
+/**
+ * Instant of the fact, ISO 8601 — the same format the migration runner writes.
+ *
+ * The one clock of every write in this package (t210). `repositories/graphs.ts`
+ * used to carry a second, byte-identical definition, which three repositories
+ * imported from THERE — so "what time is it" had two answers and the graph
+ * repository was an accidental dependency of modules that have nothing to do
+ * with graphs.
+ */
 export const now = (): string => new Date().toISOString();
 
 /** SQLite stores a boolean as 0/1. */

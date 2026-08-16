@@ -23,8 +23,8 @@ import type { Database } from '../db/connection.ts';
 import type { GraphDocument } from '../domain/graph.ts';
 import type { Verdict } from '../domain/hypothesis.ts';
 import type { Operation } from '../domain/operations.ts';
+import { now } from './common.ts';
 import {
-  now,
   getVersionSummary,
   insertVersion,
   movePointer,

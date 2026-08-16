@@ -18,8 +18,8 @@
  */
 
 import type { Database } from '../db/connection.ts';
+import { now } from './common.ts';
 import type { ExpirationReason } from './leases.ts';
-import { now } from './graphs.ts';
 
 /** A paired runner. */
 export interface RunnerRow {

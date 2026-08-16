@@ -22,7 +22,7 @@
  */
 
 import type { Database } from '../db/connection.ts';
-import { now } from './graphs.ts';
+import { now } from './common.ts';
 
 /** Where a catalog entry came from: the CLI answered, or the adapter knew. */
 export type ModelOrigin = 'cli' | 'catalog';

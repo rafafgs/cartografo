@@ -36,6 +36,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { manifestHash } from '../domain/manifest.ts';
+import { isObject } from '../util/is-object.ts';
 import { UsageError, requestJson } from './url.ts';
 
 /** Options of `scan-skill`. */
@@ -116,10 +117,6 @@ const REVIEW_CHECKLIST = `What you sign off on by approving (manifesto-skill.md,
 
 To APPROVE: answer with the final manifest in JSON, with \`origin.reviewed_by\` filled in.
 To REFUSE: answer with \`rejeitar: <reason>\`.`;
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /** One `label  value` line of the success output — same shape as import/export. */
 function line(label: string, value: string): string {

@@ -45,13 +45,10 @@ import {
   type GraphRow,
 } from '../repositories/graphs.ts';
 import { createProposal, getProposal } from '../repositories/proposals.ts';
+import { isObject } from '../util/is-object.ts';
 
 interface IdParam {
   Params: { id: string };
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

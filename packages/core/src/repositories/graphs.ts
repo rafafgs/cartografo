@@ -17,6 +17,7 @@
 import type { Database } from '../db/connection.ts';
 import type { GraphDocument } from '../domain/graph.ts';
 import { hashSnapshot, canonicalSerialize } from '../domain/hash.ts';
+import { now } from './common.ts';
 
 /** Lineage of a graph: the class and the pointer to the version that holds today. */
 export interface GraphRow {
@@ -55,11 +56,6 @@ export interface ClassRow {
 const GRAPH_COLUMNS =
   'id, classe, linhagem_tipo, base_classe, origem_proposta_id, versao_corrente_id, criado_em';
 const VERSION_COLUMNS = 'id, grafo_id, versao_pai, origem, proposta_id, criado_em';
-
-/** Moment of the write, in ISO 8601 — same format as the migration runner. */
-export function now(): string {
-  return new Date().toISOString();
-}
 
 /**
  * @param db Open database.

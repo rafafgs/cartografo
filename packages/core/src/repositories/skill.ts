@@ -66,6 +66,7 @@ import {
   VERSION_PATTERN,
   manifestHash,
 } from '../domain/manifest.ts';
+import { isObject } from '../util/is-object.ts';
 import { now } from './common.ts';
 
 /** A registered skill, as the API returns it. */
@@ -147,10 +148,6 @@ const COLUMNS = `
   id, versao, hash, papel, descricao, entrada, saida, pre_condicoes,
   checks, permissoes, instrucoes, origem, registrado_em
 `;
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function isText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;

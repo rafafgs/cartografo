@@ -34,7 +34,7 @@
  */
 
 import type { Database } from '../db/connection.ts';
-import { now } from './graphs.ts';
+import { now } from './common.ts';
 
 /** Possible states of a lease. */
 export type LeaseStatus = 'ativa' | 'liberada' | 'expirada';

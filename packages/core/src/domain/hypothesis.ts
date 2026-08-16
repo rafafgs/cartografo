@@ -23,6 +23,8 @@
  * one in a comparison operator is how it would never get made on purpose.
  */
 
+import { isObject } from '../util/is-object.ts';
+
 /** What the next round's telemetry says about the hypothesis. */
 export type Verdict = 'confirmada' | 'sem_efeito' | 'piorou';
 
@@ -58,12 +60,6 @@ export interface VerdictReport {
   /** `null` whenever `valid` is false — an incomplete hypothesis has no outcome. */
   verdict: Verdict | null;
   errors: MetricError[];
-}
-
-type Record_ = Record<string, unknown>;
-
-function isObject(value: unknown): value is Record_ {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isNumber(value: unknown): value is number {

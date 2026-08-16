@@ -36,6 +36,7 @@
  * formats meeting, each keeping its own vocabulary.
  */
 
+import { isObject } from '../util/is-object.ts';
 import type { GraphEdge, GraphDocument, GraphNode } from './graph.ts';
 
 /**
@@ -211,10 +212,6 @@ export class ApplicationError extends Error {
 }
 
 type PlainObject = Record<string, unknown>;
-
-function isObject(value: unknown): value is PlainObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function isFilledText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';

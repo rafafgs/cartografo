@@ -17,6 +17,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { isObject } from '../util/is-object.ts';
 import { UsageError, requestJson } from './url.ts';
 
 /** Options of `export`. */
@@ -27,10 +28,6 @@ export interface ExportOptions {
   url: string;
   /** Output file; defaults to `./<class>.grafo.json`. */
   output?: string;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** One `label  value` line of the success output. */

@@ -13,6 +13,7 @@ import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 
 import { openDatabase, applyPragmas, databasePath, type Database } from './db/connection.ts';
+import { acquireLock } from './db/lock.ts';
 import { migrate } from './db/migrate.ts';
 import { hasLiveCredential, issueCredential } from './repositories/credentials.ts';
 import { DEFAULT_LEASE_CAP_PROJECT, DEFAULT_LEASE_CAP_RUNNER } from './routes/leases.ts';
@@ -159,6 +160,16 @@ export function leaseCapProject(env: NodeJS.ProcessEnv = process.env): number {
  */
 export async function start(env: NodeJS.ProcessEnv = process.env): Promise<ControlPlane> {
   const file = databasePath(env);
+
+  // BEFORE the database is even opened, and that ordering is the requirement
+  // (t209, FR3): a second control plane over the same file has to find out that
+  // it is second while it still has not migrated anything nor minted anything.
+  // Below this line, everything that follows assumes one single writer — the
+  // `hasLiveCredential`/`issueCredential` pair further down is a plain
+  // check-then-act, and two startups reaching it together would each announce
+  // their own token as if it were the only one (D1).
+  const lock = acquireLock(file);
+
   const db = openDatabase(file);
 
   const host = serverHost(env);
@@ -177,6 +188,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
     await app.listen({ port: serverPort(env), host });
   } catch (error) {
     db.close();
+    lock.release();
     throw error;
   }
 
@@ -197,6 +209,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
   } catch (error) {
     await app.close();
     db.close();
+    lock.release();
     throw error;
   }
 
@@ -213,6 +226,9 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
     shutdown: async () => {
       await app.close();
       db.close();
+      // Last, and after the handle is closed: while the database can still be
+      // written the lock has not stopped being true.
+      lock.release();
     },
   };
 }

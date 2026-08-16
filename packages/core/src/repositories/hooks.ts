@@ -20,6 +20,9 @@
  *   point the same hook somewhere else, and a delivery already in flight has to
  *   finish against the destination that was declared when it was enqueued —
  *   reading the snapshot again at attempt time would silently redirect it.
+ *   Since t194 only the URL is copied out of the DOCUMENT: the key is resolved
+ *   from `segredo_gancho` by name, at this same instant and for this same
+ *   reason. A rotation after the fact does not reach a delivery already queued.
  * - **Exhaustion writes to the log, and it is the only place in the delivery
  *   path that does.** t142's dispatcher never touches `recordEvent` (its own
  *   header says so, and that is what makes a dead subscriber nobody else's
@@ -40,6 +43,7 @@ import type { Database } from '../db/connection.ts';
 import { recordEvent } from '../db/events.ts';
 import type { GraphHook } from '../domain/graph.ts';
 import { getVersion } from './graphs.ts';
+import { resolveHookSecret } from './hook-secrets.ts';
 import { API_ACTOR, now } from './common.ts';
 
 /** Injectable clock; without it, the real one. */
@@ -133,7 +137,7 @@ function matches(hook: unknown, occurrence: HookOccurrence): hook is GraphHook {
     isObject(destination) &&
     destination.type === WEBHOOK_DESTINATION &&
     isFilledText(destination.url) &&
-    isFilledText(destination.secret)
+    isFilledText(destination.secret_ref)
   );
 }
 
@@ -146,10 +150,14 @@ function matches(hook: unknown, occurrence: HookOccurrence): hook is GraphHook {
  * hook failure never blocks the traversal" true by construction and not by a
  * `try/catch` somebody has to remember.
  *
- * A job with no `grafo_versao_id`, a version id that no longer resolves and a
- * snapshot with no `hooks` key are all the same answer: zero rows, no error.
- * The first two are ordinary — `trabalho.grafo_versao_id` is loose text, not a
- * foreign key — and the third is every graph written before this ticket.
+ * A job with no `grafo_versao_id`, a version id that no longer resolves, a
+ * snapshot with no `hooks` key and — since t194 — a `secret_ref` that names no
+ * live secret are all the same answer: zero rows, no error. The first two are
+ * ordinary (`trabalho.grafo_versao_id` is loose text, not a foreign key), the
+ * third is every graph written before t169, and the fourth is a deployment that
+ * imported a graph without registering what it references. Giving a signal for
+ * that last one — an event, a gate, a warning at import time — is deliberately
+ * a separate ticket: it is the only one of the four somebody may want told.
  *
  * @param db Open database, inside the caller's transaction.
  * @param occurrence The fact that just happened, and where.
@@ -184,6 +192,13 @@ export function enqueueHookDeliveries(
 
   let created = 0;
   for (const hook of firing) {
+    // The one read of the secret store in the whole write path (t194). It sits
+    // here, next to the `url` the row copies, because the two answer the same
+    // question — "what did this hook mean when it fired?" — and a delivery in
+    // flight has to finish against that answer and not against today's.
+    const segredo = resolveHookSecret(db, hook.destination.secret_ref);
+    if (segredo === undefined) continue;
+
     created += statement.run(
       occurrence.projeto_id,
       occurrence.execucao_id,
@@ -193,7 +208,7 @@ export function enqueueHookDeliveries(
       occurrence.grafo_versao_id,
       occurrence.evento_id,
       hook.destination.url,
-      hook.destination.secret,
+      segredo,
       // Born due, so the same tick that enqueues it can also attempt it.
       moment,
       moment,

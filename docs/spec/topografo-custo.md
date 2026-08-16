@@ -21,7 +21,7 @@ coisas, "ponto de extensão" seria afirmação sem lastro.
 ## 1. A unidade de observação: `(versão de grafo, nó)`
 
 `GET /v1/executions/:id/metrics-by-version` já cruza versão × telemetria
-([`trabalho.ts`](../../packages/core/src/repositorios/trabalho.ts)), mas conta
+([`job.ts`](../../packages/core/src/repositories/job.ts)), mas conta
 trabalhos e eventos por `grafo_versao_id` e para aí. Isso responde "a v2 andou
 mais que a v1"; não responde "**qual nó** ficou caro na v2" — e uma política de
 custo sem alvo não tem operação a propor.
@@ -44,7 +44,7 @@ já vem em `GET /v1/jobs`. A junção é feita no cliente, com dois GETs.
 ### Ausência nunca é zero
 
 A regra atravessa a agregação inteira, e é herdada do core
-([`sessao.ts`](../../packages/core/src/repositorios/sessao.ts)): sessão com
+([`session.ts`](../../packages/core/src/repositories/session.ts)): sessão com
 `uso: null` **não** entra como zero tokens, e sessão ainda aberta **não** entra
 como duração zero. Zero é uma medição; `null` é o engine não ter reportado nada,
 e colapsar as duas coisas destrói justamente a métrica que esta lente existe

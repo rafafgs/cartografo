@@ -12,7 +12,10 @@
  * the D4 skill-import gate — is a pure HTTP client of the public API: they open
  * no database, do not import `src/db/**` and have no privilege whatsoever over
  * the screen or the runner (D1, D11). What they know about the control plane
- * fits in `cli/url.ts`.
+ * fits in `cli/url.ts`. The one thing this router takes from `src/db/` is the
+ * `LockHeldError` TYPE, to recognize it and print its line (t209, FR4): no
+ * handle, no query, nothing opened — the only file that talks to the driver is
+ * still `db/connection.ts`.
  *
  * One single exit-code convention:
  *
@@ -24,6 +27,7 @@
  *   incorrect usage.
  */
 
+import { LockHeldError } from '../db/lock.ts';
 import { DEFAULT_PORT, main } from '../index.ts';
 import { runExport } from './export.ts';
 import { runImport } from './import.ts';
@@ -151,6 +155,14 @@ async function startControlPlane(): Promise<number> {
     await main();
     return 0;
   } catch (error) {
+    // A held lock is not a defect: it is the answer to "is one already
+    // running?", and the answer fits in the line the error carries — the pid to
+    // look for and the file it holds (t209, FR4). Dumping a stack on top of it
+    // would only bury the two things the operator needs to read.
+    if (error instanceof LockHeldError) {
+      console.error(error.message);
+      return 1;
+    }
     console.error('cartografo: startup failed');
     console.error(error);
     return 1;

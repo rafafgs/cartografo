@@ -136,8 +136,8 @@ legível apenas como patch, e o que dá caminho de volta a qualquer mudança.
 |---|---|---|
 | `adicionar_no` | `no` (documento do nó) | `remover_no` do mesmo `id` |
 | `remover_no` | `no_id` | `adicionar_no` do mesmo nó |
-| `adicionar_aresta` | `aresta` (`de`, `para`, `condicao`) | `remover_aresta` das mesmas pontas |
-| `remover_aresta` | `aresta` (`de`, `para`) | `adicionar_aresta` da mesma aresta |
+| `adicionar_aresta` | `aresta` (`de`, `para`, `condicao`) | `remover_aresta` da mesma aresta |
+| `remover_aresta` | `aresta` (`de`, `para`, `condicao?`) | `adicionar_aresta` da mesma aresta |
 | `alterar_campo_no` | `no_id`, `campo`, `de`, `para` | `alterar_campo_no` com `de`/`para` trocados |
 
 `alterar_campo_no` troca `papel`, `descricao`, `skill_ref` ou `contrato`
@@ -149,9 +149,22 @@ semântica própria, não rename cosmético.
 {
   "tipo": "adicionar_aresta",
   "aresta": { "de": "testar", "para": "red_team", "condicao": "aprovado" },
-  "inversa": { "tipo": "remover_aresta", "aresta": { "de": "testar", "para": "red_team" } }
+  "inversa": {
+    "tipo": "remover_aresta",
+    "aresta": { "de": "testar", "para": "red_team", "condicao": "aprovado" }
+  }
 }
 ```
+
+**`condicao` no alvo de `remover_aresta` é opcional, e é o que desempata aresta
+paralela.** Duas arestas entre o mesmo par de nós com condições diferentes são
+duas arestas (o schema sempre permitiu: são dois desfechos do mesmo passo), e um
+alvo com só as duas pontas não diz qual delas remover. Com `condicao`, a
+operação remove exatamente aquela; sem, remove a primeira aresta entre aquelas
+duas pontas — que é o que a operação sempre significou e o que mantém aplicando
+igual toda operação já gravada em `proposta.operacoes` (D2: nada é reescrito no
+lugar). Pelo mesmo motivo, a inversa só é incompatível quando os DOIS lados
+declaram `condicao` e elas divergem; um lado que não declara casa com o outro.
 
 Duas fronteiras:
 

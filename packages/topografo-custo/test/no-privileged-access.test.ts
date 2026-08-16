@@ -1,13 +1,15 @@
 /**
- * Testes de aceite da fronteira do topógrafo de custo (t114, AT10/AT11 — D1/D11).
+ * Acceptance tests of the cost surveyor's boundary (t114, AT10/AT11 — D1/D11).
  *
- * Mesmo padrão de `packages/tela/test/no-privileged-access.test.ts`: o topógrafo
- * é cliente comum da API pública. Não declara driver de SQLite, não alcança
- * `packages/core/src/db` e fala com o control plane só por HTTP.
+ * The same pattern as `packages/tela/test/no-privileged-access.test.ts`: the
+ * surveyor is an ordinary client of the public API. It declares no SQLite
+ * driver, it does not reach `packages/core/src/db` and it talks to the control
+ * plane over HTTP only.
  *
- * Aqui isso vale duas vezes. Além da D1, é a prova mecânica do critério da
- * ficha: se a lente de custo precisasse tocar o core para existir, "topógrafo é
- * ponto de extensão" seria afirmação sem lastro.
+ * Here that holds twice over. Beyond D1, it is the mechanical proof of that
+ * ticket's criterion: if the cost lens needed to touch the core in order to
+ * exist, "a surveyor is an extension point" would be a claim with nothing behind
+ * it.
  */
 
 import assert from 'node:assert/strict';
@@ -16,56 +18,51 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-const RAIZ_PACOTE = path.resolve(import.meta.dirname, '..');
-const RAIZ_REPO = path.resolve(RAIZ_PACOTE, '..', '..');
-const CAMINHO_PORTAO = path.join(RAIZ_REPO, 'scripts', 'check-single-writer.mjs');
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+const GATE_PATH = path.join(REPO_ROOT, 'scripts', 'check-single-writer.mjs');
 
 /**
- * Lista escrita à mão de propósito: importar a constante do portão faria o
- * pacote depender de um script do repo, que é justamente o tipo de acoplamento
- * que este teste existe para impedir (mesma nota de `packages/tela`).
+ * A hand-written list on purpose: importing the constant from the gate would
+ * make the package depend on a script of the repo, which is exactly the kind of
+ * coupling this test exists to prevent (same note as `packages/tela`).
  */
-const DRIVERS_SQLITE = ['better-sqlite3', 'sqlite3', 'node:sqlite', 'libsql', '@libsql/client'];
+const SQLITE_DRIVERS = ['better-sqlite3', 'sqlite3', 'node:sqlite', 'libsql', '@libsql/client'];
 
-const CAMPOS_DE_DEPENDENCIA = [
+const DEPENDENCY_FIELDS = [
   'dependencies',
   'devDependencies',
   'peerDependencies',
   'optionalDependencies',
 ];
 
-test('AT10 — packages/topografo-custo não declara nenhum driver de SQLite', () => {
-  const manifesto = JSON.parse(
-    readFileSync(path.join(RAIZ_PACOTE, 'package.json'), 'utf8'),
+test('AT10 — packages/topografo-custo declares no SQLite driver', () => {
+  const manifest = JSON.parse(
+    readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'),
   ) as Record<string, Record<string, string> | undefined>;
 
-  for (const campo of CAMPOS_DE_DEPENDENCIA) {
-    const declaradas = Object.keys(manifesto[campo] ?? {});
-    for (const driver of DRIVERS_SQLITE) {
+  for (const field of DEPENDENCY_FIELDS) {
+    const declared = Object.keys(manifest[field] ?? {});
+    for (const driver of SQLITE_DRIVERS) {
       assert.ok(
-        !declaradas.includes(driver),
-        `o topógrafo não pode declarar "${driver}" em ${campo} (D1: só o core toca o banco)`,
+        !declared.includes(driver),
+        `the surveyor cannot declare "${driver}" in ${field} (D1: only the core touches the database)`,
       );
     }
     assert.ok(
-      !declaradas.includes('cartografo') && !declaradas.includes('@cartografo/runner'),
-      `o topógrafo não depende do core nem do runner em ${campo}: a única superfície é a API pública`,
+      !declared.includes('cartografo') && !declared.includes('@cartografo/runner'),
+      `the surveyor depends on neither the core nor the runner in ${field}: the only surface is the public API`,
     );
   }
 });
 
-test('AT11 — varredura do portão sobre packages/topografo-custo não acusa nada', () => {
-  assert.ok(
-    existsSync(CAMINHO_PORTAO),
-    'artefato ainda não existe: scripts/check-single-writer.mjs',
-  );
+test('AT11 — the gate sweep over packages/topografo-custo flags nothing', () => {
+  assert.ok(existsSync(GATE_PATH), 'artifact does not exist yet: scripts/check-single-writer.mjs');
 
-  const resultado = spawnSync(process.execPath, [CAMINHO_PORTAO, RAIZ_PACOTE], {
-    encoding: 'utf8',
-  });
+  const result = spawnSync(process.execPath, [GATE_PATH, PACKAGE_ROOT], { encoding: 'utf8' });
   assert.equal(
-    resultado.status,
+    result.status,
     0,
-    `o portão reprovou o topógrafo:\n${resultado.stdout ?? ''}${resultado.stderr ?? ''}`,
+    `the gate rejected the surveyor:\n${result.stdout ?? ''}${result.stderr ?? ''}`,
   );
 });

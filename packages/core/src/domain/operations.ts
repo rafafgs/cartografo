@@ -81,10 +81,21 @@ export type ChangeableField =
   | 'escalation_policy'
   | 'escalation_recipient';
 
-/** End to end of an edge — what identifies the edge on removal. */
+/**
+ * End to end of an edge — what identifies the edge on removal.
+ *
+ * `condition` is OPTIONAL and joined the reference in t205, because two ends are
+ * not an identity: the format has always allowed two edges between the same pair
+ * of nodes with different `condition`s (two outcomes of the same gate), and a
+ * removal naming only the ends cannot say which of them it means. Declaring it
+ * pins the removal to one edge; omitting it keeps the old rule — first edge with
+ * those two ends — which is what every operation already stored in
+ * `proposta.operacoes` relies on, and what `diff.ts` keeps emitting.
+ */
 export interface EdgeReference {
   from: string;
   to: string;
+  condition?: string;
 }
 
 export interface AddNodeInverse {
@@ -281,11 +292,16 @@ function checkBody(type: string, body: PlainObject, role: string, note: Note): v
       note('campo_invalido', `${role} "${type}": "aresta" has to have "from" and "to"`);
       return;
     }
-    // `condition` is only demanded of an edge that ENTERS the document. Demanding
+    // `condition` is only DEMANDED of an edge that enters the document. Demanding
     // it as a string (even an empty one) and not as filled text is what lets a
     // missing label reach the soundness gate, where it is rejected with the rule
     // name instead of becoming a generic 400.
-    if (type === 'adicionar_aresta' && typeof edge.condition !== 'string') {
+    //
+    // On a removal it is optional (t205): present, it pins the operation to one
+    // of two parallel edges; absent, the removal means what it always meant. Its
+    // TYPE is checked either way — a `condition` that is not text names no edge.
+    const declared = type === 'adicionar_aresta' || edge.condition !== undefined;
+    if (declared && typeof edge.condition !== 'string') {
       note('campo_invalido', `${role} "${type}": "aresta.condition" has to be a string`);
     }
   };
@@ -334,6 +350,15 @@ function checkInverseTarget(
   const ends = (value: unknown): string =>
     isObject(value) ? `${String(value.from)}→${String(value.to)}` : 'invalid';
 
+  /** The `condition` a reference DECLARES, or `undefined` when it names none. */
+  const conditionOf = (value: unknown): unknown => (isObject(value) ? value.condition : undefined);
+
+  /** The edge as the error message spells it, condition included when declared. */
+  const edgeLabel = (value: unknown): string => {
+    const condition = conditionOf(value);
+    return condition === undefined ? ends(value) : `${ends(value)} [${String(condition)}]`;
+  };
+
   switch (type) {
     case 'adicionar_no': {
       const id = isObject(operation.no) ? operation.no.id : undefined;
@@ -347,8 +372,17 @@ function checkInverseTarget(
     }
     case 'adicionar_aresta':
     case 'remover_aresta': {
-      if (ends(operation.aresta) !== ends(inverse.aresta)) {
-        incompatible(`has to point at the same edge (${ends(operation.aresta)})`);
+      // The pair disagrees about WHICH edge only when both sides name a
+      // condition and the two differ: with two parallel edges, undoing the
+      // other one is not undoing this one (t205). A side that names none — every
+      // pair written before t205, and everything `diff.ts` emits — goes on
+      // matching whatever the other side says, which is why widening the
+      // reference broke no stored proposal.
+      const declared = conditionOf(operation.aresta);
+      const undone = conditionOf(inverse.aresta);
+      const clash = declared !== undefined && undone !== undefined && declared !== undone;
+      if (clash || ends(operation.aresta) !== ends(inverse.aresta)) {
+        incompatible(`has to point at the same edge (${edgeLabel(operation.aresta)})`);
       }
       break;
     }
@@ -432,14 +466,26 @@ export function applyOperations(
         break;
       }
       case 'remover_aresta': {
+        // A target that declares a `condition` names ONE edge, even where two
+        // parallel ones share the ends; one that declares none removes the first
+        // edge between those ends, which is what it has always meant and what
+        // every operation stored before t205 counts on.
+        const wanted = operation.aresta.condition;
         const position = result.edges.findIndex(
-          (edge) => edge.from === operation.aresta.from && edge.to === operation.aresta.to,
+          (edge) =>
+            edge.from === operation.aresta.from &&
+            edge.to === operation.aresta.to &&
+            (wanted === undefined || edge.condition === wanted),
         );
         if (position === -1) {
           throw new ApplicationError(
             'aresta_inexistente',
-            `edge "${operation.aresta.from}"→"${operation.aresta.to}" does not exist in the snapshot`,
-            { de: operation.aresta.from, para: operation.aresta.to },
+            `edge "${operation.aresta.from}"→"${operation.aresta.to}"${wanted === undefined ? '' : ` [${wanted}]`} does not exist in the snapshot`,
+            {
+              de: operation.aresta.from,
+              para: operation.aresta.to,
+              ...(wanted === undefined ? {} : { condicao: wanted }),
+            },
           );
         }
         result.edges.splice(position, 1);

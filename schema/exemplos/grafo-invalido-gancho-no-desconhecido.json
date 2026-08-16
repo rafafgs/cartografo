@@ -133,7 +133,7 @@
       "destination": {
         "type": "webhook",
         "url": "https://exemplo.invalid/ganchos/revisao",
-        "secret": "segredo-declarado-neste-grafo"
+        "secret_ref": "gancho-revisao"
       },
       "description": "Aponta para um nó que não existe: é isso que o validador estrutural recusa."
     }

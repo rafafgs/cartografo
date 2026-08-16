@@ -29,6 +29,14 @@ CARTOGRAFO_TOKEN=<o token do passo 2> \
   npx cartografo import grafos-de-fabrica/desenvolvimento-de-software  # 3 (outro terminal)
 ```
 
+O passo 1 é `npm install` porque um checkout de trabalho é onde o lockfile
+muda. Já uma instalação **reproduzível** — o CI, ou qualquer máquina que precise
+do mesmo `node_modules` de novo — pede `npm ci`: ele instala exatamente o que o
+`package-lock.json` diz e **falha** quando lockfile e `package.json` discordam,
+em vez de acomodar a diferença em silêncio. Foi um `node_modules` velho, mais
+antigo que uma dependência recém-adicionada, que derrubou 314 testes e o
+`typecheck` num checkout sem ninguém entender por quê.
+
 O passo 2 é o control plane inteiro em um comando: cria `.cartografo/cartografo.db`,
 aplica as migrações pendentes, sobe o HTTP e imprime a linha `cartografo.ready`.
 Na PRIMEIRA partida contra um banco novo, essa linha traz também um

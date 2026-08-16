@@ -398,3 +398,139 @@ test('t166 AT — applying an engine/model swap changes that field and nothing e
   assert.equal(requireNode(result, 'redigir').model, undefined, 'only the target node moves');
   assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
 });
+
+/* -------------------------------------------------------------------------- */
+/* t205 — two parallel edges are two edges.                                    */
+/*                                                                            */
+/* The format has always allowed two edges between the same pair of nodes with */
+/* different `condition`s, and `remover_aresta` had no way of saying WHICH of  */
+/* the two it meant: `EdgeReference` was `{from, to}` and application removed  */
+/* the first hit. `condition` on the target closes that, and stays OPTIONAL —  */
+/* every operation already stored in `proposta.operacoes` omits it, and has to */
+/* keep applying exactly as it did (D2: nothing is rewritten in place).        */
+/* -------------------------------------------------------------------------- */
+
+/** The minimal graph with two parallel edges, told apart only by `condition`. */
+function graphWithParallelEdges(): GraphDocument {
+  const document = minimalGraph();
+  document.edges = [
+    { from: 'redigir', to: 'revisar', condition: 'aprovado' },
+    { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+  ];
+  return document;
+}
+
+/** `adicionar_aresta` of one edge, with the removal that undoes it. */
+function addEdge(condition: string, inverseCondition?: string): unknown {
+  const aresta = { from: 'redigir', to: 'revisar', condition };
+  const target: Record<string, string> =
+    inverseCondition === undefined
+      ? { from: 'redigir', to: 'revisar' }
+      : { from: 'redigir', to: 'revisar', condition: inverseCondition };
+  return { tipo: 'adicionar_aresta', aresta, inversa: { tipo: 'remover_aresta', aresta: target } };
+}
+
+test('t205 AT — remover_aresta with a condicao removes exactly that parallel edge', async () => {
+  const { applyOperations } = await loadOperations();
+
+  const input = graphWithParallelEdges();
+  const result = applyOperations(input, [
+    {
+      tipo: 'remover_aresta',
+      aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      inversa: {
+        tipo: 'adicionar_aresta',
+        aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      },
+    },
+  ]);
+
+  assert.deepEqual(
+    result.edges,
+    [{ from: 'redigir', to: 'revisar', condition: 'aprovado' }],
+    'the sibling edge, which the operation never named, has to stay',
+  );
+  assert.deepEqual(
+    input,
+    graphWithParallelEdges(),
+    'applyOperations cannot mutate the input document',
+  );
+});
+
+test('t205 AT — remover_aresta without a condicao still removes the first edge by its two ends', async () => {
+  const { applyOperations } = await loadOperations();
+
+  // The shape every operation stored before this ticket has, and the one
+  // `diff.ts` keeps emitting: no `condition`, first hit by `from`/`to`.
+  const result = applyOperations(graphWithParallelEdges(), [
+    {
+      tipo: 'remover_aresta',
+      aresta: { from: 'redigir', to: 'revisar' },
+      inversa: {
+        tipo: 'adicionar_aresta',
+        aresta: { from: 'redigir', to: 'revisar', condition: 'aprovado' },
+      },
+    },
+  ]);
+
+  assert.deepEqual(
+    result.edges,
+    [{ from: 'redigir', to: 'revisar', condition: 'reprovado' }],
+    'an old-format target has to keep matching the first edge, exactly as before',
+  );
+});
+
+test('t205 AT — an inverse pair whose condicao agrees is a valid pair', async () => {
+  const { validateOperation } = await loadOperations();
+
+  assert.deepEqual(validateOperation(addEdge('aprovado', 'aprovado')), { valido: true, erros: [] });
+});
+
+test('t205 AT — an inverse pair whose condicao disagrees is incompatible', async () => {
+  const { validateOperation } = await loadOperations();
+
+  const report = validateOperation(addEdge('aprovado', 'reprovado'));
+  assert.equal(report.valido, false, 'undoing another parallel edge is not undoing this one');
+  assert.ok(
+    report.erros.some((error) => error.codigo === 'inversa_incompativel'),
+    `expected inversa_incompativel, got ${JSON.stringify(report.erros)}`,
+  );
+});
+
+test('t205 AT — an inverse pair whose target omits condicao stays valid (legacy shape)', async () => {
+  const { validateOperation } = await loadOperations();
+
+  assert.deepEqual(validateOperation(addEdge('aprovado')), { valido: true, erros: [] });
+
+  // And the other way round: the removal names the edge, the addition that
+  // undoes it is the whole edge anyway. Only two DECLARED conditions can clash.
+  assert.deepEqual(
+    validateOperation({
+      tipo: 'remover_aresta',
+      aresta: { from: 'redigir', to: 'revisar', condition: 'aprovado' },
+      inversa: { tipo: 'adicionar_aresta', aresta: { from: 'redigir', to: 'revisar', condition: 'aprovado' } },
+    }),
+    { valido: true, erros: [] },
+  );
+});
+
+test('t205 AT — a condicao that is not a string is refused on either edge operation', async () => {
+  const { validateOperation } = await loadOperations();
+
+  for (const operation of [
+    {
+      tipo: 'remover_aresta',
+      aresta: { from: 'redigir', to: 'revisar', condition: 7 },
+      inversa: { tipo: 'adicionar_aresta', aresta: { from: 'redigir', to: 'revisar', condition: 'aprovado' } },
+    },
+    {
+      tipo: 'adicionar_aresta',
+      aresta: { from: 'redigir', to: 'revisar', condition: 7 },
+      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: 'revisar' } },
+    },
+  ]) {
+    const report = validateOperation(operation);
+    assert.equal(report.valido, false, `a numeric condition has to be refused: ${JSON.stringify(operation)}`);
+    assert.ok(report.erros.some((error) => error.codigo === 'campo_invalido'));
+  }
+});

@@ -56,6 +56,24 @@ export const ENGINE_STDIO = ['ignore', 'pipe', 'pipe'] as const;
  */
 export const MODEL_FLAG = '-m';
 
+/**
+ * The variable that names the model a `modelTier: 'trivial'` session runs on.
+ *
+ * **And there is deliberately no default beside it**, which is where this
+ * adapter parts company with the first one. `command.ts` can answer "what does
+ * trivial cost here" with `claude-haiku-4-5` because that is a fact about a
+ * CLI somebody measured; nothing in this repository establishes which OpenAI
+ * model is the cheap one, and a guessed identifier does not fail politely — it
+ * reaches the CLI and kills the session on an unknown model.
+ *
+ * So the tier is still RECORDED on the job by the control plane, and this
+ * adapter simply makes no argv change until an operator names the model here.
+ * That is a gap, it is written down as one, and `codex-command.test.ts` proves
+ * it rather than assuming it — the same honesty `origin: 'catalog'` carries in
+ * `listModels()`, and the opposite of a no-op dressed up as success.
+ */
+export const TRIVIAL_MODEL_VARIABLE = 'CODEX_TRIVIAL_MODEL';
+
 /** A command ready for `spawn`, with no shell in between. */
 export interface EngineCommand {
   readonly command: string;
@@ -87,7 +105,12 @@ export interface EngineCommand {
  *   prompt or move the prompt out of last place, and one of those two is
  *   always true.
  */
-export function buildCommand(spec: SessionSpec): EngineCommand {
+export function buildCommand(
+  spec: SessionSpec,
+  env: NodeJS.ProcessEnv = process.env,
+): EngineCommand {
+  const model = resolveModel(spec, env);
+
   return {
     command: CODEX_BINARY,
     args: [
@@ -96,12 +119,39 @@ export function buildCommand(spec: SessionSpec): EngineCommand {
       '--skip-git-repo-check',
       '-C',
       spec.workingDir,
-      // Absent model, absent flag: the CLI resolves its own default, and the
-      // argv is what it was before the field existed.
-      ...(spec.model === undefined ? [] : [MODEL_FLAG, spec.model]),
+      // Absent model and no trivial model to fall back on, absent flag: the CLI
+      // resolves its own default, and the argv is what it was before either
+      // field existed. Exactly one flag, whatever the two say.
+      ...(model === undefined ? [] : [MODEL_FLAG, model]),
       composeSingleArgument(spec),
     ],
   };
+}
+
+/**
+ * The model this session pins, out of the node's own id and the work's tier.
+ *
+ * Same precedence as the first adapter's, for the same reason: `spec.model` is
+ * what the GRAPH declared for this node (t166), `modelTier` is what the intake
+ * said this work costs (t175), and a triage heuristic does not overrule a
+ * decision somebody wrote into a graph document — quite apart from two `-m`
+ * flags in one argv being a broken command.
+ *
+ * The difference from `command.ts` is the last line and it is the documented
+ * gap: with no `CODEX_TRIVIAL_MODEL` there is nothing honest to return, so a
+ * trivial tier resolves to `undefined` and this adapter changes nothing.
+ *
+ * @param spec The session being assembled.
+ * @param env The adapter's own environment.
+ * @returns The model id to pin, or `undefined` for the CLI's own default.
+ */
+function resolveModel(spec: SessionSpec, env: NodeJS.ProcessEnv): string | undefined {
+  if (spec.model !== undefined) return spec.model;
+  if (spec.modelTier !== 'trivial') return undefined;
+
+  // Blank is unset: an empty `-m` would kill the session on a flag nobody typed.
+  const declared = env[TRIVIAL_MODEL_VARIABLE]?.trim();
+  return declared ? declared : undefined;
 }
 
 /**

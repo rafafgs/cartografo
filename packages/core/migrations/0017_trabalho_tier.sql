@@ -1,0 +1,47 @@
+-- 0017_trabalho_tier — quanto este trabalho custa para rodar (t175).
+--
+-- Renumerada de 0012 para 0017 (a ficha pedia 0012, e a ficha foi escrita antes
+-- da 0012_motor_modelo, da 0013_sessao_modelos, da 0014_pergunta_no_id, da
+-- 0015_trabalho_campos_customizados e da 0016_gancho chegarem à main). É a
+-- terceira vez que isso acontece — a 0015 conta a própria história — e
+-- `src/db/migrate.ts` falha alto em número repetido. Nenhuma ordem de
+-- dependência: esta só mexe em `trabalho`.
+--
+-- O conceito não é novo no repositório, é DEFERIDO em dois lugares: o
+-- `docs/spec/grafo.md:401-403` deixou o `work_tier` do flowpilot fora do grafo
+-- portado, e o `docs/spec/topografo-custo.md` registrou que nem o documento de
+-- grafo nem o manifesto de skill têm campo de custo ou de tier. Esta coluna é a
+-- fatia mais estreita possível dessa dívida, e a fronteira é o que a mantém
+-- estreita: `tier` muda quanto um nó CUSTA para rodar, nunca por qual aresta o
+-- trabalho sai. O grafo segue congelado durante a execução (princípio 2), e as
+-- únicas decisões em voo continuam sendo os veredictos de portão.
+--
+-- **`CHECK` fechado, ao contrário de `sessao.modelos` e de `motor_modelo`.** Lá
+-- o conjunto é aberto por natureza — o valor é um identificador que o engine
+-- reportou, e um enum obrigaria uma migração por modelo novo. Aqui o conjunto é
+-- nosso: `trivial` e `standard` são vocabulário desta triagem, e um terceiro
+-- valor não é dado novo, é erro de quem escreveu. Mesmo raciocínio do
+-- `timeout_reason` na 0011 e do `origem` na 0012.
+--
+-- **NULO não é `trivial`.** É a única leitura perigosa desta coluna e por isso
+-- ela é anulável e sem backfill, como `silence_seconds`, `transcricao` e
+-- `campos` antes dela: linha anterior a esta migração lê NULO, que é exatamente
+-- o que ela é — ninguém triou. Colapsar ausência em "trivial" rebaixaria para um
+-- modelo mais barato o trabalho inteiro que existia antes desta ficha, sem que
+-- ninguém tivesse escolhido isso e sem nada falhar em lugar nenhum.
+--
+-- Não há coluna de MODELO aqui, e a ausência é deliberada: qual modelo é o
+-- barato é vocabulário de engine, e vive abaixo da fronteira 1 do
+-- `EngineAdapter`, dentro de cada adapter. O control plane guarda a
+-- classificação; quem a traduz em `--model` é quem sabe o que é um modelo.
+--
+-- Os dois VALORES são inglês por serem vocabulário da interface do
+-- EngineAdapter, que é inglesa inteira e é quem os consome — o mesmo raciocínio
+-- que a 0011 escreveu para `wall_clock` e `silence`. O NOME da coluna segue em
+-- português como o resto de `trabalho`: a D18 escopa a regra de inglês a
+-- identificadores de código, e schema aqui é vocabulário de dado.
+--
+-- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+
+ALTER TABLE trabalho ADD COLUMN tier TEXT  -- NULO = ninguém triou; NULO != 'trivial'
+  CHECK (tier IS NULL OR tier IN ('trivial', 'standard'));

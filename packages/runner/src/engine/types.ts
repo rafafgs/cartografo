@@ -119,6 +119,35 @@ export interface SessionSpec {
   readonly model?: string;
 
   /**
+   * What this work COSTS to run, as the intake triaged it (t175).
+   *
+   * Not `model` under another name, and the difference is one of layer. `model`
+   * is the id the GRAPH pinned for this node: engine vocabulary, crossing the
+   * boundary because a graph document wrote it. `modelTier` is THIS interface's
+   * vocabulary — two values of ours — and it is the adapter that answers, each
+   * in its own language, what "trivial" costs there. That is what lets the
+   * runner ask for the cheap one without ever knowing which model is the cheap
+   * one for any CLI.
+   *
+   * **`model` wins over `modelTier`.** When both arrive, the adapter assembles
+   * ONE model flag and the value is `model`'s: a model id is a decision
+   * somebody recorded in a graph document, and a triage heuristic does not
+   * overrule a recorded decision. Assembling both would be an argv with two
+   * model flags, which is not a preference — it is a broken command.
+   *
+   * Absent is "not triaged", which is the behaviour of every session opened
+   * before this field existed. `standard` assembles no flag either: it asserts
+   * "the engine's default is fine", a different sentence from "nobody
+   * classified this", and it produces the same argv on purpose — the closed
+   * pair exists so the triage can say both things, not so the adapter can act
+   * on both.
+   *
+   * The set is closed, unlike `model`'s: a third value here is not new data
+   * some engine understands, it is a mistake by whoever wrote it.
+   */
+  readonly modelTier?: 'trivial' | 'standard';
+
+  /**
    * Opaque additions to the engine process's environment. Deliberately
    * untyped from this layer's point of view: what the keys mean is the
    * engine's business.

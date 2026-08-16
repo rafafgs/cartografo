@@ -186,13 +186,24 @@ Então o prompt diz, por extenso:
 | nenhum item depende de si mesmo | `dependencia_de_si_mesmo` |
 | as dependências não fecham ciclo (diamante pode) | `ciclo_de_dependencia` |
 | `criterios_de_aceite` só quando houver critério de verdade | — |
+| `tier` só `"trivial"` ou `"standard"`, e omitir é permitido | `campo_invalido` |
 
-A última é a que mais engana e por isso é dita com ênfase: **`null` não é `[]`**
+A penúltima é a que mais engana e por isso é dita com ênfase: **`null` não é `[]`**
 ([`domain/intake.ts:34-43`](../../packages/core/src/domain/intake.ts)). "Ninguém
 escreveu critério ainda" e "declarei que não há critério" são afirmações
 diferentes, e o nó que refina é justamente quem precisa distinguir as duas. Uma
 lista vazia passa na validação e mente para o resto do grafo — o pior tipo de
 erro, porque não aparece.
+
+A última entrou com a t175 e é a razão de a triagem ser **de graça**: esta
+sessão já está lendo o pedido e propondo a quebra, então pedir a ela que também
+classifique cada item não custa sessão nova, chamada nova, nem modelo novo. O
+prompt ensina os dois valores e onde fica a linha — `trivial` para rename,
+typo, mudança só de documentação, ajuste de configuração sem decisão de design
+dentro; `standard` para todo o resto, e `standard` na dúvida. Omitir continua
+válido e significa "ninguém classificou", que **não** é `trivial`: quem omite
+deixa a decisão em aberto, quem escreve `trivial` afirma que o item é pequeno, e
+é essa afirmação que faz o runner rodar aquele nó num modelo mais barato.
 
 ---
 

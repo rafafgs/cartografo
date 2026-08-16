@@ -77,6 +77,7 @@ test('t157 FR5 — a list of real strings still passes', () => {
       corpo: null,
       criterios_de_aceite: ['a nota cabe em uma tela'],
       campos: null,
+      tier: null,
     },
   );
   // An absent optional list is still absent, not an empty-item violation.
@@ -86,6 +87,7 @@ test('t157 FR5 — a list of real strings still passes', () => {
     corpo: null,
     criterios_de_aceite: null,
     campos: null,
+    tier: null,
   });
 });
 
@@ -114,6 +116,7 @@ test('t168 — trabalho.criado accepts campos as a map of scalars', () => {
       corpo: null,
       criterios_de_aceite: null,
       campos: filled,
+      tier: null,
     },
   );
 

@@ -230,6 +230,34 @@ export interface SessionSpec {
   readonly model?: string;
 
   /**
+   * Quanto este trabalho CUSTA para rodar, como o intake o triou (t175).
+   *
+   * Não é `model` com outro nome, e a diferença é de camada. `model` é o id que
+   * o GRAFO fixou para este nó: vocabulário de engine, atravessando a fronteira
+   * porque um documento de grafo o escreveu. `modelTier` é vocabulário DESTA
+   * interface — dois valores nossos — e é o adapter que responde, cada um em
+   * sua própria língua, quanto "trivial" custa nele. É o que permite ao runner
+   * pedir o barato sem nunca saber qual é o modelo barato de nenhuma CLI.
+   *
+   * **`model` ganha de `modelTier`.** Quando os dois chegam, o adapter monta
+   * UMA flag de modelo só, e o valor é o de `model`: um id de modelo é decisão
+   * que alguém registrou num documento de grafo, e uma heurística de triagem
+   * não sobrepõe decisão registrada. Montar as duas seria um argv com duas
+   * flags de modelo, que não é preferência — é comando quebrado.
+   *
+   * Ausente é "sem triagem", e é o comportamento de toda sessão aberta antes
+   * deste campo existir. `standard` também não monta flag nenhuma: ele afirma
+   * "o default do engine serve", que é uma frase diferente de "ninguém
+   * classificou" e produz o mesmo argv de propósito — o par fechado existe para
+   * a triagem poder dizer as duas coisas, não para o adapter agir sobre as
+   * duas.
+   *
+   * O conjunto é fechado, ao contrário de `model`: um terceiro valor aqui não é
+   * dado novo que algum engine entenda, é erro de quem escreveu.
+   */
+  readonly modelTier?: 'trivial' | 'standard';
+
+  /**
    * Adições opacas ao ambiente do processo do engine. Deliberadamente sem
    * tipo do ponto de vista desta camada: o que as chaves significam é
    * assunto do engine.
@@ -936,6 +964,37 @@ caso C2 do kit, que a verifica pelo que o processo recebeu.
      `engine_session_ref` **não** identifica uma execução, identifica a
      conversa, e uma tabela que o tratar como chave única de sessão colide na
      segunda continuação.
+
+8. **`SessionSpec.modelTier`** (t175, 2026-08-16). Oitavo crescimento aditivo,
+   mesma forma dos anteriores: campo opcional, nenhum símbolo publicado mudando
+   de nome ou de forma, nenhum adapter obrigado a mexer. O que ele acrescenta é
+   um vocabulário, não um dado: `model` (item 6) atravessa a fronteira porque um
+   documento de grafo escreveu um id de engine; `modelTier` tem dois valores
+   NOSSOS, e é o adapter que responde quanto "trivial" custa nele. Sem isso, um
+   runner que quisesse rodar trabalho barato precisaria conhecer o nome do
+   modelo barato de cada CLI — que é exatamente a invariante 1 ("nenhum
+   vocabulário de engine acima desta linha") de cabeça para baixo.
+
+   Duas decisões que o campo obriga, e as duas estão no comentário dele:
+
+   - **`model` ganha de `modelTier`.** Os dois chegam juntos quando um nó fixou
+     modelo e o trabalho foi triado; o adapter monta uma flag só, com o valor de
+     `model`. Não é preferência de estilo: duas flags de modelo no mesmo argv é
+     comando quebrado, e entre um id que alguém registrou num grafo e uma
+     heurística de triagem, quem cede é a heurística.
+   - **`standard` não monta flag**, e produz argv idêntico ao de `modelTier`
+     ausente. O par existe para a TRIAGEM poder dizer "olhei e é normal" em vez
+     de calar — distinção que vale na telemetria, e que os adapters
+     deliberadamente não usam.
+
+   Os dois adapters divergem aqui, por escrito e de propósito. O `claude-code`
+   tem um default documentado (`claude-haiku-4-5`, sobrescrevível por
+   `CLAUDE_TRIVIAL_MODEL`); o `codex` **não tem default nenhum** e só monta a
+   flag se `CODEX_TRIVIAL_MODEL` estiver setada. Nada neste repositório
+   estabelece qual modelo da OpenAI é o barato, e um id chutado chegaria à CLI
+   como sessão que morre em modelo desconhecido. A lacuna está escrita e é
+   testada como lacuna (`test/engine/codex-command.test.ts`), em vez de
+   maquiada — mesma postura de `origin: 'catalog'` no item 6.
 
 **Rejeitado — `SessionStatus` mais rico.** Codex e Claude Code têm ambos
 estados próprios de quota/limite (o `Reconnecting... n/5` acima é um deles).

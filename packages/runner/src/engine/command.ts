@@ -71,6 +71,34 @@ export const RESUME_FLAG = '--resume';
 export const MODEL_FLAG = '--model';
 
 /**
+ * The model a `modelTier: 'trivial'` session runs on, when nothing overrides it.
+ *
+ * A constant HERE and not on the `SessionSpec` side, which is the whole point of
+ * the tier crossing the boundary instead of the model id: which model is the
+ * cheap one is this CLI's business, and the runner above this line has no way to
+ * know it (invariant 1). `spec.model` still has no default and must not get one
+ * — there the caller named an id, and inventing one for silence would put a
+ * choice nobody made into the telemetry. Here the caller named a TIER, which is
+ * a request for whatever the cheap one is, so answering it is the honest move.
+ *
+ * `claude-haiku-4-5`: the cheapest model of the current family, and an alias
+ * rather than a dated snapshot on purpose — the CLI's own help documents both
+ * forms, and a pinned date is a constant that rots on the next release.
+ */
+export const DEFAULT_TRIVIAL_MODEL = 'claude-haiku-4-5';
+
+/**
+ * The one trivial-model override, read from the ADAPTER'S OWN environment.
+ *
+ * Same shape and same reason as `PERMISSION_MODE_VARIABLE` above: what comes
+ * from the layer above is the TIER, in the interface's vocabulary; the model id
+ * that tier resolves to is engine configuration and stays below the boundary.
+ * An operator whose installation cannot reach the default model changes it here
+ * without any graph, ficha or spec learning a model name.
+ */
+export const TRIVIAL_MODEL_VARIABLE = 'CLAUDE_TRIVIAL_MODEL';
+
+/**
  * `stdio` of the engine process: stdin on `/dev/null`, stdout and stderr piped.
  *
  * Invariant 6 of the specification, and the only one in the document that came
@@ -91,6 +119,39 @@ export interface EngineCommand {
 export function resolvePermissionMode(env: NodeJS.ProcessEnv = process.env): string {
   const declared = env[PERMISSION_MODE_VARIABLE]?.trim();
   return declared ? declared : DEFAULT_PERMISSION_MODE;
+}
+
+/**
+ * The model this session pins, out of the node's own id and the work's tier.
+ *
+ * The precedence is the interesting half and it only has one honest answer:
+ * `spec.model` is what the GRAPH declared for this node (t166), `modelTier` is
+ * what the intake said this work costs (t175), and a triage heuristic does not
+ * overrule a decision somebody wrote into a graph document. It is also not a
+ * matter of taste — returning both would put two `--model` flags in one argv,
+ * which is a command the CLI refuses.
+ *
+ * `'standard'` resolves to `undefined` alongside absence, on purpose: it says
+ * "the engine's default is fine", and the honest way to ask for an engine's
+ * default is to assemble no flag at all.
+ *
+ * The blank guard on the override is `resolveModel`'s, on the dispatch side,
+ * for the same reason: a `CLAUDE_TRIVIAL_MODEL=" "` would otherwise reach the
+ * CLI as an empty `--model` and kill the session on a flag nobody typed.
+ *
+ * @param spec The session being assembled.
+ * @param env The adapter's own environment.
+ * @returns The model id to pin, or `undefined` for the engine's own default.
+ */
+export function resolveModel(
+  spec: SessionSpec,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (spec.model !== undefined) return spec.model;
+  if (spec.modelTier !== 'trivial') return undefined;
+
+  const declared = env[TRIVIAL_MODEL_VARIABLE]?.trim();
+  return declared ? declared : DEFAULT_TRIVIAL_MODEL;
 }
 
 /**
@@ -128,6 +189,7 @@ export function buildCommand(
   env: NodeJS.ProcessEnv = process.env,
 ): EngineCommand {
   const { deniedTools } = resolvePermissions(spec.permissions);
+  const model = resolveModel(spec, env);
 
   return {
     command: CLAUDE_BINARY,
@@ -142,9 +204,10 @@ export function buildCommand(
       // `--resume` would take the next token as its value, which is the exact
       // accident the position below exists to prevent.
       ...(spec.resumeFrom ? [RESUME_FLAG, spec.resumeFrom] : []),
-      // Absent model, absent flag: the engine resolves its own default, and the
-      // argv is what it was before the field existed.
-      ...(spec.model === undefined ? [] : [MODEL_FLAG, spec.model]),
+      // Absent model AND no trivial tier, absent flag: the engine resolves its
+      // own default, and the argv is what it was before either field existed.
+      // Exactly one flag, whatever the two fields say — see `resolveModel`.
+      ...(model === undefined ? [] : [MODEL_FLAG, model]),
       // Absent policy, absent flag: a session that declared nothing produces
       // exactly the argv it produced before this field existed.
       ...(deniedTools.length === 0 ? [] : [DISALLOWED_TOOLS_FLAG, ...deniedTools]),

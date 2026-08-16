@@ -163,6 +163,13 @@ const RULES: Record<string, TypeRule> = {
       // the class's version, and freezing a list in this mirror would mean a
       // release of the control plane per problem class.
       campos: optional('scalar-map'),
+      // The cost triage (t175), and the exact opposite openness decision from
+      // `campos` above: this vocabulary is OURS, not the class's and not the
+      // engine's, so the set closes here. A third value is not new data, it is
+      // a mistake by whoever wrote it — the same reasoning `timeout_reason`
+      // carries. Absent normalizes to `null` like every optional field of this
+      // type, and `null` is "nobody classified this", never "trivial".
+      tier: optional('string', { values: ['trivial', 'standard'] }),
     },
   },
   'trabalho.transicao': {

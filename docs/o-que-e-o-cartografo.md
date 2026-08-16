@@ -56,6 +56,17 @@ nada roda no default, e trocar essa escolha é uma proposta como qualquer
 outra: vira versão nova do mapa, com evidência e com volta. Os modelos que cada
 motor oferece aparecem na API, com a informação de onde a lista veio.
 
+**Trabalho pequeno roda em modelo barato, sem você escolher nada.** Na hora de
+propor a quebra, o intake também diz de cada ticket se ele é pequeno — rename,
+typo, mexida só em documentação — ou trabalho de verdade. A classificação sai
+de graça: é a mesma sessão que já estava lendo o pedido. Daí em diante o ticket
+pequeno atravessa o mapa inteiro num modelo mais barato, sem ninguém escolher
+modelo ticket a ticket, e uma rodada com tickets de tamanhos misturados sai mais
+barata do que uma que trata todos igual. Ticket que ninguém classificou roda
+como sempre rodou, e a etapa que fixou o próprio modelo continua mandando nele.
+A classificação muda quanto o ticket custa, nunca por onde ele passa: o caminho
+no mapa é o mesmo.
+
 **Decidir, etapa por etapa, quando você quer ser chamado.** Cada etapa do
 mapa diz o quanto insiste em falar com você: sempre (chama antes de fechar,
 mesmo achando que sabe), quando travar (o padrão), ou nunca — e aí travar

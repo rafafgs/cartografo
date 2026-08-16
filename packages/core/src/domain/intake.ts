@@ -53,9 +53,31 @@ export interface DraftItem {
    * transition gate's business, one layer down and one decision later.
    */
   campos: Record<string, string | number | boolean> | null;
+  /**
+   * What this item costs to RUN, as the session triaged it (t175); `null` when
+   * it did not classify this one.
+   *
+   * The classification rides the session that already proposes the breakdown —
+   * no second session, no extra call — and it is carried onto the job at
+   * confirmation. `null` is "unclassified", never "trivial": reading absence as
+   * cheap would put every untriaged ticket on a smaller model than anybody
+   * chose, which is the same distinction `criterios_de_aceite` draws between
+   * `null` and `[]` above.
+   */
+  tier: 'trivial' | 'standard' | null;
   /** Refs of the OTHER items of the batch this one depends on; `[]` when none. */
   depende_de: string[];
 }
+
+/**
+ * The two tiers, closed here rather than left open like `campos`' keys.
+ *
+ * This vocabulary is the triage's own — not the class's, not the engine's — so
+ * a third value is a mistake by whoever wrote it and not a value some consumer
+ * might understand. The same closed set is mirrored in the event contract
+ * (`db/event-validation.ts`) and in the migration's `CHECK`.
+ */
+const TIERS: readonly string[] = ['trivial', 'standard'];
 
 /** One problem found in the batch. Same shape as `StructureError` of the graph. */
 export interface ItemProblem {
@@ -187,6 +209,17 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
     broken = true;
   }
 
+  const tier = raw.tier;
+  const tierValid = isAbsent(tier) || (typeof tier === 'string' && TIERS.includes(tier));
+  if (!tierValid) {
+    note({
+      codigo: PROBLEM_CODES.INVALID_FIELD,
+      mensagem: `"tier" of item "${String(target)}" has to be one of: ${TIERS.join(', ')}`,
+      alvo: target,
+    });
+    broken = true;
+  }
+
   const dependencies = raw.depende_de;
   const dependenciesValid =
     isAbsent(dependencies) || (Array.isArray(dependencies) && dependencies.every(isFilledText));
@@ -212,6 +245,7 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
           corpo: isAbsent(raw.corpo) ? null : (raw.corpo as string),
           criterios_de_aceite: isAbsent(criteria) ? null : (criteria as string[]),
           campos: isAbsent(fields) ? null : (fields as ScalarMap),
+          tier: isAbsent(tier) ? null : (tier as DraftItem['tier']),
           depende_de: declared ?? [],
         },
     ref: reference,

@@ -638,6 +638,10 @@ test('AT15 — trabalho.criado of a confirmed job carries corpo and criterios_de
     corpo: 'O que ela pede, em prosa.',
     criterios_de_aceite: ['o teste de aceite existe'],
     campos: null,
+    // The batch this test confirms declared no tier (t175), and an item nobody
+    // triaged reaches the log as an explicit `null` — the same normalization
+    // the three fields above already get.
+    tier: null,
   });
 });
 

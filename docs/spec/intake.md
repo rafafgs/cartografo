@@ -50,10 +50,11 @@ tela de chat. Esta camada não despacha sessão e não conhece engine.
  "titulo": "Migração 0005",
  "corpo": "Colunas novas em trabalho e as duas tabelas do intake.",
  "criterios_de_aceite": ["a migração roda do zero"],
+ "tier": "standard",
  "depende_de": ["dominio"]}
 ```
 
-`ref` e `titulo` são obrigatórios; `corpo`, `criterios_de_aceite` e
+`ref` e `titulo` são obrigatórios; `corpo`, `criterios_de_aceite`, `tier` e
 `depende_de` são opcionais. `ref` é identidade **local ao lote**: ela existe
 para que um item cite outro, e morre na confirmação, quando cada `ref` vira um
 `trabalho.id` real.
@@ -76,7 +77,7 @@ primeiro (`validateItems`, linha 242):
 | `lista_invalida` | `itens` não é lista, ou é lista vazia |
 | `item_invalido` | um item não é objeto |
 | `campo_obrigatorio_ausente` | falta `ref` ou `titulo` |
-| `campo_invalido` | `corpo`, `criterios_de_aceite` ou `depende_de` com forma errada |
+| `campo_invalido` | `corpo`, `criterios_de_aceite`, `campos`, `tier` ou `depende_de` com forma errada |
 | `ref_duplicado` | dois itens do lote usam o mesmo `ref` |
 | `dependencia_desconhecida` | `depende_de` cita `ref` que não é de nenhum item do lote |
 | `dependencia_de_si_mesmo` | o item cita o próprio `ref` |
@@ -178,9 +179,20 @@ evento `trabalho.criado` ganhou os dois campos correspondentes, **opcionais**
 |---|---|---|
 | `corpo` | TEXT | `null` quando o trabalho nasceu só com título |
 | `criterios_de_aceite` | TEXT (JSON `string[]`) | `null` **não** é `[]` |
+| `tier` | TEXT (`trivial` \| `standard`) | t175. `null` **não** é `trivial` |
 
 `null ≠ []` é a distinção que importa para o nó que refina: "ninguém escreveu
 critério ainda" e "declarei que não há critério" são afirmações diferentes.
+
+`null ≠ trivial` é a mesma disciplina com um preço maior: `tier` é a triagem de
+custo que a sessão de intake faz de graça (t175, ficha
+[`intake-geracao.md`](intake-geracao.md)), e é dela que o runner tira o modelo
+que vai rodar cada nó. Ler ausência como "trivial" rebaixaria para um modelo
+mais barato todo trabalho nascido antes desta coluna existir, sem que ninguém
+tivesse escolhido isso e sem nada falhar em lugar nenhum. O que o tier muda é
+quanto um nó CUSTA para rodar, nunca por qual aresta o trabalho sai: o grafo
+segue congelado durante a execução, e os atalhos de topologia do flowpilot
+seguem fora do porte ([`grafo.md`](grafo.md), seção do `work_tier`).
 
 Um trabalho criado à mão por `POST /v1/jobs` continua nascendo só com título, e
 nesse caso os dois campos chegam ao log como `null` explícito — a regra de

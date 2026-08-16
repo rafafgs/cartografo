@@ -164,6 +164,16 @@ interface Job {
    * t141. It is the first of the three ways {@link DEFAULT_ENGINE} is reached.
    */
   grafo_versao_id?: string | null;
+
+  /**
+   * What this work costs to run, as the intake triaged it (t175).
+   *
+   * Optional and nullable for the same reason `grafo_versao_id` above is: a work
+   * created by hand names no tier, and every work born before the column existed
+   * reads `null`. Absent and `null` mean the same thing here — nobody
+   * classified it — and neither means `trivial`.
+   */
+  tier?: 'trivial' | 'standard' | null;
 }
 
 /** One envelope of the work's timeline. */
@@ -834,6 +844,15 @@ export function createClaudeCodeDispatch(
       // still be a key, and `buildCommand` reads absence, not falsiness.
       const model = resolveModel(resolved);
 
+      // The tier comes off the WORK, not off the node — it is a property of what
+      // is being done, not of the step doing it, so it is set once here and
+      // travels to whichever engine this node resolved to. Which model that
+      // buys is the adapter's answer, below boundary 1, where model names live.
+      // Same conditional spread and same reason as `model` above: `null` is the
+      // ordinary "nobody triaged this", and it has to reach the adapters as an
+      // absent key rather than a present one holding nothing.
+      const modelTier = job.tier ?? undefined;
+
       const spec: SessionSpec = {
         workingDir: worktree.path,
         instructions,
@@ -841,6 +860,7 @@ export function createClaudeCodeDispatch(
         timeoutSeconds,
         silenceSeconds,
         ...(model === undefined ? {} : { model }),
+        ...(modelTier === undefined ? {} : { modelTier }),
         ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
         ...(permissions === undefined ? {} : { permissions }),
       };

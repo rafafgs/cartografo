@@ -275,6 +275,11 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
         // the confirmation's — a ticket may perfectly well be born on the entry
         // node with a field the node it later leaves will demand.
         campos: item.campos,
+        // The triage the intake session did for free (t175). It rides through
+        // the same way `campos` does: `validateItems` already closed the set of
+        // values, and what the tier COSTS is the runner's question, one layer
+        // out — nothing here translates it into a model.
+        tier: item.tier,
         no_entrada_id: data.no_inicial,
         projeto_id: draft.projeto_id,
         execucao_id: draft.execucao_id,

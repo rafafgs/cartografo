@@ -67,6 +67,20 @@ export interface Job {
    * transition gate reads to decide whether the job may leave a node.
    */
   campos: ScalarMap | null;
+  /**
+   * What this work costs to RUN, as the intake triaged it (t175); `null` when
+   * nobody classified it.
+   *
+   * It never decides which edge the job takes out of a node — the graph stays
+   * frozen during execution, and the only in-flight decisions are gate
+   * verdicts. What reads this is the runner, once per dispatch, to pick a
+   * cheaper model for trivial work on whichever engine that node resolved to.
+   *
+   * `null` is not `'trivial'`. Every job born before this field existed reads
+   * `null`, and collapsing the two would silently downgrade the model of all of
+   * them — a choice nobody made, with nothing failing to reveal it.
+   */
+  tier: 'trivial' | 'standard' | null;
   no_entrada_id: string;
   no_atual: string;
   bloqueado: boolean;
@@ -112,7 +126,7 @@ interface JobRow
 }
 
 const COLUMNS = `
-  id, projeto_id, execucao_id, titulo, corpo, criterios_de_aceite, campos,
+  id, projeto_id, execucao_id, titulo, corpo, criterios_de_aceite, campos, tier,
   no_entrada_id, no_atual, bloqueado, motivo_bloqueio, grafo_versao_id,
   criado_em, atualizado_em
 `;
@@ -199,6 +213,14 @@ export interface CreateJobInput {
   criterios_de_aceite?: unknown;
   /** Optional values of the class's declared fields (t168). */
   campos?: unknown;
+  /**
+   * Optional cost triage (t175), for jobs created outside the intake.
+   *
+   * Absent means "unclassified", the behaviour every caller written before this
+   * field had — which is why it is validated by the event contract and not
+   * defaulted here.
+   */
+  tier?: unknown;
   no_entrada_id?: unknown;
   execucao_id?: unknown;
   projeto_id?: unknown;
@@ -212,9 +234,9 @@ export interface CreateJobInput {
  * `grafo_versao_id` goes into the PROJECTION and not into the event payload: the
  * `trabalho.criado` schema does not declare it, and a log carrying a field
  * outside its contract is a log no consumer can validate. `corpo`,
- * `criterios_de_aceite` and `campos` go into BOTH, because the schema does
- * declare them (t122, t168) — a job that is born with content has that content
- * as part of the fact.
+ * `criterios_de_aceite`, `campos` and `tier` go into BOTH, because the schema
+ * does declare them (t122, t168, t175) — a job that is born with content, or
+ * already triaged, has that as part of the fact.
  *
  * A job created by hand with no `grafo_versao_id` is NOT cross-checked against
  * any class's `custom_fields`: there is no graph to ask, exactly as there is
@@ -235,6 +257,7 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     corpo: input.corpo,
     criterios_de_aceite: input.criterios_de_aceite,
     campos: input.campos,
+    tier: input.tier,
   });
   const projectId = integerOrDefault('projeto_id', input.projeto_id, DEFAULT_PROJECT);
   const executionId = integerOrNull('execucao_id', input.execucao_id);
@@ -243,16 +266,19 @@ export function createJob(db: Database, input: CreateJobInput): Job {
   const entryNode = data.no_entrada_id as string;
   const criteria = data.criterios_de_aceite as string[] | null;
   const fields = data.campos as ScalarMap | null;
+  // Already normalized by `requireValidData`: absent came back as an explicit
+  // `null`, and anything outside the two values threw before this line.
+  const tier = data.tier as Job['tier'];
 
   const create = db.transaction((): Job => {
     const timestamp = now();
     const result = db
       .prepare(
         `INSERT INTO trabalho (
-           projeto_id, execucao_id, titulo, corpo, criterios_de_aceite, campos,
+           projeto_id, execucao_id, titulo, corpo, criterios_de_aceite, campos, tier,
            no_entrada_id, no_atual, bloqueado, motivo_bloqueio, grafo_versao_id,
            criado_em, atualizado_em
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
       )
       .run(
         projectId,
@@ -261,6 +287,7 @@ export function createJob(db: Database, input: CreateJobInput): Job {
         data.corpo as string | null,
         criteria === null ? null : JSON.stringify(criteria),
         fields === null ? null : JSON.stringify(fields),
+        tier,
         entryNode,
         entryNode,
         graphVersionId,

@@ -75,6 +75,7 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
       corpo: 'Cria as duas tabelas do intake.',
       criterios_de_aceite: ['a migração roda do zero'],
       campos: null,
+      tier: null,
       depende_de: [],
     },
     {
@@ -86,6 +87,9 @@ test('AT1 — a batch with unique refs and no dependency validates clean', async
       corpo: null,
       criterios_de_aceite: null,
       campos: null,
+      // And the triage (t175) normalizes the same way, for a sharper reason:
+      // `null` and `'trivial'` differ by which model the work ends up running.
+      tier: null,
       depende_de: [],
     },
   ]);

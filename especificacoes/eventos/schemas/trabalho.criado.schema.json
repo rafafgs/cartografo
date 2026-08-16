@@ -36,6 +36,11 @@
           "type": ["object", "null"],
           "additionalProperties": { "type": ["string", "number", "boolean"] },
           "description": "Valores dos campos que a CLASSE declara no seu grafo (`custom_fields`, t168) — `premise_source`, `downside` e `upside` em bets assimétricas. Chaves livres de propósito: quem as declara é o documento de grafo da classe, não esta taxonomia. null quando o trabalho nasceu sem campo nenhum; null e {} são coisas diferentes."
+        },
+        "tier": {
+          "type": ["string", "null"],
+          "enum": ["trivial", "standard", null],
+          "description": "Triagem de custo do trabalho (t175): quanto ele custa para RODAR, nunca por qual aresta ele sai — o grafo segue congelado. Conjunto fechado porque o vocabulário é desta triagem, e não do engine: um terceiro valor é erro de quem escreveu. null quando ninguém triou, e null NÃO é `trivial` — ler ausência como barato rebaixaria o modelo de todo trabalho anterior a esta ficha sem que ninguém tivesse escolhido isso."
         }
       },
       "additionalProperties": false

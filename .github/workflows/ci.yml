@@ -9,6 +9,11 @@ name: CI
 on:
   push:
   pull_request:
+  # Gatilho manual. O primeiro push que registrou este workflow não criou
+  # execução nenhuma, e sem um gatilho sob controle a única forma de tentar de
+  # novo é esperar outro push cair certo. Útil de qualquer forma: força uma
+  # execução para diagnóstico sem sujar o histórico com commit vazio.
+  workflow_dispatch:
 
 jobs:
   suite:

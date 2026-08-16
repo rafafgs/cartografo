@@ -7,7 +7,8 @@
 > `packages/runner/src/engine/codex-adapter.ts` (t119), cada um certificado
 > pelos casos do kit contra o fake engine — sete no congelamento, nove desde
 > que o cão de guarda de inatividade acrescentou o C9 (t163), dez desde que a
-> continuação de sessão acrescentou o C10 (t173).
+> continuação de sessão acrescentou o C10 (t173), onze desde que o prompt
+> grande demais para o argv acrescentou o C11 (t203).
 >
 > **Lacuna registrada no congelamento (t119):** a prova manual do adapter do
 > Codex contra a CLI real rodou até o 401 — a máquina não tem credencial
@@ -778,9 +779,13 @@ Todas verificadas pelo kit abaixo:
 4. Toda linha emitida pelo engine chega ao `onOutput`, na ordem original.
 5. Nenhum processo fica órfão: nem por timeout, nem por cancelamento, nem por
    engine que ignora SIGTERM.
-6. **`stdin` do processo do engine é fechado ou redirecionado para
-   `/dev/null` pelo adapter.** Não é detalhe de implementação — ver "Ajustes
-   feitos na revisão", item 1.
+6. **`stdin` do processo do engine é fechado, redirecionado para `/dev/null`,
+   ou escrito e então fechado pelo adapter.** O que a invariante proíbe é a
+   quarta forma: pipe aberto, nada escrito, ninguém fechando — o engine espera
+   EOF para sempre. Não é detalhe de implementação — ver "Ajustes feitos na
+   revisão", item 1, que continua valendo inteiro; o item 10 é que
+   acrescentou o terceiro mecanismo, quando o conteúdo grande passou a
+   precisar de um canal fora do argv.
 7. **O adapter nunca dá ao engine acesso a diretório além do
    `spec.workingDir`.** No `claude-code` isso é `--add-dir`, que o adapter não
    monta em nenhum caminho; em outro engine será outra flag. A invariante é a
@@ -813,6 +818,14 @@ que não continuou nada é idêntica, por fora, a uma que continuou. É a mesma
 regra de honestidade que `permissions` já tornou normativa, aplicada ao campo
 onde a perda silenciosa custa mais.
 
+C11 (t203) entra por um motivo que nenhum dos anteriores tinha: ele é o único
+caso cujo modo de falha está **fora** do adapter e **abaixo** dele. O teto é
+do sistema operacional, o `spawn` morre com `E2BIG` antes de existir processo,
+e não há sessão nem `onFinished` por onde o problema pudesse ser reportado —
+o adapter simplesmente para de funcionar num tamanho que ninguém declarou. É
+a outra metade do C2: aquele pergunta se o conteúdo chega, este pergunta se
+ele continua chegando quando há conteúdo demais para caber onde costuma ir.
+
 | Nome | Setup | Resultado esperado |
 |---|---|---|
 | **C1 — Sessão básica** | Fake engine emite N linhas e sai com 0. | `getStatus` é `"running"` logo após o start; `onFinished("completed", 0)` uma vez; `getStatus` passa a `"completed"`. Nenhum `onOutput` depois do `onFinished`. |
@@ -825,6 +838,7 @@ onde a perda silenciosa custa mais.
 | **C8 — Corrida de parada** | Fake engine que ignora SIGTERM e nunca termina sozinho; `timeoutSeconds` longo, para que o relógio interno nunca dispare por conta própria. Duas paradas seguidas, sem sleep entre elas, com status diferentes — a segunda cai dentro da janela de grace da primeira: `cancel(handle, "timed_out")` e depois `cancel(handle, "cancelled")`. | Vence a PRIMEIRA: `onFinished` e `getStatus` reportam `"timed_out"`, não importa se o processo morreu no SIGTERM ou no SIGKILL. A segunda parada é no-op completo — não sobrescreve o status, não sinaliza de novo, não rearma escalação nem rede de segurança (`onFinished` uma única vez). Repetido com os status trocados, o esperado vira `"cancelled"`: o que vence é a ordem, não o literal. |
 | **C9 — Inatividade** | Fake engine emite um batimento a cada `silenceSeconds / 2`, atravessando duas janelas inteiras, e depois cala para sempre sem sair; `timeoutSeconds` longo, para que o relógio de parede nunca dispare por conta própria. | `onFinished("timed_out", null, {timeoutReason: "silence"})` uma única vez, dentro de uma janela de `silenceSeconds` contada a partir do ÚLTIMO batimento — nunca a partir do início da sessão, que é o que um cão de guarda sem rearme faria. Todos os batimentos chegaram ao `onOutput` antes disso. Nenhum órfão. `cancel()` depois é no-op silencioso. |
 | **C10 — Continuação de sessão** | Uma sessão, e depois outra com `resumeFrom` valendo o `engineRef` que a primeira reportou, no MESMO `workingDir`. O caso lê `capabilities().hasResume` e cobra o desfecho correspondente — nunca crava qual adapter está rodando. | Declarando `hasResume`: o ref chega ao **processo** por algum caminho legítimo (a disciplina do C2 — inspecionar o `SessionSpec` testaria o teste), a sessão continuada completa, e o handle local é OUTRO, porque o ref é do engine e o handle é do adapter. Não declarando: `startSession` rejeita com `SessionStartError` **antes do spawn** — nenhum processo, nenhum sidecar, nenhum `onFinished`. |
+| **C11 — Prompt grande demais para o argv** | `instructions` + `prompt` somando ~300 KB, com um marcador curto e único dentro do `prompt`. O tamanho é escolhido para passar dos dois tetos reais de sistema operacional ao mesmo tempo: 128 KiB por argumento no Linux (`MAX_ARG_STRLEN`) e o bloco argv+envp inteiro no macOS (`ARG_MAX`). | A sessão chega a status terminal sem falha de spawn — o modo de falha aqui é o `spawn` morrer com `E2BIG` antes de existir sessão para reportar coisa alguma. O marcador chega ao **processo** por algum caminho legítimo (a mesma disciplina do C2, e os mesmos quatro caminhos), e o conteúdo **não** está no `argv`: um adapter que apenas coube no teto da máquina de CI passaria o caso e quebraria na máquina seguinte. Qual canal ele usa é decisão do adapter, e o caso não cobra nenhum. |
 
 Notas de execução:
 
@@ -871,7 +885,7 @@ contra `claude 2.1.232` já instalado. Fontes primárias:
 | `startSession` | `codex exec [OPTIONS] [PROMPT]` — "Run Codex non-interactively". Subprocess comum, sem daemon. | `codex --help`: `exec  Run Codex non-interactively [aliases: e]` |
 | `SessionSpec.workingDir` | `-C, --cd <DIR>` ("use the specified directory as its working root"). Precisa de `--skip-git-repo-check` quando o diretório não é repo git — pegadinha real para worktree de teste. | `codex exec --help` |
 | `SessionSpec.instructions` | **Sem flag de system prompt.** Três caminhos internos ao adapter: concatenar no prompt; escrever `AGENTS.md` efêmero no workdir; ou `-c base_instructions=<...>`. | `codex exec --help` não lista nenhum flag de system prompt; `grep -a` no binário distribuído acha `AGENTS.md` (70 ocorrências) e `base_instructions` (14). Contraste medido: `claude --help` lista `--system-prompt <prompt>` e `--append-system-prompt <prompt>`. |
-| `SessionSpec.prompt` | Argumento posicional, ou stdin quando `-`. Sem shell no meio: argv direto, zero superfície de injeção de quoting. | `codex exec --help`: "Initial instructions for the agent. If not provided as an argument (or if `-` is used), instructions are read from stdin" |
+| `SessionSpec.prompt` | Argumento posicional **precedido de `--`**, e stdin quando o conteúdo não cabe no argv (t203). O `--` não é enfeite: `codex exec "-1 apples"` responde `error: unexpected argument '-1' found` e não abre. No caminho de stdin o posicional **some junto** — o `<stdin>` block só é anexado quando os dois canais carregam conteúdo, e omitir o posicional inteiro foi medido lendo o prompt limpo. Sem shell no meio nos dois casos: argv direto, zero superfície de injeção de quoting. | `codex exec --help`: "Initial instructions for the agent. If not provided as an argument (or if `-` is used), instructions are read from stdin. If stdin is piped and a prompt is also provided, stdin is appended as a `<stdin>` block"; erro do `-1` e sucesso do `--` medidos contra `codex-cli 0.147.0` na t203 |
 | `SessionSpec.timeoutSeconds` | **Não existe flag de timeout** — nem aqui nem no Claude Code. É relógio do adapter sobre o processo, exatamente como a interface presume. | ausência em `codex exec --help` |
 | `SessionSpec.envOverrides` | Ambiente do subprocess, mais `-c chave=valor` para configuração. | `codex exec --help` |
 | `SessionListener.onOutput` | `--json` ("Print events to stdout as JSONL"). Linhas de erro do runtime saem em texto puro **não-JSON** no mesmo fluxo — o que confirma o contrato de linha crua sem parse. | Execução real: entre os frames JSON vieram linhas `ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized` |
@@ -898,10 +912,10 @@ O que a revisão *mudou* está na seção seguinte.
 
 ## Ajustes feitos na revisão
 
-Oito mudanças e duas rejeições explícitas — quatro da revisão original, mais o
+Dez mudanças e duas rejeições explícitas — quatro da revisão original, mais o
 que cresceu depois do congelamento em v1 (item 5, t163; item 6, t166; item 7,
-t173; item 8, t172). Nada aqui é decorativo: os itens 1, 3, 6, 7 e 8 saíram de
-rodar as CLIs, não de ler documentação.
+t173; item 8, t172; item 9, t175; item 10, t203). Nada aqui é decorativo: os
+itens 1, 3, 6, 7, 8 e 10 saíram de rodar as CLIs, não de ler documentação.
 
 1. **`stdin` fechado virou invariante normativa (novo).** Rodando
    `codex exec` com stdin não-TTY, a CLI imprimiu
@@ -1116,6 +1130,62 @@ caso C2 do kit, que a verifica pelo que o processo recebeu.
    como sessão que morre em modelo desconhecido. A lacuna está escrita e é
    testada como lacuna (`test/engine/codex-command.test.ts`), em vez de
    maquiada — mesma postura de `origin: 'catalog'` no item 6.
+
+10. **O conteúdo grande saiu do argv, e o prompt deixou de poder ser lido como
+    flag** (t203, 2026-08-16). O primeiro item desta lista que **não** mexe na
+    interface: nenhum símbolo novo, nenhum campo novo, nada em `types.ts`.
+    O que ele exercita é um caminho que a regra normativa já contemplava e que
+    nenhum adapter tinha tomado — cada adapter decide como injeta, pela flag do
+    engine, por stdin ou por arquivo efêmero — e é por isso que ele cabe
+    inteiro abaixo da fronteira 1, num documento congelado, sem decisão de
+    formato nenhuma.
+
+    **Dois bugs, os dois reproduzidos contra as CLIs instaladas**
+    (`claude 2.1.233`, `codex-cli 0.147.0`):
+
+    - **`E2BIG`.** Os dois adapters punham o conteúdo composto inteiro no
+      `argv`. O Linux limita um ÚNICO elemento a 128 KiB (`MAX_ARG_STRLEN`) e o
+      macOS limita o bloco argv+envp inteiro (`ARG_MAX`); `SessionSpec.prompt` é
+      "instruções da skill + trabalho + perguntas anteriores + transcript no
+      resume" e cresce sem teto numa sessão longa ou continuada. Passando disso
+      a sessão não falha, ela **não abre**: quem morre é o `spawn`, antes de
+      existir processo, saída ou sessão para reportar o quê;
+    - **prompt começando com `-` lido como flag.** `claude --print "-1 apples
+      remain"` responde `error: unknown option '-1 apples remain'`;
+      `codex exec "-1 apples"` responde `error: unexpected argument '-1'
+      found`. Instrução de nó é prosa que outra pessoa escreveu — uma lista com
+      travessão, um número negativo — e nada garante o que cai na primeira
+      coluna. As duas CLIs aceitam `--` antes do posicional, e foi medido que
+      ele não perturba nenhuma das flags anteriores (`--resume`, `--model`,
+      `-m`, `-s`, `-C`, `--disallowedTools`), que continuam todas ANTES dele.
+
+    **O desenho é por tamanho, e o caminho antigo fica intacto.** Abaixo de
+    64 KiB combinados — bytes UTF-8 de `instructions` + `prompt`, nunca
+    `.length`, porque o conteúdo deste projeto é português e caractere
+    acentuado são dois bytes para o kernel e uma unidade para o JavaScript — o
+    argv é exatamente o de antes, com o `--` a mais. Acima, o `claude-code`
+    escreve as instruções num arquivo efêmero 0600 no `workingDir`
+    (`--system-prompt-file`, que o `--help` principal não lista mas a descrição
+    do `--bare` cita como `--system-prompt[-file]`, e que foi medido
+    funcionando) e manda o prompt por stdin; o `codex` manda a composição
+    inteira por stdin e larga o posicional junto. Nos dois casos a composição
+    continua saindo das funções deste documento — `composeWithSystemPromptFlag`
+    e `composeSingleArgument` — e o que muda é o destino, nunca o formato.
+
+    **A invariante 6 cresceu de dois mecanismos para três**, e a preocupação do
+    item 1 continua inteira: o que ela proíbe é o pipe aberto que ninguém
+    escreve e ninguém fecha. Escrever e fechar satisfaz a mesma preocupação por
+    outro caminho, e nos dois adapters a condição que abre o pipe é
+    literalmente a mesma que dispara a escrita, o que torna a terceira forma
+    impossível de acontecer por engano.
+
+    Nenhum dos dois adapters recusa sessão por tamanho, e isso é decisão
+    escrita: com os dois ganhando canal fora do argv, não existe tamanho que
+    justifique recusar. Um terceiro adapter que não tenha nem folga de argv nem
+    stdin nem arquivo recusa na porta, pela mesma regra de honestidade que
+    `resumeFrom` e `permissions` já seguem — mas ele não existe hoje, e
+    caminho de recusa sem consumidor é o mesmo campo morto que esta seção
+    rejeita em toda outra linha.
 
 **Rejeitado — `SessionStatus` mais rico.** Codex e Claude Code têm ambos
 estados próprios de quota/limite (o `Reconnecting... n/5` acima é um deles).

@@ -123,15 +123,17 @@ function die(message) {
  * The adapter under proof, pointed at the real binary.
  *
  * When `CODEX_BINARY_PATH` is set, only the COMMAND changes — every argument
- * `buildCommand` produced goes through whole. It is the same discipline the
- * conformance test applies to the fake engine, and for the same reason: an
- * override that rewrites the argv would be proving a different command from the
- * one the adapter actually issues.
+ * `buildCommand` produced goes through whole, and since t203 so does everything
+ * it produced OFF the argv (`stdin`). It is the same discipline the conformance
+ * test applies to the fake engine, and for the same reason: an override that
+ * rewrote the command would be proving a different one from the one the adapter
+ * actually issues — and dropping `stdin` here would prove a session whose large
+ * prompt went nowhere at all.
  */
 function buildAdapter() {
   if (!BINARY_OVERRIDE) return new CodexAdapter();
   return new CodexAdapter({
-    commandBuilder: (spec) => ({ command: BINARY_OVERRIDE, args: buildCommand(spec).args }),
+    commandBuilder: (spec) => ({ ...buildCommand(spec), command: BINARY_OVERRIDE }),
     environmentBuilder: (spec) => buildEnvironment(spec),
     probeCommandBuilder: () => ({ command: BINARY_OVERRIDE, args: ['--version'] }),
   });

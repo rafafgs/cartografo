@@ -29,7 +29,7 @@ import {
   type ScalarMap,
 } from '../domain/custom-fields.ts';
 import { getVersion } from './graphs.ts';
-import { enqueueHookDeliveries } from './hooks.ts';
+import { enqueueHookDeliveries, type ClockOptions } from './hooks.ts';
 import {
   API_ACTOR,
   DEFAULT_PROJECT,
@@ -438,6 +438,9 @@ function requireFieldsOfNode(db: Database, row: JobRow): void {
  * @param db Open handle.
  * @param id Job id.
  * @param input Request body.
+ * @param options The injected clock; default: the real clock. It is forwarded to
+ *   the enqueue, so a test that freezes the dispatcher's clock stamps the
+ *   delivery with the same instant the due-query reads.
  * @returns The updated job, or `null` if it does not exist.
  * @throws {ValidationError} When the node being left demands a field the job
  *   does not carry.
@@ -446,6 +449,7 @@ export function transitionJob(
   db: Database,
   id: number,
   input: TransitionInput,
+  options: ClockOptions = {},
 ): Job | null {
   const alreadyWalked =
     db
@@ -473,15 +477,19 @@ export function transitionJob(
     // The node comes from the VALIDATED payload, so what the hook matches on is
     // the same string the log records — never the raw request body.
     (row, data, event) => {
-      enqueueHookDeliveries(db, {
-        trigger: 'node_entered',
-        no_id: data.para_no_id as string,
-        trabalho_id: id,
-        projeto_id: row.projeto_id,
-        execucao_id: row.execucao_id,
-        grafo_versao_id: row.grafo_versao_id,
-        evento_id: event.id,
-      });
+      enqueueHookDeliveries(
+        db,
+        {
+          trigger: 'node_entered',
+          no_id: data.para_no_id as string,
+          trabalho_id: id,
+          projeto_id: row.projeto_id,
+          execucao_id: row.execucao_id,
+          grafo_versao_id: row.grafo_versao_id,
+          evento_id: event.id,
+        },
+        options,
+      );
     },
   );
 }
@@ -502,9 +510,16 @@ export interface BlockInput {
  * @param db Open handle.
  * @param id Job id.
  * @param input Request body.
+ * @param options The injected clock; default: the real clock. Forwarded to the
+ *   enqueue, for the same reason `transitionJob` forwards it.
  * @returns The updated job, or `null` if it does not exist.
  */
-export function blockJob(db: Database, id: number, input: BlockInput): Job | null {
+export function blockJob(
+  db: Database,
+  id: number,
+  input: BlockInput,
+  options: ClockOptions = {},
+): Job | null {
   return mutate(
     db,
     id,
@@ -517,15 +532,19 @@ export function blockJob(db: Database, id: number, input: BlockInput): Job | nul
       values: [asInteger(true), input.motivo],
     }),
     (row, _data, event) => {
-      enqueueHookDeliveries(db, {
-        trigger: 'node_blocked',
-        no_id: row.no_atual,
-        trabalho_id: id,
-        projeto_id: row.projeto_id,
-        execucao_id: row.execucao_id,
-        grafo_versao_id: row.grafo_versao_id,
-        evento_id: event.id,
-      });
+      enqueueHookDeliveries(
+        db,
+        {
+          trigger: 'node_blocked',
+          no_id: row.no_atual,
+          trabalho_id: id,
+          projeto_id: row.projeto_id,
+          execucao_id: row.execucao_id,
+          grafo_versao_id: row.grafo_versao_id,
+          evento_id: event.id,
+        },
+        options,
+      );
     },
   );
 }

@@ -247,7 +247,7 @@ test('AT8 — the delivery carries the triggering event, signed with the hook\'s
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 200 }) });
 
   const job = jobOn(ctx.db, [hook('avisar-revisao', 'node_entered', 'revisar', 'https://exemplo.invalid/gancho')]);
-  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' });
+  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
 
   await waitFor(() => ctx.calls.length >= 1, 'the hook to be POSTed');
   const [call] = ctx.calls;
@@ -278,7 +278,7 @@ test('AT9 — a 2xx closes the delivery in silence: no event is recorded', async
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 204 }) });
 
   const job = jobOn(ctx.db, [hook('avisar-bloqueio', 'node_blocked', 'redigir', 'https://exemplo.invalid/gancho')]);
-  blockJob(ctx.db, job.id, { motivo: 'a redação parou esperando o tema' });
+  blockJob(ctx.db, job.id, { motivo: 'a redação parou esperando o tema' }, { now: () => ctx.clock.value });
   const recorded = listEvents(ctx.db).length;
 
   await waitFor(() => only(deliveries(ctx.db)).status === 'entregue', 'the 2xx to close the delivery');
@@ -303,7 +303,7 @@ test('AT10 — a failed attempt is rescheduled by t142\'s backoff step, and retr
   });
 
   const job = jobOn(ctx.db, [hook('avisar-revisao', 'node_entered', 'revisar', 'https://exemplo.invalid/gancho')]);
-  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' });
+  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
 
   await waitFor(() => only(deliveries(ctx.db)).tentativas === 1, 'the first attempt to be recorded');
 
@@ -334,7 +334,7 @@ test('AT11 — the sixth failed attempt gives up and records one trabalho.gancho
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 500 }) });
 
   const job = jobOn(ctx.db, [hook('avisar-revisao', 'node_entered', 'revisar', 'https://exemplo.invalid/gancho')]);
-  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' });
+  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
 
   // Six attempts in total: the first one, plus one per step of the schedule.
   for (let attempt = 1; attempt <= BACKOFF_MS.length + 1; attempt += 1) {
@@ -386,7 +386,7 @@ test('AT12 — a dead hook does not hold up another hook of the same batch', asy
     hook('avisar-morto', 'node_entered', 'revisar', 'https://exemplo.invalid/morto'),
     hook('avisar-vivo', 'node_entered', 'revisar', 'https://exemplo.invalid/vivo'),
   ]);
-  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' });
+  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
 
   // One event, two hooks, two independent deliveries (FR5).
   await waitFor(() => deliveries(ctx.db).length === 2, 'both hooks to be enqueued');

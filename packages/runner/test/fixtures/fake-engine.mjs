@@ -58,7 +58,17 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 
-const MAX_FILE_SIZE = 64 * 1024;
+/**
+ * Ceiling on a workdir file the sidecar reproduces whole.
+ *
+ * 512 KiB and not 64: C11 hands the adapter ~300 KB of `instructions` +
+ * `prompt`, and the `claude-code` adapter's answer to that is an ephemeral
+ * system-prompt file of ~200 KB in this very directory. At the old ceiling the
+ * sidecar replaced it with `<too large for the sidecar>` and the case's own
+ * marker assertion would have been checking the placeholder — a test measuring
+ * its own fixture's truncation.
+ */
+const MAX_FILE_SIZE = 512 * 1024;
 
 /**
  * Reads stdin until EOF.

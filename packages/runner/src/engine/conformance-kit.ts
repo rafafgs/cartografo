@@ -272,7 +272,18 @@ function requireBaselineStatus(status: SessionStatus, label: string): void {
 }
 
 /**
- * Registers the ten conformance cases against an adapter.
+ * Combined size of `instructions` + `prompt` in C11, in bytes.
+ *
+ * ~300 KB is not a round number picked for looks: it is comfortably past
+ * Linux's 128 KiB single-argument ceiling (`MAX_ARG_STRLEN`) AND past macOS's
+ * ~256 KiB whole-block one (`ARG_MAX`), so an adapter that keeps the content in
+ * argv fails on both platforms rather than only on the stricter one.
+ */
+const OVERSIZED_INSTRUCTIONS_BYTES = 200 * 1024;
+const OVERSIZED_PROMPT_BYTES = 100 * 1024;
+
+/**
+ * Registers the eleven conformance cases against an adapter.
  *
  * @param makeAdapter Factory returning a NEW adapter (clean state), already
  *   seamed to run `fakeEnginePath` in place of the real binary.
@@ -890,6 +901,79 @@ export function runConformanceKit(
           'C10: the engine ref did not reach the process by any path ' +
             '(argument, environment, stdin or ephemeral file), so the session ' +
             'declared as continued started fresh',
+        );
+      } finally {
+        scenario.cleanup();
+      }
+    });
+
+    test('C11 — oversized prompt', async () => {
+      // The case that certifies the OTHER half of C2: not "did the content
+      // arrive", but "does it still arrive when there is too much of it to fit
+      // where it usually goes". The ceiling is the operating system's, not
+      // ours — Linux caps a single argv element at 128 KiB and macOS caps the
+      // whole argv+envp block at ~256 KiB — and it is reached by a `prompt`
+      // that grows with the transcript of a resumed job, which is the ordinary
+      // shape of a long-running session, not a pathological one.
+      //
+      // It fails EARLY and blind when it fails: `spawn` itself dies with
+      // E2BIG, so there is no process, no output and no session to report the
+      // problem through. That is what makes it a kit case rather than an
+      // adapter's private test — an adapter with no channel off argv is an
+      // adapter that stops working at a size nobody declared.
+      //
+      // Which channel it uses is deliberately not asserted. The normative rule
+      // already leaves it open ("cada adapter decide como injeta — flag/stdin/
+      // arquivo efêmero do engine") and `everythingTheProcessReceived` accepts
+      // all four, exactly as C2 does.
+      const scenario = buildScenario();
+      const collector = new Collector();
+      const adapter = newAdapter();
+
+      const marker = 'MARKER-c11-4d5e6f';
+      const instructions = 'i'.repeat(OVERSIZED_INSTRUCTIONS_BYTES);
+      const prompt = `${marker}\n${'p'.repeat(OVERSIZED_PROMPT_BYTES - marker.length - 1)}`;
+
+      const spec: SessionSpec = {
+        workingDir: scenario.workingDir,
+        instructions,
+        prompt,
+        timeoutSeconds: 30,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: scenario.recordPath,
+          FAKE_ENGINE_EXIT_CODE: '0',
+        },
+      };
+
+      try {
+        // The failure this guards against happens HERE, at the spawn, and it
+        // arrives as a rejected `startSession` rather than as a bad outcome.
+        await adapter.startSession(spec, collector);
+        const end = await collector.awaitEnd('C11', deadline);
+
+        requireBaselineStatus(end.status, 'C11');
+        assert.equal(
+          end.status,
+          'completed',
+          'C11: the oversized session did not run to a clean end',
+        );
+
+        const record = await scenario.readRecord();
+        assert.ok(
+          everythingTheProcessReceived(record).includes(marker),
+          'C11: the prompt marker did not reach the process by any path ' +
+            '(argument, environment, stdin or ephemeral file)',
+        );
+
+        // ...and it did not arrive by the path that would have blown up on a
+        // real kernel. Without this, an adapter that merely got lucky with the
+        // platform's ceiling would pass the case on the machine that has room
+        // and fail in production on the machine that does not.
+        const argv = record.argv.join('\n');
+        assert.ok(
+          !argv.includes(prompt) && !argv.includes(instructions),
+          'C11: the oversized content is still in the argv — it fits on this ' +
+            'machine and will not fit on the next one',
         );
       } finally {
         scenario.cleanup();

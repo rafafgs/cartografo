@@ -13,11 +13,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  ARGV_INLINE_LIMIT_BYTES,
   CLAUDE_BINARY,
   DEFAULT_PERMISSION_MODE,
   DEFAULT_TRIVIAL_MODEL,
   ENGINE_STDIO,
   PERMISSION_MODE_VARIABLE,
+  SYSTEM_PROMPT_FILE_NAME,
   TRIVIAL_MODEL_VARIABLE,
   buildCommand,
   buildEnvironment,
@@ -157,6 +159,11 @@ test('a session with no permissions produces exactly the argv of today', () => {
   // The regression that matters most in this ticket: enforcement is opt-in per
   // session, and a caller that says nothing has to keep getting the command it
   // was getting before the field existed.
+  //
+  // The `--` before the prompt is t203's one addition to this literal, and it
+  // is the only edit this pin ever took: a prompt beginning with `-` was being
+  // read as a flag (`error: unknown option '-1 apples remain'`, measured), and
+  // the end-of-options marker is what a caller cannot get wrong.
   const { args } = buildCommand(spec(), {});
 
   assert.deepEqual(args, [
@@ -168,6 +175,7 @@ test('a session with no permissions produces exactly the argv of today', () => {
     'bypassPermissions',
     '--system-prompt',
     INSTRUCTIONS,
+    '--',
     PROMPT,
   ]);
 });
@@ -278,6 +286,7 @@ test('a session with no resumeFrom produces exactly the argv of before the field
     'bypassPermissions',
     '--system-prompt',
     INSTRUCTIONS,
+    '--',
     PROMPT,
   ]);
 
@@ -298,6 +307,7 @@ test('a session with no resumeFrom produces exactly the argv of before the field
       ...NETWORK_DENIED,
       '--system-prompt',
       INSTRUCTIONS,
+      '--',
       PROMPT,
     ],
   );
@@ -373,7 +383,8 @@ test('t166 — --model neither swallows the denied list nor gets swallowed by th
 
   // ...and the trailing positionals stay trailing.
   assert.equal(args.at(-1), PROMPT, 'the prompt stays the last element of the argv');
-  assert.equal(args.at(-2), INSTRUCTIONS);
+  assert.equal(args.at(-2), '--', 'the end-of-options guard sits immediately before the prompt');
+  assert.equal(args.at(-3), INSTRUCTIONS);
   assert.ok(args.indexOf('--model') < args.indexOf('--system-prompt'));
 });
 
@@ -459,6 +470,117 @@ test('t175 — a node that pinned its own model wins over the tier, and --model 
     'exactly one --model reaches the CLI, whatever the two fields say',
   );
   assert.equal(args[args.indexOf('--model') + 1], 'claude-opus-5', "the node's pin is the one");
+});
+
+/* --- oversized content and the end-of-options guard (t203) ------------------ */
+
+/**
+ * The two bugs this block pins, both measured against `claude 2.1.233`.
+ *
+ * - **E2BIG.** Linux caps a single argv element at 128 KiB
+ *   (`MAX_ARG_STRLEN`), macOS caps the whole argv+envp block at ~256 KiB
+ *   (`ARG_MAX`), and `SessionSpec.prompt` grows without bound on a resumed job
+ *   — skill instructions plus the job plus the prior Q&A plus the transcript.
+ *   Past the limit the session does not fail, it never opens: the spawn itself
+ *   is what dies.
+ * - **A prompt beginning with `-`.** `claude --print "-1 apples remain"` →
+ *   `error: unknown option '-1 apples remain'`. Any bullet list or negative
+ *   number landing first in the prompt was killing the session.
+ *
+ * The size decision is on UTF-8 BYTES and not on `.length`: this repository's
+ * prose and skills are Portuguese, every accented character is two bytes, and a
+ * `.length` check undercounts exactly the content this project produces.
+ */
+const promptBytes = Buffer.byteLength(PROMPT, 'utf8');
+
+/** Instructions sized so that `instructions + prompt` weigh exactly `total` bytes. */
+const fillingTo = (total: number): string => 'a'.repeat(total - promptBytes);
+
+test('t203 — the inline limit is 64 KiB, under both operating-system ceilings', () => {
+  assert.equal(ARGV_INLINE_LIMIT_BYTES, 64 * 1024);
+});
+
+test('t203 — below the limit the argv is today\'s, plus a `--` before the prompt', () => {
+  const { args, stdin, ephemeralFile } = buildCommand(spec(), {});
+
+  assert.deepEqual(args.slice(-4), ['--system-prompt', INSTRUCTIONS, '--', PROMPT]);
+  assert.equal(
+    args[args.indexOf('--system-prompt') + 1],
+    INSTRUCTIONS,
+    'the `--` must not land between the flag and its value',
+  );
+  assert.equal(stdin, undefined, 'the small-content path writes nothing to stdin');
+  assert.equal(ephemeralFile, undefined, 'the small-content path writes no file');
+});
+
+test('t203 — a prompt starting with `-` survives as the last argument, verbatim', () => {
+  const dashed = '-1 apples remain; --verbose is not a flag here';
+  const { args } = buildCommand(spec({ prompt: dashed }), {});
+
+  assert.equal(args.at(-1), dashed, 'the prompt has to reach the CLI byte for byte');
+  assert.equal(
+    args.at(-2),
+    '--',
+    'without the end-of-options marker the CLI reads the prompt as an unknown option',
+  );
+});
+
+test('t203 — at the limit the instructions go to a file and the prompt to stdin', () => {
+  const instructions = fillingTo(ARGV_INLINE_LIMIT_BYTES);
+  const { args, stdin, ephemeralFile } = buildCommand(spec({ instructions }), {});
+
+  assert.deepEqual(
+    args.slice(-2),
+    ['--system-prompt-file', SYSTEM_PROMPT_FILE_NAME],
+    'the oversized path names the file instead of inlining the system prompt',
+  );
+  assert.ok(!args.includes('--system-prompt'), 'the flag that takes the content inline has to go');
+  assert.ok(
+    !args.some((argument) => argument === instructions || argument === PROMPT),
+    'no argv element may still carry the content the file and stdin now carry',
+  );
+
+  assert.deepEqual(ephemeralFile, {
+    relativePath: SYSTEM_PROMPT_FILE_NAME,
+    content: instructions,
+  });
+  assert.equal(stdin, PROMPT, 'the prompt goes to stdin, whole and unedited');
+});
+
+test('t203 — the boundary: one byte below stays inline, the limit itself switches', () => {
+  const below = buildCommand(spec({ instructions: fillingTo(ARGV_INLINE_LIMIT_BYTES - 1) }), {});
+  assert.equal(below.stdin, undefined, 'one byte under the limit is still an inline argv');
+  assert.equal(below.args.at(-1), PROMPT);
+
+  const at = buildCommand(spec({ instructions: fillingTo(ARGV_INLINE_LIMIT_BYTES) }), {});
+  assert.equal(at.stdin, PROMPT, 'at the limit the content leaves the argv');
+  assert.equal(at.args.at(-2), '--system-prompt-file');
+});
+
+test('t203 — the decision counts UTF-8 bytes, not UTF-16 units', () => {
+  // Every `á` is one `.length` unit and TWO bytes. This fixture is comfortably
+  // under the limit by `.length` and comfortably over it by what the kernel
+  // actually copies — which is the only measure that matters here.
+  const accented = 'á'.repeat(ARGV_INLINE_LIMIT_BYTES - 2_000);
+  assert.ok(accented.length < ARGV_INLINE_LIMIT_BYTES, 'the fixture is under the limit by .length');
+  assert.ok(
+    Buffer.byteLength(accented, 'utf8') > ARGV_INLINE_LIMIT_BYTES,
+    'the fixture is over the limit by byte length',
+  );
+
+  const { args, stdin } = buildCommand(spec({ instructions: accented }), {});
+
+  assert.equal(stdin, PROMPT, 'a `.length`-based check would have left this content in the argv');
+  assert.equal(args.at(-2), '--system-prompt-file');
+});
+
+test('t203 — the two fields are summed, not measured one at a time', () => {
+  // Neither half reaches the limit alone; together they pass it. Measuring only
+  // the larger of the two would put ~96 KiB into an argv sized for 64.
+  const half = 'a'.repeat(ARGV_INLINE_LIMIT_BYTES / 2 + 1_000);
+  const { stdin } = buildCommand(spec({ instructions: half, prompt: half }), {});
+
+  assert.equal(stdin, half, 'the sum of the two fields is what the kernel has to carry');
 });
 
 test('t175 — the tier flag obeys the same ordering discipline as every other flag', () => {

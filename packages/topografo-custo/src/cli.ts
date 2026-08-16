@@ -366,8 +366,12 @@ function interpretarArgumentos(
   };
 }
 
-// Rodar o arquivo direto é o caminho de produção enquanto o pacote não publica
-// um `bin` próprio: `node --import tsx src/cli.ts avaliar --url ... --execucao ...`.
+// O caminho de produção é o `bin` do pacote — `npx topografo-custo avaliar
+// --url ... --execucao ...` (t199, FR3) —, e ele importa este módulo em vez de
+// executá-lo. A guarda continua aqui por causa da OUTRA metade: sem ela,
+// qualquer `import { executarCli }` (é o que `test/cli.test.ts` faz) rodaria a
+// CLI só por ter carregado o arquivo. De quebra, `node --import tsx src/cli.ts`
+// segue funcionando para quem estiver depurando o pacote de dentro.
 if (import.meta.filename === process.argv[1]) {
   process.exitCode = await executarCli(process.argv.slice(2));
 }

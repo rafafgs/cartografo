@@ -55,9 +55,20 @@
  * the closure and the question are attempted write by write, so that neither
  * one can swallow the other.
  *
+ * **And a placeholder never reaches a model as text** (t204). The manifest body
+ * a node's skill carries may name this node's input — `{{input.<caminho>}}` —
+ * and since this ficha those are resolved before the session is built, against
+ * whatever {@link ClaudeCodeDispatchOptions.resolveInput} hands over. One that
+ * does not resolve refuses the dispatch in the same window the two pin errors
+ * already do, before a worktree exists. With nothing wired to that option the
+ * input is `{}`, which is the honest state today: nothing in this system assembles a
+ * node's input yet, so a skill with placeholders fails closed instead of
+ * opening a session on a half-written prompt.
+ *
  * English per D18. The prompt and instruction CONTENT stays in Portuguese: it
- * stands in for the skill manifest the graph will inject (t101/t105), and those
- * are written in Portuguese (`especificacoes/formatos/exemplos/`).
+ * is — since t161 — the registered skill manifest itself, and those are written
+ * in Portuguese (`especificacoes/formatos/exemplos/`); what is left of the old
+ * fixed literal is {@link DEFAULT_INSTRUCTIONS}, for a work with no graph.
  */
 
 import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
@@ -94,6 +105,7 @@ export {
   ESCALATION_PROTOCOL,
   SkillNotRegisteredError,
   SkillPinMismatchError,
+  UnresolvedPlaceholderError,
 } from './render-skill-instructions.ts';
 
 /**
@@ -149,8 +161,14 @@ export const DEFAULT_INSTRUCTIONS = [
   ESCALATION_PROTOCOL,
 ].join('\n');
 
-/** What `GET /v1/jobs/:id` gives back, in the part this module reads. */
-interface Job {
+/**
+ * What `GET /v1/jobs/:id` gives back, in the part this module reads.
+ *
+ * Exported since t204 for one reason: {@link ClaudeCodeDispatchOptions.resolveInput}
+ * is handed the work, and whoever writes that function has to be able to name
+ * its argument.
+ */
+export interface Job {
   id: number;
   titulo: string;
   no_atual: string;
@@ -310,6 +328,29 @@ export interface ClaudeCodeDispatchOptions {
    * snapshot does not carry. Default: {@link DEFAULT_INSTRUCTIONS}.
    */
   instructions?: string;
+  /**
+   * What this node's `{{input.<caminho>}}` placeholders resolve against
+   * (t204, FR8).
+   *
+   * Called once per dispatch, and only for a work standing on a node the
+   * snapshot carries — a graph-less work renders no manifest, so there is
+   * nothing to interpolate.
+   *
+   * **The default resolves nothing, on purpose.** There is no per-node context
+   * projection in this system yet: no event and no table carries a node's
+   * structured output, so nothing can assemble the object the next node's
+   * `input` schema declares. Until that ficha exists, production wiring passes
+   * `{}` and every skill whose body has a placeholder fails closed with
+   * `UnresolvedPlaceholderError` — which is the honest state, and a loud one.
+   * What it replaces is worse: the same skill used to open a session with
+   * `{{input.tese_triada.titulo}}` in the prompt and nobody the wiser.
+   *
+   * It is a seam and not a hardcoded `{}` for the same reason `silenceSeconds`
+   * above is one: the mechanism that will fill it belongs to another ficha, and
+   * a named parameter is what lets the piece be tested — and wired — the day it
+   * arrives, without reopening this function.
+   */
+  resolveInput?: (job: Job, resolved: ResolvedNode) => Record<string, unknown>;
   /** Opaque additions to the engine's environment. */
   envOverrides?: Readonly<Record<string, string>>;
   /**
@@ -507,6 +548,7 @@ export function createClaudeCodeDispatch(
   const doFetch = options.doFetch ?? fetch;
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const silenceSeconds = resolveBudget(options.silenceSeconds, DEFAULT_SILENCE_SECONDS);
+  const resolveInput = options.resolveInput ?? ((): Record<string, unknown> => ({}));
 
   // Headers of every call: the body's `content-type`, when there is a body, and
   // the credential. Built once — the seven routes below are one client, and a
@@ -775,15 +817,18 @@ export function createClaudeCodeDispatch(
     }
 
     // Then the skill, in the same window and for the same reason: an
-    // unregistered skill or a pin that stopped matching refuses the dispatch
+    // unregistered skill, a pin that stopped matching, or — since t204 — a body
+    // whose placeholders this dispatch cannot resolve refuses the dispatch
     // before a worktree is cut, before a session exists and before a single
     // token is spent (FR3). A refusal after the engine is running is a refusal
     // that already let the instructions out.
     const rendered: RenderedSkill | null =
       resolved === null
         ? null
-        : await renderSkillInstructions(resolved, (skillRoute) =>
-            call<RegisteredSkill>(skillRoute, 'GET'),
+        : await renderSkillInstructions(
+            resolved,
+            (skillRoute) => call<RegisteredSkill>(skillRoute, 'GET'),
+            resolveInput(job, resolved),
           );
 
     // The manifest wins over the dispatch's own configuration wherever it has

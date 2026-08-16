@@ -20,10 +20,14 @@ executar**: o runner busca a skill que o nó pina, recusa o despacho se o hash
 não bate com o do registro, e renderiza `instructions`, `checks` e `permissions`
 para dentro da sessão
 ([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
-Ainda não implementado: a interpolação de `{{input.<caminho>}}` dentro de
-`instructions`, que renderiza literal (ver *Limites conhecidos*); ler
-`budgets` para dentro do despacho; e reimportar/versionar uma skill já
-registrada (o registro é create-only por enquanto).
+Desde a `t204` ele também **interpola** `{{input.<caminho>}}` dentro de
+`instructions`, com falha fechada: caminho que não resolve aborta o despacho
+antes de abrir sessão nenhuma. O que ainda não existe é quem **monta** essa
+entrada — na ausência dela o despacho passa `{}`, e toda skill com placeholder
+recusa (ver *Renderização e injeção*). Ainda não implementado: a interpolação
+em `checks[].command`; ler `budgets` para dentro do despacho; e
+reimportar/versionar uma skill já registrada (o registro é create-only por
+enquanto).
 
 | Arquivo | O que é |
 |---|---|
@@ -243,13 +247,26 @@ O corpo em Markdown que vai ser injetado na sessão. Pode conter placeholders
 `{{input.<caminho>}}`, resolvidos pelo runner contra a `input` validada
 antes do despacho.
 
+O caminho é uma ou mais partes de `[a-zA-Z0-9_]+` separadas por `.`, andadas
+uma a uma dentro da `input`. Valor que é string entra **literal**, sem escape
+nenhum — o manifesto foi revisado no portão de importação (D4), e escapar aqui
+seria o runner reescrevendo texto revisado. Qualquer outro valor JSON (número,
+booleano, `null`, lista, objeto) entra como `JSON.stringify` compacto.
+
+**Falha fechada, e implementada desde a `t204`:** caminho que não resolve —
+chave ausente, ou caminho que atravessa algo que não é objeto — não vira texto
+na sessão. O despacho é recusado antes de abrir sessão
+(`UnresolvedPlaceholderError`, com todos os caminhos que faltaram de uma vez),
+na mesma janela em que hash divergente já recusava. Corpo sem nenhum
+`{{input.` renderiza byte a byte o que sempre renderizou.
+
 Por convenção, a mesma interpolação vale em `checks[].command` — é o que
 permite um check determinístico ser estável e mesmo assim rodar o comando de
 teste do projeto em questão (`{{input.projeto.comando_testes}}` nos dois
-exemplos). O motor de interpolação nasce junto do control plane (t100+); a
-regra que ele tem de obedecer já é decidida aqui: **falha fechada** —
-placeholder que não resolve aborta o despacho, e comando que ainda contém
-`{{` nunca é executado.
+exemplos). Essa metade **ainda não está implementada**, e não por esquecimento:
+nenhum código executa o `command` de um check hoje, então não há onde ligá-la.
+A regra vale igual para quando existir — comando que ainda contém `{{` nunca é
+executado.
 
 ### `origin`
 
@@ -283,16 +300,23 @@ Consequência que vale explicitar: como o contrato vive no banco e é renderizad
 por engine, trocar de engine não perde skill nem aprendizado — o que foi
 aprendido está no manifesto versionado, não no contexto de uma sessão.
 
-**Quanto disso roda hoje (`t161`):** os passos 1, 3 e 5 estão implementados e
+**Quanto disso roda hoje (`t204`):** os passos 1, 3 e 5 estão implementados e
 cobertos por teste, e o 6 registra na API sem validar `output` contra o schema.
-O passo 4 renderiza `instructions` **literalmente** — placeholder não resolvido
-segue como texto, e não aborta nada. O passo 2 não existe: não há projeção de
-contexto por nó, e é dela que o 4 dependeria. A ordem entre os dois não é
-acidental: interpolar de verdade exige que a saída de um nó vire a entrada do
-seguinte (o `merge_commit` que `testar` pede é produzido por `integrar`), e
-esse encadeamento é uma ficha própria. A regra de **falha fechada** declarada
-acima continua valendo como decisão para quando o motor existir; o que a `t161`
-faz hoje não a contradiz, porque não interpola.
+O passo 4 interpola `instructions` de verdade, com falha fechada — placeholder
+que não resolve recusa o despacho antes de qualquer sessão —, e não resolve os
+`command` dos checks (ver `checks` e *Limites conhecidos*).
+
+**O passo 2 continua não existindo, e é ele que falta.** Não há projeção de
+contexto por nó: nenhum evento e nenhuma tabela carrega a saída estruturada de
+um nó, então nada monta o objeto que o `input` do nó seguinte declara. O
+despacho expõe a costura (`resolveInput`, em
+[`dispatch-claude-code.ts`](../../packages/runner/src/dispatch/dispatch-claude-code.ts))
+e, sem ninguém para preenchê-la, passa `{}` — ou seja, **hoje toda skill com
+placeholder recusa em produção**, alto e determinístico, em vez de abrir sessão
+com o token cru no prompt como fazia até a `t204`. Encadear a saída de um nó na
+entrada do seguinte (o `merge_commit` que `testar` pede é produzido por
+`integrar`) é ficha própria, e é pré-requisito duro para despachar qualquer nó
+das duas fábricas cuja skill use placeholder.
 
 Além dos cinco campos que a renderização cita, o runner injeta na sessão o
 **contrato do próprio nó** (`input_schema`, `output_schema`, `checks`,
@@ -427,12 +451,17 @@ ou fica para outra ticket:
   `t161` ligou a declaração ao despacho. O limite que sobra é outro, e é do
   adapter: eixo que ele não sabe expressar recusa a sessão em vez de aplicá-la
   pela metade (ver `permissions`).
-- **Interpolação.** A convenção `{{input.<caminho>}}` e a regra de falha
-  fechada estão decididas aqui; o motor não existe. Desde a `t161` o runner
-  renderiza `instructions` **literalmente** — um `{{...}}` não resolvido chega à
-  sessão como texto —, porque interpolar de verdade depende de uma projeção de
-  contexto por nó que encadeie a saída de um nó na entrada do seguinte, e essa
-  é ficha própria (ver *Renderização e injeção*).
+- **Interpolação em `checks[].command`.** A de `instructions` existe desde a
+  `t204` e falha fechada; a dos comandos de check não, porque nenhum código
+  executa `command` hoje — check é declarativo, lido por revisor humano e por um
+  mecanismo de portão que ainda não existe. O limite que sobra na de
+  `instructions` é o de quem a alimenta: sem projeção de contexto por nó, o
+  despacho passa `{}` e a skill com placeholder recusa (ver *Renderização e
+  injeção*).
+- **Sintaxe de placeholder validada na entrada do registro.** O registro não
+  confere `{{input.…}}` nenhum ao aceitar um manifesto; quem pega placeholder
+  quebrado é o despacho, que recusa. Uma checagem mais cedo seria melhor
+  diagnóstico, não mais segurança.
 - **Detalhe de ferramenta:** o campo `origin.imported_at` usa `pattern` de
   data ISO em vez de `"format": "date"`. O ajv em modo estrito trata formato
   desconhecido como erro de compilação quando nenhum plugin de formatos está

@@ -25,12 +25,23 @@
  *    `version` is not separately checked: the registry is create-only, so an
  *    `id` only ever carried the one `hash` it was registered with, and a hash
  *    match already implies a version match.
- * 3. **The text and the permissions are built from what came back.** The
- *    instructions render VERBATIM — `{{input.<caminho>}}` interpolation is
- *    out of scope for this ficha and stays listed as a known limit of the
- *    format, because interpolating it needs a per-node context assembly that
- *    threads a prior node's output into the next one's input, and that pipeline
- *    does not exist.
+ * 3. **The placeholders of the manifest body are resolved against the node's
+ *    input, or nothing is rendered at all** (t204). Until then `instructions`
+ *    went into the session VERBATIM, which meant a manifest that wrote
+ *    `{{input.tese_triada.titulo}}` reached the model with those characters in
+ *    it — silently, as if a thesis had been named. Now a path that does not
+ *    resolve throws {@link UnresolvedPlaceholderError}, in the same window as
+ *    the two refusals above and for the same reason: it is the format's own
+ *    rule — `falha fechada`, in the format's own words
+ *    (`especificacoes/formatos/manifesto-skill.md`) — and a wrong prompt is
+ *    worse than no prompt.
+ *
+ *    What supplies that input is NOT here, and is honest about it: the
+ *    dispatch's `resolveInput` seam defaults to `{}`, so today every skill with
+ *    a placeholder fails closed. The per-node context projection that would
+ *    thread a prior node's output into the next one's input is a ficha of its
+ *    own, and this module refuses loudly until it exists.
+ * 4. **The text and the permissions are built from what came back.**
  *
  * **Where the routing vocabulary comes from is a decision, not an accident.**
  * The block a gate is asked to emit names the `condition` of the edges leaving
@@ -224,6 +235,46 @@ export class SkillPinMismatchError extends Error {
 }
 
 /**
+ * A manifest body names something its node's input does not carry (t204).
+ *
+ * The third refusal of this module, and the one that closes the gap the other
+ * two left open: a pin can be perfect and the instructions still arrive
+ * half-written, because the sentence that was supposed to name the thesis names
+ * `{{input.tese_triada.titulo}}` instead. A session opened on that text is a
+ * session working on the wrong thing while every log line says it went fine —
+ * the exact failure mode the format's `falha fechada` rule was decided against
+ * (`especificacoes/formatos/manifesto-skill.md`).
+ *
+ * Every unresolved path travels on the ONE error, deduplicated and in the order
+ * the body mentions them: whoever fixes this is fixing an input assembly, and
+ * fixing it one missing field per dispatch is a round trip per field.
+ *
+ * It propagates exactly like {@link SkillNotRegisteredError} — the controller's
+ * `finally` gives the lease back, and the work is simply not advanced. No block
+ * of its own: the work is not broken, the wiring around it is incomplete, and
+ * two owners for one blocked flag is how a work ends up stopped with nothing
+ * pending.
+ */
+export class UnresolvedPlaceholderError extends Error {
+  readonly nodeId: string;
+  readonly skillId: string;
+  /** Every path that did not resolve, deduplicated, in first-occurrence order. */
+  readonly paths: readonly string[];
+
+  constructor(nodeId: string, skillId: string, paths: readonly string[]) {
+    super(
+      `node "${nodeId}" pins skill "${skillId}", whose instructions name input that this ` +
+        `dispatch does not carry: ${paths.join(', ')} — a placeholder that does not resolve ` +
+        'aborts the dispatch instead of reaching the session as text',
+    );
+    this.name = 'UnresolvedPlaceholderError';
+    this.nodeId = nodeId;
+    this.skillId = skillId;
+    this.paths = paths;
+  }
+}
+
+/**
  * The route of one registered skill.
  *
  * @param id Id of the skill, as the node pins it.
@@ -276,6 +327,103 @@ export function resolveSkillPermissions(permissions: unknown): SessionPermission
     filesystem: { write: textList(filesystem.write) },
     network: allowed && domains.length > 0 ? { allowed, domains } : { allowed },
   };
+}
+
+/**
+ * Every `{{input.…}}` token of a manifest body, whatever is written inside it.
+ *
+ * Deliberately wider than the path grammar the format declares
+ * (`[a-zA-Z0-9_]+` segments joined by `.`): what is NOT a valid path — a dash, a
+ * space, an empty tail — is caught by {@link isPath} below and reported as
+ * unresolved, instead of being left in the text because the regex did not
+ * recognize it. A malformed placeholder is still a placeholder that reached the
+ * model, which is the whole bug this ficha closes.
+ *
+ * `[^{}]*` keeps the match inside one pair of braces, so a stray `{` cannot make
+ * one token swallow the paragraph that follows it.
+ */
+const PLACEHOLDER = /\{\{input\.([^{}]*)\}\}/g;
+
+/** The path grammar the manifest format declares. */
+const PATH = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$/;
+
+/** Nothing resolved: the value the walk hands back when a segment is missing. */
+const UNRESOLVED = Symbol('unresolved');
+
+/**
+ * Walks one dotted path through the node's input.
+ *
+ * A segment that the object being walked does not carry AS ITS OWN — and that
+ * includes every segment past a value which is not a plain object, an array
+ * among them — is unresolved. Inherited properties are not carriers either:
+ * `{{input.constructor.name}}` resolves against nothing, because what the
+ * manifest is allowed to name is data somebody put in the input, never the
+ * prototype chain of the object holding it.
+ *
+ * @param input The already-validated input object of this node.
+ * @param path A dotted path, already known to match the grammar.
+ * @returns The value found, or {@link UNRESOLVED}.
+ */
+function walk(input: Record<string, unknown>, path: string): unknown {
+  let current: unknown = input;
+
+  for (const segment of path.split('.')) {
+    if (!isObject(current) || !Object.hasOwn(current, segment)) return UNRESOLVED;
+    current = current[segment];
+  }
+
+  // A key present holding `undefined` cannot come out of parsed JSON, and it is
+  // not a value that can be written into a prompt either — `String(undefined)`
+  // in the middle of an instruction is exactly the silent wrongness this module
+  // refuses. It counts as unresolved, which is the fail-closed answer.
+  return current === undefined ? UNRESOLVED : current;
+}
+
+/**
+ * What one resolved value looks like inside the instruction text.
+ *
+ * A string goes in verbatim, with no escaping and no quoting: the manifest is
+ * reviewed at the import gate (D4), the text around the placeholder was written
+ * to read as prose, and quoting it would be this module editing a reviewed
+ * document. Anything else — number, boolean, `null`, array, object — goes in as
+ * compact JSON, which is the one rendering that is unambiguous for a model to
+ * read and never invents line breaks inside a paragraph.
+ *
+ * @param value The value the walk found.
+ * @returns The text that replaces the token.
+ */
+function substitute(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+/**
+ * Resolves every placeholder of a manifest body against this node's input
+ * (t204, FR2–FR6).
+ *
+ * One pass, and the refusal comes at the END of it: a body missing three fields
+ * reports three, because the caller is about to go assemble an input and
+ * discovering the gaps one dispatch at a time is a round trip per field.
+ *
+ * @param text The manifest's `instructions`, as the registry has it.
+ * @param input The already-validated input object of this node.
+ * @param unresolved Accumulator, filled in first-occurrence order, deduplicated.
+ * @returns The interpolated text — meaningless unless `unresolved` stayed empty.
+ */
+function interpolate(
+  text: string,
+  input: Record<string, unknown>,
+  unresolved: string[],
+): string {
+  return text.replace(PLACEHOLDER, (token, path: string) => {
+    const value = PATH.test(path) ? walk(input, path) : UNRESOLVED;
+    if (value !== UNRESOLVED) return substitute(value);
+
+    if (!unresolved.includes(path)) unresolved.push(path);
+    // Returned unchanged, and never read: the caller throws before this text
+    // reaches anybody. Leaving the token in place is what keeps a half-rendered
+    // body from ever looking like a rendered one while it is being inspected.
+    return token;
+  });
 }
 
 /** One fenced JSON section of the rendered text. */
@@ -354,8 +502,15 @@ function escalationProtocol(resolved: ResolvedNode): string {
   }
 }
 
-/** The whole instruction text of a session running this node with this skill. */
-function render(resolved: ResolvedNode, skill: RegisteredSkill): string {
+/**
+ * The whole instruction text of a session running this node with this skill.
+ *
+ * `body` is passed in rather than read off `skill.instructions`, because by the
+ * time the text is composed it is no longer the manifest's: it is the manifest
+ * with this node's input in it, and the interpolation that produced it either
+ * succeeded completely or never got here.
+ */
+function render(resolved: ResolvedNode, skill: RegisteredSkill, body: string): string {
   const { node, edges } = resolved;
   const contract = node.contract ?? {};
 
@@ -373,7 +528,7 @@ function render(resolved: ResolvedNode, skill: RegisteredSkill): string {
     '',
     '---',
     '',
-    skill.instructions,
+    body,
     '',
     '---',
     '',
@@ -400,20 +555,28 @@ function render(resolved: ResolvedNode, skill: RegisteredSkill): string {
 }
 
 /**
- * Fetches the node's pinned skill, checks the pin, and renders it.
+ * Fetches the node's pinned skill, checks the pin, resolves its placeholders,
+ * and renders it.
  *
  * @param resolved The node the dispatch resolved, with its outgoing edges.
  * @param read Reader of `GET /v1/skills/:id`.
+ * @param input The already-validated input object of THIS node, which is what
+ *   `{{input.<caminho>}}` is resolved against. Required and never optional: an
+ *   optional parameter here would default to "resolve nothing" at every call
+ *   site that forgot it, which is the silent pass-through this ficha removes.
  * @returns The rendered instructions and the session policy, or `null` when the
  *   node pins no skill at all — nothing is pinned, so there is nothing to refuse
  *   and nothing to render, and the dispatch keeps the instructions it would have
  *   used for a graph-less work.
  * @throws {SkillNotRegisteredError} The registry answered 404.
  * @throws {SkillPinMismatchError} The registered hash is not the declared one.
+ * @throws {UnresolvedPlaceholderError} The body names input this node does not
+ *   carry.
  */
 export async function renderSkillInstructions(
   resolved: ResolvedNode,
   read: ReadSkill,
+  input: Record<string, unknown>,
 ): Promise<RenderedSkill | null> {
   const pin = resolved.node.skill_ref;
   if (pin === undefined || typeof pin.id !== 'string' || pin.id === '') return null;
@@ -436,9 +599,18 @@ export async function renderSkillInstructions(
     throw new SkillPinMismatchError(resolved.node.id, pin.id, pin.hash, skill.hash);
   }
 
+  // Right after the pin, and before anything is composed: the content is
+  // trusted only once its hash matched, and a body that cannot be completed
+  // must not become a text somebody might ship by accident.
+  const unresolved: string[] = [];
+  const body = interpolate(skill.instructions, input, unresolved);
+  if (unresolved.length > 0) {
+    throw new UnresolvedPlaceholderError(resolved.node.id, pin.id, unresolved);
+  }
+
   return {
     skill,
-    instructions: render(resolved, skill),
+    instructions: render(resolved, skill, body),
     permissions: resolveSkillPermissions(skill.permissions),
   };
 }

@@ -224,12 +224,12 @@ function createDisposableRepo() {
  *
  * @param {string} repo The disposable repository.
  * @returns {{acquire: (jobId: number) => Promise<{path: string, branch: string}>,
- *            release: () => Promise<void>}} The manager.
+ *            release: () => Promise<{kept: boolean}>}} The manager.
  */
 function sharedWorktree(repo) {
   return {
     acquire: (jobId) => Promise.resolve({ path: repo, branch: `ticket-${jobId}` }),
-    release: () => Promise.resolve(),
+    release: () => Promise.resolve({ kept: false }),
   };
 }
 

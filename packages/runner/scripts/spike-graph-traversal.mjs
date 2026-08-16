@@ -210,7 +210,7 @@ function createDisposableRepo() {
 function sharedWorktree(repo) {
   return {
     acquire: (jobId) => Promise.resolve({ path: repo, branch: `ticket-${jobId}` }),
-    release: () => Promise.resolve(),
+    release: () => Promise.resolve({ kept: false }),
   };
 }
 

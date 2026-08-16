@@ -209,7 +209,7 @@ function directoryWorktrees(root: string): WorktreeModule.WorktreeManager {
       mkdirSync(dir, { recursive: true });
       return Promise.resolve({ path: dir, branch: `ticket-${String(jobId)}` });
     },
-    release: () => Promise.resolve(),
+    release: (_worktree, outcome) => Promise.resolve({ kept: outcome.keep }),
   };
 }
 

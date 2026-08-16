@@ -196,10 +196,13 @@ test('AT4 — release without keeping takes the directory and the registration w
   const name = path.basename(worktree.path);
   assert.ok(registeredWorktrees(repoRoot).includes(name));
 
-  // Uncommitted scratch on purpose: cleanup discards it (FR5), and a `remove`
-  // without `--force` would refuse exactly here — on the ordinary case of a
-  // session that left a file behind.
-  writeFileSync(path.join(worktree.path, 'rascunho.md'), 'sujeira não commitada\n');
+  // Nothing left over: since t207-B this is what "release without keeping"
+  // means. The case used to leave uncommitted scratch here on the grounds that
+  // "cleanup discards it", and that premise is precisely what AT8 now
+  // falsifies — a session that finished without committing has its whole output
+  // in this directory and nowhere else, so a dirty tree is retained instead.
+  // What this case still owns is the other half: removing the directory has to
+  // take git's REGISTRATION of it along.
 
   await manager.release(worktree, { keep: false });
 
@@ -218,8 +221,9 @@ test('AT5 — release that keeps leaves everything exactly as the session left i
   const worktree = await manager.acquire(160);
   writeFileSync(path.join(worktree.path, 'diagnostico.md'), 'o que a sessão deixou para trás\n');
 
-  await manager.release(worktree, { keep: true });
+  const outcome = await manager.release(worktree, { keep: true });
 
+  assert.deepEqual(outcome, { kept: true }, 'an explicit keep has to report itself as a keep');
   assert.equal(
     readFileSync(path.join(worktree.path, 'diagnostico.md'), 'utf8'),
     'o que a sessão deixou para trás\n',
@@ -228,6 +232,62 @@ test('AT5 — release that keeps leaves everything exactly as the session left i
   assert.ok(
     registeredWorktrees(repoRoot).includes(path.basename(worktree.path)),
     'the worktree left git`s registration: `worktree list` no longer shows a human where to look',
+  );
+});
+
+test('AT8 — a dirty tree is NOT removed by a release that asked for it (t207-B)', async (t) => {
+  const { GitWorktreeManager } = await loadModule();
+  const { repoRoot, worktreesRoot } = fixture(t, 'at8');
+  const manager = new GitWorktreeManager({ repoRoot, worktreesRoot });
+
+  const worktree = await manager.acquire(160);
+  const name = path.basename(worktree.path);
+
+  // The premise `release` used to run on — "committed work already lives in the
+  // branch's history no matter what happens to this directory" — is exactly
+  // what an uncommitted file falsifies. A session that finished `completed`
+  // without committing has its whole output here and nowhere else.
+  writeFileSync(path.join(worktree.path, 'trabalho-nao-commitado.md'), 'o que a sessão fez\n');
+
+  const outcome = await manager.release(worktree, { keep: false });
+
+  assert.deepEqual(
+    outcome,
+    { kept: true },
+    'a dirty tree must report that it was kept: the caller is what turns this into a block',
+  );
+  assert.equal(
+    readFileSync(path.join(worktree.path, 'trabalho-nao-commitado.md'), 'utf8'),
+    'o que a sessão fez\n',
+    'the uncommitted work was discarded — the loss this ficha exists to prevent',
+  );
+  assert.ok(
+    registeredWorktrees(repoRoot).includes(name),
+    'git no longer registers the retained worktree: `worktree list` stops showing a human where to look',
+  );
+});
+
+test('AT9 — a clean tree is removed by a release that asked for it, and says so (t207-B)', async (t) => {
+  const { GitWorktreeManager } = await loadModule();
+  const { repoRoot, worktreesRoot } = fixture(t, 'at9');
+  const manager = new GitWorktreeManager({ repoRoot, worktreesRoot });
+
+  const worktree = await manager.acquire(160);
+  const name = path.basename(worktree.path);
+
+  // Committed and nothing left over: the ordinary end of a session that did its
+  // job. AT4's behaviour, unchanged, now with the answer checked too.
+  writeFileSync(path.join(worktree.path, 'saida.md'), 'o artefato, commitado\n');
+  git(worktree.path, 'add', '.');
+  git(worktree.path, 'commit', '--quiet', '-m', 'trabalho da sessão');
+
+  const outcome = await manager.release(worktree, { keep: false });
+
+  assert.deepEqual(outcome, { kept: false }, 'a clean tree is scratch, and the removal is reported');
+  assert.ok(!existsSync(worktree.path), 'the directory survived a release of a clean tree');
+  assert.ok(
+    !registeredWorktrees(repoRoot).includes(name),
+    'git still registers the worktree: the next `worktree add` inherits a stale entry',
   );
 });
 

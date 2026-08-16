@@ -875,7 +875,10 @@ test("t159 — what the engine printed is what the finish call ships, and what a
 interface ReleaseCall {
   path: string;
   branch: string;
+  /** What the dispatch ASKED for — `outcome.status !== "completed"`. */
   keep: boolean;
+  /** What the manager ANSWERED — a dirty tree is kept whatever was asked (t207-B). */
+  kept: boolean;
 }
 
 /** A `WorktreeManager` that records what it was asked, and creates nothing. */
@@ -900,9 +903,14 @@ interface FakeWorktrees extends WorktreeModule.WorktreeManager {
  * by checking out a worktree there.
  *
  * @param dir The path `acquire` hands back.
+ * @param dirty Simulates the t207-B tree that could not be removed: the manager
+ *   is ASKED not to keep it, looks at `git status --porcelain`, finds work the
+ *   session never committed and keeps it anyway. The real refusal is proven
+ *   against real git in `session-worktree.test.ts` (AT8); here it is a return
+ *   value, because what is under test is what the DISPATCH does with it.
  * @returns The manager, with its ledger attached.
  */
-function fakeWorktrees(dir: string): FakeWorktrees {
+function fakeWorktrees(dir: string, dirty = false): FakeWorktrees {
   const acquisitions: number[] = [];
   const releases: ReleaseCall[] = [];
   return {
@@ -914,12 +922,14 @@ function fakeWorktrees(dir: string): FakeWorktrees {
       return Promise.resolve({ path: dir, branch: `ticket-${jobId}` });
     },
     release: (worktree, outcome) => {
+      const kept = outcome.keep || dirty;
       releases.push({
         path: worktree.path,
         branch: worktree.branch,
         keep: outcome.keep,
+        kept,
       });
-      return Promise.resolve();
+      return Promise.resolve({ kept });
     },
   };
 }
@@ -2043,7 +2053,7 @@ test("t160 AT9 — a worktree that cannot be created blocks the dispatch before 
     acquire: () => Promise.reject(failure),
     release: (worktree, outcome) => {
       releases.push({ worktree, outcome });
-      return Promise.resolve();
+      return Promise.resolve({ kept: outcome.keep });
     },
   };
 
@@ -2124,11 +2134,17 @@ test("t160 AT9 — a worktree that cannot be created blocks the dispatch before 
 });
 
 /**
- * AT10 — the outcome, and only the outcome, decides whether the tree is kept.
+ * AT10 — what happens to the tree, and what the work does next.
  *
- * Four outcomes through one control plane, for the reason the t141 block above
+ * Five outcomes through one control plane, for the reason the t141 block above
  * records: booting a real server per subtest is not free, and nothing is shared
  * between them except the server.
+ *
+ * Every job stands on a REAL graph version since t207-B, and that is not
+ * decoration: the fifth row's whole claim is that the advance does not happen,
+ * and a graph-less job never advances anyway — the assertion would have been
+ * vacuous. With the graph in place the first row proves the ordinary traversal
+ * still runs, and the fifth proves the new guard stops it.
  *
  * The fifth path of FR8 — a control-plane failure with the session already open
  * — lives in the t148 test above, which is the one that produces it.
@@ -2139,19 +2155,73 @@ test("t160 AT10 — the outcome decides whether the worktree is kept", async (pa
 
   const { baseUrl, token } = await bootUnpatched(parent);
 
+  // A node with a skill the registry never heard of does not dispatch at all
+  // since t161, so the graph these jobs stand on needs a real registration
+  // underneath it.
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  const versionId = await registerGraph(
+    baseUrl,
+    token,
+    traversalGraph("travessia-t160-at10"),
+  );
+
   const cases = [
-    { status: "completed", keep: false },
-    { status: "failed", keep: true },
-    { status: "timed_out", keep: true },
-    { status: "cancelled", keep: true },
+    // `asked` is the `keep` the dispatch passes — `outcome.status !==
+    // "completed"`, unchanged by t207-B. `kept` is what the manager answers,
+    // and the two only differ on the row this ficha added.
+    {
+      status: "completed",
+      dirty: false,
+      asked: false,
+      kept: false,
+      blocked: false,
+      node: "conferir",
+    },
+    {
+      status: "failed",
+      dirty: false,
+      asked: true,
+      kept: true,
+      blocked: false,
+      node: "implementar",
+    },
+    {
+      status: "timed_out",
+      dirty: false,
+      asked: true,
+      kept: true,
+      blocked: false,
+      node: "implementar",
+    },
+    {
+      status: "cancelled",
+      dirty: false,
+      asked: true,
+      kept: true,
+      blocked: false,
+      node: "implementar",
+    },
+    // t207-B: the session finished, and left work it never committed. The tree
+    // is retained, the work is blocked for a human, and it does NOT advance —
+    // moving it on would leave the only copy of that work in a directory
+    // nobody is looking at.
+    {
+      status: "completed",
+      dirty: true,
+      asked: false,
+      kept: true,
+      blocked: true,
+      node: "implementar",
+    },
   ] as const;
 
   for (const [index, scenario] of cases.entries()) {
+    const label = scenario.dirty ? `${scenario.status}-dirty` : scenario.status;
     await parent.test(
-      `a session that ends "${scenario.status}" releases with keep: ${String(scenario.keep)}`,
+      `a session that ends "${label}" leaves the tree kept: ${String(scenario.kept)}`,
       async (t) => {
         const workDir = mkdtempSync(
-          path.join(tmpdir(), `cartografo-t160-at10-${scenario.status}-`),
+          path.join(tmpdir(), `cartografo-t160-at10-${label}-`),
         );
         t.after(() => {
           rmSync(workDir, { recursive: true, force: true });
@@ -2163,15 +2233,16 @@ test("t160 AT10 — the outcome decides whether the worktree is kept", async (pa
           "POST",
           "/v1/jobs",
           {
-            titulo: `ficha cuja sessão termina como ${scenario.status}`,
+            titulo: `ficha cuja sessão termina como ${label}`,
             no_entrada_id: "implementar",
             execucao_id: executionId,
+            grafo_versao_id: versionId,
           },
           201,
           token,
         );
 
-        const worktrees = fakeWorktrees(workDir);
+        const worktrees = fakeWorktrees(workDir, scenario.dirty);
         const dispatch = createClaudeCodeDispatch({
           urlBase: baseUrl,
           token,
@@ -2203,14 +2274,51 @@ test("t160 AT10 — the outcome decides whether the worktree is kept", async (pa
 
         assert.deepEqual(
           worktrees.releases.map((release) => release.keep),
-          [scenario.keep],
-          `a "${scenario.status}" dispatch must release exactly once, with keep: ${String(scenario.keep)}`,
+          [scenario.asked],
+          `a "${label}" dispatch must release exactly once, asking keep: ${String(scenario.asked)}`,
+        );
+        assert.deepEqual(
+          worktrees.releases.map((release) => release.kept),
+          [scenario.kept],
+          `a "${label}" dispatch must end with the tree kept: ${String(scenario.kept)}`,
         );
         assert.equal(
           worktrees.releases[0].branch,
           `ticket-${work.id}`,
           "the worktree released is the one this job acquired",
         );
+
+        const after = await api<Work>(
+          baseUrl,
+          "GET",
+          `/v1/jobs/${work.id}`,
+          undefined,
+          200,
+          token,
+        );
+
+        assert.equal(
+          after.no_atual,
+          scenario.node,
+          `a "${label}" dispatch must leave the work standing on "${scenario.node}"`,
+        );
+        assert.equal(
+          after.bloqueado,
+          scenario.blocked,
+          `a "${label}" dispatch must leave the work blocked: ${String(scenario.blocked)}`,
+        );
+
+        if (scenario.blocked) {
+          const reason: string = after.motivo_bloqueio ?? "";
+          assert.ok(
+            reason.includes(workDir),
+            `the block has to name the tree a human goes and looks at:\n${reason}`,
+          );
+          assert.ok(
+            reason.includes("implementar"),
+            `the block has to name the node whose session left the work behind:\n${reason}`,
+          );
+        }
       },
     );
   }

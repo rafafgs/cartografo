@@ -249,5 +249,6 @@
     }
   ],
   "initial_node": "refinar",
-  "final_nodes": ["implantar"]
+  "final_nodes": ["implantar"],
+  "custom_fields": []
 }

@@ -618,5 +618,25 @@
   "initial_node": "triagem",
   "final_nodes": [
     "registro-monitoramento"
+  ],
+  "custom_fields": [
+    {
+      "name": "premise_source",
+      "type": "string",
+      "required_at": "triagem",
+      "description": "De onde vem a premissa central da tese: documento, número, data. Exigido em `triagem` porque é o gate que decide se a ideia merece pesquisa, e uma tese sem fonte declarada não passa desse ponto."
+    },
+    {
+      "name": "downside",
+      "type": "number",
+      "required_at": null,
+      "description": "Quanto se perde se a tese estiver errada, na estimativa de quem propõe. Informativo: os números que valem são os de `analise-assimetria`, e este é o palpite que existe antes dela."
+    },
+    {
+      "name": "upside",
+      "type": "number",
+      "required_at": null,
+      "description": "Quanto se ganha se a tese estiver certa, na estimativa de quem propõe. Informativo pela mesma razão que `downside`."
+    }
   ]
 }

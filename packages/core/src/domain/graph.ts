@@ -31,6 +31,8 @@
  * the 422.
  */
 
+import type { CustomFieldDefinition } from './custom-fields.ts';
+
 /** Names of the four soundness rules, in the order they run. */
 export const RULES = Object.freeze({
   REACHABLE: 'alcançável',
@@ -85,6 +87,14 @@ export interface GraphDocument {
   edges: GraphEdge[];
   initial_node: string;
   final_nodes: string[];
+  /**
+   * Fields this class declares on its own tickets (t168).
+   *
+   * Required and possibly empty. Typed here rather than left to the open drawer
+   * because the transition gate READS it out of the snapshot — a key this
+   * package acts on is a key it has an opinion about.
+   */
+  custom_fields: CustomFieldDefinition[];
   [key: string]: unknown;
 }
 
@@ -133,6 +143,7 @@ export const REQUIRED_DOCUMENT_FIELDS = [
   'edges',
   'initial_node',
   'final_nodes',
+  'custom_fields',
 ];
 export const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
 export const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
@@ -180,6 +191,13 @@ export function validateStructure(doc: unknown): StructureReport {
   }
   if (doc.final_nodes !== undefined && !Array.isArray(doc.final_nodes)) {
     note('campo_invalido', '"final_nodes" has to be a list', 'final_nodes');
+  }
+  // The list itself and nothing inside it: what each declaration has to look
+  // like is the schema's business, and cross-checking `required_at` against the
+  // node ids is deliberately not done here (t168, out of scope) — an unreachable
+  // `required_at` fails inertly, demanding nothing of nobody.
+  if (doc.custom_fields !== undefined && !Array.isArray(doc.custom_fields)) {
+    note('campo_invalido', '"custom_fields" has to be a list', 'custom_fields');
   }
 
   const nodes: unknown[] = Array.isArray(doc.nodes) ? doc.nodes : [];

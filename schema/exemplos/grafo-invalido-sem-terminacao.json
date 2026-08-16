@@ -74,5 +74,6 @@
     { "from": "reprocessar_item", "to": "reprocessar_item", "condition": "sempre" }
   ],
   "initial_node": "triar_item",
-  "final_nodes": ["concluir_item"]
+  "final_nodes": ["concluir_item"],
+  "custom_fields": []
 }

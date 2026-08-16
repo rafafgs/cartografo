@@ -11,7 +11,8 @@
     "nodes",
     "edges",
     "initial_node",
-    "final_nodes"
+    "final_nodes",
+    "custom_fields"
   ],
   "additionalProperties": false,
   "properties": {
@@ -48,9 +49,41 @@
       "uniqueItems": true,
       "description": "Ids dos nós que encerram a travessia. Todo id precisa existir em nodes.",
       "items": { "$ref": "#/$defs/node_id" }
+    },
+    "custom_fields": {
+      "type": "array",
+      "description": "Campos que ESTA classe de problema declara no trabalho que atravessa o mapa (t168). É aqui que a definição mora, e não no schema do trabalho: `downside`, `upside` e `premise_source` são vocabulário de bets assimétricas (D14) e não teriam sentido em desenvolvimento de software. Obrigatório e possivelmente vazio: uma classe que não pede campo nenhum escreve `[]`, e é isso que mantém verdadeira a invariante de que required e properties são o mesmo conjunto — este documento não tem chave opcional de topo.",
+      "items": { "$ref": "#/$defs/custom_field" }
     }
   },
   "$defs": {
+    "custom_field": {
+      "type": "object",
+      "description": "Um campo do trabalho, declarado pela classe: nome, tipo e o nó que exige que ele esteja preenchido.",
+      "required": ["name", "type", "required_at"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Nome do campo no trabalho, snake_case. É a chave dentro de `trabalho.campos`.",
+          "examples": ["premise_source", "downside", "upside"]
+        },
+        "type": {
+          "enum": ["string", "number", "boolean"],
+          "description": "Tipo declarado do valor. Em v1 é metadado: o valor guardado NÃO é conferido contra ele — mesma postura que o manifesto de skill já toma com `budgets`, declarado antes de ser cobrado. Três escalares e nada mais porque campo de ficha é o que uma pessoa digita, não estrutura aninhada."
+        },
+        "required_at": {
+          "oneOf": [{ "$ref": "#/$defs/node_id" }, { "type": "null" }],
+          "description": "Id do nó que exige o campo preenchido: o trabalho não sai desse nó enquanto ele estiver vazio (portão determinístico, D9). `null` quando o campo é informativo — declarado na ficha, cobrado por nó nenhum. É NULO e não ausente porque a chave segue obrigatória: a mesma disciplina da chave de topo, e é ela que impede que 'esqueci de decidir' se confunda com 'decidi que não trava'.",
+          "examples": ["triagem", null]
+        },
+        "description": {
+          "type": "string",
+          "description": "O que este campo quer dizer, em uma frase — o que a pessoa lê antes de preencher."
+        }
+      }
+    },
     "node_id": {
       "type": "string",
       "minLength": 1,

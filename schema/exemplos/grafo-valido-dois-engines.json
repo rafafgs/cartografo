@@ -90,5 +90,6 @@
     }
   ],
   "initial_node": "redigir",
-  "final_nodes": ["conferir"]
+  "final_nodes": ["conferir"],
+  "custom_fields": []
 }

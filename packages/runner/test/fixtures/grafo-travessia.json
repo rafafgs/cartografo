@@ -137,5 +137,6 @@
     }
   ],
   "initial_node": "implementar",
-  "final_nodes": ["publicar"]
+  "final_nodes": ["publicar"],
+  "custom_fields": []
 }

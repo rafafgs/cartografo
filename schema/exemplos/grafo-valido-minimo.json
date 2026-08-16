@@ -92,5 +92,6 @@
     }
   ],
   "initial_node": "redigir",
-  "final_nodes": ["revisar"]
+  "final_nodes": ["revisar"],
+  "custom_fields": []
 }

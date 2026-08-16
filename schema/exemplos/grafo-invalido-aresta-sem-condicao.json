@@ -54,5 +54,6 @@
     { "from": "coletar_fontes", "to": "resumir_fontes", "condition": "" }
   ],
   "initial_node": "coletar_fontes",
-  "final_nodes": ["resumir_fontes"]
+  "final_nodes": ["resumir_fontes"],
+  "custom_fields": []
 }

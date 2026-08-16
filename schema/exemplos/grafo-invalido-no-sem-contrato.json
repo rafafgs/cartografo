@@ -44,5 +44,6 @@
     { "from": "esbocar_texto", "to": "publicar_texto", "condition": "sempre" }
   ],
   "initial_node": "esbocar_texto",
-  "final_nodes": ["publicar_texto"]
+  "final_nodes": ["publicar_texto"],
+  "custom_fields": []
 }

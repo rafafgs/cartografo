@@ -1,4 +1,9 @@
--- 0013_pergunta_no_id — de qual nó veio a pergunta (t167).
+-- 0014_pergunta_no_id — de qual nó veio a pergunta (t167).
+--
+-- Renumerada de 0013 para 0014 (t187): três tickets em paralelo pediram o mesmo
+-- 0013 na integração, e `src/db/migrate.ts` falha alto em número repetido. A
+-- 0013 ficou com a `0013_sessao_modelos` (t172). Nenhuma ordem de dependência
+-- entre elas — esta só mexe em `pergunta`.
 --
 -- Até aqui uma pergunta sabia de qual TRABALHO ela era, e de qual execução, mas
 -- não de qual NÓ: `pergunta` carregava `trabalho_id` e `execucao_id`, e a

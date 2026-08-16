@@ -73,5 +73,6 @@
     { "from": "revisar_lote", "to": "entregar_lote", "condition": "sempre" }
   ],
   "initial_node": "preparar_lote",
-  "final_nodes": ["entregar_lote"]
+  "final_nodes": ["entregar_lote"],
+  "custom_fields": []
 }

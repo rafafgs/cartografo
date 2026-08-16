@@ -23,6 +23,11 @@ import {
   type Actor,
   type Event,
 } from '../db/event-validation.ts';
+import {
+  isScalarMap,
+  missingRequiredFields,
+  type ScalarMap,
+} from '../domain/custom-fields.ts';
 import { getVersion } from './graphs.ts';
 import { enqueueHookDeliveries } from './hooks.ts';
 import {
@@ -53,6 +58,15 @@ export interface Job {
    * wrote any yet" from "it was declared that there are none".
    */
   criterios_de_aceite: string[] | null;
+  /**
+   * Values of the fields the CLASS declares in its graph (t168); `null` when the
+   * job carries none.
+   *
+   * The keys are the class's, not this package's: what may appear here is
+   * `custom_fields` of the job's graph version, and that is also what the
+   * transition gate reads to decide whether the job may leave a node.
+   */
+  campos: ScalarMap | null;
   no_entrada_id: string;
   no_atual: string;
   bloqueado: boolean;
@@ -88,14 +102,17 @@ export interface ExecutionSummary {
   perguntas_pendentes: number;
 }
 
-interface JobRow extends Omit<Job, 'bloqueado' | 'criterios_de_aceite' | 'concluido'> {
+interface JobRow
+  extends Omit<Job, 'bloqueado' | 'criterios_de_aceite' | 'campos' | 'concluido'> {
   bloqueado: number;
   /** JSON in a TEXT column, like `sessao.uso` and `pergunta.opcoes`. */
   criterios_de_aceite: string | null;
+  /** JSON in a TEXT column too, for the same reason (t168). */
+  campos: string | null;
 }
 
 const COLUMNS = `
-  id, projeto_id, execucao_id, titulo, corpo, criterios_de_aceite,
+  id, projeto_id, execucao_id, titulo, corpo, criterios_de_aceite, campos,
   no_entrada_id, no_atual, bloqueado, motivo_bloqueio, grafo_versao_id,
   criado_em, atualizado_em
 `;
@@ -150,6 +167,7 @@ function toJob(db: Database, row: JobRow): Job {
     ...row,
     bloqueado: asBoolean(row.bloqueado),
     criterios_de_aceite: jsonOrNull<string[]>(row.criterios_de_aceite),
+    campos: jsonOrNull<ScalarMap>(row.campos),
     concluido: isAtFinalNode(db, row),
   };
 }
@@ -179,6 +197,8 @@ export interface CreateJobInput {
   corpo?: unknown;
   /** Optional preliminary acceptance criteria (t122). */
   criterios_de_aceite?: unknown;
+  /** Optional values of the class's declared fields (t168). */
+  campos?: unknown;
   no_entrada_id?: unknown;
   execucao_id?: unknown;
   projeto_id?: unknown;
@@ -191,9 +211,15 @@ export interface CreateJobInput {
  *
  * `grafo_versao_id` goes into the PROJECTION and not into the event payload: the
  * `trabalho.criado` schema does not declare it, and a log carrying a field
- * outside its contract is a log no consumer can validate. `corpo` and
- * `criterios_de_aceite` go into BOTH, because the schema does declare them since
- * t122 — a job that is born with content has that content as part of the fact.
+ * outside its contract is a log no consumer can validate. `corpo`,
+ * `criterios_de_aceite` and `campos` go into BOTH, because the schema does
+ * declare them (t122, t168) — a job that is born with content has that content
+ * as part of the fact.
+ *
+ * A job created by hand with no `grafo_versao_id` is NOT cross-checked against
+ * any class's `custom_fields`: there is no graph to ask, exactly as there is
+ * none for `no_entrada_id`, which is free text here for the same reason. The
+ * gate lives where the graph is known — the transition route.
  *
  * @param db Open handle.
  * @param input Request body.
@@ -208,6 +234,7 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     no_entrada_id: input.no_entrada_id,
     corpo: input.corpo,
     criterios_de_aceite: input.criterios_de_aceite,
+    campos: input.campos,
   });
   const projectId = integerOrDefault('projeto_id', input.projeto_id, DEFAULT_PROJECT);
   const executionId = integerOrNull('execucao_id', input.execucao_id);
@@ -215,16 +242,17 @@ export function createJob(db: Database, input: CreateJobInput): Job {
   const actor = resolveActor(input.ator, API_ACTOR);
   const entryNode = data.no_entrada_id as string;
   const criteria = data.criterios_de_aceite as string[] | null;
+  const fields = data.campos as ScalarMap | null;
 
   const create = db.transaction((): Job => {
     const timestamp = now();
     const result = db
       .prepare(
         `INSERT INTO trabalho (
-           projeto_id, execucao_id, titulo, corpo, criterios_de_aceite,
+           projeto_id, execucao_id, titulo, corpo, criterios_de_aceite, campos,
            no_entrada_id, no_atual, bloqueado, motivo_bloqueio, grafo_versao_id,
            criado_em, atualizado_em
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
       )
       .run(
         projectId,
@@ -232,6 +260,7 @@ export function createJob(db: Database, input: CreateJobInput): Job {
         data.titulo as string,
         data.corpo as string | null,
         criteria === null ? null : JSON.stringify(criteria),
+        fields === null ? null : JSON.stringify(fields),
         entryNode,
         entryNode,
         graphVersionId,
@@ -319,6 +348,47 @@ export interface TransitionInput {
 }
 
 /**
+ * The class's mandatory fields, checked against the node the job is leaving
+ * (t168).
+ *
+ * This is the deterministic gate D9 asks for wherever judgement is not needed:
+ * no session, no runner, no template engine — a comparison between what the
+ * class declared and what the ticket carries. It reads the job's graph version
+ * the same way `isAtFinalNode` above does, and for the same reason: what is
+ * demanded is a property of the VERSION the job runs under, not of the class
+ * today.
+ *
+ * Silent in the same three cases `isAtFinalNode` is: no version, a version that
+ * no longer resolves, a snapshot that declares nothing. Inventing a demand out
+ * of a graph nobody can read would block a job for a reason nobody could act on.
+ *
+ * @param db Open handle.
+ * @param row The job's row, as it is in the table.
+ * @throws {ValidationError} Naming every field the node demands and the job
+ *   does not carry.
+ */
+function requireFieldsOfNode(db: Database, row: JobRow): void {
+  if (row.grafo_versao_id === null) return;
+
+  const version = getVersion(db, row.grafo_versao_id);
+  if (version === undefined) return;
+
+  const missing = missingRequiredFields(
+    version.snapshot.custom_fields,
+    row.no_atual,
+    jsonOrNull<ScalarMap>(row.campos),
+  );
+  if (missing.length === 0) return;
+
+  throw new ValidationError(
+    missing.map(
+      (name) =>
+        `campos.${name} is required to leave node "${row.no_atual}" (declared in custom_fields of the job's graph version)`,
+    ),
+  );
+}
+
+/**
  * Moves the job across nodes and records `trabalho.transicao` (FR5).
  *
  * `de_no_id` is `null` on the FIRST transition — the job leaving the entry node
@@ -326,14 +396,24 @@ export interface TransitionInput {
  * is the log, not the projection: a job can come back to the entry node later,
  * and then `no_atual == no_entrada_id` no longer distinguishes anything.
  *
+ * This is also the only place a job's position in the graph changes, mirrored by
+ * nothing — which is what makes it the one place a gate over the class's
+ * mandatory fields can stand (t168). The check runs inside `build`, so a job
+ * that does not exist is still a 404 and a refusal writes nothing: no projection
+ * row, no event.
+ *
  * It is also where a `node_entered` hook fires (t169): the node the job ARRIVED
  * at is the match key, which is why a hook on `initial_node` structurally never
- * fires — that placement is a `trabalho.criado`, never a transition.
+ * fires — that placement is a `trabalho.criado`, never a transition. The hook is
+ * enqueued from `announce`, downstream of the t168 gate: a transition the gate
+ * refuses never happened, so it fires nothing.
  *
  * @param db Open handle.
  * @param id Job id.
  * @param input Request body.
  * @returns The updated job, or `null` if it does not exist.
+ * @throws {ValidationError} When the node being left demands a field the job
+ *   does not carry.
  */
 export function transitionJob(
   db: Database,
@@ -355,11 +435,14 @@ export function transitionJob(
     'trabalho.transicao',
     input.ator,
     API_ACTOR,
-    (row) => ({
-      data: { de_no_id: alreadyWalked ? row.no_atual : null, para_no_id: input.para_no_id },
-      sql: 'no_atual = ?',
-      values: [input.para_no_id],
-    }),
+    (row) => {
+      requireFieldsOfNode(db, row);
+      return {
+        data: { de_no_id: alreadyWalked ? row.no_atual : null, para_no_id: input.para_no_id },
+        sql: 'no_atual = ?',
+        values: [input.para_no_id],
+      };
+    },
     // The node comes from the VALIDATED payload, so what the hook matches on is
     // the same string the log records — never the raw request body.
     (row, data, event) => {
@@ -446,6 +529,8 @@ export function unblockJob(db: Database, id: number, input: UnblockInput): Job |
 /** Body of `PATCH /v1/jobs/:id`. */
 export interface AmendInput {
   titulo?: unknown;
+  /** New values for the class's declared fields (t168). */
+  campos?: unknown;
   ator?: unknown;
 }
 
@@ -467,22 +552,54 @@ export interface AmendInput {
  * row: a job that does not exist is still a 404, and the order between "does it
  * exist" and "is the body any good" does not change.
  *
+ * Since t168 there are TWO amendable fields, and the rule stayed the one t157
+ * wrote: what is written is what has to be validated. A body carrying neither is
+ * unusable — not a no-op — because an amendment that changes nothing would still
+ * record a `trabalho.emendado` claiming something was touched.
+ *
  * @param db Open handle.
  * @param id Job id.
  * @param input Request body.
  * @returns The updated job, or `null` if it does not exist.
- * @throws {ValidationError} When `titulo` is absent or is not a non-empty string.
+ * @throws {ValidationError} When neither field is usable.
  */
 export function amendJob(db: Database, id: number, input: AmendInput): Job | null {
   return mutate(db, id, 'trabalho.emendado', input.ator, API_ACTOR, () => {
-    if (typeof input.titulo !== 'string' || input.titulo.length === 0) {
-      throw new ValidationError(['titulo has to be a non-empty string']);
+    const changed: string[] = [];
+    const assignments: string[] = [];
+    const values: unknown[] = [];
+
+    if (input.titulo !== undefined && input.titulo !== null) {
+      if (typeof input.titulo !== 'string' || input.titulo.length === 0) {
+        throw new ValidationError(['titulo has to be a non-empty string']);
+      }
+      changed.push('titulo');
+      assignments.push('titulo = ?');
+      values.push(input.titulo);
     }
-    return {
-      data: { campos_alterados: ['titulo'] },
-      sql: 'titulo = ?',
-      values: [input.titulo],
-    };
+
+    if (input.campos !== undefined && input.campos !== null) {
+      if (!isScalarMap(input.campos)) {
+        throw new ValidationError([
+          'campos has to be an object of string, number or boolean values',
+        ]);
+      }
+      // Replaced whole, never merged: without that, a field somebody filled by
+      // mistake could never be taken back out, and "send me the fields you
+      // want" is a simpler contract than a patch language over a map — the same
+      // reasoning `amendDraft` wrote for the intake's item list.
+      changed.push('campos');
+      assignments.push('campos = ?');
+      values.push(JSON.stringify(input.campos));
+    }
+
+    if (changed.length === 0) {
+      throw new ValidationError([
+        'at least one of titulo or campos has to be present, and usable',
+      ]);
+    }
+
+    return { data: { campos_alterados: changed }, sql: assignments.join(', '), values };
   });
 }
 

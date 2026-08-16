@@ -480,5 +480,6 @@
   "initial_node": "refinar",
   "final_nodes": [
     "implantar"
-  ]
+  ],
+  "custom_fields": []
 }

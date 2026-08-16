@@ -137,6 +137,12 @@ como todo campo opcional desta taxonomia. Os critérios que o intake grava são
 **preliminares**: quem os produz de verdade é o nó que refina, a partir do
 pedido bruto, e ele reescreve o trabalho por `trabalho.emendado`.
 
+`campos` é o terceiro opcional e entrou com os campos customizados por classe
+(t168): um mapa de valores escalares cujas CHAVES a classe declara no grafo
+dela (`custom_fields`), não esta taxonomia — `{"premise_source": "relatório
+trimestral", "downside": -12.5}` em bets assimétricas (D14). Um trabalho que
+nasce sem campo nenhum grava `null`, e `null` não é `{}`.
+
 #### `trabalho.transicao` — [schema](schemas/trabalho.transicao.schema.json)
 
 Emitido quando o trabalho anda de um nó para outro. Ator: `sistema` (o

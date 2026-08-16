@@ -1205,6 +1205,9 @@ function twoEngineGraph(
     edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
     initial_node: "implementar",
     final_nodes: ["revisar"],
+    // Required and empty since t168: this class declares no field on its
+    // tickets, and the key is what says so out loud.
+    custom_fields: [],
   };
 }
 
@@ -3490,6 +3493,7 @@ function modelGraph(
     edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
     initial_node: "implementar",
     final_nodes: ["revisar"],
+    custom_fields: [],
   };
 }
 

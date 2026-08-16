@@ -26,6 +26,8 @@
  * are what a caller branches on, the prose is what a person reads.
  */
 
+import { isScalarMap, type ScalarMap } from './custom-fields.ts';
+
 /** An item of the draft, already normalized. */
 export interface DraftItem {
   /** Identity of the item INSIDE the batch — what `depende_de` cites. */
@@ -41,6 +43,16 @@ export interface DraftItem {
    * any yet" from "it was declared that there are none".
    */
   criterios_de_aceite: string[] | null;
+  /**
+   * Values of the fields the CLASS declares in its graph (`custom_fields`, t168);
+   * `null` when the item declares none.
+   *
+   * Only the SHAPE is judged here — a map of scalars, like `criterios_de_aceite`
+   * beside it is a list of texts. Whether the class really declares a field by
+   * that name is a graph question, and demanding a mandatory one is the
+   * transition gate's business, one layer down and one decision later.
+   */
+  campos: Record<string, string | number | boolean> | null;
   /** Refs of the OTHER items of the batch this one depends on; `[]` when none. */
   depende_de: string[];
 }
@@ -164,6 +176,17 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
     broken = true;
   }
 
+  const fields = raw.campos;
+  const fieldsValid = isAbsent(fields) || isScalarMap(fields);
+  if (!fieldsValid) {
+    note({
+      codigo: PROBLEM_CODES.INVALID_FIELD,
+      mensagem: `"campos" of item "${String(target)}" has to be a map of string, number or boolean values`,
+      alvo: target,
+    });
+    broken = true;
+  }
+
   const dependencies = raw.depende_de;
   const dependenciesValid =
     isAbsent(dependencies) || (Array.isArray(dependencies) && dependencies.every(isFilledText));
@@ -188,6 +211,7 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
           titulo: (raw.titulo as string).trim(),
           corpo: isAbsent(raw.corpo) ? null : (raw.corpo as string),
           criterios_de_aceite: isAbsent(criteria) ? null : (criteria as string[]),
+          campos: isAbsent(fields) ? null : (fields as ScalarMap),
           depende_de: declared ?? [],
         },
     ref: reference,

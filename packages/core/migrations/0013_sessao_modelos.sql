@@ -1,11 +1,4 @@
--- 0014_sessao_modelos — quais modelos rodaram a sessão (t172).
---
--- Renumerada de `0013_` para `0014_` na t169, e só o número mudou: a t167 e a
--- t172 desembocaram na mesma branch trazendo cada uma a sua `0013`, e
--- `listMigrations` recusa prefixo repetido na cara (`src/db/migrate.ts:63-69`)
--- — com as duas presentes, nenhum banco deste repositório migrava. O
--- `schema_migrations` do control plane real ia até a `0008` no dia da troca,
--- então nenhuma linha registrada mudou de nome debaixo de ninguém.
+-- 0013_sessao_modelos — quais modelos rodaram a sessão (t172).
 --
 -- Até aqui o log sabia dizer qual MOTOR rodou cada sessão (`sessao.aberta.engine`,
 -- desde a t102) e nunca qual modelo. "Custo por modelo" não tinha resposta não

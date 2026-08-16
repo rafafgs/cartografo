@@ -124,6 +124,7 @@
   "final_nodes": [
     "revisar"
   ],
+  "custom_fields": [],
   "hooks": [
     {
       "id": "avisar-revisao",

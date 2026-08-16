@@ -70,6 +70,7 @@ const REQUIRED_DOC_FIELDS = [
   'edges',
   'initial_node',
   'final_nodes',
+  'custom_fields',
 ];
 const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
 const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
@@ -108,6 +109,13 @@ export function validarEstrutura(doc) {
   }
   if (doc.final_nodes !== undefined && !Array.isArray(doc.final_nodes)) {
     annotate('campo_invalido', '"final_nodes" has to be a list', 'final_nodes');
+  }
+  // The list itself and nothing inside it: what each declaration has to look
+  // like is the schema's business, and cross-checking `required_at` against the
+  // node ids is deliberately not done here (t168, out of scope) — an unreachable
+  // `required_at` fails inertly, demanding nothing of nobody.
+  if (doc.custom_fields !== undefined && !Array.isArray(doc.custom_fields)) {
+    annotate('campo_invalido', '"custom_fields" has to be a list', 'custom_fields');
   }
   if (doc.hooks !== undefined && !Array.isArray(doc.hooks)) {
     annotate('campo_invalido', '"hooks" has to be a list', 'hooks');

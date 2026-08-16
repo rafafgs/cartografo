@@ -31,6 +31,11 @@
           "type": ["array", "null"],
           "items": { "type": "string" },
           "description": "Critérios de aceite PRELIMINARES, como o intake os propôs. Quem os produz de verdade é o nó que refina, a partir do pedido bruto. null e [] são coisas diferentes."
+        },
+        "campos": {
+          "type": ["object", "null"],
+          "additionalProperties": { "type": ["string", "number", "boolean"] },
+          "description": "Valores dos campos que a CLASSE declara no seu grafo (`custom_fields`, t168) — `premise_source`, `downside` e `upside` em bets assimétricas. Chaves livres de propósito: quem as declara é o documento de grafo da classe, não esta taxonomia. null quando o trabalho nasceu sem campo nenhum; null e {} são coisas diferentes."
         }
       },
       "additionalProperties": false

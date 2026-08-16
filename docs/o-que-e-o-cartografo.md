@@ -33,7 +33,11 @@ registrado e versionado.
 propõe a quebra em tickets e você confirma. Os tickets
 atravessam o mapa: agentes de CLI executam cada etapa com instruções e
 contratos vindos do banco, portões verificam cada passagem com evidência, e
-decisão que não é de máquina chega na tela e espera você.
+decisão que não é de máquina chega na tela e espera você. Cada mapa decide quais
+campos os tickets dele carregam — uma tese de investimento pede fonte da
+premissa, downside e upside, que um ticket de software não teria onde guardar —
+e um campo declarado como obrigatório em certa etapa trava a saída dela até
+alguém preencher.
 
 **Escolher o motor e o modelo etapa por etapa.** Cada etapa do mapa pode dizer
 em qual agente de CLI ela roda e com qual modelo — o nó que escreve usa o

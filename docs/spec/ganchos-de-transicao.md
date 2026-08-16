@@ -1,7 +1,7 @@
 # Especificação: ganchos de transição declarados no grafo
 
 **Versão da API:** `v1` · **Migração:**
-[`0015_gancho`](../../packages/core/migrations/0015_gancho.sql)
+[`0016_gancho`](../../packages/core/migrations/0016_gancho.sql)
 **Formato:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json) ·
 **Ficha:** t169
 

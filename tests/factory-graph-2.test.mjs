@@ -626,6 +626,45 @@ test('FR7 — registrar-travessia records process metrics, never a financial out
   }
 });
 
+/*
+ * t168 — the three fields D14 asks of a thesis that software has no place for.
+ *
+ * `premise_source` is demanded at `triagem`, the one gate that decides whether
+ * the idea is worth research at all; `downside` and `upside` are the
+ * proponent's own numbers, entered before `analise-assimetria` produces the
+ * real figures — so they are declared without a node demanding them.
+ */
+test('t168 — the bets graph declares the class custom fields, and the bundle still validates', async () => {
+  const { validateAgainstSchema } = await bundleValidator();
+  const doc = readJson(GRAPH_PATH);
+
+  assert.deepEqual(
+    validateAgainstSchema(doc, readJson(GRAPH_SCHEMA_PATH)),
+    [],
+    'the document with custom_fields in it still holds against the schema',
+  );
+
+  const declarations = new Map(doc.custom_fields.map((entry) => [entry.name, entry]));
+  assert.deepEqual([...declarations.keys()].sort(), ['downside', 'premise_source', 'upside']);
+
+  const source = declarations.get('premise_source');
+  assert.equal(source.type, 'string');
+  assert.equal(source.required_at, 'triagem');
+  assert.ok(
+    doc.nodes.some((node) => node.id === source.required_at),
+    'required_at has to name a node this document really has',
+  );
+
+  for (const key of ['downside', 'upside']) {
+    assert.equal(declarations.get(key).type, 'number');
+    assert.equal(
+      declarations.get(key).required_at,
+      null,
+      `${key} is informational: no node blocks the crossing on it`,
+    );
+  }
+});
+
 test('AT12 — the validator CLI approves the bundle and rejects a tampered hash', () => {
   assert.ok(
     existsSync(BUNDLE_VALIDATOR_PATH),

@@ -1,4 +1,4 @@
--- 0015_gancho — a reação que o próprio grafo declara (t169).
+-- 0016_gancho — a reação que o próprio grafo declara (t169).
 --
 -- A `0008` deu ao control plane o transporte *push* para quem REGISTRA uma
 -- assinatura pela API. Esta dá o outro dono possível de uma reação: o próprio

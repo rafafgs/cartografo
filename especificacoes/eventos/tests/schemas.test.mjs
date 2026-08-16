@@ -22,8 +22,10 @@ export const TABELA = {
     obrigatorios: ['titulo', 'no_entrada_id'],
     // `corpo` e `criterios_de_aceite` entraram com o intake (t122): um trabalho
     // pode nascer com conteúdo, e os critérios que o intake grava são
-    // preliminares — quem tem a palavra final é o nó `refinar`.
-    opcionais: ['corpo', 'criterios_de_aceite'],
+    // preliminares — quem tem a palavra final é o nó `refinar`. `campos` entrou
+    // com os campos customizados por classe (t168): o que a classe declara no
+    // grafo dela, o trabalho carrega aqui.
+    opcionais: ['corpo', 'criterios_de_aceite', 'campos'],
   },
   'trabalho.transicao': {
     entidade: 'trabalho',

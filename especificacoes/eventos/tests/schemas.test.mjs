@@ -84,7 +84,8 @@ export const TABELA = {
   'pergunta.criada': {
     entidade: 'pergunta',
     obrigatorios: ['trabalho_id', 'tipo', 'pergunta', 'auto_aprovavel'],
-    opcionais: ['sessao_id', 'contexto', 'opcoes', 'recomendacao', 'resposta_padrao'],
+    // `no_id` desde a t167: de qual nó a pergunta veio, carimbado pelo servidor.
+    opcionais: ['sessao_id', 'no_id', 'contexto', 'opcoes', 'recomendacao', 'resposta_padrao'],
   },
   'pergunta.respondida': {
     entidade: 'pergunta',

@@ -23,6 +23,10 @@
           "type": ["integer", "null"],
           "description": "Sessão que perguntou. Opcional porque o caminho da resposta sobrevive à sessão: ela emite o pedido e o processo termina."
         },
+        "no_id": {
+          "type": ["string", "null"],
+          "description": "Nó em que o trabalho estava quando perguntou (t167). Carimbado pelo servidor a partir do trabalho dono, nunca vindo do corpo do pedido — a mesma fronteira de confiança de trabalho_id. NULO significa \"não se sabe de qual nó veio\": trabalho sem posição, ou pergunta gravada antes de o campo existir."
+        },
         "tipo": {
           "enum": ["pergunta", "aprovacao"],
           "description": "pergunta: alguém precisa saber algo. aprovacao: um portão manual quer um OK sobre um artefato."

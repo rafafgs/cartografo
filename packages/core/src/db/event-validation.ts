@@ -230,6 +230,10 @@ const RULES: Record<string, TypeRule> = {
     fields: {
       trabalho_id: required('integer'),
       sessao_id: optional('integer'),
+      // The node the owning job was standing on (t167). Optional, and stamped by
+      // the repository from the job — the payload is where the fact is audited,
+      // not where it is declared.
+      no_id: optional('string'),
       tipo: required('string', { values: ['pergunta', 'aprovacao'] }),
       pergunta: required('string'),
       contexto: optional('string'),

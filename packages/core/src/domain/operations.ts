@@ -38,11 +38,33 @@
 
 import type { GraphEdge, GraphDocument, GraphNode } from './graph.ts';
 
-/** Node fields that `alterar_campo_no` is allowed to swap. */
-export const CHANGEABLE_FIELDS = Object.freeze(['role', 'description', 'skill_ref', 'contract']);
+/**
+ * Node fields that `alterar_campo_no` is allowed to swap.
+ *
+ * `escalation_policy` and `escalation_recipient` are here since t167, and being
+ * here is the ENTIRE mechanism by which a node's escalation policy is versioned:
+ * changing one produces a new `grafo_versao` and re-validates the whole
+ * document, because that is what applying a proposal already does for every
+ * other field on this list. A mutation path of their own would have been a
+ * second way to change a node, with its own rules about what gets versioned.
+ */
+export const CHANGEABLE_FIELDS = Object.freeze([
+  'role',
+  'description',
+  'skill_ref',
+  'contract',
+  'escalation_policy',
+  'escalation_recipient',
+]);
 
 /** A field swappable by `alterar_campo_no`. */
-export type ChangeableField = 'role' | 'description' | 'skill_ref' | 'contract';
+export type ChangeableField =
+  | 'role'
+  | 'description'
+  | 'skill_ref'
+  | 'contract'
+  | 'escalation_policy'
+  | 'escalation_recipient';
 
 /** End to end of an edge — what identifies the edge on removal. */
 export interface EdgeReference {

@@ -57,6 +57,18 @@ export interface GraphNode {
    * unregistered engine is the dispatch, not a closed enum.
    */
   engine?: unknown;
+  /**
+   * When this node calls a human (t167, FR3). Optional and `unknown` for exactly
+   * the same reason `engine` is: what constrains the value is the schema's enum,
+   * not this layer, and absence is resolved at dispatch by
+   * {@link resolveEscalationPolicy} — never at validation.
+   *
+   * `escalation_recipient` is deliberately NOT here. Nothing in the runner routes
+   * anything to it: there is no notification and no identity system to route to,
+   * so threading it through the dispatch would be carrying a field nobody reads.
+   * It stays graph data, visible through `GET /v1/graph-versions/:id`.
+   */
+  escalation_policy?: unknown;
   /** The skill this node runs. Required by the schema; optional here so a
    * malformed snapshot degrades instead of throwing a type error. */
   skill_ref?: SkillPin;
@@ -111,6 +123,53 @@ export interface ResolvedNode {
 
 /** Reads one route of the control plane, rejecting on a refusal. */
 export type ReadGraphVersion = (route: string) => Promise<GraphVersionBody>;
+
+/** The three ways a node can behave about calling a human (t167). */
+export type EscalationPolicy = 'always' | 'on_uncertainty' | 'never';
+
+/**
+ * The policy a node runs under when it declares none (t167, FR1).
+ *
+ * Named and exported, never implicitly implied: it is today's behaviour — every
+ * node that ever ran asked when it got stuck — and naming it is what makes
+ * "every graph written before this field keeps behaving exactly as it did" a
+ * statement somebody can check instead of a hope.
+ */
+export const DEFAULT_ESCALATION_POLICY: EscalationPolicy = 'on_uncertainty';
+
+/** The three declared values, which is what the schema's enum carries. */
+const ESCALATION_POLICIES: readonly string[] = Object.freeze([
+  'always',
+  'on_uncertainty',
+  'never',
+]);
+
+/**
+ * Which escalation policy governs the node a work is standing on (t167, FR4).
+ *
+ * Three roads lead to {@link DEFAULT_ESCALATION_POLICY}, and all three are
+ * ordinary: there is no resolvable node, the node declares nothing, or it
+ * declares something that is not one of the three. That last one is not a
+ * failure to report — the schema refuses a fourth value on the way in, so a
+ * snapshot carrying one changed shape underneath us, and the answer is today's
+ * behaviour rather than a guess at which of the three was meant.
+ *
+ * It lives HERE, beside the field it reads, rather than beside the dispatch that
+ * consumes it: `render-skill-instructions.ts` needs the same answer to compose
+ * the right paragraph, and the two modules would otherwise have had to import it
+ * from each other. `dispatch-claude-code.ts` re-exports it, the same way it
+ * already re-exports `ESCALATION_PROTOCOL`.
+ *
+ * @param resolved The node this dispatch resolved, or `null`.
+ * @returns One of the three policies, always.
+ */
+export function resolveEscalationPolicy(resolved: ResolvedNode | null): EscalationPolicy {
+  const declared = resolved?.node.escalation_policy;
+  if (typeof declared !== 'string' || !ESCALATION_POLICIES.includes(declared)) {
+    return DEFAULT_ESCALATION_POLICY;
+  }
+  return declared as EscalationPolicy;
+}
 
 /**
  * The route of one graph version.

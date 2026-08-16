@@ -80,7 +80,9 @@ import {
   type RenderedSkill,
 } from './render-skill-instructions.ts';
 import {
+  resolveEscalationPolicy,
   resolveNode,
+  type EscalationPolicy,
   type GraphEdge,
   type GraphVersionBody,
   type ResolvedNode,
@@ -93,6 +95,20 @@ export {
   SkillNotRegisteredError,
   SkillPinMismatchError,
 } from './render-skill-instructions.ts';
+
+/**
+ * Which escalation policy governs the node being dispatched (t167, FR4).
+ *
+ * Re-exported here, where {@link DEFAULT_ENGINE} and `resolveEngine` live,
+ * because this is the module that ACTS on the answer: the two places that would
+ * raise a question resolve it first, and `never` routes them to
+ * `POST /v1/jobs/:id/blocks` instead. It is defined next to the field it reads
+ * (`resolve-node.ts`) so that the instruction renderer can ask the same question
+ * without the two modules importing each other — the same shape
+ * `ESCALATION_PROTOCOL` above already has.
+ */
+export { resolveEscalationPolicy, DEFAULT_ESCALATION_POLICY } from './resolve-node.ts';
+export type { EscalationPolicy } from './resolve-node.ts';
 
 /**
  * `SessionStatus` (the interface's vocabulary) -> the taxonomy's `status`
@@ -548,6 +564,40 @@ export function createClaudeCodeDispatch(
   };
 
   /**
+   * Stops the work with a reason, for a node that has nobody to ask (t167, FR6).
+   *
+   * The other half of `never`, and the half that is deterministic: the rendered
+   * instructions ask the session not to write an escalation block, and this is
+   * what happens when one shows up anyway — or when the wiring itself has no
+   * rule to apply. `POST /v1/jobs/:id/blocks` is an unconditional, reason-
+   * carrying block that has existed since t102, so nothing new is invented here;
+   * what is chosen at dispatch time is WHICH of the two existing mechanisms
+   * stops the work.
+   *
+   * The difference that matters is what is NOT created: no row in `pergunta`,
+   * no `pergunta.criada`, nothing in anybody's queue. A node that declares it has
+   * nobody to ask may not put a line in the queue of someone who is not there —
+   * that queue is the list of things a person is expected to answer, and a
+   * question nobody owns sitting in it forever is exactly the state `never`
+   * exists to avoid.
+   *
+   * The actor is `sistema/runner`, like every other write this module makes on
+   * its own account: the wiring stopped the work, not the session and not a
+   * person.
+   *
+   * @param job The work being dispatched.
+   * @param motivo Why it stopped — it quotes the node and what walled the
+   *   session, because `trabalho.motivo_bloqueio` is what whoever opens the work
+   *   reads first.
+   */
+  const blockWithNobodyToAsk = async (job: Job, motivo: string): Promise<void> => {
+    await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
+      motivo,
+      ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+    });
+  };
+
+  /**
    * Asks a human which way the work goes (FR9).
    *
    * Reached when a node with more than one way out finished without naming one
@@ -561,12 +611,18 @@ export function createClaudeCodeDispatch(
    * asking for a decision, this one is the wiring reporting that it has no rule
    * to apply. Two spellings for two different facts, in a log somebody has to be
    * able to group.
+   *
+   * At a `never` node it stops the work instead of asking (t167, FR6). The
+   * missing routing decision is just as real, and the work stops just as hard —
+   * what changes is that nobody is called for it, which is what the node
+   * declared.
    */
   const escalateRouting = async (
     job: Job,
     sessionId: number,
     edges: readonly GraphEdge[],
     observed: string | null,
+    policy: EscalationPolicy,
   ): Promise<void> => {
     const labels = edges.map((edge) => edge.condition ?? '').filter((label) => label !== '');
     const seen = observed === null ? 'nenhum' : `"${observed}"`;
@@ -579,14 +635,21 @@ export function createClaudeCodeDispatch(
       .map((edge) => '`' + (edge.condition ?? '') + '` → `' + edge.to + '`')
       .join(', ');
 
+    const question =
+      `O nó \`${job.no_atual}\` tem mais de uma saída e a sessão não escolheu ` +
+      `nenhuma delas: o resultado observado foi ${seen}, e ele não casa com ` +
+      'aresta nenhuma deste nó. Por qual aresta o trabalho segue?';
+
+    if (policy === 'never') {
+      await blockWithNobodyToAsk(job, `${question} Este nó não tem a quem perguntar.`);
+      return;
+    }
+
     await call('/v1/input-requests', 'POST', {
       trabalho_id: job.id,
       sessao_id: sessionId,
       tipo: 'pergunta',
-      pergunta:
-        `O nó \`${job.no_atual}\` tem mais de uma saída e a sessão não escolheu ` +
-        `nenhuma delas: o resultado observado foi ${seen}, e ele não casa com ` +
-        'aresta nenhuma deste nó. Por qual aresta o trabalho segue?',
+      pergunta: question,
       contexto:
         `Arestas que saem de \`${job.no_atual}\`: ${routes}. ` +
         'A sessão terminou sem falhar; o que falta é a decisão de rota.',
@@ -641,7 +704,7 @@ export function createClaudeCodeDispatch(
     const observed = parseNodeResult(output)?.resultado ?? null;
     const chosen = edges.find((edge) => edge.condition === observed);
     if (chosen === undefined) {
-      await escalateRouting(job, sessionId, edges, observed);
+      await escalateRouting(job, sessionId, edges, observed, resolveEscalationPolicy(resolved));
       return;
     }
 
@@ -896,11 +959,21 @@ export function createClaudeCodeDispatch(
       const output = route.decodeSessionText(lines);
 
       const request: InputRequest | null = parseInputRequest(output);
-      if (request !== null) {
+      if (request !== null && resolveEscalationPolicy(resolved) === 'never') {
+        // The node declares it has nobody to ask, and the session asked anyway
+        // (t167, FR6). The work stops either way — what it does not do is put a
+        // question in a queue nobody is watching. There is exactly one owner for
+        // the flag here too: this route blocks and nothing else does.
+        await blockWithNobodyToAsk(
+          job,
+          `O nó \`${job.no_atual}\` não tem a quem perguntar, e a sessão travou em: ` +
+            request.question,
+        );
+      } else if (request !== null) {
         // This POST is what blocks the work, inside the control plane and in the
         // same transaction as `pergunta.criada` (FR1). The runner never posts a
-        // block of its own — two owners for one flag is how a work ends up
-        // blocked with nothing pending.
+        // block of its own for an ordinary question — two owners for one flag is
+        // how a work ends up blocked with nothing pending.
         await call('/v1/input-requests', 'POST', {
           trabalho_id: job.id,
           sessao_id: session.id,

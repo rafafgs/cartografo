@@ -73,6 +73,34 @@ const RETIRED_KEYS = Object.freeze({
   origem: 'origin',
 });
 
+/**
+ * Every retired name the DOCUMENT may still be caught citing, and its new one.
+ *
+ * Wider than `RETIRED_KEYS` because the doc quotes more than the manifest's own
+ * top level: the nested permission axes, and the node-contract and routing names
+ * that live in the graph schema (`docs/spec/grafo.md`) but are cited here where
+ * *Renderização e injeção* says what else the runner injects.
+ *
+ * The rename left free-text prose in Portuguese on purpose — what a backtick
+ * quotes is not prose, it is a name, and a name the schema no longer declares is
+ * a spec describing a format nobody implements (t184).
+ */
+const RETIRED_CITATIONS = Object.freeze({
+  ...RETIRED_KEYS,
+  // The axes inside `permissions`.
+  leitura: 'read',
+  escrita: 'write',
+  rede: 'network',
+  permitido: 'allowed',
+  dominios: 'domains',
+  // The node's own contract and the routing vocabulary, from the graph schema.
+  entrada_schema: 'input_schema',
+  saida_schema: 'output_schema',
+  verificacoes: 'checks',
+  condicao: 'condition',
+  resultado: 'outcome',
+});
+
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 
 const example = (name) => readJson(fileURLToPath(new URL(name, EXAMPLES_DIR)));
@@ -277,4 +305,48 @@ test('t178 — a manifest that still uses any single old key is refused', () => 
     );
   }
   assert.equal(checked, Object.keys(RETIRED_KEYS).length, 'every retired key has to be exercised');
+});
+
+/** Every inline `code` span of a markdown text, with its 1-based line. */
+function inlineCodeSpans(markdown) {
+  return markdown.split('\n').flatMap((line, index) =>
+    [...line.matchAll(/`([^`\n]+)`/g)].map((match) => ({ line: index + 1, text: match[1] })),
+  );
+}
+
+/** The retired names one span quotes, in the order it quotes them. */
+function retiredNamesIn(text) {
+  return text.split(/[^A-Za-z0-9_]+/).filter((token) => Object.hasOwn(RETIRED_CITATIONS, token));
+}
+
+test('t184 — the document quotes no name the rename retired', () => {
+  const doc = readFileSync(DOC_PATH, 'utf8');
+
+  const stale = inlineCodeSpans(doc).flatMap(({ line, text }) =>
+    retiredNamesIn(text).map(
+      (old) => `manifesto-skill.md:${line} — \`${text}\`: "${old}" is now "${RETIRED_CITATIONS[old]}"`,
+    ),
+  );
+
+  assert.deepEqual(
+    stale,
+    [],
+    'the spec still cites pre-rename names. Prose stays Portuguese; a backticked ' +
+      `name is not prose, and one the schema no longer declares is a lie:\n${stale.join('\n')}`,
+  );
+});
+
+test('t184 — the citation scan bites, and spares what was never a format key', () => {
+  assert.deepEqual(retiredNamesIn('escrita: []'), ['escrita']);
+  assert.deepEqual(retiredNamesIn('rede.permitido: true'), ['rede', 'permitido']);
+  assert.deepEqual(retiredNamesIn('network.allowed: true'), []);
+  // `entrada` is retired AND is a prefix of `entrada_schema`: each answers for
+  // itself, or a corrected `input_schema` would keep being reported as the old
+  // `entrada` and a corrected `entrada` would hide a stale `entrada_schema`.
+  assert.deepEqual(retiredNamesIn('entrada_schema'), ['entrada_schema']);
+  assert.deepEqual(retiredNamesIn('input_schema'), []);
+  // The examples' own domain fields are not this format's keys: they stay put.
+  assert.deepEqual(retiredNamesIn('artefato.gates_declarados'), []);
+  assert.deepEqual(retiredNamesIn('{{input.projeto.comando_testes}}'), []);
+  assert.deepEqual(retiredNamesIn('packages/runner/src/engine/permission-policy.ts'), []);
 });

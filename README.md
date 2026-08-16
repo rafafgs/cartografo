@@ -91,6 +91,21 @@ O arquivo que `export` grava é o mesmo documento que `import` aceita de volta:
 importá-lo em outro control plane produz a mesma `grafo_versao.id`, porque o id
 de uma versão é o hash canônico do documento. `npx cartografo --help` lista tudo.
 
+Depois de uma rodada, para a lente de custo ler a telemetria dela:
+
+```bash
+CARTOGRAFO_TOKEN=<o token do passo 2> \
+  npx topografo-custo avaliar --url http://127.0.0.1:4317 \
+    --execucao 7 --teto-tokens 200000
+```
+
+O `topografo-custo` é um topógrafo: lê sessões e trabalhos daquela execução pela
+API pública, agrega custo por `(versão do grafo, nó)` e **deposita uma proposta
+pendente** por candidata — nunca aplica nenhuma, porque aplicar é decisão humana
+no portão (princípio 5). Sem `--teto-tokens` nem `--teto-segundos` a política de
+teto não roda: não há o que ultrapassar. `npx topografo-custo --help` lista o
+resto.
+
 E, para ver o que está acontecendo:
 
 ```bash

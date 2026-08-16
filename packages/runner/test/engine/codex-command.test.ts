@@ -238,3 +238,106 @@ test('t175 — a node that pinned its own model wins over the tier, and -m still
   );
   assert.equal(args[args.indexOf(MODEL_FLAG) + 1], 'gpt-5.6-luna', "the node's pin is the one");
 });
+
+/* --- sandbox flags from the declared policy (t195, FR7) ---------------------- */
+
+/**
+ * Where the policy meets the argv.
+ *
+ * The classification lives in `codex-permission-policy.ts` and is tested there
+ * against outcomes and reasons; what these cases pin is the OTHER half of the
+ * boundary — the spelling and the POSITION of the flags. `-s` and `-c` are
+ * engine vocabulary, they belong to this module, and the one invariant they
+ * must never disturb is the composed prompt staying the last positional.
+ */
+const permitting = (
+  write: readonly string[],
+  network: { allowed: boolean; domains?: readonly string[] },
+): Partial<SessionSpec> => ({ permissions: { filesystem: { write }, network } });
+
+test('t195 — a spec with no permissions produces the argv it produced before the field was read', () => {
+  const { args } = buildCommand(spec());
+
+  assert.ok(!args.includes('-s'), `the sandbox flag showed up unasked: ${args.join(' ')}`);
+  assert.ok(!args.includes('-c'), `the config override showed up unasked: ${args.join(' ')}`);
+  assert.ok(
+    !args.some((argument) => argument.startsWith('sandbox_workspace_write')),
+    'a session that declared nothing keeps the CLI default it always had',
+  );
+  assert.deepEqual(
+    buildCommand(spec({ permissions: undefined })).args,
+    args,
+    'an explicit `undefined` is the same declaration as an absent field',
+  );
+});
+
+test('t195 — closed writes and a closed network put -s read-only in the argv', () => {
+  const { args } = buildCommand(spec(permitting([], { allowed: false })));
+
+  const position = args.indexOf('-s');
+  assert.notEqual(position, -1, 'the sandbox tier never reached the argv');
+  assert.equal(args[position + 1], 'read-only');
+});
+
+test('t195 — the sandbox flags sit after --skip-git-repo-check and before -C', () => {
+  const { args } = buildCommand(spec(permitting([], { allowed: false })));
+
+  assert.ok(
+    args.indexOf('--skip-git-repo-check') < args.indexOf('-s'),
+    `the tier has to follow the git check flag: ${args.join(' ')}`,
+  );
+  assert.ok(
+    args.indexOf('-s') < args.indexOf('-C'),
+    `the tier has to precede the working root: ${args.join(' ')}`,
+  );
+});
+
+test('t195 — an open policy carries workspace-write plus the network override', () => {
+  const { args } = buildCommand(spec(permitting(['**'], { allowed: true })));
+
+  const position = args.indexOf('-s');
+  assert.notEqual(position, -1, 'the sandbox tier never reached the argv');
+  assert.equal(args[position + 1], 'workspace-write');
+
+  const override = args.indexOf('-c');
+  assert.notEqual(override, -1, 'the config override never reached the argv');
+  assert.equal(args[override + 1], 'sandbox_workspace_write.network_access=true');
+});
+
+test('t195 — open writes with a closed network say so explicitly, never by omission', () => {
+  // Determinism over an external default: the CLI's own default for this key
+  // is already `false`, and the flag goes anyway. One code path, not two.
+  const { args } = buildCommand(spec(permitting(['**'], { allowed: false })));
+
+  assert.equal(args[args.indexOf('-s') + 1], 'workspace-write');
+  assert.equal(args[args.indexOf('-c') + 1], 'sandbox_workspace_write.network_access=false');
+});
+
+test('t195 — the composed prompt stays the LAST positional under every policy', () => {
+  for (const permissions of [
+    {},
+    permitting([], { allowed: false }),
+    permitting(['**'], { allowed: false }),
+    permitting(['**'], { allowed: true }),
+  ]) {
+    const subject = spec(permissions);
+
+    assert.equal(
+      buildCommand(subject).args.at(-1),
+      composeSingleArgument(subject),
+      `the composed argument left last place for ${JSON.stringify(permissions)}`,
+    );
+  }
+});
+
+test('t195 — a refused policy adds no flags here; refusing is the adapter\'s job', () => {
+  // `buildCommand` is pure and has no way to fail a session: the refusal lives
+  // in `startSession`, before this is ever called
+  // (`permission-enforcement.codex.test.ts`). What this pins is that a refused
+  // policy never leaks a HALF-applied sandbox into the argv if the two ever
+  // get out of step.
+  const { args } = buildCommand(spec(permitting(['src/**'], { allowed: true, domains: ['x'] })));
+
+  assert.ok(!args.includes('-s'), `a refused policy handed out a tier: ${args.join(' ')}`);
+  assert.ok(!args.includes('-c'), `a refused policy handed out an override: ${args.join(' ')}`);
+});

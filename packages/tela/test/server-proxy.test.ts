@@ -13,10 +13,13 @@
  */
 
 import assert from 'node:assert/strict';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 import test from 'node:test';
+import { setTimeout as wait } from 'node:timers/promises';
 
 import type * as ProxyModule from '../src/proxy.ts';
 import type * as ScreenServerModule from '../src/server.ts';
@@ -24,6 +27,9 @@ import type * as ScreenServerModule from '../src/server.ts';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const SERVER_PATH = path.join(PACKAGE_ROOT, 'src', 'server.ts');
 const PROXY_PATH = path.join(PACKAGE_ROOT, 'src', 'proxy.ts');
+
+/** The command that actually ships — what `npm start` and `npx` both run. */
+const BIN_PATH = path.join(PACKAGE_ROOT, 'bin', 'tela.mjs');
 
 /** Minimal shape of the test context this file uses (same idiom as the core). */
 interface Cleanup {
@@ -368,4 +374,176 @@ test('t180 — a bad configuration fails at startup in English', async () => {
     () => resolveControlPlaneUrl({ [CONTROL_PLANE_URL_ENV]: 'ftp://127.0.0.1:4317' }),
     { message: 'CARTOGRAFO_URL has to be http or https: "ftp://127.0.0.1:4317"' },
   );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t199 (FR6) — one resolver, and it is the one the shipped command runs.      */
+/*                                                                            */
+/* Until this ticket the package had TWO address resolvers: this one, honoring */
+/* `CARTOGRAFO_PORT` and pinned by the test above, and `router.ts`'s           */
+/* `resolveControlPlaneAddress`, which ignored `CARTOGRAFO_PORT`, spoke        */
+/* Portuguese and was the one `bin/tela.mjs` actually reached. The well-tested */
+/* path was the one that did not ship. So the assertions below go through the  */
+/* PROCESS — `bin/tela.mjs`, what `npm start` and `npx cartografo-tela` run —  */
+/* and not through an import that could once again prove the wrong function.   */
+/* -------------------------------------------------------------------------- */
+
+/** `stdio: ['ignore', 'pipe', 'pipe']` — no stdin, stdout/stderr both read. */
+type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
+
+/** The readiness line the screen prints when it comes up. */
+interface ReadinessLine {
+  event: string;
+  url: string;
+  controlPlane: string;
+}
+
+/** One run of the command: how it ended, or how it announced itself. */
+interface ScreenRun {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+  readiness: ReadinessLine | null;
+}
+
+/**
+ * Runs `bin/tela.mjs` and waits for the readiness line — or for it to give up.
+ *
+ * The ambient configuration is stripped first: whoever runs the suite may have
+ * `CARTOGRAFO_URL` exported in their own shell, and a test about precedence
+ * must not be decided by it.
+ *
+ * @param options Command line arguments and the environment to run under.
+ * @returns Exit code, output and the readiness line, when there was one.
+ */
+async function runScreenBin(options: {
+  args?: string[];
+  env?: NodeJS.ProcessEnv;
+}): Promise<ScreenRun> {
+  assert.ok(existsSync(BIN_PATH), 'artifact does not exist yet: packages/tela/bin/tela.mjs');
+
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  delete env.CARTOGRAFO_URL;
+  delete env.CARTOGRAFO_PORT;
+  delete env.CARTOGRAFO_TELA_PORT;
+  delete env.CARTOGRAFO_TELA_TOKEN;
+  delete env.CARTOGRAFO_TOKEN;
+  Object.assign(env, options.env ?? {});
+
+  const child: CommandChild = spawn(process.execPath, [BIN_PATH, ...(options.args ?? [])], {
+    cwd: PACKAGE_ROOT,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+
+  const ended = new Promise<number | null>((resolve) => {
+    child.on('close', (code) => resolve(code));
+  });
+
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const line = stdout
+      .split('\n')
+      .map((text) => text.trim())
+      .find((text) => text.startsWith('{'));
+    if (line !== undefined) {
+      const readiness = JSON.parse(line) as ReadinessLine;
+      child.kill('SIGTERM');
+      const code = await ended;
+      return { code, stdout, stderr, readiness };
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return { code: await ended, stdout, stderr, readiness: null };
+    }
+    await wait(50);
+  }
+
+  child.kill('SIGKILL');
+  await ended;
+  throw new Error(`the screen neither started nor failed in 60s\nstdout:\n${stdout}\nstderr:\n${stderr}`);
+}
+
+test('t199 AT — the shipped command honors CARTOGRAFO_PORT when CARTOGRAFO_URL is unset', { timeout: 120_000 }, async () => {
+  const controlPlanePort = await freePort();
+
+  const run = await runScreenBin({
+    env: { CARTOGRAFO_PORT: String(controlPlanePort), CARTOGRAFO_TELA_PORT: '0' },
+  });
+
+  assert.ok(run.readiness, `the screen did not announce itself:\n${run.stdout}\n${run.stderr}`);
+  assert.equal(run.readiness.event, 'cartografo.tela.ready');
+  assert.equal(
+    run.readiness.controlPlane,
+    `http://127.0.0.1:${controlPlanePort}`,
+    'the precedence docs/spec/tela-inbox-propostas.md promises is the one the bin applies',
+  );
+});
+
+test('t199 AT — --url wins over the environment, through the same command', { timeout: 120_000 }, async () => {
+  const fromEnv = await freePort();
+  const fromFlag = await freePort();
+
+  const run = await runScreenBin({
+    args: ['--url', `http://127.0.0.1:${fromFlag}/`],
+    env: { CARTOGRAFO_URL: `http://127.0.0.1:${fromEnv}`, CARTOGRAFO_TELA_PORT: '0' },
+  });
+
+  assert.ok(run.readiness, `the screen did not announce itself:\n${run.stdout}\n${run.stderr}`);
+  assert.equal(
+    run.readiness.controlPlane,
+    `http://127.0.0.1:${fromFlag}`,
+    'an explicit --url beats CARTOGRAFO_URL, and the trailing slash is trimmed either way',
+  );
+});
+
+test('t199 AT — a bad --url and a bad CARTOGRAFO_TELA_PORT both fail in English', { timeout: 120_000 }, async () => {
+  const badUrl = await runScreenBin({
+    args: ['--url', 'nem url é'],
+    env: { CARTOGRAFO_TELA_PORT: '0' },
+  });
+  assert.equal(badUrl.readiness, null, 'a screen pointed at nothing must not come up');
+  assert.notEqual(badUrl.code, 0);
+  assert.match(badUrl.stderr, /invalid/);
+  assert.doesNotMatch(badUrl.stderr, /inválida|esperado|precisa ser/);
+
+  const badPort = await runScreenBin({
+    env: { CARTOGRAFO_TELA_PORT: 'não é porta' },
+  });
+  assert.equal(badPort.readiness, null);
+  assert.notEqual(badPort.code, 0);
+  assert.match(badPort.stderr, /CARTOGRAFO_TELA_PORT invalid/);
+  assert.doesNotMatch(badPort.stderr, /inválida|esperado um inteiro/);
+});
+
+test('t199 AT — the surviving resolver takes the explicit override as its first choice', async () => {
+  const { resolveControlPlaneUrl, CONTROL_PLANE_URL_ENV, CONTROL_PLANE_PORT_ENV } =
+    await loadProxy();
+
+  assert.equal(
+    resolveControlPlaneUrl({ [CONTROL_PLANE_URL_ENV]: 'http://127.0.0.1:4317' }, 'http://10.0.0.2:9000'),
+    'http://10.0.0.2:9000',
+  );
+  assert.equal(
+    resolveControlPlaneUrl({ [CONTROL_PLANE_PORT_ENV]: '5099' }),
+    'http://127.0.0.1:5099',
+  );
+  // Blank is not a choice: `--url` absent and `--url ""` mean the same thing.
+  assert.equal(resolveControlPlaneUrl({ [CONTROL_PLANE_PORT_ENV]: '5099' }, '  '), 'http://127.0.0.1:5099');
+  assert.throws(() => resolveControlPlaneUrl({}, 'nem url é'), {
+    message: '--url invalid: "nem url é" (expected something like http://127.0.0.1:4317)',
+  });
+  assert.throws(() => resolveControlPlaneUrl({}, 'ftp://127.0.0.1:4317'), {
+    message: '--url has to be http or https: "ftp://127.0.0.1:4317"',
+  });
 });

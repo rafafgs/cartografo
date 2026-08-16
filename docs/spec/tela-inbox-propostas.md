@@ -83,10 +83,10 @@ inclusive nas que o proxy repassa. Quem quiser expor a tela numa interface
 externa está decidindo abrir o único escritor do sistema a quem alcançar a porta.
 
 Subir: `npm start --workspace @cartografo/tela`. Imprime uma linha de prontidão
-em stdout, no espírito de `cartografo.pronto`:
+em stdout, no espírito de `cartografo.ready`:
 
 ```json
-{"evento":"cartografo.tela.pronta","url":"http://127.0.0.1:4318","control_plane":"http://127.0.0.1:4317"}
+{"event":"cartografo.tela.ready","url":"http://127.0.0.1:4318","controlPlane":"http://127.0.0.1:4317"}
 ```
 
 ---

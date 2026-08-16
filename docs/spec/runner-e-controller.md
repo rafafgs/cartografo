@@ -63,8 +63,9 @@ contrário.
 
 Nada é apagado, nem lease morta: ela vira `expirada` com o motivo gravado e
 continua na tabela. É o mesmo append-only da [D15](../../DECISOES.md) — e é o
-que vai permitir, quando a telemetria do `t102` entrar, cruzar "runner × leases
-perdidas" sem ter que reconstruir nada.
+que permite cruzar "runner × leases perdidas" sem ter que reconstruir nada,
+agora que a telemetria do `t102` está no lugar (tabela `evento`, migração
+`0003`); falta só ligar a emissão, e a §7 diz de quem é.
 
 ---
 
@@ -102,8 +103,9 @@ interrompido no meio:
 
 Os dois nomes são exatamente os de `dados.motivo` em
 [`lease.expirada.schema.json`](../../especificacoes/eventos/schemas/lease.expirada.schema.json):
-quando o `t102` ligar a emissão de eventos, a projeção desta tabela e o evento
-falam a mesma língua, sem tradução.
+quando alguém ligar a emissão de eventos, a projeção desta tabela e o evento
+falam a mesma língua, sem tradução — a tabela `evento` que eles precisam já
+existe desde o `t102`.
 
 ### `motivo` de recusa ≠ `motivo_expiracao`
 
@@ -292,7 +294,9 @@ rede, não uma regressão.
 
 Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`
 — o runner apresenta uma credencial em toda chamada, como qualquer outro cliente
-da API. Nenhum emite evento de telemetria (`t102`).
+da API. **Nenhum emite evento de telemetria**, e isso não é mais espera por
+ficha nenhuma: o log append-only existe desde o `t102`, e ligar a emissão é o
+item aberto da §7.
 
 Desde a `t143` a credencial do runner é **dele**, emitida no pareamento, e a
 coluna "quem chama" abaixo é contrato, não convenção: quem pareia, revoga e
@@ -382,10 +386,10 @@ do SQLite (D1); repositórios e rotas recebem o banco já aberto.
 ## 6. `trabalho_id` é um inteiro opaco
 
 `POST /v1/leases` **não lê a tabela `trabalho`** e não tem FK para ela. A razão
-original foi ordem de build (a tabela é entrega do `t102`, hoje já mergeada na
-migração `0003`), mas o corte permanece pelo motivo de desenho — a mesma escolha
-que o `t102` já fez para `grafo_versao_id`. Apertar a FK depois é aditivo, e cabe
-à ficha que ligar os dois lados.
+original foi ordem de build (a tabela era entrega do `t102`, que já aterrissou
+na migração `0003`), mas o corte permanece pelo motivo de desenho — a mesma
+escolha que o `t102` fez para `grafo_versao_id`. Apertar a FK depois é aditivo, e
+cabe à ficha que ligar os dois lados.
 
 A divisão de responsabilidade que isso produz é, aliás, a correta:
 
@@ -401,8 +405,8 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 
 - **Emissão dos eventos** [`lease.concedida`](../../especificacoes/eventos/schemas/lease.concedida.schema.json)
   e [`lease.expirada`](../../especificacoes/eventos/schemas/lease.expirada.schema.json) —
-  dependem da tabela `evento` (`t102`). As colunas já carregam tudo que os dois
-  eventos pedem (`runner_id`, `trabalho_id`, `expira_em`, `motivo_expiracao`);
+  a tabela `evento` de que dependem já existe (`t102`, migração `0003`) e nada
+  aqui escreve nela. As colunas já carregam tudo que os dois eventos pedem (`runner_id`, `trabalho_id`, `expira_em`, `motivo_expiracao`);
   ligar a emissão é mapeamento direto. **Atenção de quem for ligar:** a
   taxonomia do `t98` tem `lease.concedida` e `lease.expirada`, e nenhum evento
   para a liberação — o reducer de referência

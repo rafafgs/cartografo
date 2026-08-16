@@ -338,13 +338,16 @@ do que foi pedido é o desfecho que esta interface proíbe. Quem chama fica com
 três respostas possíveis, todas honestas: a sessão sobe com a política
 aplicada, a sessão sobe sem restrição (política ausente), ou a sessão não sobe.
 
-**Estado hoje, sem maquiagem:** só o `claude-code` lê este campo. O
-`CodexAdapter` o **ignora** — nem aplica, nem recusa — e nesse estado ele não
-cumpre a regra do parágrafo acima. Isso é tolerável só porque nada popula
-`permissions` ainda: quem vai populá-lo é o pipeline de renderização de skill
-(`especificacoes/formatos/manifesto-skill.md:18-20`), que não existe. A ficha
-que der um produtor real ao campo tem de fechar isto junto, e a resposta certa
-para o Codex não é reusar o gating por nome de ferramenta daqui: ele tem
+**Estado hoje, sem maquiagem:** os **dois** adapters lêem este campo, cada um
+com o mecanismo que o seu engine tem. Nem sempre foi assim: até a t195 o
+`CodexAdapter` **ignorava** o campo — nem aplicava, nem recusava — e nesse
+estado ele não cumpria a regra do parágrafo acima. Era tolerável só enquanto
+nada populava `permissions`, e isso deixou de valer na t161, quando
+`render-skill-instructions.ts` passou a derivar a política do manifesto da
+skill registrada e o dispatch a entregá-la ao engine que o nó resolveu —
+inclusive o `codex`. A ficha que fechou o buraco é a t195, e ela seguiu a
+resposta que este parágrafo já previa: **não** reusar o gating por nome de
+ferramenta do `claude-code`, e sim mapear os dois eixos sobre o
 `-s, --sandbox` nativo, que é garantia de outra natureza (ver a tensão 1).
 
 #### O que o adapter de referência garante
@@ -391,6 +394,63 @@ log: o que o gating não impede, a telemetria pelo menos registra.
   com a rede "fechada", e `printf > arquivo` gravou no workdir com
   `escrita: []`. Os dois passaram por `Bash`, que estava disponível — como
   tem de estar, sob pena de a sessão não conseguir trabalhar.
+
+#### O que o adapter do Codex garante
+
+Aqui o mecanismo é outro, e mais forte: o `codex exec` tem
+`-s, --sandbox <read-only|workspace-write|danger-full-access>`, um sandbox de
+SO de verdade, e a rede dentro de `workspace-write` é a chave de configuração
+`sandbox_workspace_write.network_access`, passada por invocação com o
+`-c, --config` genérico da CLI. Não há gating por nome de ferramenta nenhum: os
+dois eixos viram **um** modo de sandbox, resolvido em
+`codex-permission-policy.ts` — módulo próprio, sem nada compartilhado com o
+`permission-policy.ts` do `claude-code`, pelo mesmo motivo que `command.ts` e
+`codex-command.ts` são dois.
+
+| Política declarada | Desfecho | Como |
+|---|---|---|
+| `escrita: []` + `rede.permitido: false` | aplica | `-s read-only` |
+| `escrita: ["**"]` + `rede.permitido: false` | aplica | `-s workspace-write -c sandbox_workspace_write.network_access=false` |
+| `escrita: ["**"]` + `rede.permitido: true` sem `dominios` | aplica | `-s workspace-write -c sandbox_workspace_write.network_access=true` |
+| `escrita: []` + `rede.permitido: true` | **recusa** | nenhum modo de sandbox combina escrita fechada com rede aberta (medido; ver a tabela abaixo) |
+| `escrita` mais estreita | **recusa** | os modos são concessões de workspace inteiro; um glob no meio não tem onde pousar |
+| `rede.permitido: true` com `dominios` | **recusa** | o sandbox abre a rede ou fecha a rede, inteira; allowlist por domínio exigiria proxy de egress |
+
+`permissions` ausente continua sem flag nenhuma no argv — a CLI resolve o
+default dela, que já é `read-only`. `danger-full-access` é **inalcançável** por
+construção: nenhuma combinação dos dois eixos o seleciona.
+
+Uma recusa soma os motivos dos dois eixos em vez de parar no primeiro, pela
+mesma razão do adapter de referência: sessão recusada por um motivo, corrigida,
+e recusada de novo pelo outro é uma ida e volta que não ajuda ninguém. A
+combinação escrita-fechada-com-rede-aberta é a única que **não** é limitação de
+um eixo isolado, e por isso tem constante e mensagem próprias — culpar um dos
+dois campos mandaria o autor da skill corrigir o que não é o problema.
+
+**Medido contra a CLI real** (`codex-cli 0.147.0`, rodado em 2026-08-16 com
+`codex sandbox`, que resolve a mesma configuração que o subcomando `exec`):
+
+| `sandbox_mode` | `network_access` | escrita | rede |
+|---|---|---|---|
+| `read-only` | `false` | bloqueada | bloqueada |
+| `read-only` | `true` | bloqueada | **bloqueada** |
+| `workspace-write` | `false` | permitida | bloqueada |
+| `workspace-write` | `true` | permitida | permitida |
+
+A segunda linha é a que decide o desenho: a chave **não tem efeito** sob
+`read-only`. Isto responde, com medição em vez de leitura de `--help`, a
+pergunta que a t195 deixou em aberto — não existe combinação de escrita fechada
+com rede aberta para pedir, e por isso ela é recusada em vez de aproximada.
+
+**A lacuna residual, também aqui.** O sandbox é do SO, então `Bash` não é a
+porta dos fundos que é no outro engine — o buraco de `python -c` e afins está
+fechado por mecanismo, não por lista de nomes. O que **não** existe é
+telemetria: `sessao.permissao_negada` é alimentado por
+`parse-permission-denial.ts`, que casa nomes de ferramenta do `claude-code`
+contra quadros `tool_use`/`tool_result`. Uma negação de sandbox do Codex é
+sinal de forma completamente diferente (stderr e código de saída do processo,
+não quadro de tool call), e o rastreador como está registra **nada** para este
+engine. Isto está fora do escopo da t195 e é ficha própria.
 
 ### Capacidades
 
@@ -1163,12 +1223,18 @@ primeiro" (é o que este documento acabou de fazer).
    > (define quem responde pela política: o manifesto ou o adapter). Fica para a
    > ticket de D4.
 
-   Uma coisa daquele registro **não** foi resolvida e vale como aviso: o
-   `-s/--sandbox` do `codex exec` é sandbox de verdade, de outra natureza que o
-   gating por nome de ferramenta do `claude-code`. O adapter do Codex não ganha
-   permissão nesta ficha justamente por isso — reusar a lógica de gating ali
-   seria traduzir uma garantia dura para uma fraca sem ninguém pedir, e a regra
-   dos dois consumidores manda esperar o segundo consumidor real.
+   Aquele registro deixou um aviso, e a t195 o resolveu — sem contorná-lo. O
+   aviso era: o `-s/--sandbox` do `codex exec` é sandbox de verdade, de outra
+   natureza que o gating por nome de ferramenta do `claude-code`, e reusar a
+   lógica de gating ali seria traduzir uma garantia dura para uma fraca sem
+   ninguém pedir. A t161 trouxe o segundo consumidor real que a regra dos dois
+   consumidores mandava esperar (o manifesto da skill passou a popular
+   `permissions` para qualquer engine), e com ele a t195 deu ao Codex política
+   própria: um `codex-permission-policy.ts` que mapeia os dois eixos sobre os
+   modos de sandbox reais da CLI, sem compartilhar uma linha com o vocabulário
+   de ferramenta do outro engine. A garantia dura continua dura, e o que a
+   CLI não sabe combinar virou recusa explícita em vez de aproximação
+   silenciosa (ver "O que o adapter do Codex garante").
 2. **D9 × a forma deste contrato.** A D9 manda contrato ser JSON Schema de
    entrada/saída mais checks tipados. Esta especificação é tipo TS mais uma
    tabela de conformidade em prosa. A leitura adotada aqui é que a D9 governa

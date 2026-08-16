@@ -227,7 +227,26 @@ export function extractEngineRef(line: string): string | null {
 export class CodexAdapter implements EngineAdapter {
   readonly engineName = 'codex';
 
+  /** The sessions with a process still on the other side. */
   readonly #sessions = new Map<string, Session>();
+
+  /**
+   * One terminal status per session that already ended (t207).
+   *
+   * Mirrored from `claude-code-adapter.ts`, like the rest of this lifecycle and
+   * for the same recorded reason: with two adapters there is not yet evidence of
+   * what the shared abstraction should look like. The stub is what lets
+   * `#finish` drop everything else while invariant 3 of the frozen contract —
+   * "getStatus só devolve status terminal depois que onFinished correu"
+   * (`docs/formatos/engine-adapter.md:778`) — keeps answering, for this adapter's
+   * run of C1, C3, C8 and C9 as much as for the other's.
+   *
+   * It grows by one short string per session this process ever dispatched, which
+   * is an accepted trade: a TTL would make `getStatus` answer differently
+   * depending on WHEN it is asked, and that is the invariant itself.
+   */
+  readonly #terminalStatus = new Map<string, SessionStatus>();
+
   readonly #commandBuilder: (spec: SessionSpec) => EngineCommand;
   readonly #environmentBuilder: (spec: SessionSpec) => NodeJS.ProcessEnv;
   readonly #graceMs: number;
@@ -397,16 +416,48 @@ export class CodexAdapter implements EngineAdapter {
     return id;
   }
 
+  /**
+   * How many sessions this adapter still holds live — diagnostics only.
+   *
+   * NOT part of `EngineAdapter`, which is frozen by the rule of two consumers
+   * (`notas/2026-08-14-extensao-e-qualidade.md`): it is a seam of this class, in
+   * the same family as `commandBuilder` and `probeEnvironment`, and a third-party
+   * adapter owes nobody an implementation of it. What it measures is the map of
+   * sessions with a process on the other side; the terminal-status stubs are not
+   * sessions and are not counted.
+   */
+  get liveSessionCount(): number {
+    return this.#sessions.size;
+  }
+
   async getStatus(sessionId: string): Promise<SessionStatus> {
-    return this.#requireSession(sessionId).status;
+    const session = this.#sessions.get(sessionId);
+    if (session) return session.status;
+
+    // A session that ended: everything but its outcome was dropped on the way
+    // through `#finish`, and the outcome is what invariant 3 promises.
+    const terminal = this.#terminalStatus.get(sessionId);
+    if (terminal !== undefined) return terminal;
+
+    throw new UnknownSessionError(sessionId);
   }
 
   async cancel(sessionId: string, status: SessionStatus = 'cancelled'): Promise<void> {
-    const session = this.#requireSession(sessionId);
-    // A silent no-op, not an error: whoever cancels races with the adapter's
-    // own streaming thread and has no way of knowing it lost the race.
-    if (session.finished) return;
-    this.#stop(sessionId, status);
+    const session = this.#sessions.get(sessionId);
+    if (session) {
+      // A silent no-op, not an error: whoever cancels races with the adapter's
+      // own streaming thread and has no way of knowing it lost the race. It
+      // survives here for the window between `#finish` clearing the map and a
+      // caller that still holds the handle — the same "already finished" C5
+      // covers, now answered from the stub below.
+      if (session.finished) return;
+      this.#stop(sessionId, status);
+      return;
+    }
+
+    if (this.#terminalStatus.has(sessionId)) return;
+
+    throw new UnknownSessionError(sessionId);
   }
 
   /**
@@ -456,12 +507,6 @@ export class CodexAdapter implements EngineAdapter {
   #defaultCredentialsPath(): string {
     const home = this.#probeEnvironment[CODEX_HOME_VARIABLE]?.trim();
     return join(home ? home : join(homedir(), '.codex'), CREDENTIAL_FILE);
-  }
-
-  #requireSession(sessionId: string): Session {
-    const session = this.#sessions.get(sessionId);
-    if (!session) throw new UnknownSessionError(sessionId);
-    return session;
   }
 
   /**
@@ -586,6 +631,15 @@ export class CodexAdapter implements EngineAdapter {
       exitCode,
       reason === null ? undefined : { timeoutReason: reason },
     );
+
+    // AFTER the listener has been told, and only then (t207): everything this
+    // session was holding — the `ChildProcess`, the caller's listener, the
+    // leftovers — becomes garbage the moment the map lets go, and what is left
+    // is the one string `getStatus` owes invariant 3. The order is the whole
+    // point: dropping it BEFORE the call would hand `onFinished` an adapter that
+    // no longer knows the session it is reporting.
+    this.#sessions.delete(id);
+    this.#terminalStatus.set(id, status);
   }
 
   #disarm(session: Session): void {

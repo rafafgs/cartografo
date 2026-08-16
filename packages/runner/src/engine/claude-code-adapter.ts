@@ -296,7 +296,27 @@ export function extractModels(frame: Record<string, unknown>): string[] | null {
 export class ClaudeCodeAdapter implements EngineAdapter {
   readonly engineName = 'claude-code';
 
+  /** The sessions with a process still on the other side. */
   readonly #sessions = new Map<string, Session>();
+
+  /**
+   * One terminal status per session that already ended (t207).
+   *
+   * The stub that lets `#finish` drop everything else. Invariant 3 of the frozen
+   * contract — "getStatus só devolve status terminal depois que onFinished
+   * correu" (`docs/formatos/engine-adapter.md:778`) — is answerable from a
+   * string, and a string is all a session that is over needs to leave behind:
+   * the `ChildProcess`, the caller's listener (in the real dispatch it closes
+   * over the whole transcript buffer), the timers and the leftovers all go.
+   *
+   * It grows with the number of sessions this process ever dispatched, one short
+   * string per id, and that is an accepted trade and not a leak deferred: a TTL
+   * would make `getStatus` answer differently depending on WHEN it is asked,
+   * which is precisely the invariant four cases of the kit (C1, C3, C8, C9)
+   * pin down.
+   */
+  readonly #terminalStatus = new Map<string, SessionStatus>();
+
   readonly #commandBuilder: (spec: SessionSpec) => EngineCommand;
   readonly #environmentBuilder: (spec: SessionSpec) => NodeJS.ProcessEnv;
   readonly #graceMs: number;
@@ -474,16 +494,48 @@ export class ClaudeCodeAdapter implements EngineAdapter {
     return id;
   }
 
+  /**
+   * How many sessions this adapter still holds live — diagnostics only.
+   *
+   * NOT part of `EngineAdapter`, which is frozen by the rule of two consumers
+   * (`notas/2026-08-14-extensao-e-qualidade.md`): it is a seam of this class, in
+   * the same family as `commandBuilder` and `probeEnvironment`, and a third-party
+   * adapter owes nobody an implementation of it. What it measures is the map of
+   * sessions with a process on the other side; the terminal-status stubs are not
+   * sessions and are not counted.
+   */
+  get liveSessionCount(): number {
+    return this.#sessions.size;
+  }
+
   async getStatus(sessionId: string): Promise<SessionStatus> {
-    return this.#requireSession(sessionId).status;
+    const session = this.#sessions.get(sessionId);
+    if (session) return session.status;
+
+    // A session that ended: everything but its outcome was dropped on the way
+    // through `#finish`, and the outcome is what invariant 3 promises.
+    const terminal = this.#terminalStatus.get(sessionId);
+    if (terminal !== undefined) return terminal;
+
+    throw new UnknownSessionError(sessionId);
   }
 
   async cancel(sessionId: string, status: SessionStatus = 'cancelled'): Promise<void> {
-    const session = this.#requireSession(sessionId);
-    // A silent no-op, not an error: whoever cancels races with the adapter's
-    // own streaming thread and has no way of knowing it lost the race.
-    if (session.finished) return;
-    this.#stop(sessionId, status);
+    const session = this.#sessions.get(sessionId);
+    if (session) {
+      // A silent no-op, not an error: whoever cancels races with the adapter's
+      // own streaming thread and has no way of knowing it lost the race. It
+      // survives here for the window between `#finish` clearing the map and a
+      // caller that still holds the handle — the same "already finished" C5
+      // covers, now answered from the stub below.
+      if (session.finished) return;
+      this.#stop(sessionId, status);
+      return;
+    }
+
+    if (this.#terminalStatus.has(sessionId)) return;
+
+    throw new UnknownSessionError(sessionId);
   }
 
   /**
@@ -521,12 +573,6 @@ export class ClaudeCodeAdapter implements EngineAdapter {
    */
   async listModels(): Promise<ModelCatalog> {
     return { models: CLAUDE_CODE_MODELS, resolvedAt: new Date().toISOString() };
-  }
-
-  #requireSession(sessionId: string): Session {
-    const session = this.#sessions.get(sessionId);
-    if (!session) throw new UnknownSessionError(sessionId);
-    return session;
   }
 
   /**
@@ -690,6 +736,15 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       exitCode,
       Object.keys(detail).length === 0 ? undefined : detail,
     );
+
+    // AFTER the listener has been told, and only then (t207): everything this
+    // session was holding — the `ChildProcess`, the caller's listener, the
+    // accounting, the leftovers — becomes garbage the moment the map lets go,
+    // and what is left is the one string `getStatus` owes invariant 3. The
+    // order is the whole point: dropping it BEFORE the call would hand
+    // `onFinished` an adapter that no longer knows the session it is reporting.
+    this.#sessions.delete(id);
+    this.#terminalStatus.set(id, status);
   }
 
   /**

@@ -21,7 +21,7 @@
  *
  * The t147 tests at the bottom boot through {@link bootControlPlane} and stop
  * there — they never call `authorizeGlobalFetch`. That is the whole point of
- * them: the shared {@link startControlPlane} patches `globalThis.fetch`, the
+ * them: the shared {@link bootAuthorized} patches `globalThis.fetch`, the
  * dispatcher captures the already-patched global as its `doFetch`, and every
  * test above therefore rode the harness's own token instead of exercising the
  * dispatcher's. That is how a dispatcher with no `Authorization` header at all
@@ -31,7 +31,6 @@
  */
 
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessByStdio } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -42,7 +41,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Readable } from "node:stream";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -65,17 +63,12 @@ import type * as DispatchModule from "../../src/dispatch/dispatch-claude-code.ts
 import type * as SessionTextModule from "../../src/dispatch/session-text.ts";
 import type * as WorktreeModule from "../../src/dispatch/session-worktree.ts";
 
+import { bootCore } from "@cartografo/test-support";
+
 import { authorizeGlobalFetch } from "../authorized-fetch.ts";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, "..", "..");
-const BIN_PATH = path.join(
-  REPO_ROOT,
-  "packages",
-  "core",
-  "bin",
-  "cartografo.mjs",
-);
 const FAKE_ENGINE = fileURLToPath(
   new URL("../fixtures/fake-engine.mjs", import.meta.url),
 );
@@ -179,8 +172,6 @@ interface FakeRecord {
   cwd: string;
 }
 
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
-
 async function loadModule<T>(relative: string): Promise<T> {
   assert.ok(
     existsSync(path.join(PACKAGE_ROOT, relative)),
@@ -200,80 +191,24 @@ interface Readiness {
 /**
  * Boots the real control plane and returns its readiness line, verbatim.
  *
+ * The spawn, the readiness wait and the teardown are
+ * `@cartografo/test-support`'s since t201.
+ *
  * It touches no global: whoever calls it decides how the credential reaches the
- * requests. {@link startControlPlane} arms `globalThis.fetch` on top of this;
- * the t147 tests hand the token to the code under test instead, which is the
- * only way to find out whether that code presents one.
+ * requests. {@link bootAuthorized} arms `globalThis.fetch` on top of this; the
+ * t147 tests hand the token to the code under test instead, which is the only
+ * way to find out whether that code presents one.
  */
 async function bootControlPlane(t: TestHook): Promise<Readiness> {
-  assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
-
-  const base = mkdtempSync(path.join(tmpdir(), "cartografo-t106-e2e-"));
-  const child: CommandChild = spawn(process.execPath, [BIN_PATH], {
-    cwd: base,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, "cartografo.db"),
-      CARTOGRAFO_PORT: "0",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  let out = "";
-  let err = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => {
-    out += chunk;
-  });
-  child.stderr.on("data", (chunk: string) => {
-    err += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGTERM");
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await delay(100);
-      }
-      if (child.exitCode === null && child.signalCode === null)
-        child.kill("SIGKILL");
-    }
-    rmSync(base, { recursive: true, force: true });
-  });
-
-  const deadline = Date.now() + DEADLINE_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the control plane died before it was ready (code ${child.exitCode})\nstdout:\n${out}\nstderr:\n${err}`,
-      );
-    }
-    const line = out
-      .split("\n")
-      .map((text) => text.trim())
-      .find(
-        (text) => text.startsWith("{") && text.includes("cartografo.ready"),
-      );
-    if (line !== undefined) {
-      // Since t124 the API answers nothing without a credential; the control
-      // plane prints the one it minted, on this very line.
-      return JSON.parse(line) as Readiness;
-    }
-    await delay(50);
-  }
-
-  throw new Error(
-    `the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`,
-  );
+  const { url, token } = await bootCore(t);
+  return { url, bootstrapToken: token };
 }
 
 /**
  * Boots the control plane and makes every `fetch` of this test present its
  * token — the shape the t106 and t125 tests below were written against.
  */
-async function startControlPlane(t: TestHook): Promise<string> {
+async function bootAuthorized(t: TestHook): Promise<string> {
   const readiness = await bootControlPlane(t);
   authorizeGlobalFetch(t, {
     baseUrl: readiness.url,
@@ -286,7 +221,7 @@ async function startControlPlane(t: TestHook): Promise<string> {
  * Talks JSON with the control plane, asserting the status on the way.
  *
  * `token` is optional because the tests that boot through
- * {@link startControlPlane} have their credential armed on the global already;
+ * {@link bootAuthorized} have their credential armed on the global already;
  * the t147 tests leave that global alone, so they pass it in here.
  */
 async function api<T>(
@@ -411,7 +346,7 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
   const { createClaudeCodeDispatch } =
     await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-  const baseUrl = await startControlPlane(t);
+  const baseUrl = await bootAuthorized(t);
 
   const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t106-workdir-"));
   const firstRecord = path.join(workDir, "primeiro-despacho.json");
@@ -670,7 +605,7 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
   const { createClaudeCodeDispatch } =
     await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-  const baseUrl = await startControlPlane(t);
+  const baseUrl = await bootAuthorized(t);
 
   const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t125-workdir-"));
   const record = path.join(workDir, "despacho-com-negacao.json");
@@ -778,7 +713,7 @@ test("t159 — what the engine printed is what the finish call ships, and what a
   const { createClaudeCodeDispatch } =
     await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-  const baseUrl = await startControlPlane(t);
+  const baseUrl = await bootAuthorized(t);
 
   const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t159-workdir-"));
   t.after(() => {

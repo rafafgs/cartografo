@@ -16,33 +16,24 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import test from 'node:test';
-import { setTimeout as sleep } from 'node:timers/promises';
+
+import { bootCore, type TestHook } from '@cartografo/test-support';
 
 import type * as CliModule from '../src/cli.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
 const GRAPH_PATH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
 
 /** Grouper of the seeded round. Opaque by design (t102). */
 const EXECUTION_ID = 7;
 /** Token ceiling of the scenario: "redigir" passes it, "revisar" is nowhere near. */
 const TOKEN_CEILING = 1000;
-/** Deadline for the control plane's startup. A wide margin, on purpose. */
-const TIMEOUT_MS = 30_000;
 
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
-
-interface TestContext {
-  after: (fn: () => void | Promise<void>) => void;
-}
+type TestContext = TestHook;
 
 let cache: typeof CliModule | null = null;
 
@@ -55,81 +46,38 @@ async function loadCli(): Promise<typeof CliModule> {
   return cache;
 }
 
-/** Starts the real control plane and returns the URL it announced. */
-async function startControlPlane(t: TestContext): Promise<string> {
-  assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
+/**
+ * Boots the real control plane with its credential armed on the global `fetch`.
+ *
+ * Since t124 the API does not answer without a credential. The control plane
+ * prints the one it has just issued; this test presents it from here on, both in
+ * the seeding and in the command — which is how a person would run it.
+ *
+ * The patch stays local to this file on purpose: the surveyor's CLI is the code
+ * under test and it builds its own requests, so what a shared helper could arm
+ * for everybody would quietly hide which side presented the token. Everything
+ * ABOVE the patch — spawn, readiness, teardown — is `@cartografo/test-support`'s
+ * since t201.
+ *
+ * @param t Test context, so both the process and the patch are undone at the end.
+ * @returns The URL the control plane announced.
+ */
+async function bootAuthorized(t: TestContext): Promise<string> {
+  const { url, token } = await bootCore(t);
 
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t114-e2e-'));
-  const child: CommandChild = spawn(process.execPath, [BIN_PATH], {
-    cwd: base,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
+  const previous = globalThis.fetch;
+  globalThis.fetch = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const target = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (!target.startsWith(url)) return await previous(input, init);
+    const headers = new Headers(init?.headers);
+    if (!headers.has('authorization')) headers.set('authorization', `Bearer ${token}`);
+    return await previous(input, { ...init, headers });
+  };
+  t.after(() => {
+    globalThis.fetch = previous;
   });
 
-  let output = '';
-  let errors = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    output += chunk;
-  });
-  child.stderr.on('data', (chunk: string) => {
-    errors += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await sleep(100);
-      }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
-    rmSync(base, { recursive: true, force: true });
-  });
-
-  const deadline = Date.now() + TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the control plane died before being ready (code ${child.exitCode})\nstdout:\n${output}\nstderr:\n${errors}`,
-      );
-    }
-    const line = output
-      .split('\n')
-      .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) {
-      // Since t124 the API does not answer without a credential. The control
-      // plane prints the one it has just issued; this test presents it from here
-      // on, both in the seeding and in the command — which is how a person would
-      // run it.
-      const ready = JSON.parse(line) as { url: string; bootstrapToken: string | null };
-      const previous = globalThis.fetch;
-      globalThis.fetch = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-        const target =
-          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        if (!target.startsWith(ready.url)) return await previous(input, init);
-        const headers = new Headers(init?.headers);
-        if (!headers.has('authorization')) {
-          headers.set('authorization', `Bearer ${ready.bootstrapToken ?? ''}`);
-        }
-        return await previous(input, { ...init, headers });
-      };
-      t.after(() => {
-        globalThis.fetch = previous;
-      });
-      return ready.url;
-    }
-    await sleep(50);
-  }
-
-  throw new Error(`the control plane was not ready in ${TIMEOUT_MS}ms\nstdout:\n${output}`);
+  return url;
 }
 
 /** A raw POST/PATCH against the control plane, with the answer already parsed. */
@@ -187,7 +135,7 @@ interface SpiedCall {
 
 test('AT9 — avaliar creates exactly one pending proposal from the cost lens', async (t) => {
   const { runCli } = await loadCli();
-  const baseUrl = await startControlPlane(t);
+  const baseUrl = await bootAuthorized(t);
 
   // --- seeding: the graph as data, one job and two sessions of distinct nodes
   const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
@@ -263,7 +211,7 @@ test('AT9 — avaliar creates exactly one pending proposal from the cost lens', 
 
 test('AT9 — avaliar touches only the four routes of the contract, and never /aplicar', async (t) => {
   const { runCli } = await loadCli();
-  const baseUrl = await startControlPlane(t);
+  const baseUrl = await bootAuthorized(t);
 
   const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
   const record = (await call(baseUrl, '/v1/graphs', 'POST', document)) as {

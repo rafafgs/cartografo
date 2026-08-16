@@ -26,11 +26,9 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -47,18 +45,16 @@ import type {
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
 import type * as ProposalModule from '../../src/surveyor/proposal.ts';
 
+import { bootCore } from '@cartografo/test-support';
+
 import { authorizeGlobalFetch } from '../authorized-fetch.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const BIN_PATH = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
 const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
 const PROPOSAL_MODULE = 'src/surveyor/proposal.ts';
-
-/** Deadline for anything this test waits on. Wide on purpose. */
-const DEADLINE_MS = 30_000;
 
 /** Execution with a bottleneck, and the flat one. */
 const EXECUTION_WITH_SIGNAL = 7;
@@ -77,8 +73,6 @@ const GAP_MS = 25;
 interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
 }
-
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
 
 interface GraphVersion {
   id: string;
@@ -134,66 +128,21 @@ async function loadProposal(): Promise<typeof ProposalModule> {
   return proposalCache;
 }
 
-/** Boots the real control plane and returns the URL it announced. */
-async function startControlPlane(t: TestHook): Promise<string> {
-  assert.ok(existsSync(BIN_PATH), `artifact does not exist yet: ${BIN_PATH}`);
-
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t110-e2e-'));
-  const child: CommandChild = spawn(process.execPath, [BIN_PATH], {
-    cwd: base,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let out = '';
-  let err = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    out += chunk;
-  });
-  child.stderr.on('data', (chunk: string) => {
-    err += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await delay(100);
-      }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
-    rmSync(base, { recursive: true, force: true });
-  });
-
-  const deadline = Date.now() + DEADLINE_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the control plane died before it was ready (code ${child.exitCode})\nstdout:\n${out}\nstderr:\n${err}`,
-      );
-    }
-    const line = out
-      .split('\n')
-      .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) {
-      // Since t124 the API answers nothing without a credential; the control
-      // plane prints the one it minted, and this suite presents it from here on.
-      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
-      authorizeGlobalFetch(t, { baseUrl: readiness.url, token: readiness.bootstrapToken ?? '' });
-      return readiness.url;
-    }
-    await delay(50);
-  }
-
-  throw new Error(`the control plane was not ready within ${DEADLINE_MS}ms\nstdout:\n${out}`);
+/**
+ * Boots the real control plane and arms its credential on the global `fetch`.
+ *
+ * The spawn, the readiness wait and the teardown are
+ * `@cartografo/test-support`'s since t201. Since t124 the API answers nothing
+ * without a credential; the control plane prints the one it minted, and this
+ * suite presents it from here on.
+ *
+ * @param t Test context, so both the process and the patch are undone at the end.
+ * @returns The URL the control plane announced.
+ */
+async function bootControlPlane(t: TestHook): Promise<string> {
+  const { url, token } = await bootCore(t);
+  authorizeGlobalFetch(t, { baseUrl: url, token });
+  return url;
 }
 
 /** Talks JSON with the control plane, asserting the status on the way. */
@@ -293,7 +242,7 @@ async function seedBottleneck(baseUrl: string, versionId: string): Promise<void>
 
 async function buildScenario(t: TestHook): Promise<Scenario> {
   const { ClienteControle } = await loadClient();
-  const baseUrl = await startControlPlane(t);
+  const baseUrl = await bootControlPlane(t);
 
   const document: unknown = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
   const { grafo_versao: version } = await api<{ grafo_versao: GraphVersion }>(

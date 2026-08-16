@@ -25,12 +25,10 @@
  */
 
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
-import { setTimeout as wait } from 'node:timers/promises';
+
+import { CORE_BIN, bootCore, type RunningControlPlane } from '@cartografo/test-support';
 
 import type * as RouterModule from '../src/router.ts';
 
@@ -40,8 +38,7 @@ export const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 /** Root of the monorepo. */
 export const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
-/** The control plane's command, run as a child process. */
-export const CORE_BIN = path.join(REPO_ROOT, 'packages', 'core', 'bin', 'cartografo.mjs');
+export { CORE_BIN };
 
 /** Artifacts this ticket creates; every test requires the ones it exercises. */
 export const T107_ARTIFACTS = Object.freeze({
@@ -51,12 +48,6 @@ export const T107_ARTIFACTS = Object.freeze({
   router: 'src/router.ts',
   bin: 'bin/tela.mjs',
 });
-
-/** Deadline for the control plane to come up. Wide margin over the usual ~2s. */
-const READINESS_TIMEOUT_MS = 60_000;
-
-/** `stdio: ['ignore', 'pipe', 'pipe']` — no stdin, stdout/stderr both read. */
-type CommandChild = ChildProcessByStdio<null, Readable, Readable>;
 
 /** The slice of `node:test`'s `TestContext` this support module uses. */
 export interface TestHooks {
@@ -77,89 +68,19 @@ export function requireArtifacts(...relatives: string[]): void {
   }
 }
 
-/** The control plane, up, as seen by someone who only speaks HTTP with it. */
-export interface RunningControlPlane {
-  /** Base URL announced by the command itself. */
-  url: string;
-  /**
-   * Operator credential, read off the same readiness line (t124).
-   *
-   * The database is brand new on every start here, so the control plane always
-   * mints one and always prints it. It is what `api()` seeds with and what the
-   * screen is configured to forward — the screen holds a service credential and
-   * the browser keeps holding none (D11).
-   */
-  token: string;
-}
-
 /**
- * Starts the real control plane and resolves when it announces readiness.
+ * The control plane, up, and the credential it announced at boot (t124).
  *
- * @param t Test context, so the process is shut down at the end.
- * @returns The control plane, up.
+ * Both the type and the function are `@cartografo/test-support`'s since t201 —
+ * the four suites downstream keep importing `startControlPlane` from here and
+ * never noticed the move, which is the point of naming the re-export.
+ *
+ * The database is brand new on every start, so the control plane always mints a
+ * credential and always prints it. It is what `api()` seeds with and what the
+ * screen is configured to forward — the screen holds a service credential and
+ * the browser keeps holding none (D11).
  */
-export async function startControlPlane(t: TestHooks): Promise<RunningControlPlane> {
-  assert.ok(existsSync(CORE_BIN), `artifact does not exist yet: ${CORE_BIN}`);
-
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t107-'));
-  const child: CommandChild = spawn(process.execPath, [CORE_BIN], {
-    cwd: base,
-    env: {
-      ...process.env,
-      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
-      CARTOGRAFO_PORT: '0',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let stdout = '';
-  let stderr = '';
-  child.stdout.setEncoding('utf8');
-  child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    stdout += chunk;
-  });
-  child.stderr.on('data', (chunk: string) => {
-    stderr += chunk;
-  });
-
-  t.after(async () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGTERM');
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        if (child.exitCode !== null || child.signalCode !== null) break;
-        await wait(100);
-      }
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    }
-    rmSync(base, { recursive: true, force: true });
-  });
-
-  const deadline = Date.now() + READINESS_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the control plane died before becoming ready (code ${child.exitCode})\nstdout:\n${stdout}\nstderr:\n${stderr}`,
-      );
-    }
-    const line = stdout
-      .split('\n')
-      .map((text) => text.trim())
-      .find((text) => text.startsWith('{') && text.includes('cartografo.ready'));
-    if (line !== undefined) {
-      const readiness = JSON.parse(line) as { url: string; bootstrapToken: string | null };
-      assert.equal(
-        typeof readiness.bootstrapToken,
-        'string',
-        'a brand-new database announces the credential these tests authenticate with',
-      );
-      return { url: readiness.url, token: readiness.bootstrapToken ?? '' };
-    }
-    await wait(50);
-  }
-
-  throw new Error(`the control plane was not ready in ${READINESS_TIMEOUT_MS}ms\nstdout:\n${stdout}`);
-}
+export { bootCore as startControlPlane, type RunningControlPlane };
 
 /** The screen, up. */
 export interface ScreenUnderTest {

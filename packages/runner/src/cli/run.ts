@@ -58,6 +58,7 @@ import {
 import { GitWorktreeManager } from '../dispatch/session-worktree.ts';
 import { ClaudeCodeAdapter } from '../engine/claude-code-adapter.ts';
 import { CodexAdapter } from '../engine/codex-adapter.ts';
+import type { EngineAdapter } from '../engine/types.ts';
 
 /**
  * The engines a packaged runner can be pointed at.
@@ -156,6 +157,57 @@ function describeError(error: unknown): string {
 }
 
 /**
+ * Tells the control plane which models this runner's engine offers (t166, FR11).
+ *
+ * Three decisions, each with a plausible opposite:
+ *
+ * - **Never fatal.** A catalog that could not be reported is a menu an operator
+ *   cannot read; a runner that refused to start over it is a machine that does
+ *   no work at all. The second is strictly worse, and the posture matches
+ *   `Controller.lastHeartbeatError` — log it and keep going.
+ * - **After pairing, before the first tick.** The route is inside `/v1`, so it
+ *   needs a credential the pairing has already presented, and reporting a
+ *   catalog nobody can attribute to a known runner would be reporting into the
+ *   dark. Before the first tick because that is when the process knows what it
+ *   is and has not started spending.
+ * - **Skipped, silently, for an adapter that does not implement it.**
+ *   `listModels` is optional ON THE MEMBER (`engine/types.ts`), and an adapter
+ *   without one is a legitimate adapter, not a broken one. There is nothing to
+ *   warn about.
+ *
+ * The adapter's vocabulary dies here: `EngineModel`'s `id`/`label`/`origin`
+ * become the API's `modelo_id`/`rotulo`/`origem`, which is the boundary the
+ * client already keeps for every other route.
+ *
+ * @param client Control plane client, already credentialed.
+ * @param engine Name this runner's engine answers to.
+ * @param adapter The adapter to ask.
+ */
+async function reportModels(
+  client: ClienteControle,
+  engine: string,
+  adapter: EngineAdapter,
+): Promise<void> {
+  if (adapter.listModels === undefined) return;
+
+  try {
+    const catalog = await adapter.listModels();
+    await client.reportEngineModels(
+      engine,
+      catalog.models.map((model) => ({
+        modelo_id: model.id,
+        rotulo: model.label ?? null,
+        origem: model.origin,
+      })),
+    );
+  } catch (error) {
+    process.stderr.write(
+      `cartografo-runner: could not report the model catalog of "${engine}" — ${describeError(error)}\n`,
+    );
+  }
+}
+
+/**
  * Runs a runner until it is asked to stop.
  *
  * @param options Control plane, identity, engine and the loop's numbers.
@@ -175,6 +227,10 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
   // running somewhere nobody chose (t141, FR5).
   const route = (options.engineFactory ?? defaultEngineFactory)(options.engine);
   const engines: Record<string, EngineRoute> = { [options.engine]: route };
+
+  // Discovery, and it is not on the critical path: a failure here is logged and
+  // the runner goes on to work (t166, FR11).
+  await reportModels(client, options.engine, route.adapter);
 
   const controller = new Controller({
     client,

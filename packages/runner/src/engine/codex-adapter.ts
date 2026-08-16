@@ -53,6 +53,8 @@ import {
   type CliProbe,
   type EngineAdapter,
   type EngineCapabilities,
+  type EngineModel,
+  type ModelCatalog,
   type SessionFinishDetail,
   type SessionListener,
   type SessionSpec,
@@ -97,6 +99,33 @@ export const CODEX_CREDENTIAL_VARIABLES = [
   'CODEX_API_KEY',
   'CODEX_ACCESS_TOKEN',
 ] as const;
+
+/**
+ * The models this adapter knows the `codex` CLI can be pointed at (t166).
+ *
+ * Static, and `origin: 'catalog'` on every entry, for the same measured reason
+ * the first adapter's list is: `codex exec --help` documents `-m, --model
+ * <MODEL>` — which SETS a model — and neither `codex --help` nor the exec
+ * subcommand exposes anything that LISTS them. The CLI-query branch of
+ * `listModels()` is written for a future engine that has one.
+ *
+ * Not invented: these are the presets the distributed binary itself carries,
+ * read out of `codex-cli 0.147.0` — the four its own model list marks
+ * `visibility: "list"`, in the priority order it gives them, with the display
+ * names it ships. The one it hides (`gpt-5.4`) is left out for the same reason
+ * the CLI hides it. That is why the labels look the way they do rather than
+ * following any convention of ours.
+ *
+ * The list ages like the other one, and nothing validates against it: an id
+ * this catalog never heard of is refused by the CLI at session start, which is
+ * where the truth about a given account's access actually lives.
+ */
+export const CODEX_MODELS: readonly EngineModel[] = [
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', origin: 'catalog' },
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', origin: 'catalog' },
+  { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna', origin: 'catalog' },
+  { id: 'gpt-5.5', label: 'GPT-5.5', origin: 'catalog' },
+];
 
 export interface CodexAdapterOptions {
   /** Test seam: swaps the real binary for the kit's fake engine. */
@@ -335,6 +364,16 @@ export class CodexAdapter implements EngineAdapter {
       version,
       authenticated: this.#looksAuthenticated(),
     };
+  }
+
+  /**
+   * The static catalog, stamped now (t166).
+   *
+   * `async` with nothing to await, on the same terms as the first adapter: the
+   * promise belongs to the interface, not to this implementation's shortcut.
+   */
+  async listModels(): Promise<ModelCatalog> {
+    return { models: CODEX_MODELS, resolvedAt: new Date().toISOString() };
   }
 
   /**

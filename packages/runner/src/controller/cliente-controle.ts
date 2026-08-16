@@ -129,6 +129,31 @@ export interface Runner {
   registrado_em: string;
 }
 
+/**
+ * Um modelo, no corpo que `POST /v1/engines/:name/models` recebe (t166).
+ *
+ * As chaves são as colunas de `motor_modelo`, como o resto deste cliente: o
+ * vocabulário do `EngineAdapter` (`id`, `label`, `origin`) morre no runner, e o
+ * que atravessa a fronteira é o formato de dado da API. Os dois VALORES de
+ * `origem` seguem em inglês, porque são vocabulário do adapter — quem os
+ * produziu foi ele.
+ *
+ * Nome de método e de tipo em inglês, contra o resto deste arquivo: a D18 vale
+ * para código escrito daqui em diante, e o português que sobrou aqui é dívida
+ * de uma ficha de renomeação, não convenção a imitar.
+ */
+export interface ReportedModel {
+  modelo_id: string;
+  rotulo?: string | null;
+  origem: 'cli' | 'catalog';
+}
+
+/** O catálogo de um motor, como o control plane o devolve. */
+export interface EngineCatalog {
+  motor: string;
+  modelos: Array<ReportedModel & { atualizado_em: string }>;
+}
+
 /** Estados possíveis de uma lease, no vocabulário do control plane. */
 export type StatusDeLease = 'ativa' | 'liberada' | 'expirada';
 
@@ -257,6 +282,31 @@ export class ClienteControle {
     const corpo = nome === undefined ? { id } : { id, nome };
     const { runner } = await this.#post<{ runner: Runner }>('/v1/runners', corpo);
     return runner;
+  }
+
+  /**
+   * Relata quais modelos o motor deste runner oferece (t166, FR11).
+   *
+   * Substitui o catálogo guardado para aquele motor, e é essa a semântica que o
+   * chamador precisa saber: relatar de novo não soma, sobrescreve. "Atualizar"
+   * é reiniciar o processo — não há timer, não há TTL, e é a mesma postura que
+   * `registrarRunner` já tem para o pareamento.
+   *
+   * @param motor Nome que o adapter dá a si mesmo.
+   * @param modelos O catálogo, já traduzido do vocabulário do adapter.
+   * @returns O catálogo como ficou gravado.
+   * @throws {ErroDoControlPlane} Quando o control plane recusa a forma (400) ou
+   *   a credencial (401/403). Quem chama decide se isso para a subida — e no
+   *   `run.ts` não para.
+   */
+  async reportEngineModels(
+    motor: string,
+    modelos: readonly ReportedModel[],
+  ): Promise<EngineCatalog> {
+    return await this.#post<EngineCatalog>(
+      `/v1/engines/${encodeURIComponent(motor)}/models`,
+      { modelos },
+    );
   }
 
   /**

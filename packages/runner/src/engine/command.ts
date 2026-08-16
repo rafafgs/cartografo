@@ -49,6 +49,17 @@ export const PERMISSION_MODE_VARIABLE = 'CLAUDE_PERMISSION_MODE';
 export const DISALLOWED_TOOLS_FLAG = '--disallowedTools';
 
 /**
+ * The flag that pins the model of one session.
+ *
+ * `--model <model>`, measured against the CLI's own help: it takes "an alias
+ * for the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full
+ * name (e.g. 'claude-fable-5')". Nothing here interprets which of the two a
+ * node declared — resolving an alias is the CLI's business, and a runner that
+ * expanded one would be pinning a model the graph did not ask for.
+ */
+export const MODEL_FLAG = '--model';
+
+/**
  * `stdio` of the engine process: stdin on `/dev/null`, stdout and stderr piped.
  *
  * Invariant 6 of the specification, and the only one in the document that came
@@ -91,6 +102,12 @@ export function resolvePermissionMode(env: NodeJS.ProcessEnv = process.env): str
  *   follows closes the variadic — after the prompt, it would swallow it.
  * - **`--add-dir` is never assembled, on any path** (invariant 7). An extra
  *   directory hands back, in one flag, the write scope the policy just closed.
+ *
+ * `--model` (t166) sits between the two, and the position is the only one that
+ * works: after the variadic denied list it would be read as another denied
+ * tool, and after `--system-prompt` it would land among the trailing
+ * positionals the composition owns. Before both, it closes on its own value
+ * and changes nothing else.
  */
 export function buildCommand(
   spec: SessionSpec,
@@ -107,6 +124,9 @@ export function buildCommand(
       '--verbose',
       '--permission-mode',
       resolvePermissionMode(env),
+      // Absent model, absent flag: the engine resolves its own default, and the
+      // argv is what it was before the field existed.
+      ...(spec.model === undefined ? [] : [MODEL_FLAG, spec.model]),
       // Absent policy, absent flag: a session that declared nothing produces
       // exactly the argv it produced before this field existed.
       ...(deniedTools.length === 0 ? [] : [DISALLOWED_TOOLS_FLAG, ...deniedTools]),

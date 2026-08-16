@@ -178,6 +178,21 @@ export interface SessionSpec {
   readonly silenceSeconds?: number;
 
   /**
+   * Qual modelo do engine roda esta sessão, quando o nó pinou um.
+   *
+   * Ausente significa o default DO PRÓPRIO ENGINE: nenhuma flag de modelo é
+   * montada, e o argv sai idêntico ao de antes deste campo existir — a mesma
+   * disciplina de `silenceSeconds` e `permissions`. É o único default honesto:
+   * esta camada não tem como saber a que modelos uma instalação tem acesso, e
+   * inventar um aqui poria na telemetria uma escolha que ninguém fez.
+   *
+   * Id desconhecido ou digitado errado é recusado pelo próprio engine, na
+   * abertura da sessão, como `SessionStartError` ou sessão que falha. O
+   * catálogo de `listModels()` é descoberta, nunca portão.
+   */
+  readonly model?: string;
+
+  /**
    * Adições opacas ao ambiente do processo do engine. Deliberadamente sem
    * tipo do ponto de vista desta camada: o que as chaves significam é
    * assunto do engine.
@@ -436,6 +451,38 @@ export interface SessionListener {
 ### O adapter
 
 ```typescript
+/**
+ * Um modelo que o engine oferece.
+ *
+ * `id` é o identificador que vai depois da flag de modelo do engine — a string
+ * que o `model` de um nó precisa casar — e nada mais: não é nome de exibição,
+ * nem apelido de família que a CLI por acaso resolve. `label` é o que uma
+ * pessoa lê, quando o adapter tem um para dar.
+ *
+ * `origin` é o campo que mantém o catálogo honesto. `cli` significa que o
+ * binário foi perguntado e respondeu; `catalog` significa que o adapter está
+ * recitando uma lista que ele carrega. Juntar os dois faria de "estes são os
+ * modelos" uma afirmação que ninguém consegue pesar — o mesmo rebaixamento que
+ * `CliProbe.authenticated` já levou, e pela mesma razão.
+ */
+export interface EngineModel {
+  readonly id: string;
+  readonly label?: string;
+  readonly origin: "cli" | "catalog";
+}
+
+/**
+ * Tudo que um engine diz que consegue rodar, num instante.
+ *
+ * `resolvedAt` não é decoração: catálogo estático e resposta de CLI envelhecem
+ * de forma diferente, e um consumidor sem carimbo não distingue relato fresco
+ * de relato que um runner deixou para trás antes de morrer.
+ */
+export interface ModelCatalog {
+  readonly models: readonly EngineModel[];
+  readonly resolvedAt: string;
+}
+
 /** Resultado do preflight da CLI, consumido pelo wizard de instalação. */
 export interface CliProbe {
   /** O binário existe e responde. */
@@ -488,6 +535,21 @@ export interface EngineAdapter {
 
   /** Preflight sem gastar quota. */
   verifyCli(): Promise<CliProbe>;
+
+  /**
+   * Quais modelos este engine consegue rodar, até onde o adapter sabe.
+   *
+   * O MÉTODO é opcional, e não só os campos dele — essa é a afirmação de
+   * compatibilidade: um adapter de terceiro escrito antes disto existir
+   * continua compilando, que é o que "crescimento de formato publicado é
+   * aditivo" tem de significar depois do congelamento em v1. Quem consome
+   * checa o método antes de chamar e pula o adapter que não o tem.
+   *
+   * Descoberta, nunca imposição: nada valida o `model` declarado num nó contra
+   * esta lista, e um engine de catálogo desatualizado continua recusando id
+   * ruim sozinho, que é onde a verdade de fato mora.
+   */
+  listModels?(): Promise<ModelCatalog>;
 }
 ```
 
@@ -641,8 +703,10 @@ O que a revisão *mudou* está na seção seguinte.
 
 ## Ajustes feitos na revisão
 
-Quatro mudanças e duas rejeições explícitas. Nada aqui é decorativo: os itens
-1 e 3 saíram de rodar as CLIs, não de ler documentação.
+Seis mudanças e duas rejeições explícitas — quatro da revisão original, mais o
+que cresceu depois do congelamento em v1 (item 5, t163; item 6, t166). Nada
+aqui é decorativo: os itens 1, 3 e 6 saíram de rodar as CLIs, não de ler
+documentação.
 
 1. **`stdin` fechado virou invariante normativa (novo).** Rodando
    `codex exec` com stdin não-TTY, a CLI imprimiu
@@ -703,6 +767,33 @@ caso C2 do kit, que a verifica pelo que o processo recebeu.
    abaixo, que rejeitou isso por conta própria — e sim uma causa opcional ao
    lado do status, que morre no log de eventos como
    `sessao.finalizada.dados.timeout_reason`.
+
+6. **`SessionSpec.model`, `listModels()`, `EngineModel` e `ModelCatalog`**
+   (t166). O segundo crescimento aditivo depois do congelamento em v1, e ele
+   obedece à mesma regra que `permissions` (t125) e `silenceSeconds` (t163)
+   obedeceram: campo opcional, nenhum símbolo publicado mudando de nome ou de
+   forma. A diferença é que desta vez o que cresceu foi um MÉTODO da interface,
+   e por isso `listModels?()` é opcional no próprio membro, não só nos campos —
+   um adapter de terceiro que nunca ouviu falar de catálogo continua compilando
+   e continua passando C1–C9. Não há caso C10: `listModels` é capacidade
+   opcional, não linha de base que todo adapter tem de cumprir, e teste
+   unitário por adapter dá conta.
+
+   O par `model`/`listModels` vem junto porque um sem o outro é meia entrega:
+   pinar modelo por nó sem publicar quais existem obriga quem escreve grafo a
+   adivinhar identificador, e publicar catálogo sem poder pinar é um cardápio
+   sem pedido.
+
+   **A lacuna, escrita porque existe.** `claude --help` tem `--model <model>` e
+   `codex exec --help` tem `-m, --model <MODEL>` — os dois DEFINEM modelo, e
+   nenhum dos dois expõe subcomando ou flag que LISTE os disponíveis (rodado
+   contra os dois binários nesta ficha). O caminho `cli` de `listModels()` está
+   na interface para o engine futuro que tiver um; os dois adapters de hoje
+   resolvem sempre para o catálogo estático deles, sempre `origin: 'catalog'`.
+   É o mesmo tipo de honestidade escrita que `CliProbe.authenticated` já
+   carrega — "melhor esforço, nunca garantia" — e é para isso que `origin`
+   existe: sem ele, "estes são os modelos" seria afirmação que ninguém
+   consegue pesar.
 
 **Rejeitado — `SessionStatus` mais rico.** Codex e Claude Code têm ambos
 estados próprios de quota/limite (o `Reconnecting... n/5` acima é um deles).

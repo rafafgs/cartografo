@@ -46,6 +46,16 @@ export const CODEX_SUBCOMMAND = 'exec';
  */
 export const ENGINE_STDIO = ['ignore', 'pipe', 'pipe'] as const;
 
+/**
+ * The flag that pins the model of one session.
+ *
+ * The short form, because it is the one `codex exec --help` documents first:
+ * `-m, --model <MODEL>` — "Model the agent should use". Measured against
+ * codex-cli 0.147.0, the same version the specification's feasibility review
+ * cites.
+ */
+export const MODEL_FLAG = '-m';
+
 /** A command ready for `spawn`, with no shell in between. */
 export interface EngineCommand {
   readonly command: string;
@@ -72,7 +82,10 @@ export interface EngineCommand {
  *   whose full effect was never measured against the binary.
  * - **The composed argument is the LAST positional, never stdin.** Coherent
  *   with stdin closed, and it is what dodges the `<stdin>` block the CLI would
- *   otherwise append.
+ *   otherwise append. `-m` (t166) therefore goes BEFORE it, like every other
+ *   flag: a flag after the positional would either be read as part of the
+ *   prompt or move the prompt out of last place, and one of those two is
+ *   always true.
  */
 export function buildCommand(spec: SessionSpec): EngineCommand {
   return {
@@ -83,6 +96,9 @@ export function buildCommand(spec: SessionSpec): EngineCommand {
       '--skip-git-repo-check',
       '-C',
       spec.workingDir,
+      // Absent model, absent flag: the CLI resolves its own default, and the
+      // argv is what it was before the field existed.
+      ...(spec.model === undefined ? [] : [MODEL_FLAG, spec.model]),
       composeSingleArgument(spec),
     ],
   };

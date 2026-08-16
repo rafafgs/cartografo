@@ -14,6 +14,12 @@
  * the same judgement a proposal suffers when applied, and therefore cannot
  * diverge from it.
  *
+ * One function per route, and `registerGraphs` is the list of them (t210). This
+ * was one function of 333 lines, which meant every graph ticket landed on the
+ * same lines and conflicted with every other. The handlers below take `db` as
+ * their first parameter instead of closing over it — that is the whole of what
+ * the split cost, and no behaviour moved with it.
+ *
  * No route here emits a telemetry event, and that is a real gap, not a
  * dependency: the append-only log (`src/db/events.ts`) shipped with t102, and
  * `evento.entidade_tipo` already accepts `grafo_versao`
@@ -25,7 +31,7 @@
  * mapping — and they stay in Portuguese for the same reason (t127, FR8).
  */
 
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { diffGraphs } from '../domain/diff.ts';
@@ -49,6 +55,445 @@ import { isObject } from '../util/is-object.ts';
 
 interface IdParam {
   Params: { id: string };
+}
+
+/**
+ * Contract of `POST /graphs` in the public document (t171, FR4).
+ *
+ * The body stays `{type: 'object'}` and nothing more, on purpose: the header of
+ * this file explains why no ajv schema is declared against
+ * `schema/grafo.schema.json`, and pointing a draft-07 compiler at a draft
+ * 2020-12 document would reopen exactly that. What goes in is "a JSON object";
+ * whether it is a GRAPH is `validateGraph`'s judgement and stays so.
+ *
+ * The four statuses are the ones the handler already answers — `201` with the
+ * lineage and its first version, `422` with the validator's report, `400` for a
+ * lineage that is not base, `409` for a class already registered. The refusal
+ * bodies are this file's own `{erro, mensagem, ...}` shape and not the
+ * `{error, details}` envelope of `routes/common.ts`, so they are declared here.
+ *
+ * Only `erro` and `mensagem` are typed, and only because every refusal below
+ * builds them as string literals. The rest travels through
+ * `additionalProperties: true`: a Fastify `response` schema serializes, so a
+ * declared type is a COERCION — `linhagem_tipo` echoes back whatever the body
+ * carried, and typing it would turn a number into a string on the wire (FR6).
+ */
+const REFUSAL_SCHEMA = {
+  type: 'object',
+  properties: {
+    erro: { type: 'string' },
+    mensagem: { type: 'string' },
+  },
+  required: ['erro'],
+  additionalProperties: true,
+} as const;
+
+const REGISTER_GRAPH_SCHEMA = {
+  body: { type: 'object', additionalProperties: true },
+  response: {
+    201: {
+      type: 'object',
+      properties: {
+        grafo: { type: 'object', additionalProperties: true },
+        grafo_versao: { type: 'object', additionalProperties: true },
+      },
+      required: ['grafo', 'grafo_versao'],
+      additionalProperties: true,
+    },
+    400: REFUSAL_SCHEMA,
+    409: REFUSAL_SCHEMA,
+    422: REFUSAL_SCHEMA,
+  },
+} as const;
+
+/**
+ * Registers the graph routes in the given scope (which already carries the /v1 prefix).
+ *
+ * @param app Fastify scope.
+ * @param db Already open database; the routes never open their own (D1).
+ */
+export function registerGraphs(app: FastifyInstance, db: Database): void {
+  app.post('/graphs', { schema: REGISTER_GRAPH_SCHEMA }, (request, reply) =>
+    create(db, request, reply),
+  );
+
+  app.post<IdParam>('/graphs/:id/fork', (request, reply) => fork(db, request, reply));
+  app.post<IdParam>('/graphs/:id/promote', (request, reply) => promote(db, request, reply));
+  app.post<IdParam>('/graphs/:id/offer', (request, reply) => offer(db, request, reply));
+
+  app.get('/classes', () => readClasses(db));
+  app.get('/graphs', () => readGraphs(db));
+  app.get<IdParam>('/graphs/:id', (request, reply) => readGraph(db, request, reply));
+  app.get<IdParam>('/graphs/:id/versions', (request, reply) => readVersions(db, request, reply));
+  app.get<IdParam>('/graph-versions/:id', (request, reply) => readVersion(db, request, reply));
+}
+
+/** `POST /graphs` — a graph document becomes a lineage plus its first version. */
+async function create(db: Database, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  const document = request.body;
+
+  const report = validateGraph(document);
+  if (!report.valido) {
+    reply.code(422);
+    return { erro: 'grafo_invalido', ...report };
+  }
+
+  // The document passed the gate, so it is an object with the seven keys; all
+  // that is left is making sure `problem_class` serves as identity (D8:
+  // lineage id = class).
+  const raw = document as Record<string, unknown>;
+  const className = raw.problem_class;
+  if (typeof className !== 'string' || className.trim() === '') {
+    reply.code(422);
+    return {
+      erro: 'grafo_invalido',
+      valido: false,
+      estrutura: {
+        valido: false,
+        erros: [
+          {
+            codigo: 'campo_invalido',
+            mensagem: '"problem_class" has to be a filled text: it is the identity of the lineage (D8)',
+            alvo: 'problem_class',
+          },
+        ],
+      },
+      soundness: report.soundness,
+    };
+  }
+
+  const lineage = isObject(raw.lineage) ? raw.lineage : {};
+  if (lineage.type !== 'base') {
+    reply.code(400);
+    return {
+      erro: 'linhagem_nao_base',
+      mensagem:
+        'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
+      linhagem_tipo: lineage.type ?? null,
+    };
+  }
+
+  if (getClassBase(db, className) !== undefined) {
+    reply.code(409);
+    return {
+      erro: 'classe_ja_registrada',
+      mensagem: `class "${className}" already has a base graph; a new version over an existing lineage is the proposal flow`,
+      classe: className,
+    };
+  }
+
+  const { graph, version } = registerBaseGraph(db, document as GraphDocument);
+  reply.code(201);
+  return { grafo: graph, grafo_versao: version };
+}
+
+/**
+ * `POST /graphs/:id/fork` is D13's branch semantics: the variant is born as the
+ * base's current snapshot, byte for byte, with `lineage` swapped and nothing
+ * else. A `git branch` does not change content either — it creates a pointer
+ * and a parenthood, and evolving the two sides apart is the ordinary proposal
+ * flow, which needs no special case for a variant.
+ *
+ * Every check below runs BEFORE any write, and the refusals are ordered from
+ * the route's own subject (the base) outwards to the body.
+ */
+async function fork(
+  db: Database,
+  request: FastifyRequest<IdParam>,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const base = getGraph(db, request.params.id);
+  if (base === undefined) {
+    reply.code(404);
+    return { erro: 'grafo_desconhecido', id: request.params.id };
+  }
+
+  if (base.linhagem_tipo !== 'base') {
+    reply.code(400);
+    return {
+      erro: 'base_invalida',
+      mensagem: 'only a base lineage can be forked; a variant of a variant is out (D13)',
+      linhagem_tipo: base.linhagem_tipo,
+    };
+  }
+
+  const body = isObject(request.body) ? request.body : {};
+
+  // The id of the variant is said by the request, never derived: `classe` is
+  // the identity of the BASE lineage (D8), and the variant shares the class.
+  const id = body.id;
+  if (typeof id !== 'string' || id.trim() === '') {
+    reply.code(400);
+    return {
+      erro: 'campo_obrigatorio_ausente',
+      mensagem: 'the fork requires "id": it is the identity of the lineage being born',
+    };
+  }
+
+  if (getGraph(db, id) !== undefined) {
+    reply.code(409);
+    return {
+      erro: 'id_ja_registrado',
+      mensagem: `a lineage with the id "${id}" already exists`,
+      id,
+    };
+  }
+
+  // Existence only, at any status: the topographer does not know how to propose
+  // a fork yet, so checking the content of the proposal would be checking a
+  // shape nobody writes (out of scope).
+  const rawOrigin = body.origem_proposta_id;
+  let originProposalId: number | null = null;
+  if (rawOrigin !== undefined && rawOrigin !== null) {
+    if (typeof rawOrigin !== 'number' || !Number.isInteger(rawOrigin) || rawOrigin <= 0) {
+      reply.code(400);
+      return {
+        erro: 'origem_proposta_id_invalido',
+        mensagem: 'origem_proposta_id has to be a positive integer',
+        origem_proposta_id: rawOrigin,
+      };
+    }
+    if (getProposal(db, rawOrigin) === undefined) {
+      reply.code(400);
+      return {
+        erro: 'origem_proposta_desconhecida',
+        mensagem: 'origem_proposta_id references no proposal',
+        origem_proposta_id: rawOrigin,
+      };
+    }
+    originProposalId = rawOrigin;
+  }
+
+  // Defensive invariant: a lineage with no pointer is a graph that exists
+  // without holding, which no code path here creates.
+  const source =
+    base.versao_corrente_id === null ? undefined : getVersion(db, base.versao_corrente_id);
+  if (source === undefined) {
+    reply.code(409);
+    return {
+      erro: 'grafo_sem_versao_corrente',
+      mensagem: 'the base lineage does not point at a current version; there is nothing to fork from',
+      id: base.id,
+    };
+  }
+
+  const document: GraphDocument = {
+    ...source.snapshot,
+    lineage: {
+      type: 'variante',
+      base_class: base.classe,
+      // Absent, not null: the same elision `base` already does with the two
+      // fields the schema forbids it. The column is INTEGER and the document
+      // field is a string (`schema/grafo.schema.json`) — hence the `String`.
+      ...(originProposalId === null ? {} : { source_proposal_id: String(originProposalId) }),
+    },
+  };
+
+  // The hash IS the version's identity, and it is global, not scoped per
+  // lineage: two forks of the same base with the same origin would produce the
+  // same document, and one row cannot belong to two lineages at once.
+  const versionId = hashSnapshot(document);
+  if (getVersionSummary(db, versionId) !== undefined) {
+    reply.code(409);
+    return {
+      erro: 'bifurcacao_sem_efeito',
+      mensagem: 'this fork produces a snapshot that already exists; nothing would be recorded',
+      versao_existente: versionId,
+    };
+  }
+
+  const { graph, version } = forkVariant(db, {
+    base,
+    id,
+    originProposalId,
+    document,
+    versionId,
+  });
+  reply.code(201);
+  return { grafo: graph, grafo_versao: version };
+}
+
+/**
+ * `POST /graphs/:id/promote` is D13's first pending direction: the diff of a
+ * variant that beats the base becomes a promotion proposal FOR the base.
+ *
+ * It proposes and never applies. What comes out is an ordinary pending
+ * proposal, judged at the same human gate as any other (README, princípio 5),
+ * and applied by the same `POST /proposals/:id/apply` with no special case —
+ * the diff never touches `classe`/`linhagem`, so the base stays the base.
+ */
+async function promote(
+  db: Database,
+  request: FastifyRequest<IdParam>,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const variant = getGraph(db, request.params.id);
+  if (variant === undefined) {
+    reply.code(404);
+    return { erro: 'grafo_desconhecido', id: request.params.id };
+  }
+
+  if (variant.linhagem_tipo !== 'variante') {
+    reply.code(400);
+    return {
+      erro: 'variante_invalida',
+      mensagem: 'only a variant has something to promote; a base does not promote to itself (D13)',
+      linhagem_tipo: variant.linhagem_tipo,
+    };
+  }
+
+  // D13: the variant shares the class of the base it was forked from, so the
+  // class IS the pointer back to the base — there is no second column to read.
+  const base = getClassBase(db, variant.classe);
+  if (base === undefined) {
+    reply.code(404);
+    return {
+      erro: 'grafo_desconhecido',
+      mensagem: 'the class of this variant has no base lineage; there is nowhere to promote to',
+      classe: variant.classe,
+    };
+  }
+
+  const body = isObject(request.body) ? request.body : {};
+  const missing = missingHypothesis(body);
+  if (missing !== undefined) {
+    reply.code(400);
+    return missing;
+  }
+
+  return openProposal(db, reply, {
+    target: base,
+    source: variant,
+    evidencia: body.evidencia,
+    metrica_esperada: body.metrica_esperada,
+  });
+}
+
+/**
+ * `POST /graphs/:id/offer` is the other direction, and the asymmetry is the
+ * whole point of D13: an improvement in the base is OFFERED to a variant,
+ * never forced on it. The offer lands as a pending proposal ON the variant,
+ * which is exactly what makes refusing it a no-op — nobody has to undo
+ * anything.
+ *
+ * One named `variante_id` per call: fanning out to every variant of a base is
+ * another decision, and it is not this route's to take silently.
+ */
+async function offer(
+  db: Database,
+  request: FastifyRequest<IdParam>,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const base = getGraph(db, request.params.id);
+  if (base === undefined) {
+    reply.code(404);
+    return { erro: 'grafo_desconhecido', id: request.params.id };
+  }
+
+  if (base.linhagem_tipo !== 'base') {
+    reply.code(400);
+    return {
+      erro: 'base_invalida',
+      mensagem: 'only a base lineage offers an improvement to its variants (D13)',
+      linhagem_tipo: base.linhagem_tipo,
+    };
+  }
+
+  const body = isObject(request.body) ? request.body : {};
+
+  const variantId = body.variante_id;
+  if (typeof variantId !== 'string' || variantId.trim() === '') {
+    reply.code(400);
+    return {
+      erro: 'campo_obrigatorio_ausente',
+      mensagem: 'the offer requires "variante_id": it is the variant that receives the proposal, one per call',
+    };
+  }
+
+  const variant = getGraph(db, variantId);
+  if (variant === undefined) {
+    reply.code(404);
+    return { erro: 'grafo_desconhecido', id: variantId };
+  }
+
+  if (variant.linhagem_tipo !== 'variante' || variant.base_classe !== base.classe) {
+    reply.code(400);
+    return {
+      erro: 'variante_invalida',
+      mensagem: `"${variantId}" is not a variant of this base lineage`,
+      base_classe: variant.base_classe,
+      classe: base.classe,
+    };
+  }
+
+  const missing = missingHypothesis(body);
+  if (missing !== undefined) {
+    reply.code(400);
+    return missing;
+  }
+
+  return openProposal(db, reply, {
+    target: variant,
+    source: base,
+    evidencia: body.evidencia,
+    metrica_esperada: body.metrica_esperada,
+  });
+}
+
+/** `GET /classes` — the class catalogue (D8). */
+async function readClasses(db: Database): Promise<unknown> {
+  return { classes: listClasses(db) };
+}
+
+/** `GET /graphs` — every lineage, base and variant alike. */
+async function readGraphs(db: Database): Promise<unknown> {
+  return { grafos: listGraphs(db) };
+}
+
+/** `GET /graphs/:id` — one lineage. */
+async function readGraph(
+  db: Database,
+  request: FastifyRequest<IdParam>,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const graph = getGraph(db, request.params.id);
+  if (graph === undefined) {
+    reply.code(404);
+    return { erro: 'grafo_desconhecido', id: request.params.id };
+  }
+  return { grafo: graph };
+}
+
+/**
+ * `GET /graphs/:id/versions` — the whole chain, including versions abandoned by
+ * a revert: it is the intact history D15 promises, not only the path that
+ * survived.
+ */
+async function readVersions(
+  db: Database,
+  request: FastifyRequest<IdParam>,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const graph = getGraph(db, request.params.id);
+  if (graph === undefined) {
+    reply.code(404);
+    return { erro: 'grafo_desconhecido', id: request.params.id };
+  }
+  return { versoes: listVersions(db, graph.id) };
+}
+
+/** `GET /graph-versions/:id` — one version, snapshot included. */
+async function readVersion(
+  db: Database,
+  request: FastifyRequest<IdParam>,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const version = getVersion(db, request.params.id);
+  if (version === undefined) {
+    reply.code(404);
+    return { erro: 'grafo_versao_desconhecida', id: request.params.id };
+  }
+  return { grafo_versao: version };
 }
 
 /**
@@ -134,397 +579,8 @@ function openProposal(
   return { proposta: proposal };
 }
 
-/**
- * Contract of `POST /graphs` in the public document (t171, FR4).
- *
- * The body stays `{type: 'object'}` and nothing more, on purpose: the header of
- * this file explains why no ajv schema is declared against
- * `schema/grafo.schema.json`, and pointing a draft-07 compiler at a draft
- * 2020-12 document would reopen exactly that. What goes in is "a JSON object";
- * whether it is a GRAPH is `validateGraph`'s judgement and stays so.
- *
- * The four statuses are the ones the handler already answers — `201` with the
- * lineage and its first version, `422` with the validator's report, `400` for a
- * lineage that is not base, `409` for a class already registered. The refusal
- * bodies are this file's own `{erro, mensagem, ...}` shape and not the
- * `{error, details}` envelope of `routes/common.ts`, so they are declared here.
- *
- * Only `erro` and `mensagem` are typed, and only because every refusal below
- * builds them as string literals. The rest travels through
- * `additionalProperties: true`: a Fastify `response` schema serializes, so a
- * declared type is a COERCION — `linhagem_tipo` echoes back whatever the body
- * carried, and typing it would turn a number into a string on the wire (FR6).
- */
-const REFUSAL_SCHEMA = {
-  type: 'object',
-  properties: {
-    erro: { type: 'string' },
-    mensagem: { type: 'string' },
-  },
-  required: ['erro'],
-  additionalProperties: true,
-} as const;
-
-const REGISTER_GRAPH_SCHEMA = {
-  body: { type: 'object', additionalProperties: true },
-  response: {
-    201: {
-      type: 'object',
-      properties: {
-        grafo: { type: 'object', additionalProperties: true },
-        grafo_versao: { type: 'object', additionalProperties: true },
-      },
-      required: ['grafo', 'grafo_versao'],
-      additionalProperties: true,
-    },
-    400: REFUSAL_SCHEMA,
-    409: REFUSAL_SCHEMA,
-    422: REFUSAL_SCHEMA,
-  },
-} as const;
-
 /** The document that holds today for a lineage, or `undefined` if the pointer is empty. */
 function current(db: Database, graph: GraphRow): GraphDocument | undefined {
   if (graph.versao_corrente_id === null) return undefined;
   return getVersion(db, graph.versao_corrente_id)?.snapshot;
-}
-
-/**
- * Registers the graph routes in the given scope (which already carries the /v1 prefix).
- *
- * @param app Fastify scope.
- * @param db Already open database; the routes never open their own (D1).
- */
-export function registerGraphs(app: FastifyInstance, db: Database): void {
-  app.post('/graphs', { schema: REGISTER_GRAPH_SCHEMA }, async (request, reply) => {
-    const document = request.body;
-
-    const report = validateGraph(document);
-    if (!report.valido) {
-      reply.code(422);
-      return { erro: 'grafo_invalido', ...report };
-    }
-
-    // The document passed the gate, so it is an object with the seven keys; all
-    // that is left is making sure `problem_class` serves as identity (D8:
-    // lineage id = class).
-    const raw = document as Record<string, unknown>;
-    const className = raw.problem_class;
-    if (typeof className !== 'string' || className.trim() === '') {
-      reply.code(422);
-      return {
-        erro: 'grafo_invalido',
-        valido: false,
-        estrutura: {
-          valido: false,
-          erros: [
-            {
-              codigo: 'campo_invalido',
-              mensagem: '"problem_class" has to be a filled text: it is the identity of the lineage (D8)',
-              alvo: 'problem_class',
-            },
-          ],
-        },
-        soundness: report.soundness,
-      };
-    }
-
-    const lineage = isObject(raw.lineage) ? raw.lineage : {};
-    if (lineage.type !== 'base') {
-      reply.code(400);
-      return {
-        erro: 'linhagem_nao_base',
-        mensagem:
-          'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
-        linhagem_tipo: lineage.type ?? null,
-      };
-    }
-
-    if (getClassBase(db, className) !== undefined) {
-      reply.code(409);
-      return {
-        erro: 'classe_ja_registrada',
-        mensagem: `class "${className}" already has a base graph; a new version over an existing lineage is the proposal flow`,
-        classe: className,
-      };
-    }
-
-    const { graph, version } = registerBaseGraph(db, document as GraphDocument);
-    reply.code(201);
-    return { grafo: graph, grafo_versao: version };
-  });
-
-  /**
-   * `POST /graphs/:id/fork` is D13's branch semantics: the variant is born as the
-   * base's current snapshot, byte for byte, with `lineage` swapped and nothing
-   * else. A `git branch` does not change content either — it creates a pointer
-   * and a parenthood, and evolving the two sides apart is the ordinary proposal
-   * flow, which needs no special case for a variant.
-   *
-   * Every check below runs BEFORE any write, and the refusals are ordered from
-   * the route's own subject (the base) outwards to the body.
-   */
-  app.post<IdParam>('/graphs/:id/fork', async (request, reply) => {
-    const base = getGraph(db, request.params.id);
-    if (base === undefined) {
-      reply.code(404);
-      return { erro: 'grafo_desconhecido', id: request.params.id };
-    }
-
-    if (base.linhagem_tipo !== 'base') {
-      reply.code(400);
-      return {
-        erro: 'base_invalida',
-        mensagem: 'only a base lineage can be forked; a variant of a variant is out (D13)',
-        linhagem_tipo: base.linhagem_tipo,
-      };
-    }
-
-    const body = isObject(request.body) ? request.body : {};
-
-    // The id of the variant is said by the request, never derived: `classe` is
-    // the identity of the BASE lineage (D8), and the variant shares the class.
-    const id = body.id;
-    if (typeof id !== 'string' || id.trim() === '') {
-      reply.code(400);
-      return {
-        erro: 'campo_obrigatorio_ausente',
-        mensagem: 'the fork requires "id": it is the identity of the lineage being born',
-      };
-    }
-
-    if (getGraph(db, id) !== undefined) {
-      reply.code(409);
-      return {
-        erro: 'id_ja_registrado',
-        mensagem: `a lineage with the id "${id}" already exists`,
-        id,
-      };
-    }
-
-    // Existence only, at any status: the topographer does not know how to propose
-    // a fork yet, so checking the content of the proposal would be checking a
-    // shape nobody writes (out of scope).
-    const rawOrigin = body.origem_proposta_id;
-    let originProposalId: number | null = null;
-    if (rawOrigin !== undefined && rawOrigin !== null) {
-      if (typeof rawOrigin !== 'number' || !Number.isInteger(rawOrigin) || rawOrigin <= 0) {
-        reply.code(400);
-        return {
-          erro: 'origem_proposta_id_invalido',
-          mensagem: 'origem_proposta_id has to be a positive integer',
-          origem_proposta_id: rawOrigin,
-        };
-      }
-      if (getProposal(db, rawOrigin) === undefined) {
-        reply.code(400);
-        return {
-          erro: 'origem_proposta_desconhecida',
-          mensagem: 'origem_proposta_id references no proposal',
-          origem_proposta_id: rawOrigin,
-        };
-      }
-      originProposalId = rawOrigin;
-    }
-
-    // Defensive invariant: a lineage with no pointer is a graph that exists
-    // without holding, which no code path here creates.
-    const current =
-      base.versao_corrente_id === null ? undefined : getVersion(db, base.versao_corrente_id);
-    if (current === undefined) {
-      reply.code(409);
-      return {
-        erro: 'grafo_sem_versao_corrente',
-        mensagem: 'the base lineage does not point at a current version; there is nothing to fork from',
-        id: base.id,
-      };
-    }
-
-    const document: GraphDocument = {
-      ...current.snapshot,
-      lineage: {
-        type: 'variante',
-        base_class: base.classe,
-        // Absent, not null: the same elision `base` already does with the two
-        // fields the schema forbids it. The column is INTEGER and the document
-        // field is a string (`schema/grafo.schema.json`) — hence the `String`.
-        ...(originProposalId === null ? {} : { source_proposal_id: String(originProposalId) }),
-      },
-    };
-
-    // The hash IS the version's identity, and it is global, not scoped per
-    // lineage: two forks of the same base with the same origin would produce the
-    // same document, and one row cannot belong to two lineages at once.
-    const versionId = hashSnapshot(document);
-    if (getVersionSummary(db, versionId) !== undefined) {
-      reply.code(409);
-      return {
-        erro: 'bifurcacao_sem_efeito',
-        mensagem: 'this fork produces a snapshot that already exists; nothing would be recorded',
-        versao_existente: versionId,
-      };
-    }
-
-    const { graph, version } = forkVariant(db, {
-      base,
-      id,
-      originProposalId,
-      document,
-      versionId,
-    });
-    reply.code(201);
-    return { grafo: graph, grafo_versao: version };
-  });
-
-  /**
-   * `POST /graphs/:id/promote` is D13's first pending direction: the diff of a
-   * variant that beats the base becomes a promotion proposal FOR the base.
-   *
-   * It proposes and never applies. What comes out is an ordinary pending
-   * proposal, judged at the same human gate as any other (README, princípio 5),
-   * and applied by the same `POST /proposals/:id/apply` with no special case —
-   * the diff never touches `classe`/`linhagem`, so the base stays the base.
-   */
-  app.post<IdParam>('/graphs/:id/promote', async (request, reply) => {
-    const variant = getGraph(db, request.params.id);
-    if (variant === undefined) {
-      reply.code(404);
-      return { erro: 'grafo_desconhecido', id: request.params.id };
-    }
-
-    if (variant.linhagem_tipo !== 'variante') {
-      reply.code(400);
-      return {
-        erro: 'variante_invalida',
-        mensagem: 'only a variant has something to promote; a base does not promote to itself (D13)',
-        linhagem_tipo: variant.linhagem_tipo,
-      };
-    }
-
-    // D13: the variant shares the class of the base it was forked from, so the
-    // class IS the pointer back to the base — there is no second column to read.
-    const base = getClassBase(db, variant.classe);
-    if (base === undefined) {
-      reply.code(404);
-      return {
-        erro: 'grafo_desconhecido',
-        mensagem: 'the class of this variant has no base lineage; there is nowhere to promote to',
-        classe: variant.classe,
-      };
-    }
-
-    const body = isObject(request.body) ? request.body : {};
-    const missing = missingHypothesis(body);
-    if (missing !== undefined) {
-      reply.code(400);
-      return missing;
-    }
-
-    return openProposal(db, reply, {
-      target: base,
-      source: variant,
-      evidencia: body.evidencia,
-      metrica_esperada: body.metrica_esperada,
-    });
-  });
-
-  /**
-   * `POST /graphs/:id/offer` is the other direction, and the asymmetry is the
-   * whole point of D13: an improvement in the base is OFFERED to a variant,
-   * never forced on it. The offer lands as a pending proposal ON the variant,
-   * which is exactly what makes refusing it a no-op — nobody has to undo
-   * anything.
-   *
-   * One named `variante_id` per call: fanning out to every variant of a base is
-   * another decision, and it is not this route's to take silently.
-   */
-  app.post<IdParam>('/graphs/:id/offer', async (request, reply) => {
-    const base = getGraph(db, request.params.id);
-    if (base === undefined) {
-      reply.code(404);
-      return { erro: 'grafo_desconhecido', id: request.params.id };
-    }
-
-    if (base.linhagem_tipo !== 'base') {
-      reply.code(400);
-      return {
-        erro: 'base_invalida',
-        mensagem: 'only a base lineage offers an improvement to its variants (D13)',
-        linhagem_tipo: base.linhagem_tipo,
-      };
-    }
-
-    const body = isObject(request.body) ? request.body : {};
-
-    const variantId = body.variante_id;
-    if (typeof variantId !== 'string' || variantId.trim() === '') {
-      reply.code(400);
-      return {
-        erro: 'campo_obrigatorio_ausente',
-        mensagem: 'the offer requires "variante_id": it is the variant that receives the proposal, one per call',
-      };
-    }
-
-    const variant = getGraph(db, variantId);
-    if (variant === undefined) {
-      reply.code(404);
-      return { erro: 'grafo_desconhecido', id: variantId };
-    }
-
-    if (variant.linhagem_tipo !== 'variante' || variant.base_classe !== base.classe) {
-      reply.code(400);
-      return {
-        erro: 'variante_invalida',
-        mensagem: `"${variantId}" is not a variant of this base lineage`,
-        base_classe: variant.base_classe,
-        classe: base.classe,
-      };
-    }
-
-    const missing = missingHypothesis(body);
-    if (missing !== undefined) {
-      reply.code(400);
-      return missing;
-    }
-
-    return openProposal(db, reply, {
-      target: variant,
-      source: base,
-      evidencia: body.evidencia,
-      metrica_esperada: body.metrica_esperada,
-    });
-  });
-
-  app.get('/classes', async () => ({ classes: listClasses(db) }));
-
-  app.get('/graphs', async () => ({ grafos: listGraphs(db) }));
-
-  app.get<IdParam>('/graphs/:id', async (request, reply) => {
-    const graph = getGraph(db, request.params.id);
-    if (graph === undefined) {
-      reply.code(404);
-      return { erro: 'grafo_desconhecido', id: request.params.id };
-    }
-    return { grafo: graph };
-  });
-
-  // The whole chain, including versions abandoned by a revert: it is the intact
-  // history D15 promises, not only the path that survived.
-  app.get<IdParam>('/graphs/:id/versions', async (request, reply) => {
-    const graph = getGraph(db, request.params.id);
-    if (graph === undefined) {
-      reply.code(404);
-      return { erro: 'grafo_desconhecido', id: request.params.id };
-    }
-    return { versoes: listVersions(db, graph.id) };
-  });
-
-  app.get<IdParam>('/graph-versions/:id', async (request, reply) => {
-    const version = getVersion(db, request.params.id);
-    if (version === undefined) {
-      reply.code(404);
-      return { erro: 'grafo_versao_desconhecida', id: request.params.id };
-    }
-    return { grafo_versao: version };
-  });
 }

@@ -47,6 +47,7 @@ import {
   ENGINE_STDIO,
   type EngineCommand,
 } from './codex-command.ts';
+import { PERMISSION_REFUSAL_PREFIX, resolveCodexPermissions } from './codex-permission-policy.ts';
 import {
   SessionStartError,
   UnknownSessionError,
@@ -253,6 +254,19 @@ export class CodexAdapter implements EngineAdapter {
     // from one that continued everything.
     if (spec.resumeFrom) {
       throw new SessionStartError(RESUME_REFUSAL_MESSAGE);
+    }
+
+    // The same rule, applied to the other thing this engine can be asked for
+    // and might not be able to give (t195). Until this ficha the field was read
+    // by nobody here: the adapter took a declared policy, said nothing, and
+    // opened a session that enforced none of it — the exact failure the comment
+    // above forbids, one field over. `codex-command.ts` resolves this a second
+    // time, independently, to build the argv; the duplicated call is deliberate
+    // and mirrors `command.ts`, so that neither module depends on the other
+    // having already run.
+    const { refusals } = resolveCodexPermissions(spec.permissions);
+    if (refusals.length > 0) {
+      throw new SessionStartError(`${PERMISSION_REFUSAL_PREFIX}${refusals.join('; ')}`);
     }
 
     const command = this.#commandBuilder(spec);

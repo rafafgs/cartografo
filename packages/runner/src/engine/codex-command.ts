@@ -19,6 +19,7 @@
  * exports a function for.
  */
 
+import { resolveCodexPermissions } from './codex-permission-policy.ts';
 import { composeSingleArgument, type SessionSpec } from './types.ts';
 
 /** The headless binary. */
@@ -104,12 +105,21 @@ export interface EngineCommand {
  *   flag: a flag after the positional would either be read as part of the
  *   prompt or move the prompt out of last place, and one of those two is
  *   always true.
+ * - **The sandbox flags come from the declared policy, resolved HERE** (t195).
+ *   The classification is `codex-permission-policy.ts`'s business and the
+ *   spelling is this module's; `resolveCodexPermissions` is called a second
+ *   time, on the same spec the adapter already asked about, exactly as
+ *   `command.ts` does with `resolvePermissions`. Threading the decision in from
+ *   the adapter would make this function's argv depend on a caller having run
+ *   something first, and it is the one thing keeping it pure. A refused policy
+ *   adds nothing here — the session was already refused before this ran.
  */
 export function buildCommand(
   spec: SessionSpec,
   env: NodeJS.ProcessEnv = process.env,
 ): EngineCommand {
   const model = resolveModel(spec, env);
+  const { sandboxArgs } = resolveCodexPermissions(spec.permissions);
 
   return {
     command: CODEX_BINARY,
@@ -117,6 +127,12 @@ export function buildCommand(
       CODEX_SUBCOMMAND,
       '--json',
       '--skip-git-repo-check',
+      // Before `-C`: the tier and its override configure the sandbox the
+      // working root will live inside, and reading the argv in that order is
+      // how a person checks it against `codex exec --help`. Absent policy,
+      // absent flags — the argv of a spec that declares nothing is the one it
+      // had before this field was ever read.
+      ...sandboxArgs,
       '-C',
       spec.workingDir,
       // Absent model and no trivial model to fall back on, absent flag: the CLI

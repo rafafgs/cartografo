@@ -263,8 +263,13 @@ aplicada ao intake.
 
 ## 8. O que esta camada ainda não faz
 
-- **Gerar o rascunho** a partir do pedido em linguagem natural. Quem escreve
-  `itens` é decisão de ficha futura; aqui ele chega pronto.
+> **Gerar o rascunho** a partir do pedido em linguagem natural saiu desta lista
+> com a t144, e continua fora **desta camada**: quem decompõe é um comando do
+> runner que despacha uma sessão de agente e chega aqui por
+> `POST /v1/intake` como qualquer outro cliente — ver
+> [`intake-geracao.md`](./intake-geracao.md). Estas rotas seguem sem despachar
+> sessão e sem conhecer engine.
+
 - **Exigir a dependência declarada.** A aresta é registro; bloqueio automático,
   ordem de despacho e WIP por dependência ficam de fora.
 - **Dependência entre lotes** e sobre trabalho já existente.

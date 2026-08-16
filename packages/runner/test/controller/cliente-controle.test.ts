@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import type * as ModuloCliente from '../../src/controller/cliente-controle.ts';
 
@@ -526,4 +527,100 @@ test('AT4 — the client has no confirm, amend or discard: those are the human g
       `${ausente} would put t122's human gate inside the runner`,
     );
   }
+});
+
+/* -------------------------------------------------------------------------- */
+/* t193 — every call of this door carries a deadline.                         */
+/*                                                                            */
+/* The failure they describe is not a control plane that is down: that one     */
+/* answers, and `fetchFalso` above already covers what it answers with. It is  */
+/* a control plane that ACCEPTS the connection and then says nothing — and     */
+/* against that, a client with no deadline hangs the tick, and with it the     */
+/* loop and the shutdown that awaits it.                                       */
+/* -------------------------------------------------------------------------- */
+
+/** A `fetch` that connects and never answers: the server that is there and silent. */
+const NEVER_ANSWERS: typeof fetch = () => new Promise<Response>(() => undefined);
+
+/** Deadline of these two cases: what "not never" means. Well above their own. */
+const NEVER_MS = 5_000;
+
+/**
+ * Settles a promise against a deadline, so that a hang is an assertion and not
+ * a suite that stops.
+ */
+async function settleWithin<T>(
+  promise: Promise<T>,
+  ms: number,
+): Promise<{ settled: 'resolved' | 'rejected' | 'hung'; error: unknown; elapsed: number }> {
+  const started = Date.now();
+  // Aborted on the way out, so that a case which settled in 150ms does not keep
+  // the suite's event loop alive for the whole deadline it did not need.
+  const guard = new AbortController();
+  try {
+    const outcome = await Promise.race([
+      promise.then(
+        () => ({ settled: 'resolved' as const, error: null as unknown }),
+        (error: unknown) => ({ settled: 'rejected' as const, error }),
+      ),
+      delay(ms, undefined, { signal: guard.signal }).then(
+        () => ({ settled: 'hung' as const, error: null as unknown }),
+        () => ({ settled: 'hung' as const, error: null as unknown }),
+      ),
+    ]);
+    return { ...outcome, elapsed: Date.now() - started };
+  } finally {
+    guard.abort();
+  }
+}
+
+test('t193 — a control plane that never answers is a rejection on the deadline, not a hang', async () => {
+  const { ClienteControle } = await carregarCliente();
+
+  const cliente = new ClienteControle({
+    urlBase: URL_BASE,
+    buscar: NEVER_ANSWERS,
+    requestTimeoutMs: 150,
+  });
+
+  const outcome = await settleWithin(cliente.listarTrabalhosLiberados(), NEVER_MS);
+
+  assert.equal(
+    outcome.settled,
+    'rejected',
+    `a tick that never comes back is a runner that stops working and cannot even be stopped (it ${outcome.settled} after ${outcome.elapsed}ms)`,
+  );
+  assert.ok(
+    outcome.error instanceof Error && outcome.error.name === 'TimeoutError',
+    `the rejection has to be recognizable as a timeout, got: ${String(outcome.error)}`,
+  );
+});
+
+test('t193 — heartbeat given a shorter deadline fails on its own, not on the client default', async () => {
+  const { ClienteControle } = await carregarCliente();
+
+  // A default nobody in this case wants to wait for: if the per-call override
+  // were ignored, this test would time out on the deadline below instead of on
+  // the 150ms it asked for.
+  const cliente = new ClienteControle({
+    urlBase: URL_BASE,
+    buscar: NEVER_ANSWERS,
+    requestTimeoutMs: 60_000,
+  });
+
+  const outcome = await settleWithin(cliente.heartbeat(12, undefined, 150), NEVER_MS);
+
+  assert.equal(
+    outcome.settled,
+    'rejected',
+    `the heartbeat's own deadline is what keeps a beat from outliving the interval that armed it (it ${outcome.settled} after ${outcome.elapsed}ms)`,
+  );
+  assert.ok(
+    outcome.error instanceof Error && outcome.error.name === 'TimeoutError',
+    `expected a timeout, got: ${String(outcome.error)}`,
+  );
+  assert.ok(
+    outcome.elapsed < 2_000,
+    `it waited ${outcome.elapsed}ms: the per-call override lost to the client's default`,
+  );
 });

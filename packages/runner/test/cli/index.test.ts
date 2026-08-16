@@ -420,3 +420,143 @@ test('t179 AT2 — --worktrees-root inside --working-dir is refused; a sibling i
   assert.equal(spy.seen[0].repoRoot, SOME_REPO);
   assert.equal(spy.seen[0].worktreesRoot, SOME_WORKTREES);
 });
+
+/* -------------------------------------------------------------------------- */
+/* t193 — a stop that is always bounded.                                      */
+/*                                                                            */
+/* Until this ficha the two stop signals were registered with `process.once`,  */
+/* and the first of them only stopped the loop from SCHEDULING: a dispatch     */
+/* already in flight was awaited to completion — up to an hour — and a second  */
+/* signal found no listener at all, so the process died under Node's default   */
+/* disposition with the engine still running in its worktree.                  */
+/* -------------------------------------------------------------------------- */
+
+/** A `run` holding one live session, which only ends when its cancel is called. */
+function runWithLiveSession(): {
+  run: (options: RunModule.RunnerOptions) => Promise<void>;
+  cancels: () => number;
+  started: () => boolean;
+} {
+  let cancels = 0;
+  let started = false;
+
+  return {
+    cancels: () => cancels,
+    started: () => started,
+    run: async (options) => {
+      let announceEnd: () => void = () => undefined;
+      const ended = new Promise<void>((resolve) => {
+        announceEnd = resolve;
+      });
+
+      started = true;
+      // Exactly what `createClaudeCodeDispatch` reports: a live session, and
+      // the one function that can take it down. The dispatch settles when the
+      // cancel does, which is what makes the runner's own promise resolve.
+      options.onSessionStarted?.(async () => {
+        cancels += 1;
+        options.onSessionEnded?.();
+        announceEnd();
+      });
+
+      await ended;
+    },
+  };
+}
+
+/** Sends a signal the way a supervisor would, to the listeners of this process. */
+function raise(signal: NodeJS.Signals): void {
+  process.emit(signal, signal);
+}
+
+/** Deadline of these two cases: what "not never" means. */
+const STOP_DEADLINE_MS = 10_000;
+
+/** Resolves the command's exit code, or `null` if it did not come back in time. */
+async function exitCodeWithin(pending: Promise<number>): Promise<number | null> {
+  let guard: NodeJS.Timeout | undefined;
+  const outcome = await Promise.race([
+    pending,
+    new Promise<null>((resolve) => {
+      guard = setTimeout(() => resolve(null), STOP_DEADLINE_MS);
+    }),
+  ]);
+  clearTimeout(guard);
+  return outcome;
+}
+
+test('t193 — a second stop signal takes the live session down instead of waiting it out', async () => {
+  const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  const seam = runWithLiveSession();
+  // The real default: this case may not be passing because the grace was short.
+  const pending = runRunnerCli([...ELSEWHERE], {}, { run: seam.run });
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(seam.started(), 'the runner is up, with a session registered');
+
+  raise('SIGINT');
+  assert.equal(seam.cancels(), 0, 'the first signal stops the scheduling, it does not kill');
+
+  raise('SIGINT');
+
+  const code = await exitCodeWithin(pending);
+  assert.equal(
+    code,
+    0,
+    `a second SIGINT has to end the process; it did not come back within ${STOP_DEADLINE_MS}ms`,
+  );
+  assert.equal(seam.cancels(), 1, 'and it ended it by taking the session down, exactly once');
+});
+
+test('t193 — with no second signal, the grace elapsing takes the live session down', async () => {
+  const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  const seam = runWithLiveSession();
+  const pending = runRunnerCli(
+    [...ELSEWHERE, '--shutdown-grace-seconds', '1'],
+    {},
+    { run: seam.run },
+  );
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(seam.started());
+
+  const asked = Date.now();
+  raise('SIGTERM');
+
+  const code = await exitCodeWithin(pending);
+  const took = Date.now() - asked;
+
+  assert.equal(
+    code,
+    0,
+    `the grace is what bounds a stop nobody signalled twice; it did not come back within ${STOP_DEADLINE_MS}ms`,
+  );
+  assert.equal(seam.cancels(), 1, 'the session went down through the same cancel, once');
+  assert.ok(
+    took >= 900,
+    `it took ${took}ms: the session in flight is given its grace before it is killed`,
+  );
+});
+
+test('t193 — --shutdown-grace-seconds and --request-timeout-ms are documented, with defaults', async () => {
+  const { USAGE, parseRunnerOptions } = await loadModule<typeof CliModule>(CLI_MODULE);
+
+  const defaults = parseRunnerOptions([...ELSEWHERE], {});
+  assert.equal(defaults.shutdownGraceSeconds, 120, 'the documented default grace');
+  assert.equal(defaults.requestTimeoutMs, 30_000, 'the documented default deadline per request');
+
+  const given = parseRunnerOptions(
+    [...ELSEWHERE, '--shutdown-grace-seconds', '5', '--request-timeout-ms', '1500'],
+    {},
+  );
+  assert.equal(given.shutdownGraceSeconds, 5);
+  assert.equal(given.requestTimeoutMs, 1_500);
+
+  for (const flag of ['--shutdown-grace-seconds', '--request-timeout-ms']) {
+    assert.match(USAGE, new RegExp(flag), `${flag} has to be in the usage text like every other flag`);
+  }
+  assert.match(USAGE, /120/, 'and the grace default has to be stated there');
+  assert.match(USAGE, /30000|30_000/, 'and so does the request deadline default');
+});

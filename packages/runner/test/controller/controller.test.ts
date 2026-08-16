@@ -342,3 +342,125 @@ test('t158 — a release that also fails does not take the place of the dispatch
   );
   assert.ok(happy.lastReleaseError instanceof ErroDoControlPlane);
 });
+
+/* -------------------------------------------------------------------------- */
+/* t193 — what the controller promises about a control plane that goes quiet.  */
+/* -------------------------------------------------------------------------- */
+
+/** A `fetch` that connects and never answers: the server that is there and silent. */
+const NEVER_ANSWERS: typeof fetch = () => new Promise<Response>(() => undefined);
+
+/** Deadline of the case below: what "not never" means. Well above its own. */
+const NEVER_MS = 5_000;
+
+test('t193 — a tick against a control plane that never answers rejects instead of hanging', async () => {
+  const { ClienteControle } = await loadClient();
+  const { Controller } = await loadController();
+
+  // The contract pinned here is the CONTROLLER'S, and it is deliberately taken
+  // against a real client: whoever calls `tick()` — the loop in `cli/run.ts` —
+  // has no other way of learning that a pass failed, and a `tick()` that never
+  // settles is a runner that stops working and cannot even be asked to stop.
+  const controller = new Controller({
+    ...BASE_OPTIONS,
+    client: new ClienteControle({
+      urlBase: BASE_URL,
+      buscar: NEVER_ANSWERS,
+      requestTimeoutMs: 150,
+    }),
+    dispatch: async () => {
+      throw new Error('it should never get as far as dispatching');
+    },
+  });
+
+  const started = Date.now();
+  // Cleared right after the race: a case that settles in 150ms must not keep
+  // the suite's event loop alive for the five seconds it was allowed and did
+  // not need — and while the race is running the timer stays ref'd, so a real
+  // hang is reported as this assertion instead of as a suite that stops.
+  let guard: NodeJS.Timeout | undefined;
+  const outcome = await Promise.race([
+    controller.tick().then(
+      () => 'resolved' as const,
+      () => 'rejected' as const,
+    ),
+    new Promise<'hung'>((resolve) => {
+      guard = setTimeout(() => resolve('hung'), NEVER_MS);
+    }),
+  ]);
+  clearTimeout(guard);
+
+  assert.equal(
+    outcome,
+    'rejected',
+    `the pass has to end for the loop to turn again (it ${outcome} after ${Date.now() - started}ms)`,
+  );
+});
+
+test('t193 — a heartbeat still in flight is skipped, never overlapped', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+
+  const { Controller } = await loadController();
+
+  const beats: Array<(lease: unknown) => void> = [];
+  let announceDispatched: () => void = () => undefined;
+  const dispatched = new Promise<void>((resolve) => {
+    announceDispatched = resolve;
+  });
+
+  // A hand-built client and not {@link environment}'s: what this case is about
+  // is a beat that has not come back yet, and a `fetch` fake answers too
+  // quickly to ever describe one.
+  const client = {
+    listarTrabalhosLiberados: async () => [
+      { id: 1, titulo: 'implementar t193', no_atual: 'implementar', bloqueado: false, concluido: false, execucao_id: 9, grafo_versao_id: null },
+    ],
+    pedirLease: async () => ({ lease: LEASE }),
+    heartbeat: async () =>
+      await new Promise((resolve) => {
+        beats.push(resolve);
+      }),
+    liberar: async () => LEASE,
+  } as unknown as ClientModule.ClienteControle;
+
+  const controller = new Controller({
+    ...BASE_OPTIONS,
+    client,
+    heartbeatIntervalMs: 1_000,
+    dispatch: async () => {
+      announceDispatched();
+      return new Promise<void>(() => undefined);
+    },
+  });
+
+  const inFlight = controller.tick();
+  inFlight.catch(() => undefined);
+
+  await dispatched;
+  await yieldEventLoop();
+
+  t.mock.timers.tick(1_000);
+  await yieldEventLoop();
+  assert.equal(beats.length, 1, 'the first window beats');
+
+  // The window the ficha is about: the beat armed above has not come back, and
+  // the next one is already due. Piling a second call on top of it is how a
+  // stalled control plane collects one in-flight request per interval, forever.
+  t.mock.timers.tick(1_000);
+  await yieldEventLoop();
+  t.mock.timers.tick(1_000);
+  await yieldEventLoop();
+  assert.equal(
+    beats.length,
+    1,
+    `a beat that has not answered yet is skipped, not overlapped: ${beats.length} calls were in flight at once`,
+  );
+
+  // ...and the clock is not disarmed by the skip: once the beat comes back, the
+  // next window beats again.
+  beats[0](LEASE);
+  await yieldEventLoop();
+  t.mock.timers.tick(1_000);
+  await yieldEventLoop();
+  assert.equal(beats.length, 2, 'skipping a beat may not stop the heartbeat for good');
+});

@@ -4298,3 +4298,73 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
     },
   );
 });
+
+/**
+ * The t156 discipline, at the one place left that could regress it (t193).
+ *
+ * `cliente-controle.ts` reads the status before it decodes the body since
+ * t156, and its own test pins that. This module used to have a second,
+ * hand-rolled `call()` that decoded FIRST and checked the status three lines
+ * later — so the same 502 from the same proxy came out of the other client as
+ * an `ErroDoControlPlane` and out of this one as a raw `SyntaxError`, which
+ * carries neither the status nor the text.
+ *
+ * The first call of a dispatch is the one under test because it is the one a
+ * broken intermediary meets first, and because a dispatch that fails there has
+ * opened nothing: no worktree, no session, no engine process.
+ */
+const HTML_502 = "<html>502 Bad Gateway</html>";
+
+test("t193 — a non-JSON error body is an ErroDoControlPlane, never a raw SyntaxError", async (t) => {
+  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(
+    DISPATCH_MODULE,
+  );
+  const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
+    "src/controller/cliente-controle.ts",
+  );
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t193-502-"));
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const routes: string[] = [];
+  const doFetch: typeof fetch = async (input) => {
+    routes.push(String(input));
+    return new Response(HTML_502, {
+      status: 502,
+      headers: { "content-type": "text/html" },
+    });
+  };
+
+  const dispatch = createClaudeCodeDispatch({
+    urlBase: "http://127.0.0.1:4317",
+    token: "ct_qualquer",
+    doFetch,
+    engines: claudeOnly(fakeAdapter()),
+    worktrees: fakeWorktrees(workDir),
+  });
+
+  await assert.rejects(
+    async () => dispatch(193),
+    (error: unknown) => {
+      assert.ok(
+        error instanceof ErroDoControlPlane,
+        `expected ErroDoControlPlane, got ${error instanceof Error ? error.name : String(error)}`,
+      );
+      assert.equal(error.status, 502);
+      assert.equal(
+        error.corpo,
+        HTML_502,
+        "the raw text is what is left for whoever logs it: whoever answered was not the control plane",
+      );
+      return true;
+    },
+  );
+
+  assert.deepEqual(
+    routes,
+    ["http://127.0.0.1:4317/v1/jobs/193"],
+    "it stops on the first call: nothing is opened before the work is even read",
+  );
+});

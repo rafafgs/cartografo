@@ -267,8 +267,16 @@ ninguém.
 
 Cada item é escopo declarado de outra ficha, não esquecimento:
 
-- **Tela de edição/configuração de grafo** — D11 fixa a ordem: observabilidade
-  primeiro, edição depois; por ora, arquivos e CLI.
+- **Edição de grafo além da topologia.** A D11 fixou a ordem — observabilidade
+  primeiro, edição depois — e a fatia de topologia chegou com a `t170`:
+  `/graph-editor.html` acrescenta, remove e edita nó e aresta de um grafo-base,
+  salvando pelas mesmas chamadas de proposta que qualquer cliente da API faria
+  ([`tela-editor-grafo.md`](tela-editor-grafo.md)). Ficam para fichas próprias as
+  **políticas de execução por nó** (modelo, pausa, timeout, escalação) e a
+  **edição do registro de skills**, cada uma esperando a superfície de backend
+  que ainda não existe; e ficam de fora, por decisão e não por esquecimento, o
+  canvas arrastável (o documento de grafo não tem campo de coordenada) e as
+  linhagens variantes (D13, `t118`).
 - **Inbox de aprovação de propostas** (entidade `proposta`, distinta de
   `pergunta`) — é a outra metade do pacote, entregue pela `t111` e servida em
   `/` ([`tela-inbox-propostas.md`](tela-inbox-propostas.md)).

@@ -289,6 +289,15 @@ button.link {
   font: inherit;
 }
 
+/* The picker sits in a flex row, so it does not take the full width a field does. */
+.picker {
+  min-width: 16rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+}
+
 textarea.field-input {
   min-height: 7rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

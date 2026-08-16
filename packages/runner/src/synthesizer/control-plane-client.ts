@@ -30,6 +30,8 @@
  * (`DECISOES.md:153-155`); the route paths and the identifiers here are English.
  */
 
+import { DEFAULT_REQUEST_TIMEOUT_MS, requestJson } from '../controller/http-client.ts';
+
 /** A registered class, as `GET /v1/classes` returns it. */
 export interface ClassEntry {
   classe: string;
@@ -107,21 +109,46 @@ function normalizeBase(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
 }
 
-async function getJson<T>(baseUrl: string, route: string, fetchImpl: typeof fetch): Promise<T> {
-  const response = await fetchImpl(`${normalizeBase(baseUrl)}${route}`);
-  const text = await response.text();
-
-  if (!response.ok) {
-    throw new ControlPlaneError(
-      `GET ${route} answered ${response.status}${text === '' ? '' : `: ${text}`}`,
-      response.status,
-    );
-  }
-
+/**
+ * One read, on a deadline, through the mechanic every runner client shares
+ * (t193, FR5).
+ *
+ * `ControlPlaneError` keeps the shape it has always had — a message and a
+ * status, no body — because nothing here has ever needed the body as a value:
+ * the text goes into the message, where whoever reads the command's stderr
+ * finds it. Unifying it with `ErroDoControlPlane` is a separate ticket; what is
+ * unified here is the request, not the error.
+ *
+ * The `did not answer JSON` case stays, and stays HERE rather than in the
+ * shared module: a malformed body in a 2xx is the control plane breaking its
+ * own contract, and this command's answer to that is its own error rather than
+ * a `SyntaxError` from a `JSON.parse` deep inside a synthesis run.
+ */
+async function getJson<T>(
+  baseUrl: string,
+  route: string,
+  fetchImpl: typeof fetch,
+  timeoutMs?: number,
+): Promise<T> {
   try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new ControlPlaneError(`GET ${route} did not answer JSON`, response.status);
+    return await requestJson<T>({
+      url: `${normalizeBase(baseUrl)}${route}`,
+      fetchImpl,
+      timeoutMs,
+      buildError: ({ status, body }) =>
+        new ControlPlaneError(
+          `GET ${route} answered ${status}${body === '' ? '' : `: ${body}`}`,
+          status,
+        ),
+    });
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      // The status is gone by the time a decode fails, and inventing one would
+      // be worse than the `0` this reports: the answer WAS a 2xx, and what is
+      // wrong with it is the body.
+      throw new ControlPlaneError(`GET ${route} did not answer JSON`, 0);
+    }
+    throw error;
   }
 }
 
@@ -135,8 +162,14 @@ async function getJson<T>(baseUrl: string, route: string, fetchImpl: typeof fetc
 export async function fetchClasses(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
+  timeoutMs?: number,
 ): Promise<ClassEntry[]> {
-  const { classes } = await getJson<{ classes: ClassEntry[] }>(baseUrl, '/v1/classes', fetchImpl);
+  const { classes } = await getJson<{ classes: ClassEntry[] }>(
+    baseUrl,
+    '/v1/classes',
+    fetchImpl,
+    timeoutMs,
+  );
   return classes;
 }
 
@@ -153,11 +186,13 @@ export async function fetchClassVersion(
   baseUrl: string,
   versionId: string,
   fetchImpl: typeof fetch = fetch,
+  timeoutMs?: number,
 ): Promise<GraphVersion> {
   const { grafo_versao: version } = await getJson<{ grafo_versao: GraphVersion }>(
     baseUrl,
     `/v1/graph-versions/${encodeURIComponent(versionId)}`,
     fetchImpl,
+    timeoutMs,
   );
   return version;
 }
@@ -172,8 +207,14 @@ export async function fetchClassVersion(
 export async function fetchSkills(
   baseUrl: string,
   fetchImpl: typeof fetch = fetch,
+  timeoutMs?: number,
 ): Promise<RegisteredSkill[]> {
-  const { skills } = await getJson<{ skills: RegisteredSkill[] }>(baseUrl, '/v1/skills', fetchImpl);
+  const { skills } = await getJson<{ skills: RegisteredSkill[] }>(
+    baseUrl,
+    '/v1/skills',
+    fetchImpl,
+    timeoutMs,
+  );
   return skills;
 }
 
@@ -194,6 +235,16 @@ export interface ControlPlaneReaderOptions {
   token?: string;
   /** `fetch` implementation. Default: the global one. Test seam only. */
   fetchImpl?: typeof fetch;
+  /**
+   * Deadline of each read, in milliseconds (t193, FR5). Default:
+   * {@link DEFAULT_REQUEST_TIMEOUT_MS}.
+   *
+   * A synthesis run consults three routes before it opens a session, and until
+   * this ficha none of the three could give up: a control plane that accepted
+   * the connection and never answered left `cartografo synthesize` sitting at a
+   * prompt that never came back.
+   */
+  requestTimeoutMs?: number;
 }
 
 /**
@@ -231,11 +282,12 @@ export function createControlPlaneReader(
   options: ControlPlaneReaderOptions = {},
 ): ControlPlaneReader {
   const fetchImpl = withAuthorization(options.fetchImpl ?? fetch, options.token);
+  const timeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   return {
-    fetchClasses: async () => await fetchClasses(baseUrl, fetchImpl),
+    fetchClasses: async () => await fetchClasses(baseUrl, fetchImpl, timeoutMs),
     fetchClassVersion: async (versionId: string) =>
-      await fetchClassVersion(baseUrl, versionId, fetchImpl),
-    fetchSkills: async () => await fetchSkills(baseUrl, fetchImpl),
+      await fetchClassVersion(baseUrl, versionId, fetchImpl, timeoutMs),
+    fetchSkills: async () => await fetchSkills(baseUrl, fetchImpl, timeoutMs),
   };
 }

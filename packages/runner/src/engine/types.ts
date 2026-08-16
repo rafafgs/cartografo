@@ -95,9 +95,10 @@ export interface SessionSpec {
    * that resumed.
    *
    * What continuing requires beyond the ref is the engine's business, and it
-   * is not always only the ref: `claude-code` also keys the transcript by
-   * working directory, so a spec that changes `workingDir` between the two
-   * sessions is asking for a transcript that engine never wrote.
+   * is not always only the ref. Measured on `claude-code` (t173, and it
+   * contradicted what the ficha assumed): there the ref is enough, and
+   * `workingDir` does not participate — the same ref recalled the same context
+   * from a directory that session had never seen.
    */
   readonly resumeFrom?: string;
 

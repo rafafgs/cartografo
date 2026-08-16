@@ -856,9 +856,10 @@ export function runConformanceKit(
         const second = new Collector();
         const secondHandle = await adapter.startSession(
           {
-            // The SAME directory on purpose: the continuation of a session is
-            // continuation of the work it was doing, and an engine that keys
-            // its transcript by cwd finds nothing anywhere else.
+            // The SAME directory on purpose, and conservatively: the real
+            // `claude` was measured continuing from a directory it had never
+            // seen (t173), but that is one engine's answer, and a kit that
+            // certifies any engine must not demand the loosest of them.
             workingDir: scenario.workingDir,
             instructions: 'node instructions',
             prompt: 'the turn that continues the first one',

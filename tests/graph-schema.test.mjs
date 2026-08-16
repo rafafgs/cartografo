@@ -479,8 +479,17 @@ test('t169 AT — $defs.hook declares the trigger vocabulary and closes the obje
   );
 
   const destination = schema.$defs.hook_destination;
-  assert.deepEqual([...destination.required].sort(), ['secret', 'type', 'url']);
+  // t194 — the destination names the key, it never carries it. A document that
+  // still spells `secret` is refused for free: an unrecognised key against
+  // `additionalProperties: false`, plus a required `secret_ref` that is missing.
+  assert.deepEqual([...destination.required].sort(), ['secret_ref', 'type', 'url']);
   assert.equal(destination.additionalProperties, false);
+  assert.equal(destination.properties.secret, undefined, 'no plaintext secret in the document');
+  assert.equal(
+    destination.properties.secret_ref.pattern,
+    schema.$defs.node_id.pattern,
+    'the reference is spelled like a node id: it round-trips through a URL path',
+  );
   assert.deepEqual(
     destination.properties.type.enum,
     ['webhook'],

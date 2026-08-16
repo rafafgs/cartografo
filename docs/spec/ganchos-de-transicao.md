@@ -1,9 +1,10 @@
 # Especificação: ganchos de transição declarados no grafo
 
-**Versão da API:** `v1` · **Migração:**
-[`0016_gancho`](../../packages/core/migrations/0016_gancho.sql)
+**Versão da API:** `v1` · **Migrações:**
+[`0016_gancho`](../../packages/core/migrations/0016_gancho.sql),
+[`0018_segredo_gancho`](../../packages/core/migrations/0018_segredo_gancho.sql)
 **Formato:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json) ·
-**Ficha:** t169
+**Fichas:** t169, t194
 
 Este documento é o contrato de quem escreve o grafo **e** de quem recebe a
 entrega, e ele é deliberadamente auto-suficiente: dá para escrever o gancho e o
@@ -29,6 +30,7 @@ e das arestas.
 | Onde vive | linha em `assinatura_webhook` | chave `hooks` do snapshot da versão |
 | Escopo | todo evento do projeto (com filtro por tipo) | um nó, um gatilho |
 | Versionado com o grafo | não | **sim** — muda por proposta, com diff e volta |
+| Onde fica a chave do HMAC | `assinatura_webhook.segredo` | `segredo_gancho`, referenciada por nome (§2.1) |
 | Transporte | POST assinado, seis tentativas | o mesmo, byte a byte |
 
 Regra prática: se a reação é do PROCESSO — "toda vez que qualquer trabalho
@@ -68,7 +70,7 @@ tocado.
       "destination": {
         "type": "webhook",
         "url": "https://meu-servico.exemplo/cartografo",
-        "secret": "uma-string-longa-e-aleatoria-que-eu-escolhi"
+        "secret_ref": "gancho-revisao"
       },
       "description": "Avisa o revisor de plantão quando uma nota chega para revisão."
     }
@@ -83,17 +85,61 @@ tocado.
 | `node_id` | sim | Precisa ser o id de um nó que existe em `nodes`. |
 | `destination.type` | sim | Hoje só `webhook` (§7). |
 | `destination.url` | sim | URL absoluta `http:` ou `https:` — mesma regra do `POST /v1/webhooks`. |
-| `destination.secret` | sim | String não vazia, **escolhida por você**. É a chave do HMAC (§5). |
+| `destination.secret_ref` | sim | **Nome** da chave do HMAC, nunca a chave (§2.1). Mesma classe de caracteres do id de nó. |
 | `description` | não | Para que serve a reação, em uma frase. |
 
 O exemplo completo, com um gancho de cada gatilho, está em
 [`schema/exemplos/grafo-valido-com-ganchos.json`](../../schema/exemplos/grafo-valido-com-ganchos.json).
 
-**O `secret` fica em texto claro no documento**, e isso é deliberado: a
-assinatura é HMAC, então a chave precisa ser REUSADA a cada entrega — ela não
-pode virar digest como a credencial da `0007`. Quem lê o grafo lê o segredo, e
-quem lê o grafo já tem a API inteira (t124). Se o seu segredo vazou, publique
-uma versão nova do grafo com outro: é uma proposta como qualquer outra.
+### 2.1. O segredo não mora no documento
+
+O documento **nomeia** a chave; quem a guarda é o deployment. Um grafo que ainda
+traga um campo `secret` é recusado na validação de forma — o `secret_ref`
+obrigatório falta, e a chave desconhecida bate no `additionalProperties: false`.
+
+**Por quê.** O documento é endereçado por conteúdo (D15): ele entra inteiro no
+hash da versão, sai inteiro por `GET /v1/graph-versions/:id`, é escrito em disco
+pelo `cartografo export` e copiado byte a byte para o atlas que a D7 manda
+publicar. Chave escrita ali é chave de todo mundo que lê o mapa — e rotacionar
+uma que vazou seria propor uma versão nova cujo diff mostra a velha e a nova
+lado a lado, para sempre, no histórico que nunca se apaga.
+
+O `secret_ref` é da mesma família que `engine`, `model` e `escalation_policy`
+([`grafo.md`](grafo.md)): valor que o documento declara e o deployment resolve
+na hora de despachar, nunca o validador na importação — porque o validador não
+sabe o que ESTE deployment tem. Por isso um `secret_ref` que não resolve **não**
+é erro de validação: é zero entrega (§4).
+
+Registrar a chave é um `PUT` autenticado, com o nome no caminho:
+
+```
+PUT /v1/hook-secrets/gancho-revisao
+Content-Type: application/json
+
+{"valor": "uma-string-longa-e-aleatoria-que-eu-escolhi"}
+```
+
+| Rota | O que faz |
+|---|---|
+| `PUT /v1/hook-secrets/:nome` | Registra (`201`) ou **rotaciona** (`200`). Responde `{nome, criada_em}` — o `valor` nunca volta. |
+| `GET /v1/hook-secrets` | Lista `{segredos: [{nome, criada_em, revogada_em}]}`, do mais antigo para o mais novo, sem `valor` em lugar nenhum. |
+| `DELETE /v1/hook-secrets/:nome` | Revoga a chave viva daquele nome. Idempotente; `404` num nome que ninguém registrou. |
+
+As três exigem credencial de `usuario`: um runner leva `403
+credencial_fora_de_escopo`.
+
+**Rotacionar é registrar de novo.** O `PUT` revoga a linha viva e grava uma
+linha nova, na mesma transação — nada é sobrescrito e nada é apagado (D15/D2),
+então "quando esta chave parou de valer" continua respondível. A chave nova vale
+a partir da próxima entrega enfileirada; uma entrega já em voo termina com a que
+valia quando ela nasceu (§4). E o documento de grafo não muda uma vírgula: o
+nome continua o mesmo, então não há versão nova, não há proposta e não há diff.
+
+O `valor` fica em texto claro no banco, e isso é deliberado: a assinatura é
+HMAC, então a chave precisa ser REUSADA a cada entrega — ela não pode virar
+digest como a credencial da `0007`. É exatamente a postura do
+`assinatura_webhook.segredo` (t142); o que esta ficha mudou foi ONDE a chave
+mora, não como ela é guardada.
 
 ---
 
@@ -136,13 +182,20 @@ explícito sobre as duas metades:
 ela é o que torna a garantia estrutural em vez de defensiva: não há `try/catch`
 protegendo a travessia porque não existe caminho de código do socket até ela.
 
-A `url` e o `secret` são **copiados** para a linha de entrega no momento em que
-ela é enfileirada. Uma versão nova do grafo pode apontar o mesmo gancho para
-outro lugar, e uma entrega em voo termina contra o destino que valia quando ela
-nasceu — nunca contra o que valeria hoje.
+A `url` do documento e a chave **resolvida** a partir do `secret_ref` são
+copiadas para a linha de entrega no momento em que ela é enfileirada. Uma versão
+nova do grafo pode apontar o mesmo gancho para outro lugar, e um `PUT
+/v1/hook-secrets/:nome` pode rotacionar a chave — e uma entrega em voo termina
+contra o destino que valia quando ela nasceu, nunca contra o que valeria hoje.
+É o mesmo instante e a mesma razão para as duas: só a FONTE da chave mudou de
+lugar (t194), a semântica da coluna `segredo` da linha de entrega é a de sempre.
 
-Se o trabalho não tem `grafo_versao_id`, se a versão citada não resolve, ou se o
-snapshot dela não tem `hooks`, o resultado é o mesmo: zero entregas, zero erro.
+Se o trabalho não tem `grafo_versao_id`, se a versão citada não resolve, se o
+snapshot dela não tem `hooks`, ou se o `secret_ref` de um gancho não casa com
+nenhum segredo vivo, o resultado é o mesmo: zero entregas, zero erro. O último
+caso é o de quem importou um grafo sem registrar o que ele referencia, e por
+enquanto ele é silencioso de propósito — dar sinal disso (evento, portão, aviso
+na importação) é ficha separada.
 
 ---
 
@@ -168,7 +221,13 @@ segredo.
 A receita da assinatura, inteira — a mesma da t142, com uma diferença de chave:
 
 > `X-Cartografo-Assinatura` = `sha256=` + HMAC-SHA256 do **corpo cru**,
-> com o `destination.secret` DESTE GANCHO como chave, em hex minúsculo.
+> com a chave que o `destination.secret_ref` DESTE GANCHO resolveu, em hex
+> minúsculo.
+
+Do seu lado nada muda: a chave é a string que você mandou no `valor` do
+`PUT /v1/hook-secrets/:nome`. O documento de grafo carrega o nome dela, e o
+control plane resolve o nome no enfileiramento — você nunca lê a chave de volta
+por rota nenhuma, então guarde-a quando registrar.
 
 Três detalhes que decidem se a sua verificação funciona:
 
@@ -180,6 +239,8 @@ Três detalhes que decidem se a sua verificação funciona:
 - **Sem assinatura válida, não confie no corpo.** A URL está escrita num
   documento de grafo que qualquer cliente da API lê; a assinatura é a única
   coisa que separa uma entrega do control plane de quem descobriu o endereço.
+  Desde a t194 a chave que a produz não está mais nesse documento — quem lê o
+  mapa lê para onde a reação vai, e não com o que ela assina.
 
 Em Node, a receita inteira é uma linha — a mesma que o servidor executa:
 
@@ -190,7 +251,8 @@ const assinatura = `sha256=${createHmac('sha256', segredo).update(corpoCru, 'utf
 
 O receptor mínimo de zero dependência da
 [§8 de `webhooks-eventos.md`](webhooks-eventos.md) serve aqui sem uma linha de
-diferença: troque a variável do segredo pelo `destination.secret` do gancho.
+diferença: troque a variável do segredo pela chave que você registrou para o
+`secret_ref` deste gancho.
 
 **Responda rápido.** Qualquer `2xx` encerra a entrega; o servidor não lê o corpo
 da sua resposta. Se o seu processamento é demorado, aceite (`200`), enfileire do
@@ -253,7 +315,15 @@ tick ou toca no caminho de escrita.
 
 A validação de FORMA é do [`grafo.schema.json`](../../schema/grafo.schema.json)
 — campo obrigatório faltando, `trigger` fora do vocabulário, `destination.type`
-desconhecido, `url` que não é `http(s)` absoluta.
+desconhecido, `url` que não é `http(s)` absoluta, `secret_ref` fora do charset
+`^[a-z0-9][a-z0-9_-]*$` (e um `secret` sobrando, que é como um documento do
+formato antigo é recusado).
+
+O que a validação **não** faz é resolver o `secret_ref` contra o banco. As duas
+passagens estruturais são puras e sem banco, mantidas em paridade byte a byte
+entre `scripts/validar-grafo.mjs` e o porte em `packages/core/src/domain/graph.ts`
+— uma checagem que consultasse o banco quebraria o contrato para uma das duas e
+não para a outra. Nome que não resolve é zero entrega (§4), nunca `422`.
 
 A validação REFERENCIAL é da passagem **estrutural** do validador de grafo
 (`scripts/validar-grafo.mjs` e o porte em
@@ -282,6 +352,9 @@ a rede — é defeito de forma, e sai na lista de `estrutura.erros` do `422`.
   que o cartografo roda hoje executa dentro do worktree de uma sessão, sob o
   runner, e nunca na máquina do control plane.
 - **Outros gatilhos** (`node_exited`, `node_unblocked`, condição customizada).
+- **Sinal para um `secret_ref` que não resolve.** Hoje ele produz zero entregas
+  em silêncio (§4). Um evento, um portão ou um aviso na importação é ficha
+  separada, e vale a pena escrevê-la se isso morder alguém na prática.
 - **Reenvio manual** de uma entrega `esgotada`.
 - **Tela para ganchos.** Esta ficha é só control plane; o gancho se lê e se
   edita no documento de grafo.

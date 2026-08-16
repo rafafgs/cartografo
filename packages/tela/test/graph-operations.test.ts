@@ -233,9 +233,14 @@ test('AT4 — an added and a removed edge become their two operations, each with
   assert.deepEqual(diffGraphs(loaded, edited), [
     // Removals first: it is the order that keeps the sequence applicable when a
     // node leaves together with the edges that touched it.
+    //
+    // The target carries `condition` since t205: two edges between the same two
+    // nodes are two edges, and a removal that names only the ends cannot say
+    // which one it meant. The core takes it as optional, so the ends alone
+    // still work for every operation written before this.
     {
       tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar' },
+      aresta: { from: 'redigir', to: 'revisar', condition: 'sempre' },
       inversa: {
         tipo: 'adicionar_aresta',
         aresta: { from: 'redigir', to: 'revisar', condition: 'sempre' },
@@ -244,7 +249,10 @@ test('AT4 — an added and a removed edge become their two operations, each with
     {
       tipo: 'adicionar_aresta',
       aresta: added,
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'revisar', to: 'redigir' } },
+      inversa: {
+        tipo: 'remover_aresta',
+        aresta: { from: 'revisar', to: 'redigir', condition: 'retrabalho' },
+      },
     },
   ]);
 });
@@ -253,4 +261,89 @@ test('AT5 — an untouched document produces no operation at all', async () => {
   const diffGraphs = await loadDiff();
 
   assert.deepEqual(diffGraphs(baseDocument(), baseDocument()), []);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t205 — two parallel edges are two edges.                                    */
+/*                                                                            */
+/* Nothing in the format, the schema or this page ever forbade two edges       */
+/* between the same pair of nodes with different `condition`s — the page draws */
+/* one card each and lets both be edited. What used to collapse them was this  */
+/* diff, keying its before/after maps by the two ends alone: the second edge   */
+/* overwrote the first, so removing one of a pair produced no operation at all */
+/* and adding a third became a no-op. Identity here is `from + to + condition`.*/
+/* -------------------------------------------------------------------------- */
+
+/** Two edges between the same pair of nodes, told apart only by `condition`. */
+function parallelDocument(): Document {
+  const document = baseDocument();
+  document.edges = [
+    { from: 'redigir', to: 'revisar', condition: 'aprovado' },
+    { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+  ];
+  return document;
+}
+
+test('t205 AT — a third parallel edge is one `adicionar_aresta`, and the two that stayed are silent', async () => {
+  const diffGraphs = await loadDiff();
+
+  const loaded = parallelDocument();
+  const edited = parallelDocument();
+  const added = { from: 'redigir', to: 'revisar', condition: 'escala' };
+  edgesOf(edited).push(added);
+
+  assert.deepEqual(diffGraphs(loaded, edited), [
+    {
+      tipo: 'adicionar_aresta',
+      aresta: added,
+      // The inverse names the edge it has to take back out, `condition` and
+      // all — otherwise undoing this addition could remove a sibling.
+      inversa: { tipo: 'remover_aresta', aresta: added },
+    },
+  ]);
+});
+
+test('t205 AT — removing one of a parallel pair is one `remover_aresta` pinned to its condition', async () => {
+  const diffGraphs = await loadDiff();
+
+  const loaded = parallelDocument();
+  const edited = parallelDocument();
+  const gone = edgesOf(edited).splice(1, 1)[0];
+
+  assert.deepEqual(diffGraphs(loaded, edited), [
+    {
+      tipo: 'remover_aresta',
+      aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      inversa: { tipo: 'adicionar_aresta', aresta: gone },
+    },
+  ]);
+});
+
+test('t205 AT — retyping one condition of a parallel pair moves that edge and no other', async () => {
+  const diffGraphs = await loadDiff();
+
+  const loaded = parallelDocument();
+  const edited = parallelDocument();
+  edgesOf(edited)[1].condition = 'escala';
+
+  // There is no operation that changes an edge, so this is a removal pinned to
+  // the OLD condition followed by an addition carrying the new one.
+  assert.deepEqual(diffGraphs(loaded, edited), [
+    {
+      tipo: 'remover_aresta',
+      aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      inversa: {
+        tipo: 'adicionar_aresta',
+        aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      },
+    },
+    {
+      tipo: 'adicionar_aresta',
+      aresta: { from: 'redigir', to: 'revisar', condition: 'escala' },
+      inversa: {
+        tipo: 'remover_aresta',
+        aresta: { from: 'redigir', to: 'revisar', condition: 'escala' },
+      },
+    },
+  ]);
 });

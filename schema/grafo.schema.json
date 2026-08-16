@@ -326,7 +326,7 @@
     "hook_destination": {
       "type": "object",
       "description": "Para onde a reação vai. Hoje só webhook: mandar o control plane executar um comando de shell que chegou como DADO de grafo é outra ficha, com portão de revisão/permissão próprio espelhando o da importação de skill (D4).",
-      "required": ["type", "url", "secret"],
+      "required": ["type", "url", "secret_ref"],
       "additionalProperties": false,
       "properties": {
         "type": {
@@ -338,10 +338,11 @@
           "pattern": "^https?://.+",
           "description": "URL absoluta http: ou https: que recebe o POST. Mesma regra do POST /v1/webhooks (docs/spec/webhooks-eventos.md §2)."
         },
-        "secret": {
+        "secret_ref": {
           "type": "string",
           "minLength": 1,
-          "description": "Chave do HMAC da entrega, escolhida por quem escreveu o grafo — o servidor não gera segredo, mesma razão da t142. Fica no documento em texto claro porque a assinatura precisa REUSAR a chave a cada entrega, e porque o documento inteiro já é dado versionado que quem tem a API lê."
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "description": "NOME da chave do HMAC, nunca a chave. O valor mora em segredo_gancho, no banco do deployment, registrado por PUT /v1/hook-secrets/:nome e resolvido pelo control plane no enfileiramento — o mesmo instante em que a url é copiada. O documento é endereçado por conteúdo, servido inteiro pela API, escrito em disco pelo export e publicado no atlas: chave escrita aqui é chave de todo mundo que lê o mapa. Mesma classe de caracteres de um id de nó, porque o nome também atravessa um caminho de URL."
         }
       }
     },

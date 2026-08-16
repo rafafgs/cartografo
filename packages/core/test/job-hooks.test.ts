@@ -48,12 +48,27 @@ const T169_ARTIFACTS = Object.freeze({
   dispatcher: 'src/hooks/dispatcher.ts',
 });
 
+/** Where the key itself lives since t194 — the document only names it. */
+const T194_ARTIFACTS = Object.freeze({
+  migration: 'migrations/0018_segredo_gancho.sql',
+  repository: 'src/repositories/hook-secrets.ts',
+});
+
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const EXAMPLES_DIR = path.join(REPO_ROOT, 'schema', 'exemplos');
 
 /** The two hooks the fixture declares, named here so the assertions can read. */
 const ON_ENTER = 'avisar-revisao';
 const ON_BLOCK = 'avisar-bloqueio';
+
+/**
+ * The value this deployment registers under a given `secret_ref` (t194).
+ *
+ * Derived from the name instead of a single constant so that a delivery row
+ * carrying the WRONG hook's key would still fail the assertion: the enqueue
+ * resolves one reference per hook, and "it copied some secret" is not the claim.
+ */
+const secretFor = (reference: string): string => `chave-hmac-de-${reference}`;
 
 /** One row of `entrega_gancho`, read straight from the table. */
 interface HookDelivery {
@@ -90,9 +105,37 @@ interface HookDispatcherModule {
   ) => void;
 }
 
+/** The slice of `src/repositories/hook-secrets.ts` this suite writes through. */
+interface HookSecretsModule {
+  setHookSecret: (db: Database, data: { nome: string; valor: string }) => unknown;
+}
+
 /** Reads a graph fixture from `schema/exemplos/`. */
 function readExample(name: string): GraphDocument {
   return JSON.parse(readFileSync(path.join(EXAMPLES_DIR, name), 'utf8')) as GraphDocument;
+}
+
+/**
+ * Registers a live secret for every `secret_ref` the document names (t194).
+ *
+ * The fixture carries names, not keys, so without this the enqueue resolves
+ * nothing and every hook of the document silently produces zero deliveries —
+ * which is a real behaviour of the repository, exercised on purpose in
+ * `test/hooks-dispatch.test.ts`, and never what these four tests are about.
+ *
+ * @param db Open database.
+ * @param document The graph fixture whose hooks are about to fire.
+ */
+async function registerDeclaredSecrets(db: Database, document: GraphDocument): Promise<void> {
+  requireArtifacts(T194_ARTIFACTS.migration, T194_ARTIFACTS.repository);
+  const { setHookSecret } = (await import(
+    '../src/repositories/hook-secrets.ts'
+  )) as HookSecretsModule;
+
+  for (const hook of document.hooks ?? []) {
+    const reference = hook.destination.secret_ref;
+    setHookSecret(db, { nome: reference, valor: secretFor(reference) });
+  }
 }
 
 /** Opens a throwaway database, already migrated. */
@@ -153,6 +196,7 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   const db = openWorld(t);
 
   const document = readExample('grafo-valido-com-ganchos.json');
+  await registerDeclaredSecrets(db, document);
   const versionId = registerGraph(db, document);
   const job = newJob(db, versionId);
 
@@ -170,12 +214,20 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   assert.equal(enqueued.entregue_em, null);
   assert.equal(enqueued.ultimo_erro, null);
 
-  // URL and secret are carried from the graph document, which is what makes the
-  // reaction versioned with it instead of registered out of band.
+  // The URL is carried from the graph document, which is what makes the reaction
+  // versioned with it instead of registered out of band. The KEY is not: since
+  // t194 the document names it and the deployment holds it, and the enqueue is
+  // where the two meet — the same point the URL is copied at, so a delivery in
+  // flight still finishes against what was declared when it was queued.
   const declared = document.hooks?.find((hook) => hook.id === ON_ENTER);
   assert.ok(declared !== undefined, 'the fixture has to declare the node_entered hook');
   assert.equal(enqueued.url, declared.destination.url);
-  assert.equal(enqueued.segredo, declared.destination.secret);
+  assert.equal(enqueued.segredo, secretFor(declared.destination.secret_ref));
+  assert.notEqual(
+    enqueued.segredo,
+    declared.destination.secret_ref,
+    'what is copied is the resolved key, not the name the document carries',
+  );
 
   // And the delivery points at the very event that triggered it.
   const trigger = db
@@ -192,7 +244,9 @@ test('AT5 — blocking fires only the node_blocked hook of the node it blocked o
   requireArtifacts(T169_ARTIFACTS.migration, T169_ARTIFACTS.repository);
   const db = openWorld(t);
 
-  const versionId = registerGraph(db, readExample('grafo-valido-com-ganchos.json'));
+  const document = readExample('grafo-valido-com-ganchos.json');
+  await registerDeclaredSecrets(db, document);
+  const versionId = registerGraph(db, document);
 
   // Blocked on `redigir`, which is exactly where the node_blocked hook points.
   const stuck = newJob(db, versionId);
@@ -263,7 +317,9 @@ test('AT7 — the write path answers 200 even when the hook destination rejects'
   )) as HookDispatcherModule;
 
   const db = openWorld(t);
-  const versionId = registerGraph(db, readExample('grafo-valido-com-ganchos.json'));
+  const document = readExample('grafo-valido-com-ganchos.json');
+  await registerDeclaredSecrets(db, document);
+  const versionId = registerGraph(db, document);
   const job = newJob(db, versionId);
 
   let attempts = 0;

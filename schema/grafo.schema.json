@@ -48,6 +48,11 @@
       "uniqueItems": true,
       "description": "Ids dos nós que encerram a travessia. Todo id precisa existir em nodes.",
       "items": { "$ref": "#/$defs/node_id" }
+    },
+    "hooks": {
+      "type": "array",
+      "description": "Reações que o próprio grafo declara: entrar num nó ou bloquear nele dispara uma entrega assinada (t169). Opcional — ausente significa nenhuma reação, e é por isso que todo grafo escrito antes deste campo continua válido sem tocar em nada, mesma postura não-quebradora do campo engine no nó. Ficam AQUI, e não numa assinatura registrada por fora pela API, para que a reação seja versionada e proponível como qualquer outra parte do grafo (D2, D15).",
+      "items": { "$ref": "#/$defs/hook" }
     }
   },
   "$defs": {
@@ -257,6 +262,53 @@
         "description": {
           "type": "string",
           "description": "O que este check prova."
+        }
+      }
+    },
+    "hook": {
+      "type": "object",
+      "description": "Uma reação declarada pelo grafo. O gancho NÃO participa da travessia: ele não é aresta, não muda o nó atual e não tem como fazer o trabalho parar — falha de gancho é incidente, nunca desfecho. A validação referencial (node_id existe, id único no documento) é estrutural e vive em scripts/validar-grafo.mjs e packages/core/src/domain/graph.ts, não nas quatro regras de soundness: gancho pendurado é defeito de forma, não propriedade da rede de workflow.",
+      "required": ["id", "trigger", "node_id", "destination"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/node_id",
+          "description": "Identificador do gancho, único no documento. Mesma classe de caracteres do id de nó de propósito: são os dois nomes que alguém escreve à mão dentro deste arquivo, e uma regra só é uma regra a menos para lembrar."
+        },
+        "trigger": {
+          "enum": ["node_entered", "node_blocked"],
+          "description": "O que dispara. node_entered: uma trabalho.transicao cujo para_no_id é este nó. node_blocked: uma trabalho.bloqueado com o trabalho parado neste nó. Enum fechado, como escalation_policy: um terceiro valor não é adapter novo, é erro de quem escreveu. Nada dispara na chegada ao initial_node — a colocação inicial é trabalho.criado, e não uma transição."
+        },
+        "node_id": {
+          "$ref": "#/$defs/node_id",
+          "description": "Nó cuja entrada ou bloqueio dispara o gancho. Precisa existir em nodes."
+        },
+        "destination": { "$ref": "#/$defs/hook_destination" },
+        "description": {
+          "type": "string",
+          "description": "Para que serve esta reação, em uma frase."
+        }
+      }
+    },
+    "hook_destination": {
+      "type": "object",
+      "description": "Para onde a reação vai. Hoje só webhook: mandar o control plane executar um comando de shell que chegou como DADO de grafo é outra ficha, com portão de revisão/permissão próprio espelhando o da importação de skill (D4).",
+      "required": ["type", "url", "secret"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": ["webhook"],
+          "description": "Enum de um valor só hoje, para que uma segunda variante (local_command) seja aditiva amanhã, sem quebrar grafo nenhum."
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https?://.+",
+          "description": "URL absoluta http: ou https: que recebe o POST. Mesma regra do POST /v1/webhooks (docs/spec/webhooks-eventos.md §2)."
+        },
+        "secret": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Chave do HMAC da entrega, escolhida por quem escreveu o grafo — o servidor não gera segredo, mesma razão da t142. Fica no documento em texto claro porque a assinatura precisa REUSAR a chave a cada entrega, e porque o documento inteiro já é dado versionado que quem tem a API lê."
         }
       }
     },

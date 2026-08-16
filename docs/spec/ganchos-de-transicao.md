@@ -1,0 +1,289 @@
+# Especificação: ganchos de transição declarados no grafo
+
+**Versão da API:** `v1` · **Migração:**
+[`0015_gancho`](../../packages/core/migrations/0015_gancho.sql)
+**Formato:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json) ·
+**Ficha:** t169
+
+Este documento é o contrato de quem escreve o grafo **e** de quem recebe a
+entrega, e ele é deliberadamente auto-suficiente: dá para escrever o gancho e o
+receptor inteiro — inclusive a verificação da assinatura — sem abrir uma linha
+do código do control plane. O que trafega é o envelope da
+[taxonomia de eventos](../../especificacoes/eventos/taxonomia.md), sem tradução
+nenhuma no caminho, exatamente o mesmo objeto que o
+[stream SSE](eventos-stream.md) entrega no campo `data:` e que os
+[webhooks assinados](webhooks-eventos.md) entregam por POST.
+
+---
+
+## 1. O que é, e quando usar em vez de um webhook
+
+Um gancho é uma reação que **o próprio grafo declara**: "quando um trabalho
+entrar no nó `testar`, avise este endereço"; "quando ele travar em `revisar`,
+chame aquele". A declaração mora dentro do documento de grafo, ao lado dos nós
+e das arestas.
+
+| | Webhook ([`webhooks-eventos.md`](webhooks-eventos.md)) | Gancho (este documento) |
+|---|---|---|
+| Quem declara | um operador, por `POST /v1/webhooks` | quem escreve o grafo, dentro do documento |
+| Onde vive | linha em `assinatura_webhook` | chave `hooks` do snapshot da versão |
+| Escopo | todo evento do projeto (com filtro por tipo) | um nó, um gatilho |
+| Versionado com o grafo | não | **sim** — muda por proposta, com diff e volta |
+| Transporte | POST assinado, seis tentativas | o mesmo, byte a byte |
+
+Regra prática: se a reação é do PROCESSO — "toda vez que qualquer trabalho
+chegar nesta etapa" —, ela pertence ao mapa, e é gancho. Se é da sua
+integração — "quero todo o log deste projeto na minha ferramenta" —, é webhook.
+
+**Por que isso importa.** Um webhook registrado é estado que só existe na
+máquina onde alguém rodou o `POST`: exportar o grafo não o leva junto, o
+topógrafo não consegue propô-lo, e reverter uma versão não o desfaz. Um gancho
+é dado do documento, então ele atravessa exportação, entra em proposta com
+evidência e volta atrás junto com a versão que o introduziu (D2, D15).
+
+**O que um gancho não é:** não é aresta. Ele não muda o nó atual, não decide
+caminho, não bloqueia e não tem como fazer o trabalho parar. Falha de gancho é
+incidente (§6), nunca desfecho.
+
+---
+
+## 2. Declarar um gancho
+
+`hooks` é uma lista opcional no topo do documento. Ausente = nenhuma reação, que
+é o caso de todo grafo escrito antes desta ficha — nenhum deles precisou ser
+tocado.
+
+```json
+{
+  "problem_class": "nota-curta",
+  "nodes": [ ... ],
+  "edges": [ ... ],
+  "initial_node": "redigir",
+  "final_nodes": ["revisar"],
+  "hooks": [
+    {
+      "id": "avisar-revisao",
+      "trigger": "node_entered",
+      "node_id": "revisar",
+      "destination": {
+        "type": "webhook",
+        "url": "https://meu-servico.exemplo/cartografo",
+        "secret": "uma-string-longa-e-aleatoria-que-eu-escolhi"
+      },
+      "description": "Avisa o revisor de plantão quando uma nota chega para revisão."
+    }
+  ]
+}
+```
+
+| Campo | Obrigatório | Regra |
+|---|---|---|
+| `id` | sim | Único no documento. Mesma classe de caracteres do id de nó: `^[a-z0-9][a-z0-9_-]*$`. |
+| `trigger` | sim | `node_entered` ou `node_blocked`. Qualquer outro valor é recusado na validação. |
+| `node_id` | sim | Precisa ser o id de um nó que existe em `nodes`. |
+| `destination.type` | sim | Hoje só `webhook` (§7). |
+| `destination.url` | sim | URL absoluta `http:` ou `https:` — mesma regra do `POST /v1/webhooks`. |
+| `destination.secret` | sim | String não vazia, **escolhida por você**. É a chave do HMAC (§5). |
+| `description` | não | Para que serve a reação, em uma frase. |
+
+O exemplo completo, com um gancho de cada gatilho, está em
+[`schema/exemplos/grafo-valido-com-ganchos.json`](../../schema/exemplos/grafo-valido-com-ganchos.json).
+
+**O `secret` fica em texto claro no documento**, e isso é deliberado: a
+assinatura é HMAC, então a chave precisa ser REUSADA a cada entrega — ela não
+pode virar digest como a credencial da `0007`. Quem lê o grafo lê o segredo, e
+quem lê o grafo já tem a API inteira (t124). Se o seu segredo vazou, publique
+uma versão nova do grafo com outro: é uma proposta como qualquer outra.
+
+---
+
+## 3. O que dispara, exatamente
+
+| Gatilho | Dispara em | Casa quando |
+|---|---|---|
+| `node_entered` | `trabalho.transicao` | `dados.para_no_id` é igual ao `node_id` do gancho |
+| `node_blocked` | `trabalho.bloqueado` | o `no_atual` do trabalho no instante do bloqueio é o `node_id` do gancho |
+
+Vários ganchos podem casar com o mesmo fato, e cada um vira uma entrega
+independente: uma que falha não atrasa nem cancela a outra (§6).
+
+**Um gancho no `initial_node` nunca dispara.** A colocação inicial do trabalho é
+um `trabalho.criado`, não uma `trabalho.transicao` — pela mesma razão que
+`de_no_id` é `null` na primeira transição. Não é uma limitação escondida: é o
+que "entrou no nó" significa quando a chegada é o nascimento. Se você precisa
+reagir à criação, o transporte para isso é o webhook do tipo `trabalho.criado`.
+
+**Desbloquear não dispara nada.** `node_unblocked`, `node_exited` e condições
+customizadas estão fora de escopo desta ficha.
+
+---
+
+## 4. Enfileirar é síncrono; entregar não é
+
+Isto é o coração da garantia "gancho nunca trava o viajante", e vale a pena ser
+explícito sobre as duas metades:
+
+1. **Enfileirar** acontece DENTRO da mesma transação SQLite que grava a projeção
+   do trabalho e o evento. Se a transição for revertida, as entregas dela somem
+   junto; não existe janela em que o trabalho andou sem a reação declarada estar
+   na fila.
+2. **Tentar entregar** acontece depois, num tick de fundo. `POST
+   /v1/jobs/:id/transitions` responde `200` sem esperar por chamada de rede
+   nenhuma — nem a primeira tentativa, nem o timeout de 10 segundos, nem as seis
+   retentativas.
+
+É a mesma disciplina da t142 ("o caminho de escrita nunca espera por webhook"), e
+ela é o que torna a garantia estrutural em vez de defensiva: não há `try/catch`
+protegendo a travessia porque não existe caminho de código do socket até ela.
+
+A `url` e o `secret` são **copiados** para a linha de entrega no momento em que
+ela é enfileirada. Uma versão nova do grafo pode apontar o mesmo gancho para
+outro lugar, e uma entrega em voo termina contra o destino que valia quando ela
+nasceu — nunca contra o que valeria hoje.
+
+Se o trabalho não tem `grafo_versao_id`, se a versão citada não resolve, ou se o
+snapshot dela não tem `hooks`, o resultado é o mesmo: zero entregas, zero erro.
+
+---
+
+## 5. A entrega, e como verificar a assinatura
+
+Cada disparo vira um POST idêntico ao de um webhook registrado:
+
+```
+POST /cartografo HTTP/1.1
+Host: meu-servico.exemplo
+Content-Type: application/json
+X-Cartografo-Assinatura: sha256=8f4c...  (64 caracteres hex)
+
+{"id":131,"tipo":"trabalho.transicao","projeto_id":1,"execucao_id":2,"entidade":{"tipo":"trabalho","id":7},"ator":{"tipo":"sistema","ref":"control-plane"},"ocorrido_em":"2026-08-16T12:00:03.114Z","dados":{"de_no_id":"redigir","para_no_id":"revisar"}}
+```
+
+O corpo é o envelope inteiro do evento que disparou o gancho, byte a byte o
+mesmo objeto que `GET /v1/executions/:id/events` devolve e que o `data:` do
+stream carrega. Não há campo dizendo qual gancho produziu esta entrega: o
+receptor sabe qual é o dele porque cada gancho tem sua própria URL e seu próprio
+segredo.
+
+A receita da assinatura, inteira — a mesma da t142, com uma diferença de chave:
+
+> `X-Cartografo-Assinatura` = `sha256=` + HMAC-SHA256 do **corpo cru**,
+> com o `destination.secret` DESTE GANCHO como chave, em hex minúsculo.
+
+Três detalhes que decidem se a sua verificação funciona:
+
+- **Assine os bytes que chegaram, não o objeto reparseado.** `JSON.parse`
+  seguido de `JSON.stringify` não devolve necessariamente os mesmos bytes, e um
+  byte diferente é um digest diferente. Leia o corpo cru primeiro, verifique,
+  e só então faça o parse.
+- **Compare em tempo constante** (`crypto.timingSafeEqual`), nunca com `===`.
+- **Sem assinatura válida, não confie no corpo.** A URL está escrita num
+  documento de grafo que qualquer cliente da API lê; a assinatura é a única
+  coisa que separa uma entrega do control plane de quem descobriu o endereço.
+
+Em Node, a receita inteira é uma linha — a mesma que o servidor executa:
+
+```javascript
+import { createHmac } from 'node:crypto';
+const assinatura = `sha256=${createHmac('sha256', segredo).update(corpoCru, 'utf8').digest('hex')}`;
+```
+
+O receptor mínimo de zero dependência da
+[§8 de `webhooks-eventos.md`](webhooks-eventos.md) serve aqui sem uma linha de
+diferença: troque a variável do segredo pelo `destination.secret` do gancho.
+
+**Responda rápido.** Qualquer `2xx` encerra a entrega; o servidor não lê o corpo
+da sua resposta. Se o seu processamento é demorado, aceite (`200`), enfileire do
+seu lado e processe depois.
+
+---
+
+## 6. Retentativa, desistência e o evento de falha
+
+A escala é a da t142, degrau por degrau — o mesmo `RETRY_BACKOFF_MS`, para que
+um receptor já escrito não precise de ajuste nenhum:
+
+| Tentativa | Quando |
+|---|---|
+| 1ª | assim que o gancho é enfileirado (até ~1s depois do fato) |
+| 2ª | 10 segundos depois da falha |
+| 3ª | 1 minuto depois |
+| 4ª | 5 minutos depois |
+| 5ª | 30 minutos depois |
+| 6ª | 2 horas depois |
+
+Seis tentativas no total. Contam como falha o `timeout` de 10 segundos, o erro
+de rede e **qualquer** resposta que não seja `2xx` — inclusive `3xx`, que não é
+seguido.
+
+| Estado | Significa |
+|---|---|
+| `entregue` | um `2xx` chegou. `entregue_em` registra quando, e **nada é gravado no log**. |
+| `esgotada` | as seis tentativas falharam. `ultimo_erro` guarda a última, e o control plane grava UM `trabalho.gancho_falhou`. |
+
+**Sucesso é mudo, desistência é evento.** Um gancho não tem assinante
+registrado: ninguém está fazendo polling da fila dele, então uma reação que
+falha para sempre em silêncio é exatamente o que quem escreveu o grafo não
+consegue descobrir. O
+[`trabalho.gancho_falhou`](../../especificacoes/eventos/schemas/trabalho.gancho_falhou.schema.json)
+resolve isso pelos transportes que já existem — ele aparece no stream e nos
+webhooks registrados sem trabalho nenhum a mais:
+
+```json
+{"gancho_id":"avisar-revisao","no_id":"revisar",
+ "url":"https://meu-servico.exemplo/cartografo","ultimo_erro":"HTTP 502"}
+```
+
+Ele é gravado **só no esgotamento**, nunca por tentativa: uma falha transitória
+é retentada e some sozinha, e um evento por tentativa encheria o log de ruído
+que se corrige. E ele é **incidente, não desfecho** — `entidade.id` é o
+trabalho, mas nada na travessia dele muda por causa disso.
+
+Uma entrega `esgotada` não é retentada, por mais tempo que passe, e não há rota
+para reenviar — mesma ausência da t142. A linha não é apagada: "tentei seis
+vezes e desisti" é fato de auditoria.
+
+Um gancho quebrado é problema só dele: as entregas de um lote saem juntas, cada
+uma com seu próprio timeout, e nenhuma falha atrasa a de outro gancho, segura o
+tick ou toca no caminho de escrita.
+
+---
+
+## 7. Validação: o que é recusado, e onde
+
+A validação de FORMA é do [`grafo.schema.json`](../../schema/grafo.schema.json)
+— campo obrigatório faltando, `trigger` fora do vocabulário, `destination.type`
+desconhecido, `url` que não é `http(s)` absoluta.
+
+A validação REFERENCIAL é da passagem **estrutural** do validador de grafo
+(`scripts/validar-grafo.mjs` e o porte em
+`packages/core/src/domain/graph.ts`, mantidos em paridade byte a byte):
+
+| Código | Quando |
+|---|---|
+| `gancho_no_inexistente` | o `node_id` do gancho não é nó do documento |
+| `id_gancho_duplicado` | dois ganchos com o mesmo `id` |
+| `gancho_invalido` | a entrada de `hooks` não é objeto |
+
+Um gancho pendurado **não** é violação de soundness. As quatro regras formais
+(alcançável, termina, aresta com condição, nó com contrato) são propriedades da
+rede de workflow, e uma reação que aponta para lugar nenhum não diz nada sobre
+a rede — é defeito de forma, e sai na lista de `estrutura.erros` do `422`.
+
+---
+
+## 8. O que ainda não existe
+
+- **Destino `local_command`.** Mandar o control plane executar um comando de
+  shell que chegou como DADO de grafo é outra ficha, com portão de
+  revisão/permissão próprio espelhando o da importação de skill (D4). O
+  `destination.type` é enum de um valor só justamente para que a segunda
+  variante seja aditiva. Note a assimetria com o resto do sistema: todo comando
+  que o cartografo roda hoje executa dentro do worktree de uma sessão, sob o
+  runner, e nunca na máquina do control plane.
+- **Outros gatilhos** (`node_exited`, `node_unblocked`, condição customizada).
+- **Reenvio manual** de uma entrega `esgotada`.
+- **Tela para ganchos.** Esta ficha é só control plane; o gancho se lê e se
+  edita no documento de grafo.
+- **Filtro por trabalho ou por execução.** Um gancho reage a um nó, para todo
+  trabalho que passar por ele.

@@ -25,6 +25,7 @@ import { registerSessions } from './routes/sessions.ts';
 import { registerSkills } from './routes/skills.ts';
 import { registerJobs } from './routes/jobs.ts';
 import { registerWebhooks } from './routes/webhooks.ts';
+import { registerHookDispatcher } from './hooks/dispatcher.ts';
 import { registerWebhookDispatcher } from './webhooks/dispatcher.ts';
 
 /**
@@ -91,10 +92,13 @@ export function createApp(options: AppOptions): FastifyInstance {
     { prefix: API_PREFIX },
   );
 
-  // The dispatcher is not a route family: it is a background tick, and its
+  // Neither dispatcher is a route family: they are background ticks, and their
   // `onReady`/`onClose` hooks go on the whole app — outside the versioned scope,
   // so they fire exactly once — for the same reason `registerHealth` does.
+  // They share no state: one sweeps registered subscriptions, the other only
+  // ever reads the deliveries a graph's own hooks already queued (t169).
   registerWebhookDispatcher(app, options.db);
+  registerHookDispatcher(app, options.db);
 
   return app;
 }

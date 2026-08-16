@@ -17,8 +17,8 @@ implementação.
 | Arquivo | O que é |
 |---|---|
 | `schemas/envelope.schema.json` | Os campos que existem em todo evento |
-| `schemas/<tipo>.schema.json` | Um por tipo de evento (17) |
-| `exemplos/log-exemplo.jsonl` | Uma execução ponta a ponta, com os 17 tipos |
+| `schemas/<tipo>.schema.json` | Um por tipo de evento (18) |
+| `exemplos/log-exemplo.jsonl` | Uma execução ponta a ponta, com os 18 tipos |
 | `exemplos/estado-final-esperado.json` | O estado que aquele log reconstrói |
 | `reducers/reconstruir-estado.mjs` | A dobra do log até esse estado |
 | `tests/` | Runner nativo do Node, sem `package.json` e sem dependência |
@@ -39,9 +39,10 @@ acima.
 > `schemas/` (a ficha t98 falava em "16 tipos"; valeu a tabela normativa dela).
 > O intake de duas fases acrescentou o 16º tipo,
 > `trabalho.dependencia_declarada` (t122), e o enforcement de permissão de
-> skill acrescentou o 17º, `sessao.permissao_negada` (t125) — crescer é
-> aditivo, e é isso que a regra de "tipo desconhecido é ignorado" compra. Hoje:
-> **17 tipos + o envelope = 18 arquivos**.
+> skill acrescentou o 17º, `sessao.permissao_negada` (t125), e os ganchos
+> declarados no grafo acrescentaram o 18º, `trabalho.gancho_falhou` (t169) —
+> crescer é aditivo, e é isso que a regra de "tipo desconhecido é ignorado"
+> compra. Hoje: **18 tipos + o envelope = 19 arquivos**.
 
 ## Envelope
 
@@ -111,7 +112,7 @@ Três consequências que atravessam esta ficha inteira:
 
 ## Catálogo
 
-17 tipos, em 5 grupos. "Quem emite" é o `ator.tipo` esperado; os exemplos
+18 tipos, em 5 grupos. "Quem emite" é o `ator.tipo` esperado; os exemplos
 mostram o conteúdo de `dados` e saíram do `log-exemplo.jsonl`.
 
 ### Trabalho
@@ -198,6 +199,37 @@ Declarar a dependência **não bloqueia** o trabalho dependente. A aresta é
 registro; exigir a ordem — bloquear automaticamente, ordenar despacho — é
 decisão de outra ficha, e uma bandeira que ninguém sabe baixar seria pior que
 bandeira nenhuma.
+
+#### `trabalho.gancho_falhou` — [schema](schemas/trabalho.gancho_falhou.schema.json)
+
+Emitido quando a entrega de um **gancho declarado no grafo** (t169) esgota as
+seis tentativas e desiste. Ator: `sistema` (o control plane, que é quem tenta).
+`entidade.id` é o trabalho cuja transição ou bloqueio disparou o gancho.
+
+```json
+{"gancho_id":"avisar-plantao","no_id":"desenvolvimento",
+ "url":"https://plantao.exemplo/cartografo","ultimo_erro":"HTTP 502"}
+```
+
+**É incidente, não desfecho** — mesma leitura de `sessao.permissao_negada`. O
+trabalho não muda de nó, não é bloqueado e não fica sabendo: gancho não
+participa da travessia, e é justamente por isso que "falha de gancho nunca
+trava o viajante" é verdade por construção, e não por um `try/catch` que
+alguém precisa lembrar de manter.
+
+**Por que este tipo existe, se a `entrega_webhook` da t142 nunca precisou de
+um.** Uma assinatura de webhook tem dono: alguém a registrou pela API e pode
+consultar `ultimo_erro` na linha de entrega. Um gancho não tem — ele é uma
+linha do documento de grafo, e ninguém está fazendo polling da fila dele. Sem
+este evento, a reação que quem escreveu o grafo declarou falharia em silêncio
+para sempre. Como ele entra pelos transportes que já existem (stream da t123,
+webhooks da t142), o sinal chega a quem estiver ouvindo sem nenhum trabalho a
+mais — e cliente antigo o ignora, pela regra de "tipo desconhecido é ignorado".
+
+**Só no esgotamento, nunca por tentativa.** Uma falha transitória — o consumidor
+reiniciando, um 502 de dois minutos — é retentada e some sozinha; gravar evento
+a cada uma encheria o log de ruído que se corrige. O sucesso, por simetria, é
+mudo: `status='entregue'` na linha de entrega e mais nada.
 
 ### Sessão
 

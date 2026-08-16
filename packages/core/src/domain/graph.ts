@@ -23,7 +23,9 @@
  *
  * Two checks, deliberately separate:
  *
- * - `validateStructure` — shape and referential integrity;
+ * - `validateStructure` — shape and referential integrity, hooks included since
+ *   t169: a hook whose `node_id` names nothing is a dangling reference like an
+ *   edge's, and a repeated hook id is a repeated name like a node's;
  * - `validateSoundness` — the four formal workflow-net rules.
  *
  * Neither of them throws on a malformed document: the caller needs the whole
@@ -88,6 +90,37 @@ export interface GraphEdge {
   [key: string]: unknown;
 }
 
+/** Where a hook's delivery goes (t169). Today `webhook` and nothing else. */
+export interface GraphHookDestination {
+  type: string;
+  /** Absolute `http:`/`https:` URL the delivery is POSTed to. */
+  url: string;
+  /** HMAC key of the delivery, chosen by whoever wrote the graph. */
+  secret: string;
+  [key: string]: unknown;
+}
+
+/**
+ * A reaction the graph declares for itself (t169).
+ *
+ * It is graph DATA, which is the whole point: the reaction is versioned with
+ * the document and proposable like every other part of it (D2, D15), instead of
+ * living as an out-of-band subscription only an operator with API access can
+ * register. It never participates in the traversal — a hook has no way of
+ * changing where the traveller goes, and a hook that fails is an incident, never
+ * an outcome.
+ */
+export interface GraphHook {
+  id: string;
+  /** `node_entered` | `node_blocked`; the closed vocabulary lives in the schema. */
+  trigger: string;
+  /** The node whose entry or block fires this hook. */
+  node_id: string;
+  destination: GraphHookDestination;
+  description?: string;
+  [key: string]: unknown;
+}
+
 /** Graph document (the same format as `schema/grafo.schema.json`). */
 export interface GraphDocument {
   problem_class: string;
@@ -97,6 +130,8 @@ export interface GraphDocument {
   edges: GraphEdge[];
   initial_node: string;
   final_nodes: string[];
+  /** Declared reactions (t169). Absent = none, and that is most documents. */
+  hooks?: GraphHook[];
   [key: string]: unknown;
 }
 
@@ -148,6 +183,7 @@ export const REQUIRED_DOCUMENT_FIELDS = [
 ];
 export const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
 export const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
+export const REQUIRED_HOOK_FIELDS = ['id', 'trigger', 'node_id', 'destination'];
 
 function isObject(value: unknown): value is PlainObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -192,6 +228,9 @@ export function validateStructure(doc: unknown): StructureReport {
   }
   if (doc.final_nodes !== undefined && !Array.isArray(doc.final_nodes)) {
     note('campo_invalido', '"final_nodes" has to be a list', 'final_nodes');
+  }
+  if (doc.hooks !== undefined && !Array.isArray(doc.hooks)) {
+    note('campo_invalido', '"hooks" has to be a list', 'hooks');
   }
 
   const nodes: unknown[] = Array.isArray(doc.nodes) ? doc.nodes : [];
@@ -308,6 +347,68 @@ export function validateStructure(doc: unknown): StructureReport {
     }
     if (!knownIds.has(final)) {
       note('no_final_inexistente', `final_nodes references a node that does not exist: "${final}"`, final);
+    }
+  });
+
+  // Hooks (t169). Referential integrity, exactly like an edge's endpoints: a
+  // reaction that names a node the document does not have would be a reaction
+  // that can never fire, and a document that declares one is wrong now rather
+  // than mysteriously silent later. Uniqueness of the hook id follows the node
+  // id's rule for the same reason — it is the name the delivery row carries,
+  // and two hooks answering to one name make the log ambiguous.
+  const hooks: unknown[] = Array.isArray(doc.hooks) ? doc.hooks : [];
+  const knownHookIds = new Set<string>();
+  const alreadyReportedHookIds = new Set<string>();
+
+  hooks.forEach((hook, index) => {
+    if (!isObject(hook)) {
+      note('gancho_invalido', `the hook at position ${index} has to be an object`, index);
+      return;
+    }
+    for (const field of REQUIRED_HOOK_FIELDS) {
+      if (hook[field] === undefined || hook[field] === null) {
+        note(
+          'campo_obrigatorio_ausente',
+          `required field missing from hook "${hook.id ?? `#${index}`}": "${field}"`,
+          hook.id ?? index,
+        );
+      }
+    }
+
+    if (!isFilledText(hook.id)) {
+      if (hook.id !== undefined && hook.id !== null) {
+        note(
+          'id_invalido',
+          `the id of the hook at position ${index} has to be a filled text: ${JSON.stringify(hook.id)}`,
+          index,
+        );
+      }
+    } else if (knownHookIds.has(hook.id)) {
+      if (!alreadyReportedHookIds.has(hook.id)) {
+        note('id_gancho_duplicado', `duplicate hook id in the document: "${hook.id}"`, hook.id);
+        alreadyReportedHookIds.add(hook.id);
+      }
+    } else {
+      knownHookIds.add(hook.id);
+    }
+
+    const target = hook.node_id;
+    if (!isFilledText(target)) {
+      if (target !== undefined && target !== null) {
+        note(
+          'id_invalido',
+          `hook #${index} needs a filled text in "node_id": ${JSON.stringify(target)}`,
+          hook.id ?? index,
+        );
+      }
+      return;
+    }
+    if (!knownIds.has(target)) {
+      note(
+        'gancho_no_inexistente',
+        `hook #${index} references a node that does not exist: "${target}"`,
+        hook.id ?? index,
+      );
     }
   });
 

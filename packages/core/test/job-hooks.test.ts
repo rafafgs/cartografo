@@ -43,7 +43,7 @@ import { MIGRATIONS_DIR, PACKAGE_ROOT, requireArtifacts, type TestHook } from '.
 
 /** Artifacts this ticket creates; every test requires the ones it exercises. */
 const T169_ARTIFACTS = Object.freeze({
-  migration: 'migrations/0014_gancho.sql',
+  migration: 'migrations/0015_gancho.sql',
   repository: 'src/repositories/hooks.ts',
   dispatcher: 'src/hooks/dispatcher.ts',
 });

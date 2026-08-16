@@ -5,7 +5,9 @@
  *
  * - `validarEstrutura(doc)` — shape and referential integrity: required keys
  *   present, node ids unique, every edge and every id in
- *   `initial_node`/`final_nodes` pointing at a node that exists.
+ *   `initial_node`/`final_nodes` pointing at a node that exists, and — since
+ *   t169 — every hook id unique with its `node_id` pointing at a node that
+ *   exists too.
  * - `validarSoundness(doc)` — the four formal workflow-net rules (van der
  *   Aalst) the graph validation gate applies: reachable, terminates,
  *   edge with condition, node with contract.
@@ -71,6 +73,7 @@ const REQUIRED_DOC_FIELDS = [
 ];
 const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
 const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
+const REQUIRED_HOOK_FIELDS = ['id', 'trigger', 'node_id', 'destination'];
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isFilledText = (value) => typeof value === 'string' && value.trim() !== '';
@@ -105,6 +108,9 @@ export function validarEstrutura(doc) {
   }
   if (doc.final_nodes !== undefined && !Array.isArray(doc.final_nodes)) {
     annotate('campo_invalido', '"final_nodes" has to be a list', 'final_nodes');
+  }
+  if (doc.hooks !== undefined && !Array.isArray(doc.hooks)) {
+    annotate('campo_invalido', '"hooks" has to be a list', 'hooks');
   }
 
   const nodes = Array.isArray(doc.nodes) ? doc.nodes : [];
@@ -217,6 +223,68 @@ export function validarEstrutura(doc) {
     }
     if (!knownIds.has(finalId)) {
       annotate('no_final_inexistente', `final_nodes references a node that does not exist: "${finalId}"`, finalId);
+    }
+  });
+
+  // Hooks (t169). Referential integrity, exactly like an edge's endpoints: a
+  // reaction that names a node the document does not have would be a reaction
+  // that can never fire, and a document that declares one is wrong now rather
+  // than mysteriously silent later. Uniqueness of the hook id follows the node
+  // id's rule for the same reason — it is the name the delivery row carries,
+  // and two hooks answering to one name make the log ambiguous.
+  const hooks = Array.isArray(doc.hooks) ? doc.hooks : [];
+  const knownHookIds = new Set();
+  const reportedHookIds = new Set();
+
+  hooks.forEach((hook, index) => {
+    if (!isObject(hook)) {
+      annotate('gancho_invalido', `the hook at position ${index} has to be an object`, index);
+      return;
+    }
+    for (const field of REQUIRED_HOOK_FIELDS) {
+      if (hook[field] === undefined || hook[field] === null) {
+        annotate(
+          'campo_obrigatorio_ausente',
+          `required field missing from hook "${hook.id ?? `#${index}`}": "${field}"`,
+          hook.id ?? index,
+        );
+      }
+    }
+
+    if (!isFilledText(hook.id)) {
+      if (hook.id !== undefined && hook.id !== null) {
+        annotate(
+          'id_invalido',
+          `the id of the hook at position ${index} has to be a filled text: ${JSON.stringify(hook.id)}`,
+          index,
+        );
+      }
+    } else if (knownHookIds.has(hook.id)) {
+      if (!reportedHookIds.has(hook.id)) {
+        annotate('id_gancho_duplicado', `duplicate hook id in the document: "${hook.id}"`, hook.id);
+        reportedHookIds.add(hook.id);
+      }
+    } else {
+      knownHookIds.add(hook.id);
+    }
+
+    const target = hook.node_id;
+    if (!isFilledText(target)) {
+      if (target !== undefined && target !== null) {
+        annotate(
+          'id_invalido',
+          `hook #${index} needs a filled text in "node_id": ${JSON.stringify(target)}`,
+          hook.id ?? index,
+        );
+      }
+      return;
+    }
+    if (!knownIds.has(target)) {
+      annotate(
+        'gancho_no_inexistente',
+        `hook #${index} references a node that does not exist: "${target}"`,
+        hook.id ?? index,
+      );
     }
   });
 

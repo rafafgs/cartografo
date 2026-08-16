@@ -24,7 +24,9 @@
  *   `row.no_id`, `{ execucao_id: id }`, `evidencia.tipo`. That is the data
  *   format, not code.
  * - **Backticked spans inside comments**, which is how this codebase quotes a
- *   frozen field, flag or value while writing English prose around it.
+ *   frozen field, flag or value while writing English prose around it — and the
+ *   multi-line form of the same thing, a fenced block, which is how `src/cli.ts`
+ *   shows a whole invocation.
  *
  * What is left after masking is a real identifier position — a variable, a
  * parameter, a function, a type, a const, an import binding — and from D18
@@ -321,10 +323,17 @@ export function maskLiteralsAndCommentQuotes(source: string): string {
     const start = index;
     const stop = source.indexOf(end, index + 2);
     const finish = stop === -1 ? source.length : stop + end.length;
-    // Inside a comment only the backticked spans are masked: the English prose
-    // around them still has to be scanned.
+    // Inside a comment only the quoted spans are masked: the English prose around
+    // them still has to be scanned. Fenced blocks go first, because they contain
+    // the backticks the second rule looks for — and a fence is the same quoting
+    // as a backticked span, only multi-line. `src/cli.ts` documents the command
+    // with one, and what is inside it is an invocation a person types, frozen by
+    // D20 exactly like the flags quoted inline around it.
     out.push(
-      source.slice(start, finish).replace(/`[^`\n]*`/g, (span) => `\`${blank(span.slice(1, -1))}\``),
+      source
+        .slice(start, finish)
+        .replace(/```[\s\S]*?```/g, (span) => `\`\`\`${blank(span.slice(3, -3))}\`\`\``)
+        .replace(/`[^`\n]*`/g, (span) => `\`${blank(span.slice(1, -1))}\``),
     );
     index = finish;
   };
@@ -549,6 +558,8 @@ test('t211 — the sweep does NOT bite on the frozen exceptions', () => {
     'const half = total / 1000;',
     // a backticked frozen name inside English prose
     '/** The `evidencia` / `metrica_esperada` free JSON and the `--teto-tokens` flag stay as they are. */',
+    // the multi-line form of the same quoting: a whole invocation, fenced
+    '/**\n * ```\n * topografo-custo avaliar --url http://127.0.0.1:4317 --execucao 7 --teto-tokens 200000\n * ```\n */',
   ];
   for (const source of allowed) {
     assert.deepEqual(hitsInSource(source), [], `the sweep flagged a frozen exception: ${source}`);

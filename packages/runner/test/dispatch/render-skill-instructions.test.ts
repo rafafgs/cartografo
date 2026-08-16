@@ -13,6 +13,12 @@
  * - the permissions the session runs under are the ones the manifest declared,
  *   so `permissions` stops being a document nobody reads.
  *
+ * The AT12–AT18 block at the bottom is t204, and it closes the other half of the
+ * same sentence: `{{input.<caminho>}}` used to reach the model as literal text,
+ * silently. Now it resolves against the node's input — or the render refuses,
+ * before any session exists, which is the fail-closed rule the manifest format
+ * decided long before there was an engine to obey it.
+ *
  * English per D18 — the manifest's own KEYS too, since the 2026-08-15 amendment
  * (t178). The rendered CONTENT stays Portuguese, like every other prompt in this
  * package: it stands in for the manifest's free text, which is written in
@@ -20,7 +26,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -138,7 +144,7 @@ test('AT6 — the rendered text carries the manifest, the node contract and the 
   const { renderSkillInstructions, ESCALATION_PROTOCOL } = await loadModule();
   const { read, routes } = await makeReader(registeredSkill());
 
-  const rendered = await renderSkillInstructions(resolvedNode(SINGLE_EDGE), read);
+  const rendered = await renderSkillInstructions(resolvedNode(SINGLE_EDGE), read, {});
 
   assert.ok(rendered !== null, 'a node with a registered, correctly pinned skill renders');
   assert.deepEqual(routes, [`/v1/skills/${SKILL_ID}`], 'the registry is keyed by the skill id');
@@ -178,7 +184,7 @@ test('AT7 — an unregistered skill refuses to render at all', async () => {
   const { read } = await makeReader(null);
 
   await assert.rejects(
-    async () => renderSkillInstructions(resolvedNode(SINGLE_EDGE), read),
+    async () => renderSkillInstructions(resolvedNode(SINGLE_EDGE), read, {}),
     (error: unknown) => {
       assert.ok(
         error instanceof SkillNotRegisteredError,
@@ -200,7 +206,7 @@ test('AT8 — a hash that does not match the registered one refuses to render', 
   const declared = `sha256:${'b'.repeat(64)}`;
 
   await assert.rejects(
-    async () => renderSkillInstructions(resolvedNode(SINGLE_EDGE, declared), read),
+    async () => renderSkillInstructions(resolvedNode(SINGLE_EDGE, declared), read, {}),
     (error: unknown) => {
       assert.ok(
         error instanceof SkillPinMismatchError,
@@ -222,14 +228,17 @@ test('AT9 — the routing protocol is appended only when the node has more than 
   const single = await renderSkillInstructions(
     resolvedNode(SINGLE_EDGE),
     (await makeReader(registeredSkill())).read,
+    {},
   );
   const none = await renderSkillInstructions(
     resolvedNode([]),
     (await makeReader(registeredSkill())).read,
+    {},
   );
   const gate = await renderSkillInstructions(
     resolvedNode(TWO_EDGES),
     (await makeReader(registeredSkill())).read,
+    {},
   );
 
   assert.ok(single !== null && none !== null && gate !== null);
@@ -253,6 +262,7 @@ test('AT10 — the manifest permissions become the session permissions', async (
   const gate = await renderSkillInstructions(
     resolvedNode(TWO_EDGES),
     (await makeReader(registeredSkill())).read,
+    {},
   );
   assert.ok(gate !== null);
   assert.deepEqual(gate.permissions, {
@@ -275,6 +285,7 @@ test('AT10 — the manifest permissions become the session permissions', async (
         }),
       )
     ).read,
+    {},
   );
   assert.ok(closed !== null);
   assert.deepEqual(closed.permissions, {
@@ -302,6 +313,7 @@ async function renderPolicy(policy: string | undefined): Promise<string> {
   const rendered = await renderSkillInstructions(
     nodeWithPolicy(policy),
     (await makeReader(registeredSkill())).read,
+    {},
   );
   assert.ok(rendered !== null);
   return rendered.instructions;
@@ -370,9 +382,335 @@ test('AT11 — a node that declares no skill_ref renders nothing, instead of inv
   delete node.node.skill_ref;
 
   assert.equal(
-    await renderSkillInstructions(node, read),
+    await renderSkillInstructions(node, read, {}),
     null,
     'nothing is pinned, so there is nothing to refuse and nothing to render',
   );
   assert.deepEqual(routes, [], 'and the registry was never asked');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t204 — the placeholders resolve, or no session opens at all                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Renders the standard node against a manifest carrying `instructions`.
+ *
+ * The pin is untouched on purpose: what these cases are about is the body, and
+ * the two refusals that come before it already have their own tests above.
+ */
+async function renderBody(
+  instructions: string,
+  input: Record<string, unknown>,
+): Promise<string> {
+  const { renderSkillInstructions } = await loadModule();
+  const rendered = await renderSkillInstructions(
+    resolvedNode(SINGLE_EDGE),
+    (await makeReader(registeredSkill({ instructions }))).read,
+    input,
+  );
+  assert.ok(rendered !== null);
+  return rendered.instructions;
+}
+
+/** The one refusal this ficha adds, loaded and checked for existence first. */
+async function loadUnresolvedError(): Promise<typeof RenderModule.UnresolvedPlaceholderError> {
+  const module = await loadModule();
+  assert.equal(
+    typeof module.UnresolvedPlaceholderError,
+    'function',
+    'artifact does not exist yet: UnresolvedPlaceholderError',
+  );
+  return module.UnresolvedPlaceholderError;
+}
+
+/** Renders a body that cannot resolve, and hands back the refusal it produced. */
+async function refusalOf(
+  instructions: string,
+  input: Record<string, unknown>,
+): Promise<RenderModule.UnresolvedPlaceholderError> {
+  const { renderSkillInstructions } = await loadModule();
+  const UnresolvedPlaceholderError = await loadUnresolvedError();
+
+  let refusal: RenderModule.UnresolvedPlaceholderError | null = null;
+  await assert.rejects(
+    async () =>
+      renderSkillInstructions(
+        resolvedNode(SINGLE_EDGE),
+        (await makeReader(registeredSkill({ instructions }))).read,
+        input,
+      ),
+    (error: unknown) => {
+      assert.ok(
+        error instanceof UnresolvedPlaceholderError,
+        `expected UnresolvedPlaceholderError, got: ${String(error)}`,
+      );
+      refusal = error;
+      return true;
+    },
+  );
+
+  assert.ok(refusal !== null);
+  return refusal;
+}
+
+test('AT12 — a path that resolves to a string substitutes the string verbatim', async () => {
+  // The value carries `<`, `&` and quotes on purpose: FR3 decides there is no
+  // escaping, because what is being injected is a manifest a human reviewed at
+  // the import gate (D4). A renderer that escaped here would be silently
+  // rewriting the reviewed text.
+  const title = 'Navelar Logística (NVLR3) — "reprecificação" & <venda do braço rodoviário>';
+  const text = await renderBody(
+    '**Tese:** {{input.tese_triada.titulo}} ({{input.tese_triada.ativo}})',
+    { tese_triada: { titulo: title, ativo: 'NVLR3' } },
+  );
+
+  assert.ok(
+    text.includes(`**Tese:** ${title} (NVLR3)`),
+    'the string goes in exactly as it came, with no escaping and no quoting',
+  );
+  assert.ok(!text.includes('{{'), 'and nothing that looks like a placeholder survives');
+});
+
+test('AT13 — a path that resolves to any other JSON value substitutes its compact JSON', async () => {
+  const scope = [
+    'termos da venda do braço rodoviário: preço, forma de pagamento e passivos que ficam',
+    'contrato portuário: prazo, cláusula de reajuste e concentração de cliente',
+  ];
+
+  const text = await renderBody(
+    [
+      'Frentes: {{input.tese_triada.escopo_de_pesquisa}}',
+      'Posições: {{input.carteira.posicoes_abertas}}',
+      'Descartada: {{input.tese_triada.descartada}}',
+      'Nota: {{input.tese_triada.nota}}',
+      'Carteira: {{input.carteira}}',
+    ].join('\n'),
+    {
+      tese_triada: { escopo_de_pesquisa: scope, descartada: false, nota: null },
+      carteira: { posicoes_abertas: 7, exposicao_atual_pct: 62.5 },
+    },
+  );
+
+  // `JSON.stringify` with no spacing argument IS the compact form, so comparing
+  // against it is what proves no whitespace was added on the way in.
+  assert.ok(text.includes(`Frentes: ${JSON.stringify(scope)}`), text);
+  assert.ok(text.includes('Posições: 7'));
+  assert.ok(text.includes('Descartada: false'));
+  assert.ok(text.includes('Nota: null'), 'null is a value that resolved, never a path that did not');
+  assert.ok(text.includes('Carteira: {"posicoes_abertas":7,"exposicao_atual_pct":62.5}'), text);
+});
+
+test('AT14 — a body with no `{{input.` token renders byte-for-byte what it always rendered', async () => {
+  const literal = [
+    '# Conferir uma etapa',
+    '',
+    'Julgue com evidência sua, nunca com o relato de quem produziu.',
+    '',
+    'Um `{{outro.formato}}` de chave dupla não é entrada de nó: passa reto.',
+  ].join('\n');
+
+  const empty = await renderBody(literal, {});
+  const rich = await renderBody(literal, {
+    tese_triada: { titulo: 'nada que este corpo cite' },
+    outro: { formato: 'nem isto' },
+  });
+
+  assert.ok(empty.includes(literal), 'the manifest body travels into the session unchanged');
+  assert.equal(
+    empty,
+    rich,
+    'with nothing to interpolate, what the input carries cannot change a single byte',
+  );
+});
+
+test('AT15 — a path absent from the input refuses the render instead of leaking the token', async () => {
+  const refusal = await refusalOf('**Tese:** {{input.tese_triada.titulo}}', { tese_triada: {} });
+
+  assert.equal(refusal.nodeId, 'conferir');
+  assert.equal(refusal.skillId, SKILL_ID);
+  assert.deepEqual(refusal.paths, ['tese_triada.titulo']);
+  assert.ok(refusal.message.includes('conferir'), refusal.message);
+  assert.ok(refusal.message.includes(SKILL_ID), refusal.message);
+  assert.ok(refusal.message.includes('tese_triada.titulo'), refusal.message);
+});
+
+test('AT16 — every unresolved path is listed on the one refusal, deduplicated and in order', async () => {
+  const refusal = await refusalOf(
+    [
+      '**Tese:** {{input.tese_triada.titulo}} ({{input.tese_triada.ativo}})',
+      '',
+      'Frentes: {{input.escopo}}',
+      '',
+      'Repetida de propósito: {{input.tese_triada.titulo}}',
+    ].join('\n'),
+    { tese_triada: { ativo: 'NVLR3' } },
+  );
+
+  assert.deepEqual(
+    refusal.paths,
+    ['tese_triada.titulo', 'escopo'],
+    'first-occurrence order, one entry per path, and the resolvable one is not among them',
+  );
+});
+
+test('AT17 — a path that walks through a value that is not an object is unresolved', async () => {
+  const throughText = await refusalOf('**Tese:** {{input.tese_triada.titulo}}', {
+    tese_triada: 'a tese como texto, e não como objeto',
+  });
+  assert.deepEqual(throughText.paths, ['tese_triada.titulo']);
+
+  const throughList = await refusalOf('**Primeira frente:** {{input.escopo.0}}', {
+    escopo: ['termos da venda do braço rodoviário'],
+  });
+  assert.deepEqual(
+    throughList.paths,
+    ['escopo.0'],
+    'an array is not a plain object: indexing into one is not a path this format has',
+  );
+});
+
+/* --- AT18: the real factory manifests, against the real crossing fixture --- */
+
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+const BETS_SKILLS_DIR = path.join(REPO_ROOT, 'grafos-de-fabrica', 'bets-assimetricas', 'skills');
+const BETS_FIXTURE = path.join(REPO_ROOT, 'tests', 'fixtures', 'tese-exemplo-bets-assimetricas.json');
+
+/** One step of the crossing the t116 fixture hand-authored. */
+interface CrossingStep {
+  no: string;
+  entrada: Record<string, unknown>;
+}
+
+/** The six nodes the fixture models, each with the skill its graph node pins. */
+const BETS_NODES: ReadonlyArray<readonly [string, string]> = Object.freeze([
+  ['triagem', 'triar-tese'],
+  ['coleta-fundamentos', 'coletar-fundamentos'],
+  ['analise-assimetria', 'analisar-assimetria'],
+  ['red-team', 'derrubar-tese'],
+  ['dimensionamento-risco', 'dimensionar-risco'],
+  ['decisao', 'escalar-decisao'],
+]);
+
+/** A committed factory manifest, read from the bundle it ships in. */
+function factoryManifest(skillId: string): Record<string, unknown> {
+  const file = path.join(BETS_SKILLS_DIR, `${skillId}.json`);
+  assert.ok(existsSync(file), `artifact does not exist: ${file}`);
+  return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+}
+
+/** How many `{{input.` occurrences a manifest's body carries. */
+function placeholderCount(manifest: Record<string, unknown>): number {
+  return [...String(manifest.instructions).matchAll(/\{\{input\./g)].length;
+}
+
+/** A node pinning one factory manifest, with the manifest's own contract on it. */
+function factoryNode(nodeId: string, manifest: Record<string, unknown>): ResolveModule.ResolvedNode {
+  return {
+    versionId: 'sha256:bets-assimetricas',
+    node: {
+      id: nodeId,
+      role: 'investidor',
+      node_type: String(manifest.role) === 'gate' ? 'gate' : 'work',
+      description: String(manifest.description),
+      skill_ref: {
+        id: String(manifest.id),
+        version: String(manifest.version),
+        hash: String(manifest.hash),
+      },
+      contract: {
+        input_schema: manifest.input,
+        output_schema: manifest.output,
+        checks: [],
+      },
+    },
+    edges: [],
+  };
+}
+
+test('AT18 — the bets-assimetricas manifests resolve against the crossing fixture', async (parent) => {
+  const { renderSkillInstructions } = await loadModule();
+  const fixture = JSON.parse(readFileSync(BETS_FIXTURE, 'utf8')) as { travessia: CrossingStep[] };
+
+  let covered = 0;
+
+  for (const [nodeId, skillId] of BETS_NODES) {
+    await parent.test(`${nodeId} → ${skillId}`, async () => {
+      const step = fixture.travessia.find((entry) => entry.no === nodeId);
+      assert.ok(step !== undefined, `the fixture has no step for the node "${nodeId}"`);
+
+      const manifest = factoryManifest(skillId);
+      const occurrences = placeholderCount(manifest);
+      assert.ok(occurrences > 0, `"${skillId}" carries no placeholder: this case would prove nothing`);
+      covered += occurrences;
+
+      const rendered = await renderSkillInstructions(
+        factoryNode(nodeId, manifest),
+        (await makeReader(manifest)).read,
+        step.entrada,
+      );
+
+      assert.ok(rendered !== null);
+      assert.ok(
+        !rendered.instructions.includes('{{input.'),
+        `"${skillId}" reached the session with an unresolved placeholder`,
+      );
+    });
+  }
+
+  await parent.test('the six of them account for 22 of the bundle\'s 26 occurrences', () => {
+    assert.equal(covered, 22);
+    assert.equal(placeholderCount(factoryManifest('registrar-travessia')), 4);
+  });
+
+  // The seventh node is not in the fixture, and the reason is worth pinning:
+  // two of its four placeholders are fields the WIRING produces (which nodes
+  // ran, and when the crossing was recorded), and the t116 fixture models the
+  // contract chaining between nodes, not the runner around them.
+  await parent.test('registro-monitoramento → registrar-travessia, against a literal input', async () => {
+    const manifest = factoryManifest('registrar-travessia');
+    const input: Record<string, unknown> = {
+      tese_triada: {
+        titulo: 'Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário',
+        ativo: 'NVLR3',
+      },
+      nos_executados: [
+        'triagem',
+        'coleta-fundamentos',
+        'analise-assimetria',
+        'red-team',
+        'dimensionamento-risco',
+        'decisao',
+      ],
+      data_de_registro: '2026-08-16',
+    };
+
+    const rendered = await renderSkillInstructions(
+      factoryNode('registro-monitoramento', manifest),
+      (await makeReader(manifest)).read,
+      input,
+    );
+
+    assert.ok(rendered !== null);
+    assert.ok(!rendered.instructions.includes('{{input.'));
+    assert.ok(rendered.instructions.includes(JSON.stringify(input.nos_executados)));
+    assert.ok(rendered.instructions.includes('2026-08-16'));
+
+    // And the claim that made it a separate case: strip the two wiring fields
+    // and it is exactly those two that no thesis fixture could have supplied.
+    const UnresolvedPlaceholderError = await loadUnresolvedError();
+    await assert.rejects(
+      async () =>
+        renderSkillInstructions(
+          factoryNode('registro-monitoramento', manifest),
+          (await makeReader(manifest)).read,
+          { tese_triada: input.tese_triada },
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof UnresolvedPlaceholderError, String(error));
+        assert.deepEqual(error.paths, ['nos_executados', 'data_de_registro']);
+        return true;
+      },
+    );
+  });
 });

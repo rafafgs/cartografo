@@ -4027,3 +4027,274 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
     },
   );
 });
+
+// --- t204: the placeholders resolve, or no session opens ---------------------
+
+/** The bundle whose manifests actually carry `{{input.<caminho>}}` placeholders. */
+const BETS_SKILLS_DIR = path.join(
+  REPO_ROOT,
+  "grafos-de-fabrica",
+  "bets-assimetricas",
+  "skills",
+);
+
+/** The crossing fixture of t116, whose steps are hand-authored node inputs. */
+const BETS_FIXTURE = path.join(
+  REPO_ROOT,
+  "tests",
+  "fixtures",
+  "tese-exemplo-bets-assimetricas.json",
+);
+
+/** The thesis title the fixture carries, and the string a resolved prompt shows. */
+const THESIS_TITLE = "Navelar Logística";
+
+/**
+ * The `coleta-fundamentos` input the t116 fixture hand-authored.
+ *
+ * Read from the committed fixture instead of typed here: what these two cases
+ * prove is that a REAL manifest resolves against a REAL input, and an input
+ * retyped in the test would be a shape nobody else has to keep working.
+ */
+function fundamentalsInput(): Record<string, unknown> {
+  const fixture = JSON.parse(readFileSync(BETS_FIXTURE, "utf8")) as {
+    travessia: { no: string; entrada: Record<string, unknown> }[];
+  };
+  const step = fixture.travessia.find(
+    (entry) => entry.no === "coleta-fundamentos",
+  );
+  assert.ok(step !== undefined, "the fixture has no coleta-fundamentos step");
+  return step.entrada;
+}
+
+/** One committed factory manifest of the bets bundle. */
+function factoryManifest(skillId: string): Record<string, unknown> {
+  const file = path.join(BETS_SKILLS_DIR, `${skillId}.json`);
+  assert.ok(existsSync(file), `artifact does not exist: ${file}`);
+  return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+}
+
+/**
+ * The traversal fixture, with one node repinned to a manifest that has
+ * placeholders.
+ *
+ * `publicar` is the node that gets repinned because it is the graph's final
+ * node: a dispatch that lands there opens a session and stops, with no
+ * transition to assert around: the subject here is the prompt, not the routing.
+ */
+function placeholderGraph(
+  className: string,
+  manifest: Record<string, unknown>,
+): Record<string, unknown> {
+  const document = traversalGraph(className);
+  const nodes = document.nodes as Array<Record<string, unknown>>;
+  return {
+    ...document,
+    nodes: nodes.map((node) =>
+      node.id === "publicar"
+        ? {
+            ...node,
+            skill_ref: {
+              id: manifest.id,
+              version: manifest.version,
+              hash: manifest.hash,
+            },
+          }
+        : node,
+    ),
+  };
+}
+
+test("t204 — a skill's placeholders resolve into the session, or nothing opens", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  // ONE boot for the two subtests, the same economy the t141 block above
+  // documents: a control plane per test is what made the conformance kit's C4
+  // miss its settle window.
+  const manifest = factoryManifest("coletar-fundamentos");
+  await api(baseUrl, "POST", "/v1/skills", manifest, 201, token);
+
+  await parent.test(
+    "AT19 — a resolved input reaches the session, with no token left behind",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t204-resolvido-"),
+      );
+      const record = path.join(workDir, "despacho-com-entrada.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        placeholderGraph("travessia-t204-at19", manifest),
+      );
+
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha num nó cuja skill tem placeholder",
+          no_entrada_id: "publicar",
+          execucao_id: 2041,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const inputs: string[] = [];
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        resolveInput: (dispatched, resolved) => {
+          inputs.push(`${dispatched.id}:${resolved.node.id}`);
+          return fundamentalsInput();
+        },
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      })(job.id);
+
+      assert.deepEqual(
+        inputs,
+        [`${job.id}:publicar`],
+        "the input is assembled once per dispatch, for the node being dispatched",
+      );
+
+      // The argv is the channel: `buildCommand` puts `instructions` on it, so
+      // what the process received IS what the session was told.
+      const argv = (
+        JSON.parse(readFileSync(record, "utf8")) as FakeRecord
+      ).argv.join("\n");
+
+      assert.ok(
+        argv.includes(THESIS_TITLE),
+        "the resolved thesis title has to be in the text the session was given",
+      );
+      assert.ok(
+        !argv.includes("{{"),
+        "and not one placeholder may survive into a prompt",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT20 — with nothing to resolve against, the dispatch refuses before any session",
+    async (t) => {
+      const { createClaudeCodeDispatch, UnresolvedPlaceholderError } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      assert.equal(
+        typeof UnresolvedPlaceholderError,
+        "function",
+        "artifact does not exist yet: UnresolvedPlaceholderError",
+      );
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t204-fecha-"),
+      );
+      const record = path.join(workDir, "nunca-despachado.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        placeholderGraph("travessia-t204-at20", manifest),
+      );
+
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          titulo: "ficha cuja entrada ninguém monta",
+          no_entrada_id: "publicar",
+          execucao_id: 2042,
+          grafo_versao_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const calls: { method: string; route: string }[] = [];
+      const doFetch: typeof fetch = async (input, init) => {
+        calls.push({
+          method: init?.method ?? "GET",
+          route: String(input).slice(baseUrl.length),
+        });
+        return fetch(input, init);
+      };
+
+      // No `resolveInput`: production wiring, which resolves `{}` — the honest
+      // state until the node-input-assembly ficha exists.
+      const dispatch = createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      });
+
+      await assert.rejects(
+        async () => dispatch(job.id),
+        (error: unknown) => {
+          assert.ok(
+            error instanceof UnresolvedPlaceholderError,
+            `expected UnresolvedPlaceholderError, got: ${String(error)}`,
+          );
+          assert.equal(error.nodeId, "publicar");
+          assert.equal(error.skillId, manifest.id);
+          assert.ok(error.paths.length > 0);
+          return true;
+        },
+      );
+
+      assert.deepEqual(
+        calls.filter(
+          (call) => call.method === "POST" && call.route === "/v1/sessions",
+        ),
+        [],
+        "POST /v1/sessions must never be reached for a placeholder that does not resolve",
+      );
+      assert.ok(
+        !existsSync(record),
+        "and no engine process may have been spawned",
+      );
+
+      const sessions = await api<{ sessoes: Session[] }>(
+        baseUrl,
+        "GET",
+        "/v1/sessions?execucao_id=2042",
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(sessions.sessoes.length, 0);
+
+      const blocks = calls.filter(
+        (call) => call.method === "POST" && call.route.endsWith("/blocks"),
+      );
+      assert.deepEqual(
+        blocks,
+        [],
+        "the refusal propagates through the controller's finally, like the two pin errors: no block of its own",
+      );
+    },
+  );
+});

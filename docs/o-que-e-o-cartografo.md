@@ -29,6 +29,16 @@ descreve o problema; o sintetizador propõe um mapa usando as skills
 registradas; você edita; o sistema valida formalmente; o mapa entra
 registrado e versionado.
 
+**Editar o mapa você mesmo.** Não é só aprovar o que o avaliador propõe: na
+tela dá para acrescentar uma etapa, remover outra, mudar quem faz o quê e como
+aquilo se verifica, e ligar ou cortar os caminhos entre as etapas. O que você
+salva não vira mapa direto — vira uma proposta, que passa pela mesma
+verificação formal de sempre e só entra se o mapa resultante ainda se sustentar
+(toda etapa alcançável, toda travessia com fim, todo caminho rotulado, toda
+etapa com contrato). Quando não se sustenta, a tela diz qual etapa ou qual
+caminho quebrou qual regra, e nada é gravado. Trocar a identidade de uma etapa
+que já existe não dá: para isso, remova e recrie.
+
 **O trabalho entra e atravessa sozinho.** Você faz um pedido; o intake
 propõe a quebra em tickets e você confirma. Os tickets
 atravessam o mapa: agentes de CLI executam cada etapa com instruções e

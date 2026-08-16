@@ -236,6 +236,122 @@ button.link {
   color: var(--muted);
 }
 
+/*
+ * The graph configuration screen (t170).
+ *
+ * Same two-column grid as the inbox — `main`, `.column` and `.controls` are
+ * shared, and so are `.head`, `.action`, `.muted` and `.error`. What is added
+ * here is the anatomy of one card (a node or an edge) and the three places the
+ * page answers in: the problem list, the result, and the read-only block of the
+ * fields no client can change on an existing node.
+ */
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #fff;
+}
+
+/* A node that does not exist in the loaded snapshot yet. */
+.card.fresh {
+  border-style: dashed;
+}
+
+.card .title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+.field {
+  margin: 0.4rem 0 0;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.field-input {
+  width: 100%;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+}
+
+/* The picker sits in a flex row, so it does not take the full width a field does. */
+.picker {
+  min-width: 16rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+}
+
+textarea.field-input {
+  min-height: 7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+}
+
+/* `id`, `node_type` and `engine`: shown, never offered for editing. */
+.frozen-block {
+  margin: 0.5rem 0;
+  padding: 0.4rem 0.5rem;
+  border-left: 3px solid var(--line);
+  background: var(--bg);
+}
+
+.frozen-block .field {
+  margin: 0.1rem 0;
+  font-size: 0.85rem;
+}
+
+.frozen-block .field-label {
+  display: inline;
+}
+
+.field-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+.problems {
+  margin: 0.5rem 0;
+}
+
+.problem {
+  margin: 0.2rem 0;
+  max-width: 80ch;
+}
+
+.result {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+.result .ok {
+  margin: 0;
+  color: var(--add);
+  word-break: break-all;
+}
+
+.version .label {
+  color: var(--muted);
+}
+
 pre {
   margin: 0;
   padding: 0.5rem;

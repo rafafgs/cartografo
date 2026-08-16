@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cartografo — configuração de grafo</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/quadro">quadro</a>
+        <a href="/execucoes">execuções</a>
+        <a href="/perguntas">perguntas</a>
+        <a href="/runners">runners</a>
+        <a href="/">propostas</a>
+      </nav>
+      <h1>Configuração de grafo</h1>
+      <p class="lead">
+        Edite os nós e as arestas de um grafo-base. Salvar não escreve no grafo: escreve uma
+        proposta, aprova e aplica — as mesmas três chamadas que qualquer outro cliente da API
+        faria, com o mesmo portão de soundness recusando o que quebraria a execução.
+      </p>
+      <p class="controls">
+        <label class="field-label" for="graph-picker">grafo-base</label>
+        <select id="graph-picker" class="picker"></select>
+        <button id="load" type="button">Carregar</button>
+        <button id="save" type="button">Salvar</button>
+        <span id="notice" class="notice" role="status"></span>
+      </p>
+      <p id="base" class="version"></p>
+      <div id="problems" class="problems" role="alert"></div>
+      <div id="result" class="result"></div>
+    </header>
+
+    <main>
+      <section class="column">
+        <h2>Nós</h2>
+        <p class="controls"><button id="add-node" type="button">Adicionar nó</button></p>
+        <ul id="node-list" class="cards"></ul>
+      </section>
+
+      <section class="column">
+        <h2>Arestas</h2>
+        <p class="controls"><button id="add-edge" type="button">Adicionar aresta</button></p>
+        <ul id="edge-list" class="cards"></ul>
+      </section>
+    </main>
+
+    <script type="module">
+      import { mount } from './graph-editor.js';
+
+      // The module takes the document and fetch as arguments instead of reaching
+      // for the globals, which is what lets the page be driven from Node — the
+      // same shape `index.html` uses for the inbox.
+      mount(document, (input, init) => fetch(input, init));
+    </script>
+  </body>
+</html>

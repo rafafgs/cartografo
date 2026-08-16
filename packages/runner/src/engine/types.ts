@@ -103,6 +103,22 @@ export interface SessionSpec {
   readonly resumeFrom?: string;
 
   /**
+   * Which model of the engine runs this session, when the node pinned one.
+   *
+   * Absent means the ENGINE'S OWN default: no model flag is assembled at all,
+   * and the argv is byte-identical to what it was before this field existed.
+   * That is the same discipline `silenceSeconds` and `permissions` follow, and
+   * it is the only honest default — this layer has no way to know which models
+   * a given installation has access to, and inventing one here would put a
+   * choice nobody made into the telemetry.
+   *
+   * An unknown or mistyped identifier is refused by the engine itself, at
+   * session start, as an ordinary `SessionStartError` or a failed session. The
+   * catalog `listModels()` publishes is advisory discovery, never a gate.
+   */
+  readonly model?: string;
+
+  /**
    * Opaque additions to the engine process's environment. Deliberately
    * untyped from this layer's point of view: what the keys mean is the
    * engine's business.
@@ -268,6 +284,39 @@ export interface SessionListener {
   ): void;
 }
 
+/**
+ * One model an engine offers.
+ *
+ * `id` is the identifier that goes after the engine's model flag — the string
+ * a node's `model` has to match — and nothing else: not a display name, not a
+ * family alias the CLI happens to resolve. `label` is what a person reads, when
+ * the adapter has one to give.
+ *
+ * `origin` is the field that keeps the catalog honest. `cli` means the binary
+ * was asked and answered; `catalog` means the adapter is reciting a list it
+ * carries. Collapsing the two would make "these are the models" a claim nobody
+ * can weigh, which is the same demotion `CliProbe.authenticated` already took —
+ * and both adapters answer `catalog` today, because neither CLI exposes a
+ * listing surface (measured, not assumed).
+ */
+export interface EngineModel {
+  readonly id: string;
+  readonly label?: string;
+  readonly origin: 'cli' | 'catalog';
+}
+
+/**
+ * Everything an engine says it can run, at one instant.
+ *
+ * `resolvedAt` is not decoration: a static catalog and a CLI answer age
+ * differently, and a consumer with no timestamp cannot tell a fresh report from
+ * one a runner left behind before it died.
+ */
+export interface ModelCatalog {
+  readonly models: readonly EngineModel[];
+  readonly resolvedAt: string;
+}
+
 /** Result of the CLI preflight, consumed by the install wizard. */
 export interface CliProbe {
   /** The binary exists and answers. */
@@ -322,6 +371,21 @@ export interface EngineAdapter {
 
   /** Preflight without spending quota. */
   verifyCli(): Promise<CliProbe>;
+
+  /**
+   * Which models this engine can run, as far as the adapter can tell.
+   *
+   * The METHOD is optional, not just its fields, and that is the compatibility
+   * claim: a third-party adapter written before this existed keeps compiling,
+   * which is what "growth of a published format is additive" has to mean once
+   * the interface is frozen at v1. A consumer checks for the method before
+   * calling it and skips the adapter that does not have one.
+   *
+   * Discovery, never enforcement: nothing validates a node's declared model
+   * against this list, and an engine whose catalog is stale still refuses a
+   * bad identifier itself, where the truth actually lives.
+   */
+  listModels?(): Promise<ModelCatalog>;
 }
 
 export class EngineError extends Error {}

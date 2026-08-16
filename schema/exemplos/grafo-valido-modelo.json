@@ -1,0 +1,95 @@
+{
+  "problem_class": "prova-selecao-de-modelo",
+  "lineage": {
+    "type": "base"
+  },
+  "metadata": {
+    "name": "Modelo por nó numa travessia",
+    "description": "Dois nós numa aresta: o de trabalho não diz nada sobre modelo e cai no default do próprio engine, e o portão declara engine \"codex\" e um modelo menor. O menor documento que mostra o caso de uso da t166 — pedir um modelo mais barato no portão sem mexer no nó que produz.",
+    "schema_version": "1.0.0",
+    "created_at": "2026-08-16",
+    "source": "porte manual (prova de seleção de modelo por nó da t166)"
+  },
+  "nodes": [
+    {
+      "id": "redigir",
+      "role": "redator",
+      "node_type": "work",
+      "description": "Escreve o texto. Não declara modelo: quem escolhe é o engine, com o default dele.",
+      "skill_ref": {
+        "id": "cartografo/redigir-nota",
+        "version": "1.0.0",
+        "hash": "sha256:2745f9d87a5b35e77dc5a73b8db71039cdfdae5a4c647f2f4122c1f3fb384b18"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["tema"],
+          "properties": {
+            "tema": { "type": "string", "minLength": 1 }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["texto"],
+          "properties": {
+            "texto": { "type": "string", "minLength": 1 }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s nota.md",
+            "description": "A nota existe e não está vazia."
+          }
+        ]
+      }
+    },
+    {
+      "id": "conferir",
+      "role": "revisor",
+      "node_type": "gate",
+      "engine": "codex",
+      "model": "gpt-5.6-luna",
+      "description": "Confere o texto. Declara engine e modelo: conferência é trabalho barato, e não precisa do modelo grande que redigiu.",
+      "skill_ref": {
+        "id": "cartografo/revisar-nota",
+        "version": "1.0.0",
+        "hash": "sha256:2df09e19d5917210efc074a4d3c9d5f4c8e20e29e479f524afdcbbc9859b3e55"
+      },
+      "contract": {
+        "input_schema": {
+          "type": "object",
+          "required": ["texto"],
+          "properties": {
+            "texto": { "type": "string" }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": ["resultado"],
+          "properties": {
+            "resultado": { "type": "string", "minLength": 1 }
+          }
+        },
+        "checks": [
+          {
+            "type": "deterministic",
+            "command": "test -s parecer.md",
+            "description": "O parecer existe e não está vazio."
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "redigir",
+      "to": "conferir",
+      "condition": "sempre",
+      "description": "Saída única: o texto redigido sempre segue para conferência."
+    }
+  ],
+  "initial_node": "redigir",
+  "final_nodes": ["conferir"]
+}

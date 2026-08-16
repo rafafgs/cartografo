@@ -57,6 +57,13 @@ export interface GraphNode {
    * unregistered engine is the dispatch, not a closed enum.
    */
   engine?: unknown;
+  /**
+   * The model declared for this node (t166, FR4). Optional by design, and
+   * `unknown` for exactly the reason `engine` is: the schema leaves it free
+   * text, and what a snapshot carries is whatever was valid when it was frozen
+   * — this layer reads it, it does not vouch for it.
+   */
+  model?: unknown;
   /** The skill this node runs. Required by the schema; optional here so a
    * malformed snapshot degrades instead of throwing a type error. */
   skill_ref?: SkillPin;

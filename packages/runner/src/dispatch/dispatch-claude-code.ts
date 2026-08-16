@@ -527,6 +527,30 @@ export function createClaudeCodeDispatch(
   };
 
   /**
+   * Which model of that engine runs the node this work is sitting on (t166, FR5).
+   *
+   * The mirror of {@link resolveEngine}, with the one difference that matters:
+   * there is no `DEFAULT_MODEL` to fall back to, and there must not be. The
+   * runner has no way of knowing which models a given installation can reach,
+   * so the honest absence is `undefined` — no flag assembled, the engine picks
+   * its own default, and the telemetry records that nobody chose. A constant
+   * here would put a decision into every session that no graph ever made.
+   *
+   * The blank-string guard is the same one `resolveEngine` has, and it earns
+   * its place for a different reason: a `model: "  "` that survived into a
+   * snapshot would otherwise reach the CLI as an empty `--model`, and the
+   * session would die on a flag nobody typed.
+   *
+   * @param resolved The node this dispatch resolved, or `null`.
+   * @returns The model identifier to pin, or `undefined` for the engine's own.
+   */
+  const resolveModel = (resolved: ResolvedNode | null): string | undefined => {
+    const declared = resolved?.node.model;
+    if (typeof declared !== 'string' || declared.trim() === '') return undefined;
+    return declared;
+  };
+
+  /**
    * Moves the work along the edge the traversal chose (FR10).
    *
    * The one write of this whole ficha that PROPAGATES on failure, and the
@@ -731,12 +755,18 @@ export function createClaudeCodeDispatch(
         questions.filter((question) => question.trabalho_id === jobId),
       );
 
+      // Read from the SAME resolved node the engine came from, and spread only
+      // when there is one: a `model: undefined` key present in the object would
+      // still be a key, and `buildCommand` reads absence, not falsiness.
+      const model = resolveModel(resolved);
+
       const spec: SessionSpec = {
         workingDir: worktree.path,
         instructions,
         prompt,
         timeoutSeconds,
         silenceSeconds,
+        ...(model === undefined ? {} : { model }),
         ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
         ...(permissions === undefined ? {} : { permissions }),
       };

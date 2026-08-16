@@ -10,15 +10,24 @@
  *   versão". Exige base amostral (`tierMinimoNos`): com dois nós medidos,
  *   chamar um deles de outlier é ruído, não sinal.
  *
- * **Por que toda candidata é advisória.** Nem o documento de grafo
- * (`schema/grafo.schema.json`, nó com `additionalProperties: false`) nem o
- * manifesto de skill têm hoje campo de custo ou de tier de modelo, e abrir
- * qualquer um dos dois está fora desta ficha por critério de aceite — o ponto a
- * provar é que um segundo topógrafo cabe na API que já existe, sem alterar
- * formato compartilhado. Sobra a única mutação que o vocabulário atual permite
- * sobre um nó sem inventar campo: `alterar_campo_no` em `description`, com a
- * recomendação em texto. Os números de verdade vão em `evidencia` e
- * `metrica_esperada`, que são JSON livre por design (D15).
+ * **Por que toda candidata é advisória.** Quando esta ficha rodou, nem o
+ * documento de grafo (`schema/grafo.schema.json`, nó com
+ * `additionalProperties: false`) nem o manifesto de skill tinham campo de custo
+ * ou de tier de modelo, e abrir qualquer um dos dois estava fora dela por
+ * critério de aceite — o ponto a provar era que um segundo topógrafo cabe na
+ * API que já existe, sem alterar formato compartilhado. Sobrava a única mutação
+ * que o vocabulário permitia sobre um nó sem inventar campo:
+ * `alterar_campo_no` em `description`, com a recomendação em texto. Os números
+ * de verdade vão em `evidencia` e `metrica_esperada`, que são JSON livre por
+ * design (D15).
+ *
+ * **A metade que a t166 destravou.** `no.model` existe desde então, e é
+ * proposável (`CHANGEABLE_FIELDS`), então a recomendação "use um modelo menor
+ * neste portão" já PODE virar `alterar_campo_no` em `model` em vez de prosa em
+ * `description`. Trocar a operação que esta lente emite é ficha própria — ela
+ * precisa saber qual modelo propor, e isso quer o catálogo de
+ * `GET /v1/engines` e uma noção de tier que ninguém escreveu ainda. O que muda
+ * hoje é só isto: o campo deixou de ser o obstáculo.
  *
  * A consequência honesta disso é que aplicar uma proposta desta lente não muda
  * custo nenhum sozinha: ela informa quem lê o nó. Enforcement mecânico espera

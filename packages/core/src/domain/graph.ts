@@ -51,6 +51,17 @@ export interface GraphNode {
   role: string;
   node_type: string;
   description?: string;
+  /** Which engine runs this node (t141). Absent = the runner's default. */
+  engine?: string;
+  /**
+   * Which model of that engine runs this node (t166). Absent = the engine's
+   * own default, and no model flag is assembled at all.
+   *
+   * Named here even though the open drawer below would already carry it: the
+   * field is PROPOSABLE (`CHANGEABLE_FIELDS`), and a field a proposal can swap
+   * is a field this package has an opinion about.
+   */
+  model?: string;
   skill_ref: unknown;
   contract: unknown;
   [key: string]: unknown;

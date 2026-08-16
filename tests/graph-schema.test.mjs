@@ -92,7 +92,10 @@ test('AT1 — every fixture in schema/exemplos validates against the schema', as
   const schema = readJson(SCHEMA_PATH);
   const names = readdirSync(EXAMPLES_DIR).filter((name) => name.endsWith('.json')).sort();
 
-  assert.equal(names.length, 7, `expected the seven t96 fixtures, found ${names.length}`);
+  // Seven from t96, plus the `model` fixture t166 added. The count is asserted
+  // instead of merely iterated so that a fixture dropped by accident shows up
+  // here, and not as a silently smaller loop.
+  assert.equal(names.length, 8, `expected the eight committed fixtures, found ${names.length}`);
 
   // Two of the counterexamples break SHAPE as well as soundness, and they do it
   // on purpose: an edge whose condition is the empty string trips `minLength`,
@@ -291,5 +294,57 @@ test('AT8 — validarEstrutura rejects a duplicate id and an edge pointing at a 
   assert.ok(
     danglingError.mensagem.includes('no_que_nao_existe'),
     'the message has to name the missing node',
+  );
+});
+
+/*
+ * t166 — `model` as node data.
+ *
+ * The fixture is the whole point of the assertion: `model` is a free-text
+ * OPTIONAL field, so a schema that never learned about it would still validate
+ * a document carrying one — `additionalProperties: false` on `$defs.node` is
+ * what turns "unknown key" into a refusal, and it is what this test leans on.
+ * A node WITHOUT the field rides along in the same fixture, because "absence
+ * has a name" is the other half of the claim.
+ */
+test('t166 AT — the model fixture is shape-clean, sound, and exercises both presence and absence', async () => {
+  const { validarEstrutura, validarSoundness } = await loadValidator();
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+  const doc = readExample('grafo-valido-modelo.json');
+
+  assert.deepEqual(
+    validateAgainstSchema(doc, readJson(SCHEMA_PATH)).map((error) => error.pointer),
+    [],
+    'the fixture has to validate against the schema unchanged',
+  );
+  assert.deepEqual(validarEstrutura(doc).erros, []);
+  assert.deepEqual(validarSoundness(doc).violacoes, []);
+
+  const declaring = doc.nodes.filter((node) => node.model !== undefined);
+  assert.ok(declaring.length >= 1, 'at least one node has to declare a model');
+  for (const node of declaring) {
+    assert.equal(typeof node.model, 'string');
+    assert.ok(node.model.trim() !== '', `node "${node.id}" declares an empty model`);
+  }
+  assert.ok(
+    doc.nodes.some((node) => node.model === undefined),
+    'a node WITHOUT model has to ride along: absence is the default, and it stays valid',
+  );
+});
+
+test('t166 AT — $defs.node declares model as an optional free-text string, sibling of engine', () => {
+  const node = readJson(SCHEMA_PATH).$defs.node;
+
+  assert.ok(Object.hasOwn(node.properties, 'model'), '$defs.node has to declare "model"');
+  assert.equal(node.properties.model.type, 'string');
+  assert.ok(
+    !Object.hasOwn(node.properties.model, 'enum'),
+    'model is free text, for the same reason engine is: no closed enum to edit per model release',
+  );
+  assert.ok(
+    !node.required.includes('model'),
+    'model is optional: absent means the engine\'s own default',
   );
 });

@@ -38,9 +38,11 @@
  * an operator credential (and the clock-injected assembly in the tests, which
  * has no gate at all) behaves exactly as it did before.
  *
- * `trabalho_id` is an opaque integer here: the `trabalho` table belongs to t102
- * and this route does not read it. Whoever filters eligibility is the
- * controller, through `GET /v1/jobs`.
+ * `trabalho_id` is an opaque integer here: these four verbs never look the job
+ * up, and the column carries no foreign key (`migrations/0004_runner_lease.sql`).
+ * A lease is about who holds WHAT, not about whether the what is eligible —
+ * that judgement belongs to the controller, which filters through
+ * `GET /v1/jobs` before it ever asks for one.
  *
  * The request/response field names and the status/reason values stay in
  * Portuguese: they mirror the untouched migration columns and are the wire shape

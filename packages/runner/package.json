@@ -33,11 +33,13 @@
     "synthesize": "node --import tsx src/synthesizer/cli.mjs",
     "spike:traversal": "node --import tsx scripts/spike-graph-traversal.mjs"
   },
+  "dependencies": {
+    "tsx": "^4.23.12"
+  },
   "devDependencies": {
     "@types/node": "^24.13.3",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "tsx": "^4.23.12",
     "typescript": "^6.0.3"
   }
 }

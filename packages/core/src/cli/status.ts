@@ -1,14 +1,23 @@
 /**
  * `cartografo status` — what the control plane knows today (t108, FR5).
  *
- * The most important field of this report is the one it does NOT assert:
- * `jobs` and `pendingInputRequests` come out as `null`, never `0`. The `sessao`
- * and `input_request` tables do not exist yet (`migrations/0001_init.sql`,
- * `docs/spec/entidades-versionamento.md` §7), and a `0` there would say "there
- * is no queue" when the honest answer is "this is not tracked yet" — which is
- * exactly the difference that would make someone trust an empty dashboard. The
- * field shows up, with the right value, and becomes a number once the entities
- * exist.
+ * Four fields, and each one is a count of something that exists:
+ *
+ * - `server` — whether the control plane answered `/health` at all;
+ * - `projects` — the classes registered, from `GET /v1/classes`;
+ * - `jobs` — how many jobs the queue holds, from `GET /v1/jobs`;
+ * - `pendingInputRequests` — how many questions still wait for a human, from
+ *   `GET /v1/input-requests?status=pendente`.
+ *
+ * The last two used to be the literal `null`, with a comment claiming the
+ * entities did not exist yet. Both halves of that were wrong (t199, FR1): the
+ * table is `pergunta`, not `input_request`, and `trabalho`/`sessao`/`pergunta`
+ * have existed since `migrations/0003_trabalho_sessao_evento_pergunta.sql`,
+ * delivered by t102. What survives of the old care is the distinction the whole
+ * report is built on: `null` means "could not be queried" and `0` means "queried,
+ * and empty". A server that is down answers `null` on everything, because
+ * claiming an empty queue nobody looked at is exactly how a dashboard earns
+ * trust it has not got.
  *
  * `--json` prints a single line, with the keys in a fixed order: it is machine
  * output, and the acceptance test compares it byte for byte, for the same reason
@@ -34,8 +43,8 @@ export interface StatusProject {
 export interface StatusReport {
   server: 'ok' | 'error' | 'unavailable';
   projects: StatusProject[] | null;
-  jobs: null;
-  pendingInputRequests: null;
+  jobs: number | null;
+  pendingInputRequests: number | null;
 }
 
 /** Options of `status`. */
@@ -51,7 +60,31 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Builds the report by querying `/health` and `/v1/classes`.
+ * Counts the entries of one list route, or answers `null` when it cannot.
+ *
+ * Same try/catch shape as the `/v1/classes` call below, and for the same reason:
+ * a `NetworkError` is a state this report knows how to say, and anything else is
+ * a bug that must not be swallowed into a plausible-looking zero.
+ *
+ * @param url Full URL of the list route.
+ * @param field Name of the array in the response body.
+ * @returns How many entries came back, or `null` when the route did not answer.
+ */
+async function countFrom(url: string, field: string): Promise<number | null> {
+  try {
+    const response = await requestJson(url);
+    const body = isObject(response.body) ? response.body : {};
+    const entries = body[field];
+    return response.status === 200 && Array.isArray(entries) ? entries.length : null;
+  } catch (error) {
+    if (!(error instanceof NetworkError)) throw error;
+    return null;
+  }
+}
+
+/**
+ * Builds the report by querying `/health`, `/v1/classes`, `/v1/jobs` and
+ * `/v1/input-requests?status=pendente`.
  *
  * A server that is down is not an exception here: it is a state the report knows
  * how to say. That is why `NetworkError` is caught instead of propagated —
@@ -94,7 +127,13 @@ export async function collectStatus(
     if (!(error instanceof NetworkError)) throw error;
   }
 
-  return { report: { server, projects, jobs: null, pendingInputRequests: null }, db };
+  const jobs = await countFrom(`${url}/v1/jobs`, 'trabalhos');
+  const pendingInputRequests = await countFrom(
+    `${url}/v1/input-requests?status=pendente`,
+    'perguntas',
+  );
+
+  return { report: { server, projects, jobs, pendingInputRequests }, db };
 }
 
 /** Formats the report for a human to read. */
@@ -114,12 +153,8 @@ function asTable(report: StatusReport, db: string | null, url: string): string {
     }
   }
 
-  lines.push('jobs: not tracked yet');
-  lines.push('pendingInputRequests: not tracked yet');
-  lines.push('');
-  lines.push(
-    '(jobs and pending input requests are not zero: the session/input_request entities land in a later ticket)',
-  );
+  lines.push(`jobs: ${report.jobs ?? 'not queried'}`);
+  lines.push(`pendingInputRequests: ${report.pendingInputRequests ?? 'not queried'}`);
 
   return `${lines.join('\n')}\n`;
 }

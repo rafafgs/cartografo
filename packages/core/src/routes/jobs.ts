@@ -26,7 +26,29 @@ import {
   transitionJob,
   type Job,
 } from '../repositories/job.ts';
-import { withValidation, routeId, notFound } from './common.ts';
+import {
+  withValidation,
+  routeId,
+  notFound,
+  ERROR_RESPONSE_SCHEMA,
+  OPEN_OBJECT_SCHEMA,
+} from './common.ts';
+
+/**
+ * Contract of `POST /jobs` in the public document (t171, FR4).
+ *
+ * The two statuses are the ones this handler already answers, and nothing here
+ * changes either of them: the body schema is deliberately open so ajv refuses
+ * nothing `createJob` accepts today, and `withValidation` stays the only judge
+ * of a body — it is what turns a `ValidationError` into the `400` below.
+ */
+const CREATE_JOB_SCHEMA = {
+  body: OPEN_OBJECT_SCHEMA,
+  response: {
+    201: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
 
 /**
  * Registers the job routes in the `/v1` scope.
@@ -35,7 +57,7 @@ import { withValidation, routeId, notFound } from './common.ts';
  * @param db Open database.
  */
 export function registerJobs(app: FastifyInstance, db: Database): void {
-  app.post('/jobs', async (request, reply) =>
+  app.post('/jobs', { schema: CREATE_JOB_SCHEMA }, async (request, reply) =>
     withValidation(reply, () => {
       const job = createJob(db, (request.body ?? {}) as Record<string, unknown>);
       reply.code(201);

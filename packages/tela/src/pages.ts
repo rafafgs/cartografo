@@ -113,6 +113,7 @@ function layout(title: string, body: string): string {
     <a href="/perguntas">perguntas</a>
     <a href="/runners">runners</a>
     <a href="/">propostas</a>
+    <a href="/graph-editor.html">grafo</a>
   </nav>
 </header>
 ${body}

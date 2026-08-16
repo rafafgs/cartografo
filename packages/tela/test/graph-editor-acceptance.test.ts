@@ -257,10 +257,14 @@ test('AC1 — the page produces the same version the API would, through the same
 
   // FR5: these three, in this order, and no other route. The page has no
   // shortcut into the core, and this is where that stops being a promise.
+  //
+  // The version id is percent-encoded because it carries a `sha256:` prefix and
+  // the page escapes every id it puts in a path — an id it read from the API is
+  // not a path fragment it gets to trust.
   assert.deepEqual(log.map(shapeOf), [
     'GET /v1/classes',
     `GET /v1/graphs/${registered.grafo.id}`,
-    `GET /v1/graph-versions/${registered.grafo.versao_corrente_id ?? ''}`,
+    `GET /v1/graph-versions/${encodeURIComponent(registered.grafo.versao_corrente_id ?? '')}`,
     'POST /v1/proposals',
     'POST /v1/proposals/:id/approve',
     'POST /v1/proposals/:id/apply',

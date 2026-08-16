@@ -19,6 +19,14 @@
  * Portuguese by FR8 (t127). The code around them is English.
  */
 
+// The one import this mirror allows itself, and only because the alternative is
+// worse: `isScalarMap` is the SAME predicate the intake validator and the
+// transition gate apply to `campos` (t168), and a second copy of "what a map of
+// scalars is" would be a rule that could drift between the log and the check
+// that reads it. `domain/` is pure — no database, no clock — so nothing about
+// this direction costs the owner of the connection anything.
+import { isScalarMap } from '../domain/custom-fields.ts';
+
 /** Possible subjects of an event (`envelope.schema.json`). */
 export type EntityType = 'trabalho' | 'sessao' | 'pergunta' | 'lease' | 'grafo_versao';
 
@@ -99,7 +107,7 @@ const ENVELOPE_FIELDS = [
 /** How a field of `dados` is checked. */
 interface FieldRule {
   /** Expected shape of the value. */
-  shape: 'string' | 'integer' | 'boolean' | 'string-list' | 'usage';
+  shape: 'string' | 'integer' | 'boolean' | 'string-list' | 'usage' | 'scalar-map';
   /** Is absent/null accepted? */
   required: boolean;
   /** Closed set of values, when the schema declares an `enum`. */
@@ -150,6 +158,11 @@ const RULES: Record<string, TypeRule> = {
       // refines is the one that produces the real ones out of the raw request.
       corpo: optional('string'),
       criterios_de_aceite: optional('string-list'),
+      // The fields the CLASS declares in its own graph document (t168). The
+      // keys are open on purpose: what may appear here is `custom_fields` of
+      // the class's version, and freezing a list in this mirror would mean a
+      // release of the control plane per problem class.
+      campos: optional('scalar-map'),
     },
   },
   'trabalho.transicao': {
@@ -345,6 +358,18 @@ function validateField(fieldPath: string, rule: FieldRule, value: unknown, error
 
     case 'usage':
       validateUsage(fieldPath, value, errors);
+      return;
+
+    case 'scalar-map':
+      // The opposite of `usage`, and that is why it is a shape of its own: there
+      // the four keys are a closed contract, here the keys belong to the class's
+      // graph document and only the VALUES are this mirror's business. The
+      // non-empty rule that `string` carries does not apply to them either — a
+      // field name cannot be blank, but `""` is a legitimate answer somebody
+      // typed into a field.
+      if (!isScalarMap(value)) {
+        errors.push(`${fieldPath} has to be an object of string, number or boolean values`);
+      }
       return;
   }
 }

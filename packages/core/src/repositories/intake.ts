@@ -269,6 +269,12 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
         titulo: item.titulo,
         corpo: item.corpo,
         criterios_de_aceite: item.criterios_de_aceite,
+        // The class's declared fields, filled in at intake (t168). They ride
+        // straight through: `validateItems` already judged their shape, and
+        // whether the class demands one is the transition gate's question, not
+        // the confirmation's — a ticket may perfectly well be born on the entry
+        // node with a field the node it later leaves will demand.
+        campos: item.campos,
         no_entrada_id: data.no_inicial,
         projeto_id: draft.projeto_id,
         execucao_id: draft.execucao_id,

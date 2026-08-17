@@ -286,6 +286,21 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   arrumação: uma sessão que não sabe escalar nunca escala, e sem essa
   composição o ciclo inteiro descrito aqui teria sumido em silêncio justamente
   para os trabalhos que a `t161` passou a dirigir sozinha.
+  **E ele renderiza POR ÚLTIMO, o que é medido e não estilo (`t261`).** Da
+  `t161` até a primeira travessia real do grafo de bets (plantão, 2026-08-17)
+  esse parágrafo ABRIA o system prompt, e nessa travessia todas as sessões
+  voltaram recusadas pelo próprio `claude --print`: `stop_reason: "refusal"`,
+  `stop_details.category: "reasoning_extraction"`, zero token de saída, 5/5,
+  antes de o modelo ler o nó. O bisect isolou a causa na POSIÇÃO e em mais
+  nada — o mesmo prompt sem essas linhas chega em `end_turn`, as mesmas linhas
+  movidas para o fim chegam em `end_turn`, e uma reescrita mais suave mantida
+  no topo continua sendo recusada. O que o classificador de salvaguarda da
+  Anthropic morde é um template JSON cercado ABRINDO um system prompt. Quem
+  mexer nessa ordem de novo está transformando toda sessão despachada com
+  grafo em recusa: o texto abre com o cabeçalho do nó e fecha com este
+  parágrafo, e é assim que `DEFAULT_INSTRUCTIONS` (o caso sem grafo) sempre
+  compôs — ele nunca foi implicado pelo bisect por já colocar a constante no
+  fim.
 - **Pergunta levantada pela fiação, não pela sessão.** Ainda na `t161`, um nó
   com duas ou mais saídas cuja sessão termina sem nomear nenhuma delas — sem
   bloco, bloco malformado, ou um `resultado` que não casa com aresta alguma —

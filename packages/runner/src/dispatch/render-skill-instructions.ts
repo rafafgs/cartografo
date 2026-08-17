@@ -58,11 +58,16 @@
  *    own projection of what the job and the nodes before it produced
  *    (`packages/core/src/domain/context.ts`). A path that projection does not
  *    carry still refuses loudly, which is what the rule is for.
- * 4. **The text and the permissions are built from what came back**, closing
- *    with the paragraph that tells the session how to report its result
+ * 4. **The text and the permissions are built from what came back**, with the
+ *    paragraph that tells the session how to report its result
  *    (`result-protocol.ts`) whenever this node declares an `output_schema` —
  *    gate or not, since t259. A node that is never told how to report is a node
  *    whose successor has nothing to read.
+ *
+ *    What CLOSES the text is the escalation paragraph, and since t261 that
+ *    position is measured rather than chosen: it used to open the text, and a
+ *    fenced JSON template opening a system prompt is refused outright by
+ *    Anthropic's safeguard classifier. See {@link render}.
  *
  * English per D18 — the manifest's own KEYS too, since the 2026-08-15
  * amendment (t178). The rendered CONTENT stays Portuguese, like every other
@@ -431,10 +436,6 @@ function render(resolved: ResolvedNode, skill: RegisteredSkill, body: string): s
   const contract = node.contract ?? {};
 
   const parts = [
-    escalationProtocol(resolved),
-    '',
-    '---',
-    '',
     `# Nó \`${node.id}\` — skill \`${skill.id}\` v${skill.version}`,
     '',
     `Papel do nó: \`${node.role ?? 'não declarado'}\`. Tipo: \`${node.node_type ?? 'não declarado'}\`.`,
@@ -470,6 +471,22 @@ function render(resolved: ResolvedNode, skill: RegisteredSkill, body: string): s
   if (hasOutputSchema(contract.output_schema)) {
     parts.push('', '---', '', ...resultProtocol(edges, resolveEscalationPolicy(resolved) !== 'never'));
   }
+
+  // LAST, and measured (t261). This paragraph opened the text from t161 until
+  // the first real traversal of the bets graph, when every claude-code session
+  // on it came back `stop_reason: "refusal"` with
+  // `stop_details.category: "reasoning_extraction"` — 5/5, zero output tokens,
+  // before the model ever read the node. The plantão's bisection isolated it to
+  // POSITION and to nothing else: the same prompt minus these lines reaches
+  // `end_turn`, the same lines moved down here reach `end_turn`, and a softer
+  // REWORDING left at the top still refuses. What the safeguard classifier
+  // bites on is a fenced JSON answer template OPENING a system prompt.
+  //
+  // So the order below is a constraint, not a layout preference: whoever moves
+  // this back up is turning every session on this renderer into a refusal, and
+  // the test that pins it (`render-skill-instructions.test.ts`, t261) is what
+  // says so out loud. `docs/spec/escalacao-humana.md` §8 carries the finding.
+  parts.push('', '---', '', escalationProtocol(resolved));
 
   return parts.join('\n');
 }

@@ -359,9 +359,9 @@ export async function advance(
   const { edges } = resolved;
 
   // Nothing to do: a node with no way out is a final node by the graph's own
-  // `termina` soundness rule, and the work has arrived. What marks it as
-  // finished is `concluido`, derived by the control plane from this very
-  // position (t152) — the runner records no arrival of its own.
+  // `termina` rule, and there is nowhere to move the work to. What marks it
+  // finished is `concluido`, derived by the control plane (t152) — and since
+  // t262 that is not arrival: a final node with a skill needs its own report.
   if (edges.length === 0) return;
 
   // Deterministic by construction: one way out is taken whatever the label

@@ -24,6 +24,7 @@ import { requireValidData, ValidationError } from '../db/event-validation.ts';
 import { validateAgainstJsonSchema } from '../domain/manifest.ts';
 import { isObject } from '../util/is-object.ts';
 import { getVersion } from './graphs.ts';
+import { announceFinishedExecution } from './job.ts';
 import { getSkill } from './skill.ts';
 import {
   RUNNER_ACTOR,
@@ -651,6 +652,24 @@ export function finishSession(
       occurred_at: timestamp,
       data,
     });
+
+    // The third moment a round can end (t262, FR4). Since a final node that
+    // pins a skill stops being `concluido` on arrival, the LAST thing that
+    // happens in an ordinary traversal is this very closure — a final node has
+    // no outgoing edge, so no transition follows it and `transitionJob`'s own
+    // announcement can never fire. Without this call `GET /v1/executions`
+    // would report `finished_at: null` forever for every real run of both
+    // factory bundles.
+    //
+    // Unconditional, exactly like the two callers in `job.ts`: what decides is
+    // `announceFinishedExecution`'s own three guards — no round, no jobs, not
+    // every job arrived, or a lease still held — so an ordinary session closing
+    // on an intermediate node costs one no-op. What it still cannot see is the
+    // lease-release ordering the function's own header documents (t264): the
+    // runner releases AFTER reporting, so a round finished by a dispatched
+    // session is typically announced only when something else moves. That gap
+    // is inherited here as-is (FR7), not closed and not worked around.
+    announceFinishedExecution(db, row.execucao_id, projectId, timestamp);
 
     return toSession(readRow(db, id) as SessionRow);
   });

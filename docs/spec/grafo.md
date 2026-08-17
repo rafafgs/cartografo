@@ -427,6 +427,41 @@ porque um grafo pode terminar de mais de um jeito (aprovado e arquivado são
 ambos fins legítimos). Um nó final não precisa ser folha topológica — precisa
 apenas ser um ponto onde a travessia pode parar.
 
+### Chegar ao nó final não é ter terminado (`t262`)
+
+**Nó final é o nó de onde não se sai — não é o nó que não faz nada.** Um nó
+final é nó como qualquer outro (§2): tem `skill_ref`, tem contrato, e roda. O
+que ele não tem é aresta de saída.
+
+Daí a regra de conclusão, que o control plane deriva a cada leitura e nunca
+guarda:
+
+- **Nó final que pina uma skill** — o caso de todo grafo registrado, porque o
+  schema exige `skill_ref` em todo nó (§6, `node_with_contract`) — só encerra a
+  travessia quando a sessão daquele nó fecha com `status: "completed"` e um
+  `output` que o `output` da skill pinada aceita. Até lá o trabalho continua
+  candidato a despacho como qualquer outro. Chegar não conclui.
+- **Nó final sem `skill_ref` nenhum** encerra na chegada. É ramo defensivo, não
+  forma suportada de documento: nenhum grafo que passa por `POST /v1/graphs`
+  chega aqui. Existe para o snapshot malformado ou anterior ao campo degradar em
+  vez de estourar, mesma postura de `resolveNode` e `resolveOutputSchema`.
+
+A regra é da **presença do pino**, nunca do `tipo_no`: portão não é entidade
+separada (§2), e um portão final com skill roda exatamente como um nó de
+trabalho final com skill.
+
+Por que isso está aqui e não só no código: o grafo de fábrica de bets termina em
+`registro-monitoramento`, que pina `registrar-travessia` — a etapa de registro e
+monitoramento da D14 —, e o de software termina em `implantar`, que pina
+`implantar-release`. Enquanto a conclusão vinha da chegada, essas duas etapas
+nunca ganhavam sessão, e a travessia terminava em silêncio: sem falha, sem
+evento, sem registro. Foi o buraco 2 da primeira execução real
+(`notas/2026-08-17-primeira-execucao-bets.md`).
+
+Uma sessão que fecha `completed` com relatório recusado pelo schema **não**
+conclui e **não** bloqueia: o trabalho segue candidato. Teto de tentativas
+falhas seguidas é problema geral do core, não deste ponto do grafo.
+
 ---
 
 ## 5. Classe e linhagem

@@ -215,7 +215,35 @@ function finishedAtOf(subject: string): string {
 }
 
 /**
- * "The traveller arrived": the job's node is a final node of ITS version (t152).
+ * Whether a session of this job, on this node, closed with a report that stood.
+ *
+ * `status = 'completed'` AND `output IS NOT NULL` is one condition and not two:
+ * `finishSession` writes the reported object only when it validated against the
+ * `output` schema of the skill the node pins, and stores a NULL for a report
+ * the schema refused — with the reason in the event, never in the column
+ * (`session.ts`, t253). So this single `SELECT` asks exactly what D9 asks: did
+ * the pinned capability run and produce what its contract declares?
+ *
+ * @param db Open handle.
+ * @param jobId The traveller.
+ * @param nodeId The node it is standing on.
+ * @returns Whether that node has a conforming finish on its account.
+ */
+function hasConformingFinish(db: Database, jobId: number, nodeId: string): boolean {
+  return (
+    db
+      .prepare(
+        `SELECT 1 FROM session
+          WHERE job_id = ? AND node_id = ? AND status = 'completed' AND output IS NOT NULL
+          LIMIT 1`,
+      )
+      .get(jobId, nodeId) !== undefined
+  );
+}
+
+/**
+ * "The traveller arrived": the job's node is a final node of ITS version, and
+ * that node has nothing left to run (t152, t262).
  *
  * Three things say no before the graph is even read. A blocked job is never
  * done, whatever node it is standing on — the flag stops the report of an end
@@ -226,6 +254,34 @@ function finishedAtOf(subject: string): string {
  * ordinary case here), and inventing a completion out of a version nobody can
  * read would be worse than admitting ignorance.
  *
+ * ## Arriving is not finishing, when the node pins a skill (t262)
+ *
+ * Until t262 the last line was the whole answer, and it read "final" as "there
+ * is nothing left to do". Those are different claims, and the difference is a
+ * whole step of the graph: `registro-monitoramento` of the bets bundle and
+ * `implantar` of the software one are final nodes that pin a real `work` skill
+ * — D14's own "registro e monitoramento" step — and a job declared done on
+ * ARRIVAL never gets a session on them, because the controller's candidate list
+ * drops a `concluido` job before the runner sees it
+ * (`packages/runner/src/controller/cliente-controle.ts`). t198's first real
+ * crossing found exactly that, and found it as silence: no failure, no event,
+ * just a skill that never ran.
+ *
+ * So a final node that PINS a skill is done when that skill reported — see
+ * {@link hasConformingFinish}. A final node that pins nothing is done on
+ * arrival, exactly as before. The rule is keyed on `skill_ref` and never on
+ * `node_type`: `docs/spec/grafo.md` §2 says a portão is "nó como qualquer
+ * outro", and the minimal example graph's own final node is a gate with a pin.
+ *
+ * The no-pin branch is defensive, not a supported document shape:
+ * `schema/grafo.schema.json` makes `skill_ref` mandatory on every node and
+ * `node_with_contract` guards it at soundness, so nothing registered through
+ * `POST /v1/graphs` reaches it. It exists for the same reason `resolveNode` and
+ * `resolveOutputSchema` already treat the pin as optional on the TS side — a
+ * malformed or pre-existing snapshot degrades instead of throwing. A node the
+ * snapshot no longer carries at all reads the same way: there is no pin to
+ * demand a session for.
+ *
  * One lookup per job, on purpose: the value is derived on read and never cached,
  * so a job cannot go on reporting a conclusion its version no longer declares.
  * On `listJobs` that is a query per row — correctness first; batching by
@@ -233,7 +289,8 @@ function finishedAtOf(subject: string): string {
  *
  * @param db Open handle.
  * @param row The job's row, as it is in the table.
- * @returns Whether the job is standing on a final node, unblocked.
+ * @returns Whether the job is standing on a final node, unblocked, with that
+ *   node's own work already reported.
  */
 function isAtFinalNode(db: Database, row: JobRow): boolean {
   if (asBoolean(row.bloqueado)) return false;
@@ -242,7 +299,13 @@ function isAtFinalNode(db: Database, row: JobRow): boolean {
   const version = getVersion(db, row.grafo_versao_id);
   if (version === undefined) return false;
 
-  return version.snapshot.final_nodes.includes(row.no_atual);
+  if (!version.snapshot.final_nodes.includes(row.no_atual)) return false;
+
+  const node = version.snapshot.nodes?.find((candidate) => candidate.id === row.no_atual);
+  const pin = node === undefined ? undefined : node.skill_ref;
+  if (pin === undefined || pin === null) return true;
+
+  return hasConformingFinish(db, row.id, row.no_atual);
 }
 
 function toJob(db: Database, row: JobRow): Job {
@@ -425,9 +488,17 @@ export function jobContextSeed(db: Database, id: number): JobContextSeed | null 
  * child) needs to know the assertion came from the only writer there is, not
  * from whoever happened to drive the last job.
  *
+ * Exported since t262, for the third moment a job can become `concluido`: a
+ * session finishing on a final node it will never transition away from, because
+ * a final node has no outgoing edge. `finishSession` calls it from inside its
+ * own transaction, exactly as the two callers below do — without that, every
+ * ordinary run of both factory bundles would report `finished_at: null` forever
+ * (t245, D21), which is a regression and not a gap.
+ *
  * ## What this check cannot see yet, and why it is not a bug of this file
  *
- * It runs on the JOB path — here and in `transitionJob` — and nowhere else.
+ * It runs on the JOB path — the two callers here, and `finishSession` — and
+ * nowhere else.
  * `leases.ts` deliberately treats `job_id` as an opaque integer and never reads
  * `job`/`execution_id` (migration `0004`'s header defers tying the two sides to
  * "a ficha que ligar os dois lados"), and an ordinary release records no event
@@ -450,7 +521,7 @@ export function jobContextSeed(db: Database, id: number): JobContextSeed | null 
  * @param occurredAt The instant of the mutation that triggered the check, so
  *   the fact is stamped with the moment it became true.
  */
-function announceFinishedExecution(
+export function announceFinishedExecution(
   db: Database,
   executionId: number | null,
   projectId: number,

@@ -14,9 +14,11 @@
  * or a shortcut around it — every assertion below is about the shape the public
  * route takes, inverse included.
  *
- * The operation keys (`tipo`, `no`, `no_id`, `aresta`, `campo`, `de`, `para`,
- * `inversa`) are the wire format the core owns and stay in Portuguese, exactly
- * as they do in `diff.js` (t133, exception 9).
+ * The operation keys (`type`, `node`, `node_id`, `edge`, `field`, `from`, `to`,
+ * `inverse`) are the wire format the core owns, and they speak
+ * `docs/spec/glossario-wire.md` §3 since D20's third child (t228). This page
+ * mirrors that vocabulary exactly: what it builds goes to `POST /v1/proposals`
+ * untouched, so a mirror one word out of step is a browser that posts 400s.
  */
 
 import assert from 'node:assert/strict';
@@ -103,7 +105,7 @@ function edgesOf(document: Document): Record<string, unknown>[] {
   return document.edges as Record<string, unknown>[];
 }
 
-test('AT1 — a new node becomes one `adicionar_no` whose inverse removes that id', async () => {
+test('AT1 — a new node becomes one `add_node` whose inverse removes that id', async () => {
   const diffGraphs = await loadDiff();
 
   const loaded = baseDocument();
@@ -119,11 +121,11 @@ test('AT1 — a new node becomes one `adicionar_no` whose inverse removes that i
   nodesOf(edited).push(fresh);
 
   assert.deepEqual(diffGraphs(loaded, edited), [
-    { tipo: 'adicionar_no', no: fresh, inversa: { tipo: 'remover_no', no_id: 'aprovar' } },
+    { type: 'add_node', node: fresh, inverse: { type: 'remove_node', node_id: 'aprovar' } },
   ]);
 });
 
-test('AT2 — a removed node becomes one `remover_no` whose inverse carries it back whole', async () => {
+test('AT2 — a removed node becomes one `remove_node` whose inverse carries it back whole', async () => {
   const diffGraphs = await loadDiff();
 
   const loaded = baseDocument();
@@ -132,17 +134,17 @@ test('AT2 — a removed node becomes one `remover_no` whose inverse carries it b
 
   assert.deepEqual(diffGraphs(loaded, edited), [
     {
-      tipo: 'remover_no',
-      no_id: 'revisar',
+      type: 'remove_node',
+      node_id: 'revisar',
       // The whole original node, and not just its id: it is the only thing that
       // can put the node back, and D15 demands the way back exist at the moment
       // the operation is written.
-      inversa: { tipo: 'adicionar_no', no: gone },
+      inverse: { type: 'add_node', node: gone },
     },
   ]);
 });
 
-test('AT3 — one `alterar_campo_no` per changed field, with `de`/`para` and inverse', async () => {
+test('AT3 — one `change_node_field` per changed field, with `from`/`to` and inverse', async () => {
   const diffGraphs = await loadDiff();
 
   const loaded = baseDocument();
@@ -158,59 +160,59 @@ test('AT3 — one `alterar_campo_no` per changed field, with `de`/`para` and inv
 
   assert.deepEqual(diffGraphs(loaded, edited), [
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'redigir',
-      campo: 'role',
-      de: 'redator',
-      para: 'escritor',
-      inversa: {
-        tipo: 'alterar_campo_no',
-        no_id: 'redigir',
-        campo: 'role',
-        de: 'escritor',
-        para: 'redator',
+      type: 'change_node_field',
+      node_id: 'redigir',
+      field: 'role',
+      from: 'redator',
+      to: 'escritor',
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'redigir',
+        field: 'role',
+        from: 'escritor',
+        to: 'redator',
       },
     },
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'redigir',
-      campo: 'description',
-      de: 'Escreve a nota a partir do tema declarado.',
-      para: 'Outra frase.',
-      inversa: {
-        tipo: 'alterar_campo_no',
-        no_id: 'redigir',
-        campo: 'description',
-        de: 'Outra frase.',
-        para: 'Escreve a nota a partir do tema declarado.',
+      type: 'change_node_field',
+      node_id: 'redigir',
+      field: 'description',
+      from: 'Escreve a nota a partir do tema declarado.',
+      to: 'Outra frase.',
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'redigir',
+        field: 'description',
+        from: 'Outra frase.',
+        to: 'Escreve a nota a partir do tema declarado.',
       },
     },
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'redigir',
-      campo: 'skill_ref',
-      de: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: HASH_A },
-      para: newSkill,
-      inversa: {
-        tipo: 'alterar_campo_no',
-        no_id: 'redigir',
-        campo: 'skill_ref',
-        de: newSkill,
-        para: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: HASH_A },
+      type: 'change_node_field',
+      node_id: 'redigir',
+      field: 'skill_ref',
+      from: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: HASH_A },
+      to: newSkill,
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'redigir',
+        field: 'skill_ref',
+        from: newSkill,
+        to: { id: 'cartografo/redigir-nota', version: '1.0.0', hash: HASH_A },
       },
     },
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'redigir',
-      campo: 'contract',
-      de: contractFor('nota'),
-      para: newContract,
-      inversa: {
-        tipo: 'alterar_campo_no',
-        no_id: 'redigir',
-        campo: 'contract',
-        de: newContract,
-        para: contractFor('nota'),
+      type: 'change_node_field',
+      node_id: 'redigir',
+      field: 'contract',
+      from: contractFor('nota'),
+      to: newContract,
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'redigir',
+        field: 'contract',
+        from: newContract,
+        to: contractFor('nota'),
       },
     },
   ]);
@@ -239,19 +241,19 @@ test('AT4 — an added and a removed edge become their two operations, each with
     // which one it meant. The core takes it as optional, so the ends alone
     // still work for every operation written before this.
     {
-      tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar', condition: 'sempre' },
-      inversa: {
-        tipo: 'adicionar_aresta',
-        aresta: { from: 'redigir', to: 'revisar', condition: 'sempre' },
+      type: 'remove_edge',
+      edge: { from: 'redigir', to: 'revisar', condition: 'sempre' },
+      inverse: {
+        type: 'add_edge',
+        edge: { from: 'redigir', to: 'revisar', condition: 'sempre' },
       },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: added,
-      inversa: {
-        tipo: 'remover_aresta',
-        aresta: { from: 'revisar', to: 'redigir', condition: 'retrabalho' },
+      type: 'add_edge',
+      edge: added,
+      inverse: {
+        type: 'remove_edge',
+        edge: { from: 'revisar', to: 'redigir', condition: 'retrabalho' },
       },
     },
   ]);
@@ -284,7 +286,7 @@ function parallelDocument(): Document {
   return document;
 }
 
-test('t205 AT — a third parallel edge is one `adicionar_aresta`, and the two that stayed are silent', async () => {
+test('t205 AT — a third parallel edge is one `add_edge`, and the two that stayed are silent', async () => {
   const diffGraphs = await loadDiff();
 
   const loaded = parallelDocument();
@@ -294,16 +296,16 @@ test('t205 AT — a third parallel edge is one `adicionar_aresta`, and the two t
 
   assert.deepEqual(diffGraphs(loaded, edited), [
     {
-      tipo: 'adicionar_aresta',
-      aresta: added,
+      type: 'add_edge',
+      edge: added,
       // The inverse names the edge it has to take back out, `condition` and
       // all — otherwise undoing this addition could remove a sibling.
-      inversa: { tipo: 'remover_aresta', aresta: added },
+      inverse: { type: 'remove_edge', edge: added },
     },
   ]);
 });
 
-test('t205 AT — removing one of a parallel pair is one `remover_aresta` pinned to its condition', async () => {
+test('t205 AT — removing one of a parallel pair is one `remove_edge` pinned to its condition', async () => {
   const diffGraphs = await loadDiff();
 
   const loaded = parallelDocument();
@@ -312,9 +314,9 @@ test('t205 AT — removing one of a parallel pair is one `remover_aresta` pinned
 
   assert.deepEqual(diffGraphs(loaded, edited), [
     {
-      tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
-      inversa: { tipo: 'adicionar_aresta', aresta: gone },
+      type: 'remove_edge',
+      edge: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      inverse: { type: 'add_edge', edge: gone },
     },
   ]);
 });
@@ -330,19 +332,19 @@ test('t205 AT — retyping one condition of a parallel pair moves that edge and 
   // the OLD condition followed by an addition carrying the new one.
   assert.deepEqual(diffGraphs(loaded, edited), [
     {
-      tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
-      inversa: {
-        tipo: 'adicionar_aresta',
-        aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      type: 'remove_edge',
+      edge: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      inverse: {
+        type: 'add_edge',
+        edge: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
       },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: 'redigir', to: 'revisar', condition: 'escala' },
-      inversa: {
-        tipo: 'remover_aresta',
-        aresta: { from: 'redigir', to: 'revisar', condition: 'escala' },
+      type: 'add_edge',
+      edge: { from: 'redigir', to: 'revisar', condition: 'escala' },
+      inverse: {
+        type: 'remove_edge',
+        edge: { from: 'redigir', to: 'revisar', condition: 'escala' },
       },
     },
   ]);

@@ -3714,19 +3714,19 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       // changing it is a proposal — apply → soundness → new version → pointer
       // (D15) — and not a runner flag somebody edits on the machine.
       // `null` and not `undefined` on the before-side: JSON has no `undefined`,
-      // and `alterar_campo_no` demands `de` be present.
+      // and `change_node_field` demands `from` be present.
       const swap = {
-        tipo: "alterar_campo_no",
-        no_id: "revisar",
-        campo: "model",
-        de: null,
-        para: "claude-haiku-4-5",
-        inversa: {
-          tipo: "alterar_campo_no",
-          no_id: "revisar",
-          campo: "model",
-          de: "claude-haiku-4-5",
-          para: null,
+        type: "change_node_field",
+        node_id: "revisar",
+        field: "model",
+        from: null,
+        to: "claude-haiku-4-5",
+        inverse: {
+          type: "change_node_field",
+          node_id: "revisar",
+          field: "model",
+          from: "claude-haiku-4-5",
+          to: null,
         },
       };
       const created = await api<{ proposal: { id: number } }>(

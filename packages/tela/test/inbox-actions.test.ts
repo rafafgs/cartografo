@@ -417,10 +417,10 @@ test('the title opens the proposal in full, diff included', async () => {
     rejection_reason: 'não se aplica',
     revert_reason: 'não se aplica',
     operations: [
-      { tipo: 'adicionar_no', no: { id: 'red-team', node_type: 'gate' } },
-      { tipo: 'remover_no', node_id: 'deploy' },
-      { tipo: 'alterar_campo_no', node_id: 'testar', campo: 'timeout', de: 60, para: 120 },
-      { tipo: 'uma_coisa_nova' },
+      { type: 'add_node', node: { id: 'red-team', node_type: 'gate' } },
+      { type: 'remove_node', node_id: 'deploy' },
+      { type: 'change_node_field', node_id: 'testar', field: 'timeout', from: 60, to: 120 },
+      { type: 'uma_coisa_nova' },
     ],
   };
   const { doc, calls } = await openInbox(controlPlane([detailed]));

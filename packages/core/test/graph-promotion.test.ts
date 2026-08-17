@@ -185,21 +185,21 @@ function newNode(): Record<string, unknown> {
  * The node cannot arrive alone: an isolated node breaks `alcançável` and
  * `termina` at once, so the gate would refuse the version. That is why the diff
  * these tests promote is a node plus the two edges that make it reachable, and
- * not a lone `adicionar_no`.
+ * not a lone `add_node`.
  */
 function passingOperations(): unknown[] {
   const node = newNode();
   return [
-    { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: node.id } },
+    { type: 'add_node', node, inverse: { type: 'remove_node', node_id: node.id } },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: 'redigir', to: node.id, condition: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: node.id } },
+      type: 'add_edge',
+      edge: { from: 'redigir', to: node.id, condition: 'sempre' },
+      inverse: { type: 'remove_edge', edge: { from: 'redigir', to: node.id } },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: node.id, to: 'revisar', condition: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { from: node.id, to: 'revisar' } },
+      type: 'add_edge',
+      edge: { from: node.id, to: 'revisar', condition: 'sempre' },
+      inverse: { type: 'remove_edge', edge: { from: node.id, to: 'revisar' } },
     },
   ];
 }
@@ -208,16 +208,16 @@ function passingOperations(): unknown[] {
 function expectedOperations(): unknown[] {
   const node = newNode();
   return [
-    { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: 'checar_fatos' } },
+    { type: 'add_node', node, inverse: { type: 'remove_node', node_id: 'checar_fatos' } },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: 'redigir', to: 'checar_fatos', condition: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: 'checar_fatos' } },
+      type: 'add_edge',
+      edge: { from: 'redigir', to: 'checar_fatos', condition: 'sempre' },
+      inverse: { type: 'remove_edge', edge: { from: 'redigir', to: 'checar_fatos' } },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: 'checar_fatos', to: 'revisar', condition: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'checar_fatos', to: 'revisar' } },
+      type: 'add_edge',
+      edge: { from: 'checar_fatos', to: 'revisar', condition: 'sempre' },
+      inverse: { type: 'remove_edge', edge: { from: 'checar_fatos', to: 'revisar' } },
     },
   ];
 }

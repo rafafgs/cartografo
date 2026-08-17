@@ -95,17 +95,17 @@ test('AT8 — createProposal does POST /v1/proposals with the five keys of the c
     target_version: 'sha256:v1',
     operations: [
       {
-        tipo: 'alterar_campo_no' as const,
-        no_id: 'redigir',
-        campo: 'description' as const,
-        de: 'antes',
-        para: 'depois',
-        inversa: {
-          tipo: 'alterar_campo_no' as const,
-          no_id: 'redigir',
-          campo: 'description' as const,
-          de: 'depois',
-          para: 'antes',
+        type: 'change_node_field' as const,
+        node_id: 'redigir',
+        field: 'description' as const,
+        from: 'antes',
+        to: 'depois',
+        inverse: {
+          type: 'change_node_field' as const,
+          node_id: 'redigir',
+          field: 'description' as const,
+          from: 'depois',
+          to: 'antes',
         },
       },
     ],
@@ -128,6 +128,19 @@ test('AT8 — createProposal does POST /v1/proposals with the five keys of the c
     'target_version',
   ]);
   assert.deepEqual(calls[0].body, input);
+
+  // t228: the operation inside the body speaks §3 English too — the five outer
+  // keys went English with t226, and what they wrap went with D20's third child.
+  const posted = (calls[0].body as { operations: Array<Record<string, unknown>> }).operations[0];
+  assert.deepEqual(Object.keys(posted).sort(), [
+    'field',
+    'from',
+    'inverse',
+    'node_id',
+    'to',
+    'type',
+  ]);
+  assert.equal(posted.type, 'change_node_field');
 });
 
 test('AT8 — getGraphVersion reads the snapshot through the public version route', async () => {

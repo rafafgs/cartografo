@@ -13,8 +13,10 @@
  * gate that refuses that is the one in the apply flow, and mixing the two
  * judgements is exactly what `domain-operations.test.ts` already warns about.
  *
- * The operation and graph-document field names stay in Portuguese: they are the
- * frozen data format (t127, FR8).
+ * The emitted vocabulary is English since D20's third child (t228): every
+ * operation comes out spelling `docs/spec/glossario-wire.md` §3 — `type`,
+ * `node`, `node_id`, `edge`, `field`, `from`, `to`, `inverse` — in the same
+ * fixed emission order as before.
  */
 
 import assert from 'node:assert/strict';
@@ -216,7 +218,7 @@ function edgeOnlyInFrom(): Pair {
   return { label: 'edge only in from', from, to };
 }
 
-/** AT9 — same ends, `condicao` differs: no operation edits an edge in place. */
+/** AT9 — same ends, `condition` differs: no operation edits an edge in place. */
 function edgeConditionChanged(): Pair {
   const from = minimalGraph();
   const to = minimalGraph();
@@ -273,33 +275,33 @@ test('t140 AT1 — two identical documents produce no operation', async () => {
   assert.deepEqual(diffGraphs(minimalGraph(), minimalGraph()), []);
 });
 
-test('t140 AT2 — a node only in `to` becomes a single adicionar_no', async () => {
+test('t140 AT2 — a node only in `to` becomes a single add_node', async () => {
   const { diffGraphs } = await loadDiff();
   const { from, to } = nodeOnlyInTo();
 
   assert.deepEqual(diffGraphs(from, to), [
     {
-      tipo: 'adicionar_no',
-      no: structuredClone(NEW_NODE),
-      inversa: { tipo: 'remover_no', no_id: 'checar_fatos' },
+      type: 'add_node',
+      node: structuredClone(NEW_NODE),
+      inverse: { type: 'remove_node', node_id: 'checar_fatos' },
     },
   ]);
 });
 
-test('t140 AT3 — a node only in `from` becomes a single remover_no', async () => {
+test('t140 AT3 — a node only in `from` becomes a single remove_node', async () => {
   const { diffGraphs } = await loadDiff();
   const { from, to } = nodeOnlyInFrom();
 
   assert.deepEqual(diffGraphs(from, to), [
     {
-      tipo: 'remover_no',
-      no_id: 'arquivar',
-      inversa: { tipo: 'adicionar_no', no: structuredClone(ARCHIVE_NODE) },
+      type: 'remove_node',
+      node_id: 'arquivar',
+      inverse: { type: 'add_node', node: structuredClone(ARCHIVE_NODE) },
     },
   ]);
 });
 
-test('t140 AT4 — a node with only `role` changed becomes a single alterar_campo_no', async () => {
+test('t140 AT4 — a node with only `role` changed becomes a single change_node_field', async () => {
   const { diffGraphs } = await loadDiff();
   const { validateOperation } = await loadOperations();
   const { from, to } = roleChanged();
@@ -308,21 +310,21 @@ test('t140 AT4 — a node with only `role` changed becomes a single alterar_camp
 
   assert.deepEqual(operations, [
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'revisar',
-      campo: 'role',
-      de: 'revisor',
-      para: 'red-team',
-      inversa: {
-        tipo: 'alterar_campo_no',
-        no_id: 'revisar',
-        campo: 'role',
-        de: 'red-team',
-        para: 'revisor',
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'role',
+      from: 'revisor',
+      to: 'red-team',
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'revisar',
+        field: 'role',
+        from: 'red-team',
+        to: 'revisor',
       },
     },
   ]);
-  assert.deepEqual(validateOperation(operations[0]), { valido: true, erros: [] });
+  assert.deepEqual(validateOperation(operations[0]), { valid: true, errors: [] });
 });
 
 test('t140 AT5 — `role` and `contract` changed become two ops, in the fixed field order', async () => {
@@ -332,94 +334,94 @@ test('t140 AT5 — `role` and `contract` changed become two ops, in the fixed fi
   const operations = diffGraphs(from, to);
 
   assert.deepEqual(
-    operations.map((operation) => [operation.tipo, (operation as { campo?: string }).campo]),
+    operations.map((operation) => [operation.type, (operation as { field?: string }).field]),
     [
-      ['alterar_campo_no', 'role'],
-      ['alterar_campo_no', 'contract'],
+      ['change_node_field', 'role'],
+      ['change_node_field', 'contract'],
     ],
     'the fixed order is role, description, skill_ref, contract — never the key order of the object',
   );
   assert.deepEqual(operations[1], {
-    tipo: 'alterar_campo_no',
-    no_id: 'revisar',
-    campo: 'contract',
-    de: requireNode(from, 'revisar').contract,
-    para: structuredClone(OTHER_CONTRACT),
-    inversa: {
-      tipo: 'alterar_campo_no',
-      no_id: 'revisar',
-      campo: 'contract',
-      de: structuredClone(OTHER_CONTRACT),
-      para: requireNode(from, 'revisar').contract,
+    type: 'change_node_field',
+    node_id: 'revisar',
+    field: 'contract',
+    from: requireNode(from, 'revisar').contract,
+    to: structuredClone(OTHER_CONTRACT),
+    inverse: {
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'contract',
+      from: structuredClone(OTHER_CONTRACT),
+      to: requireNode(from, 'revisar').contract,
     },
   });
 });
 
-test('t140 AT6 — a changed `node_type` becomes remover_no immediately followed by adicionar_no', async () => {
+test('t140 AT6 — a changed `node_type` becomes remove_node immediately followed by add_node', async () => {
   const { diffGraphs } = await loadDiff();
   const { from, to } = typeChanged();
 
   const operations = diffGraphs(from, to);
 
   assert.deepEqual(
-    operations.map((operation) => operation.tipo),
-    ['remover_no', 'adicionar_no'],
+    operations.map((operation) => operation.type),
+    ['remove_node', 'add_node'],
     'there is no operation that renames a node type: it is a full swap',
   );
   assert.deepEqual(operations[0], {
-    tipo: 'remover_no',
-    no_id: 'revisar',
-    inversa: { tipo: 'adicionar_no', no: structuredClone(requireNode(from, 'revisar')) },
+    type: 'remove_node',
+    node_id: 'revisar',
+    inverse: { type: 'add_node', node: structuredClone(requireNode(from, 'revisar')) },
   });
   assert.deepEqual(operations[1], {
-    tipo: 'adicionar_no',
-    no: structuredClone(requireNode(to, 'revisar')),
-    inversa: { tipo: 'remover_no', no_id: 'revisar' },
+    type: 'add_node',
+    node: structuredClone(requireNode(to, 'revisar')),
+    inverse: { type: 'remove_node', node_id: 'revisar' },
   });
 });
 
-test('t140 AT7 — an edge only in `to` becomes a single adicionar_aresta', async () => {
+test('t140 AT7 — an edge only in `to` becomes a single add_edge', async () => {
   const { diffGraphs } = await loadDiff();
   const { from, to } = edgeOnlyInTo();
 
   const edge: GraphEdge = { from: 'revisar', to: 'checar_fatos', condition: 'reprovado' };
   assert.deepEqual(diffGraphs(from, to), [
     {
-      tipo: 'adicionar_aresta',
-      aresta: edge,
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'revisar', to: 'checar_fatos' } },
+      type: 'add_edge',
+      edge: edge,
+      inverse: { type: 'remove_edge', edge: { from: 'revisar', to: 'checar_fatos' } },
     },
   ]);
 });
 
-test('t140 AT8 — an edge only in `from` becomes a single remover_aresta', async () => {
+test('t140 AT8 — an edge only in `from` becomes a single remove_edge', async () => {
   const { diffGraphs } = await loadDiff();
   const { from, to } = edgeOnlyInFrom();
 
   const edge: GraphEdge = { from: 'revisar', to: 'arquivar', condition: 'aprovado' };
   assert.deepEqual(diffGraphs(from, to), [
     {
-      tipo: 'remover_aresta',
-      aresta: { from: 'revisar', to: 'arquivar' },
-      inversa: { tipo: 'adicionar_aresta', aresta: edge },
+      type: 'remove_edge',
+      edge: { from: 'revisar', to: 'arquivar' },
+      inverse: { type: 'add_edge', edge: edge },
     },
   ]);
 });
 
-test('t140 AT9 — a changed `condicao` becomes remover_aresta immediately followed by adicionar_aresta', async () => {
+test('t140 AT9 — a changed `condition` becomes remove_edge immediately followed by add_edge', async () => {
   const { diffGraphs } = await loadDiff();
   const { from, to } = edgeConditionChanged();
 
   assert.deepEqual(diffGraphs(from, to), [
     {
-      tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar' },
-      inversa: { tipo: 'adicionar_aresta', aresta: structuredClone(from.edges[0]) },
+      type: 'remove_edge',
+      edge: { from: 'redigir', to: 'revisar' },
+      inverse: { type: 'add_edge', edge: structuredClone(from.edges[0]) },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: structuredClone(to.edges[0]),
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: 'revisar' } },
+      type: 'add_edge',
+      edge: structuredClone(to.edges[0]),
+      inverse: { type: 'remove_edge', edge: { from: 'redigir', to: 'revisar' } },
     },
   ]);
 });
@@ -464,12 +466,43 @@ test('t140 AT11 — every operation the engine emits passes validateOperation un
     diffGraphs(from, to).forEach((operation, index) => {
       total += 1;
       const report = validateOperation(operation);
-      if (report.valido) return;
-      problems.push(`${label} #${index}: ${report.erros.map((one) => one.mensagem).join('; ')}`);
+      if (report.valid) return;
+      problems.push(`${label} #${index}: ${report.errors.map((one) => one.message).join('; ')}`);
     });
   }
 
   assert.deepEqual(problems, [], problems.join('\n'));
+  assert.ok(total > 10, `the sweep only saw ${total} operations; the fixtures are not being diffed`);
+});
+
+test('t228 AT — every key the engine emits is a §3 English key, at any depth', async () => {
+  const { diffGraphs } = await loadDiff();
+
+  /** The §3 vocabulary, plus the document fragments an operation carries. */
+  const ALLOWED = new Set(['type', 'node', 'node_id', 'edge', 'field', 'from', 'to', 'inverse']);
+  const FORBIDDEN = new Set(['tipo', 'no', 'no_id', 'aresta', 'campo', 'de', 'para', 'inversa']);
+
+  const offenders: string[] = [];
+  let total = 0;
+  for (const fixture of FIXTURES) {
+    const { label, from, to } = fixture();
+    for (const operation of diffGraphs(from, to)) {
+      total += 1;
+      // Only the operation's OWN keys and the inverse's: what lives inside `node`
+      // and `edge` is the graph document, which t178 already moved.
+      for (const key of Object.keys(operation)) {
+        if (FORBIDDEN.has(key)) offenders.push(`${label}: operation key "${key}"`);
+        if (!ALLOWED.has(key)) offenders.push(`${label}: unexpected operation key "${key}"`);
+      }
+      const inverse = (operation as { inverse?: unknown }).inverse;
+      for (const key of Object.keys(inverse as object)) {
+        if (FORBIDDEN.has(key)) offenders.push(`${label}: inverse key "${key}"`);
+        if (!ALLOWED.has(key)) offenders.push(`${label}: unexpected inverse key "${key}"`);
+      }
+    }
+  }
+
+  assert.deepEqual(offenders, [], offenders.join('\n'));
   assert.ok(total > 10, `the sweep only saw ${total} operations; the fixtures are not being diffed`);
 });
 

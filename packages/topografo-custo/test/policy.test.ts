@@ -100,7 +100,7 @@ test('AT6 — tier makes a candidate over the version median, and only with a sa
   assert.deepEqual(withOneBlindNode, [], 'a node with no reported usage is no sample base');
 });
 
-test('AT7 — every candidate carries a single alterar_campo_no over description, with a swapped inverse', async () => {
+test('AT7 — every candidate carries a single change_node_field over description, with a swapped inverse', async () => {
   const { evaluatePolicies } = await load();
 
   const candidates = evaluatePolicies([row('a', 100), row('b', 100), row('c', 9000)], {
@@ -120,21 +120,33 @@ test('AT7 — every candidate carries a single alterar_campo_no over description
     assert.equal(candidate.operacoes.length, 1, 'one recommendation is one operation');
 
     const operation = candidate.operacoes[0];
-    assert.equal(operation.tipo, 'alterar_campo_no');
-    assert.equal(operation.campo, 'description');
-    assert.equal(operation.no_id, candidate.no_id);
-    assert.equal(operation.de, `descrição de ${candidate.no_id} em sha256:v1`);
-    assert.notEqual(operation.para, operation.de, 'the recommendation has to change something');
+    assert.equal(operation.type, 'change_node_field');
+    assert.equal(operation.field, 'description');
+    assert.equal(operation.node_id, candidate.no_id);
+    assert.equal(operation.from, `descrição de ${candidate.no_id} em sha256:v1`);
+    assert.notEqual(operation.to, operation.from, 'the recommendation has to change something');
     assert.ok(
-      String(operation.para).startsWith(String(operation.de)),
+      String(operation.to).startsWith(String(operation.from)),
       'the recommendation is appended to the current description, it does not replace it',
     );
 
-    assert.equal(operation.inversa.tipo, 'alterar_campo_no');
-    assert.equal(operation.inversa.no_id, operation.no_id);
-    assert.equal(operation.inversa.campo, 'description');
-    assert.equal(operation.inversa.de, operation.para, 'the inverse undoes it: de/para swapped');
-    assert.equal(operation.inversa.para, operation.de);
+    assert.equal(operation.inverse.type, 'change_node_field');
+    assert.equal(operation.inverse.node_id, operation.node_id);
+    assert.equal(operation.inverse.field, 'description');
+    assert.equal(operation.inverse.from, operation.to, 'the inverse undoes it: from/to swapped');
+    assert.equal(operation.inverse.to, operation.from);
+
+    // t228: the operation's OWN keys are §3's, and nothing else leaks in. The
+    // candidate around it keeps this module's vocabulary (`operacoes`,
+    // `evidencia`, `metrica_esperada`) — that surface is not §3's.
+    assert.deepEqual(Object.keys(operation).sort(), [
+      'field',
+      'from',
+      'inverse',
+      'node_id',
+      'to',
+      'type',
+    ]);
   }
 });
 
@@ -160,7 +172,7 @@ test('t158 — a time ceiling cites the time sample, not the token one', async (
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].evidencia.teto_excedido, 'tempo', 'only the time ceiling blew');
 
-  const { para: to } = candidates[0].operacoes[0];
+  const { to } = candidates[0].operacoes[0];
   assert.ok(
     to.includes('2 sessions with time reported'),
     `the time recommendation leans on the time sample; it came out: ${to}`,
@@ -189,7 +201,7 @@ test('t180 — the marker and the ceiling and tier recommendations are in Englis
   const ceiling = candidates.find((candidate) => candidate.tipo === 'teto');
   assert.ok(ceiling !== undefined, 'the scenario has to produce a ceiling candidate');
   assert.equal(
-    ceiling.operacoes[0].para,
+    ceiling.operacoes[0].to,
     '[cost-surveyor] token ceiling exceeded: 9000 tokens observed against a ceiling of 1000, ' +
       'over 1 sessions with usage reported. Reduce the scope of this node, split it, or revisit the ceiling.',
   );
@@ -202,7 +214,7 @@ test('t180 — the marker and the ceiling and tier recommendations are in Englis
   const tier = candidates.find((candidate) => candidate.tipo === 'tier');
   assert.ok(tier !== undefined, 'the scenario has to produce a tier candidate');
   assert.equal(
-    tier.operacoes[0].para,
+    tier.operacoes[0].to,
     '[cost-surveyor] cost out of line in this version: 9000 tokens, 90.0x the median of 100 ' +
       'across the 3 measured nodes (factor 3). Candidate for a cheaper model tier, or for a split into smaller nodes.',
   );

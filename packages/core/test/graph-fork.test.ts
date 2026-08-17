@@ -181,16 +181,16 @@ function newNode(): Record<string, unknown> {
 function passingOperations(): unknown[] {
   const node = newNode();
   return [
-    { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: node.id } },
+    { type: 'add_node', node, inverse: { type: 'remove_node', node_id: node.id } },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: 'redigir', to: node.id, condition: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: node.id } },
+      type: 'add_edge',
+      edge: { from: 'redigir', to: node.id, condition: 'sempre' },
+      inverse: { type: 'remove_edge', edge: { from: 'redigir', to: node.id } },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: node.id, to: 'revisar', condition: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { from: node.id, to: 'revisar' } },
+      type: 'add_edge',
+      edge: { from: node.id, to: 'revisar', condition: 'sempre' },
+      inverse: { type: 'remove_edge', edge: { from: node.id, to: 'revisar' } },
     },
   ];
 }

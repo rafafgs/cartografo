@@ -10,6 +10,11 @@
  * The wording is pinned here, byte for byte, because it IS the spec: this is
  * the text a person reads before deciding to approve, and a silent change of
  * wording is a change of what they were shown.
+ *
+ * Since t228 the INPUT is English (`type`, `node`, `node_id`, `edge`, `field`,
+ * `from`, `to`) and the OUTPUT is the same Portuguese prose as before. That
+ * asymmetry is the claim: the vocabulary that moved is the one on the wire, and
+ * a person reading the inbox sees exactly what they saw yesterday.
  */
 
 import assert from 'node:assert/strict';
@@ -37,18 +42,18 @@ test('AT6 — one readable line per operation, one per type of the §3 vocabular
 
   const operations = [
     {
-      tipo: 'adicionar_no',
-      no: { id: 'red_team', node_type: 'gate', role: 'conferir', skill_ref: 'red-team@1' },
+      type: 'add_node',
+      node: { id: 'red_team', node_type: 'gate', role: 'conferir', skill_ref: 'red-team@1' },
     },
-    { tipo: 'remover_no', no_id: 'revisar_manual' },
-    { tipo: 'adicionar_aresta', aresta: { from: 'testar', to: 'red_team', condition: 'aprovado' } },
-    { tipo: 'remover_aresta', aresta: { from: 'testar', to: 'implantar' } },
+    { type: 'remove_node', node_id: 'revisar_manual' },
+    { type: 'add_edge', edge: { from: 'testar', to: 'red_team', condition: 'aprovado' } },
+    { type: 'remove_edge', edge: { from: 'testar', to: 'implantar' } },
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'implementar',
-      campo: 'role',
-      de: 'fazer',
-      para: 'conferir',
+      type: 'change_node_field',
+      node_id: 'implementar',
+      field: 'role',
+      from: 'fazer',
+      to: 'conferir',
     },
   ];
 
@@ -65,10 +70,10 @@ test('AT6 — an operation the screen does not know still renders as prose, neve
   const { renderOperations } = await loadDiff();
 
   const lines = renderOperations([
-    { tipo: 'mover_no', no_id: 'implementar' },
+    { type: 'mover_no', node_id: 'implementar' },
     'isto não é uma operação',
     null,
-    { tipo: 'adicionar_aresta', aresta: { from: 'a', to: 'b' } },
+    { type: 'add_edge', edge: { from: 'a', to: 'b' } },
   ]);
 
   assert.deepEqual(lines, [
@@ -78,7 +83,7 @@ test('AT6 — an operation the screen does not know still renders as prose, neve
     '+ aresta a → b',
   ]);
   for (const line of lines) {
-    assert.doesNotMatch(line, /[{[]\s*"?tipo/, 'no line may be the raw operation JSON');
+    assert.doesNotMatch(line, /[{[]\s*"?type/, 'no line may be the raw operation JSON');
   }
 });
 

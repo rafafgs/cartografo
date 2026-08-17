@@ -11,8 +11,11 @@
  * produce a broken graph, and it is precisely that case the proposal tests
  * (AT14–AT17) exercise.
  *
- * The operation and graph-document field names stay in Portuguese: they are the
- * frozen data format (t127, FR8).
+ * The vocabulary is English on both halves since D20's third child (t228): the
+ * operation-type names, the operation's own keys and the validation report speak
+ * `docs/spec/glossario-wire.md` §3, and the document fragments an operation
+ * carries have spoken English since t178. A Portuguese-keyed operation is no
+ * longer an older spelling of the same thing — it is an unknown type.
  */
 
 import assert from 'node:assert/strict';
@@ -80,20 +83,20 @@ const NEW_NODE: GraphNode = {
   },
 };
 
-test('AT3 — adicionar_no + adicionar_aresta add the target without mutating the input', async () => {
+test('AT3 — add_node + add_edge add the target without mutating the input', async () => {
   const { applyOperations } = await loadOperations();
 
   const input = minimalGraph();
   const operations: OperationsModule.Operation[] = [
     {
-      tipo: 'adicionar_no',
-      no: structuredClone(NEW_NODE),
-      inversa: { tipo: 'remover_no', no_id: NEW_NODE.id },
+      type: 'add_node',
+      node: structuredClone(NEW_NODE),
+      inverse: { type: 'remove_node', node_id: NEW_NODE.id },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: 'redigir', to: NEW_NODE.id, condition: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: NEW_NODE.id } },
+      type: 'add_edge',
+      edge: { from: 'redigir', to: NEW_NODE.id, condition: 'sempre' },
+      inverse: { type: 'remove_edge', edge: { from: 'redigir', to: NEW_NODE.id } },
     },
   ];
 
@@ -112,7 +115,7 @@ test('AT3 — adicionar_no + adicionar_aresta add the target without mutating th
   assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
 });
 
-test('AT4 — remover_no and remover_aresta remove exactly the target', async () => {
+test('AT4 — remove_node and remove_edge remove exactly the target', async () => {
   const { applyOperations } = await loadOperations();
 
   const input = minimalGraph();
@@ -123,14 +126,14 @@ test('AT4 — remover_no and remover_aresta remove exactly the target', async ()
   // stopped existing): applying does not validate — the FR8 gate is what does.
   const result = applyOperations(input, [
     {
-      tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar' },
-      inversa: { tipo: 'adicionar_aresta', aresta: structuredClone(originalEdge) },
+      type: 'remove_edge',
+      edge: { from: 'redigir', to: 'revisar' },
+      inverse: { type: 'add_edge', edge: structuredClone(originalEdge) },
     },
     {
-      tipo: 'remover_no',
-      no_id: 'revisar',
-      inversa: { tipo: 'adicionar_no', no: structuredClone(review) },
+      type: 'remove_node',
+      node_id: 'revisar',
+      inverse: { type: 'add_node', node: structuredClone(review) },
     },
   ]);
 
@@ -143,7 +146,7 @@ test('AT4 — remover_no and remover_aresta remove exactly the target', async ()
   assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
 });
 
-test('AT4 — alterar_campo_no swaps the declared field and nothing else', async () => {
+test('AT4 — change_node_field swaps the declared field and nothing else', async () => {
   const { applyOperations } = await loadOperations();
 
   const input = minimalGraph();
@@ -151,17 +154,17 @@ test('AT4 — alterar_campo_no swaps the declared field and nothing else', async
 
   const result = applyOperations(input, [
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'revisar',
-      campo: 'role',
-      de: 'revisor',
-      para: 'red-team',
-      inversa: {
-        tipo: 'alterar_campo_no',
-        no_id: 'revisar',
-        campo: 'role',
-        de: 'red-team',
-        para: 'revisor',
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'role',
+      from: 'revisor',
+      to: 'red-team',
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'revisar',
+        field: 'role',
+        from: 'red-team',
+        to: 'revisor',
       },
     },
   ]);
@@ -175,7 +178,7 @@ test('AT4 — alterar_campo_no swaps the declared field and nothing else', async
   assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
 });
 
-test('t167 — escalation_policy and escalation_recipient are fields alterar_campo_no may swap', async () => {
+test('t167 — escalation_policy and escalation_recipient are fields change_node_field may swap', async () => {
   const { CHANGEABLE_FIELDS, validateOperation, applyOperations } = await loadOperations();
 
   assert.ok(
@@ -191,32 +194,32 @@ test('t167 — escalation_policy and escalation_recipient are fields alterar_cam
   // through the machinery that already versions and re-validates — no second
   // mutation path, which is the whole point of FR2.
   const cases = [
-    { campo: 'escalation_policy' as const, de: null, para: 'never' },
-    { campo: 'escalation_recipient' as const, de: null, para: 'editor-de-plantao' },
+    { field: 'escalation_policy' as const, from: null, to: 'never' },
+    { field: 'escalation_recipient' as const, from: null, to: 'editor-de-plantao' },
   ];
 
-  for (const { campo, de, para } of cases) {
+  for (const { field, from, to } of cases) {
     const operation = {
-      tipo: 'alterar_campo_no' as const,
-      no_id: 'revisar',
-      campo,
-      de,
-      para,
-      inversa: { tipo: 'alterar_campo_no' as const, no_id: 'revisar', campo, de: para, para: de },
+      type: 'change_node_field' as const,
+      node_id: 'revisar',
+      field,
+      from,
+      to,
+      inverse: { type: 'change_node_field' as const, node_id: 'revisar', field, from: to, to: from },
     };
 
     assert.deepEqual(
       validateOperation(operation),
-      { valido: true, erros: [] },
-      `"${campo}" has to be accepted, with its inverse`,
+      { valid: true, errors: [] },
+      `"${field}" has to be accepted, with its inverse`,
     );
 
     const input = minimalGraph();
     const result = applyOperations(input, [operation]);
     assert.equal(
-      (requireNode(result, 'revisar') as unknown as Record<string, unknown>)[campo],
-      para,
-      `applying has to write "${campo}" on the target node`,
+      (requireNode(result, 'revisar') as unknown as Record<string, unknown>)[field],
+      to,
+      `applying has to write "${field}" on the target node`,
     );
     assert.deepEqual(input, minimalGraph(), 'applyOperations cannot mutate the input document');
   }
@@ -226,65 +229,202 @@ test('AT5 — an unknown type, a missing inverse and an incompatible inverse fai
   const { validateOperation } = await loadOperations();
 
   const valid = validateOperation({
+    type: 'add_node',
+    node: structuredClone(NEW_NODE),
+    inverse: { type: 'remove_node', node_id: NEW_NODE.id },
+  });
+  assert.deepEqual(valid, { valid: true, errors: [] }, 'the well-formed operation has to pass');
+
+  const unknown = validateOperation({
+    type: 'rename_node',
+    node_id: 'revisar',
+    inverse: { type: 'rename_node', node_id: 'revisar' },
+  });
+  assert.equal(unknown.valid, false);
+  assert.ok(
+    unknown.errors.some((error) => error.code === 'unknown_type'),
+    `expected unknown_type, got ${JSON.stringify(unknown.errors)}`,
+  );
+
+  const withoutInverse = validateOperation({ type: 'add_node', node: structuredClone(NEW_NODE) });
+  assert.equal(withoutInverse.valid, false);
+  assert.ok(
+    withoutInverse.errors.some((error) => error.code === 'missing_inverse'),
+    `expected missing_inverse, got ${JSON.stringify(withoutInverse.errors)}`,
+  );
+
+  const wrongInverse = validateOperation({
+    type: 'add_node',
+    node: structuredClone(NEW_NODE),
+    inverse: { type: 'remove_edge', edge: { from: 'redigir', to: 'revisar' } },
+  });
+  assert.equal(wrongInverse.valid, false);
+  assert.ok(
+    wrongInverse.errors.some((error) => error.code === 'incompatible_inverse'),
+    `expected incompatible_inverse, got ${JSON.stringify(wrongInverse.errors)}`,
+  );
+
+  const inverseOfAnotherTarget = validateOperation({
+    type: 'add_node',
+    node: structuredClone(NEW_NODE),
+    inverse: { type: 'remove_node', node_id: 'outro_no' },
+  });
+  assert.equal(inverseOfAnotherTarget.valid, false, 'the inverse has to undo THE SAME target');
+  assert.ok(inverseOfAnotherTarget.errors.some((error) => error.code === 'incompatible_inverse'));
+
+  const unchangeableField = validateOperation({
+    type: 'change_node_field',
+    node_id: 'revisar',
+    field: 'id',
+    from: 'revisar',
+    to: 'revisar_tudo',
+    inverse: {
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'id',
+      from: 'revisar_tudo',
+      to: 'revisar',
+    },
+  });
+  assert.equal(unchangeableField.valid, false, 'swapping an id is an operation of its own, not a field swap');
+  assert.ok(unchangeableField.errors.some((error) => error.code === 'field_not_changeable'));
+});
+
+/* -------------------------------------------------------------------------- */
+/* t228 — the §3 vocabulary is English, and only English.                      */
+/*                                                                            */
+/* D20's third child renames the operation on the wire. The half that matters  */
+/* is not that the new spelling is accepted — it is that the OLD one stops     */
+/* being: dev databases are recreated (D20), so an operation still spelled in  */
+/* Portuguese is not an older dialect to fall back on, it is an unknown type.  */
+/* A validator that quietly took both would be the second vocabulary this      */
+/* whole migration exists to avoid.                                           */
+/* -------------------------------------------------------------------------- */
+
+test('t228 AT — the five type names, the keys and the report all speak §3 English', async () => {
+  const { OPERATION_TYPES, validateOperation, applyOperations } = await loadOperations();
+
+  assert.deepEqual(
+    [...OPERATION_TYPES],
+    ['add_node', 'remove_node', 'add_edge', 'remove_edge', 'change_node_field'],
+    'the five names, in the order the specification presents them',
+  );
+
+  // The report shape itself is part of §3: `{valid, errors: [{code, message}]}`.
+  const report = validateOperation({
+    type: 'add_node',
+    node: structuredClone(NEW_NODE),
+    inverse: { type: 'remove_node', node_id: NEW_NODE.id },
+  });
+  assert.deepEqual(Object.keys(report).sort(), ['errors', 'valid']);
+  assert.deepEqual(report, { valid: true, errors: [] });
+
+  const broken = validateOperation({ type: 'remove_node', node_id: '' });
+  assert.equal(broken.valid, false);
+  assert.ok(broken.errors.length > 0, 'a broken operation has to report at least one error');
+  for (const error of broken.errors) {
+    assert.deepEqual(Object.keys(error).sort(), ['code', 'message']);
+  }
+
+  // And the whole vocabulary round-trips through application, not only through
+  // validation: every key an operation carries has to be the one applyOperations
+  // reads, or the rename would pass the gate and lose the payload.
+  const result = applyOperations(minimalGraph(), [
+    {
+      type: 'add_node',
+      node: structuredClone(NEW_NODE),
+      inverse: { type: 'remove_node', node_id: NEW_NODE.id },
+    },
+    {
+      type: 'add_edge',
+      edge: { from: 'revisar', to: NEW_NODE.id, condition: 'reprovado' },
+      inverse: { type: 'remove_edge', edge: { from: 'revisar', to: NEW_NODE.id } },
+    },
+    {
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'role',
+      from: 'revisor',
+      to: 'red-team',
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'revisar',
+        field: 'role',
+        from: 'red-team',
+        to: 'revisor',
+      },
+    },
+  ]);
+  assert.ok(result.nodes.some((node) => node.id === NEW_NODE.id));
+  assert.ok(result.edges.some((edge) => edge.from === 'revisar' && edge.to === NEW_NODE.id));
+  assert.equal(requireNode(result, 'revisar').role, 'red-team');
+});
+
+test('t228 AT — a Portuguese-keyed operation is an unknown type, not an older spelling', async () => {
+  const { validateOperation, OPERATION_TYPES } = await loadOperations();
+
+  for (const type of [
+    'adicionar_no',
+    'remover_no',
+    'adicionar_aresta',
+    'remover_aresta',
+    'alterar_campo_no',
+  ]) {
+    assert.ok(!OPERATION_TYPES.includes(type), `"${type}" must no longer be a known type`);
+  }
+
+  const portuguese = validateOperation({
     tipo: 'adicionar_no',
     no: structuredClone(NEW_NODE),
     inversa: { tipo: 'remover_no', no_id: NEW_NODE.id },
   });
-  assert.deepEqual(valid, { valido: true, erros: [] }, 'the well-formed operation has to pass');
-
-  const unknown = validateOperation({
-    tipo: 'renomear_no',
-    no_id: 'revisar',
-    inversa: { tipo: 'renomear_no', no_id: 'revisar' },
-  });
-  assert.equal(unknown.valido, false);
+  assert.equal(portuguese.valid, false, 'the old vocabulary is not accepted alongside the new one');
   assert.ok(
-    unknown.erros.some((error) => error.codigo === 'tipo_desconhecido'),
-    `expected tipo_desconhecido, got ${JSON.stringify(unknown.erros)}`,
+    portuguese.errors.some((error) => error.code === 'unknown_type'),
+    `expected unknown_type, got ${JSON.stringify(portuguese.errors)}`,
+  );
+});
+
+test('t228 AT — the unknown-edge target names the ends in English', async () => {
+  const { applyOperations, ApplicationError } = await loadOperations();
+
+  // `remove_edge` carries an `EdgeReference`, and the payload that says which
+  // edge was missing has to spell it the way the reference does — `de`/`para`
+  // here would be the one place in the flow where the two disagree.
+  assert.throws(
+    () =>
+      applyOperations(minimalGraph(), [
+        {
+          type: 'remove_edge',
+          edge: { from: 'revisar', to: 'redigir', condition: 'retrabalho' },
+          inverse: {
+            type: 'add_edge',
+            edge: { from: 'revisar', to: 'redigir', condition: 'retrabalho' },
+          },
+        },
+      ]),
+    (error: unknown) =>
+      error instanceof ApplicationError &&
+      error.code === 'unknown_edge' &&
+      JSON.stringify(error.target) ===
+        JSON.stringify({ from: 'revisar', to: 'redigir', condition: 'retrabalho' }),
   );
 
-  const withoutInverse = validateOperation({ tipo: 'adicionar_no', no: structuredClone(NEW_NODE) });
-  assert.equal(withoutInverse.valido, false);
-  assert.ok(
-    withoutInverse.erros.some((error) => error.codigo === 'inversa_ausente'),
-    `expected inversa_ausente, got ${JSON.stringify(withoutInverse.erros)}`,
+  // With no `condition` declared, the payload carries only the two ends.
+  assert.throws(
+    () =>
+      applyOperations(minimalGraph(), [
+        {
+          type: 'remove_edge',
+          edge: { from: 'revisar', to: 'redigir' },
+          inverse: { type: 'add_edge', edge: { from: 'revisar', to: 'redigir', condition: 'x' } },
+        },
+      ]),
+    (error: unknown) =>
+      error instanceof ApplicationError &&
+      error.code === 'unknown_edge' &&
+      JSON.stringify(error.target) === JSON.stringify({ from: 'revisar', to: 'redigir' }),
   );
-
-  const wrongInverse = validateOperation({
-    tipo: 'adicionar_no',
-    no: structuredClone(NEW_NODE),
-    inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: 'revisar' } },
-  });
-  assert.equal(wrongInverse.valido, false);
-  assert.ok(
-    wrongInverse.erros.some((error) => error.codigo === 'inversa_incompativel'),
-    `expected inversa_incompativel, got ${JSON.stringify(wrongInverse.erros)}`,
-  );
-
-  const inverseOfAnotherTarget = validateOperation({
-    tipo: 'adicionar_no',
-    no: structuredClone(NEW_NODE),
-    inversa: { tipo: 'remover_no', no_id: 'outro_no' },
-  });
-  assert.equal(inverseOfAnotherTarget.valido, false, 'the inverse has to undo THE SAME target');
-  assert.ok(inverseOfAnotherTarget.erros.some((error) => error.codigo === 'inversa_incompativel'));
-
-  const unchangeableField = validateOperation({
-    tipo: 'alterar_campo_no',
-    no_id: 'revisar',
-    campo: 'id',
-    de: 'revisar',
-    para: 'revisar_tudo',
-    inversa: {
-      tipo: 'alterar_campo_no',
-      no_id: 'revisar',
-      campo: 'id',
-      de: 'revisar_tudo',
-      para: 'revisar',
-    },
-  });
-  assert.equal(unchangeableField.valido, false, 'swapping an id is an operation of its own, not a field swap');
-  assert.ok(unchangeableField.erros.some((error) => error.codigo === 'campo_nao_alteravel'));
 });
 
 test('AT5 — applying an operation over a missing target throws instead of a silent no-op', async () => {
@@ -299,49 +439,49 @@ test('AT5 — applying an operation over a missing target throws instead of a si
     () =>
       applyOperations(minimalGraph(), [
         {
-          tipo: 'remover_no',
-          no_id: ghost.id,
-          inversa: { tipo: 'adicionar_no', no: ghost },
+          type: 'remove_node',
+          node_id: ghost.id,
+          inverse: { type: 'add_node', node: ghost },
         },
       ]),
-    (error: unknown) => error instanceof ApplicationError && error.code === 'no_inexistente',
+    (error: unknown) => error instanceof ApplicationError && error.code === 'unknown_node',
   );
 
   assert.throws(
     () =>
       applyOperations(minimalGraph(), [
         {
-          tipo: 'adicionar_no',
-          no: structuredClone(requireNode(minimalGraph(), 'redigir')),
-          inversa: { tipo: 'remover_no', no_id: 'redigir' },
+          type: 'add_node',
+          node: structuredClone(requireNode(minimalGraph(), 'redigir')),
+          inverse: { type: 'remove_node', node_id: 'redigir' },
         },
       ]),
-    (error: unknown) => error instanceof ApplicationError && error.code === 'no_duplicado',
+    (error: unknown) => error instanceof ApplicationError && error.code === 'duplicate_node',
   );
 });
 
 /* -------------------------------------------------------------------------- */
 /* t166 — engine and model become proposable fields.                           */
 /*                                                                            */
-/* No new operation type: `alterar_campo_no` already validates the shape and   */
+/* No new operation type: `change_node_field` already validates the shape and   */
 /* the inverse, so what this ficha changes is one allowlist. The regression    */
-/* half matters as much as the addition — a `campo` outside the list has to    */
+/* half matters as much as the addition — a `field` outside the list has to    */
 /* stay refused, or the allowlist has stopped being one.                       */
 /* -------------------------------------------------------------------------- */
 
-/** A swap of one node field, with the inverse `alterar_campo_no` demands. */
+/** A swap of one node field, with the inverse `change_node_field` demands. */
 function swapField(field: string, from: unknown, to: unknown): unknown {
   return {
-    tipo: 'alterar_campo_no',
-    no_id: 'revisar',
-    campo: field,
-    de: from,
-    para: to,
-    inversa: { tipo: 'alterar_campo_no', no_id: 'revisar', campo: field, de: to, para: from },
+    type: 'change_node_field',
+    node_id: 'revisar',
+    field,
+    from,
+    to,
+    inverse: { type: 'change_node_field', node_id: 'revisar', field, from: to, to: from },
   };
 }
 
-test('t166 AT — alterar_campo_no accepts engine and model, with a well-formed inverse', async () => {
+test('t166 AT — change_node_field accepts engine and model, with a well-formed inverse', async () => {
   const { validateOperation, CHANGEABLE_FIELDS } = await loadOperations();
 
   for (const field of ['engine', 'model'] as const) {
@@ -352,28 +492,28 @@ test('t166 AT — alterar_campo_no accepts engine and model, with a well-formed 
   }
 
   const engine = validateOperation(swapField('engine', 'claude-code', 'codex'));
-  assert.deepEqual(engine, { valido: true, erros: [] });
+  assert.deepEqual(engine, { valid: true, errors: [] });
 
-  // `null` for the before-value of a node that declared nothing: `de` has to be
+  // `null` for the before-value of a node that declared nothing: `from` has to be
   // PRESENT (the shape check demands the key), and JSON — which is how a
   // proposal actually arrives — has no way to carry `undefined`.
   const model = validateOperation(swapField('model', null, 'claude-haiku-4-5'));
-  assert.deepEqual(model, { valido: true, erros: [] });
+  assert.deepEqual(model, { valid: true, errors: [] });
 
-  // The surveyor's own use case: a smaller model on the gate. `de: undefined`
+  // The surveyor's own use case: a smaller model on the gate. `from: undefined`
   // above is the node that declared nothing; here the node had one already.
   const downgrade = validateOperation(swapField('model', 'claude-opus-5', 'claude-haiku-4-5'));
-  assert.deepEqual(downgrade, { valido: true, erros: [] });
+  assert.deepEqual(downgrade, { valid: true, errors: [] });
 });
 
-test('t166 AT — a campo outside CHANGEABLE_FIELDS is still refused (regression)', async () => {
+test('t166 AT — a field outside CHANGEABLE_FIELDS is still refused (regression)', async () => {
   const { validateOperation, CHANGEABLE_FIELDS } = await loadOperations();
 
   for (const field of ['id', 'node_type', 'motor', 'modelo']) {
     assert.ok(!CHANGEABLE_FIELDS.includes(field), `the guard is vacuous: "${field}" is allowed`);
     const report = validateOperation(swapField(field, 'antes', 'depois'));
-    assert.equal(report.valido, false, `"${field}" must not be swappable by alterar_campo_no`);
-    assert.ok(report.erros.some((error) => error.codigo === 'campo_nao_alteravel'));
+    assert.equal(report.valid, false, `"${field}" must not be swappable by change_node_field`);
+    assert.ok(report.errors.some((error) => error.code === 'field_not_changeable'));
   }
 });
 
@@ -403,7 +543,7 @@ test('t166 AT — applying an engine/model swap changes that field and nothing e
 /* t205 — two parallel edges are two edges.                                    */
 /*                                                                            */
 /* The format has always allowed two edges between the same pair of nodes with */
-/* different `condition`s, and `remover_aresta` had no way of saying WHICH of  */
+/* different `condition`s, and `remove_edge` had no way of saying WHICH of  */
 /* the two it meant: `EdgeReference` was `{from, to}` and application removed  */
 /* the first hit. `condition` on the target closes that, and stays OPTIONAL —  */
 /* every operation already stored in `proposta.operacoes` omits it, and has to */
@@ -420,27 +560,27 @@ function graphWithParallelEdges(): GraphDocument {
   return document;
 }
 
-/** `adicionar_aresta` of one edge, with the removal that undoes it. */
+/** `add_edge` of one edge, with the removal that undoes it. */
 function addEdge(condition: string, inverseCondition?: string): unknown {
-  const aresta = { from: 'redigir', to: 'revisar', condition };
+  const edge = { from: 'redigir', to: 'revisar', condition };
   const target: Record<string, string> =
     inverseCondition === undefined
       ? { from: 'redigir', to: 'revisar' }
       : { from: 'redigir', to: 'revisar', condition: inverseCondition };
-  return { tipo: 'adicionar_aresta', aresta, inversa: { tipo: 'remover_aresta', aresta: target } };
+  return { type: 'add_edge', edge, inverse: { type: 'remove_edge', edge: target } };
 }
 
-test('t205 AT — remover_aresta with a condicao removes exactly that parallel edge', async () => {
+test('t205 AT — remove_edge with a condition removes exactly that parallel edge', async () => {
   const { applyOperations } = await loadOperations();
 
   const input = graphWithParallelEdges();
   const result = applyOperations(input, [
     {
-      tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
-      inversa: {
-        tipo: 'adicionar_aresta',
-        aresta: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      type: 'remove_edge',
+      edge: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
+      inverse: {
+        type: 'add_edge',
+        edge: { from: 'redigir', to: 'revisar', condition: 'reprovado' },
       },
     },
   ]);
@@ -457,18 +597,18 @@ test('t205 AT — remover_aresta with a condicao removes exactly that parallel e
   );
 });
 
-test('t205 AT — remover_aresta without a condicao still removes the first edge by its two ends', async () => {
+test('t205 AT — remove_edge without a condition still removes the first edge by its two ends', async () => {
   const { applyOperations } = await loadOperations();
 
   // The shape every operation stored before this ticket has, and the one
   // `diff.ts` keeps emitting: no `condition`, first hit by `from`/`to`.
   const result = applyOperations(graphWithParallelEdges(), [
     {
-      tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar' },
-      inversa: {
-        tipo: 'adicionar_aresta',
-        aresta: { from: 'redigir', to: 'revisar', condition: 'aprovado' },
+      type: 'remove_edge',
+      edge: { from: 'redigir', to: 'revisar' },
+      inverse: {
+        type: 'add_edge',
+        edge: { from: 'redigir', to: 'revisar', condition: 'aprovado' },
       },
     },
   ]);
@@ -480,57 +620,57 @@ test('t205 AT — remover_aresta without a condicao still removes the first edge
   );
 });
 
-test('t205 AT — an inverse pair whose condicao agrees is a valid pair', async () => {
+test('t205 AT — an inverse pair whose condition agrees is a valid pair', async () => {
   const { validateOperation } = await loadOperations();
 
-  assert.deepEqual(validateOperation(addEdge('aprovado', 'aprovado')), { valido: true, erros: [] });
+  assert.deepEqual(validateOperation(addEdge('aprovado', 'aprovado')), { valid: true, errors: [] });
 });
 
-test('t205 AT — an inverse pair whose condicao disagrees is incompatible', async () => {
+test('t205 AT — an inverse pair whose condition disagrees is incompatible', async () => {
   const { validateOperation } = await loadOperations();
 
   const report = validateOperation(addEdge('aprovado', 'reprovado'));
-  assert.equal(report.valido, false, 'undoing another parallel edge is not undoing this one');
+  assert.equal(report.valid, false, 'undoing another parallel edge is not undoing this one');
   assert.ok(
-    report.erros.some((error) => error.codigo === 'inversa_incompativel'),
-    `expected inversa_incompativel, got ${JSON.stringify(report.erros)}`,
+    report.errors.some((error) => error.code === 'incompatible_inverse'),
+    `expected incompatible_inverse, got ${JSON.stringify(report.errors)}`,
   );
 });
 
-test('t205 AT — an inverse pair whose target omits condicao stays valid (legacy shape)', async () => {
+test('t205 AT — an inverse pair whose target omits condition stays valid (legacy shape)', async () => {
   const { validateOperation } = await loadOperations();
 
-  assert.deepEqual(validateOperation(addEdge('aprovado')), { valido: true, erros: [] });
+  assert.deepEqual(validateOperation(addEdge('aprovado')), { valid: true, errors: [] });
 
   // And the other way round: the removal names the edge, the addition that
   // undoes it is the whole edge anyway. Only two DECLARED conditions can clash.
   assert.deepEqual(
     validateOperation({
-      tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar', condition: 'aprovado' },
-      inversa: { tipo: 'adicionar_aresta', aresta: { from: 'redigir', to: 'revisar', condition: 'aprovado' } },
+      type: 'remove_edge',
+      edge: { from: 'redigir', to: 'revisar', condition: 'aprovado' },
+      inverse: { type: 'add_edge', edge: { from: 'redigir', to: 'revisar', condition: 'aprovado' } },
     }),
-    { valido: true, erros: [] },
+    { valid: true, errors: [] },
   );
 });
 
-test('t205 AT — a condicao that is not a string is refused on either edge operation', async () => {
+test('t205 AT — a condition that is not a string is refused on either edge operation', async () => {
   const { validateOperation } = await loadOperations();
 
   for (const operation of [
     {
-      tipo: 'remover_aresta',
-      aresta: { from: 'redigir', to: 'revisar', condition: 7 },
-      inversa: { tipo: 'adicionar_aresta', aresta: { from: 'redigir', to: 'revisar', condition: 'aprovado' } },
+      type: 'remove_edge',
+      edge: { from: 'redigir', to: 'revisar', condition: 7 },
+      inverse: { type: 'add_edge', edge: { from: 'redigir', to: 'revisar', condition: 'aprovado' } },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: 'redigir', to: 'revisar', condition: 7 },
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: 'revisar' } },
+      type: 'add_edge',
+      edge: { from: 'redigir', to: 'revisar', condition: 7 },
+      inverse: { type: 'remove_edge', edge: { from: 'redigir', to: 'revisar' } },
     },
   ]) {
     const report = validateOperation(operation);
-    assert.equal(report.valido, false, `a numeric condition has to be refused: ${JSON.stringify(operation)}`);
-    assert.ok(report.erros.some((error) => error.codigo === 'campo_invalido'));
+    assert.equal(report.valid, false, `a numeric condition has to be refused: ${JSON.stringify(operation)}`);
+    assert.ok(report.errors.some((error) => error.code === 'invalid_field'));
   }
 });

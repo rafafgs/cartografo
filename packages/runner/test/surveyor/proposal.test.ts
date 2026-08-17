@@ -345,17 +345,17 @@ class CountingAdapter implements EngineAdapter {
 /** A well-formed semantic diff, in the vocabulary of `entidades-versionamento` §3. */
 const VALID_OPERATIONS = [
   {
-    tipo: 'alterar_campo_no',
-    no_id: 'revisar',
-    campo: 'description',
-    de: 'Confere a nota contra o tema declarado e encerra a travessia.',
-    para: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
-    inversa: {
-      tipo: 'alterar_campo_no',
-      no_id: 'revisar',
-      campo: 'description',
-      de: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
-      para: 'Confere a nota contra o tema declarado e encerra a travessia.',
+    type: 'change_node_field',
+    node_id: 'revisar',
+    field: 'description',
+    from: 'Confere a nota contra o tema declarado e encerra a travessia.',
+    to: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
+    inverse: {
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'description',
+      from: 'Confere a nota contra o tema declarado, com um checklist de três itens.',
+      to: 'Confere a nota contra o tema declarado e encerra a travessia.',
     },
   },
 ];
@@ -381,7 +381,7 @@ test('t110 — a run with a bottleneck lands exactly one pending proposal, backe
     timeoutSeconds: 60,
     envOverrides: engineWriting(
       OUTPUT_FILE,
-      JSON.stringify({ operacoes: VALID_OPERATIONS }, null, 2),
+      JSON.stringify({ operations: VALID_OPERATIONS }, null, 2),
     ),
   });
 
@@ -457,8 +457,8 @@ test('t110 — a session that returns nothing usable aborts, and posts nothing',
   // The pattern is built from a string, not a regex literal, because what it
   // matches is the frozen wire key and not an identifier of ours (D18/FR2).
   await assert.rejects(
-    async () => run(engineWriting(OUTPUT_FILE, JSON.stringify({ operacoes: [] }))),
-    new RegExp('operacoes', 'i'),
+    async () => run(engineWriting(OUTPUT_FILE, JSON.stringify({ operations: [] }))),
+    new RegExp('operations', 'i'),
   );
 
   // 2. Structurally malformed: an operation with no inverse, which the server
@@ -468,10 +468,10 @@ test('t110 — a session that returns nothing usable aborts, and posts nothing',
       run(
         engineWriting(
           OUTPUT_FILE,
-          JSON.stringify({ operacoes: [{ tipo: 'adicionar_no', no: { id: 'red_team' } }] }),
+          JSON.stringify({ operations: [{ type: 'add_node', node: { id: 'red_team' } }] }),
         ),
       ),
-    new RegExp('operation|operacoes', 'i'),
+    new RegExp('operation|operations', 'i'),
   );
 
   // 3. The session wrote nothing at all.
@@ -489,6 +489,59 @@ test('t110 — a session that returns nothing usable aborts, and posts nothing',
   assert.deepEqual(proposals, [], 'and nothing landed in the book');
 });
 
+test('t228 — the old `operacoes` wrapper and the old operation keys are both refused, before any POST', async (t) => {
+  const { proposeFlowImprovement, OUTPUT_FILE, SurveyorError } = await loadProposal();
+  const scenario = await buildScenario(t);
+
+  const run = async (document: unknown): Promise<void> => {
+    await proposeFlowImprovement({
+      client: scenario.client,
+      adapter: fakeAdapter(),
+      executionId: EXECUTION_WITH_SIGNAL,
+      workingDir: scenario.workingDir,
+      timeoutSeconds: 60,
+      envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify(document)),
+    });
+  };
+
+  // The wrapper key moved with the rest of the vocabulary (FR5): a session still
+  // writing `operacoes` has written a file with no operations in it, which is
+  // the same "nothing to propose" as an empty list — not a second dialect the
+  // reader quietly accepts.
+  await assert.rejects(
+    async () => run({ operacoes: VALID_OPERATIONS }),
+    (error: unknown) => error instanceof SurveyorError && error.code === 'missing_operations',
+  );
+
+  // And an operation still spelled in Portuguese is caught by the local mirror,
+  // which is the whole reason the mirror exists (FR7 of t110): the server would
+  // answer 400, and this way nobody spends the write to find out.
+  await assert.rejects(
+    async () =>
+      run({
+        operations: [
+          {
+            tipo: 'alterar_campo_no',
+            no_id: 'revisar',
+            campo: 'description',
+            de: 'antes',
+            para: 'depois',
+            inversa: {
+              tipo: 'alterar_campo_no',
+              no_id: 'revisar',
+              campo: 'description',
+              de: 'depois',
+              para: 'antes',
+            },
+          },
+        ],
+      }),
+    (error: unknown) => error instanceof SurveyorError && error.code === 'invalid_operations',
+  );
+
+  assert.deepEqual(postsToProposals(scenario.calls), [], 'a bad diff never reaches the control plane');
+});
+
 test('t110 — a flat run exits quietly: no session, no proposal', async (t) => {
   const { proposeFlowImprovement, OUTPUT_FILE } = await loadProposal();
   const scenario = await buildScenario(t);
@@ -502,7 +555,7 @@ test('t110 — a flat run exits quietly: no session, no proposal', async (t) => 
     timeoutSeconds: 60,
     envOverrides: engineWriting(
       OUTPUT_FILE,
-      JSON.stringify({ operacoes: VALID_OPERATIONS }),
+      JSON.stringify({ operations: VALID_OPERATIONS }),
     ),
   });
 

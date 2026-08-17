@@ -294,19 +294,19 @@ function passingOperations(): OperationsModule.Operation[] {
   const node = newNode();
   return [
     {
-      tipo: 'adicionar_no',
-      no: node,
-      inversa: { tipo: 'remover_no', no_id: node.id },
+      type: 'add_node',
+      node,
+      inverse: { type: 'remove_node', node_id: node.id },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: 'redigir', to: node.id, condition: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: node.id } },
+      type: 'add_edge',
+      edge: { from: 'redigir', to: node.id, condition: 'sempre' },
+      inverse: { type: 'remove_edge', edge: { from: 'redigir', to: node.id } },
     },
     {
-      tipo: 'adicionar_aresta',
-      aresta: { from: node.id, to: 'revisar', condition: 'sempre' },
-      inversa: { tipo: 'remover_aresta', aresta: { from: node.id, to: 'revisar' } },
+      type: 'add_edge',
+      edge: { from: node.id, to: 'revisar', condition: 'sempre' },
+      inverse: { type: 'remove_edge', edge: { from: node.id, to: 'revisar' } },
     },
   ];
 }
@@ -356,17 +356,17 @@ test('t167 — changing a node escalation_policy is a proposal, and it produces 
 
   const proposal = await createProposal(address, graph.id, version.id, [
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'revisar',
-      campo: 'escalation_policy',
-      de: null,
-      para: 'never',
-      inversa: {
-        tipo: 'alterar_campo_no',
-        no_id: 'revisar',
-        campo: 'escalation_policy',
-        de: 'never',
-        para: null,
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'escalation_policy',
+      from: null,
+      to: 'never',
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'revisar',
+        field: 'escalation_policy',
+        from: 'never',
+        to: null,
       },
     },
   ]);
@@ -488,11 +488,11 @@ const REJECTION_CASES: Array<{
       const node = newNode();
       // Only the OUTGOING edge: the node terminates, but nobody reaches it.
       return [
-        { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: node.id } },
+        { type: 'add_node', node, inverse: { type: 'remove_node', node_id: node.id } },
         {
-          tipo: 'adicionar_aresta',
-          aresta: { from: node.id, to: 'revisar', condition: 'sempre' },
-          inversa: { tipo: 'remover_aresta', aresta: { from: node.id, to: 'revisar' } },
+          type: 'add_edge',
+          edge: { from: node.id, to: 'revisar', condition: 'sempre' },
+          inverse: { type: 'remove_edge', edge: { from: node.id, to: 'revisar' } },
         },
       ];
     },
@@ -505,11 +505,11 @@ const REJECTION_CASES: Array<{
       const node = newNode();
       // Only the INCOMING edge: the node is reached, but there is no way out.
       return [
-        { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: node.id } },
+        { type: 'add_node', node, inverse: { type: 'remove_node', node_id: node.id } },
         {
-          tipo: 'adicionar_aresta',
-          aresta: { from: 'redigir', to: node.id, condition: 'sempre' },
-          inversa: { tipo: 'remover_aresta', aresta: { from: 'redigir', to: node.id } },
+          type: 'add_edge',
+          edge: { from: 'redigir', to: node.id, condition: 'sempre' },
+          inverse: { type: 'remove_edge', edge: { from: 'redigir', to: node.id } },
         },
       ];
     },
@@ -523,9 +523,9 @@ const REJECTION_CASES: Array<{
     // A legitimate rework cycle, but with no label on the transition.
     operations: () => [
       {
-        tipo: 'adicionar_aresta',
-        aresta: { from: 'revisar', to: 'redigir', condition: '' },
-        inversa: { tipo: 'remover_aresta', aresta: { from: 'revisar', to: 'redigir' } },
+        type: 'add_edge',
+        edge: { from: 'revisar', to: 'redigir', condition: '' },
+        inverse: { type: 'remove_edge', edge: { from: 'revisar', to: 'redigir' } },
       },
     ],
   },
@@ -536,17 +536,17 @@ const REJECTION_CASES: Array<{
     // An emptied contract: with no checks, the gate verifies nothing.
     operations: (document) => [
       {
-        tipo: 'alterar_campo_no',
-        no_id: 'revisar',
-        campo: 'contract',
-        de: structuredClone(requireNode(document, 'revisar').contract),
-        para: {},
-        inversa: {
-          tipo: 'alterar_campo_no',
-          no_id: 'revisar',
-          campo: 'contract',
-          de: {},
-          para: structuredClone(requireNode(document, 'revisar').contract),
+        type: 'change_node_field',
+        node_id: 'revisar',
+        field: 'contract',
+        from: structuredClone(requireNode(document, 'revisar').contract),
+        to: {},
+        inverse: {
+          type: 'change_node_field',
+          node_id: 'revisar',
+          field: 'contract',
+          from: {},
+          to: structuredClone(requireNode(document, 'revisar').contract),
         },
       },
     ],
@@ -596,17 +596,17 @@ test('AT18 — a proposal whose target version stopped being the current one ret
   const first = await createProposal(address, graph.id, version.id, passingOperations());
   const second = await createProposal(address, graph.id, version.id, [
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'redigir',
-      campo: 'role',
-      de: 'redator',
-      para: 'red-team',
-      inversa: {
-        tipo: 'alterar_campo_no',
-        no_id: 'redigir',
-        campo: 'role',
-        de: 'red-team',
-        para: 'redator',
+      type: 'change_node_field',
+      node_id: 'redigir',
+      field: 'role',
+      from: 'redator',
+      to: 'red-team',
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'redigir',
+        field: 'role',
+        from: 'red-team',
+        to: 'redator',
       },
     },
   ]);
@@ -659,7 +659,7 @@ test('FR7 — a target version foreign to the graph and a malformed operation re
   const withoutInverse = await post(address, '/v1/proposals', {
     graph_id: graph.id,
     target_version: version.id,
-    operations: [{ tipo: 'adicionar_no', no: newNode() }],
+    operations: [{ type: 'add_node', node: newNode() }],
     evidence: EVIDENCE,
     expected_metric: EXPECTED_METRIC,
   });
@@ -669,7 +669,7 @@ test('FR7 — a target version foreign to the graph and a malformed operation re
   const unknownType = await post(address, '/v1/proposals', {
     graph_id: graph.id,
     target_version: version.id,
-    operations: [{ tipo: 'renomear_no', no_id: 'redigir', inversa: { tipo: 'renomear_no' } }],
+    operations: [{ type: 'rename_node', node_id: 'redigir', inverse: { type: 'rename_node' } }],
     evidence: EVIDENCE,
     expected_metric: EXPECTED_METRIC,
   });
@@ -686,6 +686,61 @@ test('FR7 — a target version foreign to the graph and a malformed operation re
 
   assert.equal((await post(address, '/v1/proposals/999/apply', {})).status, 404);
   assert.equal((await post(address, '/v1/proposals/999/revert', { reason: 'x' })).status, 404);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t228 — the operation vocabulary crosses the route in English (D20, §3).     */
+/* -------------------------------------------------------------------------- */
+
+test('t228 AT — POST /proposals takes English-keyed operations and refuses Portuguese-keyed ones', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+
+  // The accepted half is the whole existing suite; what this pins is that the
+  // OLD spelling stops working at the door. Stored proposals are not migrated
+  // (D20: dev databases are recreated), so there is no dialect to fall back to.
+  const node = newNode();
+  const portuguese = await post(address, '/v1/proposals', {
+    graph_id: graph.id,
+    target_version: version.id,
+    operations: [
+      { tipo: 'adicionar_no', no: node, inversa: { tipo: 'remover_no', no_id: node.id } },
+    ],
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
+  });
+  assert.equal(portuguese.status, 400);
+  assert.equal((await jsonBody<{ error: string }>(portuguese)).error, 'invalid_operations');
+
+  const english = await createProposal(address, graph.id, version.id, passingOperations());
+  assert.equal(english.status, 'pending');
+});
+
+test('t228 AT — applying a remove_edge the snapshot does not have answers unknown_edge with English ends', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+
+  // The operation is well formed (it passes `POST /proposals`) and simply names
+  // an edge the target snapshot never had: that is the ApplicationError path,
+  // and its `target` payload is the one §3 renames from `{de, para, condicao}`.
+  const proposal = await createProposal(address, graph.id, version.id, [
+    {
+      type: 'remove_edge',
+      edge: { from: 'revisar', to: 'redigir', condition: 'retrabalho' },
+      inverse: {
+        type: 'add_edge',
+        edge: { from: 'revisar', to: 'redigir', condition: 'retrabalho' },
+      },
+    },
+  ]);
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<{ error: string; code: string; target: unknown }>(response);
+  assert.equal(response.status, 422, JSON.stringify(body));
+  assert.equal(body.error, 'inapplicable_operation');
+  assert.equal(body.code, 'unknown_edge');
+  assert.deepEqual(body.target, { from: 'revisar', to: 'redigir', condition: 'retrabalho' });
 });
 
 test('t127 — the old Portuguese proposal paths no longer exist', async (t) => {
@@ -733,17 +788,17 @@ interface HypothesisOutcome {
 function roleChange(role: string): OperationsModule.Operation[] {
   return [
     {
-      tipo: 'alterar_campo_no',
-      no_id: 'redigir',
-      campo: 'role',
-      de: 'redator',
-      para: role,
-      inversa: {
-        tipo: 'alterar_campo_no',
-        no_id: 'redigir',
-        campo: 'role',
-        de: role,
-        para: 'redator',
+      type: 'change_node_field',
+      node_id: 'redigir',
+      field: 'role',
+      from: 'redator',
+      to: role,
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'redigir',
+        field: 'role',
+        from: role,
+        to: 'redator',
       },
     },
   ];
@@ -1214,7 +1269,7 @@ test('t180 — the human gate refuses in English, with the frozen status quoted'
 /* -------------------------------------------------------------------------- */
 /* t166 — changing a node's engine/model is a versioned graph mutation (D15).  */
 /*                                                                            */
-/* No new machinery is proven here, and that IS the claim: `alterar_campo_no`  */
+/* No new machinery is proven here, and that IS the claim: `change_node_field`  */
 /* over the two new fields rides the pipeline the rest of this file already    */
 /* exercises — apply, soundness, new `grafo_versao`, pointer moved — and the   */
 /* previous version stays readable, because nothing is ever deleted (D15).     */
@@ -1223,12 +1278,12 @@ test('t180 — the human gate refuses in English, with the frozen status quoted'
 /** Swaps one field of the `revisar` node, with its inverse. */
 function swapNodeField(field: string, from: unknown, to: unknown): OperationsModule.Operation {
   return {
-    tipo: 'alterar_campo_no',
-    no_id: 'revisar',
-    campo: field,
-    de: from,
-    para: to,
-    inversa: { tipo: 'alterar_campo_no', no_id: 'revisar', campo: field, de: to, para: from },
+    type: 'change_node_field',
+    node_id: 'revisar',
+    field,
+    from,
+    to,
+    inverse: { type: 'change_node_field', node_id: 'revisar', field, from: to, to: from },
   } as OperationsModule.Operation;
 }
 
@@ -1250,7 +1305,7 @@ test('t166 AT — applying a model change writes a new version and moves the poi
 
   // `null` and not `undefined` for the before-value: JSON has no `undefined`,
   // so a proposal that says "this node declared nothing" has to say it in a
-  // word the wire can carry — and `alterar_campo_no` demands `de` be present.
+  // word the wire can carry — and `change_node_field` demands `from` be present.
   const operations = [swapNodeField('model', null, 'claude-haiku-4-5')];
   const proposal = await createProposal(address, graph.id, version.id, operations);
   await approve(address, proposal.id);

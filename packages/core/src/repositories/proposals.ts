@@ -14,6 +14,12 @@
  * way round — would leave the history lying, which is exactly what D15 buys with
  * append-only.
  *
+ * Since t196 the LOG is part of each of those transactions: applying records
+ * `graph_version.registered` + `graph_version.applied` through
+ * `graphs.ts`'s `recordVersionBirth`, and reverting records one
+ * `graph_version.reverted`. Same rule as the rows — projection and event land
+ * together or not at all.
+ *
  * Like `repositories/graphs.ts`, it receives the already-open database and never
  * touches the driver (D1). The COLUMNS are English since D20's fourth child
  * (t229) and the stored VALUES since its fifth (t235); {@link ProposalRow}'s
@@ -23,14 +29,16 @@
  */
 
 import type { Database } from '../db/connection.ts';
+import { recordEvent } from '../db/events.ts';
 import type { GraphDocument } from '../domain/graph.ts';
 import type { Verdict } from '../domain/hypothesis.ts';
 import type { Operation } from '../domain/operations.ts';
-import { now } from './common.ts';
+import { API_ACTOR, DEFAULT_PROJECT, now } from './common.ts';
 import {
   getVersionSummary,
   insertVersion,
   movePointer,
+  recordVersionBirth,
   type GraphVersionRow,
 } from './graphs.ts';
 
@@ -345,6 +353,18 @@ export function applyProposal(
 
     movePointer(db, proposal.grafo_id, versionId);
 
+    // The same pair the two bootstrap paths record, this time with the proposal
+    // that produced the snapshot: a version born of a hypothesis is exactly what
+    // the surveyor will later cross with the telemetry of the round that ran it.
+    recordVersionBirth(db, {
+      graphId: proposal.grafo_id,
+      versionId,
+      parentVersion: proposal.versao_alvo,
+      source: 'proposal',
+      proposalId: proposal.id,
+      moment,
+    });
+
     const effect = db
       .prepare(
         `UPDATE proposal SET status = 'applied', applied_version_id = ?, updated_at = ?
@@ -388,6 +408,15 @@ export function revertProposal(
   const { proposal, reason } = data;
   const moment = now();
 
+  // The subject of `graph_version.reverted` is the ABANDONED version, and an
+  // applied proposal always names it — `applyProposal` writes the column in the
+  // same transaction that sets the status. Reading it before opening this one
+  // means a row that somehow lost it fails without having moved a pointer.
+  const abandoned = proposal.versao_aplicada_id;
+  if (abandoned === null) {
+    throw new Error(`proposal ${proposal.id} is applied without an applied version`);
+  }
+
   db.transaction(() => {
     movePointer(db, proposal.grafo_id, proposal.versao_alvo);
 
@@ -401,6 +430,22 @@ export function revertProposal(
     if (effect.changes !== 1) {
       throw new Error(`proposal ${proposal.id} stopped being applied during the reversion`);
     }
+
+    // ONE event, and no `registered`/`applied`: reverting writes no version, it
+    // moves a pointer back over history that stays intact (D15).
+    recordEvent(db, {
+      type: 'graph_version.reverted',
+      project_id: DEFAULT_PROJECT,
+      execution_id: null,
+      entity: { type: 'graph_version', id: abandoned },
+      actor: API_ACTOR,
+      occurred_at: moment,
+      data: {
+        graph_id: proposal.grafo_id,
+        target_version: proposal.versao_alvo,
+        reason,
+      },
+    });
   })();
 
   const updated = getProposal(db, proposal.id);

@@ -28,8 +28,8 @@
     }
   },
   "leases": {
-    "7001": { "status": "ativa" },
-    "7002": { "status": "expirada" }
+    "7001": { "status": "active" },
+    "7002": { "status": "expired" }
   },
   "grafo_versao_corrente": {
     "software-dev": "sha256:1a0b7e55"

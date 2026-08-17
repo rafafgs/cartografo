@@ -24,10 +24,17 @@
  * signature, and it pays off: the end-to-end path with real time stays proven in
  * AT17.
  *
- * This file does NOT emit `lease.granted`/`lease.expired`: both depend on the
- * `event` table and on `src/db/events.ts`, deliverables of t102 (the same cut
- * t101 made for `graph_version.*`). The columns below already carry everything
- * the two events ask for.
+ * Since t196 this file emits `lease.granted` and `lease.expired` into the
+ * append-only log, inside the same transactions that write the rows — the
+ * columns below already carried everything the two events ask for, and what was
+ * missing was only the call. One event per LEASE, never per sweep: `expireOverdue`
+ * kills a batch with one `UPDATE`, and a single event for it would say "some
+ * leases died" to a consumer that has to know which.
+ *
+ * What still leaves no trace is an ordinary release: the taxonomy has no
+ * `lease.released` type, so `releaseLease` below writes a row and nothing else.
+ * Growing the taxonomy is a decision of its own, recorded as a follow-up in
+ * t196's Out of Scope and in `docs/spec/runner-e-controller.md` §7.
  *
  * The COLUMNS are English since D20's fourth child (t229) and the stored VALUES
  * since its fifth (t235); {@link LeaseRow}'s field names are not, because
@@ -36,7 +43,8 @@
  */
 
 import type { Database } from '../db/connection.ts';
-import { now } from './common.ts';
+import { recordEvent } from '../db/events.ts';
+import { API_ACTOR, now } from './common.ts';
 
 /** Possible states of a lease, as the `CHECK` of migration `0004` spells them. */
 export type LeaseStatus = 'active' | 'released' | 'expired';
@@ -243,10 +251,15 @@ export function listLeases(db: Database, filters: LeaseFilters = {}): LeaseRow[]
  * reconciles (the grant) or inside the transaction of `claimExpired`.
  *
  * The reason distinguishes the two possible deaths, with the vocabulary of the
- * `lease.expirada` event: a lease that was NEVER renewed (`heartbeat_at` still
+ * `lease.expired` event: a lease that was NEVER renewed (`heartbeat_at` still
  * equal to `granted_at`) simply ran out — the runner may not even have
  * started; one that was renewed at least once and then stopped lost its
  * heartbeat, which is the sign of a runner dead mid-job.
+ *
+ * The event is recorded HERE, inside the loop that re-reads each row, and not at
+ * the two call sites: this is the only place that knows which leases died and
+ * why, and emitting one event per row is what keeps the bulk `UPDATE` above from
+ * collapsing several deaths into a single fact (t196, FR7).
  *
  * @param db Open database, inside a transaction.
  * @param moment Reference instant.
@@ -271,6 +284,19 @@ function expireOverdue(db: Database, moment: string): LeaseRow[] {
   return overdue.map(({ id }) => {
     const lease = getLease(db, id);
     if (lease === undefined) throw new Error(`lease ${id} vanished during the claim`);
+
+    recordEvent(db, {
+      type: 'lease.expired',
+      // The lease's own project, never a default: this row carries the column
+      // (`migrations/0004_runner_lease.sql`), unlike `graph_version`.
+      project_id: lease.projeto_id,
+      execution_id: null,
+      entity: { type: 'lease', id: lease.id },
+      actor: API_ACTOR,
+      occurred_at: moment,
+      data: { runner_id: lease.runner_id, reason: lease.motivo_expiracao },
+    });
+
     return lease;
   });
 }
@@ -280,8 +306,9 @@ function expireOverdue(db: Database, moment: string): LeaseRow[] {
  *
  * It is the first step of `grantLease` (FR5/FR9) and is exported on its own
  * because it is a fact of the system with value of its own: "these leases died
- * and why" is exactly what the `lease.expirada` event will carry when t102 turns
- * telemetry on.
+ * and why" is exactly what the `lease.expired` event carries, one per lease,
+ * since t196. Both callers get the emission for free — it happens inside
+ * `expireOverdue`, in whichever transaction is open.
  *
  * @param db Open database.
  * @param options Injectable clock.
@@ -359,6 +386,24 @@ export function grantLease(
 
     const lease = getLease(db, Number(effect.lastInsertRowid));
     if (lease === undefined) throw new Error('the lease was not written');
+
+    // Inside the same transaction as the INSERT, and only on the path that
+    // really wrote one: a refusal above returns before reaching this line, and a
+    // log that recorded it would be counting dispatches that never happened.
+    recordEvent(db, {
+      type: 'lease.granted',
+      project_id: lease.projeto_id,
+      execution_id: null,
+      entity: { type: 'lease', id: lease.id },
+      actor: API_ACTOR,
+      occurred_at: moment,
+      data: {
+        job_id: lease.trabalho_id,
+        runner_id: lease.runner_id,
+        expires_at: lease.expira_em,
+      },
+    });
+
     return { lease };
   })();
 }

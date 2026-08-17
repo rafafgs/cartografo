@@ -238,7 +238,7 @@ function refusesEvent(input: Record<string, unknown>, field: string): void {
   );
 }
 
-test('t227 AT4 — the catalogue is the 13 English type names of glossario-wire.md §2.1', () => {
+test('t196 AT9 — the catalogue is the 18 type names of the taxonomy, in its order', () => {
   assert.deepEqual(
     [...KNOWN_TYPES],
     [
@@ -255,6 +255,11 @@ test('t227 AT4 — the catalogue is the 13 English type names of glossario-wire.
       'input_request.created',
       'input_request.answered',
       'input_request.auto_resolved',
+      'lease.granted',
+      'lease.expired',
+      'graph_version.registered',
+      'graph_version.applied',
+      'graph_version.reverted',
     ],
   );
 });
@@ -438,4 +443,116 @@ test('t227 AT4 / FR5 — the four enum-valued payload fields carry English value
   for (const basis of ['recomendacao', 'resposta_padrao', 'precedente']) {
     refuses('input_request.auto_resolved', { answer: 'a', based_on: basis }, 'based_on');
   }
+});
+
+/* -------------------------------------------------------------------------- */
+/* t196 — the five types the taxonomy declared and nobody recorded.            */
+/*                                                                             */
+/* The mirror is the contract: a payload the schemas of                        */
+/* `especificacoes/eventos/schemas/` accept has to pass here, and one they      */
+/* refuse has to fail here. These cases are the fields that carry the join —    */
+/* `graph_id`, `target_version`, the lease's own runner — plus the two closed   */
+/* enums, which are the only vocabulary of the five that a caller can get       */
+/* wrong in a way no shape check would catch.                                   */
+/* -------------------------------------------------------------------------- */
+
+test('t196 AT9 — the graph_version payloads demand what their schemas require', () => {
+  assert.deepEqual(
+    requireValidData('graph_version.registered', { graph_id: 'nota-curta', source: 'manual' }),
+    { graph_id: 'nota-curta', parent_version: null, source: 'manual', proposal_id: null },
+    'the first version of a lineage has no parent and no proposal, and says so explicitly',
+  );
+  refuses('graph_version.registered', { source: 'manual' }, 'graph_id');
+  refuses('graph_version.registered', { graph_id: 'nota-curta' }, 'source');
+
+  assert.deepEqual(requireValidData('graph_version.applied', { graph_id: 'nota-curta' }), {
+    graph_id: 'nota-curta',
+    proposal_id: null,
+  });
+  refuses('graph_version.applied', {}, 'graph_id');
+
+  assert.deepEqual(
+    requireValidData('graph_version.reverted', {
+      graph_id: 'nota-curta',
+      target_version: 'sha256:abc',
+      reason: 'piorou o retrabalho',
+    }),
+    { graph_id: 'nota-curta', target_version: 'sha256:abc', reason: 'piorou o retrabalho' },
+  );
+  for (const missing of ['graph_id', 'target_version', 'reason']) {
+    const complete: Record<string, unknown> = {
+      graph_id: 'nota-curta',
+      target_version: 'sha256:abc',
+      reason: 'piorou o retrabalho',
+    };
+    delete complete[missing];
+    refuses('graph_version.reverted', complete, missing);
+  }
+});
+
+test('t196 AT9 — the lease payloads demand what their schemas require', () => {
+  const granted = { job_id: 101, runner_id: 'runner-a', expires_at: '2026-08-17T13:00:00Z' };
+  assert.deepEqual(requireValidData('lease.granted', granted), granted);
+  for (const missing of Object.keys(granted)) {
+    const partial: Record<string, unknown> = { ...granted };
+    delete partial[missing];
+    refuses('lease.granted', partial, missing);
+  }
+
+  assert.deepEqual(
+    requireValidData('lease.expired', { runner_id: 'runner-a', reason: 'ttl_elapsed' }),
+    { runner_id: 'runner-a', reason: 'ttl_elapsed' },
+  );
+  refuses('lease.expired', { reason: 'ttl_elapsed' }, 'runner_id');
+  refuses('lease.expired', { runner_id: 'runner-a' }, 'reason');
+});
+
+test('t196 AT9 — the two closed enums of the new types accept their values and nothing else', () => {
+  for (const source of ['synthesizer', 'manual', 'proposal']) {
+    assert.equal(
+      requireValidData('graph_version.registered', { graph_id: 'g', source }).source,
+      source,
+    );
+  }
+  for (const source of ['sintetizador', 'proposta', 'importado']) {
+    refuses('graph_version.registered', { graph_id: 'g', source }, 'source');
+  }
+
+  for (const reason of ['heartbeat_lost', 'ttl_elapsed']) {
+    assert.equal(requireValidData('lease.expired', { runner_id: 'r', reason }).reason, reason);
+  }
+  for (const reason of ['heartbeat_perdido', 'expirou', 'released']) {
+    refuses('lease.expired', { runner_id: 'r', reason }, 'reason');
+  }
+});
+
+test('t196 AT9 — an event whose entity is not the type\'s own subject is refused', () => {
+  const leaseEnvelope = {
+    type: 'lease.granted',
+    entity: { type: 'graph_version', id: 'sha256:abc' },
+    data: { job_id: 1, runner_id: 'runner-a', expires_at: '2026-08-17T13:00:00Z' },
+  };
+  refusesEvent(envelope(leaseEnvelope), 'entity.type');
+  assert.deepEqual(
+    requireValidEvent(envelope({ ...leaseEnvelope, entity: { type: 'lease', id: 7001 } })).entity,
+    { type: 'lease', id: 7001 },
+  );
+
+  const versionEnvelope = {
+    type: 'graph_version.applied',
+    entity: { type: 'lease', id: 7001 },
+    data: { graph_id: 'nota-curta' },
+  };
+  refusesEvent(envelope(versionEnvelope), 'entity.type');
+  // And the id of a graph_version is the snapshot HASH, never an integer (D15).
+  refusesEvent(
+    envelope({ ...versionEnvelope, entity: { type: 'graph_version', id: 7001 } }),
+    'entity.id',
+  );
+  assert.deepEqual(
+    requireValidEvent(
+      envelope({ ...versionEnvelope, entity: { type: 'graph_version', id: 'sha256:abc' } }),
+    ).entity,
+    { type: 'graph_version', id: 'sha256:abc' },
+  );
 });

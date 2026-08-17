@@ -10,6 +10,13 @@
  * pointer's. That is what holds up D15's "nothing is erased" — and what makes
  * reverting a pointer move rather than an undo.
  *
+ * Since t196 every write here also writes to the LOG, in the same transaction:
+ * `recordVersionBirth` below is the pair `graph_version.registered` +
+ * `graph_version.applied` that the two bootstrap functions owe, and
+ * `repositories/proposals.ts` calls the same helper when applying. Before that
+ * the log knew nothing about graph mutation, which is half of what D15 wants the
+ * surveyor to be able to join telemetry against.
+ *
  * The COLUMNS are English since D20's fourth child (t229); the row interfaces'
  * field names are not, because `routes/graphs.ts` and `routes/proposals.ts` read
  * them, so every `SELECT` aliases the renamed column back onto the field (t229,
@@ -21,9 +28,10 @@
  */
 
 import type { Database } from '../db/connection.ts';
+import { recordEvent } from '../db/events.ts';
 import type { GraphDocument } from '../domain/graph.ts';
 import { hashSnapshot, canonicalSerialize } from '../domain/hash.ts';
-import { now } from './common.ts';
+import { API_ACTOR, DEFAULT_PROJECT, now } from './common.ts';
 
 /** Lineage of a graph: the class and the pointer to the version that holds today. */
 export interface GraphRow {
@@ -208,6 +216,75 @@ export function movePointer(db: Database, graphId: string, versionId: string): v
 }
 
 /**
+ * The birth of a version that is ALSO the one that starts to hold (t196).
+ *
+ * Three paths write a version and move the pointer in a single transaction —
+ * `registerBaseGraph` and `forkVariant`, which have no previous "current" to
+ * preserve, and `applyProposal`, which does. The taxonomy's rule that
+ * "registering does not move the pointer"
+ * (`especificacoes/eventos/taxonomia.md`) is about the two facts being
+ * DIFFERENT, not about them never happening together: whoever does both owes the
+ * log both, in this order, which is the order the reference reducer folds them
+ * in (`especificacoes/eventos/reducers/reconstruir-estado.mjs`).
+ *
+ * `project_id` is `DEFAULT_PROJECT` because a lineage is not project-scoped —
+ * `migrations/0002_grafo_versao_proposta.sql` gives `graph` no such column — and
+ * the actor is `API_ACTOR` because none of the routes that reach here accepts an
+ * `actor` in the body: a token proves possession, not identity (`common.ts`), so
+ * what gets recorded is the component that acted.
+ */
+export interface VersionBirth {
+  /** Lineage the version belongs to. */
+  graphId: string;
+  /** Hash of the version just written, which is the subject of both events. */
+  versionId: string;
+  /** Hash it descends from; `null` on the first version of a lineage. */
+  parentVersion: string | null;
+  /** Who produced the snapshot, in the schema's own vocabulary. */
+  source: 'manual' | 'synthesizer' | 'proposal';
+  /** Proposal behind it, when there is one. */
+  proposalId: number | null;
+  /** Instant of the write — the same one the rows carry. */
+  moment: string;
+}
+
+/**
+ * Records `graph_version.registered` and then `graph_version.applied`.
+ *
+ * Called from inside the caller's transaction, always: projection and event land
+ * together or not at all.
+ *
+ * @param db Open database, inside a transaction.
+ * @param data The version that was written and started to hold.
+ */
+export function recordVersionBirth(db: Database, data: VersionBirth): void {
+  recordEvent(db, {
+    type: 'graph_version.registered',
+    project_id: DEFAULT_PROJECT,
+    execution_id: null,
+    entity: { type: 'graph_version', id: data.versionId },
+    actor: API_ACTOR,
+    occurred_at: data.moment,
+    data: {
+      graph_id: data.graphId,
+      parent_version: data.parentVersion,
+      source: data.source,
+      proposal_id: data.proposalId,
+    },
+  });
+
+  recordEvent(db, {
+    type: 'graph_version.applied',
+    project_id: DEFAULT_PROJECT,
+    execution_id: null,
+    entity: { type: 'graph_version', id: data.versionId },
+    actor: API_ACTOR,
+    occurred_at: data.moment,
+    data: { graph_id: data.graphId, proposal_id: data.proposalId },
+  });
+}
+
+/**
  * Bootstrap of a new base lineage, in one transaction.
  *
  * Registering normally does NOT move the pointer
@@ -244,6 +321,15 @@ export function registerBaseGraph(
     });
 
     movePointer(db, className, versionId);
+
+    recordVersionBirth(db, {
+      graphId: className,
+      versionId,
+      parentVersion: null,
+      source: 'manual',
+      proposalId: null,
+      moment: createdAt,
+    });
   })();
 
   const graph = getGraph(db, className);
@@ -301,17 +387,31 @@ export function forkVariant(
     // Same treatment `registerBaseGraph` gives a bootstrap version with no
     // proposal behind it: with an origin proposal the version comes from it, and
     // without one it is a manual write.
+    const source = originProposalId === null ? 'manual' : 'proposal';
+
     insertVersion(db, {
       id: versionId,
       grafo_id: id,
       versao_pai: base.versao_corrente_id,
       snapshot: document,
-      origem: originProposalId === null ? 'manual' : 'proposal',
+      origem: source,
       proposta_id: originProposalId,
       criado_em: createdAt,
     });
 
     movePointer(db, id, versionId);
+
+    // The parenthood recorded here crosses lineages on purpose: the variant's
+    // first version descends from the BASE's current one, which is what makes
+    // the fork a branch and not a copy.
+    recordVersionBirth(db, {
+      graphId: id,
+      versionId,
+      parentVersion: base.versao_corrente_id,
+      source,
+      proposalId: originProposalId,
+      moment: createdAt,
+    });
   })();
 
   const graph = getGraph(db, id);

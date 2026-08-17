@@ -133,12 +133,25 @@ export function reconstruirEstado(eventos) {
         break;
 
       // --- lease ------------------------------------------------------------
+      // `active`/`expired` pela mesma razão que a sessão logo acima grava
+      // `open`: são status INVENTADOS pelo replay (o evento não carrega
+      // nenhum), e a projeção que eles têm de reproduzir é a coluna
+      // `lease.status`, que a t235 levou para o inglês —
+      // `packages/core/src/repositories/leases.ts` (`LEASE_STATUSES`) tem os
+      // três valores que existem. Quem cobra a igualdade é
+      // `packages/core/test/replay-consistency.test.ts`, desde a t196, que é
+      // quando alguém passou a gravar os dois eventos.
+      //
+      // O terceiro estado da tabela, `released`, não aparece aqui: a taxonomia
+      // não declara `lease.released`, então a projeção por eventos fica cega
+      // para o encerramento normal. É gap conhecido e anotado na
+      // `docs/spec/runner-e-controller.md` §7, não esquecimento.
       case 'lease.granted':
-        estado.leases[id] = { status: 'ativa' };
+        estado.leases[id] = { status: 'active' };
         break;
 
       case 'lease.expired':
-        estado.leases[id] = { status: 'expirada' };
+        estado.leases[id] = { status: 'expired' };
         break;
 
       // --- versão de grafo --------------------------------------------------

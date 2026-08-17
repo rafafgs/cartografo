@@ -73,19 +73,21 @@ GET /v1/events/stream?projeto_id=1&tipo=job.transitioned,job.blocked
 Os valores aceitos em `tipo` são os tipos que o control plane grava hoje:
 
 ```
-job.created          session.opened       input_request.created
-job.transitioned       session.finished   input_request.answered
-job.blocked                           input_request.auto_resolved
+job.created                session.opened               input_request.created
+job.transitioned           session.finished             input_request.answered
+job.blocked                session.permission_denied    input_request.auto_resolved
 job.unblocked
-job.amended
-job.dependency_declared
+job.amended                lease.granted                graph_version.registered
+job.dependency_declared    lease.expired                graph_version.applied
+job.hook_failed                                         graph_version.reverted
 ```
 
-A taxonomia também declara `lease.*` e `graph_version.*`; eles ainda não são
-gravados por ninguém, então pedi-los aqui é `400` — e não uma conexão aberta
-que nunca entrega nada, que é o pior dos dois erros. Crescer é aditivo: quando
-o control plane passar a gravá-los, eles passam a ser aceitos sem mudança de
-contrato.
+São os dezoito da taxonomia, e o crescimento foi aditivo como prometido: o
+filtro nunca declarou lista própria — ele valida contra `KNOWN_TYPES`
+(`packages/core/src/db/event-validation.ts`) —, então ligar a emissão de
+`lease.*` e `graph_version.*` na `t196` os tornou pedíveis sem uma linha de
+mudança de contrato aqui. Um tipo fora da taxonomia continua sendo `400`, e não
+uma conexão aberta que nunca entrega nada — que é o pior dos dois erros.
 
 ---
 

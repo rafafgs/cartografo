@@ -20,16 +20,13 @@
  * their first parameter instead of closing over it — that is the whole of what
  * the split cost, and no behaviour moved with it.
  *
- * No route here emits a telemetry event, and that is a real gap, not a
- * dependency: the append-only log (`src/db/events.ts`) shipped with t102, and
- * `evento.entidade_tipo` already accepts `grafo_versao`
- * (`migrations/0003_trabalho_sessao_evento_pergunta.sql`), so registering a
- * version could be logged today. Nobody owns that yet — no open ticket declares
- * it — so a graph version born here leaves no trace in the log, and whoever
- * replays the log will not find it. Whoever takes it should know the emission is
- * NOT a copy of what this file returns any more: since t226 the wire is English
- * and the `grafo_versao.*` event schemas are still Portuguese, until D20's
- * second child renames them.
+ * No route here builds a telemetry event, and since t196 that is no longer a
+ * gap: `POST /graphs` and `POST /graphs/:id/fork` write `graph_version.registered`
+ * + `graph_version.applied` through `repositories/graphs.ts`, in the same
+ * transaction as the row, which is where an event belongs — a route that
+ * recorded it afterwards could record a fact whose write had been rolled back.
+ * `/promote` and `/offer` emit nothing, and correctly so: they only open a
+ * pending proposal, with no version written and no pointer moved.
  *
  * What the routes return is the output of `repositories/graphs.ts`'s
  * `toGraph`/`toGraphVersion`/`toClass`, never a row (t226, FR1). The comparisons

@@ -71,14 +71,14 @@ const FULL_BODY = {
  */
 interface Precedent {
   id: number;
-  pergunta: string;
-  resposta: string | null;
-  origem: string | null;
-  respondido_por: string | null;
-  tipo: string;
-  criada_em: string;
-  respondida_em: string | null;
-  similaridade: number;
+  question: string;
+  answer: string | null;
+  source: string | null;
+  answered_by: string | null;
+  kind: string;
+  created_at: string;
+  answered_at: string | null;
+  similarity: number;
 }
 
 test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owning job (t106)', async (t) => {
@@ -100,22 +100,22 @@ test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owni
   assert.equal(response.status, 201);
   const inputRequest = response.body;
   assert.ok(Number.isInteger(inputRequest.id) && inputRequest.id >= 1);
-  assert.equal(inputRequest.status, 'pendente');
-  assert.equal(inputRequest.origem, null);
-  assert.equal(inputRequest.resposta, null);
-  assert.equal(inputRequest.respondida_em, null);
-  assert.equal(inputRequest.auto_aprovavel, true);
-  assert.deepEqual(inputRequest.opcoes, FULL_BODY.opcoes);
-  assert.equal(inputRequest.execucao_id, 7, 'the execution comes from the job that waits');
+  assert.equal(inputRequest.status, 'pending');
+  assert.equal(inputRequest.source, null);
+  assert.equal(inputRequest.answer, null);
+  assert.equal(inputRequest.answered_at, null);
+  assert.equal(inputRequest.auto_approvable, true);
+  assert.deepEqual(inputRequest.options, FULL_BODY.opcoes);
+  assert.equal(inputRequest.execution_id, 7, 'the execution comes from the job that waits');
 
   // The route's shape does not change: whoever wants the block reads the job.
   // What changes is that it is ALREADY blocked by the time the POST's response
   // arrives — same transaction, not a second step somebody may forget to take.
   const after = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
   assert.equal(after.status, 200);
-  assert.equal(after.body.bloqueado, true, 'creating the input request stops the job');
+  assert.equal(after.body.blocked, true, 'creating the input request stops the job');
   assert.equal(
-    after.body.motivo_bloqueio,
+    after.body.block_reason,
     `aguardando resposta da pergunta ${inputRequest.id}`,
     'the reason quotes the input request id: whoever reads the job knows what unblocks it',
   );
@@ -190,7 +190,7 @@ test('t167 — the created pergunta is stamped with the node the job is standing
   });
 
   assert.equal(response.status, 201);
-  assert.equal(response.body.no_id, 'revisar', 'the position of the job is what gets stamped');
+  assert.equal(response.body.node_id, 'revisar', 'the position of the job is what gets stamped');
 
   const events = getEventsByEntity(ctx.db, 'pergunta', response.body.id);
   assert.equal(events[0].tipo, 'pergunta.criada');
@@ -200,13 +200,13 @@ test('t167 — the created pergunta is stamped with the node the job is standing
     'and the event carries it too, or the log cannot answer "which node asked?"',
   );
 
-  const listed = await request<{ perguntas: InputRequest[] }>(
+  const listed = await request<{ input_requests: InputRequest[] }>(
     ctx,
     'GET',
-    `/v1/input-requests?trabalho_id=${job.id}`,
+    `/v1/input-requests?job_id=${job.id}`,
   );
   assert.deepEqual(
-    listed.body.perguntas.map((pending) => pending.no_id),
+    listed.body.input_requests.map((pending) => pending.node_id),
     ['revisar'],
     'the projection returns it like any other column',
   );
@@ -222,7 +222,7 @@ test('t167 — a job with no current node stamps no_id null, never a guess', asy
     execucao_id: 167,
   });
 
-  // `trabalho.no_atual` is NOT NULL, so "no current node" is the empty string —
+  // `trabalho.current_node_id` is NOT NULL, so "no current node" is the empty string —
   // a state the API cannot produce and the only reason this test writes to the
   // database directly. What is under test is the reading: absent position is
   // recorded as `null`, the same way `sessao.engine_session_ref` treats "not
@@ -235,7 +235,7 @@ test('t167 — a job with no current node stamps no_id null, never a guess', asy
   });
 
   assert.equal(response.status, 201);
-  assert.equal(response.body.no_id, null);
+  assert.equal(response.body.node_id, null);
 });
 
 test('t106 — PATCH /answer unblocks the job, with the actor of whoever answered', async (t) => {
@@ -251,7 +251,7 @@ test('t106 — PATCH /answer unblocks the job, with the actor of whoever answere
   assert.equal(created.status, 201);
 
   const blocked = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
-  assert.equal(blocked.body.bloqueado, true);
+  assert.equal(blocked.body.blocked, true);
 
   const answered = await request<InputRequest>(
     ctx,
@@ -262,8 +262,8 @@ test('t106 — PATCH /answer unblocks the job, with the actor of whoever answere
   assert.equal(answered.status, 200);
 
   const after = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
-  assert.equal(after.body.bloqueado, false, 'answering returns the job to the queue');
-  assert.equal(after.body.motivo_bloqueio, null);
+  assert.equal(after.body.blocked, false, 'answering returns the job to the queue');
+  assert.equal(after.body.block_reason, null);
 
   const jobEvents = getEventsByEntity(ctx.db, 'trabalho', job.id);
   assert.deepEqual(
@@ -301,8 +301,8 @@ test('t106 — PATCH /auto-resolution unblocks with an actor that is not a user'
   assert.equal(resolved.status, 200);
 
   const after = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
-  assert.equal(after.body.bloqueado, false, 'the automatic gate unblocks too');
-  assert.equal(after.body.motivo_bloqueio, null);
+  assert.equal(after.body.blocked, false, 'the automatic gate unblocks too');
+  assert.equal(after.body.block_reason, null);
 
   const jobEvents = getEventsByEntity(ctx.db, 'trabalho', job.id);
   assert.deepEqual(
@@ -336,11 +336,11 @@ test('AT12 — PATCH /v1/input-requests/:id/answer records the human answer', as
   );
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.status, 'respondida');
-  assert.equal(response.body.origem, 'usuario');
-  assert.equal(response.body.resposta, 'Manter 0002');
-  assert.equal(response.body.respondido_por, 'rafael');
-  assert.ok(!Number.isNaN(Date.parse(response.body.respondida_em ?? '')));
+  assert.equal(response.body.status, 'answered');
+  assert.equal(response.body.source, 'usuario');
+  assert.equal(response.body.answer, 'Manter 0002');
+  assert.equal(response.body.answered_by, 'rafael');
+  assert.ok(!Number.isNaN(Date.parse(response.body.answered_at ?? '')));
 
   const events = getEventsByEntity(ctx.db, 'pergunta', created.body.id);
   assert.deepEqual(
@@ -371,9 +371,9 @@ test('AT13 — PATCH /v1/input-requests/:id/auto-resolution records the automati
   );
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.status, 'respondida');
-  assert.equal(response.body.origem, 'auto');
-  assert.equal(response.body.resposta, 'Manter 0002');
+  assert.equal(response.body.status, 'answered');
+  assert.equal(response.body.source, 'auto');
+  assert.equal(response.body.answer, 'Manter 0002');
 
   const events = getEventsByEntity(ctx.db, 'pergunta', created.body.id);
   assert.deepEqual(
@@ -408,7 +408,7 @@ test('AT13 — PATCH /v1/input-requests/:id/auto-resolution records the automati
   assert.equal(invalid.status, 400, 'baseada_em is a closed enum');
 });
 
-test('AT14 — GET /v1/input-requests?status=pendente&execucao_id=7 gives enough to answer', async (t) => {
+test('AT14 — GET /v1/input-requests?status=pending&execution_id=7 gives enough to answer', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
@@ -441,24 +441,24 @@ test('AT14 — GET /v1/input-requests?status=pendente&execucao_id=7 gives enough
     respondido_por: 'rafael',
   });
 
-  const response = await request<{ perguntas: InputRequest[] }>(
+  const response = await request<{ input_requests: InputRequest[] }>(
     ctx,
     'GET',
-    '/v1/input-requests?status=pendente&execucao_id=7',
+    '/v1/input-requests?status=pending&execution_id=7',
   );
   assert.equal(response.status, 200);
   assert.deepEqual(
-    response.body.perguntas.map((row) => row.id),
+    response.body.input_requests.map((row) => row.id),
     [pending.id],
   );
 
-  const [queued] = response.body.perguntas;
-  assert.equal(queued.pergunta, FULL_BODY.pergunta);
-  assert.equal(queued.contexto, FULL_BODY.contexto);
-  assert.deepEqual(queued.opcoes, FULL_BODY.opcoes);
-  assert.equal(queued.recomendacao, FULL_BODY.recomendacao);
-  assert.equal(queued.resposta_padrao, FULL_BODY.resposta_padrao);
-  assert.equal(queued.trabalho_id, ofSeven.id);
+  const [queued] = response.body.input_requests;
+  assert.equal(queued.question, FULL_BODY.pergunta);
+  assert.equal(queued.context, FULL_BODY.contexto);
+  assert.deepEqual(queued.options, FULL_BODY.opcoes);
+  assert.equal(queued.recommendation, FULL_BODY.recomendacao);
+  assert.equal(queued.default_answer, FULL_BODY.resposta_padrao);
+  assert.equal(queued.job_id, ofSeven.id);
 });
 
 test('t127 — the old Portuguese input-request paths no longer exist', async (t) => {
@@ -488,7 +488,7 @@ test('t127 — the old Portuguese input-request paths no longer exist', async (t
   }
 });
 
-test('t107 AT3 — GET /v1/input-requests?trabalho_id= slices by job inside the same execution', async (t) => {
+test('t107 AT3 — GET /v1/input-requests?job_id= slices by job inside the same execution', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
@@ -523,34 +523,34 @@ test('t107 AT3 — GET /v1/input-requests?trabalho_id= slices by job inside the 
     respondido_por: 'rafael',
   });
 
-  const ofTheJob = await request<{ perguntas: InputRequest[] }>(
+  const ofTheJob = await request<{ input_requests: InputRequest[] }>(
     ctx,
     'GET',
-    `/v1/input-requests?trabalho_id=${watched.id}`,
+    `/v1/input-requests?job_id=${watched.id}`,
   );
   assert.equal(ofTheJob.status, 200);
   assert.deepEqual(
-    ofTheJob.body.perguntas.map((item) => item.id),
+    ofTheJob.body.input_requests.map((item) => item.id),
     [pending.id, answered.id],
     'with no status filter, both of the job — the answered one included (the timeline needs it)',
   );
   assert.ok(
-    !ofTheJob.body.perguntas.some((item) => item.id === neighbours.id),
+    !ofTheJob.body.input_requests.some((item) => item.id === neighbours.id),
     "the neighbour's input request shares the execution, but not the job",
   );
 
-  const onlyPending = await request<{ perguntas: InputRequest[] }>(
+  const onlyPending = await request<{ input_requests: InputRequest[] }>(
     ctx,
     'GET',
-    `/v1/input-requests?status=pendente&trabalho_id=${watched.id}`,
+    `/v1/input-requests?status=pending&job_id=${watched.id}`,
   );
   assert.deepEqual(
-    onlyPending.body.perguntas.map((item) => item.id),
+    onlyPending.body.input_requests.map((item) => item.id),
     [pending.id],
     'the filters add up as AND',
   );
 
-  const invalid = await request(ctx, 'GET', '/v1/input-requests?trabalho_id=abc');
+  const invalid = await request(ctx, 'GET', '/v1/input-requests?job_id=abc');
   assert.equal(invalid.status, 400, 'an invalid filter is 400, never a silently ignored filter');
 });
 
@@ -592,8 +592,8 @@ async function precedentsOf(
   ctx: TestContext,
   id: number,
   query = '',
-): Promise<{ status: number; body: { precedentes: Precedent[] } }> {
-  return await request<{ precedentes: Precedent[] }>(
+): Promise<{ status: number; body: { precedents: Precedent[] } }> {
+  return await request<{ precedents: Precedent[] }>(
     ctx,
     'GET',
     `/v1/input-requests/${id}/precedents${query}`,
@@ -622,7 +622,7 @@ test('AT4 — with no answered input request in the project, precedents is an em
 
   const response = await precedentsOf(ctx, pending.id);
   assert.equal(response.status, 200, '"found nothing" is 200 with an empty list, never 404 nor 500');
-  assert.deepEqual(response.body, { precedentes: [] });
+  assert.deepEqual(response.body, { precedents: [] });
 });
 
 test('AT5 — the precedent is the similar answered one, and the query never includes itself', async (t) => {
@@ -644,21 +644,21 @@ test('AT5 — the precedent is the similar answered one, and the query never inc
   const response = await precedentsOf(ctx, queried.id);
   assert.equal(response.status, 200);
   assert.deepEqual(
-    response.body.precedentes.map((row) => row.id),
+    response.body.precedents.map((row) => row.id),
     [similar.id],
     'an answered one with no token in common is a precedent of nothing',
   );
 
-  const [precedent] = response.body.precedentes;
-  assert.ok(precedent.similaridade > 0, 'the score is what makes the ranking auditable');
-  assert.ok(precedent.similaridade <= 1);
-  assert.equal(precedent.pergunta, 'Renumerar a migração para 0003?');
-  assert.equal(precedent.resposta, 'Manter 0002', 'a precedent is there to show WHAT was decided');
-  assert.equal(precedent.origem, 'usuario');
-  assert.equal(precedent.respondido_por, 'rafael');
-  assert.equal(precedent.tipo, 'pergunta');
-  assert.ok(!Number.isNaN(Date.parse(precedent.criada_em)));
-  assert.ok(!Number.isNaN(Date.parse(precedent.respondida_em ?? '')));
+  const [precedent] = response.body.precedents;
+  assert.ok(precedent.similarity > 0, 'the score is what makes the ranking auditable');
+  assert.ok(precedent.similarity <= 1);
+  assert.equal(precedent.question, 'Renumerar a migração para 0003?');
+  assert.equal(precedent.answer, 'Manter 0002', 'a precedent is there to show WHAT was decided');
+  assert.equal(precedent.source, 'usuario');
+  assert.equal(precedent.answered_by, 'rafael');
+  assert.equal(precedent.kind, 'question');
+  assert.ok(!Number.isNaN(Date.parse(precedent.created_at)));
+  assert.ok(!Number.isNaN(Date.parse(precedent.answered_at ?? '')));
 
   // Once answered it becomes a candidate precedent for the OTHERS — never for
   // itself, which would always be the top of the ranking with score 1.
@@ -673,7 +673,7 @@ test('AT5 — the precedent is the similar answered one, and the query never inc
   const after = await precedentsOf(ctx, queried.id);
   assert.equal(after.status, 200);
   assert.deepEqual(
-    after.body.precedentes.map((row) => row.id),
+    after.body.precedents.map((row) => row.id),
     [similar.id],
   );
 });
@@ -697,7 +697,7 @@ test('AT6 — an answered one from another project is never a precedent, not eve
   const response = await precedentsOf(ctx, queried.id);
   assert.equal(response.status, 200);
   assert.deepEqual(
-    response.body.precedentes,
+    response.body.precedents,
     [],
     "a precedent belongs to the asker's project; identical text does not pierce the isolation",
   );
@@ -706,7 +706,7 @@ test('AT6 — an answered one from another project is never a precedent, not eve
   const fromThere = await askQuestion(ctx, otherJob.id, text);
   const theirPrecedents = await precedentsOf(ctx, fromThere.id);
   assert.deepEqual(
-    theirPrecedents.body.precedentes.map((row) => row.id),
+    theirPrecedents.body.precedents.map((row) => row.id),
     [theirs.id],
   );
 });
@@ -730,36 +730,36 @@ test('AT7 — limite cuts from the top of the ranking, and a value above the cei
   const both = await precedentsOf(ctx, queried.id);
   assert.equal(both.status, 200);
   assert.deepEqual(
-    both.body.precedentes.map((row) => row.id),
+    both.body.precedents.map((row) => row.id),
     [closest.id, further.id],
     'the order is the score one, descending',
   );
   assert.ok(
-    both.body.precedentes[0].similaridade > both.body.precedentes[1].similaridade,
+    both.body.precedents[0].similarity > both.body.precedents[1].similarity,
     "the ranking is explainable from the response's own body",
   );
 
-  const capped = await precedentsOf(ctx, queried.id, '?limite=1');
+  const capped = await precedentsOf(ctx, queried.id, '?limit=1');
   assert.equal(capped.status, 200);
   assert.deepEqual(
-    capped.body.precedentes.map((row) => row.id),
+    capped.body.precedents.map((row) => row.id),
     [closest.id],
     'cutting by the limit cuts the tail, not the head',
   );
 
   // The limit is a screen-size knob, not a correctness rule: a value out of
   // range is clamped to the ceiling, and does not become a 400.
-  const aboveCeiling = await precedentsOf(ctx, queried.id, '?limite=999');
+  const aboveCeiling = await precedentsOf(ctx, queried.id, '?limit=999');
   assert.equal(aboveCeiling.status, 200);
   assert.deepEqual(
-    aboveCeiling.body.precedentes.map((row) => row.id),
+    aboveCeiling.body.precedents.map((row) => row.id),
     [closest.id, further.id],
   );
 
-  const belowFloor = await precedentsOf(ctx, queried.id, '?limite=0');
+  const belowFloor = await precedentsOf(ctx, queried.id, '?limit=0');
   assert.equal(belowFloor.status, 200);
   assert.deepEqual(
-    belowFloor.body.precedentes.map((row) => row.id),
+    belowFloor.body.precedents.map((row) => row.id),
     [closest.id],
     'zero and negative are clamped to the floor of 1, for the same reason',
   );
@@ -767,13 +767,13 @@ test('AT7 — limite cuts from the top of the ranking, and a value above the cei
 
 /** Reads one input request back through the listing (there is no GET by id). */
 async function readBack(ctx: TestContext, jobId: number, id: number): Promise<InputRequest> {
-  const response = await request<{ perguntas: InputRequest[] }>(
+  const response = await request<{ input_requests: InputRequest[] }>(
     ctx,
     'GET',
-    `/v1/input-requests?trabalho_id=${jobId}`,
+    `/v1/input-requests?job_id=${jobId}`,
   );
   assert.equal(response.status, 200);
-  const found = response.body.perguntas.find((item) => item.id === id);
+  const found = response.body.input_requests.find((item) => item.id === id);
   assert.ok(found !== undefined, `input request ${id} disappeared from the listing`);
   return found;
 }
@@ -810,10 +810,10 @@ test('t149 AT1 — answering the same input request twice is a 409, and the firs
   // The decision that stands is the FIRST one: an answer already acted upon
   // (the job went back to the queue) cannot be rewritten by whoever retried.
   const stored = await readBack(ctx, job.id, created.id);
-  assert.equal(stored.resposta, 'Manter 0002');
-  assert.equal(stored.respondido_por, 'rafael');
-  assert.equal(stored.origem, 'usuario');
-  assert.equal(stored.respondida_em, first.body.respondida_em);
+  assert.equal(stored.answer, 'Manter 0002');
+  assert.equal(stored.answered_by, 'rafael');
+  assert.equal(stored.source, 'usuario');
+  assert.equal(stored.answered_at, first.body.answered_at);
 
   const events = getEventsByEntity(ctx.db, 'pergunta', created.id);
   assert.deepEqual(
@@ -852,11 +852,11 @@ test('t149 AT2 — /auto-resolution over an already answered input request is a 
 
   const stored = await readBack(ctx, job.id, created.id);
   assert.equal(
-    stored.origem,
+    stored.source,
     'usuario',
     'a decision taken by a person never flips to "auto" afterwards — that is the audit',
   );
-  assert.equal(stored.respondido_por, 'rafael');
+  assert.equal(stored.answered_by, 'rafael');
 
   const events = getEventsByEntity(ctx.db, 'pergunta', created.id);
   assert.deepEqual(
@@ -883,14 +883,14 @@ test('t149 AT3 — a stale answer never unblocks a job that is waiting on anothe
   assert.equal(answered.status, 200);
 
   const unblocked = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
-  assert.equal(unblocked.body.bloqueado, false, 'the legitimate answer returned it to the queue');
+  assert.equal(unblocked.body.blocked, false, 'the legitimate answer returned it to the queue');
 
   // The job asks something ELSE and stops again. This is the state the retry
   // must not touch.
   const second = await askQuestion(ctx, job.id, 'Qual engine adapter usar no despacho?');
   const blockedAgain = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
-  assert.equal(blockedAgain.body.bloqueado, true);
-  assert.equal(blockedAgain.body.motivo_bloqueio, `aguardando resposta da pergunta ${second.id}`);
+  assert.equal(blockedAgain.body.blocked, true);
+  assert.equal(blockedAgain.body.block_reason, `aguardando resposta da pergunta ${second.id}`);
 
   const retry = await request<{ error: string }>(
     ctx,
@@ -903,12 +903,12 @@ test('t149 AT3 — a stale answer never unblocks a job that is waiting on anothe
 
   const after = await request<Job>(ctx, 'GET', `/v1/jobs/${job.id}`);
   assert.equal(
-    after.body.bloqueado,
+    after.body.blocked,
     true,
     'answering an OLD question does not lower a flag raised by a new one',
   );
   assert.equal(
-    after.body.motivo_bloqueio,
+    after.body.block_reason,
     `aguardando resposta da pergunta ${second.id}`,
     'the job is still waiting on the question nobody answered',
   );

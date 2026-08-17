@@ -98,12 +98,12 @@ test('AT8 — POST /v1/sessions records sessao.aberta and creates the open row',
   const session = response.body;
   assert.ok(Number.isInteger(session.id) && session.id >= 1);
   assert.equal(session.status, 'aberta');
-  assert.equal(session.trabalho_id, job.id);
-  assert.equal(session.execucao_id, 7, 'the execution comes from the job served');
+  assert.equal(session.job_id, job.id);
+  assert.equal(session.execution_id, 7, 'the execution comes from the job served');
   assert.equal(session.exit_code, null);
-  assert.equal(session.uso, null);
-  assert.equal(session.finalizada_em, null);
-  assert.ok(!Number.isNaN(Date.parse(session.aberta_em)));
+  assert.equal(session.usage, null);
+  assert.equal(session.finished_at, null);
+  assert.ok(!Number.isNaN(Date.parse(session.opened_at)));
 
   const events = getEventsByEntity(ctx.db, 'sessao', session.id);
   assert.equal(events.length, 1);
@@ -149,8 +149,8 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
   assert.equal(finished.status, 200);
   assert.equal(finished.body.status, 'concluida');
   assert.equal(finished.body.exit_code, 0, 'zero is a success exit code, not absence');
-  assert.deepEqual(finished.body.uso, USAGE);
-  assert.ok(!Number.isNaN(Date.parse(finished.body.finalizada_em ?? '')));
+  assert.deepEqual(finished.body.usage, USAGE);
+  assert.ok(!Number.isNaN(Date.parse(finished.body.finished_at ?? '')));
 
   const withoutUsage = await open();
   const paused = await request<Session>(ctx, 'PATCH', `/v1/sessions/${withoutUsage.id}/finish`, {
@@ -158,8 +158,8 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
   });
   assert.equal(paused.status, 200);
   assert.equal(paused.body.status, 'pausada_cota');
-  assert.equal(paused.body.uso, null, 'the engine reported nothing: null');
-  assert.notEqual(paused.body.uso, 0, 'never collapse absent usage into zero');
+  assert.equal(paused.body.usage, null, 'the engine reported nothing: null');
+  assert.notEqual(paused.body.usage, 0, 'never collapse absent usage into zero');
   assert.equal(paused.body.exit_code, null);
 
   const events = getEventsByEntity(ctx.db, 'sessao', withUsage.id);
@@ -187,7 +187,7 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
   });
 });
 
-test('AT10 — GET /v1/sessions?execucao_id=7 returns only that execution\'s sessions', async (t) => {
+test('AT10 — GET /v1/sessions?execution_id=7 returns only that execution\'s sessions', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
@@ -206,10 +206,10 @@ test('AT10 — GET /v1/sessions?execucao_id=7 returns only that execution\'s ses
   const other = await open(7, 'também da sete');
   await open(8, 'da oito');
 
-  const response = await request<{ sessoes: Session[] }>(ctx, 'GET', '/v1/sessions?execucao_id=7');
+  const response = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions?execution_id=7');
   assert.equal(response.status, 200);
   assert.deepEqual(
-    response.body.sessoes.map((session) => session.id).sort((a, b) => a - b),
+    response.body.sessions.map((session) => session.id).sort((a, b) => a - b),
     [one.id, other.id].sort((a, b) => a - b),
   );
 });
@@ -241,7 +241,7 @@ test('t127 — the old Portuguese session paths no longer exist', async (t) => {
   }
 });
 
-test('t107 AT2 — GET /v1/sessions?trabalho_id= slices by job inside the same execution', async (t) => {
+test('t107 AT2 — GET /v1/sessions?job_id= slices by job inside the same execution', async (t) => {
   requireArtifacts(...ARTIFACTS, T102_ARTIFACTS.jobRepository, T102_ARTIFACTS.jobRoutes);
   const ctx = await startControlPlane(t);
 
@@ -273,42 +273,42 @@ test('t107 AT2 — GET /v1/sessions?trabalho_id= slices by job inside the same e
   const second = await openSessionFor(watched.id, 'segunda passada');
   const neighbours = await openSessionFor(neighbour.id, 'do vizinho');
 
-  const response = await request<{ sessoes: Session[] }>(
+  const response = await request<{ sessions: Session[] }>(
     ctx,
     'GET',
-    `/v1/sessions?trabalho_id=${watched.id}`,
+    `/v1/sessions?job_id=${watched.id}`,
   );
   assert.equal(response.status, 200);
   assert.deepEqual(
-    response.body.sessoes.map((item) => item.id),
+    response.body.sessions.map((item) => item.id),
     [first.id, second.id],
     'only the sessions of the requested job, in id order',
   );
   assert.ok(
-    !response.body.sessoes.some((item) => item.id === neighbours.id),
+    !response.body.sessions.some((item) => item.id === neighbours.id),
     "the neighbour's session shares the execution, but not the job",
   );
 
-  const combined = await request<{ sessoes: Session[] }>(
+  const combined = await request<{ sessions: Session[] }>(
     ctx,
     'GET',
-    `/v1/sessions?execucao_id=7&trabalho_id=${watched.id}`,
+    `/v1/sessions?execution_id=7&job_id=${watched.id}`,
   );
   assert.equal(combined.status, 200);
   assert.deepEqual(
-    combined.body.sessoes.map((item) => item.id),
+    combined.body.sessions.map((item) => item.id),
     [first.id, second.id],
     'the two filters together are AND',
   );
 
-  const mismatched = await request<{ sessoes: Session[] }>(
+  const mismatched = await request<{ sessions: Session[] }>(
     ctx,
     'GET',
-    `/v1/sessions?execucao_id=8&trabalho_id=${watched.id}`,
+    `/v1/sessions?execution_id=8&job_id=${watched.id}`,
   );
-  assert.deepEqual(mismatched.body.sessoes, [], 'AND, not OR');
+  assert.deepEqual(mismatched.body.sessions, [], 'AND, not OR');
 
-  const invalid = await request(ctx, 'GET', '/v1/sessions?trabalho_id=abc');
+  const invalid = await request(ctx, 'GET', '/v1/sessions?job_id=abc');
   assert.equal(invalid.status, 400, 'an invalid filter is 400, never a silently ignored filter');
 });
 
@@ -346,7 +346,7 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
   assert.equal(denied.status, 200);
   // A denial is an incident, not a terminal state: the row does not move.
   assert.equal(denied.body.status, 'aberta');
-  assert.equal(denied.body.finalizada_em, null);
+  assert.equal(denied.body.finished_at, null);
   assert.equal(denied.body.exit_code, null);
 
   const events = getEventsByEntity(ctx.db, 'sessao', session.id);
@@ -398,7 +398,7 @@ test('t157 — a job-less session keeps its own project at finish and at denial'
       prompt: 'uma sessão de descoberta, sem trabalho dono',
     });
     assert.equal(response.status, 201);
-    assert.equal(response.body.trabalho_id, null, 'the case under test is the job-less session');
+    assert.equal(response.body.job_id, null, 'the case under test is the job-less session');
     return response.body;
   };
 
@@ -521,14 +521,14 @@ test('t149 AT5 — finishing an already finished session is a 409, and the first
     `the 409 has to say what state refused it: ${JSON.stringify(retry.body.details)}`,
   );
 
-  const listed = await request<{ sessoes: Session[] }>(ctx, 'GET', '/v1/sessions?execucao_id=7');
+  const listed = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions?execution_id=7');
   assert.equal(listed.status, 200);
-  const stored = listed.body.sessoes.find((item) => item.id === session.id);
+  const stored = listed.body.sessions.find((item) => item.id === session.id);
   assert.ok(stored !== undefined, 'the session disappeared from the listing');
   assert.equal(stored.status, 'concluida');
   assert.equal(stored.exit_code, 0);
-  assert.deepEqual(stored.uso, USAGE, 'the refused retry never NULLs the usage of the first end');
-  assert.equal(stored.finalizada_em, finished.body.finalizada_em);
+  assert.deepEqual(stored.usage, USAGE, 'the refused retry never NULLs the usage of the first end');
+  assert.equal(stored.finished_at, finished.body.finished_at);
 
   const events = getEventsByEntity(ctx.db, 'sessao', session.id);
   assert.deepEqual(
@@ -609,9 +609,9 @@ test('t159 AT1 — a small transcript is stored verbatim, and the projection and
     transcricao: output,
   });
   assert.equal(finished.status, 200);
-  assert.equal(finished.body.transcricao, output, 'stored verbatim, byte for byte');
-  assert.equal(finished.body.transcricao_truncada, false);
-  assert.equal(finished.body.transcricao_tamanho_original, bytes);
+  assert.equal(finished.body.transcript, output, 'stored verbatim, byte for byte');
+  assert.equal(finished.body.transcript_truncated, false);
+  assert.equal(finished.body.transcript_original_size, bytes);
 
   const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${session.id}/transcript`);
   assert.equal(read.status, 200);
@@ -640,19 +640,19 @@ test('t159 AT2 — a transcript past the cap keeps the TAIL and reports the size
     transcricao: output,
   });
   assert.equal(finished.status, 200);
-  assert.equal(finished.body.transcricao_truncada, true, 'truncation is never silent');
+  assert.equal(finished.body.transcript_truncated, true, 'truncation is never silent');
   assert.equal(
-    finished.body.transcricao_tamanho_original,
+    finished.body.transcript_original_size,
     output.length,
     'the reported size is the one BEFORE the cap',
   );
   assert.notEqual(
-    finished.body.transcricao_tamanho_original,
+    finished.body.transcript_original_size,
     TRANSCRIPT_CAP_BYTES,
     'reporting the capped length would erase how much was lost',
   );
 
-  const stored = finished.body.transcricao ?? '';
+  const stored = finished.body.transcript ?? '';
   assert.equal(Buffer.byteLength(stored, 'utf8'), TRANSCRIPT_CAP_BYTES, 'exactly the cap');
   assert.equal(stored, output.slice(-TRANSCRIPT_CAP_BYTES), 'the TAIL, not the head');
   assert.ok(stored.endsWith(tail), "a crash's evidence is at the end of the stream");
@@ -685,10 +685,10 @@ test('t159 — the cap cuts on a character boundary, never in the middle of a ru
     transcricao: output,
   });
   assert.equal(finished.status, 200);
-  assert.equal(finished.body.transcricao_truncada, true);
-  assert.equal(finished.body.transcricao_tamanho_original, Buffer.byteLength(output, 'utf8'));
+  assert.equal(finished.body.transcript_truncated, true);
+  assert.equal(finished.body.transcript_original_size, Buffer.byteLength(output, 'utf8'));
 
-  const stored = finished.body.transcricao ?? '';
+  const stored = finished.body.transcript ?? '';
   const storedBytes = Buffer.byteLength(stored, 'utf8');
   assert.ok(storedBytes <= TRANSCRIPT_CAP_BYTES, `${storedBytes} bytes is over the cap`);
   assert.ok(
@@ -711,10 +711,10 @@ test('t159 AT3 — an absent transcript is null, never an empty string; an empty
     { status: 'pausada_cota' },
   );
   assert.equal(withoutTranscript.status, 200);
-  assert.equal(withoutTranscript.body.transcricao, null, 'nothing was reported: null');
-  assert.notEqual(withoutTranscript.body.transcricao, '', 'absence never collapses into empty');
-  assert.equal(withoutTranscript.body.transcricao_truncada, false);
-  assert.equal(withoutTranscript.body.transcricao_tamanho_original, null);
+  assert.equal(withoutTranscript.body.transcript, null, 'nothing was reported: null');
+  assert.notEqual(withoutTranscript.body.transcript, '', 'absence never collapses into empty');
+  assert.equal(withoutTranscript.body.transcript_truncated, false);
+  assert.equal(withoutTranscript.body.transcript_original_size, null);
 
   const absent = await request<Transcript>(ctx, 'GET', `/v1/sessions/${silent.id}/transcript`);
   assert.equal(absent.status, 200, 'a session with no transcript is an answer, not a 404');
@@ -735,9 +735,9 @@ test('t159 AT3 — an absent transcript is null, never an empty string; an empty
     transcricao: '',
   });
   assert.equal(empty.status, 200);
-  assert.equal(empty.body.transcricao, '', 'an empty transcript is stored as given');
-  assert.equal(empty.body.transcricao_truncada, false);
-  assert.equal(empty.body.transcricao_tamanho_original, 0);
+  assert.equal(empty.body.transcript, '', 'an empty transcript is stored as given');
+  assert.equal(empty.body.transcript_truncated, false);
+  assert.equal(empty.body.transcript_original_size, 0);
 
   const readEmpty = await request<Transcript>(ctx, 'GET', `/v1/sessions/${quiet.id}/transcript`);
   assert.deepEqual(readEmpty.body, { transcricao: '', truncada: false, tamanho_original: 0 });
@@ -789,7 +789,7 @@ test('t159 AT5 — the transcript stays OUT of the sessao.finalizada event', asy
     transcricao: 'a saída inteira da sessão, que o log NÃO carrega',
   });
   assert.equal(finished.status, 200);
-  assert.equal(finished.body.transcricao, 'a saída inteira da sessão, que o log NÃO carrega');
+  assert.equal(finished.body.transcript, 'a saída inteira da sessão, que o log NÃO carrega');
 
   const events = getEventsByEntity(ctx.db, 'sessao', session.id);
   assert.deepEqual(
@@ -915,15 +915,15 @@ test('t163 — GET /v1/sessions surfaces both new fields on the projection', asy
     timeout_reason: 'silence',
   });
 
-  const listed = await request<{ sessoes: Session[] }>(
+  const listed = await request<{ sessions: Session[] }>(
     ctx,
     'GET',
-    '/v1/sessions?execucao_id=1631',
+    '/v1/sessions?execution_id=1631',
   );
   assert.equal(listed.status, 200);
-  assert.equal(listed.body.sessoes.length, 1);
-  assert.equal(listed.body.sessoes[0].silence_seconds, 300);
-  assert.equal(listed.body.sessoes[0].timeout_reason, 'silence');
+  assert.equal(listed.body.sessions.length, 1);
+  assert.equal(listed.body.sessions[0].silence_seconds, 300);
+  assert.equal(listed.body.sessions[0].timeout_reason, 'silence');
 });
 
 /* -------------------------------------------------------------------------- */
@@ -949,7 +949,7 @@ test('t172 — modelos round-trips through the projection; absent reads null, ne
     modelos: MODELS,
   });
   assert.equal(finished.status, 200);
-  assert.deepEqual(finished.body.modelos, MODELS, 'the single-session projection carries it');
+  assert.deepEqual(finished.body.models, MODELS, 'the single-session projection carries it');
 
   const silent = await openBareSession(ctx);
   const withoutModels = await request<Session>(ctx, 'PATCH', `/v1/sessions/${silent.id}/finish`, {
@@ -958,22 +958,22 @@ test('t172 — modelos round-trips through the projection; absent reads null, ne
   });
   assert.equal(withoutModels.status, 200);
   assert.equal(
-    withoutModels.body.modelos,
+    withoutModels.body.models,
     null,
     'the engine named no model: null, and never an empty list',
   );
   assert.notDeepEqual(
-    withoutModels.body.modelos,
+    withoutModels.body.models,
     [],
     '[] would read as "it ran under zero models", which is a claim nobody measured',
   );
-  assert.equal(withoutModels.body.uso, null, 'and the same discipline `uso` already had');
+  assert.equal(withoutModels.body.usage, null, 'and the same discipline `uso` already had');
 
-  const listed = await request<{ sessoes: Session[] }>(ctx, 'GET', '/v1/sessions?execucao_id=7');
+  const listed = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions?execution_id=7');
   assert.equal(listed.status, 200);
-  const byId = new Map(listed.body.sessoes.map((session) => [session.id, session]));
-  assert.deepEqual(byId.get(reported.id)?.modelos, MODELS, 'and the listing carries it too');
-  assert.equal(byId.get(silent.id)?.modelos, null);
+  const byId = new Map(listed.body.sessions.map((session) => [session.id, session]));
+  assert.deepEqual(byId.get(reported.id)?.models, MODELS, 'and the listing carries it too');
+  assert.equal(byId.get(silent.id)?.models, null);
 
   // The log is where the fact lives; the row is a projection of it (t102).
   const events = getEventsByEntity(ctx.db, 'sessao', reported.id);
@@ -1017,8 +1017,8 @@ test('t172 — a modelos that is not a list of non-empty strings is refused', as
 
     // ...and nothing was written: the session is still open, so a retry with a
     // well-formed body can still close it.
-    const still = await request<{ sessoes: Session[] }>(ctx, 'GET', '/v1/sessions?execucao_id=7');
-    const row = still.body.sessoes.find((item) => item.id === session.id);
+    const still = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions?execution_id=7');
+    const row = still.body.sessions.find((item) => item.id === session.id);
     assert.equal(row?.status, 'aberta', `${refused.label} left a trace on the row`);
   }
 });
@@ -1097,21 +1097,21 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
 
   // --- the two GETs, and the join done in the client. This IS the claim: no
   // aggregation route was added, and none is needed (FR10, Out of Scope).
-  const sessions = await request<{ sessoes: Session[] }>(
+  const sessions = await request<{ sessions: Session[] }>(
     ctx,
     'GET',
-    `/v1/sessions?execucao_id=${EXECUTION}`,
+    `/v1/sessions?execution_id=${EXECUTION}`,
   );
   assert.equal(sessions.status, 200);
-  const jobs = await request<{ trabalhos: Job[] }>(
+  const jobs = await request<{ jobs: Job[] }>(
     ctx,
     'GET',
-    `/v1/jobs?execucao_id=${EXECUTION}`,
+    `/v1/jobs?execution_id=${EXECUTION}`,
   );
   assert.equal(jobs.status, 200);
 
-  const versionOf = new Map(jobs.body.trabalhos.map((job) => [job.id, job.grafo_versao_id]));
-  const total = (uso: Session['uso']): number =>
+  const versionOf = new Map(jobs.body.jobs.map((job) => [job.id, job.graph_version_id]));
+  const total = (uso: Session['usage']): number =>
     uso === null
       ? 0
       : uso.input_tokens +
@@ -1122,29 +1122,29 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
   /** Sums tokens per key, ignoring what nobody reported — absence is not zero. */
   const groupBy = (key: (session: Session) => readonly (string | number | null)[]): Map<string, number> => {
     const totals = new Map<string, number>();
-    for (const session of sessions.body.sessoes) {
-      if (session.uso === null) continue;
+    for (const session of sessions.body.sessions) {
+      if (session.usage === null) continue;
       for (const bucket of key(session)) {
         const name = String(bucket);
-        totals.set(name, (totals.get(name) ?? 0) + total(session.uso));
+        totals.set(name, (totals.get(name) ?? 0) + total(session.usage));
       }
     }
     return totals;
   };
 
   assert.deepEqual(
-    Object.fromEntries(groupBy((session) => [session.trabalho_id])),
+    Object.fromEntries(groupBy((session) => [session.job_id])),
     { [jobOne.id]: 110, [jobTwo.id]: 1000 },
     'by ticket',
   );
   assert.deepEqual(
-    Object.fromEntries(groupBy((session) => [session.no_id])),
+    Object.fromEntries(groupBy((session) => [session.node_id])),
     { implementar: 1100, revisar: 10 },
     'by node',
   );
   assert.deepEqual(
     Object.fromEntries(
-      groupBy((session) => [versionOf.get(session.trabalho_id ?? -1) ?? null]),
+      groupBy((session) => [versionOf.get(session.job_id ?? -1) ?? null]),
     ),
     { [V1]: 110, [V2]: 1000 },
     'by graph version — the join `topografo-custo` already performs',
@@ -1153,7 +1153,7 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
   // models ran, never how the four counts split between them, and inventing a
   // split would be this test making up a number the engine did not give.
   assert.deepEqual(
-    Object.fromEntries(groupBy((session) => session.modelos ?? [])),
+    Object.fromEntries(groupBy((session) => session.models ?? [])),
     { [SONNET]: 1100, [HAIKU]: 1010 },
     'by model',
   );
@@ -1161,12 +1161,12 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
   // The honest denominator: the sessions that reported nothing are countable,
   // and they are not folded into any of the four totals above.
   assert.equal(
-    sessions.body.sessoes.filter((session) => session.uso === null).length,
+    sessions.body.sessions.filter((session) => session.usage === null).length,
     1,
     'exactly one session reported no usage',
   );
   assert.equal(
-    sessions.body.sessoes.filter((session) => session.modelos === null).length,
+    sessions.body.sessions.filter((session) => session.models === null).length,
     1,
     'and the same one reported no model',
   );

@@ -49,11 +49,11 @@ const EXECUTION = 7;
 
 /** Node history of a job, derived only from the API (created + transitions). */
 async function historyFromApi(ctx: TestContext, jobId: number): Promise<string[]> {
-  const response = await request<{ eventos: Event[] }>(ctx, 'GET', `/v1/jobs/${jobId}/events`);
+  const response = await request<{ events: Event[] }>(ctx, 'GET', `/v1/jobs/${jobId}/events`);
   assert.equal(response.status, 200);
 
   const history: string[] = [];
-  for (const event of response.body.eventos) {
+  for (const event of response.body.events) {
     if (event.tipo === 'trabalho.criado') history.push(event.dados.no_entrada_id as string);
     if (event.tipo === 'trabalho.transicao') history.push(event.dados.para_no_id as string);
   }
@@ -158,42 +158,55 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   const state = reconstruirEstado(events);
 
   // --- the state, as the projection tables answer it ------------------------
-  const jobs = await request<{ trabalhos: Job[] }>(
+  const jobs = await request<{ jobs: Job[] }>(
     ctx,
     'GET',
-    `/v1/jobs?execucao_id=${EXECUTION}`,
+    `/v1/jobs?execution_id=${EXECUTION}`,
   );
-  const sessions = await request<{ sessoes: Session[] }>(
+  const sessions = await request<{ sessions: Session[] }>(
     ctx,
     'GET',
-    `/v1/sessions?execucao_id=${EXECUTION}`,
+    `/v1/sessions?execution_id=${EXECUTION}`,
   );
-  const inputRequests = await request<{ perguntas: InputRequest[] }>(
+  const inputRequests = await request<{ input_requests: InputRequest[] }>(
     ctx,
     'GET',
-    `/v1/input-requests?execucao_id=${EXECUTION}`,
+    `/v1/input-requests?execution_id=${EXECUTION}`,
   );
 
   const projectedJobs: ReconstructedState['trabalhos'] = {};
-  for (const row of jobs.body.trabalhos) {
+  for (const row of jobs.body.jobs) {
     projectedJobs[String(row.id)] = {
-      no_atual: row.no_atual,
-      bloqueado: row.bloqueado,
+      no_atual: row.current_node_id,
+      bloqueado: row.blocked,
       historico_nos: await historyFromApi(ctx, row.id),
     };
   }
 
   const projectedSessions: ReconstructedState['sessoes'] = {};
-  for (const row of sessions.body.sessoes) {
+  for (const row of sessions.body.sessions) {
     projectedSessions[String(row.id)] = { status: row.status, exit_code: row.exit_code };
   }
 
+  /**
+   * The wire's status, back in the log's words (t226).
+   *
+   * The reducer replays EVENTS, whose vocabulary is D20's second child and is
+   * still Portuguese; the API projection went English with the API child. Both
+   * halves of the comparison have to be in ONE vocabulary or the assertion below
+   * stops being about replay and starts being about spelling — so the projection
+   * is translated back here, at the same boundary
+   * `repositories/input-request.ts` translates it forward. When the events child
+   * lands, this map is what disappears.
+   */
+  const asLogged: Record<string, string> = { pending: 'pendente', answered: 'respondida' };
+
   const projectedInputRequests: ReconstructedState['perguntas'] = {};
-  for (const row of inputRequests.body.perguntas) {
+  for (const row of inputRequests.body.input_requests) {
     projectedInputRequests[String(row.id)] = {
-      status: row.status,
-      resposta: row.resposta,
-      origem: row.origem,
+      status: asLogged[row.status] ?? row.status,
+      resposta: row.answer,
+      origem: row.source,
     };
   }
 

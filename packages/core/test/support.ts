@@ -76,19 +76,28 @@ export interface Event {
   dados: Record<string, unknown>;
 }
 
-/** Job projection, as the API returns it. */
+/**
+ * Job projection, as the API returns it.
+ *
+ * English since t226 — and only the RESPONSE is. What `createJob` below SENDS
+ * is still `{titulo, no_entrada_id, …}`, because that body goes into
+ * `validateEvent` and `trabalho.criado`'s contract is D20's second child. The
+ * asymmetry is deliberate, it is documented in `src/routes/common.ts`, and
+ * `jobs.test.ts` asserts both halves so a later ticket cannot close it by
+ * accident.
+ */
 export interface Job {
   id: number;
-  projeto_id: number;
-  execucao_id: number | null;
-  titulo: string;
-  no_entrada_id: string;
-  no_atual: string;
-  bloqueado: boolean;
-  motivo_bloqueio: string | null;
-  grafo_versao_id: string | null;
-  criado_em: string;
-  atualizado_em: string;
+  project_id: number;
+  execution_id: number | null;
+  title: string;
+  entry_node_id: string;
+  current_node_id: string;
+  blocked: boolean;
+  block_reason: string | null;
+  graph_version_id: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 /** Token totals of a session; `null` when the engine reported nothing. */
@@ -102,9 +111,9 @@ export interface SessionUsage {
 /** Session projection, as the API returns it. */
 export interface Session {
   id: number;
-  trabalho_id: number | null;
-  execucao_id: number | null;
-  no_id: string | null;
+  job_id: number | null;
+  execution_id: number | null;
+  node_id: string | null;
   engine: string;
   engine_session_ref: string | null;
   working_dir: string;
@@ -116,7 +125,7 @@ export interface Session {
   exit_code: number | null;
   /** Which watchdog stopped it, when one did (t163). */
   timeout_reason: string | null;
-  uso: SessionUsage | null;
+  usage: SessionUsage | null;
   /**
    * Which models the engine reported having run this session (t172).
    *
@@ -124,42 +133,43 @@ export interface Session {
    * this column existed reads as. An empty list would be a different claim, and
    * one nobody has ever measured.
    */
-  modelos: string[] | null;
-  transcricao: string | null;
-  transcricao_truncada: boolean;
-  transcricao_tamanho_original: number | null;
-  aberta_em: string;
-  finalizada_em: string | null;
+  models: string[] | null;
+  transcript: string | null;
+  transcript_truncated: boolean;
+  transcript_original_size: number | null;
+  opened_at: string;
+  finished_at: string | null;
 }
 
 /** Input-request projection, as the API returns it. */
 export interface InputRequest {
   id: number;
-  trabalho_id: number;
-  sessao_id: number | null;
-  execucao_id: number | null;
-  tipo: string;
+  job_id: number;
+  session_id: number | null;
+  execution_id: number | null;
+  kind: string;
   /** The node the job was standing on when it asked; `null` if it had none (t167). */
-  no_id: string | null;
-  pergunta: string;
-  contexto: string | null;
-  opcoes: string[] | null;
-  recomendacao: string | null;
-  resposta_padrao: string | null;
-  auto_aprovavel: boolean;
+  node_id: string | null;
+  question: string;
+  context: string | null;
+  options: string[] | null;
+  recommendation: string | null;
+  default_answer: string | null;
+  auto_approvable: boolean;
   status: string;
-  resposta: string | null;
-  respondido_por: string | null;
-  origem: string | null;
-  criada_em: string;
-  respondida_em: string | null;
+  answer: string | null;
+  answered_by: string | null;
+  /** Where the decision came from; the VALUES stay Portuguese (event surface). */
+  source: string | null;
+  created_at: string;
+  answered_at: string | null;
 }
 
 /** One row of `GET /v1/executions/:id/metrics-by-version`. */
 export interface MetricByVersion {
-  grafo_versao_id: string | null;
-  trabalhos: number;
-  eventos: number;
+  graph_version_id: string | null;
+  jobs: number;
+  events: number;
 }
 
 /** Control plane running, against a throwaway database. */

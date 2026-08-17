@@ -17,9 +17,12 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
+  PACKAGE_ROOT,
   T102_ARTIFACTS,
   loadEvents,
   createJob,
@@ -36,6 +39,16 @@ import {
 /** The reducer lives in the specification, outside the package — it is the reference, not core code. */
 const REDUCER = '../../../especificacoes/eventos/reducers/reconstruir-estado.mjs';
 
+/** The graph document every flow in this file starts from. */
+const MINIMAL_EXAMPLE = path.join(
+  PACKAGE_ROOT,
+  '..',
+  '..',
+  'schema',
+  'exemplos',
+  'grafo-valido-minimo.json',
+);
+
 interface ReconstructedState {
   trabalhos: Record<string, { no_atual: string; bloqueado: boolean; historico_nos: string[] }>;
   sessoes: Record<string, { status: string; exit_code: number | null }>;
@@ -43,6 +56,26 @@ interface ReconstructedState {
     string,
     { status: string; resposta: string | null; origem: string | null }
   >;
+  /** t196: the lifecycle of a lease, folded out of `lease.granted`/`lease.expired`. */
+  leases: Record<string, { status: string }>;
+  /** t196: which version holds per lineage, folded out of `graph_version.applied`/`.reverted`. */
+  grafo_versao_corrente: Record<string, string>;
+}
+
+/** A lineage and a version, as `/v1` publishes them — the fields this file reads. */
+interface Graph {
+  id: string;
+  current_version_id: string | null;
+}
+
+interface GraphVersion {
+  id: string;
+}
+
+/** A lease, as `/v1` publishes it — the fields this file reads. */
+interface Lease {
+  id: number;
+  status: string;
 }
 
 const EXECUTION = 7;
@@ -58,6 +91,107 @@ async function historyFromApi(ctx: TestContext, jobId: number): Promise<string[]
     if (event.type === 'job.transitioned') history.push(event.data.to_node_id as string);
   }
   return history;
+}
+
+/**
+ * Registers the minimal graph, moves the pointer with a proposal and moves it
+ * back (t196, FR8).
+ *
+ * The three writes are what `graph_version.registered`/`.applied`/`.reverted`
+ * exist for, and the round trip ends where it started: what the fold has to
+ * reproduce is a pointer that MOVED and came back, which is a strictly harder
+ * claim than a pointer that never moved.
+ *
+ * @param ctx Control plane running.
+ * @returns The lineage and the version that holds at the end.
+ */
+async function graphRoundTrip(
+  ctx: TestContext,
+): Promise<{ graph: Graph; baseVersion: string }> {
+  const document = JSON.parse(readFileSync(MINIMAL_EXAMPLE, 'utf8')) as Record<string, unknown>;
+  const registered = await request<{ graph: Graph; graph_version: GraphVersion }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+  const graph = registered.body.graph;
+  const baseVersion = registered.body.graph_version.id;
+
+  const proposal = await request<{ proposal: { id: number } }>(ctx, 'POST', '/v1/proposals', {
+    graph_id: graph.id,
+    target_version: baseVersion,
+    operations: [
+      {
+        type: 'change_node_field',
+        node_id: 'revisar',
+        field: 'role',
+        from: 'revisor',
+        to: 'red-team',
+        inverse: {
+          type: 'change_node_field',
+          node_id: 'revisar',
+          field: 'role',
+          from: 'red-team',
+          to: 'revisor',
+        },
+      },
+    ],
+    evidence: { fonte: 'telemetria', observacao: 'a revisão passa tudo' },
+    expected_metric: { nome: 'reprovacoes', direcao: 'sobe', de: 0, para: 2 },
+  });
+  assert.equal(proposal.status, 201, JSON.stringify(proposal.body));
+  const proposalId = proposal.body.proposal.id;
+
+  const approved = await request(ctx, 'POST', `/v1/proposals/${proposalId}/approve`, {});
+  assert.equal(approved.status, 200);
+  const applied = await request(ctx, 'POST', `/v1/proposals/${proposalId}/apply`, {});
+  assert.equal(applied.status, 200, JSON.stringify(applied.body));
+  const reverted = await request(ctx, 'POST', `/v1/proposals/${proposalId}/revert`, {
+    reason: 'o red-team reprovou tudo e a travessia parou',
+  });
+  assert.equal(reverted.status, 200, JSON.stringify(reverted.body));
+
+  return { graph, baseVersion };
+}
+
+/**
+ * Grants a lease, lets its deadline pass and asks for a second one (t196, FR8).
+ *
+ * The real clock, on purpose: this file's whole point is the path production
+ * runs, and the second request is the reconciliation D5 puts at the start of
+ * every grant — which is what turns the first lease into `lease.expired`.
+ *
+ * @param ctx Control plane running.
+ * @returns The id of the lease that died and the id of the one still holding.
+ */
+async function leaseRoundTrip(ctx: TestContext): Promise<{ expired: number; granted: number }> {
+  const runner = await request(ctx, 'POST', '/v1/runners', { id: 'runner-replay' });
+  assert.equal(runner.status, 201, JSON.stringify(runner.body));
+
+  const ask = async (jobId: number): Promise<Lease> => {
+    const response = await request<{ lease: Lease | null }>(ctx, 'POST', '/v1/leases', {
+      runner_id: 'runner-replay',
+      project_id: 1,
+      job_id: jobId,
+      runner_cap: 8,
+      project_cap: 8,
+      ttl_seconds: 1,
+    });
+    assert.equal(response.status, 201, JSON.stringify(response.body));
+    assert.ok(response.body.lease !== null);
+    return response.body.lease;
+  };
+
+  const doomed = await ask(1);
+  // The shortest deadline the route accepts is one second, so this is the one
+  // wait in the file — and it buys the `expirada` end of the lifecycle, which no
+  // API call can produce on its own.
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  const survivor = await ask(2);
+
+  return { expired: doomed.id, granted: survivor.id };
 }
 
 test('AT17 — the specification reducer reproduces the projection tables exactly', async (t) => {
@@ -152,6 +286,12 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   });
   assert.equal(otherSession.status, 201);
 
+  // The two entities the log was blind to until t196: a lineage that is
+  // registered, moved by a proposal and moved back, and a lease that is granted
+  // and dies of old age. Both go through the API like everything else here.
+  const { graph, baseVersion } = await graphRoundTrip(ctx);
+  const { granted, expired } = await leaseRoundTrip(ctx);
+
   // --- the state, rebuilt from the log alone --------------------------------
   const events = listEvents(ctx.db);
   assert.ok(events.length > 0, 'the log cannot be empty');
@@ -202,15 +342,41 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     };
   }
 
+  // The lease projection the reducer folds is `{status}` and nothing else: the
+  // log carries the whole lifecycle, and the deadlines it stamps belong to the
+  // table, not to the fold.
+  const leases = await request<{ leases: Lease[] }>(ctx, 'GET', '/v1/leases');
+  assert.equal(leases.status, 200);
+  const projectedLeases: ReconstructedState['leases'] = {};
+  for (const row of leases.body.leases) {
+    projectedLeases[String(row.id)] = { status: row.status };
+  }
+
+  const lineage = await request<{ graph: Graph }>(ctx, 'GET', `/v1/graphs/${graph.id}`);
+  assert.equal(lineage.status, 200);
+  const projectedPointer: ReconstructedState['grafo_versao_corrente'] = {
+    [lineage.body.graph.id]: lineage.body.graph.current_version_id as string,
+  };
+
   // --- and the two have to be the same thing --------------------------------
   assert.deepEqual(state.trabalhos, projectedJobs);
   assert.deepEqual(state.sessoes, projectedSessions);
   assert.deepEqual(state.perguntas, projectedInputRequests);
+  assert.deepEqual(state.leases, projectedLeases);
+  assert.deepEqual(state.grafo_versao_corrente, projectedPointer);
 
-  // Guards against an empty pass of the three deepEqual above.
+  // Guards against an empty pass of the five deepEqual above.
   assert.equal(Object.keys(state.trabalhos).length, 2);
   assert.equal(Object.keys(state.sessoes).length, 2);
   assert.equal(Object.keys(state.perguntas).length, 2);
+  assert.equal(Object.keys(state.leases).length, 2);
+  assert.deepEqual(state.leases[String(expired)], { status: 'expired' });
+  assert.deepEqual(state.leases[String(granted)], { status: 'active' });
+  assert.equal(
+    state.grafo_versao_corrente[graph.id],
+    baseVersion,
+    'the revert took the pointer back, and the log alone says so',
+  );
   assert.deepEqual(state.trabalhos[String(job.id)].historico_nos, [
     'entrada',
     'refinamento',

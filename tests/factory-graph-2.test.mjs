@@ -651,6 +651,7 @@ test('t168 — the bets graph declares the class custom fields, and the bundle s
     'asset',
     'downside',
     'premise_source',
+    'tamanho_pretendido',
     'upside',
   ]);
 
@@ -664,12 +665,94 @@ test('t168 — the bets graph declares the class custom fields, and the bundle s
     );
   }
 
+  // t263: the intended position size is the class's own field too, and it is
+  // demanded at the same gate — without it nobody, neither the triage nor the
+  // investor, can tell whether the thesis fits the portfolio's risk ceiling.
+  const size = declarations.get('tamanho_pretendido');
+  assert.equal(size.type, 'number', 'tamanho_pretendido: type');
+  assert.equal(size.required_at, 'triagem', 'tamanho_pretendido: required_at');
+  assert.ok(
+    doc.nodes.some((node) => node.id === size.required_at),
+    'required_at has to name a node this document really has',
+  );
+
   for (const key of ['downside', 'upside']) {
     assert.equal(declarations.get(key).type, 'number');
     assert.equal(
       declarations.get(key).required_at,
       null,
       `${key} is informational: no node blocks the crossing on it`,
+    );
+  }
+});
+
+/*
+ * t263 — two of the four triage criteria used to come out `indeterminado` for
+ * data the graph already carried.
+ *
+ * `project.carteira` reached the graph's `project` object in t260, but the
+ * manifest only ever interpolated `criterios_de_triagem`: the paragraph that
+ * spoke of the risk ceiling named `input.project.carteira` between backticks,
+ * and backticks are not double braces — the renderer only substitutes
+ * `{{input.…}}` tokens, so the value never left the JSON. The investor's circle
+ * of competence had no place at all, and the intended position size had no
+ * field. What is asserted here is the pair that makes the criteria judgeable:
+ * the shape in `input`, and the three literal tokens in `instructions`.
+ *
+ * `carteira` is required AND nullable rather than optional because the
+ * placeholder engine fails closed on a missing key
+ * (`packages/runner/src/dispatch/render-skill-instructions.ts`): a `project`
+ * with no open position has to send `carteira: null` on purpose, never omit it.
+ */
+test('t263 — triar-tese interpola carteira, círculo de competência e tamanho pretendido', () => {
+  const manifest = readManifest('triar-tese.json');
+  const project = manifest.input.properties.project;
+
+  for (const key of ['carteira', 'circulo_de_competencia']) {
+    assert.ok(project.required.includes(key), `project.required has to demand ${key}`);
+  }
+  assert.deepEqual(
+    project.properties.carteira.type,
+    ['object', 'null'],
+    'carteira is nullable, never absent: the placeholder engine fails closed on a missing key',
+  );
+  assert.equal(project.properties.circulo_de_competencia.type, 'array');
+  assert.equal(
+    project.properties.circulo_de_competencia.minItems,
+    1,
+    'an empty circle of competence is no circle at all',
+  );
+  assert.equal(project.properties.circulo_de_competencia.items.type, 'string');
+
+  assert.ok(
+    manifest.input.required.includes('tamanho_pretendido'),
+    'the intended size is demanded at the top of the input, beside asset and premise_source',
+  );
+  assert.equal(
+    manifest.input.properties.tamanho_pretendido.type,
+    'number',
+    'a class field is a flat scalar at the top, never a nested object (t168)',
+  );
+
+  for (const token of [
+    '{{input.project.carteira}}',
+    '{{input.project.circulo_de_competencia}}',
+    '{{input.tamanho_pretendido}}',
+  ]) {
+    assert.ok(
+      manifest.instructions.includes(token),
+      `instructions has to really interpolate ${token}, not merely name the path`,
+    );
+  }
+});
+
+test('t263 — the README documents the two new inputs of the triage', () => {
+  const text = readFileSync(README_PATH, 'utf8');
+
+  for (const key of ['circulo_de_competencia', 'tamanho_pretendido']) {
+    assert.ok(
+      text.includes(key),
+      `the README has to document ${key}: documentation cannot lag the schema`,
     );
   }
 });

@@ -515,7 +515,7 @@ function requireFieldsOfNode(db: Database, row: JobRow): void {
   throw new ValidationError(
     missing.map(
       (name) =>
-        `campos.${name} is required to leave node "${row.no_atual}" (declared in custom_fields of the job's graph version)`,
+        `fields.${name} is required to leave node "${row.no_atual}" (declared in custom_fields of the job's graph version)`,
     ),
   );
 }

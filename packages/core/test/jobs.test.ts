@@ -714,6 +714,13 @@ test('t168 — leaving a node that demands a field is refused while it is empty'
     refused.body.details.some((detail) => detail.includes('premise_source')),
     `the refusal has to name the missing field: ${JSON.stringify(refused.body.details)}`,
   );
+  // t255 — and it names it under the key the CALLER sends. The message said
+  // `campos.premise_source` for two tickets after `fields` became the wire key
+  // (t168), which sends whoever reads it looking for a field nothing accepts.
+  assert.ok(
+    refused.body.details.some((detail) => detail.startsWith('fields.premise_source')),
+    `the refusal has to name the wire key, not the column: ${JSON.stringify(refused.body.details)}`,
+  );
   assert.ok(
     !refused.body.details.some((detail) => detail.includes('downside')),
     'a field declared with no required_at is never demanded',

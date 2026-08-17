@@ -28,6 +28,7 @@ import {
   listSessions,
   recordPermissionDenial,
   toWireSession,
+  toWireSessionTranscript,
 } from '../repositories/session.ts';
 import { withValidation, routeId, notFound, conflict } from './common.ts';
 
@@ -99,10 +100,16 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
   // an empty payload: "no transcript" is an answer, and only an unknown id is a
   // 404. It is a GET like any other, which is what lets the screen link it
   // straight through the verbatim `/v1/*` proxy without a route of its own (D11).
+  //
+  // A GET, so it crosses the row → wire boundary like the four routes above
+  // (t232). It is the one session payload NOT built by `toWireSession`, which is
+  // exactly how it came out of t226 still spelling `{transcricao, truncada,
+  // tamanho_original}` for the three facts `/finish` was already answering as
+  // `{transcript, transcript_truncated, transcript_original_size}`.
   app.get('/sessions/:id/transcript', async (request, reply) =>
     withValidation(reply, () => {
       const transcript = getSessionTranscript(db, routeId(request.params));
-      return transcript ?? notFound(reply, 'session');
+      return transcript === null ? notFound(reply, 'session') : toWireSessionTranscript(transcript);
     }),
   );
 

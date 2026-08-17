@@ -155,6 +155,32 @@ export interface WireSession {
   finished_at: string | null;
 }
 
+/**
+ * The transcript payload, as `/v1` publishes it (t232).
+ *
+ * The same three names {@link WireSession} already publishes for the same three
+ * facts, and deliberately not a shorter second spelling: `truncada` reads fine
+ * next to `transcricao` in one body, but `truncated` next to `/finish`'s
+ * `transcript_truncated` is one concept with two names, and a client that reads
+ * the end of a session and then its output would parse both.
+ */
+export interface WireSessionTranscript {
+  transcript: string | null;
+  transcript_truncated: boolean;
+  transcript_original_size: number | null;
+}
+
+/** Transcript to wire. */
+export function toWireSessionTranscript(
+  transcript: SessionTranscript,
+): WireSessionTranscript {
+  return {
+    transcript: transcript.transcricao,
+    transcript_truncated: transcript.truncada,
+    transcript_original_size: transcript.tamanho_original,
+  };
+}
+
 /** Projection to wire: the one place the session's column names meet the API's. */
 export function toWireSession(session: Session): WireSession {
   return {
@@ -493,7 +519,12 @@ export function finishSession(
   return close();
 }
 
-/** Body of `GET /v1/sessions/:id/transcript`. */
+/**
+ * What `GET /v1/sessions/:id/transcript` reads, in the column's own words.
+ *
+ * The names mirror the untouched migration, like every other projection in this
+ * file; what LEAVES the process is `toWireSessionTranscript`'s output (t232).
+ */
 export interface SessionTranscript {
   transcricao: string | null;
   truncada: boolean;

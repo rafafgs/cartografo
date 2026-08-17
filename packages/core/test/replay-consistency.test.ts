@@ -19,6 +19,11 @@
  * lineage, moves its pointer with a proposal and moves it back, and grants a
  * lease that dies of old age.
  *
+ * t245 adds the sixth, `execucoes`, and the same care: a round that really ENDS
+ * (every traveller on a final node of a version that resolves, no lease still
+ * holding one) rides beside the round that stays open, so the fold has both a
+ * `finalizada_em` to reproduce and an absence to respect.
+ *
  * The reducer's own state keys stay in Portuguese: it lives in `especificacoes/`,
  * outside this ticket's rename scope (t127, FR8).
  */
@@ -67,6 +72,8 @@ interface ReconstructedState {
   leases: Record<string, { status: string }>;
   /** t196: which version holds per lineage, folded out of `graph_version.applied`/`.reverted`. */
   grafo_versao_corrente: Record<string, string>;
+  /** t245: which rounds are over, folded out of `execution.finished` (D21). */
+  execucoes: Record<string, { finalizada_em: string }>;
 }
 
 /** A lineage and a version, as `/v1` publishes them — the fields this file reads. */
@@ -86,6 +93,18 @@ interface Lease {
 }
 
 const EXECUTION = 7;
+
+/**
+ * The round that ENDS, beside the one that does not (t245).
+ *
+ * A second execution and not a third job of the first, because execution 7 is
+ * built to stay open: one of its jobs is blocked, the other cites a version
+ * nobody can resolve, and a lease is still active over both. What the fold has
+ * to reproduce is a `finished_at` that the API also reports — which needs a
+ * round where every traveller really arrived, on a version the registration gate
+ * really accepted, with no lease left holding it.
+ */
+const FINISHED_EXECUTION = 8;
 
 /** Node history of a job, derived only from the API (created + transitions). */
 async function historyFromApi(ctx: TestContext, jobId: number): Promise<string[]> {
@@ -297,6 +316,22 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   // registered, moved by a proposal and moved back, and a lease that is granted
   // and dies of old age. Both go through the API like everything else here.
   const { graph, baseVersion } = await graphRoundTrip(ctx);
+
+  // A round that really ENDS (t245): one traveller, on the version the gate
+  // above accepted, walked to the graph's own final node. It is what puts an
+  // `execution.finished` in the log — and the lease round trip below never
+  // touches this job, so nothing is still holding it when it arrives.
+  const arriving = await createJob(ctx, {
+    title: 'nota que chega ao fim',
+    entry_node_id: 'redigir',
+    execution_id: FINISHED_EXECUTION,
+    graph_version_id: baseVersion,
+  });
+  const arrival = await request(ctx, 'POST', `/v1/jobs/${arriving.id}/transitions`, {
+    to_node_id: 'revisar',
+  });
+  assert.equal(arrival.status, 200, JSON.stringify(arrival.body));
+
   const { granted, expired } = await leaseRoundTrip(ctx);
 
   // --- the state, rebuilt from the log alone --------------------------------
@@ -305,11 +340,10 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   const state = reconstruirEstado(events);
 
   // --- the state, as the projection tables answer it ------------------------
-  const jobs = await request<{ jobs: Job[] }>(
-    ctx,
-    'GET',
-    `/v1/jobs?execution_id=${EXECUTION}`,
-  );
+  // Every job, and not only execution 7's, since t245: the fold knows nothing
+  // about rounds when it builds `trabalhos`, so slicing the projection by one
+  // execution while the log carries two would compare two different sets.
+  const jobs = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs');
   const sessions = await request<{ sessions: Session[] }>(
     ctx,
     'GET',
@@ -365,15 +399,46 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     [lineage.body.graph.id]: lineage.body.graph.current_version_id as string,
   };
 
+  // The end of a round is derived at read time from the log, exactly like the
+  // fold derives it — so what the two have to agree on is the INSTANT, and a
+  // round that never ended has to be absent from both (t245).
+  const finished = await request<{ finished_at: string | null }>(
+    ctx,
+    'GET',
+    `/v1/executions/${FINISHED_EXECUTION}`,
+  );
+  assert.equal(finished.status, 200);
+  const open = await request<{ finished_at: string | null }>(
+    ctx,
+    'GET',
+    `/v1/executions/${EXECUTION}`,
+  );
+  assert.equal(open.status, 200);
+  const projectedExecutions: ReconstructedState['execucoes'] = {};
+  if (finished.body.finished_at !== null) {
+    projectedExecutions[String(FINISHED_EXECUTION)] = { finalizada_em: finished.body.finished_at };
+  }
+
   // --- and the two have to be the same thing --------------------------------
   assert.deepEqual(state.trabalhos, projectedJobs);
   assert.deepEqual(state.sessoes, projectedSessions);
   assert.deepEqual(state.perguntas, projectedInputRequests);
   assert.deepEqual(state.leases, projectedLeases);
   assert.deepEqual(state.grafo_versao_corrente, projectedPointer);
+  assert.deepEqual(state.execucoes, projectedExecutions);
 
-  // Guards against an empty pass of the five deepEqual above.
-  assert.equal(Object.keys(state.trabalhos).length, 2);
+  // Guards against an empty pass of the six deepEqual above.
+  assert.equal(Object.keys(state.trabalhos).length, 3);
+  assert.ok(
+    typeof state.execucoes[String(FINISHED_EXECUTION)]?.finalizada_em === 'string',
+    'the round that ended has to come out of the log with an instant on it',
+  );
+  assert.equal(
+    open.body.finished_at,
+    null,
+    'execution 7 has a blocked job, an unresolvable version and a live lease: it never ends',
+  );
+  assert.equal(state.execucoes[String(EXECUTION)], undefined);
   assert.equal(Object.keys(state.sessoes).length, 2);
   assert.equal(Object.keys(state.perguntas).length, 2);
   assert.equal(Object.keys(state.leases).length, 2);

@@ -13,9 +13,12 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
+  PACKAGE_ROOT,
   T102_ARTIFACTS,
   createJob,
   requireArtifacts,
@@ -27,10 +30,12 @@ import {
   type MetricByVersion,
   type Session,
   type TestContext,
+  type TestHook,
 } from './support.ts';
 
 /**
- * One row of `GET /v1/executions` (t107, FR1).
+ * One row of `GET /v1/executions` (t107, FR1), with the end of the round on it
+ * (t245, FR6).
  *
  * Hand-written, like the other shapes in this support: it IS the contract the
  * test charges for, and importing it from `src/` would charge nothing.
@@ -40,6 +45,14 @@ interface ExecutionSummary {
   jobs: number;
   blocked_jobs: number;
   pending_input_requests: number;
+  /**
+   * When the control plane declared this round over, `null` while it has not
+   * (t245).
+   *
+   * Derived from the `execution.finished` event at read time, never stored —
+   * same posture as the job's `completed`.
+   */
+  finished_at: string | null;
 }
 
 test('AT15 — GET /v1/executions/:id/metrics-by-version groups jobs and events by version', async (t) => {
@@ -173,10 +186,12 @@ test('t107 AT1 — GET /v1/executions groups by execution, counts blocked and pe
   const response = await request<{ executions: ExecutionSummary[] }>(ctx, 'GET', '/v1/executions');
 
   assert.equal(response.status, 200);
+  // `finished_at` rides on every row since t245: none of these rounds is over —
+  // no job of them is standing on a final node — so all three read `null`.
   assert.deepEqual(response.body.executions, [
-    { execution_id: 7, jobs: 2, blocked_jobs: 1, pending_input_requests: 1 },
-    { execution_id: 8, jobs: 1, blocked_jobs: 0, pending_input_requests: 0 },
-    { execution_id: null, jobs: 1, blocked_jobs: 0, pending_input_requests: 0 },
+    { execution_id: 7, jobs: 2, blocked_jobs: 1, pending_input_requests: 1, finished_at: null },
+    { execution_id: 8, jobs: 1, blocked_jobs: 0, pending_input_requests: 0, finished_at: null },
+    { execution_id: null, jobs: 1, blocked_jobs: 0, pending_input_requests: 0, finished_at: null },
   ]);
 });
 
@@ -397,4 +412,337 @@ test('t110 — an execution with no events answers 200 with an empty list, never
   assert.equal(response.status, 200, 'an execution is an opaque grouper: nothing to exist or not');
   assert.equal(response.body.execution_id, 99);
   assert.deepEqual(response.body.events, []);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t245 — the control plane declares the round over (D21, first of three)      */
+/*                                                                            */
+/* Until here nothing rolled `Job.completed` up across a whole `execution_id`: */
+/* the log could say "this traveller arrived" and never "the round is over".   */
+/* D21 makes that a fact the control plane — and only it (D1) — asserts, once, */
+/* as `execution.finished`, readable both from the stream and as `finished_at` */
+/* on the execution's own GET.                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The graph the rounds below run under: `redigir` is the entry, `revisar` is
+ * the one final node.
+ *
+ * The same fixture `jobs.test.ts` and `replay-consistency.test.ts` already
+ * register, and for the same reason: "the traveller arrived" is a property of
+ * the job's VERSION, so a round can only finish over a version the registration
+ * gate really accepted — a hand-made snapshot would prove nothing about it.
+ */
+const MINIMAL_GRAPH = path.join(
+  PACKAGE_ROOT,
+  '..',
+  '..',
+  'schema',
+  'exemplos',
+  'grafo-valido-minimo.json',
+);
+
+/** One execution, as `GET /v1/executions/:id` publishes it (t245, FR7). */
+type ExecutionDetail = ExecutionSummary;
+
+/**
+ * Registers the minimal example graph.
+ *
+ * @param ctx Control plane running.
+ * @returns Id of the version born with the lineage — the one a job cites.
+ */
+async function registerMinimalGraph(ctx: TestContext): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as unknown;
+  const response = await request<{ graph_version: { id: string } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(response.status, 201, `POST /v1/graphs returned ${response.status}`);
+  return response.body.graph_version.id;
+}
+
+/** Creates a job of `execution` standing on the entry node of `version`. */
+async function travellerOf(
+  ctx: TestContext,
+  execution: number,
+  version: string,
+  title: string,
+): Promise<Job> {
+  return await createJob(ctx, {
+    title,
+    entry_node_id: 'redigir',
+    execution_id: execution,
+    graph_version_id: version,
+  });
+}
+
+/** Moves a job to a node, failing loudly instead of leaving a silent 4xx behind. */
+async function moveTo(ctx: TestContext, jobId: number, node: string): Promise<void> {
+  const response = await request<Job>(ctx, 'POST', `/v1/jobs/${jobId}/transitions`, {
+    to_node_id: node,
+  });
+  assert.equal(response.status, 200, `transition to ${node} returned ${response.status}`);
+}
+
+/** Every `execution.finished` the round's own log carries, in log order. */
+async function finishedEvents(ctx: TestContext, execution: number): Promise<Event[]> {
+  const response = await request<ExecutionLog>(ctx, 'GET', `/v1/executions/${execution}/events`);
+  assert.equal(response.status, 200);
+  return response.body.events.filter((event) => event.type === 'execution.finished');
+}
+
+test('t245 AT1 — execution.finished fires exactly once, on the last job to arrive', async (t) => {
+  requireArtifacts(
+    T102_ARTIFACTS.migration,
+    T102_ARTIFACTS.events,
+    T102_ARTIFACTS.validation,
+    T102_ARTIFACTS.jobRepository,
+    T102_ARTIFACTS.jobRoutes,
+    T102_ARTIFACTS.executionRoutes,
+  );
+  const ctx = await startControlPlane(t);
+  const version = await registerMinimalGraph(ctx);
+
+  const first = await travellerOf(ctx, 245, version, 'nota que anda primeiro');
+  const second = await travellerOf(ctx, 245, version, 'nota que anda depois');
+
+  await moveTo(ctx, first.id, 'revisar');
+  assert.deepEqual(
+    await finishedEvents(ctx, 245),
+    [],
+    'one traveller arrived and the other is still at redigir: the round is not over',
+  );
+
+  await moveTo(ctx, second.id, 'revisar');
+  const announced = await finishedEvents(ctx, 245);
+  assert.equal(announced.length, 1, 'the round ends once, on the transition that completes it');
+
+  const event = announced[0];
+  assert.deepEqual(
+    event.entity,
+    { type: 'execution', id: 245 },
+    'the subject is the ROUND, never whichever job happened to trigger the check',
+  );
+  assert.deepEqual(event.data, {}, 'the envelope already carries everything there is to say');
+  assert.deepEqual(
+    event.actor,
+    { type: 'system', ref: 'control-plane' },
+    'the control plane asserts this about itself (D1, D21), never the actor of the job mutation',
+  );
+  assert.equal(event.execution_id, 245);
+
+  // "Once, ever" and not "once per re-check": the first job leaves the final
+  // node and comes back, which makes the condition true a second time.
+  await moveTo(ctx, first.id, 'redigir');
+  await moveTo(ctx, first.id, 'revisar');
+  assert.deepEqual(
+    await finishedEvents(ctx, 245),
+    announced,
+    'the fact is recorded once and the log is not asked to repeat it',
+  );
+});
+
+test('t245 AT2 — GET /v1/executions and GET /v1/executions/:id report finished_at', async (t) => {
+  requireArtifacts(
+    T102_ARTIFACTS.migration,
+    T102_ARTIFACTS.jobRepository,
+    T102_ARTIFACTS.executionRoutes,
+  );
+  const ctx = await startControlPlane(t);
+  const version = await registerMinimalGraph(ctx);
+
+  const rowOf = async (execution: number): Promise<ExecutionSummary> => {
+    const response = await request<{ executions: ExecutionSummary[] }>(
+      ctx,
+      'GET',
+      '/v1/executions',
+    );
+    assert.equal(response.status, 200);
+    const row = response.body.executions.find((entry) => entry.execution_id === execution);
+    assert.ok(row !== undefined, `execution ${execution} is missing from the list`);
+    return row;
+  };
+
+  const detailOf = async (execution: number): Promise<ExecutionDetail> => {
+    const response = await request<ExecutionDetail>(ctx, 'GET', `/v1/executions/${execution}`);
+    assert.equal(response.status, 200);
+    return response.body;
+  };
+
+  const arriving = await travellerOf(ctx, 2450, version, 'nota que chega');
+  const alsoArriving = await travellerOf(ctx, 2450, version, 'a outra nota que chega');
+  // A second round, still in flight: the end of the first says nothing about it.
+  const inFlight = await travellerOf(ctx, 2451, version, 'nota de outra rodada');
+
+  assert.equal((await rowOf(2450)).finished_at, null, 'nobody arrived yet');
+  assert.equal((await detailOf(2450)).finished_at, null);
+
+  await moveTo(ctx, arriving.id, 'revisar');
+  assert.equal((await rowOf(2450)).finished_at, null, 'half a round is not a round');
+
+  await moveTo(ctx, alsoArriving.id, 'revisar');
+
+  const announced = await finishedEvents(ctx, 2450);
+  assert.equal(announced.length, 1);
+  const occurredAt = announced[0].occurred_at;
+
+  assert.equal(
+    (await rowOf(2450)).finished_at,
+    occurredAt,
+    'the list reads the instant off the event, and does not store one of its own',
+  );
+  assert.deepEqual(await detailOf(2450), {
+    execution_id: 2450,
+    jobs: 2,
+    blocked_jobs: 0,
+    pending_input_requests: 0,
+    finished_at: occurredAt,
+  });
+
+  assert.equal((await rowOf(2451)).finished_at, null, 'the other round is untouched');
+  assert.equal((await detailOf(2451)).finished_at, null);
+  assert.deepEqual(await finishedEvents(ctx, 2451), []);
+  assert.equal(inFlight.current_node_id, 'redigir');
+});
+
+test('t245 AT3 — an execution with no job at all is never finished', async (t) => {
+  requireArtifacts(T102_ARTIFACTS.migration, T102_ARTIFACTS.executionRoutes);
+  const ctx = await startControlPlane(t);
+
+  const response = await request<ExecutionDetail>(ctx, 'GET', '/v1/executions/99');
+
+  assert.equal(response.status, 200, 'an execution is an opaque grouper: nothing to exist or not');
+  assert.deepEqual(response.body, {
+    execution_id: 99,
+    jobs: 0,
+    blocked_jobs: 0,
+    pending_input_requests: 0,
+    finished_at: null,
+  }, 'zero jobs is never finished: the condition is not vacuously true');
+});
+
+/* -------------------------------------------------------------------------- */
+/* The stream, read while it is still open (t245, AT4)                        */
+/*                                                                            */
+/* `request()` from `./support.ts` waits for the body to end and an SSE body   */
+/* never ends, so this one test speaks `fetch` directly — the same shape       */
+/* `events-stream.test.ts` uses, cut down to the two fields this assertion     */
+/* reads. The credential goes in the header of the request that OPENS the      */
+/* stream, which is the only place the route looks for it.                    */
+/* -------------------------------------------------------------------------- */
+
+/** One SSE message, in the slice this file reads. */
+interface StreamMessage {
+  event: string | null;
+  data: string;
+}
+
+/** An open SSE connection, being read in the background. */
+interface OpenStream {
+  status: number;
+  messages: StreamMessage[];
+  abort: () => void;
+}
+
+/** Parses one `\n\n`-terminated block, ignoring the comment-only ones. */
+function absorb(block: string, stream: OpenStream): void {
+  const lines = block.split('\n').filter((line) => line !== '');
+  if (lines.length === 0 || lines.every((line) => line.startsWith(':'))) return;
+
+  const message: StreamMessage = { event: null, data: '' };
+  for (const line of lines) {
+    const cut = line.indexOf(':');
+    const field = cut === -1 ? line : line.slice(0, cut);
+    const value = cut === -1 ? '' : line.slice(cut + 1).replace(/^ /, '');
+    if (field === 'event') message.event = value;
+    if (field === 'data') message.data = message.data === '' ? value : `${message.data}\n${value}`;
+  }
+  stream.messages.push(message);
+}
+
+/** Opens the stream and starts reading it in the background. */
+async function openStream(ctx: TestContext, query: string, t: TestHook): Promise<OpenStream> {
+  const controller = new AbortController();
+  const response = await fetch(`${ctx.url}/v1/events/stream?${query}`, {
+    headers: { authorization: `Bearer ${ctx.token}` },
+    signal: controller.signal,
+  });
+
+  const stream: OpenStream = {
+    status: response.status,
+    messages: [],
+    abort: () => controller.abort(),
+  };
+  t.after(() => stream.abort());
+
+  const body = response.body;
+  if (body !== null) {
+    const decoder = new TextDecoder();
+    let buffer = '';
+    void (async () => {
+      for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
+        buffer += decoder.decode(chunk, { stream: true });
+        let cut = buffer.indexOf('\n\n');
+        while (cut !== -1) {
+          absorb(buffer.slice(0, cut), stream);
+          buffer = buffer.slice(cut + 2);
+          cut = buffer.indexOf('\n\n');
+        }
+      }
+    })().catch(() => {
+      // The abort of the test itself ends the read; there is nothing to report.
+    });
+  }
+
+  return stream;
+}
+
+/** Waits for a condition, failing with a readable message instead of a timeout. */
+async function waitFor(condition: () => boolean, description: string): Promise<void> {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`timed out waiting for ${description}`);
+}
+
+/** Sleeps past a poll tick, for the "and nothing else arrived" assertions. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 800));
+
+test('t245 AT4 — GET /v1/events/stream?type=execution.finished filters to it', async (t) => {
+  requireArtifacts(
+    T102_ARTIFACTS.migration,
+    T102_ARTIFACTS.events,
+    T102_ARTIFACTS.validation,
+    T102_ARTIFACTS.executionRoutes,
+    'src/routes/events.ts',
+  );
+  const ctx = await startControlPlane(t);
+  const version = await registerMinimalGraph(ctx);
+
+  const stream = await openStream(ctx, 'type=execution.finished', t);
+  assert.equal(stream.status, 200, 'the type is in the taxonomy, so the filter is accepted');
+
+  const first = await travellerOf(ctx, 2452, version, 'nota que anda primeiro');
+  const second = await travellerOf(ctx, 2452, version, 'nota que anda depois');
+  await moveTo(ctx, first.id, 'revisar');
+  await settle();
+  assert.deepEqual(
+    stream.messages,
+    [],
+    'two creations and a transition happened, and none of them is what was asked for',
+  );
+
+  await moveTo(ctx, second.id, 'revisar');
+  await waitFor(() => stream.messages.length > 0, 'the execution.finished message');
+  await settle();
+
+  assert.deepEqual(stream.messages.map((message) => message.event), ['execution.finished']);
+  const pushed = JSON.parse(stream.messages[0].data) as Event;
+  assert.equal(pushed.type, 'execution.finished');
+  assert.deepEqual(pushed.entity, { type: 'execution', id: 2452 });
+  assert.deepEqual(pushed.data, {});
 });

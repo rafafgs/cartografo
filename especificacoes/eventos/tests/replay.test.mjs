@@ -56,5 +56,8 @@ test('um log vazio reconstrói um estado vazio', async () => {
     perguntas: {},
     leases: {},
     grafo_versao_corrente: {},
+    // A sexta projeção entrou com a D21 (t245). Vazia é a forma completa: uma
+    // rodada que ninguém declarou concluída é chave ausente, nunca `null`.
+    execucoes: {},
   });
 });

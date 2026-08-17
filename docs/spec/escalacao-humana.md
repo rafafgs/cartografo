@@ -243,9 +243,9 @@ tipo "este nó para de chamar gente".
 
 ### De qual nó veio a pergunta
 
-`pergunta` ganhou a coluna `no_id`, carimbada pelo servidor a partir do
-`no_atual` do trabalho dono — nunca vinda do corpo do pedido, a mesma fronteira
-de confiança que `projeto_id` e `execucao_id` já tinham. O evento
+`input_request` ganhou a coluna `node_id`, carimbada pelo servidor a partir do
+`current_node_id` do trabalho dono — nunca vinda do corpo do pedido, a mesma
+fronteira de confiança que `project_id` e `execution_id` já tinham. O evento
 `pergunta.criada` carrega o mesmo campo, e
 `GET /v1/executions/:id/metrics-by-version` devolve `input_requests_by_node` ao lado
 das métricas por versão.

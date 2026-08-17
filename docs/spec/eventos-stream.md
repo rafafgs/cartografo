@@ -1,6 +1,6 @@
 # Especificação: stream de eventos para fora
 
-**Versão da API:** `v1` · **Migração:** nenhuma (lê a tabela `evento` do
+**Versão da API:** `v1` · **Migração:** nenhuma (lê a tabela `event` do
 [`0003`](../../packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql))
 **Origem:** ponto de extensão nº 5 —
 ["eventos para fora"](../../notas/2026-08-14-extensao-e-qualidade.md) · **Ficha:** t123

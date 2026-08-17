@@ -62,7 +62,7 @@ banco (D1), e isso vale entre processos, não só dentro de um.
 
 O passo 3 registra o grafo de fábrica 1 (D14) como linhagem base — conferindo
 antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a
-`grafo_versao.id` que ficou gravada. Ao final, `GET /v1/classes` lista
+`graph_version.id` que ficou gravada. Ao final, `GET /v1/classes` lista
 `desenvolvimento-de-software`.
 
 E do grafo registrado ao trabalho andando, um quarto comando:
@@ -127,7 +127,7 @@ npx cartografo export desenvolvimento-de-software       # grava ./desenvolviment
 ```
 
 O arquivo que `export` grava é o mesmo documento que `import` aceita de volta:
-importá-lo em outro control plane produz a mesma `grafo_versao.id`, porque o id
+importá-lo em outro control plane produz a mesma `graph_version.id`, porque o id
 de uma versão é o hash canônico do documento. `npx cartografo --help` lista tudo.
 
 Depois de uma rodada, para a lente de custo ler a telemetria dela:

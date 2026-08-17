@@ -27,10 +27,10 @@ e das arestas.
 | | Webhook ([`webhooks-eventos.md`](webhooks-eventos.md)) | Gancho (este documento) |
 |---|---|---|
 | Quem declara | um operador, por `POST /v1/webhooks` | quem escreve o grafo, dentro do documento |
-| Onde vive | linha em `assinatura_webhook` | chave `hooks` do snapshot da versão |
+| Onde vive | linha em `webhook_subscription` | chave `hooks` do snapshot da versão |
 | Escopo | todo evento do projeto (com filtro por tipo) | um nó, um gatilho |
 | Versionado com o grafo | não | **sim** — muda por proposta, com diff e volta |
-| Onde fica a chave do HMAC | `assinatura_webhook.segredo` | `segredo_gancho`, referenciada por nome (§2.1) |
+| Onde fica a chave do HMAC | `webhook_subscription.secret` | `hook_secret`, referenciada por nome (§2.1) |
 | Transporte | POST assinado, seis tentativas | o mesmo, byte a byte |
 
 Regra prática: se a reação é do PROCESSO — "toda vez que qualquer trabalho
@@ -135,10 +135,10 @@ a partir da próxima entrega enfileirada; uma entrega já em voo termina com a q
 valia quando ela nasceu (§4). E o documento de grafo não muda uma vírgula: o
 nome continua o mesmo, então não há versão nova, não há proposta e não há diff.
 
-O `valor` fica em texto claro no banco, e isso é deliberado: a assinatura é
+O `value` fica em texto claro no banco, e isso é deliberado: a assinatura é
 HMAC, então a chave precisa ser REUSADA a cada entrega — ela não pode virar
 digest como a credencial da `0007`. É exatamente a postura do
-`assinatura_webhook.segredo` (t142); o que esta ficha mudou foi ONDE a chave
+`webhook_subscription.secret` (t142); o que esta ficha mudou foi ONDE a chave
 mora, não como ela é guardada.
 
 ---
@@ -188,9 +188,9 @@ nova do grafo pode apontar o mesmo gancho para outro lugar, e um `PUT
 /v1/hook-secrets/:nome` pode rotacionar a chave — e uma entrega em voo termina
 contra o destino que valia quando ela nasceu, nunca contra o que valeria hoje.
 É o mesmo instante e a mesma razão para as duas: só a FONTE da chave mudou de
-lugar (t194), a semântica da coluna `segredo` da linha de entrega é a de sempre.
+lugar (t194), a semântica da coluna `secret` da linha de entrega é a de sempre.
 
-Se o trabalho não tem `grafo_versao_id`, se a versão citada não resolve, se o
+Se o trabalho não tem `graph_version_id`, se a versão citada não resolve, se o
 snapshot dela não tem `hooks`, ou se o `secret_ref` de um gancho não casa com
 nenhum segredo vivo, o resultado é o mesmo: zero entregas, zero erro. O último
 caso é o de quem importou um grafo sem registrar o que ele referencia, e por

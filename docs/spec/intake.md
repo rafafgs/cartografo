@@ -22,8 +22,8 @@ grafo, não move ponteiro, não muda nó nenhum.
 
 | Fase | Rota | O que grava | O que emite no log |
 |---|---|---|---|
-| Propor | `POST /v1/intake` | Uma linha em `intake_rascunho` | Nada |
-| Confirmar | `POST /v1/intake/:id/confirmations` | N `trabalho` + M `trabalho_dependencia` | N `trabalho.criado` + M `trabalho.dependencia_declarada` |
+| Propor | `POST /v1/intake` | Uma linha em `intake_draft` | Nada |
+| Confirmar | `POST /v1/intake/:id/confirmations` | N `job` + M `job_dependency` | N `trabalho.criado` + M `trabalho.dependencia_declarada` |
 
 O rascunho **não emite evento nenhum** — nem ao nascer, nem ao ser editado, nem
 ao ser descartado. É armazenamento de trabalho em curso, não fato de auditoria:
@@ -57,7 +57,7 @@ tela de chat. Esta camada não despacha sessão e não conhece engine.
 `ref` e `titulo` são obrigatórios; `corpo`, `criterios_de_aceite`, `tier` e
 `depende_de` são opcionais. `ref` é identidade **local ao lote**: ela existe
 para que um item cite outro, e morre na confirmação, quando cada `ref` vira um
-`trabalho.id` real.
+`job.id` real.
 
 Os critérios que o intake grava são **preliminares**. Quem os produz de verdade
 é o nó `refinar` do grafo de fábrica 1, cujo contrato recebe `{ticket_id,
@@ -101,8 +101,8 @@ forma que um lote real tem.
    `getClassBase` → `getVersion` no momento da confirmação, não no da proposta:
    entre propor e aceitar a classe pode ter ganhado versão, e os viajantes
    pertencem à que vale agora.
-2. **Cria um `trabalho` por item**, todos no `no_inicial` da versão vigente,
-   todos com o `grafo_versao_id` dela e com o `projeto_id`/`execucao_id` do
+2. **Cria um `job` por item**, todos no `no_inicial` da versão vigente,
+   todos com o `graph_version_id` dela e com o `project_id`/`execution_id` do
    rascunho. Cada criação grava `trabalho.criado`.
 3. **Só então grava as dependências.** Uma aresta só pode ser registrada
    quando as duas pontas já têm id real — `ref` é local ao lote e morre aqui.
@@ -171,7 +171,7 @@ suportado nesta versão.
 
 ## 5. O trabalho ganhou conteúdo
 
-A migração acrescenta duas colunas a `trabalho` (linhas 33-34), e o contrato do
+A migração acrescenta duas colunas a `job` (linhas 33-34), e o contrato do
 evento `trabalho.criado` ganhou os dois campos correspondentes, **opcionais**
 ([`event-validation.ts:143-153`](../../packages/core/src/db/event-validation.ts)):
 

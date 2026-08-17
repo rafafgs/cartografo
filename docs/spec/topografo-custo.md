@@ -31,14 +31,14 @@ A lente desce um nível e agrega por par:
 | Campo | O que é |
 |---|---|
 | `grafo_versao_id`, `no_id` | o par observado |
-| `tokens_total` | soma das quatro subchaves de `sessao.uso` |
+| `tokens_total` | soma das quatro subchaves de `session.usage` |
 | `sessoes_com_uso` / `sessoes_sem_uso` | quantas sessões reportaram uso, e quantas não |
 | `tempo_total_segundos` | soma de `finalizada_em - aberta_em` |
 | `sessoes_com_tempo` / `sessoes_sem_tempo` | idem, para os carimbos de tempo |
 
-**Nenhuma coluna nova foi precisa.** `sessao.uso` e os dois carimbos já existem
-e já saem em `GET /v1/sessions` junto com `no_id` e `trabalho_id`; o
-`grafo_versao_id` de cada sessão se resolve pelo `trabalho.grafo_versao_id`, que
+**Nenhuma coluna nova foi precisa.** `session.usage` e os dois carimbos já
+existem e já saem em `GET /v1/sessions` junto com `no_id` e `trabalho_id`; o
+`grafo_versao_id` de cada sessão se resolve pelo `job.graph_version_id`, que
 já vem em `GET /v1/jobs`. A junção é feita no cliente, com dois GETs.
 
 ### Ausência nunca é zero

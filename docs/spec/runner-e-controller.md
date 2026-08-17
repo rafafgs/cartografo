@@ -64,7 +64,7 @@ contrário.
 Nada é apagado, nem lease morta: ela vira `expirada` com o motivo gravado e
 continua na tabela. É o mesmo append-only da [D15](../../DECISOES.md) — e é o
 que permite cruzar "runner × leases perdidas" sem ter que reconstruir nada,
-agora que a telemetria do `t102` está no lugar (tabela `evento`, migração
+agora que a telemetria do `t102` está no lugar (tabela `event`, migração
 `0003`); falta só ligar a emissão, e a §7 diz de quem é.
 
 ---
@@ -75,14 +75,14 @@ agora que a telemetria do `t102` está no lugar (tabela `evento`, migração
                       liberar (o dono terminou, bem ou mal)
    ativa ──────────────────────────────────────────────────▶ liberada
      │
-     │ expira_em vence sem heartbeat, e alguém pede trabalho
+     │ expires_at vence sem heartbeat, e alguém pede trabalho
      ▼
-  expirada  (motivo_expiracao: expirou | heartbeat_perdido)
+  expirada  (expiration_reason: expirou | heartbeat_perdido)
 ```
 
-Uma lease nasce `ativa`, com `heartbeat_em = concedida_em` e
-`expira_em = concedida_em + ttl_segundos`. Cada heartbeat empurra `expira_em`
-para frente e carimba `heartbeat_em`.
+Uma lease nasce `ativa`, com `heartbeat_at = granted_at` e
+`expires_at = granted_at + ttl_seconds`. Cada heartbeat empurra `expires_at`
+para frente e carimba `heartbeat_at`.
 
 Só há duas saídas, e nenhuma delas volta:
 
@@ -90,7 +90,7 @@ Só há duas saídas, e nenhuma delas volta:
   próximo pedido do mesmo runner/projeto já não conta esta lease no teto.
 - **`expirada`** — o prazo venceu e ninguém renovou.
 
-### O vocabulário de `motivo_expiracao`
+### O vocabulário de `expiration_reason`
 
 Os dois motivos descrevem óbitos diferentes, e a diferença é operacionalmente
 útil — um aponta para trabalho que não começou, o outro para trabalho
@@ -98,20 +98,21 @@ interrompido no meio:
 
 | Motivo | Quando | O que significa |
 |---|---|---|
-| `expirou` | `heartbeat_em == concedida_em` | A lease **nunca** foi renovada. O runner pode nem ter começado. |
-| `heartbeat_perdido` | `heartbeat_em > concedida_em` | Foi renovada ao menos uma vez e então calou. Runner morreu no meio do trabalho. |
+| `expirou` | `heartbeat_at == granted_at` | A lease **nunca** foi renovada. O runner pode nem ter começado. |
+| `heartbeat_perdido` | `heartbeat_at > granted_at` | Foi renovada ao menos uma vez e então calou. Runner morreu no meio do trabalho. |
 
 Os dois nomes são exatamente os de `dados.motivo` em
 [`lease.expirada.schema.json`](../../especificacoes/eventos/schemas/lease.expirada.schema.json):
 quando alguém ligar a emissão de eventos, a projeção desta tabela e o evento
-falam a mesma língua, sem tradução — a tabela `evento` que eles precisam já
+falam a mesma língua, sem tradução — a tabela `event` que eles precisam já
 existe desde o `t102`.
 
 ### `reason` de recusa ≠ `expiration_reason`
 
 São dois vocabulários distintos e vale não confundi-los. `expiration_reason` é
-o nome de fio de uma coluna (`motivo_expiracao`, que a t226 não renomeou — é do
-quarto filho da D20): por que uma lease morreu. `reason` é campo de resposta de
+o nome de fio **e**, desde o quarto filho da D20 (`t229`, que renomeou
+`motivo_expiracao`), o da coluna: por que uma lease morreu. `reason` é campo de
+resposta de
 `POST /v1/leases`: por que um pedido **não virou** lease
 (`job_already_leased`, `runner_cap`, `project_cap`).
 
@@ -413,12 +414,12 @@ do SQLite (D1); repositórios e rotas recebem o banco já aberto.
 
 ---
 
-## 6. `trabalho_id` é um inteiro opaco
+## 6. `job_id` é um inteiro opaco
 
-`POST /v1/leases` **não lê a tabela `trabalho`** e não tem FK para ela. A razão
+`POST /v1/leases` **não lê a tabela `job`** e não tem FK para ela. A razão
 original foi ordem de build (a tabela era entrega do `t102`, que já aterrissou
 na migração `0003`), mas o corte permanece pelo motivo de desenho — a mesma
-escolha que o `t102` fez para `grafo_versao_id`. Apertar a FK depois é aditivo, e
+escolha que o `t102` fez para `graph_version_id`. Apertar a FK depois é aditivo, e
 cabe à ficha que ligar os dois lados.
 
 A divisão de responsabilidade que isso produz é, aliás, a correta:
@@ -435,8 +436,8 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 
 - **Emissão dos eventos** [`lease.concedida`](../../especificacoes/eventos/schemas/lease.concedida.schema.json)
   e [`lease.expirada`](../../especificacoes/eventos/schemas/lease.expirada.schema.json) —
-  a tabela `evento` de que dependem já existe (`t102`, migração `0003`) e nada
-  aqui escreve nela. As colunas já carregam tudo que os dois eventos pedem (`runner_id`, `trabalho_id`, `expira_em`, `motivo_expiracao`);
+  a tabela `event` de que dependem já existe (`t102`, migração `0003`) e nada
+  aqui escreve nela. As colunas já carregam tudo que os dois eventos pedem (`runner_id`, `job_id`, `expires_at`, `expiration_reason`);
   ligar a emissão é mapeamento direto. **Atenção de quem for ligar:** a
   taxonomia do `t98` tem `lease.concedida` e `lease.expirada`, e nenhum evento
   para a liberação — o reducer de referência
@@ -475,7 +476,7 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   `resultado` que a sessão emitiu, e um resultado que não casa com aresta
   nenhuma vira pergunta para gente (`ator.tipo: "sistema"`) em vez de falha. E `listarTrabalhosLiberados` passou a filtrar por `concluido` além de
   `bloqueado`: o campo sai de `GET /v1/jobs` desde a `t152`, derivado do
-  `no_atual` contra os `nos_finais` da versão, e sem lê-lo um trabalho que
+  `current_node_id` contra os `nos_finais` da versão, e sem lê-lo um trabalho que
   pousava no nó final continuava candidato para sempre — o controller o
   redespachava para o mesmo nó a cada tick.
 - **Higiene de ciclo de vida do runner** — **fechada pela `t207`**, e citada

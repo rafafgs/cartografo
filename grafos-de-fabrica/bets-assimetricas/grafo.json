@@ -19,7 +19,7 @@
       "skill_ref": {
         "id": "triar-tese",
         "version": "1.0.0",
-        "hash": "sha256:1672cd634f92c563894edf77beb97acc21b76706c7249cae875f217991224085"
+        "hash": "sha256:96b431c28c185be965cf10d4d4cf4932ce66ac6a3e2dac4b0201a14fe8b04bd4"
       },
       "contract": {
         "input_schema": {
@@ -28,7 +28,8 @@
             "job",
             "project",
             "asset",
-            "premise_source"
+            "premise_source",
+            "tamanho_pretendido"
           ],
           "properties": {
             "job": {
@@ -37,7 +38,7 @@
             },
             "project": {
               "type": "object",
-              "description": "a configuração estática da classe: os critérios de triagem do investidor e, quando houver posição aberta, o estado da carteira"
+              "description": "a configuração estática da classe: os critérios de triagem do investidor, o círculo de competência que ele declara e o estado da carteira (`null` quando não há posição aberta)"
             },
             "asset": {
               "type": "string",
@@ -48,6 +49,10 @@
               "type": "string",
               "minLength": 1,
               "description": "de onde vem a premissa central; campo desta classe, exigido neste nó"
+            },
+            "tamanho_pretendido": {
+              "type": "number",
+              "description": "o tamanho pretendido para a posição, em % do capital; campo desta classe, exigido neste nó porque sem ele o critério do teto de risco não tem o que julgar"
             },
             "perguntas_respondidas": {
               "type": "array",
@@ -648,10 +653,16 @@
       "type": "number",
       "required_at": null,
       "description": "Quanto se ganha se a tese estiver certa, na estimativa de quem propõe. Informativo pela mesma razão que `downside`."
+    },
+    {
+      "name": "tamanho_pretendido",
+      "type": "number",
+      "required_at": "triagem",
+      "description": "O tamanho que quem propõe a tese está pedindo, em % do capital. Exigido em `triagem` porque o critério do teto de risco da carteira se julga contra ele: sem o número, o critério sai `indeterminado` em toda travessia, e não por falta de dado no mundo — por falta de campo onde declará-lo (t263)."
     }
   ],
   "project": {
-    "description": "Configuração de exemplo da classe base: são os critérios e a carteira do investidor de referência, e é o que faz `triagem` despachar sem ninguém montar entrada à mão. Uma variante de projeto sobrescreve este objeto inteiro com os critérios reais e o estado vivo da carteira de quem investe (D13) — não existe mecanismo de estado de carteira no control plane, então o que está aqui é um retrato parado, e mantê-lo em dia é edição de documento.",
+    "description": "Configuração de exemplo da classe base: são os critérios, o círculo de competência e a carteira do investidor de referência, e é o que faz `triagem` despachar sem ninguém montar entrada à mão. Uma variante de projeto sobrescreve este objeto inteiro com os critérios reais e o estado vivo da carteira de quem investe (D13) — não existe mecanismo de estado de carteira no control plane, então o que está aqui é um retrato parado, e mantê-lo em dia é edição de documento.",
     "criterios_de_triagem": [
       "o downside está limitado por caixa líquido ou ativo real, não por narrativa",
       "existe um evento datado que força a reprecificação em até 12 meses",
@@ -661,6 +672,12 @@
     "carteira": {
       "posicoes_abertas": 7,
       "exposicao_atual_pct": 62.5
-    }
+    },
+    "circulo_de_competencia": [
+      "infraestrutura de transporte com contrato de longo prazo: portos, terminais e concessões",
+      "logística e transporte de carga",
+      "empresas com caixa líquido negociadas abaixo do valor dos ativos",
+      "eventos societários datados: cisão, venda de ativo, fechamento de capital"
+    ]
   }
 }

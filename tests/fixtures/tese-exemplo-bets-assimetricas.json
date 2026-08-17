@@ -25,10 +25,17 @@
           "carteira": {
             "posicoes_abertas": 7,
             "exposicao_atual_pct": 62.5
-          }
+          },
+          "circulo_de_competencia": [
+            "infraestrutura de transporte com contrato de longo prazo: portos, terminais e concessões",
+            "logística e transporte de carga",
+            "empresas com caixa líquido negociadas abaixo do valor dos ativos",
+            "eventos societários datados: cisão, venda de ativo, fechamento de capital"
+          ]
         },
         "asset": "NVLR3",
         "premise_source": "fato relevante de 2026-07-30, arquivado no regulador",
+        "tamanho_pretendido": 1.5,
         "perguntas_respondidas": []
       },
       "saida": {
@@ -59,15 +66,15 @@
           {
             "criterio": "a tese cabe no círculo de competência declarado",
             "veredito": "atende",
-            "evidencia": "Concessão portuária com contrato take-or-pay é o mesmo padrão das duas posições atuais em infraestrutura."
+            "evidencia": "Concessão portuária com contrato take-or-pay cai em \"infraestrutura de transporte com contrato de longo prazo: portos, terminais e concessões\", declarado no círculo de competência do investidor; a venda do braço rodoviário é o \"evento societário datado\" da mesma lista."
           },
           {
             "criterio": "o tamanho pretendido cabe no teto de risco da carteira",
-            "veredito": "indeterminado",
-            "evidencia": "Exposição atual em 62,5% com 7 posições; o tamanho só é decidido no nó de dimensionamento, não aqui."
+            "veredito": "atende",
+            "evidencia": "Tamanho pretendido de 1,5% do capital contra exposição atual de 62,5% em 7 posições: a posição leva a exposição a 64%, e o downside de caixa líquido limita a perda a uma fração de 1,5%. Cabe — e o dimensionamento adiante ainda pode encolher o número."
           }
         ],
-        "justificativa": "Três dos quatro critérios são atendidos com evidência de documento público, e o quarto é decidido por outro nó. A ideia merece pesquisa de fundamentos.",
+        "justificativa": "Os quatro critérios são atendidos com evidência de documento público ou da própria configuração do investidor, e o tamanho pretendido cabe na carteira como ela está hoje. A ideia merece pesquisa de fundamentos.",
         "nota": "Triagem aprovada para aprofundar; escopo de pesquisa restrito a quatro frentes para a coleta não virar leitura infinita."
       }
     },

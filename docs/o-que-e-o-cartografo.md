@@ -145,6 +145,13 @@ identifica cada uma. Quem quiser levar as instruções junto leva a pasta do map
 com `grafo.json` e `skills/` lado a lado, que é o formato que os mapas de
 fábrica usam e que o `import` também aceita.
 
+Melhorar as instruções de uma etapa não é beco sem saída: as versões de uma
+skill coexistem no registro, então a versão nova entra ao lado da antiga em vez
+de sobrescrevê-la, e nenhum mapa que já estava rodando muda de comportamento
+porque alguém publicou algo melhor. Apontar uma etapa para a versão nova é uma
+proposta como qualquer outra mudança de mapa — com aprovação sua, e recusada de
+saída se aquela versão não existir no registro.
+
 ## O que ele deliberadamente não é
 
 Não é SaaS nem multiusuário; a evolução nunca aplica nada sem aprovação

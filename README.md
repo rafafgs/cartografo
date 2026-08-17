@@ -61,13 +61,21 @@ banco (D1), e isso vale entre processos, não só dentro de um.
 > alguém propôs, e uma linha antiga não passa pelo `CHECK` novo. Como não existe
 > dado de produção, a resposta da própria decisão é **recriar** o banco de
 > desenvolvimento, não migrá-lo — `rm -rf .cartografo/` e `npx cartografo` de
-> novo. Não existe migração de renomeação para rodar: as dezoito migrações
+> novo. Não existe migração de renomeação para rodar: as dezenove migrações
 > nascem em inglês, e um banco antigo não é atualizado por elas.
 
 O passo 3 registra o grafo de fábrica 1 (D14) como linhagem base — conferindo
 antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a
 `graph_version.id` que ficou gravada. Ao final, `GET /v1/classes` lista
 `desenvolvimento-de-software`.
+
+As skills do bundle vão para o registro antes do grafo, e o registro guarda uma
+versão por linha (D22): reimportar o mesmo bundle não reescreve nada, e
+reimportá-lo depois de subir a `version` de uma skill registra só aquela versão —
+a linha `skills  1 registered, 4 already in the registry` é o que o comando
+imprime. Editar o conteúdo de uma skill SEM subir a `version` é o caso que o
+`import` recusa, antes de mandar o grafo: uma versão não pode nomear dois
+conteúdos.
 
 E do grafo registrado ao trabalho andando, um quarto comando:
 

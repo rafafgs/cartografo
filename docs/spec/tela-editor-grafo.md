@@ -197,10 +197,17 @@ Cada item é escopo declarado de outra ficha, não esquecimento:
 - **Políticas de execução por nó** (modelo, pausa, timeout, escalação) — ficha
   "Per-node execution policies (schema + API)". O core já aceita propor `engine`,
   `model`, `escalation_policy` e `escalation_recipient`; falta o desenho de tela.
-- **Editar o registro de skills** — `POST /v1/skills` é create-only hoje; ficha
-  "Skill & contract editing (API + diff UI)". Aqui dá para apontar o `skill_ref`
-  de um nó para uma skill já registrada e editar o `contract` do próprio nó,
-  porque os dois são campos do documento de grafo.
+- **Editar o registro de skills** — resolvido pela metade pela `t215`, e a metade
+  que sobra é nomeada aqui. O registro deixou de ser create-only: as versões de
+  uma skill coexistem (D22), e esta tela lê `GET /v1/skills?id=` de cada skill
+  pinada e oferece um seletor das versões registradas quando existe alguma além
+  da que o nó pina. Escolher uma escreve os três campos do `skill_ref`
+  (`id`, `version`, `hash`) — o pino vai como `change_node_field`, pela mesma
+  porta de sempre, e é recusado ao aplicar se o registro não carrega aquele hash.
+  O que **não** existe aqui é editar o CONTEÚDO de um manifesto, nem ver o diff
+  entre duas versões dele: continua sendo a ficha "Skill & contract editing
+  (API + diff UI)". Editar o `contract` do próprio nó, sim — é campo do documento
+  de grafo, como o `skill_ref`.
 - **Canvas arrastável.** O documento de grafo não tem campo de coordenada
   ([`schema/grafo.schema.json`](../../schema/grafo.schema.json)); inventar um é
   decisão própria, com dependência de renderização que este pacote não carrega.

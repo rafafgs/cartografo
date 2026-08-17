@@ -8,26 +8,27 @@
 desta doc continua sendo o contrato — schema formal, exemplos que validam e um
 fixture que é rejeitado —, e é ele que manda: quando implementação e schema
 divergem, quem está errada é a implementação. O que mudou é que já existe
-registro: a tabela `skill` e as rotas `POST /v1/skills` e `GET /v1/skills[/:id]`
-persistem manifestos e os devolvem a quem consulta capacidades. Entram por dois
+registro: a tabela `skill` e as rotas `POST /v1/skills`, `GET /v1/skills[/:id]` e
+`PATCH /v1/skills/:id/:version` persistem manifestos e os devolvem a quem
+consulta capacidades. Entram por dois
 caminhos, e a diferença é D4: skill **nativa** (in-repo, já revisada no merge)
 entra junto com o bundle, por `cartografo import <bundle>`; skill de **repo
 externo** entra pelo pipeline com portão humano `cartografo scan-skill` →
 `propose-skill` → `register-skill`. Em ambos os casos o registro reverifica
 tudo por conta própria — pin, forma, proveniência —, porque assinatura humana
 não é verificação. Desde a `t161` o registro também é **lido na hora de
-executar**: o runner busca a skill que o nó pina, recusa o despacho se o hash
-não bate com o do registro, e renderiza `instructions`, `checks` e `permissions`
+executar**: o runner busca a versão exata que o nó pina, recusa o despacho se o
+hash não bate com o do registro, e renderiza `instructions`, `checks` e `permissions`
 para dentro da sessão
 ([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
 Desde a `t204` ele também **interpola** `{{input.<caminho>}}` dentro de
 `instructions`, com falha fechada: caminho que não resolve aborta o despacho
 antes de abrir sessão nenhuma. O que ainda não existe é quem **monta** essa
 entrada — na ausência dela o despacho passa `{}`, e toda skill com placeholder
-recusa (ver *Renderização e injeção*). Ainda não implementado: a interpolação
-em `checks[].command`; ler `budgets` para dentro do despacho; e
-reimportar/versionar uma skill já registrada (o registro é create-only por
-enquanto).
+recusa (ver *Renderização e injeção*). Desde a `t215` o registro é uma
+**linhagem**, não uma linha só: ver *Linhagem de versões* abaixo. Ainda não
+implementado: a interpolação em `checks[].command`; e ler `budgets` para dentro
+do despacho.
 
 | Arquivo | O que é |
 |---|---|
@@ -109,6 +110,40 @@ Crescer o subconjunto é barato de propósito: campo ausente serializa como
 nada (`JSON.stringify` derruba chave com valor `undefined`), então só um
 manifesto que passa a declarar o campo novo muda de hash. Foi assim que
 `budgets` entrou sem tocar no pin de nenhum manifesto já registrado.
+
+### Linhagem de versões (D22)
+
+O registro guarda uma linha por `(id, version)`, não uma por `id`: as versões de
+uma skill **coexistem**, como as versões de um grafo (D15). `id` é a linhagem,
+`version` é o ponto dela, e é isso que deixa as instruções de uma skill
+melhorarem sem quebrar nenhum grafo pinado na versão que estava rodando.
+
+Quatro regras, e nenhuma delas é sobre o formato — todas são sobre o registro,
+que é quem as impõe:
+
+- **Reenviar a mesma `(id, version)` com o mesmo `hash` não escreve nada.**
+  `POST /v1/skills` responde `200` com a linha que já existe, carimbo de registro
+  inalterado. É o que faz reimportar um bundle ser barato em vez de ser erro — e
+  é deliberadamente não um UPDATE: o que está fora do hash (`description`,
+  `origin`) continua com o valor com que entrou.
+- **Reenviar a mesma `(id, version)` com `hash` diferente é `409`.** Uma versão
+  não pode nomear dois conteúdos: todo grafo pinado nela passaria a rodar texto
+  que ninguém aprovou, que é exatamente o que pinar por hash existe para impedir
+  (D4). O caminho é subir a `version`.
+- **Um nó nunca resolve "a mais recente".** O runner busca
+  `GET /v1/skills/:id?version=<a que o nó pina>`; quem responde a última versão
+  viva é a leitura sem query, e ela existe para quem está *escolhendo* o que
+  pinar. Mover o pino de um nó é proposta, como qualquer mudança no mapa (D15), e
+  é recusada na hora de aplicar se o registro não carrega aquele hash.
+- **Aposentar uma versão (`PATCH /v1/skills/:id/:version`) não a remove.** Ela
+  sai de "a mais recente" e de mais nada: continua resolvendo por `?version=` e
+  por `?hash=`, e continua despachando. Nada é apagado (D15), e uma linhagem cujas
+  versões foram todas aposentadas ainda responde — deprecar nunca pode parecer
+  "esta skill deixou de existir".
+
+Subir a `version` sem mudar o conteúdo é legal, e o registro não policia isso: o
+hash exclui `id` e `version` de propósito, então duas versões podem carregar o
+mesmo hash. É inútil, não é perigoso, e é questão de disciplina humana.
 
 ### `role`
 
@@ -462,6 +497,10 @@ ou fica para outra ticket:
   confere `{{input.…}}` nenhum ao aceitar um manifesto; quem pega placeholder
   quebrado é o despacho, que recusa. Uma checagem mais cedo seria melhor
   diagnóstico, não mais segurança.
+- **Uma `version` nova mudar o conteúdo.** O registro recusa o contrário —
+  conteúdo diferente sob versão inalterada é `409` (ver *Linhagem de versões*) —
+  mas aceita uma versão nova cujo hash é igual ao de uma anterior. É legal e
+  inútil, e policiar isso é julgamento humano, não invariante de registro.
 - **Detalhe de ferramenta:** o campo `origin.imported_at` usa `pattern` de
   data ISO em vez de `"format": "date"`. O ajv em modo estrito trata formato
   desconhecido como erro de compilação quando nenhum plugin de formatos está

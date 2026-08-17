@@ -117,7 +117,7 @@ segundo topógrafo cabe na API existente sem alterar formato compartilhado —
 alterar um schema para caber seria refutar a própria tese.
 
 Sobra a única mutação que o vocabulário de operações atual permite sobre um nó
-sem inventar campo: `change_node_field` sobre `descricao`. Então toda candidata
+sem inventar campo: `change_node_field` sobre `description`. Então toda candidata
 carrega exatamente uma operação, que **anexa** uma recomendação legível à
 descrição atual do nó:
 
@@ -125,13 +125,13 @@ descrição atual do nó:
 {
   "type": "change_node_field",
   "node_id": "implementar",
-  "field": "descricao",
+  "field": "description",
   "from": "<descrição atual>",
   "to": "<descrição atual>\n\n[topógrafo-custo] teto de tokens excedido: …",
   "inverse": {
     "type": "change_node_field",
     "node_id": "implementar",
-    "field": "descricao",
+    "field": "description",
     "from": "<to>",
     "to": "<from>"
   }
@@ -191,7 +191,7 @@ O caminho inteiro, em ordem:
 2. monta o mapa `trabalho_id -> grafo_versao_id`;
 3. agrega por `(versão, nó)` e descarta as linhas não identificadas;
 4. `GET /v1/graph-versions/:id` **uma vez por versão distinta** — é de onde sai a
-   `descricao` atual, que vira o `de` da operação e o `para` da inversa;
+   `description` atual, que vira o `de` da operação e o `para` da inversa;
 5. avalia as duas políticas;
 6. `POST /v1/proposals` por candidata, e imprime uma linha por proposta criada.
 
@@ -208,7 +208,7 @@ prometeu (inclusive quando não havia candidata), `1` resultado negativo
 |---|---|---|
 | `/v1/sessions` | GET | tokens e tempo por `no_id` |
 | `/v1/jobs` | GET | o mapa `trabalho_id -> grafo_versao_id` |
-| `/v1/graph-versions/:id` | GET | a `descricao` atual do nó |
+| `/v1/graph-versions/:id` | GET | a `description` atual do nó |
 | `/v1/proposals` | POST | a candidata, como proposta pendente |
 
 Os caminhos são inglês (D18); as **chaves** do corpo (`sessoes`, `trabalhos`,

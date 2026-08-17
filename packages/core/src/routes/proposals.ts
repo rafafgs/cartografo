@@ -48,7 +48,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { validateGraph, type GraphDocument } from '../domain/graph.ts';
-import { hashSnapshot } from '../domain/hash.ts';
+import { hashSnapshot, proposalDedupeKey } from '../domain/hash.ts';
 import { isExpectedMetric, validateExpectedMetric, verdictFor } from '../domain/hypothesis.ts';
 import {
   applyOperations,
@@ -59,8 +59,10 @@ import {
 import { getGraph, getVersion, toGraph, toGraphVersion } from '../repositories/graphs.ts';
 import { metricsByVersion } from '../repositories/job.ts';
 import {
+  appendProposalEvidence,
   applyProposal,
   approveProposal,
+  findPendingProposalByDedupeKey,
   getProposal,
   createProposal,
   listProposals,
@@ -97,16 +99,23 @@ const ID_PARAM_SCHEMA = {
 } as const;
 
 /**
- * `POST /proposals` — the two statuses the handler answers.
+ * `POST /proposals` — the three statuses the handler answers.
  *
  * The body is open, like every other on this surface: `create` below checks
  * `graph_id`, `target_version`, the hypothesis pair and the operations by hand,
  * one refusal code each, and a schema that pre-empted any of them would replace a
  * named `{error, …}` with ajv's own (t171, FR5).
+ *
+ * The `200` arrived with t246 and is the deduplication answer: a signal that
+ * repeats a still-pending proposal strengthens it instead of cloning it, so the
+ * body carries a proposal that already existed. `201` means a row was written,
+ * `200` means one grew — and telling them apart is the only way a caller knows
+ * which of the two happened (D21).
  */
 const CREATE_PROPOSAL_SCHEMA = {
   body: OPEN_OBJECT_SCHEMA,
   response: {
+    200: OPEN_OBJECT_SCHEMA,
     201: OPEN_OBJECT_SCHEMA,
     400: ERROR_RESPONSE_SCHEMA,
   },
@@ -252,6 +261,28 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
   );
 }
 
+/**
+ * Which lens is proposing, as the evidence declares it (t246, FR2).
+ *
+ * `evidence.lens` and not a top-level wire field, because that is where the cost
+ * lens has carried it since t255 (`glossario-wire.md` §5.5) and where the flow
+ * lens gained it with this ficha. A top-level field would have meant widening
+ * `EntradaDeProposta` in the runner's client for a value the evidence already
+ * holds.
+ *
+ * Anything that declares no lens — the tela's manual-edit proposals, whose
+ * `MANUAL_EVIDENCE` carries none — reads `null`, and `null` is a bucket like any
+ * other rather than an opt-out: "do not clone an identical repeat" applies to it
+ * too, for free.
+ *
+ * @param evidence Whatever came in under `evidence`, unvalidated.
+ * @returns The lens name, or `null` when there is no string there.
+ */
+function lensOf(evidence: unknown): string | null {
+  if (!isObject(evidence)) return null;
+  return typeof evidence.lens === 'string' ? evidence.lens : null;
+}
+
 /** `POST /proposals` — opens a hypothesis over a version that exists. */
 async function create(db: Database, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
   const body = isObject(request.body) ? request.body : {};
@@ -298,12 +329,37 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
     return refusal(reply, 400, 'invalid_operations', undefined, { operations: problems });
   }
 
+  // The deduplication gate (t246, D21). It runs LAST, after every refusal above:
+  // a body that is not a valid proposal is a `400` and never a repeat of
+  // anything, and keying a request the route was going to refuse would let a
+  // malformed call decide which proposal a later good one lands on.
+  //
+  // The key is computed HERE and only here. It is not read off the body, not
+  // accepted from the client and not returned on the wire — the server stays the
+  // authority over its own identity for a signal, exactly as it does over
+  // `graph_version.id`.
+  const dedupeKey = proposalDedupeKey(
+    lensOf(body.evidence),
+    targetVersion as string,
+    rawOperations,
+  );
+
+  const pending = findPendingProposalByDedupeKey(db, dedupeKey);
+  if (pending !== undefined) {
+    // 200, not 201: nothing was created. The evidence of the proposal that
+    // already exists grows by one occurrence and everything else about it —
+    // `expected_metric` above all — stays the hypothesis it was.
+    reply.code(200);
+    return { proposal: toProposal(appendProposalEvidence(db, pending.id, body.evidence)) };
+  }
+
   const proposal = createProposal(db, {
     grafo_id: graphId,
     versao_alvo: targetVersion as string,
     operacoes: rawOperations as Operation[],
     evidencia: body.evidence,
     metrica_esperada: body.expected_metric,
+    dedupeKey,
   });
 
   reply.code(201);

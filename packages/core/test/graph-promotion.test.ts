@@ -145,7 +145,7 @@ function proposalCount(ctx: TestContext): number {
   return row.total;
 }
 
-/** A new node, complete enough to pass `no_com_contrato` (same one as t101's suite). */
+/** A new node, complete enough to pass `node_with_contract` (same one as t101's suite). */
 function newNode(): Record<string, unknown> {
   return {
     id: 'checar_fatos',
@@ -182,8 +182,8 @@ function newNode(): Record<string, unknown> {
 /**
  * Inserts `checar_fatos` between `redigir` and `revisar`; passes the soundness gate.
  *
- * The node cannot arrive alone: an isolated node breaks `alcançável` and
- * `termina` at once, so the gate would refuse the version. That is why the diff
+ * The node cannot arrive alone: an isolated node breaks `reachable` and
+ * `terminates` at once, so the gate would refuse the version. That is why the diff
  * these tests promote is a node plus the two edges that make it reachable, and
  * not a lone `add_node`.
  */

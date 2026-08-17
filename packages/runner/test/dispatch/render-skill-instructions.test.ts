@@ -858,8 +858,8 @@ test('AT18 — the bets-assimetricas manifests resolve against the crossing fixt
     });
   }
 
-  await parent.test('the six of them account for 22 of the bundle\'s 26 occurrences', () => {
-    assert.equal(covered, 22);
+  await parent.test('the six of them account for 26 of the bundle\'s 30 occurrences', () => {
+    assert.equal(covered, 26);
     assert.equal(placeholderCount(factoryManifest('registrar-travessia')), 4);
   });
 

@@ -157,6 +157,9 @@ const ASSET = 'NVLR3';
 /** ...and where the central premise came from, the field `triagem` demands. */
 const PREMISE_SOURCE = 'fato relevante de 2026-07-30, arquivado no regulador';
 
+/** ...and how big a position is being asked for, the third field it demands (t263). */
+const INTENDED_SIZE = 1.5;
+
 const TITLE = 'Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário';
 const BODY =
   'O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. ' +
@@ -238,9 +241,10 @@ test('t260 — triagem → coleta-fundamentos crosses the real bets bundle', asy
     201,
   );
 
-  // `fields` is the class's own vocabulary (t168): `asset` and `premise_source`
-  // are both demanded at `triagem`, and the projection spreads them at the TOP
-  // level of `input` — beside `input.job`, never inside it.
+  // `fields` is the class's own vocabulary (t168): `asset`, `premise_source`
+  // and `tamanho_pretendido` are all demanded at `triagem`, and the projection
+  // spreads them at the TOP level of `input` — beside `input.job`, never inside
+  // it.
   const job = await api<Work>(
     baseUrl,
     token,
@@ -252,7 +256,11 @@ test('t260 — triagem → coleta-fundamentos crosses the real bets bundle', asy
       entry_node_id: 'triagem',
       execution_id: EXECUTION_ID,
       graph_version_id: version.id,
-      fields: { asset: ASSET, premise_source: PREMISE_SOURCE },
+      fields: {
+        asset: ASSET,
+        premise_source: PREMISE_SOURCE,
+        tamanho_pretendido: INTENDED_SIZE,
+      },
     },
     201,
   );

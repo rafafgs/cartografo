@@ -124,18 +124,34 @@ alguém monta à mão:
   o mercado estaria errando, e de onde a ideia veio. A origem não tem campo
   próprio — ela mora no `body`.
 - **`fields`** traz os campos que esta classe declara em `custom_fields`.
-  `asset` e `premise_source` são **exigidos em `triagem`**: o trabalho não sai
-  desse nó sem os dois. `downside` e `upside` são informativos.
+  `asset`, `premise_source` e `tamanho_pretendido` são **exigidos em
+  `triagem`**: o trabalho não sai desse nó sem os três. `tamanho_pretendido` é
+  o tamanho pedido para a posição, em % do capital — é contra ele que o
+  critério do teto de risco se julga, e sem ele o critério sai `indeterminado`
+  em toda travessia. `downside` e `upside` são informativos.
 - **`entry_node_id: "triagem"`**, mais a versão de grafo desta classe.
 
-Os critérios do investidor e o estado da carteira **não** vêm do trabalho: eles
-moram no objeto `project` de topo do [`grafo.json`](./grafo.json), que a
-projeção de input publica em `input.project` (`t253`,
+Os critérios do investidor, o círculo de competência dele e o estado da carteira
+**não** vêm do trabalho: eles moram no objeto `project` de topo do
+[`grafo.json`](./grafo.json), que a projeção de input publica em `input.project`
+(`t253`,
 [`packages/core/src/domain/context.ts`](../../packages/core/src/domain/context.ts)).
+São três chaves, e a triagem interpola as três:
+
+- **`criterios_de_triagem`** — os critérios contra os quais a tese é julgada, e
+  só eles.
+- **`circulo_de_competencia`** — a lista dos setores e estruturas que o
+  investidor declara entender. O critério do círculo se julga contra essa lista
+  declarada, nunca contra um círculo que a sessão invente.
+- **`carteira`** — posições abertas e exposição atual. É **obrigatória e
+  anulável**, nunca ausente: sem posição aberta ela vale `null`, e omitir a
+  chave faria o motor de placeholders recusar a sessão inteira.
+
 O que está lá é a configuração de exemplo da classe base; uma variante de
-projeto sobrescreve o objeto inteiro com os critérios e a carteira reais de quem
-investe (D13). Não existe mecanismo de estado de carteira no control plane, então
-o que está no documento é um retrato parado e mantê-lo em dia é edição de arquivo.
+projeto sobrescreve o objeto inteiro com os critérios, o círculo e a carteira
+reais de quem investe (D13). Não existe mecanismo de estado de carteira no
+control plane, então o que está no documento é um retrato parado e mantê-lo em
+dia é edição de arquivo.
 
 O `id` da tese triada ninguém informa: `triagem` o deriva do número do próprio
 trabalho (`tese-<n>`), e é por ele que os nós seguintes falam da mesma tese.

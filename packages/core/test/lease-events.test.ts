@@ -261,6 +261,37 @@ test('t196 AT8 — a bulk expiration records one lease.expired per lease, with i
   );
 });
 
+/**
+ * t256 — the second caller `claimExpired` was exported for, wired at last.
+ *
+ * AT8 above proves the event through a subsequent GRANT and through a direct
+ * repository call; neither is what a dead runner's job actually gets. If nobody
+ * asks for a new lease, nothing ran `expireOverdue` at all — so the death was
+ * not merely unlisted, it was UNRECORDED, which is precisely what t196 exists to
+ * prevent. The listing is now the reconcile, so reading is enough to make the
+ * fact land.
+ */
+test('t256 — a GET /v1/leases, on its own, is what records lease.expired', async (t) => {
+  const plane = await startLeasePlane(t);
+  await registerRunners(plane.db, 'runner-a');
+
+  const doomed = await grant(plane, { runner_id: 'runner-a', job_id: 1, ttl_seconds: 10 });
+  assert.deepEqual(await leaseEvents(plane, 'lease.expired'), [], 'nothing died yet');
+
+  // The runner dies here, and no other request touches the control plane.
+  plane.advance(11);
+
+  const listed = await fetch(`${plane.address}/v1/leases`);
+  assert.equal(listed.status, 200);
+  const { leases } = (await listed.json()) as { leases: Lease[] };
+  assert.equal(leases.find((lease) => lease.id === doomed.id)?.status, 'expired');
+
+  const expired = await leaseEvents(plane, 'lease.expired');
+  assert.equal(expired.length, 1, 'the listing is the reconcile, and the reconcile is the fact');
+  assert.deepEqual(expired[0].entity, { type: 'lease', id: doomed.id });
+  assert.deepEqual(expired[0].data, { runner_id: 'runner-a', reason: 'ttl_elapsed' });
+});
+
 test('t196 AT8 — claimExpired, the other caller, records the same fact', async (t) => {
   const plane = await startLeasePlane(t);
   await registerRunners(plane.db, 'runner-a');

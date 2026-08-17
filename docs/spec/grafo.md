@@ -339,7 +339,7 @@ uso que ainda não existe (regra dos dois consumidores). Quando o segundo grafo
 de fábrica (`t116`) pedir mais, o formato ganha mais — com evidência.
 
 Ciclo é legítimo (o retrabalho `testar → desenvolver` é um), desde que a regra
-`termina` (§6) continue valendo. O que **não** é legítimo é o nó escolher
+`terminates` (§6) continue valendo. O que **não** é legítimo é o nó escolher
 caminho livremente em runtime: as únicas decisões em voo são as dos portões,
 sobre arestas já declaradas (README princípio 2).
 
@@ -396,8 +396,8 @@ mora em [`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs), que
 exporta duas funções:
 
 ```js
-validarEstrutura(doc) // → { valido, erros: [{ codigo, mensagem, alvo }] }
-validarSoundness(doc) // → { valido, violacoes: [{ regra, alvo }] }
+validarEstrutura(doc) // → { valid, errors: [{ code, message, target }] }
+validarSoundness(doc) // → { valid, violations: [{ rule, target }] }
 ```
 
 `validarEstrutura` cobre integridade de forma e de referência: chaves
@@ -413,22 +413,22 @@ formalmente os grafos que a IA propõe"**.
 
 | Regra | O que exige | Alvo relatado | Contraexemplo |
 |---|---|---|---|
-| `alcançável` | Todo nó é atingível a partir de `no_inicial` seguindo `arestas`. | id do nó | [`grafo-invalido-no-inalcancavel.json`](../../schema/exemplos/grafo-invalido-no-inalcancavel.json) |
-| `termina` | De todo nó existe caminho até algum nó em `nos_finais`. | id do nó | [`grafo-invalido-sem-terminacao.json`](../../schema/exemplos/grafo-invalido-sem-terminacao.json) |
-| `aresta_com_condicao` | Nenhuma aresta com `condicao` ausente ou vazia. | `{de, para}` | [`grafo-invalido-aresta-sem-condicao.json`](../../schema/exemplos/grafo-invalido-aresta-sem-condicao.json) |
-| `no_com_contrato` | Nenhum nó sem `skill_ref` ou `contrato`, nem com `verificacoes` vazio. | id do nó | [`grafo-invalido-no-sem-contrato.json`](../../schema/exemplos/grafo-invalido-no-sem-contrato.json) |
+| `reachable` | Todo nó é atingível a partir de `no_inicial` seguindo `arestas`. | id do nó | [`grafo-invalido-unreachable-node.json`](../../schema/exemplos/grafo-invalido-unreachable-node.json) |
+| `terminates` | De todo nó existe caminho até algum nó em `nos_finais`. | id do nó | [`grafo-invalido-sem-terminacao.json`](../../schema/exemplos/grafo-invalido-sem-terminacao.json) |
+| `edge_with_condition` | Nenhuma aresta com `condicao` ausente ou vazia. | `{from, to}` | [`grafo-invalido-aresta-sem-condicao.json`](../../schema/exemplos/grafo-invalido-aresta-sem-condicao.json) |
+| `node_with_contract` | Nenhum nó sem `skill_ref` ou `contrato`, nem com `verificacoes` vazio. | id do nó | [`grafo-invalido-no-sem-contrato.json`](../../schema/exemplos/grafo-invalido-no-sem-contrato.json) |
 
 Notas de leitura:
 
-- **`alcançável` é topológica.** Ela segue arestas independentemente da
+- **`reachable` é topológica.** Ela segue arestas independentemente da
   condição: uma aresta com rótulo vazio ainda liga dois nós. Quem reclama do
-  rótulo é `aresta_com_condicao`. As regras são independentes de propósito —
+  rótulo é `edge_with_condition`. As regras são independentes de propósito —
   cada contraexemplo do repositório viola exatamente uma delas, o que torna cada
   regra demonstrável isolada.
-- **`termina` é calculada de trás para frente**, das arestas invertidas a partir
+- **`terminates` é calculada de trás para frente**, das arestas invertidas a partir
   dos nós finais. Nó preso em ciclo sem saída simplesmente nunca é atingido — é
   assim que um ciclo de retrabalho legítimo passa e um esquecimento de saída não.
-- **`no_com_contrato` vale igual para portão**, que é nó como outro qualquer.
+- **`node_with_contract` vale igual para portão**, que é nó como outro qualquer.
 
 Rodando pela linha de comando (sai 1 se algum documento falhar):
 

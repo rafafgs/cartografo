@@ -35,7 +35,7 @@ const ROUTER_PATH = path.join(PACKAGE_ROOT, 'src', 'router.ts');
 const SURFACE_HEADING = '## 1.';
 const API_GAPS_HEADING = '## 4.';
 
-/** Method and path in the first cell of a route-table row, as in `GET /quadro`. */
+/** Method and path in the first cell of a route-table row, as in `GET /board`. */
 const TABLE_ROW = /^\|\s*`(GET|POST|PUT|PATCH|DELETE)\s+([^`]+)`\s*\|/;
 
 /** The numerals this spec spells out, and what each one is worth. */
@@ -110,7 +110,7 @@ function flatten(text: string): string {
  * `METHOD path` for every route `route()` recognizes, with `:id` standing in
  * for each captured segment — read off the router instead of copied from it.
  *
- * Two shapes, and both are load-bearing: `pathname === '/quadro'` for a fixed
+ * Two shapes, and both are load-bearing: `pathname === '/board'` for a fixed
  * path, and a regular expression `.exec(pathname)` for one that carries an id.
  * The `t133` sweep documents the same pair as the reason it masks regex
  * literals in this package.

@@ -26,7 +26,7 @@
  * `Authorization` would read as a credential in the server's log instead of as
  * the absence of one (`controller/cliente-controle.ts`).
  *
- * English per D18; the flags a person types (`--classe`, `--dir`) and the payload
+ * English per D18; the flags a person types (`--class`, `--dir`) and the payload
  * keys stay as they are published.
  */
 
@@ -46,7 +46,7 @@ export const ENV_TOKEN = 'CARTOGRAFO_TOKEN';
 export const USAGE_EXIT_CODE = 2;
 
 /** Flags this command understands. Anything else is a typo, and is refused. */
-const KNOWN_FLAGS = ['classe', 'url', 'dir', 'token'];
+const KNOWN_FLAGS = ['class', 'url', 'dir', 'token'];
 
 /** The whole flow, in the shape `--help` prints it. */
 export const HELP = [
@@ -55,11 +55,11 @@ export const HELP = [
   '',
   'Usage:',
   '  npm run intake --workspace @cartografo/runner -- \\',
-  '    "<request>" --classe <name> [options]',
+  '    "<request>" --class <name> [options]',
   '',
   'Arguments:',
   '  <request>           required, positional: what you want, in your own words.',
-  '  --classe <name>     required: the registered class whose graph the tickets',
+  '  --class <name>      required: the registered class whose graph the tickets',
   '                      will cross. It has to exist already; this command never',
   '                      creates one.',
   '',
@@ -170,9 +170,9 @@ export function parseArguments(
     return refuse(`the request is ONE argument; got ${positional.length} (quotes around it?)`);
   }
 
-  const className = flags.get('classe');
+  const className = flags.get('class');
   if (className === undefined || className.trim() === '') {
-    return refuse('--classe is required: intake breaks work down over a class already registered');
+    return refuse('--class is required: intake breaks work down over a class already registered');
   }
 
   const workingDir = flags.get('dir');

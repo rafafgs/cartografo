@@ -281,7 +281,7 @@ test('t124 AT — the screen presents its service credential on every call it ma
 
   // 2. A server-rendered page, whose API calls do not pass through the proxy at
   //    all — they are the screen's own `ApiClient`, and they need the token too.
-  const board = await fetch(`${screen.url}/quadro`);
+  const board = await fetch(`${screen.url}/board`);
   assert.equal(board.status, 200, 'the board renders against an authenticated control plane');
   assert.match(board.headers.get('content-type') ?? '', /^text\/html/);
 

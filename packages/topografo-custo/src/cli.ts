@@ -6,7 +6,7 @@
  * creates one **pending** proposal per candidate.
  *
  * ```
- * topografo-custo avaliar --url http://127.0.0.1:4317 --execucao 7 --teto-tokens 200000
+ * topografo-custo avaliar --url http://127.0.0.1:4317 --execution 7 --token-cap 200000
  * ```
  *
  * What it deliberately does NOT do:
@@ -42,12 +42,18 @@ import { evaluatePolicies } from './policy.ts';
  * Usage text. It is the same on `--help` (stdout) and on a usage error (stderr).
  *
  * In English since t180, like every command output in the repository. What a
- * person TYPES — the `avaliar` subcommand and the `--teto-tokens`,
- * `--tier-minimo-nos`, … options — stays as it is: D20 freezes the CLI surface
- * as wire vocabulary, and it migrates to English only under t213, never under a
- * per-package D18 sweep.
+ * person TYPES followed with t230, the fifth child of D20: `--execucao`,
+ * `--teto-tokens` and `--teto-segundos` became `--execution`, `--token-cap` and
+ * `--second-cap`, spelled the way the API already spells the same words
+ * (`execution_id` in §1.1, `runner_cap`/`project_cap` in §1.5) rather than
+ * invented here. Nothing answers to the old names; `avaliar` refuses whatever
+ * it did not consume.
+ *
+ * The `avaliar` subcommand and the `--tier-*` options did NOT move: the
+ * glossary has no row for them, t230's Scope does not name them, and a rename
+ * nobody decided is not a rename.
  */
-export const USAGE = `usage: topografo-custo avaliar --url <url> --execucao <id> [options]
+export const USAGE = `usage: topografo-custo avaliar --url <url> --execution <id> [options]
 
 subcommands:
   avaliar                reads the telemetry of an execution, aggregates cost by
@@ -56,9 +62,9 @@ subcommands:
 
 options:
   --url <url>            control plane to query (required)
-  --execucao <id>        execution to evaluate (required)
-  --teto-tokens <n>      a candidate when tokens_total of the node passes <n>
-  --teto-segundos <n>    a candidate when tempo_total_segundos of the node
+  --execution <id>       execution to evaluate (required)
+  --token-cap <n>        a candidate when tokens_total of the node passes <n>
+  --second-cap <n>       a candidate when tempo_total_segundos of the node
                          passes <n>
   --tier-fator <n>       multiple of the version median that makes an outlier
                          (default 3)
@@ -331,9 +337,9 @@ function parseArguments(
 ): EvaluateOptions {
   const fromUrl = extractValue(args, '--url');
   const fromToken = extractValue(fromUrl.rest, '--token');
-  const fromExecution = extractValue(fromToken.rest, '--execucao');
-  const fromTokenCeiling = extractValue(fromExecution.rest, '--teto-tokens');
-  const fromSecondCeiling = extractValue(fromTokenCeiling.rest, '--teto-segundos');
+  const fromExecution = extractValue(fromToken.rest, '--execution');
+  const fromTokenCeiling = extractValue(fromExecution.rest, '--token-cap');
+  const fromSecondCeiling = extractValue(fromTokenCeiling.rest, '--second-cap');
   const fromFactor = extractValue(fromSecondCeiling.rest, '--tier-fator');
   const fromMinNodes = extractValue(fromFactor.rest, '--tier-minimo-nos');
 
@@ -344,18 +350,18 @@ function parseArguments(
   }
 
   if (fromUrl.value === undefined) throw new UsageError('avaliar needs --url');
-  if (fromExecution.value === undefined) throw new UsageError('avaliar needs --execucao');
+  if (fromExecution.value === undefined) throw new UsageError('avaliar needs --execution');
 
   const executionId = Number(fromExecution.value);
   if (!Number.isInteger(executionId)) {
-    throw new UsageError(`--execucao needs an integer id, got "${fromExecution.value}"`);
+    throw new UsageError(`--execution needs an integer id, got "${fromExecution.value}"`);
   }
 
   return {
     url: fromUrl.value,
     executionId,
-    tokenCeiling: asNumber('--teto-tokens', fromTokenCeiling.value),
-    secondCeiling: asNumber('--teto-segundos', fromSecondCeiling.value),
+    tokenCeiling: asNumber('--token-cap', fromTokenCeiling.value),
+    secondCeiling: asNumber('--second-cap', fromSecondCeiling.value),
     tierFactor: asNumber('--tier-fator', fromFactor.value),
     tierMinNodes: asNumber('--tier-minimo-nos', fromMinNodes.value),
     doFetch: withCredential(doFetch, fromToken.value?.trim() ?? env[ENV_TOKEN]?.trim()),
@@ -364,7 +370,7 @@ function parseArguments(
 
 // The production path is the package's own `bin` (t199, FR3), and it imports
 // this module rather than executing it:
-// `npx topografo-custo avaliar --url ... --execucao ...`.
+// `npx topografo-custo avaliar --url ... --execution ...`.
 // The guard stays here for the OTHER half: without it, any `import { runCli }`
 // (which is what `test/cli.test.ts` does) would run the CLI just by loading the
 // file. As a bonus, `node --import tsx src/cli.ts` keeps working for whoever is

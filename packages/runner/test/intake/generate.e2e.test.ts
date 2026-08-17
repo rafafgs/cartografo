@@ -286,7 +286,7 @@ test('AT5c — an unregistered class posts nothing, and the command exits 1', as
 
   const result = runCli([
     REQUEST,
-    '--classe',
+    '--class',
     'classe-que-ninguem-registrou',
     '--url',
     plane.baseUrl,
@@ -305,22 +305,22 @@ test('AT5c — an unregistered class posts nothing, and the command exits 1', as
   assert.deepEqual(drafts, [], 'a refused class never reaches POST /v1/intake');
 });
 
-test('AT6 — --help exits 0 and a missing --classe exits 2', () => {
+test('AT6 — --help exits 0 and a missing --class exits 2', () => {
   const help = runCli(['--help']);
   assert.equal(help.status, 0, `stderr:\n${help.stderr}`);
-  assert.match(help.stdout, new RegExp('--classe'));
+  assert.match(help.stdout, new RegExp('--class'));
   assert.match(help.stdout, new RegExp('--token'));
   assert.match(help.stdout, /rascunho|draft/i, 'what the command produces is named');
 
   const typo = runCli([REQUEST]);
   assert.equal(typo.status, 2, `stdout:\n${typo.stdout}\nstderr:\n${typo.stderr}`);
-  assert.match(typo.stderr, new RegExp('--classe'), 'the message names the flag that is missing');
+  assert.match(typo.stderr, new RegExp('--class'), 'the message names the flag that is missing');
 });
 
 test('AT6 — a control plane that refuses the credential exits 1, saying what to do', async (t) => {
   const plane = await bootControlPlane(t);
 
-  const result = runCli([REQUEST, '--classe', CLASS_NAME, '--url', plane.baseUrl]);
+  const result = runCli([REQUEST, '--class', CLASS_NAME, '--url', plane.baseUrl]);
 
   assert.equal(result.status, 1, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   assert.match(result.stderr, new RegExp('CARTOGRAFO_TOKEN'));

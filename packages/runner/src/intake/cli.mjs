@@ -27,7 +27,7 @@
  *
  * Usage:
  *   npm run intake --workspace @cartografo/runner -- \
- *     "<request>" --classe <name> [--url <url>] [--dir <path>] [--token <token>]
+ *     "<request>" --class <name> [--url <url>] [--dir <path>] [--token <token>]
  */
 
 import { mkdtempSync } from 'node:fs';
@@ -51,7 +51,7 @@ import { IntakeError, generateIntakeDraft } from './generate.ts';
  *
  * Lazily and not up front, which is the whole point: the class check refuses
  * before any session, and probing the engine ahead of it would make a typo in
- * `--classe` depend on having the CLI installed. The probe still happens before
+ * `--class` depend on having the CLI installed. The probe still happens before
  * the only session there is, so the message a missing binary gets is the one that
  * says what to do about it.
  */

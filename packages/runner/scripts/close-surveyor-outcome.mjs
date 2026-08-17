@@ -36,7 +36,7 @@
  *
  * Usage:
  *   npm run close-outcome --workspace @cartografo/runner -- \
- *     <proposta_id> <execucao_id> [url] [--token <token>]
+ *     <proposal_id> <execution_id> [url] [--token <token>]
  */
 
 import { ClienteControle } from '../src/controller/cliente-controle.ts';

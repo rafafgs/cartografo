@@ -36,7 +36,7 @@ const CONTENT_TYPES: Record<string, string> = {
  *
  * Returns `null` for anything that escapes the directory or has an extension
  * the page is not made of — and, since the screen gained server-rendered
- * routes, that `null` is also what hands `/execucoes` and `/trabalhos/7` over
+ * routes, that `null` is also what hands `/executions` and `/jobs/7` over
  * to the renderer instead of 404-ing them as missing files.
  *
  * @param pathname Path from the request, already without the query.

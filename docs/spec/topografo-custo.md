@@ -179,8 +179,8 @@ e só a operação muda.
 ## 4. O comando
 
 ```
-topografo-custo avaliar --url <url> --execucao <id>
-                        [--teto-tokens N] [--teto-segundos N]
+topografo-custo avaliar --url <url> --execution <id>
+                        [--token-cap N] [--second-cap N]
                         [--tier-fator N] [--tier-minimo-nos N]
 ```
 

@@ -15,7 +15,7 @@
  * a fifth command would be a fifth thing to remember, and the person running all
  * of them is one person.
  *
- * English per D18; the flags a person types (`--classe`, `--dir`) and the
+ * English per D18; the flags a person types (`--class`, `--dir`) and the
  * payload keys stay as they are published.
  */
 
@@ -91,21 +91,21 @@ function recordingFetch(
   };
 }
 
-test('AT2 — the request is positional and --classe is required; either missing is a refusal', async () => {
+test('AT2 — the request is positional and --class is required; either missing is a refusal', async () => {
   const { parseArguments } = await loadCommandLine();
 
   assert.match(
     refusal(parseArguments([REQUEST], EMPTY_ENV)),
-    new RegExp('--classe'),
+    new RegExp('--class'),
     'the message names the flag that is missing',
   );
   assert.match(
-    refusal(parseArguments(['--classe', 'desenvolvimento-de-software'], EMPTY_ENV)),
+    refusal(parseArguments(['--class', 'desenvolvimento-de-software'], EMPTY_ENV)),
     /request/i,
     'the message names what is missing',
   );
   assert.match(
-    refusal(parseArguments([REQUEST, 'sobra', '--classe', 'x'], EMPTY_ENV)),
+    refusal(parseArguments([REQUEST, 'sobra', '--class', 'x'], EMPTY_ENV)),
     /2|quote/i,
     'the request is ONE argument; two of them is a missing pair of quotes',
   );
@@ -114,7 +114,7 @@ test('AT2 — the request is positional and --classe is required; either missing
 test('AT2 — --url, --dir and --token have defaults, and each one overrides its own', async () => {
   const { parseArguments, DEFAULT_URL } = await loadCommandLine();
 
-  const bare = runnable(parseArguments([REQUEST, '--classe', 'nota-curta'], EMPTY_ENV));
+  const bare = runnable(parseArguments([REQUEST, '--class', 'nota-curta'], EMPTY_ENV));
   assert.equal(bare.request, REQUEST);
   assert.equal(bare.className, 'nota-curta');
   assert.equal(bare.url, DEFAULT_URL);
@@ -125,7 +125,7 @@ test('AT2 — --url, --dir and --token have defaults, and each one overrides its
     parseArguments(
       [
         REQUEST,
-        '--classe',
+        '--class',
         'nota-curta',
         '--url',
         'http://127.0.0.1:9999',
@@ -148,12 +148,12 @@ test('AT2 — the token precedence is --token, then CARTOGRAFO_TOKEN, then none'
   assert.equal(ENV_TOKEN, 'CARTOGRAFO_TOKEN');
 
   const fromEnv = runnable(
-    parseArguments([REQUEST, '--classe', 'nota-curta'], { [ENV_TOKEN]: '  exported  ' }),
+    parseArguments([REQUEST, '--class', 'nota-curta'], { [ENV_TOKEN]: '  exported  ' }),
   );
   assert.equal(fromEnv.token, 'exported');
 
   const both = runnable(
-    parseArguments([REQUEST, '--classe', 'nota-curta', '--token', 'typed'], {
+    parseArguments([REQUEST, '--class', 'nota-curta', '--token', 'typed'], {
       [ENV_TOKEN]: 'exported',
     }),
   );
@@ -161,9 +161,9 @@ test('AT2 — the token precedence is --token, then CARTOGRAFO_TOKEN, then none'
 
   // Nothing anywhere sends no header at all: an empty `Authorization` would look
   // like a credential to whoever reads the server's log.
-  assert.equal(runnable(parseArguments([REQUEST, '--classe', 'x'], EMPTY_ENV)).token, undefined);
+  assert.equal(runnable(parseArguments([REQUEST, '--class', 'x'], EMPTY_ENV)).token, undefined);
   assert.equal(
-    runnable(parseArguments([REQUEST, '--classe', 'x'], { [ENV_TOKEN]: '   ' })).token,
+    runnable(parseArguments([REQUEST, '--class', 'x'], { [ENV_TOKEN]: '   ' })).token,
     undefined,
   );
 });
@@ -173,17 +173,27 @@ test('AT2 — an unknown flag, and a flag with no value, are both refused', asyn
 
   assert.match(refusal(parseArguments([REQUEST, '--nope', 'x'], EMPTY_ENV)), new RegExp('--nope'));
   assert.match(
-    refusal(parseArguments([REQUEST, '--classe'], EMPTY_ENV)),
-    new RegExp('--classe'),
+    refusal(parseArguments([REQUEST, '--class'], EMPTY_ENV)),
+    new RegExp('--class'),
     'a dangling flag is a typo, not an empty value',
   );
   assert.match(
-    refusal(parseArguments([REQUEST, '--classe', '--url', 'x'], EMPTY_ENV)),
-    new RegExp('--classe'),
+    refusal(parseArguments([REQUEST, '--class', '--url', 'x'], EMPTY_ENV)),
+    new RegExp('--class'),
   );
 
-  assert.ok(HELP.includes('--classe'), `the help text does not mention --classe:\n${HELP}`);
+  assert.ok(HELP.includes('--class'), `the help text does not mention --class:\n${HELP}`);
   assert.ok(HELP.includes('--token'), `the help text does not mention --token:\n${HELP}`);
+
+  // D20 §5.2: `--classe` became `--class`, and nothing was left behind under
+  // the old spelling — an alias here would be the migration keeping two
+  // vocabularies alive on the surface a person types.
+  assert.match(
+    refusal(parseArguments([REQUEST, '--classe', 'nota-curta'], EMPTY_ENV)),
+    new RegExp('--classe'),
+    'the pre-D20 spelling is an unknown flag now, not a synonym',
+  );
+  assert.ok(!HELP.includes('--classe'), `the help text still documents --classe:\n${HELP}`);
   assert.ok(
     HELP.includes('CARTOGRAFO_TOKEN'),
     `the help text does not mention the variable that spares typing the flag:\n${HELP}`,
@@ -205,7 +215,7 @@ test('AT2 — the token reaches the wire as a bearer, and its absence sends no h
 
   const options = runnable(
     parseArguments(
-      [REQUEST, '--classe', 'nota-curta', '--url', 'http://127.0.0.1:9999', '--token', 'abc'],
+      [REQUEST, '--class', 'nota-curta', '--url', 'http://127.0.0.1:9999', '--token', 'abc'],
       EMPTY_ENV,
     ),
   );
@@ -225,7 +235,7 @@ test('AT2 — the token reaches the wire as a bearer, and its absence sends no h
   assert.equal(seen[1].authorization, 'Bearer abc');
 
   const anonymous = runnable(
-    parseArguments([REQUEST, '--classe', 'nota-curta', '--url', 'http://127.0.0.1:9999'], EMPTY_ENV),
+    parseArguments([REQUEST, '--class', 'nota-curta', '--url', 'http://127.0.0.1:9999'], EMPTY_ENV),
   );
   await createReader(anonymous, recordingFetch(seen)).fetchClasses();
   assert.equal(seen.length, 3);

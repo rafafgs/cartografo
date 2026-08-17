@@ -145,11 +145,8 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   const document = request.body;
 
   const report = validateGraph(document);
-  if (!report.valido) {
+  if (!report.valid) {
     reply.code(422);
-    // The report keeps its own vocabulary: `estrutura`/`soundness` belong to
-    // D20's fifth child, and Out of Scope names them even where they ride
-    // inside a `/v1` body. Only the envelope's `error` is this ticket's.
     return { error: 'invalid_graph', ...report };
   }
 
@@ -161,16 +158,16 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   if (typeof className !== 'string' || className.trim() === '') {
     reply.code(422);
     const structure: StructureReport = {
-      valido: false,
-      erros: [
+      valid: false,
+      errors: [
         {
-          codigo: 'campo_invalido',
-          mensagem: '"problem_class" has to be a filled text: it is the identity of the lineage (D8)',
-          alvo: 'problem_class',
+          code: 'invalid_field',
+          message: '"problem_class" has to be a filled text: it is the identity of the lineage (D8)',
+          target: 'problem_class',
         },
       ],
     };
-    return { error: 'invalid_graph', valido: false, estrutura: structure, soundness: report.soundness };
+    return { error: 'invalid_graph', valid: false, structure, soundness: report.soundness };
   }
 
   const lineage = isObject(raw.lineage) ? raw.lineage : {};

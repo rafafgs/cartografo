@@ -143,7 +143,7 @@ function counts(ctx: TestContext): { lineages: number; versions: number } {
   return { lineages: lineages.total, versions: versions.total };
 }
 
-/** A new node, complete enough to pass `no_com_contrato` (same one as t101's suite). */
+/** A new node, complete enough to pass `node_with_contract` (same one as t101's suite). */
 function newNode(): Record<string, unknown> {
   return {
     id: 'checar_fatos',

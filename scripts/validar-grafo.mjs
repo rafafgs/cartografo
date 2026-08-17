@@ -21,27 +21,29 @@
  * plane's TypeScript scaffold — here the validator covers what it takes to
  * prove the fixtures.
  *
- * ## Why the exported names and the report stay in Portuguese
+ * ## Why the four exported names stay in Portuguese, and nothing else does
  *
- * This file is outside the D18 rename scope (t127, FR8; t133, exception 5), and
- * for a reason that is checked rather than asserted:
- * `packages/core/test/domain-graph.test.ts` imports it BY PATH, destructures it
- * by the names `validarEstrutura` / `validarSoundness`, and `deepEqual`s its
- * report against the TypeScript port in `packages/core/src/domain/graph.ts` on
- * every fixture in `schema/exemplos/`. That parity is the whole point of the
- * port, so the four exported names and the full report shape — `valido`,
- * `erros`, `violacoes`, `codigo`, `mensagem`, `alvo`, `regra`, `estrutura` and
- * the four rule-name values — are frozen here. Everything else in the file is
- * English, like the rest of the repository from D18 onward.
+ * `packages/core/test/domain-graph.test.ts` imports this file BY PATH,
+ * destructures it by the names `validarEstrutura` / `validarSoundness`, and
+ * `deepEqual`s its report against the TypeScript port in
+ * `packages/core/src/domain/graph.ts` on every fixture in `schema/exemplos/`.
+ * Renaming one of the four exports turns core's suite red without a line of core
+ * changing, so they stay until `scripts/`' own D18 identifier migration — a
+ * ticket that does not exist yet (t133, exception 5).
  *
- * The message text under `mensagem` is NOT part of that freeze, and moved to
- * English with t180. It moved in lockstep with the port, because it has to:
- * the parity test compares the two reports whole, so a sentence rewritten on
- * one side and not the other fails here, loudly, on the next run. The same
- * applies to the field names quoted inside those messages, which moved with the
- * document's keys in t178 (the 2026-08-15 D18 amendment): the report vocabulary
- * is frozen, the DOCUMENT vocabulary is not, and a message still naming `nos`
- * would be pointing at a key the format no longer has.
+ * Everything else here is English, and the REPORT is the newest half of that.
+ * Its keys, codes and rule-name values (`valid`, `errors`, `violations`, `code`,
+ * `message`, `target`, `rule`, `structure`) moved with t230, the fifth child of
+ * D20, out of `docs/spec/glossario-wire.md` §5.3/5.4. That parity above is why
+ * it moved in LOCKSTEP with the port, in one delivery: the test compares the two
+ * reports whole, so a key renamed on one side and not the other fails there,
+ * loudly, on the next run.
+ *
+ * The same lockstep already applied to what the report CARRIES: the message
+ * prose moved to English with t180, and the field names quoted inside those
+ * messages with the document's own keys in t178. What used to be an asymmetry —
+ * an English document described by a Portuguese report — is now one vocabulary
+ * from the document all the way out to the 422.
  *
  * CLI use: `node scripts/validar-grafo.mjs schema/exemplos/*.json`
  */
@@ -52,14 +54,15 @@ import { readFileSync } from 'node:fs';
  * Names of the four soundness rules, in the order they run.
  *
  * The KEYS match `packages/core/src/domain/graph.ts`'s `RULES` so the two
- * byte-for-byte siblings read the same side by side; the VALUES are frozen,
- * because they are what the reports compare on.
+ * byte-for-byte siblings read the same side by side; the VALUES are what the
+ * reports compare on, so they move in the same delivery on both sides or not
+ * at all (t230, glossário §5.4).
  */
 export const RULES = Object.freeze({
-  REACHABLE: 'alcançável',
-  TERMINATES: 'termina',
-  EDGE_WITH_CONDITION: 'aresta_com_condicao',
-  NODE_WITH_CONTRACT: 'no_com_contrato',
+  REACHABLE: 'reachable',
+  TERMINATES: 'terminates',
+  EDGE_WITH_CONDITION: 'edge_with_condition',
+  NODE_WITH_CONTRACT: 'node_with_contract',
 });
 
 const REQUIRED_DOC_FIELDS = [
@@ -83,42 +86,42 @@ const isFilledText = (value) => typeof value === 'string' && value.trim() !== ''
  * Checks the document's shape and referential integrity.
  *
  * @param {unknown} doc Graph document, already parsed.
- * @returns {{valido: boolean, erros: Array<{codigo: string, mensagem: string, alvo: unknown}>}}
+ * @returns {{valid: boolean, errors: Array<{code: string, message: string, target: unknown}>}}
  */
 export function validarEstrutura(doc) {
-  const erros = [];
+  const errors = [];
   const annotate = (code, message, target = null) =>
-    erros.push({ codigo: code, mensagem: message, alvo: target });
+    errors.push({ code, message, target });
 
   if (!isObject(doc)) {
-    annotate('documento_invalido', 'graph document has to be a JSON object');
-    return { valido: false, erros };
+    annotate('invalid_document', 'graph document has to be a JSON object');
+    return { valid: false, errors };
   }
 
   for (const field of REQUIRED_DOC_FIELDS) {
     if (doc[field] === undefined || doc[field] === null) {
-      annotate('campo_obrigatorio_ausente', `required field missing from the document: "${field}"`, field);
+      annotate('missing_required_field', `required field missing from the document: "${field}"`, field);
     }
   }
 
   if (doc.nodes !== undefined && !Array.isArray(doc.nodes)) {
-    annotate('campo_invalido', '"nodes" has to be a list', 'nodes');
+    annotate('invalid_field', '"nodes" has to be a list', 'nodes');
   }
   if (doc.edges !== undefined && !Array.isArray(doc.edges)) {
-    annotate('campo_invalido', '"edges" has to be a list', 'edges');
+    annotate('invalid_field', '"edges" has to be a list', 'edges');
   }
   if (doc.final_nodes !== undefined && !Array.isArray(doc.final_nodes)) {
-    annotate('campo_invalido', '"final_nodes" has to be a list', 'final_nodes');
+    annotate('invalid_field', '"final_nodes" has to be a list', 'final_nodes');
   }
   // The list itself and nothing inside it: what each declaration has to look
   // like is the schema's business, and cross-checking `required_at` against the
   // node ids is deliberately not done here (t168, out of scope) — an unreachable
   // `required_at` fails inertly, demanding nothing of nobody.
   if (doc.custom_fields !== undefined && !Array.isArray(doc.custom_fields)) {
-    annotate('campo_invalido', '"custom_fields" has to be a list', 'custom_fields');
+    annotate('invalid_field', '"custom_fields" has to be a list', 'custom_fields');
   }
   if (doc.hooks !== undefined && !Array.isArray(doc.hooks)) {
-    annotate('campo_invalido', '"hooks" has to be a list', 'hooks');
+    annotate('invalid_field', '"hooks" has to be a list', 'hooks');
   }
 
   const nodes = Array.isArray(doc.nodes) ? doc.nodes : [];
@@ -127,13 +130,13 @@ export function validarEstrutura(doc) {
 
   nodes.forEach((node, index) => {
     if (!isObject(node)) {
-      annotate('no_invalido', `the node at position ${index} has to be an object`, index);
+      annotate('invalid_node', `the node at position ${index} has to be an object`, index);
       return;
     }
     for (const field of REQUIRED_NODE_FIELDS) {
       if (node[field] === undefined || node[field] === null) {
         annotate(
-          'campo_obrigatorio_ausente',
+          'missing_required_field',
           `required field missing from node "${node.id ?? `#${index}`}": "${field}"`,
           node.id ?? index,
         );
@@ -145,7 +148,7 @@ export function validarEstrutura(doc) {
       // never entering `knownIds`, never being checked by soundness.
       if (node.id !== undefined && node.id !== null) {
         annotate(
-          'id_invalido',
+          'invalid_id',
           `the id of the node at position ${index} has to be a filled text: ${JSON.stringify(node.id)}`,
           index,
         );
@@ -154,7 +157,7 @@ export function validarEstrutura(doc) {
     }
     if (knownIds.has(node.id)) {
       if (!reportedIds.has(node.id)) {
-        annotate('id_no_duplicado', `duplicate node id in the document: "${node.id}"`, node.id);
+        annotate('duplicate_node_id', `duplicate node id in the document: "${node.id}"`, node.id);
         reportedIds.add(node.id);
       }
       return;
@@ -165,15 +168,15 @@ export function validarEstrutura(doc) {
   const edges = Array.isArray(doc.edges) ? doc.edges : [];
   edges.forEach((edge, index) => {
     if (!isObject(edge)) {
-      annotate('aresta_invalida', `the edge at position ${index} has to be an object`, index);
+      annotate('invalid_edge', `the edge at position ${index} has to be an object`, index);
       return;
     }
     for (const field of REQUIRED_EDGE_FIELDS) {
       if (edge[field] === undefined || edge[field] === null) {
         annotate(
-          'campo_obrigatorio_ausente',
+          'missing_required_field',
           `required field missing from edge #${index}: "${field}"`,
-          { de: edge.from ?? null, para: edge.to ?? null },
+          { from: edge.from ?? null, to: edge.to ?? null },
         );
       }
     }
@@ -182,18 +185,18 @@ export function validarEstrutura(doc) {
       if (!isFilledText(target)) {
         if (target !== undefined && target !== null) {
           annotate(
-            'id_invalido',
+            'invalid_id',
             `edge #${index} needs a filled text in "${side}": ${JSON.stringify(target)}`,
-            { de: edge.from ?? null, para: edge.to ?? null },
+            { from: edge.from ?? null, to: edge.to ?? null },
           );
         }
         continue;
       }
       if (!knownIds.has(target)) {
         annotate(
-          'aresta_no_inexistente',
+          'edge_unknown_node',
           `edge #${index} references in "${side}" a node that does not exist: "${target}"`,
-          { de: edge.from ?? null, para: edge.to ?? null },
+          { from: edge.from ?? null, to: edge.to ?? null },
         );
       }
     }
@@ -205,32 +208,32 @@ export function validarEstrutura(doc) {
   if (!isFilledText(doc.initial_node)) {
     if (doc.initial_node !== undefined && doc.initial_node !== null) {
       annotate(
-        'id_invalido',
+        'invalid_id',
         `initial_node has to be a filled text: ${JSON.stringify(doc.initial_node)}`,
         'initial_node',
       );
     }
   } else if (!knownIds.has(doc.initial_node)) {
-    annotate('no_inicial_inexistente', `initial_node references a node that does not exist: "${doc.initial_node}"`, doc.initial_node);
+    annotate('unknown_initial_node', `initial_node references a node that does not exist: "${doc.initial_node}"`, doc.initial_node);
   }
 
   const finals = Array.isArray(doc.final_nodes) ? doc.final_nodes : [];
   if (Array.isArray(doc.final_nodes) && finals.length === 0) {
-    annotate('campo_invalido', '"final_nodes" has to list at least one node', 'final_nodes');
+    annotate('invalid_field', '"final_nodes" has to list at least one node', 'final_nodes');
   }
   // No required-fields loop covers an entry of the array, so here the absent
   // value (`null`, `undefined`) is an invalid id like any other.
   finals.forEach((finalId, index) => {
     if (!isFilledText(finalId)) {
       annotate(
-        'id_invalido',
+        'invalid_id',
         `the id in final_nodes at position ${index} has to be a filled text: ${JSON.stringify(finalId)}`,
         index,
       );
       return;
     }
     if (!knownIds.has(finalId)) {
-      annotate('no_final_inexistente', `final_nodes references a node that does not exist: "${finalId}"`, finalId);
+      annotate('unknown_final_node', `final_nodes references a node that does not exist: "${finalId}"`, finalId);
     }
   });
 
@@ -246,13 +249,13 @@ export function validarEstrutura(doc) {
 
   hooks.forEach((hook, index) => {
     if (!isObject(hook)) {
-      annotate('gancho_invalido', `the hook at position ${index} has to be an object`, index);
+      annotate('invalid_hook', `the hook at position ${index} has to be an object`, index);
       return;
     }
     for (const field of REQUIRED_HOOK_FIELDS) {
       if (hook[field] === undefined || hook[field] === null) {
         annotate(
-          'campo_obrigatorio_ausente',
+          'missing_required_field',
           `required field missing from hook "${hook.id ?? `#${index}`}": "${field}"`,
           hook.id ?? index,
         );
@@ -262,14 +265,14 @@ export function validarEstrutura(doc) {
     if (!isFilledText(hook.id)) {
       if (hook.id !== undefined && hook.id !== null) {
         annotate(
-          'id_invalido',
+          'invalid_id',
           `the id of the hook at position ${index} has to be a filled text: ${JSON.stringify(hook.id)}`,
           index,
         );
       }
     } else if (knownHookIds.has(hook.id)) {
       if (!reportedHookIds.has(hook.id)) {
-        annotate('id_gancho_duplicado', `duplicate hook id in the document: "${hook.id}"`, hook.id);
+        annotate('duplicate_hook_id', `duplicate hook id in the document: "${hook.id}"`, hook.id);
         reportedHookIds.add(hook.id);
       }
     } else {
@@ -280,7 +283,7 @@ export function validarEstrutura(doc) {
     if (!isFilledText(target)) {
       if (target !== undefined && target !== null) {
         annotate(
-          'id_invalido',
+          'invalid_id',
           `hook #${index} needs a filled text in "node_id": ${JSON.stringify(target)}`,
           hook.id ?? index,
         );
@@ -289,14 +292,14 @@ export function validarEstrutura(doc) {
     }
     if (!knownIds.has(target)) {
       annotate(
-        'gancho_no_inexistente',
+        'hook_unknown_node',
         `hook #${index} references a node that does not exist: "${target}"`,
         hook.id ?? index,
       );
     }
   });
 
-  return { valido: erros.length === 0, erros };
+  return { valid: errors.length === 0, errors };
 }
 
 /**
@@ -304,10 +307,10 @@ export function validarEstrutura(doc) {
  * edge with condition, node with contract.
  *
  * @param {unknown} doc Graph document, already parsed.
- * @returns {{valido: boolean, violacoes: Array<{regra: string, alvo: unknown}>}}
+ * @returns {{valid: boolean, violations: Array<{rule: string, target: unknown}>}}
  */
 export function validarSoundness(doc) {
-  const violacoes = [];
+  const violations = [];
   const nodes = isObject(doc) && Array.isArray(doc.nodes) ? doc.nodes.filter(isObject) : [];
   const edges = isObject(doc) && Array.isArray(doc.edges) ? doc.edges.filter(isObject) : [];
   const ids = nodes.map((node) => node.id).filter(isFilledText);
@@ -330,7 +333,7 @@ export function validarSoundness(doc) {
     (id) => outgoing.get(id) ?? [],
   );
   for (const id of ids) {
-    if (!reached.has(id)) violacoes.push({ regra: RULES.REACHABLE, alvo: id });
+    if (!reached.has(id)) violations.push({ rule: RULES.REACHABLE, target: id });
   }
 
   // 2. terminates — from every node there is a path to some final node.
@@ -340,15 +343,15 @@ export function validarSoundness(doc) {
   const finals = (Array.isArray(doc?.final_nodes) ? doc.final_nodes : []).filter((id) => known.has(id));
   const reachEnd = traverse(finals, (id) => incoming.get(id) ?? []);
   for (const id of ids) {
-    if (!reachEnd.has(id)) violacoes.push({ regra: RULES.TERMINATES, alvo: id });
+    if (!reachEnd.has(id)) violations.push({ rule: RULES.TERMINATES, target: id });
   }
 
   // 3. edge with condition — no transition without a label.
   for (const edge of edges) {
     if (!isFilledText(edge.condition)) {
-      violacoes.push({
-        regra: RULES.EDGE_WITH_CONDITION,
-        alvo: { de: edge.from ?? null, para: edge.to ?? null },
+      violations.push({
+        rule: RULES.EDGE_WITH_CONDITION,
+        target: { from: edge.from ?? null, to: edge.to ?? null },
       });
     }
   }
@@ -356,11 +359,11 @@ export function validarSoundness(doc) {
   // 4. node with contract — holds for a gate too, which is a node like any other.
   for (const node of nodes) {
     if (!hasSkillRef(node) || !hasContract(node)) {
-      violacoes.push({ regra: RULES.NODE_WITH_CONTRACT, alvo: node.id ?? null });
+      violations.push({ rule: RULES.NODE_WITH_CONTRACT, target: node.id ?? null });
     }
   }
 
-  return { valido: violacoes.length === 0, violacoes };
+  return { valid: violations.length === 0, violations };
 }
 
 /** Breadth-first search from several seeds; returns the visited set. */
@@ -407,7 +410,7 @@ export function carregarGrafo(filePath) {
 export function validarGrafo(doc) {
   const structure = validarEstrutura(doc);
   const soundness = validarSoundness(doc);
-  return { valido: structure.valido && soundness.valido, estrutura: structure, soundness };
+  return { valid: structure.valid && soundness.valid, structure, soundness };
 }
 
 function main(paths) {
@@ -425,17 +428,17 @@ function main(paths) {
       failed = true;
       continue;
     }
-    if (report.valido) {
+    if (report.valid) {
       console.log(`✔ ${filePath}`);
       continue;
     }
     failed = true;
     console.error(`✖ ${filePath}`);
-    for (const problem of report.estrutura.erros) {
-      console.error(`  structure  ${problem.codigo}: ${problem.mensagem}`);
+    for (const problem of report.structure.errors) {
+      console.error(`  structure  ${problem.code}: ${problem.message}`);
     }
-    for (const violation of report.soundness.violacoes) {
-      console.error(`  soundness  ${violation.regra}: ${JSON.stringify(violation.alvo)}`);
+    for (const violation of report.soundness.violations) {
+      console.error(`  soundness  ${violation.rule}: ${JSON.stringify(violation.target)}`);
     }
   }
   return failed ? 1 : 0;

@@ -57,7 +57,7 @@ async function readFromControlPlane(
   return found;
 }
 
-test('t107 AT6 — GET /perguntas shows the whole question, with what it takes to decide', async (t) => {
+test('t107 AT6 — GET /input-requests shows the whole question, with what it takes to decide', async (t) => {
   requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
@@ -78,7 +78,7 @@ test('t107 AT6 — GET /perguntas shows the whole question, with what it takes t
   });
 
   const screen = await startScreen(t, cp);
-  const page = await openPage(screen, '/perguntas');
+  const page = await openPage(screen, '/input-requests');
 
   assert.equal(page.status, 200);
   const cards = blocks(page.html, 'pergunta');
@@ -97,7 +97,7 @@ test('t107 AT6 — GET /perguntas shows the whole question, with what it takes t
     assert.ok(card.excerpt.includes(option), `shows the option "${option}"`);
   }
   assert.ok(
-    card.excerpt.includes(`action="/perguntas/${question.id}/resposta"`),
+    card.excerpt.includes(`action="/input-requests/${question.id}/answer"`),
     'each question carries the form that answers it',
   );
   assert.ok(card.excerpt.includes('method="post"'), 'answering is a write, and a write is a POST');
@@ -114,13 +114,13 @@ test('t107 AT6 — the submit answers FOR REAL in the control plane and leaves t
   assert.equal(before.status, 'pending');
 
   const screen = await startScreen(t, cp);
-  const submission = await submitForm(screen, `/perguntas/${question.id}/resposta`, {
+  const submission = await submitForm(screen, `/input-requests/${question.id}/answer`, {
     resposta: 'Manter 0002',
     respondido_por: 'rafael',
   });
 
   assert.equal(submission.status, 303, 'a POST that writes answers with a redirect');
-  assert.equal(submission.location, '/perguntas', 'and goes back to the queue reloaded from the API');
+  assert.equal(submission.location, '/input-requests', 'and goes back to the queue reloaded from the API');
 
   // The proof: an independent read, straight against the control plane. What
   // matters is that the STATE changed, not that the screen said it changed.
@@ -130,7 +130,7 @@ test('t107 AT6 — the submit answers FOR REAL in the control plane and leaves t
   assert.equal(after.answered_by, 'rafael');
   assert.ok(after.answered_at !== null);
 
-  const queue = await openPage(screen, '/perguntas');
+  const queue = await openPage(screen, '/input-requests');
   assert.equal(queue.status, 200);
   assert.deepEqual(
     blocks(queue.html, 'pergunta').map((card) => card.value),
@@ -147,7 +147,7 @@ test('t107 AT6 — a blank answer is refused by the screen, with nothing written
   const question = await createQuestion(cp, { job_id: job.id, ...FULL_BODY });
 
   const screen = await startScreen(t, cp);
-  const submission = await submitForm(screen, `/perguntas/${question.id}/resposta`, {
+  const submission = await submitForm(screen, `/input-requests/${question.id}/answer`, {
     resposta: '   ',
     respondido_por: 'rafael',
   });
@@ -164,7 +164,7 @@ test('t107 AT6 — answering a nonexistent question propagates the control plane
   const cp = await startControlPlane(t);
   const screen = await startScreen(t, cp);
 
-  const submission = await submitForm(screen, '/perguntas/424242/resposta', {
+  const submission = await submitForm(screen, '/input-requests/424242/answer', {
     resposta: 'seja lá o que for',
     respondido_por: 'rafael',
   });

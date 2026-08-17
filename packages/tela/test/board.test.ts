@@ -24,7 +24,7 @@ import {
   startScreen,
 } from './support.ts';
 
-test('t107 AT4 — GET /quadro shows jobs grouped by node, with the block reason', async (t) => {
+test('t107 AT4 — GET /board shows jobs grouped by node, with the block reason', async (t) => {
   requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
@@ -53,7 +53,7 @@ test('t107 AT4 — GET /quadro shows jobs grouped by node, with the block reason
   });
 
   const screen = await startScreen(t, cp);
-  const page = await openPage(screen, '/quadro');
+  const page = await openPage(screen, '/board');
 
   assert.equal(page.status, 200);
   assert.match(page.contentType ?? '', /text\/html/, 'the screen returns HTML, not JSON');
@@ -115,9 +115,9 @@ test('t107 AT4 — GET /quadro shows jobs grouped by node, with the block reason
     'a block reason belongs to the blocked job, not to the page',
   );
 
-  assert.ok(page.html.includes('href="/execucoes"'), 'the board leads to the executions list');
+  assert.ok(page.html.includes('href="/executions"'), 'the board leads to the executions list');
   assert.ok(
-    page.html.includes(`href="/trabalhos/${refining.id}"`),
+    page.html.includes(`href="/jobs/${refining.id}"`),
     'each job leads to its own timeline',
   );
 });
@@ -135,7 +135,7 @@ test('t107 AT4 — the board escapes HTML coming from the control plane', async 
   });
 
   const screen = await startScreen(t, cp);
-  const page = await openPage(screen, '/quadro');
+  const page = await openPage(screen, '/board');
 
   assert.equal(page.status, 200);
   assert.ok(!page.html.includes('<script>alert'), 'a job title must not become a script');
@@ -143,4 +143,19 @@ test('t107 AT4 — the board escapes HTML coming from the control plane', async 
     page.html.includes('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt; &amp; cia'),
     'the title shows up escaped, and whole',
   );
+});
+
+test('t230 — the Portuguese paths D20 renamed are gone, with no redirect behind them', async (t) => {
+  requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  // Nothing is public yet (D20), so the old spelling is not an alias and not a
+  // 303 either: it is an address that never existed. A redirect here would be
+  // the migration keeping both vocabularies alive, which is the one outcome the
+  // glossary exists to prevent.
+  for (const gone of ['/quadro', '/execucoes', '/execucoes/7', '/perguntas', '/trabalhos/1']) {
+    const page = await openPage(screen, gone);
+    assert.equal(page.status, 404, `${gone} still answers; D20 §5.1 renamed it`);
+  }
 });

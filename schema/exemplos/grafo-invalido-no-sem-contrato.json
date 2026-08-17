@@ -5,7 +5,7 @@
   },
   "metadata": {
     "name": "Contraexemplo — nó sem contrato",
-    "description": "Viola SÓ a regra \"no_com_contrato\": a topologia é sound e as arestas têm condição, mas o nó publicar_texto não declara contrato. Sem contrato não há como verificar o que o nó produziu — é o nó que o sintetizador compôs por alucinação (README, princípio 3). A regra vale igual para portão, que é nó como outro qualquer.",
+    "description": "Viola SÓ a regra \"node_with_contract\": a topologia é sound e as arestas têm condição, mas o nó publicar_texto não declara contrato. Sem contrato não há como verificar o que o nó produziu — é o nó que o sintetizador compôs por alucinação (README, princípio 3). A regra vale igual para portão, que é nó como outro qualquer.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-14",
     "source": "contraexemplo da especificação"

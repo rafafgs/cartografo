@@ -198,7 +198,7 @@ test('t164 AT — GET /runners is served against a real control plane, and the n
 
   // The nav is the shared shell: a page nobody can reach from another page is a
   // page nobody opens.
-  for (const route of ['/runners', '/quadro', '/execucoes', '/perguntas']) {
+  for (const route of ['/runners', '/board', '/executions', '/input-requests']) {
     const other = await openPage(screen, route);
     assert.ok(
       other.html.includes('href="/runners"'),

@@ -81,8 +81,8 @@ interface ApplyResponse {
   proposal: Proposal;
   graph?: Graph;
   graph_version?: GraphVersion;
-  soundness?: { valido: boolean; violacoes: Array<{ regra: string; alvo: unknown }> };
-  estrutura?: { valido: boolean; erros: Array<{ codigo: string; alvo: unknown }> };
+  soundness?: { valid: boolean; violations: Array<{ rule: string; target: unknown }> };
+  structure?: { valid: boolean; errors: Array<{ code: string; target: unknown }> };
 }
 
 let connectionCache: typeof ConnectionModule | null = null;
@@ -251,7 +251,7 @@ async function getProposal(address: string, id: number): Promise<Proposal> {
   return body.proposal;
 }
 
-/** A new node, complete enough to pass `no_com_contrato`. */
+/** A new node, complete enough to pass `node_with_contract`. */
 function newNode(): GraphNode {
   return {
     id: 'checar_fatos',
@@ -477,13 +477,13 @@ test('AT13 — reverting without a reason returns 400; reverting a pending propo
 const REJECTION_CASES: Array<{
   at: string;
   counterexample: string;
-  violations: Array<{ regra: string; alvo: unknown }>;
+  violations: Array<{ rule: string; target: unknown }>;
   operations: (document: GraphDocument) => OperationsModule.Operation[];
 }> = [
   {
     at: 'AT14',
-    counterexample: 'grafo-invalido-no-inalcancavel.json',
-    violations: [{ regra: 'alcançável', alvo: 'checar_fatos' }],
+    counterexample: 'grafo-invalido-unreachable-node.json',
+    violations: [{ rule: 'reachable', target: 'checar_fatos' }],
     operations: () => {
       const node = newNode();
       // Only the OUTGOING edge: the node terminates, but nobody reaches it.
@@ -500,7 +500,7 @@ const REJECTION_CASES: Array<{
   {
     at: 'AT15',
     counterexample: 'grafo-invalido-sem-terminacao.json',
-    violations: [{ regra: 'termina', alvo: 'checar_fatos' }],
+    violations: [{ rule: 'terminates', target: 'checar_fatos' }],
     operations: () => {
       const node = newNode();
       // Only the INCOMING edge: the node is reached, but there is no way out.
@@ -517,9 +517,9 @@ const REJECTION_CASES: Array<{
   {
     at: 'AT16',
     counterexample: 'grafo-invalido-aresta-sem-condicao.json',
-    // The report's `alvo` keeps the frozen `de`/`para` pair even now that the
-    // document says `from`/`to`: the 422 wire format did not move (t178).
-    violations: [{ regra: 'aresta_com_condicao', alvo: { de: 'revisar', para: 'redigir' } }],
+    // The report's `target` names the edge's two ends the way the document and
+    // the operation vocabulary already do — `from`/`to`, since t230.
+    violations: [{ rule: 'edge_with_condition', target: { from: 'revisar', to: 'redigir' } }],
     // A legitimate rework cycle, but with no label on the transition.
     operations: () => [
       {
@@ -532,7 +532,7 @@ const REJECTION_CASES: Array<{
   {
     at: 'AT17',
     counterexample: 'grafo-invalido-no-sem-contrato.json',
-    violations: [{ regra: 'no_com_contrato', alvo: 'revisar' }],
+    violations: [{ rule: 'node_with_contract', target: 'revisar' }],
     // An emptied contract: with no checks, the gate verifies nothing.
     operations: (document) => [
       {
@@ -570,11 +570,11 @@ for (const rejectionCase of REJECTION_CASES) {
     const body = await jsonBody<ApplyResponse>(response);
     assert.equal(response.status, 422, JSON.stringify(body));
     assert.equal(body.error, 'invalid_graph');
-    assert.deepEqual(body.soundness?.violacoes, rejectionCase.violations);
+    assert.deepEqual(body.soundness?.violations, rejectionCase.violations);
     assert.equal(body.proposal.status, 'rejected');
     assert.deepEqual(
-      (body.proposal.result as { soundness?: { violacoes: unknown } } | null)?.soundness
-        ?.violacoes,
+      (body.proposal.result as { soundness?: { violations: unknown } } | null)?.soundness
+        ?.violations,
       rejectionCase.violations,
       'the report stays recorded in the proposal result',
     );

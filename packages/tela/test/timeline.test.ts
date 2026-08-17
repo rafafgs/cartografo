@@ -69,7 +69,7 @@ function segmentsOf(html: string): RenderedSegment[] {
   }));
 }
 
-test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronological order', async (t) => {
+test('t107 AT7 — GET /jobs/:id builds queue, agent and human in chronological order', async (t) => {
   requireArtifacts(
     T107_ARTIFACTS.client,
     T107_ARTIFACTS.timeline,
@@ -111,7 +111,7 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
   assert.equal(answered.status, 200);
 
   const screen = await startScreen(t, cp);
-  const page = await openPage(screen, `/trabalhos/${job.id}`);
+  const page = await openPage(screen, `/jobs/${job.id}`);
 
   assert.equal(page.status, 200);
   assert.ok(page.html.includes(job.title), 'the page identifies itself by the job');
@@ -186,7 +186,7 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
   );
 });
 
-test('t152 — GET /trabalhos/:id on a freshly created job says "em curso", never "concluído"', async (t) => {
+test('t152 — GET /jobs/:id on a freshly created job says "em curso", never "concluído"', async (t) => {
   requireArtifacts(
     T107_ARTIFACTS.client,
     T107_ARTIFACTS.timeline,
@@ -201,7 +201,7 @@ test('t152 — GET /trabalhos/:id on a freshly created job says "em curso", neve
   const job = await createJob(cp, { title: 'acabou de nascer', entry_node_id: 'refinar' });
 
   const screen = await startScreen(t, cp);
-  const page = await openPage(screen, `/trabalhos/${job.id}`);
+  const page = await openPage(screen, `/jobs/${job.id}`);
 
   assert.equal(page.status, 200);
   assert.ok(
@@ -216,7 +216,7 @@ test('t107 AT7 — a nonexistent job is a 404 on the screen', async (t) => {
   const cp = await startControlPlane(t);
   const screen = await startScreen(t, cp);
 
-  const page = await openPage(screen, '/trabalhos/424242');
+  const page = await openPage(screen, '/jobs/424242');
   assert.equal(page.status, 404, 'a job is an entity: absence is a 404, not an empty page');
 });
 

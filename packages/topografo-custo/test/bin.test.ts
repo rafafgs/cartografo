@@ -40,7 +40,7 @@ test('AT — `topografo-custo --help` exits 0 and prints the usage text', () => 
 
   assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
   assert.match(result.stdout, /^usage: topografo-custo avaliar/m);
-  assert.match(result.stdout, /--teto-tokens/);
+  assert.match(result.stdout, /--token-cap/);
   assert.equal(result.stderr, '', 'asking for help is stdout, not an error');
 });
 

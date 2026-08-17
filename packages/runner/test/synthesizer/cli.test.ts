@@ -7,12 +7,12 @@
  * from `1` ("it ran and could not finish") — a caller that cannot tell those
  * apart cannot retry either of them sensibly.
  *
- * `--classe` is required and never inferred: D8 puts the naming of the class in
+ * `--class` is required and never inferred: D8 puts the naming of the class in
  * the user's hands, and a command that guesses a name registers a lineage
  * nobody chose.
  *
  * Argument parsing itself is exercised through the exported function rather
- * than the process, because the interesting claim — `--saida` overrides the
+ * than the process, because the interesting claim — `--out` overrides the
  * default draft path — is a decision, not an I/O effect, and proving it by
  * running a whole synthesis would prove the engine instead.
  */
@@ -53,15 +53,15 @@ function runCli(args: string[]): { status: number | null; stdout: string; stderr
   return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
-test('AT5 — a missing --classe exits 2 without touching anything', () => {
+test('AT5 — a missing --class exits 2 without touching anything', () => {
   const result = runCli(['uma declaração de problema em linguagem natural']);
 
   assert.equal(result.status, 2, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
-  assert.match(result.stderr, /--classe/, 'the message names the flag that is missing');
+  assert.match(result.stderr, /--class/, 'the message names the flag that is missing');
 });
 
 test('AT5 — a missing declaration exits 2', () => {
-  const result = runCli(['--classe', 'artigo-revisado']);
+  const result = runCli(['--class', 'artigo-revisado']);
 
   assert.equal(result.status, 2, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   assert.match(result.stderr, /declara/i, 'the message names what is missing');
@@ -72,17 +72,17 @@ test('AT5 — --help prints the flow and the mandatory next step by hand', () =>
 
   assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
   assert.match(result.stdout, /cartografo import/, 'the manual next step is the whole gate (D10)');
-  assert.match(result.stdout, /--classe/);
-  // Built from a string and not a regex literal: `--saida` is the user-facing
+  assert.match(result.stdout, /--class/);
+  // Built from a string and not a regex literal: `--out` is the user-facing
   // flag, a frozen surface, not an identifier of ours (D18/FR2).
-  assert.match(result.stdout, new RegExp('--saida'));
+  assert.match(result.stdout, new RegExp('--out'));
   assert.match(result.stdout, /rascunho/, 'what the command produces is a draft, and says so');
 });
 
-test('AT5 — --saida overrides the default draft path', async () => {
+test('AT5 — --out overrides the default draft path', async () => {
   const { parseArguments } = await loadSynthesis();
 
-  const byDefault = parseArguments(['uma declaração', '--classe', 'artigo-revisado']);
+  const byDefault = parseArguments(['uma declaração', '--class', 'artigo-revisado']);
   assert.equal(byDefault.kind, 'run');
   assert.ok(byDefault.kind === 'run');
   assert.equal(byDefault.options.className, 'artigo-revisado');
@@ -90,14 +90,14 @@ test('AT5 — --saida overrides the default draft path', async () => {
   assert.equal(
     byDefault.options.outputPath,
     undefined,
-    'no --saida means the default is resolved from the class name, later',
+    'no --out means the default is resolved from the class name, later',
   );
 
   const overridden = parseArguments([
     'uma declaração',
-    '--classe',
+    '--class',
     'artigo-revisado',
-    '--saida',
+    '--out',
     '/tmp/outro-lugar.json',
   ]);
   assert.ok(overridden.kind === 'run');
@@ -131,7 +131,7 @@ test('t148 — --token is read into the run options', async () => {
   const { parseArguments } = await loadSynthesis();
 
   const parsed = parseArguments(
-    ['uma declaração', '--classe', 'artigo-revisado', '--token', 'ct_abc'],
+    ['uma declaração', '--class', 'artigo-revisado', '--token', 'ct_abc'],
     EMPTY_ENV,
   );
 
@@ -142,14 +142,14 @@ test('t148 — --token is read into the run options', async () => {
 test('t148 — CARTOGRAFO_TOKEN is the fallback, and --token wins over it', async () => {
   const { parseArguments } = await loadSynthesis();
 
-  const fromEnv = parseArguments(['uma declaração', '--classe', 'artigo-revisado'], {
+  const fromEnv = parseArguments(['uma declaração', '--class', 'artigo-revisado'], {
     CARTOGRAFO_TOKEN: 'ct_do_ambiente',
   });
   assert.ok(fromEnv.kind === 'run');
   assert.equal(fromEnv.options.token, 'ct_do_ambiente');
 
   const both = parseArguments(
-    ['uma declaração', '--classe', 'artigo-revisado', '--token', 'ct_da_linha'],
+    ['uma declaração', '--class', 'artigo-revisado', '--token', 'ct_da_linha'],
     { CARTOGRAFO_TOKEN: 'ct_do_ambiente' },
   );
   assert.ok(both.kind === 'run');
@@ -159,7 +159,7 @@ test('t148 — CARTOGRAFO_TOKEN is the fallback, and --token wins over it', asyn
     'the same precedence the surveyor and the cost lens already use',
   );
 
-  const neither = parseArguments(['uma declaração', '--classe', 'artigo-revisado'], EMPTY_ENV);
+  const neither = parseArguments(['uma declaração', '--class', 'artigo-revisado'], EMPTY_ENV);
   assert.ok(neither.kind === 'run');
   assert.equal(
     neither.options.token,
@@ -181,7 +181,7 @@ test('AT5 — --url and --timeout are optional and parsed when given', async () 
 
   const parsed = parseArguments([
     'uma declaração',
-    '--classe',
+    '--class',
     'artigo-revisado',
     '--url',
     'http://127.0.0.1:9999',
@@ -211,8 +211,8 @@ test('t180 — --help is English, and still names the Portuguese flags and the d
     'the manual half of D10 is the point of the text',
   );
   // The published surface a person types is untouched (D18 carve-out).
-  assert.match(result.stdout, new RegExp('--classe <name>'));
-  assert.match(result.stdout, new RegExp('--saida <path>'));
+  assert.match(result.stdout, new RegExp('--class <name>'));
+  assert.match(result.stdout, new RegExp('--out <path>'));
   assert.match(result.stdout, /\.grafo\.rascunho\.json/);
 });
 
@@ -223,16 +223,46 @@ test('t180 — the usage refusals are English', async () => {
   assert.ok(noClass.kind === 'usage');
   assert.equal(
     noClass.message,
-    '--classe is required: you name the class, not the synthesizer (D8)',
+    '--class is required: you name the class, not the synthesizer (D8)',
   );
 
-  const noDeclaration = parseArguments(['--classe', 'artigo-revisado'], {});
+  const noDeclaration = parseArguments(['--class', 'artigo-revisado'], {});
   assert.ok(noDeclaration.kind === 'usage');
   assert.equal(noDeclaration.message, 'the problem declaration is missing (first argument)');
 
-  const dangling = parseArguments(['uma declaração', '--classe', '--url'], {});
+  const dangling = parseArguments(['uma declaração', '--class', '--url'], {});
   assert.ok(dangling.kind === 'usage');
-  assert.equal(dangling.message, 'option --classe needs a value');
+  assert.equal(dangling.message, 'option --class needs a value');
+});
+
+/**
+ * t230 — the pre-D20 spellings are gone, and nothing answers to them.
+ *
+ * This parser has no known-flag list (an unknown `--foo bar` lands in the map
+ * and is never read), so the two old flags fail in the two different ways that
+ * absence produces, and both are asserted: `--classe` leaves the required class
+ * unset and becomes the usage refusal, while `--saida` leaves the output path
+ * unset and the default takes over. Neither is an alias, which is the claim.
+ */
+test('t230 — --classe and --saida are not aliases of --class and --out', async () => {
+  const { parseArguments, HELP } = await loadSynthesis();
+
+  const oldClass = parseArguments(['uma declaração', '--classe', 'artigo-revisado'], {});
+  assert.ok(oldClass.kind === 'usage');
+  assert.equal(
+    oldClass.message,
+    '--class is required: you name the class, not the synthesizer (D8)',
+  );
+
+  const oldOut = parseArguments(
+    ['uma declaração', '--class', 'artigo-revisado', '--saida', '/tmp/outro-lugar.json'],
+    {},
+  );
+  assert.ok(oldOut.kind === 'run');
+  assert.equal(oldOut.options.outputPath, undefined, '--saida no longer chooses where the draft lands');
+
+  assert.ok(!HELP.includes('--classe'), `the help text still documents --classe:\n${HELP}`);
+  assert.ok(!HELP.includes('--saida'), `the help text still documents --saida:\n${HELP}`);
 });
 
 test('t180 — a missing `claude` CLI says so in English', () => {
@@ -243,7 +273,7 @@ test('t180 — a missing `claude` CLI says so in English', () => {
   // that goes missing is the engine the probe looks for.
   const result = spawnSync(
     process.execPath,
-    ['--import', 'tsx', CLI_PATH, 'uma declaração', '--classe', 'classe-nova'],
+    ['--import', 'tsx', CLI_PATH, 'uma declaração', '--class', 'classe-nova'],
     { cwd: PACKAGE_ROOT, encoding: 'utf8', env: { ...process.env, PATH: '' } },
   );
 

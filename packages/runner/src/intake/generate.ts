@@ -32,7 +32,7 @@
  *   the client this module writes through does not have the methods.
  *
  * The order of operations is a decision too. The class check comes first, before
- * any session, mirroring the synthesizer's own FR2 ordering: a typo in `--classe`
+ * any session, mirroring the synthesizer's own FR2 ordering: a typo in `--class`
  * that costs a whole session is a typo found too late.
  *
  * English per D18, and since t180 that includes everything this module PRINTS.

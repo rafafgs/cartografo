@@ -149,10 +149,10 @@ test('AT1 — grafo.json passes validarEstrutura and validarSoundness', async ()
   const { validarEstrutura, validarSoundness } = await graphValidator();
   const doc = readJson(GRAPH_PATH);
 
-  assert.deepEqual(validarEstrutura(doc).erros, []);
-  assert.equal(validarEstrutura(doc).valido, true);
-  assert.deepEqual(validarSoundness(doc).violacoes, []);
-  assert.equal(validarSoundness(doc).valido, true);
+  assert.deepEqual(validarEstrutura(doc).errors, []);
+  assert.equal(validarEstrutura(doc).valid, true);
+  assert.deepEqual(validarSoundness(doc).violations, []);
+  assert.equal(validarSoundness(doc).valid, true);
 });
 
 test('AT2 — ids, roles and edges match the topology pinned by t96', () => {

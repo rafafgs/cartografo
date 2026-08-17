@@ -133,3 +133,30 @@ test('t165 AT10 — a malformed or unknown name measures null instead of crashin
   assert.equal(measureForExpectedMetric(round, 'constructor:redigir'), null);
   assert.equal(measureForExpectedMetric(round, 'node_id:redigir'), null, 'no_id is not a measure');
 });
+
+/**
+ * t230 — the two positionals `close-outcome` PRINTS are English (D20 §5.1/§1).
+ *
+ * Display names only. The `execucao_id` this command sends inside the body of
+ * `POST /v1/proposals/:id/outcome` is the frozen hypothesis vocabulary
+ * (`docs/spec/entidades-versionamento.md` §5) and does not move — conflating
+ * the two would rename a wire field that no D20 child owns.
+ */
+test('t230 — the usage and the refusals of close-outcome name execution_id and proposal_id', async () => {
+  const { OUTCOME_USAGE, parseOutcomeArguments } = await loadOutcome();
+
+  assert.match(OUTCOME_USAGE, /<proposal_id> <execution_id>/);
+  assert.match(OUTCOME_USAGE, /^ {2}proposal_id {3}/m);
+  assert.match(OUTCOME_USAGE, /^ {2}execution_id {2}/m);
+  for (const gone of ['proposta_id', 'execucao_id']) {
+    assert.ok(!OUTCOME_USAGE.includes(gone), `the usage still shows ${gone}`);
+  }
+
+  const noProposal = parseOutcomeArguments(['nao-e-numero', '7'], {});
+  assert.ok(noProposal.kind === 'usage');
+  assert.match(noProposal.message, /^proposal_id has to be an integer/);
+
+  const noExecution = parseOutcomeArguments(['3', 'nao-e-numero'], {});
+  assert.ok(noExecution.kind === 'usage');
+  assert.match(noExecution.message, /^execution_id has to be an integer/);
+});

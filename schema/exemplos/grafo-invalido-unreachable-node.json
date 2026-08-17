@@ -5,7 +5,7 @@
   },
   "metadata": {
     "name": "Contraexemplo — nó inalcançável",
-    "description": "Viola SÓ a regra \"alcançável\": o nó revisar_lote tem saída para entregar_lote (portanto termina), mas nenhuma aresta chega até ele a partir de no_inicial. É o erro típico de um nó acrescentado por proposta sem a aresta de entrada correspondente.",
+    "description": "Viola SÓ a regra \"reachable\": o nó revisar_lote tem saída para entregar_lote (portanto termina), mas nenhuma aresta chega até ele a partir de no_inicial. É o erro típico de um nó acrescentado por proposta sem a aresta de entrada correspondente.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-14",
     "source": "contraexemplo da especificação"

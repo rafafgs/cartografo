@@ -29,23 +29,23 @@ roda no `npm run lint`, e travada por
 
 | Rota | O que mostra | O que lê da API |
 |---|---|---|
-| `GET /quadro` | O quadro: todos os trabalhos, agrupados por `no_atual`, com o motivo do bloqueio quando há. | `GET /v1/jobs` |
-| `GET /execucoes` | Uma linha por execução, com trabalhos, bloqueados e perguntas pendentes. | `GET /v1/executions` |
-| `GET /execucoes/:id` | O recorte de uma rodada: quadro, sessões e perguntas pendentes na mesma página. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
-| `GET /perguntas` | A fila de escalação, cada pergunta inteira e com formulário inline. | `GET /v1/input-requests?status=pendente` |
+| `GET /board` | O quadro: todos os trabalhos, agrupados por `no_atual`, com o motivo do bloqueio quando há. | `GET /v1/jobs` |
+| `GET /executions` | Uma linha por execução, com trabalhos, bloqueados e perguntas pendentes. | `GET /v1/executions` |
+| `GET /executions/:id` | O recorte de uma rodada: quadro, sessões e perguntas pendentes na mesma página. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
+| `GET /input-requests` | A fila de escalação, cada pergunta inteira e com formulário inline. | `GET /v1/input-requests?status=pendente` |
 | `GET /runners` | A frota: um runner por linha, com leases ativas, último heartbeat e a última lease que ele perdeu para o TTL. | `GET /v1/runners` |
-| `POST /perguntas/:id/resposta` | Nada: escreve e redireciona (303) para `/perguntas`. | `PATCH /v1/input-requests/:id/answer` |
-| `GET /trabalhos/:id` | A linha do tempo do trabalho, em três baldes, mais os totais. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
+| `POST /input-requests/:id/answer` | Nada: escreve e redireciona (303) para `/input-requests`. | `PATCH /v1/input-requests/:id/answer` |
+| `GET /jobs/:id` | A linha do tempo do trabalho, em três baldes, mais os totais. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
 
 Cada view renderiza **no request**. Não há polling, websocket nem
 auto-refresh: recarregar a página é a atualização, e o estado da tela é sempre
 o estado que a API acabou de contar.
 
 **Execução não é entidade.** `execucao_id` é agrupador opaco (não existe tabela
-`execucao` na v1), então `/execucoes/99` sem nada dentro responde **200 com
+`execucao` na v1), então `/executions/99` sem nada dentro responde **200 com
 página vazia**, nunca 404 — mesma leitura que o control plane já faz em
 `GET /v1/executions/:id/metrics-by-version`. Trabalho, esse sim, é entidade:
-`/trabalhos/424242` responde **404**.
+`/jobs/424242` responde **404**.
 
 ### O pacote tem duas metades, e uma porta só
 
@@ -63,10 +63,10 @@ entre elas, nesta ordem:
 
 A ordem é o contrato. O estático vem antes do render porque `resolveStaticFile`
 só devolve caminho para extensão conhecida, e é justamente o `null` dele que
-entrega `/execucoes` e `/trabalhos/7` às views em vez de 404-á-los como arquivo
+entrega `/executions` e `/jobs/7` às views em vez de 404-á-los como arquivo
 faltando.
 
-**Por que o quadro é `/quadro` e não `/`.** A raiz já era o `index.html` do
+**Por que o quadro é `/board` e não `/`.** A raiz já era o `index.html` do
 inbox quando esta metade chegou, e trocar isso quebraria os testes de aceite da
 `t111` sem ganho funcional: as duas metades se alcançam pela navegação, que
 ambas as páginas trazem no topo. É layout, não fronteira — mudar de ideia custa
@@ -84,7 +84,7 @@ tela. O portão fecha exatamente esse buraco (`t192`).
 Ele lê **metadado de fetch**, e só: `Sec-Fetch-Site` e `Origin` são escritos
 pela pilha de rede do navegador e proibidos ao script da página — nem em
 `no-cors` uma página hostil consegue forjá-los. São recusadas as escritas
-(`/v1/*` com método diferente de `GET`/`HEAD`, e o `POST /perguntas/:id/resposta`
+(`/v1/*` com método diferente de `GET`/`HEAD`, e o `POST /input-requests/:id/answer`
 desta especificação) quando:
 
 1. **`Sec-Fetch-Site` veio e não é `same-origin` nem `none`** — o próprio
@@ -184,8 +184,8 @@ reconstruir o título a partir dos eventos daria o título antigo.
 
 ## 3. Responder é escrita de verdade
 
-`POST /perguntas/:id/resposta` chama `PATCH /v1/input-requests/:id/answer` no
-control plane real e devolve **303** para `/perguntas` — 303 e não 302 porque
+`POST /input-requests/:id/answer` chama `PATCH /v1/input-requests/:id/answer` no
+control plane real e devolve **303** para `/input-requests` — 303 e não 302 porque
 depois de um POST a volta é um GET, e é isso que impede o navegador de reenviar
 a resposta em um recarregamento. A pergunta some da fila porque a fila é relida
 da API, **não** porque o formulário a escondeu localmente. O teste de aceite

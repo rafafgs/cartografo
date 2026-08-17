@@ -1,7 +1,7 @@
 /**
  * Acceptance tests for the accessible name of the answer field (t134, AT6/ux).
  *
- * The alpha round on `t107` found `GET /perguntas` rendering the one required
+ * The alpha round on `t107` found `GET /input-requests` rendering the one required
  * field of the screen as `<textarea name="resposta" required placeholder="…">`
  * and nothing else: no `<label>`, no `aria-label`. A placeholder is a hint, not
  * a name — it is gone at the first keystroke, and a reader that reaches the
@@ -138,14 +138,14 @@ function accessibleNameOf(scope: string, tag: string): string {
 
 /** The card of every pending question on the page, in the order shown. */
 async function openQueue(screen: ScreenUnderTest): Promise<{ html: string; cards: string[] }> {
-  const page = await openPage(screen, '/perguntas');
+  const page = await openPage(screen, '/input-requests');
   assert.equal(page.status, 200);
   return { html: page.html, cards: blocks(page.html, 'pergunta').map((block) => block.excerpt) };
 }
 
 /* --- the tests -------------------------------------------------------- */
 
-test('t134 AT6 — the answer field on GET /perguntas has an accessible name', async (t) => {
+test('t134 AT6 — the answer field on GET /input-requests has an accessible name', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 

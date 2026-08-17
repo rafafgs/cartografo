@@ -463,7 +463,7 @@ export function validateBundle(bundleDir) {
 
   report.valid =
     report.errors.length === 0 &&
-    report.graph?.valido === true &&
+    report.graph?.valid === true &&
     report.manifests.every((m) => m.valid) &&
     report.pins.every((p) => p.ok) &&
     report.pins.length > 0;
@@ -495,11 +495,11 @@ function main(args) {
   for (const problem of report.errors) {
     console.error(`  bundle     ${problem.code}: ${problem.message}`);
   }
-  for (const problem of report.graph?.estrutura.erros ?? []) {
-    console.error(`  graph      structure ${problem.codigo}: ${problem.mensagem}`);
+  for (const problem of report.graph?.structure.errors ?? []) {
+    console.error(`  graph      structure ${problem.code}: ${problem.message}`);
   }
-  for (const violation of report.graph?.soundness.violacoes ?? []) {
-    console.error(`  graph      soundness ${violation.regra}: ${JSON.stringify(violation.alvo)}`);
+  for (const violation of report.graph?.soundness.violations ?? []) {
+    console.error(`  graph      soundness ${violation.rule}: ${JSON.stringify(violation.target)}`);
   }
   for (const manifest of report.manifests) {
     for (const problem of manifest.errors) {

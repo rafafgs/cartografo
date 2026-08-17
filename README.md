@@ -139,13 +139,13 @@ Depois de uma rodada, para a lente de custo ler a telemetria dela:
 ```bash
 CARTOGRAFO_TOKEN=<o token do passo 2> \
   npx topografo-custo avaliar --url http://127.0.0.1:4317 \
-    --execucao 7 --teto-tokens 200000
+    --execution 7 --token-cap 200000
 ```
 
 O `topografo-custo` é um topógrafo: lê sessões e trabalhos daquela execução pela
 API pública, agrega custo por `(versão do grafo, nó)` e **deposita uma proposta
 pendente** por candidata — nunca aplica nenhuma, porque aplicar é decisão humana
-no portão (princípio 5). Sem `--teto-tokens` nem `--teto-segundos` a política de
+no portão (princípio 5). Sem `--token-cap` nem `--second-cap` a política de
 teto não roda: não há o que ultrapassar. `npx topografo-custo --help` lista o
 resto.
 
@@ -158,7 +158,7 @@ npx cartografo-tela                                     # http://127.0.0.1:4318
 Um comando, as duas metades da tela que a D11 pede. Em `/`, o **inbox de
 propostas**: o diff semântico, a evidência e as quatro decisões
 ([`docs/spec/tela-inbox-propostas.md`](docs/spec/tela-inbox-propostas.md)). Em
-`/quadro`, a **observabilidade mínima**: o quadro de trabalhos agrupado por nó,
+`/board`, a **observabilidade mínima**: o quadro de trabalhos agrupado por nó,
 as execuções, as sessões, a fila de perguntas pendentes — com resposta inline,
 que escreve de verdade na API — e a linha do tempo de qualquer trabalho,
 separada em fila, agente trabalhando e esperando humano

@@ -21,7 +21,7 @@
  *
  * Usage:
  *   npm run synthesize --workspace @cartografo/runner -- \
- *     `"<declaração>" --classe <nome> [--url <url>] [--saida <caminho>]` \
+ *     `"<declaração>" --class <nome> [--url <url>] [--out <caminho>]` \
  *     `[--timeout <seg>] [--token <token>]`
  */
 

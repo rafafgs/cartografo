@@ -25,7 +25,7 @@ import {
   startScreen,
 } from './support.ts';
 
-test('t107 AT5 — GET /execucoes lists the executions with the right counts', async (t) => {
+test('t107 AT5 — GET /executions lists the executions with the right counts', async (t) => {
   requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
@@ -45,7 +45,7 @@ test('t107 AT5 — GET /execucoes lists the executions with the right counts', a
   await createQuestion(cp, { job_id: fromSeven.id, question: 'renumerar?' });
 
   const screen = await startScreen(t, cp);
-  const page = await openPage(screen, '/execucoes');
+  const page = await openPage(screen, '/executions');
 
   assert.equal(page.status, 200);
   const rows = blocks(page.html, 'execucao');
@@ -71,10 +71,10 @@ test('t107 AT5 — GET /execucoes lists the executions with the right counts', a
   assert.match(eight.excerpt, /data-campo="trabalhos_bloqueados">\s*0\s*</);
   assert.match(eight.excerpt, /data-campo="perguntas_pendentes">\s*0\s*</);
 
-  assert.ok(seven.excerpt.includes('href="/execucoes/7"'), 'each execution leads to its page');
+  assert.ok(seven.excerpt.includes('href="/executions/7"'), 'each execution leads to its page');
 });
 
-test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of that execution', async (t) => {
+test('t107 AT5 — GET /executions/:id slices jobs, sessions and questions of that execution', async (t) => {
   requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
@@ -106,7 +106,7 @@ test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of tha
   });
 
   const screen = await startScreen(t, cp);
-  const page = await openPage(screen, '/execucoes/7');
+  const page = await openPage(screen, '/executions/7');
 
   assert.equal(page.status, 200);
   assert.ok(page.html.includes(fromSeven.title), "the execution board shows that execution's job");
@@ -160,7 +160,7 @@ test('t159 — every session row links its transcript, on the API route the prox
   });
 
   const screen = await startScreen(t, cp);
-  const page = await openPage(screen, '/execucoes/7');
+  const page = await openPage(screen, '/executions/7');
   assert.equal(page.status, 200);
 
   const rows = blocks(page.html, 'sessao');
@@ -191,7 +191,7 @@ test('t107 AT5 — an execution with nothing in it is 200 with an empty page, no
 
   // An execution is an opaque grouper: there is no object to be missing (the
   // same reading `GET /v1/executions/:id/metrics-by-version` already makes).
-  const page = await openPage(screen, '/execucoes/99');
+  const page = await openPage(screen, '/executions/99');
   assert.equal(page.status, 200);
   assert.deepEqual(blocks(page.html, 'trabalho'), []);
 });

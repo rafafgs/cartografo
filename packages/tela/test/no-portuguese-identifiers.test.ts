@@ -14,10 +14,13 @@
  *   renders its pages in Portuguese on purpose, and the `data-*` markers it
  *   writes into that HTML are a declared contract (`docs/spec/tela.md`).
  * - **Regular-expression literals.** The screen's own route paths are matched
- *   by regex, not by string compare, in the router. `/^\/execucoes\/([^/]+)$/`
- *   is a route, and a route is frozen — so a regex literal is masked exactly
- *   like the string literal `'/quadro'` next to it. This is the one place this
- *   port had to go beyond the core original, which has no such regex.
+ *   by regex, not by string compare, in the router — so a regex literal is
+ *   masked exactly like the string literal next to it. This is the one place
+ *   this port had to go beyond the core original, which has no such regex. The
+ *   paths themselves went English with t230 (D20 §5.1) and no longer need the
+ *   exemption; what still does is every other regex over a Portuguese wire
+ *   name, and `no-portuguese-wire.test.ts` next door is what now holds the
+ *   routes to their new spelling.
  * - **Key and member positions.** A field the screen mirrors from a core JSON
  *   response is still spelled in Portuguese in the code that reads it —
  *   `job.motivo_bloqueio`, `{ execucao_id: id }`, `erro:`. That is the data
@@ -515,7 +518,9 @@ test('AC1 — the sweep does NOT bite on the frozen exceptions', () => {
     'return { no_entrada_id: entry, no_atual: current, motivo_bloqueio: null };',
     "reply.code(502); return { erro: 'control_plane_indisponivel', mensagem: text };",
     'export interface Job { grafo_versao_id: string | null; bloqueado: boolean }',
-    // the screen's own route paths, as strings and as regexes
+    // A route path as a string and as a regex. The spellings below are the
+    // pre-t230 ones on purpose: no file writes them any more, and a made-up
+    // path in English would demonstrate nothing about masking a Portuguese one.
     "if (pathname === '/quadro') return board(client);",
     "if (pathname === '/execucoes' || pathname === '/perguntas') return list(client);",
     'const match = /^\\/execucoes\\/([^/]+)$/.exec(pathname);',
@@ -532,7 +537,7 @@ test('AC1 — the sweep does NOT bite on the frozen exceptions', () => {
     'export class ValidationError extends Error { readonly errors: string[]; }',
     'const half = total / 1000;',
     // a backticked frozen name inside English prose
-    '/** The `erro` / `mensagem` envelope and the `/quadro` route stay as they are. */',
+    '/** The `erro` / `mensagem` envelope the core still answers with stays as it is. */',
   ];
   for (const source of allowed) {
     assert.deepEqual(hitsInSource(source), [], `the sweep flagged a frozen exception: ${source}`);

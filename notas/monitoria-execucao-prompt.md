@@ -117,3 +117,50 @@ dele, mesmo de manhã), (b) forçar t121 adiante (ele pediu explicitamente
 para ficar como está), (c) decisão de produto genuinamente nova ou algo
 que mexeria em DECISOES.md (isso continua escalando — registrar para a
 manhã, não adivinhar).
+
+## Addendum 2026-08-16 (Rafael): quadro novo t189–t216 e o portão do t216
+
+Em 2026-08-16 entraram 28 tickets novos em backlog (t189–t216), vindos da
+avaliação técnica do repo. Regras que se somam às de cima:
+
+- **t216 (empacotamento: publicação npm + Dockerfile) é founder-only, como o
+  t109.** NUNCA libere nem desbloqueie: ele está BLOQUEADO de propósito
+  (`awaiting_input`, motivo "Founder gate") e só o Rafael tira o bloqueio.
+  Se por engano ele aparecer num estado de trabalho (to_refine, refining,
+  to_develop, developing…), a resposta é bloquear de novo com o mesmo
+  motivo e avisar o Rafael — nunca deixar seguir. Palavras dele: "não deve
+  ser liberado em desenvolvimento, salvo eu explicitamente aprove; se for
+  colocado em desenvolvimento por engano, deverá ficar bloqueado até eu
+  aprovar."
+- **t213, t214, t215 e t216 têm decisão registrada** (D20, D21, D22 e D23
+  em `DECISOES.md`, gravadas em 2026-08-16 com autorização do Rafael).
+  Agente que perguntar sobre o "porquê" desses tickets: responder citando a
+  Dn. Isso NÃO muda o portão do t216 (bulleta acima) — a D23 diz o mesmo.
+- **Quem escreve em `DECISOES.md` (regra atualizada 2026-08-16):**
+  preferencialmente o Rafael; agente só com autorização explícita dele, caso
+  a caso ou em lote, e a entrada diz quem autorizou. A monitoria continua sem
+  escrever lá por conta própria: decisão nova → escalar, como sempre.
+- **Pré-requisitos do t198 (rodada real do grafo de bets), ordem do Rafael
+  (2026-08-16):** t189 e t190 e t204 já foram liberados para `to_refine`
+  nessa data. **t193 só entra quando t204 estiver integrado na `main`**
+  (estado `to_test` ou além) — os dois mexem em
+  `packages/runner/src/dispatch/dispatch-claude-code.ts` e não devem
+  desenvolver em paralelo. Há um vigia automático que faz essa liberação;
+  se t204 chegar a `to_test`/`done` e t193 ainda estiver em `backlog`, libere
+  t193 você mesmo (regra 3 continua valendo para o teto de WIP). **t198 só
+  depois de t193 done**, e é o Rafael quem libera (quota real).
+- **Liberador automático (2026-08-16, ~18:20 local):** um processo
+  `node ~/cartografo-plantao/liberador.mjs` libera `backlog → to_refine` na
+  ordem e sob as dependências combinadas com o Rafael (lote t191, t192, t194,
+  t205, t209, t211, t212; depois t199/t206 após t192; cadeia do runner
+  t195→t203→t208→t207→t202 após t193; t201 e t210 no fim). Log em
+  `~/cartografo-plantao/liberador.log`. Enquanto ele estiver vivo
+  (`pgrep -f 'node liberador.mjs'`), **não libere por cima dele**; se morreu,
+  o plantão de sessão do Claude o reinicia. Desde ~18:30 local o plano inclui
+  também (ordem do Rafael, "assim que fizer sentido"): t213 **sozinho**, só com o
+  quadro vazio; depois t196 → t197 → t200 → t215, um por vez, cada um também só
+  com o quadro vazio (cobre os filhos do t213); t214 depois do t215 **e** do t198.
+  Fora do alcance dele: t198 e t216 (só o Rafael), t109 e t121 (intocáveis).
+- Ordem sugerida para o resto (não é regra, é sugestão da avaliação):
+  t191 (CI), depois t192/t194 em paralelo (superfícies disjuntas), depois
+  por rank.

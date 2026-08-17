@@ -3,6 +3,12 @@
 Registro incremental; fonte da verdade das decisões do projeto. Cada decisão
 tem data e pode ser revertida por outra decisão registrada.
 
+**Quem registra (regra desde 2026-08-16):** preferencialmente o Rafael. Outra
+pessoa ou agente só registra com autorização explícita dele — caso a caso ("pode
+gravar a D20") ou em lote ("grave essas quatro"). Sem essa autorização, agente
+não escreve aqui: entrega o texto da decisão como proposta (no ticket ou na
+conversa) e escala. Toda entrada registrada por terceiro diz quem autorizou.
+
 ## D1 (2026-08-14) — Só o server escreve no banco
 
 O control plane é dono do SQLite; runner é cliente stateless da API e nunca
@@ -172,3 +178,67 @@ documento vivo: toda entrega que mudar comportamento visível do produto
 atualiza o arquivo na mesma entrega (vale como critério de aceite implícito
 desses tickets). Marcações *(em construção)* saem conforme as features
 chegam.
+
+## D20 (2026-08-16) — O fio também fala inglês
+
+A D18 e sua emenda levaram para o inglês o código, as chaves dos formatos
+congelados (schema de grafo, manifesto de skill), os subcomandos de CLI e os
+nomes de entidade nos caminhos da API. Ficou em português, congelado como
+formato de fio, o resto do vocabulário público: campos e parâmetros de query
+do JSON da API (`classe`, `grafo_id`, `versao_corrente_id`, `execucao_id`…),
+valores de enumeração (`pendente`, `teto_runner`…), os dois envelopes de erro
+(`{erro, mensagem}` e `{error, details}`), nomes e envelope dos eventos
+(`trabalho.transicao`, `pergunta.criada`…), operações de proposta
+(`adicionar_no`…), tabelas e colunas do banco, rotas da tela (`/quadro`,
+`/perguntas`…), flags de CLI (`--classe`, `--teto-*`) e o relatório de
+validação (`estrutura.erros`, `soundness.violacoes`).
+
+Decisão: tudo isso migra para inglês, com glossário registrado
+(`docs/spec/glossario-wire.md`), **antes de o repositório abrir (D7)** e antes
+dos tickets que mexem nessas superfícies (t196, t197, t200), para não fazer
+duas vezes. Bancos de desenvolvimento existentes são **recriados** (não há dado
+de produção; migração de dados só se surgir dado que valha guardar).
+Documentação, notas e este arquivo continuam em português. Ticket guarda-chuva:
+t213 (dividido por superfície, na ordem: glossário → API/erros → eventos →
+operações → banco → rotas/flags/relatório → docs e gate).
+Registrado pelo agente com autorização do Rafael (2026-08-16).
+
+## D21 (2026-08-16) — Primeiro degrau da escada: o topógrafo roda sozinho, aplicar continua humano
+
+Ao fim de cada execução, o control plane declara a execução concluída (fato
+que só ele afirma, D1) e um observador sem privilégio (D11) roda as lentes de
+fluxo e de custo, depositando propostas na inbox — deduplicadas: sinal
+repetido reforça a proposta pendente (soma evidência) em vez de cloná-la.
+Aprovar e aplicar continuam decisão humana. Auto-aplicar mudanças de baixo
+risco com rollback (princípio 5 do README) só entra depois de ~10 rodadas
+reais de histórico, por decisão própria. Isto amenda o "disparo é decisão
+própria" da spec do topógrafo de fluxo e vem depois de t198 (segunda
+instância da D14 e rodada com n>1), para o gatilho ser calibrado com dado
+real. Ticket: t214. Registrado pelo agente com autorização do Rafael
+(2026-08-16).
+
+## D22 (2026-08-16) — Skill é linhagem, como o grafo
+
+Uma skill tem id estável e versões (semver + hash de conteúdo); versão nunca
+muda de conteúdo — conteúdo novo é versão nova. O nó continua pinado por hash
+(D4) e nunca resolve "a mais recente"; mover o pino de um nó para outra versão
+é proposta como qualquer mudança no mapa (D15), recusada se o hash não existir
+no registro. Reimportar um bundle registra o que é novo e é idempotente no que
+já existe; conteúdo diferente sob a mesma versão é recusado antes de qualquer
+escrita. Aposentar uma versão a esconde de "mais recente", nunca quebra um
+grafo pinado nela. Ticket: t215. Registrado pelo agente com autorização do
+Rafael (2026-08-16).
+
+## D23 (2026-08-16) — Um pacote, três comandos, e um contêiner para o control plane
+
+O cartografo é publicado no npm como um único pacote `cartografo` com os
+comandos `cartografo`, `cartografo-tela` e `cartografo-runner` (e o topógrafo
+de custo quando ganhar bin); as fronteiras D1/D11 são de processo, não de
+pacote. Control plane e tela têm imagem Docker oficial; o runner roda na
+máquina onde estão o CLI do engine autenticado e o repositório alvo — não vai
+em contêiner. Nome validado e reservado no npm antes do anúncio (D12; em
+2026-08-16 `cartografo` estava livre). **A liberação deste trabalho para
+desenvolvimento e a publicação em si são decisão explícita do Rafael, caso a
+caso**: o ticket t216 fica bloqueado até ele mesmo desbloquear, e se entrar em
+voo por engano volta a ser bloqueado. Registrado pelo agente com autorização do
+Rafael (2026-08-16).

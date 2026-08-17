@@ -18,8 +18,10 @@
  * rebuild `no_atual`: the log is the only place the node a work sat on at a
  * given moment exists.
  *
- * English per D18; the domain vocabulary (`gargalo`, `tempo_agente_ms`) stays
- * in Portuguese because the ticket and the payload keys name it that way.
+ * English per D18. The payload keys of the ranking went English with t264
+ * (`docs/spec/glossario-wire.md` §5.6), which is what the assertions below
+ * spell; `gargalo` is the module's own result key and is identifier debt of
+ * another ficha, not a wire name.
  */
 
 import assert from 'node:assert/strict';
@@ -149,39 +151,39 @@ test('t110 — the flow lens computes the four numbers per node and names the bo
 
   const metrics = calculateFlowMetrics(unbalancedLog(), NODES);
 
-  assert.deepEqual(metrics.por_no, [
+  assert.deepEqual(metrics.by_node, [
     {
-      no_id: 'revisar',
-      tempo_agente_ms: 9_000,
-      tempo_espera_ms: 120_000,
-      tempo_fila_ms: 30_000,
+      node_id: 'revisar',
+      agent_ms: 9_000,
+      blocked_ms: 120_000,
+      queue_ms: 30_000,
       total_ms: 159_000,
-      perguntas: 1,
-      eventos: [4, 5, 6, 7, 8, 10],
+      input_requests: 1,
+      event_ids: [4, 5, 6, 7, 8, 10],
     },
     {
-      no_id: 'implantar',
-      tempo_agente_ms: 2_000,
-      tempo_espera_ms: 0,
-      tempo_fila_ms: 1_000,
+      node_id: 'implantar',
+      agent_ms: 2_000,
+      blocked_ms: 0,
+      queue_ms: 1_000,
       total_ms: 3_000,
-      perguntas: 0,
-      eventos: [11, 12, 13],
+      input_requests: 0,
+      event_ids: [11, 12, 13],
     },
     {
-      no_id: 'redigir',
-      tempo_agente_ms: 3_000,
-      tempo_espera_ms: 0,
-      tempo_fila_ms: 0,
+      node_id: 'redigir',
+      agent_ms: 3_000,
+      blocked_ms: 0,
+      queue_ms: 0,
       total_ms: 3_000,
-      perguntas: 0,
-      eventos: [2, 3],
+      input_requests: 0,
+      event_ids: [2, 3],
     },
   ]);
 
-  assert.equal(metrics.gargalo?.no_id, 'revisar', 'the worst total is the bottleneck');
+  assert.equal(metrics.gargalo?.node_id, 'revisar', 'the worst total is the bottleneck');
   assert.deepEqual(
-    metrics.gargalo?.eventos,
+    metrics.gargalo?.event_ids,
     [4, 5, 6, 7, 8, 10],
     'every number carries the ids of the events it was computed from',
   );
@@ -202,12 +204,12 @@ test('t110 — a run with no time signal at all has no bottleneck', async () => 
 
   assert.equal(metrics.gargalo, null, '"nothing to propose" is a valid outcome, not an error');
   assert.deepEqual(
-    metrics.por_no.map((row) => row.total_ms),
+    metrics.by_node.map((row) => row.total_ms),
     [0, 0, 0],
     'the nodes are still reported — a report that hides what it measured lies about the total',
   );
   assert.deepEqual(
-    metrics.por_no.map((row) => row.no_id),
+    metrics.by_node.map((row) => row.node_id),
     ['implantar', 'redigir', 'revisar'],
     'with every total tied at zero, the order is the node id',
   );
@@ -252,14 +254,14 @@ test('t110 — a tie is broken by node id, and nodes outside the graph are ignor
 
   const metrics = calculateFlowMetrics(tied, NODES);
 
-  assert.equal(metrics.gargalo?.no_id, 'implantar', 'same total, lowest node id wins');
+  assert.equal(metrics.gargalo?.node_id, 'implantar', 'same total, lowest node id wins');
   assert.deepEqual(
-    metrics.por_no.map((row) => row.no_id),
+    metrics.by_node.map((row) => row.node_id),
     ['implantar', 'revisar', 'redigir'],
     'the ranking lists every node of the graph, and only them',
   );
   assert.equal(
-    metrics.por_no.find((row) => row.no_id === 'redigir')?.total_ms,
+    metrics.by_node.find((row) => row.node_id === 'redigir')?.total_ms,
     0,
     'the ten minutes of a node outside the graph land nowhere',
   );

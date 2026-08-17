@@ -298,7 +298,7 @@ test('t254 — the spawned surveyor reports the graph and version it really prop
   // command to read, and both of them printed `undefined` until t254.
   //
   // Asserted over the REPORT BLOCK and not over the whole of stdout, because
-  // the evidence line below it carries `grafo_versao_id` too: a search of the
+  // the evidence line below it carries `graph_version_id` too: a search of the
   // whole output would find the version id whether or not the line that is
   // supposed to print it does.
   const marker = '===== proposal =====';

@@ -12,7 +12,7 @@
  * Three claims, one per test:
  *
  * 1. a run with a clear bottleneck produces EXACTLY ONE pending proposal whose
- *    `evidencia.eventos` are ids that exist in the seeded log, and never calls
+ *    `evidence.event_ids` are ids that exist in the seeded log, and never calls
  *    `.../aplicar` — the safety ladder of README principle 5 is the point;
  * 2. a session that returns nothing usable aborts, and posts nothing;
  * 3. a flat run posts nothing AND never opens a session at all.
@@ -386,7 +386,7 @@ test('t110 — a run with a bottleneck lands exactly one pending proposal, backe
   });
 
   assert.equal(adapter.sessions, 1, 'exactly one agent session decides the operations');
-  assert.equal(result.gargalo?.no_id, 'revisar', 'the seeded bottleneck is the one found');
+  assert.equal(result.gargalo?.node_id, 'revisar', 'the seeded bottleneck is the one found');
   assert.ok(result.proposta !== null, 'a bottleneck with a well-formed diff becomes a proposal');
 
   assert.deepEqual(
@@ -418,16 +418,33 @@ test('t110 — a run with a bottleneck lands exactly one pending proposal, backe
   // The evidence is ours, not the agent's: the four numbers plus the ids of the
   // events they were computed from, every one of them real.
   const evidence = proposal.evidence;
-  assert.equal(evidence.no_id, 'revisar');
-  assert.equal(evidence.execucao_id, EXECUTION_WITH_SIGNAL);
-  const ids = evidence.eventos as number[];
+  assert.equal(evidence.node_id, 'revisar');
+  assert.equal(evidence.execution_id, EXECUTION_WITH_SIGNAL);
+  const ids = evidence.event_ids as number[];
   assert.ok(Array.isArray(ids) && ids.length > 0, 'evidence without ids is a summary, not evidence');
   for (const id of ids) {
-    assert.ok(scenario.eventIds.includes(id), `evidencia.eventos cites ${id}, absent from the log`);
+    assert.ok(scenario.eventIds.includes(id), `evidence.event_ids cites ${id}, absent from the log`);
   }
-  for (const field of ['tempo_agente_ms', 'tempo_espera_ms', 'tempo_fila_ms', 'perguntas']) {
-    assert.equal(typeof evidence[field], 'number', `evidencia.${field} must be a number`);
+  // The lens's own vocabulary is English since t264 (§5.6); `fonte` is the one
+  // deliberate exception, and it is a label, not a measure.
+  assert.equal(evidence.graph_version_id, scenario.version.id);
+  assert.deepEqual(
+    Object.keys(evidence).filter((key) => key.startsWith('tempo_') || key === 'por_no'),
+    [],
+    'no Portuguese measure key survives on the wire the book stores',
+  );
+  for (const field of ['agent_ms', 'blocked_ms', 'queue_ms', 'input_requests']) {
+    assert.equal(typeof evidence[field], 'number', `evidence.${field} must be a number`);
   }
+
+  // The whole ranking rides along, so "why THIS node?" is answerable without a
+  // re-run — under the name §5.6 gives it.
+  const ranking = evidence.by_node as Array<Record<string, unknown>>;
+  assert.ok(Array.isArray(ranking) && ranking.length > 0, 'the ranking travels with the evidence');
+  assert.ok(
+    ranking.every((row) => typeof row.node_id === 'string' && typeof row.agent_ms === 'number'),
+    `every row of by_node is spelled in English: ${JSON.stringify(ranking)}`,
+  );
   assert.ok((evidence.total_ms as number) > 0, 'the bottleneck has to have cost something');
 
   // `metrica_esperada` has the shape t112's verdict can read.

@@ -34,6 +34,31 @@ import {
 } from './support.ts';
 
 /**
+ * The per-node breakdown that rides on every `metrics[]` row since t264 (FR7).
+ *
+ * The field set mirrors `packages/topografo-custo/src/cost.ts`'s `aggregateCost`
+ * on purpose, discipline included: an absent `usage` is never worth zero, so
+ * `sessions` and `sessions_with_usage` are two counters and only the second one
+ * says how much of `tokens` can be believed. The same holds for time.
+ */
+interface NodeMetrics {
+  node_id: string | null;
+  sessions: number;
+  sessions_with_usage: number;
+  tokens: { input: number; output: number; cache_read: number; cache_creation: number };
+  sessions_with_duration: number;
+  agent_ms: number;
+}
+
+/** One row of `metrics[]` since t264: the version's counts plus its nodes. */
+interface MetricByVersionWithNodes extends MetricByVersion {
+  nodes: NodeMetrics[];
+}
+
+/** Tokens nobody reported: the shape a node with no measured session carries. */
+const NO_TOKENS = { input: 0, output: 0, cache_read: 0, cache_creation: 0 };
+
+/**
  * One row of `GET /v1/executions` (t107, FR1), with the end of the round on it
  * (t245, FR6).
  *
@@ -106,7 +131,7 @@ test('AT15 — GET /v1/executions/:id/metrics-by-version groups jobs and events 
   // v2: 1 created + 1 block = 2 events.
   await request(ctx, 'POST', `/v1/jobs/${v2.id}/blocks`, { reason: 'travou' });
 
-  const response = await request<{ execution_id: number; metrics: MetricByVersion[] }>(
+  const response = await request<{ execution_id: number; metrics: MetricByVersionWithNodes[] }>(
     ctx,
     'GET',
     '/v1/executions/7/metrics-by-version',
@@ -114,9 +139,26 @@ test('AT15 — GET /v1/executions/:id/metrics-by-version groups jobs and events 
 
   assert.equal(response.status, 200);
   assert.equal(response.body.execution_id, 7);
+  // `nodes` rides on every row since t264 (FR7). The one session of this
+  // fixture was opened without a `node_id` and never finished, which is why it
+  // lands in the `null` group with nothing measured on it.
   assert.deepEqual(response.body.metrics, [
-    { graph_version_id: 'v1', jobs: 2, events: 5 },
-    { graph_version_id: 'v2', jobs: 1, events: 2 },
+    {
+      graph_version_id: 'v1',
+      jobs: 2,
+      events: 5,
+      nodes: [
+        {
+          node_id: null,
+          sessions: 1,
+          sessions_with_usage: 0,
+          tokens: NO_TOKENS,
+          sessions_with_duration: 0,
+          agent_ms: 0,
+        },
+      ],
+    },
+    { graph_version_id: 'v2', jobs: 1, events: 2, nodes: [] },
   ]);
 });
 
@@ -124,7 +166,7 @@ test('AT15 — an execution with no job at all returns an empty list, not 404', 
   requireArtifacts(T102_ARTIFACTS.migration, T102_ARTIFACTS.executionRoutes);
   const ctx = await startControlPlane(t);
 
-  const response = await request<{ execution_id: number; metrics: MetricByVersion[] }>(
+  const response = await request<{ execution_id: number; metrics: MetricByVersionWithNodes[] }>(
     ctx,
     'GET',
     '/v1/executions/99/metrics-by-version',
@@ -794,4 +836,259 @@ test('t245 AT4 — GET /v1/events/stream?type=execution.finished filters to it',
   assert.equal(pushed.type, 'execution.finished');
   assert.deepEqual(pushed.entity, { type: 'execution', id: 2452 });
   assert.deepEqual(pushed.data, {});
+});
+
+/* -------------------------------------------------------------------------- */
+/* t264 — the per-node breakdown of `metrics-by-version` (FR7)                 */
+/*                                                                            */
+/* Until here the route reported jobs and events per version and nothing else, */
+/* so both of its callers — the note of t198's first real crossing (gap 8) and */
+/* the cost lens — recomputed tokens and agent time per `(version, node)` by   */
+/* hand, pulling `GET /v1/sessions` and `GET /v1/jobs` and joining them in the */
+/* runner process (`packages/topografo-custo/src/cost.ts`). This is that join, */
+/* done once, on the side that owns the two tables (D1).                      */
+/*                                                                            */
+/* The two disciplines it inherits from that lens are the whole point of the   */
+/* field set: an absent `usage` is never worth zero, and nothing disappears —  */
+/* a session with no node, or one whose job declares no version, lands in a    */
+/* group of its own instead of being dropped.                                  */
+/* -------------------------------------------------------------------------- */
+
+/** Tokens as `PATCH /v1/sessions/:id/finish` takes them. */
+interface ReportedUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
+}
+
+/**
+ * Opens a session, finishes it (or not) and pins its two stamps.
+ *
+ * The stamps are written straight to the throwaway database — the same thing
+ * `input-requests.test.ts` and `graph-promotion.test.ts` already do to force a
+ * state the API has no verb for. `opened_at`/`finished_at` come off the server's
+ * real clock, and a duration measured against it would be whatever the machine
+ * happened to take; what this suite is charging for is the SUM, and a sum is
+ * only assertable over numbers somebody chose.
+ *
+ * @param ctx Control plane running.
+ * @param seed The session to open, and how long it is to have lasted.
+ * @returns The session id.
+ */
+async function seedSession(
+  ctx: TestContext,
+  seed: {
+    jobId: number;
+    nodeId?: string;
+    usage?: ReportedUsage | null;
+    durationMs?: number;
+  },
+): Promise<number> {
+  const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    job_id: seed.jobId,
+    ...(seed.nodeId === undefined ? {} : { node_id: seed.nodeId }),
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'trabalhe',
+  });
+  assert.equal(opened.status, 201);
+  const id = opened.body.id;
+
+  if (seed.durationMs === undefined) {
+    // Still open: counted among `sessions`, and unknown — never zero — in time.
+    return id;
+  }
+
+  const finished = await request(ctx, 'PATCH', `/v1/sessions/${id}/finish`, {
+    status: 'completed',
+    exit_code: 0,
+    usage: seed.usage ?? null,
+  });
+  assert.equal(finished.status, 200);
+
+  const openedAt = '2026-08-18T12:00:00.000Z';
+  const finishedAt = new Date(Date.parse(openedAt) + seed.durationMs).toISOString();
+  ctx.db
+    .prepare('UPDATE session SET opened_at = ?, finished_at = ? WHERE id = ?')
+    .run(openedAt, finishedAt, id);
+
+  return id;
+}
+
+/** The `metrics[]` of one round, keyed by the version each row is about. */
+async function nodesByVersion(
+  ctx: TestContext,
+  execution: number,
+): Promise<Map<string | null, NodeMetrics[]>> {
+  const response = await request<{ metrics: MetricByVersionWithNodes[] }>(
+    ctx,
+    'GET',
+    `/v1/executions/${execution}/metrics-by-version`,
+  );
+  assert.equal(response.status, 200);
+  return new Map(response.body.metrics.map((row) => [row.graph_version_id, row.nodes]));
+}
+
+test('t264 AT3 — metrics-by-version reports sessions, tokens and agent time per node', async (t) => {
+  requireArtifacts(
+    T102_ARTIFACTS.migration,
+    T102_ARTIFACTS.jobRepository,
+    T102_ARTIFACTS.sessionRepository,
+    T102_ARTIFACTS.sessionRoutes,
+    T102_ARTIFACTS.executionRoutes,
+  );
+  const ctx = await startControlPlane(t);
+
+  const redigir = await createJob(ctx, {
+    title: 'trabalho que redige',
+    entry_node_id: 'redigir',
+    execution_id: 2642,
+    graph_version_id: 'v264',
+  });
+  const revisar = await createJob(ctx, {
+    title: 'trabalho que revisa',
+    entry_node_id: 'revisar',
+    execution_id: 2642,
+    graph_version_id: 'v264',
+  });
+
+  // Another round, same version and same nodes: none of it may leak in.
+  const elsewhere = await createJob(ctx, {
+    title: 'de outra rodada',
+    entry_node_id: 'redigir',
+    execution_id: 2643,
+    graph_version_id: 'v264',
+  });
+  await seedSession(ctx, {
+    jobId: elsewhere.id,
+    nodeId: 'redigir',
+    usage: {
+      input_tokens: 999_999,
+      output_tokens: 999_999,
+      cache_creation_input_tokens: 999_999,
+      cache_read_input_tokens: 999_999,
+    },
+    durationMs: 999_999,
+  });
+
+  await seedSession(ctx, {
+    jobId: redigir.id,
+    nodeId: 'redigir',
+    usage: {
+      input_tokens: 100,
+      output_tokens: 20,
+      cache_creation_input_tokens: 5,
+      cache_read_input_tokens: 7,
+    },
+    durationMs: 3_000,
+  });
+  // The second session of the same node reported NOTHING: it has to inflate
+  // `sessions` and `agent_ms` and leave `tokens` exactly where it found it.
+  await seedSession(ctx, { jobId: redigir.id, nodeId: 'redigir', usage: null, durationMs: 1_000 });
+
+  await seedSession(ctx, {
+    jobId: revisar.id,
+    nodeId: 'revisar',
+    usage: {
+      input_tokens: 1,
+      output_tokens: 2,
+      cache_creation_input_tokens: 3,
+      cache_read_input_tokens: 4,
+    },
+    durationMs: 500,
+  });
+
+  const nodes = (await nodesByVersion(ctx, 2642)).get('v264');
+  assert.ok(nodes !== undefined, 'the version has a row of its own');
+
+  assert.deepEqual(nodes, [
+    {
+      node_id: 'redigir',
+      sessions: 2,
+      sessions_with_usage: 1,
+      tokens: { input: 100, output: 20, cache_read: 7, cache_creation: 5 },
+      sessions_with_duration: 2,
+      agent_ms: 4_000,
+    },
+    {
+      node_id: 'revisar',
+      sessions: 1,
+      sessions_with_usage: 1,
+      tokens: { input: 1, output: 2, cache_read: 4, cache_creation: 3 },
+      sessions_with_duration: 1,
+      agent_ms: 500,
+    },
+  ]);
+});
+
+test('t264 AT3 — a session with no node, or a job with no version, lands in a null group', async (t) => {
+  requireArtifacts(
+    T102_ARTIFACTS.migration,
+    T102_ARTIFACTS.jobRepository,
+    T102_ARTIFACTS.sessionRepository,
+    T102_ARTIFACTS.sessionRoutes,
+    T102_ARTIFACTS.executionRoutes,
+  );
+  const ctx = await startControlPlane(t);
+
+  const declared = await createJob(ctx, {
+    title: 'trabalho que declara versão',
+    entry_node_id: 'redigir',
+    execution_id: 2644,
+    graph_version_id: 'v264',
+  });
+  const versionless = await createJob(ctx, {
+    title: 'trabalho sem versão declarada',
+    entry_node_id: 'redigir',
+    execution_id: 2644,
+  });
+
+  await seedSession(ctx, { jobId: declared.id, nodeId: 'redigir', durationMs: 2_000 });
+  // No `node_id` at all: nothing to attribute it to, and dropping it would make
+  // the report lie about how many sessions the version really cost.
+  await seedSession(ctx, { jobId: declared.id, durationMs: 700 });
+  // Still open, so it is a session with no measurable duration — not a session
+  // that took no time.
+  await seedSession(ctx, { jobId: versionless.id, nodeId: 'revisar' });
+
+  const byVersion = await nodesByVersion(ctx, 2644);
+
+  assert.deepEqual(
+    byVersion.get('v264'),
+    [
+      {
+        node_id: 'redigir',
+        sessions: 1,
+        sessions_with_usage: 0,
+        tokens: NO_TOKENS,
+        sessions_with_duration: 1,
+        agent_ms: 2_000,
+      },
+      {
+        node_id: null,
+        sessions: 1,
+        sessions_with_usage: 0,
+        tokens: NO_TOKENS,
+        sessions_with_duration: 1,
+        agent_ms: 700,
+      },
+    ],
+    'the node that could not be named is last, and it is still counted',
+  );
+
+  assert.deepEqual(
+    byVersion.get(null),
+    [
+      {
+        node_id: 'revisar',
+        sessions: 1,
+        sessions_with_usage: 0,
+        tokens: NO_TOKENS,
+        sessions_with_duration: 0,
+        agent_ms: 0,
+      },
+    ],
+    'a job with no version keeps its own row, with its node named on it',
+  );
 });

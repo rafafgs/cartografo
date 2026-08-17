@@ -24,7 +24,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -918,4 +918,226 @@ test('t180 — a lease of another runner is refused in English, quoting both ids
       `lease ${lease.id} belongs to runner "runner-a"; the credential presented belongs to runner "runner-b"`,
     );
   }
+});
+
+/* -------------------------------------------------------------------------- */
+/* t264 — the round that only a RELEASE can declare over (FR1)                 */
+/*                                                                            */
+/* `announceFinishedExecution` has always been right about its own condition   */
+/* — every job arrived AND no lease of the round is still active — and wrong   */
+/* about WHEN it is asked. Until t264 it was asked only on a job mutation, and */
+/* the runner releases the lease strictly AFTER reporting the terminal one     */
+/* (`packages/runner/src/controller/controller.ts`, the `finally` around       */
+/* `#dispatch`). So at the only instant anything re-checked, the job's own     */
+/* lease was still `active`, and nothing looked again when it cleared a moment */
+/* later. t198's first real crossing hit exactly that                          */
+/* (`notas/2026-08-17-primeira-execucao-bets.md`, gap 3).                      */
+/*                                                                            */
+/* This is the one place the four verbs above look a job up, and the route is  */
+/* where it happens: `repositories/leases.ts` stays job-blind, as its own      */
+/* header requires, and the route already knew both sides.                     */
+/*                                                                            */
+/* The graph is the minimal example, whose final node PINS a skill — every     */
+/* node of a registrable document does, because `schema/grafo.schema.json`     */
+/* makes `skill_ref` mandatory. So the pinned step is run and reported FIRST   */
+/* (t262), which leaves the transition as the fact that completes the job,     */
+/* with its own lease still held: the exact ordering the defect needs.         */
+/* -------------------------------------------------------------------------- */
+
+/** The minimal example graph, the same fixture `executions.test.ts` registers. */
+const MINIMAL_GRAPH = path.resolve(
+  PACKAGE_ROOT,
+  '..',
+  '..',
+  'schema',
+  'exemplos',
+  'grafo-valido-minimo.json',
+);
+
+/** A job, in the slice these two tests read. */
+interface JobRow {
+  id: number;
+  execution_id: number | null;
+  current_node_id: string;
+}
+
+/** One envelope of the round's log, in the slice these two tests read. */
+interface EventRow {
+  id: number;
+  type: string;
+  occurred_at: string;
+}
+
+/** Sends a JSON body and fails loudly instead of leaving a silent 4xx behind. */
+async function postJson<T>(
+  address: string,
+  route: string,
+  body: unknown,
+  expected: number,
+): Promise<T> {
+  const response = await fetch(`${address}${route}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const decoded = (await response.json()) as T;
+  assert.equal(
+    response.status,
+    expected,
+    `POST ${route} returned ${response.status}: ${JSON.stringify(decoded)}`,
+  );
+  return decoded;
+}
+
+/** Registers the minimal example graph and returns the version a job cites. */
+async function registerMinimalGraph(address: string): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as unknown;
+  const body = await postJson<{ graph_version: { id: string } }>(
+    address,
+    '/v1/graphs',
+    document,
+    201,
+  );
+  return body.graph_version.id;
+}
+
+/** A traveller of `execution`, standing on the entry node of `version`. */
+async function traveller(
+  address: string,
+  execution: number,
+  version: string,
+  title: string,
+): Promise<JobRow> {
+  return await postJson<JobRow>(
+    address,
+    '/v1/jobs',
+    { title, entry_node_id: 'redigir', execution_id: execution, graph_version_id: version },
+    201,
+  );
+}
+
+/**
+ * Runs the pinned final node and reports it, which is what makes arriving there
+ * an arrival at all (t262).
+ */
+async function runFinalNode(address: string, jobId: number): Promise<void> {
+  const opened = await postJson<{ id: number }>(
+    address,
+    '/v1/sessions',
+    {
+      job_id: jobId,
+      node_id: 'revisar',
+      engine: 'claude-code',
+      working_dir: '/tmp/cartografo',
+      prompt: 'revisa e encerra',
+    },
+    201,
+  );
+
+  const finished = await fetch(`${address}/v1/sessions/${opened.id}/finish`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      status: 'completed',
+      exit_code: 0,
+      output: { outcome: 'passou', evidencia: 'a nota responde ao tema declarado' },
+    }),
+  });
+  assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
+}
+
+/** Moves a job to a node. */
+async function moveTo(address: string, jobId: number, node: string): Promise<void> {
+  await postJson(address, `/v1/jobs/${jobId}/transitions`, { to_node_id: node }, 200);
+}
+
+/** `finished_at` of one round, off `GET /v1/executions/:id`. */
+async function finishedAt(address: string, execution: number): Promise<string | null> {
+  const response = await fetch(`${address}/v1/executions/${execution}`);
+  assert.equal(response.status, 200);
+  return ((await response.json()) as { finished_at: string | null }).finished_at;
+}
+
+/** Releases a lease as the operator credential the harness already presents. */
+async function releaseLeaseHttp(address: string, leaseId: number): Promise<Response> {
+  return await fetch(`${address}/v1/leases/${leaseId}/releases`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
+/** Every `execution.finished` of one round's own log, in log order. */
+async function finishedEvents(address: string, execution: number): Promise<EventRow[]> {
+  const response = await fetch(`${address}/v1/executions/${execution}/events`);
+  assert.equal(response.status, 200);
+  const { events } = (await response.json()) as { events: EventRow[] };
+  return events.filter((event) => event.type === 'execution.finished');
+}
+
+test('t264 AT1 — execution.finished fires on release even though the transition landed first', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-t264');
+  const version = await registerMinimalGraph(address);
+
+  const job = await traveller(address, 2640, version, 'nota que devolve o lease por último');
+
+  // The lease the runner holds for the whole of its dispatch.
+  const granted = await requestLease(address, { runner_id: 'runner-t264', job_id: job.id });
+  assert.equal(granted.status, 201);
+  const { lease } = (await granted.json()) as { lease: LeaseRow };
+
+  // The pinned final node runs and reports first: that is what makes the
+  // transition below the fact that completes the job.
+  await runFinalNode(address, job.id);
+  assert.equal(await finishedAt(address, 2640), null, 'the traveller has not arrived yet');
+
+  // The terminal transition, reported while the lease is still held — the
+  // ordering `controller.ts` really produces.
+  await moveTo(address, job.id, 'revisar');
+
+  assert.deepEqual(
+    await finishedEvents(address, 2640),
+    [],
+    'every job of the round arrived, but one lease of it is still active',
+  );
+  assert.equal(await finishedAt(address, 2640), null);
+
+  const released = await releaseLeaseHttp(address, lease.id);
+  assert.equal(released.status, 200);
+
+  const announced = await finishedEvents(address, 2640);
+  assert.equal(announced.length, 1, 'the release is what makes the condition true, so it announces');
+  assert.equal(
+    await finishedAt(address, 2640),
+    announced[0].occurred_at,
+    'and the round reads its end off that very event',
+  );
+});
+
+test('t264 AT2 — releasing a lease of an unfinished round is a no-op', async (t) => {
+  const { address, db } = await start(t);
+  await registerRunners(db, 'runner-t264');
+  const version = await registerMinimalGraph(address);
+
+  const arrived = await traveller(address, 2641, version, 'nota que chega');
+  const midGraph = await traveller(address, 2641, version, 'nota que ainda está redigindo');
+
+  const granted = await requestLease(address, { runner_id: 'runner-t264', job_id: arrived.id });
+  assert.equal(granted.status, 201);
+  const { lease } = (await granted.json()) as { lease: LeaseRow };
+
+  await runFinalNode(address, arrived.id);
+  await moveTo(address, arrived.id, 'revisar');
+
+  const released = await releaseLeaseHttp(address, lease.id);
+  assert.equal(released.status, 200, 'the release itself is an ordinary release');
+
+  assert.equal(
+    await finishedAt(address, 2641),
+    null,
+    'half a round is not a round: the other traveller is still at redigir',
+  );
+  assert.deepEqual(await finishedEvents(address, 2641), [], 'and nothing was written about it');
+  assert.equal(midGraph.current_node_id, 'redigir');
 });

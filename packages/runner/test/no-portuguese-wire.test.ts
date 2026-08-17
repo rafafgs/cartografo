@@ -25,11 +25,28 @@
  * edited since t213. They are listed inline below, and that is why.
  *
  * The scope of that derivation is DISPLAY, and the file list is what keeps it
- * there: `src/surveyor/proposal.ts` builds the body of
- * `POST /v1/proposals/:id/outcome`, whose `execucao_id` is the frozen
- * hypothesis vocabulary (`docs/spec/entidades-versionamento.md` §5), and it is
- * deliberately not swept. The CLI's display name and the wire field it feeds are
- * two different things, and renaming the second one is nobody's ticket.
+ * there: the body of `POST /v1/proposals/:id/outcome` carries `execucao_id` as
+ * the frozen hypothesis vocabulary (`docs/spec/entidades-versionamento.md` §5),
+ * and it is deliberately not swept. The CLI's display name and the wire field it
+ * feeds are two different things, and renaming the second one is nobody's ticket.
+ *
+ * That body lives in `src/controller/cliente-controle.ts`
+ * (`fecharResultadoDeProposta`), and until t264 the assertion below pointed at
+ * `src/surveyor/proposal.ts` instead — a file that never calls it. It only ever
+ * passed because `FlowEvidence.execucao_id`, a key of the FLOW LENS and nobody's
+ * frozen anything, happened to share the spelling. t264 migrated that lens to
+ * English (§5.6), so the coincidence is gone and the assertion now reads the
+ * file the frozen field is really in.
+ *
+ * ## The flow lens's own keys (t264)
+ *
+ * {@link FLOW_LENS_KEYS} is §5.6 as this package's gate reads it, and it is
+ * swept over `src/surveyor/proposal.ts` in KEY positions only — `.perguntas` as
+ * a read, `perguntas:` as a declaration. Not raw text, because that file also
+ * builds the session's PROMPT, and the prompt's table header really does say
+ * `perguntas` in Portuguese prose: it is content handed to an agent (D18), not a
+ * name on the wire, and a sweep that could not tell them apart would have to be
+ * turned off to be usable.
  *
  * ## The other half: what a client READS off the answer (t254)
  *
@@ -141,6 +158,59 @@ const DERIVED_FIELDS: ReadonlyArray<{ term: string; english: string }> = Object.
   { term: 'bloqueado', english: 'blocked' },
   { term: 'versao_alvo', english: 'target_version' },
 ]);
+
+/**
+ * The flow lens's Portuguese keys and the English each one became (t264, FR3).
+ *
+ * Read from the header of this file rather than from the glossary, the same way
+ * {@link DISPLAYED_POSITIONALS} and {@link DERIVED_FIELDS} are: `surfaceTerms`
+ * filters on a surface tag, and `flow-lens`'s rows are readable only by this
+ * package — pointing the shared reader at them would hand three other sweeps a
+ * vocabulary none of them can see. `fonte` is deliberately absent: it is the
+ * module's own provenance label, and `docs/spec/topografo-fluxo.md` §4 already
+ * records the decision to leave it where it is.
+ */
+const FLOW_LENS_KEYS: ReadonlyArray<Term> = Object.freeze([
+  { term: 'no_id', english: 'node_id' },
+  { term: 'execucao_id', english: 'execution_id' },
+  { term: 'grafo_versao_id', english: 'graph_version_id' },
+  { term: 'tempo_agente_ms', english: 'agent_ms' },
+  { term: 'tempo_espera_ms', english: 'blocked_ms' },
+  { term: 'tempo_fila_ms', english: 'queue_ms' },
+  { term: 'perguntas', english: 'input_requests' },
+  { term: 'eventos', english: 'event_ids' },
+  { term: 'por_no', english: 'by_node' },
+]);
+
+/**
+ * Every hit of an old key in a KEY position: `.name` read or `name:` declared.
+ *
+ * The two positions a wire key of this lens can occupy in TypeScript, and
+ * neither of them is prose. Comments are masked first, for the reason the sweeps
+ * above give: explaining a rename means writing both sides of it down.
+ *
+ * @param source File contents.
+ * @param terms The vocabulary to look for.
+ * @returns One `line: what` per hit, sorted.
+ */
+export function keyHits(source: string, terms: ReadonlyArray<Term>): string[] {
+  const hits: string[] = [];
+
+  maskComments(source).split('\n').forEach((line, index) => {
+    for (const entry of terms) {
+      // `.name` on the left, `name:` on the right; the boundaries on both sides
+      // keep `node_id` from reading as a hit on `no_id`.
+      const tail = `${entry.term}(?![A-Za-z0-9_$])`;
+      const read = `\\.${tail}`;
+      const declared = `(?<![A-Za-z0-9_$.])${tail}\\s*:`;
+      if (new RegExp(`${read}|${declared}`).test(line)) {
+        hits.push(`${index + 1}: "${entry.term}" (English: "${entry.english}")`);
+      }
+    }
+  });
+
+  return hits.sort();
+}
 
 /**
  * Spans of a client file that are not a wire name, each with the reason.
@@ -476,11 +546,32 @@ test('t230 — the surveyor commands print English positionals, without touching
 
   // And the frozen half is still spelled the old way, on purpose: a sweep that
   // had quietly renamed it too would have moved a wire field no D20 child owns.
-  const proposal = sourceOf(path.join('src', 'surveyor', 'proposal.ts'));
+  // The file is the one that BUILDS that body (t264, FR6); see this file's
+  // header for why it used to be `proposal.ts`, and why that never proved this.
+  const client = sourceOf(path.join('src', 'controller', 'cliente-controle.ts'));
   assert.ok(
-    proposal.includes('execucao_id'),
+    client.includes('execucao_id'),
     'the hypothesis body lost `execucao_id`; that field is frozen (entidades-versionamento.md §5)',
   );
+
+  // ...and the flow lens, which shared that spelling by coincidence and nothing
+  // else, no longer carries a single Portuguese key of §5.6.
+  const proposal = sourceOf(path.join('src', 'surveyor', 'proposal.ts'));
+  assert.deepEqual(
+    keyHits(proposal, FLOW_LENS_KEYS),
+    [],
+    'a Portuguese flow-lens key survives in src/surveyor/proposal.ts (D20, §5.6)',
+  );
+  for (const relative of [
+    path.join('src', 'surveyor', 'metrics.ts'),
+    path.join('src', 'surveyor', 'outcome.ts'),
+  ]) {
+    assert.deepEqual(
+      keyHits(sourceOf(relative), FLOW_LENS_KEYS),
+      [],
+      `a Portuguese flow-lens key survives in ${relative} (D20, §5.6)`,
+    );
+  }
 });
 
 test('t230 — the sweep bites on the old spellings and lets the new ones through', () => {
@@ -522,6 +613,37 @@ test('t230 — the sweep bites on the old spellings and lets the new ones throug
     [],
     'the English positionals have to pass',
   );
+
+  // ...and the §5.6 sweep, which judges KEY positions and nothing else (t264).
+  const caughtKeys = [
+    '  tempo_agente_ms: number;',
+    'return { por_no: ranking, gargalo: worst };',
+    '`| \\`${row.no_id}\\`| ${row.tempo_espera_ms} |`',
+    '  perguntas: bottleneck.perguntas,',
+  ];
+  for (const source of caughtKeys) {
+    assert.ok(keyHits(source, FLOW_LENS_KEYS).length > 0, `the sweep missed an old key: ${source}`);
+  }
+
+  const allowedKeys = [
+    '  agent_ms: number;',
+    'return { by_node: ranking, gargalo: worst };',
+    '  input_requests: bottleneck.input_requests,',
+    // The prompt's own table header: Portuguese content handed to an agent
+    // (D18), in neither of the two positions a key can occupy.
+    "    '| nó | agente (ms) | espera (ms) | fila (ms) | total (ms) | perguntas |',",
+    // A name that merely starts the same way is not the old one.
+    '  node_id: string;',
+    // ...and the event vocabulary this fold READS, which is the taxonomy's.
+    "      const target = asText(event.data.to_node_id);",
+  ];
+  for (const source of allowedKeys) {
+    assert.deepEqual(
+      keyHits(source, FLOW_LENS_KEYS),
+      [],
+      `the sweep flagged what is not a flow-lens key: ${source}`,
+    );
+  }
 });
 
 test('t254 — the client commands read and print the English fields the wire really answers', () => {

@@ -13,11 +13,16 @@
  *
  * The same rule is what keeps the dependency arrow pointing one way: this module
  * imports NOTHING from `dispatch.ts`. What it needs of a work is two fields, and
- * it declares them ({@link JobRef}) rather than naming the orchestrator's type —
- * structural typing does the rest.
+ * `blocks.ts` declares them ({@link JobRef}) rather than naming the
+ * orchestrator's type — structural typing does the rest.
+ *
+ * **And the writes that STOP a work live next door since t265** (`blocks.ts`),
+ * re-exported below so that no caller had to move with them. What is left here
+ * is what a work that keeps going owes: the transition, the escalations, the
+ * denials and the closure.
  *
  * **Who signs each write, and why it differs.** Everything the wiring does on
- * its own account is signed `sistema/runner`: the transition, both blocks and
+ * its own account is signed `sistema/runner`: the transition, every block and
  * the routing escalation are the runner reporting, never a model deciding. The
  * ordinary question is the one exception and it is signed `agente`, because that
  * one IS a model asking — two spellings for two different facts, in a log
@@ -38,6 +43,7 @@
  */
 
 import type { SessionFinishDetail, SessionStatus } from '../engine/types.ts';
+import { blockWithNobodyToAsk, RUNNER_ACTOR_REF, type JobRef } from './blocks.ts';
 import type { ControlPlaneCall } from './control-plane-client.ts';
 import type { InputRequest } from './parse-input-request.ts';
 import { parseNodeResult } from './parse-node-result.ts';
@@ -67,16 +73,6 @@ export const TAXONOMY_STATUS: Readonly<Record<SessionStatus, string>> = Object.f
   timed_out: 'timed_out',
 });
 
-/**
- * `actor.ref` of every write this module makes on the runner's own account.
- *
- * `system` and not `agent`: the fact being recorded is not something the
- * session decided, it is the wiring reporting what happened. Same `ref` the
- * control plane uses by default for a write coming from the runner, on purpose
- * — two spellings for one actor is how a log stops being groupable.
- */
-const RUNNER_ACTOR_REF = 'runner';
-
 /** `parse-permission-denial.ts`'s two resources, as the taxonomy spells them. */
 const DENIAL_RESOURCE: Readonly<Record<'filesystem' | 'rede', string>> = Object.freeze({
   filesystem: 'filesystem',
@@ -84,26 +80,21 @@ const DENIAL_RESOURCE: Readonly<Record<'filesystem' | 'rede', string>> = Object.
 });
 
 /**
- * The part of a work a report names.
+ * The four writes that stop a work, re-exported from the module that owns them
+ * now (t265).
  *
- * Two fields, and declared here rather than imported from `dispatch.ts` (FR4):
- * this module owes the orchestrator nothing, which is exactly what lets it be
- * unit-tested against a fake client. The dispatch's own `Job` satisfies this
- * shape without either module naming the other.
+ * They were declared here until this ficha, and moved together when the fourth
+ * one pushed this file past the 600-line budget. Re-exporting rather than asking
+ * each caller to follow the declaration is the rule both earlier splits ran
+ * under: a refactor that renames nothing may not make anybody edit an import.
  */
-export interface JobRef {
-  /** The id every route below is addressed by. */
-  id: number;
-  /**
-   * The node whose session produced what is being reported.
-   *
-   * Named after the JOB PROJECTION this module is handed, which went English
-   * with the API in t226 — not after anything this file writes. Every payload
-   * built below is still Portuguese, and deliberately so: this is the client of
-   * the EVENT surface, which is D20's second child.
-   */
-  current_node_id: string;
-}
+export {
+  blockForEngineRefusal,
+  blockForPreSessionFailure,
+  blockForUncommittedWork,
+  blockWithNobodyToAsk,
+  type JobRef,
+} from './blocks.ts';
 
 /** What the session reported when it ended. */
 export interface Outcome {
@@ -127,6 +118,16 @@ export interface Outcome {
   usage?: SessionFinishDetail['usage'];
   /** Which models ran it, when the engine named them (t172). */
   models?: SessionFinishDetail['models'];
+  /**
+   * What KIND of failure this was, when the status alone does not say (t265).
+   *
+   * Today one value: the engine refused to answer. Same reading as the two
+   * fields above — absent is "the adapter reported no kind", it is recorded as
+   * `null`, and it is never inferred from the exit code.
+   */
+  failureKind?: SessionFinishDetail['failureKind'];
+  /** How the engine classified its own refusal, when it did (t265). */
+  refusalCategory?: SessionFinishDetail['refusalCategory'];
 }
 
 /**
@@ -155,109 +156,6 @@ export async function transition(
   });
 }
 
-/**
- * Stops the work with a reason, for a node that has nobody to ask (t167, FR6).
- *
- * The other half of `never`, and the half that is deterministic: the rendered
- * instructions ask the session not to write an escalation block, and this is
- * what happens when one shows up anyway — or when the wiring itself has no
- * rule to apply. `POST /v1/jobs/:id/blocks` is an unconditional, reason-
- * carrying block that has existed since t102, so nothing new is invented here;
- * what is chosen at dispatch time is WHICH of the two existing mechanisms
- * stops the work.
- *
- * The difference that matters is what is NOT created: no row in `pergunta`,
- * no `pergunta.criada`, nothing in anybody's queue. A node that declares it has
- * nobody to ask may not put a line in the queue of someone who is not there —
- * that queue is the list of things a person is expected to answer, and a
- * question nobody owns sitting in it forever is exactly the state `never`
- * exists to avoid.
- *
- * @param call The dispatch's control-plane client.
- * @param job The work being dispatched.
- * @param reason Why it stopped — it quotes the node and what walled the
- *   session, because `trabalho.motivo_bloqueio` is what whoever opens the work
- *   reads first.
- */
-export async function blockWithNobodyToAsk(
-  call: ControlPlaneCall,
-  job: JobRef,
-  reason: string,
-): Promise<void> {
-  await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
-    reason,
-    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
-  });
-}
-
-/**
- * Stops the work because a session that finished left work it never committed
- * (t207-B).
- *
- * The same route and the same actor as {@link blockWithNobodyToAsk}, and a
- * function of its own all the same: a node with nobody to ask and output that
- * exists in exactly one directory are different facts, and a single helper
- * taking a string would make them indistinguishable at every call site.
- *
- * No new field on `/finish` and no new schema: `POST /v1/jobs/:id/blocks` has
- * existed since t102 and takes a free `reason` (`motivo` until t227), and the
- * finish route's vocabulary was the t213/D20 migration's to touch.
- *
- * The reason names the tree, because that path is the whole point — whoever
- * opens the work reads `trabalho.motivo_bloqueio` first, and what they have to
- * do next is go and look at that directory.
- *
- * @param call The dispatch's control-plane client.
- * @param job The work being dispatched.
- * @param worktreePath The tree that was retained, absolute.
- */
-export async function blockForUncommittedWork(
-  call: ControlPlaneCall,
-  job: JobRef,
-  worktreePath: string,
-): Promise<void> {
-  await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
-    reason:
-      `A sessão do nó \`${job.current_node_id}\` terminou como concluída, mas deixou ` +
-      `trabalho não commitado em \`${worktreePath}\` — o \`git status\` da árvore ` +
-      'não estava limpo. A árvore foi RETIDA em vez de removida, e o trabalho ' +
-      'não avançou: o que essa sessão produziu só existe nesse diretório. ' +
-      'Commite o que valer a pena, descarte o resto e desbloqueie.',
-    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
-  });
-}
-
-/**
- * Stops the work because the dispatch could not even get to a session (t252, FR3).
- *
- * The third reason a dispatch stops a work on its own account, and the one that
- * happens EARLIEST: before a worktree, before a session, before a token is
- * spent. What it is for is a failure that will reproduce identically on every
- * retry — a placeholder that does not resolve, a skill nobody registered, a pin
- * that stopped matching, an engine with no route, a `graph_version_id` the
- * control plane no longer has. Until this ficha each of those was thrown, logged
- * by `cli/run.ts` and retried two seconds later, forever, with nothing in
- * anybody's inbox and no other job of the project ever reached.
- *
- * Same route, same actor and same shape as the two blocks above, and a function
- * of its own for the reason they are two. The reason itself is composed
- * elsewhere (`pre-session-failure.ts`): classifying is not writing.
- *
- * @param call The dispatch's control-plane client.
- * @param job The work being dispatched.
- * @param reason Why it stopped, naming the cause concretely: it is what whoever
- *   opens the work reads first, and what tells them which of the five it was.
- */
-export async function blockForPreSessionFailure(
-  call: ControlPlaneCall,
-  job: JobRef,
-  reason: string,
-): Promise<void> {
-  await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
-    reason,
-    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
-  });
-}
 
 /**
  * Asks a human which way the work goes (t161, FR9).
@@ -537,6 +435,14 @@ export async function finishSession(
       // somebody else drove, or for an adapter that predates the field —
       // and it may never be filled in with a guess.
       timeout_reason: outcome.timeoutReason ?? null,
+      // ...and the same discipline for the other cause a status cannot carry
+      // (t265): `failed` is one word for a crash and for an engine that refused
+      // to answer, and only the second one reproduces on every retry. `null` is
+      // "the adapter reported no kind", never "it was an ordinary crash" —
+      // an adapter that does not read the frame and a frame that said nothing
+      // are the same absence, and neither is a measurement.
+      failure_kind: outcome.failureKind ?? null,
+      refusal_category: outcome.refusalCategory ?? null,
       // What the session actually cost, as the engine counted it (t172).
       // Until that ficha these two lines were a hardcoded `usage: null` and no
       // `models` key at all, and every session this system ever ran

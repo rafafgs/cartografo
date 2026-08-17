@@ -36,8 +36,14 @@ export const TABELA = {
   },
   'job.blocked': {
     entidade: 'job',
+    // `consecutive_failures` entrou com o teto de falhas consecutivas (t265):
+    // quantas sessões falhadas em sequência, no mesmo nó, levantaram a bandeira.
+    // Opcional porque é o único motivo de bloqueio que tem sequência atrás de
+    // si — os outros quatro (falha antes da sessão, trabalho não commitado, nó
+    // sem a quem perguntar, escalação comum) não contam nada, e escrever um
+    // número ali seria inventar medição.
     obrigatorios: ['reason'],
-    opcionais: [],
+    opcionais: ['consecutive_failures'],
   },
   'job.unblocked': {
     entidade: 'job',
@@ -99,10 +105,19 @@ export const TABELA = {
     // essa conferência recusa, o valor não é gravado e o que viaja no lugar dele
     // é a lista de motivos em `output_schema_error` — nunca ao custo de registrar
     // o status terminal da sessão, que é o fato que ninguém pode perder.
+    //
+    // `failure_kind` e `refusal_category` entraram com a recusa do engine
+    // (t265): `failed` é uma palavra só para duas coisas — um crash, que vale
+    // retentar, e um engine que RECUSOU responder, que se reproduz idêntico a
+    // cada tentativa (medido: quatro recusas seguidas no mesmo prompt, t198).
+    // O tipo é fechado porque a palavra é nossa; a categoria é aberta porque é
+    // a palavra do engine, exatamente como `models` ao lado.
     opcionais: [
       'exit_code',
       'usage',
       'timeout_reason',
+      'failure_kind',
+      'refusal_category',
       'models',
       'output',
       'output_schema_error',

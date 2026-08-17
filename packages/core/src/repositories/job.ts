@@ -929,6 +929,160 @@ export function blockJob(
   );
 }
 
+/**
+ * How many failed sessions in a row stop a job whose graph declares no ceiling.
+ *
+ * Three, and not one: a session dies for reasons that are nobody's fault and do
+ * not repeat — a machine that slept, a network that blinked, a CLI that crashed
+ * once. One failure is noise, and blocking on it would put a person in the loop
+ * for something the next attempt fixes. Three in a row on the SAME node is a
+ * pattern, and the fourth attempt is buying the same answer again.
+ *
+ * A class that disagrees says so in its own document (`max_consecutive_failures`
+ * at the graph root), which is where a per-class number belongs — versioned and
+ * proposable with the graph (D2, D15), never as a flag on a process.
+ */
+export const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3;
+
+/**
+ * The ceiling the job's graph version declares, or the default.
+ *
+ * Silent in the same three cases `requireFieldsOfNode` and `isAtFinalNode` are:
+ * no version, a version that no longer resolves, a snapshot that declares
+ * nothing. A fourth one is added here — a declared value that is not a positive
+ * integer — for the reason the schema alone cannot cover it: `POST /v1/graphs`
+ * compiles no ajv against `grafo.schema.json` (`domain/graph.ts:222-226`), so a
+ * `0` or a `"três"` can reach a snapshot. Falling back is the only safe
+ * direction: a ceiling of zero would block every job on its first session, and a
+ * ceiling of `NaN` would never block anything.
+ *
+ * @param db Open handle.
+ * @param row The job's row, as it is in the table.
+ * @returns A positive integer.
+ */
+function resolveFailureCeiling(db: Database, row: JobRow): number {
+  if (row.grafo_versao_id === null) return DEFAULT_MAX_CONSECUTIVE_FAILURES;
+
+  const version = getVersion(db, row.grafo_versao_id);
+  if (version === undefined) return DEFAULT_MAX_CONSECUTIVE_FAILURES;
+
+  const declared = version.snapshot.max_consecutive_failures;
+  return typeof declared === 'number' && Number.isInteger(declared) && declared >= 1
+    ? declared
+    : DEFAULT_MAX_CONSECUTIVE_FAILURES;
+}
+
+/**
+ * Stops a job whose sessions keep failing on the same node (t265, FR9).
+ *
+ * The half of this ficha that only the control plane can do. The runner already
+ * blocks what it can decide alone — the five pre-session failures (t252), a
+ * refusal the engine declared (t265) — but a STREAK is not visible from inside
+ * one dispatch: the three sessions that came before this one may have run under
+ * three different leases, in three different runner processes, one of which
+ * died. The history lives here, and only here (D1).
+ *
+ * Called from `finishSession`, inside its transaction and right after the
+ * `session.finished` event exists, so the flag and the fact that raised it land
+ * together or neither does — the same rule `announceFinishedExecution` runs
+ * under, and the reason this writes the row directly instead of calling
+ * {@link blockJob}: that one opens a transaction of its own.
+ *
+ * Three things it deliberately does not do:
+ *
+ * - **It does not count a refusal.** A session closed with `failure_kind` is
+ *   the runner's to stop, on the first occurrence, and counting it here as well
+ *   would put two owners on one flag — which is how a job ends up blocked with
+ *   nothing pending. The guard is at the call site, where the payload is.
+ * - **It does not touch a job that is already blocked.** Whatever stopped it
+ *   first is what a person is reading, and overwriting that reason with this one
+ *   would hide the real cause behind a symptom of it.
+ * - **It counts the TRAILING streak.** Most-recent-first, stopping at the first
+ *   session that did not fail: a node that failed twice, worked, and failed
+ *   again has one failure behind it, not three. `LIMIT` the ceiling, because
+ *   nothing past it can change the answer.
+ *
+ * @param db Open handle, inside the finish's own transaction.
+ * @param jobId The job whose session just failed.
+ * @param nodeId The node it ran on; `null` is a no-op — a session with no node
+ *   belongs to no streak.
+ * @param occurredAt The instant of the closure, so the flag is stamped with the
+ *   moment it went up.
+ */
+export function blockOnRepeatedFailure(
+  db: Database,
+  jobId: number,
+  nodeId: string | null,
+  occurredAt: string,
+): void {
+  if (nodeId === null) return;
+
+  const row = readRow(db, jobId);
+  if (row === undefined) return;
+  if (asBoolean(row.bloqueado)) return;
+
+  const ceiling = resolveFailureCeiling(db, row);
+
+  const recent = db
+    .prepare(
+      `SELECT status FROM session
+        WHERE job_id = ? AND node_id = ?
+        ORDER BY id DESC
+        LIMIT ?`,
+    )
+    .all(jobId, nodeId, ceiling) as Array<{ status: string }>;
+
+  let streak = 0;
+  for (const session of recent) {
+    if (session.status !== 'failed') break;
+    streak += 1;
+  }
+  if (streak < ceiling) return;
+
+  // Portuguese, like every other block reason a person reads first
+  // (`input-request.ts:316` is the precedent for core writing one). It names the
+  // node and the count because those two are what tells whoever opens the job
+  // which sessions to go and read.
+  const reason =
+    `O nó \`${nodeId}\` falhou ${String(streak)} sessões seguidas, que é o teto ` +
+    'desta classe de problema. O trabalho parou aqui em vez de continuar sendo ' +
+    'arrendado: cada tentativa custa uma sessão inteira e as últimas terminaram ' +
+    'todas do mesmo jeito. Leia a transcrição dessas sessões, corrija o que elas ' +
+    'apontam e desbloqueie.';
+
+  db.prepare('UPDATE job SET blocked = ?, block_reason = ?, updated_at = ? WHERE id = ?').run(
+    asInteger(true),
+    reason,
+    occurredAt,
+    jobId,
+  );
+
+  // `API_ACTOR`, like `announceFinishedExecution`: this is the control plane
+  // asserting something about the history IT owns, not the runner reporting
+  // what a session did.
+  const event = recordEvent(db, {
+    type: 'job.blocked',
+    project_id: row.projeto_id,
+    execution_id: row.execucao_id,
+    entity: { type: 'job', id: jobId },
+    actor: API_ACTOR,
+    occurred_at: occurredAt,
+    data: { reason, consecutive_failures: streak },
+  });
+
+  // The same reaction `blockJob` fires, matched on the node the job is STANDING
+  // on: a block is a flag fact, not a movement fact (t169).
+  enqueueHookDeliveries(db, {
+    trigger: 'node_blocked',
+    no_id: row.no_atual,
+    trabalho_id: jobId,
+    projeto_id: row.projeto_id,
+    execucao_id: row.execucao_id,
+    grafo_versao_id: row.grafo_versao_id,
+    evento_id: event.id,
+  });
+}
+
 /** Body of `POST /v1/jobs/:id/unblocks`. */
 export interface UnblockInput {
   actor?: unknown;

@@ -92,13 +92,15 @@ test('AT8 — MANIFEST_ROLES is exactly the schema\'s role enum', () => {
  * untouched, the same non-breaking posture `engine` already had on the node.
  * `project` joined it with t253, under exactly the same rule: it is the class's
  * static configuration, read by the node input projection, and a document that
- * declares none projects `{}` instead of refusing.
+ * declares none projects `{}` instead of refusing. `max_consecutive_failures`
+ * joined with t265, again under it: absent means the default of 3, resolved when
+ * a session closes and never at validation time.
  *
  * Naming it here instead of loosening the check to a subset keeps the claim
  * total — a top-level key that is neither required nor listed here still fails,
  * which is the property that catches a rename or a stray addition.
  */
-const OPTIONAL_DOCUMENT_FIELDS = ['hooks', 'project'];
+const OPTIONAL_DOCUMENT_FIELDS = ['hooks', 'project', 'max_consecutive_failures'];
 
 test('AT8 — the document, node, edge and hook field sets are exactly the graph schema\'s', () => {
   const schema = readSchema(GRAPH_SCHEMA_PATH);

@@ -162,6 +162,16 @@ export interface GraphDocument {
   custom_fields: CustomFieldDefinition[];
   /** Declared reactions (t169). Absent = none, and that is most documents. */
   hooks?: GraphHook[];
+  /**
+   * How many failed sessions in a row, on the same node, stop the job (t265).
+   *
+   * Typed here for the same reason `hooks` is: this package ACTS on the key —
+   * `repositories/job.ts` reads it out of the snapshot when a session closes
+   * `failed`. Absent means the default of 3, and it is resolved THERE and never
+   * here: validation refusing a document for a field it has no opinion about
+   * would break every graph written before this one existed.
+   */
+  max_consecutive_failures?: number;
   [key: string]: unknown;
 }
 

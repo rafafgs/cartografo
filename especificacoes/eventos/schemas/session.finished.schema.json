@@ -85,6 +85,23 @@
           },
           "additionalProperties": false
         },
+        "failure_kind": {
+          "enum": [
+            "engine_refusal",
+            null
+          ],
+          "description": "Que TIPO de falha foi esta, quando o status sozinho não diz (t265). Mesmo movimento de timeout_reason aplicado ao outro status ambíguo: um crash e um engine que RECUSOU responder desembocam ambos em failed, e só a recusa se reproduz idêntica em toda retentativa — medido na t198, o mesmo prompt foi recusado quatro vezes seguidas antes de a quinta sessão funcionar. Conjunto fechado porque a palavra é NOSSA: um segundo valor entra quando um segundo tipo de falha for medido, nunca porque um engine inventou um. null/ausente quando o adapter não reportou tipo nenhum — jamais deduzido do código de saída, que é justamente o que recusa e crash têm em comum.",
+          "examples": ["engine_refusal", null]
+        },
+        "refusal_category": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "description": "Como o próprio engine classificou a recusa, quando classificou (t265). Palavra do ENGINE, verbatim e sem tradução — reasoning_extraction foi o que a bissecção da t198 leu do frame real. Conjunto de valores aberto de propósito, como o de models e ao contrário de failure_kind ao lado: a categoria é vocabulário de engine, e um enum fechado pediria mudança de schema a cada categoria nova. null quando o engine recusou e não disse mais nada, que é forma real do frame e não defeito.",
+          "examples": ["reasoning_extraction"]
+        },
         "models": {
           "type": [
             "array",

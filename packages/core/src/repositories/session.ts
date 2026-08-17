@@ -24,7 +24,7 @@ import { requireValidData, ValidationError } from '../db/event-validation.ts';
 import { validateAgainstJsonSchema } from '../domain/manifest.ts';
 import { isObject } from '../util/is-object.ts';
 import { getVersion } from './graphs.ts';
-import { announceFinishedExecution } from './job.ts';
+import { announceFinishedExecution, blockOnRepeatedFailure } from './job.ts';
 import { getSkill } from './skill.ts';
 import {
   RUNNER_ACTOR,
@@ -464,6 +464,18 @@ export interface FinishSessionInput {
   status?: unknown;
   exit_code?: unknown;
   timeout_reason?: unknown;
+  /**
+   * What KIND of failure this was, when `failed` alone does not say (t265).
+   *
+   * Today one value, `engine_refusal`: the engine refused the request before
+   * working. It rides in the event and in nothing else — no column, no field on
+   * `GET /v1/sessions` — because the two consumers it has are the log and the
+   * block reason, and promoting it to the projection before a third one exists
+   * is how a schema grows fields nobody reads.
+   */
+  failure_kind?: unknown;
+  /** How the engine classified its own refusal, when it did (t265). */
+  refusal_category?: unknown;
   usage?: unknown;
   models?: unknown;
   transcript?: unknown;
@@ -579,6 +591,8 @@ export function finishSession(
     status: input.status,
     exit_code: input.exit_code,
     timeout_reason: input.timeout_reason,
+    failure_kind: input.failure_kind,
+    refusal_category: input.refusal_category,
     usage: input.usage,
     models: input.models,
     output: input.output,
@@ -670,6 +684,22 @@ export function finishSession(
     // session is typically announced only when something else moves. That gap
     // is inherited here as-is (FR7), not closed and not worked around.
     announceFinishedExecution(db, row.execucao_id, projectId, timestamp);
+
+    // ...and the other thing a closure can trigger (t265, FR10): a job whose
+    // sessions keep failing on the same node stops being re-leased. Here and not
+    // in the runner because the streak spans leases and runner processes, and
+    // only this side can see it (D1) — inside the same transaction, so a flag
+    // never exists without the closure that raised it.
+    //
+    // Three guards, and each one excludes a different thing. Anything but
+    // `failed` is not a failure to count — `timed_out` is a stop of OURS, and
+    // `completed` is what resets the streak. A `failure_kind` present means the
+    // runner is already blocking this one on its own account, and two owners for
+    // one flag is how a job ends up blocked with nothing pending. And a session
+    // with no job belongs to no streak at all.
+    if (data.status === 'failed' && data.failure_kind === null && row.trabalho_id !== null) {
+      blockOnRepeatedFailure(db, row.trabalho_id, row.no_id, timestamp);
+    }
 
     return toSession(readRow(db, id) as SessionRow);
   });

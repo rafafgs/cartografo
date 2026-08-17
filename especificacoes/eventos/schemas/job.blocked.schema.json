@@ -30,6 +30,15 @@
         "reason": {
           "type": "string",
           "description": "Por que parou, em texto livre. Não substitui a pergunta: quando o bloqueio é espera por humano, o conteúdo do que foi perguntado vive em input_request.created."
+        },
+        "consecutive_failures": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Quantas sessões falhadas em sequência, no mesmo trabalho e no mesmo nó, levantaram a bandeira (t265). Presente SÓ no bloqueio que o teto disparou; ausente em todo outro motivo de parada — falha antes da sessão, trabalho não commitado, nó sem a quem perguntar, escalação comum —, porque nenhum deles tem sequência atrás de si e escrever um número ali inventaria uma contagem que ninguém mediu. Mínimo 1: bloquear com zero falhas não é teto, é defeito.",
+          "examples": [3]
         }
       },
       "additionalProperties": false

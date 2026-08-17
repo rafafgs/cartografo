@@ -61,6 +61,13 @@
  * not carry fails the dispatch closed instead of opening a session on a
  * half-written prompt.
  *
+ * **And a REFUSAL after the session is one too** (t265). An engine that refused
+ * the request reproduces its refusal on every retry — measured, four in a row on
+ * one prompt — so it stops the work on the first occurrence instead of throwing
+ * into a loop that buys the same answer again. Every other failed session still
+ * throws, and the CAP on those lives in the control plane, which is the only
+ * side that can count across leases.
+ *
  * **And a failure BEFORE the session is a block, not a throw** (t252). Five of
  * the ways the window below can fail reproduce identically on every retry — a
  * dangling `graph_version_id`, an engine with no route, an unregistered skill,
@@ -91,7 +98,6 @@
 
 import { resolvePermissions } from '../engine/permission-policy.ts';
 import { resolveBudget } from '../engine/resolve-budget.ts';
-import type { SessionStatus } from '../engine/types.ts';
 import { createDispatchControlPlaneClient } from './control-plane-client.ts';
 import {
   DEFAULT_INSTRUCTIONS,
@@ -100,6 +106,7 @@ import {
   type ClaudeCodeDispatchOptions,
   type Job,
 } from './options.ts';
+import { DispatchError, type DispatchOutcome } from './outcome.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
 import { parseNodeResult } from './parse-node-result.ts';
 import { PermissionDenialTracker } from './parse-permission-denial.ts';
@@ -107,6 +114,7 @@ import { classifyPreSessionFailure } from './pre-session-failure.ts';
 import {
   PermissionDenialReporter,
   advance,
+  blockForEngineRefusal,
   blockForPreSessionFailure,
   blockForUncommittedWork,
   blockWithNobodyToAsk,
@@ -158,39 +166,13 @@ export {
   type Job,
 } from './options.ts';
 export { DEFAULT_ENGINE, UnknownEngineError, type EngineRoute } from './resolve-engine.ts';
+export { DispatchError, type DispatchOutcome } from './outcome.ts';
 export { resolveEscalationPolicy, DEFAULT_ESCALATION_POLICY } from './resolve-node.ts';
 export type { EscalationPolicy } from './resolve-node.ts';
 
 /** A session, as `POST /v1/sessions` gives it back. */
 interface Session {
   id: number;
-}
-
-/**
- * How a dispatch ended, for the controller waiting on it (t252).
- *
- * Two answers and not three: a session ran (whatever it then did — asked, was
- * denied, advanced), or the work was stopped before anything opened. A session
- * that DIED is still a rejection, and always was.
- *
- * The reason travels with the block because the caller may want it and the
- * controller does not: `ControllerOptions.dispatch` declares the narrower
- * `{blocked: boolean}` of its own, which this satisfies structurally without
- * either file importing the other.
- */
-export type DispatchOutcome = { blocked: false } | { blocked: true; reason: string };
-
-/** A session that started but did not end well. */
-export class DispatchError extends Error {
-  readonly status: SessionStatus;
-  readonly exitCode: number | null;
-
-  constructor(message: string, status: SessionStatus, exitCode: number | null) {
-    super(message);
-    this.name = 'DispatchError';
-    this.status = status;
-    this.exitCode = exitCode;
-  }
 }
 
 /**
@@ -377,6 +359,8 @@ export function createClaudeCodeDispatch(
             timeoutReason: detail?.timeoutReason,
             usage: detail?.usage,
             models: detail?.models,
+            failureKind: detail?.failureKind,
+            refusalCategory: detail?.refusalCategory,
           });
         },
       });
@@ -564,6 +548,21 @@ export function createClaudeCodeDispatch(
       // than one at a time is a multi-error type nobody has needed yet.
       const failure = denials.failure ?? finishFailure ?? releaseFailure;
       if (failure !== null) throw failure;
+
+      // The engine refused to answer, which is not a session that died — it is a
+      // session that was never going to happen (t265, FR7): throwing would put
+      // the work back in the pool to buy the same refusal again, forever, with
+      // nothing in anybody's inbox. The runner decides it alone, with no read at
+      // all, because `onFinished` already handed it the fact.
+      //
+      // After the failure precedence above, so a refused write still surfaces as
+      // itself, and before the throw below, which is the behaviour being
+      // replaced. `controller.ts` needs nothing new: `attempt.blocked` already
+      // means "keep going with the next candidate".
+      if (outcome.failureKind === 'engine_refusal') {
+        const reason = await blockForEngineRefusal(call, job, outcome.refusalCategory);
+        return { blocked: true, reason };
+      }
 
       // Asking is a successful dispatch — the question is already recorded above,
       // and the work is already blocked. What is NOT successful is a session that

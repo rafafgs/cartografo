@@ -157,6 +157,16 @@ interface Session {
    */
   usage: SessionUsage | null;
   models: string[] | null;
+  /**
+   * The refusal the terminal frame declared, when it declared one (t265).
+   *
+   * `null` is "no frame said this session was refused" — a crash, a clean end,
+   * a build of the CLI that does not report `stop_reason`. The `category` inside
+   * is `null` on its own account: an engine can refuse and say no more than
+   * that, and inventing a word for it here would be a diagnosis this adapter
+   * made up.
+   */
+  refusal: { category: string | null } | null;
   finished: boolean;
   refSent: boolean;
   clock: NodeJS.Timeout | null;
@@ -293,6 +303,41 @@ export function extractModels(frame: Record<string, unknown>): string[] | null {
   return models.length === 0 ? null : models;
 }
 
+/**
+ * The refusal the terminal `result` frame declares, when it declares one (t265,
+ * FR1).
+ *
+ * Two keys, and they were not guessed: `stop_reason` and `stop_details.category`
+ * are what the bisection of t198's four refused sessions read off the real
+ * frames (`docs/spec/escalacao-humana.md:292-293`). Every one of them exited 1
+ * with zero output tokens, which is precisely the shape of a crash — the exit
+ * code cannot tell the two apart, and this is the only place that can.
+ *
+ * `"refusal"` and nothing else: an unknown `stop_reason` is not a refusal this
+ * adapter half-recognizes, it is a frame with nothing to say about one. The
+ * category travels unmapped, because it is the engine's own vocabulary crossing
+ * a boundary that was built to carry engine words (the same posture `models`
+ * has), and an empty or non-string one is no category at all.
+ *
+ * @param frame A parsed line of the stream.
+ * @returns The refusal, with the category when the frame named one, or `null`.
+ */
+export function extractRefusal(
+  frame: Record<string, unknown>,
+): { category: string | null } | null {
+  if (frame.stop_reason !== 'refusal') return null;
+
+  const details = frame.stop_details;
+  if (typeof details !== 'object' || details === null || Array.isArray(details)) {
+    return { category: null };
+  }
+
+  const category = (details as Record<string, unknown>).category;
+  return {
+    category: typeof category === 'string' && category.trim() !== '' ? category : null,
+  };
+}
+
 export class ClaudeCodeAdapter implements EngineAdapter {
   readonly engineName = 'claude-code';
 
@@ -409,6 +454,7 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       timeoutReason: null,
       usage: null,
       models: null,
+      refusal: null,
       finished: false,
       refSent: false,
       clock: null,
@@ -635,9 +681,12 @@ export class ClaudeCodeAdapter implements EngineAdapter {
     if (frame === null || frame.type !== 'result') return;
 
     // Independently: a frame may carry the counts without the breakdown, and a
-    // build of the CLI that dropped one has no business erasing the other.
+    // build of the CLI that dropped one has no business erasing the other. The
+    // refusal (t265) is read under the same rule and for the same reason — a
+    // later frame that says nothing about it does not un-refuse the session.
     session.usage = extractUsage(frame) ?? session.usage;
     session.models = extractModels(frame) ?? session.models;
+    session.refusal = extractRefusal(frame) ?? session.refusal;
   }
 
   /** Natural end of the process: drains what is left and classifies the outcome. */
@@ -730,6 +779,14 @@ export class ClaudeCodeAdapter implements EngineAdapter {
       ...(session.timeoutReason === null ? {} : { timeoutReason: session.timeoutReason }),
       ...(session.usage === null ? {} : { usage: session.usage }),
       ...(session.models === null ? {} : { models: session.models }),
+      // Two keys out of one fact, and they appear independently (t265): a
+      // refusal the engine did not classify reports the KIND and no category —
+      // absence is absence, and an empty string in its place would be a
+      // category somebody could group sessions by.
+      ...(session.refusal === null ? {} : { failureKind: 'engine_refusal' as const }),
+      ...(session.refusal === null || session.refusal.category === null
+        ? {}
+        : { refusalCategory: session.refusal.category }),
     };
     session.listener.onFinished(
       status,

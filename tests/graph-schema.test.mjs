@@ -49,8 +49,11 @@ const TOP_LEVEL_KEYS = [
  * `project` entered with t253 under the same rule — it is the static, per-class
  * configuration the node input projection publishes at `input.project`, and a
  * graph that declares none projects an empty object rather than refusing.
+ * `max_consecutive_failures` entered with t265 under the same rule again: how
+ * many failed sessions in a row stop a job, absent meaning the default of 3,
+ * resolved at dispatch time and never at validation.
  */
-const OPTIONAL_TOP_LEVEL_KEYS = ['hooks', 'project'];
+const OPTIONAL_TOP_LEVEL_KEYS = ['hooks', 'project', 'max_consecutive_failures'];
 
 /** Reads a JSON file from the repo, failing with its relative path if missing. */
 function readJson(filePath) {

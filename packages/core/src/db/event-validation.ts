@@ -217,7 +217,16 @@ const RULES: Record<string, TypeRule> = {
   },
   'job.blocked': {
     entity: 'job',
-    fields: { reason: required('string') },
+    fields: {
+      reason: required('string'),
+      // How many failed sessions in a row put the flag up (t265). Present ONLY
+      // for the block the cap itself triggered: every other reason a job stops —
+      // a pre-session failure, uncommitted work, a node with nobody to ask, an
+      // ordinary escalation — has no streak behind it, and writing a number
+      // there would invent a count nobody measured. Floored at 1 because a block
+      // over zero failures is not a cap, it is a bug.
+      consecutive_failures: optional('integer', { min: 1 }),
+    },
   },
   'job.unblocked': {
     entity: 'job',
@@ -286,6 +295,19 @@ const RULES: Record<string, TypeRule> = {
       // in the payload — the same reasoning that kept quota states out of the
       // adapter's own status vocabulary.
       timeout_reason: optional('string', { values: ['wall_clock', 'silence'] }),
+      // What KIND of failure it was, when `failed` alone does not say (t265).
+      // The same move `timeout_reason` above makes, applied to the other
+      // ambiguous status: a crash and an engine that REFUSED to answer both land
+      // on `failed`, and only the second one reproduces identically on every
+      // retry. Closed set, like `tier` and unlike `models`: this word is ours.
+      failure_kind: optional('string', { values: ['engine_refusal'] }),
+      // ...and how the engine classified its own refusal. Open, like `models`
+      // beside it and for the same reason: the category is the ENGINE's word
+      // (`reasoning_extraction` is what t198 measured), and a closed enum would
+      // need a release of this file for every category an engine ships. No
+      // cross-field check against `status` either — `timeout_reason` has never
+      // had one, and the mirror is not where that rule would belong.
+      refusal_category: optional('string'),
       // Which models ran the session (t172). `minItems: 1` is the same rule the
       // schema declares, and it is what keeps `[]` out: an empty list is not a
       // way to say "nothing was reported" — that is what the absence, normalized

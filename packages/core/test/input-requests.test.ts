@@ -150,6 +150,10 @@ test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owni
   const block = jobEvents[1];
   assert.deepEqual(block.data, {
     reason: `aguardando resposta da pergunta ${inputRequest.id}`,
+    // Every optional field of the type appears normalized (t265): a block that
+    // waits on a person has no streak of failed sessions behind it, and `null`
+    // is how the log says so.
+    consecutive_failures: null,
   });
   assert.equal(
     block.actor.type,

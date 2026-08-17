@@ -316,6 +316,43 @@ export interface SessionFinishDetail {
    * Absent follows the same discipline as `usage`; an empty list is no answer.
    */
   readonly models?: readonly string[];
+
+  /**
+   * What KIND of failure this was, when the engine said something the status
+   * cannot carry (t265).
+   *
+   * The third use of this interface's additive-growth point, and it is here for
+   * the same reason `timeoutReason` is: `failed` is one word for two facts that
+   * deserve different answers. A crash is worth retrying — the process died, and
+   * the next attempt may not. An engine REFUSAL is not: measured in t198, the
+   * same prompt was refused four times in a row before a fifth session worked,
+   * so a consumer that retries it is buying the same answer again.
+   *
+   * A closed set of one, and the opposite openness decision from
+   * `refusalCategory` below: this word is OURS. A second value enters here when a
+   * second failure kind is measured, never because an engine invented one.
+   *
+   * Absent is the ordinary case and covers every session opened before this
+   * field existed — a crash, a clean end, a cancel. It is never inferred from an
+   * exit code: a non-zero exit is what a refusal and a crash have in common,
+   * which is exactly why this field had to exist.
+   */
+  readonly failureKind?: 'engine_refusal';
+
+  /**
+   * How the engine itself classified the refusal, when it classified it (t265).
+   *
+   * The engine's own word, verbatim and unmapped — `reasoning_extraction` is
+   * what the bisection read off the real frame. Open vocabulary, like `models`
+   * and unlike `failureKind`: a closed enum here would need a release of this
+   * file every time an engine names a new category, and a category nobody could
+   * record is a diagnosis nobody can make.
+   *
+   * Absent is "the engine refused and said no more than that", which is a real
+   * shape of the frame and not a defect — the refusal itself already travels in
+   * `failureKind`.
+   */
+  readonly refusalCategory?: string;
 }
 
 /**

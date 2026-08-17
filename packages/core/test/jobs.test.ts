@@ -16,6 +16,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import type { GraphDocument } from '../src/domain/graph.ts';
+import { manifestHash } from '../src/domain/manifest.ts';
+import { insertVersion } from '../src/repositories/graphs.ts';
 import {
   PACKAGE_ROOT,
   T102_ARTIFACTS,
@@ -124,6 +127,150 @@ async function registerGraphDemandingField(ctx: TestContext): Promise<string> {
   );
   assert.equal(response.status, 201, `POST /v1/graphs returned ${response.status}`);
   return response.body.graph_version.id;
+}
+
+/* -------------------------------------------------------------------------- */
+/* t262 — a final node that pins a skill is not done just for being arrived at. */
+/*                                                                             */
+/* Until this ficha `concluido` was `final_nodes.includes(no_atual)` and        */
+/* nothing else, so the traveller was declared finished the instant it LANDED   */
+/* on the last node — and the skill that node pins never got a session, because */
+/* the controller's candidate list drops a `completed` job before the runner    */
+/* sees it (`packages/runner/src/controller/cliente-controle.ts`). t198's first */
+/* real crossing of the bets bundle found it on `registro-monitoramento`.       */
+/*                                                                             */
+/* The rule below keys on `skill_ref` PRESENCE and never on `node_type`:        */
+/* `docs/spec/grafo.md` §2 says a portão is "nó como qualquer outro", and this  */
+/* fixture's own final node is a gate that pins a real skill.                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The `output` schema the final node's registered skill declares.
+ *
+ * A gate's outcome vocabulary is not this file's to choose: the registry
+ * demands exactly `pass`/`fail`/`escalate_human`
+ * (`src/repositories/skill.ts`, `checkGateOutcome`), so the executor can route.
+ * `evidencia` rides along because an agentic gate verifies with evidence of its
+ * own (D9) — and because a report that omits it is what AT-3 needs refused.
+ */
+const REVIEW_OUTPUT_SCHEMA = {
+  type: 'object',
+  required: ['outcome', 'evidencia'],
+  additionalProperties: false,
+  properties: {
+    outcome: { enum: ['pass', 'fail', 'escalate_human'] },
+    evidencia: { type: 'string', minLength: 1 },
+  },
+};
+
+/** A report the schema above accepts, whole. */
+const CONFORMING_REPORT = {
+  outcome: 'pass',
+  evidencia: 'a nota responde ao tema declarado, no segundo parágrafo',
+};
+
+/**
+ * Registers the skill the final node pins, and returns the pin.
+ *
+ * `revisar-nota` and not `cartografo/revisar-nota`: the committed fixture's own
+ * pin carries a slash and the registry's ids are kebab-case, so the pin as
+ * written could never be registered at all — the same swap `sessions.test.ts`
+ * makes for the same reason. Which is exactly why the rule under test may not
+ * be keyed on a REGISTERED skill: it is keyed on the node declaring one.
+ */
+async function registerReviewSkill(
+  ctx: TestContext,
+): Promise<{ id: string; version: string; hash: string }> {
+  const manifest: Record<string, unknown> = {
+    id: 'revisar-nota',
+    version: '1.0.0',
+    hash: '',
+    role: 'gate',
+    description: 'Confere a nota contra o tema declarado e encerra a travessia.',
+    input: { type: 'object', properties: { tema: { type: 'string' } } },
+    output: REVIEW_OUTPUT_SCHEMA,
+    preconditions: [],
+    checks: [
+      {
+        id: 'nota-existe',
+        type: 'deterministic',
+        description: 'A nota existe e não está vazia.',
+        command: 'test -s nota.md',
+      },
+    ],
+    permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: false } },
+    instructions: '# Revisar nota\n\nConfira a nota contra o tema.',
+    origin: { type: 'native' },
+  };
+  manifest.hash = manifestHash(manifest);
+
+  const response = await request<{ id: string; version: string; hash: string }>(
+    ctx,
+    'POST',
+    '/v1/skills',
+    manifest,
+  );
+  assert.equal(response.status, 201, `POST /v1/skills returned ${response.status}`);
+  return { id: manifest.id as string, version: '1.0.0', hash: manifest.hash as string };
+}
+
+/**
+ * The minimal graph with its final node pinning a skill the registry carries.
+ *
+ * Patched, never hand-written, for the reason `registerMinimalGraph` above
+ * already gives: what these tests read is the snapshot of a version that went
+ * through the registration gate. The one edit is the pin, because the report
+ * has to be judged against a REGISTERED `output` schema for the refusal in AT-3
+ * to mean anything.
+ */
+async function registerGraphPinningReviewSkill(ctx: TestContext): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  document.problem_class = 'nota-curta-com-revisao-registrada';
+  const nodes = document.nodes as Array<Record<string, unknown>>;
+  nodes[1].skill_ref = await registerReviewSkill(ctx);
+
+  const response = await request<{ graph_version: { id: string } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(response.status, 201, `POST /v1/graphs returned ${response.status}`);
+  return response.body.graph_version.id;
+}
+
+/**
+ * Opens a session on a node of the job and closes it, exactly as the runner does.
+ *
+ * @param ctx Control plane running.
+ * @param jobId The traveller.
+ * @param nodeId Where the session runs.
+ * @param output What the session reports; omitted means it reported nothing
+ *   structured at all, which is a different fact from a report that was refused.
+ * @returns The id of the session that was closed.
+ */
+async function runSessionOn(
+  ctx: TestContext,
+  jobId: number,
+  nodeId: string,
+  output?: Record<string, unknown>,
+): Promise<number> {
+  const opened = await request<{ id: number }>(ctx, 'POST', '/v1/sessions', {
+    job_id: jobId,
+    node_id: nodeId,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'Revise a nota.',
+  });
+  assert.equal(opened.status, 201, `POST /v1/sessions returned ${opened.status}`);
+
+  const finished = await request(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
+    status: 'completed',
+    exit_code: 0,
+    ...(output === undefined ? {} : { output }),
+  });
+  assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
+  return opened.body.id;
 }
 
 /** Reads one job's projection off the API. */
@@ -545,7 +692,7 @@ test('t152 — a job with no graph version is never reported as concluído', asy
   );
 });
 
-test('t152 — concluído is "the current node is a final node of the job\'s graph version"', async (t) => {
+test('t262 AT-1 — arriving at a final node that pins a skill is not enough to be concluído', async (t) => {
   requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
   const ctx = await startControlPlane(t);
   const versionId = await registerMinimalGraph(ctx);
@@ -573,15 +720,86 @@ test('t152 — concluído is "the current node is a final node of the job\'s gra
   assert.equal(atFinal.current_node_id, 'revisar');
   assert.equal(
     atFinal.completed,
-    true,
-    '`revisar` is the only node in the version\'s final_nodes: the walk is over',
+    false,
+    '`revisar` pins a skill that never ran: the traveller is standing on the last ' +
+      'node, which is not the same as having finished it (t262)',
   );
+  assert.equal(atFinal.blocked, false, 'and it is an ordinary candidate, not a stuck job');
 });
 
-test('t152 — a blocked job is not concluído, even parked on a final node', async (t) => {
+test('t262 AT-2 — a conforming report on the final node completes the job, on both routes', async (t) => {
   requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
   const ctx = await startControlPlane(t);
-  const versionId = await registerMinimalGraph(ctx);
+  const versionId = await registerGraphPinningReviewSkill(ctx);
+
+  const job = await createJob(ctx, {
+    title: 'a nota que foi revisada de verdade',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { to_node_id: 'revisar' });
+  assert.equal((await readJob(ctx, job.id)).completed, false, 'nothing ran yet');
+
+  await runSessionOn(ctx, job.id, 'revisar', CONFORMING_REPORT);
+
+  assert.equal(
+    (await readJob(ctx, job.id)).completed,
+    true,
+    'the pinned skill ran and reported what its `output` schema declares: now it is over',
+  );
+
+  const list = await request<{ jobs: JobProjection[] }>(ctx, 'GET', '/v1/jobs');
+  assert.equal(list.status, 200);
+  const row = list.body.jobs.find((candidate) => candidate.id === job.id);
+  assert.ok(row !== undefined, 'the job is missing from the board');
+  assert.equal(row.completed, true, 'the board cannot disagree with the job page');
+});
+
+test('t262 AT-3 — a report the schema refuses leaves the job an ordinary candidate', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerGraphPinningReviewSkill(ctx);
+
+  const refused = await createJob(ctx, {
+    title: 'a revisão que reportou torto',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${refused.id}/transitions`, { to_node_id: 'revisar' });
+  // `escala` is the graph fixture's own vocabulary, not the registry's, and
+  // `evidencia` is missing: the registered schema refuses it, `finishSession`
+  // stores `output: null` and records the reason in the event (t253).
+  await runSessionOn(ctx, refused.id, 'revisar', { outcome: 'escala' });
+
+  const afterRefusal = await readJob(ctx, refused.id);
+  assert.equal(afterRefusal.completed, false, 'a refused report is not a report');
+  assert.equal(
+    afterRefusal.blocked,
+    false,
+    'and it does not block either: capping repeated failed attempts is t265, not this ficha',
+  );
+
+  const silent = await createJob(ctx, {
+    title: 'a revisão que não reportou nada',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${silent.id}/transitions`, { to_node_id: 'revisar' });
+  await runSessionOn(ctx, silent.id, 'revisar');
+
+  const afterSilence = await readJob(ctx, silent.id);
+  assert.equal(
+    afterSilence.completed,
+    false,
+    'a session that reported nothing structured left nothing to verify the arrival with',
+  );
+  assert.equal(afterSilence.blocked, false);
+});
+
+test('t262 AT-4 — a blocked job is not concluído, even parked on a finished final node', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerGraphPinningReviewSkill(ctx);
 
   const job = await createJob(ctx, {
     title: 'a nota que travou no fim',
@@ -589,7 +807,8 @@ test('t152 — a blocked job is not concluído, even parked on a final node', as
     graph_version_id: versionId,
   });
   await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { to_node_id: 'revisar' });
-  assert.equal((await readJob(ctx, job.id)).completed, true, 'it got there before blocking');
+  await runSessionOn(ctx, job.id, 'revisar', CONFORMING_REPORT);
+  assert.equal((await readJob(ctx, job.id)).completed, true, 'it finished before blocking');
 
   const blocked = await request<JobProjection>(ctx, 'POST', `/v1/jobs/${job.id}/blocks`, {
     reason: 'a revisão parou esperando alguém',
@@ -605,10 +824,10 @@ test('t152 — a blocked job is not concluído, even parked on a final node', as
   );
 });
 
-test('t152 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id', async (t) => {
+test('t262 AT-4 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id', async (t) => {
   requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
   const ctx = await startControlPlane(t);
-  const versionId = await registerMinimalGraph(ctx);
+  const versionId = await registerGraphPinningReviewSkill(ctx);
 
   const arrived = await createJob(ctx, {
     title: 'chegou ao fim',
@@ -616,6 +835,14 @@ test('t152 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id', as
     graph_version_id: versionId,
   });
   await request(ctx, 'POST', `/v1/jobs/${arrived.id}/transitions`, { to_node_id: 'revisar' });
+  await runSessionOn(ctx, arrived.id, 'revisar', CONFORMING_REPORT);
+
+  const standing = await createJob(ctx, {
+    title: 'parado no nó final, sem ter rodado',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${standing.id}/transitions`, { to_node_id: 'revisar' });
 
   const walking = await createJob(ctx, {
     title: 'ainda no meio',
@@ -626,7 +853,7 @@ test('t152 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id', as
   const list = await request<{ jobs: JobProjection[] }>(ctx, 'GET', '/v1/jobs');
   assert.equal(list.status, 200);
 
-  for (const id of [arrived.id, walking.id]) {
+  for (const id of [arrived.id, standing.id, walking.id]) {
     const row = list.body.jobs.find((candidate) => candidate.id === id);
     assert.ok(row !== undefined, `job #${id} is missing from the board`);
     assert.equal(
@@ -640,9 +867,106 @@ test('t152 — GET /v1/jobs reports the same concluído as GET /v1/jobs/:id', as
     list.body.jobs.map((row) => [row.id, row.completed]),
     [
       [arrived.id, true],
+      [standing.id, false],
       [walking.id, false],
     ],
-    'and the value is the derived one, not a constant',
+    'and the value is the derived one, not a constant — two of these three are on the final node',
+  );
+});
+
+test('t262 AT-5 — a final node with no skill_ref at all is concluído on arrival, as before', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+
+  // The registered version exists only to give the lineage a `graph` row to
+  // hang off; what the job cites is the hand-inserted one below.
+  const registered = await registerMinimalGraph(ctx);
+  const graphId = (
+    ctx.db.prepare('SELECT graph_id FROM graph_version WHERE id = ?').get(registered) as {
+      graph_id: string;
+    }
+  ).graph_id;
+
+  // Inserted through the repository, bypassing `POST /v1/graphs` on purpose:
+  // `schema/grafo.schema.json` makes `skill_ref` mandatory on every node, so no
+  // document that passes the registration gate can ever reach this branch. It
+  // exists for the malformed or pre-existing snapshot, the same way
+  // `resolveOutputSchema` and the runner's `resolveNode` already degrade instead
+  // of throwing — the deliberately-not-sound-fixture posture of
+  // `domain-operations.test.ts`.
+  const snapshot = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as GraphDocument;
+  delete (snapshot.nodes[1] as Record<string, unknown>).skill_ref;
+  const versionId = 'sha256:' + 'e'.repeat(64);
+  insertVersion(ctx.db, {
+    id: versionId,
+    grafo_id: graphId,
+    versao_pai: null,
+    snapshot,
+    origem: 'manual',
+    proposta_id: null,
+    criado_em: new Date().toISOString(),
+  });
+
+  const job = await createJob(ctx, {
+    title: 'a nota de um snapshot sem pino no nó final',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { to_node_id: 'revisar' });
+
+  assert.equal(
+    (await readJob(ctx, job.id)).completed,
+    true,
+    'a final node with nothing pinned has nothing left to run: arrival is the whole of it',
+  );
+});
+
+test('t262 AT-6 — the round finishes on the final node\'s session, not only on a transition', async (t) => {
+  requireArtifacts(...ARTIFACTS, T102_ARTIFACTS.executionRoutes, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerGraphPinningReviewSkill(ctx);
+
+  const job = await createJob(ctx, {
+    title: 'o único trabalho da rodada',
+    entry_node_id: 'redigir',
+    execution_id: 2620,
+    graph_version_id: versionId,
+  });
+
+  const finishedAt = async (): Promise<string | null> => {
+    const response = await request<{ finished_at: string | null }>(
+      ctx,
+      'GET',
+      '/v1/executions/2620',
+    );
+    assert.equal(response.status, 200);
+    return response.body.finished_at;
+  };
+
+  assert.equal(await finishedAt(), null, 'the traveller has not even left the entry node');
+
+  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { to_node_id: 'revisar' });
+  assert.equal(
+    await finishedAt(),
+    null,
+    'and landing on the final node is no longer the end of the round either (t262)',
+  );
+
+  await runSessionOn(ctx, job.id, 'revisar', CONFORMING_REPORT);
+
+  const announced = await finishedAt();
+  assert.ok(
+    announced !== null,
+    'PATCH /v1/sessions/:id/finish is now the THIRD moment a job can become ' +
+      'concluído, and it has to announce the round like the other two do (FR4)',
+  );
+
+  const events = await request<{ events: Event[] }>(ctx, 'GET', '/v1/executions/2620/events');
+  assert.equal(events.status, 200);
+  assert.deepEqual(
+    events.body.events.filter((event) => event.type === 'execution.finished').length,
+    1,
+    'once, ever — the guard `announceFinishedExecution` already carries',
   );
 });
 

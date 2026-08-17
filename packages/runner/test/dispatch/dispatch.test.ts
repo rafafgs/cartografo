@@ -4950,3 +4950,182 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
     assert.ok(argv.includes("veio do teste"));
   });
 });
+
+// --- t262: a final node that pins a skill is dispatched like any other -------
+
+/**
+ * The lines a fake session prints when it reports what its node produced.
+ *
+ * `linesWithResult` above says which EDGE a gate took; this one carries no
+ * label at all, which is what a `work` node with a single way out — or with
+ * none — reports (`parse-node-result.ts`). The payload is the smallest object
+ * `skill-travessia-fazer.json`'s `output` accepts, because the whole point of
+ * the case below is a report that SURVIVES the registered schema: one that does
+ * not is stored as `null` and would leave the job forever unfinished.
+ */
+function linesWithReport(nota: string): string {
+  return JSON.stringify([
+    { stream: "stdout", text: "Fiz a etapa e escrevi o que fiz em saida.md." },
+    { stream: "stdout", text: "```resultado" },
+    { stream: "stdout", text: JSON.stringify({ nota }) },
+    { stream: "stdout", text: "```" },
+  ]);
+}
+
+/** The work, with the terminal flag the controller filters candidates on. */
+type FinishedWork = Work & { completed: boolean };
+
+/** The session, with the structured report `PATCH /finish` stored (t253). */
+type SessionWithOutput = Session & { output: Record<string, unknown> | null };
+
+test("t262 — the controller dispatches a final node that pins a skill, and only its report ends the traversal", async (t) => {
+  const { ClienteControle } = await loadModule<typeof ClientModule>(
+    "src/controller/cliente-controle.ts",
+  );
+  const { Controller } = await loadModule<typeof ControllerModule>(
+    "src/controller/controller.ts",
+  );
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t262-workdir-"));
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  // Both nodes of the fixture are real `work` nodes pinning the same registered
+  // skill, and `revisar` is the graph's only final node — the exact shape both
+  // factory bundles have at `registro-monitoramento` and `implantar`.
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  const versionId = await registerGraph(
+    baseUrl,
+    token,
+    twoEngineGraph("no-final-com-skill-t262", undefined),
+  );
+
+  const work = await api<FinishedWork>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      title: "ficha que ainda tem o último nó para rodar",
+      entry_node_id: "implementar",
+      execution_id: 262,
+      graph_version_id: versionId,
+    },
+    201,
+    token,
+  );
+
+  const client = new ClienteControle({ urlBase: baseUrl, token });
+  await client.registrarRunner("runner-t262", "o que roda o nó final");
+
+  let currentRecord = path.join(workDir, "implementar.json");
+  const controller = new Controller({
+    client,
+    runnerId: "runner-t262",
+    projectId: 1,
+    runnerCap: 1,
+    projectCap: 4,
+    ttlSeconds: 30,
+    dispatch: async (jobId) =>
+      createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: currentRecord,
+          FAKE_ENGINE_LINES: linesWithReport(
+            "a etapa deixou saida.md pronto",
+          ),
+        },
+      })(jobId),
+  });
+
+  const jobNow = async (): Promise<FinishedWork> =>
+    await api<FinishedWork>(
+      baseUrl,
+      "GET",
+      `/v1/jobs/${work.id}`,
+      undefined,
+      200,
+      token,
+    );
+
+  // --- 1. the ordinary node advances onto the final one ---------------------
+  assert.ok(await controller.tick(), "the entry node was picked up");
+
+  const arrived = await jobNow();
+  assert.equal(arrived.current_node_id, "revisar", arrived.block_reason ?? "");
+  assert.equal(arrived.blocked, false);
+  assert.equal(
+    arrived.completed,
+    false,
+    "standing on the last node is not having run it: `revisar` pins a skill (t262)",
+  );
+
+  // ...and that is the whole defect this ficha closes: the candidate list drops
+  // a `completed` job before the runner ever sees it, so the last node's skill
+  // used to get no session at all.
+  assert.deepEqual(
+    (await client.listarTrabalhosLiberados()).map((candidate) => candidate.id),
+    [work.id],
+    "a job that arrived with work left to do is still a candidate",
+  );
+
+  // --- 2. the final node gets a session, like any other node ----------------
+  currentRecord = path.join(workDir, "revisar.json");
+  assert.ok(
+    await controller.tick(),
+    "the final node has to be dispatched, not skipped",
+  );
+
+  const { sessions } = await api<{ sessions: SessionWithOutput[] }>(
+    baseUrl,
+    "GET",
+    `/v1/sessions?job_id=${work.id}`,
+    undefined,
+    200,
+    token,
+  );
+  assert.deepEqual(
+    sessions.map((session) => session.node_id),
+    ["implementar", "revisar"],
+    "one session per node, the final one included",
+  );
+  const last = sessions[1];
+  assert.equal(last.status, "completed");
+  assert.deepEqual(
+    last.output,
+    { nota: "a etapa deixou saida.md pronto" },
+    "the report survived the pinned skill's own `output` schema",
+  );
+  assert.ok(
+    existsSync(path.join(workDir, "revisar.json")),
+    "the final node really opened an engine process",
+  );
+
+  // --- 3. and only NOW is the traversal over --------------------------------
+  const finished = await jobNow();
+  assert.equal(finished.current_node_id, "revisar", "a final node has nowhere to go");
+  assert.equal(
+    finished.completed,
+    true,
+    "the pinned skill ran and reported what it declares: the walk is over",
+  );
+
+  assert.deepEqual(
+    (await client.listarTrabalhosLiberados()).map((candidate) => candidate.id),
+    [],
+    "and a finished job stops being anybody's candidate",
+  );
+  assert.equal(
+    await controller.tick(),
+    null,
+    "so the next tick finds nothing, instead of re-running the last node forever",
+  );
+});

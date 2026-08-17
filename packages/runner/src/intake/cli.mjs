@@ -8,7 +8,7 @@
  *
  * What it does: refuses an unregistered class before spending anything, opens
  * ONE agent session to decompose the request, and posts the result as a draft.
- * The draft lands `pendente`. No ticket exists until a human confirms it, and
+ * The draft lands `pending`. No ticket exists until a human confirms it, and
  * confirming is a route this command does not call and this client does not have.
  *
  * Exit codes are the contract, because this is what a person (or a script) reads:
@@ -129,7 +129,7 @@ async function main() {
 
   process.stdout.write(`${draft.id}\n`);
   process.stdout.write(
-    `intake: draft ${draft.id} is "${draft.status}" with ${draft.itens.length} item(s) over ${draft.classe}\n`,
+    `intake: draft ${draft.id} is "${draft.status}" with ${draft.items.length} item(s) over ${draft.class}\n`,
   );
   process.stdout.write(
     `intake: review it, then confirm by hand — POST /v1/intake/${draft.id}/confirmations. ` +

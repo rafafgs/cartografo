@@ -82,7 +82,7 @@ export const HELP = [
   '',
   'What the command does NOT do:',
   '',
-  '  - confirm the draft. It lands as `pendente`, no ticket exists yet, and the',
+  '  - confirm the draft. It lands as `pending`, no ticket exists yet, and the',
   '    confirmation is the human gate:',
   '',
   '      POST /v1/intake/<id>/confirmations',

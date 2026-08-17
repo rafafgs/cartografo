@@ -127,7 +127,7 @@ options:
                             --worktrees-root ~/proj-worktrees
   --declared-runner-cap <n>
                             ceiling this runner DECLARES to the control plane
-                            for its own runner id (teto_runner); the server
+                            for its own runner id (runner_cap); the server
                             takes the MIN with its own configured ceiling and
                             is the one that enforces it (D1). It is not
                             sessions in flight here: this process dispatches

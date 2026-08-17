@@ -595,4 +595,11 @@ test('t208 — USAGE names --declared-runner-cap and no longer promises simultan
     'the value is a ceiling declared to the control plane, and this process ' +
       'dispatches one session at a time whatever it says',
   );
+
+  // ...and the wire field it feeds is named the way the wire spells it since
+  // t226 (`docs/spec/glossario-wire.md` §1.5). The help text is where somebody
+  // goes to find out what the server is being told, so a name it retired sends
+  // them looking for a field no route has (t254, FR4).
+  assert.match(USAGE, /runner_cap/, 'the help names the body field the flag fills');
+  assert.doesNotMatch(USAGE, /teto_runner/, 'and never the spelling t226 retired');
 });

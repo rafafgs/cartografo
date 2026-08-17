@@ -27,7 +27,16 @@ abre (D7) com dois vocabulários em vez de um.
 | §2 | `events` | convergida | t227 |
 | §3 | `proposal-ops` | convergida | t228 |
 | §4.1 e §4.2 | `database` | convergida | t229 (nomes), t235 (valores) |
-| §5 | `routes-cli-report` | pendente | t230 |
+| §5 | `routes-cli-report` | convergida | t230 |
+| todas, nas especificações | — | convergida | t231 (docs e portão) |
+
+A última linha é a do filho que fecha a D20: o CÓDIGO de cada superfície já
+tinha portão próprio quando ela começou (um `no-portuguese-wire.test.ts` por
+pacote, mais os portões de evento, de operação e de banco), e o que faltava era
+o papel. O `packages/core/test/glossario-wire-docs.test.ts` lê a §2.1, a §5.1 e
+a §5.2 daqui em tempo de execução e recusa qualquer uma dessas grafias dentro
+de crase ou de bloco cercado nas especificações — a prosa em volta continua
+portuguesa, que é o que a D18 decidiu.
 
 Quatro colunas de `job` e de `session` que a §4.2 não registra continuam em
 português (`corpo`, `criterios_de_aceite`, `transcricao_truncada`,

@@ -22,9 +22,10 @@
  *
  * Only a **backtick span or a fenced code block** is read. Everything else on
  * the page is blanked before a term is looked for, because these documents are
- * Portuguese prose ON PURPOSE (D18): a sentence about "a pergunta que bloqueia
- * o trabalho" is the language the project is written in, and a sweep that could
- * not tell it from a citation would have to be turned off to be usable. A name
+ * Portuguese prose ON PURPOSE (D18): the sentence
+ * `a pergunta que bloqueia o trabalho` is the language the project is written
+ * in, and a sweep that could not tell it from a citation would have to be
+ * turned off to be usable. A name
  * quoted as code is the one position where the document is claiming something
  * about the wire, and it is the only position this gate judges.
  *

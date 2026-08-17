@@ -56,7 +56,7 @@ interface OperationObject {
 /** The document, in the slice this suite reads. */
 interface OpenApiDocument {
   openapi: string;
-  info: { title: string; version: string };
+  info: { title: string; version: string; description?: string };
   servers: Array<{ url: string }>;
   paths: Record<string, Record<string, OperationObject>>;
 }
@@ -270,6 +270,25 @@ test('t171 AT3 — the three routes of the basic flow carry request and response
   assert.ok(
     (answer.parameters ?? []).some((item) => item.name === 'id' && item.in === 'path'),
     'PATCH /v1/input-requests/{id}/answer does not declare its path parameter',
+  );
+});
+
+test('t197 FR6 — the document says which status an unusable body gets, and names the exception', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const document = await fetchDocument(ctx.url);
+
+  // Prose and not a per-route schema, deliberately: writing the real contract of
+  // each endpoint is still t171's own Out of Scope. What a client cannot guess
+  // from the paths alone is that ONE route answers `422` where every other one
+  // answers `400` (t157, FR2), so that is what the description has to carry.
+  const description = document.info.description ?? '';
+  assert.ok(description.length > 0, 'the document describes the API by title alone');
+  assert.ok(description.includes('400'), `the description does not mention 400: ${description}`);
+  assert.ok(description.includes('422'), `the description does not mention 422: ${description}`);
+  assert.ok(
+    description.includes('/v1/jobs/'),
+    `the description does not name the one route that answers 422: ${description}`,
   );
 });
 

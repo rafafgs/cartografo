@@ -28,28 +28,28 @@ processo isoladamente. O runner é cliente HTTP puro, exatamente como a tela
 ```sql
 CREATE TABLE runner (
   id            TEXT PRIMARY KEY,
-  nome          TEXT,
-  registrado_em TEXT NOT NULL
+  name          TEXT,
+  registered_at TEXT NOT NULL
 );
 
 CREATE TABLE lease (
-  id               INTEGER PRIMARY KEY AUTOINCREMENT,
-  runner_id        TEXT NOT NULL REFERENCES runner(id),
-  trabalho_id      INTEGER NOT NULL, -- solto de propósito (§6)
-  projeto_id       INTEGER NOT NULL,
-  status           TEXT NOT NULL DEFAULT 'ativa'
-                     CHECK (status IN ('ativa', 'liberada', 'expirada')),
-  ttl_segundos     INTEGER NOT NULL,
-  concedida_em     TEXT NOT NULL,
-  heartbeat_em     TEXT NOT NULL,
-  expira_em        TEXT NOT NULL,
-  liberada_em      TEXT,
-  motivo_expiracao TEXT CHECK (motivo_expiracao IN ('heartbeat_perdido', 'expirou'))
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  runner_id         TEXT NOT NULL REFERENCES runner(id),
+  job_id            INTEGER NOT NULL, -- solto de propósito (§6)
+  project_id        INTEGER NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'ativa'
+                      CHECK (status IN ('ativa', 'liberada', 'expirada')),
+  ttl_seconds       INTEGER NOT NULL,
+  granted_at        TEXT NOT NULL,
+  heartbeat_at      TEXT NOT NULL,
+  expires_at        TEXT NOT NULL,
+  released_at       TEXT,
+  expiration_reason TEXT CHECK (expiration_reason IN ('heartbeat_perdido', 'expirou'))
 );
 
-CREATE INDEX idx_lease_runner_status   ON lease (runner_id, status);
-CREATE INDEX idx_lease_projeto_status  ON lease (projeto_id, status);
-CREATE INDEX idx_lease_trabalho_status ON lease (trabalho_id, status);
+CREATE INDEX idx_lease_runner_status  ON lease (runner_id, status);
+CREATE INDEX idx_lease_project_status ON lease (project_id, status);
+CREATE INDEX idx_lease_job_status     ON lease (job_id, status);
 ```
 
 Os três índices são os três caminhos de leitura do despacho, na ordem em que

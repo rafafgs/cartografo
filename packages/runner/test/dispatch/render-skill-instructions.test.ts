@@ -245,17 +245,117 @@ test('AT9 — the routing protocol is appended only when the node has more than 
 
   assert.ok(single !== null && none !== null && gate !== null);
 
+  // The claim is about the ROUTING half, and it is the same claim it always
+  // was: a node with one way out is deterministic, and asking it to choose
+  // invents a decision it does not have. What changed in t259 is that every
+  // node with an `output_schema` is now told to REPORT — the block is there for
+  // all three, and only the gate is asked to name an edge inside it.
   assert.ok(
-    !single.instructions.includes('```resultado'),
+    !single.instructions.includes('mais de uma saída'),
     'a node with one way out is deterministic: asking it to choose invents a decision',
   );
-  assert.ok(!none.instructions.includes('```resultado'));
+  assert.ok(!none.instructions.includes('mais de uma saída'));
 
   assert.ok(gate.instructions.includes('```resultado'), 'a gate is told how to report its outcome');
+  assert.ok(gate.instructions.includes('mais de uma saída'));
   // The exact `condition` labels of THIS node, so the session is choosing from
   // the real edges and not from a vocabulary somebody remembered.
   assert.ok(gate.instructions.includes('aprovado'));
   assert.ok(gate.instructions.includes('retrabalho'));
+});
+
+/* -- t259: every node is told how to report, not just the ones that route --- */
+
+/** The same node, with whatever `contract` the case needs. */
+function nodeWithContract(
+  edges: ResolveModule.GraphEdge[],
+  contract: Record<string, unknown>,
+): ResolveModule.ResolvedNode {
+  const base = resolvedNode(edges);
+  return { ...base, node: { ...base.node, contract } };
+}
+
+/** Renders that node and gives back the text. */
+async function renderContract(
+  edges: ResolveModule.GraphEdge[],
+  contract: Record<string, unknown>,
+): Promise<string> {
+  const { renderSkillInstructions } = await loadModule();
+  const rendered = await renderSkillInstructions(
+    nodeWithContract(edges, contract),
+    (await makeReader(registeredSkill())).read,
+    {},
+  );
+  assert.ok(rendered !== null, 'the node pins a registered skill, so it renders');
+  return rendered.instructions;
+}
+
+/**
+ * The other half of the routing protocol, and the half nothing carried (t259).
+ *
+ * `routingProtocol` only ever spoke to a node with two or more ways out, and it
+ * only ever asked for a routing label. So a `work` node — every node of the
+ * software bundle but one — was handed an `output_schema` in its prompt, told
+ * it would be checked against it, and never told HOW to hand its result back.
+ * There was no producer for `session.output` at all, which is what the next
+ * node's `input` is projected from.
+ */
+test('t259 AT5 — a single-edge node with an output_schema is told to report it', async () => {
+  const OUTPUT_SCHEMA = {
+    type: 'object',
+    required: ['branch'],
+    properties: { branch: { type: 'string' } },
+  };
+  const text = await renderContract(SINGLE_EDGE, {
+    input_schema: { type: 'object' },
+    output_schema: OUTPUT_SCHEMA,
+    checks: [],
+  });
+
+  assert.ok(
+    text.includes('```resultado'),
+    'a work node with a contract to fulfil has to be told how to hand its result back',
+  );
+  assert.ok(
+    !text.includes('mais de uma saída'),
+    'and it is never asked to choose an edge it does not have',
+  );
+});
+
+test('t259 AT5 — a node with more than one way out gets ONE merged block', async () => {
+  const text = await renderContract(TWO_EDGES, {
+    input_schema: { type: 'object' },
+    output_schema: {
+      type: 'object',
+      required: ['outcome'],
+      properties: { outcome: { enum: ['pass', 'fail'] } },
+    },
+    checks: [],
+  });
+
+  assert.equal(
+    text.split('```resultado').length - 1,
+    1,
+    'the routing label is a FIELD of the report, never a second block beside it',
+  );
+  assert.ok(text.includes('mais de uma saída'), 'the gate is still told it decides');
+  assert.ok(text.includes('aprovado') && text.includes('retrabalho'), 'and with its real labels');
+});
+
+test('t259 AT5 — a node with no output_schema is told nothing about reporting', async () => {
+  const empty = await renderContract(SINGLE_EDGE, {
+    input_schema: { type: 'object' },
+    output_schema: {},
+    checks: [],
+  });
+  const absent = await renderContract(SINGLE_EDGE, { input_schema: { type: 'object' }, checks: [] });
+
+  for (const text of [empty, absent]) {
+    assert.ok(
+      !text.includes('```resultado'),
+      'there is nothing to conform to, so there is nothing to ask for',
+    );
+  }
 });
 
 test('AT10 — the manifest permissions become the session permissions', async () => {

@@ -2572,6 +2572,21 @@ function traversalGraph(className: string): Record<string, unknown> {
   return { ...document, problem_class: className };
 }
 
+/**
+ * The input the traversal fixture's gate needs, handed over through the seam.
+ *
+ * `travessia-conferir` reads `{{input.producao.nota}}` since t259 — the bucket
+ * `implementar` declares in `contract.produces` — because that fixture is what
+ * proves the projection live (`test/controller/graph-traversal.e2e.test.ts`).
+ * A job created directly ON the gate has no previous session to have produced
+ * it, and these four cases are about routing and permissions, not about input:
+ * they inject it, which is what `resolveInput` exists for. What the PRODUCTION
+ * default reads is the subject of the t259 suite at the end of this file.
+ */
+const GATE_NOTA = "a etapa anterior deixou saida.md pronto";
+const gateInput = (): Promise<Record<string, unknown>> =>
+  Promise.resolve({ producao: { nota: GATE_NOTA } });
+
 /** The lines a fake gate session prints when it chooses an edge by name. */
 function linesWithResult(result: string): string {
   return JSON.stringify([
@@ -3207,6 +3222,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         doFetch,
         engines: claudeOnly(fakeAdapter()),
         worktrees: fakeWorktrees(workDir),
+        resolveInput: gateInput,
         timeoutSeconds: 60,
         envOverrides: {
           FAKE_ENGINE_RECORD: record,
@@ -3226,7 +3242,14 @@ test("t161 — the node's skill drives the session, and the session advances the
         JSON.parse(readFileSync(record, "utf8")) as FakeRecord
       ).argv.join("\n");
       assert.ok(argv.includes("```resultado"), "the gate was given the protocol");
-      assert.ok(argv.includes(gateSkill.instructions), "and its own skill's instructions");
+      // Interpolated, since t259 gave the fixture a placeholder: what reaches
+      // the session is the manifest body with this node's input in it, and a
+      // byte-for-byte comparison against the registry copy would be comparing
+      // against a text nobody is ever given.
+      assert.ok(
+        argv.includes(gateSkill.instructions.replaceAll("{{input.producao.nota}}", GATE_NOTA)),
+        "and its own skill's instructions",
+      );
     },
   );
 
@@ -3273,6 +3296,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         doFetch,
         engines: claudeOnly(fakeAdapter()),
         worktrees: fakeWorktrees(workDir),
+        resolveInput: gateInput,
         timeoutSeconds: 60,
         envOverrides: { FAKE_ENGINE_LINES: linesWithResult("escala") },
       })(job.id);
@@ -3500,6 +3524,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         token,
         engines: claudeOnly(fakeAdapter()),
         worktrees: fakeWorktrees(workDir),
+        resolveInput: gateInput,
         timeoutSeconds: 60,
         permissions: { filesystem: { write: ["**"] }, network: { allowed: true } },
         envOverrides: {
@@ -3762,6 +3787,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         doFetch,
         engines: claudeOnly(fakeAdapter()),
         worktrees: fakeWorktrees(workDir),
+        resolveInput: gateInput,
         timeoutSeconds: 60,
         envOverrides: { FAKE_ENGINE_LINES: linesWithResult("escala") },
       })(job.id);
@@ -4502,9 +4528,11 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         engines: claudeOnly(fakeAdapter()),
         worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
+        // Asynchronous since t259: the production default is an HTTP call to
+        // `GET /v1/jobs/:id/context`, and the seam took its signature.
         resolveInput: (dispatched, resolved) => {
           inputs.push(`${dispatched.id}:${resolved.node.id}`);
-          return fundamentalsInput();
+          return Promise.resolve(fundamentalsInput());
         },
         envOverrides: {
           FAKE_ENGINE_RECORD: record,
@@ -4721,4 +4749,204 @@ test("t193 — a non-JSON error body is an ErroDoControlPlane, never a raw Synta
     ["http://127.0.0.1:4317/v1/jobs/193"],
     "it stops on the first call: nothing is opened before the work is even read",
   );
+});
+
+// --- t259: the production `resolveInput` is the real projection -------------
+
+/**
+ * The seam t204 left open, wired (t259, FR1).
+ *
+ * `resolveInput` defaulted to `{}` for four fichas — honestly, because nothing
+ * assembled a node's input. t253 built that assembly and published it at
+ * `GET /v1/jobs/:id/context`; what was missing was this one call. The three
+ * cases below are the whole contract of the default: it asks that route through
+ * the same client every other one goes through, it hands the `input` key WHOLE
+ * to the renderer, a refusal from it propagates instead of blocking the work,
+ * and an injected `resolveInput` still wins.
+ */
+test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  await registerSkill(baseUrl, token, GATE_SKILL);
+
+  /** The node this suite dispatches: `conferir` names `{{input.producao.nota}}`. */
+  const NOTA = "a etapa anterior deixou saida.md pronto";
+
+  /**
+   * Wraps `fetch`, recording every route and optionally answering `/context`
+   * itself.
+   *
+   * Standing in for the projection rather than producing one is deliberate:
+   * what is under test here is the CALL — which route, which envelope key,
+   * what happens when it refuses. That the projection itself is right is
+   * `packages/core`'s own suite (t253), and that the two meet is the live
+   * traversal in `test/controller/graph-traversal.e2e.test.ts`.
+   */
+  function contextStub(answer?: { status: number; body: unknown }): {
+    doFetch: typeof fetch;
+    routes: string[];
+  } {
+    const routes: string[] = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      const route = String(input).slice(baseUrl.length);
+      routes.push(`${init?.method ?? "GET"} ${route}`);
+      if (answer !== undefined && route.endsWith("/context")) {
+        return new Response(JSON.stringify(answer.body), {
+          status: answer.status,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return await fetch(input, init);
+    };
+    return { doFetch, routes };
+  }
+
+  /** A job standing on the gate, in a class of its own. */
+  async function jobOnGate(className: string, executionId: number): Promise<Work> {
+    const versionId = await registerGraph(baseUrl, token, traversalGraph(className));
+    return await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        title: "ficha num nó cuja skill lê o que o nó anterior produziu",
+        entry_node_id: "conferir",
+        execution_id: executionId,
+        graph_version_id: versionId,
+      },
+      201,
+      token,
+    );
+  }
+
+  await parent.test(
+    "t259 AT2 — the `input` envelope key reaches the renderer whole",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t259-contexto-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnGate("travessia-t259-at2", 2591);
+      const record = path.join(workDir, "conferir.json");
+      const { doFetch, routes } = contextStub({
+        status: 200,
+        body: { input: { producao: { nota: NOTA } } },
+      });
+
+      const outcome = await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      })(job.id);
+
+      assert.deepEqual(outcome, { blocked: false }, "the placeholder resolved, so nothing blocks");
+      assert.ok(
+        routes.includes(`GET /v1/jobs/${job.id}/context`),
+        `the default has to ask the projection for this job, and it asked: ${routes.join(", ")}`,
+      );
+
+      // The argv is the channel: `buildCommand` puts `instructions` on it, so
+      // what the process received IS what the session was told (t204's AT19).
+      const argv = (JSON.parse(readFileSync(record, "utf8")) as FakeRecord).argv.join("\n");
+      assert.ok(
+        argv.includes(NOTA),
+        "the `input` key is handed over whole, so `{{input.producao.nota}}` resolves",
+      );
+      assert.ok(!argv.includes("{{input."), "and no token survives");
+    },
+  );
+
+  await parent.test(
+    "t259 AT2 — a refusal from /context propagates; the work is not blocked",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t259-contexto-500-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOnGate("travessia-t259-at2-500", 2592);
+      const { doFetch, routes } = contextStub({
+        status: 500,
+        body: { error: "erro_interno" },
+      });
+
+      // Not one of the five patterns `pre-session-failure.ts` recognizes, so it
+      // is not reclassified into a block: a 5xx heals itself, and the tick loop
+      // is the right handler for it.
+      await assert.rejects(
+        async () =>
+          createClaudeCodeDispatch({
+            urlBase: baseUrl,
+            token,
+            doFetch,
+            engines: claudeOnly(fakeAdapter()),
+            worktrees: fakeWorktrees(workDir),
+            timeoutSeconds: 60,
+            envOverrides: { FAKE_ENGINE_LINES: linesWithoutBlock() },
+          })(job.id),
+      );
+
+      assert.deepEqual(
+        routes.filter((route) => route.endsWith("/blocks")),
+        [],
+        "a transient refusal may never stop the work",
+      );
+      assert.equal(
+        (await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token)).blocked,
+        false,
+      );
+    },
+  );
+
+  await parent.test("t259 AT2 — an injected resolveInput still wins", async (t) => {
+    const { createClaudeCodeDispatch } =
+      await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+    const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t259-injetado-"));
+    t.after(() => {
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    const job = await jobOnGate("travessia-t259-at2-injetado", 2593);
+    const record = path.join(workDir, "conferir.json");
+    const { doFetch, routes } = contextStub();
+
+    await createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      doFetch,
+      engines: claudeOnly(fakeAdapter()),
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+      resolveInput: () => Promise.resolve({ producao: { nota: "veio do teste" } }),
+      envOverrides: {
+        FAKE_ENGINE_RECORD: record,
+        FAKE_ENGINE_LINES: linesWithoutBlock(),
+      },
+    })(job.id);
+
+    assert.deepEqual(
+      routes.filter((route) => route.endsWith("/context")),
+      [],
+      "an overridden seam does not also call the default's route",
+    );
+
+    const argv = (JSON.parse(readFileSync(record, "utf8")) as FakeRecord).argv.join("\n");
+    assert.ok(argv.includes("veio do teste"));
+  });
 });

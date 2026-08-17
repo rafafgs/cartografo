@@ -48,6 +48,9 @@ const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.
 /** The execution this traversal's telemetry lands in. */
 const EXECUTION_ID = 1610;
 
+/** ...and the one the t259 projection traversal below lands in. */
+const PROJECTION_EXECUTION_ID = 2590;
+
 interface Work {
   id: number;
   title: string;
@@ -69,6 +72,13 @@ interface Event {
   entity: { type: string; id: number | string };
   actor: { type: string; ref: string };
   data: Record<string, unknown>;
+}
+
+/** A session, in the three fields the projection traversal reads back. */
+interface SessionRecord {
+  node_id: string | null;
+  prompt: string;
+  output: Record<string, unknown> | null;
 }
 
 async function loadModule<T>(relative: string): Promise<T> {
@@ -138,9 +148,24 @@ function directoryWorktrees(root: string): WorktreeModule.WorktreeManager {
   };
 }
 
-/** The lines a fake session prints when it just works and asks nothing. */
+/** The `nota` every fake `implementar` session below reports. */
+const NOTA = 'escrevi saida.md com o resumo da etapa';
+
+/**
+ * The lines a fake session prints when it just works and asks nothing.
+ *
+ * It closes with the block its node's `output_schema` declares since t259: a
+ * `work` node is TOLD to report its result that way now
+ * (`render-skill-instructions.ts`), and the report is what the next node's
+ * `input` projection is built out of. Before that ficha nothing in the runner
+ * turned a session's own result into an object, so this constant was bare prose
+ * and the node downstream had nothing to read.
+ */
 const QUIET = JSON.stringify([
   { stream: 'stdout', text: 'Fiz o que o nó pedia; nada a perguntar.' },
+  { stream: 'stdout', text: '```resultado' },
+  { stream: 'stdout', text: JSON.stringify({ nota: NOTA }) },
+  { stream: 'stdout', text: '```' },
 ]);
 
 /** ...and the lines a fake gate prints when it chooses an edge by name. */
@@ -149,6 +174,27 @@ function routing(result: string): string {
     { stream: 'stdout', text: 'Conferi o artefato com evidência própria.' },
     { stream: 'stdout', text: '```resultado' },
     { stream: 'stdout', text: JSON.stringify({ resultado: result }) },
+    { stream: 'stdout', text: '```' },
+  ]);
+}
+
+/**
+ * ...and the lines a gate prints under the merged protocol of t259: ONE block,
+ * carrying the routing label AND the object its `output_schema` declares, never
+ * a routing key on its own and a second block beside it.
+ */
+function verdict(result: string): string {
+  return JSON.stringify([
+    { stream: 'stdout', text: 'Conferi o artefato com evidência própria.' },
+    { stream: 'stdout', text: '```resultado' },
+    {
+      stream: 'stdout',
+      text: JSON.stringify({
+        resultado: result,
+        outcome: 'pass',
+        evidencia: 'li saida.md do começo ao fim',
+      }),
+    },
     { stream: 'stdout', text: '```' },
   ]);
 }
@@ -349,5 +395,167 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     [...new Set(moves.map((event) => `${event.actor.type}:${event.actor.ref}`))],
     ['system:runner'],
     'and the log says who moved it: the runner, on every single edge',
+  );
+});
+
+/**
+ * The projection, live: what a node produced is what the next node reads
+ * (t259, AT1).
+ *
+ * t253 built both ends of this and could join neither. The control plane stores
+ * a session's structured report (`PATCH /sessions/:id/finish`) and projects it
+ * into the next node's input (`GET /jobs/:id/context`); the runner shipped
+ * nothing to the first route and asked nothing of the second, so
+ * `resolveInput` resolved `{}` and every manifest with a placeholder blocked.
+ *
+ * What this test asserts is the whole chain in one traversal, with a real
+ * control plane and nothing faked but the engine: the `implementar` session
+ * reports `{"nota": …}`, the report reaches `/finish`, `/context` shows it at
+ * `input.producao.nota` — the bucket `implementar`'s own `contract.produces`
+ * names — and the prompt of the session opened for `conferir` carries the value
+ * where the placeholder used to be. Each link is checked on its own, so a break
+ * says WHICH one broke.
+ */
+test('t259 — what a node produced reaches the next node through the real projection', async (t) => {
+  const { ClienteControle } = await loadModule<typeof ClientModule>(
+    'src/controller/cliente-controle.ts',
+  );
+  const { Controller } = await loadModule<typeof ControllerModule>('src/controller/controller.ts');
+  const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(
+    'src/dispatch/dispatch.ts',
+  );
+
+  const { url: baseUrl, token } = await bootCore(t);
+
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t259-worktrees-'));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-travessia-fazer.json'), 201);
+  await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-travessia-conferir.json'), 201);
+
+  const { graph_version: version } = await api<{ graph_version: { id: string } }>(
+    baseUrl,
+    token,
+    'POST',
+    '/v1/graphs',
+    fixture('grafo-travessia.json'),
+    201,
+  );
+
+  const job = await api<Work>(
+    baseUrl,
+    token,
+    'POST',
+    '/v1/jobs',
+    {
+      title: 'a saída de um nó é a entrada do seguinte',
+      entry_node_id: 'implementar',
+      execution_id: PROJECTION_EXECUTION_ID,
+      graph_version_id: version.id,
+    },
+    201,
+  );
+
+  const client = new ClienteControle({ urlBase: baseUrl, token });
+  await client.registrarRunner('runner-t259', 'o que atravessa lendo o que ficou para trás');
+
+  const worktrees = directoryWorktrees(root);
+  let currentLines = QUIET;
+  // One sidecar per node: the rendered instructions travel on the ARGV, not in
+  // the session's `prompt` column — `buildCommand` puts them there, and the
+  // `prompt` the control plane stores is `buildPrompt`'s envelope
+  // (`session-spec.ts`). What the model was told is the argv, so that is what
+  // gets read back below.
+  let currentRecord = path.join(root, 'implementar.json');
+  const controller = new Controller({
+    client,
+    runnerId: 'runner-t259',
+    projectId: 1,
+    runnerCap: 1,
+    projectCap: 4,
+    ttlSeconds: 30,
+    // No `resolveInput`: the production default is the subject of this test.
+    dispatch: async (jobId) =>
+      createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: {
+          'claude-code': {
+            adapter: new ClaudeCodeAdapter({
+              commandBuilder: (spec) => ({
+                command: process.execPath,
+                args: [FAKE_ENGINE, ...buildCommand(spec).args],
+              }),
+              graceMs: 300,
+            }),
+            decodeSessionText: decodeClaudeCodeSessionText,
+          },
+        },
+        worktrees,
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: currentLines, FAKE_ENGINE_RECORD: currentRecord },
+      })(jobId),
+  });
+
+  /** Everything one fake session was told, as the process received it. */
+  const toldTo = (node: string): string =>
+    (JSON.parse(readFileSync(path.join(root, `${node}.json`), 'utf8')) as { argv: string[] }).argv.join(
+      '\n',
+    );
+
+  // --- 1. the work node runs and its report reaches the control plane -------
+  assert.ok(await controller.tick(), 'the released job was picked up');
+
+  const afterFirst = await api<{ sessions: SessionRecord[] }>(
+    baseUrl,
+    token,
+    'GET',
+    `/v1/sessions?job_id=${job.id}`,
+  );
+  assert.equal(afterFirst.sessions.length, 1);
+  assert.deepEqual(
+    afterFirst.sessions[0].output,
+    { nota: NOTA },
+    'the session\'s own ```resultado``` block is what /finish stored as `output`',
+  );
+
+  // --- 2. ...and the projection puts it in the bucket the node declares -----
+  const { input } = await api<{ input: Record<string, unknown> }>(
+    baseUrl,
+    token,
+    'GET',
+    `/v1/jobs/${job.id}/context`,
+  );
+  assert.deepEqual(
+    input.producao,
+    { nota: NOTA },
+    '`implementar` declares contract.produces: "producao", so that is where its report lands',
+  );
+
+  // --- 3. ...and the next node's instructions carry the value, not the token -
+  assert.equal((await api<Work>(baseUrl, token, 'GET', `/v1/jobs/${job.id}`)).current_node_id, 'conferir');
+
+  currentLines = verdict('aprovado');
+  currentRecord = path.join(root, 'conferir.json');
+  assert.ok(await controller.tick());
+
+  const gate = toldTo('conferir');
+  assert.ok(
+    gate.includes(NOTA),
+    `the gate has to be told what the step before it reported, and it was told:\n${gate}`,
+  );
+  assert.ok(!gate.includes('{{input.'), 'and not one placeholder may survive into a prompt (t204)');
+
+  const { sessions } = await api<{ sessions: SessionRecord[] }>(
+    baseUrl,
+    token,
+    'GET',
+    `/v1/sessions?job_id=${job.id}`,
+  );
+  assert.ok(
+    sessions.some((session) => session.node_id === 'conferir'),
+    'the gate opened a session of its own',
   );
 });

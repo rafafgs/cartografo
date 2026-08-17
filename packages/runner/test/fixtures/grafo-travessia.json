@@ -36,6 +36,7 @@
             "nota": { "type": "string", "minLength": 1 }
           }
         },
+        "produces": "producao",
         "checks": [
           {
             "type": "deterministic",
@@ -53,14 +54,20 @@
       "skill_ref": {
         "id": "travessia-conferir",
         "version": "1.0.0",
-        "hash": "sha256:32e940651e4c6491bb62ffe875a26f2d5859149175488e66ddc1101a75104c84"
+        "hash": "sha256:a26c224025323ee4efd18d90c79f48bf64ebf3799f499303206f2088fe2659e3"
       },
       "contract": {
         "input_schema": {
           "type": "object",
-          "required": ["nota"],
+          "required": ["producao"],
           "properties": {
-            "nota": { "type": "string", "minLength": 1 }
+            "producao": {
+              "type": "object",
+              "required": ["nota"],
+              "properties": {
+                "nota": { "type": "string", "minLength": 1 }
+              }
+            }
           }
         },
         "output_schema": {

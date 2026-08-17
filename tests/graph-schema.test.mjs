@@ -650,11 +650,29 @@ test('t253 — project is an optional top-level object, and both bundles still v
   document.project = { repo: 'git@github.com:rafaelgomes/cartografo.git' };
   assert.deepEqual(validateAgainstSchema(document, schema), []);
 
-  // The non-breaking claim, checked against the two real consumers: neither
-  // bundle declares either field, and both still pass the schema unchanged.
+  // The non-breaking claim, checked against the two real consumers: one bundle
+  // declares the field and the other does not, and BOTH pass the schema.
+  //
+  // t253 asserted here that neither did, and said in its own message that
+  // "ticket 2" would change it — t259 is that ticket, and it filled the field in
+  // the software bundle so its five manifests could resolve
+  // `{{input.project.*}}` and dispatch at all. bets-assimetricas is untouched,
+  // which is what keeps the "optional, breaks nothing" half of the claim real.
   for (const bundle of ['desenvolvimento-de-software', 'bets-assimetricas']) {
     const graph = readJson(path.join(ROOT, 'grafos-de-fabrica', bundle, 'grafo.json'));
-    assert.equal(graph.project, undefined, `${bundle} declares no project yet (ticket 2 does)`);
     assert.deepEqual(validateAgainstSchema(graph, schema), [], `${bundle}: shape`);
   }
+
+  const software = readJson(
+    path.join(ROOT, 'grafos-de-fabrica', 'desenvolvimento-de-software', 'grafo.json'),
+  );
+  assert.ok(
+    typeof software.project === 'object' && software.project !== null,
+    'the software bundle declares the class config its manifests read (t259)',
+  );
+  assert.equal(
+    readJson(path.join(ROOT, 'grafos-de-fabrica', 'bets-assimetricas', 'grafo.json')).project,
+    undefined,
+    'and a bundle that declares none is still valid, which is the optional half',
+  );
 });

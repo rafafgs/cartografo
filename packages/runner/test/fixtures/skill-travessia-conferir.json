@@ -1,19 +1,28 @@
 {
   "id": "travessia-conferir",
   "version": "1.0.0",
-  "hash": "sha256:32e940651e4c6491bb62ffe875a26f2d5859149175488e66ddc1101a75104c84",
+  "hash": "sha256:a26c224025323ee4efd18d90c79f48bf64ebf3799f499303206f2088fe2659e3",
   "role": "gate",
   "description": "Confere o artefato da etapa anterior com evidência própria e roteia a travessia.",
   "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
-      "nota"
+      "producao"
     ],
     "properties": {
-      "nota": {
-        "type": "string",
-        "minLength": 1
+      "producao": {
+        "type": "object",
+        "description": "o balde que o nó `implementar` declara em `contract.produces`; é onde a saída estruturada da etapa anterior aterrissa na projeção de input (t253)",
+        "required": [
+          "nota"
+        ],
+        "properties": {
+          "nota": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     }
   },
@@ -65,7 +74,7 @@
       "allowed": false
     }
   },
-  "instructions": "# Conferir uma etapa da travessia\n\nLeia o que a etapa anterior produziu e julgue com evidência sua: o relato\nde quem produziu não conta como prova.\n\nVocê não escreve arquivo nenhum. Sua saída é o veredito.",
+  "instructions": "# Conferir uma etapa da travessia\n\nA etapa anterior relatou: {{input.producao.nota}}\n\nLeia o que a etapa anterior produziu e julgue com evidência sua: o relato\nde quem produziu não conta como prova.\n\nVocê não escreve arquivo nenhum. Sua saída é o veredito.",
   "origin": {
     "type": "native"
   }

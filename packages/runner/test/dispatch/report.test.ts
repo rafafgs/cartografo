@@ -388,6 +388,43 @@ test('AT16 — `finishSession` ships what the engine did report', async () => {
   assert.deepEqual(posted.models, ['claude-opus-4']);
 });
 
+/**
+ * The node's own structured report, and the difference between absent and null
+ * (t259).
+ *
+ * `session.output` has existed since t253 and had no producer: the runner
+ * printed a session's `` ```resultado `` block, read one field off it for
+ * routing and threw the rest away. Now the parsed payload rides on the closure
+ * — and the KEY is omitted when there is none, because the control plane
+ * distinguishes "nothing was reported" from "a report the skill's schema
+ * refused" and both of those are stored as a NULL row
+ * (`packages/core/src/repositories/session.ts`). Sending `null` from here would
+ * claim the second when only the first happened.
+ */
+test('t259 AT4 — `finishSession` ships the structured report when there is one', async () => {
+  const { finishSession } = await loadReport();
+  const { sent, call } = recorder();
+
+  const reported = { resultado: 'aprovado', outcome: 'pass', evidencia: 'li a saída inteira' };
+  await finishSession(call, 31, { status: 'completed', exitCode: 0 }, 'bruto', reported);
+
+  const posted = body(sent[0]);
+  assert.deepEqual(posted.output, reported);
+  assert.equal(posted.transcript, 'bruto', 'and the raw stream is untouched by it');
+});
+
+test('t259 AT4 — ...and omits the key entirely when there is none', async () => {
+  const { finishSession } = await loadReport();
+  const { sent, call } = recorder();
+
+  await finishSession(call, 31, { status: 'completed', exitCode: 0 }, 'bruto');
+
+  assert.ok(
+    !('output' in body(sent[0])),
+    '`output` is OMITTED and never sent as null — the two are different facts',
+  );
+});
+
 test('AT17 — a refused closure is given back, not thrown', async () => {
   const { finishSession } = await loadReport();
   const refusal = new Error('the control plane refused the closure');

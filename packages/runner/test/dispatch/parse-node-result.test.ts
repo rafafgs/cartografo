@@ -74,11 +74,6 @@ test('a malformed block yields null instead of throwing', async () => {
   assert.equal(parseNodeResult(block('{"resultado": "unterminated')), null);
   assert.equal(parseNodeResult(block('not json at all')), null);
   assert.equal(parseNodeResult(block(JSON.stringify(['aprovado']))), null);
-  assert.equal(
-    parseNodeResult(block(JSON.stringify({ evidencia: 'sem resultado nenhum' }))),
-    null,
-    'a block that names no result routes nothing, so it is not a block',
-  );
   assert.equal(parseNodeResult(block(JSON.stringify({ resultado: '   ' }))), null);
   assert.equal(
     parseNodeResult(block(JSON.stringify({ resultado: 42 }))),
@@ -123,5 +118,58 @@ test('a payload carrying its own fence does not truncate the block', async () =>
   const evidence = 'A suíte imprimiu:\n```\n1 failing\n```\ne foi só isso.';
   const output = block(JSON.stringify({ resultado: 'retrabalho', evidencia: evidence }));
 
-  assert.deepEqual(parseNodeResult(output), { resultado: 'retrabalho' });
+  assert.deepEqual(parseNodeResult(output), { resultado: 'retrabalho', evidencia: evidence });
+});
+
+/* -- t259: the block is the node's REPORT, and the label is one field of it -- */
+
+/**
+ * The whole payload comes back, and the routing label is one field inside it.
+ *
+ * Until t259 this parser kept `resultado` and threw the rest away, because the
+ * only consumer was `advance()` and the only question was which edge to take.
+ * The block is also the only thing a session prints that has the shape of its
+ * node's `output_schema` — and that object is what `PATCH /sessions/:id/finish`
+ * stores and what the next node's `input` is projected from. Dropping every key
+ * but one left that whole channel with no producer.
+ */
+test('t259 — the whole payload of the block comes back, not just the label', async () => {
+  const { parseNodeResult } = await loadParser();
+
+  const payload = {
+    resultado: 'aprovado',
+    outcome: 'pass',
+    vereditos: [{ ref: 'AT1', veredito: 'passou', evidencia: 'rodei e li a saída' }],
+  };
+
+  assert.deepEqual(parseNodeResult(block(JSON.stringify(payload))), payload);
+});
+
+test('t259 — a block with no label at all is a report, and it comes back whole', async () => {
+  const { parseNodeResult } = await loadParser();
+
+  // A `work` node with a single way out has no decision to report and its
+  // `output_schema` declares no `resultado` — `desenvolver` produces
+  // `{branch, commits, …}` and nothing else. Read as "not a block", as this
+  // parser read it until t259, its report reached `/finish` as nothing at all
+  // and the node after it had no input to resolve against.
+  const payload = { branch: 'ticket-259', commits: ['abc1234'], nota: 'fiz o combinado' };
+
+  assert.deepEqual(parseNodeResult(block(JSON.stringify(payload))), payload);
+});
+
+test('t259 — a label that is not a usable string still refuses the whole block', async () => {
+  const { parseNodeResult } = await loadParser();
+
+  // The one rule that did NOT loosen: a `resultado` that is present and is not
+  // a label is a session that did not understand the protocol, and taking the
+  // rest of its payload as a report would store an object nobody can trust
+  // beside a routing decision that can never be taken.
+  assert.equal(
+    parseNodeResult(block(JSON.stringify({ resultado: 42, evidencia: 'li tudo' }))),
+    null,
+    'the result is a label, and a number is not one',
+  );
+  assert.equal(parseNodeResult(block(JSON.stringify({ resultado: { a: 1 } }))), null);
+  assert.equal(parseNodeResult(block(JSON.stringify({ resultado: null, nota: 'x' }))), null);
 });

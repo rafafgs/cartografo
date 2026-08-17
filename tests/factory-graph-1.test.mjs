@@ -273,7 +273,11 @@ test('AT7 — testar-alpha does not rerun the quality gate; integrar and desenvo
     manifest.checks.some(
       (check) =>
         check.type === 'deterministic' &&
-        /\{\{input\.projeto\.(comando_testes|comandos_qualidade)\}\}/.test(check.command ?? ''),
+        // `project` and not `projeto` since t259: the projection publishes the
+        // class's static config at `input.project`
+        // (`especificacoes/formatos/manifesto-skill.md`), and the bundle's
+        // templates were the last thing still spelling it the old way.
+        /\{\{input\.project\.(comando_testes|comandos_qualidade)\}\}/.test(check.command ?? ''),
     );
   for (const file of ['integrar-branch.json', 'desenvolver-ticket.json']) {
     assert.ok(

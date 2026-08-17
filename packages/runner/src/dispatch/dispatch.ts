@@ -476,18 +476,18 @@ export function createClaudeCodeDispatch(
       // incident may not cost the session its closure nor its question.
       await denials.drain();
 
-      // Captured rather than thrown, exactly as the denials' failure already is:
-      // a closure the control plane refused may not cancel the question that
-      // comes after it. "Asking is not failing" is not a rule about happy paths
-      // — a question dropped here is a human who is never called, and the work
-      // stays unblocked with nobody knowing what it needed. So `report.ts` hands
-      // the failure back rather than throwing it, and it surfaces below.
       // Decoded ONCE and read three times: the escalation block, the routing
       // block and — since t259 — the report that rides on the closure. Decoding
       // it again would let the three disagree about what the session said, and
       // it happens BEFORE the closure now because the closure is one of them.
       const output = route.decodeSessionText(lines);
 
+      // Captured rather than thrown, exactly as the denials' failure already is:
+      // a closure the control plane refused may not cancel the question that
+      // comes after it. "Asking is not failing" is not a rule about happy paths
+      // — a question dropped here is a human who is never called, and the work
+      // stays unblocked with nobody knowing what it needed. So `report.ts` hands
+      // the failure back rather than throwing it, and it surfaces below.
       const finishFailure = await finishSession(
         call,
         session.id,

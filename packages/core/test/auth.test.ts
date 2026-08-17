@@ -4,17 +4,22 @@
  * `POST /v1/jobs` stands in for the whole business surface on purpose: the hook
  * is registered ONCE on the `/v1` scope, so a route family is not what is under
  * test here — the scope is. What each case pins is the difference between the
- * two refusals: a request that never presented a credential (`credencial_ausente`)
- * and one that presented an unusable one (`credencial_invalida`). Collapsing the
- * two into a single message would leave whoever has a stale token unable to tell
- * "I forgot the header" from "my token no longer works".
+ * two refusals: a request that never presented a credential
+ * (`missing_credential`) and one that presented an unusable one
+ * (`invalid_credential`). Collapsing the two into a single message would leave
+ * whoever has a stale token unable to tell "I forgot the header" from "my token
+ * no longer works".
  *
  * `GET /health` is the fifth case and the reason the hook is scoped instead of
  * global: a supervisor has to be able to poll liveness before any credential
  * exists anywhere.
  *
- * The `erro` values are the wire contract, in Portuguese like every other error
- * code the API answers with (t127, FR8).
+ * Since t226 the three bodies are the one envelope of the whole `/v1` surface —
+ * `{error, message}` — and the three codes are the rows the same ticket added to
+ * `docs/spec/glossario-wire.md` §1.4 under FR6, following the `invalid_X` /
+ * `missing_X` naming that section already used. These are the only refusals
+ * EVERY client can receive, which is why they are pinned by value here and not
+ * merely by status.
  */
 
 import assert from 'node:assert/strict';
@@ -25,7 +30,7 @@ import { request, startControlPlane, type TestContext } from './support.ts';
 /** An answer, already decoded, from a request built header by header. */
 interface RawResponse {
   status: number;
-  body: { erro?: string; mensagem?: string; id?: number };
+  body: { error?: string; message?: string; id?: number };
 }
 
 /**
@@ -60,14 +65,14 @@ async function raw(
   };
 }
 
-test('t124 AT — a /v1 request with no Authorization header is denied with credencial_ausente', async (t) => {
+test('t124 AT — a /v1 request with no Authorization header is denied with missing_credential', async (t) => {
   const ctx = await startControlPlane(t);
 
   const denied = await raw(ctx, '/v1/jobs');
   assert.equal(denied.status, 401);
-  assert.equal(denied.body.erro, 'credencial_ausente');
-  assert.equal(typeof denied.body.mensagem, 'string');
-  assert.ok((denied.body.mensagem ?? '').length > 0, 'the refusal says what to do about it');
+  assert.equal(denied.body.error, 'missing_credential');
+  assert.equal(typeof denied.body.message, 'string');
+  assert.ok((denied.body.message ?? '').length > 0, 'the refusal says what to do about it');
 
   const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM trabalho').get() as { total: number };
   assert.equal(rows.total, 0, 'a denied request writes nothing');
@@ -79,18 +84,18 @@ test('t124 AT — a malformed Authorization header is the same refusal as none a
   for (const header of ['not-bearer-shaped', 'Basic abc123', 'Bearer', 'Bearer ', ctx.token]) {
     const denied = await raw(ctx, '/v1/jobs', header);
     assert.equal(denied.status, 401, `"${header}" is not a well-formed credential`);
-    assert.equal(denied.body.erro, 'credencial_ausente');
+    assert.equal(denied.body.error, 'missing_credential');
   }
 });
 
-test('t124 AT — a well-formed header carrying an unknown token is credencial_invalida', async (t) => {
+test('t124 AT — a well-formed header carrying an unknown token is invalid_credential', async (t) => {
   const ctx = await startControlPlane(t);
 
   const denied = await raw(ctx, '/v1/jobs', 'Bearer garbage');
   assert.equal(denied.status, 401);
   assert.equal(
-    denied.body.erro,
-    'credencial_invalida',
+    denied.body.error,
+    'invalid_credential',
     'presenting a credential that does not resolve is a different failure from presenting none',
   );
 });
@@ -167,8 +172,8 @@ test('t143 AT — a runner credential is refused outside its route family', asyn
     no_entrada_id: 'refinar',
   });
   assert.equal(denied.status, 403, 'authenticated is not authorized: the token is valid and refused');
-  assert.equal(denied.body.erro, 'credencial_fora_de_escopo');
-  assert.ok((denied.body.mensagem ?? '').length > 0, 'the refusal says what the credential may do');
+  assert.equal(denied.body.error, 'out_of_scope_credential');
+  assert.ok((denied.body.message ?? '').length > 0, 'the refusal says what the credential may do');
 
   const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM trabalho').get() as { total: number };
   assert.equal(rows.total, 0, 'a refused request writes nothing');
@@ -187,7 +192,7 @@ test('t143 AT — a runner credential cannot revoke, not even its own', async (t
     403,
     'decommissioning a runner is the operator\'s act; a compromised runner does not get to hide',
   );
-  assert.equal(denied.body.erro, 'credencial_fora_de_escopo');
+  assert.equal(denied.body.error, 'out_of_scope_credential');
 
   const stillAlive = await call(ctx, 'GET', '/v1/jobs', token);
   assert.equal(stillAlive.status, 200, 'the refused revocation did not revoke anything');
@@ -199,7 +204,7 @@ test('t143 AT — a runner credential cannot pair another runner', async (t) => 
 
   const denied = await call(ctx, 'POST', '/v1/runners', token, { id: 'runner-inventado' });
   assert.equal(denied.status, 403, 'a runner never pairs itself, nor anybody else (FR1/FR2)');
-  assert.equal(denied.body.erro, 'credencial_fora_de_escopo');
+  assert.equal(denied.body.error, 'out_of_scope_credential');
 });
 
 test('t124 AT — GET /health keeps answering with no credential at all', async (t) => {
@@ -224,14 +229,14 @@ test('t180 — the two 401 bodies say, in English, what to do about them', async
   const missing = await raw(ctx, '/v1/jobs');
   assert.equal(missing.status, 401);
   assert.equal(
-    missing.body.mensagem,
+    missing.body.message,
     'this route requires `Authorization: Bearer <token>` — use the token printed when the control plane starts (CARTOGRAFO_TOKEN, or --token on the command)',
   );
 
   const dead = await raw(ctx, '/v1/jobs', 'Bearer garbage');
   assert.equal(dead.status, 401);
   assert.equal(
-    dead.body.mensagem,
+    dead.body.message,
     'the credential presented is no longer valid (unknown or revoked) — ask whoever administers this control plane for another one',
   );
 });
@@ -251,7 +256,7 @@ test('t180 — the 403 of a runner outside its surface names the surface in Engl
   // shows up here, in a diff somebody reads. `POST /v1/engines/:name/models`
   // joined it in t166.
   assert.equal(
-    denied.body.mensagem,
+    denied.body.message,
     'a runner credential reaches only GET /v1/jobs, POST /v1/leases, POST /v1/leases/:id/heartbeats, POST /v1/leases/:id/releases, GET /v1/leases, POST /v1/engines/:name/models — "POST /v1/jobs" requires a user credential',
   );
 });

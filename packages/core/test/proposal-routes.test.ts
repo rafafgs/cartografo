@@ -8,9 +8,17 @@
  * t96: the soundness gate has to reject the proposal BEFORE the new version
  * exists.
  *
- * The JSON field names stay in Portuguese: they mirror the untouched migration
- * columns (t127, FR8). Only the route paths and the code identifiers are in
- * English.
+ * Since t226 the JSON is English (`docs/spec/glossario-wire.md` §1) — with ONE
+ * island that is deliberately not, and this file is where it is pinned. The
+ * hypothesis vocabulary of `domain/hypothesis.ts` does not move: the outcome
+ * route still takes `{execucao_id, depois}`, `?veredito=` still filters on
+ * `confirmada`/`sem_efeito`/`piorou`, and what is inside `expected_metric` and
+ * `result` is still `{nome, direcao, de, para}` and `{veredito, antes, depois,
+ * execucao_id, avaliado_em}`. t226 renames the KEYS that carry those blobs and
+ * not a byte of the blobs (FR5), because that format is out of D20's scope —
+ * the glossary maps none of it, and `hypothesis.ts` documents the exemption.
+ * The last test of this file asserts exactly that, so a later rename that reaches
+ * in there has to break something on the way.
  */
 
 import assert from 'node:assert/strict';
@@ -37,40 +45,42 @@ interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
 }
 
-interface GraphRow {
+interface Graph {
   id: string;
-  classe: string;
-  versao_corrente_id: string | null;
+  class: string;
+  current_version_id: string | null;
 }
 
-interface VersionRow {
+interface GraphVersion {
   id: string;
-  grafo_id: string;
-  versao_pai: string | null;
-  origem: string;
-  proposta_id: number | null;
-  criado_em: string;
+  graph_id: string;
+  parent_version: string | null;
+  source: string;
+  proposal_id: number | null;
+  created_at: string;
 }
 
-interface ProposalRow {
+interface Proposal {
   id: number;
-  grafo_id: string;
-  versao_alvo: string;
-  operacoes: unknown[];
-  evidencia: unknown;
-  metrica_esperada: unknown;
+  graph_id: string;
+  target_version: string;
+  operations: unknown[];
+  evidence: unknown;
+  /** The KEY is English; what is inside stays `{nome, direcao, de, para}` (FR5). */
+  expected_metric: unknown;
   status: string;
-  versao_aplicada_id: string | null;
-  motivo_reversao: string | null;
-  motivo_rejeicao: string | null;
-  resultado: unknown;
+  applied_version_id: string | null;
+  revert_reason: string | null;
+  rejection_reason: string | null;
+  /** Same story: the key translates, the verdict shape inside does not (FR5). */
+  result: unknown;
 }
 
 interface ApplyResponse {
-  erro?: string;
-  proposta: ProposalRow;
-  grafo?: GraphRow;
-  grafo_versao?: VersionRow;
+  error?: string;
+  proposal: Proposal;
+  graph?: Graph;
+  graph_version?: GraphVersion;
   soundness?: { valido: boolean; violacoes: Array<{ regra: string; alvo: unknown }> };
   estrutura?: { valido: boolean; erros: Array<{ codigo: string; alvo: unknown }> };
 }
@@ -179,18 +189,18 @@ function requireNode(doc: GraphDocument, id: string): GraphNode {
 /** Registers the minimal base graph and returns the freshly created lineage. */
 async function registerBase(
   address: string,
-): Promise<{ document: GraphDocument; graph: GraphRow; version: VersionRow }> {
+): Promise<{ document: GraphDocument; graph: Graph; version: GraphVersion }> {
   const document = minimalGraph();
   const response = await post(address, '/v1/graphs', document);
-  const body = await jsonBody<{ grafo: GraphRow; grafo_versao: VersionRow }>(response);
+  const body = await jsonBody<{ graph: Graph; graph_version: GraphVersion }>(response);
   assert.equal(response.status, 201, JSON.stringify(body));
-  return { document, graph: body.grafo, version: body.grafo_versao };
+  return { document, graph: body.graph, version: body.graph_version };
 }
 
-async function getGraph(address: string, id: string): Promise<GraphRow> {
+async function getGraph(address: string, id: string): Promise<Graph> {
   const response = await fetch(`${address}/v1/graphs/${id}`);
   assert.equal(response.status, 200);
-  return (await jsonBody<{ grafo: GraphRow }>(response)).grafo;
+  return (await jsonBody<{ graph: Graph }>(response)).graph;
 }
 
 const EVIDENCE = {
@@ -205,17 +215,17 @@ async function createProposal(
   targetVersion: string,
   operations: OperationsModule.Operation[],
   expectedMetric: unknown = EXPECTED_METRIC,
-): Promise<ProposalRow> {
+): Promise<Proposal> {
   const response = await post(address, '/v1/proposals', {
-    grafo_id: graphId,
-    versao_alvo: targetVersion,
-    operacoes: operations,
-    evidencia: EVIDENCE,
-    metrica_esperada: expectedMetric,
+    graph_id: graphId,
+    target_version: targetVersion,
+    operations,
+    evidence: EVIDENCE,
+    expected_metric: expectedMetric,
   });
-  const body = await jsonBody<{ proposta: ProposalRow }>(response);
+  const body = await jsonBody<{ proposal: Proposal }>(response);
   assert.equal(response.status, 201, JSON.stringify(body));
-  return body.proposta;
+  return body.proposal;
 }
 
 /**
@@ -225,20 +235,20 @@ async function createProposal(
  * `apply` is `aprovada`, not `pendente`, so a test that applied a freshly
  * created proposal would be exercising a precondition the route no longer has.
  */
-async function approve(address: string, proposalId: number): Promise<ProposalRow> {
+async function approve(address: string, proposalId: number): Promise<Proposal> {
   const response = await post(address, `/v1/proposals/${proposalId}/approve`, {});
-  const body = await jsonBody<{ proposta: ProposalRow }>(response);
+  const body = await jsonBody<{ proposal: Proposal }>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal(body.proposta.status, 'aprovada');
-  return body.proposta;
+  assert.equal(body.proposal.status, 'approved');
+  return body.proposal;
 }
 
 /** Reads one proposal by id (t165, FR5). */
-async function getProposal(address: string, id: number): Promise<ProposalRow> {
+async function getProposal(address: string, id: number): Promise<Proposal> {
   const response = await fetch(`${address}/v1/proposals/${id}`);
-  const body = await jsonBody<{ proposta: ProposalRow }>(response);
+  const body = await jsonBody<{ proposal: Proposal }>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  return body.proposta;
+  return body.proposal;
 }
 
 /** A new node, complete enough to pass `no_com_contrato`. */
@@ -309,7 +319,7 @@ test('AT11 — applying a proposal creates a new version with the right parent a
   const { document, graph, version } = await registerBase(address);
   const operations = passingOperations();
   const proposal = await createProposal(address, graph.id, version.id, operations);
-  assert.equal(proposal.status, 'pendente', 'every proposal is born pending');
+  assert.equal(proposal.status, 'pending', 'every proposal is born pending');
   await approve(address, proposal.id);
 
   const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
@@ -317,22 +327,22 @@ test('AT11 — applying a proposal creates a new version with the right parent a
   assert.equal(response.status, 200, JSON.stringify(body));
 
   const expected = hashSnapshot(applyOperations(document, operations));
-  assert.ok(body.grafo_versao !== undefined);
-  assert.equal(body.grafo_versao.id, expected, 'the version id is the hash of the resulting document');
-  assert.equal(body.grafo_versao.versao_pai, version.id, 'the new version points at the previous one');
-  assert.equal(body.grafo_versao.origem, 'proposta');
-  assert.equal(body.grafo_versao.proposta_id, proposal.id);
+  assert.ok(body.graph_version !== undefined);
+  assert.equal(body.graph_version.id, expected, 'the version id is the hash of the resulting document');
+  assert.equal(body.graph_version.parent_version, version.id, 'the new version points at the previous one');
+  assert.equal(body.graph_version.source, 'proposal');
+  assert.equal(body.graph_version.proposal_id, proposal.id);
 
-  assert.equal(body.proposta.status, 'aplicada');
-  assert.equal(body.proposta.versao_aplicada_id, expected);
+  assert.equal(body.proposal.status, 'applied');
+  assert.equal(body.proposal.applied_version_id, expected);
 
   const after = await getGraph(address, graph.id);
-  assert.equal(after.versao_corrente_id, expected, 'the pointer has to have moved');
+  assert.equal(after.current_version_id, expected, 'the pointer has to have moved');
 
   // The new snapshot is the document with the operations applied — not a diff.
   const newVersion = await fetch(`${address}/v1/graph-versions/${encodeURIComponent(expected)}`);
-  const versionBody = await jsonBody<{ grafo_versao: { snapshot: GraphDocument } }>(newVersion);
-  assert.deepEqual(versionBody.grafo_versao.snapshot, applyOperations(document, operations));
+  const versionBody = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(newVersion);
+  assert.deepEqual(versionBody.graph_version.snapshot, applyOperations(document, operations));
 });
 
 test('t167 — changing a node escalation_policy is a proposal, and it produces a version', async (t) => {
@@ -365,19 +375,19 @@ test('t167 — changing a node escalation_policy is a proposal, and it produces 
   const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
   const body = await jsonBody<ApplyResponse>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.ok(body.grafo_versao !== undefined);
+  assert.ok(body.graph_version !== undefined);
   assert.notEqual(
-    body.grafo_versao.id,
+    body.graph_version.id,
     version.id,
     'changing a node policy is a new version, like any other node field',
   );
-  assert.equal(body.grafo_versao.versao_pai, version.id);
+  assert.equal(body.graph_version.parent_version, version.id);
 
-  const changed = await jsonBody<{ grafo_versao: { snapshot: GraphDocument } }>(
-    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(body.grafo_versao.id)}`),
+  const changed = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(body.graph_version.id)}`),
   );
   assert.equal(
-    (requireNode(changed.grafo_versao.snapshot, 'revisar') as unknown as Record<string, unknown>)
+    (requireNode(changed.graph_version.snapshot, 'revisar') as unknown as Record<string, unknown>)
       .escalation_policy,
     'never',
     'the new snapshot carries the declared policy',
@@ -385,11 +395,11 @@ test('t167 — changing a node escalation_policy is a proposal, and it produces 
 
   // Append-only: the version somebody already ran under does not learn the new
   // policy retroactively (D15).
-  const parent = await jsonBody<{ grafo_versao: { snapshot: GraphDocument } }>(
+  const parent = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(
     await fetch(`${address}/v1/graph-versions/${encodeURIComponent(version.id)}`),
   );
   assert.deepEqual(
-    parent.grafo_versao.snapshot,
+    parent.graph_version.snapshot,
     document,
     'the parent version has to be byte-for-byte what it always was',
   );
@@ -404,28 +414,28 @@ test('AT12 — reverting restores the pointer and the history stays whole', asyn
 
   const application = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
   assert.equal(application.status, 200);
-  const newVersion = (await jsonBody<ApplyResponse>(application)).grafo_versao;
+  const newVersion = (await jsonBody<ApplyResponse>(application)).graph_version;
   assert.ok(newVersion !== undefined);
 
   const reversion = await post(address, `/v1/proposals/${proposal.id}/revert`, {
-    motivo: 'o nó novo dobrou o tempo de travessia sem mexer no retrabalho',
+    reason: 'o nó novo dobrou o tempo de travessia sem mexer no retrabalho',
   });
   const body = await jsonBody<ApplyResponse>(reversion);
   assert.equal(reversion.status, 200, JSON.stringify(body));
-  assert.equal(body.proposta.status, 'revertida');
+  assert.equal(body.proposal.status, 'reverted');
   assert.equal(
-    body.proposta.motivo_reversao,
+    body.proposal.revert_reason,
     'o nó novo dobrou o tempo de travessia sem mexer no retrabalho',
   );
 
   const after = await getGraph(address, graph.id);
-  assert.equal(after.versao_corrente_id, version.id, 'the pointer goes back to the target version');
+  assert.equal(after.current_version_id, version.id, 'the pointer goes back to the target version');
 
-  const versions = await jsonBody<{ versoes: VersionRow[] }>(
+  const versions = await jsonBody<{ versions: GraphVersion[] }>(
     await fetch(`${address}/v1/graphs/${graph.id}/versions`),
   );
   assert.deepEqual(
-    versions.versoes.map((row) => row.id).sort(),
+    versions.versions.map((row) => row.id).sort(),
     [version.id, newVersion.id].sort(),
     'append-only: the abandoned version stays in the history',
   );
@@ -443,21 +453,21 @@ test('AT13 — reverting without a reason returns 400; reverting a pending propo
 
   const withoutReason = await post(address, `/v1/proposals/${proposal.id}/revert`, {});
   assert.equal(withoutReason.status, 400);
-  assert.equal((await jsonBody<{ erro: string }>(withoutReason)).erro, 'motivo_obrigatorio');
+  assert.equal((await jsonBody<{ error: string }>(withoutReason)).error, 'reason_required');
 
   const blankReason = await post(address, `/v1/proposals/${proposal.id}/revert`, {
-    motivo: '   ',
+    reason: '   ',
   });
   assert.equal(blankReason.status, 400, 'a blank reason is not evidence');
 
   const pending = await post(address, `/v1/proposals/${proposal.id}/revert`, {
-    motivo: 'mudei de ideia',
+    reason: 'mudei de ideia',
   });
   assert.equal(pending.status, 409);
-  assert.equal((await jsonBody<{ erro: string }>(pending)).erro, 'proposta_nao_aplicada');
+  assert.equal((await jsonBody<{ error: string }>(pending)).error, 'proposal_not_applied');
 
   const graphAfter = await getGraph(address, graph.id);
-  assert.equal(graphAfter.versao_corrente_id, version.id);
+  assert.equal(graphAfter.current_version_id, version.id);
 });
 
 /**
@@ -559,23 +569,23 @@ for (const rejectionCase of REJECTION_CASES) {
     const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
     const body = await jsonBody<ApplyResponse>(response);
     assert.equal(response.status, 422, JSON.stringify(body));
-    assert.equal(body.erro, 'grafo_invalido');
+    assert.equal(body.error, 'invalid_graph');
     assert.deepEqual(body.soundness?.violacoes, rejectionCase.violations);
-    assert.equal(body.proposta.status, 'rejeitada');
+    assert.equal(body.proposal.status, 'rejected');
     assert.deepEqual(
-      (body.proposta.resultado as { soundness?: { violacoes: unknown } } | null)?.soundness
+      (body.proposal.result as { soundness?: { violacoes: unknown } } | null)?.soundness
         ?.violacoes,
       rejectionCase.violations,
-      'the report stays recorded in proposta.resultado',
+      'the report stays recorded in the proposal result',
     );
 
     const after = await getGraph(address, graph.id);
-    assert.equal(after.versao_corrente_id, version.id, 'the pointer must not have moved');
+    assert.equal(after.current_version_id, version.id, 'the pointer must not have moved');
 
-    const versions = await jsonBody<{ versoes: VersionRow[] }>(
+    const versions = await jsonBody<{ versions: GraphVersion[] }>(
       await fetch(`${address}/v1/graphs/${graph.id}/versions`),
     );
-    assert.equal(versions.versoes.length, 1, 'no new version can have been written');
+    assert.equal(versions.versions.length, 1, 'no new version can have been written');
   });
 }
 
@@ -608,8 +618,8 @@ test('AT18 — a proposal whose target version stopped being the current one ret
   const outdated = await post(address, `/v1/proposals/${second.id}/apply`, {});
   assert.equal(outdated.status, 409);
   assert.equal(
-    (await jsonBody<{ erro: string }>(outdated)).erro,
-    'proposta_desatualizada',
+    (await jsonBody<{ error: string }>(outdated)).error,
+    'stale_proposal',
     'the base moved under the proposal; solving that belongs to the topographer (t118)',
   );
 });
@@ -626,8 +636,8 @@ test('AT19 — applying the same proposal twice returns 409 on the second', asyn
   const second = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
   assert.equal(second.status, 409);
   assert.equal(
-    (await jsonBody<{ erro: string }>(second)).erro,
-    'proposta_nao_aprovada',
+    (await jsonBody<{ error: string }>(second)).error,
+    'proposal_not_approved',
     'since t165 the precondition of apply is `aprovada`, and the refusal says so',
   );
 });
@@ -637,45 +647,45 @@ test('FR7 — a target version foreign to the graph and a malformed operation re
   const { graph, version } = await registerBase(address);
 
   const missingTarget = await post(address, '/v1/proposals', {
-    grafo_id: graph.id,
-    versao_alvo: `sha256:${'1'.repeat(64)}`,
-    operacoes: passingOperations(),
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    graph_id: graph.id,
+    target_version: `sha256:${'1'.repeat(64)}`,
+    operations: passingOperations(),
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(missingTarget.status, 400);
-  assert.equal((await jsonBody<{ erro: string }>(missingTarget)).erro, 'versao_alvo_desconhecida');
+  assert.equal((await jsonBody<{ error: string }>(missingTarget)).error, 'unknown_target_version');
 
   const withoutInverse = await post(address, '/v1/proposals', {
-    grafo_id: graph.id,
-    versao_alvo: version.id,
-    operacoes: [{ tipo: 'adicionar_no', no: newNode() }],
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    graph_id: graph.id,
+    target_version: version.id,
+    operations: [{ tipo: 'adicionar_no', no: newNode() }],
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(withoutInverse.status, 400);
-  assert.equal((await jsonBody<{ erro: string }>(withoutInverse)).erro, 'operacoes_invalidas');
+  assert.equal((await jsonBody<{ error: string }>(withoutInverse)).error, 'invalid_operations');
 
   const unknownType = await post(address, '/v1/proposals', {
-    grafo_id: graph.id,
-    versao_alvo: version.id,
-    operacoes: [{ tipo: 'renomear_no', no_id: 'redigir', inversa: { tipo: 'renomear_no' } }],
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    graph_id: graph.id,
+    target_version: version.id,
+    operations: [{ tipo: 'renomear_no', no_id: 'redigir', inversa: { tipo: 'renomear_no' } }],
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(unknownType.status, 400);
 
   const unknownGraph = await post(address, '/v1/proposals', {
-    grafo_id: 'nao-existe',
-    versao_alvo: version.id,
-    operacoes: passingOperations(),
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    graph_id: 'nao-existe',
+    target_version: version.id,
+    operations: passingOperations(),
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(unknownGraph.status, 400);
 
   assert.equal((await post(address, '/v1/proposals/999/apply', {})).status, 404);
-  assert.equal((await post(address, '/v1/proposals/999/revert', { motivo: 'x' })).status, 404);
+  assert.equal((await post(address, '/v1/proposals/999/revert', { reason: 'x' })).status, 404);
 });
 
 test('t127 — the old Portuguese proposal paths no longer exist', async (t) => {
@@ -686,18 +696,18 @@ test('t127 — the old Portuguese proposal paths no longer exist', async (t) => 
   assert.equal(
     (
       await post(address, '/v1/propostas', {
-        grafo_id: graph.id,
-        versao_alvo: version.id,
-        operacoes: passingOperations(),
-        evidencia: EVIDENCE,
-        metrica_esperada: EXPECTED_METRIC,
+        graph_id: graph.id,
+        target_version: version.id,
+        operations: passingOperations(),
+        evidence: EVIDENCE,
+        expected_metric: EXPECTED_METRIC,
       })
     ).status,
     404,
   );
   assert.equal((await post(address, `/v1/propostas/${proposal.id}/aplicar`, {})).status, 404);
   assert.equal(
-    (await post(address, `/v1/proposals/${proposal.id}/reverter`, { motivo: 'x' })).status,
+    (await post(address, `/v1/proposals/${proposal.id}/reverter`, { reason: 'x' })).status,
     404,
   );
 });
@@ -710,7 +720,7 @@ test('t127 — the old Portuguese proposal paths no longer exist', async (t) => 
 /* Portuguese, mirroring the untouched migration column (FR8).                 */
 /* -------------------------------------------------------------------------- */
 
-/** The shape `proposta.resultado` takes once the experiment is closed (FR5). */
+/** The shape `proposal.result` takes once the experiment is closed (FR5). */
 interface HypothesisOutcome {
   veredito: string;
   antes: number;
@@ -765,8 +775,8 @@ async function applyProposal(address: string, proposalId: number): Promise<strin
   const response = await post(address, `/v1/proposals/${proposalId}/apply`, {});
   const body = await jsonBody<ApplyResponse>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.ok(body.proposta.versao_aplicada_id !== null);
-  return body.proposta.versao_aplicada_id;
+  assert.ok(body.proposal.applied_version_id !== null);
+  return body.proposal.applied_version_id;
 }
 
 /** The whole prelude of the outcome route: base, applied proposal, telemetry. */
@@ -775,9 +785,9 @@ async function appliedProposalWithTelemetry(
   options: { executionId?: number; expectedMetric?: unknown } = {},
 ): Promise<{
   address: string;
-  graph: GraphRow;
+  graph: Graph;
   targetVersion: string;
-  proposal: ProposalRow;
+  proposal: Proposal;
   appliedVersion: string;
   executionId: number;
 }> {
@@ -799,11 +809,11 @@ async function appliedProposalWithTelemetry(
 }
 
 /** Reads the listing route, with the querystring already assembled. */
-async function listProposals(address: string, query = ''): Promise<ProposalRow[]> {
+async function listProposals(address: string, query = ''): Promise<Proposal[]> {
   const response = await fetch(`${address}/v1/proposals${query}`);
-  const body = await jsonBody<{ propostas: ProposalRow[] }>(response);
+  const body = await jsonBody<{ proposals: Proposal[] }>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  return body.propostas;
+  return body.proposals;
 }
 
 test('AT20 — a metric that moved in the declared direction closes the hypothesis as confirmada', async (t) => {
@@ -817,15 +827,15 @@ test('AT20 — a metric that moved in the declared direction closes the hypothes
   const body = await jsonBody<ApplyResponse>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
 
-  const outcome = body.proposta.resultado as HypothesisOutcome;
+  const outcome = body.proposal.result as HypothesisOutcome;
   assert.equal(outcome.veredito, 'confirmada');
   assert.equal(outcome.antes, 0.4, 'the "antes" is the `de` the proposal declared');
   assert.equal(outcome.depois, 0.1);
   assert.equal(outcome.execucao_id, scenario.executionId);
   assert.equal(typeof outcome.avaliado_em, 'string');
 
-  assert.equal(body.proposta.status, 'aplicada', 'closing the experiment does not change the state');
-  assert.equal(body.proposta.versao_aplicada_id, scenario.appliedVersion);
+  assert.equal(body.proposal.status, 'applied', 'closing the experiment does not change the state');
+  assert.equal(body.proposal.applied_version_id, scenario.appliedVersion);
 });
 
 test('AT21 — a metric that did not move is sem_efeito', async (t) => {
@@ -838,8 +848,8 @@ test('AT21 — a metric that did not move is sem_efeito', async (t) => {
   );
   const body = await jsonBody<ApplyResponse>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal((body.proposta.resultado as HypothesisOutcome).veredito, 'sem_efeito');
-  assert.equal(body.proposta.status, 'aplicada');
+  assert.equal((body.proposal.result as HypothesisOutcome).veredito, 'sem_efeito');
+  assert.equal(body.proposal.status, 'applied');
 });
 
 test('AT22 — a metric that moved the wrong way is piorou, and nothing is reverted', async (t) => {
@@ -852,14 +862,14 @@ test('AT22 — a metric that moved the wrong way is piorou, and nothing is rever
   );
   const body = await jsonBody<ApplyResponse>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal((body.proposta.resultado as HypothesisOutcome).veredito, 'piorou');
+  assert.equal((body.proposal.result as HypothesisOutcome).veredito, 'piorou');
 
   // "piorou" is data, never an action: reverting stays a human decision.
-  assert.equal(body.proposta.status, 'aplicada');
-  assert.equal(body.proposta.versao_aplicada_id, scenario.appliedVersion);
+  assert.equal(body.proposal.status, 'applied');
+  assert.equal(body.proposal.applied_version_id, scenario.appliedVersion);
   const graph = await getGraph(scenario.address, scenario.graph.id);
   assert.equal(
-    graph.versao_corrente_id,
+    graph.current_version_id,
     scenario.appliedVersion,
     'the pointer cannot have moved back',
   );
@@ -874,18 +884,18 @@ test('AT23 — only the first outcome counts; the second call is 409 and changes
     depois: 0.1,
   });
   assert.equal(first.status, 200);
-  const written = (await jsonBody<ApplyResponse>(first)).proposta.resultado as HypothesisOutcome;
+  const written = (await jsonBody<ApplyResponse>(first)).proposal.result as HypothesisOutcome;
 
   const second = await post(scenario.address, route, {
     execucao_id: scenario.executionId,
     depois: 0.9,
   });
   assert.equal(second.status, 409);
-  assert.equal((await jsonBody<{ erro: string }>(second)).erro, 'proposta_ja_avaliada');
+  assert.equal((await jsonBody<{ error: string }>(second)).error, 'proposal_already_reviewed');
 
   const [stored] = await listProposals(scenario.address);
   assert.deepEqual(
-    stored.resultado,
+    stored.result,
     written,
     'the second call cannot rewrite the first round outcome',
   );
@@ -901,7 +911,7 @@ test('AT24 — a proposal that is not aplicada cannot have an outcome', async (t
     depois: 0.1,
   });
   assert.equal(response.status, 409);
-  assert.equal((await jsonBody<{ erro: string }>(response)).erro, 'proposta_nao_aplicada');
+  assert.equal((await jsonBody<{ error: string }>(response)).error, 'proposal_not_applied');
 
   assert.equal(
     (await post(address, '/v1/proposals/999/outcome', { execucao_id: 1, depois: 0.1 })).status,
@@ -915,20 +925,20 @@ test('AT25 — an execution with no telemetry under the applied version is refus
 
   const noJob = await post(scenario.address, route, { execucao_id: 99, depois: 0.1 });
   assert.equal(noJob.status, 422);
-  assert.equal((await jsonBody<{ erro: string }>(noJob)).erro, 'execucao_sem_evidencia');
+  assert.equal((await jsonBody<{ error: string }>(noJob)).error, 'execution_without_evidence');
 
   // An execution that ran, but under the PREVIOUS version, is not evidence for
   // this proposal either: the join is by version, not by execution.
   await recordWorkUnderVersion(scenario.address, 2, scenario.targetVersion);
   const otherVersion = await post(scenario.address, route, { execucao_id: 2, depois: 0.1 });
   assert.equal(otherVersion.status, 422);
-  assert.equal((await jsonBody<{ erro: string }>(otherVersion)).erro, 'execucao_sem_evidencia');
+  assert.equal((await jsonBody<{ error: string }>(otherVersion)).error, 'execution_without_evidence');
 
   const [proposal] = await listProposals(scenario.address);
-  assert.equal(proposal.resultado, null, 'nothing can have been written');
+  assert.equal(proposal.result, null, 'nothing can have been written');
 });
 
-test('AT26 — a proposal whose metrica_esperada has no shape gets no verdict', async (t) => {
+test('AT26 — a proposal whose expected_metric has no shape gets no verdict', async (t) => {
   const scenario = await appliedProposalWithTelemetry(t, {
     expectedMetric: { nome: 'retrabalho_por_travessia', de: 0.4, para: 0.1 },
   });
@@ -939,10 +949,10 @@ test('AT26 — a proposal whose metrica_esperada has no shape gets no verdict', 
     { execucao_id: scenario.executionId, depois: 0.1 },
   );
   assert.equal(response.status, 422);
-  assert.equal((await jsonBody<{ erro: string }>(response)).erro, 'metrica_esperada_invalida');
+  assert.equal((await jsonBody<{ error: string }>(response)).error, 'invalid_expected_metric');
 
   const [proposal] = await listProposals(scenario.address);
-  assert.equal(proposal.resultado, null, 'a verdict over incomplete data is not written');
+  assert.equal(proposal.result, null, 'a verdict over incomplete data is not written');
 });
 
 test('AT27 — the reversal-suggestion queue is a filtered read over the proposals', async (t) => {
@@ -967,7 +977,7 @@ test('AT27 — the reversal-suggestion queue is a filtered read over the proposa
     200,
   );
   assert.equal(
-    (await post(address, `/v1/proposals/${b.id}/revert`, { motivo: 'piorou de verdade' })).status,
+    (await post(address, `/v1/proposals/${b.id}/revert`, { reason: 'piorou de verdade' })).status,
     200,
   );
 
@@ -983,7 +993,7 @@ test('AT27 — the reversal-suggestion queue is a filtered read over the proposa
   // D: pending, with no outcome at all.
   const d = await createProposal(address, graph.id, versionC, roleChange('editor'));
 
-  const queue = await listProposals(address, '?status=aplicada&veredito=piorou');
+  const queue = await listProposals(address, '?status=applied&veredito=piorou');
   assert.deepEqual(
     queue.map((proposal) => proposal.id),
     [a.id],
@@ -998,7 +1008,7 @@ test('AT27 — the reversal-suggestion queue is a filtered read over the proposa
   );
   assert.deepEqual(
     all.map((proposal) => proposal.status),
-    ['aplicada', 'revertida', 'aplicada', 'pendente'],
+    ['applied', 'reverted', 'applied', 'pending'],
   );
 
   assert.deepEqual(
@@ -1020,24 +1030,24 @@ test('AT27 — the reversal-suggestion queue is a filtered read over the proposa
 /* migration's CHECK. These are the two ends of that contract meeting.         */
 /* -------------------------------------------------------------------------- */
 
-test('t165 AT1 — approving a pending proposal moves it to aprovada', async (t) => {
+test('t165 AT1 — approving a pending proposal moves it to approved', async (t) => {
   const address = await startApp(t);
   const { graph, version } = await registerBase(address);
   const proposal = await createProposal(address, graph.id, version.id, passingOperations());
 
   const response = await post(address, `/v1/proposals/${proposal.id}/approve`, {});
-  const body = await jsonBody<{ proposta: ProposalRow }>(response);
+  const body = await jsonBody<{ proposal: Proposal }>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal(body.proposta.status, 'aprovada');
-  assert.equal(body.proposta.versao_aplicada_id, null, 'approving applies nothing by itself');
-  assert.equal(body.proposta.resultado, null);
+  assert.equal(body.proposal.status, 'approved');
+  assert.equal(body.proposal.applied_version_id, null, 'approving applies nothing by itself');
+  assert.equal(body.proposal.result, null);
 
   // The pointer is where it was: the gate is a decision, not the application.
-  assert.equal((await getGraph(address, graph.id)).versao_corrente_id, version.id);
-  assert.equal((await getProposal(address, proposal.id)).status, 'aprovada', 'and it is persisted');
+  assert.equal((await getGraph(address, graph.id)).current_version_id, version.id);
+  assert.equal((await getProposal(address, proposal.id)).status, 'approved', 'and it is persisted');
 });
 
-test('t165 AT2 — approving anything that is not pendente returns 409 proposta_nao_pendente', async (t) => {
+test('t165 AT2 — approving anything that is not pending returns 409 proposal_not_pending', async (t) => {
   const address = await startApp(t);
   const { graph, version } = await registerBase(address);
   const proposal = await createProposal(address, graph.id, version.id, passingOperations());
@@ -1046,51 +1056,51 @@ test('t165 AT2 — approving anything that is not pendente returns 409 proposta_
   // Already approved.
   const twice = await post(address, `/v1/proposals/${proposal.id}/approve`, {});
   assert.equal(twice.status, 409);
-  assert.equal((await jsonBody<{ erro: string }>(twice)).erro, 'proposta_nao_pendente');
+  assert.equal((await jsonBody<{ error: string }>(twice)).error, 'proposal_not_pending');
 
   // Applied.
   assert.equal((await post(address, `/v1/proposals/${proposal.id}/apply`, {})).status, 200);
   const applied = await post(address, `/v1/proposals/${proposal.id}/approve`, {});
   assert.equal(applied.status, 409);
-  assert.equal((await jsonBody<{ erro: string }>(applied)).erro, 'proposta_nao_pendente');
-  assert.equal((await getProposal(address, proposal.id)).status, 'aplicada', 'nothing regressed');
+  assert.equal((await jsonBody<{ error: string }>(applied)).error, 'proposal_not_pending');
+  assert.equal((await getProposal(address, proposal.id)).status, 'applied', 'nothing regressed');
 
   assert.equal((await post(address, '/v1/proposals/999/approve', {})).status, 404);
 });
 
-test('t165 AT3 — rejecting without a motivo returns 400 and changes nothing', async (t) => {
+test('t165 AT3 — rejecting without a reason returns 400 and changes nothing', async (t) => {
   const address = await startApp(t);
   const { graph, version } = await registerBase(address);
   const proposal = await createProposal(address, graph.id, version.id, passingOperations());
 
   const missing = await post(address, `/v1/proposals/${proposal.id}/reject`, {});
   assert.equal(missing.status, 400);
-  assert.equal((await jsonBody<{ erro: string }>(missing)).erro, 'motivo_obrigatorio');
+  assert.equal((await jsonBody<{ error: string }>(missing)).error, 'reason_required');
 
-  const blank = await post(address, `/v1/proposals/${proposal.id}/reject`, { motivo: '   ' });
+  const blank = await post(address, `/v1/proposals/${proposal.id}/reject`, { reason: '   ' });
   assert.equal(blank.status, 400, 'a blank reason is not a reason');
-  assert.equal((await jsonBody<{ erro: string }>(blank)).erro, 'motivo_obrigatorio');
+  assert.equal((await jsonBody<{ error: string }>(blank)).error, 'reason_required');
 
   const untouched = await getProposal(address, proposal.id);
-  assert.equal(untouched.status, 'pendente');
-  assert.equal(untouched.motivo_rejeicao, null);
+  assert.equal(untouched.status, 'pending');
+  assert.equal(untouched.rejection_reason, null);
 
-  assert.equal((await post(address, '/v1/proposals/999/reject', { motivo: 'x' })).status, 404);
+  assert.equal((await post(address, '/v1/proposals/999/reject', { reason: 'x' })).status, 404);
 });
 
-test('t165 AT4 — rejecting with a motivo writes motivo_rejeicao and leaves resultado alone', async (t) => {
+test('t165 AT4 — rejecting with a reason writes rejection_reason and leaves result alone', async (t) => {
   const address = await startApp(t);
   const { graph, version } = await registerBase(address);
   const proposal = await createProposal(address, graph.id, version.id, passingOperations());
 
-  const motivo = 'o nó novo repete a checagem que o portão de teste já faz';
-  const response = await post(address, `/v1/proposals/${proposal.id}/reject`, { motivo });
-  const body = await jsonBody<{ proposta: ProposalRow }>(response);
+  const reason = 'o nó novo repete a checagem que o portão de teste já faz';
+  const response = await post(address, `/v1/proposals/${proposal.id}/reject`, { reason });
+  const body = await jsonBody<{ proposal: Proposal }>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.equal(body.proposta.status, 'rejeitada');
-  assert.equal(body.proposta.motivo_rejeicao, motivo);
+  assert.equal(body.proposal.status, 'rejected');
+  assert.equal(body.proposal.rejection_reason, reason);
   assert.equal(
-    body.proposta.resultado,
+    body.proposal.result,
     null,
     'resultado stays reserved for the gate report and the hypothesis verdict',
   );
@@ -1098,23 +1108,23 @@ test('t165 AT4 — rejecting with a motivo writes motivo_rejeicao and leaves res
   // Rejected is terminal for the gate: neither approving nor applying it after.
   const late = await post(address, `/v1/proposals/${proposal.id}/approve`, {});
   assert.equal(late.status, 409);
-  assert.equal((await jsonBody<{ erro: string }>(late)).erro, 'proposta_nao_pendente');
+  assert.equal((await jsonBody<{ error: string }>(late)).error, 'proposal_not_pending');
 
   const apply = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
   assert.equal(apply.status, 409);
-  assert.equal((await jsonBody<{ erro: string }>(apply)).erro, 'proposta_nao_aprovada');
+  assert.equal((await jsonBody<{ error: string }>(apply)).error, 'proposal_not_approved');
 
-  const twice = await post(address, `/v1/proposals/${proposal.id}/reject`, { motivo: 'de novo' });
+  const twice = await post(address, `/v1/proposals/${proposal.id}/reject`, { reason: 'de novo' });
   assert.equal(twice.status, 409);
-  assert.equal((await jsonBody<{ erro: string }>(twice)).erro, 'proposta_nao_pendente');
+  assert.equal((await jsonBody<{ error: string }>(twice)).error, 'proposal_not_pending');
   assert.equal(
-    (await getProposal(address, proposal.id)).motivo_rejeicao,
-    motivo,
+    (await getProposal(address, proposal.id)).rejection_reason,
+    reason,
     'the first reason stands',
   );
 });
 
-test('t165 AT5 — apply demands aprovada: a merely pending proposal is 409 proposta_nao_aprovada', async (t) => {
+test('t165 AT5 — apply demands approved: a merely pending proposal is 409 proposal_not_approved', async (t) => {
   const address = await startApp(t);
   const { hashSnapshot } = await loadHash();
   const { applyOperations } = await loadOperations();
@@ -1126,18 +1136,18 @@ test('t165 AT5 — apply demands aprovada: a merely pending proposal is 409 prop
   const early = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
   assert.equal(early.status, 409);
   assert.equal(
-    (await jsonBody<{ erro: string }>(early)).erro,
-    'proposta_nao_aprovada',
+    (await jsonBody<{ error: string }>(early)).error,
+    'proposal_not_approved',
     'skipping the gate has to fail loudly, with a code that names the missing precondition',
   );
 
   // Nothing happened: no version, pointer where it was, proposal still pending.
-  const versions = await jsonBody<{ versoes: VersionRow[] }>(
+  const versions = await jsonBody<{ versions: GraphVersion[] }>(
     await fetch(`${address}/v1/graphs/${graph.id}/versions`),
   );
-  assert.equal(versions.versoes.length, 1, 'a refused apply writes no version');
-  assert.equal((await getGraph(address, graph.id)).versao_corrente_id, version.id);
-  assert.equal((await getProposal(address, proposal.id)).status, 'pendente');
+  assert.equal(versions.versions.length, 1, 'a refused apply writes no version');
+  assert.equal((await getGraph(address, graph.id)).current_version_id, version.id);
+  assert.equal((await getProposal(address, proposal.id)).status, 'pending');
 
   // And once approved, the happy path is the one AT11 already pinned.
   await approve(address, proposal.id);
@@ -1146,33 +1156,33 @@ test('t165 AT5 — apply demands aprovada: a merely pending proposal is 409 prop
   assert.equal(response.status, 200, JSON.stringify(body));
 
   const expected = hashSnapshot(applyOperations(document, operations));
-  assert.equal(body.grafo_versao?.id, expected);
-  assert.equal(body.grafo_versao?.versao_pai, version.id);
-  assert.equal(body.proposta.status, 'aplicada');
-  assert.equal(body.proposta.versao_aplicada_id, expected);
-  assert.equal((await getGraph(address, graph.id)).versao_corrente_id, expected);
+  assert.equal(body.graph_version?.id, expected);
+  assert.equal(body.graph_version?.parent_version, version.id);
+  assert.equal(body.proposal.status, 'applied');
+  assert.equal(body.proposal.applied_version_id, expected);
+  assert.equal((await getGraph(address, graph.id)).current_version_id, expected);
 });
 
-test('t165 AT6 — the read routes expose motivo_rejeicao', async (t) => {
+test('t165 AT6 — the read routes expose rejection_reason', async (t) => {
   const address = await startApp(t);
   const { graph, version } = await registerBase(address);
   const proposal = await createProposal(address, graph.id, version.id, passingOperations());
 
-  const motivo = 'a evidência é de uma execução única, sem base de comparação';
-  assert.equal((await post(address, `/v1/proposals/${proposal.id}/reject`, { motivo })).status, 200);
+  const reason = 'a evidência é de uma execução única, sem base de comparação';
+  assert.equal((await post(address, `/v1/proposals/${proposal.id}/reject`, { reason })).status, 200);
 
   assert.equal(
-    (await getProposal(address, proposal.id)).motivo_rejeicao,
-    motivo,
+    (await getProposal(address, proposal.id)).rejection_reason,
+    reason,
     'GET /v1/proposals/:id carries the reason the tela already reads (inbox.js:197)',
   );
 
   const [listed] = await listProposals(address);
-  assert.equal(listed.motivo_rejeicao, motivo, 'and so does the listing');
+  assert.equal(listed.rejection_reason, reason, 'and so does the listing');
 
   // A proposal nobody rejected reads null, never an empty string.
   const other = await createProposal(address, graph.id, version.id, roleChange('copidesque'));
-  assert.equal((await getProposal(address, other.id)).motivo_rejeicao, null);
+  assert.equal((await getProposal(address, other.id)).rejection_reason, null);
 
   assert.equal((await fetch(`${address}/v1/proposals/999`)).status, 404);
   assert.equal((await fetch(`${address}/v1/proposals/nao-numerico`)).status, 404);
@@ -1185,20 +1195,20 @@ test('t180 — the human gate refuses in English, with the frozen status quoted'
 
   const noReason = await post(address, `/v1/proposals/${proposal.id}/reject`, {});
   assert.equal(noReason.status, 400);
-  const refused = await jsonBody<{ erro: string; mensagem: string }>(noReason);
-  assert.equal(refused.erro, 'motivo_obrigatorio', 'the code is frozen (FR2)');
+  const refused = await jsonBody<{ error: string; message: string }>(noReason);
+  assert.equal(refused.error, 'reason_required', 'the code is frozen (FR2)');
   assert.equal(
-    refused.mensagem,
+    refused.message,
     'rejecting requires a reason: a rejected proposal is negative knowledge for the surveyor, and without the why it is not',
   );
 
   await approve(address, proposal.id);
   const twice = await post(address, `/v1/proposals/${proposal.id}/approve`, {});
   assert.equal(twice.status, 409);
-  const conflict = await jsonBody<{ erro: string; mensagem: string; status: string }>(twice);
-  assert.equal(conflict.erro, 'proposta_nao_pendente');
-  assert.equal(conflict.status, 'aprovada', 'the status value is stored data, never translated (FR2)');
-  assert.equal(conflict.mensagem, 'only a pending proposal can be approved; this one is "aprovada"');
+  const conflict = await jsonBody<{ error: string; message: string; status: string }>(twice);
+  assert.equal(conflict.error, 'proposal_not_pending');
+  assert.equal(conflict.status, 'approved', 'the wire quotes the wire value, never the column (t226, FR1)');
+  assert.equal(conflict.message, 'only a pending proposal can be approved; this one is "approved"');
 });
 
 /* -------------------------------------------------------------------------- */
@@ -1225,9 +1235,9 @@ function swapNodeField(field: string, from: unknown, to: unknown): OperationsMod
 /** The snapshot of one version, as `GET /v1/graph-versions/:id` returns it. */
 async function readSnapshot(address: string, versionId: string): Promise<GraphDocument> {
   const response = await fetch(`${address}/v1/graph-versions/${encodeURIComponent(versionId)}`);
-  const body = await jsonBody<{ grafo_versao: { snapshot: GraphDocument } }>(response);
+  const body = await jsonBody<{ graph_version: { snapshot: GraphDocument } }>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  return body.grafo_versao.snapshot;
+  return body.graph_version.snapshot;
 }
 
 test('t166 AT — applying a model change writes a new version and moves the pointer', async (t) => {
@@ -1250,13 +1260,13 @@ test('t166 AT — applying a model change writes a new version and moves the poi
   assert.equal(response.status, 200, JSON.stringify(body));
 
   const expected = hashSnapshot(applyOperations(document, operations));
-  assert.ok(body.grafo_versao !== undefined);
-  assert.equal(body.grafo_versao.id, expected, 'the new version is the hash of the resulting document');
-  assert.notEqual(body.grafo_versao.id, version.id, 'a field swap is a NEW version, never an edit');
-  assert.equal(body.grafo_versao.versao_pai, version.id);
+  assert.ok(body.graph_version !== undefined);
+  assert.equal(body.graph_version.id, expected, 'the new version is the hash of the resulting document');
+  assert.notEqual(body.graph_version.id, version.id, 'a field swap is a NEW version, never an edit');
+  assert.equal(body.graph_version.parent_version, version.id);
 
   assert.equal(
-    (await getGraph(address, graph.id)).versao_corrente_id,
+    (await getGraph(address, graph.id)).current_version_id,
     expected,
     'the pointer has to have moved',
   );
@@ -1281,10 +1291,10 @@ test('t166 AT — applying an engine change writes a new version and moves the p
   const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
   const body = await jsonBody<ApplyResponse>(response);
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.ok(body.grafo_versao !== undefined);
+  assert.ok(body.graph_version !== undefined);
 
-  const current = (await getGraph(address, graph.id)).versao_corrente_id;
-  assert.equal(current, body.grafo_versao.id);
+  const current = (await getGraph(address, graph.id)).current_version_id;
+  assert.equal(current, body.graph_version.id);
   assert.ok(current !== null);
   assert.equal(requireNode(await readSnapshot(address, current), 'revisar').engine, 'codex');
   assert.equal(requireNode(await readSnapshot(address, version.id), 'revisar').engine, undefined);

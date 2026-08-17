@@ -11,7 +11,10 @@
  * pointer move rather than an undo.
  *
  * The row interfaces mirror the untouched migration columns, so their field
- * names stay in Portuguese (t127, FR8).
+ * names stay in Portuguese (t127, FR8). Since t226 they no longer leave the
+ * package that way: `toGraph`/`toGraphVersion`/`toClass` at the bottom are the
+ * translation boundary D20 puts between the database and the wire, and the
+ * routes return their output and never a row.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -310,4 +313,131 @@ export function forkVariant(
   }
 
   return { graph, version };
+}
+
+/* -------------------------------------------------------------------------- */
+/* The row → wire boundary (t226, FR1).                                        */
+/*                                                                             */
+/* D20 fixes the order: the wire goes English BEFORE the database does. Between */
+/* the two there has to be an explicit translation, or the rename would drag    */
+/* the columns along with it — which is the fourth child ticket's job, not this */
+/* one's. Everything above this line still says `linhagem_tipo`; everything the */
+/* routes hand to Fastify says `lineage_type`, and nothing in between.         */
+/*                                                                             */
+/* Same shape as `repositories/skill.ts`'s `toSkill`/`ROLE_FIELD` pair, which   */
+/* has been the one instance of this pattern in the package since t178.        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `linhagem_tipo`, both ways.
+ *
+ * `migrations/0002_grafo_versao_proposta.sql` puts the Portuguese values in a
+ * `CHECK`, which makes them part of the DB schema rather than of the format —
+ * so a request that says `variant` is stored as `variante` and comes back out
+ * as `variant`. `base` is spelled the same in both languages and is listed here
+ * anyway: a map with a hole in it is a map somebody has to remember to read
+ * around.
+ */
+const LINEAGE_FIELD: Record<string, string> = { base: 'base', variante: 'variant' };
+const LINEAGE_COLUMN: Record<string, string> = { base: 'base', variant: 'variante' };
+
+/**
+ * `grafo_versao.origem`, both ways.
+ *
+ * `manual` is already English; the other two are not (`glossario-wire.md` §1.6,
+ * which routes the value `proposta` through its §1.3 row on purpose — one word,
+ * one translation, whether it names the entity or this column's value).
+ */
+const SOURCE_FIELD: Record<string, string> = {
+  manual: 'manual',
+  sintetizador: 'synthesizer',
+  proposta: 'proposal',
+};
+
+/** The English `lineage_type` a request declared, as the column spells it. */
+export function lineageTypeColumn(value: string): string | undefined {
+  return LINEAGE_COLUMN[value];
+}
+
+/** A lineage, as `/v1` publishes it. */
+export interface Graph {
+  id: string;
+  class: string;
+  lineage_type: string;
+  base_class: string | null;
+  origin_proposal_id: number | null;
+  current_version_id: string | null;
+  created_at: string;
+}
+
+/** A version, as `/v1` publishes it — the snapshot only when it was asked for. */
+export interface GraphVersion {
+  id: string;
+  graph_id: string;
+  parent_version: string | null;
+  source: string;
+  proposal_id: number | null;
+  created_at: string;
+}
+
+/** A version with the whole document. */
+export interface GraphVersionWithSnapshot extends GraphVersion {
+  snapshot: GraphDocument;
+}
+
+/** A registered class, in the catalogue view. */
+export interface ClassEntry {
+  class: string;
+  graph_id: string;
+  current_version_id: string | null;
+  created_at: string;
+}
+
+/** Row to wire: the one place the lineage's column names meet the API's. */
+export function toGraph(row: GraphRow): Graph {
+  return {
+    id: row.id,
+    class: row.classe,
+    lineage_type: LINEAGE_FIELD[row.linhagem_tipo] ?? row.linhagem_tipo,
+    base_class: row.base_classe,
+    origin_proposal_id: row.origem_proposta_id,
+    current_version_id: row.versao_corrente_id,
+    created_at: row.criado_em,
+  };
+}
+
+/** Row to wire, for a version. */
+export function toGraphVersion(row: GraphVersionRow): GraphVersion {
+  return {
+    id: row.id,
+    graph_id: row.grafo_id,
+    parent_version: row.versao_pai,
+    source: SOURCE_FIELD[row.origem] ?? row.origem,
+    proposal_id: row.proposta_id,
+    created_at: row.criado_em,
+  };
+}
+
+/**
+ * Row to wire, snapshot included.
+ *
+ * The snapshot passes through byte for byte: it is the graph DOCUMENT
+ * (`schema/grafo.schema.json`), a format of its own that no child of D20
+ * renames — and rewriting it here would change the hash that IS the version's
+ * identity.
+ */
+export function toGraphVersionWithSnapshot(
+  row: GraphVersionRowWithSnapshot,
+): GraphVersionWithSnapshot {
+  return { ...toGraphVersion(row), snapshot: row.snapshot };
+}
+
+/** Row to wire, for the class catalogue. */
+export function toClass(row: ClassRow): ClassEntry {
+  return {
+    class: row.classe,
+    graph_id: row.grafo_id,
+    current_version_id: row.versao_corrente_id,
+    created_at: row.criado_em,
+  };
 }

@@ -90,6 +90,92 @@ function hydrate(row: RawRow): ProposalRow {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* The row → wire boundary (t226, FR1).                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `proposta.status`, both ways (`glossario-wire.md` §1.6).
+ *
+ * `migrations/0010_proposta_aprovada.sql` holds these five in a `CHECK`, so they
+ * are schema and not format — same reasoning as `skill.ts`'s `ROLE_COLUMN`, and
+ * the same fix: the wire says `pending`, the column keeps saying `pendente`
+ * until D20's fourth child renames it.
+ */
+const STATUS_FIELD: Record<string, string> = {
+  pendente: 'pending',
+  aprovada: 'approved',
+  aplicada: 'applied',
+  revertida: 'reverted',
+  rejeitada: 'rejected',
+};
+
+const STATUS_COLUMN: Record<string, ProposalStatus> = {
+  pending: 'pendente',
+  approved: 'aprovada',
+  applied: 'aplicada',
+  reverted: 'revertida',
+  rejected: 'rejeitada',
+};
+
+/** The five statuses a `?status=` filter may name, in the wire's spelling. */
+export const PROPOSAL_STATUSES: readonly string[] = Object.freeze(Object.keys(STATUS_COLUMN));
+
+/** The English status a request declared, as the column spells it. */
+export function proposalStatusColumn(value: string): ProposalStatus | undefined {
+  return STATUS_COLUMN[value];
+}
+
+/**
+ * A proposal, as `/v1` publishes it.
+ *
+ * `evidence`, `expected_metric` and `result` are `unknown` and stay that way:
+ * the KEYS translate (`glossario-wire.md` §4.2), and what is inside them does
+ * not move by one byte. Those blobs are `domain/hypothesis.ts`'s `ExpectedMetric`
+ * and `Verdict` shapes — `{nome, direcao, de, para}`, `{veredito, antes, depois,
+ * execucao_id, avaliado_em}` — which that file documents as a frozen data format
+ * D18 left out of the English rule, which no row of the glossary maps, and which
+ * D20 does not unfreeze either. Renaming them is a decision somebody has to take
+ * on purpose; t226 deliberately does not take it (FR5).
+ *
+ * `operations` is the same story for a different reason: the operation
+ * vocabulary is D20's THIRD child, and it travels through here untouched.
+ */
+export interface Proposal {
+  id: number;
+  graph_id: string;
+  target_version: string;
+  operations: Operation[];
+  evidence: unknown;
+  expected_metric: unknown;
+  status: string;
+  applied_version_id: string | null;
+  revert_reason: string | null;
+  rejection_reason: string | null;
+  result: unknown;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Row to wire: the one place the proposal's column names meet the API's. */
+export function toProposal(row: ProposalRow): Proposal {
+  return {
+    id: row.id,
+    graph_id: row.grafo_id,
+    target_version: row.versao_alvo,
+    operations: row.operacoes,
+    evidence: row.evidencia,
+    expected_metric: row.metrica_esperada,
+    status: STATUS_FIELD[row.status] ?? row.status,
+    applied_version_id: row.versao_aplicada_id,
+    revert_reason: row.motivo_reversao,
+    rejection_reason: row.motivo_rejeicao,
+    result: row.resultado,
+    created_at: row.criado_em,
+    updated_at: row.atualizado_em,
+  };
+}
+
 /**
  * @param db Open database.
  * @param id Proposal id.

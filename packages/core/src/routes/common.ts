@@ -14,19 +14,56 @@
  *   (t149). Nothing is written here either: the second attempt is a conflict,
  *   never an overwrite of the first.
  *
- * This envelope is the one error shape D18 does translate (t127, FR7): no other
- * package in the repo parses it, so it is self-contained to core's own tests.
- * The ad-hoc error bodies of the other route files keep their Portuguese keys —
- * those are the wire format the runner reads.
+ * Since t226 this is the ONE error envelope of the whole `/v1` surface. Two
+ * competed until D20: this `{error, details}` and the `{erro, mensagem, …}` the
+ * domain routes wrote by hand. The glossary left the choice to this ticket
+ * (`docs/spec/glossario-wire.md` §1.4) and the answer is `{error, message?,
+ * details?}` with the route's own context as SIBLING properties — `id`,
+ * `status`, `class` — never folded into `details`. `refusal` below is how the
+ * files that used to build the second shape write the first one.
+ *
+ * ## The asymmetry that is deliberate, and that a later ticket must not "fix"
+ *
+ * Four entities answer English on the way out and still demand Portuguese on the
+ * way in: **job**, **session**, **input request** and the intake
+ * `/confirmations` route. It is not an oversight and it is not half a migration.
+ *
+ * Their write bodies do not stop here — they go straight into `validateEvent`
+ * (`src/db/event-validation.ts`), which checks the `dados.*` contract of
+ * `trabalho.criado`, `sessao.aberta`, `pergunta.criada` and friends. That
+ * vocabulary is the EVENT surface, and D20 gives it to the second child ticket,
+ * not to this one. Translating those bodies here would make a validator that
+ * still speaks Portuguese reject every legitimate write.
+ *
+ * So, concretely, until the events child lands:
+ *
+ * - `POST /jobs`, `POST /jobs/:id/{transitions,blocks,unblocks}`,
+ *   `PATCH /jobs/:id`, `POST /sessions`, `PATCH /sessions/:id/finish`,
+ *   `POST /sessions/:id/permission-denials`, `POST /input-requests`,
+ *   `PATCH /input-requests/:id/{answer,auto-resolution}` and
+ *   `POST /intake/:id/confirmations` keep taking the body they always took;
+ * - everything those same routes RETURN — a projection, never an event — is
+ *   translated by its repository's `toX` mapper like every other entity.
+ *
+ * The tests pin both halves on purpose (`test/jobs.test.ts`,
+ * `test/sessions.test.ts`, `test/input-requests.test.ts`): each asserts the
+ * English response AND that the Portuguese request body is still accepted.
  */
 
 import type { FastifyReply } from 'fastify';
 
 import { ValidationError } from '../db/event-validation.ts';
 
-/** Body of an error response. */
+/**
+ * Body of an error response.
+ *
+ * `message` is one sentence for a person; `details` is the machine-readable list
+ * of everything wrong at once. A refusal carries either, both or neither — what
+ * it always carries is `error`, the code from `glossario-wire.md` §1.4.
+ */
 export interface ErrorResponse {
   error: string;
+  message?: string;
   details?: string[];
 }
 
@@ -38,13 +75,14 @@ export interface ErrorResponse {
  * a narrower whitelist would silently drop fields from the wire instead of
  * merely failing to document them — a behaviour change disguised as
  * documentation (FR6). For the same reason nothing here declares a type it
- * cannot guarantee: `error` and `details` are the two the three helpers below
- * always build themselves.
+ * cannot guarantee: `error`, `message` and `details` are the three the helpers
+ * below always build themselves.
  */
 export const ERROR_RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     error: { type: 'string' },
+    message: { type: 'string' },
     details: { type: 'array', items: { type: 'string' } },
   },
   required: ['error'],
@@ -119,6 +157,37 @@ export function notFound(reply: FastifyReply, entity: string): ErrorResponse {
 export function conflict(reply: FastifyReply, detail: string): ErrorResponse {
   reply.code(409);
   return { error: 'conflict', details: [detail] };
+}
+
+/**
+ * Builds a refusal in the one envelope, with the route's own context beside it.
+ *
+ * This is what the six files that used to write `{erro, mensagem, …}` by hand
+ * call instead (t226, FR3). The context goes in as SIBLING properties and is
+ * never folded into `details`: `{error: 'invalid_variant', message: '…',
+ * lineage_type: 'base'}` is one flat object a client reads with two lookups,
+ * and pushing `lineage_type` into a string array would be losing a field to
+ * make a shape tidier.
+ *
+ * `extra` is spread FIRST so the envelope's own three keys can never be shot
+ * off by a context field that happens to share a name.
+ *
+ * @param reply Fastify reply, marked with the status.
+ * @param status HTTP status of the refusal.
+ * @param error Code from `docs/spec/glossario-wire.md` §1.4.
+ * @param message One sentence for whoever has to fix the call.
+ * @param extra Route-specific context, as sibling properties.
+ * @returns The body to return.
+ */
+export function refusal(
+  reply: FastifyReply,
+  status: number,
+  error: string,
+  message?: string,
+  extra: Record<string, unknown> = {},
+): ErrorResponse & Record<string, unknown> {
+  reply.code(status);
+  return { ...extra, error, ...(message === undefined ? {} : { message }) };
 }
 
 /** Reads a route's `:id` as an integer. */

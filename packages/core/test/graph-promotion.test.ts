@@ -39,43 +39,43 @@ const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido
 const VARIANT_ID = 'nota-curta-do-projeto';
 
 /** A lineage, as the API returns it. */
-interface GraphRow {
+interface Graph {
   id: string;
-  classe: string;
-  linhagem_tipo: string;
-  base_classe: string | null;
-  versao_corrente_id: string | null;
+  class: string;
+  lineage_type: string;
+  base_class: string | null;
+  current_version_id: string | null;
 }
 
 /** A version without the snapshot, as the API returns it. */
-interface VersionRow {
+interface GraphVersion {
   id: string;
-  grafo_id: string;
-  versao_pai: string | null;
-  origem: string;
-  proposta_id: number | null;
+  graph_id: string;
+  parent_version: string | null;
+  source: string;
+  proposal_id: number | null;
 }
 
 /** A version with the whole document. */
-interface VersionWithSnapshot extends VersionRow {
+interface GraphVersionWithSnapshot extends GraphVersion {
   snapshot: Record<string, unknown>;
 }
 
 /** A proposal, in the slice these tests read. */
-interface ProposalRow {
+interface Proposal {
   id: number;
-  grafo_id: string;
-  versao_alvo: string;
-  operacoes: Array<Record<string, unknown>>;
+  graph_id: string;
+  target_version: string;
+  operations: Array<Record<string, unknown>>;
   status: string;
-  versao_aplicada_id: string | null;
+  applied_version_id: string | null;
 }
 
 /** Body of a successful promotion/offer, and of a refused one. */
 interface ProposalResponse {
-  erro?: string;
-  mensagem?: string;
-  proposta: ProposalRow;
+  error?: string;
+  message?: string;
+  proposal: Proposal;
 }
 
 function minimalGraph(): Record<string, unknown> {
@@ -91,52 +91,52 @@ async function start(t: TestHook): Promise<TestContext> {
 async function registerBase(
   ctx: TestContext,
   className?: string,
-): Promise<{ graph: GraphRow; version: VersionRow }> {
+): Promise<{ graph: Graph; version: GraphVersion }> {
   const document = minimalGraph();
   if (className !== undefined) document.problem_class = className;
 
-  const response = await request<{ grafo: GraphRow; grafo_versao: VersionRow }>(
+  const response = await request<{ graph: Graph; graph_version: GraphVersion }>(
     ctx,
     'POST',
     '/v1/graphs',
     document,
   );
   assert.equal(response.status, 201, JSON.stringify(response.body));
-  return { graph: response.body.grafo, version: response.body.grafo_versao };
+  return { graph: response.body.graph, version: response.body.graph_version };
 }
 
-async function fork(ctx: TestContext, baseId: string, id: string): Promise<VersionRow> {
-  const response = await request<{ grafo: GraphRow; grafo_versao: VersionRow }>(
+async function fork(ctx: TestContext, baseId: string, id: string): Promise<GraphVersion> {
+  const response = await request<{ graph: Graph; graph_version: GraphVersion }>(
     ctx,
     'POST',
     `/v1/graphs/${baseId}/fork`,
     { id },
   );
   assert.equal(response.status, 201, JSON.stringify(response.body));
-  return response.body.grafo_versao;
+  return response.body.graph_version;
 }
 
-async function readGraph(ctx: TestContext, id: string): Promise<GraphRow> {
-  const response = await request<{ grafo: GraphRow }>(ctx, 'GET', `/v1/graphs/${id}`);
+async function readGraph(ctx: TestContext, id: string): Promise<Graph> {
+  const response = await request<{ graph: Graph }>(ctx, 'GET', `/v1/graphs/${id}`);
   assert.equal(response.status, 200);
-  return response.body.grafo;
+  return response.body.graph;
 }
 
-async function readVersion(ctx: TestContext, id: string): Promise<VersionWithSnapshot> {
-  const response = await request<{ grafo_versao: VersionWithSnapshot }>(
+async function readVersion(ctx: TestContext, id: string): Promise<GraphVersionWithSnapshot> {
+  const response = await request<{ graph_version: GraphVersionWithSnapshot }>(
     ctx,
     'GET',
     `/v1/graph-versions/${encodeURIComponent(id)}`,
   );
   assert.equal(response.status, 200);
-  return response.body.grafo_versao;
+  return response.body.graph_version;
 }
 
 /** Current snapshot of a lineage, the document as it holds today. */
 async function currentSnapshot(ctx: TestContext, id: string): Promise<Record<string, unknown>> {
   const graph = await readGraph(ctx, id);
-  assert.ok(graph.versao_corrente_id !== null, `lineage "${id}" has no current version`);
-  return (await readVersion(ctx, graph.versao_corrente_id)).snapshot;
+  assert.ok(graph.current_version_id !== null, `lineage "${id}" has no current version`);
+  return (await readVersion(ctx, graph.current_version_id)).snapshot;
 }
 
 /** How many proposals exist — the "nothing was written" assertion. */
@@ -226,26 +226,26 @@ const EVIDENCE = { fonte: 'telemetria', observacao: 'divergência sistemática n
 const EXPECTED_METRIC = { nome: 'retrabalho_por_travessia', direcao: 'cai', de: 0.4, para: 0.1 };
 
 /** Evolves a lineage through the ordinary proposal flow: create, then apply. */
-async function evolve(ctx: TestContext, graphId: string): Promise<VersionRow> {
+async function evolve(ctx: TestContext, graphId: string): Promise<GraphVersion> {
   const graph = await readGraph(ctx, graphId);
-  const created = await request<{ proposta: ProposalRow }>(ctx, 'POST', '/v1/proposals', {
-    grafo_id: graphId,
-    versao_alvo: graph.versao_corrente_id,
-    operacoes: passingOperations(),
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+  const created = await request<{ proposal: Proposal }>(ctx, 'POST', '/v1/proposals', {
+    graph_id: graphId,
+    target_version: graph.current_version_id,
+    operations: passingOperations(),
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
 
-  await approve(ctx, created.body.proposta.id);
-  const applied = await request<{ grafo_versao: VersionRow }>(
+  await approve(ctx, created.body.proposal.id);
+  const applied = await request<{ graph_version: GraphVersion }>(
     ctx,
     'POST',
-    `/v1/proposals/${created.body.proposta.id}/apply`,
+    `/v1/proposals/${created.body.proposal.id}/apply`,
     {},
   );
   assert.equal(applied.status, 200, JSON.stringify(applied.body));
-  return applied.body.grafo_versao;
+  return applied.body.graph_version;
 }
 
 async function promote(
@@ -272,28 +272,28 @@ async function offer(
  * lineages skips the gate of princípio 5.
  */
 async function approve(ctx: TestContext, id: number): Promise<void> {
-  const response = await request<{ proposta: ProposalRow }>(
+  const response = await request<{ proposal: Proposal }>(
     ctx,
     'POST',
     `/v1/proposals/${id}/approve`,
     {},
   );
   assert.equal(response.status, 200, JSON.stringify(response.body));
-  assert.equal(response.body.proposta.status, 'aprovada');
+  assert.equal(response.body.proposal.status, 'approved');
 }
 
 /** Approves and applies a proposal by id, and returns the version it wrote. */
-async function apply(ctx: TestContext, id: number): Promise<VersionRow> {
+async function apply(ctx: TestContext, id: number): Promise<GraphVersion> {
   await approve(ctx, id);
-  const response = await request<{ proposta: ProposalRow; grafo_versao: VersionRow }>(
+  const response = await request<{ proposal: Proposal; graph_version: GraphVersion }>(
     ctx,
     'POST',
     `/v1/proposals/${id}/apply`,
     {},
   );
   assert.equal(response.status, 200, JSON.stringify(response.body));
-  assert.equal(response.body.proposta.status, 'aplicada');
-  return response.body.grafo_versao;
+  assert.equal(response.body.proposal.status, 'applied');
+  return response.body.graph_version;
 }
 
 test('t140 AT12 — promoting a variant that gained a node opens a pending proposal on the base', async (t) => {
@@ -303,16 +303,16 @@ test('t140 AT12 — promoting a variant that gained a node opens a pending propo
   await evolve(ctx, VARIANT_ID);
 
   const response = await promote(ctx, VARIANT_ID, {
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
-  const proposal = response.body.proposta;
-  assert.equal(proposal.status, 'pendente');
-  assert.equal(proposal.grafo_id, graph.id, 'the promotion targets the BASE');
-  assert.equal(proposal.versao_alvo, version.id, "and the base's current version");
-  assert.deepEqual(proposal.operacoes, expectedOperations());
+  const proposal = response.body.proposal;
+  assert.equal(proposal.status, 'pending');
+  assert.equal(proposal.graph_id, graph.id, 'the promotion targets the BASE');
+  assert.equal(proposal.target_version, version.id, "and the base's current version");
+  assert.deepEqual(proposal.operations, expectedOperations());
 });
 
 test('t140 AT13 — applying the promotion carries the diff to the base and keeps its identity', async (t) => {
@@ -322,20 +322,20 @@ test('t140 AT13 — applying the promotion carries the diff to the base and keep
   await evolve(ctx, VARIANT_ID);
 
   const response = await promote(ctx, VARIANT_ID, {
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
-  const written = await apply(ctx, response.body.proposta.id);
-  assert.equal(written.grafo_id, graph.id);
+  const written = await apply(ctx, response.body.proposal.id);
+  assert.equal(written.graph_id, graph.id);
 
   const base = await currentSnapshot(ctx, graph.id);
   const variant = await currentSnapshot(ctx, VARIANT_ID);
   assert.deepEqual(canonicalize(base.nodes), canonicalize(variant.nodes));
   assert.deepEqual(canonicalize(base.edges), canonicalize(variant.edges));
 
-  assert.equal(base.problem_class, graph.classe);
+  assert.equal(base.problem_class, graph.class);
   assert.deepEqual(base.lineage, { type: 'base' }, 'the base stays a base');
 });
 
@@ -346,17 +346,17 @@ test('t140 AT14 — offering the base improvement opens a pending proposal on th
   await evolve(ctx, graph.id);
 
   const response = await offer(ctx, graph.id, {
-    variante_id: VARIANT_ID,
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    variant_id: VARIANT_ID,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
-  const proposal = response.body.proposta;
-  assert.equal(proposal.status, 'pendente');
-  assert.equal(proposal.grafo_id, VARIANT_ID, 'the offer targets the VARIANT');
-  assert.equal(proposal.versao_alvo, forked.id, "and the variant's current version");
-  assert.deepEqual(proposal.operacoes, expectedOperations());
+  const proposal = response.body.proposal;
+  assert.equal(proposal.status, 'pending');
+  assert.equal(proposal.graph_id, VARIANT_ID, 'the offer targets the VARIANT');
+  assert.equal(proposal.target_version, forked.id, "and the variant's current version");
+  assert.deepEqual(proposal.operations, expectedOperations());
 });
 
 test('t140 AT15 — applying the offer carries the diff to the variant and keeps its lineage', async (t) => {
@@ -366,14 +366,14 @@ test('t140 AT15 — applying the offer carries the diff to the variant and keeps
   await evolve(ctx, graph.id);
 
   const response = await offer(ctx, graph.id, {
-    variante_id: VARIANT_ID,
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    variant_id: VARIANT_ID,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
-  const written = await apply(ctx, response.body.proposta.id);
-  assert.equal(written.grafo_id, VARIANT_ID);
+  const written = await apply(ctx, response.body.proposal.id);
+  assert.equal(written.graph_id, VARIANT_ID);
 
   const base = await currentSnapshot(ctx, graph.id);
   const variant = await currentSnapshot(ctx, VARIANT_ID);
@@ -382,10 +382,10 @@ test('t140 AT15 — applying the offer carries the diff to the variant and keeps
 
   assert.deepEqual(
     variant.lineage,
-    { type: 'variante', base_class: graph.classe },
+    { type: 'variante', base_class: graph.class },
     'an offer is not a merge of identities: the variant stays a variant',
   );
-  assert.equal((await readGraph(ctx, VARIANT_ID)).linhagem_tipo, 'variante');
+  assert.equal((await readGraph(ctx, VARIANT_ID)).lineage_type, 'variant');
 });
 
 test('t140 AT16 — promoting a base is a 400 and writes no proposal', async (t) => {
@@ -395,11 +395,11 @@ test('t140 AT16 — promoting a base is a 400 and writes no proposal', async (t)
   const before = proposalCount(ctx);
 
   const response = await promote(ctx, graph.id, {
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(response.status, 400, JSON.stringify(response.body));
-  assert.equal(response.body.erro, 'variante_invalida');
+  assert.equal(response.body.error, 'invalid_variant');
   assert.equal(proposalCount(ctx), before);
 });
 
@@ -410,12 +410,12 @@ test('t140 AT17 — offering from a variant is a 400 and writes no proposal', as
   const before = proposalCount(ctx);
 
   const response = await offer(ctx, VARIANT_ID, {
-    variante_id: VARIANT_ID,
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    variant_id: VARIANT_ID,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(response.status, 400, JSON.stringify(response.body));
-  assert.equal(response.body.erro, 'base_invalida');
+  assert.equal(response.body.error, 'invalid_base');
   assert.equal(proposalCount(ctx), before);
 });
 
@@ -427,30 +427,30 @@ test('t140 AT18 — offering to an unknown variant is a 404 and writes no propos
   const before = proposalCount(ctx);
 
   const response = await offer(ctx, graph.id, {
-    variante_id: 'nunca-bifurcada',
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    variant_id: 'nunca-bifurcada',
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(response.status, 404, JSON.stringify(response.body));
-  assert.equal(response.body.erro, 'grafo_desconhecido');
+  assert.equal(response.body.error, 'unknown_graph');
   assert.equal(proposalCount(ctx), before);
 });
 
-test('t140 AT18 — offering with no variante_id is a 400 and writes no proposal', async (t) => {
+test('t140 AT18 — offering with no variant_id is a 400 and writes no proposal', async (t) => {
   const ctx = await start(t);
   const { graph } = await registerBase(ctx);
   await fork(ctx, graph.id, VARIANT_ID);
   await evolve(ctx, graph.id);
   const before = proposalCount(ctx);
 
-  for (const body of [{}, { variante_id: '' }, { variante_id: 42 }]) {
+  for (const body of [{}, { variant_id: '' }, { variant_id: 42 }]) {
     const response = await offer(ctx, graph.id, {
       ...body,
-      evidencia: EVIDENCE,
-      metrica_esperada: EXPECTED_METRIC,
+      evidence: EVIDENCE,
+      expected_metric: EXPECTED_METRIC,
     });
     assert.equal(response.status, 400, JSON.stringify(response.body));
-    assert.equal(response.body.erro, 'campo_obrigatorio_ausente');
+    assert.equal(response.body.error, 'missing_required_field');
   }
   assert.equal(proposalCount(ctx), before);
 });
@@ -464,12 +464,12 @@ test('t140 AT19 — offering to a variant of another class is a 400 and writes n
   const before = proposalCount(ctx);
 
   const response = await offer(ctx, graph.id, {
-    variante_id: 'nota-longa-do-projeto',
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    variant_id: 'nota-longa-do-projeto',
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(response.status, 400, JSON.stringify(response.body));
-  assert.equal(response.body.erro, 'variante_invalida');
+  assert.equal(response.body.error, 'invalid_variant');
   assert.equal(proposalCount(ctx), before);
 });
 
@@ -480,19 +480,19 @@ test('t140 AT20 — promoting or offering before either side diverges is a 422',
   const before = proposalCount(ctx);
 
   const promoted = await promote(ctx, VARIANT_ID, {
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(promoted.status, 422, JSON.stringify(promoted.body));
-  assert.equal(promoted.body.erro, 'diff_sem_efeito');
+  assert.equal(promoted.body.error, 'diff_without_effect');
 
   const offered = await offer(ctx, graph.id, {
-    variante_id: VARIANT_ID,
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    variant_id: VARIANT_ID,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(offered.status, 422, JSON.stringify(offered.body));
-  assert.equal(offered.body.erro, 'diff_sem_efeito');
+  assert.equal(offered.body.error, 'diff_without_effect');
 
   assert.equal(proposalCount(ctx), before);
 });
@@ -505,18 +505,18 @@ test('t140 AT21 — promoting without the hypothesis fields is a 400 and writes 
   const before = proposalCount(ctx);
 
   for (const body of [
-    { metrica_esperada: EXPECTED_METRIC },
-    { evidencia: EVIDENCE },
+    { expected_metric: EXPECTED_METRIC },
+    { evidence: EVIDENCE },
     {},
   ]) {
     const response = await promote(ctx, VARIANT_ID, body);
     assert.equal(response.status, 400, JSON.stringify(response.body));
-    assert.equal(response.body.erro, 'campo_obrigatorio_ausente');
+    assert.equal(response.body.error, 'missing_required_field');
   }
 
-  const offered = await offer(ctx, graph.id, { variante_id: VARIANT_ID });
+  const offered = await offer(ctx, graph.id, { variant_id: VARIANT_ID });
   assert.equal(offered.status, 400, JSON.stringify(offered.body));
-  assert.equal(offered.body.erro, 'campo_obrigatorio_ausente');
+  assert.equal(offered.body.error, 'missing_required_field');
 
   assert.equal(proposalCount(ctx), before);
 });
@@ -527,19 +527,19 @@ test('t140 AT22 — promoting or offering on an unknown lineage is a 404', async
   const before = proposalCount(ctx);
 
   const promoted = await promote(ctx, 'inexistente', {
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(promoted.status, 404, JSON.stringify(promoted.body));
-  assert.equal(promoted.body.erro, 'grafo_desconhecido');
+  assert.equal(promoted.body.error, 'unknown_graph');
 
   const offered = await offer(ctx, 'inexistente', {
-    variante_id: VARIANT_ID,
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    variant_id: VARIANT_ID,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(offered.status, 404, JSON.stringify(offered.body));
-  assert.equal(offered.body.erro, 'grafo_desconhecido');
+  assert.equal(offered.body.error, 'unknown_graph');
 
   assert.equal(proposalCount(ctx), before);
 });
@@ -555,19 +555,19 @@ test('t140 FR9 — a lineage with no current version is a 409, not a crash', asy
   ctx.db.prepare('UPDATE grafo SET versao_corrente_id = NULL WHERE id = ?').run(VARIANT_ID);
 
   const promoted = await promote(ctx, VARIANT_ID, {
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(promoted.status, 409, JSON.stringify(promoted.body));
-  assert.equal(promoted.body.erro, 'grafo_sem_versao_corrente');
+  assert.equal(promoted.body.error, 'graph_without_current_version');
 
   const offered = await offer(ctx, graph.id, {
-    variante_id: VARIANT_ID,
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+    variant_id: VARIANT_ID,
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(offered.status, 409, JSON.stringify(offered.body));
-  assert.equal(offered.body.erro, 'grafo_sem_versao_corrente');
+  assert.equal(offered.body.error, 'graph_without_current_version');
 
   assert.equal(proposalCount(ctx), before);
 });
@@ -577,24 +577,24 @@ test('t180 — the promote and offer guards refuse in English', async (t) => {
   const { graph } = await registerBase(ctx);
   await fork(ctx, graph.id, 'variante-a');
 
-  const hypothesis = { evidencia: EVIDENCE, metrica_esperada: EXPECTED_METRIC };
+  const hypothesis = { evidence: EVIDENCE, expected_metric: EXPECTED_METRIC };
 
   const basePromoting = await promote(ctx, graph.id, hypothesis);
   assert.equal(basePromoting.status, 400);
-  assert.equal((basePromoting.body as { erro: string }).erro, 'variante_invalida');
+  assert.equal((basePromoting.body as { error: string }).error, 'invalid_variant');
   assert.equal(
-    (basePromoting.body as { mensagem: string }).mensagem,
+    (basePromoting.body as { message: string }).message,
     'only a variant has something to promote; a base does not promote to itself (D13)',
   );
 
   const variantOffering = await offer(ctx, 'variante-a', {
     ...hypothesis,
-    variante_id: 'variante-a',
+    variant_id: 'variante-a',
   });
   assert.equal(variantOffering.status, 400);
-  assert.equal((variantOffering.body as { erro: string }).erro, 'base_invalida');
+  assert.equal((variantOffering.body as { error: string }).error, 'invalid_base');
   assert.equal(
-    (variantOffering.body as { mensagem: string }).mensagem,
+    (variantOffering.body as { message: string }).message,
     'only a base lineage offers an improvement to its variants (D13)',
   );
 });

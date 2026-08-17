@@ -6,9 +6,15 @@
  * D16's "graph living as data in the database" criterion — a synthetic fixture
  * would not prove that.
  *
- * The JSON field names stay in Portuguese: they mirror the untouched migration
- * columns (t127, FR8). Only the route paths and the code identifiers are in
- * English.
+ * Since t226 the JSON is English, per `docs/spec/glossario-wire.md` §1: the
+ * migration columns are still `classe`/`linhagem_tipo`/`criado_em` (renaming
+ * them is D20's fourth child), and `repositories/graphs.ts`'s `toGraph` is the
+ * boundary between the two. What is asserted here is the wire, so the
+ * expectations below are the English side of that boundary.
+ *
+ * The `estrutura`/`soundness` report riding inside the 422 is NOT translated,
+ * and the assertions on it are the pin: it is the graph validator's own
+ * vocabulary, which D20 hands to its fifth child (routes, flags and report).
  */
 
 import assert from 'node:assert/strict';
@@ -40,27 +46,27 @@ interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
 }
 
-interface GraphRow {
+interface Graph {
   id: string;
-  classe: string;
-  linhagem_tipo: string;
-  base_classe: string | null;
-  origem_proposta_id: number | null;
-  versao_corrente_id: string | null;
-  criado_em: string;
+  class: string;
+  lineage_type: string;
+  base_class: string | null;
+  origin_proposal_id: number | null;
+  current_version_id: string | null;
+  created_at: string;
 }
 
-interface VersionRow {
+interface GraphVersion {
   id: string;
-  grafo_id: string;
-  versao_pai: string | null;
-  origem: string;
-  proposta_id: number | null;
-  criado_em: string;
+  graph_id: string;
+  parent_version: string | null;
+  source: string;
+  proposal_id: number | null;
+  created_at: string;
 }
 
 interface ValidationReport {
-  erro: string;
+  error: string;
   valido: boolean;
   estrutura: { valido: boolean; erros: Array<{ codigo: string; alvo: unknown }> };
   soundness: { valido: boolean; violacoes: Array<{ regra: string; alvo: unknown }> };
@@ -164,34 +170,34 @@ test('AT6 — factory graph 1 goes in through the API unedited, hashing the whol
   const document = readJson(FACTORY_GRAPH);
 
   const response = await post(address, '/v1/graphs', document);
-  const body = await jsonBody<{ grafo: GraphRow; grafo_versao: VersionRow }>(response);
+  const body = await jsonBody<{ graph: Graph; graph_version: GraphVersion }>(response);
   assert.equal(response.status, 201, JSON.stringify(body));
-  assert.equal(body.grafo.id, 'desenvolvimento-de-software');
-  assert.equal(body.grafo.classe, 'desenvolvimento-de-software');
-  assert.equal(body.grafo.linhagem_tipo, 'base');
-  assert.equal(body.grafo.base_classe, null);
+  assert.equal(body.graph.id, 'desenvolvimento-de-software');
+  assert.equal(body.graph.class, 'desenvolvimento-de-software');
+  assert.equal(body.graph.lineage_type, 'base');
+  assert.equal(body.graph.base_class, null);
 
   assert.equal(
-    body.grafo_versao.id,
+    body.graph_version.id,
     hashSnapshot(document),
     'the version id is the sha256 of the WHOLE canonicalized document',
   );
-  assert.match(body.grafo_versao.id, /^sha256:[0-9a-f]{64}$/);
-  assert.equal(body.grafo_versao.versao_pai, null, 'the first version of the lineage has no parent');
-  assert.equal(body.grafo_versao.origem, 'manual');
-  assert.equal(body.grafo_versao.grafo_id, 'desenvolvimento-de-software');
+  assert.match(body.graph_version.id, /^sha256:[0-9a-f]{64}$/);
+  assert.equal(body.graph_version.parent_version, null, 'the first version of the lineage has no parent');
+  assert.equal(body.graph_version.source, 'manual');
+  assert.equal(body.graph_version.graph_id, 'desenvolvimento-de-software');
 
   // Bootstrapping a new lineage is the only situation in which registering moves
   // the pointer in the same call: there is no previous "current" to preserve.
-  assert.equal(body.grafo.versao_corrente_id, body.grafo_versao.id);
+  assert.equal(body.graph.current_version_id, body.graph_version.id);
 
   // The stored snapshot is the whole document, recoverable byte for byte in value.
   const version = await fetch(
-    `${address}/v1/graph-versions/${encodeURIComponent(body.grafo_versao.id)}`,
+    `${address}/v1/graph-versions/${encodeURIComponent(body.graph_version.id)}`,
   );
   assert.equal(version.status, 200);
-  const versionBody = await jsonBody<{ grafo_versao: VersionRow & { snapshot: unknown } }>(version);
-  assert.deepEqual(versionBody.grafo_versao.snapshot, document);
+  const versionBody = await jsonBody<{ graph_version: GraphVersion & { snapshot: unknown } }>(version);
+  assert.deepEqual(versionBody.graph_version.snapshot, document);
 });
 
 test('AT7 — registering the same class twice returns 409 on the second', async (t) => {
@@ -202,8 +208,8 @@ test('AT7 — registering the same class twice returns 409 on the second', async
 
   const second = await post(address, '/v1/graphs', document);
   assert.equal(second.status, 409);
-  const body = await jsonBody<{ erro: string }>(second);
-  assert.equal(body.erro, 'classe_ja_registrada');
+  const body = await jsonBody<{ error: string }>(second);
+  assert.equal(body.error, 'class_already_registered');
 });
 
 test('AT8 — registering a variant returns 400 (D13/t118 are out of this ticket)', async (t) => {
@@ -215,7 +221,7 @@ test('AT8 — registering a variant returns 400 (D13/t118 are out of this ticket
 
   const response = await post(address, '/v1/graphs', document);
   assert.equal(response.status, 400);
-  assert.equal((await jsonBody<{ erro: string }>(response)).erro, 'linhagem_nao_base');
+  assert.equal((await jsonBody<{ error: string }>(response)).error, 'lineage_not_base');
 });
 
 test('AT9 — a graph that breaks soundness returns 422 with the validator report', async (t) => {
@@ -226,7 +232,7 @@ test('AT9 — a graph that breaks soundness returns 422 with the validator repor
   assert.equal(response.status, 422);
 
   const body = await jsonBody<ValidationReport>(response);
-  assert.equal(body.erro, 'grafo_invalido');
+  assert.equal(body.error, 'invalid_graph');
   assert.equal(body.valido, false);
   assert.deepEqual(
     body.soundness.violacoes,
@@ -235,8 +241,8 @@ test('AT9 — a graph that breaks soundness returns 422 with the validator repor
   );
 
   // Nothing was written: a graph that fails the gate does not become a lineage.
-  const graphs = await jsonBody<{ grafos: GraphRow[] }>(await fetch(`${address}/v1/graphs`));
-  assert.deepEqual(graphs.grafos, []);
+  const graphs = await jsonBody<{ graphs: Graph[] }>(await fetch(`${address}/v1/graphs`));
+  assert.deepEqual(graphs.graphs, []);
 });
 
 test('t153 — a graph whose ids are not filled strings returns 422 and registers nothing', async (t) => {
@@ -259,7 +265,7 @@ test('t153 — a graph whose ids are not filled strings returns 422 and register
   const response = await post(address, '/v1/graphs', document);
   const body = await jsonBody<ValidationReport>(response);
   assert.equal(response.status, 422, JSON.stringify(body));
-  assert.equal(body.erro, 'grafo_invalido');
+  assert.equal(body.error, 'invalid_graph');
   assert.equal(body.valido, false);
   assert.ok(
     body.estrutura.erros.some((item) => item.codigo === 'id_invalido'),
@@ -267,8 +273,8 @@ test('t153 — a graph whose ids are not filled strings returns 422 and register
   );
 
   // Nothing was written: a document that fails the gate does not become a lineage.
-  const graphs = await jsonBody<{ grafos: GraphRow[] }>(await fetch(`${address}/v1/graphs`));
-  assert.deepEqual(graphs.grafos, []);
+  const graphs = await jsonBody<{ graphs: Graph[] }>(await fetch(`${address}/v1/graphs`));
+  assert.deepEqual(graphs.graphs, []);
 });
 
 test('AT10 — the reads reflect the freshly registered graph and 404 on what does not exist', async (t) => {
@@ -277,31 +283,31 @@ test('AT10 — the reads reflect the freshly registered graph and 404 on what do
 
   const creation = await post(address, '/v1/graphs', document);
   assert.equal(creation.status, 201);
-  const { grafo_versao: version } = await jsonBody<{ grafo_versao: VersionRow }>(creation);
+  const { graph_version: version } = await jsonBody<{ graph_version: GraphVersion }>(creation);
 
   const byId = await fetch(`${address}/v1/graphs/nota-curta`);
   assert.equal(byId.status, 200);
-  const byIdBody = await jsonBody<{ grafo: GraphRow }>(byId);
-  assert.equal(byIdBody.grafo.id, 'nota-curta');
-  assert.equal(byIdBody.grafo.versao_corrente_id, version.id);
+  const byIdBody = await jsonBody<{ graph: Graph }>(byId);
+  assert.equal(byIdBody.graph.id, 'nota-curta');
+  assert.equal(byIdBody.graph.current_version_id, version.id);
 
-  const list = await jsonBody<{ grafos: GraphRow[] }>(await fetch(`${address}/v1/graphs`));
+  const list = await jsonBody<{ graphs: Graph[] }>(await fetch(`${address}/v1/graphs`));
   assert.deepEqual(
-    list.grafos.map((graph) => graph.id),
+    list.graphs.map((graph) => graph.id),
     ['nota-curta'],
   );
 
-  const classes = await jsonBody<{ classes: Array<{ classe: string; grafo_id: string }> }>(
+  const classes = await jsonBody<{ classes: Array<{ class: string; graph_id: string }> }>(
     await fetch(`${address}/v1/classes`),
   );
-  assert.deepEqual(classes.classes.map((entry) => entry.classe), ['nota-curta']);
-  assert.equal(classes.classes[0].grafo_id, 'nota-curta');
+  assert.deepEqual(classes.classes.map((entry) => entry.class), ['nota-curta']);
+  assert.equal(classes.classes[0].graph_id, 'nota-curta');
 
-  const versions = await jsonBody<{ versoes: VersionRow[] }>(
+  const versions = await jsonBody<{ versions: GraphVersion[] }>(
     await fetch(`${address}/v1/graphs/nota-curta/versions`),
   );
   assert.deepEqual(
-    versions.versoes.map((row) => row.id),
+    versions.versions.map((row) => row.id),
     [version.id],
   );
 
@@ -316,7 +322,7 @@ test('t127 — the old Portuguese graph paths no longer exist', async (t) => {
 
   const creation = await post(address, '/v1/graphs', document);
   assert.equal(creation.status, 201);
-  const { grafo_versao: version } = await jsonBody<{ grafo_versao: VersionRow }>(creation);
+  const { graph_version: version } = await jsonBody<{ graph_version: GraphVersion }>(creation);
 
   assert.equal((await post(address, '/v1/grafos', document)).status, 404);
   assert.equal((await fetch(`${address}/v1/grafos`)).status, 404);
@@ -337,10 +343,10 @@ test('t180 — the register guards refuse in English, quoting the class', async 
 
   const again = await post(address, '/v1/graphs', document);
   assert.equal(again.status, 409);
-  const taken = await jsonBody<{ erro: string; mensagem: string }>(again);
-  assert.equal(taken.erro, 'classe_ja_registrada', 'the code is frozen (FR2)');
+  const taken = await jsonBody<{ error: string; message: string }>(again);
+  assert.equal(taken.error, 'class_already_registered', 'the code is frozen (FR2)');
   assert.equal(
-    taken.mensagem,
+    taken.message,
     `class "${String(document.problem_class)}" already has a base graph; a new version over an existing lineage is the proposal flow`,
   );
 
@@ -349,10 +355,10 @@ test('t180 — the register guards refuse in English, quoting the class', async 
   asVariant.lineage = { type: 'variante', base_class: String(document.problem_class) };
   const refused = await post(address, '/v1/graphs', asVariant);
   assert.equal(refused.status, 400);
-  const notBase = await jsonBody<{ erro: string; mensagem: string }>(refused);
-  assert.equal(notBase.erro, 'linhagem_nao_base');
+  const notBase = await jsonBody<{ error: string; message: string }>(refused);
+  assert.equal(notBase.error, 'lineage_not_base');
   assert.equal(
-    notBase.mensagem,
+    notBase.message,
     'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
   );
 });
@@ -387,7 +393,7 @@ test('t194 — a hook secret never comes back out of the version routes', async 
     const response = await fetch(`${address}/v1/hook-secrets/${reference}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ valor: value }),
+      body: JSON.stringify({ value }),
     });
     assert.ok(
       response.status === 201 || response.status === 200,
@@ -396,14 +402,14 @@ test('t194 — a hook secret never comes back out of the version routes', async 
   }
 
   const creation = await post(address, '/v1/graphs', document);
-  const created = await jsonBody<{ grafo_versao: VersionRow }>(creation);
+  const created = await jsonBody<{ graph_version: GraphVersion }>(creation);
   assert.equal(creation.status, 201, JSON.stringify(created));
-  const { grafo_versao: version } = created;
+  const { graph_version: version } = created;
 
   const listed = await jsonBody(
     await fetch(`${address}/v1/graphs/${String(document.problem_class)}/versions`),
   );
-  const byId = await jsonBody<{ grafo_versao: VersionRow & { snapshot: unknown } }>(
+  const byId = await jsonBody<{ graph_version: GraphVersion & { snapshot: unknown } }>(
     await fetch(`${address}/v1/graph-versions/${encodeURIComponent(version.id)}`),
   );
 
@@ -419,7 +425,7 @@ test('t194 — a hook secret never comes back out of the version routes', async 
 
   // And the document that comes back is still the whole document: what was
   // removed is the value, not the declaration.
-  const snapshot = JSON.stringify(byId.grafo_versao.snapshot);
+  const snapshot = JSON.stringify(byId.graph_version.snapshot);
   assert.ok(!snapshot.includes('"secret"'), 'no snapshot carries a plaintext secret field');
   for (const reference of registered.keys()) {
     assert.ok(

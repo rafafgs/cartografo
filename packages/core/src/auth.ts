@@ -12,19 +12,19 @@
  * the probe useless exactly when it matters most.
  *
  * Two refusals, and the difference between them is the whole reason there are
- * two: `credencial_ausente` means nothing usable was presented — no header, or
- * a header that is not `Bearer <token>` — and `credencial_invalida` means
+ * two: `missing_credential` means nothing usable was presented — no header, or
+ * a header that is not `Bearer <token>` — and `invalid_credential` means
  * something was presented and it does not resolve. Whoever gets the first knows
  * to set a variable; whoever gets the second knows their token is dead. Both
- * bodies are the `erro`/`mensagem` shape the rest of the API answers with, so
- * the screen and the CLI have one failure format, not two (t127, FR8).
+ * bodies are the `{error, message}` envelope the rest of the API answers with,
+ * so the screen and the CLI have one failure format, not two (t226, FR3).
  *
  * Since t143 the hook also authorizes, and the second check is a different
  * question from the first: authentication asks "does this token resolve", and
  * authorization asks "may THIS credential be here". A `usuario` credential is
  * unrestricted, as it always was; a `runner` credential opens only the five
  * routes a runner really calls (FR2) and is refused everywhere else with
- * `credencial_fora_de_escopo` (403) — a third refusal, deliberately distinct
+ * `out_of_scope_credential` (403) — a third refusal, deliberately distinct
  * from the two 401s, because "your token is dead" and "your token is alive and
  * has no business here" send whoever reads it to opposite places.
  *
@@ -38,15 +38,16 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import type { Database } from './db/connection.ts';
 import { verifyToken, type CredentialRow } from './repositories/credentials.ts';
+import type { ErrorResponse } from './routes/common.ts';
 
 /** Error code of a request that presented no usable credential. */
-export const MISSING_CREDENTIAL = 'credencial_ausente';
+export const MISSING_CREDENTIAL = 'missing_credential';
 
 /** Error code of a request whose credential does not resolve. */
-export const INVALID_CREDENTIAL = 'credencial_invalida';
+export const INVALID_CREDENTIAL = 'invalid_credential';
 
 /** Error code of a live credential presented outside the routes it may use. */
-export const OUT_OF_SCOPE_CREDENTIAL = 'credencial_fora_de_escopo';
+export const OUT_OF_SCOPE_CREDENTIAL = 'out_of_scope_credential';
 
 /** The `Authorization` scheme this API speaks, and the only one. */
 const SCHEME = 'bearer';
@@ -133,10 +134,10 @@ export function credentialRunnerId(request: FastifyRequest): string | null {
  * scope, so the two halves of FR2/FR3 cannot drift into two vocabularies.
  *
  * @param detail What was out of scope, in one clause.
- * @returns The `erro`/`mensagem` body, ready to return.
+ * @returns The `{error, message}` body, ready to return.
  */
-export function outOfScope(detail: string): { erro: string; mensagem: string } {
-  return { erro: OUT_OF_SCOPE_CREDENTIAL, mensagem: detail };
+export function outOfScope(detail: string): ErrorResponse {
+  return { error: OUT_OF_SCOPE_CREDENTIAL, message: detail };
 }
 
 /**
@@ -150,20 +151,20 @@ export function registerAuth(app: FastifyInstance, db: Database): void {
     const token = bearerToken(request.headers.authorization);
     if (token === null) {
       await reply.code(401).send({
-        erro: MISSING_CREDENTIAL,
-        mensagem:
+        error: MISSING_CREDENTIAL,
+        message:
           'this route requires `Authorization: Bearer <token>` — use the token printed when the control plane starts (CARTOGRAFO_TOKEN, or --token on the command)',
-      });
+      } satisfies ErrorResponse);
       return;
     }
 
     const credential = verifyToken(db, token);
     if (credential === null) {
       await reply.code(401).send({
-        erro: INVALID_CREDENTIAL,
-        mensagem:
+        error: INVALID_CREDENTIAL,
+        message:
           'the credential presented is no longer valid (unknown or revoked) — ask whoever administers this control plane for another one',
-      });
+      } satisfies ErrorResponse);
       return;
     }
 

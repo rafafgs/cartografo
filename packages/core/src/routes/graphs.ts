@@ -26,16 +26,23 @@
  * (`migrations/0003_trabalho_sessao_evento_pergunta.sql`), so registering a
  * version could be logged today. Nobody owns that yet — no open ticket declares
  * it — so a graph version born here leaves no trace in the log, and whoever
- * replays the log will not find it. The field names are already the ones of the
- * `grafo_versao.*` schemas, so the emission, when someone takes it, is a direct
- * mapping — and they stay in Portuguese for the same reason (t127, FR8).
+ * replays the log will not find it. Whoever takes it should know the emission is
+ * NOT a copy of what this file returns any more: since t226 the wire is English
+ * and the `grafo_versao.*` event schemas are still Portuguese, until D20's
+ * second child renames them.
+ *
+ * What the routes return is the output of `repositories/graphs.ts`'s
+ * `toGraph`/`toGraphVersion`/`toClass`, never a row (t226, FR1). The comparisons
+ * inside the handlers keep reading the ROW — `base.linhagem_tipo !== 'base'` —
+ * because the database is untouched until D20's fourth child; only the boundary
+ * translates.
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { diffGraphs } from '../domain/diff.ts';
-import { validateGraph, type GraphDocument } from '../domain/graph.ts';
+import { validateGraph, type GraphDocument, type StructureReport } from '../domain/graph.ts';
 import { hashSnapshot } from '../domain/hash.ts';
 import type { Operation } from '../domain/operations.ts';
 import {
@@ -48,10 +55,15 @@ import {
   listGraphs,
   listVersions,
   registerBaseGraph,
+  toClass,
+  toGraph,
+  toGraphVersion,
+  toGraphVersionWithSnapshot,
   type GraphRow,
 } from '../repositories/graphs.ts';
-import { createProposal, getProposal } from '../repositories/proposals.ts';
+import { createProposal, getProposal, toProposal } from '../repositories/proposals.ts';
 import { isObject } from '../util/is-object.ts';
+import { refusal } from './common.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -68,23 +80,23 @@ interface IdParam {
  *
  * The four statuses are the ones the handler already answers — `201` with the
  * lineage and its first version, `422` with the validator's report, `400` for a
- * lineage that is not base, `409` for a class already registered. The refusal
- * bodies are this file's own `{erro, mensagem, ...}` shape and not the
- * `{error, details}` envelope of `routes/common.ts`, so they are declared here.
+ * lineage that is not base, `409` for a class already registered. Since t226 the
+ * refusal body is the one envelope of `routes/common.ts`, so this is that
+ * schema's shape and not a second one.
  *
- * Only `erro` and `mensagem` are typed, and only because every refusal below
+ * Only `error` and `message` are typed, and only because every refusal below
  * builds them as string literals. The rest travels through
  * `additionalProperties: true`: a Fastify `response` schema serializes, so a
- * declared type is a COERCION — `linhagem_tipo` echoes back whatever the body
+ * declared type is a COERCION — `lineage_type` echoes back whatever the body
  * carried, and typing it would turn a number into a string on the wire (FR6).
  */
 const REFUSAL_SCHEMA = {
   type: 'object',
   properties: {
-    erro: { type: 'string' },
-    mensagem: { type: 'string' },
+    error: { type: 'string' },
+    message: { type: 'string' },
   },
-  required: ['erro'],
+  required: ['error'],
   additionalProperties: true,
 } as const;
 
@@ -94,10 +106,10 @@ const REGISTER_GRAPH_SCHEMA = {
     201: {
       type: 'object',
       properties: {
-        grafo: { type: 'object', additionalProperties: true },
-        grafo_versao: { type: 'object', additionalProperties: true },
+        graph: { type: 'object', additionalProperties: true },
+        graph_version: { type: 'object', additionalProperties: true },
       },
-      required: ['grafo', 'grafo_versao'],
+      required: ['graph', 'graph_version'],
       additionalProperties: true,
     },
     400: REFUSAL_SCHEMA,
@@ -135,7 +147,10 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   const report = validateGraph(document);
   if (!report.valido) {
     reply.code(422);
-    return { erro: 'grafo_invalido', ...report };
+    // The report keeps its own vocabulary: `estrutura`/`soundness` belong to
+    // D20's fifth child, and Out of Scope names them even where they ride
+    // inside a `/v1` body. Only the envelope's `error` is this ticket's.
+    return { error: 'invalid_graph', ...report };
   }
 
   // The document passed the gate, so it is an object with the seven keys; all
@@ -145,46 +160,46 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   const className = raw.problem_class;
   if (typeof className !== 'string' || className.trim() === '') {
     reply.code(422);
-    return {
-      erro: 'grafo_invalido',
+    const structure: StructureReport = {
       valido: false,
-      estrutura: {
-        valido: false,
-        erros: [
-          {
-            codigo: 'campo_invalido',
-            mensagem: '"problem_class" has to be a filled text: it is the identity of the lineage (D8)',
-            alvo: 'problem_class',
-          },
-        ],
-      },
-      soundness: report.soundness,
+      erros: [
+        {
+          codigo: 'campo_invalido',
+          mensagem: '"problem_class" has to be a filled text: it is the identity of the lineage (D8)',
+          alvo: 'problem_class',
+        },
+      ],
     };
+    return { error: 'invalid_graph', valido: false, estrutura: structure, soundness: report.soundness };
   }
 
   const lineage = isObject(raw.lineage) ? raw.lineage : {};
   if (lineage.type !== 'base') {
-    reply.code(400);
-    return {
-      erro: 'linhagem_nao_base',
-      mensagem:
-        'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
-      linhagem_tipo: lineage.type ?? null,
-    };
+    // `lineage.type` is the DOCUMENT's field (`schema/grafo.schema.json`), so
+    // what it carries is echoed back untranslated — it is what the caller sent,
+    // and a mapper here would report a value nobody wrote.
+    return refusal(
+      reply,
+      400,
+      'lineage_not_base',
+      'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
+      { lineage_type: lineage.type ?? null },
+    );
   }
 
   if (getClassBase(db, className) !== undefined) {
-    reply.code(409);
-    return {
-      erro: 'classe_ja_registrada',
-      mensagem: `class "${className}" already has a base graph; a new version over an existing lineage is the proposal flow`,
-      classe: className,
-    };
+    return refusal(
+      reply,
+      409,
+      'class_already_registered',
+      `class "${className}" already has a base graph; a new version over an existing lineage is the proposal flow`,
+      { class: className },
+    );
   }
 
   const { graph, version } = registerBaseGraph(db, document as GraphDocument);
   reply.code(201);
-  return { grafo: graph, grafo_versao: version };
+  return { graph: toGraph(graph), graph_version: toGraphVersion(version) };
 }
 
 /**
@@ -204,62 +219,60 @@ async function fork(
 ): Promise<unknown> {
   const base = getGraph(db, request.params.id);
   if (base === undefined) {
-    reply.code(404);
-    return { erro: 'grafo_desconhecido', id: request.params.id };
+    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
   }
 
   if (base.linhagem_tipo !== 'base') {
-    reply.code(400);
-    return {
-      erro: 'base_invalida',
-      mensagem: 'only a base lineage can be forked; a variant of a variant is out (D13)',
-      linhagem_tipo: base.linhagem_tipo,
-    };
+    return refusal(
+      reply,
+      400,
+      'invalid_base',
+      'only a base lineage can be forked; a variant of a variant is out (D13)',
+      { lineage_type: toGraph(base).lineage_type },
+    );
   }
 
   const body = isObject(request.body) ? request.body : {};
 
-  // The id of the variant is said by the request, never derived: `classe` is
+  // The id of the variant is said by the request, never derived: `class` is
   // the identity of the BASE lineage (D8), and the variant shares the class.
   const id = body.id;
   if (typeof id !== 'string' || id.trim() === '') {
-    reply.code(400);
-    return {
-      erro: 'campo_obrigatorio_ausente',
-      mensagem: 'the fork requires "id": it is the identity of the lineage being born',
-    };
+    return refusal(
+      reply,
+      400,
+      'missing_required_field',
+      'the fork requires "id": it is the identity of the lineage being born',
+    );
   }
 
   if (getGraph(db, id) !== undefined) {
-    reply.code(409);
-    return {
-      erro: 'id_ja_registrado',
-      mensagem: `a lineage with the id "${id}" already exists`,
-      id,
-    };
+    return refusal(reply, 409, 'id_already_registered', `a lineage with the id "${id}" already exists`, { id });
   }
 
   // Existence only, at any status: the topographer does not know how to propose
   // a fork yet, so checking the content of the proposal would be checking a
   // shape nobody writes (out of scope).
-  const rawOrigin = body.origem_proposta_id;
+  const rawOrigin = body.origin_proposal_id;
   let originProposalId: number | null = null;
   if (rawOrigin !== undefined && rawOrigin !== null) {
     if (typeof rawOrigin !== 'number' || !Number.isInteger(rawOrigin) || rawOrigin <= 0) {
-      reply.code(400);
-      return {
-        erro: 'origem_proposta_id_invalido',
-        mensagem: 'origem_proposta_id has to be a positive integer',
-        origem_proposta_id: rawOrigin,
-      };
+      return refusal(
+        reply,
+        400,
+        'invalid_origin_proposal_id',
+        'origin_proposal_id has to be a positive integer',
+        { origin_proposal_id: rawOrigin },
+      );
     }
     if (getProposal(db, rawOrigin) === undefined) {
-      reply.code(400);
-      return {
-        erro: 'origem_proposta_desconhecida',
-        mensagem: 'origem_proposta_id references no proposal',
-        origem_proposta_id: rawOrigin,
-      };
+      return refusal(
+        reply,
+        400,
+        'unknown_origin_proposal',
+        'origin_proposal_id references no proposal',
+        { origin_proposal_id: rawOrigin },
+      );
     }
     originProposalId = rawOrigin;
   }
@@ -269,12 +282,13 @@ async function fork(
   const source =
     base.versao_corrente_id === null ? undefined : getVersion(db, base.versao_corrente_id);
   if (source === undefined) {
-    reply.code(409);
-    return {
-      erro: 'grafo_sem_versao_corrente',
-      mensagem: 'the base lineage does not point at a current version; there is nothing to fork from',
-      id: base.id,
-    };
+    return refusal(
+      reply,
+      409,
+      'graph_without_current_version',
+      'the base lineage does not point at a current version; there is nothing to fork from',
+      { id: base.id },
+    );
   }
 
   const document: GraphDocument = {
@@ -294,12 +308,13 @@ async function fork(
   // same document, and one row cannot belong to two lineages at once.
   const versionId = hashSnapshot(document);
   if (getVersionSummary(db, versionId) !== undefined) {
-    reply.code(409);
-    return {
-      erro: 'bifurcacao_sem_efeito',
-      mensagem: 'this fork produces a snapshot that already exists; nothing would be recorded',
-      versao_existente: versionId,
-    };
+    return refusal(
+      reply,
+      409,
+      'fork_without_effect',
+      'this fork produces a snapshot that already exists; nothing would be recorded',
+      { existing_version: versionId },
+    );
   }
 
   const { graph, version } = forkVariant(db, {
@@ -310,7 +325,7 @@ async function fork(
     versionId,
   });
   reply.code(201);
-  return { grafo: graph, grafo_versao: version };
+  return { graph: toGraph(graph), graph_version: toGraphVersion(version) };
 }
 
 /**
@@ -329,43 +344,40 @@ async function promote(
 ): Promise<unknown> {
   const variant = getGraph(db, request.params.id);
   if (variant === undefined) {
-    reply.code(404);
-    return { erro: 'grafo_desconhecido', id: request.params.id };
+    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
   }
 
   if (variant.linhagem_tipo !== 'variante') {
-    reply.code(400);
-    return {
-      erro: 'variante_invalida',
-      mensagem: 'only a variant has something to promote; a base does not promote to itself (D13)',
-      linhagem_tipo: variant.linhagem_tipo,
-    };
+    return refusal(
+      reply,
+      400,
+      'invalid_variant',
+      'only a variant has something to promote; a base does not promote to itself (D13)',
+      { lineage_type: toGraph(variant).lineage_type },
+    );
   }
 
   // D13: the variant shares the class of the base it was forked from, so the
   // class IS the pointer back to the base — there is no second column to read.
   const base = getClassBase(db, variant.classe);
   if (base === undefined) {
-    reply.code(404);
-    return {
-      erro: 'grafo_desconhecido',
-      mensagem: 'the class of this variant has no base lineage; there is nowhere to promote to',
-      classe: variant.classe,
-    };
+    return refusal(
+      reply,
+      404,
+      'unknown_graph',
+      'the class of this variant has no base lineage; there is nowhere to promote to',
+      { class: variant.classe },
+    );
   }
 
   const body = isObject(request.body) ? request.body : {};
-  const missing = missingHypothesis(body);
-  if (missing !== undefined) {
-    reply.code(400);
-    return missing;
-  }
+  if (missingHypothesis(body)) return missingHypothesisRefusal(reply);
 
   return openProposal(db, reply, {
     target: base,
     source: variant,
-    evidencia: body.evidencia,
-    metrica_esperada: body.metrica_esperada,
+    evidence: body.evidence,
+    expectedMetric: body.expected_metric,
   });
 }
 
@@ -386,68 +398,66 @@ async function offer(
 ): Promise<unknown> {
   const base = getGraph(db, request.params.id);
   if (base === undefined) {
-    reply.code(404);
-    return { erro: 'grafo_desconhecido', id: request.params.id };
+    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
   }
 
   if (base.linhagem_tipo !== 'base') {
-    reply.code(400);
-    return {
-      erro: 'base_invalida',
-      mensagem: 'only a base lineage offers an improvement to its variants (D13)',
-      linhagem_tipo: base.linhagem_tipo,
-    };
+    return refusal(
+      reply,
+      400,
+      'invalid_base',
+      'only a base lineage offers an improvement to its variants (D13)',
+      { lineage_type: toGraph(base).lineage_type },
+    );
   }
 
   const body = isObject(request.body) ? request.body : {};
 
-  const variantId = body.variante_id;
+  const variantId = body.variant_id;
   if (typeof variantId !== 'string' || variantId.trim() === '') {
-    reply.code(400);
-    return {
-      erro: 'campo_obrigatorio_ausente',
-      mensagem: 'the offer requires "variante_id": it is the variant that receives the proposal, one per call',
-    };
+    return refusal(
+      reply,
+      400,
+      'missing_required_field',
+      'the offer requires "variant_id": it is the variant that receives the proposal, one per call',
+    );
   }
 
   const variant = getGraph(db, variantId);
   if (variant === undefined) {
-    reply.code(404);
-    return { erro: 'grafo_desconhecido', id: variantId };
+    return refusal(reply, 404, 'unknown_graph', undefined, { id: variantId });
   }
 
   if (variant.linhagem_tipo !== 'variante' || variant.base_classe !== base.classe) {
-    reply.code(400);
-    return {
-      erro: 'variante_invalida',
-      mensagem: `"${variantId}" is not a variant of this base lineage`,
-      base_classe: variant.base_classe,
-      classe: base.classe,
-    };
+    return refusal(
+      reply,
+      400,
+      'invalid_variant',
+      `"${variantId}" is not a variant of this base lineage`,
+      { base_class: variant.base_classe, class: base.classe },
+    );
   }
 
-  const missing = missingHypothesis(body);
-  if (missing !== undefined) {
-    reply.code(400);
-    return missing;
-  }
+  if (missingHypothesis(body)) return missingHypothesisRefusal(reply);
 
   return openProposal(db, reply, {
     target: variant,
     source: base,
-    evidencia: body.evidencia,
-    metrica_esperada: body.metrica_esperada,
+    evidence: body.evidence,
+    expectedMetric: body.expected_metric,
   });
 }
 
 /** `GET /classes` — the class catalogue (D8). */
 async function readClasses(db: Database): Promise<unknown> {
-  return { classes: listClasses(db) };
+  const classes = listClasses(db);
+  return { classes: classes.map(toClass) };
 }
 
 /** `GET /graphs` — every lineage, base and variant alike. */
 async function readGraphs(db: Database): Promise<unknown> {
-  return { grafos: listGraphs(db) };
+  const graphs = listGraphs(db);
+  return { graphs: graphs.map(toGraph) };
 }
 
 /** `GET /graphs/:id` — one lineage. */
@@ -458,10 +468,9 @@ async function readGraph(
 ): Promise<unknown> {
   const graph = getGraph(db, request.params.id);
   if (graph === undefined) {
-    reply.code(404);
-    return { erro: 'grafo_desconhecido', id: request.params.id };
+    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
   }
-  return { grafo: graph };
+  return { graph: toGraph(graph) };
 }
 
 /**
@@ -476,10 +485,10 @@ async function readVersions(
 ): Promise<unknown> {
   const graph = getGraph(db, request.params.id);
   if (graph === undefined) {
-    reply.code(404);
-    return { erro: 'grafo_desconhecido', id: request.params.id };
+    return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
   }
-  return { versoes: listVersions(db, graph.id) };
+  const versions = listVersions(db, graph.id);
+  return { versions: versions.map(toGraphVersion) };
 }
 
 /** `GET /graph-versions/:id` — one version, snapshot included. */
@@ -490,10 +499,9 @@ async function readVersion(
 ): Promise<unknown> {
   const version = getVersion(db, request.params.id);
   if (version === undefined) {
-    reply.code(404);
-    return { erro: 'grafo_versao_desconhecida', id: request.params.id };
+    return refusal(reply, 404, 'unknown_graph_version', undefined, { id: request.params.id });
   }
-  return { grafo_versao: version };
+  return { graph_version: toGraphVersionWithSnapshot(version) };
 }
 
 /**
@@ -504,13 +512,18 @@ async function readVersion(
  * proposals like any other, and validating them harder here than at the route
  * everyone already uses would be two different contracts for one table.
  */
-function missingHypothesis(body: Record<string, unknown>): Record<string, unknown> | undefined {
-  if (body.evidencia !== undefined && body.metrica_esperada !== undefined) return undefined;
-  return {
-    erro: 'campo_obrigatorio_ausente',
-    mensagem:
-      'a proposal is a hypothesis: evidencia and metrica_esperada are required (D15, learning note)',
-  };
+function missingHypothesis(body: Record<string, unknown>): boolean {
+  return body.evidence === undefined || body.expected_metric === undefined;
+}
+
+/** The refusal the two routes above share when the hypothesis is incomplete. */
+function missingHypothesisRefusal(reply: FastifyReply): Record<string, unknown> {
+  return refusal(
+    reply,
+    400,
+    'missing_required_field',
+    'a proposal is a hypothesis: evidence and expected_metric are required (D15, learning note)',
+  );
 }
 
 /** The direction of a promotion or an offer, once the route knows which is which. */
@@ -519,8 +532,8 @@ interface Direction {
   target: GraphRow;
   /** Lineage whose current snapshot the target would come to match. */
   source: GraphRow;
-  evidencia: unknown;
-  metrica_esperada: unknown;
+  evidence: unknown;
+  expectedMetric: unknown;
 }
 
 /**
@@ -549,34 +562,36 @@ function openProposal(
   const to = current(db, source);
   const from = current(db, target);
   if (to === undefined || from === undefined) {
-    reply.code(409);
-    return {
-      erro: 'grafo_sem_versao_corrente',
-      mensagem: 'both lineages have to point at a current version for there to be a diff',
-      grafo_id: from === undefined ? target.id : source.id,
-    };
+    return refusal(
+      reply,
+      409,
+      'graph_without_current_version',
+      'both lineages have to point at a current version for there to be a diff',
+      { graph_id: from === undefined ? target.id : source.id },
+    );
   }
 
   const operations: Operation[] = diffGraphs(from, to);
   if (operations.length === 0) {
-    reply.code(422);
-    return {
-      erro: 'diff_sem_efeito',
-      mensagem: 'the two snapshots already agree on "nodes" and "edges"; there is no diff to propose',
-      grafo_id: target.id,
-    };
+    return refusal(
+      reply,
+      422,
+      'diff_without_effect',
+      'the two snapshots already agree on "nodes" and "edges"; there is no diff to propose',
+      { graph_id: target.id },
+    );
   }
 
   const proposal = createProposal(db, {
     grafo_id: target.id,
     versao_alvo: target.versao_corrente_id as string,
     operacoes: operations,
-    evidencia: data.evidencia,
-    metrica_esperada: data.metrica_esperada,
+    evidencia: data.evidence,
+    metrica_esperada: data.expectedMetric,
   });
 
   reply.code(201);
-  return { proposta: proposal };
+  return { proposal: toProposal(proposal) };
 }
 
 /** The document that holds today for a lineage, or `undefined` if the pointer is empty. */

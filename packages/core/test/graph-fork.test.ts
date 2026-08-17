@@ -38,46 +38,46 @@ const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido
 const VARIANT_ID = 'nota-curta-do-projeto';
 
 /** A lineage, as the API returns it. */
-interface GraphRow {
+interface Graph {
   id: string;
-  classe: string;
-  linhagem_tipo: string;
-  base_classe: string | null;
-  origem_proposta_id: number | null;
-  versao_corrente_id: string | null;
-  criado_em: string;
+  class: string;
+  lineage_type: string;
+  base_class: string | null;
+  origin_proposal_id: number | null;
+  current_version_id: string | null;
+  created_at: string;
 }
 
 /** A version without the snapshot, as the API returns it. */
-interface VersionRow {
+interface GraphVersion {
   id: string;
-  grafo_id: string;
-  versao_pai: string | null;
-  origem: string;
-  proposta_id: number | null;
-  criado_em: string;
+  graph_id: string;
+  parent_version: string | null;
+  source: string;
+  proposal_id: number | null;
+  created_at: string;
 }
 
 /** A version with the whole document. */
-interface VersionWithSnapshot extends VersionRow {
+interface GraphVersionWithSnapshot extends GraphVersion {
   snapshot: Record<string, unknown>;
 }
 
 /** A proposal, in the slice these tests read. */
-interface ProposalRow {
+interface Proposal {
   id: number;
-  grafo_id: string;
-  versao_alvo: string;
+  graph_id: string;
+  target_version: string;
   status: string;
-  versao_aplicada_id: string | null;
+  applied_version_id: string | null;
 }
 
 /** Body of a successful fork, and of a refused one. */
 interface ForkResponse {
-  erro?: string;
-  mensagem?: string;
-  grafo: GraphRow;
-  grafo_versao: VersionRow;
+  error?: string;
+  message?: string;
+  graph: Graph;
+  graph_version: GraphVersion;
 }
 
 function minimalGraph(): Record<string, unknown> {
@@ -98,16 +98,16 @@ async function start(t: TestHook): Promise<TestContext> {
 /** Registers the minimal base graph and returns the document and what was written. */
 async function registerBase(
   ctx: TestContext,
-): Promise<{ document: Record<string, unknown>; graph: GraphRow; version: VersionRow }> {
+): Promise<{ document: Record<string, unknown>; graph: Graph; version: GraphVersion }> {
   const document = minimalGraph();
-  const response = await request<{ grafo: GraphRow; grafo_versao: VersionRow }>(
+  const response = await request<{ graph: Graph; graph_version: GraphVersion }>(
     ctx,
     'POST',
     '/v1/graphs',
     document,
   );
   assert.equal(response.status, 201, JSON.stringify(response.body));
-  return { document, graph: response.body.grafo, version: response.body.grafo_versao };
+  return { document, graph: response.body.graph, version: response.body.graph_version };
 }
 
 async function fork(
@@ -118,20 +118,20 @@ async function fork(
   return request<ForkResponse>(ctx, 'POST', `/v1/graphs/${baseId}/fork`, body);
 }
 
-async function readGraph(ctx: TestContext, id: string): Promise<GraphRow> {
-  const response = await request<{ grafo: GraphRow }>(ctx, 'GET', `/v1/graphs/${id}`);
+async function readGraph(ctx: TestContext, id: string): Promise<Graph> {
+  const response = await request<{ graph: Graph }>(ctx, 'GET', `/v1/graphs/${id}`);
   assert.equal(response.status, 200);
-  return response.body.grafo;
+  return response.body.graph;
 }
 
-async function readVersion(ctx: TestContext, id: string): Promise<VersionWithSnapshot> {
-  const response = await request<{ grafo_versao: VersionWithSnapshot }>(
+async function readVersion(ctx: TestContext, id: string): Promise<GraphVersionWithSnapshot> {
+  const response = await request<{ graph_version: GraphVersionWithSnapshot }>(
     ctx,
     'GET',
     `/v1/graph-versions/${encodeURIComponent(id)}`,
   );
   assert.equal(response.status, 200);
-  return response.body.grafo_versao;
+  return response.body.graph_version;
 }
 
 /** How many rows the two tables hold — the "nothing was written" assertion. */
@@ -203,16 +203,16 @@ async function createProposal(
   ctx: TestContext,
   graphId: string,
   targetVersion: string,
-): Promise<ProposalRow> {
-  const response = await request<{ proposta: ProposalRow }>(ctx, 'POST', '/v1/proposals', {
-    grafo_id: graphId,
-    versao_alvo: targetVersion,
-    operacoes: passingOperations(),
-    evidencia: EVIDENCE,
-    metrica_esperada: EXPECTED_METRIC,
+): Promise<Proposal> {
+  const response = await request<{ proposal: Proposal }>(ctx, 'POST', '/v1/proposals', {
+    graph_id: graphId,
+    target_version: targetVersion,
+    operations: passingOperations(),
+    evidence: EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
   });
   assert.equal(response.status, 201, JSON.stringify(response.body));
-  return response.body.proposta;
+  return response.body.proposal;
 }
 
 test('t118 AT1 — forking a base with a fresh id creates a variant lineage', async (t) => {
@@ -222,11 +222,11 @@ test('t118 AT1 — forking a base with a fresh id creates a variant lineage', as
   const response = await fork(ctx, graph.id, { id: VARIANT_ID });
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
-  assert.equal(response.body.grafo.id, VARIANT_ID);
-  assert.equal(response.body.grafo.classe, graph.classe, 'the variant inherits the class');
-  assert.equal(response.body.grafo.linhagem_tipo, 'variante');
-  assert.equal(response.body.grafo.base_classe, graph.classe);
-  assert.equal(response.body.grafo.origem_proposta_id, null);
+  assert.equal(response.body.graph.id, VARIANT_ID);
+  assert.equal(response.body.graph.class, graph.class, 'the variant inherits the class');
+  assert.equal(response.body.graph.lineage_type, 'variant');
+  assert.equal(response.body.graph.base_class, graph.class);
+  assert.equal(response.body.graph.origin_proposal_id, null);
 });
 
 test('t118 AT2 — with no origin proposal the version is manual', async (t) => {
@@ -236,9 +236,9 @@ test('t118 AT2 — with no origin proposal the version is manual', async (t) => 
   const response = await fork(ctx, graph.id, { id: VARIANT_ID });
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
-  assert.equal(response.body.grafo_versao.grafo_id, VARIANT_ID);
-  assert.equal(response.body.grafo_versao.origem, 'manual');
-  assert.equal(response.body.grafo_versao.proposta_id, null);
+  assert.equal(response.body.graph_version.graph_id, VARIANT_ID);
+  assert.equal(response.body.graph_version.source, 'manual');
+  assert.equal(response.body.graph_version.proposal_id, null);
 });
 
 test('t118 AT3 — the forked snapshot is the base one with only `lineage` swapped', async (t) => {
@@ -249,11 +249,11 @@ test('t118 AT3 — the forked snapshot is the base one with only `lineage` swapp
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
   const baseSnapshot = (await readVersion(ctx, version.id)).snapshot;
-  const forked = (await readVersion(ctx, response.body.grafo_versao.id)).snapshot;
+  const forked = (await readVersion(ctx, response.body.graph_version.id)).snapshot;
 
   assert.deepEqual(
     forked.lineage,
-    { type: 'variante', base_class: graph.classe },
+    { type: 'variante', base_class: graph.class },
     'with no origin proposal the key is omitted altogether, never null',
   );
   assert.deepEqual(
@@ -269,17 +269,17 @@ test('t118 AT4 — an origin proposal lands as an integer in the column and a st
   const { graph, version } = await registerBase(ctx);
   const proposal = await createProposal(ctx, graph.id, version.id);
 
-  const response = await fork(ctx, graph.id, { id: VARIANT_ID, origem_proposta_id: proposal.id });
+  const response = await fork(ctx, graph.id, { id: VARIANT_ID, origin_proposal_id: proposal.id });
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
-  assert.equal(response.body.grafo.origem_proposta_id, proposal.id);
-  assert.equal(response.body.grafo_versao.origem, 'proposta');
-  assert.equal(response.body.grafo_versao.proposta_id, proposal.id);
+  assert.equal(response.body.graph.origin_proposal_id, proposal.id);
+  assert.equal(response.body.graph_version.source, 'proposal');
+  assert.equal(response.body.graph_version.proposal_id, proposal.id);
 
-  const forked = (await readVersion(ctx, response.body.grafo_versao.id)).snapshot;
+  const forked = (await readVersion(ctx, response.body.graph_version.id)).snapshot;
   assert.deepEqual(forked.lineage, {
     type: 'variante',
-    base_class: graph.classe,
+    base_class: graph.class,
     source_proposal_id: String(proposal.id),
   });
 });
@@ -292,12 +292,12 @@ test('t118 AT5 — the first version of the variant descends from the base curre
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
   assert.equal(
-    response.body.grafo_versao.versao_pai,
+    response.body.graph_version.parent_version,
     version.id,
     'the parenthood crosses the lineage: the parent belongs to the base',
   );
   assert.equal(
-    (await readGraph(ctx, graph.id)).versao_corrente_id,
+    (await readGraph(ctx, graph.id)).current_version_id,
     version.id,
     'and the base pointer stands still',
   );
@@ -311,8 +311,8 @@ test('t118 AT6 — the variant is born already pointing at its first version', a
   assert.equal(response.status, 201, JSON.stringify(response.body));
 
   assert.equal(
-    (await readGraph(ctx, VARIANT_ID)).versao_corrente_id,
-    response.body.grafo_versao.id,
+    (await readGraph(ctx, VARIANT_ID)).current_version_id,
+    response.body.graph_version.id,
   );
 });
 
@@ -323,7 +323,7 @@ test('t118 AT7 — forking an unknown lineage is a 404 and writes nothing', asyn
 
   const response = await fork(ctx, 'inexistente', { id: VARIANT_ID });
   assert.equal(response.status, 404);
-  assert.equal(response.body.erro, 'grafo_desconhecido');
+  assert.equal(response.body.error, 'unknown_graph');
   assert.deepEqual(counts(ctx), before);
 });
 
@@ -335,7 +335,7 @@ test('t118 AT8 — forking a variant is a 400 and writes nothing', async (t) => 
 
   const response = await fork(ctx, VARIANT_ID, { id: 'nota-curta-de-outro-projeto' });
   assert.equal(response.status, 400);
-  assert.equal(response.body.erro, 'base_invalida');
+  assert.equal(response.body.error, 'invalid_base');
   assert.deepEqual(counts(ctx), before);
 });
 
@@ -347,7 +347,7 @@ test('t118 AT9 — a body with no id is a 400 and writes nothing', async (t) => 
   for (const body of [{}, { id: '' }, { id: '   ' }, { id: 42 }]) {
     const response = await fork(ctx, graph.id, body);
     assert.equal(response.status, 400, JSON.stringify(response.body));
-    assert.equal(response.body.erro, 'campo_obrigatorio_ausente');
+    assert.equal(response.body.error, 'missing_required_field');
   }
   assert.deepEqual(counts(ctx), before);
 });
@@ -361,7 +361,7 @@ test('t118 AT10 — an id that already exists is a 409 and writes nothing', asyn
   for (const taken of [graph.id, VARIANT_ID]) {
     const response = await fork(ctx, graph.id, { id: taken });
     assert.equal(response.status, 409, JSON.stringify(response.body));
-    assert.equal(response.body.erro, 'id_ja_registrado');
+    assert.equal(response.body.error, 'id_already_registered');
   }
   assert.deepEqual(counts(ctx), before);
 });
@@ -372,9 +372,9 @@ test('t118 AT11 — an origem_proposta_id that is not a positive integer is a 40
   const before = counts(ctx);
 
   for (const wrong of ['1', 1.5, 0, -3, true, {}]) {
-    const response = await fork(ctx, graph.id, { id: VARIANT_ID, origem_proposta_id: wrong });
+    const response = await fork(ctx, graph.id, { id: VARIANT_ID, origin_proposal_id: wrong });
     assert.equal(response.status, 400, `${JSON.stringify(wrong)}: ${JSON.stringify(response.body)}`);
-    assert.equal(response.body.erro, 'origem_proposta_id_invalido');
+    assert.equal(response.body.error, 'invalid_origin_proposal_id');
   }
   assert.deepEqual(counts(ctx), before);
 });
@@ -384,9 +384,9 @@ test('t118 AT12 — an origem_proposta_id nobody proposed is a 400 and writes no
   const { graph } = await registerBase(ctx);
   const before = counts(ctx);
 
-  const response = await fork(ctx, graph.id, { id: VARIANT_ID, origem_proposta_id: 999 });
+  const response = await fork(ctx, graph.id, { id: VARIANT_ID, origin_proposal_id: 999 });
   assert.equal(response.status, 400, JSON.stringify(response.body));
-  assert.equal(response.body.erro, 'origem_proposta_desconhecida');
+  assert.equal(response.body.error, 'unknown_origin_proposal');
   assert.deepEqual(counts(ctx), before);
 });
 
@@ -395,7 +395,7 @@ test('t118 AT13 — the second identical fork is a 409 and writes nothing', asyn
   const { graph } = await registerBase(ctx);
   assert.equal((await fork(ctx, graph.id, { id: VARIANT_ID })).status, 201);
 
-  const listBefore = await request<{ grafos: GraphRow[] }>(ctx, 'GET', '/v1/graphs');
+  const listBefore = await request<{ graphs: Graph[] }>(ctx, 'GET', '/v1/graphs');
   const before = counts(ctx);
 
   // Same base version and no origin proposal on either side: the two documents
@@ -403,11 +403,11 @@ test('t118 AT13 — the second identical fork is a 409 and writes nothing', asyn
   // cannot belong to two lineages at once.
   const response = await fork(ctx, graph.id, { id: 'nota-curta-de-outro-projeto' });
   assert.equal(response.status, 409, JSON.stringify(response.body));
-  assert.equal(response.body.erro, 'bifurcacao_sem_efeito');
+  assert.equal(response.body.error, 'fork_without_effect');
 
   assert.deepEqual(counts(ctx), before);
-  const listAfter = await request<{ grafos: GraphRow[] }>(ctx, 'GET', '/v1/graphs');
-  assert.deepEqual(listAfter.body.grafos, listBefore.body.grafos);
+  const listAfter = await request<{ graphs: Graph[] }>(ctx, 'GET', '/v1/graphs');
+  assert.deepEqual(listAfter.body.graphs, listBefore.body.graphs);
 });
 
 test('t118 AT14 — a base with no current version is a 409, not a crash', async (t) => {
@@ -427,7 +427,7 @@ test('t118 AT14 — a base with no current version is a 409, not a crash', async
 
   const response = await fork(ctx, 'nota-orfa', { id: VARIANT_ID });
   assert.equal(response.status, 409, JSON.stringify(response.body));
-  assert.equal(response.body.erro, 'grafo_sem_versao_corrente');
+  assert.equal(response.body.error, 'graph_without_current_version');
 
   const after = counts(ctx);
   assert.equal(after.lineages, before.lineages + 1, 'only the row the test itself inserted');
@@ -440,13 +440,13 @@ test('t118 AT15 — the ordinary proposal flow evolves the variant, base untouch
 
   const forked = await fork(ctx, graph.id, { id: VARIANT_ID });
   assert.equal(forked.status, 201, JSON.stringify(forked.body));
-  const variantVersion = forked.body.grafo_versao.id;
+  const variantVersion = forked.body.graph_version.id;
 
   const proposal = await createProposal(ctx, VARIANT_ID, variantVersion);
 
   // The gate of princípio 5 stands between the two, since t165: `apply` demands
   // `aprovada`, and a variant's proposal is a proposal like any other.
-  const approved = await request<{ proposta: ProposalRow }>(
+  const approved = await request<{ proposal: Proposal }>(
     ctx,
     'POST',
     `/v1/proposals/${proposal.id}/approve`,
@@ -454,24 +454,24 @@ test('t118 AT15 — the ordinary proposal flow evolves the variant, base untouch
   );
   assert.equal(approved.status, 200, JSON.stringify(approved.body));
 
-  const applied = await request<{ proposta: ProposalRow; grafo_versao: VersionRow }>(
+  const applied = await request<{ proposal: Proposal; graph_version: GraphVersion }>(
     ctx,
     'POST',
     `/v1/proposals/${proposal.id}/apply`,
     {},
   );
   assert.equal(applied.status, 200, JSON.stringify(applied.body));
-  assert.equal(applied.body.proposta.status, 'aplicada');
-  assert.equal(applied.body.grafo_versao.grafo_id, VARIANT_ID);
-  assert.equal(applied.body.grafo_versao.versao_pai, variantVersion);
+  assert.equal(applied.body.proposal.status, 'applied');
+  assert.equal(applied.body.graph_version.graph_id, VARIANT_ID);
+  assert.equal(applied.body.graph_version.parent_version, variantVersion);
 
   assert.equal(
-    (await readGraph(ctx, VARIANT_ID)).versao_corrente_id,
-    applied.body.grafo_versao.id,
+    (await readGraph(ctx, VARIANT_ID)).current_version_id,
+    applied.body.graph_version.id,
     'the variant pointer moved',
   );
   assert.equal(
-    (await readGraph(ctx, graph.id)).versao_corrente_id,
+    (await readGraph(ctx, graph.id)).current_version_id,
     version.id,
     'and the base pointer did not: the two lineages evolve apart',
   );
@@ -483,9 +483,9 @@ test('t180 — the fork guards refuse in English', async (t) => {
 
   const noId = await fork(ctx, graph.id, {});
   assert.equal(noId.status, 400);
-  assert.equal((noId.body as { erro: string }).erro, 'campo_obrigatorio_ausente');
+  assert.equal((noId.body as { error: string }).error, 'missing_required_field');
   assert.equal(
-    (noId.body as { mensagem: string }).mensagem,
+    (noId.body as { message: string }).message,
     'the fork requires "id": it is the identity of the lineage being born',
   );
 
@@ -494,9 +494,9 @@ test('t180 — the fork guards refuse in English', async (t) => {
 
   const ofVariant = await fork(ctx, 'variante-a', { id: 'variante-b' });
   assert.equal(ofVariant.status, 400);
-  assert.equal((ofVariant.body as { erro: string }).erro, 'base_invalida');
+  assert.equal((ofVariant.body as { error: string }).error, 'invalid_base');
   assert.equal(
-    (ofVariant.body as { mensagem: string }).mensagem,
+    (ofVariant.body as { message: string }).message,
     'only a base lineage can be forked; a variant of a variant is out (D13)',
   );
 });

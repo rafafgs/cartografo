@@ -207,7 +207,7 @@ Cada disparo vira um POST idêntico ao de um webhook registrado:
 POST /cartografo HTTP/1.1
 Host: meu-servico.exemplo
 Content-Type: application/json
-X-Cartografo-Assinatura: sha256=8f4c...  (64 caracteres hex)
+X-Cartografo-Signature: sha256=8f4c...  (64 caracteres hex)
 
 {"id":131,"type":"job.transitioned","project_id":1,"execution_id":2,"entity":{"type":"job","id":7},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-16T12:00:03.114Z","data":{"from_node_id":"redigir","to_node_id":"revisar"}}
 ```
@@ -220,7 +220,7 @@ segredo.
 
 A receita da assinatura, inteira — a mesma da t142, com uma diferença de chave:
 
-> `X-Cartografo-Assinatura` = `sha256=` + HMAC-SHA256 do **corpo cru**,
+> `X-Cartografo-Signature` = `sha256=` + HMAC-SHA256 do **corpo cru**,
 > com a chave que o `destination.secret_ref` DESTE GANCHO resolveu, em hex
 > minúsculo.
 

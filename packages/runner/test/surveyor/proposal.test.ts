@@ -564,3 +564,75 @@ test('t110 — a flat run exits quietly: no session, no proposal', async (t) => 
   assert.equal(adapter.sessions, 0, 'with nothing to explain, no agent is paid to explain it');
   assert.deepEqual(postsToProposals(scenario.calls), []);
 });
+
+/* -------------------------------------------------------------------------- */
+/* t247 — `criada` tells a proposal that landed from one that was deduplicated */
+/*                                                                            */
+/* The flow lens is about to stop being something a person types (D21's third  */
+/* child), and an unattended caller has to be able to say which of the two     */
+/* happened. Since t246 it cannot read that off the proposal: a deduplicated   */
+/* one reads `pendente` exactly like a fresh one, and the only difference is   */
+/* the status the control plane answered with.                                 */
+/* -------------------------------------------------------------------------- */
+
+test('t247 AT2 — criada is true on the first run and false when t246 deduplicates', async (t) => {
+  const { proposeFlowImprovement, OUTPUT_FILE } = await loadProposal();
+  const scenario = await buildScenario(t);
+
+  const run = async (): Promise<ProposalModule.SurveyorResult> =>
+    await proposeFlowImprovement({
+      client: scenario.client,
+      adapter: fakeAdapter(),
+      executionId: EXECUTION_WITH_SIGNAL,
+      workingDir: scenario.workingDir,
+      timeoutSeconds: 60,
+      envOverrides: engineWriting(
+        OUTPUT_FILE,
+        JSON.stringify({ operations: VALID_OPERATIONS }, null, 2),
+      ),
+    });
+
+  const first = await run();
+  assert.equal(first.criada, true, 'the first run creates the proposal: 201');
+  assert.ok(first.proposta !== null);
+
+  // The same telemetry, the same version, the same operations — which is the
+  // triple t246 keys on. Nothing about this second run is different, and that
+  // is the point: an unattended trigger firing twice must not clone a proposal.
+  const second = await run();
+  assert.equal(second.criada, false, 'the repeat matched the pending proposal: 200');
+  assert.ok(second.proposta !== null);
+  assert.equal(
+    second.proposta.id,
+    first.proposta.id,
+    'and it is the SAME proposal, strengthened, never a second one',
+  );
+
+  const { proposals } = await api<{ proposals: Proposal[] }>(
+    scenario.baseUrl,
+    'GET',
+    '/v1/proposals',
+  );
+  assert.equal(proposals.length, 1, `two runs, one proposal: ${JSON.stringify(proposals)}`);
+});
+
+test('t247 AT2 — a run with nothing to propose reports criada as null, not false', async (t) => {
+  const { proposeFlowImprovement, OUTPUT_FILE } = await loadProposal();
+  const scenario = await buildScenario(t);
+
+  const result = await proposeFlowImprovement({
+    client: scenario.client,
+    adapter: fakeAdapter(),
+    executionId: FLAT_EXECUTION,
+    workingDir: scenario.workingDir,
+    timeoutSeconds: 60,
+    envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ operations: VALID_OPERATIONS })),
+  });
+
+  assert.equal(result.proposta, null, 'no bottleneck, nothing to propose (unchanged since t110)');
+  assert.equal(
+    result.criada,
+    null,
+    '`false` would read as "it was deduplicated"; nothing was posted at all',
+  );
+});

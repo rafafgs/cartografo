@@ -1,0 +1,32 @@
+{
+  "name": "@cartografo/topografo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unprivileged watcher: runs both surveyor lenses when an execution finishes, an ordinary client of the public API (D1, D11, D21).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "bin": {
+    "cartografo-topografo": "./bin/topografo.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "scripts": {
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cartografo/runner": "^0.1.0",
+    "@cartografo/topografo-custo": "^0.1.0",
+    "tsx": "^4.23.12"
+  },
+  "devDependencies": {
+    "@cartografo/test-support": "^0.1.0",
+    "@types/node": "^24.13.3",
+    "typescript": "^6.0.3"
+  }
+}

@@ -116,7 +116,9 @@ test('AT8 — createProposal does POST /v1/proposals with the five keys of the c
   };
 
   const { calls, doFetch } = spy({ proposal: { id: 42, status: 'pendente' } });
-  const proposal = await createProposal('http://127.0.0.1:4317', input, doFetch);
+  // The call answers `{proposal, created}` since t247: the body is still the
+  // proposal, and what rides beside it is whether the route CREATED one.
+  const { proposal } = await createProposal('http://127.0.0.1:4317', input, doFetch);
 
   assert.equal(proposal.id, 42);
   assert.equal(calls.length, 1);
@@ -305,5 +307,75 @@ test('t156 (non-regression) — an empty body on an error answer still arrives a
       assert.equal(error.body, undefined);
       return true;
     },
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t247 — `createProposal` reports whether it CREATED anything (AT3).          */
+/*                                                                            */
+/* Since t246 the control plane deduplicates for every caller at once: a       */
+/* repeat that matches a still-pending proposal on                            */
+/* `(lens, target_version, operations)` answers 200 with that same proposal    */
+/* instead of 201 with a clone. Both are a success and both carry a proposal   */
+/* reading `pending`, so the status is the only thing that tells them apart —  */
+/* and this door used to drop it on the floor.                                 */
+/* -------------------------------------------------------------------------- */
+
+/** A `fetch` that answers `POST` with the status the case is about. */
+function answering(status: number, body: unknown): typeof fetch {
+  return async () =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+}
+
+/** The five keys of the contract, as `evaluateExecution` assembles them. */
+const CANDIDATE_INPUT = {
+  graph_id: 'nota-curta',
+  target_version: 'sha256:v1',
+  operations: [
+    {
+      type: 'change_node_field' as const,
+      node_id: 'redigir',
+      field: 'description' as const,
+      from: 'antes',
+      to: 'depois',
+      inverse: {
+        type: 'change_node_field' as const,
+        node_id: 'redigir',
+        field: 'description' as const,
+        from: 'depois',
+        to: 'antes',
+      },
+    },
+  ],
+  evidence: { lens: 'cost' as const },
+  expected_metric: { nome: 'tokens_total', direcao: 'cai', de: 5000, para: 1000 },
+};
+
+test('t247 AT3 — createProposal reports `created` from the HTTP status', async () => {
+  const { createProposal } = await load();
+  const recorded = { proposal: { id: 7, status: 'pending' } };
+
+  const created = await createProposal(
+    'http://127.0.0.1:4317',
+    CANDIDATE_INPUT,
+    answering(201, recorded),
+  );
+  assert.equal(created.created, true, '201 is a candidate nobody had raised yet');
+  assert.deepEqual(created.proposal, recorded.proposal);
+
+  const deduped = await createProposal(
+    'http://127.0.0.1:4317',
+    CANDIDATE_INPUT,
+    answering(200, recorded),
+  );
+  assert.equal(deduped.created, false, '200 is t246 answering with the proposal already in the book');
+  assert.deepEqual(deduped.proposal, recorded.proposal);
+  assert.equal(
+    deduped.proposal.status,
+    created.proposal.status,
+    'both read `pending`, which is exactly why the status of the answer is the only signal',
   );
 });

@@ -624,3 +624,78 @@ test('t193 — heartbeat given a shorter deadline fails on its own, not on the c
     `it waited ${outcome.elapsed}ms: the per-call override lost to the client's default`,
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t247 — `criarProposta` reports whether it CREATED anything (AT1).           */
+/*                                                                            */
+/* Since t246 the control plane deduplicates: a repeat that matches a still-  */
+/* pending proposal on `(lens, target_version, operations)` answers 200 with  */
+/* that same proposal instead of 201 with a clone. The proposal that comes    */
+/* back reads `pending` either way — the ONE signal that tells the two apart  */
+/* is the status, and this door used to throw it away.                        */
+/* -------------------------------------------------------------------------- */
+
+/** The proposal body both cases answer with; only the status differs. */
+const PROPOSTA_GRAVADA = {
+  id: 42,
+  graph_id: 'nota-curta',
+  target_version: 'sha256:v1',
+  status: 'pending',
+};
+
+/** The five keys of `POST /v1/proposals`, as the flow lens sends them. */
+const ENTRADA_DE_PROPOSTA = {
+  graph_id: 'nota-curta',
+  target_version: 'sha256:v1',
+  operations: [
+    {
+      type: 'change_node_field',
+      node_id: 'revisar',
+      field: 'description',
+      from: 'antes',
+      to: 'depois',
+      inverse: {
+        type: 'change_node_field',
+        node_id: 'revisar',
+        field: 'description',
+        from: 'depois',
+        to: 'antes',
+      },
+    },
+  ],
+  evidence: { lens: 'flow' },
+  expected_metric: { nome: 'tempo_espera_ms:revisar', direcao: 'cai', de: 100, para: 80 },
+};
+
+test('t247 AT1 — criarProposta reports `created` from the HTTP status', async () => {
+  const { ClienteControle } = await carregarCliente();
+
+  const criada = await new ClienteControle({
+    urlBase: URL_BASE,
+    buscar: fetchFalso(() => ({ status: 201, corpo: { proposal: PROPOSTA_GRAVADA } })).buscar,
+  }).criarProposta(ENTRADA_DE_PROPOSTA);
+
+  assert.equal(criada.created, true, '201 is a proposal that did not exist a moment ago');
+  assert.deepEqual(criada.proposal, PROPOSTA_GRAVADA, 'and the proposal is the one the body carried');
+
+  const deduplicada = await new ClienteControle({
+    urlBase: URL_BASE,
+    buscar: fetchFalso(() => ({ status: 200, corpo: { proposal: PROPOSTA_GRAVADA } })).buscar,
+  }).criarProposta(ENTRADA_DE_PROPOSTA);
+
+  assert.equal(
+    deduplicada.created,
+    false,
+    '200 is t246 answering with the pending proposal that was already there',
+  );
+  assert.deepEqual(
+    deduplicada.proposal,
+    PROPOSTA_GRAVADA,
+    'the same proposal comes back on both, which is exactly why the status is the only signal',
+  );
+  assert.equal(
+    deduplicada.proposal.status,
+    criada.proposal.status,
+    'a deduplicated proposal reads `pending` too: `status` cannot tell the two apart',
+  );
+});

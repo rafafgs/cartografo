@@ -453,3 +453,61 @@ async function stderrOf(action: () => Promise<number>): Promise<string> {
   }
   return chunks.join('');
 }
+
+/* -------------------------------------------------------------------------- */
+/* t247 — every candidate says whether it CREATED a proposal (AT4).            */
+/*                                                                            */
+/* The cost lens is about to be triggered by something that types nothing and  */
+/* reads no report — D21's watcher — and "posted" versus "deduplicated" is the  */
+/* distinction it writes one line about. Since t246 the proposal itself cannot  */
+/* answer that: a deduplicated one reads `pending` exactly like a fresh one.    */
+/* -------------------------------------------------------------------------- */
+
+test('t247 AT4 — evaluateExecution reports created: true, then false on the repeat', async (t) => {
+  const { evaluateExecution } = await loadCli();
+  const baseUrl = await bootAuthorized(t);
+
+  // The same seeding as AT9: one node whose tokens pass the declared ceiling.
+  const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
+  const record = (await call(baseUrl, '/v1/graphs', 'POST', document)) as {
+    graph_version: { id: string };
+  };
+  const job = (await call(baseUrl, '/v1/jobs', 'POST', {
+    title: 'nota sobre custo',
+    entry_node_id: 'redigir',
+    execution_id: EXECUTION_ID,
+    graph_version_id: record.graph_version.id,
+  })) as { id: number };
+  await seedSession(baseUrl, job.id, 'redigir', 5000);
+
+  const options = {
+    url: baseUrl,
+    executionId: EXECUTION_ID,
+    tokenCeiling: TOKEN_CEILING,
+  };
+
+  const first = await evaluateExecution(options);
+  assert.equal(first.length, 1, 'only "redigir" passes the ceiling');
+  assert.equal(first[0].created, true, 'the first evaluation creates the proposal: 201');
+
+  // The same telemetry read again: same lens, same target version, same
+  // operations — t246's triple, and the proposal is still pending.
+  const second = await evaluateExecution(options);
+  assert.equal(second.length, 1, 'the candidate is still a candidate; what changed is what happened to it');
+  assert.equal(second[0].created, false, 'the repeat matched the pending proposal: 200');
+  assert.equal(second[0].id, first[0].id, 'and it is the SAME proposal, never a clone');
+  assert.equal(
+    second[0].status,
+    first[0].status,
+    'both read `pending`, which is exactly why `created` had to exist at all',
+  );
+
+  const listed = (await (await fetch(`${baseUrl}/v1/proposals`)).json()) as {
+    proposals: Array<{ id: number }>;
+  };
+  assert.equal(
+    listed.proposals.length,
+    1,
+    `two evaluations, one proposal: ${JSON.stringify(listed.proposals)}`,
+  );
+});

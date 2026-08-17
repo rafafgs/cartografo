@@ -101,20 +101,20 @@ interface TestHook {
 interface Job {
   id: number;
   titulo: string;
-  no_atual: string;
-  bloqueado: boolean;
+  current_node_id: string;
+  blocked: boolean;
 }
 
 interface Lease {
   id: number;
   runner_id: string;
-  trabalho_id: number;
+  job_id: number;
   status: string;
 }
 
 interface Session {
   id: number;
-  trabalho_id: number | null;
+  job_id: number | null;
   no_id: string | null;
   engine: string;
   status: string;
@@ -254,9 +254,9 @@ async function leasesOfJob(plane: RunningControlPlane, jobId: number): Promise<L
   const { leases } = await api<{ leases: Lease[] }>(
     plane,
     'GET',
-    `/v1/leases?trabalho_id=${jobId}`,
+    `/v1/leases?job_id=${jobId}`,
   );
-  return leases.filter((lease) => lease.trabalho_id === jobId);
+  return leases.filter((lease) => lease.job_id === jobId);
 }
 
 /**
@@ -267,9 +267,9 @@ async function leasesOfJob(plane: RunningControlPlane, jobId: number): Promise<L
  * this the next subtest's runner would find it and dispatch it again.
  */
 async function blockEveryJob(plane: RunningControlPlane): Promise<void> {
-  const { trabalhos: jobs } = await api<{ trabalhos: Job[] }>(plane, 'GET', '/v1/jobs');
+  const { jobs: jobs } = await api<{ jobs: Job[] }>(plane, 'GET', '/v1/jobs');
   for (const job of jobs) {
-    if (job.bloqueado) continue;
+    if (job.blocked) continue;
     await api(plane, 'POST', `/v1/jobs/${job.id}/blocks`, { motivo: 'fim do caso de teste' });
   }
 }
@@ -429,7 +429,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     ],
     final_nodes: ['arquivar'],
   };
-  const { grafo_versao: version } = await api<{ grafo_versao: { id: string } }>(
+  const { graph_version: version } = await api<{ graph_version: { id: string } }>(
     plane,
     'POST',
     '/v1/graphs',
@@ -452,11 +452,11 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         },
         body: JSON.stringify({
           runner_id: runnerId,
-          projeto_id: projectId,
-          trabalho_id: 999_162,
-          teto_runner: 1,
-          teto_projeto: 1,
-          ttl_segundos: 1,
+          project_id: projectId,
+          job_id: 999_162,
+          runner_cap: 1,
+          project_cap: 1,
+          ttl_seconds: 1,
         }),
       });
       return { status: response.status, body: await response.text() };
@@ -466,7 +466,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     // assertion after the start mean something.
     const before = await probe();
     assert.equal(before.status, 404, `an unpaired runner gets a 404: ${before.body}`);
-    assert.match(before.body, /runner_desconhecido/);
+    assert.match(before.body, /unknown_runner/);
 
     // Plain directories: this case pairs and never dispatches, so no worktree
     // is ever cut and a real repository would be fixture nobody reads.
@@ -495,7 +495,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
 
     assert.doesNotMatch(
       after.body,
-      /runner_desconhecido/,
+      /unknown_runner/,
       'the runner registers before the first tick, not on the way to one',
     );
     assert.equal(after.status, 201, `the paired runner is granted its lease: ${after.body}`);
@@ -543,10 +543,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     });
 
     await waitFor('the job being dispatched to completion', async () => {
-      const { sessoes: sessions } = await api<{ sessoes: Session[] }>(
+      const { sessions: sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execucao_id=1629',
+        '/v1/sessions?execution_id=1629',
       );
       return sessions.some((session) => session.status === 'concluida');
     });
@@ -559,7 +559,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     assert.ok(leases.length > 0, 'the dispatch happened under a lease');
     assert.deepEqual(
       [...new Set(leases.map((lease) => lease.status))],
-      ['liberada'],
+      ['released'],
       'every lease this job was dispatched under went back',
     );
   });
@@ -607,17 +607,17 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     });
 
     await waitFor('the codex route dispatching the job', async () => {
-      const { sessoes: sessions } = await api<{ sessoes: Session[] }>(
+      const { sessions: sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execucao_id=16210',
+        '/v1/sessions?execution_id=16210',
       );
       return sessions.some((session) => session.status === 'concluida');
     });
 
     await runner.stop();
 
-    const { eventos: events } = await api<{ eventos: Event[] }>(
+    const { events: events } = await api<{ events: Event[] }>(
       plane,
       'GET',
       '/v1/executions/16210/events',
@@ -640,7 +640,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     );
 
     const leases = await leasesOfJob(plane, job.id);
-    assert.deepEqual([...new Set(leases.map((lease) => lease.status))], ['liberada']);
+    assert.deepEqual([...new Set(leases.map((lease) => lease.status))], ['released']);
   });
 
   await parent.test('AT11 — a tick that blows up is logged and the loop keeps turning', async (t) => {
@@ -708,7 +708,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     assert.ok(poisonLeases.length > 0, 'the failing tick did take a lease');
     assert.deepEqual(
       [...new Set(poisonLeases.map((lease) => lease.status))],
-      ['liberada'],
+      ['released'],
       'a dispatch that blew up still gave its lease back',
     );
 
@@ -725,10 +725,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     );
 
     await waitFor('the loop dispatching a later job after the failure', async () => {
-      const { sessoes: sessions } = await api<{ sessoes: Session[] }>(
+      const { sessions: sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execucao_id=16212',
+        '/v1/sessions?execution_id=16212',
       );
       return sessions.some((session) => session.status === 'concluida');
     });
@@ -765,9 +765,9 @@ test('t162 — the packaged runner, against a real control plane', async (parent
 
     // Idle means idle: the queue was emptied by the subtests above, so the
     // only thing this loop is doing is waiting out its interval.
-    const { trabalhos: jobs } = await api<{ trabalhos: Job[] }>(plane, 'GET', '/v1/jobs');
+    const { jobs: jobs } = await api<{ jobs: Job[] }>(plane, 'GET', '/v1/jobs');
     assert.deepEqual(
-      jobs.filter((job) => !job.bloqueado),
+      jobs.filter((job) => !job.blocked),
       [],
       'this case measures a shutdown with nothing in flight',
     );
@@ -836,10 +836,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     // The session row is written as soon as the engine is up, which is the
     // earliest moment this test can know a dispatch is in flight.
     await waitFor('a session being opened', async () => {
-      const { sessoes: sessions } = await api<{ sessoes: Session[] }>(
+      const { sessions: sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execucao_id=16213',
+        '/v1/sessions?execution_id=16213',
       );
       return sessions.length > 0;
     });
@@ -847,7 +847,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     const live = await leasesOfJob(plane, job.id);
     assert.deepEqual(
       [...new Set(live.map((lease) => lease.status))],
-      ['ativa'],
+      ['active'],
       'the dispatch under way is holding its lease',
     );
 
@@ -859,14 +859,14 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     const afterStop = await leasesOfJob(plane, job.id);
     assert.deepEqual(
       [...new Set(afterStop.map((lease) => lease.status))],
-      ['liberada'],
+      ['released'],
       'the stop returned only after the dispatch in flight settled and gave the lease back',
     );
 
-    const { sessoes: sessions } = await api<{ sessoes: Session[] }>(
+    const { sessions: sessions } = await api<{ sessions: Session[] }>(
       plane,
       'GET',
-      '/v1/sessions?execucao_id=16213',
+      '/v1/sessions?execution_id=16213',
     );
     assert.deepEqual(
       [...new Set(sessions.map((session) => session.status))],
@@ -917,10 +917,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     });
 
     await waitFor('the job being dispatched to completion', async () => {
-      const { sessoes: sessions } = await api<{ sessoes: Session[] }>(
+      const { sessions: sessions } = await api<{ sessions: Session[] }>(
         plane,
         'GET',
-        '/v1/sessions?execucao_id=17901',
+        '/v1/sessions?execution_id=17901',
       );
       return sessions.some((session) => session.status === 'concluida');
     });
@@ -958,8 +958,8 @@ test('t162 — the packaged runner, against a real control plane', async (parent
 
 /** One engine's catalog, as `GET /v1/engines` gives it back. */
 interface ReportedCatalog {
-  motor: string;
-  modelos: Array<{ modelo_id: string; rotulo: string | null; origem: string }>;
+  engine: string;
+  models: Array<{ model_id: string; label: string | null; source: string }>;
 }
 
 /** A preflight command that cannot answer, because the binary is not there. */
@@ -1048,8 +1048,8 @@ test('t186 — the catalog is reported only after the CLI probe answers', async 
 
   /** Every engine catalog the control plane is holding right now. */
   const catalogs = async (): Promise<ReportedCatalog[]> => {
-    const { motores } = await api<{ motores: ReportedCatalog[] }>(plane, 'GET', '/v1/engines');
-    return motores;
+    const { engines } = await api<{ engines: ReportedCatalog[] }>(plane, 'GET', '/v1/engines');
+    return engines;
   };
 
   /** Is this runner already known to the control plane? */
@@ -1105,9 +1105,9 @@ test('t186 — the catalog is reported only after the CLI probe answers', async 
       'the probe ran before the pairing, so the report it gates would land in the dark',
     );
 
-    const reported = (await catalogs()).find((entry) => entry.motor === 'claude-code');
+    const reported = (await catalogs()).find((entry) => entry.engine === 'claude-code');
     assert.ok(reported, 'a probe that answered has to end in a reported catalog');
-    assert.ok(reported.modelos.length > 0, 'the reported catalog is the adapter\'s, not an empty list');
+    assert.ok(reported.models.length > 0, 'the reported catalog is the adapter\'s, not an empty list');
   });
 
   await parent.test('AT2 — a probe that finds no CLI reports no catalog, and the runner still comes up', async (t) => {
@@ -1129,7 +1129,7 @@ test('t186 — the catalog is reported only after the CLI probe answers', async 
     });
 
     assert.equal(
-      (await catalogs()).some((entry) => entry.motor === 'codex'),
+      (await catalogs()).some((entry) => entry.engine === 'codex'),
       false,
       'nothing has reported a codex catalog to this control plane yet',
     );
@@ -1163,7 +1163,7 @@ test('t186 — the catalog is reported only after the CLI probe answers', async 
     await runner.stop();
 
     assert.equal(
-      (await catalogs()).some((entry) => entry.motor === 'codex'),
+      (await catalogs()).some((entry) => entry.engine === 'codex'),
       false,
       'the catalog went out although the CLI the models belong to never answered',
     );
@@ -1207,10 +1207,10 @@ test('t186 — the catalog is reported only after the CLI probe answers', async 
     await ready;
     await runner.stop();
 
-    const reported = (await catalogs()).find((entry) => entry.motor === 'codex');
+    const reported = (await catalogs()).find((entry) => entry.engine === 'codex');
     assert.ok(reported, 'the probe answered, so the catalog had to go out');
     assert.deepEqual(
-      reported.modelos.map((model) => model.modelo_id).sort(),
+      reported.models.map((model) => model.model_id).sort(),
       CODEX_MODELS.map((model) => model.id).sort(),
       'what was reported is this adapter\'s own catalog, entry for entry',
     );

@@ -302,9 +302,9 @@ async function reportModels(
     await client.reportEngineModels(
       engine,
       catalog.models.map((model) => ({
-        modelo_id: model.id,
-        rotulo: model.label ?? null,
-        origem: model.origin,
+        model_id: model.id,
+        label: model.label ?? null,
+        source: model.origin,
       })),
     );
   } catch (error) {

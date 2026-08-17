@@ -53,10 +53,10 @@ async function loadPrompt(): Promise<typeof PromptModule> {
 /** The work every case here renders, with the fields the prompt reads. */
 const JOB = Object.freeze({
   id: 42,
-  titulo: 'Portar o grafo de referência',
-  no_atual: 'desenvolvimento',
-  bloqueado: false,
-  execucao_id: null,
+  title: 'Portar o grafo de referência',
+  current_node_id: 'desenvolvimento',
+  blocked: false,
+  execution_id: null,
 });
 
 /** One `pergunta.criada` envelope of the work's timeline. */
@@ -73,12 +73,12 @@ function asked(questionId: number): PromptModule.Event {
 function question(overrides: Partial<PromptModule.Question> = {}): PromptModule.Question {
   return {
     id: 1,
-    trabalho_id: JOB.id,
-    pergunta: 'Renumerar a migração para 0003?',
+    job_id: JOB.id,
+    question: 'Renumerar a migração para 0003?',
     status: 'respondida',
-    resposta: 'Manter 0002',
-    respondido_por: 'rafael',
-    origem: 'humano',
+    answer: 'Manter 0002',
+    answered_by: 'rafael',
+    source: 'humano',
     ...overrides,
   };
 }
@@ -107,7 +107,7 @@ test('AT2 — a question that is still open is not rendered', async () => {
   const prompt = buildPrompt(
     JOB,
     [asked(1)],
-    [question({ id: 1, resposta: null, respondido_por: null, status: 'pendente' })],
+    [question({ id: 1, answer: null, answered_by: null, status: 'pendente' })],
   );
 
   assert.ok(!prompt.includes(ANSWERED_HEADING));
@@ -131,7 +131,7 @@ test('AT4 — an automatic answer names itself, any other names who answered', a
   const automatic = buildPrompt(
     JOB,
     [asked(1)],
-    [question({ id: 1, origem: 'auto', respondido_por: 'politica' })],
+    [question({ id: 1, source: 'auto', answered_by: 'politica' })],
   );
   assert.ok(automatic.includes('  **a resposta automática respondeu:** Manter 0002'));
   assert.ok(!automatic.includes('politica respondeu'));
@@ -139,7 +139,7 @@ test('AT4 — an automatic answer names itself, any other names who answered', a
   const human = buildPrompt(
     JOB,
     [asked(1)],
-    [question({ id: 1, origem: 'humano', respondido_por: 'rafael' })],
+    [question({ id: 1, source: 'humano', answered_by: 'rafael' })],
   );
   assert.ok(human.includes('  **rafael respondeu:** Manter 0002'));
 
@@ -148,7 +148,7 @@ test('AT4 — an automatic answer names itself, any other names who answered', a
   const anonymous = buildPrompt(
     JOB,
     [asked(1)],
-    [question({ id: 1, origem: null, respondido_por: null })],
+    [question({ id: 1, source: null, answered_by: null })],
   );
   assert.ok(anonymous.includes('  **a pessoa respondeu:** Manter 0002'));
 });
@@ -162,8 +162,8 @@ test('AT5 — two answered questions render in the LOG order, not the projection
     JOB,
     [asked(7), asked(9)],
     [
-      question({ id: 9, pergunta: 'Segunda pergunta?', resposta: 'Segunda resposta' }),
-      question({ id: 7, pergunta: 'Primeira pergunta?', resposta: 'Primeira resposta' }),
+      question({ id: 9, question: 'Segunda pergunta?', answer: 'Segunda resposta' }),
+      question({ id: 7, question: 'Primeira pergunta?', answer: 'Primeira resposta' }),
     ],
   );
 

@@ -423,7 +423,7 @@ export function buildPrompt(version: VersaoDeGrafo, evidence: FlowEvidence): str
   const edges = version.snapshot.edges ?? [];
 
   const parts = [
-    `# Grafo \`${version.grafo_id}\`, versão \`${version.id}\``,
+    `# Grafo \`${version.graph_id}\`, versão \`${version.id}\``,
     '',
     '## Nós',
     '',
@@ -573,20 +573,20 @@ async function chooseOperations(
 async function resolveVersion(options: SurveyorOptions): Promise<string> {
   const rows = await options.client.metricasPorVersao(options.executionId);
   const declared = rows.filter(
-    (row): row is { grafo_versao_id: string; trabalhos: number; eventos: number } =>
-      row.grafo_versao_id !== null,
+    (row): row is { graph_version_id: string; jobs: number; events: number } =>
+      row.graph_version_id !== null,
   );
 
   if (declared.length === 0) {
     throw new SurveyorError(
       'execution_without_version',
-      `execution ${options.executionId} has no work declaring a grafo_versao_id: there is no graph to propose a change to`,
+      `execution ${options.executionId} has no work declaring a graph_version_id: there is no graph to propose a change to`,
     );
   }
 
   return declared.reduce((biggest, current) =>
-    current.trabalhos > biggest.trabalhos ? current : biggest,
-  ).grafo_versao_id;
+    current.jobs > biggest.jobs ? current : biggest,
+  ).graph_version_id;
 }
 
 /**
@@ -630,12 +630,15 @@ export async function proposeFlowImprovement(
 
   const operations = await chooseOperations(options, version, evidence, log);
 
+  // Only the OUTER keys of the input change language (t226): what `evidence` and
+  // `expected_metric` carry is the frozen hypothesis shape (FR5), and what is
+  // inside `operations` belongs to D20's third child.
   const proposal = await options.client.criarProposta({
-    grafo_id: version.grafo_id,
-    versao_alvo: version.id,
-    operacoes: operations,
-    evidencia: evidence,
-    metrica_esperada: expectedMetric,
+    graph_id: version.graph_id,
+    target_version: version.id,
+    operations,
+    evidence,
+    expected_metric: expectedMetric,
   });
   log(`proposal ${proposal.id} written as "${proposal.status}"`);
 

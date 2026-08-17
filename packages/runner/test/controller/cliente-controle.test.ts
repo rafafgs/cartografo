@@ -75,15 +75,15 @@ function fetchFalso(responder: (chamada: ChamadaHttp) => { status: number; corpo
 const LEASE = {
   id: 12,
   runner_id: 'runner-a',
-  trabalho_id: 55,
-  projeto_id: 3,
-  status: 'ativa',
-  ttl_segundos: 30,
-  concedida_em: '2026-08-14T12:00:00.000Z',
-  heartbeat_em: '2026-08-14T12:00:00.000Z',
-  expira_em: '2026-08-14T12:00:30.000Z',
-  liberada_em: null,
-  motivo_expiracao: null,
+  job_id: 55,
+  project_id: 3,
+  status: 'active',
+  ttl_seconds: 30,
+  granted_at: '2026-08-14T12:00:00.000Z',
+  heartbeat_at: '2026-08-14T12:00:00.000Z',
+  expires_at: '2026-08-14T12:00:30.000Z',
+  released_at: null,
+  expiration_reason: null,
 };
 
 test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', async () => {
@@ -93,40 +93,40 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
     if (chamada.url.endsWith('/v1/runners')) {
       return {
         status: 201,
-        corpo: { runner: { id: 'runner-a', nome: 'laptop', registrado_em: '2026-08-14T12:00:00.000Z' } },
+        corpo: { runner: { id: 'runner-a', name: 'laptop', registered_at: '2026-08-14T12:00:00.000Z' } },
       };
     }
     if (chamada.url.endsWith('/v1/jobs')) {
       return {
         status: 200,
         corpo: {
-          trabalhos: [
+          jobs: [
             {
               id: 1,
-              titulo: 'liberado',
-              no_atual: 'implementar',
-              bloqueado: false,
-              concluido: false,
-              execucao_id: 9,
-              grafo_versao_id: 'sha256:abc',
+              title: 'liberado',
+              current_node_id: 'implementar',
+              blocked: false,
+              completed: false,
+              execution_id: 9,
+              graph_version_id: 'sha256:abc',
             },
             {
               id: 2,
-              titulo: 'bloqueado',
-              no_atual: 'revisar',
-              bloqueado: true,
-              concluido: false,
-              execucao_id: 9,
-              grafo_versao_id: 'sha256:abc',
+              title: 'blocked',
+              current_node_id: 'revisar',
+              blocked: true,
+              completed: false,
+              execution_id: 9,
+              graph_version_id: 'sha256:abc',
             },
             {
               id: 3,
-              titulo: 'também liberado',
-              no_atual: 'implementar',
-              bloqueado: false,
-              concluido: false,
-              execucao_id: 9,
-              grafo_versao_id: 'sha256:abc',
+              title: 'também liberado',
+              current_node_id: 'implementar',
+              blocked: false,
+              completed: false,
+              execution_id: 9,
+              graph_version_id: 'sha256:abc',
             },
           ],
         },
@@ -134,10 +134,10 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
     }
     if (chamada.url.endsWith('/v1/leases')) return { status: 201, corpo: { lease: LEASE } };
     if (chamada.url.endsWith('/heartbeats')) {
-      return { status: 200, corpo: { lease: { ...LEASE, ttl_segundos: 45 } } };
+      return { status: 200, corpo: { lease: { ...LEASE, ttl_seconds: 45 } } };
     }
     if (chamada.url.endsWith('/releases')) {
-      return { status: 200, corpo: { lease: { ...LEASE, status: 'liberada' } } };
+      return { status: 200, corpo: { lease: { ...LEASE, status: 'released' } } };
     }
     throw new Error(`chamada inesperada: ${chamada.metodo} ${chamada.url}`);
   });
@@ -149,7 +149,7 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
   assert.deepEqual(chamadas[0], {
     url: `${URL_BASE}/v1/runners`,
     metodo: 'POST',
-    corpo: { id: 'runner-a', nome: 'laptop' },
+    corpo: { id: 'runner-a', name: 'laptop' },
   });
 
   const liberados = await cliente.listarTrabalhosLiberados();
@@ -166,11 +166,11 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
 
   const concessao = await cliente.pedirLease({
     runner_id: 'runner-a',
-    projeto_id: 3,
-    trabalho_id: 55,
-    teto_runner: 2,
-    teto_projeto: 4,
-    ttl_segundos: 30,
+    project_id: 3,
+    job_id: 55,
+    runner_cap: 2,
+    project_cap: 4,
+    ttl_seconds: 30,
   });
   assert.equal(concessao.lease?.id, 12);
   assert.deepEqual(chamadas[2], {
@@ -178,24 +178,24 @@ test('AT13 — cada método do cliente monta verbo, caminho e corpo certos', asy
     metodo: 'POST',
     corpo: {
       runner_id: 'runner-a',
-      projeto_id: 3,
-      trabalho_id: 55,
-      teto_runner: 2,
-      teto_projeto: 4,
-      ttl_segundos: 30,
+      project_id: 3,
+      job_id: 55,
+      runner_cap: 2,
+      project_cap: 4,
+      ttl_seconds: 30,
     },
   });
 
   const renovada = await cliente.heartbeat(12, 45);
-  assert.equal(renovada.ttl_segundos, 45);
+  assert.equal(renovada.ttl_seconds, 45);
   assert.deepEqual(chamadas[3], {
     url: `${URL_BASE}/v1/leases/12/heartbeats`,
     metodo: 'POST',
-    corpo: { ttl_segundos: 45 },
+    corpo: { ttl_seconds: 45 },
   });
 
   const liberada = await cliente.liberar(12);
-  assert.equal(liberada.status, 'liberada');
+  assert.equal(liberada.status, 'released');
   assert.deepEqual(chamadas[4], {
     url: `${URL_BASE}/v1/leases/12/releases`,
     metodo: 'POST',
@@ -215,24 +215,24 @@ test('t161 — trabalho concluído deixa de ser candidato, mesmo desbloqueado', 
   const { buscar } = fetchFalso(() => ({
     status: 200,
     corpo: {
-      trabalhos: [
+      jobs: [
         {
           id: 1,
-          titulo: 'ainda andando',
-          no_atual: 'implementar',
-          bloqueado: false,
-          concluido: false,
-          execucao_id: 9,
-          grafo_versao_id: 'sha256:abc',
+          title: 'ainda andando',
+          current_node_id: 'implementar',
+          blocked: false,
+          completed: false,
+          execution_id: 9,
+          graph_version_id: 'sha256:abc',
         },
         {
           id: 2,
-          titulo: 'chegou no nó final',
-          no_atual: 'publicar',
-          bloqueado: false,
-          concluido: true,
-          execucao_id: 9,
-          grafo_versao_id: 'sha256:abc',
+          title: 'chegou no nó final',
+          current_node_id: 'publicar',
+          blocked: false,
+          completed: true,
+          execution_id: 9,
+          graph_version_id: 'sha256:abc',
         },
       ],
     },
@@ -246,7 +246,7 @@ test('t161 — trabalho concluído deixa de ser candidato, mesmo desbloqueado', 
     [1],
     'trabalho no nó final não volta para a fila de despacho',
   );
-  assert.equal(liberados[0].concluido, false, 'o campo chega ao chamador, não só ao filtro');
+  assert.equal(liberados[0].completed, false, 'o campo chega ao chamador, não só ao filtro');
 });
 
 test('AT13 — recusa de lease chega ao chamador como motivo, não como erro', async () => {
@@ -254,21 +254,21 @@ test('AT13 — recusa de lease chega ao chamador como motivo, não como erro', a
 
   const { buscar } = fetchFalso(() => ({
     status: 200,
-    corpo: { lease: null, motivo: 'teto_projeto' },
+    corpo: { lease: null, reason: 'project_cap' },
   }));
 
   const cliente = new ClienteControle({ urlBase: URL_BASE, buscar });
   const concessao = await cliente.pedirLease({
     runner_id: 'runner-a',
-    projeto_id: 3,
-    trabalho_id: 55,
-    teto_runner: 1,
-    teto_projeto: 1,
-    ttl_segundos: 30,
+    project_id: 3,
+    job_id: 55,
+    runner_cap: 1,
+    project_cap: 1,
+    ttl_seconds: 30,
   });
 
   assert.equal(concessao.lease, null);
-  assert.equal(concessao.motivo, 'teto_projeto');
+  assert.equal(concessao.reason, 'project_cap');
 });
 
 test('AT13 — resposta de erro do control plane vira exceção com o status', async () => {
@@ -281,11 +281,11 @@ test('AT13 — resposta de erro do control plane vira exceção com o status', a
     async () =>
       cliente.pedirLease({
         runner_id: 'fantasma',
-        projeto_id: 3,
-        trabalho_id: 55,
-        teto_runner: 1,
-        teto_projeto: 1,
-        ttl_segundos: 30,
+        project_id: 3,
+        job_id: 55,
+        runner_cap: 1,
+        project_cap: 1,
+        ttl_seconds: 30,
       }),
     (erro: unknown) => {
       assert.ok(erro instanceof ErroDoControlPlane);
@@ -300,7 +300,7 @@ test('AT13 — a URL base tolera barra no fim, como o cliente da tela', async ()
 
   const { buscar, chamadas } = fetchFalso(() => ({
     status: 201,
-    corpo: { runner: { id: 'runner-a', nome: null, registrado_em: '2026-08-14T12:00:00.000Z' } },
+    corpo: { runner: { id: 'runner-a', name: null, registered_at: '2026-08-14T12:00:00.000Z' } },
   }));
 
   const cliente = new ClienteControle({ urlBase: `${URL_BASE}/`, buscar });
@@ -328,8 +328,8 @@ function fetchQueRegistraCabecalhos(): {
     return new Response(
       JSON.stringify(
         String(entrada).endsWith('/v1/jobs')
-          ? { trabalhos: [] }
-          : { runner: { id: 'runner-a', nome: null, registrado_em: '2026-08-14T12:00:00.000Z' } },
+          ? { jobs: [] }
+          : { runner: { id: 'runner-a', name: null, registered_at: '2026-08-14T12:00:00.000Z' } },
       ),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
@@ -444,33 +444,33 @@ test('t156 (não-regressão) — corpo vazio em resposta de erro continua chegan
 
 /** The two items of a batch, in the shape `domain/intake.ts` validates. */
 const INTAKE_ITEMS = [
-  { ref: 'migracao', titulo: 'Migracao do intake' },
-  { ref: 'rotas', titulo: 'Rotas do intake', depende_de: ['migracao'] },
+  { ref: 'migracao', title: 'Migracao do intake' },
+  { ref: 'rotas', title: 'Rotas do intake', depende_de: ['migracao'] },
 ];
 
 test('AT4 — criarIntake posts the body to /v1/intake and resolves the draft', async () => {
   const { ClienteControle } = await carregarCliente();
 
-  const rascunho = {
+  const draft = {
     id: 9,
-    projeto_id: 3,
-    execucao_id: null,
-    classe: 'desenvolvimento-de-software',
-    pedido: 'fechar a camada de intake',
-    itens: INTAKE_ITEMS,
-    status: 'pendente',
-    trabalhos_criados: null,
-    criado_em: '2026-08-16T12:00:00.000Z',
-    atualizado_em: '2026-08-16T12:00:00.000Z',
+    project_id: 3,
+    execution_id: null,
+    class: 'desenvolvimento-de-software',
+    request: 'fechar a camada de intake',
+    items: INTAKE_ITEMS,
+    status: 'pending',
+    created_jobs: null,
+    created_at: '2026-08-16T12:00:00.000Z',
+    updated_at: '2026-08-16T12:00:00.000Z',
   };
 
-  const { buscar, chamadas } = fetchFalso(() => ({ status: 201, corpo: { rascunho } }));
+  const { buscar, chamadas } = fetchFalso(() => ({ status: 201, corpo: { draft } }));
   const cliente = new ClienteControle({ urlBase: URL_BASE, buscar });
 
   const criado = await cliente.criarIntake({
-    classe: 'desenvolvimento-de-software',
-    pedido: 'fechar a camada de intake',
-    itens: INTAKE_ITEMS,
+    class: 'desenvolvimento-de-software',
+    request: 'fechar a camada de intake',
+    items: INTAKE_ITEMS,
   });
 
   assert.deepEqual(chamadas, [
@@ -478,14 +478,14 @@ test('AT4 — criarIntake posts the body to /v1/intake and resolves the draft', 
       url: `${URL_BASE}/v1/intake`,
       metodo: 'POST',
       corpo: {
-        classe: 'desenvolvimento-de-software',
-        pedido: 'fechar a camada de intake',
-        itens: INTAKE_ITEMS,
+        class: 'desenvolvimento-de-software',
+        request: 'fechar a camada de intake',
+        items: INTAKE_ITEMS,
       },
     },
   ]);
-  assert.deepEqual(criado, rascunho, 'the draft comes out of `{rascunho}`, unwrapped');
-  assert.equal(criado.status, 'pendente', 'a draft is born pending; confirming it is the human gate');
+  assert.deepEqual(criado, draft, 'the draft comes out of `{draft}`, unwrapped');
+  assert.equal(criado.status, 'pending', 'a draft is born pending; confirming it is the human gate');
 });
 
 test('AT4 — a refused write carries the status, like every other call of this door', async () => {
@@ -493,21 +493,21 @@ test('AT4 — a refused write carries the status, like every other call of this 
 
   const { buscar } = fetchFalso(() => ({
     status: 404,
-    corpo: { erro: 'grafo_desconhecido', classe: 'nao-registrada' },
+    corpo: { erro: 'grafo_desconhecido', class: 'nao-registrada' },
   }));
   const cliente = new ClienteControle({ urlBase: URL_BASE, buscar });
 
   await assert.rejects(
     () =>
       cliente.criarIntake({
-        classe: 'nao-registrada',
-        pedido: 'qualquer coisa',
-        itens: INTAKE_ITEMS,
+        class: 'nao-registrada',
+        request: 'qualquer coisa',
+        items: INTAKE_ITEMS,
       }),
     (erro: unknown) => {
       assert.ok(erro instanceof ErroDoControlPlane);
       assert.equal(erro.status, 404);
-      assert.deepEqual(erro.corpo, { erro: 'grafo_desconhecido', classe: 'nao-registrada' });
+      assert.deepEqual(erro.corpo, { erro: 'grafo_desconhecido', class: 'nao-registrada' });
       return true;
     },
   );

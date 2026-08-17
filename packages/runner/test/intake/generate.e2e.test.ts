@@ -136,7 +136,7 @@ function scratch(t: TestHook, label: string): string {
 /** Registers factory bundle 1 unedited, so the class exists exactly as shipped. */
 async function registerFactoryGraph(plane: ControlPlane): Promise<string> {
   const document: unknown = JSON.parse(readFileSync(FACTORY_GRAPH, 'utf8'));
-  const { grafo_versao: version } = await api<{ grafo_versao: { id: string } }>(
+  const { graph_version: version } = await api<{ graph_version: { id: string } }>(
     plane,
     'POST',
     '/v1/graphs',
@@ -181,19 +181,19 @@ function runCli(
 /** A draft, as `GET /v1/intake/:id` returns it. */
 interface Draft {
   id: number;
-  classe: string;
-  pedido: string;
-  itens: Array<Record<string, unknown>>;
+  class: string;
+  request: string;
+  items: Array<Record<string, unknown>>;
   status: string;
-  trabalhos_criados: Record<string, number> | null;
+  created_jobs: Record<string, number> | null;
 }
 
 interface Job {
   id: number;
-  titulo: string;
-  no_atual: string;
-  corpo: string | null;
-  criterios_de_aceite: string[] | null;
+  title: string;
+  current_node_id: string;
+  body: string | null;
+  acceptance_criteria: string[] | null;
 }
 
 interface LogEvent {
@@ -224,34 +224,34 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
     timeoutSeconds: 60,
   });
 
-  assert.equal(draft.status, 'pendente', 'a generated draft is proposed, never confirmed');
+  assert.equal(draft.status, 'pending', 'a generated draft is proposed, never confirmed');
 
   // (a) it is a real row, readable through the public API.
-  const { rascunho: stored } = await api<{ rascunho: Draft }>(
+  const { draft: stored } = await api<{ draft: Draft }>(
     plane,
     'GET',
     `/v1/intake/${draft.id}`,
   );
-  assert.equal(stored.classe, CLASS_NAME);
-  assert.equal(stored.pedido, REQUEST, 'the request is stored as the person typed it');
+  assert.equal(stored.class, CLASS_NAME);
+  assert.equal(stored.request, REQUEST, 'the request is stored as the person typed it');
   assert.deepEqual(
-    stored.itens.map((item) => item.ref),
+    stored.items.map((item) => item.ref),
     ['migracao', 'rotas'],
   );
   assert.deepEqual(
-    stored.itens[1].depende_de,
+    stored.items[1].depende_de,
     ['migracao'],
     'the dependency the session declared survived the round trip',
   );
   assert.equal(
-    stored.itens[1].criterios_de_aceite,
+    stored.items[1].criterios_de_aceite,
     null,
     'an item with no criteria is null, never the empty list (domain/intake.ts)',
   );
 
   // (b) t122's human gate closes over it exactly as it does over a hand-written
   // draft — this ficha added no second confirmation path.
-  const confirmed = await api<{ rascunho: Draft; trabalhos: Job[] }>(
+  const confirmed = await api<{ draft: Draft; jobs: Job[] }>(
     plane,
     'POST',
     `/v1/intake/${draft.id}/confirmations`,
@@ -259,18 +259,18 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
     201,
   );
 
-  assert.equal(confirmed.rascunho.status, 'confirmado');
-  assert.equal(confirmed.trabalhos.length, 2);
-  const created = confirmed.rascunho.trabalhos_criados;
+  assert.equal(confirmed.draft.status, 'confirmed');
+  assert.equal(confirmed.jobs.length, 2);
+  const created = confirmed.draft.created_jobs;
   assert.ok(created !== null, 'the confirmation maps every ref to a real id');
   assert.deepEqual(Object.keys(created).sort(), ['migracao', 'rotas']);
 
-  const dependent = confirmed.trabalhos.find((job) => job.id === created.rotas);
+  const dependent = confirmed.jobs.find((job) => job.id === created.rotas);
   assert.ok(dependent !== undefined);
-  assert.equal(dependent.titulo, 'Rotas do intake');
-  assert.equal(dependent.no_atual, 'refinar', 'the traveller is born on the entry node of the version');
+  assert.equal(dependent.title, 'Rotas do intake');
+  assert.equal(dependent.current_node_id, 'refinar', 'the traveller is born on the entry node of the version');
 
-  const { eventos: events } = await api<{ eventos: LogEvent[] }>(
+  const { events: events } = await api<{ events: LogEvent[] }>(
     plane,
     'GET',
     `/v1/jobs/${created.rotas}/events`,
@@ -301,7 +301,7 @@ test('AT5c — an unregistered class posts nothing, and the command exits 1', as
     'the refusal echoes the control plane own code',
   );
 
-  const { rascunhos: drafts } = await api<{ rascunhos: Draft[] }>(plane, 'GET', '/v1/intake');
+  const { drafts: drafts } = await api<{ drafts: Draft[] }>(plane, 'GET', '/v1/intake');
   assert.deepEqual(drafts, [], 'a refused class never reaches POST /v1/intake');
 });
 
@@ -326,6 +326,6 @@ test('AT6 — a control plane that refuses the credential exits 1, saying what t
   assert.match(result.stderr, new RegExp('CARTOGRAFO_TOKEN'));
   assert.match(result.stderr, new RegExp('--token'));
 
-  const { rascunhos: drafts } = await api<{ rascunhos: Draft[] }>(plane, 'GET', '/v1/intake');
+  const { drafts: drafts } = await api<{ drafts: Draft[] }>(plane, 'GET', '/v1/intake');
   assert.deepEqual(drafts, [], 'a denied command writes nothing either');
 });

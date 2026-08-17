@@ -11,7 +11,7 @@
  *
  * `null` and a rejection are NOT the same answer here, and the difference is the
  * whole reason the module exists: a work with no graph, or a node the snapshot
- * does not carry, is ordinary and resolves to `null`; a `grafo_versao_id` that
+ * does not carry, is ordinary and resolves to `null`; a `graph_version_id` that
  * is set and does not resolve is a dangling reference, and it propagates.
  *
  * English per D18; route segments and payload keys stay in Portuguese.
@@ -95,7 +95,7 @@ function fakeFetch(status = 200): { doFetch: typeof fetch; calls: Call[] } {
       });
     }
     return new Response(
-      JSON.stringify({ grafo_versao: { id: VERSION_ID, snapshot: snapshot() } }),
+      JSON.stringify({ graph_version: { id: VERSION_ID, snapshot: snapshot() } }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
   };
@@ -127,7 +127,7 @@ test('AT1 — a resolvable version yields the current node and the edges leaving
   const { doFetch, calls } = fakeFetch();
 
   const resolved = await resolveNode(
-    { no_atual: 'conferir', grafo_versao_id: VERSION_ID },
+    { current_node_id: 'conferir', graph_version_id: VERSION_ID },
     reader(doFetch, ErroDoControlPlane),
   );
 
@@ -158,10 +158,10 @@ test('AT2 — a work with no graph version resolves to null, with no call at all
   for (const versionId of [null, undefined, '']) {
     const { doFetch, calls } = fakeFetch();
     const resolved = await resolveNode(
-      { no_atual: 'implementar', grafo_versao_id: versionId },
+      { current_node_id: 'implementar', graph_version_id: versionId },
       reader(doFetch, ErroDoControlPlane),
     );
-    assert.equal(resolved, null, `grafo_versao_id ${JSON.stringify(versionId)} is "no graph"`);
+    assert.equal(resolved, null, `graph_version_id ${JSON.stringify(versionId)} is "no graph"`);
     assert.equal(calls.length, 0, 'there is nothing to ask the control plane about');
   }
 });
@@ -172,7 +172,7 @@ test('AT3 — a node the snapshot does not carry resolves to null', async () => 
   const { doFetch, calls } = fakeFetch();
 
   const resolved = await resolveNode(
-    { no_atual: 'um-no-que-ninguem-declarou', grafo_versao_id: VERSION_ID },
+    { current_node_id: 'um-no-que-ninguem-declarou', graph_version_id: VERSION_ID },
     reader(doFetch, ErroDoControlPlane),
   );
 
@@ -188,7 +188,7 @@ test('AT4 — a version id that does not resolve propagates, never defaults', as
   await assert.rejects(
     async () =>
       resolveNode(
-        { no_atual: 'implementar', grafo_versao_id: VERSION_ID },
+        { current_node_id: 'implementar', graph_version_id: VERSION_ID },
         reader(doFetch, ErroDoControlPlane),
       ),
     (error: unknown) => {
@@ -208,7 +208,7 @@ test('t167 — the declared escalation policy travels with the node', async () =
   const { doFetch } = fakeFetch();
 
   const resolved = await resolveNode(
-    { no_atual: 'publicar', grafo_versao_id: VERSION_ID },
+    { current_node_id: 'publicar', graph_version_id: VERSION_ID },
     reader(doFetch, ErroDoControlPlane),
   );
 
@@ -229,7 +229,7 @@ test('t167 — absence and an unrecognized value are both today\'s behaviour', a
   // A node that declares nothing: every graph written before this field existed
   // keeps behaving exactly as it did.
   const declaringNothing = await resolveNode(
-    { no_atual: 'implementar', grafo_versao_id: VERSION_ID },
+    { current_node_id: 'implementar', graph_version_id: VERSION_ID },
     reader(doFetch, ErroDoControlPlane),
   );
   assert.ok(declaringNothing !== null);
@@ -257,7 +257,7 @@ test('AT5 — a node with no outgoing edge resolves with an empty edge list', as
   const { doFetch } = fakeFetch();
 
   const resolved = await resolveNode(
-    { no_atual: 'publicar', grafo_versao_id: VERSION_ID },
+    { current_node_id: 'publicar', graph_version_id: VERSION_ID },
     reader(doFetch, ErroDoControlPlane),
   );
 

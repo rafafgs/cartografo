@@ -141,8 +141,8 @@ class CountingAdapter implements EngineAdapter {
 }
 
 /** The read side of the control plane: which classes are registered. */
-function readerWith(...names: readonly string[]): { fetchClasses: () => Promise<{ classe: string }[]> } {
-  return { fetchClasses: async () => names.map((name) => ({ classe: name })) };
+function readerWith(...names: readonly string[]): { fetchClasses: () => Promise<{ class: string }[]> } {
+  return { fetchClasses: async () => names.map((name) => ({ class: name })) };
 }
 
 /** The write side: records every call and never makes one of its own. */
@@ -153,15 +153,15 @@ class RecordingClient {
     this.calls.push(input);
     return {
       id: 7,
-      projeto_id: 3,
-      execucao_id: null,
-      classe: input.classe,
-      pedido: input.pedido,
-      itens: input.itens as Array<Record<string, unknown>>,
-      status: 'pendente',
-      trabalhos_criados: null,
-      criado_em: '2026-08-16T12:00:00.000Z',
-      atualizado_em: '2026-08-16T12:00:00.000Z',
+      project_id: 3,
+      execution_id: null,
+      class: input.class,
+      request: input.request,
+      items: input.items as Array<Record<string, unknown>>,
+      status: 'pending',
+      created_jobs: null,
+      created_at: '2026-08-16T12:00:00.000Z',
+      updated_at: '2026-08-16T12:00:00.000Z',
     };
   }
 }
@@ -229,11 +229,11 @@ test('AT3b — a well-formed session lands exactly one draft, carrying what it w
   assert.equal(adapter.sessions, 1, 'exactly one agent session decomposes the request');
   assert.deepEqual(
     client.calls,
-    [{ classe: CLASS_NAME, pedido: REQUEST, itens: ITEMS }],
+    [{ class: CLASS_NAME, request: REQUEST, items: ITEMS }],
     'the body is the class, the request and the items the session wrote, verbatim',
   );
   assert.equal(draft.id, 7, 'the created draft is what comes back');
-  assert.equal(draft.status, 'pendente');
+  assert.equal(draft.status, 'pending');
 });
 
 /**
@@ -271,11 +271,11 @@ test('t175 — an item written with a tier reaches the draft with the tier intac
 
   assert.deepEqual(
     client.calls,
-    [{ classe: CLASS_NAME, pedido: REQUEST, itens: triaged }],
+    [{ class: CLASS_NAME, request: REQUEST, items: triaged }],
     'the items go up exactly as the session wrote them, tier included',
   );
   assert.deepEqual(
-    draft.itens.map((item) => item.tier),
+    draft.items.map((item) => item.tier),
     ['trivial', 'standard', undefined],
     'and come back on the draft the same way',
   );

@@ -50,15 +50,15 @@ const EXECUTION_ID = 1610;
 
 interface Work {
   id: number;
-  titulo: string;
-  no_atual: string;
-  bloqueado: boolean;
-  concluido: boolean;
+  title: string;
+  current_node_id: string;
+  blocked: boolean;
+  completed: boolean;
 }
 
 interface Question {
   id: number;
-  trabalho_id: number;
+  job_id: number;
   pergunta: string;
   status: string;
 }
@@ -190,7 +190,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-travessia-fazer.json'), 201);
   await api(baseUrl, token, 'POST', '/v1/skills', fixture('skill-travessia-conferir.json'), 201);
 
-  const { grafo_versao: version } = await api<{ grafo_versao: { id: string } }>(
+  const { graph_version: version } = await api<{ graph_version: { id: string } }>(
     baseUrl,
     token,
     'POST',
@@ -258,26 +258,26 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
 
   // --- 1. implementar → conferir: a single-edge node moves on its own -------
   assert.ok(await controller.tick(), 'the released job was picked up');
-  assert.equal((await nodeNow()).no_atual, 'conferir');
+  assert.equal((await nodeNow()).current_node_id, 'conferir');
 
   // --- 2. the gate asks a human: the work blocks and does NOT move ----------
   currentLines = ASKS;
   assert.ok(await controller.tick());
 
   let blocked = await nodeNow();
-  assert.equal(blocked.no_atual, 'conferir', 'a session that asked cannot also have routed');
-  assert.equal(blocked.bloqueado, true);
+  assert.equal(blocked.current_node_id, 'conferir', 'a session that asked cannot also have routed');
+  assert.equal(blocked.blocked, true);
   assert.equal(
     await controller.tick(),
     null,
     'and while it is blocked it is not a candidate for anybody',
   );
 
-  const { perguntas: pending } = await api<{ perguntas: Question[] }>(
+  const { input_requests: pending } = await api<{ input_requests: Question[] }>(
     baseUrl,
     token,
     'GET',
-    '/v1/input-requests?status=pendente',
+    '/v1/input-requests?status=pending',
   );
   assert.equal(pending.length, 1, 'exactly one question is waiting on a person');
 
@@ -288,13 +288,13 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
 
   // --- 3. the answer resumes the SAME node, and the gate reproves -----------
   blocked = await nodeNow();
-  assert.equal(blocked.bloqueado, false, 'answering unblocked it');
-  assert.equal(blocked.no_atual, 'conferir', 'and it resumes where it stopped');
+  assert.equal(blocked.blocked, false, 'answering unblocked it');
+  assert.equal(blocked.current_node_id, 'conferir', 'and it resumes where it stopped');
 
   currentLines = routing('retrabalho');
   assert.ok(await controller.tick());
   assert.equal(
-    (await nodeNow()).no_atual,
+    (await nodeNow()).current_node_id,
     'implementar',
     'the gate reproved, and the rework edge is a real edge like any other',
   );
@@ -302,14 +302,14 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   // --- 4. round two: the same two nodes, and then the final one -------------
   currentLines = QUIET;
   assert.ok(await controller.tick());
-  assert.equal((await nodeNow()).no_atual, 'conferir');
+  assert.equal((await nodeNow()).current_node_id, 'conferir');
 
   currentLines = routing('aprovado');
   assert.ok(await controller.tick());
 
   const arrived = await nodeNow();
-  assert.equal(arrived.no_atual, 'publicar', 'the approved edge leads to the final node');
-  assert.equal(arrived.concluido, true, 'and a work standing on a final node is done');
+  assert.equal(arrived.current_node_id, 'publicar', 'the approved edge leads to the final node');
+  assert.equal(arrived.completed, true, 'and a work standing on a final node is done');
 
   // --- 5. a finished work stops being a candidate ---------------------------
   const released = await client.listarTrabalhosLiberados();
@@ -331,7 +331,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     "the test — standing in for the operator — posted no transition at all",
   );
 
-  const { eventos: events } = await api<{ eventos: Event[] }>(
+  const { events } = await api<{ events: Event[] }>(
     baseUrl,
     token,
     'GET',

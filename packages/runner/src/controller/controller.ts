@@ -147,17 +147,17 @@ export class Controller {
     const candidates = await this.#options.client.listarTrabalhosLiberados();
 
     for (const job of candidates) {
-      const { lease, motivo } = await this.#options.client.pedirLease({
+      const { lease, reason: motivo } = await this.#options.client.pedirLease({
         runner_id: this.#options.runnerId,
-        projeto_id: this.#options.projectId,
-        trabalho_id: job.id,
-        teto_runner: this.#options.runnerCap,
-        teto_projeto: this.#options.projectCap,
-        ttl_segundos: this.#options.ttlSeconds,
+        project_id: this.#options.projectId,
+        job_id: job.id,
+        runner_cap: this.#options.runnerCap,
+        project_cap: this.#options.projectCap,
+        ttl_seconds: this.#options.ttlSeconds,
       });
 
       if (lease === null) {
-        if (motivo === 'teto_runner' || motivo === 'teto_projeto') break;
+        if (motivo === 'runner_cap' || motivo === 'project_cap') break;
         continue;
       }
 

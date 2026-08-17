@@ -75,10 +75,10 @@ export const DEFAULT_SILENCE_SECONDS = 300;
  */
 export interface Job {
   id: number;
-  titulo: string;
-  no_atual: string;
-  bloqueado: boolean;
-  execucao_id: number | null;
+  title: string;
+  current_node_id: string;
+  blocked: boolean;
+  execution_id: number | null;
   /**
    * The graph version this work traverses, when it has one (t101).
    *
@@ -86,12 +86,12 @@ export interface Job {
    * node and no graph at all, and that is the shape every dispatch had before
    * t141. It is the first of the three ways `DEFAULT_ENGINE` is reached.
    */
-  grafo_versao_id?: string | null;
+  graph_version_id?: string | null;
 
   /**
    * What this work costs to run, as the intake triaged it (t175).
    *
-   * Optional and nullable for the same reason `grafo_versao_id` above is: a work
+   * Optional and nullable for the same reason `graph_version_id` above is: a work
    * created by hand names no tier, and every work born before the column existed
    * reads `null`. Absent and `null` mean the same thing here — nobody
    * classified it — and neither means `trivial`.

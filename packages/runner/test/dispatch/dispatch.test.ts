@@ -98,34 +98,34 @@ interface TestHook {
 
 interface Work {
   id: number;
-  titulo: string;
-  no_atual: string;
-  bloqueado: boolean;
-  motivo_bloqueio: string | null;
-  execucao_id: number | null;
+  title: string;
+  current_node_id: string;
+  blocked: boolean;
+  block_reason: string | null;
+  execution_id: number | null;
 }
 
 interface Question {
   id: number;
-  trabalho_id: number;
-  sessao_id: number | null;
-  tipo: string;
-  pergunta: string;
-  contexto: string | null;
-  opcoes: string[] | null;
-  recomendacao: string | null;
-  resposta_padrao: string | null;
-  auto_aprovavel: boolean;
+  job_id: number;
+  session_id: number | null;
+  kind: string;
+  question: string;
+  context: string | null;
+  options: string[] | null;
+  recommendation: string | null;
+  default_answer: string | null;
+  auto_approvable: boolean;
   status: string;
-  resposta: string | null;
-  respondido_por: string | null;
-  origem: string | null;
+  answer: string | null;
+  answered_by: string | null;
+  source: string | null;
 }
 
 interface Session {
   id: number;
-  trabalho_id: number | null;
-  no_id: string | null;
+  job_id: number | null;
+  node_id: string | null;
   engine: string;
   engine_session_ref: string | null;
   working_dir: string;
@@ -137,15 +137,15 @@ interface Session {
   /** Which watchdog stopped it, when one did (t163). */
   timeout_reason: string | null;
   /** The four token counts the engine reported, or `null` for nothing (t172). */
-  uso: {
+  usage: {
     input_tokens: number;
     output_tokens: number;
     cache_creation_input_tokens: number;
     cache_read_input_tokens: number;
   } | null;
   /** Which models ran the session, or `null` for nothing reported (t172). */
-  modelos: string[] | null;
-  finalizada_em: string | null;
+  models: string[] | null;
+  finished_at: string | null;
 }
 
 /** Body of `GET /v1/sessions/:id/transcript` (t159). */
@@ -427,36 +427,36 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
 
   const blocked = await api<Work>(baseUrl, "GET", `/v1/jobs/${work.id}`);
   assert.equal(
-    blocked.bloqueado,
+    blocked.blocked,
     true,
     "asking blocks the work, without the runner asking for it",
   );
 
-  const pending = await api<{ perguntas: Question[] }>(
+  const pending = await api<{ input_requests: Question[] }>(
     baseUrl,
     "GET",
-    "/v1/input-requests?status=pendente",
+    "/v1/input-requests?status=pending",
   );
-  assert.equal(pending.perguntas.length, 1);
-  const question = pending.perguntas[0];
+  assert.equal(pending.input_requests.length, 1);
+  const question = pending.input_requests[0];
   assert.equal(
-    blocked.motivo_bloqueio,
+    blocked.block_reason,
     `aguardando resposta da pergunta ${question.id}`,
     "the reason names the question that unblocks the work",
   );
 
   // The queue carries enough to decide without opening the repository — the
   // criterion t102 set for the question entity, now fed by a real session.
-  assert.equal(question.trabalho_id, work.id);
-  assert.equal(question.tipo, "pergunta");
-  assert.equal(question.pergunta, ESCALATION.question);
-  assert.equal(question.contexto, ESCALATION.context);
-  assert.deepEqual(question.opcoes, ESCALATION.options);
-  assert.equal(question.recomendacao, ESCALATION.recommendation);
-  assert.equal(question.resposta_padrao, ESCALATION.default);
-  assert.equal(question.auto_aprovavel, true);
+  assert.equal(question.job_id, work.id);
+  assert.equal(question.kind, "question");
+  assert.equal(question.question, ESCALATION.question);
+  assert.equal(question.context, ESCALATION.context);
+  assert.deepEqual(question.options, ESCALATION.options);
+  assert.equal(question.recommendation, ESCALATION.recommendation);
+  assert.equal(question.default_answer, ESCALATION.default);
+  assert.equal(question.auto_approvable, true);
   assert.ok(
-    question.sessao_id !== null,
+    question.session_id !== null,
     "the question knows which session raised it",
   );
 
@@ -475,16 +475,16 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     `/v1/input-requests/${question.id}/answer`,
     { resposta: ANSWER, respondido_por: ANSWERED_BY },
   );
-  assert.equal(answered.status, "respondida");
-  assert.equal(answered.origem, "usuario");
+  assert.equal(answered.status, "answered");
+  assert.equal(answered.source, "usuario");
 
   const unblocked = await api<Work>(baseUrl, "GET", `/v1/jobs/${work.id}`);
   assert.equal(
-    unblocked.bloqueado,
+    unblocked.blocked,
     false,
     "answering returns the work to the queue",
   );
-  assert.equal(unblocked.motivo_bloqueio, null);
+  assert.equal(unblocked.block_reason, null);
 
   // --- 3. the next tick re-dispatches, and this time the session knows ------
   currentDispatch = dispatchThatFinishes;
@@ -510,25 +510,25 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     "the session ran in the working dir it was given",
   );
 
-  const questions = await api<{ perguntas: Question[] }>(
+  const questions = await api<{ input_requests: Question[] }>(
     baseUrl,
     "GET",
     "/v1/input-requests",
   );
   assert.equal(
-    questions.perguntas.length,
+    questions.input_requests.length,
     1,
     "knowing the answer, the second session did not ask the same thing again",
   );
 
   // --- 4. and the log tells the whole story ---------------------------------
-  const timeline = await api<{ eventos: Event[] }>(
+  const timeline = await api<{ events: Event[] }>(
     baseUrl,
     "GET",
     `/v1/jobs/${work.id}/events`,
   );
   assert.deepEqual(
-    timeline.eventos.map((event) => event.tipo),
+    timeline.events.map((event) => event.tipo),
     [
       "trabalho.criado",
       "sessao.aberta",
@@ -544,15 +544,15 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     "the work timeline, in the order the log recorded it",
   );
 
-  const created = timeline.eventos.find(
+  const created = timeline.events.find(
     (event) => event.tipo === "pergunta.criada",
   );
   assert.deepEqual(
     created?.ator,
-    { tipo: "agente", ref: work.no_atual },
+    { tipo: "agente", ref: work.current_node_id },
     "the agent asked",
   );
-  const blockEvent = timeline.eventos.find(
+  const blockEvent = timeline.events.find(
     (event) => event.tipo === "trabalho.bloqueado",
   );
   assert.equal(
@@ -560,7 +560,7 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     "sistema",
     "the flag was raised by the wiring",
   );
-  const unblockEvent = timeline.eventos.find(
+  const unblockEvent = timeline.events.find(
     (event) => event.tipo === "trabalho.desbloqueado",
   );
   assert.equal(
@@ -569,19 +569,19 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     "the flag was lowered by the human who answered",
   );
 
-  const sessions = await api<{ sessoes: Session[] }>(
+  const sessions = await api<{ sessions: Session[] }>(
     baseUrl,
     "GET",
-    "/v1/sessions?execucao_id=7",
+    "/v1/sessions?execution_id=7",
   );
   assert.equal(
-    sessions.sessoes.length,
+    sessions.sessions.length,
     2,
     "two sessions: the one that asked and the one that knew",
   );
-  for (const session of sessions.sessoes) {
-    assert.equal(session.trabalho_id, work.id);
-    assert.equal(session.no_id, work.no_atual);
+  for (const session of sessions.sessions) {
+    assert.equal(session.job_id, work.id);
+    assert.equal(session.node_id, work.current_node_id);
     assert.equal(session.engine, "claude-code");
     assert.equal(session.working_dir, workDir);
     assert.equal(
@@ -590,10 +590,10 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
       "the taxonomy vocabulary, not the interface one",
     );
     assert.equal(session.exit_code, 0);
-    assert.ok(session.finalizada_em !== null);
+    assert.ok(session.finished_at !== null);
   }
   assert.ok(
-    sessions.sessoes[1].prompt.includes(ANSWER),
+    sessions.sessions[1].prompt.includes(ANSWER),
     "the persisted prompt of the second session carries the answer, for the audit trail",
   );
 });
@@ -669,13 +669,13 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
   // session that tried a closed door resolves normally.
   await dispatch(work.id);
 
-  const sessions = await api<{ sessoes: Session[] }>(
+  const sessions = await api<{ sessions: Session[] }>(
     baseUrl,
     "GET",
-    "/v1/sessions?execucao_id=9",
+    "/v1/sessions?execution_id=9",
   );
-  assert.equal(sessions.sessoes.length, 1);
-  const session = sessions.sessoes[0];
+  assert.equal(sessions.sessions.length, 1);
+  const session = sessions.sessions[0];
   assert.equal(
     session.status,
     "concluida",
@@ -783,13 +783,13 @@ test("t159 — what the engine printed is what the finish call ships, and what a
     "the transcript rides along with `uso`; it does not replace it",
   );
 
-  const sessions = await api<{ sessoes: Session[] }>(
+  const sessions = await api<{ sessions: Session[] }>(
     baseUrl,
     "GET",
-    "/v1/sessions?execucao_id=11",
+    "/v1/sessions?execution_id=11",
   );
-  assert.equal(sessions.sessoes.length, 1);
-  const session = sessions.sessoes[0];
+  assert.equal(sessions.sessions.length, 1);
+  const session = sessions.sessions[0];
 
   // The end of the proof: what the engine printed is what a human can read
   // back, long after the runner's process is gone.
@@ -976,15 +976,15 @@ test("t147 — with no token, the dispatch is refused 401 on its very first call
     !existsSync(record),
     "the engine process must never have been spawned",
   );
-  const sessions = await api<{ sessoes: Session[] }>(
+  const sessions = await api<{ sessions: Session[] }>(
     baseUrl,
     "GET",
-    "/v1/sessions?execucao_id=147",
+    "/v1/sessions?execution_id=147",
     undefined,
     200,
     token,
   );
-  assert.equal(sessions.sessoes.length, 0);
+  assert.equal(sessions.sessions.length, 0);
 });
 
 test("t147 — with a token, the dispatch crosses every route it uses", async (t) => {
@@ -1035,26 +1035,26 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
   // report by way of the failure the dispatch re-throws at the very end.
   await dispatch(work.id);
 
-  const sessions = await api<{ sessoes: Session[] }>(
+  const sessions = await api<{ sessions: Session[] }>(
     baseUrl,
     "GET",
-    "/v1/sessions?execucao_id=147",
+    "/v1/sessions?execution_id=147",
     undefined,
     200,
     token,
   );
   assert.equal(
-    sessions.sessoes.length,
+    sessions.sessions.length,
     1,
     "the session was opened through POST /v1/sessions",
   );
   assert.equal(
-    sessions.sessoes[0].status,
+    sessions.sessions[0].status,
     "concluida",
     "and closed through PATCH /v1/sessions/:id/finish",
   );
 
-  const questions = await api<{ perguntas: Question[] }>(
+  const questions = await api<{ input_requests: Question[] }>(
     baseUrl,
     "GET",
     "/v1/input-requests",
@@ -1063,17 +1063,17 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
     token,
   );
   assert.equal(
-    questions.perguntas.length,
+    questions.input_requests.length,
     1,
     "the question reached POST /v1/input-requests",
   );
-  assert.equal(questions.perguntas[0].pergunta, ESCALATION.question);
+  assert.equal(questions.input_requests[0].question, ESCALATION.question);
 
   // The execution stream and not the work timeline: a denial is recorded
   // against the session and its payload carries no `trabalho_id`, so the work's
   // own timeline structurally cannot show it — the same contract the t106 test
   // above records for `sessao.finalizada`.
-  const timeline = await api<{ eventos: Event[] }>(
+  const timeline = await api<{ events: Event[] }>(
     baseUrl,
     "GET",
     "/v1/executions/147/events",
@@ -1082,7 +1082,7 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
     token,
   );
   assert.ok(
-    timeline.eventos.some((event) => event.tipo === "sessao.permissao_negada"),
+    timeline.events.some((event) => event.tipo === "sessao.permissao_negada"),
     "the denial reached POST /v1/sessions/:id/permission-denials",
   );
 });
@@ -1173,7 +1173,7 @@ async function registerGraph(
   token: string,
   document: Record<string, unknown>,
 ): Promise<string> {
-  const registered = await api<{ grafo_versao: { id: string } }>(
+  const registered = await api<{ graph_version: { id: string } }>(
     baseUrl,
     "POST",
     "/v1/graphs",
@@ -1181,7 +1181,7 @@ async function registerGraph(
     201,
     token,
   );
-  return registered.grafo_versao.id;
+  return registered.graph_version.id;
 }
 
 /** The two skill manifests this file registers, read from disk. */
@@ -1322,21 +1322,21 @@ test("t141 — the engine is resolved from the node the work is standing on", as
 
       await dispatch(work.id);
 
-      const sessions = await api<{ sessoes: Session[] }>(
+      const sessions = await api<{ sessions: Session[] }>(
         baseUrl,
         "GET",
-        "/v1/sessions?execucao_id=141",
+        "/v1/sessions?execution_id=141",
         undefined,
         200,
         token,
       );
-      assert.equal(sessions.sessoes.length, 1);
+      assert.equal(sessions.sessions.length, 1);
       assert.equal(
-        sessions.sessoes[0].engine,
+        sessions.sessions[0].engine,
         "codex",
         "the engine the node declared is the engine the telemetry records",
       );
-      assert.equal(sessions.sessoes[0].no_id, "revisar");
+      assert.equal(sessions.sessions[0].node_id, "revisar");
 
       // ...and the route that ran is the codex one, by the only channel that
       // proves it: the argv the fake engine received.
@@ -1444,25 +1444,25 @@ test("t141 — the engine is resolved from the node the work is standing on", as
       })(onGraph.id);
 
       for (const executionId of [1410, 1411]) {
-        const sessions = await api<{ sessoes: Session[] }>(
+        const sessions = await api<{ sessions: Session[] }>(
           baseUrl,
           "GET",
-          `/v1/sessions?execucao_id=${executionId}`,
+          `/v1/sessions?execution_id=${executionId}`,
           undefined,
           200,
           token,
         );
         assert.equal(
-          sessions.sessoes.length,
+          sessions.sessions.length,
           1,
           `execution ${executionId} dispatched exactly once`,
         );
         assert.equal(
-          sessions.sessoes[0].engine,
+          sessions.sessions[0].engine,
           DEFAULT_ENGINE,
           `execution ${executionId} must fall back to the default engine`,
         );
-        assert.equal(sessions.sessoes[0].status, "concluida");
+        assert.equal(sessions.sessions[0].status, "concluida");
       }
     },
   );
@@ -1549,15 +1549,15 @@ test("t141 — the engine is resolved from the node the work is standing on", as
       );
       assert.ok(!existsSync(record), "no engine process may have been spawned");
 
-      const sessions = await api<{ sessoes: Session[] }>(
+      const sessions = await api<{ sessions: Session[] }>(
         baseUrl,
         "GET",
-        "/v1/sessions?execucao_id=1412",
+        "/v1/sessions?execution_id=1412",
         undefined,
         200,
         token,
       );
-      assert.equal(sessions.sessoes.length, 0);
+      assert.equal(sessions.sessions.length, 0);
     },
   );
 });
@@ -1745,16 +1745,16 @@ test("t148 — POST /v1/sessions fails after the engine started: the session is 
   await requireProcessDead(enginePid, "t148 (engine process)");
 
   // ...and nothing was left half-open on the other side either.
-  const sessions = await api<{ sessoes: Session[] }>(
+  const sessions = await api<{ sessions: Session[] }>(
     baseUrl,
     "GET",
-    "/v1/sessions?execucao_id=148",
+    "/v1/sessions?execution_id=148",
     undefined,
     200,
     token,
   );
   assert.equal(
-    sessions.sessoes.length,
+    sessions.sessions.length,
     0,
     "the call that failed is the one that would have created the row",
   );
@@ -1831,7 +1831,7 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
   // invariant, and a question dropped here is a human who is never called.
   await assert.rejects(async () => dispatch(work.id));
 
-  const questions = await api<{ perguntas: Question[] }>(
+  const questions = await api<{ input_requests: Question[] }>(
     baseUrl,
     "GET",
     "/v1/input-requests",
@@ -1840,17 +1840,17 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
     token,
   );
   assert.equal(
-    questions.perguntas.length,
+    questions.input_requests.length,
     1,
     "the question the session asked has to reach POST /v1/input-requests anyway",
   );
-  const question = questions.perguntas[0];
-  assert.equal(question.trabalho_id, work.id);
-  assert.equal(question.pergunta, ESCALATION.question);
-  assert.equal(question.contexto, ESCALATION.context);
-  assert.deepEqual(question.opcoes, ESCALATION.options);
-  assert.equal(question.recomendacao, ESCALATION.recommendation);
-  assert.equal(question.resposta_padrao, ESCALATION.default);
+  const question = questions.input_requests[0];
+  assert.equal(question.job_id, work.id);
+  assert.equal(question.question, ESCALATION.question);
+  assert.equal(question.context, ESCALATION.context);
+  assert.deepEqual(question.options, ESCALATION.options);
+  assert.equal(question.recommendation, ESCALATION.recommendation);
+  assert.equal(question.default_answer, ESCALATION.default);
 });
 
 // --- t160: one worktree per session -----------------------------------------
@@ -1947,17 +1947,17 @@ test("t160 AT8 — the session runs in the directory the worktree manager handed
     "the engine ran somewhere other than the worktree it was given",
   );
 
-  const sessions = await api<{ sessoes: Session[] }>(
+  const sessions = await api<{ sessions: Session[] }>(
     baseUrl,
     "GET",
-    "/v1/sessions?execucao_id=160",
+    "/v1/sessions?execution_id=160",
     undefined,
     200,
     token,
   );
-  assert.equal(sessions.sessoes.length, 1);
+  assert.equal(sessions.sessions.length, 1);
   assert.equal(
-    sessions.sessoes[0].working_dir,
+    sessions.sessions[0].working_dir,
     worktreePath,
     "the telemetry has to record the directory the session really had",
   );
@@ -2057,15 +2057,15 @@ test("t160 AT9 — a worktree that cannot be created blocks the dispatch before 
     "nothing was acquired, so there is nothing to release",
   );
 
-  const sessions = await api<{ sessoes: Session[] }>(
+  const sessions = await api<{ sessions: Session[] }>(
     baseUrl,
     "GET",
-    "/v1/sessions?execucao_id=1601",
+    "/v1/sessions?execution_id=1601",
     undefined,
     200,
     token,
   );
-  assert.equal(sessions.sessoes.length, 0);
+  assert.equal(sessions.sessions.length, 0);
 });
 
 /**
@@ -2233,18 +2233,18 @@ test("t160 AT10 — the outcome decides whether the worktree is kept", async (pa
         );
 
         assert.equal(
-          after.no_atual,
+          after.current_node_id,
           scenario.node,
           `a "${label}" dispatch must leave the work standing on "${scenario.node}"`,
         );
         assert.equal(
-          after.bloqueado,
+          after.blocked,
           scenario.blocked,
           `a "${label}" dispatch must leave the work blocked: ${String(scenario.blocked)}`,
         );
 
         if (scenario.blocked) {
-          const reason: string = after.motivo_bloqueio ?? "";
+          const reason: string = after.block_reason ?? "";
           assert.ok(
             reason.includes(workDir),
             `the block has to name the tree a human goes and looks at:\n${reason}`,
@@ -2443,15 +2443,15 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
       );
       assert.equal(opened(calls).silence_seconds, DEFAULT_SILENCE_SECONDS);
 
-      const sessions = await api<{ sessoes: Session[] }>(
+      const sessions = await api<{ sessions: Session[] }>(
         baseUrl,
         "GET",
-        "/v1/sessions?execucao_id=1630",
+        "/v1/sessions?execution_id=1630",
         undefined,
         200,
         token,
       );
-      assert.equal(sessions.sessoes[0]?.silence_seconds, DEFAULT_SILENCE_SECONDS);
+      assert.equal(sessions.sessions[0]?.silence_seconds, DEFAULT_SILENCE_SECONDS);
     },
   );
 
@@ -2781,15 +2781,15 @@ test("t161 — the node's skill drives the session, and the session advances the
         "and no engine process may have been spawned",
       );
 
-      const sessions = await api<{ sessoes: Session[] }>(
+      const sessions = await api<{ sessions: Session[] }>(
         baseUrl,
         "GET",
-        "/v1/sessions?execucao_id=1613",
+        "/v1/sessions?execution_id=1613",
         undefined,
         200,
         token,
       );
-      assert.equal(sessions.sessoes.length, 0);
+      assert.equal(sessions.sessions.length, 0);
     },
   );
 
@@ -2850,7 +2850,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         200,
         token,
       );
-      assert.equal(after.no_atual, "conferir", "the work really moved");
+      assert.equal(after.current_node_id, "conferir", "the work really moved");
 
       // Exactly one read of the snapshot: the engine and the edge come from the
       // same document, and they cost one call between them (FR1).
@@ -3003,8 +3003,8 @@ test("t161 — the node's skill drives the session, and the session advances the
         200,
         token,
       );
-      assert.equal(after.no_atual, "conferir", "the work stayed where it was");
-      assert.equal(after.bloqueado, true, "and it is blocked behind the question");
+      assert.equal(after.current_node_id, "conferir", "the work stayed where it was");
+      assert.equal(after.blocked, true, "and it is blocked behind the question");
     },
   );
 
@@ -3063,8 +3063,8 @@ test("t161 — the node's skill drives the session, and the session advances the
         200,
         token,
       );
-      assert.equal(after.no_atual, "implementar");
-      assert.equal(after.bloqueado, true);
+      assert.equal(after.current_node_id, "implementar");
+      assert.equal(after.blocked, true);
     },
   );
 
@@ -3134,16 +3134,16 @@ test("t161 — the node's skill drives the session, and the session advances the
 
       // The session itself was fine and is closed as such: what failed is the
       // advance, and the work is still standing where it was.
-      const sessions = await api<{ sessoes: Session[] }>(
+      const sessions = await api<{ sessions: Session[] }>(
         baseUrl,
         "GET",
-        "/v1/sessions?execucao_id=1618",
+        "/v1/sessions?execution_id=1618",
         undefined,
         200,
         token,
       );
-      assert.equal(sessions.sessoes.length, 1);
-      assert.equal(sessions.sessoes[0].status, "concluida");
+      assert.equal(sessions.sessions.length, 1);
+      assert.equal(sessions.sessions[0].status, "concluida");
 
       const after = await api<Work>(
         baseUrl,
@@ -3153,7 +3153,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         200,
         token,
       );
-      assert.equal(after.no_atual, "implementar");
+      assert.equal(after.current_node_id, "implementar");
     },
   );
 
@@ -3271,15 +3271,15 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
 
   /** The questions the control plane actually recorded for one job. */
   async function questionsOf(jobId: number): Promise<Question[]> {
-    const body = await api<{ perguntas: Question[] }>(
+    const body = await api<{ input_requests: Question[] }>(
       baseUrl,
       "GET",
-      `/v1/input-requests?trabalho_id=${jobId}`,
+      `/v1/input-requests?job_id=${jobId}`,
       undefined,
       200,
       token,
     );
-    return body.perguntas;
+    return body.input_requests;
   }
 
   await parent.test(
@@ -3354,9 +3354,9 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         200,
         token,
       );
-      assert.equal(after.bloqueado, true, "the work stops all the same");
-      assert.equal(after.motivo_bloqueio, motivo);
-      assert.equal(after.no_atual, "implementar", "and it never advanced past the node that got stuck");
+      assert.equal(after.blocked, true, "the work stops all the same");
+      assert.equal(after.block_reason, motivo);
+      assert.equal(after.current_node_id, "implementar", "and it never advanced past the node that got stuck");
     },
   );
 
@@ -3414,7 +3414,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
 
       const questions = await questionsOf(job.id);
       assert.equal(questions.length, 1);
-      assert.equal(questions[0].status, "pendente");
+      assert.equal(questions[0].status, "pending");
     },
   );
 
@@ -3486,8 +3486,8 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         200,
         token,
       );
-      assert.equal(after.bloqueado, true);
-      assert.equal(after.no_atual, "conferir");
+      assert.equal(after.blocked, true);
+      assert.equal(after.current_node_id, "conferir");
     },
   );
 });
@@ -3547,10 +3547,10 @@ async function registerLineage(
   document: Record<string, unknown>,
 ): Promise<{ graphId: string; versionId: string }> {
   const registered = await api<{
-    grafo: { id: string };
-    grafo_versao: { id: string };
+    graph: { id: string };
+    graph_version: { id: string };
   }>(baseUrl, "POST", "/v1/graphs", document, 201, token);
-  return { graphId: registered.grafo.id, versionId: registered.grafo_versao.id };
+  return { graphId: registered.graph.id, versionId: registered.graph_version.id };
 }
 
 /**
@@ -3729,16 +3729,16 @@ test("t166 — the model is resolved from the node the work is standing on", asy
           para: null,
         },
       };
-      const created = await api<{ proposta: { id: number } }>(
+      const created = await api<{ proposal: { id: number } }>(
         baseUrl,
         "POST",
         "/v1/proposals",
         {
-          grafo_id: graphId,
-          versao_alvo: versionId,
-          operacoes: [swap],
-          evidencia: { fonte: "telemetria", observacao: "o portão não precisa do modelo grande" },
-          metrica_esperada: {
+          graph_id: graphId,
+          target_version: versionId,
+          operations: [swap],
+          evidence: { fonte: "telemetria", observacao: "o portão não precisa do modelo grande" },
+          expected_metric: {
             nome: "custo_por_travessia",
             direcao: "cai",
             de: 1,
@@ -3748,19 +3748,19 @@ test("t166 — the model is resolved from the node the work is standing on", asy
         201,
         token,
       );
-      await api(baseUrl, "POST", `/v1/proposals/${created.proposta.id}/approve`, {}, 200, token);
-      const applied = await api<{ grafo_versao: { id: string } }>(
+      await api(baseUrl, "POST", `/v1/proposals/${created.proposal.id}/approve`, {}, 200, token);
+      const applied = await api<{ graph_version: { id: string } }>(
         baseUrl,
         "POST",
-        `/v1/proposals/${created.proposta.id}/apply`,
+        `/v1/proposals/${created.proposal.id}/apply`,
         {},
         200,
         token,
       );
-      assert.notEqual(applied.grafo_versao.id, versionId, "applying writes a NEW version");
+      assert.notEqual(applied.graph_version.id, versionId, "applying writes a NEW version");
 
       const after = await dispatchOn(t, {
-        versionId: applied.grafo_versao.id,
+        versionId: applied.graph_version.id,
         executionId: 1663,
         title: "ficha sob a versão que a proposta escreveu",
       });
@@ -3880,18 +3880,18 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
       // Read by property and never destructured: `sessoes` is a wire key, and a
       // local binding of that name is a Portuguese identifier D18 forbids in
       // this package (`test/no-portuguese-identifiers.test.ts`).
-      const listed = await api<{ sessoes: Session[] }>(
+      const listed = await api<{ sessions: Session[] }>(
         baseUrl,
         "GET",
-        `/v1/sessions?execucao_id=1720`,
+        `/v1/sessions?execution_id=1720`,
         undefined,
         200,
         token,
       );
-      const stored = listed.sessoes.find((session) => session.id === sessionId);
+      const stored = listed.sessions.find((session) => session.id === sessionId);
       assert.ok(stored, "the session the dispatch closed is not in the projection");
-      assert.deepEqual(stored.uso, USAGE);
-      assert.deepEqual(stored.modelos, ["claude-haiku-4-5-20251001", "claude-sonnet-5"]);
+      assert.deepEqual(stored.usage, USAGE);
+      assert.deepEqual(stored.models, ["claude-haiku-4-5-20251001", "claude-sonnet-5"]);
     },
   );
 
@@ -4320,15 +4320,15 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         "and no engine process may have been spawned",
       );
 
-      const sessions = await api<{ sessoes: Session[] }>(
+      const sessions = await api<{ sessions: Session[] }>(
         baseUrl,
         "GET",
-        "/v1/sessions?execucao_id=2042",
+        "/v1/sessions?execution_id=2042",
         undefined,
         200,
         token,
       );
-      assert.equal(sessions.sessoes.length, 0);
+      assert.equal(sessions.sessions.length, 0);
 
       const blocks = calls.filter(
         (call) => call.method === "POST" && call.route.endsWith("/blocks"),

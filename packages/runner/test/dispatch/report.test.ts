@@ -80,7 +80,7 @@ function refuser(failOn: string, error: Error): { sent: Sent[]; call: ControlPla
 }
 
 /** The work every case here reports about, in the part a report reads. */
-const JOB = Object.freeze({ id: 7, no_atual: 'revisao' });
+const JOB = Object.freeze({ id: 7, current_node_id: 'revisao' });
 
 /** Reads a recorded body as a plain record, so a field can be named. */
 function body(sent: Sent): Record<string, unknown> {
@@ -92,7 +92,7 @@ function node(edges: GraphEdge[], escalationPolicy?: string): ResolvedNode {
   return {
     versionId: 'sha256:abc',
     node: {
-      id: JOB.no_atual,
+      id: JOB.current_node_id,
       ...(escalationPolicy === undefined ? {} : { escalation_policy: escalationPolicy }),
     },
     edges,
@@ -144,7 +144,7 @@ test('AT3 — `blockForUncommittedWork` names the tree that was retained', async
   const motivo = body(sent[0]).motivo;
   assert.equal(typeof motivo, 'string');
   assert.ok((motivo as string).includes('/tmp/worktrees/job-7'));
-  assert.ok((motivo as string).includes(JOB.no_atual));
+  assert.ok((motivo as string).includes(JOB.current_node_id));
   assert.deepEqual(body(sent[0]).ator, { tipo: 'sistema', ref: 'runner' });
 });
 
@@ -431,7 +431,7 @@ test('AT19 — a question from a work standing on no node is signed `sessao`', a
   const { postSessionQuestion } = await loadReport();
   const { sent, call } = recorder();
 
-  await postSessionQuestion(call, { id: 7, no_atual: '' }, 31, {
+  await postSessionQuestion(call, { id: 7, current_node_id: '' }, 31, {
     question: 'E agora?',
   });
 

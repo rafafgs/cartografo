@@ -11,12 +11,22 @@
  * `buscar` é injetável só para teste; em produção é o `fetch` global — mesmo
  * padrão de `packages/tela/src/index.ts`.
  *
- * `GET /v1/jobs` é entrega do t102, hoje já mergeada, e devolve
- * `{trabalhos: [...]}`. O cliente consome apenas o subconjunto do contrato de
- * que precisa para escolher um candidato — `id` e `bloqueado` — e declara os
- * demais campos só para documentar o que chega; os testes seguem simulando a
- * rota, porque o que esta ficha prova é o comportamento do cliente, não o do
- * server do t102.
+ * `GET /v1/jobs` é entrega do t102, hoje já mergeada, e devolve `{jobs: [...]}`
+ * desde a t226. O cliente consome apenas o subconjunto do contrato de que
+ * precisa para escolher um candidato — `id` e `blocked` — e declara os demais
+ * campos só para documentar o que chega; os testes seguem simulando a rota,
+ * porque o que esta ficha prova é o comportamento do cliente, não o do server
+ * do t102.
+ *
+ * Os NOMES DE CAMPO desta arquivo são o fio, e viraram inglês com a t226
+ * (`docs/spec/glossario-wire.md` §1). Os nomes de método e de classe continuam
+ * em português: é dívida de identificador de uma outra ficha, como o comentário
+ * de {@link ReportedModel} já dizia, e a D18 vale para código escrito daqui em
+ * diante.
+ *
+ * O que este cliente ESCREVE em `packages/runner/src/dispatch/report.ts` não
+ * passa por aqui e segue em português inteiro: aquele é o cliente da superfície
+ * de EVENTOS, que é o segundo filho da D20.
  */
 
 import {
@@ -34,12 +44,12 @@ import {
  */
 export interface Trabalho {
   id: number;
-  titulo: string;
-  no_atual: string;
-  bloqueado: boolean;
+  title: string;
+  current_node_id: string;
+  blocked: boolean;
   /**
-   * "O viajante chegou": o `no_atual` é um dos `final_nodes` da versão do
-   * trabalho (t152).
+   * "O viajante chegou": o `current_node_id` é um dos `final_nodes` da versão
+   * do trabalho (t152).
    *
    * Derivado na leitura pelo control plane, nunca gravado: um trabalho sem
    * grafo, ou cuja versão não resolve, não tem estado terminal a que chegar e
@@ -47,9 +57,9 @@ export interface Trabalho {
    * trabalho que terminou da fila de despacho (ver
    * {@link ClienteControle.listarTrabalhosLiberados}).
    */
-  concluido: boolean;
-  execucao_id: number | null;
-  grafo_versao_id: string | null;
+  completed: boolean;
+  execution_id: number | null;
+  graph_version_id: string | null;
 }
 
 /**
@@ -72,9 +82,9 @@ export interface Evento {
 
 /** Uma linha de `GET /v1/executions/:id/metrics-by-version` (t102, FR17). */
 export interface MetricaPorVersao {
-  grafo_versao_id: string | null;
-  trabalhos: number;
-  eventos: number;
+  graph_version_id: string | null;
+  jobs: number;
+  events: number;
 }
 
 /**
@@ -93,39 +103,40 @@ export interface SnapshotDeGrafo {
 /** Uma versão de grafo, como `GET /v1/graph-versions/:id` a devolve (t101). */
 export interface VersaoDeGrafo {
   id: string;
-  grafo_id: string;
-  versao_pai: string | null;
-  origem: string;
-  proposta_id: number | null;
+  graph_id: string;
+  parent_version: string | null;
+  source: string;
+  proposal_id: number | null;
   snapshot: SnapshotDeGrafo;
-  criado_em: string;
+  created_at: string;
 }
 
 /** O que `POST /v1/proposals` exige: um diff semântico com hipótese (D15). */
 export interface EntradaDeProposta {
-  grafo_id: string;
-  versao_alvo: string;
-  operacoes: readonly unknown[];
-  evidencia: unknown;
-  metrica_esperada: unknown;
+  graph_id: string;
+  target_version: string;
+  /** O vocabulário DENTRO da operação é o terceiro filho da D20, e não move. */
+  operations: readonly unknown[];
+  evidence: unknown;
+  expected_metric: unknown;
 }
 
 /**
  * Uma proposta, no recorte que o runner precisa da resposta.
  *
- * `metrica_esperada` e `resultado` chegam como `unknown` de propósito: a forma
- * das duas é do control plane (`hypothesis.ts`), e o runner só as repassa ou
- * lê o `nome` de dentro — declarar a forma aqui seria duplicar um contrato do
- * outro lado da fronteira.
+ * `expected_metric` e `result` chegam como `unknown` de propósito: a forma das
+ * duas é do control plane (`hypothesis.ts`) e a D20 não a descongela — as CHAVES
+ * viraram inglês na t226, o conteúdo delas não moveu um byte. O runner só as
+ * repassa ou lê o `nome` de dentro.
  */
 export interface Proposta {
   id: number;
-  grafo_id: string;
-  versao_alvo: string;
+  graph_id: string;
+  target_version: string;
   status: string;
-  versao_aplicada_id: string | null;
-  metrica_esperada?: unknown;
-  resultado?: unknown;
+  applied_version_id: string | null;
+  expected_metric?: unknown;
+  result?: unknown;
 }
 
 /**
@@ -142,11 +153,11 @@ export interface Proposta {
  */
 export interface EntradaDeIntake {
   /** Classe cujo grafo registrado o lote vai atravessar. */
-  classe: string;
+  class: string;
   /** O pedido em linguagem natural, como chegou. */
-  pedido: string;
+  request: string;
   /** A quebra proposta, exatamente como quem a escreveu a declarou. */
-  itens: readonly unknown[];
+  items: readonly unknown[];
 }
 
 /**
@@ -158,89 +169,88 @@ export interface EntradaDeIntake {
  */
 export interface Rascunho {
   id: number;
-  projeto_id: number;
-  execucao_id: number | null;
-  classe: string;
-  pedido: string;
-  itens: Array<Record<string, unknown>>;
-  /** `pendente` ao nascer; `confirmado`/`descartado` só por decisão humana. */
+  project_id: number;
+  execution_id: number | null;
+  class: string;
+  request: string;
+  items: Array<Record<string, unknown>>;
+  /** `pending` ao nascer; `confirmed`/`discarded` só por decisão humana. */
   status: string;
-  /** `ref` → `trabalho.id` real; `null` enquanto ninguém confirmou. */
-  trabalhos_criados: Record<string, number> | null;
-  criado_em: string;
-  atualizado_em: string;
+  /** `ref` → id real do trabalho; `null` enquanto ninguém confirmou. */
+  created_jobs: Record<string, number> | null;
+  created_at: string;
+  updated_at: string;
 }
 
 /** Um runner pareado. */
 export interface Runner {
   id: string;
-  nome: string | null;
-  registrado_em: string;
+  name: string | null;
+  registered_at: string;
 }
 
 /**
  * Um modelo, no corpo que `POST /v1/engines/:name/models` recebe (t166).
  *
- * As chaves são as colunas de `motor_modelo`, como o resto deste cliente: o
- * vocabulário do `EngineAdapter` (`id`, `label`, `origin`) morre no runner, e o
- * que atravessa a fronteira é o formato de dado da API. Os dois VALORES de
- * `origem` seguem em inglês, porque são vocabulário do adapter — quem os
- * produziu foi ele.
+ * As chaves são as da API, como o resto deste cliente: o vocabulário do
+ * `EngineAdapter` (`id`, `label`, `origin`) morre no runner, e o que atravessa a
+ * fronteira é o formato de dado da API. Os dois VALORES de `source` seguem em
+ * inglês, porque são vocabulário do adapter — quem os produziu foi ele.
  *
  * Nome de método e de tipo em inglês, contra o resto deste arquivo: a D18 vale
  * para código escrito daqui em diante, e o português que sobrou aqui é dívida
  * de uma ficha de renomeação, não convenção a imitar.
  */
 export interface ReportedModel {
-  modelo_id: string;
-  rotulo?: string | null;
-  origem: 'cli' | 'catalog';
+  model_id: string;
+  label?: string | null;
+  source: 'cli' | 'catalog';
 }
 
 /** O catálogo de um motor, como o control plane o devolve. */
 export interface EngineCatalog {
-  motor: string;
-  modelos: Array<ReportedModel & { atualizado_em: string }>;
+  engine: string;
+  models: Array<ReportedModel & { updated_at: string }>;
 }
 
 /** Estados possíveis de uma lease, no vocabulário do control plane. */
-export type StatusDeLease = 'ativa' | 'liberada' | 'expirada';
+export type StatusDeLease = 'active' | 'released' | 'expired';
 
 /** Por que uma lease morreu. */
-export type MotivoDeExpiracao = 'heartbeat_perdido' | 'expirou';
+export type MotivoDeExpiracao = 'heartbeat_lost' | 'ttl_elapsed';
 
 /** Por que um pedido não virou lease. Nenhum deles é erro. */
-export type MotivoDeRecusa = 'trabalho_ja_leased' | 'teto_runner' | 'teto_projeto';
+export type MotivoDeRecusa = 'job_already_leased' | 'runner_cap' | 'project_cap';
 
 /** Uma lease, como o control plane a devolve. */
 export interface Lease {
   id: number;
   runner_id: string;
-  trabalho_id: number;
-  projeto_id: number;
+  job_id: number;
+  project_id: number;
   status: StatusDeLease;
-  ttl_segundos: number;
-  concedida_em: string;
-  heartbeat_em: string;
-  expira_em: string;
-  liberada_em: string | null;
-  motivo_expiracao: MotivoDeExpiracao | null;
+  ttl_seconds: number;
+  granted_at: string;
+  heartbeat_at: string;
+  expires_at: string;
+  released_at: string | null;
+  expiration_reason: MotivoDeExpiracao | null;
 }
 
 /** O que o runner declara ao disputar um trabalho. */
 export interface PedidoDeLease {
   runner_id: string;
-  projeto_id: number;
-  trabalho_id: number;
-  teto_runner: number;
-  teto_projeto: number;
-  ttl_segundos: number;
+  project_id: number;
+  job_id: number;
+  runner_cap: number;
+  project_cap: number;
+  ttl_seconds: number;
 }
 
 /** Resposta de `POST /v1/leases`: ou saiu lease, ou saiu o motivo. */
 export interface RespostaDeConcessao {
   lease: Lease | null;
-  motivo?: MotivoDeRecusa;
+  reason?: MotivoDeRecusa;
 }
 
 /** Configuração do cliente. */
@@ -315,7 +325,7 @@ export class ClienteControle {
    * @returns O runner como ficou registrado.
    */
   async registrarRunner(id: string, nome?: string): Promise<Runner> {
-    const corpo = nome === undefined ? { id } : { id, nome };
+    const corpo = nome === undefined ? { id } : { id, name: nome };
     const { runner } = await this.#post<{ runner: Runner }>('/v1/runners', corpo);
     return runner;
   }
@@ -341,7 +351,7 @@ export class ClienteControle {
   ): Promise<EngineCatalog> {
     return await this.#post<EngineCatalog>(
       `/v1/engines/${encodeURIComponent(motor)}/models`,
-      { modelos },
+      { models: modelos },
     );
   }
 
@@ -361,10 +371,8 @@ export class ClienteControle {
    *   mandou.
    */
   async listarTrabalhosLiberados(): Promise<Trabalho[]> {
-    const { trabalhos } = await this.#get<{ trabalhos: Trabalho[] }>('/v1/jobs');
-    return trabalhos.filter(
-      (trabalho) => trabalho.bloqueado === false && trabalho.concluido === false,
-    );
+    const { jobs } = await this.#get<{ jobs: Trabalho[] }>('/v1/jobs');
+    return jobs.filter((trabalho) => trabalho.blocked === false && trabalho.completed === false);
   }
 
   /**
@@ -391,7 +399,7 @@ export class ClienteControle {
    * @returns A lease renovada.
    */
   async heartbeat(leaseId: number, ttlSegundos?: number, timeoutMs?: number): Promise<Lease> {
-    const corpo = ttlSegundos === undefined ? {} : { ttl_segundos: ttlSegundos };
+    const corpo = ttlSegundos === undefined ? {} : { ttl_seconds: ttlSegundos };
     const { lease } = await this.#post<{ lease: Lease }>(
       `/v1/leases/${leaseId}/heartbeats`,
       corpo,
@@ -424,10 +432,10 @@ export class ClienteControle {
    *   — execução não é entidade, então não existe 404 aqui.
    */
   async listarEventosDaExecucao(execucaoId: number): Promise<Evento[]> {
-    const { eventos } = await this.#get<{ eventos: Evento[] }>(
+    const { events } = await this.#get<{ events: Evento[] }>(
       `/v1/executions/${execucaoId}/events`,
     );
-    return eventos;
+    return events;
   }
 
   /**
@@ -441,10 +449,10 @@ export class ClienteControle {
    * @returns Uma linha por versão; a linha `null` agrupa trabalhos sem versão.
    */
   async metricasPorVersao(execucaoId: number): Promise<MetricaPorVersao[]> {
-    const { metricas } = await this.#get<{ metricas: MetricaPorVersao[] }>(
+    const { metrics } = await this.#get<{ metrics: MetricaPorVersao[] }>(
       `/v1/executions/${execucaoId}/metrics-by-version`,
     );
-    return metricas;
+    return metrics;
   }
 
   /**
@@ -455,7 +463,7 @@ export class ClienteControle {
    * @throws {ErroDoControlPlane} 404 quando a versão não existe.
    */
   async buscarVersaoDeGrafo(id: string): Promise<VersaoDeGrafo> {
-    const { grafo_versao: versao } = await this.#get<{ grafo_versao: VersaoDeGrafo }>(
+    const { graph_version: versao } = await this.#get<{ graph_version: VersaoDeGrafo }>(
       `/v1/graph-versions/${encodeURIComponent(id)}`,
     );
     return versao;
@@ -473,14 +481,14 @@ export class ClienteControle {
    * @throws {ErroDoControlPlane} 400 quando o server recusa a forma.
    */
   async criarProposta(entrada: EntradaDeProposta): Promise<Proposta> {
-    const { proposta } = await this.#post<{ proposta: Proposta }>('/v1/proposals', entrada);
-    return proposta;
+    const { proposal } = await this.#post<{ proposal: Proposta }>('/v1/proposals', entrada);
+    return proposal;
   }
 
   /**
    * Uma proposta, pelo id (t165, FR9).
    *
-   * Quem vai fechar o experimento precisa da `metrica_esperada` que a hipótese
+   * Quem vai fechar o experimento precisa da `expected_metric` que a hipótese
    * declarou — é o `nome` dela que diz QUAL número medir na rodada seguinte.
    *
    * @param id Id da proposta.
@@ -488,8 +496,8 @@ export class ClienteControle {
    * @throws {ErroDoControlPlane} 404 quando a proposta não existe.
    */
   async buscarProposta(id: number): Promise<Proposta> {
-    const { proposta } = await this.#get<{ proposta: Proposta }>(`/v1/proposals/${id}`);
-    return proposta;
+    const { proposal } = await this.#get<{ proposal: Proposta }>(`/v1/proposals/${id}`);
+    return proposal;
   }
 
   /**
@@ -518,11 +526,11 @@ export class ClienteControle {
     id: number,
     entrada: { execucao_id: number; depois: number },
   ): Promise<Proposta> {
-    const { proposta } = await this.#post<{ proposta: Proposta }>(
+    const { proposal } = await this.#post<{ proposal: Proposta }>(
       `/v1/proposals/${id}/outcome`,
       entrada,
     );
-    return proposta;
+    return proposal;
   }
 
   /* ------------------------------------------------------------------------ */
@@ -546,8 +554,8 @@ export class ClienteControle {
    *   quando `itens` não passa na validação do server (`itens_invalidos`).
    */
   async criarIntake(entrada: EntradaDeIntake): Promise<Rascunho> {
-    const { rascunho } = await this.#post<{ rascunho: Rascunho }>('/v1/intake', entrada);
-    return rascunho;
+    const { draft } = await this.#post<{ draft: Rascunho }>('/v1/intake', entrada);
+    return draft;
   }
 
   /** Cabeçalhos de uma chamada: o `content-type` do corpo, se houver, e a credencial. */

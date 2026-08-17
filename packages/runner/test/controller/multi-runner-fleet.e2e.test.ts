@@ -84,24 +84,24 @@ const TTL_SECONDS = 2;
 interface LeaseRow {
   id: number;
   runner_id: string;
-  trabalho_id: number;
+  job_id: number;
   status: string;
-  concedida_em: string;
-  heartbeat_em: string;
-  expira_em: string;
-  liberada_em: string | null;
-  motivo_expiracao: string | null;
+  granted_at: string;
+  heartbeat_at: string;
+  expires_at: string;
+  released_at: string | null;
+  expiration_reason: string | null;
 }
 
 /** A runner's health, as `GET /v1/runners` returns it (FR1). */
 interface RunnerHealth {
   id: string;
-  leases_ativas: number;
-  ultimo_heartbeat: string | null;
-  ultima_expiracao: {
-    trabalho_id: number;
-    expira_em: string;
-    motivo_expiracao: string | null;
+  active_leases: number;
+  last_heartbeat: string | null;
+  last_expiration: {
+    job_id: number;
+    expires_at: string;
+    expiration_reason: string | null;
   } | null;
 }
 
@@ -215,7 +215,7 @@ async function call<T>(
 async function pair(cp: RunningControlPlane, id: string): Promise<string> {
   const paired = await call<{ token: string | null }>(cp, 'POST', '/v1/runners', cp.bootstrapToken, {
     id,
-    nome: `máquina ${id}`,
+    name: `máquina ${id}`,
   });
   assert.equal(paired.status, 201, `pairing ${id} over ${cp.urlBase} failed`);
   const token = paired.body.token ?? '';
@@ -243,7 +243,7 @@ async function leasesOf(cp: RunningControlPlane, query = ''): Promise<LeaseRow[]
   const response = await call<{ leases: LeaseRow[] }>(
     cp,
     'GET',
-    `/v1/leases?projeto_id=${PROJECT_ID}${query}`,
+    `/v1/leases?project_id=${PROJECT_ID}${query}`,
     cp.bootstrapToken,
   );
   assert.equal(response.status, 200);
@@ -385,22 +385,22 @@ test('t164 AT — two runners racing over the LAN take every job exactly once, a
   // exclusivity forbids is two live leases over the same job AT ONCE.
   const granted = await leasesOf(cp);
   assert.equal(
-    new Set(granted.map((lease) => lease.trabalho_id)).size,
+    new Set(granted.map((lease) => lease.job_id)).size,
     JOB_COUNT,
     'every seeded job got a lease of its own',
   );
 
   for (const jobId of jobIds) {
     const history = granted
-      .filter((lease) => lease.trabalho_id === jobId)
-      .sort((one, other) => Date.parse(one.concedida_em) - Date.parse(other.concedida_em));
+      .filter((lease) => lease.job_id === jobId)
+      .sort((one, other) => Date.parse(one.granted_at) - Date.parse(other.granted_at));
 
     for (const [index, lease] of history.slice(1).entries()) {
       const previous = history[index];
-      const ended = previous.liberada_em ?? previous.expira_em;
+      const ended = previous.released_at ?? previous.expires_at;
       assert.ok(
-        Date.parse(ended) <= Date.parse(lease.concedida_em),
-        `job ${jobId} had two live leases at once: ${previous.id} (${previous.runner_id}) ran to ${ended}, and ${lease.id} (${lease.runner_id}) started at ${lease.concedida_em}`,
+        Date.parse(ended) <= Date.parse(lease.granted_at),
+        `job ${jobId} had two live leases at once: ${previous.id} (${previous.runner_id}) ran to ${ended}, and ${lease.id} (${lease.runner_id}) started at ${lease.granted_at}`,
       );
     }
   }
@@ -469,7 +469,7 @@ test('t164 AT — the per-project ceiling holds across two runners racing withou
   const observed: number[] = [];
   const poll = (async () => {
     while (racing) {
-      observed.push((await leasesOf(cp, '&status=ativa')).length);
+      observed.push((await leasesOf(cp, '&status=active')).length);
       await delay(10);
     }
   })();
@@ -547,7 +547,7 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
       // already proven by `dispatch-and-lease.e2e.test.ts`).
       await waitFor(async () => {
         const [lease] = await leasesOf(cp, `&runner_id=${RUNNER_A}`);
-        return lease !== undefined && Date.parse(lease.heartbeat_em) > Date.parse(lease.concedida_em);
+        return lease !== undefined && Date.parse(lease.heartbeat_at) > Date.parse(lease.granted_at);
       }, `no heartbeat of ${RUNNER_A} reached the control plane`);
 
       alive = false;
@@ -601,17 +601,17 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
   const fromB = leases.filter((lease) => lease.runner_id === RUNNER_B);
 
   assert.equal(fromA.length, 1);
-  assert.equal(fromA[0].trabalho_id, jobId);
-  assert.equal(fromA[0].status, 'expirada', 'the dead runner had its lease claimed');
+  assert.equal(fromA[0].job_id, jobId);
+  assert.equal(fromA[0].status, 'expired', 'the dead runner had its lease claimed');
   assert.equal(
-    fromA[0].motivo_expiracao,
-    'heartbeat_perdido',
+    fromA[0].expiration_reason,
+    'heartbeat_lost',
     'it had beaten at least once before going quiet, and the reason records which death it was',
   );
 
   assert.equal(fromB.length, 1, 'the same work, with a lease of its own');
-  assert.equal(fromB[0].trabalho_id, jobId);
-  assert.equal(fromB[0].status, 'ativa', 'runner-b holds it right now');
+  assert.equal(fromB[0].job_id, jobId);
+  assert.equal(fromB[0].status, 'active', 'runner-b holds it right now');
 
   // The point of FR1: none of the above is readable from the outside without a
   // query surface, and this is it.
@@ -620,21 +620,21 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
   const healthOfB = health.find((runner) => runner.id === RUNNER_B);
   assert.ok(healthOfA !== undefined && healthOfB !== undefined, 'both runners are on the fleet page');
 
-  assert.equal(healthOfA.leases_ativas, 0, 'a dead runner holds nothing');
+  assert.equal(healthOfA.active_leases, 0, 'a dead runner holds nothing');
   assert.ok(
-    healthOfA.ultimo_heartbeat !== null,
+    healthOfA.last_heartbeat !== null,
     'when it was last heard from survives the lease that carried it',
   );
   assert.deepEqual(
-    healthOfA.ultima_expiracao,
+    healthOfA.last_expiration,
     {
-      trabalho_id: jobId,
-      expira_em: fromA[0].expira_em,
-      motivo_expiracao: 'heartbeat_perdido',
+      job_id: jobId,
+      expires_at: fromA[0].expires_at,
+      expiration_reason: 'heartbeat_lost',
     },
     'the sweep that reclaimed the work is visible, and says the same as the lease it came from',
   );
-  assert.equal(healthOfB.leases_ativas, 1, 'and the runner that took it over is holding one');
+  assert.equal(healthOfB.active_leases, 1, 'and the runner that took it over is holding one');
 
   assert.ok(
     controllerA.lastHeartbeatError !== null,

@@ -59,7 +59,7 @@ export const DEFAULT_TIMEOUT_SECONDS = 900;
  * two-line object.
  */
 export interface ClassReader {
-  fetchClasses(): Promise<readonly { classe: string }[]>;
+  fetchClasses(): Promise<readonly { class: string }[]>;
 }
 
 /**
@@ -223,12 +223,12 @@ export async function generateIntakeDraft(options: IntakeGenerationOptions): Pro
   // The code is the control plane's own, so that the two refusals are obviously
   // the same refusal (`routes/intake.ts`).
   const classes = await options.reader.fetchClasses();
-  if (!classes.some((entry) => entry.classe === options.className)) {
+  if (!classes.some((entry) => entry.class === options.className)) {
     throw new IntakeError(
       'grafo_desconhecido',
       `grafo_desconhecido — class "${options.className}" has no base graph registered; ` +
         'intake breaks work down over a class that is already registered',
-      classes.map((entry) => entry.classe),
+      classes.map((entry) => entry.class),
     );
   }
 
@@ -237,9 +237,9 @@ export async function generateIntakeDraft(options: IntakeGenerationOptions): Pro
   log(`the session proposed ${items.length} item(s)`);
 
   const draft = await options.client.criarIntake({
-    classe: options.className,
-    pedido: options.request,
-    itens: items,
+    class: options.className,
+    request: options.request,
+    items: items,
   });
   log(`draft ${draft.id} written as "${draft.status}"`);
 

@@ -129,7 +129,7 @@ const SKILLS: ClientModule.RegisteredSkill[] = [
 
 const EXISTING_VERSION: ClientModule.GraphVersion = {
   id: 'sha256:aaa',
-  grafo_id: 'nota-curta',
+  graph_id: 'nota-curta',
   snapshot: {
     metadata: {
       nome: 'Nota curta',
@@ -209,7 +209,7 @@ test('AT4a — a class that already has a base graph is refused without opening 
   const { runSynthesis } = await loadSynthesis();
 
   const client = fakeClient([
-    { classe: 'nota-curta', versao_corrente_id: EXISTING_VERSION.id },
+    { class: 'nota-curta', current_version_id: EXISTING_VERSION.id },
   ]);
   const adapter = new CountingAdapter(fakeAdapter(['should never run']));
   const dir = scratch(t, 'ja-registrada');
@@ -228,7 +228,7 @@ test('AT4a — a class that already has a base graph is refused without opening 
   });
 
   assert.equal(code, 1);
-  assert.match(err.join(''), /classe_ja_registrada/);
+  assert.match(err.join(''), /class_already_registered/);
   assert.equal(adapter.sessions, 0, 'the refusal comes before any session (D13: fork is t118)');
   assert.ok(
     !client.calls.includes('GET /v1/skills'),
@@ -240,7 +240,7 @@ test('AT4a — a class that already has a base graph is refused without opening 
 test('AT4b — a session that returns no valid block exits 1 and writes nothing', async (t) => {
   const { runSynthesis } = await loadSynthesis();
 
-  const client = fakeClient([{ classe: 'nota-curta', versao_corrente_id: EXISTING_VERSION.id }]);
+  const client = fakeClient([{ class: 'nota-curta', current_version_id: EXISTING_VERSION.id }]);
   const adapter = new CountingAdapter(
     fakeAdapter([
       'I looked at the catalogue and could not compose a topology.',
@@ -281,7 +281,7 @@ test('AT4c — a valid block lands the draft file and the one-line summary', asy
   const { runSynthesis } = await loadSynthesis();
 
   const document = proposedGraph('artigo-revisado');
-  const client = fakeClient([{ classe: 'nota-curta', versao_corrente_id: EXISTING_VERSION.id }]);
+  const client = fakeClient([{ class: 'nota-curta', current_version_id: EXISTING_VERSION.id }]);
   const adapter = new CountingAdapter(
     fakeAdapter([
       'Composed from the registered capabilities:',
@@ -332,7 +332,7 @@ test('t148 — a block that arrives inside a stream-json frame lands the draft t
   const { runSynthesis } = await loadSynthesis();
 
   const document = proposedGraph('artigo-revisado');
-  const client = fakeClient([{ classe: 'nota-curta', versao_corrente_id: EXISTING_VERSION.id }]);
+  const client = fakeClient([{ class: 'nota-curta', current_version_id: EXISTING_VERSION.id }]);
   // ONE line, exactly as the real adapter emits it: the whole answer, fence and
   // all, JSON-escaped inside the final frame.
   const adapter = new CountingAdapter(
@@ -371,7 +371,7 @@ test('t148 — a block that arrives inside a stream-json frame lands the draft t
 test('t148 — a frame with no block prints the decoded prose, not the raw frame', async (t) => {
   const { runSynthesis } = await loadSynthesis();
 
-  const client = fakeClient([{ classe: 'nota-curta', versao_corrente_id: EXISTING_VERSION.id }]);
+  const client = fakeClient([{ class: 'nota-curta', current_version_id: EXISTING_VERSION.id }]);
   const adapter = new CountingAdapter(
     fakeAdapter([
       resultFrame('Li o catálogo e não consegui compor uma topologia com o que existe.'),
@@ -407,7 +407,7 @@ test('t148 — a frame with no block prints the decoded prose, not the raw frame
 test('t180 — the run refuses and reports in English, quoting the API vocabulary', async (t) => {
   const { runSynthesis } = await loadSynthesis();
 
-  const client = fakeClient([{ classe: 'nota-curta', versao_corrente_id: EXISTING_VERSION.id }]);
+  const client = fakeClient([{ class: 'nota-curta', current_version_id: EXISTING_VERSION.id }]);
   const dir = scratch(t, 'classe-ja-registrada');
 
   const err: string[] = [];
@@ -425,7 +425,7 @@ test('t180 — the run refuses and reports in English, quoting the API vocabular
   assert.equal(code, 1);
   assert.equal(
     err.join(''),
-    'synthesize: classe_ja_registrada — class "nota-curta" already has a base graph.\n' +
+    'synthesize: class_already_registered — class "nota-curta" already has a base graph.\n' +
       '  A new version over an existing lineage is the proposal flow (D13), not synthesis.\n',
     'the code echoes the API and is frozen; the sentence around it is English (FR2)',
   );

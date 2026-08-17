@@ -13,9 +13,9 @@
  * usually agree; "usually" is not a property worth building routing on.
  *
  * **`null` and a rejection are different answers, and the difference is the
- * point.** A work with no `grafo_versao_id`, or one whose node the snapshot does
+ * point.** A work with no `graph_version_id`, or one whose node the snapshot does
  * not carry, resolves to `null`: both are ordinary, and both are the shape every
- * dispatch had before graphs existed. A `grafo_versao_id` that IS set and does
+ * dispatch had before graphs existed. A `graph_version_id` that IS set and does
  * not resolve is a dangling reference, and it propagates untouched — papering
  * over it with a default would run the work under a graph nobody registered and
  * record it as if somebody had.
@@ -100,7 +100,7 @@ export interface GraphSnapshot {
 
 /** What `GET /v1/graph-versions/:id` gives back. */
 export interface GraphVersionBody {
-  grafo_versao: {
+  graph_version: {
     id: string;
     snapshot?: GraphSnapshot;
   };
@@ -108,14 +108,14 @@ export interface GraphVersionBody {
 
 /** The position of a work, in the part this module reads. */
 export interface JobPosition {
-  no_atual: string;
+  current_node_id: string;
   /**
    * The graph version this work traverses, when it has one (t101).
    *
    * `null` is ordinary and not a defect: a work created by hand names an entry
    * node and no graph at all.
    */
-  grafo_versao_id?: string | null;
+  graph_version_id?: string | null;
 }
 
 /** Everything one dispatch learns from the snapshot. */
@@ -206,15 +206,15 @@ export async function resolveNode(
   job: JobPosition,
   read: ReadGraphVersion,
 ): Promise<ResolvedNode | null> {
-  const versionId = job.grafo_versao_id;
+  const versionId = job.graph_version_id;
   if (versionId === undefined || versionId === null || versionId === '') return null;
 
-  const { grafo_versao: version } = await read(graphVersionRoute(versionId));
+  const { graph_version: version } = await read(graphVersionRoute(versionId));
 
-  const node = version.snapshot?.nodes?.find((candidate) => candidate.id === job.no_atual);
+  const node = version.snapshot?.nodes?.find((candidate) => candidate.id === job.current_node_id);
   if (node === undefined) return null;
 
-  const edges = (version.snapshot?.edges ?? []).filter((edge) => edge.from === job.no_atual);
+  const edges = (version.snapshot?.edges ?? []).filter((edge) => edge.from === job.current_node_id);
 
   return { versionId: version.id, node, edges };
 }

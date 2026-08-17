@@ -88,8 +88,15 @@ const RUNNER_ACTOR_REF = 'runner';
 export interface JobRef {
   /** The id every route below is addressed by. */
   id: number;
-  /** The node whose session produced what is being reported. */
-  no_atual: string;
+  /**
+   * The node whose session produced what is being reported.
+   *
+   * Named after the JOB PROJECTION this module is handed, which went English
+   * with the API in t226 — not after anything this file writes. Every payload
+   * built below is still Portuguese, and deliberately so: this is the client of
+   * the EVENT surface, which is D20's second child.
+   */
+  current_node_id: string;
 }
 
 /** What the session reported when it ended. */
@@ -206,7 +213,7 @@ export async function blockForUncommittedWork(
 ): Promise<void> {
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
     motivo:
-      `A sessão do nó \`${job.no_atual}\` terminou como concluída, mas deixou ` +
+      `A sessão do nó \`${job.current_node_id}\` terminou como concluída, mas deixou ` +
       `trabalho não commitado em \`${worktreePath}\` — o \`git status\` da árvore ` +
       'não estava limpo. A árvore foi RETIDA em vez de removida, e o trabalho ' +
       'não avançou: o que essa sessão produziu só existe nesse diretório. ' +
@@ -262,7 +269,7 @@ export async function escalateRouting(
     .join(', ');
 
   const question =
-    `O nó \`${job.no_atual}\` tem mais de uma saída e a sessão não escolheu ` +
+    `O nó \`${job.current_node_id}\` tem mais de uma saída e a sessão não escolheu ` +
     `nenhuma delas: o resultado observado foi ${seen}, e ele não casa com ` +
     'aresta nenhuma deste nó. Por qual aresta o trabalho segue?';
 
@@ -277,7 +284,7 @@ export async function escalateRouting(
     tipo: 'pergunta',
     pergunta: question,
     contexto:
-      `Arestas que saem de \`${job.no_atual}\`: ${routes}. ` +
+      `Arestas que saem de \`${job.current_node_id}\`: ${routes}. ` +
       'A sessão terminou sem falhar; o que falta é a decisão de rota.',
     opcoes: labels,
     recomendacao: null,
@@ -538,6 +545,6 @@ export async function postSessionQuestion(
     // The field exists since t102; nothing reads it to answer on its own —
     // the auto-answer policy is still outside the PoC.
     auto_aprovavel: true,
-    ator: { tipo: 'agente', ref: job.no_atual === '' ? 'sessao' : job.no_atual },
+    ator: { tipo: 'agente', ref: job.current_node_id === '' ? 'sessao' : job.current_node_id },
   });
 }

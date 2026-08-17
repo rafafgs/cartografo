@@ -253,7 +253,7 @@ export function createClaudeCodeDispatch(
     const engineName = resolveEngine(resolved);
     const route = options.engines[engineName];
     if (route === undefined) {
-      throw new UnknownEngineError(engineName, job.no_atual, Object.keys(options.engines));
+      throw new UnknownEngineError(engineName, job.current_node_id, Object.keys(options.engines));
     }
 
     // Then the skill, in the same window and for the same reason: an
@@ -401,7 +401,7 @@ export function createClaudeCodeDispatch(
         // never "this engine has no ref".
         session = await call<Session>('/v1/sessions', 'POST', {
           trabalho_id: job.id,
-          no_id: job.no_atual,
+          no_id: job.current_node_id,
           engine: route.adapter.engineName,
           engine_session_ref: engineRef,
           working_dir: spec.workingDir,
@@ -506,7 +506,7 @@ export function createClaudeCodeDispatch(
         await blockWithNobodyToAsk(
           call,
           job,
-          `O nó \`${job.no_atual}\` não tem a quem perguntar, e a sessão travou em: ` +
+          `O nó \`${job.current_node_id}\` não tem a quem perguntar, e a sessão travou em: ` +
             request.question,
         );
       } else if (request !== null) {

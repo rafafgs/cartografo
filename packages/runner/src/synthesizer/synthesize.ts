@@ -28,7 +28,7 @@
  * English per D18, and since t180 that includes everything this command PRINTS.
  * What stays Portuguese is the surface a person types or a machine matches: the
  * flags (`--classe`, `--saida`), the error codes that echo the API's own
- * vocabulary (`classe_ja_registrada`) and the draft file name.
+ * vocabulary (`class_already_registered`) and the draft file name.
  */
 
 import { writeFileSync } from 'node:fs';
@@ -281,16 +281,16 @@ export function parseArguments(
 async function rankPrecedents(
   declaration: string,
   client: ControlPlaneReader,
-  classes: readonly { classe: string; versao_corrente_id: string | null }[],
+  classes: readonly { class: string; current_version_id: string | null }[],
 ): Promise<SimilarClass[]> {
   const scored: SimilarClass[] = [];
 
   for (const entry of classes) {
-    if (entry.versao_corrente_id === null) continue;
+    if (entry.current_version_id === null) continue;
 
     let metadata;
     try {
-      const version = await client.fetchClassVersion(entry.versao_corrente_id);
+      const version = await client.fetchClassVersion(entry.current_version_id);
       metadata = version.snapshot.metadata ?? {};
     } catch {
       continue;
@@ -302,7 +302,7 @@ async function rankPrecedents(
     const name = typeof metadata.name === 'string' ? metadata.name : '';
     const description = typeof metadata.description === 'string' ? metadata.description : '';
     const score = similarity(declaration, `${name} ${description}`);
-    if (score > 0) scored.push({ classe: entry.classe, nome: name, descricao: description, score });
+    if (score > 0) scored.push({ classe: entry.class, nome: name, descricao: description, score });
   }
 
   return scored.sort((a, b) => b.score - a.score).slice(0, SUGGESTION_LIMIT);
@@ -380,9 +380,9 @@ export async function runSynthesis(options: SynthesisOptions): Promise<number> {
 
   // FR2 — the refusal comes BEFORE the catalogue and before any session.
   const classes = await options.client.fetchClasses();
-  if (classes.some((entry) => entry.classe === options.className)) {
+  if (classes.some((entry) => entry.class === options.className)) {
     writeError(
-      `synthesize: classe_ja_registrada — class "${options.className}" already has a base graph.\n` +
+      `synthesize: class_already_registered — class "${options.className}" already has a base graph.\n` +
         '  A new version over an existing lineage is the proposal flow (D13), not synthesis.\n',
     );
     return 1;

@@ -34,13 +34,20 @@ import { DEFAULT_REQUEST_TIMEOUT_MS, requestJson } from '../controller/http-clie
 
 /** A registered class, as `GET /v1/classes` returns it. */
 export interface ClassEntry {
-  classe: string;
+  class: string;
   /** `null` for a lineage with no version yet; such a class cannot be scored. */
-  versao_corrente_id: string | null;
+  current_version_id: string | null;
 }
 
 /** The metadata drawer of a graph document, in the part the ranking reads. */
 export interface GraphMetadata {
+  /**
+   * The document's own metadata, NOT the API's.
+   *
+   * `schema/grafo.schema.json` is a format of its own and no child of D20
+   * renames it, so these two keys stay Portuguese while everything around them
+   * went English in t226.
+   */
   nome?: string;
   descricao?: string;
   [key: string]: unknown;
@@ -55,7 +62,7 @@ export interface GraphSnapshot {
 /** A graph version, as `GET /v1/graph-versions/:id` returns it. */
 export interface GraphVersion {
   id: string;
-  grafo_id: string;
+  graph_id: string;
   snapshot: GraphSnapshot;
 }
 
@@ -63,7 +70,7 @@ export interface GraphVersion {
  * A registered skill, as `GET /v1/skills` returns it (t117).
  *
  * The eight fields the prompt renders, out of the thirteen the route projects.
- * `instructions`, `permissions`, `origin`, `preconditions` and `registrado_em` are
+ * `instructions`, `permissions`, `origin`, `preconditions` and `registered_at` are
  * deliberately absent: the session composes a topology out of contracts, and
  * shipping a skill's whole instruction text into the prompt would both bloat it
  * and hand imported prose to the composing agent — which is precisely the
@@ -188,7 +195,7 @@ export async function fetchClassVersion(
   fetchImpl: typeof fetch = fetch,
   timeoutMs?: number,
 ): Promise<GraphVersion> {
-  const { grafo_versao: version } = await getJson<{ grafo_versao: GraphVersion }>(
+  const { graph_version: version } = await getJson<{ graph_version: GraphVersion }>(
     baseUrl,
     `/v1/graph-versions/${encodeURIComponent(versionId)}`,
     fetchImpl,

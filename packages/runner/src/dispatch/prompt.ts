@@ -37,12 +37,19 @@ export interface Event {
 /** A question, as `GET /v1/input-requests` projects it. */
 export interface Question {
   id: number;
-  trabalho_id: number;
-  pergunta: string;
+  job_id: number;
+  question: string;
   status: string;
-  resposta: string | null;
-  respondido_por: string | null;
-  origem: string | null;
+  answer: string | null;
+  answered_by: string | null;
+  /**
+   * Where the decision came from.
+   *
+   * The KEY went English with the API in t226; the VALUES did not (`usuario`,
+   * `auto`, `recomendacao`, …) — those are the `pergunta.respondida` payload's
+   * vocabulary, which is D20's second child.
+   */
+  source: string | null;
 }
 
 /**
@@ -60,9 +67,9 @@ export function buildPrompt(
   answered: readonly Question[],
 ): string {
   const parts = [
-    `# Trabalho #${job.id} — ${job.titulo}`,
+    `# Trabalho #${job.id} — ${job.title}`,
     '',
-    `Nó atual: \`${job.no_atual}\`.`,
+    `Nó atual: \`${job.current_node_id}\`.`,
     '',
     'Faça o que este nó pede neste trabalho, no diretório em que você está.',
   ];
@@ -77,7 +84,7 @@ export function buildPrompt(
   for (const event of events) {
     if (event.tipo !== 'pergunta.criada') continue;
     const question = byId.get(Number(event.entidade.id));
-    if (question !== undefined && question.resposta !== null) alreadyClosed.push(question);
+    if (question !== undefined && question.answer !== null) alreadyClosed.push(question);
   }
 
   if (alreadyClosed.length > 0) {
@@ -88,11 +95,11 @@ export function buildPrompt(
       'Isto já foi decidido. Não pergunte de novo: siga a resposta.',
     );
     for (const question of alreadyClosed) {
-      const who = question.origem === 'auto' ? 'a resposta automática' : (question.respondido_por ?? 'a pessoa');
+      const who = question.source === 'auto' ? 'a resposta automática' : (question.answered_by ?? 'a pessoa');
       parts.push(
         '',
-        `- **Você perguntou:** ${question.pergunta}`,
-        `  **${who} respondeu:** ${question.resposta ?? ''}`,
+        `- **Você perguntou:** ${question.question}`,
+        `  **${who} respondeu:** ${question.answer ?? ''}`,
       );
     }
   }

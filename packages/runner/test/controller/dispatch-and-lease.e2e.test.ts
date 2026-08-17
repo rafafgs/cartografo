@@ -43,9 +43,9 @@ const DEADLINE_MS = 30_000;
 interface LeaseRow {
   id: number;
   runner_id: string;
-  trabalho_id: number;
+  job_id: number;
   status: string;
-  motivo_expiracao: string | null;
+  expiration_reason: string | null;
 }
 
 let clientCache: typeof ClientModule | null = null;
@@ -88,17 +88,17 @@ function fetchWithSeededQueue(): typeof fetch {
     if (String(input).endsWith('/v1/jobs')) {
       return new Response(
         JSON.stringify({
-          trabalhos: [
+          jobs: [
             {
               id: JOB_ID,
               titulo: 'trabalho disputado',
-              no_atual: 'implementar',
-              bloqueado: false,
+              current_node_id: 'implementar',
+              blocked: false,
               // Derived by the control plane and read by the client since t161:
               // a work standing on a final node stops being a candidate. The
               // real route has always answered it; this simulation has to as
               // well, or the queue it seeds is one the client throws away.
-              concluido: false,
+              completed: false,
               execucao_id: 1,
               grafo_versao_id: 'sha256:e2e',
             },
@@ -190,19 +190,19 @@ test('AT17 — a runner dies, the lease expires and the other runner takes the s
   assert.equal(inherited.jobId, JOB_ID);
   assert.deepEqual(dispatched, [JOB_ID], 'runner-b dispatched the re-queued work');
 
-  const response = await fetch(`${urlBase}/v1/leases?projeto_id=3`, {
+  const response = await fetch(`${urlBase}/v1/leases?project_id=3`, {
     headers: { authorization: `Bearer ${token}` },
   });
   assert.equal(response.status, 200);
   const all = (await response.json()) as { leases: LeaseRow[] };
-  const leases = all.leases.filter((lease) => lease.trabalho_id === JOB_ID);
+  const leases = all.leases.filter((lease) => lease.job_id === JOB_ID);
 
   const fromRunnerA = leases.filter((lease) => lease.runner_id === 'runner-a');
   assert.equal(fromRunnerA.length, 1);
-  assert.equal(fromRunnerA[0].status, 'expirada', 'the lease of the dead runner is claimed');
+  assert.equal(fromRunnerA[0].status, 'expired', 'the lease of the dead runner is claimed');
   assert.equal(
-    fromRunnerA[0].motivo_expiracao,
-    'expirou',
+    fromRunnerA[0].expiration_reason,
+    'ttl_elapsed',
     'runner-a never renewed: the term simply ran out',
   );
 
@@ -211,7 +211,7 @@ test('AT17 — a runner dies, the lease expires and the other runner takes the s
   assert.equal(fromRunnerB[0].id, inherited.leaseId);
   assert.equal(
     fromRunnerB[0].status,
-    'liberada',
+    'released',
     'with the dispatch finished, runner-b gave the capacity back',
   );
 });

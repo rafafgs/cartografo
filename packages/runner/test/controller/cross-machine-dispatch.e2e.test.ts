@@ -55,10 +55,10 @@ const DEADLINE_MS = 30_000;
 interface LeaseRow {
   id: number;
   runner_id: string;
-  trabalho_id: number;
+  job_id: number;
   status: string;
-  concedida_em: string;
-  heartbeat_em: string;
+  granted_at: string;
+  heartbeat_at: string;
 }
 
 let clientCache: typeof ClientModule | null = null;
@@ -176,7 +176,7 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
   // used in this file: from here on the runner speaks for itself.
   const paired = await call<{ token: string | null }>(urlBase, 'POST', '/v1/runners', bootstrapToken, {
     id: RUNNER_ID,
-    nome: 'runner reached over the LAN',
+    name: 'runner reached over the LAN',
   });
   assert.equal(paired.status, 201, `pairing over ${urlBase} is the first proof the bind took`);
   const token = paired.body.token ?? '';
@@ -191,12 +191,12 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
 
   // The credential is scoped, and this is the cheapest possible proof of it on
   // the very connection the cycle is about to run over.
-  const refused = await call<{ erro?: string }>(urlBase, 'POST', '/v1/jobs', token, {
+  const refused = await call<{ error?: string }>(urlBase, 'POST', '/v1/jobs', token, {
     titulo: 'trabalho que um runner não cria',
     no_entrada_id: 'implementar',
   });
   assert.equal(refused.status, 403);
-  assert.equal(refused.body.erro, 'credencial_fora_de_escopo');
+  assert.equal(refused.body.error, 'out_of_scope_credential');
 
   const client = new ClienteControle({ urlBase, token });
 
@@ -218,7 +218,7 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
       while (Date.now() < deadline) {
         const [lease] = await leasesOf(urlBase, token);
         assert.ok(lease !== undefined, 'the lease being dispatched under has to be visible');
-        if (Date.parse(lease.heartbeat_em) > Date.parse(lease.concedida_em)) return;
+        if (Date.parse(lease.heartbeat_at) > Date.parse(lease.granted_at)) return;
         await delay(100);
       }
       throw new Error(`no heartbeat reached the control plane within ${DEADLINE_MS}ms`);
@@ -237,10 +237,10 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
   assert.equal(leases.length, 1);
   assert.equal(leases[0].id, result.leaseId);
   assert.equal(leases[0].runner_id, RUNNER_ID);
-  assert.equal(leases[0].trabalho_id, job.body.id);
-  assert.equal(leases[0].status, 'liberada', 'the cycle closed: the capacity went back');
+  assert.equal(leases[0].job_id, job.body.id);
+  assert.equal(leases[0].status, 'released', 'the cycle closed: the capacity went back');
   assert.ok(
-    Date.parse(leases[0].heartbeat_em) > Date.parse(leases[0].concedida_em),
+    Date.parse(leases[0].heartbeat_at) > Date.parse(leases[0].granted_at),
     'the lease was renewed at least once while the dispatch ran',
   );
 });

@@ -76,7 +76,7 @@ interface TestHook {
 
 interface GraphVersion {
   id: string;
-  grafo_id: string;
+  graph_id: string;
 }
 
 interface Work {
@@ -98,13 +98,13 @@ interface Event {
 
 interface Proposal {
   id: number;
-  grafo_id: string;
-  versao_alvo: string;
-  operacoes: Array<Record<string, unknown>>;
-  evidencia: Record<string, unknown>;
-  metrica_esperada: Record<string, unknown>;
+  graph_id: string;
+  target_version: string;
+  operations: Array<Record<string, unknown>>;
+  evidence: Record<string, unknown>;
+  expected_metric: Record<string, unknown>;
   status: string;
-  versao_aplicada_id: string | null;
+  applied_version_id: string | null;
 }
 
 let clientCache: typeof ClientModule | null = null;
@@ -245,7 +245,7 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
   const baseUrl = await bootControlPlane(t);
 
   const document: unknown = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
-  const { grafo_versao: version } = await api<{ grafo_versao: GraphVersion }>(
+  const { graph_version: version } = await api<{ graph_version: GraphVersion }>(
     baseUrl,
     'POST',
     '/v1/graphs',
@@ -275,7 +275,7 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
     rmSync(workingDir, { recursive: true, force: true });
   });
 
-  const { eventos: events } = await api<{ eventos: Event[] }>(
+  const { events } = await api<{ events: Event[] }>(
     baseUrl,
     'GET',
     `/v1/executions/${EXECUTION_WITH_SIGNAL}/events`,
@@ -400,7 +400,7 @@ test('t110 — a run with a bottleneck lands exactly one pending proposal, backe
     'a surveyor proposal only ever reaches "pendente" (README, princípio 5)',
   );
 
-  const { propostas: proposals } = await api<{ propostas: Proposal[] }>(
+  const { proposals } = await api<{ proposals: Proposal[] }>(
     scenario.baseUrl,
     'GET',
     '/v1/proposals',
@@ -409,15 +409,15 @@ test('t110 — a run with a bottleneck lands exactly one pending proposal, backe
   const proposal = proposals[0];
 
   assert.equal(proposal.id, result.proposta.id);
-  assert.equal(proposal.status, 'pendente');
-  assert.equal(proposal.versao_aplicada_id, null, 'nothing was applied');
-  assert.equal(proposal.grafo_id, scenario.version.grafo_id);
-  assert.equal(proposal.versao_alvo, scenario.version.id);
-  assert.deepEqual(proposal.operacoes, VALID_OPERATIONS, 'the session chose the operations');
+  assert.equal(proposal.status, 'pending');
+  assert.equal(proposal.applied_version_id, null, 'nothing was applied');
+  assert.equal(proposal.graph_id, scenario.version.graph_id);
+  assert.equal(proposal.target_version, scenario.version.id);
+  assert.deepEqual(proposal.operations, VALID_OPERATIONS, 'the session chose the operations');
 
   // The evidence is ours, not the agent's: the four numbers plus the ids of the
   // events they were computed from, every one of them real.
-  const evidence = proposal.evidencia;
+  const evidence = proposal.evidence;
   assert.equal(evidence.no_id, 'revisar');
   assert.equal(evidence.execucao_id, EXECUTION_WITH_SIGNAL);
   const ids = evidence.eventos as number[];
@@ -431,7 +431,7 @@ test('t110 — a run with a bottleneck lands exactly one pending proposal, backe
   assert.ok((evidence.total_ms as number) > 0, 'the bottleneck has to have cost something');
 
   // `metrica_esperada` has the shape t112's verdict can read.
-  const metric = proposal.metrica_esperada;
+  const metric = proposal.expected_metric;
   assert.equal(typeof metric.nome, 'string');
   assert.ok(['sobe', 'cai'].includes(metric.direcao as string));
   assert.equal(typeof metric.de, 'number');
@@ -481,7 +481,7 @@ test('t110 — a session that returns nothing usable aborts, and posts nothing',
   await assert.rejects(async () => run({ FAKE_ENGINE_EXIT_CODE: '3' }));
 
   assert.deepEqual(postsToProposals(scenario.calls), [], 'no proposal may be posted from a bad run');
-  const { propostas: proposals } = await api<{ propostas: Proposal[] }>(
+  const { proposals } = await api<{ proposals: Proposal[] }>(
     scenario.baseUrl,
     'GET',
     '/v1/proposals',

@@ -64,15 +64,15 @@ const yieldEventLoop = (): Promise<void> =>
 const LEASE = {
   id: 12,
   runner_id: 'runner-a',
-  trabalho_id: 1,
-  projeto_id: 3,
-  status: 'ativa',
-  ttl_segundos: 6,
-  concedida_em: '2026-08-14T12:00:00.000Z',
-  heartbeat_em: '2026-08-14T12:00:00.000Z',
-  expira_em: '2026-08-14T12:00:06.000Z',
-  liberada_em: null,
-  motivo_expiracao: null,
+  job_id: 1,
+  project_id: 3,
+  status: 'active',
+  ttl_seconds: 6,
+  granted_at: '2026-08-14T12:00:00.000Z',
+  heartbeat_at: '2026-08-14T12:00:00.000Z',
+  expires_at: '2026-08-14T12:00:06.000Z',
+  released_at: null,
+  expiration_reason: null,
 };
 
 /** Knobs of the fake control plane. Everything answers the happy path by default. */
@@ -118,19 +118,19 @@ async function environment(options: EnvironmentOptions = {}): Promise<{
 
     if (url.endsWith('/v1/jobs')) {
       return respond(200, {
-        trabalhos: [
+        jobs: [
           {
             id: 1,
-            titulo: 'implementar t103',
-            no_atual: 'implementar',
-            bloqueado: false,
+            title: 'implementar t103',
+            current_node_id: 'implementar',
+            blocked: false,
             // Derived by the control plane and read by the client since t161: a
             // work standing on a final node stops being a candidate. The real
             // route has always answered it; this simulation has to as well, or
             // the queue it seeds is one the client throws away.
-            concluido: false,
-            execucao_id: 9,
-            grafo_versao_id: 'sha256:abc',
+            completed: false,
+            execution_id: 9,
+            graph_version_id: 'sha256:abc',
           },
         ],
       });
@@ -141,7 +141,7 @@ async function environment(options: EnvironmentOptions = {}): Promise<{
       if (releaseStatus < 200 || releaseStatus > 299) {
         return respond(releaseStatus, { erro: 'control plane out of order' });
       }
-      return respond(releaseStatus, { lease: { ...LEASE, status: 'liberada' } });
+      return respond(releaseStatus, { lease: { ...LEASE, status: 'released' } });
     }
     throw new Error(`unexpected call: ${url}`);
   };
@@ -287,7 +287,7 @@ test('AT16 — with no released work, the tick asks for no lease at all', async 
   const calls: string[] = [];
   const doFetch: typeof fetch = async (input) => {
     calls.push(String(input));
-    return new Response(JSON.stringify({ trabalhos: [{ id: 1, bloqueado: true }] }), {
+    return new Response(JSON.stringify({ jobs: [{ id: 1, blocked: true }] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -422,7 +422,7 @@ test('t193 — a heartbeat still in flight is skipped, never overlapped', async 
   // quickly to ever describe one.
   const client = {
     listarTrabalhosLiberados: async () => [
-      { id: 1, titulo: 'implementar t193', no_atual: 'implementar', bloqueado: false, concluido: false, execucao_id: 9, grafo_versao_id: null },
+      { id: 1, title: 'implementar t193', current_node_id: 'implementar', blocked: false, completed: false, execution_id: 9, graph_version_id: null },
     ],
     pedirLease: async () => ({ lease: LEASE }),
     heartbeat: async () =>
@@ -481,12 +481,12 @@ test('t193 — a heartbeat still in flight is skipped, never overlapped', async 
 /** A candidate as `GET /v1/jobs` describes one, for the fakes below. */
 const candidate = (id: number): ClientModule.Trabalho => ({
   id,
-  titulo: `implementar t208 #${id}`,
-  no_atual: 'implementar',
-  bloqueado: false,
-  concluido: false,
-  execucao_id: 9,
-  grafo_versao_id: null,
+  title: `implementar t208 #${id}`,
+  current_node_id: 'implementar',
+  blocked: false,
+  completed: false,
+  execution_id: 9,
+  graph_version_id: null,
 });
 
 /**
@@ -498,14 +498,14 @@ const candidate = (id: number): ClientModule.Trabalho => ({
  */
 function refusingClient(
   candidates: number[],
-  answers: Array<{ lease: typeof LEASE | null; motivo?: ClientModule.MotivoDeRecusa }>,
+  answers: Array<{ lease: typeof LEASE | null; reason?: ClientModule.MotivoDeRecusa }>,
 ): { client: ClientModule.ClienteControle; asked: () => number[] } {
   const asked: number[] = [];
 
   const client = {
     listarTrabalhosLiberados: async () => candidates.map(candidate),
     pedirLease: async (request: ClientModule.PedidoDeLease) => {
-      asked.push(request.trabalho_id);
+      asked.push(request.job_id);
       return answers[asked.length - 1] ?? { lease: null };
     },
     heartbeat: async () => LEASE,
@@ -515,14 +515,14 @@ function refusingClient(
   return { client, asked: () => asked };
 }
 
-for (const motivo of ['teto_runner', 'teto_projeto'] as const) {
+for (const motivo of ['runner_cap', 'project_cap'] as const) {
   test(`t208 — tick() stops asking after a \`${motivo}\` refusal, even with candidates left`, async () => {
     const { Controller } = await loadController();
 
     // Three released candidates and a ceiling that is already full: every one of
     // them would come back with this same answer, so the two POSTs after the
     // first are round trips spent learning something the first one said.
-    const { client, asked } = refusingClient([1, 2, 3], [{ lease: null, motivo }]);
+    const { client, asked } = refusingClient([1, 2, 3], [{ lease: null, reason: motivo }]);
 
     const controller = new Controller({
       ...BASE_OPTIONS,
@@ -550,7 +550,7 @@ test('t208 — tick() still tries the next candidate after `trabalho_ja_leased`'
   // nothing at all about the next candidate.
   const { client, asked } = refusingClient(
     [1, 2],
-    [{ lease: null, motivo: 'trabalho_ja_leased' }, { lease: LEASE }],
+    [{ lease: null, reason: 'job_already_leased' }, { lease: LEASE }],
   );
 
   const dispatched: number[] = [];

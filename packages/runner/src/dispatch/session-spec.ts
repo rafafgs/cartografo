@@ -74,16 +74,18 @@ export async function buildSessionSpec(
   resolved: ResolvedNode | null,
   config: SessionSpecConfig,
 ): Promise<SessionSpec> {
-  const { eventos: events } = await call<{ eventos: Event[] }>(`/v1/jobs/${job.id}/events`, 'GET');
-  const { perguntas: questions } = await call<{ perguntas: Question[] }>(
-    '/v1/input-requests?status=respondida',
+  const { events } = await call<{ events: Event[] }>(`/v1/jobs/${job.id}/events`, 'GET');
+  // `?status=` is a QUERY PARAMETER of the read side, which t226 translated: the
+  // route maps `answered` back to the column's `respondida` at its own boundary.
+  const { input_requests: questions } = await call<{ input_requests: Question[] }>(
+    '/v1/input-requests?status=answered',
     'GET',
   );
 
   const prompt = buildPrompt(
     job,
     events,
-    questions.filter((question) => question.trabalho_id === job.id),
+    questions.filter((question) => question.job_id === job.id),
   );
 
   // Read from the SAME resolved node the engine came from.

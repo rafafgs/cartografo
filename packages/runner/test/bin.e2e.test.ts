@@ -197,7 +197,7 @@ test('t162 — the runner is an installable command, started by plain node', asy
         trabalho_id: 999_162,
         teto_runner: 1,
         teto_projeto: 1,
-        ttl_segundos: 1,
+        ttl_seconds: 1,
       }),
     });
     const body = await response.text();
@@ -311,11 +311,11 @@ test('t162 — the runner is an installable command, started by plain node', asy
       // earliest moment this test can know a dispatch is in flight — the same
       // wait `cli/run.e2e.test.ts`'s AT13 uses.
       await waitFor('a session being opened', async () => {
-        const { sessoes: sessions } = await api<{ sessoes: unknown[] }>(
+        const { sessions } = await api<{ sessions: unknown[] }>(
           baseUrl,
           token,
           'GET',
-          '/v1/sessions?execucao_id=193016',
+          '/v1/sessions?execution_id=193016',
         );
         return sessions.length > 0;
       });

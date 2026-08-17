@@ -17,11 +17,15 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
+import { buildNodeInput } from '../domain/context.ts';
 import { integerFromQuery } from '../repositories/common.ts';
+import { getVersion } from '../repositories/graphs.ts';
+import { listInputRequests } from '../repositories/input-request.ts';
 import {
   blockJob,
   getJob,
   createJob,
+  jobContextSeed,
   unblockJob,
   amendJob,
   jobTimeline,
@@ -30,6 +34,7 @@ import {
   transitionJob,
   type Job,
 } from '../repositories/job.ts';
+import { listSessions } from '../repositories/session.ts';
 import {
   withValidation,
   routeId,
@@ -53,6 +58,58 @@ const CREATE_JOB_SCHEMA = {
     400: ERROR_RESPONSE_SCHEMA,
   },
 } as const;
+
+/**
+ * The four reads behind `GET /jobs/:id/context` (t253, FR6).
+ *
+ * The MERGE is `domain/context.ts`, pure and unit-tested without a server; what
+ * lives here is only which rows feed it, which is a routing decision:
+ *
+ * - the job itself, for `input.job` and for the class's own field values;
+ * - the version's snapshot, for the class's `project` object and for each
+ *   node's `contract.produces`. A version that no longer resolves is read as no
+ *   graph at all — the same posture `isAtFinalNode` and `requireFieldsOfNode`
+ *   already take in `repositories/job.ts`;
+ * - the job's COMPLETED sessions of this round. Only `completed`, because an
+ *   incomplete session's report is not a fact about the graph, and only this
+ *   round, because a previous execution's traversal is a different journey;
+ * - the answered escalations of the job — the same set `buildSessionSpec`
+ *   already fetches to render the prompt, now exposed structurally too.
+ *
+ * @param db Open database.
+ * @param id Job id.
+ * @returns The assembled `input`, or `null` when the job does not exist.
+ */
+function nodeInputOf(db: Database, id: number): Record<string, unknown> | null {
+  const seed = jobContextSeed(db, id);
+  if (seed === null) return null;
+
+  const version =
+    seed.grafo_versao_id === null ? undefined : getVersion(db, seed.grafo_versao_id);
+
+  const sessions = listSessions(db, {
+    trabalho_id: id,
+    ...(seed.execucao_id === null ? {} : { execucao_id: seed.execucao_id }),
+  });
+
+  return buildNodeInput({
+    job: seed.job,
+    snapshot: version?.snapshot ?? null,
+    outputs: sessions
+      .filter((session) => session.status === 'completed')
+      .map((session) => ({
+        node_id: session.no_id,
+        output: session.saida,
+        finished_at: session.finalizada_em,
+        session_id: session.id,
+      })),
+    answered: listInputRequests(db, { status: 'answered', trabalho_id: id }).map((request) => ({
+      id: String(request.id),
+      pergunta: request.pergunta,
+      resposta: request.resposta ?? '',
+    })),
+  });
+}
 
 /**
  * Registers the job routes in the `/v1` scope.
@@ -84,6 +141,28 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
     withValidation(reply, () => {
       const job = getJob(db, routeId(request.params));
       return job === null ? notFound(reply, 'job') : toWireJob(job);
+    }),
+  );
+
+  /**
+   * The `input` the job's current node resolves its placeholders against (t253).
+   *
+   * A GET and not a field of `GET /jobs/:id`: it is assembled out of four reads
+   * and it is asked for exactly once per dispatch, by the runner — the same
+   * reasoning `GET /sessions/:id/transcript` writes for the one other derived
+   * payload of this API. The envelope key is `input` because that is the name
+   * the manifest format gives it, and it is what `{{input.<path>}}` resolves
+   * against.
+   *
+   * There is no 409 and no empty-answer case: a job with no graph, with no
+   * completed session and with nothing answered projects an object with `job`,
+   * an empty `project` and an empty `perguntas_respondidas` — which is the
+   * honest answer, not a refusal. Only an id that names nothing is a 404.
+   */
+  app.get('/jobs/:id/context', async (request, reply) =>
+    withValidation(reply, () => {
+      const input = nodeInputOf(db, routeId(request.params));
+      return input === null ? notFound(reply, 'job') : { input };
     }),
   );
 

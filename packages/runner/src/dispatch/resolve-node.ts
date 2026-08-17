@@ -41,6 +41,22 @@ export interface NodeContract {
   input_schema?: unknown;
   output_schema?: unknown;
   checks?: unknown;
+  /**
+   * The bucket this node's structured output accumulates into, in the `input`
+   * of the nodes downstream of it (t253).
+   *
+   * Declared here so the runner's read of the snapshot stays in step with the
+   * control plane's, and READ-ONLY for now: what acts on it is
+   * `GET /v1/jobs/:id/context`, which is the control plane's own projection
+   * (`packages/core/src/domain/context.ts`, D1 — the sole writer is the one
+   * place that can assemble it without a second round trip). Wiring
+   * {@link ClaudeCodeDispatchOptions.resolveInput} to that route is the
+   * follow-up ficha; until then nothing on this side reads the field.
+   *
+   * Optional, and absence means "merge at the top level" — the behaviour every
+   * graph written before the field already has.
+   */
+  produces?: string;
 }
 
 /** One node of a graph snapshot, in the part the dispatch reads. */
@@ -96,6 +112,16 @@ export interface GraphSnapshot {
   nodes?: GraphNode[];
   edges?: GraphEdge[];
   final_nodes?: string[];
+  /**
+   * The class's static configuration, which the projection publishes at
+   * `input.project` (t253).
+   *
+   * Here for the same reason `NodeContract.produces` is, and with the same
+   * standing: the runner reads the document and does not act on this key — the
+   * object that reaches a session comes from `GET /v1/jobs/:id/context`, whole.
+   * Optional, and absence means the class declares none, which projects `{}`.
+   */
+  project?: Record<string, unknown>;
 }
 
 /** What `GET /v1/graph-versions/:id` gives back. */

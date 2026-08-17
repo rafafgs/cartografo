@@ -21,6 +21,10 @@
 import type { Database } from '../db/connection.ts';
 import { getEventsByEntity, recordEvent } from '../db/events.ts';
 import { requireValidData, ValidationError } from '../db/event-validation.ts';
+import { validateAgainstJsonSchema } from '../domain/manifest.ts';
+import { isObject } from '../util/is-object.ts';
+import { getVersion } from './graphs.ts';
+import { getSkill } from './skill.ts';
 import {
   RUNNER_ACTOR,
   DEFAULT_PROJECT,
@@ -86,13 +90,26 @@ export interface Session {
   transcricao: string | null;
   transcricao_truncada: boolean;
   transcricao_tamanho_original: number | null;
+  /**
+   * The node's structured result, as the session reported it at `/finish`
+   * (t253).
+   *
+   * This is the half of the node input projection that WRITES: `domain/context.
+   * ts` reads it back out of every completed session of a job and merges it into
+   * the object the next node's `input` schema declares. `null` is "nothing
+   * structured was reported" — the same reading `uso` and `modelos` have — and
+   * it is ALSO what a report that did not match the skill's `output` schema
+   * leaves behind, with the reason recorded in the event instead of here.
+   */
+  saida: Record<string, unknown> | null;
   aberta_em: string;
   finalizada_em: string | null;
 }
 
-interface SessionRow extends Omit<Session, 'uso' | 'modelos' | 'transcricao_truncada'> {
+interface SessionRow extends Omit<Session, 'uso' | 'modelos' | 'saida' | 'transcricao_truncada'> {
   uso: string | null;
   modelos: string | null;
+  saida: string | null;
   transcricao_truncada: number;
 }
 
@@ -109,7 +126,7 @@ const COLUMNS = `
   engine, engine_session_ref, working_dir,
   prompt, timeout_seconds, silence_seconds, status, exit_code, timeout_reason,
   usage AS uso, models AS modelos, transcript AS transcricao,
-  transcricao_truncada, transcricao_tamanho_original,
+  transcricao_truncada, transcricao_tamanho_original, output AS saida,
   opened_at AS aberta_em, finished_at AS finalizada_em
 `;
 
@@ -121,6 +138,8 @@ function toSession(row: SessionRow): Session {
     // reading of a NULL: nothing was reported. A row written before t172 lands
     // here as `null` with no backfill and no special case.
     modelos: jsonOrNull<string[]>(row.modelos),
+    // ...and the third one, for the same two reasons (t253).
+    saida: jsonOrNull<Record<string, unknown>>(row.saida),
     transcricao_truncada: asBoolean(row.transcricao_truncada),
   };
 }
@@ -164,6 +183,15 @@ export interface WireSession {
   transcript: string | null;
   transcript_truncated: boolean;
   transcript_original_size: number | null;
+  /**
+   * The node's structured result (t253); `null` when none was recorded.
+   *
+   * Published, unlike `output_schema_error`: this is the value the projection is
+   * built out of, and a client that wants to know what a node produced has one
+   * place to read it. WHY a report was refused is telemetry of the log, not part
+   * of the session — see `finishSession`.
+   */
+  output: Record<string, unknown> | null;
   opened_at: string;
   finished_at: string | null;
 }
@@ -215,6 +243,7 @@ export function toWireSession(session: Session): WireSession {
     transcript: session.transcricao,
     transcript_truncated: session.transcricao_truncada,
     transcript_original_size: session.transcricao_tamanho_original,
+    output: session.saida,
     opened_at: session.aberta_em,
     finished_at: session.finalizada_em,
   };
@@ -437,7 +466,63 @@ export interface FinishSessionInput {
   usage?: unknown;
   models?: unknown;
   transcript?: unknown;
+  /**
+   * The node's structured result (t253, FR1).
+   *
+   * Absent and `null` are the same fact — "nothing structured was reported" —
+   * the posture `usage` and `models` above already have. What the object has to
+   * look like is not this envelope's business: it is checked against the
+   * `output` schema of the skill the node pins, by {@link resolveOutputSchema}
+   * below.
+   */
+  output?: unknown;
   actor?: unknown;
+}
+
+/**
+ * The `output` JSON Schema this session's node declares, when it declares one.
+ *
+ * The whole resolution path, and every step of it may honestly end in `null`:
+ * session → its node id → its job → the job's `graph_version_id` → that
+ * version's snapshot → the node inside it → the node's `skill_ref` → the
+ * registry row at that exact `(id, version)` → its `output`.
+ *
+ * **`null` is not a defect and is never reported as one.** A session with no
+ * job (a discovery session, a conversation turn), a job created by hand with no
+ * graph, a version the snapshot no longer carries the node of, a node with no
+ * pin — all four are ordinary, and all four are what every dispatch looked like
+ * before graphs existed. It is the same posture `resolveNode` writes on the
+ * runner's side of the same read: the answer is "there is nothing to check this
+ * against", never "this is wrong".
+ *
+ * Reads only, and only tables this package owns. `(id, version)` and never
+ * "the latest": the graph is frozen during execution, and resolving forward
+ * would judge a report against a schema nobody pinned (D4, D22).
+ *
+ * @param db Open handle.
+ * @param row The session being closed, as it is in the table.
+ * @returns The registered skill's `output` schema, or `null` when the chain
+ *   does not reach one.
+ */
+function resolveOutputSchema(db: Database, row: SessionRow): unknown {
+  if (row.no_id === null || row.trabalho_id === null) return null;
+
+  const owner = db
+    .prepare('SELECT graph_version_id AS grafo_versao_id FROM job WHERE id = ?')
+    .get(row.trabalho_id) as { grafo_versao_id: string | null } | undefined;
+  if (owner === undefined || owner.grafo_versao_id === null) return null;
+
+  const version = getVersion(db, owner.grafo_versao_id);
+  if (version === undefined) return null;
+
+  const node = version.snapshot.nodes?.find((candidate) => candidate.id === row.no_id);
+  const pin = node === undefined ? undefined : node.skill_ref;
+  if (!isObject(pin) || typeof pin.id !== 'string' || typeof pin.version !== 'string') {
+    return null;
+  }
+
+  const skill = getSkill(db, pin.id, { version: pin.version });
+  return skill === null ? null : skill.output;
 }
 
 /**
@@ -454,12 +539,31 @@ export interface FinishSessionInput {
  * printed, capped by {@link capTranscript} — and it goes to the row only, never
  * into `data`, because the event schema does not know it exists.
  *
+ * ## The node's structured result, and why a bad one does not refuse (t253, FR4)
+ *
+ * `output` is what the next node's `input` projection is built out of, and it is
+ * held against the `output` schema of the skill THIS node pins (D9) —
+ * {@link resolveOutputSchema}. The check lives here and not in the runner
+ * because core is the sole writer (D1): it is the one place that can look up the
+ * registered skill without a second round trip, and the one place that must
+ * never accept an event it cannot itself justify.
+ *
+ * A mismatch never blocks the close. `status`, `exit_code`, `usage`, `models`
+ * and `transcript` are written exactly as they always were; the row's `output`
+ * gets `null` and the event carries `output_schema_error` in place of the
+ * reported value. The reasoning is the one the manifest format already states —
+ * a work node's self-report is never evidence, a gate verifies with its own —
+ * so losing the SESSION over a malformed self-report would be strictly worse
+ * than losing the self-report: it would leave the session `open` forever, with
+ * `/finish` answering 409 from then on and no route left to close it.
+ *
  * @param db Open handle.
  * @param id Session id.
  * @param input Request body.
  * @returns The closed session, or `null` if it does not exist.
- * @throws {ValidationError} When the status is outside the enum, `usage` or
- *   `models` does not match, or `transcript` is present and is not a string.
+ * @throws {ValidationError} When the status is outside the enum, `usage`,
+ *   `models` or `output` does not match the envelope's own contract, or
+ *   `transcript` is present and is not a string.
  * @throws {Error} When the session stopped being open mid-flight.
  */
 export function finishSession(
@@ -476,6 +580,7 @@ export function finishSession(
     timeout_reason: input.timeout_reason,
     usage: input.usage,
     models: input.models,
+    output: input.output,
   });
   const usage = data.usage as SessionUsage | null;
   const models = data.models as string[] | null;
@@ -483,13 +588,24 @@ export function finishSession(
   const actor = resolveActor(input.actor, RUNNER_ACTOR);
   const projectId = sessionProject(db, id);
 
+  // Nothing reported, nothing to check: an absent `output` skips the lookup
+  // entirely, so the ordinary session pays no read for a feature it did not use.
+  const reported = data.output as Record<string, unknown> | null;
+  const problems =
+    reported === null ? [] : validateAgainstJsonSchema(resolveOutputSchema(db, row), reported);
+  const output = problems.length === 0 ? reported : null;
+  if (problems.length > 0) {
+    data.output = null;
+    data.output_schema_error = problems;
+  }
+
   const close = db.transaction((): Session => {
     const timestamp = now();
     const effect = db
       .prepare(
         `UPDATE session SET status = ?, exit_code = ?, timeout_reason = ?, usage = ?,
                 models = ?, transcript = ?, transcricao_truncada = ?,
-                transcricao_tamanho_original = ?, finished_at = ?
+                transcricao_tamanho_original = ?, output = ?, finished_at = ?
           WHERE id = ? AND status = 'open'`,
       )
       .run(
@@ -509,6 +625,11 @@ export function finishSession(
         transcript.text,
         asInteger(transcript.truncated),
         transcript.originalBytes,
+        // ...and the same reading a third time (t253): NULL is "nothing
+        // structured was reported", and it is also what a report the skill's
+        // schema refused leaves behind — the reason travels in the event, so
+        // nobody has to guess which of the two a NULL means.
+        output === null ? null : JSON.stringify(output),
         timestamp,
         id,
       );

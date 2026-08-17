@@ -43,6 +43,42 @@ autocontido de propósito (ver §7).
 | `arestas` | lista | sim | As transições. Ver §3. |
 | `no_inicial` | id de nó | sim | Onde toda travessia começa. Precisa existir em `nos`. |
 | `nos_finais` | lista de ids | sim | Onde a travessia termina. Pelo menos um; todos precisam existir em `nos`. |
+| `project` | objeto | não | Configuração **estática** da classe, publicada pela projeção de input em `input.project` (`t253`). Ausente significa `{}`. Ver abaixo. |
+
+### `project`: o que a classe declara para si
+
+O que não vem de trabalho nenhum e não é produzido por nó nenhum: repositório,
+branch principal, comando de testes, convenções, documentos de registro. Até a
+`t253` esse material não tinha onde morar — as skills do grafo de fábrica de
+software já liam `{{input.projeto.*}}` e nada montava esse objeto.
+
+```json
+{
+  "project": {
+    "repo": "git@github.com:rafaelgomes/cartografo.git",
+    "branch_principal": "main",
+    "comando_testes": "npm test",
+    "comandos_qualidade": ["npm test", "npm run lint", "npm run typecheck"]
+  }
+}
+```
+
+Três coisas que o campo decide:
+
+- **Ausência tem nome, e o nome é `{}`.** Uma classe que ainda não declara
+  configuração de projeto projeta um objeto vazio, e não uma chave faltando: um
+  placeholder resolve para algo honesto em vez de recusar o despacho. É o que
+  mantém válido e despachável todo grafo escrito antes deste campo — mesma
+  postura não-quebradora de `hooks` e do `engine` do nó.
+- **As chaves de dentro são da CLASSE.** O schema abre a gaveta
+  (`additionalProperties: true`) pela mesma razão que `custom_fields` existe:
+  `comando_testes` é vocabulário de desenvolvimento de software e não teria
+  sentido em bets assimétricas, e fechar o conjunto pediria uma edição de schema
+  por classe.
+- **Estático, e por isso versionado com o documento.** Muda o comando de testes,
+  muda o grafo, e a mudança é proponível e reversível como qualquer outra parte
+  dele (D2, D15). Valor específico de um projeto mora na **variante** daquele
+  projeto (D13); o que mora aqui é o que a classe declara para si.
 
 **Ids de nó** são minúsculas, dígitos, hífen e underscore (`^[a-z0-9][a-z0-9_-]*$`),
 únicos dentro do documento. São a chave por onde arestas, telemetria e propostas
@@ -292,6 +328,43 @@ contrato, compor grafo vira **casar contratos**.
 | `entrada_schema` | sim | JSON Schema da projeção de estado que o nó recebe. Projeção, não janela comum (README princípio 4). |
 | `saida_schema` | sim | JSON Schema do que o nó devolve ao quadro. |
 | `verificacoes` | sim | Lista com **pelo menos um** check. Como se confere o que o nó produziu. |
+| `produces` | não | Nome do **balde** em que a saída estruturada deste nó se acumula na projeção de input dos nós seguintes (`t253`). Ausente = merge no topo de `input`. Ver abaixo. |
+
+#### `produces`: onde a saída deste nó aterrissa
+
+A saída estruturada de um nó — o que a sessão relata em
+`PATCH /v1/sessions/:id/finish` e o control plane guarda depois de conferir
+contra o `output` da skill pinada (D9) — precisa aterrissar em algum lugar do
+`input` do nó seguinte. `produces` é esse lugar, e ele é um **balde**, não uma
+caixa por sessão: dois nós que declaram o mesmo nome escrevem no mesmo objeto.
+
+```json
+{ "id": "desenvolver", "contrato": { "produces": "artefato", "…": "…" } }
+{ "id": "testar",      "contrato": { "…": "…" } }
+{ "id": "integrar",    "contrato": { "produces": "artefato", "…": "…" } }
+```
+
+Com essas três declarações, `desenvolver` grava `artefato.branch`, `integrar`
+grava `artefato.merge_commit` — e `implantar`, dois saltos adiante, lê os dois.
+O portão `testar` no meio **não** declara balde: ele não produz artefato próprio,
+merge no topo, e o `artefato` que já existia continua exatamente como estava.
+Fosse uma caixa por sessão, o `merge_commit` chegaria num objeto que não carrega
+mais o `branch`, e é esse encadeamento — não o passo isolado — que a travessia
+precisa.
+
+Duas consequências que valem escritas:
+
+- **Ausência tem nome.** Um nó sem `produces` faz merge no topo de `input`, que
+  é o que os dois grafos de fábrica já faziam por o campo não existir. É por isso
+  que ele é opcional e não quebra grafo nenhum — `bets-assimetricas` continua
+  resolvendo nó a nó sem declarar um balde sequer.
+- **Em colisão de chave vence quem escreveu depois**, na ordem da travessia
+  (`finalizada_em` da sessão). A ordem é a que aconteceu, e não a que a consulta
+  devolveu.
+
+A montagem inteira é `GET /v1/jobs/:id/context`, no control plane
+(`packages/core/src/domain/context.ts`): quem escreve no banco é quem monta a
+projeção (D1), e o runner é cliente dela como de qualquer outra rota.
 
 Cada verificação é de um de dois tipos:
 

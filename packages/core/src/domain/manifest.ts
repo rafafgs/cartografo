@@ -22,6 +22,14 @@
 
 import { createHash } from 'node:crypto';
 
+// The named export, not the default one: `ajv/dist/2020.js` is CommonJS, and
+// only the named binding resolves the same way under Node's ESM loader and
+// under `moduleResolution: nodenext` (`tsconfig.base.json` sets no
+// `esModuleInterop`). The `/dist/2020` entry point is draft 2020-12's; the
+// package's own root entry is draft-07, which is the version Fastify already
+// carries and the reason `routes/graphs.ts` never reached for it.
+import { Ajv2020, type ErrorObject } from 'ajv/dist/2020.js';
+
 import { canonicalize, HASH_PREFIX } from './hash.ts';
 
 /** Fields every manifest declares (`required` of the t97 schema). */
@@ -92,4 +100,96 @@ export function manifestHash(manifest: Record<string, unknown>): string {
     .update(JSON.stringify(canonicalize(subset)), 'utf8')
     .digest('hex');
   return `${HASH_PREFIX}${digest}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Runtime JSON-Schema validation (t253, FR5).                                 */
+/*                                                                            */
+/* The first place this package validates an ARBITRARY, caller-declared schema */
+/* at request time, and the reason `ajv` finally enters as a real dependency.  */
+/* `db/event-validation.ts:9` named this as another ticket's decision, and this */
+/* is that ticket — scoped to exactly one validation. The fixed envelope of the */
+/* event log stays hand-ported there, deliberately: it validates ten formats    */
+/* that fit in one table, and its whole value is being a mirror somebody reads. */
+/*                                                                            */
+/* It lives HERE, beside the manifest's other rules, because what it is pointed */
+/* at is a manifest field: `skill.output`, the schema a node's self-report has  */
+/* to match (D9). Still pure — no database, no clock, no network.              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The compiler, built once and reused.
+ *
+ * Draft 2020-12, which is what every schema in this repository declares
+ * (`schema/grafo.schema.json`, `especificacoes/eventos/schemas/*`, and the
+ * `input`/`output` of all twelve registered manifests).
+ *
+ * `strict: false` is not laziness: a registered manifest's `output` is a
+ * document a third party wrote, `manifesto-skill.md`'s *Limites conhecidos*
+ * says out loud that the registry only checks it is an OBJECT, and ajv's strict
+ * mode turns an unknown keyword or an unknown `format` into a COMPILATION
+ * error. Refusing to compile is not a verdict about the reported value — it
+ * would turn somebody else's loose schema into this session's problem.
+ *
+ * `allErrors` because the caller gets the whole list or fixes one thing at a
+ * time, the same reasoning `validateEvent` writes for its own report.
+ */
+const compiler = new Ajv2020({ strict: false, allErrors: true, validateFormats: false });
+
+/**
+ * A cache keyed by the schema's canonical serialization.
+ *
+ * Compiling is the expensive half, and the same node's `output` schema is
+ * validated once per session it closes. The key is the canonical JSON rather
+ * than the object identity because the schema is read out of the database and
+ * parsed afresh on every call — object identity would never hit.
+ */
+const compiled = new Map<string, ((value: unknown) => boolean) | null>();
+
+/** One ajv error, as a sentence somebody can act on. */
+function describe(error: ErrorObject): string {
+  const where = error.instancePath === '' ? 'output' : `output${error.instancePath}`;
+  return `${where} ${error.message ?? 'does not match the schema'}`;
+}
+
+/**
+ * Checks a value against a JSON Schema, and reports every reason it does not fit.
+ *
+ * Three answers, and the middle one is the subtle one:
+ *
+ * - **`[]`** — the value matches, or there is nothing to match it against;
+ * - **`[]` for a schema that will not compile** — deliberately the SAME answer.
+ *   A skill whose `output` is an object but not a usable JSON Schema is a
+ *   documented, expected state of the registry, and it is not a fact about the
+ *   value being reported. Treating it as a mismatch would throw away a
+ *   legitimate self-report because of somebody else's manifest;
+ * - **a non-empty list** — the value was checked and it does not fit. Every
+ *   reason, not the first.
+ *
+ * @param schema The JSON Schema to check against, as it was registered.
+ * @param value The value being judged.
+ * @returns One sentence per problem; empty when there is nothing to report.
+ */
+export function validateAgainstJsonSchema(schema: unknown, value: unknown): string[] {
+  if (typeof schema !== 'object' || schema === null || Array.isArray(schema)) return [];
+
+  const key = JSON.stringify(canonicalize(schema));
+  let validate = compiled.get(key);
+  if (validate === undefined) {
+    try {
+      validate = compiler.compile(schema as Record<string, unknown>) as (
+        candidate: unknown,
+      ) => boolean;
+    } catch {
+      validate = null;
+    }
+    compiled.set(key, validate);
+  }
+  if (validate === null) return [];
+
+  if (validate(value)) return [];
+  const errors = (validate as unknown as { errors?: ErrorObject[] | null }).errors ?? [];
+  // A validator that said "no" and then reported nothing would leave the caller
+  // with an empty list, which this function's contract reads as "it fits".
+  return errors.length === 0 ? ['output does not match the schema'] : errors.map(describe);
 }

@@ -174,11 +174,13 @@ test(
       // is what makes a rename migration for a database nobody has fail on the
       // way up if it quietly reappears (D20). t215 added `0019_skill_versao.sql`,
       // which is not that — it turns the registry into a lineage (D22) — so the
-      // count moved with it, deliberately and in the same commit.
+      // count moved with it, deliberately and in the same commit. t253 added
+      // `0020_sessao_saida.sql`, which is not that either — it gives the session
+      // somewhere to keep the node's structured report — and moved it again.
       assert.equal(
         first.readiness.migrationsApplied,
-        19,
-        'a brand-new database applies the nineteen migrations the package ships',
+        20,
+        'a brand-new database applies the twenty migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

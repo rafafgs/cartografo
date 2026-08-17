@@ -26,6 +26,7 @@ import {
   type Actor,
   type Event,
 } from '../db/event-validation.ts';
+import type { ProjectedJob } from '../domain/context.ts';
 import {
   isScalarMap,
   missingRequiredFields,
@@ -307,6 +308,48 @@ function readRow(db: Database, id: number): JobRow | undefined {
 export function getJob(db: Database, id: number): Job | null {
   const row = readRow(db, id);
   return row === undefined ? null : toJob(db, row);
+}
+
+/** What the node input projection needs off the job itself (t253, FR7). */
+export interface JobContextSeed {
+  /** The ticket, as `input.job` publishes it plus the class's own fields. */
+  job: ProjectedJob;
+  /** The version whose snapshot carries `project` and the nodes' `produces`. */
+  grafo_versao_id: string | null;
+  /** The round the job belongs to, which narrows the sessions that count. */
+  execucao_id: number | null;
+}
+
+/**
+ * The job's own contribution to the projection, in one read (t253, FR7).
+ *
+ * A read of its own rather than `getJob` because the two answer different
+ * questions. `getJob` builds the whole projection, `concluido` included, and
+ * that is a fact about where the traveller is standing — which a skill's `input`
+ * has no business carrying. What the projection seeds with is the ticket: what
+ * it is called, what was asked for, the values of the fields the class declared,
+ * and the two ids the caller needs to go read the rest.
+ *
+ * `type` is deliberately not filled: the `job` table has no such column, and
+ * `domain/context.ts` reads an absent one as absent rather than as `null`.
+ *
+ * @param db Open handle.
+ * @param id Job id.
+ * @returns The seed, or `null` if the job does not exist.
+ */
+export function jobContextSeed(db: Database, id: number): JobContextSeed | null {
+  const row = readRow(db, id);
+  if (row === undefined) return null;
+  return {
+    job: {
+      id: row.id,
+      title: row.titulo,
+      body: row.corpo,
+      fields: jsonOrNull<ScalarMap>(row.campos),
+    },
+    grafo_versao_id: row.grafo_versao_id,
+    execucao_id: row.execucao_id,
+  };
 }
 
 /** Body of `POST /v1/jobs`. */

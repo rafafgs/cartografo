@@ -182,13 +182,16 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     ['session.opened', 'session.finished'],
   );
   // Every optional field the type declares appears normalized, with an explicit
-  // `null` for what the client did not send — `models` included since t172.
+  // `null` for what the client did not send — `models` included since t172, and
+  // the node's structured report plus the reason it was refused since t253.
   assert.deepEqual(events[1].data, {
     status: 'completed',
     exit_code: 0,
     usage: USAGE,
     timeout_reason: null,
     models: null,
+    output: null,
+    output_schema_error: null,
   });
 
   const withoutUsageEvents = getEventsByEntity(ctx.db, 'session', withoutUsage.id);
@@ -198,6 +201,8 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     usage: null,
     timeout_reason: null,
     models: null,
+    output: null,
+    output_schema_error: null,
   });
 });
 
@@ -824,14 +829,19 @@ test('t159 AT5 — the transcript stays OUT of the session.finished event', asyn
   );
   // Raw diagnostic material hangs off the projection, not off the append-only
   // envelope: `dados` carries the contract's own fields and nothing else —
-  // which since t172 includes `models`, normalized to null like every other
-  // optional field the caller did not send.
+  // which since t172 includes `models` and since t253 `output` and
+  // `output_schema_error`, all normalized to null like every other optional
+  // field the caller did not send. The STRUCTURED report does travel in the
+  // envelope; the raw stream still does not, and that is the whole distinction
+  // this case exists to hold.
   assert.deepEqual(events[1].data, {
     status: 'completed',
     exit_code: 0,
     usage: USAGE,
     timeout_reason: null,
     models: null,
+    output: null,
+    output_schema_error: null,
   });
   assert.ok(
     !JSON.stringify(events[1]).includes('transcript'),
@@ -1001,7 +1011,9 @@ test('t172 — models round-trips through the projection; absent reads null, nev
   assert.deepEqual(byId.get(reported.id)?.models, MODELS, 'and the listing carries it too');
   assert.equal(byId.get(silent.id)?.models, null);
 
-  // The log is where the fact lives; the row is a projection of it (t102).
+  // The log is where the fact lives; the row is a projection of it (t102). The
+  // two nulls at the end are t253's fields, normalized like every other optional
+  // one this session did not send.
   const events = getEventsByEntity(ctx.db, 'session', reported.id);
   assert.deepEqual(events[1].data, {
     status: 'completed',
@@ -1009,6 +1021,8 @@ test('t172 — models round-trips through the projection; absent reads null, nev
     usage: USAGE,
     timeout_reason: null,
     models: MODELS,
+    output: null,
+    output_schema_error: null,
   });
   assert.deepEqual(
     getEventsByEntity(ctx.db, 'session', silent.id)[1].data.models,

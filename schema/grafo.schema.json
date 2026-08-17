@@ -59,6 +59,11 @@
       "type": "array",
       "description": "Reações que o próprio grafo declara: entrar num nó ou bloquear nele dispara uma entrega assinada (t169). Opcional — ausente significa nenhuma reação, e é por isso que todo grafo escrito antes deste campo continua válido sem tocar em nada, mesma postura não-quebradora do campo engine no nó. Ficam AQUI, e não numa assinatura registrada por fora pela API, para que a reação seja versionada e proponível como qualquer outra parte do grafo (D2, D15).",
       "items": { "$ref": "#/$defs/hook" }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Configuração ESTÁTICA da classe, publicada pela projeção de input em `input.project` (t253). É o que não vem de trabalho nenhum e não é produzido por nó nenhum: repositório, branch principal, comando de testes, convenções, documentos de registro. Opcional — ausente significa `{}`, e a projeção devolve o objeto vazio em vez de recusar, para que um grafo escrito antes deste campo continue válido e continue despachando exatamente como antes (mesma postura não-quebradora de `hooks` e do `engine` do nó). Gaveta deliberadamente aberta: as chaves de dentro são da CLASSE, como as de `custom_fields`, e fechá-las aqui pediria uma edição de schema por classe. Valor de projeto específico mora na variante do projeto (D13); o que mora aqui é o que a classe declara para si."
     }
   },
   "$defs": {
@@ -243,6 +248,12 @@
         "output_schema": {
           "type": "object",
           "description": "JSON Schema do que o nó devolve ao quadro."
+        },
+        "produces": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Nome do BALDE em que a saída estruturada deste nó se acumula na projeção de input do nó seguinte (t253). Ausente significa merge no topo de `input`, que é o que os dois grafos de fábrica já faziam por não existir o campo — e é por isso que ele é opcional e não quebra grafo nenhum. Balde e não caixa por sessão: dois nós que declaram o MESMO nome escrevem no mesmo objeto, e é assim que o `merge_commit` de `integrar` aterrissa ao lado do `branch` de `desenvolver` e sobrevive ao portão `testar`, que não produz artefato próprio. Em colisão de chave vence quem escreveu depois, na ordem da travessia.",
+          "examples": ["artefato", "ticket"]
         },
         "checks": {
           "type": "array",

@@ -318,40 +318,67 @@ sistema não depende de `CLAUDE.md` nem de nenhum markdown residente lá:
 
 1. O executor libera o nó; o runner busca na API o manifesto da skill daquele
    nó, na versão pinada pelo grafo (`id` + `version` + `hash`).
-2. O runner monta a `input` a partir da projeção de contexto daquele nó —
-   estado explícito e event log, nunca janela compartilhada (princípio 4) — e
-   valida contra o schema `input` do manifesto. Entrada inválida não vira
-   sessão.
+2. O runner pede ao control plane a projeção de contexto daquele nó
+   (`GET /v1/jobs/:id/context`) e recebe a `input` pronta — estado explícito e
+   event log, nunca janela compartilhada (princípio 4). Quem monta é o control
+   plane, não o runner (D1: quem escreve no banco é quem tem as linhas à mão sem
+   uma segunda ida à rede). Validar a `input` montada contra o schema `input` do
+   manifesto — "entrada inválida não vira sessão" — é o pedaço que falta.
 3. O runner confere o `hash` contra o conteúdo recebido. Divergiu, não roda.
 4. O runner renderiza `instructions` interpolando `{{input.<caminho>}}`, e
    resolve os `command` dos checks determinísticos do mesmo jeito.
 5. O runner entrega o texto renderizado ao EngineAdapter, que abre a sessão.
    **Como** o texto chega ao CLI — flag, stdin, arquivo efêmero — é decisão de
    cada adapter e está fora do escopo desta doc (é a interface de t99).
-6. A sessão devolve um resultado; o runner valida contra o schema `output` e
-   registra na API. Só o server escreve no banco (D1).
+6. A sessão devolve um resultado estruturado; o runner o manda para a API em
+   `PATCH /v1/sessions/:id/finish`, e é o **control plane** que o confere contra
+   o schema `output` da skill registrada antes de guardar. Só o server escreve
+   no banco (D1), e o mesmo argumento decide quem julga: é ele que tem a linha
+   do registro ao alcance, e é ele que não pode aceitar um evento que não
+   consegue justificar.
 
 Consequência que vale explicitar: como o contrato vive no banco e é renderizado
 por engine, trocar de engine não perde skill nem aprendizado — o que foi
 aprendido está no manifesto versionado, não no contexto de uma sessão.
 
-**Quanto disso roda hoje (`t204`):** os passos 1, 3 e 5 estão implementados e
-cobertos por teste, e o 6 registra na API sem validar `output` contra o schema.
-O passo 4 interpola `instructions` de verdade, com falha fechada — placeholder
-que não resolve recusa o despacho antes de qualquer sessão —, e não resolve os
-`command` dos checks (ver `checks` e *Limites conhecidos*).
+**Quanto disso roda hoje (`t253`):** os passos 1, 3 e 5 estão implementados e
+cobertos por teste. O passo 4 interpola `instructions` de verdade, com falha
+fechada — placeholder que não resolve recusa o despacho antes de qualquer sessão
+—, e não resolve os `command` dos checks (ver `checks` e *Limites conhecidos*).
 
-**O passo 2 continua não existindo, e é ele que falta.** Não há projeção de
-contexto por nó: nenhum evento e nenhuma tabela carrega a saída estruturada de
-um nó, então nada monta o objeto que o `input` do nó seguinte declara. O
-despacho expõe a costura (`resolveInput`, em
+**O passo 6 passou a conferir de verdade (`t253`).** `PATCH /finish` aceita um
+campo `output`, resolve a skill que o nó da sessão pina — `no_id` + o
+`graph_version_id` do trabalho → o snapshot → o `skill_ref` → a linha
+`(id, version)` do registro — e valida o relato contra o `output` dela. Sessão
+sem trabalho, sem grafo, ou num nó que o snapshot não carrega guarda o relato
+como veio: não há contra o que conferir, e isso é ordinário, não defeito.
+Divergência **nunca** impede o fechamento: `status`, `exit_code`, `usage`,
+`models` e `transcript` são gravados como sempre, o `output` da linha vai a nulo
+e o evento `session.finished` leva `output_schema_error` no lugar do valor. O
+motivo é o desta própria doc — auto-relato de nó de trabalho nunca foi evidência,
+portão verifica com evidência própria —, e perder a sessão por causa dele
+deixaria a sessão `aberta` para sempre, sem rota nenhuma para fechá-la.
+
+**O passo 2 passou a existir no control plane (`t253`).**
+`GET /v1/jobs/:id/context` monta a `input` do nó em que o trabalho está: a
+identidade do trabalho em `input.job` mais os `custom_fields` da classe no topo,
+o objeto `project` do grafo em `input.project`, a saída estruturada de cada
+sessão concluída no balde que o `contract.produces` daquele nó nomeia (ou no topo
+quando ele não nomeia nenhum), e as perguntas já respondidas em
+`input.perguntas_respondidas`. Os dois campos novos do documento de grafo —
+`contract.produces` e `project` — estão em
+[`docs/spec/grafo.md`](../../docs/spec/grafo.md) e são aditivos: grafo escrito
+antes deles vale e despacha igual.
+
+**O que falta, e é a outra metade da ficha:** ligar `resolveInput` a essa rota.
+O despacho ainda expõe a costura (`resolveInput`, em
 [`dispatch.ts`](../../packages/runner/src/dispatch/dispatch.ts))
 e, sem ninguém para preenchê-la, passa `{}` — ou seja, **hoje toda skill com
-placeholder recusa em produção**, alto e determinístico, em vez de abrir sessão
-com o token cru no prompt como fazia até a `t204`. Encadear a saída de um nó na
-entrada do seguinte (o `merge_commit` que `testar` pede é produzido por
-`integrar`) é ficha própria, e é pré-requisito duro para despachar qualquer nó
-das duas fábricas cuja skill use placeholder.
+placeholder ainda recusa em produção**, alto e determinístico, em vez de abrir
+sessão com o token cru no prompt como fazia até a `t204`. Declarar `produces` e
+`project` nos dois bundles de fábrica é parte do mesmo passo. Falta também
+`contexto_falha`, que só se preenche num ciclo de retrabalho e depende dessa
+ligação para ser exercitado ponta a ponta.
 
 Além dos cinco campos que a renderização cita, o runner injeta na sessão o
 **contrato do próprio nó** (`input_schema`, `output_schema`, `checks`,
@@ -476,6 +503,16 @@ ou fica para outra ticket:
 
 - **`input`/`output` são JSON Schema de verdade.** O schema só exige que
   sejam objetos. Validar contra o meta-schema oficial é passo do registro.
+  Consequência prática desde a `t253`, quando o control plane passou a compilar
+  o `output` para conferir o relato da sessão: um `output` que é objeto mas não
+  é schema compilável é lido como "não há contra o que conferir", e o relato é
+  guardado como veio. A alternativa — recusar o relato — jogaria fora um
+  auto-relato legítimo por causa do manifesto de outra pessoa.
+- **A `input` montada conferida contra o schema `input`.** A projeção existe
+  desde a `t253` (`GET /v1/jobs/:id/context`), e "entrada inválida não vira
+  sessão" continua sendo o comportamento eventual: é o mesmo ajv apontado para o
+  outro lado do contrato, e entrou como ficha separada para não abrir duas
+  superfícies de validação de uma vez.
 - **`outcome` na saída de um portão.** A regra está documentada e os
   exemplos a cumprem, mas não é imposta estruturalmente — impô-la exigiria o
   schema do manifesto navegar dentro de um documento JSON Schema arbitrário.
@@ -490,9 +527,9 @@ ou fica para outra ticket:
   `t204` e falha fechada; a dos comandos de check não, porque nenhum código
   executa `command` hoje — check é declarativo, lido por revisor humano e por um
   mecanismo de portão que ainda não existe. O limite que sobra na de
-  `instructions` é o de quem a alimenta: sem projeção de contexto por nó, o
-  despacho passa `{}` e a skill com placeholder recusa (ver *Renderização e
-  injeção*).
+  `instructions` é o de quem a alimenta: a projeção de contexto por nó já existe
+  no control plane desde a `t253`, mas o despacho ainda não a busca, então passa
+  `{}` e a skill com placeholder recusa (ver *Renderização e injeção*).
 - **Sintaxe de placeholder validada na entrada do registro.** O registro não
   confere `{{input.…}}` nenhum ao aceitar um manifesto; quem pega placeholder
   quebrado é o despacho, que recusa. Uma checagem mais cedo seria melhor

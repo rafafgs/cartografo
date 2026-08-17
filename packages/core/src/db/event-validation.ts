@@ -113,7 +113,14 @@ const ENVELOPE_FIELDS = [
 /** How a field of `data` is checked. */
 interface FieldRule {
   /** Expected shape of the value. */
-  shape: 'string' | 'integer' | 'boolean' | 'string-list' | 'usage' | 'scalar-map';
+  shape:
+    | 'string'
+    | 'integer'
+    | 'boolean'
+    | 'string-list'
+    | 'usage'
+    | 'scalar-map'
+    | 'open-object';
   /** Is absent/null accepted? */
   required: boolean;
   /** Closed set of values, when the schema declares an `enum`. */
@@ -265,6 +272,19 @@ const RULES: Record<string, TypeRule> = {
       // identifier is whatever the engine reported, and a closed enum would need
       // a release of this file for every model that ships.
       models: optional('string-list', { minItems: 1 }),
+      // The node's structured result (t253) — what the next node's `input`
+      // projection reads. The mirror checks that it is an OBJECT and stops
+      // there, on purpose: the shape inside is declared by the `output` schema
+      // of the skill the node pins (D9), and freezing it here would be one event
+      // contract per problem class. `repositories/session.ts` is what holds it
+      // against that schema, at `/finish`, where the registry row is in reach.
+      output: optional('open-object'),
+      // ...and why it was refused, when it was. Present only on the mismatch
+      // path, and then `output` is `null`: the session's terminal status is
+      // recorded either way, because losing the end of a session over a
+      // malformed self-report would be strictly worse than losing the
+      // self-report — which was never evidence to begin with.
+      output_schema_error: optional('string-list', { minItems: 1 }),
     },
   },
   'session.permission_denied': {
@@ -462,6 +482,18 @@ function validateField(fieldPath: string, rule: FieldRule, value: unknown, error
       // typed into a field.
       if (!isScalarMap(value)) {
         errors.push(`${fieldPath} has to be an object of string, number or boolean values`);
+      }
+      return;
+
+    case 'open-object':
+      // One step further open than `scalar-map`: not even the values are this
+      // mirror's business. It is the shape of a payload whose whole contract
+      // lives somewhere else — `session.finished.output`, judged against the
+      // skill's own `output` schema — and the only claim made here is the one
+      // the envelope can make on its own: it is a JSON object, so a string, a
+      // number and a list are refused before anything is written.
+      if (!isObject(value)) {
+        errors.push(`${fieldPath} has to be a JSON object, or absent`);
       }
       return;
   }

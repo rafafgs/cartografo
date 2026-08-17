@@ -127,18 +127,27 @@ token.
 **O mapa melhora, com a sua mão no portão.** Depois de uma rodada, um avaliador
 lê o histórico e deposita propostas na sua caixa de entrada, cada uma com o
 diff, a evidência e a métrica que espera mover. Você aprova, nasce a versão
-nova. Hoje o avaliador que existe é o de custo (tokens e tempo por nó), e ele se
-chama pela mão — `npx topografo-custo evaluate …` —, como o sintetizador.
-Projetos que divergem ganham variante própria do mapa, e o que a variante
-aprende volta ao mapa-base como proposta, pelo mesmo portão.
+nova. São dois avaliadores: o de fluxo (onde a rodada gastou tempo) e o de custo
+(tokens e tempo por nó). Os dois se chamam pela mão — `npx topografo-custo
+evaluate …` —, e agora também sozinhos, se você deixar. Projetos que divergem
+ganham variante própria do mapa, e o que a variante aprende volta ao mapa-base
+como proposta, pelo mesmo portão.
 
-**O mapa melhorar sozinho** *(em construção)*. Falta o degrau de cima da escada:
-medir automaticamente se a hipótese de uma proposta se confirmou na rodada
-seguinte (hoje quem fecha o experimento é uma chamada explícita, e ela exige
-evidência de execução), e transformar resposta repetida em auto-resposta — a
-API já sabe listar os precedentes de uma pergunta, mas ninguém os lê para
-responder por você. Enquanto isso, nenhuma mudança de mapa acontece sem uma
-aprovação sua, que é a ordem que a escada de segurança pede.
+**O mapa observa sozinho.** `npx cartografo-topografo watch …` fica ouvindo o
+control plane e, cada vez que uma rodada termina, roda as duas lentes sobre ela
+sem ninguém digitar nada. Você continua ligando o observador — ele não sobe com
+o sistema —, mas depois disso a caixa de entrada enche sozinha. Rodar duas vezes
+sobre a mesma rodada não duplica proposta: quem deduplica é o control plane.
+
+**O mapa melhorar sozinho** *(em construção)*. Falta o degrau de cima da escada,
+e ele é o de decidir, não o de olhar: **aplicar** uma proposta sem você continua
+não existindo, medir automaticamente se a hipótese de uma proposta se confirmou
+na rodada seguinte também não (hoje quem fecha o experimento é uma chamada
+explícita, e ela exige evidência de execução), e transformar resposta repetida
+em auto-resposta tampouco — a API já sabe listar os precedentes de uma pergunta,
+mas ninguém os lê para responder por você. Enquanto isso, nenhuma mudança de
+mapa acontece sem uma aprovação sua, que é a ordem que a escada de segurança
+pede.
 
 **Compartilhar o que aprendeu.** Qualquer mapa exporta como arquivo, com o
 contrato de cada etapa dentro e as skills fixadas por hash; importa em outro

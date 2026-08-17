@@ -1,21 +1,15 @@
 {
-  "name": "@cartografo/topografo-custo",
+  "name": "@cartografo/topografo",
   "version": "0.1.0",
   "private": true,
-  "description": "Cost surveyor: second telemetry lens (tokens and time per node and per version), an ordinary client of the public API (D1, D11).",
+  "description": "Unprivileged watcher: runs both surveyor lenses when an execution finishes, an ordinary client of the public API (D1, D11, D21).",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=20.11.0"
   },
   "bin": {
-    "topografo-custo": "./bin/topografo-custo.mjs"
-  },
-  "exports": {
-    "./cli": {
-      "types": "./src/cli.ts",
-      "default": "./src/cli.ts"
-    }
+    "cartografo-topografo": "./bin/topografo.mjs"
   },
   "files": [
     "bin",
@@ -26,6 +20,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cartografo/runner": "^0.1.0",
+    "@cartografo/topografo-custo": "^0.1.0",
     "tsx": "^4.23.12"
   },
   "devDependencies": {

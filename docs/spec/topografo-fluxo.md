@@ -253,11 +253,19 @@ que aquela partida imprimiu.
 
 Cada item aqui é escopo declarado de outra ficha, não esquecimento:
 
-- **Disparo automático.** O topógrafo é um comando que uma pessoa roda depois da
-  execução — nunca um nó do grafo nem um passo do laço de despacho do
-  controller. É a escada de segurança do princípio 5 do README (o avaliador
-  primeiro só *sugere*) e a postura de "copiloto no MVP" da [D10]. Ligar o
-  disparo é decisão própria, não refatoração.
+- **Disparo automático — existe, e continua sendo alguém que o liga** (`t247`,
+  terceiro filho da [D21]). `cartografo-topografo watch`
+  ([`packages/topografo`](../../packages/topografo)) assina
+  `GET /v1/events/stream?type=execution.finished`
+  ([eventos-stream.md](eventos-stream.md)) e roda as duas lentes — esta e a de
+  custo — sobre cada execução que o control plane declara terminada, sem
+  ninguém digitar id nenhum. O que mudou é QUEM chama a lente; o resto da
+  escada está intacto: o topógrafo continua não sendo nó do grafo nem passo do
+  laço de despacho do controller, e continua só *sugerindo* — aplicar segue
+  sendo decisão humana no portão (princípio 5 do README, postura de "copiloto
+  no MVP" da [D10]). O que o `watch` não faz é subir sozinho: nenhum script de
+  partida, serviço ou job de CI o invoca, e ligá-lo em produção é decisão de
+  quem opera, como a [D21] pediu.
 - **A superfície aprendível "políticas"** (timeouts, concorrência,
   auto-resposta): hoje não existe artefato versionado a que uma proposta possa
   se dirigir — `schema/grafo.schema.json` não tem campo de política, e os tetos
@@ -285,3 +293,4 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
 
 [D10]: ../../DECISOES.md
 [D11]: ../../DECISOES.md
+[D21]: ../../DECISOES.md

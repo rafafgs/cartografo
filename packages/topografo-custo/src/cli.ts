@@ -119,6 +119,16 @@ export interface CreatedProposal {
   node_id: string;
   graph_version_id: string;
   type: 'ceiling' | 'tier';
+  /**
+   * Whether THIS run put the proposal in the book (t247).
+   *
+   * `true` on a `201`, `false` when t246's deduplication matched a proposal
+   * that was already pending for the same `(lens, target_version, operations)`
+   * and strengthened it instead. `status` cannot answer this — a deduplicated
+   * proposal reads `pending` exactly like a fresh one — and the watcher of D21
+   * writes a different line for each.
+   */
+  created: boolean;
 }
 
 /** What can be injected into a run of the command. All of it for tests only. */
@@ -228,7 +238,7 @@ export async function evaluateExecution(options: EvaluateOptions): Promise<Creat
     const version = snapshots.get(candidate.graph_version_id);
     if (version === undefined) continue;
 
-    const proposal = await createProposal(
+    const answer = await createProposal(
       url,
       {
         graph_id: version.graph_id,
@@ -241,11 +251,12 @@ export async function evaluateExecution(options: EvaluateOptions): Promise<Creat
     );
 
     created.push({
-      id: proposal.id,
-      status: proposal.status,
+      id: answer.proposal.id,
+      status: answer.proposal.status,
       node_id: candidate.node_id,
       graph_version_id: candidate.graph_version_id,
       type: candidate.type,
+      created: answer.created,
     });
   }
 

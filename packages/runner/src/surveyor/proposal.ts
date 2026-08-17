@@ -44,6 +44,18 @@ import type {
   Proposta,
   VersaoDeGrafo,
 } from '../controller/cliente-controle.ts';
+
+/**
+ * The one client this lens runs on, re-exported (t247).
+ *
+ * `packages/topografo` calls `proposeFlowImprovement` across the package
+ * boundary and has to hand it a client; without this line the only way to build
+ * one would be a fourth entry in this package's `exports`, publishing the whole
+ * controller so that a caller can reach one constructor. The lens is what needs
+ * a client, so the lens is where it is offered — and the exported surface stays
+ * the three subpaths that ticket named.
+ */
+export { ClienteControle } from '../controller/cliente-controle.ts';
 import type { EngineAdapter, SessionSpec, SessionStatus } from '../engine/types.ts';
 import {
   calculateFlowMetrics,
@@ -148,6 +160,22 @@ export interface SurveyorResult {
   metrica_esperada: ExpectedMetric | null;
   /** The proposal, always `pendente`; `null` when there was nothing to propose. */
   proposta: Proposta | null;
+  /**
+   * Whether THIS run is what put {@link SurveyorResult.proposta} in the book.
+   *
+   * `true` when the control plane created it (`201`), `false` when t246's
+   * deduplication matched a still-pending proposal on
+   * `(lens, target_version, operations)` and strengthened its evidence instead
+   * (`200`), and `null` when there was nothing to propose at all.
+   *
+   * The three-way answer is the point. A caller reading only `proposta` cannot
+   * tell the first two apart — a deduplicated proposal reads `pendente`
+   * exactly like a fresh one — and `false` would be a lie for the third: a run
+   * with no bottleneck was not deduplicated, it never proposed anything. The
+   * unattended trigger of D21 writes one line per outcome, and this is the
+   * field that decides which.
+   */
+  criada: boolean | null;
 }
 
 /** Configuration of one surveyor run. */
@@ -640,7 +668,14 @@ export async function proposeFlowImprovement(
     // No session, no proposal, no error: with nothing to explain, nobody gets
     // paid to explain it.
     log('no node cost any time in this execution; nothing to propose');
-    return { metricas: metrics, gargalo: null, evidencia: null, metrica_esperada: null, proposta: null };
+    return {
+      metricas: metrics,
+      gargalo: null,
+      evidencia: null,
+      metrica_esperada: null,
+      proposta: null,
+      criada: null,
+    };
   }
 
   const evidence = buildEvidence(bottleneck, metrics, options.executionId, versionId);
@@ -654,14 +689,19 @@ export async function proposeFlowImprovement(
   // The outer keys went English with t226 and what is inside `operations` with
   // t228 (D20's third child). What `evidence` and `expected_metric` carry is the
   // frozen hypothesis shape (FR5), which is nobody's surface in D20.
-  const proposal = await options.client.criarProposta({
+  const { proposal, created } = await options.client.criarProposta({
     graph_id: version.graph_id,
     target_version: version.id,
     operations,
     evidence,
     expected_metric: expectedMetric,
   });
-  log(`proposal ${proposal.id} written as "${proposal.status}"`);
+  // "created" and not "written": since t246 a repeat over the same signal comes
+  // back as the proposal that was already there, and saying otherwise in a log
+  // is how a person concludes the lens is looping.
+  log(
+    `proposal ${proposal.id} ${created ? 'created' : 'already pending (deduplicated)'} as "${proposal.status}"`,
+  );
 
   return {
     metricas: metrics,
@@ -669,5 +709,6 @@ export async function proposeFlowImprovement(
     evidencia: evidence,
     metrica_esperada: expectedMetric,
     proposta: proposal,
+    criada: created,
   };
 }

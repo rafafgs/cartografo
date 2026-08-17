@@ -51,6 +51,25 @@ export interface HttpFailure {
   body: string;
 }
 
+/**
+ * A successful answer, with the status still attached (t247).
+ *
+ * Almost every caller in this package wants the body and nothing else, which is
+ * why {@link requestJson} exists and stays the default. The exception is a
+ * route where the STATUS is itself an answer: since t246 `POST /v1/proposals`
+ * replies `201` when it created a proposal and `200` when it matched a pending
+ * one and strengthened it instead — and the proposal that comes back reads
+ * `pending` in both cases. A client that discards the status cannot tell a
+ * proposal it just landed from one that was already there, which is exactly the
+ * distinction an unattended surveyor has to report (D21).
+ */
+export interface JsonAnswer<T> {
+  /** The decoded body, or `undefined` when a 2xx answered with none. */
+  body: T;
+  /** The HTTP status of the answer. Always 2xx: a non-2xx threw. */
+  status: number;
+}
+
 /** One request, with everything this module needs to make it and read it back. */
 export interface JsonRequest {
   /** Absolute URL, already assembled. */
@@ -97,6 +116,23 @@ export function decodeErrorBody(text: string): unknown {
 /**
  * Makes one request, on a deadline, and gives back the decoded success body.
  *
+ * The thin one, and the one every caller but one wants. What it adds over
+ * {@link requestJsonWithStatus} is subtraction: a caller with no opinion about
+ * `200` versus `201` does not have to write `.body` at the end of every line.
+ *
+ * @param request Where to go, what to send, how long to wait and what an error
+ *   should become.
+ * @returns The decoded body, or `undefined` when a 2xx answered with none.
+ * @throws Whatever `buildError` built, for any non-2xx; the `TimeoutError` of
+ *   `AbortSignal.timeout`, unchanged, when the deadline ran out.
+ */
+export async function requestJson<T>(request: JsonRequest): Promise<T> {
+  return (await requestJsonWithStatus<T>(request)).body;
+}
+
+/**
+ * Makes one request, on a deadline, and gives back the body AND the status.
+ *
  * The deadline is enforced HERE and not only through the signal handed to
  * `fetch`. That is not distrust of the platform: `fetchImpl` is an injected
  * seam in all three callers, and a request that gives up only if the injected
@@ -106,11 +142,11 @@ export function decodeErrorBody(text: string): unknown {
  *
  * @param request Where to go, what to send, how long to wait and what an error
  *   should become.
- * @returns The decoded body, or `undefined` when a 2xx answered with none.
+ * @returns The decoded body and the 2xx it came with ({@link JsonAnswer}).
  * @throws Whatever `buildError` built, for any non-2xx; the `TimeoutError` of
  *   `AbortSignal.timeout`, unchanged, when the deadline ran out.
  */
-export async function requestJson<T>(request: JsonRequest): Promise<T> {
+export async function requestJsonWithStatus<T>(request: JsonRequest): Promise<JsonAnswer<T>> {
   const timeoutMs = request.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const signal = AbortSignal.timeout(timeoutMs);
 
@@ -143,5 +179,8 @@ export async function requestJson<T>(request: JsonRequest): Promise<T> {
     throw request.buildError({ status: response.status, body: text });
   }
 
-  return (text === '' ? undefined : JSON.parse(text)) as T;
+  return {
+    body: (text === '' ? undefined : JSON.parse(text)) as T,
+    status: response.status,
+  };
 }

@@ -157,6 +157,26 @@ no portão (princípio 5). Sem `--token-cap` nem `--second-cap` a política de
 teto não roda: não há o que ultrapassar. `npx topografo-custo --help` lista o
 resto.
 
+E, para não ter de digitar o id de cada rodada, um observador que faz isso
+sozinho:
+
+```bash
+npx cartografo-topografo watch --url http://127.0.0.1:4317 --token <o token do passo 2>
+```
+
+Ele assina o stream de eventos, espera o control plane declarar uma execução
+terminada e roda as **duas** lentes sobre ela — a de fluxo (uma sessão de agente
+de verdade, um diff semântico) e a de custo (agregação determinística) —,
+escrevendo uma linha JSON por desfecho: `posted`, `deduped`, `nothing` ou
+`error`. `--lens flow|cost` roda só uma delas; `--dry-run` diz o que rodaria e
+não gasta nada. Rodar duas vezes sobre a mesma execução não duplica proposta:
+quem deduplica é o control plane, por `(lente, versão-alvo, operações)`.
+
+O que ele **não** faz: aplicar. Continua nascendo tudo `pending` e esperando
+você no portão (princípio 5) — o que virou automático foi propor, não decidir.
+Ele também não se liga sozinho: não há serviço, cron nem passo de partida que o
+suba, e ligá-lo é decisão de quem opera ([D21](DECISOES.md)).
+
 E, para ver o que está acontecendo:
 
 ```bash

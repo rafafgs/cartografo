@@ -32,7 +32,8 @@
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   decodeErrorBody,
-  requestJson,
+  requestJsonWithStatus,
+  type JsonAnswer,
 } from './http-client.ts';
 
 /**
@@ -476,13 +477,28 @@ export class ClienteControle {
    * humana (README, princípio 5), e um cliente que não tem o método não a toma
    * por engano.
    *
+   * O `created` é da t247, e o que ele resolve é uma ambiguidade que a t246
+   * criou: a deduplicação do control plane responde `200` com a proposta
+   * pendente que já existia, em vez de `201` com um clone, e essa proposta lê
+   * `pending` exatamente como uma recém-criada. Quem chama por engano duas vezes
+   * não precisa saber a diferença; quem dispara sozinho, sem ninguém lendo
+   * relatório (D21), precisa — é a diferença entre "propus" e "isto já estava
+   * proposto".
+   *
    * @param entrada Grafo, versão-alvo, operações, evidência e métrica esperada.
-   * @returns A proposta gravada.
+   * @returns A proposta gravada, e se esta chamada foi a que a criou (`201`) ou
+   *   se ela casou com uma pendente e só reforçou a evidência (`200`, t246).
    * @throws {ErroDoControlPlane} 400 quando o server recusa a forma.
    */
-  async criarProposta(entrada: EntradaDeProposta): Promise<Proposta> {
-    const { proposal } = await this.#post<{ proposal: Proposta }>('/v1/proposals', entrada);
-    return proposal;
+  async criarProposta(entrada: EntradaDeProposta): Promise<{
+    proposal: Proposta;
+    created: boolean;
+  }> {
+    const { body, status } = await this.#postComStatus<{ proposal: Proposta }>(
+      '/v1/proposals',
+      entrada,
+    );
+    return { proposal: body.proposal, created: status === 201 };
   }
 
   /**
@@ -567,10 +583,26 @@ export class ClienteControle {
   }
 
   async #get<T>(caminho: string, timeoutMs?: number): Promise<T> {
-    return await this.#chamar<T>('GET', caminho, undefined, timeoutMs);
+    return (await this.#chamar<T>('GET', caminho, undefined, timeoutMs)).body;
   }
 
   async #post<T>(caminho: string, corpo: unknown, timeoutMs?: number): Promise<T> {
+    return (await this.#chamar<T>('POST', caminho, corpo, timeoutMs)).body;
+  }
+
+  /**
+   * O mesmo `POST`, com o status ainda anexado (t247).
+   *
+   * Existe para uma rota só — `POST /v1/proposals` —, onde o status É resposta:
+   * desde a t246 o control plane responde `201` quando criou e `200` quando
+   * casou com uma proposta pendente e reforçou a evidência dela. Os demais
+   * `#post` continuam lendo só o corpo, porque para eles um 2xx é um 2xx.
+   */
+  async #postComStatus<T>(
+    caminho: string,
+    corpo: unknown,
+    timeoutMs?: number,
+  ): Promise<JsonAnswer<T>> {
     return await this.#chamar<T>('POST', caminho, corpo, timeoutMs);
   }
 
@@ -587,15 +619,15 @@ export class ClienteControle {
    * @param caminho Caminho a partir da URL base.
    * @param corpo Corpo a enviar, quando há um.
    * @param timeoutMs Prazo desta chamada. Sem ele, o do cliente.
-   * @returns O corpo decodificado da resposta.
+   * @returns O corpo decodificado da resposta, e o status com que ela veio.
    */
   async #chamar<T>(
     verbo: string,
     caminho: string,
     corpo: unknown,
     timeoutMs?: number,
-  ): Promise<T> {
-    return await requestJson<T>({
+  ): Promise<JsonAnswer<T>> {
+    return await requestJsonWithStatus<T>({
       url: `${this.urlBase}${caminho}`,
       method: verbo,
       headers: this.#cabecalhos(corpo !== undefined),

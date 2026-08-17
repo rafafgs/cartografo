@@ -64,7 +64,7 @@ function answersText(text: string, status: number): Answer {
  * The screen's own server never answered.
  *
  * The core being down is NOT this case: the proxy turns that into a
- * `502 control_plane_indisponivel`, which is an answer. What is left here is the
+ * `502 control_plane_unavailable`, which is an answer. What is left here is the
  * page losing the server it was served from — a dropped connection, a laptop
  * that slept — and the page owes a message for it just the same (FR9).
  */
@@ -507,11 +507,11 @@ test('a proposal missing fields renders without pretending it has them', async (
 
 test('a list the API refuses is said out loud instead of showing an empty inbox', async () => {
   const { doc } = await openInbox(() =>
-    answers({ error: 'control_plane_indisponivel', message: 'o núcleo não respondeu' }, 502),
+    answers({ error: 'control_plane_unavailable', message: 'o núcleo não respondeu' }, 502),
   );
 
   const notice = doc.require('notice');
-  assert.equal(notice.textContent, 'control_plane_indisponivel: o núcleo não respondeu');
+  assert.equal(notice.textContent, 'control_plane_unavailable: o núcleo não respondeu');
   assert.equal(notice.classList.contains('error'), true);
   assert.deepEqual(rowsOf(doc, 'pending-list'), [], 'no row is invented out of a failure');
 });

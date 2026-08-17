@@ -71,7 +71,7 @@ export function mount(doc, request) {
   /**
    * One HTTP call, with failures already turned into a body.
    *
-   * The proxy answers `502 control_plane_indisponivel` when the core is down,
+   * The proxy answers `502 control_plane_unavailable` when the core is down,
    * so the only failure left here is the screen's own server being gone.
    *
    * @param {string} url
@@ -109,7 +109,10 @@ export function mount(doc, request) {
   /**
    * The human-readable half of an error body, in the core's own vocabulary.
    *
-   * `error` + `message` is what every error of the API carries since t226.
+   * `error` + `message` is what every error of the API carries since t226 — and
+   * what the screen's OWN proxy carries since t255, which is four tickets in
+   * which this function met `{erro, mensagem}` from `proxy.ts` and fell through
+   * to "falha 502" with the real message right there in the body.
    * the fallback for the one error the core does NOT write itself: Fastify's
    * own 404, which is exactly what a screen pointed at a control plane without
    * the inbox routes gets back — a real message beats "falha 404" there.

@@ -516,7 +516,7 @@ export function mount(doc, request) {
   /**
    * One HTTP call, with failures already turned into a body.
    *
-   * Same shape as `inbox.js`: the proxy answers `502 control_plane_indisponivel`
+   * Same shape as `inbox.js`: the proxy answers `502 control_plane_unavailable`
    * when the core is down, so what is left here is the screen's own server
    * being gone.
    */

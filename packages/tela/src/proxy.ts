@@ -9,15 +9,15 @@
  * talks to the API, and nothing about the API's boundary changes.
  *
  * "Forward" here means verbatim. Method, path, query and body cross unchanged,
- * and the upstream status comes back as it is — a `409 proposta_nao_pendente`
+ * and the upstream status comes back as it is — a `409 proposal_not_pending`
  * is an answer the inbox must show, not an error for the proxy to reshape.
  * Three replies this module invents rather than forwards: the control plane that
- * is down (`502 control_plane_indisponivel`), because the alternative is a
+ * is down (`502 control_plane_unavailable`), because the alternative is a
  * socket error reaching the browser as a blank page; the write that did not
- * start on this screen's page (`403 origem_nao_confiavel`, t192), because a
+ * start on this screen's page (`403 untrusted_origin`, t192), because a
  * forwarded request carries the operator's credential and a page on another site
  * must not get to spend it; and the body too big to hold in memory
- * (`413 corpo_grande_demais`, t206), because this proxy buffers whole bodies and
+ * (`413 body_too_large`, t206), because this proxy buffers whole bodies and
  * an unbounded one is a local page choosing how much memory the screen spends.
  * The last two are decisions ABOUT forwarding, so they are checks the router
  * runs before the pipe, never branches inside it.
@@ -54,13 +54,13 @@ export const DEFAULT_CONTROL_PLANE_HOST = '127.0.0.1';
 export const API_PREFIX = '/v1';
 
 /** Error code of the failure this proxy invents when the core does not answer. */
-export const UPSTREAM_DOWN_CODE = 'control_plane_indisponivel';
+export const UPSTREAM_DOWN_CODE = 'control_plane_unavailable';
 
 /** Error code of a state-changing request that did not start on this screen. */
-export const UNTRUSTED_ORIGIN_CODE = 'origem_nao_confiavel';
+export const UNTRUSTED_ORIGIN_CODE = 'untrusted_origin';
 
 /** Error code of a body bigger than this proxy is willing to hold in memory. */
-export const BODY_TOO_LARGE_CODE = 'corpo_grande_demais';
+export const BODY_TOO_LARGE_CODE = 'body_too_large';
 
 /**
  * What a browser looks like when it says nothing else about itself.
@@ -222,10 +222,15 @@ export function resolveControlPlaneToken(
 /**
  * The answer for a control plane that did not answer.
  *
- * Same `erro` / `mensagem` shape every error of the core uses, so the page has
+ * Same `error` / `message` shape every error of the core uses, so the page has
  * one way to show a failure instead of two — and, since t180, the same English
  * prose: this body is API plumbing, not the rendered copy t133 keeps in
- * Portuguese on purpose. The cause is deliberately dropped:
+ * Portuguese on purpose.
+ *
+ * "Same shape" was a claim and not a fact between t226 and t255: the core moved
+ * to `{error, message}` and these three bodies stayed `{erro, mensagem}`, which
+ * `public/inbox.js`'s `messageOf()` reads as an unknown envelope and renders as
+ * a bare "falha 502". The cause is deliberately dropped:
  * `ECONNREFUSED` and a stack trace say nothing to whoever is looking at the
  * inbox, and the actionable half is the address plus what to run.
  *
@@ -234,8 +239,8 @@ export function resolveControlPlaneToken(
  */
 export function unavailableResponse(baseUrl: string): ProxiedResponse {
   return jsonResponse(502, {
-    erro: UPSTREAM_DOWN_CODE,
-    mensagem: `could not reach the control plane at ${baseUrl} — run \`npx cartografo\` first (or point somewhere else with ${CONTROL_PLANE_URL_ENV})`,
+    error: UPSTREAM_DOWN_CODE,
+    message: `could not reach the control plane at ${baseUrl} — run \`npx cartografo\` first (or point somewhere else with ${CONTROL_PLANE_URL_ENV})`,
   });
 }
 
@@ -313,7 +318,7 @@ export function isTrustedScreenOrigin(
 /**
  * The answer for a write that came from somewhere else (t192).
  *
- * Same `erro` / `mensagem` shape as `unavailableResponse`, and English for the
+ * Same `error` / `message` shape as `unavailableResponse`, and English for the
  * same reason (t180): this body is proxy plumbing, met as an API response, not
  * the rendered copy the screen keeps in Portuguese. The way out is in the
  * message, because the two people who will ever read it are whoever reloaded a
@@ -323,15 +328,15 @@ export function isTrustedScreenOrigin(
  */
 export function untrustedOriginResponse(): ProxiedResponse {
   return jsonResponse(403, {
-    erro: UNTRUSTED_ORIGIN_CODE,
-    mensagem: `this proxy only forwards writes that started on the screen's own page — reload the tab, or call the control plane directly (${DEFAULT_CONTROL_PLANE_HOST}:${DEFAULT_CONTROL_PLANE_PORT} by default)`,
+    error: UNTRUSTED_ORIGIN_CODE,
+    message: `this proxy only forwards writes that started on the screen's own page — reload the tab, or call the control plane directly (${DEFAULT_CONTROL_PLANE_HOST}:${DEFAULT_CONTROL_PLANE_PORT} by default)`,
   });
 }
 
 /**
  * The answer for a body this proxy refuses to hold (t206).
  *
- * Same `erro` / `mensagem` shape as its two siblings above, and English for the
+ * Same `error` / `message` shape as its two siblings above, and English for the
  * same reason (t180): this is met as an API response, not as the rendered copy
  * the screen keeps in Portuguese. The ceiling is named in the message because
  * the only useful reaction is to send less, and nothing else on this screen says
@@ -348,8 +353,8 @@ export function untrustedOriginResponse(): ProxiedResponse {
  */
 export function bodyTooLargeResponse(limitBytes: number): ProxiedResponse {
   const refused = jsonResponse(413, {
-    erro: BODY_TOO_LARGE_CODE,
-    mensagem: `this proxy holds at most ${limitBytes} bytes of request body and forwards nothing bigger — the control plane never saw this request`,
+    error: BODY_TOO_LARGE_CODE,
+    message: `this proxy holds at most ${limitBytes} bytes of request body and forwards nothing bigger — the control plane never saw this request`,
   });
   return { ...refused, headers: { ...refused.headers, connection: 'close' } };
 }

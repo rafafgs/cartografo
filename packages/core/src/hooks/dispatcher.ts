@@ -29,9 +29,11 @@
  * can be: only on exhaustion, only through that one function, and never on a
  * path that can reach the job's traversal.
  *
- * The COLUMN names stay in Portuguese — the schema is untouched, and renaming
- * it is D20's fifth child. The event this dispatcher delivers is English on
- * every key since t227, and nothing here had to change for that: the body is
+ * The schema went English with D20's FOURTH child (t229); what this file reads
+ * are the repository's TypeScript field names, which that ticket deliberately
+ * left in Portuguese, aliasing each renamed column back onto them so nothing
+ * out here had to move. The event this dispatcher delivers is English on every
+ * key since t227, and nothing here had to change for that either: the body is
  * `JSON.stringify(event)` and the signature is over those bytes, whatever they
  * spell.
  */

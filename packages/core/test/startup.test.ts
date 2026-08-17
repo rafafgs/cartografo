@@ -6,6 +6,12 @@
  * single command creates the file, applies the migrations and brings HTTP up
  * with no manual setup step. The second startup against the same database proves
  * idempotence.
+ *
+ * Since t197 it also owns the log-level configuration (`CARTOGRAFO_LOG_LEVEL`),
+ * which belongs here for the same reason `CARTOGRAFO_PORT` does: it is a
+ * decision of the startup, resolved out of the environment before `createApp`
+ * ever sees it, and the failure of a bad value is a process that refuses to come
+ * up instead of one that quietly logs at a level nobody chose.
  */
 
 import assert from 'node:assert/strict';
@@ -17,6 +23,8 @@ import type { Readable } from 'node:stream';
 import test from 'node:test';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+
+import type * as IndexModule from '../src/index.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const BIN_PATH = path.join(PACKAGE_ROOT, 'bin', 'cartografo.mjs');
@@ -42,6 +50,26 @@ interface Startup {
   child: CommandChild;
   readiness: ReadinessLine;
   shutdown: () => Promise<void>;
+}
+
+let indexCache: typeof IndexModule | null = null;
+
+/**
+ * Loads `src/index.ts` on demand, so the initial red NAMES what is missing.
+ *
+ * Same convention as `test/health.test.ts` and `test/lease-cap-config.test.ts`:
+ * a module-resolution blow-up in a file whose other tests spawn a child process
+ * reads like any other bug.
+ */
+async function loadIndex(): Promise<typeof IndexModule> {
+  assert.ok(
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'index.ts')),
+    'artifact does not exist yet: packages/core/src/index.ts',
+  );
+  indexCache ??= (await import(
+    new URL('../src/index.ts', import.meta.url).href
+  )) as typeof IndexModule;
+  return indexCache;
 }
 
 /** Reserves a free port by asking the OS for port 0 and returning the number. */
@@ -425,6 +453,94 @@ test(
       assert.equal((await fetch(`http://127.0.0.1:${port}/health`)).status, 200);
     } finally {
       await startup.shutdown();
+    }
+  },
+);
+
+test('t197 FR1 — logLevel() defaults to info, accepts a pino level and refuses anything else', async () => {
+  const { ENV_LOG_LEVEL, logLevel } = await loadIndex();
+
+  assert.equal(typeof logLevel, 'function', 'artifact does not exist yet: logLevel in src/index.ts');
+  assert.equal(ENV_LOG_LEVEL, 'CARTOGRAFO_LOG_LEVEL');
+
+  // The environment is passed in and never read off `process.env`: a config test
+  // that mutates the real one leaks into every other test in the process (the
+  // same rule `lease-cap-config.test.ts` states).
+  assert.equal(logLevel({}), 'info', 'an unset variable logs at info, never silently off');
+  assert.equal(logLevel({ [ENV_LOG_LEVEL]: '' }), 'info', 'a blank value is an unset value');
+  assert.equal(logLevel({ [ENV_LOG_LEVEL]: '   ' }), 'info', 'whitespace is a blank value');
+
+  for (const level of ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']) {
+    assert.equal(
+      logLevel({ [ENV_LOG_LEVEL]: level }),
+      level,
+      `${level} is one of pino's own levels and has to come through`,
+    );
+    assert.equal(
+      logLevel({ [ENV_LOG_LEVEL]: `  ${level}  ` }),
+      level,
+      'the value is trimmed, like every other variable of this file',
+    );
+  }
+
+  // And it dies naming both, exactly like `leaseCap`: a level nobody chose is
+  // worse than no server, because the operator goes on believing the one they
+  // typed is the one in force.
+  assert.throws(
+    () => logLevel({ [ENV_LOG_LEVEL]: 'verboso' }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes('CARTOGRAFO_LOG_LEVEL'), `does not name the variable: ${error.message}`);
+      assert.ok(error.message.includes('verboso'), `does not name the value: ${error.message}`);
+      return true;
+    },
+  );
+});
+
+test(
+  't197 FR2 — the configured level reaches the running app, and the command still comes up',
+  { timeout: 180_000 },
+  async (t) => {
+    // Renamed on the way in: `start` is already this file's spawn helper, and
+    // both are used below — one in process, to read `app.log`, one as the real
+    // command, to prove the readiness line survived.
+    const { start: startInProcess } = await loadIndex();
+
+    const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t197-nivel-'));
+    t.after(() => rmSync(base, { recursive: true, force: true }));
+
+    // `warn` and not `debug`: what has to be proven is that the value travels
+    // from the environment into `app.log`, and a level below `info` would spray
+    // Fastify's own startup lines across the test reporter's output.
+    const controlPlane = await startInProcess({
+      CARTOGRAFO_DB_PATH: path.join(base, 'cartografo.db'),
+      CARTOGRAFO_PORT: String(await freePort()),
+      CARTOGRAFO_LOG_LEVEL: 'warn',
+    });
+    try {
+      assert.equal(
+        controlPlane.app.log.level,
+        'warn',
+        'start() has to hand createApp the level it resolved, or the variable configures nothing',
+      );
+    } finally {
+      await controlPlane.shutdown();
+    }
+
+    // And end to end: a startup with the variable set announces itself as it
+    // always did — turning logging on is not allowed to cost the readiness line.
+    const spawned = await start({
+      cwd: base,
+      databasePath: path.join(base, 'spawned.db'),
+      port: await freePort(),
+      env: { CARTOGRAFO_LOG_LEVEL: 'info' },
+    });
+    try {
+      assert.equal(spawned.readiness.event, 'cartografo.ready');
+      assert.equal((await fetch(`${spawned.readiness.url}/health`)).status, 200);
+      assert.equal(spawned.child.exitCode, null, 'the process with logging on did not stay up');
+    } finally {
+      await spawned.shutdown();
     }
   },
 );

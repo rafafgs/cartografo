@@ -45,6 +45,38 @@ export const ENV_LEASE_CAP_RUNNER = 'CARTOGRAFO_LEASE_CAP_RUNNER';
 /** Environment variable that overrides the per-project lease ceiling (t157, FR1). */
 export const ENV_LEASE_CAP_PROJECT = 'CARTOGRAFO_LEASE_CAP_PROJECT';
 
+/** Environment variable that overrides the log level (t197, FR1). */
+export const ENV_LOG_LEVEL = 'CARTOGRAFO_LOG_LEVEL';
+
+/**
+ * Level the control plane logs at when nobody says otherwise.
+ *
+ * `info` and not `false`: a production control plane that logs nothing is one
+ * whose dispatchers already call `app.log.error` on a failed tick
+ * (`util/polling-dispatcher.ts`) into a void, and whose 500s leave no trace at
+ * all. Tests stay silent by another route — they omit `logger` entirely, and
+ * `createApp`'s own default is still off.
+ */
+export const DEFAULT_LOG_LEVEL = 'info';
+
+/**
+ * The levels pino names, plus the one that means "none of them".
+ *
+ * A closed list because the failure of an open one is silent: pino takes an
+ * unknown level as a custom one and then never emits anything at it, so
+ * `CARTOGRAFO_LOG_LEVEL=verbose` would produce a control plane that looks
+ * configured and logs nothing.
+ */
+export const LOG_LEVELS: readonly string[] = Object.freeze([
+  'trace',
+  'debug',
+  'info',
+  'warn',
+  'error',
+  'fatal',
+  'silent',
+]);
+
 /** Migrations directory of the package. */
 export const MIGRATIONS_DIR = path.resolve(import.meta.dirname, '..', 'migrations');
 
@@ -153,6 +185,31 @@ export function leaseCapProject(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 /**
+ * Resolves the level the control plane logs at (t197, FR1).
+ *
+ * Same shape as `serverPort` and `leaseCap`, failure included: unset or blank
+ * keeps the default, a level pino knows comes through as it is, and anything
+ * else stops the startup naming the variable and the value. Falling back to
+ * `info` on a typo would be the worst of the three outcomes — the operator who
+ * asked for `debug` to chase a bug would get `info` and no sign that the
+ * request was ignored.
+ *
+ * @param env Environment to read `CARTOGRAFO_LOG_LEVEL` from.
+ * @returns One of {@link LOG_LEVELS}.
+ */
+export function logLevel(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env[ENV_LOG_LEVEL]?.trim();
+  if (configured === undefined || configured === '') return DEFAULT_LOG_LEVEL;
+
+  if (!LOG_LEVELS.includes(configured)) {
+    throw new Error(
+      `invalid ${ENV_LOG_LEVEL}: "${configured}" (expected one of ${LOG_LEVELS.join(', ')})`,
+    );
+  }
+  return configured;
+}
+
+/**
  * Brings the whole control plane up.
  *
  * @param env Environment to read the configuration from.
@@ -179,10 +236,15 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
   try {
     applyPragmas(db);
     migrationsApplied = migrate(db, MIGRATIONS_DIR);
-    // Inside the `try`, like `serverPort`: a misconfigured ceiling stops the
-    // startup, and the handle opened above is closed on the way out.
+    // Inside the `try`, like `serverPort`: a misconfigured ceiling — or a
+    // misconfigured level — stops the startup, and the handle opened above is
+    // closed on the way out.
     app = createApp({
       db,
+      // This is the ONE caller that turns logging on (t197, FR2). Every test
+      // omits the option and keeps `createApp`'s silent default, so a suite
+      // does not have to opt out of the production configuration.
+      logger: { level: logLevel(env) },
       leaseCeilings: { runner: leaseCapRunner(env), projeto: leaseCapProject(env) },
     });
     await app.listen({ port: serverPort(env), host });

@@ -11,10 +11,11 @@ import { readFileSync } from 'node:fs';
 
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { LogController, type FastifyInstance } from 'fastify';
 
 import { registerAuth } from './auth.ts';
 import type { Database } from './db/connection.ts';
+import type { ErrorResponse } from './routes/common.ts';
 import { registerEngines } from './routes/engines.ts';
 import { registerEvents } from './routes/events.ts';
 import { registerExecutions } from './routes/executions.ts';
@@ -58,12 +59,51 @@ const PACKAGE_VERSION = (
   }
 ).version;
 
+/**
+ * Body of an unexpected failure, and the only thing a client ever learns of one.
+ *
+ * Two fixed strings and an id, and nothing derived from the error: a `message`
+ * copied off the throw is how `repositories/leases.ts`'s own sentence about a
+ * lease that "stopped being active" ends up on the wire, and a `stack` is a map
+ * of the server's filesystem. `request_id` is what replaces them — it says
+ * nothing on its own and it is exactly enough to find the log line that says
+ * everything (t197, FR4).
+ */
+export const INTERNAL_ERROR_CODE = 'internal_error';
+
+/** The one sentence the generic 500 carries; it describes nothing on purpose. */
+export const INTERNAL_ERROR_MESSAGE = 'an unexpected error occurred';
+
+/** Error code of an address no route claims (t197, FR5). */
+export const ROUTE_NOT_FOUND_CODE = 'not_found';
+
+/** The sentence that goes with it. */
+export const ROUTE_NOT_FOUND_MESSAGE = 'route not found';
+
+/**
+ * What the OpenAPI document says about the status of an unusable body (FR6).
+ *
+ * Prose and not a per-route schema: writing the real contract of each endpoint
+ * is still t171's Out of Scope. What a client genuinely cannot guess from the
+ * paths is the ONE exception, so the exception is what this names.
+ */
+export const OPENAPI_DESCRIPTION =
+  'Every /v1 route answers 400 when the request body fails its contract, with the single exception of PATCH /v1/jobs/{id}, which answers 422 because it edits the content of an entity that already exists (t157). An unexpected failure answers 500 with {error, message, request_id}; the request_id is the reqId of the corresponding log line.';
+
 /** Options of the app factory. */
 export interface AppOptions {
   /** Already open database; the app never opens its own. */
   db: Database;
-  /** Fastify log level. `false` turns it off (the default in silent tests). */
-  logger?: boolean;
+  /**
+   * Fastify log configuration. `false` turns it off (the default in silent
+   * tests).
+   *
+   * The object form is pino's own options, narrowed to the two anybody here
+   * sets: `start()` sets `level` out of `CARTOGRAFO_LOG_LEVEL` (t197, FR2), and
+   * `test/error-envelope.test.ts` sets `stream` to read back what the app
+   * logged instead of letting it reach a terminal.
+   */
+  logger?: boolean | { level?: string; stream?: { write: (line: string) => void } };
   /**
    * Ceilings of simultaneous active leases this process enforces (t157, FR1).
    *
@@ -81,7 +121,61 @@ export interface AppOptions {
  * @returns A Fastify instance ready to `listen`.
  */
 export function createApp(options: AppOptions): FastifyInstance {
-  const app = Fastify({ logger: options.logger ?? false });
+  const app = Fastify({
+    logger: options.logger ?? false,
+    // Unconditionally, and it is not the same switch as the one above (t197,
+    // FR3): what this turns off is the automatic line-per-request, which nobody
+    // asked for and which would bury the two things that DO have to be seen —
+    // a dispatcher tick that failed and the error handler below. Every one of
+    // `LogController`'s automatic lines is gated on it; an explicit
+    // `log.error` call is not, which is the whole distinction.
+    //
+    // Through `logController` and not the top-level `disableRequestLogging`
+    // the ticket names: fastify 5.12 deprecates that spelling (FSTDEP023) and
+    // drops it in 6, so passing it would print a deprecation warning on stderr
+    // at every startup — noise, in the one ticket whose subject is a control
+    // plane you can read. Same behaviour, same single flag, no warning.
+    logController: new LogController({ disableRequestLogging: true }),
+  });
+
+  // The catch-all, and the ONE place in the package that answers a 500 (t197,
+  // FR4). Everything a route MEANS to refuse already has an envelope of its own
+  // in `routes/common.ts`, and none of those ever gets here: Fastify only runs
+  // this for a throw nobody caught, which by definition is a failure whose
+  // message was written for whoever maintains the server, not for the client.
+  //
+  // An error that already carries a `statusCode` is Fastify's own — a body that
+  // is not parseable JSON, a payload over the limit — and is handed straight
+  // back: `reply.send(error)` re-enters the chain one link down, at the default
+  // handler, which is the behaviour every client already sees for those and
+  // which this ticket has no business changing.
+  app.setErrorHandler((error, request, reply) => {
+    const status = (error as { statusCode?: number }).statusCode;
+    if (typeof status === 'number') {
+      void reply.code(status).send(error);
+      return;
+    }
+
+    // `request.log` and not `app.log`: Fastify binds `reqId` on every
+    // request-scoped child logger, and that binding is the whole reason the
+    // `request_id` below is worth anything to an operator.
+    request.log.error({ err: error }, 'unhandled error');
+
+    void reply.code(500).send({
+      error: INTERNAL_ERROR_CODE,
+      message: INTERNAL_ERROR_MESSAGE,
+      request_id: request.id,
+    });
+  });
+
+  // And an address nobody claims answers in the same shape (t197, FR5), instead
+  // of the router's `{statusCode, error, message}` — one failure format for a
+  // client to parse, whether it got the path wrong or the server broke.
+  app.setNotFoundHandler((_request, reply) => {
+    void reply
+      .code(404)
+      .send({ error: ROUTE_NOT_FOUND_CODE, message: ROUTE_NOT_FOUND_MESSAGE } satisfies ErrorResponse);
+  });
 
   registerHealth(app, options.db);
 
@@ -112,7 +206,11 @@ export function createApp(options: AppOptions): FastifyInstance {
 
   app.register(fastifySwagger, {
     openapi: {
-      info: { title: OPENAPI_TITLE, version: PACKAGE_VERSION },
+      info: {
+        title: OPENAPI_TITLE,
+        version: PACKAGE_VERSION,
+        description: OPENAPI_DESCRIPTION,
+      },
       // The declared server IS the existing prefix, so `servers` + path is the
       // address a client really calls, and the documented paths stay free of a
       // version somebody would otherwise have to strip by hand.

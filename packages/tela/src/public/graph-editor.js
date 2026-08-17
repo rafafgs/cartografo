@@ -57,6 +57,15 @@ const VERSIONS_URL = '/v1/graph-versions';
 const PROPOSALS_URL = '/v1/proposals';
 
 /**
+ * Where the versions of a skill are read from (t215).
+ *
+ * No new route on the screen's own server: `proxy.ts` forwards every `/v1/*`
+ * verbatim, so this is the control plane's own registry read, reached from the
+ * browser through the same pipe as everything else on this page.
+ */
+const SKILLS_URL = '/v1/skills';
+
+/**
  * The evidence every proposal written here carries.
  *
  * `POST /v1/proposals` demands `evidence` and `expected_metric` because a
@@ -154,6 +163,19 @@ export function mount(doc, request) {
 
   /** Version written by the last successful save, or `null`. */
   let appliedVersionId = null;
+
+  /**
+   * Every version the registry carries, per skill id, as of the last load (t215).
+   *
+   * Read once per load and not per keystroke: the answer is what the registry
+   * holds, and re-asking it while somebody types an id would be a request per
+   * character for a lineage that mostly does not exist yet. A skill id nobody
+   * registered is simply absent from the map, which reads the same as "one
+   * version" — nothing extra is drawn.
+   *
+   * @type {Map<string, {id: string, version: string, hash: string}[]>}
+   */
+  let skillVersions = new Map();
 
   /** Serial number behind each `for`/`id` pair; ids of the API never enter one. */
   let fieldCount = 0;
@@ -258,6 +280,79 @@ export function mount(doc, request) {
   }
 
   /**
+   * The other versions of this node's skill, when the registry carries any (t215).
+   *
+   * `null` — nothing drawn — whenever there is nothing to offer: no `skill_ref.id`
+   * typed yet, a lineage the registry does not know, or a lineage with exactly
+   * the one version the node is already pinned to. A control that only ever
+   * shows what is already on screen is noise on every card.
+   *
+   * Choosing writes the same three fields `skillField` writes and nothing else,
+   * so the diff this produces is the `change_node_field` a hand-typed
+   * `skill_ref` has always produced — and the gate that refuses a pin the
+   * registry does not carry (`routes/proposals.ts`) still has the last word. It
+   * is not an upgrade button: it fills in a pin a person chose, including the
+   * 64-character hash nobody should be typing by hand.
+   */
+  function skillVersionPicker(node) {
+    const reference = isObject(node.skill_ref) ? node.skill_ref : {};
+    const skillId = typeof reference.id === 'string' ? reference.id : '';
+    const pinned = typeof reference.version === 'string' ? reference.version : '';
+    const known = skillVersions.get(skillId) ?? [];
+    if (skillId === '' || known.length === 0) return null;
+    if (!known.some((entry) => entry.version !== pinned)) return null;
+
+    const line = el('p', 'field skill-versions');
+    line.setAttribute('data-skill-versions', skillId);
+
+    const control = el('select', 'field-input');
+    const id = `graph-field-${(fieldCount += 1)}`;
+    control.id = id;
+    const label = el('label', 'field-label', `versões registradas de ${skillId}`);
+    label.htmlFor = id;
+
+    // The pinned version is listed too, and it is the selected one: the point is
+    // to show WHERE this node stands among the versions that exist, and a list
+    // that hides the current one turns every glance into a guess.
+    //
+    // When the registry does NOT carry the pinned version — it was never
+    // registered, or this graph came from somewhere else — the entry is still
+    // drawn, disabled, saying so. A `<select>` whose value matches no option
+    // displays the first one instead, which would show a version this node is
+    // not pinned to and quietly read as if somebody had already chosen it.
+    const options = known.some((entry) => entry.version === pinned)
+      ? known.map((entry) => ({ version: entry.version, registered: true }))
+      : [{ version: pinned, registered: false }, ...known.map((entry) => ({ version: entry.version, registered: true }))];
+
+    control.append(
+      ...options.map((entry) => {
+        const suffix = !entry.registered
+          ? ' (pinada, fora do registro)'
+          : entry.version === pinned
+            ? ' (pinada)'
+            : '';
+        const option = el('option', undefined, `${entry.version}${suffix}`);
+        option.value = entry.version;
+        if (!entry.registered) option.disabled = true;
+        return option;
+      }),
+    );
+    control.value = pinned;
+    control.addEventListener('input', () => {
+      const chosen = known.find((entry) => entry.version === control.value);
+      if (chosen === undefined) return;
+      node.skill_ref = { id: chosen.id, version: chosen.version, hash: chosen.hash };
+      // Redrawn, because the three text fields above show the pin and they are
+      // the ones a person will read back to check what they just chose.
+      draw();
+      setNotice(`nó "${String(node.id)}" agora pina ${chosen.id} ${chosen.version}`, false);
+    });
+
+    line.append(label, control);
+    return line;
+  }
+
+  /**
    * One node.
    *
    * A node that exists in the loaded snapshot shows `id`, `node_type` and
@@ -312,6 +407,12 @@ export function mount(doc, request) {
       skillField(node, 'id'),
       skillField(node, 'version'),
       skillField(node, 'hash'),
+    );
+
+    const versions = skillVersionPicker(node);
+    if (versions !== null) card.append(versions);
+
+    card.append(
       textField('textarea', 'contract', entry.contractText, (value) => {
         entry.contractText = value;
       }),
@@ -559,6 +660,11 @@ export function mount(doc, request) {
       }));
     edgeEntries = (Array.isArray(snapshot.edges) ? snapshot.edges : []).filter(isObject).map(clone);
 
+    // Awaited, not fired and forgotten: a picker that appears a moment after the
+    // cards is a control somebody is already scrolling past, and a load that has
+    // returned has to be a load that finished.
+    skillVersions = await loadSkillVersions(nodeEntries);
+
     fill(
       base,
       el('span', 'label', 'editando '),
@@ -567,6 +673,47 @@ export function mount(doc, request) {
 
     draw();
     setNotice(`${nodeEntries.length} nó(s) e ${edgeEntries.length} aresta(s) carregados`, false);
+  }
+
+  /**
+   * Asks the registry which versions each pinned skill has (t215, FR10).
+   *
+   * One read per DISTINCT skill id, and only for ids a node really pins: a graph
+   * whose five nodes share one skill asks once. A read that fails, or a lineage
+   * the registry does not carry, is left out of the map instead of becoming an
+   * error on the page — a registry that cannot answer is a reason to draw no
+   * picker, never a reason to refuse to show a graph that loaded fine.
+   *
+   * @param entries The node entries just built from the snapshot.
+   * @returns Versions per skill id, in the order the registry listed them.
+   */
+  async function loadSkillVersions(entries) {
+    const ids = new Set();
+    for (const entry of entries) {
+      const reference = isObject(entry.node.skill_ref) ? entry.node.skill_ref : {};
+      if (typeof reference.id === 'string' && reference.id !== '') ids.add(reference.id);
+    }
+
+    const found = new Map();
+    for (const skillId of ids) {
+      const answer = await call(`${SKILLS_URL}?id=${encodeURIComponent(skillId)}`);
+      if (!answer.ok) continue;
+
+      const listed = isObject(answer.body) && Array.isArray(answer.body.skills)
+        ? answer.body.skills
+        : [];
+      const versions = listed
+        .filter(isObject)
+        .filter(
+          (skill) =>
+            typeof skill.id === 'string' &&
+            typeof skill.version === 'string' &&
+            typeof skill.hash === 'string',
+        )
+        .map((skill) => ({ id: skill.id, version: skill.version, hash: skill.hash }));
+      if (versions.length > 0) found.set(skillId, versions);
+    }
+    return found;
   }
 
   /* ----------------------------------------------------------------- saving */

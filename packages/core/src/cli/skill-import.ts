@@ -260,8 +260,19 @@ export async function runScanSkill(options: ScanSkillOptions): Promise<number> {
     ? registry.body.skills
     : [];
   if (known.some((skill) => isObject(skill) && skill.id === id)) {
+    // The refusal STAYS, and t215 did not soften it. The registry carries
+    // versions now, but that answers a different question: whether this
+    // `SKILL.md` is a newer version of that lineage or a different skill that
+    // happens to share a name is exactly D4's human decision, and a derivation
+    // from a fresh source has no way to tell. What changed is that the message
+    // used to read as a dead end. There are two ways through now, both of them
+    // a person's, and neither needs a flag that does not exist: rename, or say
+    // "yes, same lineage" by hand — `propose-skill` and `register-skill` do not
+    // re-run this check, because they take a manifest a human wrote and signed.
     process.stderr.write(
-      `cartografo: id "${id}" is already registered at ${options.url} — a collision is a human decision (D4): re-run with a source-prefixed name\n`,
+      `cartografo: id "${id}" is already registered at ${options.url} — a collision is a human decision (D4)\n` +
+        '  a different skill that shares a name: re-run with a source-prefixed name\n' +
+        `  a newer version of the same skill: edit this draft with a bumped "version" (and its recomputed "hash"), then send it through \`cartografo propose-skill\` → \`register-skill\`\n`,
     );
     return 1;
   }

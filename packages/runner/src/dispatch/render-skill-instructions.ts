@@ -11,10 +11,23 @@
  *
  * Three things happen here, and the order matters:
  *
- * 1. **The registry is asked, by the id the node pins.** A node whose skill the
- *    registry does not carry does not dispatch; it is a broken deployment, and
- *    running it under generic instructions would be the hand-cranked mode this
- *    ficha exists to end.
+ * 1. **The registry is asked, by the id AND the version the node pins.** A node
+ *    whose skill the registry does not carry does not dispatch; it is a broken
+ *    deployment, and running it under generic instructions would be the
+ *    hand-cranked mode this ficha exists to end.
+ *
+ *    The version is part of the request since t215, and it is the whole of what
+ *    that ficha changed here. This module used to ask `GET /v1/skills/:id` and
+ *    say, in this very paragraph, that it was safe because "the registry is
+ *    create-only, so an `id` only ever carried the one `hash` it was registered
+ *    with". D22 made that false: a lineage has versions, and the id-only read
+ *    resolves the newest one. Asking by id alone would mean that the moment
+ *    somebody registered a better version of a skill, every graph in flight
+ *    pinned to the older one started refusing its own dispatch on the hash
+ *    check below — a decision nobody took, taken by whoever happened to publish
+ *    a skill. D22 says the opposite twice: a node "nunca resolve 'a mais
+ *    recente'", and improving a skill never breaks a map that is pinned to it.
+ *    Moving a pin is a proposal, and it happens in the graph, not here.
  * 2. **The pin is checked, and a mismatch refuses the dispatch.** That is the
  *    entire value of pinning by hash (D4): an imported skill is a prompt-
  *    injection vector, and a hash that stopped matching means the content behind
@@ -22,9 +35,13 @@
  *    exists, the same placement `UnknownEngineError` already has — a refusal
  *    after the engine is running is a refusal that already spent the quota and
  *    already let the instructions out.
- *    `version` is not separately checked: the registry is create-only, so an
- *    `id` only ever carried the one `hash` it was registered with, and a hash
- *    match already implies a version match.
+ *
+ *    It stays exactly what it was, and it does not need `hash` in the lookup to
+ *    do its job: `(id, version)` is the registry's primary key now, so this
+ *    check compares the pin the graph froze against the content that key
+ *    resolves to. What it catches is the one case that is left, and the one it
+ *    was always for — the registered content having moved under a version that
+ *    did not.
  * 3. **The placeholders of the manifest body are resolved against the node's
  *    input, or nothing is rendered at all** (t204). Until then `instructions`
  *    went into the session VERBATIM, which meant a manifest that wrote
@@ -84,7 +101,7 @@ export {
   NEVER_ESCALATION_PROTOCOL,
 } from './escalation-protocol.ts';
 
-/** A registered skill, as `GET /v1/skills/:id` projects it. */
+/** A registered skill, as `GET /v1/skills/:id?version=` projects it. */
 export interface RegisteredSkill {
   id: string;
   version: string;
@@ -218,13 +235,24 @@ export class UnresolvedPlaceholderError extends Error {
 }
 
 /**
- * The route of one registered skill.
+ * The route of one registered skill VERSION (t215).
+ *
+ * `?version=` and not `?hash=`, and the difference matters: `(id, version)` is
+ * the registry's key, so this asks for exactly one row, and the hash check above
+ * then compares what came back against what the graph froze. Looking up by hash
+ * instead would make a moved-content mismatch look like a 404 — "this skill is
+ * not registered" for a skill that is, which sends whoever is debugging to
+ * register a manifest that is already there.
+ *
+ * Both halves are encoded. They come off a graph document written by an agent,
+ * and D4 says that is content to distrust — never a path fragment to trust.
  *
  * @param id Id of the skill, as the node pins it.
- * @returns The route, with the id encoded.
+ * @param version Version of the skill, as the node pins it.
+ * @returns The route, with both values encoded.
  */
-export function skillRoute(id: string): string {
-  return `/v1/skills/${encodeURIComponent(id)}`;
+export function skillRoute(id: string, version: string): string {
+  return `/v1/skills/${encodeURIComponent(id)}?version=${encodeURIComponent(version)}`;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -502,7 +530,7 @@ function render(resolved: ResolvedNode, skill: RegisteredSkill, body: string): s
  * and renders it.
  *
  * @param resolved The node the dispatch resolved, with its outgoing edges.
- * @param read Reader of `GET /v1/skills/:id`.
+ * @param read Reader of `GET /v1/skills/:id?version=`.
  * @param input The already-validated input object of THIS node, which is what
  *   `{{input.<caminho>}}` is resolved against. Required and never optional: an
  *   optional parameter here would default to "resolve nothing" at every call
@@ -526,7 +554,7 @@ export async function renderSkillInstructions(
 
   let skill: RegisteredSkill;
   try {
-    skill = await read(skillRoute(pin.id));
+    skill = await read(skillRoute(pin.id, pin.version));
   } catch (error) {
     // Only the 404 is translated: it is the one refusal that means something
     // specific about the GRAPH, and it deserves a message naming the node. Any

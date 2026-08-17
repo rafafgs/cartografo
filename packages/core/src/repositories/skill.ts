@@ -51,6 +51,31 @@
  * `SkillRow` did not, because it is the shape `toSkill` was written against, and
  * `COLUMNS` aliases each renamed column back onto it (t229, FR4). `toSkill` is
  * where the two meet, and it is the only place that has to know both.
+ *
+ * ## One row per `(id, version)` since t215 (D22)
+ *
+ * The registry used to be create-only, one row per id, ever — and the reason it
+ * was is written in `migrations/0005_skill.sql`: version history for a skill was
+ * deferred by the rule of two consumers. D22 is the decision that arrived with
+ * them, and it says what the shape has to be: "skill tem id estável e versões
+ * (semver + hash de conteúdo)... o nó continua pinado por hash (D4) e nunca
+ * resolve 'a mais recente'".
+ *
+ * Three rules follow from that sentence, and every function below is one of them:
+ *
+ * - **the write is content-addressed per version.** Same `(id, version)` and the
+ *   same `hash` is the SAME registration, answered with the row that is already
+ *   there — that is what makes reimporting a bundle safe. Same `(id, version)`
+ *   and a DIFFERENT `hash` is a refusal, because one pin naming two different
+ *   bodies is exactly the thing pinning by hash exists to prevent;
+ * - **"latest" is a convenience, never a resolution.** {@link getSkill} with no
+ *   options answers the newest live version, and that read exists for a person
+ *   or a synthesizer choosing what to pin. Nothing that EXECUTES uses it: the
+ *   runner asks by `(id, version)`, off the frozen snapshot;
+ * - **nothing is ever removed.** {@link deprecateSkill} stamps a version as
+ *   retired, which takes it out of "latest" and out of nothing else. A node
+ *   pinned to it keeps resolving, because that is D22's own promise: improving a
+ *   skill never breaks a map that is pinned to it.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -87,6 +112,16 @@ export interface Skill {
    * it. The COLUMN is `registered_at` since D20's fourth child (t229).
    */
   registered_at: string;
+  /**
+   * When this version was retired (t215, FR7), or `null` while it is live.
+   *
+   * Retired means "not what a new graph should pin", and nothing more: the row is
+   * still served by every exact read, and the runner still dispatches on it.
+   * Anything stronger would be withdrawing a version graphs already point at,
+   * which append-only persistence does not do (D15) and which D22 forbids by
+   * name: improving a skill never breaks a map pinned to it.
+   */
+  deprecated_at: string | null;
 }
 
 /** The shape `toSkill` reads, which `COLUMNS` aliases the row onto. */
@@ -104,6 +139,7 @@ interface SkillRow {
   instrucoes: string;
   origem: string;
   registrado_em: string;
+  desativada_em: string | null;
 }
 
 /**
@@ -149,7 +185,8 @@ const COLUMNS = `
   id, version AS versao, hash, role AS papel, description AS descricao,
   input AS entrada, output AS saida, preconditions AS pre_condicoes,
   checks, permissions AS permissoes, instructions AS instrucoes,
-  source AS origem, registered_at AS registrado_em
+  source AS origem, registered_at AS registrado_em,
+  deprecated_at AS desativada_em
 `;
 
 function isText(value: unknown): value is string {
@@ -172,7 +209,36 @@ function toSkill(row: SkillRow): Skill {
     instructions: row.instrucoes,
     origin: JSON.parse(row.origem) as Record<string, unknown>,
     registered_at: row.registrado_em,
+    deprecated_at: row.desativada_em,
   };
+}
+
+/**
+ * Orders two versions the way semver does, over the numeric triple (t215).
+ *
+ * Written here, small, instead of pulled in as a dependency or exported from
+ * `domain/manifest.ts`: `VERSION_PATTERN` is already the strict `x.y.z` with no
+ * pre-release suffix and no build metadata, so the whole of semver's ordering
+ * that can ever apply to a registered version is three integers compared in
+ * order. Nothing else in the package needs it, and a comparator with one caller
+ * belongs next to that caller.
+ *
+ * String comparison is what this replaces and what it must never become: `'1.9.0'
+ * > '1.10.0'` lexically, so a lineage that reached ten minor versions would start
+ * offering the ninth as its newest.
+ *
+ * @param a One version, matching `VERSION_PATTERN`.
+ * @param b The other.
+ * @returns Negative when `a` is older, positive when newer, 0 when equal.
+ */
+function compareVersions(a: string, b: string): number {
+  const left = a.split('.').map(Number);
+  const right = b.split('.').map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (left[index] ?? 0) - (right[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
 }
 
 /** Shape of every field the schema declares `required`. */
@@ -412,29 +478,57 @@ export function findProblems(manifest: unknown): string[] {
   return problems;
 }
 
+/** What {@link registerSkill} did, so the route can answer 201 or 200 (t215, FR2). */
+export interface Registration {
+  /** The stored version — the one that was written, or the one already there. */
+  skill: Skill;
+  /** `true` when a row came into being; `false` for an idempotent reimport. */
+  created: boolean;
+}
+
 /**
- * Registers a manifest, after re-verifying it from scratch (FR3).
+ * Registers a manifest, after re-verifying it from scratch (FR3; t215 FR2).
  *
- * Create-only: a second registration of the same `id` is a conflict, not an
- * update. Re-import, diff and version history for a skill are a separate ticket
- * — the graph-style lineage exists because two consumers asked for it, and this
- * one has none yet.
+ * Content-addressed per version. The key is `(id, version)`, and what the
+ * registry does with a key it already has is decided by the CONTENT:
+ *
+ * - **no row** → an INSERT, and `created: true`. Whether this is the first
+ *   version of a lineage or its tenth is not this function's business: a version
+ *   is a row, and a lineage is the rows that share an id;
+ * - **a row with the same `hash`** → nothing is written, and the row that is
+ *   already there comes back with `created: false`. This is what makes the second
+ *   `cartografo import` of a bundle a no-op instead of a failure, and it is
+ *   deliberately not an UPDATE: the fields OUTSIDE the content hash
+ *   (`description`, `origin`) keep the values they were registered with, because
+ *   a repeated write is not a revision, and a revision of a registered version is
+ *   what the next bullet refuses;
+ * - **a row with a DIFFERENT `hash`** → refused. One `(id, version)` naming two
+ *   different bodies is precisely what pinning by hash exists to prevent (D4):
+ *   every graph pinned to that version would silently start running content
+ *   nobody approved. The way through is a new version, and the message says so.
  *
  * @param db Open handle.
  * @param manifest The submitted manifest.
- * @returns The stored skill.
- * @throws {SkillRejected} With 422 for an unverifiable manifest, 409 for a known id.
+ * @returns The stored version, and whether this call is what stored it.
+ * @throws {SkillRejected} 422 for an unverifiable manifest, 409 for content that
+ *   moved under an unchanged version.
  */
-export function registerSkill(db: Database, manifest: unknown): Skill {
+export function registerSkill(db: Database, manifest: unknown): Registration {
   const problems = findProblems(manifest);
   if (problems.length > 0) throw new SkillRejected(422, 'manifest_rejected', problems);
 
   const verified = manifest as Record<string, unknown>;
   const id = verified.id as string;
+  const version = verified.version as string;
+  const hash = verified.hash as string;
 
-  if (getSkill(db, id) !== null) {
-    throw new SkillRejected(409, 'skill_already_registered', [
-      `a skill with id "${id}" is already registered; re-import is not this route's job`,
+  const existing = getSkill(db, id, { version });
+  if (existing !== null) {
+    if (existing.hash === hash) return { skill: existing, created: false };
+    throw new SkillRejected(409, 'skill_version_conflict', [
+      `skill "${id}" version ${version} is already registered with hash ${existing.hash}, and this ` +
+        `manifest carries ${hash} — one version cannot name two different bodies (D4): bump the ` +
+        'version instead',
     ]);
   }
 
@@ -446,8 +540,8 @@ export function registerSkill(db: Database, manifest: unknown): Skill {
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
-    verified.version as string,
-    verified.hash as string,
+    version,
+    hash,
     verified.role as string,
     verified.description as string,
     JSON.stringify(verified.input),
@@ -460,30 +554,114 @@ export function registerSkill(db: Database, manifest: unknown): Skill {
     timestamp,
   );
 
-  return getSkill(db, id) as Skill;
+  return { skill: getSkill(db, id, { version }) as Skill, created: true };
+}
+
+/** Which version of a lineage a read is asking for (t215, FR3). */
+export interface SkillSelector {
+  /** An exact version. Nothing is inferred: absent means "the newest live one". */
+  version?: string;
+  /** The pin, resolved inside the lineage — what a node actually carries. */
+  hash?: string;
 }
 
 /**
- * Gets a registered skill by id.
+ * Gets one version of a registered skill (t215, FR3).
+ *
+ * Three reads, and the difference between them is which of them may resolve
+ * "forward":
+ *
+ * - **`{version}`** — the exact row, or `null`. This is the read that keeps a
+ *   frozen graph running: `null` here means the lineage does not carry that
+ *   version, never "here is a newer one";
+ * - **`{hash}`** — the row of this lineage carrying that pin, or `null`. Same
+ *   promise, reached from what the graph document actually stores. Two versions
+ *   of a lineage may legally share a hash (the content hash excludes `version`),
+ *   so the newest of the matches answers — deterministically, and it is the same
+ *   content either way, which is the whole point of a content hash;
+ * - **no selector** — the newest LIVE version, for a person or a synthesizer
+ *   choosing what to pin. If every version has been retired it answers the
+ *   newest overall rather than `null`: a lineage nobody should pin any more is
+ *   still a lineage that exists, and answering 404 would make a deprecation
+ *   indistinguishable from an unregistered skill.
  *
  * @param db Open handle.
  * @param id Skill id (the manifest's own kebab-case identifier).
- * @returns The skill, or `null` when it is not registered.
+ * @param selector Which version; absent selects the newest live one.
+ * @returns The version, or `null` when the lineage does not carry it.
  */
-export function getSkill(db: Database, id: string): Skill | null {
-  const row = db.prepare(`SELECT ${COLUMNS} FROM skill WHERE id = ?`).get(id) as
-    | SkillRow
-    | undefined;
-  return row === undefined ? null : toSkill(row);
+export function getSkill(db: Database, id: string, selector: SkillSelector = {}): Skill | null {
+  if (selector.version !== undefined) {
+    const row = db
+      .prepare(`SELECT ${COLUMNS} FROM skill WHERE id = ? AND version = ?`)
+      .get(id, selector.version) as SkillRow | undefined;
+    return row === undefined ? null : toSkill(row);
+  }
+
+  // Ordered in JS and not in SQL, and it has to be: `version` is TEXT, and
+  // SQLite would sort `1.10.0` before `1.9.0`.
+  const versions = lineage(db, id);
+  if (versions.length === 0) return null;
+
+  if (selector.hash !== undefined) {
+    const matching = versions.filter((skill) => skill.hash === selector.hash);
+    return matching.length === 0 ? null : matching[matching.length - 1];
+  }
+
+  const live = versions.filter((skill) => skill.deprecated_at === null);
+  const candidates = live.length > 0 ? live : versions;
+  return candidates[candidates.length - 1];
+}
+
+/** Every version of one lineage, oldest first. */
+function lineage(db: Database, id: string): Skill[] {
+  const rows = db.prepare(`SELECT ${COLUMNS} FROM skill WHERE id = ?`).all(id) as SkillRow[];
+  return rows.map(toSkill).sort((a, b) => compareVersions(a.version, b.version));
 }
 
 /**
- * The whole registry, in id order — what a capability reader consults.
+ * Retires one version of a lineage (t215, FR7).
+ *
+ * First write wins, the same posture `registered_at` has: retiring something
+ * twice does not move when it happened, and a second call is not an error — it
+ * is somebody confirming a decision that was already taken.
  *
  * @param db Open handle.
- * @returns Registered skills.
+ * @param id Skill id.
+ * @param version The exact version to retire.
+ * @returns The version, retired; `null` when the lineage does not carry it.
  */
-export function listSkills(db: Database): Skill[] {
+export function deprecateSkill(db: Database, id: string, version: string): Skill | null {
+  const existing = getSkill(db, id, { version });
+  if (existing === null) return null;
+  if (existing.deprecated_at !== null) return existing;
+
+  db.prepare('UPDATE skill SET deprecated_at = ? WHERE id = ? AND version = ?').run(
+    now(),
+    id,
+    version,
+  );
+  return getSkill(db, id, { version });
+}
+
+/**
+ * The registry, or one lineage of it — what a capability reader consults.
+ *
+ * One entry per `(id, version)`, and deliberately FLAT: a nested
+ * "lineage → versions" envelope would be a wire change for every existing
+ * consumer of this list, in exchange for a grouping any of them can do in one
+ * pass. Ordered by id, then by version, so the newest version of each lineage is
+ * the last of its run.
+ *
+ * @param db Open handle.
+ * @param filter `id` narrows the answer to one lineage.
+ * @returns Registered versions.
+ */
+export function listSkills(db: Database, filter: { id?: string } = {}): Skill[] {
+  if (filter.id !== undefined) return lineage(db, filter.id);
+
   const rows = db.prepare(`SELECT ${COLUMNS} FROM skill ORDER BY id`).all() as SkillRow[];
-  return rows.map(toSkill);
+  return rows
+    .map(toSkill)
+    .sort((a, b) => (a.id === b.id ? compareVersions(a.version, b.version) : a.id < b.id ? -1 : 1));
 }

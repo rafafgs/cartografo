@@ -212,9 +212,9 @@ export function verifyBundle(directory: string, document: unknown): BundleProble
 
 /** How the registry answered for the bundle as a whole. */
 interface RegistryOutcome {
-  /** Manifests the registry had never seen (201). */
+  /** Versions the registry had never seen (201). */
   created: number;
-  /** Manifests already registered (409) — a reimport, not a failure. */
+  /** Versions already registered with this content (200) — a reimport. */
   known: number;
 }
 
@@ -240,11 +240,17 @@ function readBundleSkills(directory: string): { file: string; manifest: unknown 
  * Offers every manifest of the bundle to the registry, over HTTP (D1), before
  * the graph (FR2/FR3).
  *
- * 201 and 409 are both success. Registration is create-only (t117), so the
- * second `cartografo import` of a bundle finds its manifests already there —
- * treating that as a failure would make the command non-idempotent in exchange
- * for nothing, since the pin the CLI just checked is the same content the
- * registry already holds.
+ * 201 and 200 are both success, and which pair of statuses means that is what
+ * t215 changed. While the registry was create-only, a known manifest came back
+ * `409` and treating that as a failure would have made the command
+ * non-idempotent for nothing. Now the key is `(id, version)`: a version already
+ * holding this exact content answers `200` — still a reimport, still nothing to
+ * report — and `409` means the opposite of what it used to. It says this version
+ * already names DIFFERENT content, which is a bundle-author mistake and not an
+ * idempotent rerun: somebody edited a manifest without bumping its `version`,
+ * so one pin now describes two bodies. That has to stop the import for the same
+ * reason a `422` does, and the local pin check cannot catch it — it compares the
+ * bundle against itself, and both halves moved together.
  *
  * Anything else stops the import where it stands, and the graph is never sent:
  * a class whose nodes pin a capability the registry refused is a class nobody
@@ -269,7 +275,7 @@ async function registerBundleSkills(
       outcome.created += 1;
       continue;
     }
-    if (response.status === 409) {
+    if (response.status === 200) {
       outcome.known += 1;
       continue;
     }

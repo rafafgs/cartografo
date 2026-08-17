@@ -40,7 +40,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
-import { validateGraph } from '../domain/graph.ts';
+import { validateGraph, type GraphDocument } from '../domain/graph.ts';
 import { hashSnapshot } from '../domain/hash.ts';
 import { isExpectedMetric, validateExpectedMetric, verdictFor } from '../domain/hypothesis.ts';
 import {
@@ -65,6 +65,7 @@ import {
   toProposal,
   type ProposalRow,
 } from '../repositories/proposals.ts';
+import { getSkill } from '../repositories/skill.ts';
 import { isObject } from '../util/is-object.ts';
 import { refusal } from './common.ts';
 
@@ -218,6 +219,110 @@ async function reject(
   return { proposal: toProposal(rejectProposalByHuman(db, proposal.id, reason.trim())) };
 }
 
+/** The pin of one node, as the graph document carries it (`{id, version, hash}`). */
+interface NodePin {
+  id?: unknown;
+  version?: unknown;
+  hash?: unknown;
+}
+
+/** A node's pin, or `undefined` when the node declares none. */
+function pinOf(node: unknown): NodePin | undefined {
+  if (!isObject(node)) return undefined;
+  return isObject(node.skill_ref) ? (node.skill_ref as NodePin) : undefined;
+}
+
+/** Every node of a document, keyed by id — the two sides of the pin comparison. */
+function nodesById(document: GraphDocument): Map<string, unknown> {
+  const nodes = Array.isArray(document.nodes) ? document.nodes : [];
+  const byId = new Map<string, unknown>();
+  for (const node of nodes) {
+    if (isObject(node) && typeof node.id === 'string') byId.set(node.id, node);
+  }
+  return byId;
+}
+
+/**
+ * The first pin this proposal MOVES that the registry cannot resolve (t215, FR6).
+ *
+ * D22 puts it as one sentence: moving a node's pin to another version of the same
+ * skill is a change to the map like any other (D15), and it is refused when the
+ * hash does not exist in the registry. Until this ficha nothing enforced the
+ * second half: `domain/graph.ts` only checks that
+ * `skill_ref.{id,version,hash}` are non-empty strings, so a proposal could point
+ * a node at content nobody ever registered and apply cleanly — the failure
+ * surfaced much later, at dispatch, as a `SkillPinMismatchError` on a graph
+ * somebody had already promoted.
+ *
+ * **What is judged is the pin that MOVED, and that scope is the decision here.**
+ * A node whose `skill_ref` is byte-for-byte what the base version already carried
+ * is not re-read: this gate exists to stop a change, not to re-litigate the past.
+ * Re-judging every node would make the check retroactive, and retroactive is
+ * exactly wrong — a graph registered before the registry carried its skills would
+ * become unproposable forever, its whole lineage frozen by a rule that did not
+ * exist when it was written. (The repository's own fixtures are that case:
+ * `schema/exemplos/` pins ids like `cartografo/redigir-nota`, which `ID_PATTERN`
+ * can never accept.) A node ADDED by the proposal is left out for the same
+ * reason it is left out of `validateOperation`'s shape rules — `add_node` carries
+ * a whole node, and demanding a registered pin there is a rule about what a graph
+ * may contain, not about moving a pin, with its own ticket and its own migration
+ * of the fixtures. What did not change here is that the runner still refuses an
+ * unresolvable pin before it opens a session (D4).
+ *
+ * @param db Open handle — the reason this lives in the route and not in `domain/`.
+ * @param before The snapshot the proposal was written against.
+ * @param after The candidate document, already through `validateGraph`.
+ * @returns The refusal report, or `null` when every moved pin resolves.
+ */
+function unregisteredPin(
+  db: Database,
+  before: GraphDocument,
+  after: GraphDocument,
+): { error: string; code: string; message: string; target: unknown } | null {
+  const previous = nodesById(before);
+
+  for (const [nodeId, node] of nodesById(after)) {
+    if (!previous.has(nodeId)) continue;
+
+    const pin = pinOf(node);
+    const was = pinOf(previous.get(nodeId));
+    if (pin === undefined) continue;
+    if (JSON.stringify(pin) === JSON.stringify(was)) continue;
+
+    const { id, version, hash } = pin;
+    if (typeof id !== 'string' || typeof version !== 'string' || typeof hash !== 'string') {
+      // Shape is `validateGraph`'s job and it already passed, so this is a
+      // snapshot from outside this API. It is still a pin nothing can resolve.
+      return {
+        error: 'unregistered_skill_pin',
+        code: 'skill_pin_malformed',
+        message: `node "${nodeId}" moves to a skill_ref that is not {id, version, hash}`,
+        target: { node_id: nodeId, skill_ref: pin },
+      };
+    }
+
+    const registered = getSkill(db, id, { version });
+    if (registered === null) {
+      return {
+        error: 'unregistered_skill_pin',
+        code: 'skill_version_not_registered',
+        message: `node "${nodeId}" moves to skill "${id}" version ${version}, which the registry does not carry — register the manifest before pointing a node at it (D22)`,
+        target: { node_id: nodeId, skill_ref: pin },
+      };
+    }
+    if (registered.hash !== hash) {
+      return {
+        error: 'unregistered_skill_pin',
+        code: 'skill_pin_not_registered',
+        message: `node "${nodeId}" moves to skill "${id}" version ${version} at ${hash}, but the registry carries ${registered.hash} — a pin the registry does not have is refused before it is written (D22)`,
+        target: { node_id: nodeId, skill_ref: pin },
+      };
+    }
+  }
+
+  return null;
+}
+
 /** `POST /proposals/:id/apply` — the D15 flow: apply ops, gate, write, move. */
 async function apply(
   db: Database,
@@ -292,6 +397,19 @@ async function apply(
       error: 'invalid_graph',
       ...report,
       proposal: toProposal(rejectProposal(db, proposal.id, report)),
+    };
+  }
+
+  // The second gate, and the reason it is HERE: `validateGraph` is pure and
+  // takes no `db`, so a pin is the one thing about a node it cannot check. This
+  // is the only place in the apply path holding both the resulting document and
+  // a database handle (t215, FR6).
+  const unregistered = unregisteredPin(db, target.snapshot, document);
+  if (unregistered !== null) {
+    reply.code(422);
+    return {
+      ...unregistered,
+      proposal: toProposal(rejectProposal(db, proposal.id, unregistered)),
     };
   }
 

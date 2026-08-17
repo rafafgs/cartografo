@@ -50,11 +50,27 @@
  * an operator credential (and the clock-injected assembly in the tests, which
  * has no gate at all) behaves exactly as it did before.
  *
- * `job_id` is an opaque integer here: these four verbs never look the job up,
- * and the column carries no foreign key (`migrations/0004_runner_lease.sql`).
- * A lease is about who holds WHAT, not about whether the what is eligible —
- * that judgement belongs to the controller, which filters through
- * `GET /v1/jobs` before it ever asks for one.
+ * `job_id` is an opaque integer here, with ONE exception: three of these four
+ * verbs never look the job up, and the column carries no foreign key
+ * (`migrations/0004_runner_lease.sql`). A lease is about who holds WHAT, not
+ * about whether the what is eligible — that judgement belongs to the
+ * controller, which filters through `GET /v1/jobs` before it ever asks for one.
+ *
+ * The exception is the RELEASE, since t264 (FR1). "The round is over" is three
+ * conditions, and one of them is that no lease of the round is still active
+ * (`repositories/job.ts`, `announceFinishedExecution`) — so a release can be the
+ * fact that makes it true, and until t264 nothing looked. It could not be
+ * looked at from the repository: `repositories/leases.ts` is job-blind on
+ * purpose, and the taxonomy has no `lease.released` to hang an observer off
+ * (that file's own header, §"what still leaves no trace"). This route is the one
+ * place that already knows BOTH sides, so this is where the re-check goes —
+ * `getJob` then the same guarded, idempotent announcement every other caller
+ * makes, in a transaction of its own. On every release that does not finish a
+ * round, the function's own three guards make it a no-op.
+ *
+ * A lease that clears by EXPIRING has the same theoretical gap and is not
+ * closed here: `claimExpired`/`expireOverdue` kill a batch with one `UPDATE`,
+ * which is a differently shaped problem, and it is not what t198 hit.
  *
  * Since t226 every field and every status/reason value on this wire is English
  * (`docs/spec/glossario-wire.md` §1.5/§1.6), and since t235 so is the column
@@ -82,6 +98,8 @@ import {
   type LeaseFilters,
   type LeaseRow,
 } from '../repositories/leases.ts';
+import { now } from '../repositories/common.ts';
+import { announceFinishedExecution, getJob } from '../repositories/job.ts';
 import { getRunner } from '../repositories/runners.ts';
 import { isObject } from '../util/is-object.ts';
 import { refusal } from './common.ts';
@@ -261,7 +279,32 @@ export function registerLeases(
 
     if (lease.status !== 'active') return notActive(reply, lease, 'can be released');
 
-    return { lease: toLease(releaseLease(db, lease.id, options)) };
+    const released = releaseLease(db, lease.id, options);
+
+    // The one job lookup of this module (t264, FR1). It runs AFTER the release
+    // landed, because what the check needs to see is a lease that is no longer
+    // active — asking before would answer the same "no" it has always answered.
+    // A `job_id` pointing at nothing is an ordinary case here (no foreign key),
+    // and it simply has no round to declare over.
+    //
+    // The instant is the release's own: the fact is stamped with the moment it
+    // became true, exactly as the two callers in `job.ts` do. The `??` is the
+    // COLUMN's nullability — a row that was never released — and not a state
+    // `releaseLease` can return, since it writes `released_at` in the same
+    // `UPDATE` that flips the status.
+    const job = getJob(db, released.trabalho_id);
+    if (job !== null) {
+      db.transaction(() => {
+        announceFinishedExecution(
+          db,
+          job.execucao_id,
+          job.projeto_id,
+          released.liberada_em ?? (options.now ?? now)(),
+        );
+      })();
+    }
+
+    return { lease: toLease(released) };
   });
 
   app.get<ListQuery>('/leases', async (request, reply) => {

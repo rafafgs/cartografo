@@ -65,7 +65,7 @@ const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
 const GLOSSARY_LABEL = path.relative(REPO_ROOT, GLOSSARY);
 
 /**
- * The five child-ticket surfaces of D20, in D20's own order (FR4), plus one.
+ * The five child-ticket surfaces of D20, in D20's own order (FR4), plus two.
  *
  * `cost-lens` is not a child of t213: it arrived with t255, for the vocabulary
  * the cost surveyor puts on the wire (§5.5). It is a surface of its own rather
@@ -73,6 +73,11 @@ const GLOSSARY_LABEL = path.relative(REPO_ROOT, GLOSSARY);
  * FILTERS on, and those keys are readable only by that package's gate — folding
  * them into §5's tag would point three other sweeps at names none of them can
  * see.
+ *
+ * `flow-lens` is the same story one ticket later (§5.6, t264), and it is a
+ * SEVENTH tag rather than more `cost-lens` rows for a reason of its own: the two
+ * lenses write into the same `proposal.evidence` with different key sets, and
+ * one tag over both would let a name of either read as a name of the other.
  */
 const SURFACES = Object.freeze([
   'api',
@@ -81,6 +86,7 @@ const SURFACES = Object.freeze([
   'database',
   'routes-cli-report',
   'cost-lens',
+  'flow-lens',
 ]);
 
 /** First header cell of a glossary table, normalized. */

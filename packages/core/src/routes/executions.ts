@@ -28,6 +28,7 @@ import {
   getExecution,
   listExecutions,
   metricsByVersion,
+  nodeMetricsByVersion,
   toWireExecutionSummary,
   toWireMetricByVersion,
 } from '../repositories/job.ts';
@@ -77,6 +78,14 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
    * behave better?". Whoever is judging a per-node escalation policy reads both,
    * and two calls to compare two columns is a report split in half.
    *
+   * Since t264 every `metrics[]` row also carries `nodes`: sessions, tokens and
+   * agent time per node, under that version. It rides INSIDE the row rather
+   * than beside it like `input_requests_by_node`, because unlike the questions
+   * it is not a second slice of the round — it is the same slice one level
+   * down, and a node's cost means nothing without the version it was paid
+   * under. A version with no session at all gets an empty list, which is a
+   * measurement; it never gets a missing key.
+   *
    * The route keeps its name: what it groups by version did not change, and a
    * rename would break every client for an added field.
    */
@@ -84,10 +93,14 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
     withValidation(reply, () => {
       const executionId = routeId(request.params);
       const metrics = metricsByVersion(db, executionId);
+      const nodes = nodeMetricsByVersion(db, executionId);
       const byNode = questionsByNode(db, executionId);
       return {
         execution_id: executionId,
-        metrics: metrics.map(toWireMetricByVersion),
+        metrics: metrics.map((row) => ({
+          ...toWireMetricByVersion(row),
+          nodes: nodes.get(row.grafo_versao_id) ?? [],
+        })),
         input_requests_by_node: byNode.map(toWireQuestionsByNode),
       };
     }),

@@ -42,10 +42,10 @@ uma linha em `proposta`, sempre com status `pendente`.
 
 | Medida | De que par de eventos sai | Atribuída a |
 |---|---|---|
-| `tempo_agente_ms` | `session.opened` → `session.finished` | O nó em `session.opened.data.node_id`. |
-| `tempo_espera_ms` | `job.blocked` → `job.unblocked` | O nó em que o trabalho **estava no momento do bloqueio**. |
-| `tempo_fila_ms` | `job.transitioned` → o próximo `session.opened` do mesmo trabalho **no mesmo nó** | O nó de destino da transição. É latência de despacho. |
-| `perguntas` | `input_request.created` | O nó da sessão que perguntou (`data.session_id` → `session.opened.data.node_id`). |
+| `agent_ms` | `session.opened` → `session.finished` | O nó em `session.opened.data.node_id`. |
+| `blocked_ms` | `job.blocked` → `job.unblocked` | O nó em que o trabalho **estava no momento do bloqueio**. |
+| `queue_ms` | `job.transitioned` → o próximo `session.opened` do mesmo trabalho **no mesmo nó** | O nó de destino da transição. É latência de despacho. |
+| `input_requests` | `input_request.created` | O nó da sessão que perguntou (`data.session_id` → `session.opened.data.node_id`). |
 
 Três regras atravessam a dobra, e cada uma delas é uma decisão:
 
@@ -70,7 +70,7 @@ não há a quem cobrar aquele tempo.
 
 ## 3. O ranking e o gargalo
 
-`total_ms` é a soma das três medidas de tempo (perguntas **não** entram na
+`total_ms` é a soma das três medidas de tempo (`input_requests` **não** entra na
 soma: elas são sinal de outra natureza, e misturá-las exigiria um câmbio
 arbitrário entre segundo e pergunta). O ranking ordena por `total_ms`
 decrescente, com empate desfeito pelo id do nó em ordem crescente — duas
@@ -94,23 +94,32 @@ monta as duas antes de qualquer agente entrar na história.
   "lens": "flow",
   "fonte": "topografo/fluxo",
   "execution_id": 110,
-  "grafo_versao_id": "sha256:55be71af…",
+  "graph_version_id": "sha256:55be71af…",
   "node_id": "redigir",
-  "tempo_agente_ms": 20507,
-  "tempo_espera_ms": 5009,
-  "tempo_fila_ms": 0,
+  "agent_ms": 20507,
+  "blocked_ms": 5009,
+  "queue_ms": 0,
   "total_ms": 25516,
-  "perguntas": 0,
-  "eventos": [2, 3, 4, 5],
-  "por_no": [ … o ranking inteiro … ]
+  "input_requests": 0,
+  "event_ids": [2, 3, 4, 5],
+  "by_node": [ … o ranking inteiro … ]
 }
 ```
 
-`eventos` é o campo que dá nome ao contrato: são os ids **reais** dos eventos de
-que cada número saiu, e é por eles que qualquer pessoa reconstrói a conta sem
+`event_ids` é o campo que dá nome ao contrato: são os ids **reais** dos eventos
+de que cada número saiu, e é por eles que qualquer pessoa reconstrói a conta sem
 confiar em ninguém. Uma evidência que resume sem citar id é um parecer, não uma
-evidência. `por_no` viaja junto para que "por que ESTE nó?" seja respondível sem
+evidência. `by_node` viaja junto para que "por que ESTE nó?" seja respondível sem
 rodar nada de novo.
+
+As chaves acima estão em inglês desde a `t264`
+([`glossario-wire.md` §5.6](glossario-wire.md)): até ali a lente de fluxo era a
+única que ainda escrevia português dentro de `evidence`, e a de custo já tinha
+migrado na `t255`. Uma hipótese aberta ANTES daquela ficha nomeia
+`tempo_agente_ms:<no>`, e o `measureForExpectedMetric` responde `null` para ela
+— recusar é o comportamento correto: fechar com um zero leria como "o gargalo
+sumiu", que é o melhor veredito possível, quando o que houve foi ninguém medir
+nada.
 
 `lens` é o campo que o control plane lê, e não o topógrafo: desde a `t246`
 (D21), o `POST /v1/proposals` deduplica por `(lens, target_version, operations)`
@@ -128,7 +137,7 @@ A hipótese aponta o **componente dominante** do gargalo, não o total: "o nó
 custa 25s" não é acionável, "o nó passa 20s com agente aberto" é.
 
 ```json
-{ "nome": "tempo_agente_ms:redigir", "direcao": "cai", "de": 20507, "para": 16406 }
+{ "nome": "agent_ms:redigir", "direcao": "cai", "de": 20507, "para": 16406 }
 ```
 
 `para` é 20% abaixo de `de` — ambição declarada, não limiar. Quem julga a
@@ -210,7 +219,7 @@ base nova é trabalho de outra rodada ([t118](entidades-versionamento.md)).
 | Método | Rota | Papel nesta camada |
 |---|---|---|
 | `GET` | `/v1/executions/:id/events` | **Novo (t110).** O log inteiro da execução, em ordem de `id`. Execução sem evento nenhum responde `200` com lista vazia — execução é agrupador opaco, nunca entidade, então não há `404`. |
-| `GET` | `/v1/executions/:id/metrics-by-version` | Sob que versão a rodada correu (o log não carrega `grafo_versao_id`). |
+| `GET` | `/v1/executions/:id/metrics-by-version` | Sob que versão a rodada correu (o log não carrega `graph_version_id`). |
 | `GET` | `/v1/graph-versions/:id` | O snapshot: os nós que a medição reporta e as arestas que vão no prompt. |
 | `POST` | `/v1/proposals` | A única escrita. Devolve `201` com a proposta `pendente`. |
 
@@ -221,7 +230,7 @@ que continua sendo a única porta HTTP do processo.
 O comando é manual, e é assim de propósito (§8):
 
 ```
-npm run surveyor --workspace @cartografo/runner -- <execucao_id> [url] [dir] [--token <token>]
+npm run surveyor --workspace @cartografo/runner -- <execution_id> [url] [dir] [--token <token>]
 ```
 
 A credencial não é opcional na prática: desde a `t124` nenhuma rota de `/v1`

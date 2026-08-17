@@ -119,7 +119,7 @@ async function main() {
   console.log(`status:           ${result.proposta.status}`);
   console.log(`graph:            ${result.proposta.graph_id}`);
   console.log(`target_version:   ${result.proposta.target_version}`);
-  console.log(`gargalo:          ${result.gargalo.no_id}`);
+  console.log(`gargalo:          ${result.gargalo.node_id}`);
   console.log(`evidencia:        ${JSON.stringify(result.evidencia)}`);
   console.log(`metrica_esperada: ${JSON.stringify(result.metrica_esperada)}`);
   console.log('====================\n');

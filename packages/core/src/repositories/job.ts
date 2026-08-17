@@ -495,24 +495,40 @@ export function jobContextSeed(db: Database, id: number): JobContextSeed | null 
  * ordinary run of both factory bundles would report `finished_at: null` forever
  * (t245, D21), which is a regression and not a gap.
  *
- * ## What this check cannot see yet, and why it is not a bug of this file
+ * ## The fourth moment, which is not a job moving at all (t264)
  *
- * It runs on the JOB path — the two callers here, and `finishSession` — and
- * nowhere else.
- * `leases.ts` deliberately treats `job_id` as an opaque integer and never reads
- * `job`/`execution_id` (migration `0004`'s header defers tying the two sides to
- * "a ficha que ligar os dois lados"), and an ordinary release records no event
- * at all: the taxonomy has no `lease.released`, a gap open since t196 and named
- * in `leases.ts:34-36`.
+ * Until t264 this ran on the JOB path only — the two callers here, and
+ * `finishSession` — and that left the commonest real ending unannounced. The
+ * runner releases the lease strictly AFTER reporting the terminal transition
+ * (`packages/runner/src/controller/controller.ts`, the `finally` around
+ * `#dispatch`), so at the instant the last job of a round arrives, its own lease
+ * is typically still `active` and the third guard below refuses — correctly.
+ * Nothing looked again when that lease cleared a moment later, so the round
+ * stayed open until some job of it happened to move again. t198's first real
+ * crossing measured exactly that
+ * (`notas/2026-08-17-primeira-execucao-bets.md`, gap 3).
  *
- * The consequence is concrete and was measured against the real runner: it
- * releases the lease strictly AFTER reporting the transition
- * (`packages/runner/src/controller/controller.ts:211-236`), so at the instant
- * the last job's terminal transition lands, its own lease is typically still
- * active — and nothing re-checks when that lease later clears. A round in that
- * state is only declared over if some job of it moves again. Closing it means
- * adding `lease.released` or letting `leases.ts` know about the job; t245 named
- * the gap instead of shipping a check that structurally cannot fire.
+ * The fix is the fourth caller, and it is `routes/leases.ts` and not
+ * `repositories/leases.ts`: that repository treats `job_id` as an opaque integer
+ * on purpose and the taxonomy has no `lease.released` to hang an observer off,
+ * while the ROUTE already holds both the lease and the job. It calls this same
+ * function, with these same guards, in a transaction of its own. A lease that
+ * clears by EXPIRING instead is still uncovered — a bulk `UPDATE` over many
+ * leases is a differently shaped problem, and it is not what t198 hit.
+ *
+ * ## A job blocked forever keeps its round open forever, by design
+ *
+ * `isAtFinalNode` answers `false` for a blocked job whatever node it is standing
+ * on, so `jobs.every(job => job.concluido)` cannot pass while any job of the
+ * round is blocked, and this function stays a no-op for as long as that lasts.
+ * That is the intended reading: a round waiting on a human has not ended, and
+ * announcing otherwise would put a fact in the append-only log that a later
+ * unblock could not take back.
+ *
+ * It is not silent either. `blocked_jobs` on `GET /v1/executions` and on
+ * `GET /v1/executions/:id` counts exactly those jobs, and `pending_input_requests`
+ * beside it names how many people are being waited on — which is the report a
+ * person reads to tell "this round is still working" from "this round is stuck".
  *
  * @param db Open handle, inside the mutation's own transaction.
  * @param executionId Round the mutated job belongs to; `null` is a no-op —
@@ -1246,6 +1262,196 @@ export function metricsByVersion(db: Database, executionId: number): MetricByVer
     if (b.grafo_versao_id === null) return -1;
     return a.grafo_versao_id.localeCompare(b.grafo_versao_id);
   });
+}
+
+/**
+ * Token totals of one `(version, node)` pair, summed over the sessions that
+ * reported them (t264, FR7).
+ *
+ * The four subkeys are `session.usage`'s own, shortened: the prefix and the
+ * suffix say nothing here that the surrounding object does not already say.
+ */
+export interface NodeTokenTotals {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_creation: number;
+}
+
+/**
+ * What one node cost, under one graph version, in one execution (t264, FR7).
+ *
+ * English throughout, unlike {@link MetricByVersion} and {@link QuestionsByNode}
+ * beside it, and for the reason {@link ExecutionSummary.finished_at} already
+ * gives: those field names mirror COLUMNS that D20's fourth child renamed and
+ * that every `SELECT` aliases back. Nothing here mirrors a column — every field
+ * is a count or a sum this function computes — so there is no aliasing to
+ * preserve and no `toWire` step to write.
+ *
+ * Two counters instead of one, twice over, and that is the discipline this
+ * shape exists to carry (`packages/topografo-custo/src/cost.ts`, whose
+ * `aggregateCost` computes exactly this client-side): an absent `usage` is the
+ * engine having reported NOTHING, never a measurement of zero, and a session
+ * still open is a duration nobody knows, never an instant one. `sessions` minus
+ * `sessions_with_usage` is how much of `tokens` cannot be believed.
+ */
+export interface NodeMetrics {
+  /** The node the sessions ran on; `null` groups the ones that named none. */
+  node_id: string | null;
+  sessions: number;
+  sessions_with_usage: number;
+  tokens: NodeTokenTotals;
+  sessions_with_duration: number;
+  /** Sum of `finished_at - opened_at`, only over the sessions with both. */
+  agent_ms: number;
+}
+
+/** `session.usage`, in the subset this fold reads. */
+interface ReportedUsage {
+  input_tokens?: unknown;
+  output_tokens?: unknown;
+  cache_read_input_tokens?: unknown;
+  cache_creation_input_tokens?: unknown;
+}
+
+/** One session of the execution, joined to the version its job declares. */
+interface SessionOfExecution {
+  graph_version_id: string | null;
+  node_id: string | null;
+  usage: string | null;
+  opened_at: string;
+  finished_at: string | null;
+}
+
+/** A subkey of `usage` as a number; anything else contributes nothing. */
+function tokenCount(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Duration of a session in milliseconds, or `null` when there is no knowing.
+ *
+ * An absent or unparseable stamp is ignorance, and ignorance is counted out of
+ * `sessions_with_duration` — never added to `agent_ms` as a zero.
+ */
+function sessionDurationMs(row: SessionOfExecution): number | null {
+  if (row.finished_at === null) return null;
+  const start = Date.parse(row.opened_at);
+  const end = Date.parse(row.finished_at);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return end - start;
+}
+
+/** Text first, `null` last — the order of `metricsByVersion`. */
+function nodeIdOrder(a: string | null, b: string | null): number {
+  if (a === b) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a.localeCompare(b);
+}
+
+/**
+ * Sessions, tokens and agent time per `(graph version, node)`, for one
+ * execution (t264, FR7).
+ *
+ * The level below {@link metricsByVersion}, and the one its two callers were
+ * already computing by hand: the flow surveyor's note
+ * (`notas/2026-08-17-primeira-execucao-bets.md`, gap 8) and the cost lens, which
+ * pulls `GET /v1/sessions` and `GET /v1/jobs` and joins them in the runner
+ * process. "v2 is more expensive than v1" is an opinion until it says WHICH node
+ * became expensive, and the join that answers that belongs on the side that owns
+ * both tables (D1).
+ *
+ * The `session` table is read straight from here, as `hasConformingFinish`
+ * already does, rather than through `repositories/session.ts`: the question is
+ * about a JOB's version, and reaching into the other repository to ask it would
+ * put the join in the file that has no business knowing about jobs.
+ *
+ * The grouping is done in JS and not by `GROUP BY`, for one reason: `usage` is
+ * a JSON document in a column (`migrations/0003`, "JSON; NULL != gravar zeros"),
+ * and summing its subkeys in SQL would mean depending on the JSON1 extension for
+ * a fold of a few dozen rows. What SQL does here is the join and the filter,
+ * which is what SQL is for.
+ *
+ * The `INNER JOIN` is not a silent drop: a session with no `job_id` belongs to
+ * no job, and therefore to no execution — there is no round for it to be
+ * missing from. What DOES get a group of its own is a session with no
+ * `node_id`, and a job that declares no `graph_version_id`; both fall under
+ * `null` and are ordered last, the same convention {@link metricsByVersion} and
+ * `questionsByNode` follow.
+ *
+ * @param db Open handle.
+ * @param executionId Execution to group.
+ * @returns One entry per graph version observed, holding its nodes in node
+ *   order with `null` last. A version with no session at all is simply absent —
+ *   the caller supplies the empty list for it.
+ */
+export function nodeMetricsByVersion(
+  db: Database,
+  executionId: number,
+): Map<string | null, NodeMetrics[]> {
+  const rows = db
+    .prepare(
+      `SELECT j.graph_version_id AS graph_version_id,
+              s.node_id          AS node_id,
+              s.usage            AS usage,
+              s.opened_at        AS opened_at,
+              s.finished_at      AS finished_at
+         FROM session s
+         JOIN job j ON j.id = s.job_id
+        WHERE j.execution_id = ?
+        ORDER BY s.id`,
+    )
+    .all(executionId) as SessionOfExecution[];
+
+  const byVersion = new Map<string | null, Map<string | null, NodeMetrics>>();
+
+  for (const row of rows) {
+    let nodes = byVersion.get(row.graph_version_id);
+    if (nodes === undefined) {
+      nodes = new Map<string | null, NodeMetrics>();
+      byVersion.set(row.graph_version_id, nodes);
+    }
+
+    let metrics = nodes.get(row.node_id);
+    if (metrics === undefined) {
+      metrics = {
+        node_id: row.node_id,
+        sessions: 0,
+        sessions_with_usage: 0,
+        tokens: { input: 0, output: 0, cache_read: 0, cache_creation: 0 },
+        sessions_with_duration: 0,
+        agent_ms: 0,
+      };
+      nodes.set(row.node_id, metrics);
+    }
+
+    metrics.sessions += 1;
+
+    const usage = jsonOrNull<ReportedUsage>(row.usage);
+    if (usage !== null) {
+      metrics.sessions_with_usage += 1;
+      metrics.tokens.input += tokenCount(usage.input_tokens);
+      metrics.tokens.output += tokenCount(usage.output_tokens);
+      metrics.tokens.cache_read += tokenCount(usage.cache_read_input_tokens);
+      metrics.tokens.cache_creation += tokenCount(usage.cache_creation_input_tokens);
+    }
+
+    const duration = sessionDurationMs(row);
+    if (duration !== null) {
+      metrics.sessions_with_duration += 1;
+      // An interval that runs backwards is a clock disagreement, not negative
+      // time — the same reading the flow lens's fold gives one.
+      metrics.agent_ms += Math.max(0, duration);
+    }
+  }
+
+  return new Map(
+    [...byVersion].map(([version, nodes]) => [
+      version,
+      [...nodes.values()].sort((a, b) => nodeIdOrder(a.node_id, b.node_id)),
+    ]),
+  );
 }
 
 /**

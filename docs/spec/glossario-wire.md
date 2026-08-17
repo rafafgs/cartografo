@@ -29,14 +29,22 @@ abre (D7) com dois vocabulários em vez de um.
 | §4.1 e §4.2 | `database` | convergida | t229 (nomes), t235 (valores) |
 | §5.1 a §5.4 | `routes-cli-report` | convergida | t230 |
 | §1.1 e §1.4 (intake), §1.7, §5.2 (custo), §5.5 | `api`, `routes-cli-report`, `cost-lens` | convergida | t255 (as sobras) |
+| §5.6 | `flow-lens` | convergida | t264 |
 | todas, nas especificações | — | convergida | t231 (docs e portão) |
 
-A penúltima linha é do t255, que não é filho do t213: é a ficha que a revisão v2
-abriu ao encontrar seis sobras que os portões não pegavam, todas por não estarem
-mapeadas aqui. Cinco delas viraram linha nova (item de intake, códigos do proxy
+A antepenúltima linha é do t255, que não é filho do t213: é a ficha que a revisão
+v2 abriu ao encontrar seis sobras que os portões não pegavam, todas por não
+estarem mapeadas aqui. Cinco delas viraram linha nova (item de intake, códigos do proxy
 da tela, cabeçalho de assinatura, linha de comando da lente de custo, candidata
 da lente de custo); a sexta era de forma, não de idioma, e está contada na
 `policy.ts` daquele pacote.
+
+A penúltima é do t264, pelo mesmo motivo e um ticket depois: o t227 tinha
+deixado o vocabulário da lente de FLUXO em português de propósito, e essa
+decisão valia enquanto nenhuma lente tivesse migrado. O t255 migrou a irmã
+(§5.5), e a partir dali "é JSON livre, ninguém governa" virou duas línguas na
+mesma coluna. A §5.6 é essa sobra, encontrada pela primeira travessia real
+(`notas/2026-08-17-primeira-execucao-bets.md`, buraco 7).
 
 A última linha é a do filho que fecha a D20: o CÓDIGO de cada superfície já
 tinha portão próprio quando ela começou (um `no-portuguese-wire.test.ts` por
@@ -66,7 +74,11 @@ código, e mascara exatamente o que este documento mapeia — o valor no fio.
   `events`, `proposal-ops`, `database`, `routes-cli-report`. A sexta,
   `cost-lens`, chegou com o t255 e não é filho de ninguém: é o vocabulário que a
   lente de custo põe no fio (§5.5), e existe separada porque o portão que a lê é
-  o daquele pacote e só ele. Uma superfície pode aparecer em mais de uma tabela
+  o daquele pacote e só ele. A sétima, `flow-lens`, é a mesma história para a
+  lente de fluxo (§5.6, t264) — e é etiqueta própria pela mesma razão, com uma a
+  mais: as duas lentes escrevem no MESMO `proposal.evidence`, e uma etiqueta só
+  para as duas esconderia que cada uma tem o seu conjunto de chaves.
+  Uma superfície pode aparecer em mais de uma tabela
   (a `api` está dividida por grupo, para caber na cabeça de quem lê); o que vale
   é a etiqueta da linha, não o título da seção.
 - **`hoje`** é o termo em português como ele está escrito no código agora.
@@ -753,6 +765,54 @@ do portão do núcleo.
 | cost-lens | `operacoes` | `operations` | `packages/topografo-custo/src/policy.ts` |
 | cost-lens | `evidencia` | `evidence` | `packages/topografo-custo/src/policy.ts` |
 | cost-lens | `metrica_esperada` | `expected_metric` | `packages/topografo-custo/src/policy.ts` |
+
+### 5.6 Evidência e medidas da lente de fluxo
+
+O que o topógrafo de FLUXO põe no fio: as chaves de `evidence` e os nomes de
+medida que `expected_metric.nome` carrega, ambos dentro do `POST /v1/proposals`.
+Etiqueta própria (`flow-lens`) pelo mesmo motivo da §5.5 — é vocabulário de uma
+lente, lido pelo portão de um pacote só — e porque as duas lentes escrevem no
+mesmo campo com conjuntos de chaves diferentes.
+
+O t227 deixou estas em português **de propósito**, e escreveu isso no cabeçalho
+do `metrics.ts`: eram JSON livre (D15), nenhuma linha de glossário as governava,
+e nenhuma lente irmã tinha migrado. O t255 migrou a irmã, e a partir dali a
+escolha deixou de ser "ainda não" e passou a ser "duas línguas na mesma coluna".
+O t264 é quem fecha, e a primeira travessia real é quem encontrou
+(`notas/2026-08-17-primeira-execucao-bets.md`, buraco 7).
+
+Três coisas NÃO estão aqui, cada uma por seu motivo:
+
+- **`total_ms` e `lens` já são inglês.** Nada a mapear.
+- **`fonte` fica.** O [`topografo-fluxo.md` §4](topografo-fluxo.md) já registra
+  que ela é a procedência que o módulo declara, distinta do `lens` que o
+  servidor lê para deduplicar. Renomeá-la seria reverter uma decisão gravada,
+  não deixar uma por gravar.
+- **O CONTEÚDO de `metrica_esperada` continua `{nome, direcao, de, para}`** —
+  formato de hipótese congelado do `domain/hypothesis.ts`, exatamente como diz a
+  §5.5. O que a §5.6 muda é o VALOR de `nome`, que é `"<medida>:<node_id>"`: as
+  medidas abaixo são as grafias que ele passa a compor.
+
+`gargalo`, `evidencia`, `metrica_esperada` e `proposta` como chaves do
+`SurveyorResult` também não estão: aquilo é o retorno interno do runner, lido
+pelo `cli.mjs` e pelo `packages/topografo`, nunca serializado — mesma convenção
+que deixa `IdentifiedCostRow` fora da §5.5.
+
+`evidencia.eventos` aparece qualificada porque `eventos` já é `events` na §1.1,
+e aqui a lista não é de eventos: é de ids deles. Mesma regra que separa
+`evento.tipo` de `pergunta.tipo` na §4.2.
+
+| superfície | hoje | vira | onde está hoje |
+|---|---|---|---|
+| flow-lens | `no_id` | `node_id` | `packages/runner/src/surveyor/metrics.ts` |
+| flow-lens | `execucao_id` | `execution_id` | `packages/runner/src/surveyor/proposal.ts` |
+| flow-lens | `grafo_versao_id` | `graph_version_id` | `packages/runner/src/surveyor/proposal.ts` |
+| flow-lens | `tempo_agente_ms` | `agent_ms` | `packages/runner/src/surveyor/metrics.ts` |
+| flow-lens | `tempo_espera_ms` | `blocked_ms` | `packages/runner/src/surveyor/metrics.ts` |
+| flow-lens | `tempo_fila_ms` | `queue_ms` | `packages/runner/src/surveyor/metrics.ts` |
+| flow-lens | `perguntas` | `input_requests` | `packages/runner/src/surveyor/metrics.ts` |
+| flow-lens | `evidencia.eventos` | `event_ids` | `packages/runner/src/surveyor/metrics.ts` |
+| flow-lens | `por_no` | `by_node` | `packages/runner/src/surveyor/metrics.ts` |
 
 ---
 

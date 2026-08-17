@@ -323,8 +323,8 @@ async function main() {
     if (proposal.status !== 'pendente') die(`the proposal is "${proposal.status}"`);
     if (proposal.versao_aplicada_id !== null) die('something applied the proposal');
 
-    for (const id of proposal.evidencia.eventos) {
-      if (!logIds.has(id)) die(`evidencia.eventos cites event ${id}, absent from the log`);
+    for (const id of proposal.evidencia.event_ids) {
+      if (!logIds.has(id)) die(`evidencia.event_ids cites event ${id}, absent from the log`);
     }
 
     const graphAfter = await api(url, 'GET', `/v1/graphs/${graph.id}`);

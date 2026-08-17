@@ -31,9 +31,16 @@
  * English per D18. The proposal's outer keys went English with t226 and the
  * OPERATIONS with t228 (`docs/spec/glossario-wire.md` §3) — mirror validator and
  * session prompt together, because a prompt teaching the old spelling would
- * produce exactly the 400 the mirror exists to prevent. What stays Portuguese is
- * this module's own vocabulary: `evidencia`, `metrica_esperada` and the ranking
- * it publishes, which are free JSON by design (D15) and nobody's surface in D20.
+ * produce exactly the 400 the mirror exists to prevent. What travels INSIDE
+ * `evidence` followed with t264 (§5.6), for the reason t255 set on the cost
+ * lens: the two lenses write into the same free-JSON column (D15), and free
+ * JSON is not a reason to write it in two languages. `fonte` is the one
+ * deliberate exception — see {@link FlowEvidence.fonte}.
+ *
+ * `evidencia`, `metrica_esperada` and `proposta` on {@link SurveyorResult} are
+ * NOT that surface: they are this module's own return value, read by
+ * `cli.mjs` and by `packages/topografo`, and renaming them is identifier debt
+ * of another ficha (`test/no-portuguese-wire.test.ts`'s own exemption says so).
  */
 
 import { readFileSync } from 'node:fs';
@@ -122,19 +129,19 @@ export interface FlowEvidence {
   lens: 'flow';
   /** Which surveyor produced this. The second one (custo) will say otherwise. */
   fonte: string;
-  execucao_id: number;
-  grafo_versao_id: string;
+  execution_id: number;
+  graph_version_id: string;
   /** The bottleneck these numbers are about. */
-  no_id: string;
-  tempo_agente_ms: number;
-  tempo_espera_ms: number;
-  tempo_fila_ms: number;
+  node_id: string;
+  agent_ms: number;
+  blocked_ms: number;
+  queue_ms: number;
   total_ms: number;
-  perguntas: number;
+  input_requests: number;
   /** Ids of the events the numbers were computed from — never a summary alone. */
-  eventos: number[];
+  event_ids: number[];
   /** The whole ranking, so "why this node" is answerable without a re-run. */
-  por_no: NodeMetric[];
+  by_node: NodeMetric[];
 }
 
 /** The hypothesis, in the shape t112's verdict can read. */
@@ -148,9 +155,11 @@ export interface ExpectedMetric {
 /**
  * What one surveyor run did.
  *
- * The field names are the book's, not this module's: they are the same keys
- * `POST /v1/proposals` reads and the same ones the ranking publishes, so they
- * stay in Portuguese along with everything else on that surface.
+ * These four names are this module's OWN — the runner-internal result its two
+ * callers destructure — and not the book's. What goes into the book is what
+ * `evidencia` and `metrica_esperada` CARRY, and that vocabulary went English
+ * with t264; these keys did not, and renaming them is the identifier debt
+ * `test/no-portuguese-wire.test.ts` already exempts by name.
  */
 export interface SurveyorResult {
   metricas: FlowMetrics;
@@ -372,16 +381,16 @@ export function buildEvidence(
   return {
     lens: 'flow',
     fonte: 'topografo/fluxo',
-    execucao_id: executionId,
-    grafo_versao_id: versionId,
-    no_id: bottleneck.no_id,
-    tempo_agente_ms: bottleneck.tempo_agente_ms,
-    tempo_espera_ms: bottleneck.tempo_espera_ms,
-    tempo_fila_ms: bottleneck.tempo_fila_ms,
+    execution_id: executionId,
+    graph_version_id: versionId,
+    node_id: bottleneck.node_id,
+    agent_ms: bottleneck.agent_ms,
+    blocked_ms: bottleneck.blocked_ms,
+    queue_ms: bottleneck.queue_ms,
     total_ms: bottleneck.total_ms,
-    perguntas: bottleneck.perguntas,
-    eventos: [...bottleneck.eventos],
-    por_no: metrics.por_no,
+    input_requests: bottleneck.input_requests,
+    event_ids: [...bottleneck.event_ids],
+    by_node: metrics.by_node,
   };
 }
 
@@ -398,16 +407,16 @@ export function buildEvidence(
  */
 export function buildExpectedMetric(bottleneck: NodeMetric): ExpectedMetric {
   const components = [
-    { name: 'tempo_espera_ms', value: bottleneck.tempo_espera_ms },
-    { name: 'tempo_fila_ms', value: bottleneck.tempo_fila_ms },
-    { name: 'tempo_agente_ms', value: bottleneck.tempo_agente_ms },
+    { name: 'blocked_ms', value: bottleneck.blocked_ms },
+    { name: 'queue_ms', value: bottleneck.queue_ms },
+    { name: 'agent_ms', value: bottleneck.agent_ms },
   ];
   const dominant = components.reduce((biggest, current) =>
     current.value > biggest.value ? current : biggest,
   );
 
   return {
-    nome: `${dominant.name}:${bottleneck.no_id}`,
+    nome: `${dominant.name}:${bottleneck.node_id}`,
     direcao: 'cai',
     de: dominant.value,
     para: Math.round(dominant.value * (1 - EXPECTED_REDUCTION)),
@@ -490,15 +499,15 @@ export function buildPrompt(version: VersaoDeGrafo, evidence: FlowEvidence): str
         `- \`${edge.from}\` → \`${edge.to}\` quando: ${edge.condition ?? '(sem condição)'}`,
     ),
     '',
-    `## Medição da execução ${evidence.execucao_id}`,
+    `## Medição da execução ${evidence.execution_id}`,
     '',
-    `Gargalo: **\`${evidence.no_id}\`**.`,
+    `Gargalo: **\`${evidence.node_id}\`**.`,
     '',
     '| nó | agente (ms) | espera (ms) | fila (ms) | total (ms) | perguntas |',
     '|---|---|---|---|---|---|',
-    ...evidence.por_no.map(
+    ...evidence.by_node.map(
       (row) =>
-        `| \`${row.no_id}\` | ${row.tempo_agente_ms} | ${row.tempo_espera_ms} | ${row.tempo_fila_ms} | ${row.total_ms} | ${row.perguntas} |`,
+        `| \`${row.node_id}\` | ${row.agent_ms} | ${row.blocked_ms} | ${row.queue_ms} | ${row.total_ms} | ${row.input_requests} |`,
     ),
     '',
     'Leitura das colunas: **agente** é tempo de sessão aberta no nó; **espera** é',
@@ -613,7 +622,7 @@ async function chooseOperations(
 /**
  * Which graph version this execution ran under.
  *
- * The log does not carry it (`trabalho.criado` has no `grafo_versao_id` in its
+ * The log does not carry it (`trabalho.criado` has no `graph_version_id` in its
  * schema — it is projection, not fact), so the answer comes from the
  * version × telemetry join of t102. The version with the most works wins a run
  * that spans two of them: the proposal has to target one, and the majority is
@@ -681,7 +690,7 @@ export async function proposeFlowImprovement(
   const evidence = buildEvidence(bottleneck, metrics, options.executionId, versionId);
   const expectedMetric = buildExpectedMetric(bottleneck);
   log(
-    `bottleneck: ${bottleneck.no_id} (${bottleneck.total_ms}ms, ${bottleneck.perguntas} question(s)), over events ${bottleneck.eventos.join(', ')}`,
+    `bottleneck: ${bottleneck.node_id} (${bottleneck.total_ms}ms, ${bottleneck.input_requests} question(s)), over events ${bottleneck.event_ids.join(', ')}`,
   );
 
   const operations = await chooseOperations(options, version, evidence, log);

@@ -3,7 +3,7 @@
  * (t165, FR6/FR9).
  *
  * The surveyor opens a hypothesis naming the number it expects to move, and it
- * names it as `"<medida>:<no_id>"` — `"tempo_agente_ms:redigir"`
+ * names it as `"<medida>:<node_id>"` — `"agent_ms:redigir"`
  * (`docs/spec/topografo-fluxo.md` §4, `proposal.ts:buildExpectedMetric`). The
  * control plane closes it against `depois`, a plain number the caller computes
  * (`POST /v1/proposals/:id/outcome`, t112: "there is no engine of named metrics
@@ -26,8 +26,12 @@
  * about its own: what a test can reach without spawning a process is what stays
  * covered, so the `.mjs` is left with the network and the exit code.
  *
- * English per D18; the measure names stay in Portuguese because they are the
- * payload keys of `proposta.metrica_esperada` and of `FlowMetrics`.
+ * English per D18, measure names included since t264: they are payload keys of
+ * `metrica_esperada` and of `FlowMetrics`, which is exactly what makes them the
+ * flow lens's wire (`docs/spec/glossario-wire.md` §5.6). A hypothesis opened
+ * before that rename names `tempo_agente_ms:<no>`, which this list no longer
+ * knows — and the honest answer to a name from a vocabulary this code does not
+ * carry is the `null` below, not a number read off the wrong column.
  */
 
 import type { FlowMetrics, NodeMetric } from './metrics.ts';
@@ -36,21 +40,21 @@ import { DEFAULT_URL, ENV_TOKEN } from './command-line.ts';
 /**
  * The measures of the ranking that name a number, and only those.
  *
- * A closed list and not "any key of `NodeMetric`": `no_id` and `eventos` are
+ * A closed list and not "any key of `NodeMetric`": `node_id` and `event_ids` are
  * not measurements, and reading an arbitrary key off an object would let
  * `"constructor:redigir"` resolve to something. The five here are exactly the
  * four of `topografo-fluxo.md` §2 plus the total the ranking sorts by.
  */
 export const MEASURES = Object.freeze([
-  'tempo_agente_ms',
-  'tempo_espera_ms',
-  'tempo_fila_ms',
+  'agent_ms',
+  'blocked_ms',
+  'queue_ms',
   'total_ms',
-  'perguntas',
+  'input_requests',
 ]);
 
 /** One of {@link MEASURES}. */
-export type MeasureName = 'tempo_agente_ms' | 'tempo_espera_ms' | 'tempo_fila_ms' | 'total_ms' | 'perguntas';
+export type MeasureName = 'agent_ms' | 'blocked_ms' | 'queue_ms' | 'total_ms' | 'input_requests';
 
 /**
  * Reads the number an `ExpectedMetric.nome` points at, out of a round's ranking.
@@ -58,7 +62,7 @@ export type MeasureName = 'tempo_agente_ms' | 'tempo_espera_ms' | 'tempo_fila_ms
  * @param metrics The next round's metrics, straight out of
  *   `calculateFlowMetrics` — the same shape the proposal's evidence was built
  *   from, which is what makes the two numbers comparable at all.
- * @param name The `nome` the proposal declared, shaped `"<medida>:<no_id>"`.
+ * @param name The `nome` the proposal declared, shaped `"<medida>:<node_id>"`.
  * @returns The measured value, or `null` when the name is malformed, names a
  *   measure this code does not know, or names a node absent from the ranking. A
  *   node that ran and cost nothing measures `0`, which is a number and not an
@@ -78,7 +82,7 @@ export function measureForExpectedMetric(metrics: FlowMetrics, name: string): nu
   if (measure === '' || nodeId === '') return null;
   if (!MEASURES.includes(measure)) return null;
 
-  const row = metrics.por_no.find((candidate) => candidate.no_id === nodeId);
+  const row = metrics.by_node.find((candidate) => candidate.node_id === nodeId);
   if (row === undefined) return null;
 
   const value = row[measure as MeasureName];
@@ -95,8 +99,8 @@ export function describeBottleneck(metrics: FlowMetrics): string {
   const worst: NodeMetric | null = metrics.gargalo;
   if (worst === null) return 'nenhum nó custou tempo nesta rodada';
   return (
-    `${worst.no_id}: total_ms=${worst.total_ms} ` +
-    `(agente=${worst.tempo_agente_ms}, espera=${worst.tempo_espera_ms}, fila=${worst.tempo_fila_ms})`
+    `${worst.node_id}: total_ms=${worst.total_ms} ` +
+    `(agente=${worst.agent_ms}, espera=${worst.blocked_ms}, fila=${worst.queue_ms})`
   );
 }
 

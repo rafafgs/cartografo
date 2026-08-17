@@ -100,7 +100,7 @@ try {
   // The join that proves this round is the NEXT one, checked here so the
   // failure names the problem instead of arriving as a 422 from the route.
   const byVersion = await client.metricasPorVersao(executionId);
-  const underApplied = byVersion.find((row) => row.grafo_versao_id === appliedVersionId);
+  const underApplied = byVersion.find((row) => row.graph_version_id === appliedVersionId);
   if (underApplied === undefined || underApplied.trabalhos < 1) {
     die(
       `no job of execution ${executionId} ran under ${appliedVersionId} — ` +
@@ -115,7 +115,7 @@ try {
   if (after === null) {
     die(
       `"${name}" measures nothing in execution ${executionId}: the node is not in the ` +
-        'ranking of the applied version, or the name is not "<medida>:<no_id>". ' +
+        'ranking of the applied version, or the name is not "<medida>:<node_id>". ' +
         'Closing with a zero would read as the best possible verdict — refusing instead',
     );
   }

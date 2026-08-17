@@ -29,10 +29,13 @@
  * Pure: no HTTP, no clock, no filesystem. Its only input is the log and the
  * node ids of the graph version that ran.
  *
- * English per D18; the metric names of {@link NodeMetric} stay in Portuguese
- * because they are payload keys of `proposta.evidencia` and land in the book
- * that way — no glossary row governs them, and t227 left them alone on purpose.
- * The EVENT vocabulary this fold reads is English since that ticket.
+ * English per D18, the metric names of {@link NodeMetric} included since t264.
+ * They are payload keys of `proposal.evidence` and land in the book that way, so
+ * a glossary row is exactly what they needed — `docs/spec/glossario-wire.md`
+ * §5.6 now carries one for each. t227 did leave them alone on purpose, and that
+ * purpose expired when t255 migrated the sibling lens (§5.5): two lenses writing
+ * two languages into the same column is the one outcome D20 exists to prevent.
+ * The EVENT vocabulary this fold reads has been English since t227.
  */
 
 /** One envelope of the log, reduced to what the fold reads. */
@@ -46,42 +49,42 @@ export interface FlowEvent {
 
 /** What one node cost in one execution. */
 export interface NodeMetric {
-  no_id: string;
+  node_id: string;
   /** Sum of `session.opened` → `session.finished` for sessions on this node. */
-  tempo_agente_ms: number;
+  agent_ms: number;
   /** Sum of `job.blocked` → `job.unblocked`, attributed to the node the work sat on. */
-  tempo_espera_ms: number;
+  blocked_ms: number;
   /** Sum of `job.transitioned` → the next `session.opened` for the same work and node. */
-  tempo_fila_ms: number;
+  queue_ms: number;
   /** The three above. It is what the ranking sorts by. */
   total_ms: number;
   /** `input_request.created` events whose session ran on this node. */
-  perguntas: number;
+  input_requests: number;
   /** The ids of the events every number above was computed from, ascending. */
-  eventos: number[];
+  event_ids: number[];
 }
 
 /** The ranking, plus the node at the top of it. */
 export interface FlowMetrics {
   /** Every node of the graph, worst total first, ties broken by node id. */
-  por_no: NodeMetric[];
+  by_node: NodeMetric[];
   /** The worst node, or `null` when nothing in this run cost any time. */
   gargalo: NodeMetric | null;
 }
 
 /** Mutable accumulator of one node, before it becomes a `NodeMetric`. */
 interface Accumulator {
-  no_id: string;
-  tempo_agente_ms: number;
-  tempo_espera_ms: number;
-  tempo_fila_ms: number;
-  perguntas: number;
-  eventos: Set<number>;
+  node_id: string;
+  agent_ms: number;
+  blocked_ms: number;
+  queue_ms: number;
+  input_requests: number;
+  event_ids: Set<number>;
 }
 
 /** A session, from `session.opened` until its `session.finished` shows up. */
 interface OpenSession {
-  no_id: string | null;
+  node_id: string | null;
   trabalho_id: number | null;
   openedAt: number;
   event: number;
@@ -89,7 +92,7 @@ interface OpenSession {
 
 /** An interval that started and is waiting for the event that closes it. */
 interface PendingInterval {
-  no_id: string;
+  node_id: string;
   since: number;
   event: number;
 }
@@ -130,19 +133,19 @@ export function calculateFlowMetrics(
   for (const nodeId of nodeIds) {
     if (accumulators.has(nodeId)) continue;
     accumulators.set(nodeId, {
-      no_id: nodeId,
-      tempo_agente_ms: 0,
-      tempo_espera_ms: 0,
-      tempo_fila_ms: 0,
-      perguntas: 0,
-      eventos: new Set<number>(),
+      node_id: nodeId,
+      agent_ms: 0,
+      blocked_ms: 0,
+      queue_ms: 0,
+      input_requests: 0,
+      event_ids: new Set<number>(),
     });
   }
 
   /** Adds an interval to a node, ignoring what the graph does not have. */
   const add = (
     nodeId: string | null,
-    field: 'tempo_agente_ms' | 'tempo_espera_ms' | 'tempo_fila_ms',
+    field: 'agent_ms' | 'blocked_ms' | 'queue_ms',
     ms: number,
     from: readonly number[],
   ): void => {
@@ -152,7 +155,7 @@ export function calculateFlowMetrics(
     // time: `occurred_at` is not a total ordering, and subtracting here would
     // let one bad timestamp erase a real cost.
     accumulator[field] += Math.max(0, ms);
-    for (const id of from) accumulator.eventos.add(id);
+    for (const id of from) accumulator.event_ids.add(id);
   };
 
   const currentNode = new Map<number, string>();
@@ -179,14 +182,14 @@ export function calculateFlowMetrics(
         // Landing on a node starts the dispatch clock. A previous landing that
         // never got a session is overwritten: the work left without one, and
         // there is no queue time to charge anyone.
-        queued.set(entity, { no_id: target, since: when, event: event.id });
+        queued.set(entity, { node_id: target, since: when, event: event.id });
         break;
       }
 
       case 'job.blocked': {
         const where = currentNode.get(entity);
         if (where === undefined) break;
-        blocked.set(entity, { no_id: where, since: when, event: event.id });
+        blocked.set(entity, { node_id: where, since: when, event: event.id });
         break;
       }
 
@@ -194,29 +197,29 @@ export function calculateFlowMetrics(
         const wait = blocked.get(entity);
         if (wait === undefined) break;
         blocked.delete(entity);
-        add(wait.no_id, 'tempo_espera_ms', when - wait.since, [wait.event, event.id]);
+        add(wait.node_id, 'blocked_ms', when - wait.since, [wait.event, event.id]);
         break;
       }
 
       case 'session.opened': {
-        const no_id = asText(event.data.node_id);
+        const node_id = asText(event.data.node_id);
         const trabalho_id = asInteger(event.data.job_id);
-        sessions.set(entity, { no_id, trabalho_id, openedAt: when, event: event.id });
+        sessions.set(entity, { node_id, trabalho_id, openedAt: when, event: event.id });
 
-        if (trabalho_id === null || no_id === null) break;
+        if (trabalho_id === null || node_id === null) break;
         const queue = queued.get(trabalho_id);
         // Only the session that opens ON THE NODE the work landed on closes the
         // queue interval; anything else is a different node's business.
-        if (queue === undefined || queue.no_id !== no_id) break;
+        if (queue === undefined || queue.node_id !== node_id) break;
         queued.delete(trabalho_id);
-        add(no_id, 'tempo_fila_ms', when - queue.since, [queue.event, event.id]);
+        add(node_id, 'queue_ms', when - queue.since, [queue.event, event.id]);
         break;
       }
 
       case 'session.finished': {
         const session = sessions.get(entity);
         if (session === undefined) break;
-        add(session.no_id, 'tempo_agente_ms', when - session.openedAt, [
+        add(session.node_id, 'agent_ms', when - session.openedAt, [
           session.event,
           event.id,
         ]);
@@ -230,12 +233,12 @@ export function calculateFlowMetrics(
         const sessionId = asInteger(event.data.session_id);
         const session = sessionId === null ? undefined : sessions.get(sessionId);
         const accumulator =
-          session?.no_id === undefined || session.no_id === null
+          session?.node_id === undefined || session.node_id === null
             ? undefined
-            : accumulators.get(session.no_id);
+            : accumulators.get(session.node_id);
         if (accumulator === undefined) break;
-        accumulator.perguntas += 1;
-        accumulator.eventos.add(event.id);
+        accumulator.input_requests += 1;
+        accumulator.event_ids.add(event.id);
         break;
       }
 
@@ -246,22 +249,22 @@ export function calculateFlowMetrics(
 
   const ranking = [...accumulators.values()]
     .map((accumulator) => ({
-      no_id: accumulator.no_id,
-      tempo_agente_ms: accumulator.tempo_agente_ms,
-      tempo_espera_ms: accumulator.tempo_espera_ms,
-      tempo_fila_ms: accumulator.tempo_fila_ms,
+      node_id: accumulator.node_id,
+      agent_ms: accumulator.agent_ms,
+      blocked_ms: accumulator.blocked_ms,
+      queue_ms: accumulator.queue_ms,
       total_ms:
-        accumulator.tempo_agente_ms + accumulator.tempo_espera_ms + accumulator.tempo_fila_ms,
-      perguntas: accumulator.perguntas,
-      eventos: [...accumulator.eventos].sort((a, b) => a - b),
+        accumulator.agent_ms + accumulator.blocked_ms + accumulator.queue_ms,
+      input_requests: accumulator.input_requests,
+      event_ids: [...accumulator.event_ids].sort((a, b) => a - b),
     }))
     // Ties broken by node id so the ranking is a function of the log alone —
     // two runs with the same numbers must name the same bottleneck.
-    .sort((a, b) => b.total_ms - a.total_ms || (a.no_id < b.no_id ? -1 : 1));
+    .sort((a, b) => b.total_ms - a.total_ms || (a.node_id < b.node_id ? -1 : 1));
 
   const worst = ranking[0];
   return {
-    por_no: ranking,
+    by_node: ranking,
     gargalo: worst !== undefined && worst.total_ms > 0 ? worst : null,
   };
 }

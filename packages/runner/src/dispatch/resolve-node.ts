@@ -46,12 +46,12 @@ export interface NodeContract {
    * of the nodes downstream of it (t253).
    *
    * Declared here so the runner's read of the snapshot stays in step with the
-   * control plane's, and READ-ONLY for now: what acts on it is
+   * control plane's, and READ-ONLY on this side: what acts on it is
    * `GET /v1/jobs/:id/context`, which is the control plane's own projection
    * (`packages/core/src/domain/context.ts`, D1 — the sole writer is the one
-   * place that can assemble it without a second round trip). Wiring
-   * {@link ClaudeCodeDispatchOptions.resolveInput} to that route is the
-   * follow-up ficha; until then nothing on this side reads the field.
+   * place that can assemble it without a second round trip). Since t259 the
+   * dispatch READS that route (`resolve-input.ts`), so the field is live end to
+   * end; nothing here interprets it all the same.
    *
    * Optional, and absence means "merge at the top level" — the behaviour every
    * graph written before the field already has.

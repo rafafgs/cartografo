@@ -195,9 +195,8 @@ export async function blockWithNobodyToAsk(
  * (t207-B).
  *
  * The same route and the same actor as {@link blockWithNobodyToAsk}, and a
- * function of its own all the same: the two reasons a dispatch stops a work on
- * its own account are different facts — one is a node with nobody to ask, the
- * other is output that exists in exactly one directory — and a single helper
+ * function of its own all the same: a node with nobody to ask and output that
+ * exists in exactly one directory are different facts, and a single helper
  * taking a string would make them indistinguishable at every call site.
  *
  * No new field on `/finish` and no new schema: `POST /v1/jobs/:id/blocks` has
@@ -241,10 +240,8 @@ export async function blockForUncommittedWork(
  * anybody's inbox and no other job of the project ever reached.
  *
  * Same route, same actor and same shape as the two blocks above, and a function
- * of its own for the same reason they are two: a single helper taking a string
- * would make three different facts indistinguishable at the call site. The
- * reason itself is composed elsewhere (`pre-session-failure.ts`) — WHICH failure
- * this was is a classification, and posting it is a write.
+ * of its own for the reason they are two. The reason itself is composed
+ * elsewhere (`pre-session-failure.ts`): classifying is not writing.
  *
  * @param call The dispatch's control-plane client.
  * @param job The work being dispatched.
@@ -516,6 +513,12 @@ export class PermissionDenialReporter {
  *   frame-decoding is lossy by design: what gets persisted is the material
  *   before that, because a session that died is diagnosed from what it printed,
  *   not from what parsed.
+ * @param output What the session reported in its `` ```resultado `` block, as
+ *   the object its node's `output_schema` declares (t259) — the value the next
+ *   node's `input` is projected from. Absent when it printed no usable block,
+ *   and then the KEY is omitted: a `null` there is what the control plane
+ *   writes for a report the skill's schema REFUSED
+ *   (`packages/core/src/repositories/session.ts`), which is a different fact.
  * @returns `null` when the write went through, and whatever it threw otherwise.
  */
 export async function finishSession(
@@ -523,6 +526,7 @@ export async function finishSession(
   sessionId: number,
   outcome: Outcome,
   transcript: string,
+  output?: Record<string, unknown>,
 ): Promise<unknown> {
   try {
     await call(`/v1/sessions/${sessionId}/finish`, 'PATCH', {
@@ -549,6 +553,7 @@ export async function finishSession(
       usage: outcome.usage ?? null,
       models: outcome.models ?? null,
       transcript,
+      ...(output === undefined ? {} : { output }),
     });
   } catch (error) {
     return error;

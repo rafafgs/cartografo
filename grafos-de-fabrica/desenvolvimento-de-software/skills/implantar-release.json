@@ -1,31 +1,32 @@
 {
   "id": "implantar-release",
   "version": "1.0.0",
-  "hash": "sha256:f00cd356adb2f9007fa61a7c4f197033236714800f5b19a508eed3c87a09b522",
+  "hash": "sha256:aec5b3230e4317f0369540952af25a0f29a011316513a79162a1a70fad7afde8",
   "role": "work",
   "description": "Verifica se o merge commit do trabalho já está contido no commit que a instalação em uso carrega, e encerra a travessia quando está.",
   "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
-      "ticket",
+      "job",
       "artefato",
       "referencia",
-      "projeto"
+      "project"
     ],
     "additionalProperties": false,
     "properties": {
-      "ticket": {
+      "job": {
         "type": "object",
+        "description": "a identidade do próprio trabalho, publicada pela projeção de input em `input.job` (t253)",
         "required": [
           "id",
-          "titulo"
+          "title"
         ],
         "properties": {
           "id": {
             "type": "integer"
           },
-          "titulo": {
+          "title": {
             "type": "string"
           }
         }
@@ -69,7 +70,7 @@
           }
         }
       },
-      "projeto": {
+      "project": {
         "type": "object",
         "required": [
           "repo"
@@ -80,9 +81,6 @@
             "minLength": 1
           }
         }
-      },
-      "contexto_falha": {
-        "type": "string"
       }
     }
   },
@@ -156,14 +154,14 @@
       "id": "referencia-resolve",
       "type": "deterministic",
       "description": "A referência existe como commit neste repositório. Sem isso, um \"não contém\" seria indistinguível de \"não sei\", e essas duas respostas têm destinos diferentes.",
-      "command": "git -C {{input.projeto.repo}} rev-parse --verify --quiet {{input.referencia.commit}}^{commit}",
+      "command": "git -C {{input.project.repo}} rev-parse --verify --quiet {{input.referencia.commit}}^{commit}",
       "timeout_s": 60
     },
     {
       "id": "merge-commit-contido-na-referencia",
       "type": "deterministic",
       "description": "A pergunta inteira desta etapa: o merge commit do trabalho é ancestral da referência? Saída 0 = publicado; 1 = ainda não; qualquer outra = indeterminado. É um comando com resposta certa e inequívoca — pagar julgamento por isso seria pagar pela coisa errada.",
-      "command": "git -C {{input.projeto.repo}} merge-base --is-ancestor {{input.artefato.merge_commit}} {{input.referencia.commit}}",
+      "command": "git -C {{input.project.repo}} merge-base --is-ancestor {{input.artefato.merge_commit}} {{input.referencia.commit}}",
       "timeout_s": 120
     }
   ],
@@ -178,7 +176,7 @@
       "allowed": false
     }
   },
-  "instructions": "# Confirmar que o trabalho está publicado\n\nEsta etapa não publica nada: ela **verifica** uma publicação que já aconteceu.\nA pergunta inteira é uma só, e tem resposta objetiva:\n\n> o merge commit `{{input.artefato.merge_commit}}` está contido no commit\n> que a instalação em uso carrega (`{{input.referencia.commit}}`, modo\n> `{{input.referencia.modo}}`)?\n\n**Trabalho:** {{input.ticket.titulo}} (#{{input.ticket.id}})\n\n## Uma nota honesta sobre este nó\n\nNo sistema de referência que este grafo porta, esta etapa **nunca abre sessão\nde agente**: é uma varredura 100% determinística, porque pagar um modelo para\nrodar uma sequência de comandos com resposta inequívoca é pagar pela coisa\nerrada. O formato de grafo deste projeto ainda não tem um tipo de nó \"sem\nsessão\" — e criar um agora, com um único caso pressionando o schema, violaria\na regra dos dois consumidores. Então o porte deixa este nó agêntico, com\nchecks 100% determinísticos e instruções triviais, e registra a divergência\nem vez de escondê-la. Quando existir um segundo caso real, o tipo de nó novo\nentra com dois consumidores para provar o formato.\n\nNa prática, para você: **não improvise**. Rode os dois checks determinísticos\ndesta skill, leia o código de saída e relate. Não há julgamento a fazer aqui,\ne qualquer coisa que você \"conclua\" além do que o comando disse é opinião\nentrando num lugar onde só cabia um fato.\n\n## Onde você está\n\nVocê tem leitura no repositório (`{{input.projeto.repo}}`) e nada de\nescrita. Não comite, não empurre, não troque de branch, não mexa em outro\ncheckout, e não fale com a rede — a verificação é local e histórica.\n\n## O procedimento\n\n1. **Confira que a referência resolve** como commit neste repositório. Se não\n   resolve, o veredito é `indeterminado` — não é \"ainda não\".\n2. **Pergunte a contenção**: o merge commit é ancestral da referência? Saída 0\n   é `publicado`; saída 1 é `ainda_nao`; qualquer outra saída é\n   `indeterminado`, e você anexa a saída do comando na nota.\n3. **Não force nenhuma das três respostas.** `ainda_nao` é o estado normal e\n   que se resolve sozinho: a instalação ainda não avançou, e vai avançar.\n   `indeterminado` não se resolve sozinho — o merge commit foi reescrito para\n   fora do histórico, ou o repositório não está onde deveria — e alguém\n   precisa saber disso. Colapsar os dois num só é apagar a única diferença que\n   importa entre eles.\n\nO gatilho desta etapa é externo: nada aqui reinicia, publica ou promove nada.\nEsta sessão observa e relata.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais — \"Rode a migração e\n  depois integre\", não \"acho que, como o schema já tem a coluna, provavelmente\n  seria seguro…\". É o texto de um botão de aceite de um clique, então o que\n  estiver ali vira a resposta do fundador, literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\nEscale só no caso `indeterminado` que você não conseguir explicar — `ainda_nao`\né resposta normal e uma pergunta disparada no caso normal é uma pergunta que o\nfundador aprende a ignorar.\n\n## O que devolver\n\nDevolva o resultado no formato que o schema de saída desta skill declara:\n`veredito`, `referencia_conferida` (commit e modo que você de fato conferiu),\n`nota` e, quando o veredito for `publicado`, também `release` e\n`implantado_em`.\n\n{{input.contexto_falha}}",
+  "instructions": "# Confirmar que o trabalho está publicado\n\nEsta etapa não publica nada: ela **verifica** uma publicação que já aconteceu.\nA pergunta inteira é uma só, e tem resposta objetiva:\n\n> o merge commit `{{input.artefato.merge_commit}}` está contido no commit\n> que a instalação em uso carrega (`{{input.referencia.commit}}`, modo\n> `{{input.referencia.modo}}`)?\n\n**Trabalho:** {{input.job.title}} (#{{input.job.id}})\n\n## Uma nota honesta sobre este nó\n\nNo sistema de referência que este grafo porta, esta etapa **nunca abre sessão\nde agente**: é uma varredura 100% determinística, porque pagar um modelo para\nrodar uma sequência de comandos com resposta inequívoca é pagar pela coisa\nerrada. O formato de grafo deste projeto ainda não tem um tipo de nó \"sem\nsessão\" — e criar um agora, com um único caso pressionando o schema, violaria\na regra dos dois consumidores. Então o porte deixa este nó agêntico, com\nchecks 100% determinísticos e instruções triviais, e registra a divergência\nem vez de escondê-la. Quando existir um segundo caso real, o tipo de nó novo\nentra com dois consumidores para provar o formato.\n\nNa prática, para você: **não improvise**. Rode os dois checks determinísticos\ndesta skill, leia o código de saída e relate. Não há julgamento a fazer aqui,\ne qualquer coisa que você \"conclua\" além do que o comando disse é opinião\nentrando num lugar onde só cabia um fato.\n\n## Onde você está\n\nVocê tem leitura no repositório (`{{input.project.repo}}`) e nada de\nescrita. Não comite, não empurre, não troque de branch, não mexa em outro\ncheckout, e não fale com a rede — a verificação é local e histórica.\n\n## O procedimento\n\n1. **Confira que a referência resolve** como commit neste repositório. Se não\n   resolve, o veredito é `indeterminado` — não é \"ainda não\".\n2. **Pergunte a contenção**: o merge commit é ancestral da referência? Saída 0\n   é `publicado`; saída 1 é `ainda_nao`; qualquer outra saída é\n   `indeterminado`, e você anexa a saída do comando na nota.\n3. **Não force nenhuma das três respostas.** `ainda_nao` é o estado normal e\n   que se resolve sozinho: a instalação ainda não avançou, e vai avançar.\n   `indeterminado` não se resolve sozinho — o merge commit foi reescrito para\n   fora do histórico, ou o repositório não está onde deveria — e alguém\n   precisa saber disso. Colapsar os dois num só é apagar a única diferença que\n   importa entre eles.\n\nO gatilho desta etapa é externo: nada aqui reinicia, publica ou promove nada.\nEsta sessão observa e relata.\n\n## Quando escalar para o humano\n\nSe você precisar do fundador para concluir, encerre o turno com exatamente UM\nbloco cercado, e nada depois dele:\n\n```input-request\n{\"question\": \"<uma ou duas frases: o que aconteceu e por que a decisão é necessária>\",\n \"context\": \"<o detalhe de apoio — evidência, o que você tentou, as alternativas que pesou>\",\n \"options\": [\"<rótulo curto de ação>\", \"<rótulo curto de ação>\"],\n \"recommendation\": \"<a ÚNICA ação que você tomaria, no imperativo>\",\n \"default\": \"<a opção a aplicar se o fundador simplesmente aceitar>\"}\n```\n\nO que vai em cada campo:\n\n- `question` é lido primeiro e precisa ser curto. Enuncie a decisão, não a\n  investigação que levou até ela.\n- `context` é onde vai TODO o seu raciocínio: a evidência, o que você já\n  tentou, as alternativas que pesou e por que descartou cada uma. Pode ficar\n  longo — o fundador lê inteiro no registro desta sessão.\n- `recommendation` é uma ação no imperativo e nada mais — \"Rode a migração e\n  depois integre\", não \"acho que, como o schema já tem a coluna, provavelmente\n  seria seguro…\". É o texto de um botão de aceite de um clique, então o que\n  estiver ali vira a resposta do fundador, literalmente.\n- `options` são rótulos curtos, cada um uma decisão que o fundador poderia\n  escolher.\n- `default` é o que se aplica se o fundador simplesmente aceitar.\n\nSó `question` é obrigatório; omita o campo que não tiver conteúdo. Faça UMA\npergunta, e não repita nada disso como prosa antes ou depois do bloco — o\nbloco é a mensagem inteira.\n\nEmitir um `input-request` encerra seu trabalho por ora: o que você já fez fica\nexatamente como está, a sessão pausa, e a resposta chega até você quando vier.\nNão espere, não fique consultando, e não emita dois blocos — um pedido de\ndecisão sempre supera um relato de resultado.\n\nEscale só no caso `indeterminado` que você não conseguir explicar — `ainda_nao`\né resposta normal e uma pergunta disparada no caso normal é uma pergunta que o\nfundador aprende a ignorar.\n\n## O que devolver\n\nDevolva o resultado no formato que o schema de saída desta skill declara:\n`veredito`, `referencia_conferida` (commit e modo que você de fato conferiu),\n`nota` e, quando o veredito for `publicado`, também `release` e\n`implantado_em`.",
   "origin": {
     "type": "native",
     "referencia_comportamental": "flowpilot"

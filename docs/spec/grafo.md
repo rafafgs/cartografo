@@ -50,7 +50,9 @@ autocontido de propósito (ver §7).
 O que não vem de trabalho nenhum e não é produzido por nó nenhum: repositório,
 branch principal, comando de testes, convenções, documentos de registro. Até a
 `t253` esse material não tinha onde morar — as skills do grafo de fábrica de
-software já liam `{{input.projeto.*}}` e nada montava esse objeto.
+software já liam `{{input.projeto.*}}` e nada montava esse objeto. A `t259`
+fechou os dois lados: aqueles manifestos passaram a ler `{{input.project.*}}`,
+que é o nome que a projeção publica, e o bundle de software declara o objeto.
 
 ```json
 {

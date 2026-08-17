@@ -519,7 +519,16 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   busca a skill pinada, confere o hash (pin que não bate não despacha, D4) e
   renderiza instruções, contrato do nó, checks e permissões para dentro da
   sessão. As **permissões** declaradas pelo manifesto passaram a valer no
-  mesmo movimento. O que segue pendente pelo mesmo buraco é o **orçamento
+  mesmo movimento. **Fechado pela `t259`:** os dois buracos que sobravam nessa
+  mesma costura — a `resolveInput`, que resolvia `{}` e fazia todo placeholder
+  falhar fechado, agora lê a projeção de verdade
+  ([`GET /v1/jobs/:id/context`](../../packages/core/src/domain/context.ts), pela
+  [`resolve-input.ts`](../../packages/runner/src/dispatch/resolve-input.ts)), e
+  o nó de trabalho, que recebia um `output_schema` no prompt e nunca era
+  ensinado a devolver nada nele, agora fecha o turno com um bloco
+  `resultado` ([`result-protocol.ts`](../../packages/runner/src/dispatch/result-protocol.ts))
+  que o despacho manda no `/finish` como `output` — que é justamente o que a
+  projeção do nó seguinte lê. O que segue pendente pelo mesmo buraco é o **orçamento
   declarado pela skill**: a `t163` deu à sessão dois cães de guarda (relógio de
   parede e silêncio), com o manifesto declarando `orcamentos` e o runner
   resolvendo pelo menor dos dois

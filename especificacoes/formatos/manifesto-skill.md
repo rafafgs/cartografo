@@ -370,23 +370,29 @@ quando ele não nomeia nenhum), e as perguntas já respondidas em
 [`docs/spec/grafo.md`](../../docs/spec/grafo.md) e são aditivos: grafo escrito
 antes deles vale e despacha igual.
 
-**O que falta, e é a outra metade da ficha:** ligar `resolveInput` a essa rota.
-O despacho ainda expõe a costura (`resolveInput`, em
-[`dispatch.ts`](../../packages/runner/src/dispatch/dispatch.ts))
-e, sem ninguém para preenchê-la, passa `{}` — ou seja, **hoje toda skill com
-placeholder ainda recusa em produção**, alto e determinístico, em vez de abrir
-sessão com o token cru no prompt como fazia até a `t204`. Declarar `produces` e
-`project` nos dois bundles de fábrica é parte do mesmo passo. Falta também
-`contexto_falha`, que só se preenche num ciclo de retrabalho e depende dessa
-ligação para ser exercitado ponta a ponta.
+**A outra metade da ficha foi ligada (`t259`).** O despacho continua expondo a
+costura (`resolveInput`, em
+[`dispatch.ts`](../../packages/runner/src/dispatch/dispatch.ts)), e o default de
+produção dela agora é essa rota
+([`resolve-input.ts`](../../packages/runner/src/dispatch/resolve-input.ts)): o
+que `GET /v1/jobs/:id/context` devolve na chave `input` é exatamente o objeto
+contra o qual `{{input.<caminho>}}` resolve. E o produtor do `output` que a
+projeção lê também passou a existir — toda sessão cujo nó declara
+`output_schema` é instruída a fechar o turno com um bloco cercado `resultado`
+trazendo esse objeto, e o despacho o manda no `/finish`. O bundle de fábrica de
+software declara `produces` e `project` e atravessa `refinar` → `desenvolver` →
+`integrar` vivo. Falta ainda `contexto_falha`, que só se preenche num ciclo de
+retrabalho e espera a ficha que exercitar `testar → desenvolver` ponta a ponta.
 
 Além dos cinco campos que a renderização cita, o runner injeta na sessão o
-**contrato do próprio nó** (`input_schema`, `output_schema`, `checks`,
-que vivem no grafo e não no manifesto) e, num nó com duas ou mais saídas, o
-protocolo de roteamento: um bloco cercado `outcome` nomeando as `condition`
-das arestas daquele nó. O vocabulário de rota é o do **grafo**, nunca o
-`outcome` do `output` da skill — são dois enums diferentes, de propósito
-([`docs/spec/grafo.md`](../../docs/spec/grafo.md)).
+**contrato do próprio nó** (`input_schema`, `output_schema`, `checks`, que vivem
+no grafo e não no manifesto) e — desde a `t259`, em todo nó que declara
+`output_schema`, portão ou não — o protocolo de relato: UM bloco cercado
+`resultado` com o objeto que aquele schema pede. Num nó com duas ou mais saídas,
+a chave `resultado` vai DENTRO desse mesmo objeto nomeando a `condition` da
+aresta escolhida, e não num segundo bloco ao lado. O vocabulário de rota é o do
+**grafo**, nunca o `outcome` do `output` da skill — são dois enums diferentes, de
+propósito ([`docs/spec/grafo.md`](../../docs/spec/grafo.md)).
 
 ## Regra de importação (D4)
 

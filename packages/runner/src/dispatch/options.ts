@@ -188,21 +188,25 @@ export interface ClaudeCodeDispatchOptions {
    * snapshot carries — a graph-less work renders no manifest, so there is
    * nothing to interpolate.
    *
-   * **The default resolves nothing, on purpose.** There is no per-node context
-   * projection in this system yet: no event and no table carries a node's
-   * structured output, so nothing can assemble the object the next node's
-   * `input` schema declares. Until that ficha exists, production wiring passes
-   * `{}` and every skill whose body has a placeholder fails closed with
-   * `UnresolvedPlaceholderError` — which is the honest state, and a loud one.
-   * What it replaces is worse: the same skill used to open a session with
-   * `{{input.tese_triada.titulo}}` in the prompt and nobody the wiser.
+   * **The default is the real projection** (t259). It reads
+   * `GET /v1/jobs/:id/context` — the control plane's own assembly of the job's
+   * identity, the class's `project` config, every completed node's structured
+   * output in the bucket its `contract.produces` names, and the answered
+   * escalations (`packages/core/src/domain/context.ts`, D1: the sole writer is
+   * the one place that can build it without a second round trip). For four
+   * fichas it resolved `{}` instead, honestly: nothing carried a node's output,
+   * so nothing could assemble the object the next node's `input` schema
+   * declares, and every skill with a placeholder failed closed. What that
+   * replaced is still worse than either — the same skill used to open a session
+   * with `{{input.tese_triada.titulo}}` in the prompt and nobody the wiser.
    *
-   * It is a seam and not a hardcoded `{}` for the same reason `silenceSeconds`
-   * above is one: the mechanism that will fill it belongs to another ficha, and
-   * a named parameter is what lets the piece be tested — and wired — the day it
-   * arrives, without reopening this function.
+   * Asynchronous since that wiring, and it is what forced the signature: the
+   * projection is an HTTP call. It stays a seam rather than a hardcoded call
+   * for the reason `silenceSeconds` above is one — a named parameter is what
+   * lets a test pin the renderer against an input it chose, with no control
+   * plane in the way.
    */
-  resolveInput?: (job: Job, resolved: ResolvedNode) => Record<string, unknown>;
+  resolveInput?: (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>>;
   /** Opaque additions to the engine's environment. */
   envOverrides?: Readonly<Record<string, string>>;
   /**

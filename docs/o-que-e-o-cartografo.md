@@ -48,7 +48,11 @@ que já existe não dá: para isso, remova e recrie.
 propõe a quebra em tickets e você confirma. Os tickets
 atravessam o mapa: agentes de CLI executam cada etapa com instruções e
 contratos vindos do banco, portões verificam cada passagem com evidência, e
-decisão que não é de máquina chega na tela e espera você. Cada mapa decide quais
+decisão que não é de máquina chega na tela e espera você. **Cada etapa recebe o
+que as anteriores produziram** — a especificação que o refino escreveu chega
+para quem desenvolve, o branch que o desenvolvimento deixou chega para quem
+integra —, montado pelo control plane a partir do que cada sessão relatou, e
+nunca por um arquivo que alguém lembrou de passar adiante. Cada mapa decide quais
 campos os tickets dele carregam — uma tese de investimento pede fonte da
 premissa, downside e upside, que um ticket de software não teria onde guardar —
 e um campo declarado como obrigatório em certa etapa trava a saída dela até

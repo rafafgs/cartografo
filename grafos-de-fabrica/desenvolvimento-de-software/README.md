@@ -113,7 +113,7 @@ importação. O caminho pela API tem cobertura própria em
 
 ## Divergências registradas
 
-Dois lugares onde este porte se afasta do que a fonte faz ou do que o rascunho
+Três lugares onde este porte se afasta do que a fonte faz ou do que o rascunho
 do `t96` sugeria, mais dois que já foram reconciliados. Ficam escritas porque
 divergência não registrada vira armadilha para quem vier depois.
 
@@ -132,6 +132,41 @@ divergência não registrada vira armadilha para quem vier depois.
    exige, `passou`/`falhou`/`escalar_humano`. O mapeamento é direto e está
    escrito nas `instrucoes` de `testar-alpha`: `passou` → aresta `aprovado`,
    `falhou` → aresta `retrabalho`.
+3. **Metade do bundle atravessa vivo; a outra metade continua só provada por
+   contrato** (`t259`). `refinar` → `desenvolver` → `integrar` roda ponta a
+   ponta com um runner de verdade: cada nó recebe o que o anterior produziu, a
+   especificação do refino chega em quem desenvolve e o branch do
+   desenvolvimento chega em quem integra, sem operador no meio
+   ([`packages/runner/test/controller/factory-graph-software.e2e.test.ts`](../../packages/runner/test/controller/factory-graph-software.e2e.test.ts)).
+   `testar` e `implantar` **não** atravessam, e não é fiação faltando: eles
+   nomeiam `{{input.aplicacao.*}}` (uma aplicação de pé), `{{input.banco_de_testes.*}}`
+   (um checkout compartilhado de teste) e `{{input.referencia.*}}` (o commit de
+   uma instalação em uso). Nenhum dos três tem fonte na projeção de input, nem
+   mecanismo no runner, nem desenho em lugar nenhum deste repositório — é ficha
+   própria, de quem primeiro sentir a dor. Enquanto isso os dois nós **bloqueiam
+   com motivo legível** em vez de entrar em laço de retentativa (`t252`), que é o
+   comportamento correto para uma falha que se reproduz igual em todo tick.
+
+   Duas coisas mudaram no bundle para a primeira metade funcionar, e ficam
+   registradas porque não são óbvias. Os cinco manifestos liam
+   `{{input.ticket.id}}`/`{{input.ticket.titulo}}` para a identidade do próprio
+   trabalho e `{{input.projeto.*}}` para a configuração da classe; a projeção
+   publica isso em `input.job` e `input.project` (`t253`), então os manifestos
+   passaram a ler os nomes que existem — `{{input.ticket.especificacao}}` ficou
+   como estava, porque esse SIM é o balde que `refinar` declara em
+   `contract.produces`. E `{{input.ticket.tipo}}`, `{{input.workspace.*}}` e o
+   `{{input.contexto_falha}}` incondicional no fim de cada instrução saíram: o
+   primeiro nunca teve coluna que o alimentasse, o segundo só existiria se o
+   worktree fosse cortado antes de o prompt ser renderizado (o oposto da garantia
+   de `dispatch.ts`), e o terceiro é a metade da `t253` que ainda não foi montada
+   (FR8) — quem exercitar o ciclo `testar → desenvolver` de retrabalho o traz de
+   volta quando ele existir.
+
+   O `project` de topo do `grafo.json` carrega a configuração do projeto de
+   referência (este repositório): sem ele o grafo base não despacha nem o
+   primeiro nó. Por D13 valor específico de projeto mora na variante — uma
+   variante desta classe sobrescreve esse objeto inteiro, e é assim que o mesmo
+   mapa serve outro repositório.
 
 **Reconciliada pelo `t176` — o manifesto é a única fonte que declara COMO um nó
 se verifica.** O grafo nascia do exemplo-mestre do `t96` com `make check` em

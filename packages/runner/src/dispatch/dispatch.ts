@@ -53,13 +53,13 @@
  * the closure and the question are attempted write by write, so that neither
  * one can swallow the other.
  *
- * **And a placeholder never reaches a model as text** (t204). A manifest body
- * may name this node's input — `{{input.<caminho>}}` — and those are resolved
- * before the session is built, against whatever
- * `ClaudeCodeDispatchOptions.resolveInput` hands over. With nothing wired to
- * that option the input is `{}`, which is the honest state today: nothing in
- * this system assembles a node's input yet, so a skill with placeholders fails
- * closed instead of opening a session on a half-written prompt.
+ * **And a placeholder never reaches a model as text** (t204, t259). A manifest
+ * body may name this node's input — `{{input.<caminho>}}` — and those are
+ * resolved before the session is built, against what
+ * `GET /v1/jobs/:id/context` projects: the job, the class config, and every
+ * node before this one, in the bucket each declared. A path that projection does
+ * not carry fails the dispatch closed instead of opening a session on a
+ * half-written prompt.
  *
  * **And a failure BEFORE the session is a block, not a throw** (t252). Five of
  * the ways the window below can fail reproduce identically on every retry — a
@@ -101,6 +101,7 @@ import {
   type Job,
 } from './options.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
+import { parseNodeResult } from './parse-node-result.ts';
 import { PermissionDenialTracker } from './parse-permission-denial.ts';
 import { classifyPreSessionFailure } from './pre-session-failure.ts';
 import {
@@ -119,6 +120,7 @@ import {
   type RenderedSkill,
 } from './render-skill-instructions.ts';
 import { UnknownEngineError, resolveEngine, type EngineRoute } from './resolve-engine.ts';
+import { createNodeInputResolver } from './resolve-input.ts';
 import {
   resolveEscalationPolicy,
   resolveNode,
@@ -211,13 +213,13 @@ export function createClaudeCodeDispatch(
 ): (jobId: number) => Promise<DispatchOutcome> {
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const silenceSeconds = resolveBudget(options.silenceSeconds, DEFAULT_SILENCE_SECONDS);
-  const resolveInput = options.resolveInput ?? ((): Record<string, unknown> => ({}));
-
   // ONE client, built once and handed to everything that writes (t202, FR3).
   // The seven routes below and the nine in `report.ts` are the same client on
   // purpose: a route that assembled its own headers is a route that could
   // forget the credential.
   const call = createDispatchControlPlaneClient(options);
+
+  const resolveInput = options.resolveInput ?? createNodeInputResolver(call);
 
   return async (jobId: number): Promise<DispatchOutcome> => {
     const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
@@ -261,7 +263,7 @@ export function createClaudeCodeDispatch(
           : await renderSkillInstructions(
               resolved,
               (skillRoute) => call<RegisteredSkill>(skillRoute, 'GET'),
-              resolveInput(job, resolved),
+              await resolveInput(job, resolved),
             );
     } catch (error) {
       // `null` is "this one may well work next time": it goes up untouched, the
@@ -480,22 +482,22 @@ export function createClaudeCodeDispatch(
       // — a question dropped here is a human who is never called, and the work
       // stays unblocked with nobody knowing what it needed. So `report.ts` hands
       // the failure back rather than throwing it, and it surfaces below.
+      // Decoded ONCE and read three times: the escalation block, the routing
+      // block and — since t259 — the report that rides on the closure. Decoding
+      // it again would let the three disagree about what the session said, and
+      // it happens BEFORE the closure now because the closure is one of them.
+      const output = route.decodeSessionText(lines);
+
       const finishFailure = await finishSession(
         call,
         session.id,
         outcome,
-        // The raw stream, exactly as `onOutput` reported it — undecoded, frames
-        // and dying screams alike (t159). `decodeSessionText` below is a READER
-        // of this same buffer, and its frame-decoding is lossy by design: what
-        // gets persisted is the material before that, because a session that
-        // died is diagnosed from what it printed, not from what parsed.
+        // The raw stream as `onOutput` reported it, undecoded (t159), and then
+        // what the session reported INSIDE it (t259) — absent when it printed
+        // no usable block. Both arguments are argued in `report.ts`.
         lines.join('\n'),
+        parseNodeResult(output) ?? undefined,
       );
-
-      // Decoded ONCE and read twice: the escalation block and the routing block
-      // are two readings of the same text, and decoding it a second time would
-      // let them disagree about what the session said.
-      const output = route.decodeSessionText(lines);
 
       const request: InputRequest | null = parseInputRequest(output);
       if (request !== null && resolveEscalationPolicy(resolved) === 'never') {

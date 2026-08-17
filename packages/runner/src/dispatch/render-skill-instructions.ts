@@ -53,22 +53,16 @@
  *    (`especificacoes/formatos/manifesto-skill.md`) — and a wrong prompt is
  *    worse than no prompt.
  *
- *    What supplies that input is NOT here, and is honest about it: the
- *    dispatch's `resolveInput` seam defaults to `{}`, so today every skill with
- *    a placeholder fails closed. The per-node context projection that would
- *    thread a prior node's output into the next one's input is a ficha of its
- *    own, and this module refuses loudly until it exists.
- * 4. **The text and the permissions are built from what came back.**
- *
- * **Where the routing vocabulary comes from is a decision, not an accident.**
- * The block a gate is asked to emit names the `condition` of the edges leaving
- * THIS node, taken from the graph — not the `outcome` enum of the skill's own
- * `output`, which is a different vocabulary with different values
- * (`pass`/`fail`/`escalate_human`, enforced at registry entry). The graph spec is
- * explicit that an edge's label matches the outcome the source node's
- * `output_schema` declares (`docs/spec/grafo.md`), and that schema is the NODE's
- * contract. One skill can sit under two graphs whose edges are labelled
- * differently, and reading the labels off the graph is what lets it.
+ *    What supplies that input is NOT here: since t259 the dispatch's
+ *    `resolveInput` seam reads `GET /v1/jobs/:id/context`, the control plane's
+ *    own projection of what the job and the nodes before it produced
+ *    (`packages/core/src/domain/context.ts`). A path that projection does not
+ *    carry still refuses loudly, which is what the rule is for.
+ * 4. **The text and the permissions are built from what came back**, closing
+ *    with the paragraph that tells the session how to report its result
+ *    (`result-protocol.ts`) whenever this node declares an `output_schema` —
+ *    gate or not, since t259. A node that is never told how to report is a node
+ *    whose successor has nothing to read.
  *
  * English per D18 — the manifest's own KEYS too, since the 2026-08-15
  * amendment (t178). The rendered CONTENT stays Portuguese, like every other
@@ -83,7 +77,8 @@ import {
   ESCALATION_PROTOCOL,
   NEVER_ESCALATION_PROTOCOL,
 } from './escalation-protocol.ts';
-import { resolveEscalationPolicy, type GraphEdge, type ResolvedNode } from './resolve-node.ts';
+import { resolveEscalationPolicy, type ResolvedNode } from './resolve-node.ts';
+import { hasOutputSchema, resultProtocol } from './result-protocol.ts';
 
 /**
  * The three paragraphs this module composes, re-exported unchanged (t223).
@@ -403,56 +398,6 @@ function fenced(title: string, value: unknown): string[] {
 }
 
 /**
- * The paragraph that tells a gate how to name the edge it took.
- *
- * Rendered only for a node with more than one way out (FR8): a node with a
- * single outgoing edge is deterministic by construction, and asking it to choose
- * would invent a decision it does not have — and then escalate to a human when
- * the session, correctly, did not make one.
- */
-function routingProtocol(edges: readonly GraphEdge[], canAsk: boolean): string[] {
-  const labels = edges.map((edge) => edge.condition ?? '').filter((label) => label !== '');
-  const list = labels.map((label) => `\`${label}\``).join(', ');
-
-  // The two sentences that describe what happens when the session does NOT name
-  // an edge have to agree with the paragraph at the top: at a `never` node the
-  // wiring blocks the work instead of raising a question, and a session sent
-  // back to a block that will not become a question is a prompt lying about the
-  // wiring it runs under (t167).
-  const whenNothingMatches = canAsk
-    ? [
-        'O valor precisa ser um desses, literalmente. Qualquer outra coisa — ou',
-        'nenhum bloco — não roteia nada: vira uma pergunta para uma pessoa, e o',
-        'trabalho para até alguém responder.',
-        '',
-        'Se o que trava você é a decisão em si, use o bloco `input-request` acima em',
-        'vez de chutar um resultado.',
-      ]
-    : [
-        'O valor precisa ser um desses, literalmente. Qualquer outra coisa — ou',
-        'nenhum bloco — não roteia nada: o trabalho é bloqueado com o motivo, e',
-        'para até alguém olhar.',
-        '',
-        'Se o que trava você é a decisão em si, relate isso como falha do contrato',
-        'deste nó, com o motivo — nunca chute um resultado para sair andando.',
-      ];
-
-  return [
-    '## Como fechar o turno: este nó decide para onde o trabalho vai',
-    '',
-    `Este nó tem mais de uma saída — ${list} —, e quem escolhe qual delas vale`,
-    'é você. Termine seu turno com exatamente UM bloco cercado, e nada depois',
-    'dele:',
-    '',
-    '```resultado',
-    `{"resultado": "<um de: ${labels.join(', ')}>"}`,
-    '```',
-    '',
-    ...whenNothingMatches,
-  ];
-}
-
-/**
  * The escalation paragraph of THIS node (t167, FR5).
  *
  * Until this ficha there was one paragraph, composed into every session
@@ -518,8 +463,12 @@ function render(resolved: ResolvedNode, skill: RegisteredSkill, body: string): s
     'isso é uma pergunta, não um obstáculo para driblar.',
   ];
 
-  if (edges.length >= 2) {
-    parts.push('', '---', '', ...routingProtocol(edges, resolveEscalationPolicy(resolved) !== 'never'));
+  // Whenever this node declares a shape, and no longer only when it decides
+  // (t259). A `work` node that is never told how to report is a node whose
+  // successor has nothing to read; the routing key, when there is one, is a
+  // field INSIDE the same block rather than a second one beside it.
+  if (hasOutputSchema(contract.output_schema)) {
+    parts.push('', '---', '', ...resultProtocol(edges, resolveEscalationPolicy(resolved) !== 'never'));
   }
 
   return parts.join('\n');

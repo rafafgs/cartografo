@@ -19,7 +19,7 @@
       "skill_ref": {
         "id": "refinar-ticket",
         "version": "1.0.0",
-        "hash": "sha256:e7a388bf674968583b6da5c2d7f0f83c775f780c1a63a6ac4ebf37a19d5ef9aa"
+        "hash": "sha256:92e6b2ad13c2ab9c6c0c8ea5addee5e2aced0336bbe3c5d906b702f5f85e8562"
       },
       "contract": {
         "input_schema": {
@@ -96,6 +96,7 @@
             }
           }
         },
+        "produces": "ticket",
         "checks": [
           {
             "type": "agentic",
@@ -114,7 +115,7 @@
       "skill_ref": {
         "id": "desenvolver-ticket",
         "version": "1.0.0",
-        "hash": "sha256:897b7538c55c1ba93fcab5c0c8566b9d43442686f71cedc61b291af990563190"
+        "hash": "sha256:b2504dbfd708a13ae72350c32b80232e0836aba7c76922c704f8dd1127fa0581"
       },
       "contract": {
         "input_schema": {
@@ -167,15 +168,16 @@
             }
           }
         },
+        "produces": "artefato",
         "checks": [
           {
             "type": "deterministic",
-            "command": "{{input.projeto.comando_testes}}",
+            "command": "{{input.project.comando_testes}}",
             "description": "A suíte do projeto passa no checkout isolado do trabalho."
           },
           {
             "type": "deterministic",
-            "command": "{{input.projeto.comandos_qualidade}}",
+            "command": "{{input.project.comandos_qualidade}}",
             "description": "Todo comando de qualidade que o perfil declara, e não só o que a sessão acha que tocou."
           },
           {
@@ -200,7 +202,7 @@
       "skill_ref": {
         "id": "integrar-branch",
         "version": "1.0.0",
-        "hash": "sha256:b3e83e7afc63b24ccebe7f4f1732370f572754c9beb8acd38789ff88f156e60f"
+        "hash": "sha256:7e0d21744b205bb0509d642840812c34e1f9264f1c8c4ad7a43504a8810c87d0"
       },
       "contract": {
         "input_schema": {
@@ -238,15 +240,16 @@
             }
           }
         },
+        "produces": "artefato",
         "checks": [
           {
             "type": "deterministic",
-            "command": "{{input.projeto.comando_testes}}",
+            "command": "{{input.project.comando_testes}}",
             "description": "A suíte passa na árvore mesclada, não só no branch isolado."
           },
           {
             "type": "deterministic",
-            "command": "{{input.projeto.comandos_qualidade}}",
+            "command": "{{input.project.comandos_qualidade}}",
             "description": "Última estação determinística do fluxo: o portão de teste não reroda nada disto."
           },
           {
@@ -265,7 +268,7 @@
       "skill_ref": {
         "id": "testar-alpha",
         "version": "1.0.0",
-        "hash": "sha256:a260c8db1ab16db84b4f6c854b3e95914e420e8597e920e95bea103b4a29bf45"
+        "hash": "sha256:26727403acb24e2336363f51dbd4e5620995fe0e5eabc12a42518a1b6873402a"
       },
       "contract": {
         "input_schema": {
@@ -394,7 +397,7 @@
       "skill_ref": {
         "id": "implantar-release",
         "version": "1.0.0",
-        "hash": "sha256:f00cd356adb2f9007fa61a7c4f197033236714800f5b19a508eed3c87a09b522"
+        "hash": "sha256:aec5b3230e4317f0369540952af25a0f29a011316513a79162a1a70fad7afde8"
       },
       "contract": {
         "input_schema": {
@@ -433,12 +436,12 @@
         "checks": [
           {
             "type": "deterministic",
-            "command": "git -C {{input.projeto.repo}} rev-parse --verify --quiet {{input.referencia.commit}}^{commit}",
+            "command": "git -C {{input.project.repo}} rev-parse --verify --quiet {{input.referencia.commit}}^{commit}",
             "description": "A referência existe como commit: sem isso, \"não contém\" seria indistinguível de \"não sei\"."
           },
           {
             "type": "deterministic",
-            "command": "git -C {{input.projeto.repo}} merge-base --is-ancestor {{input.artefato.merge_commit}} {{input.referencia.commit}}",
+            "command": "git -C {{input.project.repo}} merge-base --is-ancestor {{input.artefato.merge_commit}} {{input.referencia.commit}}",
             "description": "A pergunta inteira da etapa: o merge commit do trabalho é ancestral da referência publicada."
           }
         ]
@@ -481,5 +484,22 @@
   "final_nodes": [
     "implantar"
   ],
-  "custom_fields": []
+  "custom_fields": [],
+  "project": {
+    "repo": ".",
+    "branch_principal": "main",
+    "comando_testes": "npm test",
+    "comandos_qualidade": [
+      "npm test",
+      "npm run lint",
+      "npm run typecheck"
+    ],
+    "convencoes": "Contract-first: toda capacidade — skill, portão, nó — declara entrada e saída em JSON Schema mais uma lista de verificações tipadas (D9). Escritor único: só o control plane escreve no banco, e o runner é cliente da API pública como qualquer outro (D1, D11). Persistência append-only com versionamento tipo git dentro do banco; rollback move ponteiro e nada é apagado (D2, D15). Código, identificadores e chaves de formato em inglês; conteúdo que chega a uma pessoa ou a um modelo em português (D18).",
+    "arquivos_de_registro": [
+      "DECISOES.md",
+      "packages/core/migrations",
+      "schema",
+      "especificacoes"
+    ]
+  }
 }

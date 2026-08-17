@@ -464,6 +464,87 @@ test('AT18 — `postSessionQuestion` posts as the AGENT, with the node as its re
   assert.deepEqual(posted.actor, { type: 'agent', ref: 'revisao' });
 });
 
+/* -- t265: the engine that refused before answering ------------------------- */
+
+/**
+ * The two fields a refused session adds to the closure, and the block that
+ * follows it (t265, AT3).
+ *
+ * A refusal is deterministic — it reproduced four times in a row against the
+ * same prompt in t198 — so it stops the work on its FIRST occurrence instead of
+ * riding the consecutive-failure cap. What travels on `/finish` is the fact
+ * itself, in the same present-and-null posture `timeout_reason`/`usage`/`models`
+ * already have; what stops the work is a block of the runner own account, the
+ * fourth in this module and signed like the other three.
+ */
+test('t265 AT3 — `finishSession` sends the two refusal fields as null when there are none', async () => {
+  const { finishSession } = await loadReport();
+  const { sent, call } = recorder();
+
+  await finishSession(call, 31, { status: 'completed', exitCode: 0 }, 'bruto');
+
+  const posted = body(sent[0]);
+  for (const field of ['failure_kind', 'refusal_category']) {
+    assert.ok(field in posted, `\`${field}\` has to be SENT, not omitted`);
+    assert.equal(posted[field], null, `\`${field}\` is null when the adapter reported none`);
+  }
+});
+
+test('t265 AT3 — `finishSession` ships the refusal the adapter reported', async () => {
+  const { finishSession } = await loadReport();
+  const { sent, call } = recorder();
+
+  await finishSession(
+    call,
+    31,
+    {
+      status: 'failed',
+      exitCode: 1,
+      failureKind: 'engine_refusal',
+      refusalCategory: 'reasoning_extraction',
+    },
+    '',
+  );
+
+  const posted = body(sent[0]);
+  assert.equal(posted.status, 'failed', 'a refusal is a failed session with a cause beside it');
+  assert.equal(posted.failure_kind, 'engine_refusal');
+  assert.equal(posted.refusal_category, 'reasoning_extraction');
+});
+
+test('t265 AT3 — `blockForEngineRefusal` names the node and the category it was given', async () => {
+  const { blockForEngineRefusal } = await loadReport();
+  const { sent, call } = recorder();
+
+  await blockForEngineRefusal(call, JOB, 'reasoning_extraction');
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].route, '/v1/jobs/7/blocks');
+  assert.equal(sent[0].method, 'POST');
+
+  const reason = body(sent[0]).reason;
+  assert.equal(typeof reason, 'string');
+  assert.ok((reason as string).includes(JOB.current_node_id), `the node is missing from: ${String(reason)}`);
+  assert.ok(
+    (reason as string).includes('reasoning_extraction'),
+    `the category is missing from: ${String(reason)}`,
+  );
+  assert.deepEqual(body(sent[0]).actor, { type: 'system', ref: 'runner' });
+});
+
+test('t265 AT3 — ...and still blocks when the engine named no category', async () => {
+  const { blockForEngineRefusal } = await loadReport();
+  const { sent, call } = recorder();
+
+  await blockForEngineRefusal(call, JOB, undefined);
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].route, '/v1/jobs/7/blocks');
+  const reason = body(sent[0]).reason;
+  assert.equal(typeof reason, 'string');
+  assert.ok((reason as string).includes(JOB.current_node_id));
+});
+
 test('AT19 — a question from a work standing on no node is signed `sessao`', async () => {
   const { postSessionQuestion } = await loadReport();
   const { sent, call } = recorder();

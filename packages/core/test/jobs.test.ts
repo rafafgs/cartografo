@@ -450,7 +450,12 @@ test('AT3 — block and unblock move the flag and record both events', async (t)
     flags.map((event) => event.type),
     ['job.blocked', 'job.unblocked'],
   );
-  assert.deepEqual(flags[0].data, { reason: 'esperando resposta do humano' });
+  // `consecutive_failures` is null for every block but the one the failure cap
+  // itself raises (t265): a block somebody asked for has no streak behind it.
+  assert.deepEqual(flags[0].data, {
+    reason: 'esperando resposta do humano',
+    consecutive_failures: null,
+  });
   assert.deepEqual(flags[1].data, {}, 'the fact is the fall of the flag itself: no payload');
 });
 
@@ -1401,4 +1406,226 @@ test('t253 AT4 — the route answers exactly what the pure module builds', async
   });
 
   assert.deepEqual(response.body.input, expected);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t265 — a job whose sessions keep failing stops being re-leased.              */
+/*                                                                             */
+/* The cap lives in core and not in the runner because only the control plane   */
+/* holds the session history across leases and runner processes (D1): a runner  */
+/* that died mid-round knows nothing about the three sessions that came before  */
+/* it. It runs inside `finishSession`'s own transaction, next to                */
+/* `announceFinishedExecution` — the projection and the fact that produced it   */
+/* land together, or neither does.                                             */
+/*                                                                             */
+/* The streak is TRAILING, counted most-recent-first and stopped at the first   */
+/* session that did not fail: a node that failed twice, worked, and failed once */
+/* more is a node with one failure behind it, not three.                       */
+/* -------------------------------------------------------------------------- */
+
+/** How many consecutive failures block a job when the graph declares nothing. */
+const T265_DEFAULT_CAP = 3;
+
+/**
+ * Registers the minimal graph with a cap of its own.
+ *
+ * Patched, never hand-written, for the reason `registerMinimalGraph` gives: what
+ * the repository reads is the snapshot of a version that went through the
+ * registration gate, and a hand-made snapshot would prove nothing about it.
+ *
+ * @param ctx Control plane running.
+ * @param cap What the document declares in `max_consecutive_failures`.
+ * @returns Id of the registered version.
+ */
+async function registerGraphWithFailureCap(ctx: TestContext, cap: number): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  document.problem_class = `nota-curta-com-teto-${String(cap)}`;
+  document.max_consecutive_failures = cap;
+
+  const response = await request<{ graph_version: { id: string } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(response.status, 201, `POST /v1/graphs returned ${response.status}`);
+  return response.body.graph_version.id;
+}
+
+/**
+ * Opens a session on a node and closes it with the given status, as the runner
+ * does.
+ *
+ * Deliberately NOT {@link runSessionOn}: that one always completes, and what
+ * these cases are about is the session that did not.
+ *
+ * @param ctx Control plane running.
+ * @param jobId The job the session belongs to.
+ * @param nodeId Where it runs.
+ * @param status How it ends, in the taxonomy's vocabulary.
+ * @param extra Anything else the closure carries — `failure_kind` for a refusal.
+ */
+async function endSessionWith(
+  ctx: TestContext,
+  jobId: number,
+  nodeId: string,
+  status: string,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  const opened = await request<{ id: number }>(ctx, 'POST', '/v1/sessions', {
+    job_id: jobId,
+    node_id: nodeId,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'Redija a nota.',
+  });
+  assert.equal(opened.status, 201, `POST /v1/sessions returned ${opened.status}`);
+
+  const finished = await request(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
+    status,
+    exit_code: status === 'completed' ? 0 : 1,
+    ...extra,
+  });
+  assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
+}
+
+/** Every `job.blocked` of a job, in log order. */
+async function blocks(ctx: TestContext, jobId: number): Promise<Event[]> {
+  return (await timeline(ctx, jobId)).filter((event) => event.type === 'job.blocked');
+}
+
+test('t265 AT5 — three failed sessions on the same node block the job, with the count', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+
+  const job = await createJob(ctx, {
+    title: 'a nota cujas sessões não param de falhar',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  await endSessionWith(ctx, job.id, 'redigir', 'failed');
+  assert.equal((await readJob(ctx, job.id)).blocked, false, 'one failure is not a pattern');
+  await endSessionWith(ctx, job.id, 'redigir', 'failed');
+  assert.equal((await readJob(ctx, job.id)).blocked, false, 'and neither is two');
+
+  await endSessionWith(ctx, job.id, 'redigir', 'failed');
+
+  const stopped = await readJob(ctx, job.id);
+  assert.equal(stopped.blocked, true, 'the third one in a row stops the job');
+  const reason = stopped.block_reason ?? '';
+  assert.ok(reason.includes('redigir'), `the reason has to name the node: ${reason}`);
+  assert.ok(
+    reason.includes(String(T265_DEFAULT_CAP)),
+    `the reason has to carry the count: ${reason}`,
+  );
+
+  const recorded = await blocks(ctx, job.id);
+  assert.equal(recorded.length, 1, 'one block, one event');
+  assert.equal(recorded[0].data.consecutive_failures, T265_DEFAULT_CAP);
+  assert.equal(recorded[0].data.reason, stopped.block_reason);
+});
+
+test('t265 AT5 — a session that worked resets the streak', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerMinimalGraph(ctx);
+
+  const job = await createJob(ctx, {
+    title: 'a nota que falhou, funcionou e falhou de novo',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  await endSessionWith(ctx, job.id, 'redigir', 'failed');
+  await endSessionWith(ctx, job.id, 'redigir', 'failed');
+  await endSessionWith(ctx, job.id, 'redigir', 'completed');
+
+  assert.equal((await readJob(ctx, job.id)).blocked, false);
+  assert.deepEqual(await blocks(ctx, job.id), [], 'nothing was blocked, so nothing was recorded');
+
+  // ...and the streak really starts over: this is the THIRD failed session of
+  // the node, and only the first one of the current run.
+  await endSessionWith(ctx, job.id, 'redigir', 'failed');
+
+  assert.equal(
+    (await readJob(ctx, job.id)).blocked,
+    false,
+    'the count is trailing: three failures with a success among them are not three in a row',
+  );
+});
+
+test('t265 AT5 — a graph that declares max_consecutive_failures: 1 blocks on the first failure', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerGraphWithFailureCap(ctx, 1);
+
+  const job = await createJob(ctx, {
+    title: 'a nota de uma classe que não dá segunda chance',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  await endSessionWith(ctx, job.id, 'redigir', 'failed');
+
+  const stopped = await readJob(ctx, job.id);
+  assert.equal(stopped.blocked, true, 'the document declared one, and one is what it took');
+  assert.ok((stopped.block_reason ?? '').includes('redigir'));
+
+  const recorded = await blocks(ctx, job.id);
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].data.consecutive_failures, 1);
+});
+
+test('t265 AT5 — a job already blocked does not get a second block', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerGraphWithFailureCap(ctx, 1);
+
+  const job = await createJob(ctx, {
+    title: 'a nota que já estava parada por outro motivo',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  const halted = await request<JobProjection>(ctx, 'POST', `/v1/jobs/${job.id}/blocks`, {
+    reason: 'este nó não tem a quem perguntar, e a sessão travou',
+  });
+  assert.equal(halted.status, 200);
+
+  await endSessionWith(ctx, job.id, 'redigir', 'failed');
+
+  const stopped = await readJob(ctx, job.id);
+  assert.equal(stopped.blocked, true);
+  assert.equal(
+    stopped.block_reason,
+    'este nó não tem a quem perguntar, e a sessão travou',
+    'the reason a person is already reading may not be overwritten by a second owner',
+  );
+  assert.equal((await blocks(ctx, job.id)).length, 1, 'one flag, one owner, one event');
+});
+
+test('t265 AT5 — a refused session is not counted by the cap: it blocks on its own', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerGraphWithFailureCap(ctx, 1);
+
+  const job = await createJob(ctx, {
+    title: 'a nota cuja sessão o engine recusou',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  // The runner blocks a refusal itself, on its first occurrence, with a reason
+  // that names the category (`report.ts`). Counting it here as well would put
+  // two owners on one flag — which is how a job ends up blocked with nothing
+  // pending.
+  await endSessionWith(ctx, job.id, 'redigir', 'failed', {
+    failure_kind: 'engine_refusal',
+    refusal_category: 'reasoning_extraction',
+  });
+
+  assert.equal((await readJob(ctx, job.id)).blocked, false);
+  assert.deepEqual(await blocks(ctx, job.id), []);
 });

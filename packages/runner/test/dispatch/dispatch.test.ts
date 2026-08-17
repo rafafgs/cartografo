@@ -4978,6 +4978,132 @@ type FinishedWork = Work & { completed: boolean };
 /** The session, with the structured report `PATCH /finish` stored (t253). */
 type SessionWithOutput = Session & { output: Record<string, unknown> | null };
 
+// --- t265: an engine that refused stops the work instead of being retried ----
+
+/**
+ * A refusal is deterministic, so it blocks on its FIRST occurrence (t265, AT2).
+ *
+ * t198's first real traversal got four refused sessions in a row on the same
+ * prompt — `stop_reason: "refusal"`, exit 1, zero output tokens — and the runner
+ * re-leased the job after every one of them. What ended that loop was the
+ * operator, not the system.
+ *
+ * The shape is `blockForPreSessionFailure`'s and not `DispatchError`'s, for the
+ * reason t252 already wrote down: an outcome that reproduces identically on
+ * every retry is a work that has to STOP, with a reason a person can read, and
+ * `GET /v1/jobs` filtering `blocked === false` is the whole mechanism. What is
+ * new here is only WHEN it is known — after a session ran, not before one
+ * opened.
+ */
+test("t265 — an engine refusal blocks the work instead of failing the dispatch", async (t) => {
+  const { createClaudeCodeDispatch, DispatchError } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t265-workdir-"));
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      title: "ficha cuja sessão o engine recusou",
+      entry_node_id: "implementar",
+      execution_id: 265,
+    },
+    201,
+    token,
+  );
+
+  const calls: Array<{ method: string; route: string; body: unknown }> = [];
+  const doFetch: typeof fetch = async (input, init) => {
+    calls.push({
+      method: init?.method ?? "GET",
+      route: String(input).slice(baseUrl.length),
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+    });
+    return fetch(input, init);
+  };
+
+  const probe = recordingAdapter({
+    status: "failed",
+    exitCode: 1,
+    detail: {
+      failureKind: "engine_refusal",
+      refusalCategory: "reasoning_extraction",
+    },
+  });
+
+  let failure: unknown = null;
+  let outcome: { blocked: boolean; reason?: string } | null = null;
+  try {
+    outcome = await createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      doFetch,
+      engines: {
+        "claude-code": {
+          adapter: probe.adapter,
+          decodeSessionText: decodeClaudeCodeSessionText,
+        },
+      },
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+    })(work.id);
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.equal(
+    failure instanceof DispatchError,
+    false,
+    `a refusal is a stop, not a dispatch failure, got: ${String(failure)}`,
+  );
+  assert.equal(failure, null, `nothing at all may be thrown: ${String(failure)}`);
+  assert.ok(outcome !== null);
+  assert.equal(outcome.blocked, true, "the caller has to be told the work stopped");
+  assert.ok(
+    (outcome.reason ?? "").includes("implementar"),
+    `the reason has to name the node: ${String(outcome.reason)}`,
+  );
+  assert.ok(
+    (outcome.reason ?? "").includes("reasoning_extraction"),
+    `the reason has to carry the engine's own category: ${String(outcome.reason)}`,
+  );
+
+  const blocks = calls.filter(
+    (call) => call.method === "POST" && call.route === `/v1/jobs/${work.id}/blocks`,
+  );
+  assert.equal(blocks.length, 1, "exactly one block, posted by the runner itself");
+  assert.equal(
+    calls.some((call) => call.route.endsWith("/transitions")),
+    false,
+    "a session that never answered advanced nothing",
+  );
+
+  const finish = calls.find(
+    (call) => call.method === "PATCH" && call.route.endsWith("/finish"),
+  );
+  assert.ok(finish, "the session still has to be closed before the work is stopped");
+  const closed = finish.body as Record<string, unknown>;
+  assert.equal(closed.failure_kind, "engine_refusal");
+  assert.equal(closed.refusal_category, "reasoning_extraction");
+
+  const stopped = await api<Work>(
+    baseUrl,
+    "GET",
+    `/v1/jobs/${work.id}`,
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(stopped.blocked, true, "and the work really stopped being a candidate");
+  assert.equal(stopped.block_reason, outcome.reason);
+});
+
 test("t262 — the controller dispatches a final node that pins a skill, and only its report ends the traversal", async (t) => {
   const { ClienteControle } = await loadModule<typeof ClientModule>(
     "src/controller/cliente-controle.ts",

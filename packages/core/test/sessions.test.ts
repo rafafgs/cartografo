@@ -182,13 +182,16 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     ['session.opened', 'session.finished'],
   );
   // Every optional field the type declares appears normalized, with an explicit
-  // `null` for what the client did not send — `models` included since t172, and
-  // the node's structured report plus the reason it was refused since t253.
+  // `null` for what the client did not send — `models` included since t172, the
+  // node's structured report plus the reason it was refused since t253, and the
+  // kind of failure plus the engine's own refusal category since t265.
   assert.deepEqual(events[1].data, {
     status: 'completed',
     exit_code: 0,
     usage: USAGE,
     timeout_reason: null,
+    failure_kind: null,
+    refusal_category: null,
     models: null,
     output: null,
     output_schema_error: null,
@@ -200,10 +203,64 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     exit_code: null,
     usage: null,
     timeout_reason: null,
+    failure_kind: null,
+    refusal_category: null,
     models: null,
     output: null,
     output_schema_error: null,
   });
+});
+
+/**
+ * The engine refused before answering, and the log says so (t265, AT4).
+ *
+ * Two fields and not a seventh `status`: the session ended `failed`, exactly as
+ * a crash does, and what separates the two is `failure_kind` beside it — the
+ * same shape `timed_out` + `timeout_reason` has carried since t163. The category
+ * is the ENGINE's own word (`reasoning_extraction` is what t198 measured), so it
+ * travels as an open string; the kind is ours, so its set is closed.
+ *
+ * Nothing is promoted to the session projection by this ficha (Out of Scope):
+ * what a reader has is this event, and — when the cap or the refusal stops the
+ * work — the job's own `block_reason`.
+ */
+test('t265 AT4 — PATCH /finish records the refusal kind and category, verbatim', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const refused = await openBareSession(ctx);
+  const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${refused.id}/finish`, {
+    status: 'failed',
+    exit_code: 1,
+    failure_kind: 'engine_refusal',
+    refusal_category: 'reasoning_extraction',
+  });
+  assert.equal(finished.status, 200, JSON.stringify(finished.body));
+  assert.equal(finished.body.status, 'failed');
+
+  const events = getEventsByEntity(ctx.db, 'session', refused.id);
+  assert.deepEqual(events[1].data, {
+    status: 'failed',
+    exit_code: 1,
+    usage: null,
+    timeout_reason: null,
+    failure_kind: 'engine_refusal',
+    refusal_category: 'reasoning_extraction',
+    models: null,
+    output: null,
+    output_schema_error: null,
+  });
+
+  // The kind is a closed set of one: a value nobody declared is a mistake by
+  // whoever wrote it, never new data some engine understands.
+  const invented = await openBareSession(ctx);
+  const refusedKind = await request(ctx, 'PATCH', `/v1/sessions/${invented.id}/finish`, {
+    status: 'failed',
+    exit_code: 1,
+    failure_kind: 'engine_crash',
+  });
+  assert.equal(refusedKind.status, 400);
 });
 
 test('AT10 — GET /v1/sessions?execution_id=7 returns only that execution\'s sessions', async (t) => {
@@ -839,6 +896,8 @@ test('t159 AT5 — the transcript stays OUT of the session.finished event', asyn
     exit_code: 0,
     usage: USAGE,
     timeout_reason: null,
+    failure_kind: null,
+    refusal_category: null,
     models: null,
     output: null,
     output_schema_error: null,
@@ -1020,6 +1079,8 @@ test('t172 — models round-trips through the projection; absent reads null, nev
     exit_code: 0,
     usage: USAGE,
     timeout_reason: null,
+    failure_kind: null,
+    refusal_category: null,
     models: MODELS,
     output: null,
     output_schema_error: null,

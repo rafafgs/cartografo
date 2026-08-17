@@ -3,9 +3,14 @@
  *
  * The t229 pass moved this document's DDL and its table/column citations to the
  * English of `glossario-wire.md` §4, and one sentence of §5 stayed behind: it
- * still said the fork's column was `grafo.origem_proposta_id`, of type `INTEGER
- * REFERENCES proposta(id)`, when migration `0019` had renamed all three names.
- * A reader comparing the specification to the database found two schemas.
+ * still said the fork's column was `grafo.origem_proposta_id`, of a type quoted
+ * as `INTEGER REFERENCES proposta(id)`, when migration `0019` had renamed all
+ * three names. A reader comparing the specification to the database found two
+ * schemas.
+ *
+ * (A backticked span in a comment is how this package quotes a schema name past
+ * the D18 gate, and that masking stops at the end of the line — so a quotation
+ * long enough to wrap has to be re-wrapped, never split across two lines.)
  *
  * ## The oracle is the database, not a word list
  *

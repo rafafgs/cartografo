@@ -12,6 +12,13 @@
  * by field, what the tables answer. If one day the projection knows something
  * the log does not tell, this is where it shows up.
  *
+ * Since t196 it covers the reducer's five projections and not three: `leases`
+ * and `grafo_versao_corrente` used to fold to `{}` no matter what the control
+ * plane did, because nobody recorded `lease.*` or `graph_version.*` — an empty
+ * comparison that passed and proved nothing. The flow below now also registers a
+ * lineage, moves its pointer with a proposal and moves it back, and grants a
+ * lease that dies of old age.
+ *
  * The reducer's own state keys stay in Portuguese: it lives in `especificacoes/`,
  * outside this ticket's rename scope (t127, FR8).
  */

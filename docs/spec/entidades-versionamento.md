@@ -86,11 +86,13 @@ Notas de leitura:
 - **Os nomes de coluna copiam literalmente os schemas de evento** já
   especificados em
   [`especificacoes/eventos/schemas/`](../../especificacoes/eventos/schemas)
-  (`graph_id`, `parent_version`, `source`, `proposal_id`, `reason`). Nenhuma rota
-  desta camada emite evento, e a tabela append-only de eventos já existe (`t102`,
-  migração `0003`, com `grafo_versao` entre os `entity_type` válidos): ligar a
-  emissão é mapeamento direto, não tradução — e é item aberto da §7, sem ficha
-  dona ainda.
+  (`graph_id`, `parent_version`, `source`, `proposal_id`, `reason`). Foi o que
+  fez da emissão, ligada pela `t196`, mapeamento direto e não tradução: cada
+  caminho que escreve uma versão grava `graph_version.registered` e —
+  porque escrever e passar a valer acontecem na mesma transação nos três casos —
+  também `graph_version.applied`. Reverter grava um `graph_version.reverted`
+  sozinho, com `entity.id` na versão **abandonada**, porque nenhuma versão nova
+  é escrita.
 - **Nada se apaga.** Não existe `DELETE` nem `UPDATE` de `graph_version` em
   nenhum caminho de código. O único `UPDATE` de `graph` é o do ponteiro.
 
@@ -384,9 +386,10 @@ topógrafo, não lixo.
 `target_version` e grava `revert_reason`. A versão abandonada continua em
 `graph_version` e continua listada no histórico — append-only não tem exceção.
 
-`motivo` é **obrigatório**, espelhando `dados.motivo` do evento
-[`grafo_versao.revertida`](../../especificacoes/eventos/schemas/grafo_versao.revertida.schema.json):
-é a evidência que o topógrafo vai cruzar com a telemetria da versão abandonada.
+`motivo` é **obrigatório**, espelhando `data.reason` do evento
+[`graph_version.reverted`](../../especificacoes/eventos/schemas/graph_version.reverted.schema.json)
+— que desde a `t196` é gravado de verdade, com `entity.id` na versão
+abandonada: é a evidência que o topógrafo vai cruzar com a telemetria dela.
 Reverter sem dizer por quê perde a metade útil do fato.
 
 ### Fechar o experimento
@@ -490,8 +493,11 @@ justificou a reversão.
 ## 6. Endpoints
 
 Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`.
-**Nenhum emite evento de telemetria**, e não é mais espera pelo `t102`: o log
-append-only existe desde ele. Ligar a emissão é o item aberto da §7.
+Desde a `t196`, os quatro que escrevem versão ou movem ponteiro — `POST /graphs`,
+`POST /graphs/:id/fork`, `POST /proposals/:id/apply` e
+`POST /proposals/:id/revert` — **gravam o evento correspondente na mesma
+transação da linha**. Os dois que só abrem proposta pendente (`/promote` e
+`/offer`) não gravam nada, porque nada mudou de versão.
 
 Os caminhos abaixo estão na grafia em português deste documento; a superfície
 implementada foi renomeada para inglês pelo `t127` (D18), e é ela que vale:
@@ -589,10 +595,7 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   nem entidade/evento de execução finalizada na v1
   ([`routes/executions.ts`](../../packages/core/src/routes/executions.ts)).
   Fechar o experimento é sempre chamada explícita de API (§5).
-- **Emissão de eventos** `grafo_versao.registrada/.aplicada/.revertida` — a
-  tabela `event` que eles pedem já veio com o `t102`, e `grafo_versao` já é um
-  `entity_type` válido; o que falta é a emissão, que nenhuma ficha aberta
-  declara. Enquanto isso, uma versão registrada não deixa rastro no log.
 - **Identidade de quem chama.** A `t124` fechou a autenticação — todas estas
-  rotas exigem credencial —, mas um token prova posse, não pessoa: o `ator` dos
-  eventos segue sendo `sistema`/componente.
+  rotas exigem credencial —, mas um token prova posse, não pessoa: o `actor` dos
+  eventos que a `t196` ligou é `{type: "system", ref: "control-plane"}`, o
+  componente que agiu, e nenhuma destas rotas aceita um `actor` no corpo.

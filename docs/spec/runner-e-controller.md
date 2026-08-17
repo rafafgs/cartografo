@@ -37,14 +37,14 @@ CREATE TABLE lease (
   runner_id         TEXT NOT NULL REFERENCES runner(id),
   job_id            INTEGER NOT NULL, -- solto de propósito (§6)
   project_id        INTEGER NOT NULL,
-  status            TEXT NOT NULL DEFAULT 'ativa'
-                      CHECK (status IN ('ativa', 'liberada', 'expirada')),
+  status            TEXT NOT NULL DEFAULT 'active'
+                      CHECK (status IN ('active', 'released', 'expired')),
   ttl_seconds       INTEGER NOT NULL,
   granted_at        TEXT NOT NULL,
   heartbeat_at      TEXT NOT NULL,
   expires_at        TEXT NOT NULL,
   released_at       TEXT,
-  expiration_reason TEXT CHECK (expiration_reason IN ('heartbeat_perdido', 'expirou'))
+  expiration_reason TEXT CHECK (expiration_reason IN ('heartbeat_lost', 'ttl_elapsed'))
 );
 
 CREATE INDEX idx_lease_runner_status  ON lease (runner_id, status);
@@ -65,7 +65,8 @@ Nada é apagado, nem lease morta: ela vira `expirada` com o motivo gravado e
 continua na tabela. É o mesmo append-only da [D15](../../DECISOES.md) — e é o
 que permite cruzar "runner × leases perdidas" sem ter que reconstruir nada,
 agora que a telemetria do `t102` está no lugar (tabela `event`, migração
-`0003`); falta só ligar a emissão, e a §7 diz de quem é.
+`0003`) e que a `t196` ligou a emissão: a morte de cada lease está na tabela
+**e** no log.
 
 ---
 
@@ -77,7 +78,7 @@ agora que a telemetria do `t102` está no lugar (tabela `event`, migração
      │
      │ expires_at vence sem heartbeat, e alguém pede trabalho
      ▼
-  expirada  (expiration_reason: expirou | heartbeat_perdido)
+  expirada  (expiration_reason: ttl_elapsed | heartbeat_lost)
 ```
 
 Uma lease nasce `ativa`, com `heartbeat_at = granted_at` e
@@ -98,14 +99,14 @@ interrompido no meio:
 
 | Motivo | Quando | O que significa |
 |---|---|---|
-| `expirou` | `heartbeat_at == granted_at` | A lease **nunca** foi renovada. O runner pode nem ter começado. |
-| `heartbeat_perdido` | `heartbeat_at > granted_at` | Foi renovada ao menos uma vez e então calou. Runner morreu no meio do trabalho. |
+| `ttl_elapsed` | `heartbeat_at == granted_at` | A lease **nunca** foi renovada. O runner pode nem ter começado. |
+| `heartbeat_lost` | `heartbeat_at > granted_at` | Foi renovada ao menos uma vez e então calou. Runner morreu no meio do trabalho. |
 
-Os dois nomes são exatamente os de `dados.motivo` em
-[`lease.expirada.schema.json`](../../especificacoes/eventos/schemas/lease.expirada.schema.json):
-quando alguém ligar a emissão de eventos, a projeção desta tabela e o evento
-falam a mesma língua, sem tradução — a tabela `event` que eles precisam já
-existe desde o `t102`.
+Os dois nomes são exatamente os de `data.reason` em
+[`lease.expired.schema.json`](../../especificacoes/eventos/schemas/lease.expired.schema.json):
+desde a `t196` cada lease que morre grava o evento com o mesmo motivo que a
+coluna guarda, sem tradução — um evento por lease, mesmo quando a varredura
+mata várias de uma vez.
 
 ### `reason` de recusa ≠ `expiration_reason`
 
@@ -325,9 +326,10 @@ rede, não uma regressão.
 
 Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`
 — o runner apresenta uma credencial em toda chamada, como qualquer outro cliente
-da API. **Nenhum emite evento de telemetria**, e isso não é mais espera por
-ficha nenhuma: o log append-only existe desde o `t102`, e ligar a emissão é o
-item aberto da §7.
+da API. Desde a `t196`, conceder grava `lease.granted` e cada lease que a
+varredura mata grava um `lease.expired`, ambos na transação que escreve a linha.
+O que continua sem rastro é a **liberação** normal, e por falta de tipo na
+taxonomia — o item que sobrou na §7.
 
 Desde a `t143` a credencial do runner é **dele**, emitida no pareamento, e a
 coluna "quem chama" abaixo é contrato, não convenção: quem pareia, revoga e
@@ -434,18 +436,19 @@ A divisão de responsabilidade que isso produz é, aliás, a correta:
 
 Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 
-- **Emissão dos eventos** [`lease.concedida`](../../especificacoes/eventos/schemas/lease.concedida.schema.json)
-  e [`lease.expirada`](../../especificacoes/eventos/schemas/lease.expirada.schema.json) —
-  a tabela `event` de que dependem já existe (`t102`, migração `0003`) e nada
-  aqui escreve nela. As colunas já carregam tudo que os dois eventos pedem (`runner_id`, `job_id`, `expires_at`, `expiration_reason`);
-  ligar a emissão é mapeamento direto. **Atenção de quem for ligar:** a
-  taxonomia do `t98` tem `lease.concedida` e `lease.expirada`, e nenhum evento
-  para a liberação — o reducer de referência
+- **Nenhum evento para a liberação.** A emissão de
+  [`lease.granted`](../../especificacoes/eventos/schemas/lease.granted.schema.json)
+  e [`lease.expired`](../../especificacoes/eventos/schemas/lease.expired.schema.json)
+  está ligada desde a `t196` — as colunas já carregavam tudo que os dois eventos
+  pedem (`runner_id`, `job_id`, `expires_at`, `expiration_reason`), e foi
+  mapeamento direto. **O que sobrou é o gap maior:** a taxonomia do `t98` não
+  declara `lease.released`, e o reducer de referência
   ([`reconstruir-estado.mjs`](../../especificacoes/eventos/reducers/reconstruir-estado.mjs))
-  projeta `leases` só com `ativa`/`expirada`. A tabela tem três estados, então
-  ou a taxonomia ganha um `lease.liberada`, ou a projeção por eventos fica
-  cega para o encerramento normal — que é o caso mais comum de todos. A
-  decisão é de quem ligar a emissão; esta ficha não mexe na taxonomia.
+  projeta `leases` só com `active`/`expired`. A tabela tem três estados, então
+  ou a taxonomia ganha um `lease.released`, ou a projeção por eventos fica
+  cega para o encerramento normal — que é o caso mais comum de todos. Crescer a
+  taxonomia é decisão de outra ficha; a `t196` ligou os dois tipos que já tinham
+  contrato e não mexeu nela.
 - **Abrir sessão de verdade** pelo `EngineAdapter` — `despachar` é callback
   injetado (`t106`/`t109`). **Construído pela `t106`:**
   [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch.ts)

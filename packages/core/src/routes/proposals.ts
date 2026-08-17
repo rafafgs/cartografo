@@ -328,10 +328,10 @@ async function revert(
     return refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id });
   }
 
-  // Reason before status: it is the field the `grafo_versao.revertida` event
-  // demands, and it is the evidence the topographer will cross with the
-  // telemetry of the abandoned version. Reverting without saying why loses the
-  // useful half of the fact.
+  // Reason before status: it is the field the `graph_version.reverted` event
+  // demands — and since t196 really carries into the log —, and it is the
+  // evidence the topographer will cross with the telemetry of the abandoned
+  // version. Reverting without saying why loses the useful half of the fact.
   const body = isObject(request.body) ? request.body : {};
   const reason = body.reason;
   if (typeof reason !== 'string' || reason.trim() === '') {

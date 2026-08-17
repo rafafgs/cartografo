@@ -166,7 +166,14 @@ plane: outro processo, outra porta, nenhum acesso ao banco.
 Configuração: `CARTOGRAFO_PORT`, `CARTOGRAFO_DB_PATH` e `CARTOGRAFO_HOST` na
 partida — o último decide o endereço de escuta, e o default segue sendo
 `127.0.0.1`, porque abrir a porta para a rede é decisão de quem opera, não do
-comando; `CARTOGRAFO_LEASE_CAP_RUNNER` e `CARTOGRAFO_LEASE_CAP_PROJECT`
+comando; `CARTOGRAFO_LOG_LEVEL` (default `info`, valores `trace`, `debug`,
+`info`, `warn`, `error`, `fatal`, `silent`) para o nível do log JSON do control
+plane — é por ele que saem as falhas de tick dos despachantes e os 500
+inesperados, cuja resposta ao cliente não diz mais do que `{error, message,
+request_id}`: o `request_id` é o `reqId` da linha de log correspondente, e é o
+que liga um relato de suporte ao que de fato quebrou; não há log por
+requisição, de propósito; `CARTOGRAFO_LEASE_CAP_RUNNER` e
+`CARTOGRAFO_LEASE_CAP_PROJECT`
 (default 50 cada) para o teto de leases simultâneas que o servidor impõe — o
 runner declara o teto que quer em `--declared-runner-cap` e vale o MENOR dos
 dois, porque quem decide concorrência é o control plane, não o pedido (D1); esse

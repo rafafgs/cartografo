@@ -126,7 +126,11 @@ palavra.
 | api | `campo_obrigatorio_ausente` | `missing_required_field` | `packages/core/src/routes/intake.ts` |
 | api | `classe_ja_registrada` | `class_already_registered` | `packages/core/src/routes/graphs.ts` |
 | api | `corpo_invalido` | `invalid_body` | `packages/core/src/routes/leases.ts:148` |
+| api | `credencial_ausente` | `missing_credential` | `packages/core/src/auth.ts:43` |
+| api | `credencial_fora_de_escopo` | `out_of_scope_credential` | `packages/core/src/auth.ts:49` |
+| api | `credencial_invalida` | `invalid_credential` | `packages/core/src/auth.ts:46` |
 | api | `diff_sem_efeito` | `diff_without_effect` | `packages/core/src/routes/proposals.ts` |
+| api | `esperado` | `expected` | `packages/core/src/routes/leases.ts:288` |
 | api | `execucao_sem_evidencia` | `execution_without_evidence` | `packages/core/src/routes/proposals.ts` |
 | api | `filtro_invalido` | `invalid_filter` | `packages/core/src/routes/events.ts` |
 | api | `grafo_desconhecido` | `unknown_graph` | `packages/core/src/routes/proposals.ts` |

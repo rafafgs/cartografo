@@ -1,0 +1,431 @@
+/**
+ * D20 gate: no Portuguese term of the API surface survives on the wire (t226, FR9).
+ *
+ * The glossary's own placeholder for this file (`docs/spec/glossario-wire.md`,
+ * "O que este glossário não decide") says the wire gate arrives "when there is
+ * already an English wire to check". This ticket is the one that builds it, so
+ * the gate lands with it — scoped to exactly the surface t226 migrates (`api`),
+ * and no wider. The remaining four surfaces stay Portuguese until their own
+ * child ticket, and a sweep that flagged them now would be a sweep somebody
+ * turns off.
+ *
+ * Complement, not substitute, of `no-portuguese-identifiers.test.ts`: that one
+ * guards IDENTIFIERS and deliberately masks key and string positions — which is
+ * exactly the value on the wire, and exactly what this file scans instead.
+ *
+ * The vocabulary is not re-declared here. It is read out of the glossary's
+ * `superfície = api` rows at run time, so a row added there is a term checked
+ * here on the next run, and the two cannot drift.
+ *
+ * ## What is masked, and why each one is a boundary and not a loophole
+ *
+ * A route file sits between two vocabularies. Below it the database still spells
+ * everything in Portuguese (child 4 of D20 renames it, not this ticket); above
+ * it the wire is English from this ticket on. So the same file legitimately
+ * contains both, and the masks below are the line between them:
+ *
+ * - **Comments.** Prose about `grafo_versao` is documentation, not payload.
+ * - **SQL literals.** A `FROM evento` is child 4's surface, untouched here.
+ * - **Comparison operands.** `lease.status !== 'ativa'` reads a ROW value; FR1
+ *   is explicit that internal route logic keeps comparing the Portuguese values
+ *   and that only the boundary translates.
+ * - **The KEYS of an object literal handed to the repository layer.** What a
+ *   route passes to `grantLease` or `createDraft` is that layer's input shape,
+ *   and it mirrors the untouched columns (FR2 translates EN→PT *before* calling
+ *   it). Only the keys go blank, never the values: the value half of
+ *   `{ projeto_id: integerFromQuery('project_id', …) }` still names a QUERY
+ *   PARAMETER, and masking it would hide exactly what FR2 renames.
+ * - **Object literals typed by an imported domain/repository type**, keys and
+ *   values alike. A `const document: GraphDocument = {…}` is the graph document
+ *   format (`schema/grafo.schema.json`), which is nobody's surface in D20, and
+ *   its `lineage.type: 'variante'` is that format's value and not this API's.
+ * - **The `estrutura`/`soundness` report objects.** They ride inside `/v1`
+ *   bodies, and Out of Scope names them explicitly: the whole structural-report
+ *   vocabulary is child 5's, "including where that report rides inside a `/v1`
+ *   422 body".
+ *
+ * What is left after masking is a key or a value this API actually publishes.
+ */
+
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
+
+/** The surface this ticket migrates, as the glossary tags it. */
+const SURFACE = 'api';
+
+/**
+ * `GET /health` is not `/v1`, and this ticket's Goal is the `/v1` surface.
+ *
+ * It sits outside the business API on purpose (`routes/health.ts`), it is not in
+ * t226's Code Changes table, and its two values (`ok`/`erro`) are the probe's
+ * contract, pinned byte for byte by `test/health.test.ts`. Renaming a
+ * supervisor-facing payload is a decision with its own blast radius; whoever
+ * takes it takes it deliberately, in the docs-and-gate child of D20.
+ */
+const OUTSIDE_V1 = ['health.ts'];
+
+/**
+ * Files that publish the wire: every `/v1` route, plus the credential gate.
+ *
+ * `auth.ts` is not a route file and is swept anyway, because it answers three
+ * refusal bodies of its own on every `/v1` request — the three the glossary
+ * gained a row for under FR6. A gate that skipped it would leave the only
+ * refusal EVERY client can receive outside the only sweep that checks refusals.
+ */
+function scannedFiles(): string[] {
+  const routes = path.join(PACKAGE_ROOT, 'src', 'routes');
+  return [
+    ...readdirSync(routes)
+      .filter((entry) => entry.endsWith('.ts') && !OUTSIDE_V1.includes(entry))
+      .map((entry) => path.join('src', 'routes', entry))
+      .sort(),
+    path.join('src', 'auth.ts'),
+  ];
+}
+
+/**
+ * Keys whose object value is a report of another D20 surface (Out of Scope).
+ *
+ * The graph validation report is child 5's vocabulary and it travels inside a
+ * `/v1` 422; skipping it here is what keeps this sweep from demanding a rename
+ * that ticket owns.
+ */
+const FOREIGN_REPORT_KEYS = ['estrutura', 'soundness'];
+
+/** Modules whose exported names are the layer BELOW the wire. */
+const LOWER_LAYERS = ['../repositories/', '../domain/', '../db/', './repositories/', './db/'];
+
+/** Rough test for "this string literal is SQL", not a parser. */
+const SQL = /\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|CREATE\s+TABLE)\b/i;
+
+/** Replaces a span with same-length blanks, so line numbers stay honest. */
+function blank(text: string): string {
+  return text.replace(/[^\n]/g, ' ');
+}
+
+/** Blanks `[start, end)` of `source`, keeping its length and its newlines. */
+function blankRange(source: string, start: number, end: number): string {
+  return source.slice(0, start) + blank(source.slice(start, end)) + source.slice(end);
+}
+
+/**
+ * Index just past the delimiter that closes the one opened at `open`.
+ *
+ * Quote-aware, because a `{` inside a string is not a brace. Returns the end of
+ * the source when nothing closes it — a truncated file masks to its end rather
+ * than throwing, which keeps a parse accident from reading as a clean sweep.
+ */
+function matchDelimiter(source: string, open: number): number {
+  const opener = source[open];
+  const closer = opener === '{' ? '}' : ')';
+  let depth = 0;
+
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "'" || char === '"' || char === '`') {
+      index = endOfString(source, index) - 1;
+      continue;
+    }
+    if (char === opener) depth += 1;
+    else if (char === closer) {
+      depth -= 1;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return source.length;
+}
+
+/** Index just past the string literal that starts at `start`. */
+function endOfString(source: string, start: number): number {
+  const quote = source[start];
+  for (let index = start + 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '\\') {
+      index += 1;
+      continue;
+    }
+    if (char === quote) return index + 1;
+    if (char === '\n' && quote !== '`') return index;
+  }
+  return source.length;
+}
+
+/** Blanks every comment, keeping the file's shape. */
+function maskComments(source: string): string {
+  let out = source;
+  let index = 0;
+
+  while (index < out.length) {
+    const char = out[index];
+    const next = out[index + 1];
+
+    if (char === "'" || char === '"' || char === '`') {
+      index = endOfString(out, index);
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      const stop = out.indexOf('\n', index);
+      const end = stop === -1 ? out.length : stop;
+      out = blankRange(out, index, end);
+      index = end;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      const stop = out.indexOf('*/', index + 2);
+      const end = stop === -1 ? out.length : stop + 2;
+      out = blankRange(out, index, end);
+      index = end;
+      continue;
+    }
+    index += 1;
+  }
+
+  return out;
+}
+
+/** Every name this file imports from a module of the layer below the wire. */
+function lowerLayerNames(source: string): string[] {
+  const names: string[] = [];
+  const importPattern = /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*'([^']+)'/g;
+
+  for (const match of source.matchAll(importPattern)) {
+    if (!LOWER_LAYERS.some((prefix) => match[2].startsWith(prefix))) continue;
+    for (const specifier of match[1].split(',')) {
+      const name = specifier.replace(/^\s*type\s+/, '').split(/\s+as\s+/).pop()?.trim();
+      if (name !== undefined && name !== '') names.push(name);
+    }
+  }
+
+  return names;
+}
+
+/** Blanks every object-literal KEY inside the argument list of a lower-layer call. */
+function maskLowerLayerArguments(source: string, names: readonly string[]): string {
+  let out = source;
+
+  for (const name of names) {
+    const call = new RegExp(`\\b${name}\\s*\\(`, 'g');
+    for (const match of [...out.matchAll(call)]) {
+      const open = match.index + match[0].length - 1;
+      const close = matchDelimiter(out, open);
+      // Keys only. The VALUE half of `{ projeto_id: integerFromQuery('x', …) }`
+      // is assembled out of the wire and still names query parameters, so it
+      // stays in the sweep; the key is the repository's column shape.
+      const masked = out
+        .slice(open, close)
+        .replace(/[A-Za-z_][A-Za-z0-9_]*\s*\??\s*:/g, (key) => blank(key));
+      out = out.slice(0, open) + masked + out.slice(close);
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Blanks object literals annotated with a type of the layer below the wire.
+ *
+ * Keys AND values, unlike a call argument: this is a whole foreign document, and
+ * `lineage: { type: 'variante' }` inside a `GraphDocument` is that format's
+ * value — `schema/grafo.schema.json`, which no D20 child renames.
+ */
+function maskLowerLayerLiterals(source: string, names: readonly string[]): string {
+  let out = source;
+
+  for (const name of names) {
+    const annotated = new RegExp(`:\\s*${name}(?:\\[\\])?\\s*=\\s*\\{`, 'g');
+    for (const match of [...out.matchAll(annotated)]) {
+      const open = match.index + match[0].length - 1;
+      const end = matchDelimiter(out, open);
+      out = blankRange(out, open + 1, end - 1);
+    }
+  }
+
+  return out;
+}
+
+/** Blanks the report objects that belong to another D20 surface. */
+function maskForeignReports(source: string): string {
+  let out = source;
+
+  for (const key of FOREIGN_REPORT_KEYS) {
+    const entry = new RegExp(`\\b${key}\\s*:\\s*\\{`, 'g');
+    for (const match of [...out.matchAll(entry)]) {
+      const open = match.index + match[0].length - 1;
+      const end = matchDelimiter(out, open);
+      out = blankRange(out, open + 1, end - 1);
+    }
+  }
+
+  return out;
+}
+
+/** Blanks SQL literals and the operands of a comparison (row values, FR1). */
+function maskRowValues(source: string): string {
+  let out = source;
+  let index = 0;
+
+  while (index < out.length) {
+    const char = out[index];
+    if (char !== "'" && char !== '"' && char !== '`') {
+      index += 1;
+      continue;
+    }
+
+    const end = endOfString(out, index);
+    const literal = out.slice(index + 1, end - 1);
+    const before = out.slice(Math.max(0, index - 40), index);
+    const isComparison = /(===|!==|==|!=)\s*$/.test(before);
+
+    if (SQL.test(literal) || isComparison) out = blankRange(out, index + 1, end - 1);
+    index = end;
+  }
+
+  return out;
+}
+
+/** The whole masking chain, in the order the stages depend on each other. */
+export function maskWireSource(source: string): string {
+  const withoutComments = maskComments(source);
+  const names = lowerLayerNames(withoutComments);
+  return maskRowValues(
+    maskForeignReports(
+      maskLowerLayerLiterals(maskLowerLayerArguments(withoutComments, names), names),
+    ),
+  );
+}
+
+/** A term of the glossary's API surface, with where it is written down. */
+interface Term {
+  term: string;
+  english: string;
+  line: number;
+}
+
+/**
+ * Every Portuguese term the glossary maps on the `api` surface.
+ *
+ * Rows whose replacement equals the term itself are dropped: they exist to say
+ * "this name does not change" (`runner`), and scanning for them would fail a
+ * file for spelling a word correctly. A qualified row (`pergunta.tipo=pergunta`)
+ * contributes the VALUE, which is what travels.
+ */
+function apiTerms(): Term[] {
+  assert.ok(existsSync(GLOSSARY), `${GLOSSARY} does not exist`);
+  const terms: Term[] = [];
+
+  readFileSync(GLOSSARY, 'utf8')
+    .split('\n')
+    .forEach((line, index) => {
+      const cells = line.trim();
+      if (!cells.startsWith('|')) return;
+      const parts = cells.slice(1).split('|').map((cell) => cell.replace(/`/g, '').trim());
+      if (parts[0] !== SURFACE) return;
+
+      const english = parts[2] ?? '';
+      for (const spelling of (parts[1] ?? '').split(' / ')) {
+        const term = spelling.includes('=') ? spelling.split('=').pop()!.trim() : spelling.trim();
+        if (term === '' || term === english) continue;
+        terms.push({ term, english, line: index + 1 });
+      }
+    });
+
+  assert.ok(terms.length > 50, `the glossary's "${SURFACE}" surface parsed to only ${terms.length} terms`);
+  return terms;
+}
+
+/** Every hit of one term in already-masked source, as `line — what` records. */
+function hitsFor(masked: string, entry: Term): Array<{ line: number; detail: string }> {
+  const hits: Array<{ line: number; detail: string }> = [];
+  // A key of an object literal or of an inline type, and a whole string
+  // literal — the two shapes a Portuguese name still takes on the wire.
+  const asKey = new RegExp(`(^|[{,(\\s])${entry.term}\\s*\\??\\s*:`);
+  const asValue = new RegExp(`(['"\`])${entry.term}\\1`);
+
+  masked.split('\n').forEach((line, index) => {
+    if (asKey.test(line)) {
+      hits.push({ line: index + 1, detail: `key "${entry.term}" (glossary says "${entry.english}")` });
+    }
+    if (asValue.test(line)) {
+      hits.push({ line: index + 1, detail: `value "${entry.term}" (glossary says "${entry.english}")` });
+    }
+  });
+
+  return hits;
+}
+
+/** Every hit in one file's source. */
+export function wireHits(source: string, terms: readonly Term[]): string[] {
+  const masked = maskWireSource(source);
+  return terms
+    .flatMap((entry) => hitsFor(masked, entry).map((hit) => `${hit.line}: ${hit.detail}`))
+    .sort();
+}
+
+test('FR9 — every /v1 body speaks the English wire vocabulary of glossario-wire.md §1', () => {
+  const terms = apiTerms();
+  const files = scannedFiles();
+  assert.ok(files.length > 10, `the sweep found only ${files.length} files; it is not walking the routes`);
+
+  const hits = files.flatMap((relative) =>
+    wireHits(readFileSync(path.join(PACKAGE_ROOT, relative), 'utf8'), terms).map(
+      (hit) => `${relative}:${hit}`,
+    ),
+  );
+
+  assert.deepEqual(
+    hits,
+    [],
+    `Portuguese still on the wire (D20, glossario-wire.md §1):\n${hits.join('\n')}`,
+  );
+});
+
+test('FR9 — the sweep bites on Portuguese that really is on the wire', () => {
+  const terms = apiTerms();
+  const caught = [
+    "reply.code(422); return { erro: 'grafo_invalido' };",
+    'return { trabalhos: listJobs(db) };',
+    'return { grafo: graph, grafo_versao: version };',
+    "return { lease: null, motivo: 'teto_runner' };",
+    'const query = request.query as { execucao_id?: string };',
+    "return { erro: 'credencial_ausente', mensagem: 'no token' };",
+  ];
+  for (const source of caught) {
+    assert.ok(wireHits(source, terms).length > 0, `the sweep missed a Portuguese wire name: ${source}`);
+  }
+});
+
+test('FR9 — the sweep does NOT bite on the boundaries D20 leaves in Portuguese', () => {
+  const terms = apiTerms();
+  const allowed = [
+    // A row value compared inside the handler (FR1: only the boundary translates).
+    "if (lease.status !== 'ativa') return conflict(reply);",
+    "if (base.linhagem_tipo !== 'base' || draft.status !== 'pendente') return null;",
+    // SQL, which is child 4's surface.
+    "db.prepare('SELECT MAX(id) AS last_id FROM evento').get();",
+    // The repository's own input shape, built by the route just before calling.
+    [
+      "import { grantLease } from '../repositories/leases.ts';",
+      'const result = grantLease(db, { projeto_id: projectId, teto_runner: cap });',
+    ].join('\n'),
+    // A domain format nobody's D20 surface renames.
+    [
+      "import type { GraphDocument } from '../domain/graph.ts';",
+      "const document: GraphDocument = { lineage: { type: 'variante' } };",
+    ].join('\n'),
+    // The structural report, riding inside a /v1 422 (child 5, Out of Scope).
+    "return { error: 'invalid_graph', estrutura: { erros: [{ mensagem: 'x' }] } };",
+    // English prose that merely contains a mapped word.
+    'const message = `only a pending proposal can be approved`;',
+    // A comment quoting the frozen vocabulary.
+    '/** The `erro`/`mensagem` shape became `error`/`message` in t226. */',
+  ];
+  for (const source of allowed) {
+    assert.deepEqual(wireHits(source, terms), [], `the sweep flagged a D20 boundary: ${source}`);
+  }
+});

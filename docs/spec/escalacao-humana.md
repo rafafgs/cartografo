@@ -264,7 +264,7 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   pelo despacho, e nada o lê para responder sozinho. A rota
   `/auto_resolucao` existe e funciona; quem a chama é gente, por enquanto.
   A `t167` não a construiu: o que ela deixou pronto é o **fato** que esse portão
-  vai precisar ler — a política do nó, no snapshot do grafo, e o `no_id` na
+  vai precisar ler — a política do nó, no snapshot do grafo, e o `node_id` na
   própria pergunta.
 - **Atualizar `engine_session_ref` depois da abertura.** `sessao.aberta` é
   gravado assim que a sessão sobe, e o ref que o engine revela no primeiro

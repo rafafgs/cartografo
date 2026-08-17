@@ -179,7 +179,7 @@ test('AT14 — with the dispatch in flight, the heartbeat beats at an interval s
     // Never resolves: it is the session still running.
     dispatch: async () => {
       announceDispatched();
-      return new Promise<void>(() => undefined);
+      return new Promise<ControllerModule.DispatchAttempt>(() => undefined);
     },
   });
 
@@ -224,7 +224,7 @@ test('AT15 — a finished dispatch releases the lease and stops the heartbeat', 
   const controller = new Controller({
     ...BASE_OPTIONS,
     client,
-    dispatch: async () => undefined,
+    dispatch: async () => ({ blocked: false }),
   });
 
   const result = await controller.tick();
@@ -341,7 +341,7 @@ test('t158 — a release that also fails does not take the place of the dispatch
   const happy = new Controller({
     ...BASE_OPTIONS,
     client: quiet.client,
-    dispatch: async () => undefined,
+    dispatch: async () => ({ blocked: false }),
   });
 
   assert.deepEqual(
@@ -438,7 +438,7 @@ test('t193 — a heartbeat still in flight is skipped, never overlapped', async 
     heartbeatIntervalMs: 1_000,
     dispatch: async () => {
       announceDispatched();
-      return new Promise<void>(() => undefined);
+      return new Promise<ControllerModule.DispatchAttempt>(() => undefined);
     },
   });
 
@@ -559,10 +559,74 @@ test('t208 — tick() still tries the next candidate after `trabalho_ja_leased`'
     client,
     dispatch: async (jobId: number) => {
       dispatched.push(jobId);
+      return { blocked: false };
     },
   });
 
   assert.deepEqual(await controller.tick(), { jobId: 2, leaseId: LEASE.id });
   assert.deepEqual(asked(), [1, 2], 'a job with an owner is one job, never the whole queue');
   assert.deepEqual(dispatched, [2], 'and the one dispatched is the one that yielded a lease');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t252 — a dispatch that blocked the job does not end the pass.               */
+/* -------------------------------------------------------------------------- */
+
+test('t252 — a blocked candidate is skipped and the NEXT one runs in the same tick', async () => {
+  const { Controller } = await loadController();
+
+  // Both candidates yield a lease: what decides the pass here is not the
+  // server's answer to the lease request, it is what the dispatch reported
+  // back. Job 1 blocked itself before opening a session — an engine with no
+  // route, a placeholder that does not resolve — and that is a job which will
+  // never be a candidate again until a human unblocks it. Ending the pass on it
+  // would leave every other released job of the project waiting behind a queue
+  // head that is already dead.
+  const { client, asked } = refusingClient([1, 2], [{ lease: LEASE }, { lease: LEASE }]);
+
+  const dispatched: number[] = [];
+  const controller = new Controller({
+    ...BASE_OPTIONS,
+    client,
+    dispatch: async (jobId: number) => {
+      dispatched.push(jobId);
+      return jobId === 1
+        ? { blocked: true, reason: 'o nó pede um engine que este runner não tem' }
+        : { blocked: false };
+    },
+  });
+
+  assert.deepEqual(
+    await controller.tick(),
+    { jobId: 2, leaseId: LEASE.id },
+    'the tick reports the work it actually dispatched, not the one it blocked',
+  );
+  assert.deepEqual(
+    asked(),
+    [1, 2],
+    'the second candidate was leased in the SAME pass, not two seconds later',
+  );
+  assert.deepEqual(
+    dispatched,
+    [1, 2],
+    'and it was dispatched in the same pass too: one blocked job may not cost a whole tick',
+  );
+});
+
+test('t252 — a tick whose only candidate blocks itself returns null', async () => {
+  const { Controller } = await loadController();
+
+  const { client, asked } = refusingClient([1], [{ lease: LEASE }]);
+
+  const controller = new Controller({
+    ...BASE_OPTIONS,
+    client,
+    dispatch: async () => ({ blocked: true, reason: 'a skill fixada não está no registro' }),
+  });
+
+  // Same answer as "no candidate yielded a lease": the pass won nothing. What
+  // it must NOT do is report the blocked job as dispatched work — the loop in
+  // `cli/run.ts` reads that as a session having run.
+  assert.equal(await controller.tick(), null, 'a tick that blocked its only candidate won nothing');
+  assert.deepEqual(asked(), [1]);
 });

@@ -7,7 +7,9 @@
  *   present, node ids unique, every edge and every id in
  *   `initial_node`/`final_nodes` pointing at a node that exists, and — since
  *   t169 — every hook id unique with its `node_id` pointing at a node that
- *   exists too.
+ *   exists too. Since t256 a hook also answers for its own content: a `trigger`
+ *   inside the taxonomy and a `destination` naming the HMAC key instead of
+ *   carrying it.
  * - `validarSoundness(doc)` — the four formal workflow-net rules (van der
  *   Aalst) the graph validation gate applies: reachable, terminates,
  *   edge with condition, node with contract.
@@ -78,6 +80,16 @@ const REQUIRED_DOC_FIELDS = [
 const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
 const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
 const REQUIRED_HOOK_FIELDS = ['id', 'trigger', 'node_id', 'destination'];
+
+/**
+ * What a hook may react to — `schema/grafo.schema.json`'s own closed enum.
+ *
+ * Written down here because the schema is not what refuses a third value:
+ * `POST /v1/graphs` declares no ajv against it (draft 2020-12 against the
+ * draft-07 ajv Fastify v5 ships), so until t256 the enum was documentation and
+ * the hooks loop below was the whole gate.
+ */
+const HOOK_TRIGGERS = ['node_entered', 'node_blocked'];
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isFilledText = (value) => typeof value === 'string' && value.trim() !== '';
@@ -277,6 +289,48 @@ export function validarEstrutura(doc) {
       }
     } else {
       knownHookIds.add(hook.id);
+    }
+
+    // Two things the schema declares and, until t256, nobody enforced: a
+    // document with either of them used to get a 201 out of `POST /v1/graphs`
+    // and then never fire. The control plane's delivery-time filter compares the
+    // trigger against the occurrence's own and demands a filled `secret_ref`, so
+    // it simply enqueues nothing — a silent no-op, with no event and no error,
+    // in both cases.
+    const trigger = hook.trigger;
+    if (trigger !== undefined && trigger !== null && !HOOK_TRIGGERS.includes(trigger)) {
+      annotate(
+        'invalid_hook_trigger',
+        `hook #${index} declares a trigger outside the taxonomy: ${JSON.stringify(trigger)} (expected one of "${HOOK_TRIGGERS.join('", "')}")`,
+        hook.id ?? index,
+      );
+    }
+
+    const destination = hook.destination;
+    if (destination !== undefined && destination !== null) {
+      if (!isObject(destination)) {
+        annotate(
+          'invalid_hook_destination',
+          `hook #${index} needs an object in "destination", naming the HMAC key in "secret_ref": ${JSON.stringify(destination)}`,
+          hook.id ?? index,
+        );
+      } else if (Object.hasOwn(destination, 'secret')) {
+        // Its own code, and a message that does NOT quote the value: this is the
+        // pre-t194 shape, and the document is content-addressed, served whole,
+        // exported to disk and published to the atlas — a key written here is a
+        // key every reader of the map has. A leak, not a shape mistake.
+        annotate(
+          'hook_raw_secret',
+          `hook #${index} carries a raw "secret" in "destination": the document is published whole, so what goes on the wire is the NAME of a key registered by PUT /v1/hook-secrets/:name, in "secret_ref"`,
+          hook.id ?? index,
+        );
+      } else if (!isFilledText(destination.secret_ref)) {
+        annotate(
+          'invalid_hook_destination',
+          `hook #${index} needs a filled text in "destination.secret_ref": ${JSON.stringify(destination.secret_ref)}`,
+          hook.id ?? index,
+        );
+      }
     }
 
     const target = hook.node_id;

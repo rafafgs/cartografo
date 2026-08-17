@@ -74,6 +74,18 @@ export const INTERNAL_ERROR_CODE = 'internal_error';
 /** The one sentence the generic 500 carries; it describes nothing on purpose. */
 export const INTERNAL_ERROR_MESSAGE = 'an unexpected error occurred';
 
+/** Error code of a body that is not parseable JSON (t256, FR10). */
+export const INVALID_JSON_CODE = 'invalid_json';
+
+/**
+ * Error code of a body that parses but does not match the route's contract.
+ *
+ * The same word `routes/leases.ts` already answers by hand for a field of the
+ * wrong type: from a client's side "the body is wrong" is one refusal, whether
+ * the shape was caught by Fastify's ajv or by a handler reading the object.
+ */
+export const INVALID_BODY_CODE = 'invalid_body';
+
 /** Error code of an address no route claims (t197, FR5). */
 export const ROUTE_NOT_FOUND_CODE = 'not_found';
 
@@ -144,14 +156,39 @@ export function createApp(options: AppOptions): FastifyInstance {
   // this for a throw nobody caught, which by definition is a failure whose
   // message was written for whoever maintains the server, not for the client.
   //
-  // An error that already carries a `statusCode` is Fastify's own — a body that
-  // is not parseable JSON, a payload over the limit — and is handed straight
-  // back: `reply.send(error)` re-enters the chain one link down, at the default
-  // handler, which is the behaviour every client already sees for those and
-  // which this ticket has no business changing.
+  // An error that already carries a `statusCode` is Fastify's own — a payload
+  // over the limit, a header the parser refused — and is handed straight back:
+  // `reply.send(error)` re-enters the chain one link down, at the default
+  // handler, which is the behaviour every client already sees for those.
+  //
+  // With ONE exception, and t256 is it: the two commonest client mistakes also
+  // arrive here carrying a `statusCode` of 400 — a body that is not JSON
+  // (`FST_ERR_CTP_INVALID_JSON_BODY`, from the content-type parser) and a body
+  // that is JSON but not the shape the route declares (`FST_ERR_VALIDATION`,
+  // e.g. an array where `OPEN_OBJECT_SCHEMA` wants an object). Both used to
+  // serialize as `{statusCode, error: 'Bad Request', message}`: an extra key and
+  // an English PHRASE where every other refusal on `/v1` carries a snake_case
+  // code (`routes/common.ts`'s `refusal`). So a 400 — and only a 400 — is
+  // rewritten into the house envelope. The `message` is Fastify's own: it
+  // describes the shape problem to whoever has to fix the call and carries
+  // nothing about the server.
   app.setErrorHandler((error, request, reply) => {
     const status = (error as { statusCode?: number }).statusCode;
     if (typeof status === 'number') {
+      if (status === 400) {
+        // `message` and not `message?`: whatever else it carries, what got here
+        // is an Error, and Fastify's own sentence is the only description of the
+        // problem the client is going to get.
+        const failure = error as { code?: string; message: string };
+        void reply.code(400).send({
+          error:
+            failure.code === 'FST_ERR_CTP_INVALID_JSON_BODY'
+              ? INVALID_JSON_CODE
+              : INVALID_BODY_CODE,
+          message: failure.message,
+        } satisfies ErrorResponse);
+        return;
+      }
       void reply.code(status).send(error);
       return;
     }

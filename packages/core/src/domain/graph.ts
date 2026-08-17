@@ -109,8 +109,12 @@ export interface GraphHookDestination {
    * enqueue time — the same place `url` is copied from, and the same timing
    * `engine`, `model` and `escalation_policy` already have.
    *
-   * Deliberately NOT resolved by `validateStructure`: that pass is pure and
-   * DB-free, in byte-for-byte parity with `scripts/validar-grafo.mjs`, and a
+   * That it is PRESENT, and that no raw `secret` sits beside it, is checked by
+   * `validateStructure` since t256: the schema said so and nothing enforced it,
+   * because `POST /v1/graphs` compiles no ajv against `grafo.schema.json`.
+   *
+   * What is still deliberately NOT done here is RESOLVING it: that pass is pure
+   * and DB-free, in byte-for-byte parity with `scripts/validar-grafo.mjs`, and a
    * check that consulted a database would break the contract for one sibling
    * and not the other. The CHARSET is the schema's job, as it always was.
    */
@@ -130,7 +134,7 @@ export interface GraphHookDestination {
  */
 export interface GraphHook {
   id: string;
-  /** `node_entered` | `node_blocked`; the closed vocabulary lives in the schema. */
+  /** One of {@link HOOK_TRIGGERS}; the closed vocabulary is the schema's own. */
   trigger: string;
   /** The node whose entry or block fires this hook. */
   node_id: string;
@@ -211,6 +215,16 @@ export const REQUIRED_DOCUMENT_FIELDS = [
 export const REQUIRED_NODE_FIELDS = ['id', 'role', 'node_type', 'skill_ref', 'contract'];
 export const REQUIRED_EDGE_FIELDS = ['from', 'to', 'condition'];
 export const REQUIRED_HOOK_FIELDS = ['id', 'trigger', 'node_id', 'destination'];
+
+/**
+ * What a hook may react to — `schema/grafo.schema.json`'s own closed enum.
+ *
+ * Written down here because the schema is not what refuses a third value:
+ * `POST /v1/graphs` declares no ajv against it (draft 2020-12 against the
+ * draft-07 ajv Fastify v5 ships, `routes/graphs.ts`), so until t256 the enum was
+ * documentation and this loop was the whole gate.
+ */
+export const HOOK_TRIGGERS = ['node_entered', 'node_blocked'];
 
 function isFilledText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
@@ -420,6 +434,49 @@ export function validateStructure(doc: unknown): StructureReport {
       }
     } else {
       knownHookIds.add(hook.id);
+    }
+
+    // Two things the schema declares and, until t256, nobody enforced: a
+    // document with either of them used to get a 201 and then never fire.
+    // `repositories/hooks.ts`'s `matches()` compares the trigger against the
+    // occurrence's own and demands a filled `secret_ref`, so it simply enqueues
+    // nothing — a silent no-op, with no event and no error, in both cases. It
+    // stays exactly as it is: defence in depth over a snapshot written before
+    // this check existed.
+    const trigger = hook.trigger;
+    if (trigger !== undefined && trigger !== null && !HOOK_TRIGGERS.includes(trigger as string)) {
+      note(
+        'invalid_hook_trigger',
+        `hook #${index} declares a trigger outside the taxonomy: ${JSON.stringify(trigger)} (expected one of "${HOOK_TRIGGERS.join('", "')}")`,
+        hook.id ?? index,
+      );
+    }
+
+    const destination = hook.destination;
+    if (destination !== undefined && destination !== null) {
+      if (!isObject(destination)) {
+        note(
+          'invalid_hook_destination',
+          `hook #${index} needs an object in "destination", naming the HMAC key in "secret_ref": ${JSON.stringify(destination)}`,
+          hook.id ?? index,
+        );
+      } else if (Object.hasOwn(destination, 'secret')) {
+        // Its own code, and a message that does NOT quote the value: this is the
+        // pre-t194 shape, and the document is content-addressed, served whole,
+        // exported to disk and published to the atlas — a key written here is a
+        // key every reader of the map has. A leak, not a shape mistake.
+        note(
+          'hook_raw_secret',
+          `hook #${index} carries a raw "secret" in "destination": the document is published whole, so what goes on the wire is the NAME of a key registered by PUT /v1/hook-secrets/:name, in "secret_ref"`,
+          hook.id ?? index,
+        );
+      } else if (!isFilledText(destination.secret_ref)) {
+        note(
+          'invalid_hook_destination',
+          `hook #${index} needs a filled text in "destination.secret_ref": ${JSON.stringify(destination.secret_ref)}`,
+          hook.id ?? index,
+        );
+      }
     }
 
     const target = hook.node_id;

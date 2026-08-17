@@ -375,6 +375,117 @@ test('t169 — a duplicate hook id is a structure error, and the valid fixture h
 });
 
 /**
+ * t256 — the hook's own vocabulary, enforced where the schema cannot reach it.
+ *
+ * `POST /v1/graphs` declares no ajv schema against `schema/grafo.schema.json`
+ * (`routes/graphs.ts`: the schema is draft 2020-12 and the ajv Fastify ships is
+ * draft-07), so this pair of validators is the ONLY gate a document really
+ * passes. Until this ticket the loop below checked that `trigger` and
+ * `destination` were PRESENT and never looked at what was inside them — which
+ * made two documents the schema forbids answer `201`: a trigger outside the
+ * closed enum, and a destination carrying the RAW HMAC key instead of the name
+ * of one. The second is the reason the three codes are distinct: a raw secret in
+ * a content-addressed snapshot is a credential leak, not a shape mistake, and
+ * the document is served whole, exported to disk and published to the atlas.
+ *
+ * Each case runs through BOTH validators, like every other rule here: the port
+ * and `scripts/validar-grafo.mjs` say the same thing or AT1 says so on the next
+ * run.
+ */
+const HOOK_CASES: Array<{
+  name: string;
+  mutate: (hook: Record<string, unknown>) => void;
+  code: string;
+  quoted: string;
+  /** What the message must NOT carry: reporting a leak by repeating it is not a fix. */
+  forbidden?: string;
+}> = [
+  {
+    name: 'trigger outside the closed enum',
+    mutate: (hook) => {
+      hook.trigger = 'node_entred';
+    },
+    code: 'invalid_hook_trigger',
+    quoted: 'node_entred',
+  },
+  {
+    name: 'destination carrying the raw key instead of its name',
+    mutate: (hook) => {
+      const destination = hook.destination as Record<string, unknown>;
+      delete destination.secret_ref;
+      destination.secret = 'RAW-HMAC-KEY';
+    },
+    code: 'hook_raw_secret',
+    quoted: 'secret',
+    forbidden: 'RAW-HMAC-KEY',
+  },
+  {
+    name: 'destination with neither secret_ref nor a raw secret',
+    mutate: (hook) => {
+      delete (hook.destination as Record<string, unknown>).secret_ref;
+    },
+    code: 'invalid_hook_destination',
+    quoted: 'secret_ref',
+  },
+];
+
+test('t256 — a hook with a bad trigger or a raw secret refuses the document', async () => {
+  const ported = await loadDomainGraph();
+  const reference = await loadReference();
+
+  for (const scenario of HOOK_CASES) {
+    const document = readExample('grafo-valido-com-ganchos.json') as Record<string, unknown>;
+    const hooks = document.hooks as Array<Record<string, unknown>>;
+    assert.ok(hooks.length >= 1, 'the fixture has to declare at least one hook');
+    const hookId = hooks[0].id;
+    scenario.mutate(hooks[0]);
+
+    const report = ported.validateStructure(document);
+
+    // Parity first, exactly as t153 does: a rule only one of the two validators
+    // applies is a rule the reference validator no longer documents.
+    assert.deepEqual(
+      report,
+      reference.validarEstrutura(document),
+      `structure diverged on: ${scenario.name}`,
+    );
+    assert.equal(report.valid, false, `has to be refused: ${scenario.name}`);
+
+    // The fixture is valid but for the mutation, so the whole report is the one
+    // error — no companion code fires in its place.
+    assert.deepEqual(
+      report.errors.map((item) => item.code),
+      [scenario.code],
+      `wrong codes on: ${scenario.name}`,
+    );
+    assert.equal(report.errors[0].target, hookId, `the hook has to be named on: ${scenario.name}`);
+    assert.ok(
+      report.errors[0].message.includes(scenario.quoted),
+      `the message has to quote "${scenario.quoted}" on: ${scenario.name} — ${report.errors[0].message}`,
+    );
+    if (scenario.forbidden !== undefined) {
+      assert.ok(
+        !report.errors[0].message.includes(scenario.forbidden),
+        `the message repeats the very key it refuses: ${report.errors[0].message}`,
+      );
+    }
+  }
+});
+
+test('t256 — a destination that is not an object is the same refusal', async () => {
+  const ported = await loadDomainGraph();
+  const reference = await loadReference();
+
+  const document = readExample('grafo-valido-com-ganchos.json') as Record<string, unknown>;
+  const hooks = document.hooks as Array<Record<string, unknown>>;
+  hooks[0].destination = 'https://exemplo.invalid/ganchos/revisao';
+
+  const report = ported.validateStructure(document);
+  assert.deepEqual(report, reference.validarEstrutura(document), 'the two validators still agree');
+  assert.deepEqual(report.errors.map((item) => item.code), ['invalid_hook_destination']);
+});
+
+/**
  * t168 — `custom_fields` is a required key, and both validators say so.
  *
  * The point of running it through the pair is the parity of AT1: a rule added

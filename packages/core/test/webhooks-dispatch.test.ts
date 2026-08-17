@@ -130,12 +130,12 @@ interface WebhookRoutesModule {
 /** A subscription, as the API returns it — without the secret. */
 interface Subscription {
   id: number;
-  projeto_id: number;
+  project_id: number;
   url: string;
-  tipos: string[] | null;
-  evento_inicial_id: number;
-  criada_em: string;
-  desativada_em: string | null;
+  filter_types: string[] | null;
+  initial_event_id: number;
+  created_at: string;
+  deactivated_at: string | null;
 }
 
 /** A delivery row, read straight from the table the migration creates. */
@@ -374,7 +374,7 @@ test('AT5 — the event is pushed with the envelope and a verifiable signature',
 
   const subscription = await subscribe(ctx, {
     url: 'https://exemplo.invalid/hook',
-    segredo: SECRET,
+    secret: SECRET,
   });
   recordJobCreated(ctx.db, 1, 'primeiro fato da rodada');
 
@@ -413,10 +413,10 @@ test('AT6 — a subscription never replays what was already in the log', async (
   const old = recordJobCreated(ctx.db, 1, 'já estava no log');
   const subscription = await subscribe(ctx, {
     url: 'https://exemplo.invalid/hook',
-    segredo: SECRET,
+    secret: SECRET,
   });
   assert.equal(
-    subscription.evento_inicial_id,
+    subscription.initial_event_id,
     old.id,
     'the subscription is born pointing at the end of the log',
   );
@@ -434,13 +434,13 @@ test('AT6 — a subscription never replays what was already in the log', async (
   );
 });
 
-test('AT7 — tipos filters the fan-out down to the asked types', async (t) => {
+test('AT7 — filter_types narrows the fan-out to the asked types', async (t) => {
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 200 }) });
 
   const subscription = await subscribe(ctx, {
     url: 'https://exemplo.invalid/hook',
-    segredo: SECRET,
-    tipos: ['trabalho.criado'],
+    secret: SECRET,
+    filter_types: ['trabalho.criado'],
   });
   recordJobCreated(ctx.db, 1, 'entra');
   recordJobMoved(ctx.db, 1, 'revisao');
@@ -465,7 +465,7 @@ test('AT8 — a failed attempt is rescheduled by the backoff step, and retried',
 
   const subscription = await subscribe(ctx, {
     url: 'https://exemplo.invalid/hook',
-    segredo: SECRET,
+    secret: SECRET,
   });
   recordJobCreated(ctx.db, 1, 'para retentar');
 
@@ -516,7 +516,7 @@ test('AT9 — past the last step the delivery is esgotada, and never tried again
 
   const subscription = await subscribe(ctx, {
     url: 'https://exemplo.invalid/hook',
-    segredo: SECRET,
+    secret: SECRET,
   });
   recordJobCreated(ctx.db, 1, 'para esgotar');
 
@@ -555,11 +555,11 @@ test('AT10 — a broken subscriber does not hold up a healthy one', async (t) =>
 
   const broken = await subscribe(ctx, {
     url: 'https://exemplo.invalid/quebrado',
-    segredo: SECRET,
+    secret: SECRET,
   });
   const healthy = await subscribe(ctx, {
     url: 'https://exemplo.invalid/saudavel',
-    segredo: SECRET,
+    secret: SECRET,
   });
   recordJobCreated(ctx.db, 1, 'para os dois');
 
@@ -585,7 +585,7 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
 
   const subscription = await subscribe(ctx, {
     url: 'https://exemplo.invalid/hook',
-    segredo: SECRET,
+    secret: SECRET,
   });
   const pushed = recordJobCreated(ctx.db, 1, 'antes da desativação');
 
@@ -598,7 +598,7 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
   assert.equal(only(deliveries(ctx.db, subscription.id)).status, 'pendente');
 
   const removed = await unsubscribe(ctx, subscription.id);
-  assert.equal(typeof removed.desativada_em, 'string');
+  assert.equal(typeof removed.deactivated_at, 'string');
   assert.equal(
     only(deliveries(ctx.db, subscription.id)).status,
     'esgotada',

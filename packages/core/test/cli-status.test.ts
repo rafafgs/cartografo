@@ -111,12 +111,12 @@ test('AT9 — after importing, status --json lists the class with its current ve
 
   const report = JSON.parse(result.stdout) as {
     server: string;
-    projects: { classe: string; versao_corrente_id: string }[];
+    projects: { class: string; current_version_id: string }[];
     jobs: number | null;
     pendingInputRequests: number | null;
   };
   assert.equal(report.server, 'ok');
-  assert.deepEqual(report.projects, [{ classe: FACTORY_CLASS, versao_corrente_id: version }]);
+  assert.deepEqual(report.projects, [{ class: FACTORY_CLASS, current_version_id: version }]);
   assert.equal(report.jobs, 1, 'the job created through the API is counted');
   assert.equal(report.pendingInputRequests, 1, 'the pending question is counted');
 

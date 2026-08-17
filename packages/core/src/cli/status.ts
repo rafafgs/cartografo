@@ -7,7 +7,7 @@
  * - `projects` — the classes registered, from `GET /v1/classes`;
  * - `jobs` — how many jobs the queue holds, from `GET /v1/jobs`;
  * - `pendingInputRequests` — how many questions still wait for a human, from
- *   `GET /v1/input-requests?status=pendente`.
+ *   `GET /v1/input-requests?status=pending`.
  *
  * The last two used to be the literal `null`, with a comment claiming the
  * entities did not exist yet. Both halves of that were wrong (t199, FR1): the
@@ -31,8 +31,8 @@ import { NetworkError, serverDownMessage, requestJson } from './url.ts';
 
 /** A registered class, in `status`'s view. */
 export interface StatusProject {
-  classe: string;
-  versao_corrente_id: string | null;
+  class: string;
+  current_version_id: string | null;
 }
 
 /**
@@ -81,7 +81,7 @@ async function countFrom(url: string, field: string): Promise<number | null> {
 
 /**
  * Builds the report by querying `/health`, `/v1/classes`, `/v1/jobs` and
- * `/v1/input-requests?status=pendente`.
+ * `/v1/input-requests?status=pending`.
  *
  * A server that is down is not an exception here: it is a state the report knows
  * how to say. That is why `NetworkError` is caught instead of propagated —
@@ -115,19 +115,19 @@ export async function collectStatus(
     const body = isObject(classes.body) ? classes.body : {};
     if (classes.status === 200 && Array.isArray(body.classes)) {
       projects = body.classes.filter(isObject).map((entry) => ({
-        classe: String(entry.classe),
-        versao_corrente_id:
-          typeof entry.versao_corrente_id === 'string' ? entry.versao_corrente_id : null,
+        class: String(entry.class),
+        current_version_id:
+          typeof entry.current_version_id === 'string' ? entry.current_version_id : null,
       }));
     }
   } catch (error) {
     if (!(error instanceof NetworkError)) throw error;
   }
 
-  const jobs = await countFrom(`${url}/v1/jobs`, 'trabalhos');
+  const jobs = await countFrom(`${url}/v1/jobs`, 'jobs');
   const pendingInputRequests = await countFrom(
-    `${url}/v1/input-requests?status=pendente`,
-    'perguntas',
+    `${url}/v1/input-requests?status=pending`,
+    'input_requests',
   );
 
   return { report: { server, projects, jobs, pendingInputRequests }, db };
@@ -146,7 +146,7 @@ function asTable(report: StatusReport, db: string | null, url: string): string {
   } else {
     lines.push(`projects: ${report.projects.length}`);
     for (const project of report.projects) {
-      lines.push(`  - ${project.classe}  ${project.versao_corrente_id ?? 'no current version'}`);
+      lines.push(`  - ${project.class}  ${project.current_version_id ?? 'no current version'}`);
     }
   }
 

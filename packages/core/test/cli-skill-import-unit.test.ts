@@ -20,8 +20,10 @@
  * `deriveChecks` — are tested directly, since they are where the "guesses
  * nothing" rule actually lives.
  *
- * English per D18; the wire vocabulary of the input request (`aprovacao`,
- * `respondida`, `rejeitar:`) and the manifest field names are the formats' own.
+ * English per D18. Since t226 what the gate READS back is English too
+ * (`kind: 'approval'`, `status: 'answered'`) — D20's API child — while the body
+ * it POSTS stays Portuguese, because that one is event-validated; `rejeitar:`
+ * and the manifest field names are the formats' own either way.
  */
 
 import assert from 'node:assert/strict';
@@ -332,17 +334,17 @@ test('a control plane that refuses the job or the approval stops the proposal', 
 
 /** The queue of input requests of a job, as `register-skill` reads it. */
 function queue(questions: unknown[]): FakeAnswer {
-  return { status: 200, body: { perguntas: questions } };
+  return { status: 200, body: { input_requests: questions } };
 }
 
 /** An answered approval carrying `answer` as the human's decision. */
 function answered(answer: string, id = 91): Record<string, unknown> {
   return {
     id,
-    tipo: 'aprovacao',
-    status: 'respondida',
-    resposta: answer,
-    respondido_por: 'rafael',
+    kind: 'approval',
+    status: 'answered',
+    answer,
+    answered_by: 'rafael',
   };
 }
 
@@ -351,8 +353,8 @@ const APPROVED_MANIFEST = { id: 'uma-skill', version: '0.1.0', hash: 'sha256:abc
 test('a gate nobody answered registers nothing', async (t) => {
   const pending = await startFakeControlPlane(t, () =>
     queue([
-      { id: 1, tipo: 'aprovacao', status: 'pendente', resposta: null },
-      { id: 2, tipo: 'esclarecimento', status: 'respondida', resposta: 'qualquer coisa' },
+      { id: 1, kind: 'approval', status: 'pending', answer: null },
+      { id: 2, kind: 'esclarecimento', status: 'answered', answer: 'qualquer coisa' },
     ]),
   );
 
@@ -362,7 +364,7 @@ test('a gate nobody answered registers nothing', async (t) => {
   assert.match(run.stderr, /no answered approval on job 77/);
   assert.equal(
     pending.requests[0].path,
-    '/v1/input-requests?trabalho_id=77',
+    '/v1/input-requests?job_id=77',
     'the queue is asked for that job alone',
   );
 });
@@ -373,7 +375,7 @@ test('a queue that does not come back as a queue stops the registration', async 
   assert.equal(first.code, 1);
   assert.match(first.stderr, /HTTP 500 for the gate of job 77/);
 
-  const shapeless = await startFakeControlPlane(t, () => ({ status: 200, body: { sem: 'perguntas' } }));
+  const shapeless = await startFakeControlPlane(t, () => ({ status: 200, body: { sem: 'input_requests' } }));
   const second = await capture(() => runRegisterSkill({ jobId: 77, url: shapeless.url }));
   assert.equal(second.code, 1);
 });
@@ -416,7 +418,7 @@ test('the last answer on the gate is the one that counts', async (t) => {
         ])
       : {
           status: 201,
-          body: { ...APPROVED_MANIFEST, registrado_em: '2026-08-16T00:00:00.000Z' },
+          body: { ...APPROVED_MANIFEST, registered_at: '2026-08-16T00:00:00.000Z' },
         },
   );
 
@@ -425,7 +427,7 @@ test('the last answer on the gate is the one that counts', async (t) => {
   assert.equal(run.code, 0, 'a gate reopened after a rejection is the same job with a newer decision');
   assert.deepEqual(plane.requests[1].body, APPROVED_MANIFEST, 'what the human approved, verbatim');
   assert.match(run.stdout, /skill registered/);
-  assert.match(run.stdout, /registrado_em\s+2026-08-16/);
+  assert.match(run.stdout, /registered_at\s+2026-08-16/);
 });
 
 test('a registry that refuses the approved manifest is quoted, never softened', async (t) => {

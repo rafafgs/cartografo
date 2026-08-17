@@ -3,7 +3,7 @@
  *
  * The central test is the round trip: exporting from one control plane and
  * importing into ANOTHER, with an empty database, has to produce the same
- * `grafo_versao.id`. That only closes if the export returns the snapshot without
+ * `graph_version.id`. That only closes if the export returns the snapshot without
  * touching it — the id is the canonical hash of the document
  * (`docs/spec/entidades-versionamento.md` §2), so any field added, removed or
  * rewritten along the way shows up as a different hash. It is the proof that the
@@ -109,13 +109,13 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
     const response = await fetch(`${first.url}/v1/classes`);
     assert.equal(response.status, 200);
     const body = (await response.json()) as {
-      classes: { classe: string; versao_corrente_id: string }[];
+      classes: { class: string; current_version_id: string }[];
     };
     assert.deepEqual(
-      body.classes.map((entry) => entry.classe),
+      body.classes.map((entry) => entry.class),
       [FACTORY_CLASS],
     );
-    assert.equal(body.classes[0]?.versao_corrente_id, importedVersion);
+    assert.equal(body.classes[0]?.current_version_id, importedVersion);
 
     // t135, FR4: the graph is only half the bundle — the capabilities its nodes
     // pin have to be in the registry, or the class is imported with nothing to
@@ -131,10 +131,10 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
     }
   });
 
-  await t.test('importing the same bundle again is refused with classe_ja_registrada', async () => {
+  await t.test('importing the same bundle again is refused with class_already_registered', async () => {
     const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url], { token: first.token });
     assert.notEqual(result.code, 0, 'reimporting over an existing lineage cannot exit 0');
-    assert.match(result.stderr, /classe_ja_registrada/);
+    assert.match(result.stderr, /class_already_registered/);
     assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
   });
 
@@ -142,7 +142,7 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
     const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url], { token: first.token });
 
     assert.notEqual(result.code, 0, 'the class is still already registered');
-    assert.match(result.stderr, /classe_ja_registrada/);
+    assert.match(result.stderr, /class_already_registered/);
     assert.doesNotMatch(
       result.stderr,
       /skill_already_registered/,
@@ -180,13 +180,13 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
     );
   });
 
-  await t.test('exporting an unknown class exits non-zero with grafo_desconhecido', async () => {
+  await t.test('exporting an unknown class exits non-zero with unknown_graph', async () => {
     const result = await runCli(['export', 'classe-que-nao-existe', '--url', first.url], {
       token: first.token,
       cwd: base,
     });
     assert.notEqual(result.code, 0);
-    assert.match(result.stderr, /grafo_desconhecido/);
+    assert.match(result.stderr, /unknown_graph/);
     assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
   });
 
@@ -214,7 +214,7 @@ test('AT6 — importing an invalid graph prints the violations of the 422', { ti
   const result = await runCli(['import', INVALID_GRAPH, '--url', controlPlane.url], { token: controlPlane.token });
 
   assert.notEqual(result.code, 0, 'an invalid graph cannot exit 0');
-  assert.match(result.stderr, /grafo_invalido/);
+  assert.match(result.stderr, /invalid_graph/);
   assert.match(result.stderr, /alcançável/, 'the soundness violation comes out on the error output');
   assert.match(result.stderr, /revisar_lote/, 'the violation comes out with the target that broke it');
   assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
@@ -310,7 +310,7 @@ test('t194 — `cartografo export` writes the reference and never the secret', {
     const response = await fetch(`${controlPlane.url}/v1/hook-secrets/${reference}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ valor: value }),
+      body: JSON.stringify({ value }),
     });
     assert.ok(
       response.status === 201 || response.status === 200,

@@ -3,7 +3,7 @@
  *
  * `cli-import-export.test.ts` walks the round trip against a real control plane
  * and proves the thing that matters most about this command: what comes out
- * reimports to the SAME `grafo_versao.id`. What it cannot walk is what happens
+ * reimports to the SAME `graph_version.id`. What it cannot walk is what happens
  * when the control plane answers something OTHER than a healthy 200 — an
  * unknown class, a lineage with no current version, a version that comes back
  * without a snapshot — because producing those against a real server means
@@ -16,8 +16,8 @@
  * exists so the data can leave, and a file that exists but is wrong is worse
  * than no file at all.
  *
- * English per D18; the wire codes this command prints (`grafo_desconhecido`,
- * `grafo_versao_desconhecida`) and the field names it reads are the format's.
+ * English per D18; since t226 so are the wire codes it prints (`unknown_graph`,
+ * `unknown_graph_version`) and the field names it reads — the API child of D20.
  */
 
 import assert from 'node:assert/strict';
@@ -48,10 +48,10 @@ const VERSION_ID = 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef01234
 function healthy(overrides: { lineage?: FakeAnswer; version?: FakeAnswer } = {}) {
   return (request: { path: string }): FakeAnswer => {
     if (request.path.startsWith('/v1/graph-versions/')) {
-      return overrides.version ?? { status: 200, body: { grafo_versao: { snapshot: SNAPSHOT } } };
+      return overrides.version ?? { status: 200, body: { graph_version: { snapshot: SNAPSHOT } } };
     }
     return (
-      overrides.lineage ?? { status: 200, body: { grafo: { versao_corrente_id: VERSION_ID } } }
+      overrides.lineage ?? { status: 200, body: { graph: { current_version_id: VERSION_ID } } }
     );
   };
 }
@@ -66,7 +66,7 @@ test('a class that is only whitespace never becomes a request', async (t) => {
   assert.deepEqual(plane.requests, [], 'a wrong command line costs the server nothing');
 });
 
-test('a class the control plane does not know comes back as grafo_desconhecido', async (t) => {
+test('a class the control plane does not know comes back as unknown_graph', async (t) => {
   const plane = await startFakeControlPlane(t, healthy({ lineage: { status: 404 } }));
   const area = temporaryArea(t, 'cartografo-t212-export-');
   const output = path.join(area, 'saida.json');
@@ -76,7 +76,7 @@ test('a class the control plane does not know comes back as grafo_desconhecido',
   );
 
   assert.equal(run.code, 1);
-  assert.match(run.stderr, /grafo_desconhecido/);
+  assert.match(run.stderr, /unknown_graph/);
   assert.match(run.stderr, /classe-que-nao-existe/);
   assert.equal(existsSync(output), false, 'a failed export writes no file');
 });
@@ -97,10 +97,10 @@ test('any other status on the lineage is reported with its number', async (t) =>
 
 test('a lineage with no current version is refused, in each of its shapes', async (t) => {
   const shapes: FakeAnswer[] = [
-    { status: 200, body: { grafo: {} } },
-    { status: 200, body: { grafo: { versao_corrente_id: '' } } },
-    { status: 200, body: { grafo: { versao_corrente_id: 42 } } },
-    { status: 200, body: { grafo: 'nem objeto' } },
+    { status: 200, body: { graph: {} } },
+    { status: 200, body: { graph: { current_version_id: '' } } },
+    { status: 200, body: { graph: { current_version_id: 42 } } },
+    { status: 200, body: { graph: 'nem objeto' } },
     { status: 200, body: {} },
     { status: 200, body: ['nem objeto'] },
     { status: 200, text: 'not json at all' },
@@ -115,20 +115,20 @@ test('a lineage with no current version is refused, in each of its shapes', asyn
   }
 });
 
-test('a version the control plane cannot serve is grafo_versao_desconhecida', async (t) => {
+test('a version the control plane cannot serve is unknown_graph_version', async (t) => {
   const plane = await startFakeControlPlane(t, healthy({ version: { status: 404 } }));
 
   const run = await capture(() => runExport({ className: 'desenvolvimento', url: plane.url }));
 
   assert.equal(run.code, 1);
-  assert.match(run.stderr, /grafo_versao_desconhecida/);
+  assert.match(run.stderr, /unknown_graph_version/);
   assert.match(run.stderr, new RegExp(VERSION_ID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('a version that comes back without a snapshot is refused, in each of its shapes', async (t) => {
   const shapes: FakeAnswer[] = [
-    { status: 200, body: { grafo_versao: {} } },
-    { status: 200, body: { grafo_versao: 'nem objeto' } },
+    { status: 200, body: { graph_version: {} } },
+    { status: 200, body: { graph_version: 'nem objeto' } },
     { status: 200, body: {} },
     { status: 200, text: 'not json at all' },
   ];
@@ -159,7 +159,7 @@ test('the export writes the snapshot and nothing around it', async (t) => {
     'no envelope: what comes out is what import accepts back',
   );
   assert.match(run.stdout, /graph exported/);
-  assert.match(run.stdout, /grafo_versao\.id\s+sha256:/);
+  assert.match(run.stdout, /graph_version\.id\s+sha256:/);
   assert.match(run.stdout, new RegExp(output.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.deepEqual(
     plane.requests.map((request) => request.path),

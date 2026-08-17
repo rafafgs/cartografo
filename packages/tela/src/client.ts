@@ -15,9 +15,21 @@
  * missing field breaks in the right place — at the boundary, with the route
  * name in the error.
  *
- * The Portuguese field names below are the control plane's wire format, frozen
- * by t127's own FR8 exception and untouched by the D18 rename: this file
- * mirrors them, it does not own them.
+ * The field names below are the control plane's wire format — English since
+ * t226 (`docs/spec/glossario-wire.md` §1). This file MIRRORS that format, it
+ * does not own it: the interfaces are declared here so a missing field breaks
+ * at the boundary, with the route name in the error, and they move whenever the
+ * API moves.
+ *
+ * The method names of {@link ApiClient} were already English before this ticket
+ * (D18 covers identifiers) and did not change: what moved is only what travels.
+ *
+ * ONE call still speaks Portuguese on the way IN, and it is deliberate:
+ * {@link ApiClient.answerQuestion} PATCHes `{resposta, respondido_por}`. That
+ * route's body is validated against the `pergunta.respondida` EVENT contract
+ * (`packages/core/src/routes/common.ts` documents the whole asymmetry), and the
+ * event vocabulary is D20's second child, not this one. What the same call
+ * READS back is English like everything else.
  *
  * `doFetch` is injectable for tests only; in production it is the global
  * `fetch`.
@@ -26,13 +38,13 @@
 /** Projection of a job, as `GET /v1/jobs` returns it. */
 export interface Job {
   id: number;
-  execucao_id: number | null;
-  titulo: string;
-  no_entrada_id: string;
-  no_atual: string;
-  bloqueado: boolean;
-  motivo_bloqueio: string | null;
-  grafo_versao_id: string | null;
+  execution_id: number | null;
+  title: string;
+  entry_node_id: string;
+  current_node_id: string;
+  blocked: boolean;
+  block_reason: string | null;
+  graph_version_id: string | null;
   /**
    * The control plane's own answer to "did this job arrive?" (t152).
    *
@@ -40,17 +52,17 @@ export interface Job {
    * `final_nodes` — data the screen has no way to reach, which is exactly why it
    * is read and not recomputed here.
    */
-  concluido: boolean;
-  criado_em: string;
-  atualizado_em: string;
+  completed: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 /** One row of `GET /v1/executions`. */
 export interface ExecutionSummary {
-  execucao_id: number | null;
-  trabalhos: number;
-  trabalhos_bloqueados: number;
-  perguntas_pendentes: number;
+  execution_id: number | null;
+  jobs: number;
+  blocked_jobs: number;
+  pending_input_requests: number;
 }
 
 /** Token totals of a session; `null` when the engine reported nothing. */
@@ -64,40 +76,41 @@ export interface SessionUsage {
 /** Projection of a session, as `GET /v1/sessions` returns it. */
 export interface Session {
   id: number;
-  trabalho_id: number | null;
-  execucao_id: number | null;
-  no_id: string | null;
+  job_id: number | null;
+  execution_id: number | null;
+  node_id: string | null;
   engine: string;
+  /** Still the column's value: session status is the event surface (t226, FR1). */
   status: string;
   exit_code: number | null;
-  uso: SessionUsage | null;
-  aberta_em: string;
-  finalizada_em: string | null;
+  usage: SessionUsage | null;
+  opened_at: string;
+  finished_at: string | null;
 }
 
 /** Projection of an input request, as `GET /v1/input-requests` returns it. */
 export interface Question {
   id: number;
-  trabalho_id: number;
-  execucao_id: number | null;
-  tipo: string;
-  pergunta: string;
-  contexto: string | null;
-  opcoes: string[] | null;
-  recomendacao: string | null;
-  resposta_padrao: string | null;
+  job_id: number;
+  execution_id: number | null;
+  kind: string;
+  question: string;
+  context: string | null;
+  options: string[] | null;
+  recommendation: string | null;
+  default_answer: string | null;
   status: string;
-  resposta: string | null;
-  respondido_por: string | null;
-  criada_em: string;
-  respondida_em: string | null;
+  answer: string | null;
+  answered_by: string | null;
+  created_at: string;
+  answered_at: string | null;
 }
 
 /** The last lease a runner lost to the deadline, inside {@link RunnerHealth}. */
 export interface RunnerExpiration {
-  trabalho_id: number;
-  expira_em: string;
-  motivo_expiracao: string | null;
+  job_id: number;
+  expires_at: string;
+  expiration_reason: string | null;
 }
 
 /**
@@ -110,11 +123,11 @@ export interface RunnerExpiration {
  */
 export interface RunnerHealth {
   id: string;
-  nome: string | null;
-  registrado_em: string;
-  leases_ativas: number;
-  ultimo_heartbeat: string | null;
-  ultima_expiracao: RunnerExpiration | null;
+  name: string | null;
+  registered_at: string;
+  active_leases: number;
+  last_heartbeat: string | null;
+  last_expiration: RunnerExpiration | null;
 }
 
 /** Event envelope, in the slice the timeline reads. */
@@ -127,8 +140,8 @@ export interface Event {
 
 /** The slice asked of a listing route. */
 export interface Filter {
-  execucao_id?: number;
-  trabalho_id?: number;
+  execution_id?: number;
+  job_id?: number;
   status?: string;
 }
 
@@ -181,8 +194,8 @@ export interface ClientOptions {
 function queryString(filter: Filter): string {
   const params = new URLSearchParams();
   if (filter.status !== undefined) params.set('status', filter.status);
-  if (filter.execucao_id !== undefined) params.set('execucao_id', String(filter.execucao_id));
-  if (filter.trabalho_id !== undefined) params.set('trabalho_id', String(filter.trabalho_id));
+  if (filter.execution_id !== undefined) params.set('execution_id', String(filter.execution_id));
+  if (filter.job_id !== undefined) params.set('job_id', String(filter.job_id));
   const text = params.toString();
   return text === '' ? '' : `?${text}`;
 }
@@ -232,7 +245,7 @@ export class ApiClient {
    * @returns Jobs in the order the control plane sent them.
    */
   async listJobs(filter: Filter = {}): Promise<Job[]> {
-    const { trabalhos: jobs } = await this.#get<{ trabalhos: Job[] }>(
+    const { jobs } = await this.#get<{ jobs: Job[] }>(
       `/v1/jobs${queryString(filter)}`,
     );
     return jobs;
@@ -255,8 +268,8 @@ export class ApiClient {
    * @returns Events in order, or `null` if the job does not exist.
    */
   async jobEvents(id: number): Promise<Event[] | null> {
-    const body = await this.#getOrNull<{ eventos: Event[] }>(`/v1/jobs/${id}/events`);
-    return body === null ? null : body.eventos;
+    const body = await this.#getOrNull<{ events: Event[] }>(`/v1/jobs/${id}/events`);
+    return body === null ? null : body.events;
   }
 
   /**
@@ -265,7 +278,7 @@ export class ApiClient {
    * @returns One row per execution, with the `null` group last.
    */
   async listExecutions(): Promise<ExecutionSummary[]> {
-    const { execucoes: executions } = await this.#get<{ execucoes: ExecutionSummary[] }>(
+    const { executions } = await this.#get<{ executions: ExecutionSummary[] }>(
       '/v1/executions',
     );
     return executions;
@@ -288,7 +301,7 @@ export class ApiClient {
    * @returns Sessions in id order.
    */
   async listSessions(filter: Filter = {}): Promise<Session[]> {
-    const { sessoes: sessions } = await this.#get<{ sessoes: Session[] }>(
+    const { sessions } = await this.#get<{ sessions: Session[] }>(
       `/v1/sessions${queryString(filter)}`,
     );
     return sessions;
@@ -301,7 +314,7 @@ export class ApiClient {
    * @returns Questions in id order.
    */
   async listQuestions(filter: Filter = {}): Promise<Question[]> {
-    const { perguntas: questions } = await this.#get<{ perguntas: Question[] }>(
+    const { input_requests: questions } = await this.#get<{ input_requests: Question[] }>(
       `/v1/input-requests${queryString(filter)}`,
     );
     return questions;
@@ -318,6 +331,12 @@ export class ApiClient {
    * @param id Question id.
    * @param answer What was answered.
    * @param answeredBy Who answered (required in the event payload).
+   * The BODY is the one Portuguese thing left in this file, and it is not an
+   * oversight: `PATCH /v1/input-requests/:id/answer` validates against the
+   * `pergunta.respondida` event contract, whose vocabulary D20 hands to its
+   * SECOND child. Sending `{answer, answered_by}` today would be refused by the
+   * control plane's own validator. The response comes back English.
+   *
    * @returns The question as it ended up.
    * @throws {ApiError} When the control plane refuses — 404 included.
    */

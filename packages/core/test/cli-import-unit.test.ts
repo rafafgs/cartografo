@@ -25,7 +25,8 @@
  * so a change to the graph format cannot leave this file passing against a
  * fixture nobody validates.
  *
- * English per D18; the wire codes (`grafo_invalido`, `classe_ja_registrada`) and
+ * English per D18; since t226 the wire codes (`invalid_graph`,
+ * `class_already_registered`) are too — D20's API child — and
  * the manifest field names are the formats' own.
  */
 
@@ -95,8 +96,8 @@ function accepting(): (request: { path: string }) => FakeAnswer {
       : {
           status: 201,
           body: {
-            grafo: { id: 42, classe: 'desenvolvimento-de-software' },
-            grafo_versao: { id: 'sha256:abc' },
+            graph: { id: 42, class: 'desenvolvimento-de-software' },
+            graph_version: { id: 'sha256:abc' },
           },
         };
 }
@@ -298,7 +299,7 @@ test('a graph file goes straight to the control plane, with no registry step', a
 
   assert.equal(run.code, 0);
   assert.match(run.stdout, /graph imported/);
-  assert.match(run.stdout, /grafo_versao\.id\s+sha256:abc/);
+  assert.match(run.stdout, /graph_version\.id\s+sha256:abc/);
   assert.deepEqual(
     plane.requests.map((request) => `${request.method} ${request.path}`),
     ['POST /v1/graphs'],
@@ -401,10 +402,10 @@ test('an invalid bundle never becomes a request at all', async (t) => {
   assert.deepEqual(plane.requests, [], 'a broken pin never becomes a request (D4)');
 });
 
-test('a class already registered comes back as classe_ja_registrada', async (t) => {
+test('a class already registered comes back as class_already_registered', async (t) => {
   const plane = await startFakeControlPlane(t, () => ({
     status: 409,
-    body: { erro: 'classe_ja_registrada', mensagem: 'a classe desenvolvimento-de-software já existe' },
+    body: { error: 'class_already_registered', message: 'a classe desenvolvimento-de-software já existe' },
   }));
   const directory = bundleCopy(t);
 
@@ -413,7 +414,7 @@ test('a class already registered comes back as classe_ja_registrada', async (t) 
   );
 
   assert.equal(run.code, 1);
-  assert.match(run.stderr, /classe_ja_registrada — a classe desenvolvimento-de-software já existe/);
+  assert.match(run.stderr, /class_already_registered — a classe desenvolvimento-de-software já existe/);
 });
 
 test('a graph the control plane refuses is printed rule by rule', async (t) => {
@@ -431,7 +432,7 @@ test('a graph the control plane refuses is printed rule by rule', async (t) => {
   );
 
   assert.equal(run.code, 1);
-  assert.match(run.stderr, /grafo_invalido/);
+  assert.match(run.stderr, /invalid_graph/);
   assert.match(run.stderr, /estrutura {2}campo_obrigatorio_ausente: "nodes" is missing/);
   assert.match(run.stderr, /soundness {2}alcançável: \{"no":"implantar"\}/);
 });
@@ -445,7 +446,7 @@ test('a 422 with nothing to list is still a refusal, not a crash', async (t) => 
   );
 
   assert.equal(run.code, 1);
-  assert.match(run.stderr, /grafo_invalido/);
+  assert.match(run.stderr, /invalid_graph/);
 });
 
 test('any other refusal of the graph is printed with what came with it', async (t) => {
@@ -454,7 +455,7 @@ test('any other refusal of the graph is printed with what came with it', async (
 
   const detailed = await startFakeControlPlane(t, () => ({
     status: 503,
-    body: { erro: 'indisponivel', mensagem: 'o núcleo está reindexando' },
+    body: { error: 'indisponivel', message: 'o núcleo está reindexando' },
   }));
   const withBody = await capture(() => runImport({ path: graphPath, url: detailed.url }));
   assert.equal(withBody.code, 1);

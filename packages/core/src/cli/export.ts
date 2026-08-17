@@ -4,7 +4,7 @@
  * Writes the `snapshot` of the CURRENT version of the class, with no envelope:
  * what comes out is exactly the format `import` accepts back. That is not
  * formatting convenience — it is what makes the round trip meaningful. Since
- * `grafo_versao.id` is the canonical hash of the whole document
+ * `graph_version.id` is the canonical hash of the whole document
  * (`docs/spec/entidades-versionamento.md` §2), reimporting the exported file
  * into another control plane has to produce the SAME id; any field this command
  * added, removed or rewrote would show up as a different hash on the other side.
@@ -49,7 +49,7 @@ export async function runExport(options: ExportOptions): Promise<number> {
   );
   if (fromLineage.status === 404) {
     process.stderr.write(
-      `cartografo: grafo_desconhecido — no class "${options.className}" registered at ${options.url}\n`,
+      `cartografo: unknown_graph — no class "${options.className}" registered at ${options.url}\n`,
     );
     return 1;
   }
@@ -61,8 +61,8 @@ export async function runExport(options: ExportOptions): Promise<number> {
   }
 
   const lineageBody = isObject(fromLineage.body) ? fromLineage.body : {};
-  const graph = isObject(lineageBody.grafo) ? lineageBody.grafo : {};
-  const versionId = graph.versao_corrente_id;
+  const graph = isObject(lineageBody.graph) ? lineageBody.graph : {};
+  const versionId = graph.current_version_id;
   if (typeof versionId !== 'string' || versionId === '') {
     process.stderr.write(
       `cartografo: class "${options.className}" has no current version to export\n`,
@@ -75,13 +75,13 @@ export async function runExport(options: ExportOptions): Promise<number> {
   );
   if (fromVersion.status !== 200) {
     process.stderr.write(
-      `cartografo: grafo_versao_desconhecida — the control plane answered HTTP ${fromVersion.status} for ${versionId}\n`,
+      `cartografo: unknown_graph_version — the control plane answered HTTP ${fromVersion.status} for ${versionId}\n`,
     );
     return 1;
   }
 
   const versionBody = isObject(fromVersion.body) ? fromVersion.body : {};
-  const version = isObject(versionBody.grafo_versao) ? versionBody.grafo_versao : {};
+  const version = isObject(versionBody.graph_version) ? versionBody.graph_version : {};
   const snapshot = version.snapshot;
   if (snapshot === undefined) {
     process.stderr.write(`cartografo: version ${versionId} came back without a snapshot\n`);
@@ -93,8 +93,8 @@ export async function runExport(options: ExportOptions): Promise<number> {
   writeFileSync(destination, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
 
   process.stdout.write('graph exported\n');
-  process.stdout.write(line('classe', options.className));
-  process.stdout.write(line('grafo_versao.id', versionId));
+  process.stdout.write(line('class', options.className));
+  process.stdout.write(line('graph_version.id', versionId));
   process.stdout.write(line('file', destination));
   return 0;
 }

@@ -394,9 +394,9 @@ export async function runProposeSkill(options: ProposeSkillOptions): Promise<num
  */
 export async function runRegisterSkill(options: RegisterSkillOptions): Promise<number> {
   const queue = await requestJson(
-    `${options.url}/v1/input-requests?trabalho_id=${options.jobId}`,
+    `${options.url}/v1/input-requests?job_id=${options.jobId}`,
   );
-  if (queue.status !== 200 || !isObject(queue.body) || !Array.isArray(queue.body.perguntas)) {
+  if (queue.status !== 200 || !isObject(queue.body) || !Array.isArray(queue.body.input_requests)) {
     process.stderr.write(
       `cartografo: the control plane answered HTTP ${queue.status} for the gate of job ${options.jobId}\n`,
     );
@@ -405,10 +405,10 @@ export async function runRegisterSkill(options: RegisterSkillOptions): Promise<n
 
   // The last answered approval, and not the first: a gate reopened after a
   // rejection is the same job with a newer decision on it.
-  const answered = queue.body.perguntas
+  const answered = queue.body.input_requests
     .filter(
       (item): item is Record<string, unknown> =>
-        isObject(item) && item.tipo === 'aprovacao' && item.status === 'respondida',
+        isObject(item) && item.kind === 'approval' && item.status === 'answered',
     )
     .at(-1);
 
@@ -419,11 +419,11 @@ export async function runRegisterSkill(options: RegisterSkillOptions): Promise<n
     return 1;
   }
 
-  const decision = typeof answered.resposta === 'string' ? answered.resposta.trim() : '';
+  const decision = typeof answered.answer === 'string' ? answered.answer.trim() : '';
   if (decision.toLowerCase().startsWith('rejeitar:')) {
     const why = decision.slice('rejeitar:'.length).trim();
     process.stderr.write(
-      `cartografo: import refused by ${String(answered.respondido_por)} — ${why === '' ? '(no reason given)' : why}\n`,
+      `cartografo: import refused by ${String(answered.answered_by)} — ${why === '' ? '(no reason given)' : why}\n`,
     );
     process.stderr.write('cartografo: nothing was registered\n');
     return 1;
@@ -450,7 +450,7 @@ export async function runRegisterSkill(options: RegisterSkillOptions): Promise<n
     process.stdout.write(line('id', String(body.id)));
     process.stdout.write(line('version', String(body.version)));
     process.stdout.write(line('hash', String(body.hash)));
-    process.stdout.write(line('registrado_em', String(body.registrado_em)));
+    process.stdout.write(line('registered_at', String(body.registered_at)));
     return 0;
   }
 

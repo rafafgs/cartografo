@@ -50,23 +50,23 @@ const MINIMAL_GRAPH = path.join(
 
 /** What `POST /v1/graphs` answers, in the slice this flow needs. */
 interface GraphRegistration {
-  grafo: { id: string };
-  grafo_versao: { id: string };
+  graph: { id: string };
+  graph_version: { id: string };
 }
 
 /** What `POST /v1/jobs` answers, in the slice this flow needs. */
 interface JobProjection {
   id: number;
-  no_atual: string;
-  bloqueado: boolean;
+  current_node_id: string;
+  blocked: boolean;
 }
 
 /** What the input-request routes answer, in the slice this flow needs. */
 interface InputRequestProjection {
   id: number;
   status: string;
-  resposta: string | null;
-  respondido_por: string | null;
+  answer: string | null;
+  answered_by: string | null;
 }
 
 /**
@@ -140,14 +140,14 @@ test('t171 AT5 — a client built only from /openapi.json runs the basic flow en
     `POST /graphs answered ${registered.status}: ${JSON.stringify(registered.data)}`,
   );
   const graph = registered.data as GraphRegistration;
-  assert.equal(graph.grafo.id, 'nota-curta');
-  assert.ok(typeof graph.grafo_versao.id === 'string' && graph.grafo_versao.id.length > 0);
+  assert.equal(graph.graph.id, 'nota-curta');
+  assert.ok(typeof graph.graph_version.id === 'string' && graph.graph_version.id.length > 0);
 
   // 2. Create a job under the version that was just born.
   const created = await operation(client, '/jobs', HttpMethod.Post)(undefined, {
     titulo: 'primeira nota',
     no_entrada_id: 'redigir',
-    grafo_versao_id: graph.grafo_versao.id,
+    grafo_versao_id: graph.graph_version.id,
   });
   assert.equal(
     created.status,
@@ -155,8 +155,8 @@ test('t171 AT5 — a client built only from /openapi.json runs the basic flow en
     `POST /jobs answered ${created.status}: ${JSON.stringify(created.data)}`,
   );
   const job = created.data as JobProjection;
-  assert.equal(job.no_atual, 'redigir');
-  assert.equal(job.bloqueado, false);
+  assert.equal(job.current_node_id, 'redigir');
+  assert.equal(job.blocked, false);
 
   // 3. The job asks, and the answer comes back through the templated path — the
   //    one call of the three that makes the client fill `{id}` from the document.
@@ -176,7 +176,7 @@ test('t171 AT5 — a client built only from /openapi.json runs the basic flow en
     `POST /input-requests answered ${asked.status}: ${JSON.stringify(asked.data)}`,
   );
   const question = asked.data as InputRequestProjection;
-  assert.equal(question.status, 'pendente');
+  assert.equal(question.status, 'pending');
 
   const answered = await operation(client, '/input-requests/{id}/answer', HttpMethod.Patch)(
     { id: question.id },
@@ -188,13 +188,13 @@ test('t171 AT5 — a client built only from /openapi.json runs the basic flow en
     `PATCH /input-requests/{id}/answer answered ${answered.status}: ${JSON.stringify(answered.data)}`,
   );
   const settled = answered.data as InputRequestProjection;
-  assert.equal(settled.status, 'respondida');
-  assert.equal(settled.resposta, 'Sim');
-  assert.equal(settled.respondido_por, 'rafael');
+  assert.equal(settled.status, 'answered');
+  assert.equal(settled.answer, 'Sim');
+  assert.equal(settled.answered_by, 'rafael');
 
   // The answer really landed on the control plane, and not only on the client:
   // the job it was blocking is back in the queue.
   const reread = await request<JobProjection>(ctx, 'GET', `/v1/jobs/${job.id}`);
   assert.equal(reread.status, 200);
-  assert.equal(reread.body.bloqueado, false, 'answering through the generated client unblocked it');
+  assert.equal(reread.body.blocked, false, 'answering through the generated client unblocked it');
 });

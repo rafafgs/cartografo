@@ -37,7 +37,13 @@ import { applyPragmas, openDatabase, type Database } from '../src/db/connection.
 import { migrate } from '../src/db/migrate.ts';
 import type { GraphDocument } from '../src/domain/graph.ts';
 import { registerBaseGraph } from '../src/repositories/graphs.ts';
-import { blockJob, createJob, transitionJob, type Job } from '../src/repositories/job.ts';
+import {
+  blockJob,
+  createJob,
+  transitionJob,
+  type Job,
+  type WireJob,
+} from '../src/repositories/job.ts';
 import { registerJobs } from '../src/routes/jobs.ts';
 import { MIGRATIONS_DIR, PACKAGE_ROOT, requireArtifacts, type TestHook } from './support.ts';
 
@@ -368,12 +374,12 @@ test('AT7 — the write path answers 200 even when the hook destination rejects'
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ para_no_id: 'revisar' }),
   });
-  const body = (await response.json()) as Job;
+  const body = (await response.json()) as WireJob;
 
   assert.equal(response.status, 200, 'a hook failure is never the traveller\'s problem');
   assert.equal(body.id, job.id);
-  assert.equal(body.no_atual, 'revisar');
-  assert.equal(body.bloqueado, false);
+  assert.equal(body.current_node_id, 'revisar');
+  assert.equal(body.blocked, false);
 
   // The delivery exists and is retried in the background; the response above did
   // not wait for a single one of those attempts.

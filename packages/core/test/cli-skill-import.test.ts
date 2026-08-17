@@ -232,47 +232,47 @@ test('AT9 — propose-skill opens a blocking human gate, never auto-approvable',
   const ids = proposedIds(result.stdout);
 
   const job = (await (await fetch(`${controlPlane.url}/v1/jobs/${ids.job}`)).json()) as {
-    titulo: string;
-    no_entrada_id: string;
-    bloqueado: boolean;
+    title: string;
+    entry_node_id: string;
+    blocked: boolean;
   };
-  assert.equal(job.bloqueado, true, 'the job waits on the human');
-  assert.equal(job.no_entrada_id, 'importar-skill');
-  assert.match(job.titulo, /feature-dev/);
-  assert.match(job.titulo, new RegExp(SOURCE_REF));
+  assert.equal(job.blocked, true, 'the job waits on the human');
+  assert.equal(job.entry_node_id, 'importar-skill');
+  assert.match(job.title, /feature-dev/);
+  assert.match(job.title, new RegExp(SOURCE_REF));
 
   const queue = (await (
-    await fetch(`${controlPlane.url}/v1/input-requests?trabalho_id=${ids.job}`)
+    await fetch(`${controlPlane.url}/v1/input-requests?job_id=${ids.job}`)
   ).json()) as {
-    perguntas: {
+    input_requests: {
       id: number;
-      tipo: string;
-      pergunta: string;
-      contexto: string | null;
-      auto_aprovavel: boolean;
+      kind: string;
+      question: string;
+      context: string | null;
+      auto_approvable: boolean;
       status: string;
     }[];
   };
-  assert.equal(queue.perguntas.length, 1);
-  const pending = queue.perguntas[0];
+  assert.equal(queue.input_requests.length, 1);
+  const pending = queue.input_requests[0];
   assert.equal(pending.id, ids.inputRequest);
-  assert.equal(pending.tipo, 'aprovacao');
-  assert.equal(pending.auto_aprovavel, false, 'D4 never allows auto-approval of an import');
-  assert.equal(pending.status, 'pendente');
-  assert.match(pending.pergunta, /feature-dev/);
-  assert.ok(pending.contexto !== null, 'whoever answers has to see the manifest');
-  assert.match(pending.contexto, /"id": "feature-dev"/, 'the manifest goes in pretty-printed');
-  assert.match(pending.contexto, /permissions/, 'the checklist covers what the reviewer signs');
+  assert.equal(pending.kind, 'approval');
+  assert.equal(pending.auto_approvable, false, 'D4 never allows auto-approval of an import');
+  assert.equal(pending.status, 'pending');
+  assert.match(pending.question, /feature-dev/);
+  assert.ok(pending.context !== null, 'whoever answers has to see the manifest');
+  assert.match(pending.context, /"id": "feature-dev"/, 'the manifest goes in pretty-printed');
+  assert.match(pending.context, /permissions/, 'the checklist covers what the reviewer signs');
 
   // t180 — the question and the checklist are what a person READS, so they are
   // English; the manifest keys quoted inside them are the format's own (FR2).
-  assert.equal(pending.pergunta, 'Approve importing skill feature-dev?');
+  assert.equal(pending.question, 'Approve importing skill feature-dev?');
   assert.ok(
-    pending.contexto.includes('What you sign off on by approving'),
-    `the checklist header is English; came:\n${pending.contexto}`,
+    pending.context.includes('What you sign off on by approving'),
+    `the checklist header is English; came:\n${pending.context}`,
   );
   assert.ok(
-    pending.contexto.includes('To APPROVE: answer with the final manifest in JSON'),
+    pending.context.includes('To APPROVE: answer with the final manifest in JSON'),
     'so is the instruction that closes it',
   );
 });
@@ -330,9 +330,9 @@ test('AT10 — scan, complete, propose, approve, register: the whole D4 gate', {
   assert.equal(registered.checks.length, 4);
 
   const job = (await (await fetch(`${controlPlane.url}/v1/jobs/${ids.job}`)).json()) as {
-    bloqueado: boolean;
+    blocked: boolean;
   };
-  assert.equal(job.bloqueado, false, 'answering the input request unblocks the job');
+  assert.equal(job.blocked, false, 'answering the input request unblocks the job');
 });
 
 test('AT11 — a skill with no derivable check is refused by the registry, even once approved', { timeout: 300_000 }, async (t) => {

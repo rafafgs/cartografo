@@ -77,7 +77,7 @@ interface Skill {
   permissions: Record<string, unknown>;
   instructions: string;
   origin: Record<string, unknown>;
-  registrado_em: string;
+  registered_at: string;
 }
 
 /** Error body of the registry. */
@@ -178,7 +178,7 @@ test('AT1 — a valid imported manifest is registered and comes back whole', asy
   assert.equal(created.body.id, 'feature-dev');
   assert.equal(created.body.hash, manifest.hash);
   assert.ok(
-    typeof created.body.registrado_em === 'string' && created.body.registrado_em.length > 0,
+    typeof created.body.registered_at === 'string' && created.body.registered_at.length > 0,
     'the registration has to carry the instant it happened',
   );
 

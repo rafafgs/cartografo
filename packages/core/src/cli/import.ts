@@ -345,12 +345,12 @@ export async function runImport(options: ImportOptions): Promise<number> {
   const body = isObject(response.body) ? response.body : {};
 
   if (response.status === 201) {
-    const graph = isObject(body.grafo) ? body.grafo : {};
-    const version = isObject(body.grafo_versao) ? body.grafo_versao : {};
+    const graph = isObject(body.graph) ? body.graph : {};
+    const version = isObject(body.graph_version) ? body.graph_version : {};
     process.stdout.write('graph imported\n');
-    process.stdout.write(line('classe', String(graph.classe)));
-    process.stdout.write(line('grafo.id', String(graph.id)));
-    process.stdout.write(line('grafo_versao.id', String(version.id)));
+    process.stdout.write(line('class', String(graph.class)));
+    process.stdout.write(line('graph.id', String(graph.id)));
+    process.stdout.write(line('graph_version.id', String(version.id)));
     if (registry !== null) {
       process.stdout.write(
         line('skills', `${registry.created} registered, ${registry.known} already in the registry`),
@@ -360,12 +360,12 @@ export async function runImport(options: ImportOptions): Promise<number> {
   }
 
   if (response.status === 409) {
-    process.stderr.write(`cartografo: classe_ja_registrada — ${String(body.mensagem)}\n`);
+    process.stderr.write(`cartografo: class_already_registered — ${String(body.message)}\n`);
     return 1;
   }
 
   if (response.status === 422) {
-    process.stderr.write(`cartografo: grafo_invalido — ${graphPath}\n`);
+    process.stderr.write(`cartografo: invalid_graph — ${graphPath}\n`);
     const structure = isObject(body.estrutura) ? body.estrutura : {};
     const soundness = isObject(body.soundness) ? body.soundness : {};
     for (const error of Array.isArray(structure.erros) ? structure.erros : []) {
@@ -381,8 +381,8 @@ export async function runImport(options: ImportOptions): Promise<number> {
 
   process.stderr.write(
     `cartografo: the control plane refused the graph (HTTP ${response.status})${
-      typeof body.erro === 'string' ? ` — ${body.erro}` : ''
-    }${typeof body.mensagem === 'string' ? `: ${body.mensagem}` : ''}\n`,
+      typeof body.error === 'string' ? ` — ${body.error}` : ''
+    }${typeof body.message === 'string' ? `: ${body.message}` : ''}\n`,
   );
   return 1;
 }

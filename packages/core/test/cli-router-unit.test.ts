@@ -51,8 +51,8 @@ const CLEAN_ENV: NodeJS.ProcessEnv = {};
 function exporting(): (request: { path: string }) => FakeAnswer {
   return (request) =>
     request.path.startsWith('/v1/graph-versions/')
-      ? { status: 200, body: { grafo_versao: { snapshot: { problem_class: 'uma-classe' } } } }
-      : { status: 200, body: { grafo: { versao_corrente_id: 'sha256:abc' } } };
+      ? { status: 200, body: { graph_version: { snapshot: { problem_class: 'uma-classe' } } } }
+      : { status: 200, body: { graph: { current_version_id: 'sha256:abc' } } };
 }
 
 test('--help is the usage text and a clean exit, in each of its three spellings', async () => {

@@ -11,6 +11,12 @@
   "bin": {
     "topografo-custo": "./bin/topografo-custo.mjs"
   },
+  "exports": {
+    "./cli": {
+      "types": "./src/cli.ts",
+      "default": "./src/cli.ts"
+    }
+  },
   "files": [
     "bin",
     "src"

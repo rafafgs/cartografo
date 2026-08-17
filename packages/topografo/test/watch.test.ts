@@ -197,12 +197,10 @@ test('t247 AT6 — the line shape is exactly FR3: nothing carries a field it has
     write: (line) => void lines.push(JSON.parse(line) as Record<string, unknown>),
   });
 
-  assert.deepEqual(lines, [
-    { execution_id: 81, lens: 'flow', outcome: 'nothing' },
-    { execution_id: 81, lens: 'cost', outcome: 'posted', proposal_id: 11 },
-    { execution_id: 81, lens: 'cost', outcome: 'deduped', proposal_id: 12 },
-  ]);
-
+  // The per-key checks come BEFORE the whole-list comparison, because
+  // `assert.deepEqual` is an assertion function: it narrows `lines` to the
+  // literal shape it was handed, and a later `line.reason` would then be a type
+  // error instead of the check it is meant to be.
   for (const line of lines) {
     assert.deepEqual(
       Object.keys(line).slice(0, 3),
@@ -212,6 +210,12 @@ test('t247 AT6 — the line shape is exactly FR3: nothing carries a field it has
     assert.equal(line.reason, undefined, 'only a skipped line explains itself with a reason');
     assert.equal(line.message, undefined, 'only an error line carries a message');
   }
+
+  assert.deepEqual(lines, [
+    { execution_id: 81, lens: 'flow', outcome: 'nothing' },
+    { execution_id: 81, lens: 'cost', outcome: 'posted', proposal_id: 11 },
+    { execution_id: 81, lens: 'cost', outcome: 'deduped', proposal_id: 12 },
+  ]);
 });
 
 test('t247 FR3 — one execution at a time: two lens runs never overlap in one process', async () => {

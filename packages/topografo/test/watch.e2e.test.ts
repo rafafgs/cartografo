@@ -38,7 +38,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
 
 import { bootCore, type TestHook } from '@cartografo/test-support';
 

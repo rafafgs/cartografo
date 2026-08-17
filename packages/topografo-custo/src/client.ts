@@ -73,6 +73,25 @@ export interface Proposal {
   status: string;
 }
 
+/**
+ * What `POST /v1/proposals` answered: the proposal, and whether it is new.
+ *
+ * The second field is t247's, and it exists because t246 made the first one
+ * ambiguous. Since the control plane deduplicates by
+ * `(lens, target_version, operations)`, a repeat that matches a still-pending
+ * proposal comes back as `200` with that same proposal — evidence strengthened,
+ * `status` still `pending` — instead of `201` with a clone. Both are a success
+ * and both carry a proposal reading `pending`, so the STATUS is the only thing
+ * that tells "I proposed this" from "this was already proposed". A person
+ * running `evaluate` by hand never needed to know; the unattended watcher of
+ * D21, which writes one line per outcome and has no report to read, does.
+ */
+export interface ProposalAnswer {
+  proposal: Proposal;
+  /** `true` on `201` (created), `false` on `200` (matched a pending one). */
+  created: boolean;
+}
+
 /** Narrowing by execution. Without it, the route returns everything. */
 export interface ExecutionFilter {
   execution_id?: number;
@@ -220,22 +239,28 @@ export async function getGraphVersion(
 /**
  * Creates the proposal. It is born `pending`: the human gate is what applies it.
  *
+ * The status is read BEFORE the body is decoded, because decoding consumes the
+ * answer — and it is the status, not the body, that says whether anything was
+ * created (see {@link ProposalAnswer}).
+ *
  * @param baseUrl Base URL of the control plane.
  * @param input The five keys of the route's contract.
  * @param doFetch `fetch` implementation to use.
- * @returns The proposal as the server recorded it.
+ * @returns The proposal as the server recorded it, and whether this call is
+ *   what recorded it (`201`) or matched a pending one (`200`, t246).
  */
 export async function createProposal(
   baseUrl: string,
   input: ProposalInput,
   doFetch: typeof fetch = fetch,
-): Promise<Proposal> {
+): Promise<ProposalAnswer> {
   const path = '/v1/proposals';
   const response = await doFetch(`${normalize(baseUrl)}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
   });
+  const created = response.status === 201;
   const { proposal } = await parseResponse<{ proposal: Proposal }>(path, 'POST', response);
-  return proposal;
+  return { proposal, created };
 }

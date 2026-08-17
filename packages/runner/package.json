@@ -11,6 +11,20 @@
   "bin": {
     "cartografo-runner": "./bin/cartografo-runner.mjs"
   },
+  "exports": {
+    "./surveyor/proposal": {
+      "types": "./src/surveyor/proposal.ts",
+      "default": "./src/surveyor/proposal.ts"
+    },
+    "./engine/claude-code-adapter": {
+      "types": "./src/engine/claude-code-adapter.ts",
+      "default": "./src/engine/claude-code-adapter.ts"
+    },
+    "./engine/types": {
+      "types": "./src/engine/types.ts",
+      "default": "./src/engine/types.ts"
+    }
+  },
   "files": [
     "bin",
     "src"

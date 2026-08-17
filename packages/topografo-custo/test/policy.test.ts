@@ -13,13 +13,15 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
 import type * as PolicyModule from '../src/policy.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'topografo-custo.md');
 
 let cache: typeof PolicyModule | null = null;
 
@@ -148,6 +150,94 @@ test('AT7 — every candidate carries a single change_node_field over descriptio
       'type',
     ]);
   }
+});
+
+/* -------------------------------------------------------------------------- */
+/* t234 — the spec's example is the operation this module really emits.         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every ```json block of the spec, parsed.
+ *
+ * The blocks are read as data and not by line number on purpose: the example of
+ * §3 and the `evidencia`/`metrica_esperada` block right under it are told apart
+ * by what they ARE — an operation carries `type: 'change_node_field'` — and not
+ * by where they sit, so neither test below rots when a paragraph moves.
+ */
+function jsonBlocks(spec: string): Record<string, unknown>[] {
+  return [...spec.matchAll(/```json\n([\s\S]*?)```/g)].map(([, body], index) => {
+    try {
+      return JSON.parse(body) as Record<string, unknown>;
+    } catch (error) {
+      return assert.fail(`json block ${index + 1} of the spec does not parse: ${String(error)}`);
+    }
+  });
+}
+
+test('t234 — every operation example of the spec is the operation the policy emits', async () => {
+  const { evaluatePolicies } = await load();
+
+  const [candidate] = evaluatePolicies([row('implementar', 5000)], {
+    tokenCeiling: 1000,
+    currentDescription: () => 'descrição atual',
+  });
+  assert.ok(candidate !== undefined, 'the scenario has to produce a candidate to compare against');
+  const emitted = candidate.operacoes[0];
+
+  const spec = readFileSync(SPEC_PATH, 'utf8');
+  const examples = jsonBlocks(spec).filter((block) => block.type === 'change_node_field');
+  assert.ok(examples.length > 0, 'the spec has to carry at least one literal operation example');
+
+  for (const example of examples) {
+    const inverse = example.inverse as Record<string, unknown>;
+    assert.ok(inverse !== undefined && typeof inverse === 'object', 'the example carries an inverse');
+
+    // The keys are §3's since t228. The VALUE of `field` is the half t228 left
+    // behind: `CHANGEABLE_FIELDS` never held `descricao`, and the node's field
+    // has been `description` since t178 — in `schema/grafo.schema.json` and in
+    // `SnapshotNode` alike. A reader copying this block verbatim into a
+    // `POST /v1/proposals` body gets `field_not_changeable` back.
+    assert.deepEqual(Object.keys(example).sort(), Object.keys(emitted).sort());
+    assert.equal(example.type, emitted.type);
+    assert.equal(example.field, emitted.field);
+
+    assert.deepEqual(Object.keys(inverse).sort(), Object.keys(emitted.inverse).sort());
+    assert.equal(inverse.type, emitted.inverse.type);
+    assert.equal(inverse.field, emitted.inverse.field);
+  }
+});
+
+/**
+ * The single `descricao` the spec keeps: the key of `metrica_esperada`.
+ *
+ * That one is this module's own vocabulary — the same key `t180` pins in the
+ * candidates above — and D20 does not reach it. Every OTHER `descricao` in the
+ * document names the node's field, which is `description`.
+ */
+const KEPT_METRIC_KEY = /^\s*"descricao":/;
+
+test('t234 — no `descricao` names the node field anywhere in the spec', () => {
+  const spec = readFileSync(SPEC_PATH, 'utf8');
+
+  const hits = spec
+    .split('\n')
+    .map((text, index) => ({ line: index + 1, text }))
+    // Unaccented on purpose: the prose word "descrição" is Portuguese the
+    // reader reads, not a field name, and it is not what this sweep is about.
+    .filter(({ text }) => /\bdescricao\b/.test(text));
+
+  const offenders = hits.filter(({ text }) => !KEPT_METRIC_KEY.test(text));
+  assert.deepEqual(
+    offenders.map(({ line, text }) => `${line}: ${text.trim()}`),
+    [],
+    'the spec names the node field `descricao`, which the API refuses (field_not_changeable)',
+  );
+
+  assert.equal(
+    hits.length,
+    1,
+    'the one kept `descricao` is the `metrica_esperada` key, and it stays alone',
+  );
 });
 
 test('t158 — a time ceiling cites the time sample, not the token one', async () => {

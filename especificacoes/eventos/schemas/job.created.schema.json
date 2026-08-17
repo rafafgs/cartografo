@@ -1,45 +1,82 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "trabalho.criado.schema.json",
-  "title": "trabalho.criado",
+  "$id": "job.created.schema.json",
+  "title": "job.created",
   "description": "Um trabalho (viajante) entrou no grafo. Paridade com EventKind.CREATED do flowpilot.",
   "type": "object",
-  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
   "properties": {
-    "tipo": { "const": "trabalho.criado" },
-    "entidade": {
-      "type": "object",
-      "properties": { "tipo": { "const": "trabalho" } }
+    "type": {
+      "const": "job.created"
     },
-    "dados": {
+    "entity": {
       "type": "object",
-      "required": ["titulo", "no_entrada_id"],
       "properties": {
-        "titulo": {
+        "type": {
+          "const": "job"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "title",
+        "entry_node_id"
+      ],
+      "properties": {
+        "title": {
           "type": "string",
           "description": "Título do trabalho no momento da criação."
         },
-        "no_entrada_id": {
+        "entry_node_id": {
           "type": "string",
           "description": "Nó do grafo em que o trabalho nasce. O cartografo não tem estados fixos: o nó de entrada é dado da versão de grafo vigente."
         },
-        "corpo": {
-          "type": ["string", "null"],
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Corpo do trabalho, quando ele nasce com conteúdo (intake). null quando ninguém escreveu nenhum."
         },
-        "criterios_de_aceite": {
-          "type": ["array", "null"],
-          "items": { "type": "string" },
+        "acceptance_criteria": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
           "description": "Critérios de aceite PRELIMINARES, como o intake os propôs. Quem os produz de verdade é o nó que refina, a partir do pedido bruto. null e [] são coisas diferentes."
         },
-        "campos": {
-          "type": ["object", "null"],
-          "additionalProperties": { "type": ["string", "number", "boolean"] },
+        "fields": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          },
           "description": "Valores dos campos que a CLASSE declara no seu grafo (`custom_fields`, t168) — `premise_source`, `downside` e `upside` em bets assimétricas. Chaves livres de propósito: quem as declara é o documento de grafo da classe, não esta taxonomia. null quando o trabalho nasceu sem campo nenhum; null e {} são coisas diferentes."
         },
         "tier": {
-          "type": ["string", "null"],
-          "enum": ["trivial", "standard", null],
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "trivial",
+            "standard",
+            null
+          ],
           "description": "Triagem de custo do trabalho (t175): quanto ele custa para RODAR, nunca por qual aresta ele sai — o grafo segue congelado. Conjunto fechado porque o vocabulário é desta triagem, e não do engine: um terceiro valor é erro de quem escreveu. null quando ninguém triou, e null NÃO é `trivial` — ler ausência como barato rebaixaria o modelo de todo trabalho anterior a esta ficha sem que ninguém tivesse escolhido isso."
         }
       },

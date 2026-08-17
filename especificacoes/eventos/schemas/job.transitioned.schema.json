@@ -1,25 +1,40 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "trabalho.transicao.schema.json",
-  "title": "trabalho.transicao",
+  "$id": "job.transitioned.schema.json",
+  "title": "job.transitioned",
   "description": "O trabalho andou de um nó para outro. Divergência justificada do EventKind.STATE_CHANGE do flowpilot: nós do grafo congelado por versão, não os 12 estados fixos de um TicketState.",
   "type": "object",
-  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
   "properties": {
-    "tipo": { "const": "trabalho.transicao" },
-    "entidade": {
-      "type": "object",
-      "properties": { "tipo": { "const": "trabalho" } }
+    "type": {
+      "const": "job.transitioned"
     },
-    "dados": {
+    "entity": {
       "type": "object",
-      "required": ["para_no_id"],
       "properties": {
-        "de_no_id": {
-          "type": ["string", "null"],
+        "type": {
+          "const": "job"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "to_node_id"
+      ],
+      "properties": {
+        "from_node_id": {
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Nó de origem; null na primeira transição, quando o trabalho sai do nó de entrada pela primeira vez."
         },
-        "para_no_id": {
+        "to_node_id": {
           "type": "string",
           "description": "Nó de destino, dentro da versão de grafo congelada para esta execução."
         }

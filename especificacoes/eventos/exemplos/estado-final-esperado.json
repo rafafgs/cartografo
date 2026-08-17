@@ -12,17 +12,17 @@
     }
   },
   "sessoes": {
-    "5001": { "status": "concluida", "exit_code": 0 },
-    "5002": { "status": "travada", "exit_code": null }
+    "5001": { "status": "completed", "exit_code": 0 },
+    "5002": { "status": "stuck", "exit_code": null }
   },
   "perguntas": {
     "900": {
-      "status": "respondida",
+      "status": "answered",
       "resposta": "Unificar num log so, com envelope comum e entidade generica",
-      "origem": "usuario"
+      "origem": "user"
     },
     "901": {
-      "status": "respondida",
+      "status": "answered",
       "resposta": "Porte os 12 nos como estao; reagrupar e decisao de outra ficha",
       "origem": "auto"
     }

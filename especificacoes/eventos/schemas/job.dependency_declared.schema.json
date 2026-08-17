@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "job.dependency_declared.schema.json",
+  "title": "job.dependency_declared",
+  "description": "Um trabalho declarou depender de outro, na confirmação do intake. Sem equivalente no flowpilot: lá a ordem entre tickets é convenção, aqui é fato do log. Declarar a aresta não bloqueia ninguém — exigir a ordem é decisão de outra ficha.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "job.dependency_declared"
+    },
+    "entity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "job"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "depends_on_job_id"
+      ],
+      "properties": {
+        "depends_on_job_id": {
+          "type": "integer",
+          "description": "Trabalho do qual o sujeito do evento depende. O sujeito (entity.id) é sempre o DEPENDENTE: quem espera é quem carrega o fato na própria linha do tempo."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

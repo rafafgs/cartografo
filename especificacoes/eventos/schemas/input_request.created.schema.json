@@ -1,58 +1,96 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "pergunta.criada.schema.json",
-  "title": "pergunta.criada",
+  "$id": "input_request.created.schema.json",
+  "title": "input_request.created",
   "description": "Um agente precisa de algo do humano antes de continuar. Paridade com input_requests + EventKind.INPUT_REQUESTED do flowpilot: pergunta e aprovação são o mesmo animal, o campo tipo é a única diferença.",
   "type": "object",
-  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
   "properties": {
-    "tipo": { "const": "pergunta.criada" },
-    "entidade": {
-      "type": "object",
-      "properties": { "tipo": { "const": "pergunta" } }
+    "type": {
+      "const": "input_request.created"
     },
-    "dados": {
+    "entity": {
       "type": "object",
-      "required": ["trabalho_id", "tipo", "pergunta", "auto_aprovavel"],
       "properties": {
-        "trabalho_id": {
+        "type": {
+          "const": "input_request"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "kind",
+        "question",
+        "auto_approvable"
+      ],
+      "properties": {
+        "job_id": {
           "type": "integer",
           "description": "Trabalho que fica esperando a resposta."
         },
-        "sessao_id": {
-          "type": ["integer", "null"],
+        "session_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
           "description": "Sessão que perguntou. Opcional porque o caminho da resposta sobrevive à sessão: ela emite o pedido e o processo termina."
         },
-        "no_id": {
-          "type": ["string", "null"],
+        "node_id": {
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Nó em que o trabalho estava quando perguntou (t167). Carimbado pelo servidor a partir do trabalho dono, nunca vindo do corpo do pedido — a mesma fronteira de confiança de trabalho_id. NULO significa \"não se sabe de qual nó veio\": trabalho sem posição, ou pergunta gravada antes de o campo existir."
         },
-        "tipo": {
-          "enum": ["pergunta", "aprovacao"],
+        "kind": {
+          "enum": [
+            "question",
+            "approval"
+          ],
           "description": "pergunta: alguém precisa saber algo. aprovacao: um portão manual quer um OK sobre um artefato."
         },
-        "pergunta": {
+        "question": {
           "type": "string",
           "description": "O que está sendo perguntado."
         },
-        "contexto": {
-          "type": ["string", "null"],
+        "context": {
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Evidência, alternativas pesadas, o que já foi tentado."
         },
-        "opcoes": {
-          "type": ["array", "null"],
-          "items": { "type": "string" },
+        "options": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
           "description": "Rótulos curtos das decisões possíveis."
         },
-        "recomendacao": {
-          "type": ["string", "null"],
+        "recommendation": {
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "O que o agente escolheria, no imperativo."
         },
-        "resposta_padrao": {
-          "type": ["string", "null"],
+        "default_answer": {
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "O valor que a auto-aprovação aplica em nome do humano."
         },
-        "auto_aprovavel": {
+        "auto_approvable": {
           "type": "boolean",
           "description": "Se o portão de auto-aprovação PODE responder no lugar do humano. Carregado explicitamente: \"sem opções e sem padrão\" nunca foi um bom proxy para inaprovável."
         }

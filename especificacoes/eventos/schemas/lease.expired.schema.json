@@ -1,26 +1,42 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "lease.expirada.schema.json",
-  "title": "lease.expirada",
+  "$id": "lease.expired.schema.json",
+  "title": "lease.expired",
   "description": "A posse caducou e o trabalho volta para a fila (D5). Extensão do cartografo, sem equivalente no flowpilot.",
   "type": "object",
-  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
   "properties": {
-    "tipo": { "const": "lease.expirada" },
-    "entidade": {
-      "type": "object",
-      "properties": { "tipo": { "const": "lease" } }
+    "type": {
+      "const": "lease.expired"
     },
-    "dados": {
+    "entity": {
       "type": "object",
-      "required": ["runner_id", "motivo"],
+      "properties": {
+        "type": {
+          "const": "lease"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "runner_id",
+        "reason"
+      ],
       "properties": {
         "runner_id": {
           "type": "string",
           "description": "Runner que perdeu a posse."
         },
-        "motivo": {
-          "enum": ["heartbeat_perdido", "expirou"],
+        "reason": {
+          "enum": [
+            "heartbeat_lost",
+            "ttl_elapsed"
+          ],
           "description": "heartbeat_perdido: o runner parou de dar sinal antes do prazo. expirou: o prazo chegou ao fim sem renovação."
         }
       },

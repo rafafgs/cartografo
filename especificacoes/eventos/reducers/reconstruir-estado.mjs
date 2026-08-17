@@ -50,106 +50,106 @@ export function reconstruirEstado(eventos) {
   const ordenados = [...eventos].sort((a, b) => a.id - b.id);
 
   for (const evento of ordenados) {
-    const { tipo, dados } = evento;
-    const id = evento.entidade.id;
+    const { type, data } = evento;
+    const id = evento.entity.id;
 
-    switch (tipo) {
+    switch (type) {
       // --- trabalho ---------------------------------------------------------
-      case 'trabalho.criado':
-        estado.trabalhos[id] = trabalhoNovo(dados.no_entrada_id);
+      case 'job.created':
+        estado.trabalhos[id] = trabalhoNovo(data.entry_node_id);
         break;
 
-      case 'trabalho.transicao': {
+      case 'job.transitioned': {
         const trabalho = estado.trabalhos[id];
         if (!trabalho) break;
-        trabalho.no_atual = dados.para_no_id;
-        trabalho.historico_nos.push(dados.para_no_id);
+        trabalho.no_atual = data.to_node_id;
+        trabalho.historico_nos.push(data.to_node_id);
         break;
       }
 
-      case 'trabalho.bloqueado':
+      case 'job.blocked':
         if (estado.trabalhos[id]) estado.trabalhos[id].bloqueado = true;
         break;
 
-      case 'trabalho.desbloqueado':
+      case 'job.unblocked':
         if (estado.trabalhos[id]) estado.trabalhos[id].bloqueado = false;
         break;
 
-      // `trabalho.emendado` é fato de conteúdo, não de fluxo: muda o trabalho,
+      // `job.amended` é fato de conteúdo, não de fluxo: muda o trabalho,
       // não a posição dele no grafo. Nenhuma projeção daqui se move — e é por
       // isso que ele carrega só os NOMES dos campos alterados.
-      case 'trabalho.emendado':
+      case 'job.amended':
         break;
 
       // --- sessão -----------------------------------------------------------
-      case 'sessao.aberta':
+      case 'session.opened':
         estado.sessoes[id] = { status: 'aberta', exit_code: null };
         break;
 
-      case 'sessao.finalizada':
+      case 'session.finished':
         estado.sessoes[id] = {
-          status: dados.status,
+          status: data.status,
           // Ausente e null são a mesma coisa aqui: o engine não reportou
           // código de saída. Nunca colapsar em zero — zero é sucesso.
-          exit_code: dados.exit_code ?? null,
+          exit_code: data.exit_code ?? null,
         };
         break;
 
-      // `sessao.permissao_negada` é incidente, não desfecho: a sessão continua
+      // `session.permission_denied` é incidente, não desfecho: a sessão continua
       // exatamente onde estava, e nenhuma projeção daqui se move. Está listado
       // em vez de cair no `default` porque a diferença entre "ignorado de
       // propósito" e "esquecido" é justamente o que este arquivo existe para
       // registrar. Quem quiser contar negações lê o log, que não perde nada.
-      case 'sessao.permissao_negada':
+      case 'session.permission_denied':
         break;
 
       // --- pergunta ---------------------------------------------------------
-      case 'pergunta.criada':
-        estado.perguntas[id] = { status: 'pendente', resposta: null, origem: null };
+      case 'input_request.created':
+        estado.perguntas[id] = { status: 'pending', resposta: null, origem: null };
         break;
 
       // Os dois tipos abaixo colapsam de volta no `answer_source` user/auto do
       // flowpilot: no log a origem é o tipo do evento, na projeção volta a ser
       // um campo, porque quem lê estado quer comparar, não classificar.
-      case 'pergunta.respondida':
+      case 'input_request.answered':
         estado.perguntas[id] = {
-          status: 'respondida',
-          resposta: dados.resposta,
-          origem: 'usuario',
+          status: 'answered',
+          resposta: data.answer,
+          origem: 'user',
         };
         break;
 
-      case 'pergunta.auto_resolvida':
+      case 'input_request.auto_resolved':
         estado.perguntas[id] = {
-          status: 'respondida',
-          resposta: dados.resposta,
+          status: 'answered',
+          resposta: data.answer,
           origem: 'auto',
         };
         break;
 
       // --- lease ------------------------------------------------------------
-      case 'lease.concedida':
+      case 'lease.granted':
         estado.leases[id] = { status: 'ativa' };
         break;
 
-      case 'lease.expirada':
+      case 'lease.expired':
         estado.leases[id] = { status: 'expirada' };
         break;
 
       // --- versão de grafo --------------------------------------------------
       // Registrar NÃO move o ponteiro: uma versão pode existir no banco sem
       // nunca ter valido (D15 — aplicar é um ato separado, e é o que move).
-      case 'grafo_versao.registrada':
+      case 'graph_version.registered':
         break;
 
-      case 'grafo_versao.aplicada':
-        estado.grafo_versao_corrente[dados.grafo_id] = id;
+      case 'graph_version.applied':
+        estado.grafo_versao_corrente[data.graph_id] = id;
         break;
 
       // Rollback move o ponteiro de volta e não apaga nada: a versão
       // abandonada continua no log e no banco, com a telemetria dela.
-      case 'grafo_versao.revertida':
-        estado.grafo_versao_corrente[dados.grafo_id] = dados.versao_alvo;
+      case 'graph_version.reverted':
+        estado.grafo_versao_corrente[data.graph_id] = data.target_version;
         break;
 
       default:

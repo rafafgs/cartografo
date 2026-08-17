@@ -1,26 +1,46 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "sessao.aberta.schema.json",
-  "title": "sessao.aberta",
+  "$id": "session.opened.schema.json",
+  "title": "session.opened",
   "description": "O runner despachou uma sessão de CLI pelo EngineAdapter. Paridade com a criação de uma linha de agent_sessions no flowpilot.",
   "type": "object",
-  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
   "properties": {
-    "tipo": { "const": "sessao.aberta" },
-    "entidade": {
-      "type": "object",
-      "properties": { "tipo": { "const": "sessao" } }
+    "type": {
+      "const": "session.opened"
     },
-    "dados": {
+    "entity": {
       "type": "object",
-      "required": ["engine", "working_dir", "prompt"],
       "properties": {
-        "trabalho_id": {
-          "type": ["integer", "null"],
+        "type": {
+          "const": "session"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "engine",
+        "working_dir",
+        "prompt"
+      ],
+      "properties": {
+        "job_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
           "description": "Trabalho servido pela sessão. Ausente ou null quando a sessão não serve nenhum (sessão de descoberta, turno de conversa)."
         },
-        "no_id": {
-          "type": ["string", "null"],
+        "node_id": {
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Nó do grafo que a sessão trabalha. É o que permite contar tentativas por nó em vez de por trabalho."
         },
         "engine": {
@@ -28,7 +48,10 @@
           "description": "Qual EngineAdapter despachou, ex. \"claude-code\". O campo é a fronteira de independência de LLM."
         },
         "engine_session_ref": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "description": "Id da sessão no vocabulário do próprio engine, capturado enquanto ela roda. É a chave que torna o retomar possível depois de uma pausa por cota."
         },
         "working_dir": {
@@ -40,12 +63,18 @@
           "description": "O que foi pedido à sessão. Entrada do engine, não título."
         },
         "timeout_seconds": {
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0,
           "description": "Orçamento de relógio de parede com que a sessão foi aberta. null significa que a sessão não declara política própria."
         },
         "silence_seconds": {
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0,
           "description": "Orçamento de inatividade com que a sessão foi aberta: segundos sem nenhuma saída antes de ela ser parada. Independente do relógio de parede, porque mede outra coisa — sessão pode ficar viva e produtiva por uma hora, e pode travar em dois minutos com o processo de pé. null significa que a sessão não declara política própria."
         }

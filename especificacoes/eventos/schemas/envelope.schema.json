@@ -6,13 +6,13 @@
   "type": "object",
   "required": [
     "id",
-    "tipo",
-    "projeto_id",
-    "execucao_id",
-    "entidade",
-    "ator",
-    "ocorrido_em",
-    "dados"
+    "type",
+    "project_id",
+    "execution_id",
+    "entity",
+    "actor",
+    "occurred_at",
+    "data"
   ],
   "properties": {
     "id": {
@@ -20,40 +20,62 @@
       "minimum": 1,
       "description": "Monotônico, atribuído pelo servidor. É a ordem do log e a única ordenação total que existe (dois eventos podem compartilhar o mesmo ocorrido_em)."
     },
-    "tipo": {
+    "type": {
       "type": "string",
-      "description": "Discriminador do evento, ex. \"trabalho.criado\". Cada valor tem um schema próprio que fixa este campo com const."
+      "description": "Discriminador do evento, ex. \"job.created\". Cada valor tem um schema próprio que fixa este campo com const."
     },
-    "projeto_id": {
+    "project_id": {
       "type": "integer",
       "description": "Projeto dono do evento."
     },
-    "execucao_id": {
-      "type": ["integer", "null"],
+    "execution_id": {
+      "type": [
+        "integer",
+        "null"
+      ],
       "description": "Execução à qual o evento pertence, ou null quando o evento acontece fora de uma rodada (ex. registro de versão de grafo)."
     },
-    "entidade": {
+    "entity": {
       "type": "object",
       "description": "O sujeito do evento — a chave de join da telemetria com o resto do banco.",
-      "required": ["tipo", "id"],
+      "required": [
+        "type",
+        "id"
+      ],
       "properties": {
-        "tipo": {
-          "enum": ["trabalho", "sessao", "pergunta", "lease", "grafo_versao"]
+        "type": {
+          "enum": [
+            "job",
+            "session",
+            "input_request",
+            "lease",
+            "graph_version"
+          ]
         },
         "id": {
-          "type": ["integer", "string"],
-          "description": "Id da própria entidade nomeada em entidade.tipo. Inteiro para trabalho/sessao/pergunta/lease; string para grafo_versao, cujo id é o hash do snapshot (D15)."
+          "type": [
+            "integer",
+            "string"
+          ],
+          "description": "Id da própria entidade nomeada em entity.type. Inteiro para job/session/input_request/lease; string para graph_version, cujo id é o hash do snapshot (D15)."
         }
       },
       "additionalProperties": false
     },
-    "ator": {
+    "actor": {
       "type": "object",
       "description": "Quem causou o evento. Paridade com ActorType do flowpilot (user/agent/system).",
-      "required": ["tipo", "ref"],
+      "required": [
+        "type",
+        "ref"
+      ],
       "properties": {
-        "tipo": {
-          "enum": ["usuario", "agente", "sistema"]
+        "type": {
+          "enum": [
+            "user",
+            "agent",
+            "system"
+          ]
         },
         "ref": {
           "type": "string",
@@ -62,12 +84,12 @@
       },
       "additionalProperties": false
     },
-    "ocorrido_em": {
+    "occurred_at": {
       "type": "string",
       "format": "date-time",
       "description": "Quando o fato aconteceu, ISO 8601. É o único carimbo de tempo do log — uma coluna de modificação num log append-only seria mentira."
     },
-    "dados": {
+    "data": {
       "type": "object",
       "description": "Payload específico do tipo, declarado pelo schema do tipo."
     }

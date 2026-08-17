@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "graph_version.registered.schema.json",
+  "title": "graph_version.registered",
+  "description": "Uma versão nova de grafo entrou no banco (D15). entity.id é o hash do snapshot. Extensão do cartografo, sem equivalente no flowpilot, cujo fluxo é código. Registrar NÃO move o ponteiro do grafo — quem move é graph_version.applied.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "graph_version.registered"
+    },
+    "entity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "graph_version"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "graph_id",
+        "source"
+      ],
+      "properties": {
+        "graph_id": {
+          "type": "string",
+          "description": "Linhagem à qual a versão pertence."
+        },
+        "parent_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Hash da versão anterior; null na primeira versão de uma linhagem."
+        },
+        "source": {
+          "enum": [
+            "synthesizer",
+            "manual",
+            "proposal"
+          ],
+          "description": "Quem produziu o snapshot. Na PoC só manual acontece: synthesizer e topógrafo estão fora dela (D6, D16); os outros dois valores já existem porque a origem (source) é fato do dado, não da fase."
+        },
+        "proposal_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Proposta que gerou a versão, quando source é proposal."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "job.blocked.schema.json",
+  "title": "job.blocked",
+  "description": "O trabalho parou de andar sem sair do nó — fato de bandeira, não de movimento. Paridade com EventKind.BLOCKED do flowpilot.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "job.blocked"
+    },
+    "entity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "job"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "description": "Por que parou, em texto livre. Não substitui a pergunta: quando o bloqueio é espera por humano, o conteúdo do que foi perguntado vive em input_request.created."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

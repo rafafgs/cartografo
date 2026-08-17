@@ -1,21 +1,35 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "lease.concedida.schema.json",
-  "title": "lease.concedida",
+  "$id": "lease.granted.schema.json",
+  "title": "lease.granted",
   "description": "Um runner tomou posse de um trabalho por um prazo (D5). Extensão do cartografo: o flowpilot é de um runner só e não tem equivalente.",
   "type": "object",
-  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
   "properties": {
-    "tipo": { "const": "lease.concedida" },
-    "entidade": {
-      "type": "object",
-      "properties": { "tipo": { "const": "lease" } }
+    "type": {
+      "const": "lease.granted"
     },
-    "dados": {
+    "entity": {
       "type": "object",
-      "required": ["trabalho_id", "runner_id", "expira_em"],
       "properties": {
-        "trabalho_id": {
+        "type": {
+          "const": "lease"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "runner_id",
+        "expires_at"
+      ],
+      "properties": {
+        "job_id": {
           "type": "integer",
           "description": "Trabalho despachado sob esta posse."
         },
@@ -23,7 +37,7 @@
           "type": "string",
           "description": "Runner que tomou a posse."
         },
-        "expira_em": {
+        "expires_at": {
           "type": "string",
           "format": "date-time",
           "description": "Quando a posse caduca se o heartbeat não a renovar."

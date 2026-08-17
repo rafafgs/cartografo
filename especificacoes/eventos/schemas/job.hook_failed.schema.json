@@ -1,25 +1,40 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "trabalho.gancho_falhou.schema.json",
-  "title": "trabalho.gancho_falhou",
+  "$id": "job.hook_failed.schema.json",
+  "title": "job.hook_failed",
   "description": "A entrega de um gancho declarado no grafo esgotou as seis tentativas e desistiu. É incidente, não desfecho: o trabalho não muda de nó, não é bloqueado e não sabe que isto aconteceu — gancho nunca participa da travessia. Existe porque um gancho não tem assinante registrado: ninguém está fazendo polling da fila dele, e sem este evento a reação declarada por quem escreveu o grafo falharia em silêncio. Sem paridade no flowpilot — nasce com os ganchos de transição (t169).",
   "type": "object",
-  "allOf": [{ "$ref": "envelope.schema.json" }],
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
   "properties": {
-    "tipo": { "const": "trabalho.gancho_falhou" },
-    "entidade": {
-      "type": "object",
-      "properties": { "tipo": { "const": "trabalho" } }
+    "type": {
+      "const": "job.hook_failed"
     },
-    "dados": {
+    "entity": {
       "type": "object",
-      "required": ["gancho_id", "no_id", "url", "ultimo_erro"],
       "properties": {
-        "gancho_id": {
+        "type": {
+          "const": "job"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "hook_id",
+        "node_id",
+        "url",
+        "last_error"
+      ],
+      "properties": {
+        "hook_id": {
           "type": "string",
           "description": "Id do gancho dentro do documento de grafo, tal como quem escreveu o grafo o nomeou. É por ele que se acha a declaração que falhou."
         },
-        "no_id": {
+        "node_id": {
           "type": "string",
           "description": "Nó cuja entrada ou bloqueio disparou o gancho. Sem ele, \"qual etapa tem reação quebrada?\" só se responde reconstruindo a travessia evento a evento."
         },
@@ -27,7 +42,7 @@
           "type": "string",
           "description": "Destino que não respondeu. Vai copiada da linha de entrega, e não relida do grafo: uma versão nova pode ter mudado o destino desde então, e o incidente é sobre o que foi tentado."
         },
-        "ultimo_erro": {
+        "last_error": {
           "type": "string",
           "description": "O que a sexta e última tentativa devolveu — status HTTP, timeout ou a mensagem da exceção. É o que quem depura uma integração muda procura primeiro."
         }

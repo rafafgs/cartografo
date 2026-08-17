@@ -128,9 +128,18 @@ function fixture(t: TestHook, label: string): Fixture {
   };
 }
 
-/** How the fake control plane answers about one job. */
+/**
+ * How the fake control plane answers about one job.
+ *
+ * The field names are `WireJob`'s (`packages/core/src/repositories/job.ts`),
+ * which is what `GET /v1/jobs/:id` really answers since t226 — and t254 exists
+ * because this fixture used to answer `bloqueado`/`concluido` instead. A fake
+ * that speaks a vocabulary the server retired proves the command works against
+ * a control plane that no longer exists: every case here passed while `prune`
+ * was, in production, a no-op that collected nothing.
+ */
 type JobAnswer =
-  | { bloqueado: boolean; concluido: boolean }
+  | { blocked: boolean; completed: boolean }
   | 'not-found'
   | 'network-error';
 
@@ -153,15 +162,15 @@ function controlPlane(jobs: Record<number, JobAnswer>): {
 
     if (answer === 'network-error') throw new TypeError('fetch failed');
     if (answer === 'not-found') {
-      return new Response(JSON.stringify({ erro: 'nao_encontrado' }), { status: 404 });
+      return new Response(JSON.stringify({ error: 'unknown_job' }), { status: 404 });
     }
     return new Response(
       JSON.stringify({
         id: Number(match?.[1] ?? 0),
-        titulo: 'ficha de fixture',
-        no_atual: 'implementar',
-        bloqueado: answer.bloqueado,
-        concluido: answer.concluido,
+        title: 'ficha de fixture',
+        current_node_id: 'implementar',
+        blocked: answer.blocked,
+        completed: answer.completed,
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
@@ -225,8 +234,8 @@ test('AT2 — --dry-run lists only the concluded job and touches nothing', async
   const doneTree = worktreeFor(1);
   const blockedTree = worktreeFor(2);
   const plane = controlPlane({
-    1: { bloqueado: false, concluido: true },
-    2: { bloqueado: true, concluido: false },
+    1: { blocked: false, completed: true },
+    2: { blocked: true, completed: false },
   });
 
   const { code, stdout } = await run(
@@ -270,8 +279,8 @@ test('AT3 — a real run removes the concluded tree and branch, and leaves the i
   const doneTree = worktreeFor(1);
   const blockedTree = worktreeFor(2);
   const plane = controlPlane({
-    1: { bloqueado: false, concluido: true },
-    2: { bloqueado: true, concluido: false },
+    1: { blocked: false, completed: true },
+    2: { blocked: true, completed: false },
   });
 
   const { code, stdout } = await run(
@@ -303,10 +312,10 @@ test('AT4 — a concluded job whose branch nobody merged loses the tree and keep
   const { repoRoot, worktreesRoot, worktreeFor } = fixture(t, 'at4');
 
   // A commit inside the tree is what makes the branch unmergeable into the
-  // default one — and `concluido` says the traversal reached a final node, which
+  // default one — and `completed` says the traversal reached a final node, which
   // says nothing at all about whether those commits landed anywhere.
   const tree = worktreeFor(1, true);
-  const plane = controlPlane({ 1: { bloqueado: false, concluido: true } });
+  const plane = controlPlane({ 1: { blocked: false, completed: true } });
 
   const { code, stdout } = await run(
     ['--url', SOME_URL, '--working-dir', repoRoot, '--worktrees-root', worktreesRoot],
@@ -346,8 +355,8 @@ test('AT4b — a branch checked out somewhere this run does not sweep is kept, n
   worktreeFor(2);
 
   const plane = controlPlane({
-    1: { bloqueado: false, concluido: true },
-    2: { bloqueado: false, concluido: true },
+    1: { blocked: false, completed: true },
+    2: { blocked: false, completed: true },
   });
 
   const { code, stdout } = await run(
@@ -383,7 +392,7 @@ test('AT5 — a directory this command does not recognize is reported and left a
   mkdirSync(impostor);
   writeFileSync(path.join(impostor, 'nota.md'), 'parece uma worktree e não é\n');
 
-  const plane = controlPlane({ 1: { bloqueado: false, concluido: true } });
+  const plane = controlPlane({ 1: { blocked: false, completed: true } });
 
   const { code, stdout } = await run(
     ['--url', SOME_URL, '--working-dir', repoRoot, '--worktrees-root', worktreesRoot],
@@ -431,8 +440,8 @@ test('AT7 — --older-than leaves a tree younger than the window exactly where i
   utimesSync(old, longAgo, longAgo);
 
   const plane = controlPlane({
-    1: { bloqueado: false, concluido: true },
-    2: { bloqueado: false, concluido: true },
+    1: { blocked: false, completed: true },
+    2: { blocked: false, completed: true },
   });
 
   const { code, stdout } = await run(

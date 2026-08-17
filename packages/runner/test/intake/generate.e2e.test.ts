@@ -24,13 +24,19 @@
  * the SAME draft a hand-written one is, so t122's human gate closes over it
  * unchanged. If that were not true, this ficha would have built a second intake.
  *
+ * t254 added the one spawn this file was missing: the SUCCESS path. AT5a/AT5b
+ * calls `generateIntakeDraft` in process, and the three spawns below all return
+ * before a draft is ever posted — so the lines `cli.mjs` prints afterwards were
+ * covered by nothing, and shipped reading two fields the answer does not carry.
+ *
+
  * English per D18; route segments, payload keys and the file the session writes
  * are the published, Portuguese surface.
  */
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -161,6 +167,29 @@ function engineWriting(file: string, content: string): ClaudeCodeAdapter {
   });
 }
 
+/**
+ * A directory holding a `claude` that is really the fake engine.
+ *
+ * The device `test/bin.e2e.test.ts` already uses, and the only one that works
+ * when the command under test is a CHILD PROCESS: `engineWriting` above swaps
+ * the adapter's `commandBuilder` in this process, and `cli.mjs` builds its own
+ * adapter with no seam at all — deliberately, since what it needs a process for
+ * is precisely the real engine. So the swap happens where a spawned command can
+ * still see it, which is `PATH`.
+ *
+ * @param base Directory to put the shim in.
+ * @returns The directory to prepend to `PATH`.
+ */
+function fakeEngineOnPath(base: string): string {
+  const shim = path.join(base, 'claude');
+  writeFileSync(
+    shim,
+    `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(FAKE_ENGINE)} "$@"\n`,
+  );
+  chmodSync(shim, 0o755);
+  return base;
+}
+
 /** Runs the real entrypoint and gives back what a shell would see. */
 function runCli(
   args: readonly string[],
@@ -278,6 +307,65 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
   const declared = events.find((event) => event.type === 'job.dependency_declared');
   assert.ok(declared !== undefined, `no dependency was declared: ${JSON.stringify(events)}`);
   assert.equal(declared.data.depends_on_job_id, created.migracao);
+});
+
+test('t254 — a spawned intake prints the draft it posted, over the real class, and exits 0', async (t) => {
+  const { OUTPUT_FILE } = await loadModule<typeof PromptModule>('src/intake/prompt.ts');
+
+  const plane = await bootControlPlane(t);
+  await registerFactoryGraph(plane);
+
+  // The gap this closes: every spawn above returns BEFORE the draft is posted —
+  // a refusal, a usage error, a denied credential — so the last three lines of
+  // `cli.mjs`, the ones that run only after the write succeeded, had never been
+  // executed by any test. They read `draft.itens`/`draft.classe` off a
+  // `Rascunho` that carries `items`/`class`, which is a TypeError thrown after
+  // the row is already in the book: `npm run intake` exited 1 on a run that had
+  // worked, and there was nothing in the report to say the draft existed.
+  const result = runCli(
+    [
+      REQUEST,
+      '--class',
+      CLASS_NAME,
+      '--url',
+      plane.baseUrl,
+      '--token',
+      plane.token,
+      '--dir',
+      scratch(t, 'spawned-workdir'),
+    ],
+    {
+      PATH: `${fakeEngineOnPath(scratch(t, 'spawned-bin'))}${path.delimiter}${process.env.PATH ?? ''}`,
+      FAKE_ENGINE_WRITE_FILES: JSON.stringify({
+        [OUTPUT_FILE]: JSON.stringify({ itens: ITEMS }, null, 2),
+      }),
+    },
+  );
+
+  assert.equal(result.status, 0, `a posted draft is a 0:\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(
+    result.stdout,
+    /with 2 item\(s\)/,
+    `the summary has to count the items that were posted:\n${result.stdout}`,
+  );
+  assert.match(
+    result.stdout,
+    new RegExp(`over ${CLASS_NAME}`),
+    `...and name the class they will cross:\n${result.stdout}`,
+  );
+  assert.doesNotMatch(
+    result.stdout,
+    /undefined/,
+    `a field the answer does not carry reads as "undefined":\n${result.stdout}`,
+  );
+
+  // ...and what it printed is a real row, not a hopeful line: one draft, the two
+  // items, still waiting on the human gate.
+  const { drafts } = await api<{ drafts: Draft[] }>(plane, 'GET', '/v1/intake');
+  assert.equal(drafts.length, 1, 'exactly one draft was posted');
+  assert.equal(drafts[0].status, 'pending');
+  assert.equal(drafts[0].items.length, 2);
+  assert.match(result.stdout, new RegExp(`draft ${drafts[0].id} `), 'and the id printed is that row');
 });
 
 test('AT5c — an unregistered class posts nothing, and the command exits 1', async (t) => {

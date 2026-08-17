@@ -257,8 +257,9 @@ falhas dessa janela se reproduzem **idênticas** em toda retentativa:
 
 Até a `t252` todas elas **estouravam**. O erro subia do despacho, subia do
 `tick()`, e o loop do `cartografo-runner run` fazia a única coisa que sabe fazer
-com um tick que falhou: escrevia uma linha no stderr e perguntava de novo dois
-segundos depois. Como nada tinha marcado o trabalho, `GET /v1/jobs` devolvia o
+com um tick que falhou: escrevia uma linha no stderr e perguntava de novo no
+intervalo seguinte (`--interval-ms`, dois segundos por padrão). Como nada tinha
+marcado o trabalho, `GET /v1/jobs` devolvia o
 **mesmo** trabalho na cabeça da fila, a lease era concedida de novo, e o
 despacho caía no mesmo erro — para sempre, sem linha em `pergunta`, sem
 `bloqueado`, sem nada na caixa de entrada. E, como o `tick()` termina na

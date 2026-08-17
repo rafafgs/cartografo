@@ -85,6 +85,15 @@ quem deveria ser chamado, para quando existirem papéis. Mudar isso é uma
 proposta como qualquer outra: nasce versão nova do mapa, e dá para voltar
 atrás. E o relatório da rodada mostra quantas perguntas cada etapa fez.
 
+**Parar de insistir quando insistir não adianta.** Um trabalho cujas sessões
+falham não fica sendo tentado para sempre: falhou três vezes seguidas na mesma
+etapa, ele para, com o motivo escrito dizendo qual etapa e quantas vezes — e o
+número é do mapa, então uma classe que quer mais paciência (ou nenhuma) diz
+isso no próprio mapa. E quando o motivo é o agente **recusando** o pedido em
+vez de errar nele, o trabalho para na primeira: recusa é a mesma resposta toda
+vez, e tentar de novo só gasta sessão. Nos dois casos quem destrava é você,
+depois de olhar o que as sessões disseram.
+
 **Fazer o mapa avisar sozinho quando algo acontece.** Uma etapa do mapa pode
 dizer "quando um ticket entrar aqui, avise este endereço" ou "quando ele travar
 aqui, chame aquele" — e o aviso sai assinado, com retentativa, para o serviço

@@ -292,8 +292,62 @@ não ganhou lease nenhuma.
 
 **Nada abre.** O bloqueio acontece antes de `worktrees.acquire`, então não há
 árvore para devolver, não há `POST /v1/sessions`, não há processo de engine e
-não há token gasto. Falha depois que a sessão subiu é outro assunto, e continua
-sendo o que sempre foi (`DispatchError`, cancelamento, árvore retida).
+não há token gasto. Falha **depois** que a sessão subiu é outro assunto — o da
+seção seguinte, que a `t265` fechou.
+
+### Falha depois que a sessão subiu também para (`t265`)
+
+A `t198` levou uma tese real ao nó `triagem` do grafo de bets e colheu **quatro
+sessões recusadas em sequência** antes de a quinta funcionar: `stop_reason:
+"refusal"`, `stop_details.category: "reasoning_extraction"`, saída 1, zero
+tokens de saída e ~23k tokens de cache queimados em cada uma
+([nota](../../notas/2026-08-17-primeira-execucao-bets.md)). Nada no sistema
+contava nada: o trabalho voltava para a fila, ganhava lease de novo e abria a
+sessão seguinte. Quem parou o laço foi o operador olhando o log.
+
+São **dois** buracos, e eles se fecham de lados diferentes da API.
+
+**A recusa é reconhecida, e para na primeira.** O adapter passou a ler
+`stop_reason`/`stop_details.category` do frame `result` terminal e a reportar
+`failureKind: 'engine_refusal'` + `refusalCategory` no `SessionFinishDetail` —
+campos ao lado do status, e não um sétimo `SessionStatus`: a interface está
+congelada em v1 e a forma já existia (`timed_out` + `timeout_reason`). O
+despacho, ao ver esse `failureKind`, chama `blockForEngineRefusal`
+(`packages/runner/src/dispatch/blocks.ts`) e devolve `{blocked: true, reason}` em
+vez de estourar `DispatchError`. É decisão **do runner**, tomada sem leitura
+nenhuma, porque o `onFinished` já entregou o fato — mesma postura das cinco
+falhas pré-sessão acima. Recusa é determinística: retentar compra a mesma
+resposta de novo.
+
+**A falha comum tem teto, e quem conta é o control plane.** Uma sessão que
+morreu não tem sinal nenhum que a distinga de uma que morreria de novo, então
+ela continua estourando e continua sendo retentada — o que mudou é que a
+**sequência** agora tem fim. Ao fechar uma sessão `failed`,
+`PATCH /v1/sessions/:id/finish` conta, dentro da sua própria transação, as
+sessões finais do par `(trabalho, nó)` da mais recente para trás, parando na
+primeira que não falhou; alcançado o teto, o trabalho é bloqueado com o motivo
+nomeando o nó e a contagem, e o evento `job.blocked` carrega
+`consecutive_failures`. Isso mora no control plane (`repositories/job.ts`) e não
+no runner porque a sequência **atravessa leases e processos** — o runner que
+despacha a quarta tentativa pode nunca ter visto as três primeiras (D1).
+
+O teto é do documento de grafo: `max_consecutive_failures` na raiz, ausente
+significando **3** (`docs/spec/grafo.md` §1). Três detalhes que fazem parte da
+decisão:
+
+- **Uma sessão que funcionou zera a sequência.** A contagem é de cauda: falhou,
+  falhou, funcionou, falhou é *uma* falha atrás de si, não três.
+- **Recusa não entra na conta.** Ela já foi bloqueada pelo runner na primeira
+  ocorrência, e contá-la aqui também colocaria dois donos na mesma bandeira —
+  que é como um trabalho acaba bloqueado sem nada pendente.
+- **Trabalho já bloqueado não é bloqueado de novo.** O motivo que a pessoa está
+  lendo é o primeiro; sobrescrevê-lo esconderia a causa atrás de um sintoma.
+
+O que continua em aberto, e está registrado como fora de escopo: se o runner
+morrer entre o `PATCH /finish` e o `POST /blocks` da recusa, o trabalho fica
+arrendável por mais uma sessão — que, sendo recusada também, bloqueia pela
+**própria** primeira ocorrência. O custo é uma sessão a mais, não o laço
+infinito.
 
 ### Toda chamada tem prazo (`t193`)
 

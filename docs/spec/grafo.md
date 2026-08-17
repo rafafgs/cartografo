@@ -44,6 +44,7 @@ autocontido de propósito (ver §7).
 | `no_inicial` | id de nó | sim | Onde toda travessia começa. Precisa existir em `nos`. |
 | `nos_finais` | lista de ids | sim | Onde a travessia termina. Pelo menos um; todos precisam existir em `nos`. |
 | `project` | objeto | não | Configuração **estática** da classe, publicada pela projeção de input em `input.project` (`t253`). Ausente significa `{}`. Ver abaixo. |
+| `max_consecutive_failures` | inteiro ≥ 1 | não | Quantas sessões falhadas **em sequência**, no mesmo trabalho e no mesmo nó, bloqueiam o trabalho (`t265`). Ausente significa **3**. Ver abaixo. |
 
 ### `project`: o que a classe declara para si
 
@@ -81,6 +82,41 @@ Três coisas que o campo decide:
   muda o grafo, e a mudança é proponível e reversível como qualquer outra parte
   dele (D2, D15). Valor específico de um projeto mora na **variante** daquele
   projeto (D13); o que mora aqui é o que a classe declara para si.
+
+### `max_consecutive_failures`: quantas vezes seguidas um nó pode falhar
+
+Até a `t265` não havia teto: um trabalho cujas sessões falhavam voltava para a
+fila, ganhava lease de novo e abria a sessão seguinte, para sempre. Quem parava
+o laço era o operador olhando o log — foi o que aconteceu na primeira travessia
+real do grafo de bets (`t198`).
+
+```json
+{
+  "max_consecutive_failures": 3
+}
+```
+
+Quatro coisas que o campo decide:
+
+- **Ausência tem nome, e o nome é 3.** Resolvido na hora em que uma sessão
+  fecha, nunca na validação: um grafo escrito antes deste campo continua válido
+  e passa a ter teto sem ser tocado — mesma postura não-quebradora de `hooks`,
+  `project` e do `engine` do nó.
+- **A contagem é de cauda.** Ela anda da sessão mais recente para trás e para na
+  primeira que não falhou. Falhou, falhou, funcionou, falhou é **uma** falha
+  atrás de si; o sucesso zera a sequência.
+- **Vale por nó, mas se declara na raiz.** O par contado é `(trabalho, nó)` —
+  falhar duas vezes em `redigir` e uma em `revisar` não é sequência de três —,
+  e o número é do documento inteiro. Teto por nó é decisão de outra ficha, se a
+  evidência aparecer.
+- **Recusa do engine não passa por aqui.** Um engine que recusa responder é
+  determinístico e para na **primeira** ocorrência, do lado do runner
+  (`docs/spec/runner-e-controller.md`). O teto é para a falha comum, que pode
+  muito bem ser um soluço.
+
+Quem conta é o control plane, dentro da transação que fecha a sessão: a
+sequência atravessa leases e processos de runner, e nenhum runner sozinho
+consegue vê-la (D1).
 
 **Ids de nó** são minúsculas, dígitos, hífen e underscore (`^[a-z0-9][a-z0-9_-]*$`),
 únicos dentro do documento. São a chave por onde arestas, telemetria e propostas

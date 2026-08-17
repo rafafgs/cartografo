@@ -187,7 +187,7 @@ export function enqueueHookDeliveries(
     `INSERT OR IGNORE INTO hook_delivery
        (project_id, execution_id, job_id, hook_id, node_id, graph_version_id, event_id,
         url, secret, status, attempts, next_attempt_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', 0, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
   );
 
   let created = 0;
@@ -240,7 +240,7 @@ export function dueHookDeliveries(
       `SELECT id, event_id AS evento_id, attempts AS tentativas, url,
               secret AS segredo
          FROM hook_delivery
-        WHERE status = 'pendente' AND next_attempt_at <= ?
+        WHERE status = 'pending' AND next_attempt_at <= ?
         ORDER BY id
         LIMIT ?`,
     )
@@ -264,8 +264,8 @@ export function recordHookDeliverySuccess(
 ): void {
   db.prepare(
     `UPDATE hook_delivery
-        SET status = 'entregue', attempts = attempts + 1, delivered_at = ?, last_error = NULL
-      WHERE id = ? AND status = 'pendente'`,
+        SET status = 'delivered', attempts = attempts + 1, delivered_at = ?, last_error = NULL
+      WHERE id = ? AND status = 'pending'`,
   ).run((options.now ?? now)(), id);
 }
 
@@ -296,7 +296,7 @@ export function recordHookDeliveryFailure(
   db.transaction(() => {
     const current = db
       .prepare(
-        "SELECT attempts AS tentativas FROM hook_delivery WHERE id = ? AND status = 'pendente'",
+        "SELECT attempts AS tentativas FROM hook_delivery WHERE id = ? AND status = 'pending'",
       )
       .get(attempt.id) as { tentativas: number } | undefined;
     if (current === undefined) return;
@@ -307,14 +307,14 @@ export function recordHookDeliveryFailure(
     if (step !== undefined) {
       db.prepare(
         `UPDATE hook_delivery SET attempts = ?, last_error = ?, next_attempt_at = ?
-          WHERE id = ? AND status = 'pendente'`,
+          WHERE id = ? AND status = 'pending'`,
       ).run(made, attempt.message, addMilliseconds(clock(), step), attempt.id);
       return;
     }
 
     db.prepare(
-      `UPDATE hook_delivery SET status = 'esgotada', attempts = ?, last_error = ?
-        WHERE id = ? AND status = 'pendente'`,
+      `UPDATE hook_delivery SET status = 'exhausted', attempts = ?, last_error = ?
+        WHERE id = ? AND status = 'pending'`,
     ).run(made, attempt.message, attempt.id);
 
     const row = db

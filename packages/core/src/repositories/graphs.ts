@@ -14,9 +14,10 @@
  * field names are not, because `routes/graphs.ts` and `routes/proposals.ts` read
  * them, so every `SELECT` aliases the renamed column back onto the field (t229,
  * FR4). Since t226 the rows no longer leave the package that way either:
- * `toGraph`/`toGraphVersion`/`toClass` at the bottom are the translation
- * boundary D20 puts between the database and the wire, and the routes return
- * their output and never a row.
+ * `toGraph`/`toGraphVersion`/`toClass` at the bottom are the boundary D20 puts
+ * between the database and the wire, and the routes return their output and
+ * never a row. Since t235 that boundary renames KEYS only — the stored values
+ * are the wire's own words.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -173,7 +174,7 @@ export function insertVersion(
     grafo_id: string;
     versao_pai: string | null;
     snapshot: GraphDocument;
-    origem: 'manual' | 'sintetizador' | 'proposta';
+    origem: 'manual' | 'synthesizer' | 'proposal';
     proposta_id: number | null;
     criado_em: string;
   },
@@ -294,7 +295,7 @@ export function forkVariant(
   db.transaction(() => {
     db.prepare(
       `INSERT INTO graph (id, class, lineage_type, base_class, origin_proposal_id, current_version_id, created_at)
-       VALUES (?, ?, 'variante', ?, ?, NULL, ?)`,
+       VALUES (?, ?, 'variant', ?, ?, NULL, ?)`,
     ).run(id, base.classe, base.classe, originProposalId, createdAt);
 
     // Same treatment `registerBaseGraph` gives a bootstrap version with no
@@ -305,7 +306,7 @@ export function forkVariant(
       grafo_id: id,
       versao_pai: base.versao_corrente_id,
       snapshot: document,
-      origem: originProposalId === null ? 'manual' : 'proposta',
+      origem: originProposalId === null ? 'manual' : 'proposal',
       proposta_id: originProposalId,
       criado_em: createdAt,
     });
@@ -325,46 +326,21 @@ export function forkVariant(
 /* -------------------------------------------------------------------------- */
 /* The row → wire boundary (t226, FR1).                                        */
 /*                                                                             */
-/* D20 fixes the order: the wire goes English BEFORE the database does. Between */
-/* the two there has to be an explicit translation, or the rename would drag    */
-/* the columns along with it — which is the fourth child ticket's job, not this */
-/* one's. Everything above this line still says `linhagem_tipo`; everything the */
-/* routes hand to Fastify says `lineage_type`, and nothing in between.         */
+/* D20 fixed the order: the wire went English BEFORE the database did, so for   */
+/* three tickets there was an explicit translation here — `lineage_type` and    */
+/* `graph_version.source` are both `CHECK`-constrained, which made their values */
+/* schema rather than format. The fourth child (t229) renamed the columns and   */
+/* the fifth (t235) rewrote the `CHECK`s to `('base','variant')` and            */
+/* `('manual','synthesizer','proposal')`, and the two maps went with them.      */
+/* What crosses this line now is the KEY and nothing else: everything above     */
+/* still says `linhagem_tipo`, everything the routes hand to Fastify says       */
+/* `lineage_type`, and the value is the same word on both sides.               */
 /*                                                                             */
-/* Same shape as `repositories/skill.ts`'s `toSkill`/`ROLE_FIELD` pair, which   */
-/* has been the one instance of this pattern in the package since t178.        */
+/* The document's own `lineage.type` is a different vocabulary and is NOT this  */
+/* one: `schema/grafo.schema.json` says `variante`, because a format key and a  */
+/* format value are outside D20 (D18's carve-out), and `routes/graphs.ts` keeps */
+/* writing that word into the snapshot it forks.                               */
 /* -------------------------------------------------------------------------- */
-
-/**
- * `lineage_type`, both ways.
- *
- * `migrations/0002_grafo_versao_proposta.sql` puts the Portuguese values in a
- * `CHECK`, which makes them part of the DB schema rather than of the format —
- * so a request that says `variant` is stored as `variante` and comes back out
- * as `variant`. `base` is spelled the same in both languages and is listed here
- * anyway: a map with a hole in it is a map somebody has to remember to read
- * around.
- */
-const LINEAGE_FIELD: Record<string, string> = { base: 'base', variante: 'variant' };
-const LINEAGE_COLUMN: Record<string, string> = { base: 'base', variant: 'variante' };
-
-/**
- * `graph_version.source`, both ways.
- *
- * `manual` is already English; the other two are not (`glossario-wire.md` §1.6,
- * which routes the value `proposta` through its §1.3 row on purpose — one word,
- * one translation, whether it names the entity or this column's value).
- */
-const SOURCE_FIELD: Record<string, string> = {
-  manual: 'manual',
-  sintetizador: 'synthesizer',
-  proposta: 'proposal',
-};
-
-/** The English `lineage_type` a request declared, as the column spells it. */
-export function lineageTypeColumn(value: string): string | undefined {
-  return LINEAGE_COLUMN[value];
-}
 
 /** A lineage, as `/v1` publishes it. */
 export interface Graph {
@@ -405,7 +381,7 @@ export function toGraph(row: GraphRow): Graph {
   return {
     id: row.id,
     class: row.classe,
-    lineage_type: LINEAGE_FIELD[row.linhagem_tipo] ?? row.linhagem_tipo,
+    lineage_type: row.linhagem_tipo,
     base_class: row.base_classe,
     origin_proposal_id: row.origem_proposta_id,
     current_version_id: row.versao_corrente_id,
@@ -419,7 +395,7 @@ export function toGraphVersion(row: GraphVersionRow): GraphVersion {
     id: row.id,
     graph_id: row.grafo_id,
     parent_version: row.versao_pai,
-    source: SOURCE_FIELD[row.origem] ?? row.origem,
+    source: row.origem,
     proposal_id: row.proposta_id,
     created_at: row.criado_em,
   };

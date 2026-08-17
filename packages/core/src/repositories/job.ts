@@ -157,8 +157,8 @@ const COLUMNS = `
  */
 const JOB_EVENTS = `
   SELECT COUNT(*) FROM event e
-   WHERE (e.entity_type = 'trabalho' AND e.entity_id = CAST(t.id AS TEXT))
-      OR (e.entity_type IN ('sessao','pergunta')
+   WHERE (e.entity_type = 'job' AND e.entity_id = CAST(t.id AS TEXT))
+      OR (e.entity_type IN ('session','input_request')
           AND json_extract(e.data, '$.job_id') = t.id)
 `;
 
@@ -558,7 +558,7 @@ export function transitionJob(
     db
       .prepare(
         `SELECT 1 FROM event
-          WHERE type = 'job.transitioned' AND entity_type = 'trabalho' AND entity_id = ?
+          WHERE type = 'job.transitioned' AND entity_type = 'job' AND entity_id = ?
           LIMIT 1`,
       )
       .get(String(id)) !== undefined;
@@ -847,7 +847,7 @@ export function listExecutions(db: Database): ExecutionSummary[] {
               COUNT(*)                 AS trabalhos,
               COALESCE(SUM(t.blocked), 0) AS trabalhos_bloqueados,
               (SELECT COUNT(*) FROM input_request p
-                WHERE p.status = 'pendente' AND p.execution_id IS t.execution_id)
+                WHERE p.status = 'pending' AND p.execution_id IS t.execution_id)
                                        AS perguntas_pendentes
          FROM job t
         GROUP BY t.execution_id`,

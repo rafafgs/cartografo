@@ -35,14 +35,14 @@ dia existir classe navegável sem grafo (t118), extrair a tabela é aditivo.
 CREATE TABLE graph (
   id                  TEXT PRIMARY KEY,          -- classe, para a linhagem base (D8)
   class               TEXT NOT NULL,
-  lineage_type        TEXT NOT NULL CHECK (lineage_type IN ('base', 'variante')),
+  lineage_type        TEXT NOT NULL CHECK (lineage_type IN ('base', 'variant')),
   base_class          TEXT,                      -- só variante (D13)
   origin_proposal_id  INTEGER REFERENCES proposal(id),
   current_version_id  TEXT REFERENCES graph_version(id),
   created_at          TEXT NOT NULL,
   CHECK (
     (lineage_type = 'base' AND base_class IS NULL)
-    OR (lineage_type = 'variante' AND base_class IS NOT NULL)
+    OR (lineage_type = 'variant' AND base_class IS NOT NULL)
   )
 );
 
@@ -53,7 +53,7 @@ CREATE TABLE graph_version (
   graph_id       TEXT NOT NULL REFERENCES graph(id),
   parent_version TEXT REFERENCES graph_version(id),
   snapshot       TEXT NOT NULL,        -- documento de grafo completo, canonicalizado
-  source         TEXT NOT NULL CHECK (source IN ('manual', 'sintetizador', 'proposta')),
+  source         TEXT NOT NULL CHECK (source IN ('manual', 'synthesizer', 'proposal')),
   proposal_id    INTEGER REFERENCES proposal(id),
   created_at     TEXT NOT NULL
 );
@@ -65,8 +65,8 @@ CREATE TABLE proposal (
   operations          TEXT NOT NULL,   -- JSON: Operacao[] (§3)
   evidence            TEXT NOT NULL,   -- JSON
   expected_metric     TEXT NOT NULL,   -- JSON
-  status              TEXT NOT NULL DEFAULT 'pendente'
-                        CHECK (status IN ('pendente', 'aplicada', 'revertida', 'rejeitada')),
+  status              TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'applied', 'reverted', 'rejected')),
   applied_version_id  TEXT REFERENCES graph_version(id),
   revert_reason       TEXT,
   result              TEXT,            -- JSON
@@ -80,8 +80,8 @@ Notas de leitura:
 - **`current_version_id` é o único campo que responde "o que vale hoje".** Não
   há flag `ativa` em `graph_version`: duas fontes para o mesmo fato divergem.
 - **`source` distingue quem produziu o snapshot** — `manual` (importado ou
-  escrito à mão), `sintetizador` (D10) ou `proposta` (topógrafo). Na PoC só
-  `manual` e `proposta` acontecem; o valor existe porque origem é fato do dado,
+  escrito à mão), `synthesizer` (D10) ou `proposal` (topógrafo). Na PoC só
+  `manual` e `proposal` acontecem; o valor existe porque origem é fato do dado,
   não da fase.
 - **Os nomes de coluna copiam literalmente os schemas de evento** já
   especificados em
@@ -352,7 +352,7 @@ lhe proíbe.
 ### Aplicar uma proposta
 
 `POST /v1/propostas/:id/aplicar` é o fluxo da D15 inteiro. Ele só roda sobre
-proposta **`aprovada`**: o portão humano vem antes, e pular o portão é
+proposta **`approved`**: o portão humano vem antes, e pular o portão é
 `409 proposta_nao_aprovada` (§ "Estados da proposta"). A ordem do que vem depois
 não é negociável:
 
@@ -360,14 +360,14 @@ não é negociável:
 aplicar operações sobre uma CÓPIA do snapshot-alvo
         ↓
 validar estrutura + soundness NO RESULTADO
-        ↓ (reprovado: status = rejeitada, relatório em result, 422)
+        ↓ (reprovado: status = rejected, relatório em result, 422)
 calcular o hash do documento resultante
         ↓
-gravar graph_version (parent_version = target_version, source = proposta)
+gravar graph_version (parent_version = target_version, source = proposal)
         ↓
 mover graph.current_version_id
         ↓
-status = aplicada, applied_version_id = hash
+status = applied, applied_version_id = hash
 ```
 
 O portão roda sobre o documento que **sairia**, não sobre o que entrou: é a
@@ -437,52 +437,52 @@ Três garantias em volta do cálculo:
   de uma hipótese.
 
 Fechar o experimento **não muda o status**: uma proposta que piorou continua
-`aplicada`, e esta rota nunca chama a reversão. "Piorou" é dado, não ação — a
+`applied`, e esta rota nunca chama a reversão. "Piorou" é dado, não ação — a
 escada de segurança da evolução (README, princípio 5) manda sugerir e passar
 por portão humano, não reverter sozinho. A fila dessas sugestões é uma leitura
-filtrada, `GET /v1/propostas?status=aplicada&veredito=piorou`, e nada além
+filtrada, `GET /v1/propostas?status=applied&veredito=piorou`, e nada além
 disso: notificação ativa, se um dia existir, é decisão de outra ticket.
 
 ### Estados da proposta
 
 ```
-              rejeitar (com motivo)
-   pendente ───────────────────────────────▶ rejeitada
-      │                                          ▲
-      │ aprovar                                  │ aplicar (portão reprova)
+             rejeitar (com motivo)
+   pending ───────────────────────────────▶ rejected
+      │                                         ▲
+      │ aprovar                                 │ aplicar (portão reprova)
+      ▼                                         │
+   approved ─────────────────────────────────────┤
+      │             aplicar (portão aprova)      │
       ▼                                          │
-   aprovada ─────────────────────────────────────┤
-      │              aplicar (portão aprova)     │
-      ▼                                          │
-   aplicada ──────────────────────────────▶ revertida
-                 reverter (com motivo)
+   applied ───────────────────────────────▶ reverted
+                reverter (com motivo)
 ```
 
-`aprovada` é o portão humano do princípio 5, e desde a `t165` ele é obrigatório:
-aplicar exige `aprovada`, e uma proposta que pula o portão leva
+`approved` é o portão humano do princípio 5, e desde a `t165` ele é obrigatório:
+aplicar exige `approved`, e uma proposta que pula o portão leva
 `409 proposta_nao_aprovada`. É a mesma escada que a tela desenha desde a `t111`
-([`tela-inbox-propostas.md` §3](tela-inbox-propostas.md)) — `pendente` oferece
-Aprovar/Rejeitar, `aprovada` oferece Aplicar.
+([`tela-inbox-propostas.md` §3](tela-inbox-propostas.md)) — `pending` oferece
+Aprovar/Rejeitar, `approved` oferece Aplicar.
 
 Aprovar não escreve nada além do status: aplicar é um segundo ato deliberado, e
 colapsar os dois em um clique seria desfazer a escada em nome de um clique a
 menos.
 
-Dois caminhos chegam a `rejeitada`, e as duas histórias moram em colunas
+Dois caminhos chegam a `rejected`, e as duas histórias moram em colunas
 diferentes de propósito:
 
 | Quem rejeitou | De que estado | Onde fica o porquê |
 |---|---|---|
-| Uma pessoa, pela inbox | `pendente` | `rejection_reason` (texto livre, obrigatório) |
-| O portão de soundness, durante o `aplicar` | `aprovada` | `result` (o relatório inteiro do §4) |
+| Uma pessoa, pela inbox | `pending` | `rejection_reason` (texto livre, obrigatório) |
+| O portão de soundness, durante o `aplicar` | `approved` | `result` (o relatório inteiro do §4) |
 
-Linha `rejeitada` anterior à `t165` tem `rejection_reason = NULL`, e isso é o
+Linha `rejected` anterior à `t165` tem `rejection_reason = NULL`, e isso é o
 correto: ela nunca foi rejeitada por gente. Não houve backfill.
 
 O veredito é ortogonal a este diagrama: ele escreve `result` e deixa o estado
 onde estava. `result` acumula dois usos que nunca coexistem — o relatório que
-reprovou uma proposta `rejeitada`, ou o veredito da hipótese de uma proposta que
-chegou a ser `aplicada`. Uma proposta revertida **mantém** o veredito que
+reprovou uma proposta `rejected`, ou o veredito da hipótese de uma proposta que
+chegou a ser `applied`. Uma proposta revertida **mantém** o veredito que
 justificou a reversão.
 
 ---
@@ -512,9 +512,9 @@ implementada foi renomeada para inglês pelo `t127` (D18), e é ela que vale:
 | `POST` | `/v1/propostas` | Cria uma proposta pendente. |
 | `GET` | `/v1/propostas` | Lista as propostas em ordem de `id`; filtros opcionais `status` e `veredito`. |
 | `GET` | `/v1/propostas/:id` | Uma proposta, com `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao` e `motivo_rejeicao`. |
-| `POST` | `/v1/propostas/:id/aprovar` | Portão humano: `pendente` → `aprovada`. Sem corpo. |
-| `POST` | `/v1/propostas/:id/rejeitar` | Portão humano: `pendente` → `rejeitada`; exige `motivo`, que vai para `motivo_rejeicao`. |
-| `POST` | `/v1/propostas/:id/aplicar` | Executa o fluxo do §5. Exige `aprovada`. |
+| `POST` | `/v1/propostas/:id/aprovar` | Portão humano: `pending` → `approved`. Sem corpo. |
+| `POST` | `/v1/propostas/:id/rejeitar` | Portão humano: `pending` → `rejected`; exige `motivo`, que vai para `motivo_rejeicao`. |
+| `POST` | `/v1/propostas/:id/aplicar` | Executa o fluxo do §5. Exige `approved`. |
 | `POST` | `/v1/propostas/:id/reverter` | Move o ponteiro de volta; exige `motivo`. |
 | `POST` | `/v1/propostas/:id/resultado` | Fecha o experimento: grava o veredito da hipótese. Não muda o status. |
 
@@ -538,9 +538,9 @@ Códigos de erro, por rota:
 | Promoção/oferta cujos dois snapshots já concordam em `nos`/`arestas` | `422` | `diff_sem_efeito` |
 | `versao_alvo` inexistente ou de outro grafo | `400` | `versao_alvo_desconhecida` |
 | Operação de tipo desconhecido, sem inversa ou malformada | `400` | `operacoes_invalidas` |
-| Aprovar/rejeitar proposta que não está `pendente` | `409` | `proposta_nao_pendente` |
+| Aprovar/rejeitar proposta que não está `pending` | `409` | `proposta_nao_pendente` |
 | Aplicar proposta que não passou pelo portão humano | `409` | `proposta_nao_aprovada` |
-| Reverter, ou fechar experimento de, proposta que não está `aplicada` | `409` | `proposta_nao_aplicada` |
+| Reverter, ou fechar experimento de, proposta que não está `applied` | `409` | `proposta_nao_aplicada` |
 | A base mudou debaixo da proposta | `409` | `proposta_desatualizada` |
 | Operação não se aplica ao snapshot | `422` | `operacao_inaplicavel` |
 | Resultado idêntico a uma versão existente | `422` | `versao_sem_efeito` |

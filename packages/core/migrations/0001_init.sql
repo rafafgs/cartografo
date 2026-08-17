@@ -1,7 +1,7 @@
 -- 0001_init — tabela de controle do próprio runner de migração.
 --
--- É a única tabela deste scaffold: o schema de domínio (grafo, grafo_versao,
--- proposta, evento, sessão, input_request) entra nas tickets seguintes, na
+-- É a única tabela deste scaffold: o schema de domínio (graph, graph_version,
+-- proposal, event, session, input_request) entra nas tickets seguintes, na
 -- ordem da D6.
 --
 -- Nenhuma migração abre transação própria: quem transaciona é

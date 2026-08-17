@@ -294,6 +294,9 @@ async function fork(
   const document: GraphDocument = {
     ...source.snapshot,
     lineage: {
+      // The DOCUMENT's vocabulary, not the column's: `schema/grafo.schema.json`
+      // says `variante`, and a format value is outside D20 (D18's carve-out).
+      // `graph.lineage_type` says `variant` and is written by `forkVariant`.
       type: 'variante',
       base_class: base.classe,
       // Absent, not null: the same elision `base` already does with the two
@@ -347,7 +350,7 @@ async function promote(
     return refusal(reply, 404, 'unknown_graph', undefined, { id: request.params.id });
   }
 
-  if (variant.linhagem_tipo !== 'variante') {
+  if (variant.linhagem_tipo !== 'variant') {
     return refusal(
       reply,
       400,
@@ -428,7 +431,7 @@ async function offer(
     return refusal(reply, 404, 'unknown_graph', undefined, { id: variantId });
   }
 
-  if (variant.linhagem_tipo !== 'variante' || variant.base_classe !== base.classe) {
+  if (variant.linhagem_tipo !== 'variant' || variant.base_classe !== base.classe) {
     return refusal(
       reply,
       400,

@@ -35,7 +35,7 @@ import { now, jsonOrNull } from './common.ts';
 import { createJob, type Job } from './job.ts';
 
 /** The three states of a draft, as the migration's CHECK spells them. */
-export type DraftStatus = 'pendente' | 'confirmado' | 'descartado';
+export type DraftStatus = 'pending' | 'confirmed' | 'discarded';
 
 /**
  * Actor of a confirmation that arrives without one.
@@ -81,36 +81,34 @@ const COLUMNS = `
 /* -------------------------------------------------------------------------- */
 /* The row → wire boundary (t226, FR1).                                        */
 /*                                                                             */
-/* `Draft` above stays the INTERNAL projection, in the column's Portuguese: the */
-/* routes compare `draft.status !== 'pendente'` and `confirmDraft` reads        */
-/* `draft.classe`, and FR1 is explicit that internal logic keeps reading the    */
-/* row's values. `WireDraft` is what leaves the process.                       */
+/* `Draft` above stays the INTERNAL projection, in the column's own field       */
+/* names: the routes read `draft.classe` and `confirmDraft` reads `draft.itens`, */
+/* and FR1 is explicit that internal logic keeps reading the row. The VALUES it */
+/* carries are the wire's since t235, so `WireDraft` below renames keys and     */
+/* nothing else.                                                               */
 /* -------------------------------------------------------------------------- */
 
 /**
- * `intake_draft.status`, both ways (`glossario-wire.md` §1.6).
+ * The three statuses a `?status=` filter may name (`glossario-wire.md` §1.6).
  *
- * `migrations/0006_intake.sql` holds the three in a `CHECK`, which makes them
- * schema and not format — the reasoning `skill.ts`'s `ROLE_COLUMN` wrote first.
+ * `migrations/0006_intake.sql` holds them in a `CHECK`, and since D20's fifth
+ * child (t235) that `CHECK` is already English — so the list validates a filter
+ * and translates nothing.
  */
-const STATUS_FIELD: Record<string, string> = {
-  pendente: 'pending',
-  confirmado: 'confirmed',
-  descartado: 'discarded',
-};
+export const DRAFT_STATUSES: readonly DraftStatus[] = Object.freeze([
+  'pending',
+  'confirmed',
+  'discarded',
+]);
 
-const STATUS_COLUMN: Record<string, DraftStatus> = {
-  pending: 'pendente',
-  confirmed: 'confirmado',
-  discarded: 'descartado',
-};
-
-/** The three statuses a `?status=` filter may name, in the wire's spelling. */
-export const DRAFT_STATUSES: readonly string[] = Object.freeze(Object.keys(STATUS_COLUMN));
-
-/** The English `status` a request declared, as the column spells it. */
+/**
+ * The `status` a request declared, if the column can hold it.
+ *
+ * @param value What the query string said.
+ * @returns The same word, or `undefined` when the column has no such state.
+ */
 export function draftStatusColumn(value: string): DraftStatus | undefined {
-  return STATUS_COLUMN[value];
+  return DRAFT_STATUSES.find((status) => status === value);
 }
 
 /** A draft, as `/v1` publishes it. */
@@ -142,7 +140,7 @@ export function toWireDraft(draft: Draft): WireDraft {
     class: draft.classe,
     request: draft.pedido,
     items: draft.itens,
-    status: STATUS_FIELD[draft.status] ?? draft.status,
+    status: draft.status,
     created_jobs: draft.trabalhos_criados,
     created_at: draft.criado_em,
     updated_at: draft.atualizado_em,
@@ -202,7 +200,7 @@ export function createDraft(db: Database, data: CreateDraftData): Draft {
       `INSERT INTO intake_draft (
          project_id, execution_id, class, request, items, status,
          created_jobs, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, 'pendente', NULL, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?)`,
     )
     .run(
       data.projeto_id,
@@ -273,7 +271,7 @@ export function amendDraft(db: Database, id: number, itens: DraftItem[]): Draft 
   const effect = db
     .prepare(
       `UPDATE intake_draft SET items = ?, updated_at = ?
-        WHERE id = ? AND status = 'pendente'`,
+        WHERE id = ? AND status = 'pending'`,
     )
     .run(JSON.stringify(itens), now(), id);
 
@@ -290,8 +288,8 @@ export function amendDraft(db: Database, id: number, itens: DraftItem[]): Draft 
 export function discardDraft(db: Database, id: number): Draft | null {
   const effect = db
     .prepare(
-      `UPDATE intake_draft SET status = 'descartado', updated_at = ?
-        WHERE id = ? AND status = 'pendente'`,
+      `UPDATE intake_draft SET status = 'discarded', updated_at = ?
+        WHERE id = ? AND status = 'pending'`,
     )
     .run(now(), id);
 
@@ -391,8 +389,8 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
 
     const effect = db
       .prepare(
-        `UPDATE intake_draft SET status = 'confirmado', created_jobs = ?, updated_at = ?
-          WHERE id = ? AND status = 'pendente'`,
+        `UPDATE intake_draft SET status = 'confirmed', created_jobs = ?, updated_at = ?
+          WHERE id = ? AND status = 'pending'`,
       )
       .run(JSON.stringify(created), timestamp, draft.id);
 

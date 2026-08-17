@@ -1071,7 +1071,7 @@ test('AT27 — the reversal-suggestion queue is a filtered read over the proposa
     [c.id],
   );
   assert.deepEqual(
-    (await listProposals(address, '?status=pendente')).map((proposal) => proposal.id),
+    (await listProposals(address, '?status=pending')).map((proposal) => proposal.id),
     [d.id],
   );
 });

@@ -73,7 +73,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
       const id = routeId(request.params);
       const current = getSession(db, id);
       if (current === null) return notFound(reply, 'session');
-      if (current.status !== 'aberta') {
+      if (current.status !== 'open') {
         return conflict(reply, `session ${id} is already "${current.status}"`);
       }
 

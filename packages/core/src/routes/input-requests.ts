@@ -104,7 +104,7 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
   const refuseUnlessPending = (reply: FastifyReply, id: number): ErrorResponse | null => {
     const current = getInputRequest(db, id);
     if (current === null) return notFound(reply, 'input request');
-    if (current.status !== 'pendente') {
+    if (current.status !== 'pending') {
       return conflict(reply, `input request ${id} is already "${current.status}"`);
     }
     return null;

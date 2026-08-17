@@ -5,7 +5,7 @@
 -- reivindicado em paralelo por mais dois tickets — ficou com a
 -- `0013_sessao_modelos` (t172), e a `0014_pergunta_no_id` (t167) veio depois.
 -- `src/db/migrate.ts` falha alto em número repetido. Nenhuma ordem de
--- dependência entre elas — esta só mexe em `trabalho`.
+-- dependência entre elas — esta só mexe em `job`.
 --
 -- A classe de bets assimétricas (D14) precisa de `downside`, `upside` e
 -- `premise_source` na ficha; desenvolvimento de software não precisa de nenhum
@@ -13,8 +13,8 @@
 -- por isso que a DEFINIÇÃO mora no documento de grafo da classe
 -- (`custom_fields`, schema/grafo.schema.json) e só o VALOR mora aqui.
 --
--- `campos` é JSON em coluna TEXT, como `criterios_de_aceite` ao lado e como
--- `sessao.uso`, `pergunta.opcoes` e `intake_rascunho.itens`: as chaves são
+-- `fields` é JSON em coluna TEXT, como `criterios_de_aceite` ao lado e como
+-- `session.usage`, `input_request.options` e `intake_draft.items`: as chaves são
 -- declaradas pela classe, então normalizar em tabela obrigaria o control plane
 -- a conhecer o vocabulário de cada classe — exatamente o que a D8 tira dele.
 --
@@ -23,10 +23,10 @@
 -- campo nenhum", `{}` é "a classe declara campos e ninguém preencheu ainda".
 --
 -- Quem cobra um campo obrigatório é a rota de transição, em código
--- (`custom_fields[].required_at` × `no_atual`), e não um CHECK aqui: o que é
+-- (`custom_fields[].required_at` × `current_node_id`), e não um CHECK aqui: o que é
 -- exigido muda com a VERSÃO DE GRAFO do trabalho, e um CHECK de tabela não sabe
 -- em que nó a ficha está nem sob qual versão ela corre.
 --
 -- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
 
-ALTER TABLE trabalho ADD COLUMN campos TEXT; -- JSON: {[nome]: string|number|boolean}; NULL != {}
+ALTER TABLE job ADD COLUMN fields TEXT; -- JSON: {[nome]: string|number|boolean}; NULL != {}

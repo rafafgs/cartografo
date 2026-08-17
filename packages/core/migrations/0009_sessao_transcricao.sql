@@ -6,12 +6,12 @@
 -- gravado, a saída não". A `0003` já guarda o `prompt` — o que ENTROU na
 -- sessão — e nada guardava o que SAIU dela.
 --
--- Três colunas aditivas em `sessao`, sem backfill: linha antiga lê `NULL`/`0`,
+-- Três colunas aditivas em `session`, sem backfill: linha antiga lê `NULL`/`0`,
 -- que é exatamente o que a API reporta com honestidade ("nenhuma transcrição
 -- registrada"). Não há valor a inventar para uma sessão que terminou antes
 -- desta migração existir.
 --
--- - `transcricao` é o texto cru que o engine imprimiu, as linhas do `onOutput`
+-- - `transcript` é o texto cru que o engine imprimiu, as linhas do `onOutput`
 --   juntadas por `\n`. Cru é requisito, não descuido: nem toda linha é um
 --   frame estruturado, e "um CLI escreve seu grito de morte em texto puro no
 --   meio do stream" (`packages/runner/src/engine/types.ts`, `SessionListener`).
@@ -29,21 +29,22 @@
 --   teto sem que ninguém percebesse.
 --
 -- O que esta migração deliberadamente NÃO faz: mexer no envelope do evento.
--- `sessao.finalizada` continua carregando `status`/`exit_code`/`uso` e mais
--- nada (`especificacoes/eventos/schemas/sessao.finalizada.schema.json`
+-- `session.finished` continua carregando `status`/`exit_code`/`usage` e mais
+-- nada (`especificacoes/eventos/schemas/session.finished.schema.json`
 -- intocado). Transcrição é material de diagnóstico pendurado na projeção, não
 -- fato de que estado de grafo dependa — duplicar um blob capado dentro de
--- `evento.dados` a cada sessão engorda o log append-only sem tornar nada mais
+-- `event.data` a cada sessão engorda o log append-only sem tornar nada mais
 -- replayável. Quem quer a saída pergunta à sessão, do mesmo jeito que já
--- pergunta pelo `uso`, pelo `working_dir` e pelo `prompt`.
+-- pergunta pelo `usage`, pelo `working_dir` e pelo `prompt`.
 --
--- Nomes de coluna seguem em português, como o resto de `sessao`: a D18 escopa
--- a regra de inglês a identificadores de código, e schema aqui é vocabulário
--- de dado. O TypeScript em volta (`TRANSCRIPT_CAP_BYTES`, `capTranscript`) é
--- inglês, esse sim.
+-- `transcricao_truncada` e `transcricao_tamanho_original` nascem em português e
+-- ficam: a §4.2 do glossário registra `transcricao` -> `transcript` e não
+-- registra nenhuma das duas, e a t235 não inventa vocabulário fora do
+-- glossário. Fechá-las é acrescentar as linhas lá e uma migração curta — ficha
+-- própria, como o cabeçalho da 0003 diz de `job.corpo`.
 --
 -- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
 
-ALTER TABLE sessao ADD COLUMN transcricao TEXT;                             -- NULO = nada foi reportado
-ALTER TABLE sessao ADD COLUMN transcricao_truncada INTEGER NOT NULL DEFAULT 0; -- 0/1, teto de 1 MiB
-ALTER TABLE sessao ADD COLUMN transcricao_tamanho_original INTEGER;         -- bytes ANTES do corte
+ALTER TABLE session ADD COLUMN transcript TEXT;                              -- NULO = nada foi reportado
+ALTER TABLE session ADD COLUMN transcricao_truncada INTEGER NOT NULL DEFAULT 0; -- 0/1, teto de 1 MiB
+ALTER TABLE session ADD COLUMN transcricao_tamanho_original INTEGER;         -- bytes ANTES do corte

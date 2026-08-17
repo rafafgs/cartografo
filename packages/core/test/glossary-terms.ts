@@ -101,7 +101,7 @@ function mappings(wanted: (surface: string, section: string) => boolean): Term[]
 
     const row = line.trim();
     if (!row.startsWith('|')) continue;
-    const cells = row.slice(1).split('|').map((cell) => cell.replace(/`/g, '').trim());
+    const cells = row.slice(1).split('|').map((cell) => cell.replaceAll('`', '').trim());
     if (!wanted(cells[0] ?? '', section)) continue;
 
     const english = cells[2] ?? '';

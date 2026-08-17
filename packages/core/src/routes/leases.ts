@@ -45,11 +45,11 @@
  * `GET /v1/jobs` before it ever asks for one.
  *
  * Since t226 every field and every status/reason value on this wire is English
- * (`docs/spec/glossario-wire.md` §1.5/§1.6). The columns are not: the
- * translation is `repositories/leases.ts`'s `toLease`/`toGrantResult` on the way
- * out and `leaseStatusColumn` plus the body reads below on the way in, and the
- * comparisons in this file keep reading the ROW (`lease.status !== 'ativa'`)
- * because the migration is D20's fourth child.
+ * (`docs/spec/glossario-wire.md` §1.5/§1.6), and since t235 so is the column
+ * behind them: `repositories/leases.ts`'s `toLease`/`toGrantResult` rename KEYS
+ * on the way out and nothing else, and the comparisons in this file keep reading
+ * the ROW (`lease.status !== 'active'`) because the row and the wire now agree
+ * on the word.
  */
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -211,7 +211,7 @@ export function registerLeases(
       );
     }
 
-    if (lease.status !== 'ativa') return notActive(reply, lease, 'takes a heartbeat');
+    if (lease.status !== 'active') return notActive(reply, lease, 'takes a heartbeat');
 
     const body = isObject(request.body) ? request.body : {};
     const ttl = body.ttl_seconds;
@@ -237,7 +237,7 @@ export function registerLeases(
       );
     }
 
-    if (lease.status !== 'ativa') return notActive(reply, lease, 'can be released');
+    if (lease.status !== 'active') return notActive(reply, lease, 'can be released');
 
     return { lease: toLease(releaseLease(db, lease.id, options)) };
   });

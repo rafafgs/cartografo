@@ -26,9 +26,9 @@
  * - **Comments.** Prose about `trabalho` is documentation, not a query.
  * - **Everything that is not a SQL string literal.** An interface field, a map
  *   key, a property access — that is the layer FR5 keeps in Portuguese. A
- *   literal that is prose rather than SQL goes with them, which is what keeps
- *   `reason: \`aguardando resposta da pergunta ${id}\`` out of the sweep: it
- *   matches none of {@link SQL_SHAPE}, so it is blanked whole.
+ *   literal that is prose rather than SQL goes with them, which is what keeps a
+ *   free-text `reason` naming a domain word out of the sweep: it matches none of
+ *   {@link SQL_SHAPE}, so it is blanked whole.
  * - **`${…}` inside a template literal.** That is TypeScript spliced into SQL,
  *   not SQL; the constant it names is a literal of its own and is swept as one.
  * - **`AS <name>`.** The alias is the bridge FR5 is built on — a `SELECT title AS

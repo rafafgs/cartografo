@@ -17,20 +17,21 @@
  * path, and it is what makes projection and event land together or not at all
  * (FR18).
  *
- * This module is also the row ↔ wire boundary of the log (t227). The envelope,
- * the event types and the payload keys are English since D20's second child;
- * the TABLE and its columns followed with D20's FOURTH child (t229), and two of
+ * This module used to be the row ↔ wire boundary of the log (t227). The
+ * envelope, the event types and the payload keys went English with D20's second
+ * child; the TABLE and its columns followed with the FOURTH (t229), and two of
  * those columns are not free text — migration `0003` pins `entity_type` and
- * `actor_type` to their five and three Portuguese VALUES with a `CHECK`. So
- * those two values are translated here, both ways, exactly as
- * `repositories/leases.ts` and `repositories/input-request.ts` already do for
- * their own CHECK-constrained enums. The fourth child renamed identifiers ONLY
- * (founder decision, 2026-08-17): the stored values stay Portuguese, and the two
- * maps below stay exactly where they are.
+ * `actor_type` to five and three values with a `CHECK`. Those two were the last
+ * Portuguese in the log, translated here in both directions, and D20's FIFTH
+ * child (t235) rewrote `0003` so the `CHECK` itself reads
+ * `('job','session','input_request','lease','graph_version')` and
+ * `('user','agent','system')`. The maps went with it: what this module writes
+ * into the row is the envelope's own word.
  *
- * `type` and `data` have no CHECK and take the new vocabulary straight, which
- * is why a database written before that ticket cannot be read after it — the
- * README says so, and D20's answer is to recreate it, never to migrate it.
+ * `type` and `data` never had a CHECK and always took the new vocabulary
+ * straight, which is why a database written before those tickets cannot be read
+ * after them — the README says so, and D20's answer is to recreate it, never to
+ * migrate it.
  */
 
 import type { Database } from './connection.ts';
@@ -40,42 +41,6 @@ import {
   type Event,
   type EntityType,
 } from './event-validation.ts';
-
-/**
- * The `entity_type` column's five values, wire ↔ column.
- *
- * Not a `Record<EntityType, string>` by accident: the reverse direction reads a
- * value that came out of the database, which is a `string` and not an
- * `EntityType` until this map says so.
- */
-const ENTITY_COLUMN: Record<string, string> = {
-  job: 'trabalho',
-  session: 'sessao',
-  input_request: 'pergunta',
-  lease: 'lease',
-  graph_version: 'grafo_versao',
-};
-
-const ENTITY_FIELD: Record<string, string> = {
-  trabalho: 'job',
-  sessao: 'session',
-  pergunta: 'input_request',
-  lease: 'lease',
-  grafo_versao: 'graph_version',
-};
-
-/** The `actor_type` column's three values, wire ↔ column. */
-const ACTOR_COLUMN: Record<string, string> = {
-  user: 'usuario',
-  agent: 'agente',
-  system: 'sistema',
-};
-
-const ACTOR_FIELD: Record<string, string> = {
-  usuario: 'user',
-  agente: 'agent',
-  sistema: 'system',
-};
 
 /** Raw table row, before becoming an envelope. */
 interface EventRow {
@@ -113,10 +78,11 @@ const COLUMNS = `
  * `job`/`session`/`input_request`/`lease`. The conversion happens here, at the
  * boundary, and not in every consumer's head.
  *
- * @param type Entity type as the COLUMN spells it, before {@link ENTITY_FIELD}.
+ * @param type Entity type as the column spells it, which since t235 is the
+ *   envelope's own spelling.
  */
 function entityId(type: string, raw: string): number | string {
-  return type === 'grafo_versao' ? raw : Number(raw);
+  return type === 'graph_version' ? raw : Number(raw);
 }
 
 /** Translates the database row into the taxonomy's envelope. */
@@ -127,10 +93,10 @@ function toEvent(row: EventRow): Event {
     project_id: row.projeto_id,
     execution_id: row.execucao_id,
     entity: {
-      type: ENTITY_FIELD[row.entidade_tipo] as EntityType,
+      type: row.entidade_tipo as EntityType,
       id: entityId(row.entidade_tipo, row.entidade_id),
     },
-    actor: { type: ACTOR_FIELD[row.ator_tipo] as Event['actor']['type'], ref: row.ator_ref },
+    actor: { type: row.ator_tipo as Event['actor']['type'], ref: row.ator_ref },
     occurred_at: row.ocorrido_em,
     data: JSON.parse(row.dados) as Record<string, unknown>,
   };
@@ -162,9 +128,9 @@ export function recordEvent(db: Database, input: unknown): Event {
       event.type,
       event.project_id,
       event.execution_id,
-      ENTITY_COLUMN[event.entity.type],
+      event.entity.type,
       String(event.entity.id),
-      ACTOR_COLUMN[event.actor.type],
+      event.actor.type,
       event.actor.ref,
       event.occurred_at,
       JSON.stringify(event.data),
@@ -253,8 +219,8 @@ export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
 
   if (filter.trabalho_id !== undefined) {
     conditions.push(
-      `((entity_type = 'trabalho' AND entity_id = @id_texto)
-        OR (entity_type IN ('sessao','pergunta')
+      `((entity_type = 'job' AND entity_id = @id_texto)
+        OR (entity_type IN ('session','input_request')
             AND json_extract(data, '$.job_id') = @id))`,
     );
     parameters.id = filter.trabalho_id;
@@ -303,8 +269,8 @@ export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
  * The events of one entity, in `id` order.
  *
  * @param db Open handle.
- * @param type Entity type on the WIRE (`job`, `session`, `input_request`, ...);
- *   the column's spelling is this module's business, not the caller's.
+ * @param type Entity type (`job`, `session`, `input_request`, ...), which the
+ *   column spells the same way since t235.
  * @param id Entity id; an integer for all of them except `graph_version`.
  * @returns Events of that entity, from oldest to newest.
  */
@@ -319,6 +285,6 @@ export function getEventsByEntity(
         WHERE entity_type = ? AND entity_id = ?
         ORDER BY id`,
     )
-    .all(ENTITY_COLUMN[type], String(id)) as EventRow[];
+    .all(type, String(id)) as EventRow[];
   return rows.map(toEvent);
 }

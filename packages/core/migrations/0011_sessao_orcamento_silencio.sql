@@ -17,13 +17,13 @@
 --   `CHECK`ada porque um terceiro valor aqui não é dado novo, é erro de quem
 --   escreveu — e a projeção é lida por gente decidindo se investiga.
 --
--- **Por que a causa é campo e não status.** `sessao.finalizada.status` continua
+-- **Por que a causa é campo e não status.** `session.finished.status` continua
 -- com os seis valores que tinha: as duas paradas nossas desembocam em
--- `tempo_esgotado`, distinguidas por esta coluna. Crescer o vocabulário de
+-- `timed_out`, distinguidas por esta coluna. Crescer o vocabulário de
 -- status foi rejeitado uma vez, para estados de cota, com o raciocínio que vale
 -- igual aqui — "o motivo real vive no log de eventos, que é append-only e não
 -- perde nada" (`docs/formatos/engine-adapter.md`, *Rejeitado — `SessionStatus`
--- mais rico*). E `travada`, que a taxonomia descrevia como "parada por
+-- mais rico*). E `stuck`, que a taxonomia descrevia como "parada por
 -- silêncio", nunca foi isso na prática: é o slot de quem não tem slot
 -- (`pending`/`running`/`cancelled`). A prosa foi corrigida junto desta ficha.
 --
@@ -32,13 +32,13 @@
 -- é — "não declarou política" e "não se aplica". Não há valor a inventar para
 -- uma sessão que terminou antes de o segundo cão de guarda existir.
 --
--- Nomes de coluna seguem em português, como o resto de `sessao`: a D18 escopa a
--- regra de inglês a identificadores de código, e schema aqui é vocabulário de
--- dado. Os dois VALORES de `timeout_reason` são inglês por serem vocabulário da
--- interface do EngineAdapter, que é inglês inteira e é quem os produz.
+-- Os dois VALORES de `timeout_reason` já nasceram em inglês, por serem
+-- vocabulário da interface do EngineAdapter, que é inglês inteira e é quem os
+-- produz — e é por isso que a t235, que levou para o inglês os valores presos
+-- por CHECK do resto do schema, não teve nada a fazer nesta migração.
 --
 -- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
 
-ALTER TABLE sessao ADD COLUMN silence_seconds INTEGER;  -- NULO = sem política própria
-ALTER TABLE sessao ADD COLUMN timeout_reason  TEXT
+ALTER TABLE session ADD COLUMN silence_seconds INTEGER;  -- NULO = sem política própria
+ALTER TABLE session ADD COLUMN timeout_reason  TEXT
   CHECK (timeout_reason IN ('wall_clock', 'silence'));  -- NULO = nenhum cão de guarda mordeu

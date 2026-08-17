@@ -16,9 +16,10 @@
  *
  * Like `repositories/graphs.ts`, it receives the already-open database and never
  * touches the driver (D1). The COLUMNS are English since D20's fourth child
- * (t229); {@link ProposalRow}'s field names are not, because
- * `routes/proposals.ts` and `cli/` read them, so every `SELECT` aliases the
- * renamed column back onto the field (t229, FR4).
+ * (t229) and the stored VALUES since its fifth (t235); {@link ProposalRow}'s
+ * field names are not, because `routes/proposals.ts` and `cli/` read them, so
+ * every `SELECT` aliases the renamed column back onto the field (t229, FR4;
+ * t235, FR5).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -36,12 +37,12 @@ import {
 /**
  * Possible states of a proposal.
  *
- * `aprovada` is the human gate of princípio 5, between the hypothesis and the
- * change (t165): the topographer writes `pendente`, a person approves, and only
- * then can it be applied. Rejecting is the other way out of `pendente`, and it
+ * `approved` is the human gate of princípio 5, between the hypothesis and the
+ * change (t165): the topographer writes `pending`, a person approves, and only
+ * then can it be applied. Rejecting is the other way out of `pending`, and it
  * is terminal.
  */
-export type ProposalStatus = 'pendente' | 'aprovada' | 'aplicada' | 'revertida' | 'rejeitada';
+export type ProposalStatus = 'pending' | 'approved' | 'applied' | 'reverted' | 'rejected';
 
 /** A proposal, with the JSON columns already parsed. */
 export interface ProposalRow {
@@ -102,36 +103,30 @@ function hydrate(row: RawRow): ProposalRow {
 /* -------------------------------------------------------------------------- */
 
 /**
- * `proposal.status`, both ways (`glossario-wire.md` §1.6).
+ * The five statuses a `?status=` filter may name (`glossario-wire.md` §1.6).
  *
- * `migrations/0010_proposta_aprovada.sql` holds these five in a `CHECK`, so they
- * are schema and not format — same reasoning as `skill.ts`'s `ROLE_COLUMN`, and
- * the same fix: the wire says `pending` and the column keeps saying `pendente`.
- * D20's fourth child (t229) renamed the COLUMNS around this map and left the
- * values it holds alone (founder decision, 2026-08-17), so the map stays.
+ * `migrations/0010_proposta_aprovada.sql` holds them in a `CHECK`, and since
+ * D20's fifth child (t235) that `CHECK` spells them in English — so there is
+ * nothing to translate here and never was anything else: the wire and the column
+ * are the same five words. The list survives the map because a `?status=` a
+ * caller invented still has to be refused.
  */
-const STATUS_FIELD: Record<string, string> = {
-  pendente: 'pending',
-  aprovada: 'approved',
-  aplicada: 'applied',
-  revertida: 'reverted',
-  rejeitada: 'rejected',
-};
+export const PROPOSAL_STATUSES: readonly ProposalStatus[] = Object.freeze([
+  'pending',
+  'approved',
+  'applied',
+  'reverted',
+  'rejected',
+]);
 
-const STATUS_COLUMN: Record<string, ProposalStatus> = {
-  pending: 'pendente',
-  approved: 'aprovada',
-  applied: 'aplicada',
-  reverted: 'revertida',
-  rejected: 'rejeitada',
-};
-
-/** The five statuses a `?status=` filter may name, in the wire's spelling. */
-export const PROPOSAL_STATUSES: readonly string[] = Object.freeze(Object.keys(STATUS_COLUMN));
-
-/** The English status a request declared, as the column spells it. */
+/**
+ * The `status` a request declared, if the column can hold it.
+ *
+ * @param value What the query string said.
+ * @returns The same word, or `undefined` when the column has no such state.
+ */
 export function proposalStatusColumn(value: string): ProposalStatus | undefined {
-  return STATUS_COLUMN[value];
+  return PROPOSAL_STATUSES.find((status) => status === value);
 }
 
 /**
@@ -174,7 +169,7 @@ export function toProposal(row: ProposalRow): Proposal {
     operations: row.operacoes,
     evidence: row.evidencia,
     expected_metric: row.metrica_esperada,
-    status: STATUS_FIELD[row.status] ?? row.status,
+    status: row.status,
     applied_version_id: row.versao_aplicada_id,
     revert_reason: row.motivo_reversao,
     rejection_reason: row.motivo_rejeicao,
@@ -220,7 +215,7 @@ export function createProposal(
     .prepare(
       `INSERT INTO proposal (graph_id, target_version, operations, evidence, expected_metric,
                              status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
     )
     .run(
       data.grafo_id,
@@ -246,7 +241,7 @@ export function createProposal(
  * columns because the two facts are different, and telling them apart later is
  * the whole point (t165).
  *
- * The guard is `aprovada` because that is the only status `apply` runs from
+ * The guard is `approved` because that is the only status `apply` runs from
  * since t165: a proposal reaches this gate already past the human one.
  *
  * @param db Open database.
@@ -256,8 +251,8 @@ export function createProposal(
  */
 export function rejectProposal(db: Database, id: number, report: unknown): ProposalRow {
   db.prepare(
-    `UPDATE proposal SET status = 'rejeitada', result = ?, updated_at = ?
-      WHERE id = ? AND status = 'aprovada'`,
+    `UPDATE proposal SET status = 'rejected', result = ?, updated_at = ?
+      WHERE id = ? AND status = 'approved'`,
   ).run(JSON.stringify(report), now(), id);
 
   const proposal = getProposal(db, id);
@@ -266,7 +261,7 @@ export function rejectProposal(db: Database, id: number, report: unknown): Propo
 }
 
 /**
- * The human gate says yes: `pendente` → `aprovada` (t165, FR2).
+ * The human gate says yes: `pending` → `approved` (t165, FR2).
  *
  * Approving writes nothing but the status. It is a decision recorded, not the
  * change itself — applying is a second, deliberate act, and princípio 5's
@@ -281,8 +276,8 @@ export function rejectProposal(db: Database, id: number, report: unknown): Propo
 export function approveProposal(db: Database, id: number): ProposalRow {
   const effect = db
     .prepare(
-      `UPDATE proposal SET status = 'aprovada', updated_at = ?
-        WHERE id = ? AND status = 'pendente'`,
+      `UPDATE proposal SET status = 'approved', updated_at = ?
+        WHERE id = ? AND status = 'pending'`,
     )
     .run(now(), id);
 
@@ -294,7 +289,7 @@ export function approveProposal(db: Database, id: number): ProposalRow {
 }
 
 /**
- * The human gate says no: `pendente` → `rejeitada`, with the reason (t165, FR3).
+ * The human gate says no: `pending` → `rejected`, with the reason (t165, FR3).
  *
  * `result` is deliberately untouched. That column carries either the report
  * of the soundness gate that failed a proposal or the verdict of a hypothesis
@@ -311,8 +306,8 @@ export function approveProposal(db: Database, id: number): ProposalRow {
 export function rejectProposalByHuman(db: Database, id: number, reason: string): ProposalRow {
   const effect = db
     .prepare(
-      `UPDATE proposal SET status = 'rejeitada', rejection_reason = ?, updated_at = ?
-        WHERE id = ? AND status = 'pendente'`,
+      `UPDATE proposal SET status = 'rejected', rejection_reason = ?, updated_at = ?
+        WHERE id = ? AND status = 'pending'`,
     )
     .run(reason, now(), id);
 
@@ -343,7 +338,7 @@ export function applyProposal(
       grafo_id: proposal.grafo_id,
       versao_pai: proposal.versao_alvo,
       snapshot: document,
-      origem: 'proposta',
+      origem: 'proposal',
       proposta_id: proposal.id,
       criado_em: moment,
     });
@@ -352,8 +347,8 @@ export function applyProposal(
 
     const effect = db
       .prepare(
-        `UPDATE proposal SET status = 'aplicada', applied_version_id = ?, updated_at = ?
-          WHERE id = ? AND status = 'aprovada'`,
+        `UPDATE proposal SET status = 'applied', applied_version_id = ?, updated_at = ?
+          WHERE id = ? AND status = 'approved'`,
       )
       .run(versionId, moment, proposal.id);
 
@@ -383,7 +378,7 @@ export function applyProposal(
  *
  * @param db Open database.
  * @param data Applied proposal and the reason (required, D15 / event
- *   `grafo_versao.revertida`).
+ *   `graph_version.reverted`).
  * @returns The updated proposal.
  */
 export function revertProposal(
@@ -398,8 +393,8 @@ export function revertProposal(
 
     const effect = db
       .prepare(
-        `UPDATE proposal SET status = 'revertida', revert_reason = ?, updated_at = ?
-          WHERE id = ? AND status = 'aplicada'`,
+        `UPDATE proposal SET status = 'reverted', revert_reason = ?, updated_at = ?
+          WHERE id = ? AND status = 'applied'`,
       )
       .run(reason, moment, proposal.id);
 
@@ -441,10 +436,10 @@ export interface VerdictRecord {
  * Writes the outcome of the hypothesis, once (t112, FR5/FR6).
  *
  * The status does NOT change: a proposal that made things worse stays
- * `aplicada`, and reverting remains a human decision (README, princípio 5).
+ * `applied`, and reverting remains a human decision (README, princípio 5).
  * "Piorou" is data, not an action.
  *
- * The `UPDATE` is guarded by `result IS NULL AND status = 'aplicada'`, the
+ * The `UPDATE` is guarded by `result IS NULL AND status = 'applied'`, the
  * same concurrency pattern `applyProposal`/`revertProposal` use: two callers
  * closing the same experiment at once is a `409`, never a verdict silently
  * overwritten by whoever arrived last.
@@ -468,7 +463,7 @@ export function recordVerdict(db: Database, data: VerdictRecord): ProposalRow {
   const effect = db
     .prepare(
       `UPDATE proposal SET result = ?, updated_at = ?
-        WHERE id = ? AND result IS NULL AND status = 'aplicada'`,
+        WHERE id = ? AND result IS NULL AND status = 'applied'`,
     )
     .run(JSON.stringify(outcome), outcome.avaliado_em, proposal.id);
 
@@ -491,7 +486,7 @@ export interface ProposalFilter {
 /**
  * Lists proposals in id order, optionally filtered (t112, FR8).
  *
- * `status=aplicada&veredito=piorou` is the reversal-suggestion queue: the
+ * `status=applied&veredito=piorou` is the reversal-suggestion queue: the
  * hypotheses that made things worse and are still in force. It is a filtered
  * read and nothing else — no notification surface is implied by it.
  *

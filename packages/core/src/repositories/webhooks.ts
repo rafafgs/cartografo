@@ -259,8 +259,8 @@ export function deactivateSubscription(
       'UPDATE webhook_subscription SET deactivated_at = ? WHERE id = ? AND deactivated_at IS NULL',
     ).run(moment, id);
     db.prepare(
-      `UPDATE webhook_delivery SET status = 'esgotada', last_error = ?
-        WHERE subscription_id = ? AND status = 'pendente'`,
+      `UPDATE webhook_delivery SET status = 'exhausted', last_error = ?
+        WHERE subscription_id = ? AND status = 'pending'`,
     ).run(DEACTIVATED, id);
 
     return getSubscription(db, id);
@@ -293,7 +293,7 @@ export function enqueueDeliveries(
   const statement = db.prepare(
     `INSERT OR IGNORE INTO webhook_delivery
        (subscription_id, event_id, status, next_attempt_at, created_at)
-     VALUES (?, ?, 'pendente', ?, ?)`,
+     VALUES (?, ?, 'pending', ?, ?)`,
   );
 
   return db.transaction((): number => {
@@ -345,7 +345,7 @@ export function dueDeliveries(db: Database, moment: string, limit: number): Deli
          FROM webhook_delivery AS delivery
          JOIN webhook_subscription AS subscription
            ON subscription.id = delivery.subscription_id
-        WHERE delivery.status = 'pendente'
+        WHERE delivery.status = 'pending'
           AND delivery.next_attempt_at <= ?
           AND subscription.deactivated_at IS NULL
         ORDER BY delivery.id
@@ -357,7 +357,7 @@ export function dueDeliveries(db: Database, moment: string, limit: number): Deli
 /**
  * Closes a delivery that got a 2xx (FR6).
  *
- * Guarded by `status = 'pendente'`: a delivery closed while this attempt was in
+ * Guarded by `status = 'pending'`: a delivery closed while this attempt was in
  * flight — the subscription was deactivated meanwhile — stays closed.
  *
  * @param db Open database.
@@ -367,8 +367,8 @@ export function dueDeliveries(db: Database, moment: string, limit: number): Deli
 export function recordDeliverySuccess(db: Database, id: number, options: ClockOptions = {}): void {
   db.prepare(
     `UPDATE webhook_delivery
-        SET status = 'entregue', attempts = attempts + 1, delivered_at = ?, last_error = NULL
-      WHERE id = ? AND status = 'pendente'`,
+        SET status = 'delivered', attempts = attempts + 1, delivered_at = ?, last_error = NULL
+      WHERE id = ? AND status = 'pending'`,
   ).run((options.now ?? now)(), id);
 }
 
@@ -395,7 +395,7 @@ export function recordDeliveryFailure(
   db.transaction(() => {
     const current = db
       .prepare(
-        "SELECT attempts AS tentativas FROM webhook_delivery WHERE id = ? AND status = 'pendente'",
+        "SELECT attempts AS tentativas FROM webhook_delivery WHERE id = ? AND status = 'pending'",
       )
       .get(attempt.id) as { tentativas: number } | undefined;
     if (current === undefined) return;
@@ -405,15 +405,15 @@ export function recordDeliveryFailure(
 
     if (step === undefined) {
       db.prepare(
-        `UPDATE webhook_delivery SET status = 'esgotada', attempts = ?, last_error = ?
-          WHERE id = ? AND status = 'pendente'`,
+        `UPDATE webhook_delivery SET status = 'exhausted', attempts = ?, last_error = ?
+          WHERE id = ? AND status = 'pending'`,
       ).run(made, attempt.message, attempt.id);
       return;
     }
 
     db.prepare(
       `UPDATE webhook_delivery SET attempts = ?, last_error = ?, next_attempt_at = ?
-        WHERE id = ? AND status = 'pendente'`,
+        WHERE id = ? AND status = 'pending'`,
     ).run(made, attempt.message, addMilliseconds(clock(), step), attempt.id);
   })();
 }

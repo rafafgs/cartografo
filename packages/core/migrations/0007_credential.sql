@@ -15,33 +15,32 @@
 --   leva nada que autentique. Não há KDF lento aqui (bcrypt/scrypt) porque o
 --   token é segredo gerado com 32 bytes de entropia, não senha escolhida por
 --   gente — força bruta sobre ele não é o risco.
--- - `tipo` já aceita `runner` embora nada nesta ficha emita credencial de
+-- - `owner_type` já aceita `runner` embora nada nesta ficha emita credencial de
 --   runner. Declarar o valor agora custa uma linha; descobrir depois que falta
 --   custa uma segunda migração nesta mesma tabela. O pareamento de runner (e a
 --   revogação) é a ficha seguinte, dependente desta.
--- - `runner_id` é anulável e só faz sentido quando `tipo = 'runner'`: uma
+-- - `runner_id` é anulável e só faz sentido quando `owner_type = 'runner'`: uma
 --   credencial de operador não pertence a máquina nenhuma.
--- - `revogada_em` é data, não flag: "quando deixou de valer" responde a uma
+-- - `revoked_at` é data, não flag: "quando deixou de valer" responde a uma
 --   pergunta de auditoria que um booleano apaga. Nada é deletado (D15/D2), e é
---   `revogada_em IS NULL` que separa credencial viva de credencial morta.
+--   `revoked_at IS NULL` que separa credencial viva de credencial morta.
 --
--- Os nomes de tabela e coluna seguem em português, como `grafo`, `trabalho`,
--- `runner` e `lease`: a D18 escopa a regra de código em inglês a
--- identificadores, e o schema deste projeto é vocabulário de dado. O TypeScript
--- em volta (`issueCredential`, `verifyToken`) é inglês, esse sim.
+-- `owner_type` e não `type`: é uma das três linhas QUALIFICADAS da §4.2 do
+-- glossário, porque `tipo` queria dizer três coisas em três tabelas e aqui
+-- quer dizer de quem é a credencial.
 --
 -- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
 
-CREATE TABLE credencial (
+CREATE TABLE credential (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  tipo        TEXT NOT NULL CHECK (tipo IN ('usuario', 'runner')),
-  runner_id   TEXT REFERENCES runner(id), -- só para tipo = 'runner'
+  owner_type  TEXT NOT NULL CHECK (owner_type IN ('user', 'runner')),
+  runner_id   TEXT REFERENCES runner(id), -- só para owner_type = 'runner'
   hash        TEXT NOT NULL UNIQUE,       -- SHA-256 hex do token cru, nunca o token
-  criada_em   TEXT NOT NULL,
-  revogada_em TEXT
+  created_at  TEXT NOT NULL,
+  revoked_at  TEXT
 );
 
 -- O caminho de leitura quente é um só, e é por requisição: achar a credencial
 -- viva a partir do hash apresentado. O UNIQUE de `hash` já o indexa; este aqui
 -- serve à outra pergunta, a da partida — "já existe credencial de operador?".
-CREATE INDEX idx_credencial_tipo ON credencial (tipo, revogada_em);
+CREATE INDEX idx_credential_type ON credential (owner_type, revoked_at);

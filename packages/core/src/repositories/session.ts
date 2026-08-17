@@ -397,7 +397,7 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
            job_id, execution_id, node_id, engine, engine_session_ref, working_dir,
            prompt, timeout_seconds, silence_seconds, status, exit_code, usage,
            opened_at, finished_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'aberta', NULL, NULL, ?, NULL)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', NULL, NULL, ?, NULL)`,
       )
       .run(
         jobId,
@@ -443,7 +443,7 @@ export interface FinishSessionInput {
 /**
  * Closes the session and records `session.finished` (FR11).
  *
- * Closing is exactly-once: the `UPDATE` is guarded by `status = 'aberta'` and a
+ * Closing is exactly-once: the `UPDATE` is guarded by `status = 'open'` and a
  * lost claim throws before anything is appended, the same shape the sibling
  * repositories already use (t149). A second finish would rewrite the terminal
  * status and NULL the `usage` this whole file exists to protect — so it is refused
@@ -490,7 +490,7 @@ export function finishSession(
         `UPDATE session SET status = ?, exit_code = ?, timeout_reason = ?, usage = ?,
                 models = ?, transcript = ?, transcricao_truncada = ?,
                 transcricao_tamanho_original = ?, finished_at = ?
-          WHERE id = ? AND status = 'aberta'`,
+          WHERE id = ? AND status = 'open'`,
       )
       .run(
         data.status as string,

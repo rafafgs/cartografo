@@ -14,10 +14,11 @@
  * Re-dispatching the session is on the other side of the boundary (the runner's
  * `Controller`, t103/t106) — see `docs/spec/escalacao-humana.md`.
  *
- * The TABLE and its columns are English since D20's fourth child (t229); the
- * projection's field names are not, because `routes/input-requests.ts` reads
- * them, so every `SELECT` aliases the renamed column back onto the field (t229,
- * FR4). The event-type strings went English with the second child (t227).
+ * The TABLE and its columns are English since D20's fourth child (t229) and the
+ * stored VALUES since its fifth (t235); the projection's field names are not,
+ * because `routes/input-requests.ts` reads them, so every `SELECT` aliases the
+ * renamed column back onto the field (t229, FR4; t235, FR5). The event-type
+ * strings went English with the second child (t227).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -99,49 +100,30 @@ function toInputRequest(row: InputRequestRow): InputRequest {
 /* -------------------------------------------------------------------------- */
 
 /**
- * `input_request.status` and `input_request.kind`, row → wire
- * (`glossario-wire.md` §1.6).
+ * The two statuses a `?status=` filter may name (`glossario-wire.md` §1.6).
  *
- * `tipo` is the one row of §1.6 that is QUALIFIED, and the glossary says why:
+ * There were three maps here — status, kind and source — and D20's fifth child
+ * (t235) retired all three by rewriting migration `0003`: the column's `CHECK`
+ * now reads `('question','approval')` and `('user','auto')`, and `status`
+ * defaults to `pending`. What is left is this list, which validates a filter
+ * rather than converting one.
+ *
+ * The `kind` values are the reason the glossary QUALIFIES one of its §1.6 rows:
  * the bare word `pergunta` was the ENTITY and became `input_request`, while
- * `pergunta.tipo = pergunta` is the KIND of escalation and becomes `question`.
+ * `pergunta.tipo = pergunta` is the KIND of escalation and became `question`.
  * One word, two concepts, two English names — which is exactly what a glossary
  * exists to keep straight.
  */
-const STATUS_FIELD: Record<string, string> = { pendente: 'pending', respondida: 'answered' };
-const STATUS_COLUMN: Record<string, string> = { pending: 'pendente', answered: 'respondida' };
-const KIND_FIELD: Record<string, string> = { pergunta: 'question', aprovacao: 'approval' };
+export const INPUT_REQUEST_STATUSES: readonly string[] = Object.freeze(['pending', 'answered']);
 
 /**
- * ...and the way back, which t227 is what created the need for.
+ * The `status` a request declared, if the column can hold it.
  *
- * The column carries a `CHECK (kind IN ('pergunta','aprovacao'))` since
- * migration `0003`, so it cannot simply take the event's new word. The wire says
- * `question`/`approval` and the row keeps saying what its constraint demands,
- * exactly as lease status and draft status already do here and in
- * `repositories/leases.ts`. D20's FOURTH child (t229) renamed the column and
- * left the constraint's VALUES alone (founder decision, 2026-08-17), so this map
- * stays exactly where it is.
+ * @param value What the query string said.
+ * @returns The same word, or `undefined` when the column has no such state.
  */
-const KIND_COLUMN: Record<string, string> = { question: 'pergunta', approval: 'aprovacao' };
-
-/**
- * `input_request.source`, row → wire.
- *
- * The column's two values are `usuario` and `auto` (`CHECK` of migration
- * `0003`); `auto` is already English and `usuario` is not, and the glossary maps
- * it to `user` (§1.6). Translating it here is what lets the specification's
- * reducer compare its `perguntas` projection against this one with no map in
- * between — which is the whole point of `test/replay-consistency.test.ts`.
- */
-const SOURCE_FIELD: Record<string, string> = { usuario: 'user', auto: 'auto' };
-
-/** The two statuses a `?status=` filter may name, in the wire's spelling. */
-export const INPUT_REQUEST_STATUSES: readonly string[] = Object.freeze(Object.keys(STATUS_COLUMN));
-
-/** The English `status` a request declared, as the column spells it. */
 export function inputRequestStatusColumn(value: string): string | undefined {
-  return STATUS_COLUMN[value];
+  return INPUT_REQUEST_STATUSES.find((status) => status === value);
 }
 
 /** An input request, as `/v1` publishes it. */
@@ -164,9 +146,9 @@ export interface WireInputRequest {
   /**
    * Where the decision came from: `user` or `auto`.
    *
-   * Both the key and the value translate since t227 (`glossario-wire.md` §4.2
-   * and §1.6). The column still says `usuario`, because its `CHECK` does —
-   * see {@link SOURCE_FIELD}.
+   * Both the key and the value went English with t227 and t235
+   * (`glossario-wire.md` §4.2 and §1.6); the column's own `CHECK` now spells the
+   * same two words, so this field is the column, passed through.
    */
   source: string | null;
   created_at: string;
@@ -181,17 +163,17 @@ export function toWireInputRequest(request: InputRequest): WireInputRequest {
     session_id: request.sessao_id,
     execution_id: request.execucao_id,
     node_id: request.no_id,
-    kind: KIND_FIELD[request.tipo] ?? request.tipo,
+    kind: request.tipo,
     question: request.pergunta,
     context: request.contexto,
     options: request.opcoes,
     recommendation: request.recomendacao,
     default_answer: request.resposta_padrao,
     auto_approvable: request.auto_aprovavel,
-    status: STATUS_FIELD[request.status] ?? request.status,
+    status: request.status,
     answer: request.resposta,
     answered_by: request.respondido_por,
-    source: request.origem === null ? null : (SOURCE_FIELD[request.origem] ?? request.origem),
+    source: request.origem,
     created_at: request.criada_em,
     answered_at: request.respondida_em,
   };
@@ -295,14 +277,14 @@ export function createInputRequest(
            job_id, session_id, execution_id, node_id, kind, question, context,
            options, recommendation, default_answer, auto_approvable, status, answer,
            answered_by, source, created_at, answered_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', NULL, NULL, NULL, ?, NULL)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, NULL)`,
       )
       .run(
         jobId,
         data.session_id as number | null,
         owner.execucao_id,
         nodeId,
-        KIND_COLUMN[data.kind as string],
+        data.kind as string,
         data.question as string,
         data.context as string | null,
         options === null ? null : JSON.stringify(options),
@@ -354,7 +336,7 @@ export function createInputRequest(
  * on `job.unblocked`, and it is what stops the audit from concluding that
  * "the system" unblocked everything a human unblocked.
  *
- * Closing is exactly-once: the `UPDATE` is guarded by `status = 'pendente'` and a
+ * Closing is exactly-once: the `UPDATE` is guarded by `status = 'pending'` and a
  * lost claim throws, the same shape `amendDraft`/`applyProposal`/`renewLease`
  * already use (t149). The route answers 409 for the sequential retry; this guard
  * is the backstop for two callers racing over the same input request.
@@ -365,8 +347,8 @@ function answer(
   db: Database,
   id: number,
   type: 'input_request.answered' | 'input_request.auto_resolved',
-  /** The COLUMN's value, whose `CHECK` still spells the first one Portuguese. */
-  origin: 'usuario' | 'auto',
+  /** The COLUMN's value; its `CHECK` spells both of them the wire's way (t235). */
+  origin: 'user' | 'auto',
   raw: Record<string, unknown>,
   answeredBy: string | null,
   actor: Actor,
@@ -385,9 +367,9 @@ function answer(
     const effect = db
       .prepare(
         `UPDATE input_request
-            SET status = 'respondida', answer = ?, answered_by = ?, source = ?,
+            SET status = 'answered', answer = ?, answered_by = ?, source = ?,
                 answered_at = ?
-          WHERE id = ? AND status = 'pendente'`,
+          WHERE id = ? AND status = 'pending'`,
       )
       .run(data.answer as string, answeredBy, origin, timestamp, id);
 
@@ -461,7 +443,7 @@ export function answerInputRequest(
     db,
     id,
     'input_request.answered',
-    'usuario',
+    'user',
     { answer: input.answer, answered_by: input.answered_by },
     answeredBy,
     actor,
@@ -646,11 +628,11 @@ export interface WirePrecedent {
 export function toWirePrecedent(row: Precedent): WirePrecedent {
   return {
     id: row.id,
-    kind: KIND_FIELD[row.tipo] ?? row.tipo,
+    kind: row.tipo,
     question: row.pergunta,
     answer: row.resposta,
     answered_by: row.respondido_por,
-    source: row.origem === null ? null : (SOURCE_FIELD[row.origem] ?? row.origem),
+    source: row.origem,
     created_at: row.criada_em,
     answered_at: row.respondida_em,
     similarity: row.similaridade,
@@ -725,7 +707,7 @@ export function getPrecedents(
       `SELECT ${PRECEDENT_COLUMNS}
          FROM input_request p
          JOIN job t ON t.id = p.job_id
-        WHERE p.status = 'respondida'
+        WHERE p.status = 'answered'
           AND p.id <> ?
           AND t.project_id = ?`,
     )

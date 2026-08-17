@@ -168,7 +168,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
   app.patch<IdParam>('/intake/:id', async (request, reply) => {
     const draft = load(db, request.params.id);
     if (draft === undefined) return unknownDraft(reply, request.params.id);
-    if (draft.status !== 'pendente') return notPending(reply, draft);
+    if (draft.status !== 'pending') return notPending(reply, draft);
 
     const body = isObject(request.body) ? request.body : {};
     const report = validateItems(body.items);
@@ -184,7 +184,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
   app.post<IdParam>('/intake/:id/discards', async (request, reply) => {
     const draft = load(db, request.params.id);
     if (draft === undefined) return unknownDraft(reply, request.params.id);
-    if (draft.status !== 'pendente') return notPending(reply, draft);
+    if (draft.status !== 'pending') return notPending(reply, draft);
 
     const discarded = discardDraft(db, draft.id);
     if (discarded === null) return notPending(reply, getDraft(db, draft.id) ?? draft);
@@ -199,7 +199,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
     withValidation(reply, () => {
       const draft = load(db, request.params.id);
       if (draft === undefined) return unknownDraft(reply, request.params.id);
-      if (draft.status !== 'pendente') return notPending(reply, draft);
+      if (draft.status !== 'pending') return notPending(reply, draft);
 
       // The pointer is read HERE, at confirmation time, and not when the draft was
       // opened: between proposing a breakdown and accepting it the class may have

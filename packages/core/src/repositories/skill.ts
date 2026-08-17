@@ -133,20 +133,17 @@ const GATE_OUTCOMES = ['pass', 'fail', 'escalate_human'];
 /** The two things a check can be (`manifesto-skill.schema.json:91`), and no third. */
 const CHECK_TYPES = ['deterministic', 'agentic'];
 
-/**
- * `role`, as the `skill` table spells it — the other half of the translation
- * boundary, and the one that is not cosmetic.
+/*
+ * `role` used to be the one value this boundary carried across.
  *
- * `migrations/0005_skill.sql:47` puts a `CHECK (role IN ('fazer', 'portao'))` on
- * the column, which makes the Portuguese VALUES part of the DB schema rather
- * than of the format. D20's fourth child (t229) renamed the column and left
- * them exactly there (founder decision, 2026-08-17), so a manifest that says
- * `work` is still stored as `fazer` and comes back out as `work`. Every other
- * column is either free text or JSON, so this is the only value the boundary has
- * to carry across.
+ * `migrations/0005_skill.sql` puts a `CHECK` on the column, which made the
+ * Portuguese values part of the DB schema rather than of the format, and a
+ * manifest that said `work` was stored as `fazer`. D20's fourth child (t229)
+ * renamed the column and its fifth (t235) rewrote the `CHECK` to
+ * `('work', 'gate')` — the manifest's own two words, which the graph document
+ * already spelled that way in `node_type`. Every other column is either free
+ * text or JSON, so with that pair gone the boundary carries no value at all.
  */
-const ROLE_COLUMN: Record<string, string> = { work: 'fazer', gate: 'portao' };
-const ROLE_FIELD: Record<string, string> = { fazer: 'work', portao: 'gate' };
 
 const COLUMNS = `
   id, version AS versao, hash, role AS papel, description AS descricao,
@@ -165,7 +162,7 @@ function toSkill(row: SkillRow): Skill {
     id: row.id,
     version: row.versao,
     hash: row.hash,
-    role: ROLE_FIELD[row.papel] ?? row.papel,
+    role: row.papel,
     description: row.descricao,
     input: JSON.parse(row.entrada) as Record<string, unknown>,
     output: JSON.parse(row.saida) as Record<string, unknown>,
@@ -451,7 +448,7 @@ export function registerSkill(db: Database, manifest: unknown): Skill {
     id,
     verified.version as string,
     verified.hash as string,
-    ROLE_COLUMN[verified.role as string] ?? (verified.role as string),
+    verified.role as string,
     verified.description as string,
     JSON.stringify(verified.input),
     JSON.stringify(verified.output),

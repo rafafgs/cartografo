@@ -22,8 +22,8 @@
  *
  * What the routes return is the output of `repositories/proposals.ts`'s
  * `toProposal`, never a row (t226, FR1); the comparisons inside the handlers keep
- * reading the ROW (`proposal.status !== 'pendente'`), because the column is
- * untouched until D20's fourth child.
+ * reading the ROW (`proposal.status !== 'pending'`), which since D20's fifth
+ * child (t235) is the same word the wire publishes.
  *
  * ONE flow here stays Portuguese on the way in, and it is deliberate:
  * `POST /proposals/:id/outcome` takes `{execucao_id, depois}` and
@@ -179,7 +179,7 @@ async function approve(
     return refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id });
   }
 
-  if (proposal.status !== 'pendente') {
+  if (proposal.status !== 'pending') {
     return notPending(reply, proposal, 'approved');
   }
 
@@ -211,7 +211,7 @@ async function reject(
     );
   }
 
-  if (proposal.status !== 'pendente') {
+  if (proposal.status !== 'pending') {
     return notPending(reply, proposal, 'rejected');
   }
 
@@ -233,7 +233,7 @@ async function apply(
   // gate, and a proposal that skipped it has to fail loudly. The code is its
   // own — `proposal_not_pending` now describes approve/reject's precondition,
   // and reusing it here would say the wrong thing about which step is missing.
-  if (proposal.status !== 'aprovada') {
+  if (proposal.status !== 'approved') {
     return refusal(
       reply,
       409,
@@ -345,7 +345,7 @@ async function revert(
     );
   }
 
-  if (proposal.status !== 'aplicada') {
+  if (proposal.status !== 'applied') {
     return refusal(
       reply,
       409,
@@ -412,7 +412,7 @@ async function outcome(
     );
   }
 
-  if (proposal.status !== 'aplicada') {
+  if (proposal.status !== 'applied') {
     return refusal(
       reply,
       409,

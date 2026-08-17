@@ -11,9 +11,10 @@
  *
  * Like the other repositories, it receives the already-open database and never
  * touches the driver (D1). The COLUMNS are English since D20's fourth child
- * (t229); {@link CredentialRow}'s field names are not, because `src/auth.ts`
- * reads them and that file is outside that ticket's surface — so every `SELECT`
- * aliases the renamed column back onto the field (t229, FR4).
+ * (t229) and `owner_type`'s two VALUES since its fifth (t235);
+ * {@link CredentialRow}'s field names are not, because `src/auth.ts` reads them
+ * and that file is outside both tickets' surface — so every `SELECT` aliases the
+ * renamed column back onto the field (t229, FR4; t235, FR5).
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -22,7 +23,7 @@ import type { Database } from '../db/connection.ts';
 import { now } from './common.ts';
 
 /** What a credential is for. `runner` is issued at pairing (t143, FR1). */
-export type CredentialType = 'usuario' | 'runner';
+export type CredentialType = 'user' | 'runner';
 
 /** A credential, as the table holds it — the raw token is not part of it. */
 export interface CredentialRow {

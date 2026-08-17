@@ -82,8 +82,13 @@ export function reconstruirEstado(eventos) {
         break;
 
       // --- sessão -----------------------------------------------------------
+      // `open`, e não `aberta`: este é o único status que o replay INVENTA (os
+      // terminais vêm do `data.status` do evento), e a projeção que ele tem de
+      // reproduzir grava `open` desde a t235, que levou os valores do banco
+      // para o inglês do glossário. Quem cobra a igualdade é
+      // `packages/core/test/replay-consistency.test.ts`.
       case 'session.opened':
-        estado.sessoes[id] = { status: 'aberta', exit_code: null };
+        estado.sessoes[id] = { status: 'open', exit_code: null };
         break;
 
       case 'session.finished':

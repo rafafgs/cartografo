@@ -1,13 +1,13 @@
 -- 0013_sessao_modelos — quais modelos rodaram a sessão (t172).
 --
--- Até aqui o log sabia dizer qual MOTOR rodou cada sessão (`sessao.aberta.engine`,
+-- Até aqui o log sabia dizer qual MOTOR rodou cada sessão (`session.opened.engine`,
 -- desde a t102) e nunca qual modelo. "Custo por modelo" não tinha resposta não
 -- porque faltasse agregação, mas porque o dado nunca foi coletado: não havia
 -- campo para ele em lugar nenhum — nem na taxonomia, nem na tabela, nem na
 -- interface do EngineAdapter.
 --
--- - `modelos` é um array JSON de identificadores, na mesma convenção de
---   armazenamento que `criterios_de_aceite` em `trabalho`: TEXT com JSON dentro,
+-- - `models` é um array JSON de identificadores, na mesma convenção de
+--   armazenamento que `criterios_de_aceite` em `job`: TEXT com JSON dentro,
 --   projetado de volta em lista pelo repositório. NULO é "o engine não nomeou
 --   nenhum", e lista vazia não é resposta válida — quem diz "nada" é o NULO.
 -- - **Lista, e não um identificador só.** Uma sessão roda mais de um modelo, e
@@ -19,18 +19,17 @@
 --   valores é fechado e vem da nossa própria interface, então um terceiro valor
 --   é erro de quem escreveu. Aqui o conjunto é aberto por natureza: o valor é o
 --   identificador que o engine reportou, e uma migração a cada modelo novo seria
---   o mesmo enum fechado que a 0012 já recusou para `motor_modelo.modelo_id`.
+--   o mesmo enum fechado que a 0012 já recusou para `engine_model.model_id`.
 --
 -- Anulável e sem backfill, como `silence_seconds`, `timeout_reason` e
--- `transcricao` antes dela: linha anterior a esta migração lê NULO, que é
+-- `transcript` antes dela: linha anterior a esta migração lê NULO, que é
 -- exatamente o que ela é. Não há valor a inventar para uma sessão que terminou
 -- antes de alguém estar contando — e inventar um seria escrever no log um fato
 -- que ninguém mediu.
 --
--- Nomes de coluna seguem em português, como o resto de `sessao`: a D18 escopa a
--- regra de inglês a identificadores de código, e schema aqui é vocabulário de
--- dado. Os VALORES são strings do engine, e chegam como o engine as escreveu.
+-- Os VALORES são strings do engine, e chegam como o engine as escreveu: não há
+-- enum aqui para a t235 traduzir.
 --
 -- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
 
-ALTER TABLE sessao ADD COLUMN modelos TEXT;  -- NULO = o engine não nomeou modelo
+ALTER TABLE session ADD COLUMN models TEXT;  -- NULO = o engine não nomeou modelo

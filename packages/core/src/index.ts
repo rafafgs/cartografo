@@ -265,9 +265,9 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
   // every request, because there is nothing for a token to resolve to.
   let bootstrapToken: string | null;
   try {
-    bootstrapToken = hasLiveCredential(db, 'usuario')
+    bootstrapToken = hasLiveCredential(db, 'user')
       ? null
-      : issueCredential(db, { tipo: 'usuario' }).token;
+      : issueCredential(db, { tipo: 'user' }).token;
   } catch (error) {
     await app.close();
     db.close();

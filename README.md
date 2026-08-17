@@ -48,17 +48,21 @@ contra o mesmo banco sai com 1 e uma linha só, dizendo o pid do que já está
 rodando e o arquivo `<banco>.lock` que ele segura — só o servidor escreve no
 banco (D1), e isso vale entre processos, não só dentro de um.
 
-> **Subindo de uma versão anterior à t228? Apague `.cartografo/`.** A D20 traduziu
+> **Subindo de uma versão anterior à t235? Apague `.cartografo/`.** A D20 traduziu
 > para inglês o vocabulário do log de eventos (`job.created` no lugar de
-> `trabalho.criado`, `data.title` no lugar de `dados.titulo`) e o das operações
+> `trabalho.criado`, `data.title` no lugar de `dados.titulo`), o das operações
 > de proposta (`add_node` no lugar de `adicionar_no`, `{type, node_id, field,
-> from, to, inverse}` no lugar de `{tipo, no_id, campo, de, para, inversa}`). Os
-> dois são dado gravado que não se reescreve — o log é append-only, e uma
-> proposta guardada é o registro do que alguém propôs. Como não existe dado de
-> produção, a resposta da própria decisão é **recriar** o banco de
+> from, to, inverse}` no lugar de `{tipo, no_id, campo, de, para, inversa}`) e o
+> do próprio banco — os nomes de tabela e de coluna (`job`, `graph_version`,
+> `created_at`) e também os VALORES que eles guardam (`status = 'pending'` no
+> lugar de `'pendente'`, `entity_type = 'job'` no lugar de `'trabalho'`,
+> `role = 'work'` no lugar de `'fazer'`). Tudo isso é dado gravado que não se
+> reescreve — o log é append-only, uma proposta guardada é o registro do que
+> alguém propôs, e uma linha antiga não passa pelo `CHECK` novo. Como não existe
+> dado de produção, a resposta da própria decisão é **recriar** o banco de
 > desenvolvimento, não migrá-lo — `rm -rf .cartografo/` e `npx cartografo` de
-> novo. Um banco antigo sobe, mas os eventos velhos vêm com as chaves velhas e
-> uma proposta velha é recusada no `apply` com `unknown_type`.
+> novo. Não existe migração de renomeação para rodar: as dezoito migrações
+> nascem em inglês, e um banco antigo não é atualizado por elas.
 
 O passo 3 registra o grafo de fábrica 1 (D14) como linhagem base — conferindo
 antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a

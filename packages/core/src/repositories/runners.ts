@@ -14,14 +14,15 @@
  *
  * Like the other repositories, it receives the already-open database and never
  * touches the driver (D1). The COLUMNS are English since D20's fourth child
- * (t229); {@link RunnerRow}'s field names are not, because `routes/runners.ts`
- * reads them, so every `SELECT` aliases the renamed column back onto the field
- * (t229, FR4).
+ * (t229) and the lease VALUES this file reads since its fifth (t235);
+ * {@link RunnerRow}'s field names are not, because `routes/runners.ts` reads
+ * them, so every `SELECT` aliases the renamed column back onto the field (t229,
+ * FR4; t235, FR5).
  */
 
 import type { Database } from '../db/connection.ts';
 import { now } from './common.ts';
-import { toExpirationReason, type ExpirationReason } from './leases.ts';
+import type { ExpirationReason } from './leases.ts';
 
 /** A paired runner, as the row spells it. */
 export interface RunnerRow {
@@ -70,7 +71,7 @@ export interface RunnerHealth extends Runner {
   /**
    * When it was last heard from, across EVERY lease it ever held.
    *
-   * Any status, and not just `ativa`, on purpose: an idle runner between two
+   * Any status, and not just `active`, on purpose: an idle runner between two
    * jobs would otherwise go blank the instant its last lease closed — which is
    * the opposite of what "last heartbeat" is read for.
    */
@@ -121,7 +122,7 @@ export function listRunnersWithHealth(db: Database): RunnerHealth[] {
   const fleet = db
     .prepare(
       `SELECT r.id, r.name AS nome, r.registered_at AS registrado_em,
-              COUNT(CASE WHEN l.status = 'ativa' THEN 1 END) AS leases_ativas,
+              COUNT(CASE WHEN l.status = 'active' THEN 1 END) AS leases_ativas,
               MAX(l.heartbeat_at) AS ultimo_heartbeat
          FROM runner r
          LEFT JOIN lease l ON l.runner_id = r.id
@@ -139,7 +140,7 @@ export function listRunnersWithHealth(db: Database): RunnerHealth[] {
                         PARTITION BY runner_id ORDER BY expires_at DESC, id DESC
                       ) AS recency
                  FROM lease
-                WHERE status = 'expirada')
+                WHERE status = 'expired')
         WHERE recency = 1`,
     )
     .all() as Array<RunnerExpirationRow & { runner_id: string }>;
@@ -150,7 +151,7 @@ export function listRunnersWithHealth(db: Database): RunnerHealth[] {
       {
         job_id: expiration.trabalho_id,
         expires_at: expiration.expira_em,
-        expiration_reason: toExpirationReason(expiration.motivo_expiracao),
+        expiration_reason: expiration.motivo_expiracao,
       },
     ]),
   );

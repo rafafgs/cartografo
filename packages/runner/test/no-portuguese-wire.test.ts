@@ -79,7 +79,29 @@
  * take the spelling their already-converged `database` rows (§4.2) gave those
  * columns, without editing a document no child ticket has touched since t213.
  *
- * And two spans are exempted, in {@link EXEMPT_SPANS}, both for the same reason:
+ * ## The third position, and the file nobody was sweeping (t266)
+ *
+ * t254 swept six files in two positions, and the first real crossing found the
+ * hole in both halves at once. The half-file: `scripts/spike-surveyor-flow.mjs`
+ * talks to `/v1` eleven times by hand and was on no list, so every rename since
+ * t226 walked past it — it destructured `eventos` off a body that answers
+ * `events`, read `.no_atual`, `.grafo`, `.evidencia` and compared `status`
+ * against `'pendente'`, and the proof died on the first of them with a
+ * `TypeError` about `undefined`. The half-position: a DESTRUCTURING is the third
+ * way a client touches a field name, and it is the one a proof script uses most
+ * — `const { eventos: events } = await api(…)` is neither a `.read` nor a
+ * literal, so t254's two scanners could not see it even in the files they did
+ * sweep. {@link destructuredSpans} is that position, and it is swept over every
+ * client file rather than only the new one: the same line in `prune.ts` would be
+ * the same defect.
+ *
+ * {@link PROPOSAL_FIELDS} is four more §4.2 derives, on the same §1.1 note
+ * {@link DERIVED_FIELDS} rides — `evidence`, `expected_metric`,
+ * `applied_version_id` and `current_version_id` are `proposal`'s and `graph`'s
+ * columns (`packages/core/migrations/0002_grafo_versao_proposta.sql`), and
+ * `toProposal`/`toGraph` project them onto the wire with the same spelling.
+ *
+ * And three spans are exempted, in {@link EXEMPT_SPANS}, all for the same reason:
  * the name belongs to this package, not to the wire. `result.proposta` in the
  * surveyor's command is the runner-internal result of `proposeFlowImprovement`,
  * whose keys (`gargalo`, `evidencia`, `metrica_esperada`, `proposta`) are that
@@ -160,6 +182,43 @@ const DERIVED_FIELDS: ReadonlyArray<{ term: string; english: string }> = Object.
 ]);
 
 /**
+ * The manual proofs of this package, which are clients like any other (t266).
+ *
+ * `scripts/spike-surveyor-flow.mjs` is the half of the surveyor the suite cannot
+ * run — it needs a real `claude`, an account and three minutes — and that is
+ * exactly why it needs this gate more than the commands do, not less: nothing
+ * else in CI ever executes a line of it, so a field the server renamed goes on
+ * reading fine to every reviewer until someone spends the three minutes. Swept
+ * with the same terms and the same positions as {@link CLIENT_FILES}; the only
+ * difference is that the list is separate, because {@link PROPOSAL_FIELDS} is
+ * vocabulary no command reads.
+ */
+const MANUAL_PROOF_FILES = [path.join('scripts', 'spike-surveyor-flow.mjs')];
+
+/**
+ * Four more entity fields the `api` surface does not carry by name (t266).
+ *
+ * The same derivation {@link DERIVED_FIELDS} documents, over the four columns of
+ * `0002_grafo_versao_proposta.sql` a proposal and a graph are read by:
+ * `evidencia`, `metrica_esperada` and `versao_aplicada_id` are `proposta`'s,
+ * `versao_corrente_id` is `grafo`'s, §4.2 already maps all four, and §1.1 is
+ * what says the wire spells them the way the column does — which it does, in
+ * `toProposal` and `toGraph` (`packages/core/src/repositories/`).
+ *
+ * Kept out of {@link DERIVED_FIELDS} on purpose: `evidencia` and
+ * `metrica_esperada` are ALSO two keys of the runner-internal `SurveyorResult`,
+ * which `src/surveyor/cli.mjs` prints under their own names and which
+ * `glossario-wire.md` §5.6 records as staying — so a sweep that carried them
+ * over every client file would be demanding a rename the glossary refuses.
+ */
+const PROPOSAL_FIELDS: ReadonlyArray<Term> = Object.freeze([
+  { term: 'evidencia', english: 'evidence' },
+  { term: 'metrica_esperada', english: 'expected_metric' },
+  { term: 'versao_aplicada_id', english: 'applied_version_id' },
+  { term: 'versao_corrente_id', english: 'current_version_id' },
+]);
+
+/**
  * The flow lens's Portuguese keys and the English each one became (t264, FR3).
  *
  * Read from the header of this file rather than from the glossary, the same way
@@ -228,6 +287,16 @@ const EXEMPT_SPANS: ReadonlyArray<{ file: string; span: string; reason: string }
       'the runner-internal result of `proposeFlowImprovement`, not a body of the wire: ' +
       'its keys are `src/surveyor/proposal.ts`’s own, and renaming them is that ' +
       'module’s identifier debt (t254, Out of Scope)',
+  },
+  {
+    file: path.join('scripts', 'spike-surveyor-flow.mjs'),
+    span: '.proposta',
+    reason:
+      'the same runner-internal result, in the manual proof of the same module: ' +
+      '`proposeFlowImprovement` answers `{gargalo, evidencia, metrica_esperada, ' +
+      'proposta}`, and `glossario-wire.md` §5.6 records those four as staying — ' +
+      'what came off the wire is the proposal INSIDE it, and every read of THAT ' +
+      'is swept (t266)',
   },
   {
     file: path.join('src', 'controller', 'cliente-controle.ts'),
@@ -317,13 +386,20 @@ function maskComments(source: string): string {
  * old spelling, whole, counts. The one on the LEFT does the same job on the
  * other side and t254 needed it: this package's own name ENDS in `grafo`, so
  * without it every `cartografo` in a usage line reads as the field `grafo`.
+ *
+ * Both boundaries are `\p{L}` and not `A-Za-z` since t266, because the text on
+ * either side of them is not always ASCII: the manual proof titles its job
+ * `nota curta sobre o topógrafo de fluxo` — Portuguese CONTENT, which D18 keeps
+ * — and an accented letter that does not count as a letter turns the `grafo`
+ * inside `topógrafo` into a wire field. A letter is a letter; the `u` flag is
+ * what makes the class mean that.
  */
 export function cliHits(source: string, terms: ReadonlyArray<Term>): string[] {
   const hits: string[] = [];
 
   maskComments(source).split('\n').forEach((line, index) => {
     for (const entry of terms) {
-      if (new RegExp(`(?<![A-Za-z0-9_-])${entry.term}(?![A-Za-z0-9_-])`).test(line)) {
+      if (new RegExp(`(?<![\\p{L}\\p{N}_-])${entry.term}(?![\\p{L}\\p{N}_-])`, 'u').test(line)) {
         hits.push(`${index + 1}: "${entry.term}" (English: "${entry.english}")`);
       }
     }
@@ -491,9 +567,48 @@ export function clientSpans(source: string): ClientSpan[] {
   return spans;
 }
 
+/**
+ * The keys a `const {…} = …` binds: the third position of a client (t266).
+ *
+ * A regex and not a pass of the scanner above, because there is nothing to
+ * disambiguate here — a destructuring pattern is `const`, `let` or `var`
+ * followed immediately by a brace, which no object literal and no block ever is,
+ * and what it binds is a comma-separated list of names. Comments are masked
+ * first, for the reason every sweep in this file gives.
+ *
+ * Each key comes back shaped like a property read (`.eventos`), because that is
+ * what it IS — `const { eventos: events } = body` and `body.eventos` are the
+ * same read of the same field written two ways — and shaping it so lets one
+ * {@link EXEMPT_SPANS} entry excuse both.
+ *
+ * @param source File contents.
+ * @returns One span per bound key, at the line the declaration opens on.
+ */
+export function destructuredSpans(source: string): ClientSpan[] {
+  const masked = maskComments(source);
+  const spans: ClientSpan[] = [];
+
+  for (const match of masked.matchAll(/(?:const|let|var)\s*\{([^{}]*)\}\s*=/g)) {
+    const line = masked.slice(0, match.index).split('\n').length;
+    for (const bound of (match[1] ?? '').split(',')) {
+      // `key: alias` reads the key; `key` on its own reads itself; `...rest`
+      // reads nothing at all.
+      const key = (bound.split(':')[0] ?? '').trim();
+      if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)) spans.push({ line, text: `.${key}` });
+    }
+  }
+
+  return spans;
+}
+
+/** Every position of a client source this gate judges, in one list. */
+function readSpans(source: string): ClientSpan[] {
+  return [...clientSpans(source), ...destructuredSpans(source)];
+}
+
 /** Every old spelling a client source reads or prints, as `line: what`. */
 function clientHitsIn(source: string, terms: ReadonlyArray<Term>): string[] {
-  return clientSpans(source).flatMap((span) =>
+  return readSpans(source).flatMap((span) =>
     // `cliHits` numbers the lines of what it is given, and what it is given here
     // is one span — so the line it reports is replaced by the span's own.
     cliHits(span.text, terms).map((hit) => `${span.line}: ${hit.replace(/^\d+: /, '')}`),
@@ -505,7 +620,7 @@ function clientHitsOf(relative: string, terms: ReadonlyArray<Term>): string[] {
   const excused = new Set(
     EXEMPT_SPANS.filter((entry) => entry.file === relative).map((entry) => entry.span),
   );
-  return clientSpans(sourceOf(relative))
+  return readSpans(sourceOf(relative))
     .filter((span) => !excused.has(span.text.trim()))
     .flatMap((span) =>
       cliHits(span.text, terms).map((hit) => `${relative}:${span.line}: ${hit.replace(/^\d+: /, '')}`),
@@ -658,9 +773,88 @@ test('t254 — the client commands read and print the English fields the wire re
   );
 });
 
+test('t266 — the surveyor manual proof reads the English fields the wire really answers', () => {
+  const terms = [...apiTerms(), ...PROPOSAL_FIELDS];
+
+  const hits = MANUAL_PROOF_FILES.flatMap((relative) => clientHitsOf(relative, terms));
+
+  assert.deepEqual(
+    hits,
+    [],
+    'the manual proof still reads or prints a Portuguese wire field, so it dies against a real ' +
+      `control plane (D20, glossario-wire.md §1/§4.2):\n${hits.join('\n')}`,
+  );
+});
+
+test('t266 — the sweep bites on a destructured read of the old wire and lets the new one through', () => {
+  const terms = [...apiTerms(), ...PROPOSAL_FIELDS];
+
+  // Every one of these is a line that really shipped in the manual proof, and
+  // every one of them was green until this gate existed. The first is the one
+  // the crossing died on: `events` bound to nothing, `.map` on `undefined`.
+  const caught = [
+    "    const { eventos: events } = await api(url, 'GET', `/v1/executions/${EXECUTION_ID}/events`);",
+    "    const { propostas: proposals } = await api(url, 'GET', '/v1/proposals');",
+    "    const { grafo: graph, grafo_versao: version } = await api(url, 'POST', '/v1/graphs', doc, 201);",
+    '    log(`job ${job.id} created on node "${job.no_atual}"`);',
+    "    if (proposal.status !== 'pendente') die(`the proposal is \"${proposal.status}\"`);",
+    "    if (proposal.versao_aplicada_id !== null) die('something applied the proposal');",
+    '    for (const id of proposal.evidencia.event_ids) {',
+    '    if (graphAfter.grafo.versao_corrente_id !== version.id) {',
+    '    console.log(`operacoes:        ${JSON.stringify(proposal.operacoes, null, 2)}`);',
+    '    console.log(`metrica_esperada: ${JSON.stringify(proposal.metrica_esperada)}`);',
+  ];
+  for (const source of caught) {
+    assert.ok(clientHitsIn(source, terms).length > 0, `the sweep missed an old wire name: ${source}`);
+  }
+
+  const allowed = [
+    "    const { events } = await api(url, 'GET', `/v1/executions/${EXECUTION_ID}/events`);",
+    "    const { proposals } = await api(url, 'GET', '/v1/proposals');",
+    "    const { graph, graph_version: version } = await api(url, 'POST', '/v1/graphs', doc, 201);",
+    '    log(`job ${job.id} created on node "${job.current_node_id}"`);',
+    "    if (proposal.status !== 'pending') die(`the proposal is \"${proposal.status}\"`);",
+    "    if (proposal.applied_version_id !== null) die('something applied the proposal');",
+    '    for (const id of proposal.evidence.event_ids) {',
+    '    if (graphAfter.graph.current_version_id !== version.id) {',
+    '    console.log(`operations:       ${JSON.stringify(proposal.operations, null, 2)}`);',
+    '    console.log(`expected_metric:  ${JSON.stringify(proposal.expected_metric)}`);',
+    // A binding of this script's own is not a read of a body.
+    '    const { root, repo } = createDisposableRepo();',
+    // Portuguese CONTENT, which D18 keeps: the `grafo` inside `topógrafo` is a
+    // word, not a field, and the accent is the only thing that says so.
+    "        title: 'nota curta sobre o topógrafo de fluxo',",
+    // ...and neither is the runner-internal result the proof destructures
+    // nothing out of: `gargalo` is `SurveyorResult`'s, §5.6 keeps it.
+    '    if (result.gargalo === null) die(`the real execution produced no time signal at all`);',
+  ];
+  for (const source of allowed) {
+    assert.deepEqual(
+      clientHitsIn(source, terms),
+      [],
+      `the sweep flagged what is not a Portuguese wire read: ${source}`,
+    );
+  }
+
+  // The position itself: what a destructuring binds, and where it says it is.
+  assert.deepEqual(
+    destructuredSpans('const a = 1;\nconst { eventos: events, propostas } = body;\n'),
+    [
+      { line: 2, text: '.eventos' },
+      { line: 2, text: '.propostas' },
+    ],
+    'the third position has to report each bound key at the line its declaration opens on',
+  );
+  assert.deepEqual(
+    destructuredSpans('// const { eventos: events } = body;\nconst document = { eventos: [] };\n'),
+    [],
+    'a comment is not a binding, and neither is an object literal',
+  );
+});
+
 test('t254 — every exempted span is still there, and still a span', () => {
   for (const entry of EXEMPT_SPANS) {
-    const spans = clientSpans(sourceOf(entry.file));
+    const spans = readSpans(sourceOf(entry.file));
     assert.ok(
       spans.some((span) => span.text.trim() === entry.span),
       `${entry.file} no longer has \`${entry.span}\`; drop the exception (${entry.reason})`,

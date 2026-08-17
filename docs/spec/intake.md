@@ -224,24 +224,37 @@ Registrada em [`routes/intake.ts`](../../packages/core/src/routes/intake.ts)
 
 | Rota | Resposta | Erros |
 |---|---|---|
-| `POST /v1/intake` | `201 {rascunho}` | `400 campo_obrigatorio_ausente` (sem `classe`/`pedido`) · `404 grafo_desconhecido` · `400 itens_invalidos` |
-| `GET /v1/intake` | `200 {rascunhos}` | filtros `status`, `classe`, `projeto_id` |
-| `GET /v1/intake/:id` | `200 {rascunho}` | `404 rascunho_desconhecido` |
-| `PATCH /v1/intake/:id` | `200 {rascunho}` | `404` · `409 rascunho_nao_pendente` · `400 itens_invalidos` |
-| `POST /v1/intake/:id/discards` | `200 {rascunho}` | `404` · `409 rascunho_nao_pendente` |
-| `POST /v1/intake/:id/confirmations` | `201 {rascunho, trabalhos}` | `404` · `409 rascunho_nao_pendente` · `404 grafo_desconhecido` · `400 validation_failed` |
+| `POST /v1/intake` | `201 {draft}` | `400 missing_required_field` (sem `class`/`request`) · `404 unknown_graph` · `400 invalid_items` |
+| `GET /v1/intake` | `200 {drafts}` | filtros `status`, `class`, `project_id` |
+| `GET /v1/intake/:id` | `200 {draft}` | `404 unknown_draft` |
+| `PATCH /v1/intake/:id` | `200 {draft}` | `404` · `409 draft_not_pending` · `400 invalid_items` |
+| `POST /v1/intake/:id/discards` | `200 {draft}` | `404` · `409 draft_not_pending` |
+| `POST /v1/intake/:id/confirmations` | `201 {draft, jobs}` | `404` · `409 draft_not_pending` · `404 unknown_graph` · `400 validation_failed` |
 
-Os erros desta camada falam a vocabulário de fio dela — `erro` em português,
-como os das rotas de grafo e de proposta (t127, FR8). A confirmação tem **uma**
-exceção, e é a única rota do intake que grava EVENTO: um envelope de evento
-torto (um `ator` que não é `{tipo, ref}`, por exemplo) é recusado pelo mesmo
-`validateEvent` que serve toda a API, e volta pelo mesmo `withValidation` de
-[`routes/common.ts`](../../packages/core/src/routes/common.ts), com o mesmo
-corpo `{error: "validation_failed", details: [...]}` que `POST /v1/jobs`
-devolve. Quem precisa corrigir o próprio `ator` não deveria ter de aprender uma
-segunda forma de erro para descobrir isso — era um `500` até a rodada alfa
-t139. O rascunho recusado continua `pendente` e confirmável; nenhum `trabalho`,
-nenhuma dependência e nenhuma linha de log sobrevivem à transação que caiu.
+Os códigos, as chaves e os filtros acima falam inglês desde o t226
+([glossário](glossario-wire.md) §1.4), e esta tabela só soube disso na rodada
+alfa da t258: ela é da t122, e nem a migração da API nem a varredura de citações
+da t231 passaram por aqui — §1.4 é justamente a seção do glossário que aquela
+varredura não lê. Quem cobra a tabela agora é
+[`spec-intake-http-codes.test.ts`](../../packages/core/test/spec-intake-http-codes.test.ts):
+cada par status+código é resolvido contra as chamadas de `refusal` da rota, cada
+corpo de sucesso contra as chaves que ela devolve, cada filtro contra os
+parâmetros de query que ela lê. Oráculo é a rota, nunca uma lista de palavras —
+uma tabela de status é promessa sobre o que o cliente recebe.
+
+Desde o t226 há **um** envelope de erro em toda a superfície `/v1` — `{error,
+message?}` com o contexto da rota como propriedade irmã
+([`routes/common.ts`](../../packages/core/src/routes/common.ts)) — e o intake não
+tem forma de erro própria nenhuma. O que a confirmação ainda tem de seu é ser a
+única rota desta camada que grava EVENTO, e é daí que vem o único código da
+tabela que a rota não escreve: um envelope de evento torto (um `actor` que não é
+`{type, ref}`, por exemplo) é recusado pelo mesmo `validateEvent` que serve toda
+a API e volta pelo `withValidation` daquele arquivo, com o mesmo corpo
+`{error: "validation_failed", details: [...]}` que `POST /v1/jobs` devolve. Quem
+precisa corrigir o próprio `actor` não deveria ter de aprender uma segunda forma
+de erro para descobrir isso — era um `500` até a rodada alfa t139. O rascunho
+recusado continua `pending` e confirmável; nenhum `trabalho`, nenhuma
+dependência e nenhuma linha de log sobrevivem à transação que caiu.
 
 `PATCH` **substitui** a lista de itens, nunca funde: um intake que fundisse não
 teria como remover um item de que alguém desistiu, e "me mande a quebra que você

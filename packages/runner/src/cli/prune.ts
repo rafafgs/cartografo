@@ -13,11 +13,11 @@
  * opposite that would be wrong:
  *
  * - **The control plane decides what is finished, never this command** (D1).
- *   Eligibility is `concluido === true` on `GET /v1/jobs/:id` and nothing else.
- *   `bloqueado` is NOT a terminal state: a blocked work can be unblocked and
+ *   Eligibility is `completed === true` on `GET /v1/jobs/:id` and nothing else.
+ *   `blocked` is NOT a terminal state: a blocked work can be unblocked and
  *   continue on the same node, with a fresh tree, and pruning its branch would
  *   take the work with it.
- * - **`git branch -d`, never `-D`.** `concluido` says the traversal reached a
+ * - **`git branch -d`, never `-D`.** `completed` says the traversal reached a
  *   final node of the graph. It says nothing whatsoever about whether the
  *   branch's commits were merged anywhere, and those two facts are independent.
  *   `-d` is the spelling that refuses to discard unmerged history; a refusal is
@@ -70,7 +70,7 @@ const DAY_SECONDS = 24 * 60 * 60;
  * Both are ordinary results of this command and neither changes the exit code:
  *
  * - **not fully merged** — the reason `-d` is used instead of `-D` at all.
- *   `concluido` says the traversal reached a final node, which is independent
+ *   `completed` says the traversal reached a final node, which is independent
  *   of where the commits ended up, and discarding them would be this command
  *   destroying the only thing it was collecting around.
  * - **used by worktree** — the branch is checked out in a directory this run
@@ -317,10 +317,20 @@ interface Candidate {
   branch: string | null;
 }
 
-/** What `GET /v1/jobs/:id` gives back, in the part this command reads. */
+/**
+ * What `GET /v1/jobs/:id` gives back, in the part this command reads.
+ *
+ * The names are `WireJob`'s (`packages/core/src/repositories/job.ts`), which is
+ * the shape the route really answers since t226 renamed the wire. Until t254
+ * this interface declared `bloqueado`/`concluido`, and TypeScript had no way to
+ * say so: the body arrives as `unknown` and is asserted into this type, so both
+ * reads were `undefined` on every job and every candidate looked unfinished
+ * forever. The command was a no-op that reported "not concluded" about work
+ * that had finished weeks earlier.
+ */
 interface JobStatus {
-  bloqueado: boolean;
-  concluido: boolean;
+  blocked: boolean;
+  completed: boolean;
 }
 
 /**
@@ -498,11 +508,11 @@ export async function runPrune(options: PruneOptions, seams: PruneSeams = {}): P
       // the one somebody is waiting to have collected.
     }
 
-    if (status?.concluido !== true) {
+    if (status?.completed !== true) {
       const why =
         status === null
           ? 'the control plane did not answer for it'
-          : status.bloqueado
+          : status.blocked
             ? 'blocked, which is not a terminal state'
             : 'not concluded';
       write(`left alone: job ${candidate.jobId} (${why})`);
@@ -565,7 +575,7 @@ export async function runPrune(options: PruneOptions, seams: PruneSeams = {}): P
     }
 
     // `-d` and never `-D`: this is the line that refuses to discard history
-    // nobody merged. `concluido` means the traversal reached a final node of the
+    // nobody merged. `completed` means the traversal reached a final node of the
     // graph, which is independent of where those commits ended up.
     const deleted = await runGit(options.repoRoot, ['branch', '-d', candidate.branch]);
     if (deleted.code === 0) {

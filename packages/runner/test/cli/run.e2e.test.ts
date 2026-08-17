@@ -143,6 +143,8 @@ interface Job {
   title: string;
   current_node_id: string;
   blocked: boolean;
+  /** What a person reads first when the work left the queue (t252). */
+  block_reason: string | null;
 }
 
 interface Lease {
@@ -678,32 +680,30 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     assert.deepEqual([...new Set(leases.map((lease) => lease.status))], ['released']);
   });
 
-  await parent.test('AT11 — a tick that blows up is logged and the loop keeps turning', async (t) => {
+  await parent.test('AT11 — a tick that blows up blocks the work with its reason, and the loop keeps turning (t252)', async (t) => {
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
     // A real repository, for the SECOND job: the poison one never reaches a
-    // worktree (`UnknownEngineError` is thrown before `acquire`), but the
+    // worktree (`UnknownEngineError` is raised before `acquire`), but the
     // healthy one that proves the loop survived is dispatched for real.
     const { repoRoot, worktreesRoot } = initRepo(t, 't162-at11');
     t.after(async () => {
       await blockEveryJob(plane);
     });
 
-    // Recorded and swallowed: the lines below are the failure under test, and
-    // letting them through would read as the suite itself breaking.
-    const logged: string[] = [];
-    const original = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
-      logged.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'));
-      return true;
-    }) as typeof process.stderr.write;
-    t.after(() => {
-      process.stderr.write = original;
-    });
-
     // This runner routes `claude-code` and nothing else, so a job standing on
-    // the node that declares `codex` is an `UnknownEngineError` — thrown before
-    // any session opens, and travelling up through `tick()`.
+    // the node that declares `codex` is an `UnknownEngineError` — raised before
+    // any session opens.
+    //
+    // What this test asserted until t252 was the line `cli/run.ts` logged on the
+    // way past: the error travelled up through `tick()`, one line went to
+    // stderr, and two seconds later the same job was at the head of the same
+    // queue being dispatched into the same throw. t252 closed exactly that loop
+    // (`src/dispatch/pre-session-failure.ts`): a failure that will reproduce on
+    // every retry is now CLASSIFIED, the work is blocked with the reason a
+    // person reads, and the dispatch resolves normally — so there is no line on
+    // stderr any more, and asserting one was asserting the bug. The stderr
+    // capture that used to stand here went with it.
     const poison = await api<Job>(
       plane,
       'POST',
@@ -732,25 +732,47 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       engineFactory: fakeEngineFactory({ FAKE_ENGINE_LINES: QUIET_LINES }),
     });
 
-    await waitFor('the failing tick being logged', async () => {
-      await delay(0);
-      return logged.some((line) => line.includes('codex'));
+    // The first half of t252's contract: the work LEAVES the queue on the
+    // runner's own account, and it leaves carrying why.
+    await waitFor('the failing dispatch blocking its own work', async () => {
+      const current = await api<Job>(plane, 'GET', `/v1/jobs/${poison.id}`);
+      return current.blocked;
     });
 
-    // The lease of the failed dispatch went back all the same: the loop is the
-    // only thing that survived the error, not the capacity.
+    const blocked = await api<Job>(plane, 'GET', `/v1/jobs/${poison.id}`);
+    assert.match(
+      blocked.block_reason ?? '',
+      /codex/,
+      `the reason a person reads has to name the engine with no route: ${blocked.block_reason}`,
+    );
+
+    // ...and it left BEFORE anything was spent, which is the whole point of
+    // classifying pre-session: no session was ever opened for that execution.
+    // Structural on purpose — it says what `Nenhuma sessão foi aberta` says in
+    // the reason, without pinning the Portuguese sentence that says it.
+    const { sessions: poisonSessions } = await api<{ sessions: Session[] }>(
+      plane,
+      'GET',
+      '/v1/sessions?execution_id=16211',
+    );
+    assert.deepEqual(poisonSessions, [], 'a pre-session block opens no session at all');
+
+    // The lease of the failed dispatch went back all the same: what the failure
+    // costs is one candidate, never the capacity.
     const poisonLeases = await leasesOfJob(plane, poison.id);
     assert.ok(poisonLeases.length > 0, 'the failing tick did take a lease');
     assert.deepEqual(
       [...new Set(poisonLeases.map((lease) => lease.status))],
       ['released'],
-      'a dispatch that blew up still gave its lease back',
+      'a dispatch that blocked its work still gave its lease back',
     );
 
-    // Out of the queue, or the next tick would keep finding it first — the
-    // controller stops at the first candidate that yields a lease.
-    await api(plane, 'POST', `/v1/jobs/${poison.id}/blocks`, { reason: 'engine sem rota neste runner' });
-
+    // No `POST /blocks` by hand here any more, and that absence is the assertion
+    // above read from the other side: this test used to have to take the poison
+    // job out of the queue itself, or the next tick would find it at the head
+    // again and dispatch it into the same failure. The runner does it now, which
+    // is what makes the second half — a later job being reached at all —
+    // something the runner earns rather than something the test arranges.
     const healthy = await api<Job>(
       plane,
       'POST',

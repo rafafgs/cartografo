@@ -24,9 +24,17 @@
  * 4. The surveyor reads THAT execution through `GET /v1/executions/:id/events`,
  *    computes time per node, and dispatches one more real session to choose the
  *    semantic diff.
- * 5. Exactly one proposal lands in the book, `pendente`, and its `evidencia`
+ * 5. Exactly one proposal lands in the book, `pending`, and its `evidence`
  *    cites event ids that are in the log. Nothing is applied: the graph's
  *    current version pointer is checked at the end and has not moved.
+ *
+ * Every field this script reads off an answer is spelled the way `/v1` answers
+ * it, in English, and `test/no-portuguese-wire.test.ts` is what keeps it that
+ * way (t266). It did not, for a long time: this proof was on no sweep's list,
+ * so it went on destructuring `eventos` off a body that has answered `events`
+ * since t226, and the run died at the hard-proof step on a `TypeError` about
+ * `undefined` — a defect nothing in CI could see, because nothing in CI runs a
+ * line of this file.
  *
  * The evidence printed at the end is the control plane's own record, read back
  * from the API — not this script's opinion of what happened.
@@ -240,7 +248,7 @@ async function main() {
         return { ...no, skill_ref: { id: skill.id, version: skill.version, hash: skill.hash } };
       }),
     };
-    const { grafo: graph, grafo_versao: version } = await api(url, 'POST', '/v1/graphs', document, 201);
+    const { graph, graph_version: version } = await api(url, 'POST', '/v1/graphs', document, 201);
     log(`graph "${graph.id}" registered at version ${version.id}`);
 
     const { root, repo } = createDisposableRepo();
@@ -260,7 +268,7 @@ async function main() {
       },
       201,
     );
-    log(`job ${job.id} created on node "${job.no_atual}"`);
+    log(`job ${job.id} created on node "${job.current_node_id}"`);
 
     // No `instructions` here since t161: the text of each node comes from the
     // manifest registered above, resolved from the node the work is standing on.
@@ -290,7 +298,8 @@ async function main() {
     // work is `concluido` the moment it lands there and the controller would
     // never offer it again.
     const moved = await api(url, 'GET', `/v1/jobs/${job.id}`);
-    if (moved.no_atual !== 'revisar') die(`the dispatch had to advance the work to "revisar"; it is on "${moved.no_atual}"`);
+    if (moved.current_node_id !== 'revisar')
+      die(`the dispatch had to advance the work to "revisar"; it is on "${moved.current_node_id}"`);
     log('the dispatch advanced the work to "revisar" with nobody asking');
 
     log('real session #2 — node "revisar"...');
@@ -314,37 +323,37 @@ async function main() {
     if (result.proposta === null) die('there was a bottleneck and no proposal was created');
 
     // --- 5. the hard proofs, read back from the API ---------------------------
-    const { eventos: events } = await api(url, 'GET', `/v1/executions/${EXECUTION_ID}/events`);
+    const { events } = await api(url, 'GET', `/v1/executions/${EXECUTION_ID}/events`);
     const logIds = new Set(events.map((event) => event.id));
-    const { propostas: proposals } = await api(url, 'GET', '/v1/proposals');
+    const { proposals } = await api(url, 'GET', '/v1/proposals');
 
     if (proposals.length !== 1) die(`the book has ${proposals.length} proposals; expected 1`);
     const proposal = proposals[0];
-    if (proposal.status !== 'pendente') die(`the proposal is "${proposal.status}"`);
-    if (proposal.versao_aplicada_id !== null) die('something applied the proposal');
+    if (proposal.status !== 'pending') die(`the proposal is "${proposal.status}"`);
+    if (proposal.applied_version_id !== null) die('something applied the proposal');
 
-    for (const id of proposal.evidencia.event_ids) {
-      if (!logIds.has(id)) die(`evidencia.event_ids cites event ${id}, absent from the log`);
+    for (const id of proposal.evidence.event_ids) {
+      if (!logIds.has(id)) die(`evidence.event_ids cites event ${id}, absent from the log`);
     }
 
     const graphAfter = await api(url, 'GET', `/v1/graphs/${graph.id}`);
-    if (graphAfter.grafo.versao_corrente_id !== version.id) {
+    if (graphAfter.graph.current_version_id !== version.id) {
       die('the version pointer moved: the surveyor applied something');
     }
 
-    const jsonl = join(root, 'eventos.jsonl');
+    const jsonl = join(root, 'events.jsonl');
     writeFileSync(jsonl, `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
 
     console.log('\n===== evidence =====');
     console.log(`CLI:              ${probe.version}`);
     console.log(`execution_id:      ${EXECUTION_ID}`);
     console.log(`events in the log: ${events.length}`);
-    console.log(`proposta.id:      ${proposal.id}`);
+    console.log(`proposal.id:      ${proposal.id}`);
     console.log(`status:           ${proposal.status}`);
-    console.log(`grafo/versao:     ${proposal.grafo_id} / ${proposal.versao_alvo}`);
-    console.log(`operacoes:        ${JSON.stringify(proposal.operacoes, null, 2)}`);
-    console.log(`evidencia:        ${JSON.stringify(proposal.evidencia, null, 2)}`);
-    console.log(`metrica_esperada: ${JSON.stringify(proposal.metrica_esperada)}`);
+    console.log(`graph/version:    ${proposal.graph_id} / ${proposal.target_version}`);
+    console.log(`operations:       ${JSON.stringify(proposal.operations, null, 2)}`);
+    console.log(`evidence:         ${JSON.stringify(proposal.evidence, null, 2)}`);
+    console.log(`expected_metric:  ${JSON.stringify(proposal.expected_metric)}`);
     console.log(`full log:         ${jsonl}`);
     console.log(`workdirs:         ${repo} · ${surveyorRepo}`);
     console.log(`(surveyor root: ${surveyorRoot})`);

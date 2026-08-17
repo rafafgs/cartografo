@@ -114,7 +114,7 @@ test('t124 AT — issueCredential returns the raw token once and persists only i
   const db = await openMigrated(t);
   const { issueCredential } = await loadRepository();
 
-  const issued = issueCredential(db, { tipo: 'usuario' });
+  const issued = issueCredential(db, { tipo: 'user' });
 
   assert.equal(typeof issued.id, 'number');
   assert.match(issued.token, /^[0-9a-f]{64}$/, '32 random bytes, in hex (Refinement Log)');
@@ -123,7 +123,7 @@ test('t124 AT — issueCredential returns the raw token once and persists only i
     string,
     unknown
   >;
-  assert.equal(stored.owner_type, 'usuario');
+  assert.equal(stored.owner_type, 'user');
   assert.equal(stored.runner_id, null);
   assert.equal(stored.revoked_at, null);
   assert.equal(typeof stored.created_at, 'string');
@@ -139,7 +139,7 @@ test('t124 AT — issueCredential returns the raw token once and persists only i
     assert.notEqual(value, issued.token, `the raw token leaked into "${column}"`);
   }
 
-  const second = issueCredential(db, { tipo: 'usuario' });
+  const second = issueCredential(db, { tipo: 'user' });
   assert.notEqual(second.token, issued.token, 'every issuance is a fresh random token');
 });
 
@@ -147,12 +147,12 @@ test('t124 AT — verifyToken resolves a live credential and refuses everything 
   const db = await openMigrated(t);
   const { issueCredential, verifyToken } = await loadRepository();
 
-  const issued = issueCredential(db, { tipo: 'usuario' });
+  const issued = issueCredential(db, { tipo: 'user' });
 
   const found = verifyToken(db, issued.token);
   assert.ok(found !== null, 'a freshly issued token resolves');
   assert.equal(found.id, issued.id);
-  assert.equal(found.tipo, 'usuario');
+  assert.equal(found.tipo, 'user');
 
   assert.equal(verifyToken(db, 'f'.repeat(64)), null, 'a token never issued resolves to nothing');
   assert.equal(verifyToken(db, ''), null, 'the empty string is not a credential');
@@ -191,7 +191,7 @@ test('t143 AT — revokeRunnerCredentials revokes every live credential of one r
   const first = issueCredential(db, { tipo: 'runner', runnerId: 'runner-a' });
   const second = issueCredential(db, { tipo: 'runner', runnerId: 'runner-a' });
   const other = issueCredential(db, { tipo: 'runner', runnerId: 'runner-b' });
-  const operator = issueCredential(db, { tipo: 'usuario' });
+  const operator = issueCredential(db, { tipo: 'user' });
 
   assert.equal(revokeRunnerCredentials(db, 'runner-a'), 2, 'it returns what it revoked');
 

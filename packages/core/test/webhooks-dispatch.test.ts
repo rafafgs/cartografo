@@ -399,7 +399,7 @@ test('AT5 — the event is pushed with the envelope and a verifiable signature',
 
   await waitFor(
     t,
-    () => only(deliveries(ctx.db, subscription.id)).status === 'entregue',
+    () => only(deliveries(ctx.db, subscription.id)).status === 'delivered',
     'the 2xx to close the delivery',
   );
   const delivery = only(deliveries(ctx.db, subscription.id));
@@ -481,7 +481,7 @@ test('AT8 — a failed attempt is rescheduled by the backoff step, and retried',
   );
 
   const failed = only(deliveries(ctx.db, subscription.id));
-  assert.equal(failed.status, 'pendente', 'a failure does not end the delivery');
+  assert.equal(failed.status, 'pending', 'a failure does not end the delivery');
   assert.equal(failed.next_attempt_at, after(BACKOFF_MS[0]));
   assert.equal(failed.delivered_at, null);
   assert.ok(
@@ -501,7 +501,7 @@ test('AT8 — a failed attempt is rescheduled by the backoff step, and retried',
   );
 
   const retried = only(deliveries(ctx.db, subscription.id));
-  assert.equal(retried.status, 'pendente');
+  assert.equal(retried.status, 'pending');
   assert.equal(
     retried.next_attempt_at,
     after(BACKOFF_MS[0] + BACKOFF_MS[1]),
@@ -533,7 +533,7 @@ test('AT9 — past the last step the delivery is esgotada, and never tried again
   }
 
   const exhausted = only(deliveries(ctx.db, subscription.id));
-  assert.equal(exhausted.status, 'esgotada');
+  assert.equal(exhausted.status, 'exhausted');
   assert.equal(exhausted.attempts, BACKOFF_MS.length + 1);
   assert.equal(exhausted.delivered_at, null);
   assert.ok((exhausted.last_error ?? '').includes('500'), 'the last failure is kept');
@@ -565,13 +565,13 @@ test('AT10 — a broken subscriber does not hold up a healthy one', async (t) =>
 
   await waitFor(
     t,
-    () => deliveries(ctx.db, healthy.id).some((delivery) => delivery.status === 'entregue'),
+    () => deliveries(ctx.db, healthy.id).some((delivery) => delivery.status === 'delivered'),
     "the healthy subscriber's delivery",
   );
-  assert.equal(only(deliveries(ctx.db, healthy.id)).status, 'entregue');
+  assert.equal(only(deliveries(ctx.db, healthy.id)).status, 'delivered');
 
   const stuck = only(deliveries(ctx.db, broken.id));
-  assert.equal(stuck.status, 'pendente', 'the broken one keeps its own failure');
+  assert.equal(stuck.status, 'pending', 'the broken one keeps its own failure');
   assert.ok(stuck.attempts >= 1);
   assert.equal(only(deliveries(ctx.db, healthy.id)).last_error, null);
 });
@@ -595,13 +595,13 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
     'the first attempt, so there is a pending retry to stop',
   );
   const spent = ctx.calls.length;
-  assert.equal(only(deliveries(ctx.db, subscription.id)).status, 'pendente');
+  assert.equal(only(deliveries(ctx.db, subscription.id)).status, 'pending');
 
   const removed = await unsubscribe(ctx, subscription.id);
   assert.equal(typeof removed.deactivated_at, 'string');
   assert.equal(
     only(deliveries(ctx.db, subscription.id)).status,
-    'esgotada',
+    'exhausted',
     'the pending retry is closed in the same call',
   );
 

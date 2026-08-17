@@ -6,10 +6,10 @@ do banco, rotas da tela, flags de CLI e as chaves do relatório de validação.
 
 ## O que este documento é (e o que não é)
 
-Este glossário é **descritivo da INTENÇÃO**, não de um estado do código: nenhum
-dos nomes da coluna "vira" existe hoje em lugar nenhum. Nada foi renomeado sob
-o t213 — ele produz este documento e o teste estrutural que o guarda
-(`packages/core/test/glossario-wire.test.ts`), e mais nada.
+Este glossário nasceu **descritivo da INTENÇÃO** — quando o t213 o escreveu,
+nenhum dos nomes da coluna "vira" existia em lugar nenhum. Ele vai virando
+descritivo do CÓDIGO à medida que os filhos aterrissam, e é aqui que se lê
+quanto já virou.
 
 Quem aplica são os seis tickets filhos do t213, na ordem da D20 (glossário →
 API/erros → eventos → operações → banco → rotas/flags/relatório → docs e
@@ -17,6 +17,27 @@ portão). Cada um filtra a coluna `superfície` pelas linhas que lhe cabem e
 renomeia só aquilo. A razão de o glossário vir primeiro é simples: sem ele, os
 seis inventam cinco inglêses diferentes para o mesmo termo, e o repositório
 abre (D7) com dois vocabulários em vez de um.
+
+**Onde cada superfície está** (atualizado pelo filho que aterrissa):
+
+| seção | etiqueta | estado | quem levou |
+|---|---|---|---|
+| §1.1 a §1.5 | `api` | convergida | t226 |
+| §1.6, valores de enum | `api` | convergida | t226 no fio, t227 no evento, t235 no banco |
+| §2 | `events` | convergida | t227 |
+| §3 | `proposal-ops` | convergida | t228 |
+| §4.1 e §4.2 | `database` | convergida | t229 (nomes), t235 (valores) |
+| §5 | `routes-cli-report` | pendente | t230 |
+
+Quatro colunas de `job` e de `session` que a §4.2 não registra continuam em
+português (`corpo`, `criterios_de_aceite`, `transcricao_truncada`,
+`transcricao_tamanho_original`): fechar o buraco é acrescentar linha aqui, e é
+trabalho de ficha própria, não do filho do banco.
+
+O banco fala inglês **desde a primeira migração**, e não a partir de uma
+migração de renomeação: a D20 recria os bancos de desenvolvimento, então o
+t235 reescreveu `0001`–`0018` no lugar em vez de empilhar uma dezenove-ésima
+que renomeasse o que ninguém tinha gravado ainda.
 
 Complemento, não substituto, do portão da D18 já existente
 (`no-portuguese-identifiers.test.ts`): aquele cuida de IDENTIFICADORES de
@@ -194,6 +215,12 @@ significa outra coisa: `pergunta.tipo=pergunta` é o TIPO de escalação (pergun
 ou aprovação) e vira `question`, enquanto `pergunta` sozinho é a entidade e vira
 `input_request` (2.3, 4.1).
 
+`sessao.status = 'aberta'` entrou nesta tabela com o filho do banco (t235): ela
+é a única coluna de status sem `CHECK`, e por isso ninguém a tinha registrado
+aqui — o valor nasce na migração `0003` e é lido de volta pela rota que fecha a
+sessão. Vira `open`, o mesmo vocabulário do evento `session.opened` e o mesmo
+padrão de `ativa` → `active`.
+
 | superfície | hoje | vira | onde está hoje |
 |---|---|---|---|
 | api | `pendente` | `pending` | `packages/core/migrations/0010_proposta_aprovada.sql`, `packages/core/migrations/0006_intake.sql` |
@@ -219,6 +246,7 @@ ou aprovação) e vira `question`, enquanto `pergunta` sozinho é a entidade e v
 | api | `variante` | `variant` | `packages/core/migrations/0002_grafo_versao_proposta.sql` |
 | api | `fazer` | `work` | `packages/core/migrations/0005_skill.sql` |
 | api | `portao` | `gate` | `packages/core/migrations/0005_skill.sql` |
+| api | `aberta` | `open` | `packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql`, `packages/core/src/repositories/session.ts` |
 | api | `concluida` | `completed` | `packages/core/src/db/event-validation.ts:246` |
 | api | `falhou` | `failed` | `packages/core/src/db/event-validation.ts:246` |
 | api | `travada` | `stuck` | `packages/core/src/db/event-validation.ts:246` |

@@ -401,7 +401,7 @@ test('AT9 — a 2xx closes the delivery in silence: no event is recorded', async
 
   await waitFor(
 t,
-() => only(deliveries(ctx.db)).status === 'entregue', 'the 2xx to close the delivery');
+() => only(deliveries(ctx.db)).status === 'delivered', 'the 2xx to close the delivery');
   await drive(t);
 
   const delivered = only(deliveries(ctx.db));
@@ -430,7 +430,7 @@ t,
 () => only(deliveries(ctx.db)).attempts === 1, 'the first attempt to be recorded');
 
   const failed = only(deliveries(ctx.db));
-  assert.equal(failed.status, 'pendente', 'a failure does not end the delivery');
+  assert.equal(failed.status, 'pending', 'a failure does not end the delivery');
   assert.equal(failed.next_attempt_at, after(BACKOFF_MS[0]));
   assert.equal(failed.delivered_at, null);
   assert.ok(
@@ -472,7 +472,7 @@ test('AT11 — the sixth failed attempt gives up and records one job.hook_failed
   }
 
   const exhausted = only(deliveries(ctx.db));
-  assert.equal(exhausted.status, 'esgotada');
+  assert.equal(exhausted.status, 'exhausted');
   assert.equal(exhausted.attempts, BACKOFF_MS.length + 1);
   assert.equal(exhausted.delivered_at, null);
 
@@ -528,12 +528,12 @@ t,
 
   await waitFor(
 t,
-() => healthy().status === 'entregue', 'the healthy hook to be delivered');
+() => healthy().status === 'delivered', 'the healthy hook to be delivered');
   assert.equal(healthy().last_error, null);
 
   const broken = deliveries(ctx.db).find((row) => row.hook_id === 'avisar-morto');
   assert.ok(broken !== undefined);
-  assert.equal(broken.status, 'pendente', 'the dead one keeps its own failure');
+  assert.equal(broken.status, 'pending', 'the dead one keeps its own failure');
   assert.ok(broken.attempts >= 1);
 });
 

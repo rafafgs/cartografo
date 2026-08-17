@@ -241,7 +241,7 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   assert.equal(enqueued.job_id, job.id);
   assert.equal(enqueued.project_id, job.projeto_id);
   assert.equal(enqueued.graph_version_id, versionId);
-  assert.equal(enqueued.status, 'pendente');
+  assert.equal(enqueued.status, 'pending');
   assert.equal(enqueued.attempts, 0);
   assert.equal(enqueued.delivered_at, null);
   assert.equal(enqueued.last_error, null);
@@ -265,7 +265,7 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   const trigger = db
     .prepare(
       `SELECT id, type FROM event
-        WHERE entity_type = 'trabalho' AND entity_id = ? ORDER BY id DESC LIMIT 1`,
+        WHERE entity_type = 'job' AND entity_id = ? ORDER BY id DESC LIMIT 1`,
     )
     .get(String(job.id)) as { id: number; type: string };
   assert.equal(trigger.type, 'job.transitioned');
@@ -288,7 +288,7 @@ test('AT5 — blocking fires only the node_blocked hook of the node it blocked o
   const enqueued = only(hookDeliveries(db));
   assert.equal(enqueued.hook_id, ON_BLOCK);
   assert.equal(enqueued.node_id, 'redigir');
-  assert.equal(enqueued.status, 'pendente');
+  assert.equal(enqueued.status, 'pending');
 
   // A block on `revisar` matches nothing: its only hook is a node_entered one,
   // and a trigger is half of the match, never a detail of it.
@@ -386,5 +386,5 @@ test('AT7 — the write path answers 200 even when the hook destination rejects'
   assert.equal(only(hookDeliveries(db)).hook_id, ON_ENTER);
   await waitFor(() => attempts >= 1, 'the background dispatcher to attempt the delivery');
   assert.ok(attempts >= 1, 'and the dispatcher does attempt it, after the answer went out');
-  assert.equal(only(hookDeliveries(db)).status, 'pendente', 'a failed attempt is not terminal');
+  assert.equal(only(hookDeliveries(db)).status, 'pending', 'a failed attempt is not terminal');
 });

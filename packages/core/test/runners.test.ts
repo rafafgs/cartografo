@@ -108,7 +108,7 @@ async function start(t: TestHook): Promise<{
   // Every `/v1` route demands a credential since t124; this suite is about
   // the routes, so the harness issues one and presents it on every call.
   const { issueCredential } = await loadCredentials();
-  const { token } = issueCredential(db, { tipo: 'usuario' });
+  const { token } = issueCredential(db, { tipo: 'user' });
 
   const app = createApp({ db });
   const address = await app.listen({ port: 0, host: '127.0.0.1' });

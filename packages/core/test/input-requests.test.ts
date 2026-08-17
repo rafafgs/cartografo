@@ -803,7 +803,7 @@ test('t149 AT1 — answering the same input request twice is a 409, and the firs
   assert.equal(retry.status, 409, 'the second answer is a conflict, never a silent overwrite');
   assert.equal(retry.body.error, 'conflict');
   assert.ok(
-    retry.body.details.some((detail) => detail.includes('respondida')),
+    retry.body.details.some((detail) => detail.includes('answered')),
     `the 409 has to say what state refused it: ${JSON.stringify(retry.body.details)}`,
   );
 

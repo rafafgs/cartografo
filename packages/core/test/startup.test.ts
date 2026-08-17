@@ -169,9 +169,14 @@ test(
     try {
       assert.equal(first.readiness.event, 'cartografo.ready');
       assert.equal(first.readiness.database, databasePath);
-      assert.ok(
-        first.readiness.migrationsApplied >= 1,
-        'the first startup has to apply at least the initial migration',
+      // The exact count, not `>= 1`: t235 deleted `0019_wire_database_rename.sql`
+      // and rewrote `0001`–`0018` so the schema is born English, and this line
+      // is what makes a nineteenth file that quietly reappears — a rename
+      // migration for a database nobody has — fail on the way up (D20).
+      assert.equal(
+        first.readiness.migrationsApplied,
+        18,
+        'a brand-new database applies the eighteen migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

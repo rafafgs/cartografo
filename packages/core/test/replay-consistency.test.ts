@@ -218,5 +218,5 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   ]);
   assert.equal(state.trabalhos[String(stopped.id)].bloqueado, true);
   assert.equal(state.perguntas[String(auto.body.id)].origem, 'auto');
-  assert.equal(state.sessoes[String(otherSession.body.id)].status, 'aberta');
+  assert.equal(state.sessoes[String(otherSession.body.id)].status, 'open');
 });

@@ -27,6 +27,7 @@ import test from 'node:test';
 
 import type * as ConnectionModule from '../src/db/connection.ts';
 import type * as MigrateModule from '../src/db/migrate.ts';
+import { databaseTerms, termHits } from './glossary-terms.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REAL_MIGRATIONS_DIR = path.join(PACKAGE_ROOT, 'migrations');
@@ -268,8 +269,15 @@ test('AT5 — the package 0001_init.sql creates schema_migrations with id and ap
   assert.equal(appliedAt.notnull, 1, 'applied_at is NOT NULL');
 });
 
-/** The 15 tables §4.1 renames, in the glossary's own order. */
-const RENAMED_TABLES = Object.freeze([
+/**
+ * The 18 tables the sequence builds, so the sweep below cannot pass vacuously.
+ *
+ * Not a rename list any more: t235 rewrote `0001`–`0018` in place and deleted
+ * `0019_wire_database_rename.sql`, so there is no step where a table is called
+ * anything else. `schema_migrations` (`0001`) and `sqlite_sequence` (SQLite's
+ * own) are left out — neither is a row of the glossary's §4.1.
+ */
+const TABLES = Object.freeze([
   'graph',
   'graph_version',
   'proposal',
@@ -277,6 +285,9 @@ const RENAMED_TABLES = Object.freeze([
   'job',
   'session',
   'input_request',
+  'runner',
+  'lease',
+  'skill',
   'job_dependency',
   'intake_draft',
   'credential',
@@ -287,29 +298,22 @@ const RENAMED_TABLES = Object.freeze([
   'hook_secret',
 ]);
 
-/** The three §4.1 already spells in English — no `RENAME TO` touches them. */
-const UNCHANGED_TABLES = Object.freeze(['runner', 'lease', 'skill']);
+/**
+ * A DDL line's declarations, without the `--` tail that explains them.
+ *
+ * `sqlite_schema.sql` gives back the statement as it was WRITTEN, comments and
+ * all, and the comments of these migrations are Portuguese prose about a schema
+ * that used to be Portuguese ("solto de propósito: `grafo_versao` é de t101").
+ * Prose is not a name; what the sweep wants is the declaration. The migrations
+ * never open a `--` inside a quoted value, which is what makes stripping to the
+ * end of the line safe here and what keeps the stored VALUES — the other half of
+ * what t235 moved — in front of the sweep.
+ */
+function declarationsOnly(sql: string): string {
+  return sql.replace(/--[^\n]*/g, '');
+}
 
-/** The Portuguese spellings §4.1 retires; no table and no index may still carry one. */
-const RETIRED_TABLE_WORDS = Object.freeze([
-  'grafo',
-  'grafo_versao',
-  'proposta',
-  'evento',
-  'trabalho',
-  'sessao',
-  'pergunta',
-  'trabalho_dependencia',
-  'intake_rascunho',
-  'credencial',
-  'assinatura_webhook',
-  'entrega_webhook',
-  'motor_modelo',
-  'entrega_gancho',
-  'segredo_gancho',
-]);
-
-test('t229 AT — after 0019 the schema speaks the English of glossario-wire.md §4.1', async (t) => {
+test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAULT', async (t) => {
   const { openDatabase, applyPragmas } = await loadConnection();
   const { migrate } = await loadMigrate();
 
@@ -318,40 +322,40 @@ test('t229 AT — after 0019 the schema speaks the English of glossario-wire.md 
   t.after(() => db.close());
   applyPragmas(db);
 
-  migrate(db, REAL_MIGRATIONS_DIR);
-
-  const tables = new Set(
-    (
-      db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table'").all() as Array<{
-        name: string;
-      }>
-    ).map((row) => row.name),
+  const applied = migrate(db, REAL_MIGRATIONS_DIR);
+  assert.equal(
+    applied.length,
+    18,
+    'a fresh database applies the eighteen migrations of the package and nothing else',
   );
-  for (const wanted of [...RENAMED_TABLES, ...UNCHANGED_TABLES]) {
-    assert.ok(tables.has(wanted), `the table "${wanted}" has to exist after the rename`);
+
+  const objects = db
+    .prepare("SELECT type, name, sql FROM sqlite_schema WHERE type IN ('table', 'index') ORDER BY name")
+    .all() as Array<{ type: string; name: string; sql: string | null }>;
+
+  const tables = new Set(objects.filter((row) => row.type === 'table').map((row) => row.name));
+  for (const wanted of TABLES) {
+    assert.ok(tables.has(wanted), `the table "${wanted}" has to exist in a fresh database`);
   }
 
-  // Indexes as well as tables: SQLite renames the COLUMNS an index references on
-  // its own, never the index's own name, so every one of them that spelled a
-  // retired word has to have been dropped and recreated by hand (FR2).
-  const objects = db
-    .prepare("SELECT type, name FROM sqlite_schema WHERE type IN ('table', 'index') ORDER BY name")
-    .all() as Array<{ type: string; name: string }>;
-
-  const survivors = objects
-    .filter((row) =>
-      RETIRED_TABLE_WORDS.some((word) => new RegExp(`(^|_)${word}(_|$)`).test(row.name)),
-    )
-    .map((row) => `${row.type} ${row.name}`);
+  // The same term source as `no-portuguese-database.test.ts` (FR7/FR8): that
+  // gate asks it of the QUERIES and this one of the SCHEMA those queries run
+  // against, and a word retired in one place but not the other is precisely the
+  // drift a second declared list would let through.
+  const terms = databaseTerms();
+  const hits = objects.flatMap((row) => {
+    const text = `${row.name}\n${declarationsOnly(row.sql ?? '')}`;
+    return termHits(text, terms).map((hit) => `${row.type} ${row.name}: ${hit.split(': ')[1]}`);
+  });
 
   assert.deepEqual(
-    survivors,
+    [...new Set(hits)].sort(),
     [],
-    'no table and no index may still be named after a §4.1 Portuguese word',
+    'no table, index, column, CHECK or DEFAULT of a fresh database may spell a retired Portuguese word',
   );
 });
 
-test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows already there', async (t) => {
+test('t165 AT7 — migration 0010 rebuilds proposal and round-trips the rows already there', async (t) => {
   const { openDatabase, applyPragmas } = await loadConnection();
   const { listMigrations, migrate } = await loadMigrate();
 
@@ -363,7 +367,7 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
   const upTo0009 = path.join(base, 'ate-0009');
   mkdirSync(upTo0009);
   const all = listMigrations(REAL_MIGRATIONS_DIR);
-  const rebuild = all.find((migration) => migration.id.startsWith('0010_'));
+  const rebuild = all.find((migration) => migration.number === 10);
   assert.ok(rebuild, 'artifact does not exist yet: packages/core/migrations/0010_proposta_aprovada.sql');
   assert.doesNotMatch(
     readFileSync(rebuild.path, 'utf8'),
@@ -391,52 +395,55 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
 
   migrate(db, upTo0009);
 
-  const before = db.prepare("SELECT name FROM pragma_table_info('proposta')").all() as Array<{
+  const before = db.prepare("SELECT name FROM pragma_table_info('proposal')").all() as Array<{
     name: string;
   }>;
+  assert.ok(before.length > 0, 'the seed schema has to have built the proposal table');
   assert.ok(
-    !before.some((column) => column.name === 'motivo_rejeicao'),
+    !before.some((column) => column.name === 'rejection_reason'),
     'the point of the test is that the column is NOT there before 0010',
   );
 
   // A lineage, a version and two proposals — one that the soundness gate
-  // rejected (its story is in `resultado`) and one still pending.
+  // rejected (its story is in `result`) and one still pending. Every name and
+  // every stored value is English from `0001` on since t235: this is the schema
+  // as `0009` really leaves it, not a translation of it.
   const moment = '2026-08-15T12:00:00.000Z';
   const versionId = `sha256:${'a'.repeat(64)}`;
   // Lineage first with a null pointer, then the version, then the pointer: the
   // three tables reference each other in a circle (`0002`), so with the foreign
   // keys on there is no other order that ever satisfies all of them.
   db.prepare(
-    `INSERT INTO grafo (id, classe, linhagem_tipo, versao_corrente_id, criado_em)
+    `INSERT INTO graph (id, class, lineage_type, current_version_id, created_at)
      VALUES ('redacao', 'redacao', 'base', NULL, ?)`,
   ).run(moment);
   db.prepare(
-    `INSERT INTO grafo_versao (id, grafo_id, versao_pai, snapshot, origem, criado_em)
+    `INSERT INTO graph_version (id, graph_id, parent_version, snapshot, source, created_at)
      VALUES (?, 'redacao', NULL, '{}', 'manual', ?)`,
   ).run(versionId, moment);
-  db.prepare('UPDATE grafo SET versao_corrente_id = ? WHERE id = ?').run(versionId, 'redacao');
+  db.prepare('UPDATE graph SET current_version_id = ? WHERE id = ?').run(versionId, 'redacao');
   const seed = db.prepare(
-    `INSERT INTO proposta (grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada,
-                           status, motivo_reversao, resultado, criado_em, atualizado_em)
+    `INSERT INTO proposal (graph_id, target_version, operations, evidence, expected_metric,
+                           status, revert_reason, result, created_at, updated_at)
      VALUES ('redacao', ?, '[]', '{"fonte":"telemetria"}', '{"nome":"x"}', ?, NULL, ?, ?, ?)`,
   );
-  seed.run(versionId, 'rejeitada', '{"soundness":{"valido":false}}', moment, moment);
-  seed.run(versionId, 'pendente', null, moment, moment);
+  seed.run(versionId, 'rejected', '{"soundness":{"valido":false}}', moment, moment);
+  seed.run(versionId, 'pending', null, moment, moment);
 
   // And rows POINTING AT a proposal, which is the case the rebuild has to
-  // survive and the only reason the migration defers the foreign keys: a
+  // survive and the only reason the migration detaches the foreign keys: a
   // version born of a proposal, and a lineage that declares its origin. Without
   // these two the drop/rename would pass for a reason that does not hold in a
   // real database.
   const bornOfProposal = `sha256:${'b'.repeat(64)}`;
   db.prepare(
-    `INSERT INTO grafo_versao (id, grafo_id, versao_pai, snapshot, origem, proposta_id, criado_em)
-     VALUES (?, 'redacao', ?, '{}', 'proposta', 1, ?)`,
+    `INSERT INTO graph_version (id, graph_id, parent_version, snapshot, source, proposal_id, created_at)
+     VALUES (?, 'redacao', ?, '{}', 'proposal', 1, ?)`,
   ).run(bornOfProposal, versionId, moment);
-  db.prepare('UPDATE grafo SET origem_proposta_id = 2 WHERE id = ?').run('redacao');
+  db.prepare('UPDATE graph SET origin_proposal_id = 2 WHERE id = ?').run('redacao');
 
   const previous = db
-    .prepare('SELECT id, grafo_id, status, resultado, criado_em FROM proposta ORDER BY id')
+    .prepare('SELECT id, graph_id, status, result, created_at FROM proposal ORDER BY id')
     .all();
   assert.equal(previous.length, 2);
 
@@ -449,44 +456,44 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
   assert.deepEqual(migrate(db, upTo0009), [rebuild.id], 'only the rebuild was pending');
 
   assert.deepEqual(
-    db.prepare('SELECT id, grafo_id, status, resultado, criado_em FROM proposta ORDER BY id').all(),
+    db.prepare('SELECT id, graph_id, status, result, created_at FROM proposal ORDER BY id').all(),
     previous,
     'every existing row survives the rebuild identical to itself',
   );
   assert.deepEqual(
-    db.prepare('SELECT motivo_rejeicao FROM proposta ORDER BY id').all(),
-    [{ motivo_rejeicao: null }, { motivo_rejeicao: null }],
+    db.prepare('SELECT rejection_reason FROM proposal ORDER BY id').all(),
+    [{ rejection_reason: null }, { rejection_reason: null }],
     'no backfill: a gate-rejected row was never rejected by a human',
   );
 
   // The new vocabulary is accepted, and the old constraint still bites.
-  db.prepare("UPDATE proposta SET status = 'aprovada' WHERE status = 'pendente'").run();
+  db.prepare("UPDATE proposal SET status = 'approved' WHERE status = 'pending'").run();
   assert.equal(
-    (db.prepare("SELECT count(*) AS n FROM proposta WHERE status = 'aprovada'").get() as {
+    (db.prepare("SELECT count(*) AS n FROM proposal WHERE status = 'approved'").get() as {
       n: number;
     }).n,
     1,
   );
   assert.throws(
-    () => db.prepare("UPDATE proposta SET status = 'inventada' WHERE id = 1").run(),
+    () => db.prepare("UPDATE proposal SET status = 'invented' WHERE id = 1").run(),
     /CHECK/i,
     'the rebuilt table still refuses a status outside the vocabulary',
   );
 
   // The index the rebuild had to recreate, and the identity column it kept.
   const indexes = db
-    .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'proposta'")
+    .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'proposal'")
     .all() as Array<{ name: string }>;
   assert.ok(
-    indexes.some((index) => index.name === 'proposta_por_grafo'),
-    'proposta_por_grafo goes away with the dropped table and has to come back',
+    indexes.some((index) => index.name === 'proposal_by_graph'),
+    'proposal_by_graph goes away with the dropped table and has to come back',
   );
 
   const inserted = db
     .prepare(
-      `INSERT INTO proposta (grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada,
-                             status, criado_em, atualizado_em)
-       VALUES ('redacao', ?, '[]', '{}', '{}', 'pendente', ?, ?)`,
+      `INSERT INTO proposal (graph_id, target_version, operations, evidence, expected_metric,
+                             status, created_at, updated_at)
+       VALUES ('redacao', ?, '[]', '{}', '{}', 'pending', ?, ?)`,
     )
     .run(versionId, moment, moment);
   assert.equal(
@@ -501,16 +508,16 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
   // references, and a database with a single applied proposal did not migrate
   // at all.
   assert.deepEqual(
-    db.prepare('SELECT id, proposta_id FROM grafo_versao ORDER BY id').all(),
+    db.prepare('SELECT id, proposal_id FROM graph_version ORDER BY id').all(),
     [
-      { id: versionId, proposta_id: null },
-      { id: bornOfProposal, proposta_id: 1 },
+      { id: versionId, proposal_id: null },
+      { id: bornOfProposal, proposal_id: 1 },
     ],
     'a version born of a proposal still names it',
   );
   assert.equal(
-    (db.prepare('SELECT origem_proposta_id FROM grafo').get() as { origem_proposta_id: number })
-      .origem_proposta_id,
+    (db.prepare('SELECT origin_proposal_id FROM graph').get() as { origin_proposal_id: number })
+      .origin_proposal_id,
     2,
     'and so does a lineage that declares its origin',
   );
@@ -522,7 +529,7 @@ test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows alr
   assert.equal(
     (
       db
-        .prepare("SELECT count(*) AS n FROM sqlite_temp_schema WHERE name LIKE 'referencia_%'")
+        .prepare("SELECT count(*) AS n FROM sqlite_temp_schema WHERE name LIKE 'reference_%'")
         .get() as { n: number }
     ).n,
     0,

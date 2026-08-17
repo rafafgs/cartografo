@@ -111,7 +111,7 @@ async function startApp(
   applyPragmas(db);
   migrate(db, MIGRATIONS_DIR);
 
-  const { token } = issueCredential(db, { tipo: 'usuario' });
+  const { token } = issueCredential(db, { tipo: 'user' });
 
   const capture = options.capture === true ? captureStream() : null;
   const app = createApp({

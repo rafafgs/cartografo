@@ -1,51 +1,53 @@
 /**
- * D20 gate: no Portuguese term of the DATABASE surface survives in SQL (t229, FR10).
+ * D20 gate: no Portuguese of the schema survives in SQL (t229 FR10, t235 FR7).
  *
- * Sibling of `no-portuguese-wire.test.ts`, scoped to the surface the glossary
- * tags `database` (`docs/spec/glossario-wire.md` §4.1 tables, §4.2 columns)
- * instead of `api`. The vocabulary is not re-declared here: it is read out of the
- * glossary's own rows at run time, so a row added there is a term checked here on
- * the next run, and the two cannot drift.
+ * Sibling of `no-portuguese-wire.test.ts`, scoped to the database instead of to
+ * the wire. The vocabulary is not re-declared here: `glossary-terms.ts` reads it
+ * out of `docs/spec/glossario-wire.md` at run time and `migrate.test.ts` reads
+ * the same list, so this sweep and the one over the built schema cannot drift.
+ *
+ * t229 renamed the NAMES and left every CHECK-constrained VALUE in Portuguese;
+ * t235 finished the job by rewriting the migrations so the schema is born
+ * English in both vocabularies. That is why the term set is now §4 **and** §1.6,
+ * and why a quoted run inside a query is swept instead of blanked: `status =
+ * 'pendente'` used to be a stored value this gate had to tolerate, and today it
+ * is a query written against a column that cannot hold that word.
  *
  * ## What is swept, and what is masked
  *
  * The sweep looks ONLY at SQL. Every file it walks legitimately holds two
- * vocabularies at once — below the SQL is the schema, which this ticket moves to
- * English; above it are the repository's own TypeScript field names, which it
- * deliberately does NOT move (FR4: `Job.titulo` stays, because `routes/*.ts`
- * reads it and the routes are outside this ticket's surface). So a Portuguese
- * name is a violation in a SQL identifier position and nowhere else, and the
- * masks below are that line:
+ * vocabularies at once — below the SQL is the schema, which is English; above it
+ * are the repository's own TypeScript field names, which D20 deliberately does
+ * NOT move (t229 FR4, t235 FR5: `Job.titulo` stays, because `routes/*.ts` reads
+ * it and the routes are outside both tickets' surface). So a Portuguese word is
+ * a violation in a SQL position and nowhere else, and the masks below are that
+ * line:
  *
  * - **Comments.** Prose about `trabalho` is documentation, not a query.
  * - **Everything that is not a SQL string literal.** An interface field, a map
- *   key, a property access — that is the layer FR4 keeps in Portuguese.
+ *   key, a property access — that is the layer FR5 keeps in Portuguese. A
+ *   literal that is prose rather than SQL goes with them, which is what keeps
+ *   `reason: \`aguardando resposta da pergunta ${id}\`` out of the sweep: it
+ *   matches none of {@link SQL_SHAPE}, so it is blanked whole.
  * - **`${…}` inside a template literal.** That is TypeScript spliced into SQL,
  *   not SQL; the constant it names is a literal of its own and is swept as one.
- * - **A quoted run INSIDE the SQL.** `status = 'pendente'` and
- *   `entity_type = 'trabalho'` are stored VALUES, and the founder's 2026-08-17
- *   decision keeps every CHECK-constrained value Portuguese: this ticket renames
- *   identifiers only.
- * - **`AS <name>`.** The alias is the bridge FR4 is built on — a `SELECT title AS
+ * - **`AS <name>`.** The alias is the bridge FR5 is built on — a `SELECT title AS
  *   titulo` is precisely how a renamed column reaches an unrenamed TypeScript
  *   field without dragging `routes/`, `packages/runner` and `packages/tela` into
  *   this ticket.
  *
- * What is left after masking is a table or a column this package really does
- * name in a query.
+ * What is left after masking is a table, a column or a stored value this package
+ * really does write into a query.
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
+import { databaseTerms, termHits, type Term } from './glossary-terms.ts';
 
-/** The surface this ticket migrates, as the glossary tags it. */
-const SURFACE = 'database';
+const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 
 /**
  * The files that speak SQL against the renamed schema.
@@ -177,12 +179,17 @@ function blankSubstitutions(body: string): string {
   return out.join('');
 }
 
-/** Blanks the three things a Portuguese word may still legitimately be inside SQL. */
+/**
+ * Blanks the two things a Portuguese word may still legitimately be inside SQL.
+ *
+ * The quoted run is NOT one of them any more (t235, FR7). Until this ticket the
+ * schema held Portuguese values under English column names, so a run like
+ * `status = 'pendente'` was the one Portuguese a query was allowed to write; now
+ * the column's own `CHECK` spells `pending`, and a query that still says
+ * `pendente` writes a value the database refuses.
+ */
 function maskInsideSql(body: string): string {
-  return blankSubstitutions(body)
-    .replace(/'[^'\n]*'/g, blank)
-    .replace(/"[^"\n]*"/g, blank)
-    .replace(/\bAS\s+[A-Za-z_][A-Za-z0-9_]*/gi, blank);
+  return blankSubstitutions(body).replace(/\bAS\s+[A-Za-z_][A-Za-z0-9_]*/gi, blank);
 }
 
 /**
@@ -217,76 +224,18 @@ export function sqlOnly(source: string): string {
   return out.join('');
 }
 
-/** A term of the glossary's database surface, with what it has to become. */
-interface Term {
-  term: string;
-  english: string;
-}
-
-/**
- * Every Portuguese name the glossary maps on the `database` surface.
- *
- * Rows whose replacement equals the term itself are dropped: they exist to say
- * "this name does not change" (`runner`, `lease`, `skill`), and scanning for
- * them would fail a file for spelling a table correctly. A QUALIFIED row
- * (`evento.tipo`) names the table only to disambiguate which `tipo` is meant —
- * what a SQL identifier position actually spells is the column, so the term is
- * the part after the dot, and the three of them collapse into one entry that
- * lists all three English names.
- */
-function databaseTerms(): Term[] {
-  assert.ok(existsSync(GLOSSARY), `${GLOSSARY} does not exist`);
-  const byTerm = new Map<string, string[]>();
-
-  for (const line of readFileSync(GLOSSARY, 'utf8').split('\n')) {
-    const cells = line.trim();
-    if (!cells.startsWith('|')) continue;
-    const parts = cells.slice(1).split('|').map((cell) => cell.replace(/`/g, '').trim());
-    if (parts[0] !== SURFACE) continue;
-
-    const english = parts[2] ?? '';
-    for (const spelling of (parts[1] ?? '').split(' / ')) {
-      const term = spelling.includes('.') ? spelling.split('.').pop()!.trim() : spelling.trim();
-      if (term === '' || term === english) continue;
-      const known = byTerm.get(term) ?? [];
-      if (!known.includes(english)) known.push(english);
-      byTerm.set(term, known);
-    }
-  }
-
-  const terms = [...byTerm].map(([term, englishes]) => ({ term, english: englishes.join(' / ') }));
-  assert.ok(
-    terms.length > 80,
-    `the glossary's "${SURFACE}" surface parsed to only ${terms.length} terms`,
-  );
-  return terms;
-}
-
 /**
  * Every hit in one file's source, as `line: what`.
  *
  * @param source File contents.
- * @param terms The glossary's `database` rows.
- * @returns One entry per Portuguese name still standing in a SQL identifier
- *   position.
+ * @param terms The glossary's schema rows (§4 names, §1.6 values).
+ * @returns One entry per Portuguese word still standing in a SQL position.
  */
 export function databaseHits(source: string, terms: readonly Term[]): string[] {
-  const lines = sqlOnly(source).split('\n');
-  const hits: string[] = [];
-
-  for (const entry of terms) {
-    const pattern = new RegExp(`\\b${entry.term}\\b`);
-    lines.forEach((line, index) => {
-      if (pattern.test(line)) {
-        hits.push(`${index + 1}: "${entry.term}" (glossary says "${entry.english}")`);
-      }
-    });
-  }
-
-  return hits.sort();
+  return termHits(sqlOnly(source), terms);
 }
 
-test('FR10 — every query speaks the English schema of glossario-wire.md §4', () => {
+test('FR10 — every query speaks the English schema of glossario-wire.md §4 and §1.6', () => {
   const terms = databaseTerms();
   const files = scannedFiles();
   assert.ok(files.length > 10, `the sweep found only ${files.length} files; it is not walking src/`);
@@ -300,7 +249,7 @@ test('FR10 — every query speaks the English schema of glossario-wire.md §4', 
   assert.deepEqual(
     hits,
     [],
-    `Portuguese still in a SQL identifier position (D20, glossario-wire.md §4):\n${hits.join('\n')}`,
+    `Portuguese still in a SQL position (D20, glossario-wire.md §4 and §1.6):\n${hits.join('\n')}`,
   );
 });
 
@@ -315,11 +264,18 @@ test('FR10 — the sweep bites on Portuguese that really is in the SQL', () => {
     "conditions.push('desativada_em IS NULL');",
     "const COLUMNS = 'id, projeto_id, titulo, no_atual, criado_em';",
     "conditions.push(`tipo IN (${filter.tipos.map((_, i) => `@t_${i}`).join(', ')})`);",
+    // t235, FR7: a stored VALUE is a hit now, wherever the query writes one —
+    // a comparison, an `INSERT … VALUES`, an `UPDATE … SET` or an `IN (…)`.
+    'db.prepare("SELECT id FROM lease WHERE status = \'ativa\'");',
+    'db.prepare("SELECT 1 FROM event WHERE entity_type = \'trabalho\' LIMIT 1");',
+    "db.prepare(`INSERT INTO intake_draft (class, status) VALUES (?, 'pendente')`);",
+    "db.prepare(\"UPDATE proposal SET status = 'rejeitada' WHERE id = ?\");",
+    "db.prepare(\"SELECT id FROM input_request WHERE kind IN ('pergunta','aprovacao')\");",
   ];
   for (const source of caught) {
     assert.ok(
       databaseHits(source, terms).length > 0,
-      `the sweep missed a Portuguese name in the SQL: ${source}`,
+      `the sweep missed Portuguese in the SQL: ${source}`,
     );
   }
 });
@@ -327,22 +283,21 @@ test('FR10 — the sweep bites on Portuguese that really is in the SQL', () => {
 test('FR10 — the sweep does NOT bite on the boundaries D20 leaves in Portuguese', () => {
   const terms = databaseTerms();
   const allowed = [
-    // Stored values: the founder's 2026-08-17 decision is identifiers only.
-    'db.prepare("SELECT id FROM lease WHERE status = \'ativa\'");',
-    'db.prepare("SELECT 1 FROM event WHERE entity_type = \'trabalho\' LIMIT 1");',
-    // The alias FR4 is built on: a renamed column reaching an unrenamed field.
+    // The alias FR5 is built on: a renamed column reaching an unrenamed field.
     "db.prepare('SELECT title AS titulo, current_node_id AS no_atual FROM job');",
-    // The row ↔ wire translation maps, which are TypeScript and not SQL.
-    "const ENTITY_COLUMN = { job: 'trabalho', session: 'sessao' };",
-    // The repository's own projection, which FR4 deliberately does not rename.
+    // The repository's own projection, which FR5 deliberately does not rename.
     'export interface Job { titulo: string; no_atual: string; criado_em: string }',
-    // A message that happens to name a domain word.
+    // A TypeScript object literal is not SQL, whatever it spells.
+    "const LABELS = { job: 'trabalho', session: 'sessao' };",
+    // A message that happens to name a domain word: prose, not a query.
     'blockJob(db, id, { reason: `aguardando resposta da pergunta ${id}` });',
     // A comment quoting the schema as it used to be.
     '// the old query said FROM evento, before D20 fourth child',
     '/* `trabalho` and `pergunta` are what migration 0003 called them. */',
-    // Already-English SQL over the renamed schema.
+    // Already-English SQL over the renamed schema, names and values alike.
     "db.prepare('SELECT COUNT(*) AS total FROM job WHERE execution_id = ?');",
+    'db.prepare("SELECT id FROM lease WHERE status = \'active\'");',
+    "db.prepare(\"UPDATE proposal SET status = 'rejected' WHERE id = ?\");",
   ];
   for (const source of allowed) {
     assert.deepEqual(

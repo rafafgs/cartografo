@@ -218,7 +218,7 @@ export async function startControlPlane(t: TestHook): Promise<TestContext> {
   applyPragmas(db);
   migrate(db, MIGRATIONS_DIR);
 
-  const { token } = issueCredential(db, { tipo: 'usuario' });
+  const { token } = issueCredential(db, { tipo: 'user' });
 
   const app = createApp({ db });
   const url = await app.listen({ port: 0, host: '127.0.0.1' });

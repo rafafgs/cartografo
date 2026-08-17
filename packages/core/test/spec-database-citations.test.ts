@@ -5,7 +5,7 @@
  * the English of `glossario-wire.md` §4, and it walked past three spots. One
  * sentence of `entidades-versionamento.md` §5 still said the fork's column was
  * `grafo.origem_proposta_id`, of a type quoted as `INTEGER REFERENCES proposta(id)`,
- * when migration `0019` had renamed all three names (t236). Then the t237 round
+ * when the schema called all three something else (t236). Then the t237 round
  * found two whole DDL blocks: the `runner`/`lease` bodies of
  * `runner-e-controller.md` §1, whose table names were already English and whose
  * every column and two of whose three index names were not, and the
@@ -22,8 +22,8 @@
  * of a name in a query: is this Portuguese? That is the wrong question to put to
  * documents which are bilingual ON PURPOSE. Almost everything they spell in
  * Portuguese, D20 leaves in Portuguese: the prose, the domain vocabulary, the
- * API error codes, the CHECK-constrained stored values, the route paths, and the
- * keys of the graph document itself. The line right below the one t236 fixes
+ * API error codes, the route paths, and the keys of the graph document itself.
+ * The line right below the one t236 fixes
  * says `linhagem.origem_proposta_id`, and that one is CORRECT — it is a field of
  * `schema/grafo.schema.json`, not a column, and the whole point of the sentence
  * is that the two surfaces disagree by design.
@@ -35,10 +35,9 @@
  * are read:
  *
  * - **`CREATE TABLE <name>`** and the **`ON <name>`** of a `CREATE INDEX`.
- * - **The NAME of a `CREATE INDEX`.** SQLite renames the columns an index
- *   points at and never the index itself, so `0019` dropped and recreated 24 of
- *   them by hand — which makes a cited index name either one the database has
- *   or one nothing builds.
+ * - **The NAME of a `CREATE INDEX`.** An index name is not derived from anything
+ *   — a cited one is either an index the migrations really build or one nothing
+ *   builds.
  * - **`REFERENCES <name>(`** — the one that catches the prose, because §5 of
  *   `entidades-versionamento.md` quotes a column's SQL type inline rather than
  *   in a fenced block.
@@ -46,10 +45,11 @@
  *   the migrations renamed away from on THAT table. It reads the column
  *   declaration and the `CHECK` that cites the same column a second time, and
  *   the "renamed away from" is what keeps it from being a word list: a name the
- *   migrations never had is not a hit, because a specification is allowed to
+ *   glossary never retired is not a hit, because a specification is allowed to
  *   describe a column before a migration builds it. Quoted runs and the `--`
- *   tail of a line are blanked first — the stored values stay Portuguese by the
- *   founder's 2026-08-17 decision, and a trailing comment is prose.
+ *   tail of a line are blanked first — a stored value is not a citation of a
+ *   name (`no-portuguese-database.test.ts` is the gate that reads those), and a
+ *   trailing comment is prose.
  * - **A backticked `<table>.<column>`**, and only when BOTH halves resolve: the
  *   prefix has to be a table (today's spelling or one the migrations renamed
  *   away from) and the suffix a column of that table (likewise). That double
@@ -91,6 +91,7 @@ import test from 'node:test';
 
 import type * as ConnectionModule from '../src/db/connection.ts';
 import type * as MigrateModule from '../src/db/migrate.ts';
+import { databaseNameRows } from './glossary-terms.ts';
 import { MIGRATIONS_DIR, PACKAGE_ROOT, requireArtifacts } from './support.ts';
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
@@ -110,13 +111,22 @@ const GLOSSARY = 'docs/spec/glossario-wire.md';
 const EVENT_SURFACE = 'events';
 
 /**
- * What the migrations renamed, so a stale citation can be named as such.
+ * What the schema renamed away from, so a stale citation can be named as such.
  *
  * `table` maps every spelling a table ever had to the one it has today, and
- * `column` does the same per table, keyed by TODAY's table name. Both are read
- * out of the `ALTER TABLE … RENAME` statements themselves rather than declared
- * here: a rename registered in a migration is a rename this sweep knows about on
- * the next run, and the two cannot drift.
+ * `column` does the same per table, keyed by TODAY's table name. Neither is
+ * declared here — they come from two sources that cannot drift from the tree:
+ *
+ * - **The glossary's `database` rows.** This is where the D20 vocabulary lives,
+ *   and since t235 it is the ONLY place it lives: that ticket rewrote
+ *   `0001`–`0018` so the schema is born English and deleted the `0019` whose
+ *   `ALTER … RENAME` statements this sweep used to read. A retired name is now a
+ *   `hoje` cell whose `vira` cell really is a table, or really is a column of the
+ *   table being read — which is the same question the `ALTER` answered, asked of
+ *   the document that decided the rename in the first place.
+ * - **The `ALTER TABLE … RENAME` still in the sequence.** `0010` rebuilds
+ *   `proposal` through a `proposal_new`, and a spelling a migration really does
+ *   move stays known here without anyone listing it.
  */
 interface RenameHistory {
   table: Map<string, string>;
@@ -127,9 +137,9 @@ interface RenameHistory {
  * Everything a citation is read against, all of it derived from the repository.
  *
  * Nothing here is a declared list: the tables, their columns and the index names
- * come from a database the migrations really built, the renames from the
- * migrations' own `ALTER` statements, and the event names from the glossary's
- * `events` rows.
+ * come from a database the migrations really built, the retired spellings from
+ * the glossary's `database` rows read against that schema, and the event names
+ * from the glossary's `events` rows.
  */
 interface Oracle {
   /** Every table the migrations build, mapped to the columns it really has. */
@@ -196,16 +206,36 @@ const RENAME =
   /^[ \t]*ALTER[ \t]+TABLE[ \t]+(\w+)[ \t]+RENAME[ \t]+(?:COLUMN[ \t]+(\w+)[ \t]+)?TO[ \t]+(\w+)[ \t]*;/gim;
 
 /**
- * Replays the renames of every migration, in the order they really ran.
+ * Every spelling the schema retired, read off the glossary and off the sequence.
  *
- * Order is what makes a chain resolve: `0010` renamed `proposta_novo` to
- * `proposta` and `0019` renamed `proposta` to `proposal`, so the first spelling
- * has to end up pointing at the last one and not at the middle.
+ * The glossary half asks the live schema which side of a row is real: a `vira`
+ * cell that names a table registers the `hoje` cell as that table's old name, and
+ * a `vira` cell that names a column of table T registers it as T's old name for
+ * that column. Reading it per table is what keeps the three meanings of `tipo`
+ * apart without this file re-deciding which is which — `evento.tipo` lands on
+ * `event.type`, `pergunta.tipo` on `input_request.kind` and `credencial.tipo` on
+ * `credential.owner_type`, because those are the tables that really have those
+ * columns.
+ *
+ * The `ALTER` half is replayed in migration order, which is what makes a chain
+ * resolve when one exists.
+ *
+ * @param tables The live schema: what a name has to be to count as one.
  */
-async function renameHistory(): Promise<RenameHistory> {
+async function renameHistory(tables: Map<string, Set<string>>): Promise<RenameHistory> {
   const { listMigrations } = await loadMigrate();
   const table = new Map<string, string>();
   const column = new Map<string, Map<string, string>>();
+
+  for (const row of databaseNameRows()) {
+    if (tables.has(row.english)) table.set(row.term, row.english);
+    for (const [name, columns] of tables) {
+      if (!columns.has(row.english) || columns.has(row.term)) continue;
+      const known = column.get(name) ?? new Map<string, string>();
+      known.set(row.term, row.english);
+      column.set(name, known);
+    }
+  }
 
   for (const migration of listMigrations(MIGRATIONS_DIR)) {
     const body = readFileSync(migration.path, 'utf8');
@@ -263,7 +293,7 @@ let oracleCache: Promise<Oracle> | null = null;
 
 async function buildOracle(): Promise<Oracle> {
   const { tables, indexes } = await buildLiveSchema();
-  return { tables, indexes, renamed: await renameHistory(), events: eventNames() };
+  return { tables, indexes, renamed: await renameHistory(tables), events: eventNames() };
 }
 
 function oracle(): Promise<Oracle> {
@@ -409,14 +439,14 @@ test('FR11 — the sweep bites on a citation the rename left behind', async () =
     // Half-renamed citations, each of which reads plausible on its own.
     '`graph.origem_proposta_id` chega ao documento como `String(id)`.',
     '`grafo.current_version_id` é o ponteiro da linhagem.',
-    // A DDL block that did not follow migration 0019.
+    // A DDL block written against the schema before D20's database children.
     'CREATE TABLE grafo_versao (',
     "CREATE UNIQUE INDEX graph_class_base_unique ON grafo (class) WHERE lineage_type = 'base';",
     '  grafo_id    TEXT NOT NULL REFERENCES grafo(id),',
     // A body whose table name was already English and whose columns were not:
     // the block of `runner-e-controller.md` §1 that t237 fixes.
     'CREATE TABLE lease (\n  trabalho_id  INTEGER NOT NULL,\n  expira_em    TEXT NOT NULL\n);',
-    // The same block's index, dropped and recreated under another name by 0019.
+    // The same block's index, which the sequence builds under another name.
     'CREATE INDEX idx_lease_projeto_status ON lease (projeto_id, status);',
     // A table constraint, which cites the columns of the body a second time.
     'CREATE TABLE job_dependency (\n  CHECK (trabalho_id != depende_de_trabalho_id)\n);',
@@ -449,13 +479,14 @@ test('FR11 — the sweep does NOT bite on what the documents keep in Portuguese'
     '  origin_proposal_id  INTEGER REFERENCES proposal(id),',
     'CREATE TABLE graph_version (',
     '`graph_version.graph_id`, `proposal.operations` e `proposal.result`.',
-    // The body of §1 as migration 0019 left it, and the index it kept.
+    // The body of §1 as the migrations really build it, and the index it kept.
     'CREATE TABLE lease (\n  job_id  INTEGER NOT NULL,\n  expires_at  TEXT NOT NULL\n);',
     'CREATE INDEX idx_lease_runner_status ON lease (runner_id, status);',
     // A trailing comment inside a body, naming the word a column is named after.
     'CREATE TABLE graph (\n  id  TEXT PRIMARY KEY,  -- classe, para a linhagem base (D8)\n);',
-    // A stored value inside a body: identifiers moved, values did not.
-    "CREATE TABLE proposal (\n  status  TEXT NOT NULL DEFAULT 'pendente'\n);",
+    // A stored value inside a body: this sweep reads NAMES, and the value is
+    // `no-portuguese-database.test.ts`'s to judge.
+    "CREATE TABLE proposal (\n  status  TEXT NOT NULL DEFAULT 'pending'\n);",
   ];
   for (const line of allowed) {
     assert.deepEqual(

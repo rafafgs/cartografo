@@ -107,7 +107,7 @@ test('AT8 — POST /v1/sessions records session.opened and creates the open row'
   assert.equal(response.status, 201);
   const session = response.body;
   assert.ok(Number.isInteger(session.id) && session.id >= 1);
-  assert.equal(session.status, 'aberta');
+  assert.equal(session.status, 'open');
   assert.equal(session.job_id, job.id);
   assert.equal(session.execution_id, 7, 'the execution comes from the job served');
   assert.equal(session.exit_code, null);
@@ -355,7 +355,7 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
 
   assert.equal(denied.status, 200);
   // A denial is an incident, not a terminal state: the row does not move.
-  assert.equal(denied.body.status, 'aberta');
+  assert.equal(denied.body.status, 'open');
   assert.equal(denied.body.finished_at, null);
   assert.equal(denied.body.exit_code, null);
 
@@ -1041,7 +1041,7 @@ test('t172 — a models that is not a list of non-empty strings is refused', asy
     // well-formed body can still close it.
     const still = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions?execution_id=7');
     const row = still.body.sessions.find((item) => item.id === session.id);
-    assert.equal(row?.status, 'aberta', `${refused.label} left a trace on the row`);
+    assert.equal(row?.status, 'open', `${refused.label} left a trace on the row`);
   }
 });
 

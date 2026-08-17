@@ -145,7 +145,7 @@ async function start(t: TestHook): Promise<{
   const { issueCredential } = (await import(
     new URL('../src/repositories/credentials.ts', import.meta.url).href
   )) as typeof CredentialsModule;
-  const { token } = issueCredential(db, { tipo: 'usuario' });
+  const { token } = issueCredential(db, { tipo: 'user' });
 
   const app = createApp({ db });
   const address = await app.listen({ port: 0, host: '127.0.0.1' });

@@ -337,13 +337,51 @@ async function seedRound(plane: ControlPlane, versionId: string): Promise<Job[]>
     answer: 'responde, siga',
     answered_by: 'rafael',
   });
+  // The report is not decoration since t262: `revisar` pins a skill, so this
+  // traveller is only done once the session on the node it is standing on
+  // closed with an `output`. The fixture's pin names a skill the registry can
+  // never carry (its id has a slash), so nothing holds this object against a
+  // schema — which is t253's "there is nothing to check this against", and is
+  // enough for the report to be STORED, which is what the arrival reads.
   await api(plane, 'PATCH', `/v1/sessions/${session.id}/finish`, {
     status: 'completed',
     exit_code: 0,
     usage: null,
+    output: { outcome: 'passou', evidencia: 'a nota responde ao tema' },
   });
 
   return travellers;
+}
+
+/**
+ * Closes the last traveller's own step on the final node.
+ *
+ * The transition puts it THERE; this is what finishes it — and therefore what
+ * ends the round (t262).
+ *
+ * @param plane Control plane running.
+ * @param jobId The traveller standing on `revisar`.
+ */
+async function runFinalNode(plane: ControlPlane, jobId: number): Promise<void> {
+  const session = await api<Session>(
+    plane,
+    'POST',
+    '/v1/sessions',
+    {
+      job_id: jobId,
+      node_id: 'revisar',
+      engine: 'claude-code',
+      working_dir: '/tmp/cartografo',
+      prompt: 'revise a nota',
+    },
+    201,
+  );
+  await api(plane, 'PATCH', `/v1/sessions/${session.id}/finish`, {
+    status: 'completed',
+    exit_code: 0,
+    usage: null,
+    output: { outcome: 'passou', evidencia: 'a nota responde ao tema' },
+  });
 }
 
 /** Every proposal in the book, whichever lens wrote it. */
@@ -374,9 +412,10 @@ test('t247 AT7 — a finished round makes at most one proposal per lens, and a r
   const first = spawnWatcher(t, plane, binDir);
   await waitUntilWatching(first);
 
-  // The last traveller arrives: every job of the round is completed, and the
-  // control plane says so — once (t245).
+  // The last traveller arrives AND runs the node it arrived on (t262): every
+  // job of the round is completed, and the control plane says so — once (t245).
   await api(plane, 'POST', `/v1/jobs/${travellers[1].id}/transitions`, { to_node_id: 'revisar' });
+  await runFinalNode(plane, travellers[1].id);
 
   await waitFor(
     first,

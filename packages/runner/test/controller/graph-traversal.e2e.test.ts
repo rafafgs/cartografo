@@ -357,9 +357,29 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
 
   const arrived = await nodeNow();
   assert.equal(arrived.current_node_id, 'publicar', 'the approved edge leads to the final node');
-  assert.equal(arrived.completed, true, 'and a work standing on a final node is done');
+  assert.equal(
+    arrived.completed,
+    false,
+    'standing on the final node is not having run it: `publicar` pins a skill (t262)',
+  );
 
-  // --- 5. a finished work stops being a candidate ---------------------------
+  // --- 5. and the final node is a node: it runs, like every other one -------
+  // Until t262 the traversal stopped here, one step short of its own end — the
+  // job was `concluido` on arrival and the controller drops a `concluido` job
+  // from its candidate list, so `publicar` never got a session. Both factory
+  // bundles end exactly this way (`registro-monitoramento`, `implantar`).
+  currentLines = QUIET;
+  assert.ok(await controller.tick(), 'the final node has to be dispatched, not skipped');
+
+  const finished = await nodeNow();
+  assert.equal(finished.current_node_id, 'publicar', 'a final node has nowhere to go');
+  assert.equal(
+    finished.completed,
+    true,
+    'and NOW the walk is over: the last node reported what its skill declares',
+  );
+
+  // --- 6. a finished work stops being a candidate ---------------------------
   const released = await client.listarTrabalhosLiberados();
   assert.deepEqual(
     released.map((candidate) => candidate.id),
@@ -372,7 +392,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     'so the next tick finds nothing to do, instead of re-running the last node forever',
   );
 
-  // --- 6. and NOTHING above was moved by hand -------------------------------
+  // --- 7. and NOTHING above was moved by hand -------------------------------
   assert.deepEqual(
     testCalls.filter((call) => call.endsWith('/transitions')),
     [],

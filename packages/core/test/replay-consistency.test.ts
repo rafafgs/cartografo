@@ -332,6 +332,26 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   });
   assert.equal(arrival.status, 200, JSON.stringify(arrival.body));
 
+  // ...and then RUNS that final node, because since t262 landing on it is not
+  // the end of anything: `revisar` pins a skill, and the round ends on the
+  // session that reports it, not on the transition that arrived (FR4). The
+  // third session of this log, and the first one outside execution 7 — which
+  // is why the projection below stopped slicing sessions by round.
+  const closing = await request<Session>(ctx, 'POST', '/v1/sessions', {
+    job_id: arriving.id,
+    node_id: 'revisar',
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'revisa e encerra',
+  });
+  assert.equal(closing.status, 201);
+  const closed = await request(ctx, 'PATCH', `/v1/sessions/${closing.body.id}/finish`, {
+    status: 'completed',
+    exit_code: 0,
+    output: { outcome: 'passou', evidencia: 'a nota responde ao tema' },
+  });
+  assert.equal(closed.status, 200, JSON.stringify(closed.body));
+
   const { granted, expired } = await leaseRoundTrip(ctx);
 
   // --- the state, rebuilt from the log alone --------------------------------
@@ -344,11 +364,11 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   // about rounds when it builds `trabalhos`, so slicing the projection by one
   // execution while the log carries two would compare two different sets.
   const jobs = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs');
-  const sessions = await request<{ sessions: Session[] }>(
-    ctx,
-    'GET',
-    `/v1/sessions?execution_id=${EXECUTION}`,
-  );
+  // Unsliced since t262, for the reason the jobs read above already gives: the
+  // round that ENDS now needs a session of its own, so the log carries sessions
+  // of two executions and comparing one slice against the whole fold would be
+  // comparing two different sets.
+  const sessions = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions');
   const inputRequests = await request<{ input_requests: InputRequest[] }>(
     ctx,
     'GET',
@@ -439,7 +459,9 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     'execution 7 has a blocked job, an unresolvable version and a live lease: it never ends',
   );
   assert.equal(state.execucoes[String(EXECUTION)], undefined);
-  assert.equal(Object.keys(state.sessoes).length, 2);
+  // Three since t262: the two of execution 7, plus the one that closes the
+  // final node of the round that ends.
+  assert.equal(Object.keys(state.sessoes).length, 3);
   assert.equal(Object.keys(state.perguntas).length, 2);
   assert.equal(Object.keys(state.leases).length, 2);
   assert.deepEqual(state.leases[String(expired)], { status: 'expired' });

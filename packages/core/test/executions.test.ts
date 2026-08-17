@@ -486,6 +486,44 @@ async function moveTo(ctx: TestContext, jobId: number, node: string): Promise<vo
   assert.equal(response.status, 200, `transition to ${node} returned ${response.status}`);
 }
 
+/**
+ * Walks a job to the final node AND runs it — the whole of "arriving" (t262).
+ *
+ * `revisar` pins a skill, so landing there stopped being the end of anything:
+ * the pinned step has to run and report before the traveller is done, and
+ * therefore before the ROUND can be declared over. The fixture's pin names
+ * `cartografo/revisar-nota`, which the registry can never carry — its id has a
+ * slash and the registry's are kebab-case — so `finishSession` finds no
+ * `output` schema to hold the report against and stores what was reported,
+ * which is t253's own "there is nothing to check this against".
+ *
+ * @param ctx Control plane running.
+ * @param jobId The traveller.
+ */
+async function runFinalNode(ctx: TestContext, jobId: number): Promise<void> {
+  const opened = await request<{ id: number }>(ctx, 'POST', '/v1/sessions', {
+    job_id: jobId,
+    node_id: 'revisar',
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'revisa e encerra',
+  });
+  assert.equal(opened.status, 201, `POST /v1/sessions returned ${opened.status}`);
+
+  const finished = await request(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
+    status: 'completed',
+    exit_code: 0,
+    output: { outcome: 'passou', evidencia: 'a nota responde ao tema declarado' },
+  });
+  assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
+}
+
+/** Walking to the final node and running it, which is one traveller's whole end. */
+async function arrive(ctx: TestContext, jobId: number): Promise<void> {
+  await moveTo(ctx, jobId, 'revisar');
+  await runFinalNode(ctx, jobId);
+}
+
 /** Every `execution.finished` the round's own log carries, in log order. */
 async function finishedEvents(ctx: TestContext, execution: number): Promise<Event[]> {
   const response = await request<ExecutionLog>(ctx, 'GET', `/v1/executions/${execution}/events`);
@@ -508,14 +546,14 @@ test('t245 AT1 — execution.finished fires exactly once, on the last job to arr
   const first = await travellerOf(ctx, 245, version, 'nota que anda primeiro');
   const second = await travellerOf(ctx, 245, version, 'nota que anda depois');
 
-  await moveTo(ctx, first.id, 'revisar');
+  await arrive(ctx, first.id);
   assert.deepEqual(
     await finishedEvents(ctx, 245),
     [],
     'one traveller arrived and the other is still at redigir: the round is not over',
   );
 
-  await moveTo(ctx, second.id, 'revisar');
+  await arrive(ctx, second.id);
   const announced = await finishedEvents(ctx, 245);
   assert.equal(announced.length, 1, 'the round ends once, on the transition that completes it');
 
@@ -534,7 +572,8 @@ test('t245 AT1 — execution.finished fires exactly once, on the last job to arr
   assert.equal(event.execution_id, 245);
 
   // "Once, ever" and not "once per re-check": the first job leaves the final
-  // node and comes back, which makes the condition true a second time.
+  // node and comes back, which makes the condition true a second time — its own
+  // conforming session is still on the log, so coming back is coming back done.
   await moveTo(ctx, first.id, 'redigir');
   await moveTo(ctx, first.id, 'revisar');
   assert.deepEqual(
@@ -579,10 +618,17 @@ test('t245 AT2 — GET /v1/executions and GET /v1/executions/:id report finished
   assert.equal((await rowOf(2450)).finished_at, null, 'nobody arrived yet');
   assert.equal((await detailOf(2450)).finished_at, null);
 
-  await moveTo(ctx, arriving.id, 'revisar');
+  await arrive(ctx, arriving.id);
   assert.equal((await rowOf(2450)).finished_at, null, 'half a round is not a round');
 
   await moveTo(ctx, alsoArriving.id, 'revisar');
+  assert.equal(
+    (await rowOf(2450)).finished_at,
+    null,
+    'and the other half LANDED without running the node it landed on (t262)',
+  );
+
+  await runFinalNode(ctx, alsoArriving.id);
 
   const announced = await finishedEvents(ctx, 2450);
   assert.equal(announced.length, 1);
@@ -728,7 +774,7 @@ test('t245 AT4 — GET /v1/events/stream?type=execution.finished filters to it',
 
   const first = await travellerOf(ctx, 2452, version, 'nota que anda primeiro');
   const second = await travellerOf(ctx, 2452, version, 'nota que anda depois');
-  await moveTo(ctx, first.id, 'revisar');
+  await arrive(ctx, first.id);
   await settle();
   // The length, and not `deepEqual(messages, [])`: node's own types read that
   // second form as an assertion that narrows `messages` to `never[]`, and every
@@ -736,10 +782,10 @@ test('t245 AT4 — GET /v1/events/stream?type=execution.finished filters to it',
   assert.equal(
     stream.messages.length,
     0,
-    'two creations and a transition happened, and none of them is what was asked for',
+    'two creations, a transition and a session happened, and none of them is what was asked for',
   );
 
-  await moveTo(ctx, second.id, 'revisar');
+  await arrive(ctx, second.id);
   await waitFor(() => stream.messages.length > 0, 'the execution.finished message');
   await settle();
 

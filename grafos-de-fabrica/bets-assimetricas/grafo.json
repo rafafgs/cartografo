@@ -19,30 +19,35 @@
       "skill_ref": {
         "id": "triar-tese",
         "version": "1.0.0",
-        "hash": "sha256:950e14902d464c3a5148e3a285f7d413d0c2d00ab06720cb430f5c132587e46e"
+        "hash": "sha256:1672cd634f92c563894edf77beb97acc21b76706c7249cae875f217991224085"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
-            "tese",
-            "criterios_de_triagem"
+            "job",
+            "project",
+            "asset",
+            "premise_source"
           ],
           "properties": {
-            "tese": {
+            "job": {
               "type": "object",
-              "description": "a ideia bruta: ativo, hipótese e origem"
+              "description": "a identidade do próprio trabalho — `id`, `title` e `body` —, que é onde a ideia bruta chega: título e hipótese em prosa livre"
             },
-            "criterios_de_triagem": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "minItems": 1
-            },
-            "carteira": {
+            "project": {
               "type": "object",
-              "description": "estado da carteira, quando houver posição aberta"
+              "description": "a configuração estática da classe: os critérios de triagem do investidor e, quando houver posição aberta, o estado da carteira"
+            },
+            "asset": {
+              "type": "string",
+              "minLength": 1,
+              "description": "o ativo da tese; campo desta classe, exigido neste nó"
+            },
+            "premise_source": {
+              "type": "string",
+              "minLength": 1,
+              "description": "de onde vem a premissa central; campo desta classe, exigido neste nó"
             },
             "perguntas_respondidas": {
               "type": "array",
@@ -627,6 +632,12 @@
       "description": "De onde vem a premissa central da tese: documento, número, data. Exigido em `triagem` porque é o gate que decide se a ideia merece pesquisa, e uma tese sem fonte declarada não passa desse ponto."
     },
     {
+      "name": "asset",
+      "type": "string",
+      "required_at": "triagem",
+      "description": "O ativo que a tese propõe: ticker, papel, contrato. Exigido em `triagem` pela mesma razão que `premise_source` — é o gate que decide se a ideia merece pesquisa, e uma tese sem ativo identificado não tem o que triar."
+    },
+    {
       "name": "downside",
       "type": "number",
       "required_at": null,
@@ -638,5 +649,18 @@
       "required_at": null,
       "description": "Quanto se ganha se a tese estiver certa, na estimativa de quem propõe. Informativo pela mesma razão que `downside`."
     }
-  ]
+  ],
+  "project": {
+    "description": "Configuração de exemplo da classe base: são os critérios e a carteira do investidor de referência, e é o que faz `triagem` despachar sem ninguém montar entrada à mão. Uma variante de projeto sobrescreve este objeto inteiro com os critérios reais e o estado vivo da carteira de quem investe (D13) — não existe mecanismo de estado de carteira no control plane, então o que está aqui é um retrato parado, e mantê-lo em dia é edição de documento.",
+    "criterios_de_triagem": [
+      "o downside está limitado por caixa líquido ou ativo real, não por narrativa",
+      "existe um evento datado que força a reprecificação em até 12 meses",
+      "a tese cabe no círculo de competência declarado",
+      "o tamanho pretendido cabe no teto de risco da carteira"
+    ],
+    "carteira": {
+      "posicoes_abertas": 7,
+      "exposicao_atual_pct": 62.5
+    }
+  }
 }

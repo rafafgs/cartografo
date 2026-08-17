@@ -115,6 +115,31 @@ O teto de tamanho de posição segue o mesmo princípio: é um `maximum` no
 `saida` de `dimensionar-risco`, não um check que alguém possa argumentar
 contra.
 
+## Como dar entrada numa tese
+
+Uma tese entra como **trabalho no quadro**, e não como um objeto `tese` que
+alguém monta à mão:
+
+- **`title`** é o título da tese e **`body`** é a hipótese em prosa livre: o que
+  o mercado estaria errando, e de onde a ideia veio. A origem não tem campo
+  próprio — ela mora no `body`.
+- **`fields`** traz os campos que esta classe declara em `custom_fields`.
+  `asset` e `premise_source` são **exigidos em `triagem`**: o trabalho não sai
+  desse nó sem os dois. `downside` e `upside` são informativos.
+- **`entry_node_id: "triagem"`**, mais a versão de grafo desta classe.
+
+Os critérios do investidor e o estado da carteira **não** vêm do trabalho: eles
+moram no objeto `project` de topo do [`grafo.json`](./grafo.json), que a
+projeção de input publica em `input.project` (`t253`,
+[`packages/core/src/domain/context.ts`](../../packages/core/src/domain/context.ts)).
+O que está lá é a configuração de exemplo da classe base; uma variante de
+projeto sobrescreve o objeto inteiro com os critérios e a carteira reais de quem
+investe (D13). Não existe mecanismo de estado de carteira no control plane, então
+o que está no documento é um retrato parado e mantê-lo em dia é edição de arquivo.
+
+O `id` da tese triada ninguém informa: `triagem` o deriva do número do próprio
+trabalho (`tese-<n>`), e é por ele que os nós seguintes falam da mesma tese.
+
 ## Como validar
 
 ```bash
@@ -155,7 +180,7 @@ chama de semente do atlas compartilhável.
 
 ## Divergências registradas
 
-Cinco lugares onde este bundle se afasta do bundle 1 ou do que o formato
+Seis lugares onde este bundle se afasta do bundle 1 ou do que o formato
 sugeriria. Ficam escritas porque divergência não registrada vira armadilha para
 quem vier depois.
 
@@ -207,6 +232,48 @@ quem vier depois.
    contrato, até `decisao`, onde nenhuma aresta é seguida sem resposta humana
    registrada (`tests/factory-graph-2.test.mjs`, AT11). Quando a `t109` existir,
    um teste de execução real pelo runner é mais forte que este e vale escrever.
+6. **O nó de entrada lia uma entrada que ninguém montava** (`t260`). Até esta
+   ficha `triar-tese` nomeava `{{input.tese.titulo}}`, `{{input.tese.ativo}}`,
+   `{{input.tese.hipotese}}` e `{{input.criterios_de_triagem}}` — e a projeção
+   de input publica outra coisa: `input.job` (a identidade do próprio trabalho),
+   `input.project` (a configuração estática da classe), o balde que o nó declara
+   em `contract.produces` e os campos da classe como escalares planos no topo.
+   Objeto `tese` e `criterios_de_triagem` de topo não existiam em lugar nenhum,
+   então o primeiro nó de uma tese de verdade abortava com
+   `UnresolvedPlaceholderError` antes de abrir sessão — falha fechada de
+   propósito, e exatamente a reparação que a `t259` já tinha feito no bundle 1.
+   Hoje o manifesto lê `input.job.title`, `input.asset`, `input.job.body` e
+   `input.project.criterios_de_triagem`, o `grafo.json` ganhou o `project` que
+   alimenta esses caminhos e o campo de classe `asset`, e a travessia
+   `triagem` → `coleta-fundamentos` roda ao vivo com runner e control plane de
+   verdade em
+   [`packages/runner/test/controller/factory-graph-bets.e2e.test.ts`](../../packages/runner/test/controller/factory-graph-bets.e2e.test.ts).
+
+   **O limite é explícito: só `triagem` → `coleta-fundamentos` atravessa vivo.**
+   Os outros cinco nós continuam provados por contrato (divergência 5), e dois
+   buracos ficam nomeados aqui em vez de esquecidos:
+
+   - **`dimensionar-risco` exige `capital` e nunca o interpola.** O `input` dele
+     pede um objeto `capital` de topo que a projeção não tem como produzir — não
+     é campo de classe (campo de classe é escalar plano, `t168`) nem balde que
+     nó nenhum declara —, e a prosa fala em "capital total" sem nenhum
+     `{{input.…}}` que traga o número. Não bloqueia hoje: nada em tempo de
+     execução confere o `input` declarado de um nó contra a projeção real, e o
+     único portão fechado do caminho é o placeholder que o texto de fato contém.
+     É ficha própria, e maior que mudar um campo de lugar.
+   - **`resultado` no `saida` do portão.** O protocolo de relato manda a sessão
+     devolver UM bloco só, com o rótulo da aresta (`aprofundar`/`descartar`)
+     DENTRO do objeto do contrato (`t161`, `t259`). Como o `saida` destes
+     manifestos fecha em `additionalProperties`, um schema que não declara
+     `resultado` faz o control plane recusar o relato inteiro e gravar `null` —
+     e aí o nó seguinte não acha a tese triada. `triar-tese` passou a declarar o
+     campo; `derrubar-tese` e `escalar-decisao` ainda não, e vão precisar no dia
+     em que atravessarem vivos. Junto vem a outra metade do mesmo desencontro,
+     não tocada aqui: a prosa de fecho dos três portões ainda ensina
+     `resultado: "passou"`/`"falhou"`, que era o vocabulário de antes do `t178`
+     e do `t161` — hoje o campo do schema é `outcome`
+     (`pass`/`fail`/`escalate_human`) e `resultado` é o rótulo da aresta. Os três
+     portões erram igual, então a reparação é uma só e vale fazer de uma vez.
 
 ## O formato de aresta não cresceu
 

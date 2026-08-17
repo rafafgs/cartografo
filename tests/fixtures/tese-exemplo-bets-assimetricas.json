@@ -10,23 +10,26 @@
     {
       "no": "triagem",
       "entrada": {
-        "tese": {
-          "id": "tese-nvlr3-2026-08-14",
-          "titulo": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
-          "ativo": "NVLR3",
-          "hipotese": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado.",
-          "origem": "fato relevante de 2026-07-30, lido na leitura semanal de fatos relevantes"
+        "job": {
+          "id": 116,
+          "title": "Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário",
+          "body": "O mercado ainda precifica a Navelar como transportadora rodoviária de margem baixa. Vendido o braço rodoviário, sobra uma operação portuária com contrato de longo prazo e caixa líquido; o desconto tende a sumir quando o primeiro trimestre pró-forma for reportado. A ideia veio do fato relevante de 2026-07-30, lido na leitura semanal de fatos relevantes."
         },
-        "criterios_de_triagem": [
-          "o downside está limitado por caixa líquido ou ativo real, não por narrativa",
-          "existe um evento datado que força a reprecificação em até 12 meses",
-          "a tese cabe no círculo de competência declarado",
-          "o tamanho pretendido cabe no teto de risco da carteira"
-        ],
-        "carteira": {
-          "posicoes_abertas": 7,
-          "exposicao_atual_pct": 62.5
-        }
+        "project": {
+          "criterios_de_triagem": [
+            "o downside está limitado por caixa líquido ou ativo real, não por narrativa",
+            "existe um evento datado que força a reprecificação em até 12 meses",
+            "a tese cabe no círculo de competência declarado",
+            "o tamanho pretendido cabe no teto de risco da carteira"
+          ],
+          "carteira": {
+            "posicoes_abertas": 7,
+            "exposicao_atual_pct": 62.5
+          }
+        },
+        "asset": "NVLR3",
+        "premise_source": "fato relevante de 2026-07-30, arquivado no regulador",
+        "perguntas_respondidas": []
       },
       "saida": {
         "outcome": "pass",

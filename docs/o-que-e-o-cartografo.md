@@ -53,10 +53,10 @@ que as anteriores produziram** — a especificação que o refino escreveu chega
 para quem desenvolve, o branch que o desenvolvimento deixou chega para quem
 integra —, montado pelo control plane a partir do que cada sessão relatou, e
 nunca por um arquivo que alguém lembrou de passar adiante. Cada mapa decide quais
-campos os tickets dele carregam — uma tese de investimento pede fonte da
-premissa, downside e upside, que um ticket de software não teria onde guardar —
-e um campo declarado como obrigatório em certa etapa trava a saída dela até
-alguém preencher.
+campos os tickets dele carregam — uma tese de investimento pede o ativo, a fonte
+da premissa, downside e upside, que um ticket de software não teria onde
+guardar — e um campo declarado como obrigatório em certa etapa trava a saída
+dela até alguém preencher.
 
 **Escolher o motor e o modelo etapa por etapa.** Cada etapa do mapa pode dizer
 em qual agente de CLI ela roda e com qual modelo — o nó que escreve usa o

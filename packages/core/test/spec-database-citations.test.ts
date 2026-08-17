@@ -78,13 +78,21 @@
  *
  * ## Scope
  *
- * Four documents: the one t236 owned plus the three the t237 round found. What
- * stays out is `tela-editor-grafo.md`, which cites `grafo_versao.id` and is
- * another ticket's file; widening `SWEPT` is how this gate grows once it lands.
+ * Every specification: `docs/spec/*.md`, `docs/formatos/*.md` and
+ * `docs/o-que-e-o-cartografo.md`. It started as four documents — the one t236
+ * owned plus the three the t237 round found — and t231 took the growth path
+ * this paragraph used to describe, which was to widen `SWEPT` once
+ * `tela-editor-grafo.md`'s `grafo_versao.id` had a ticket of its own.
+ *
+ * `glossario-wire.md` is the one document of that set left out, and it is the
+ * exception that proves the rule: a map FROM the retired names TO the ones that
+ * replaced them is written, cell by cell, in retired names. Sweeping it would
+ * ask the glossary to stop being a glossary. Its sibling gate
+ * `glossario-wire-docs.test.ts` leaves it out for the same reason.
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -96,16 +104,27 @@ import { MIGRATIONS_DIR, PACKAGE_ROOT, requireArtifacts } from './support.ts';
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
-/** The documents this gate owns, relative to the repository root. */
-const SWEPT = [
-  'docs/spec/entidades-versionamento.md',
-  'docs/spec/runner-e-controller.md',
-  'docs/spec/intake.md',
-  'docs/spec/escalacao-humana.md',
-];
-
 /** Where the event names live, so a dotted span can be told from a citation. */
 const GLOSSARY = 'docs/spec/glossario-wire.md';
+
+/**
+ * The documents this gate owns, relative to the repository root.
+ *
+ * Read off the disk instead of listed, so a specification added tomorrow is
+ * swept without anyone remembering to come here.
+ */
+function swept(): string[] {
+  const documents = [
+    ...['docs/spec', 'docs/formatos'].flatMap((directory) =>
+      readdirSync(path.join(REPO_ROOT, directory))
+        .filter((entry) => entry.endsWith('.md'))
+        .sort()
+        .map((entry) => `${directory}/${entry}`),
+    ),
+    'docs/o-que-e-o-cartografo.md',
+  ];
+  return documents.filter((relative) => relative !== GLOSSARY);
+}
 
 /** The glossary surface that owns those names (§2.1). */
 const EVENT_SURFACE = 'events';
@@ -417,7 +436,13 @@ test('FR11 — every database citation of the specs spells the schema the migrat
     `only ${seen.events.size} event names were parsed; the sweep would read one as a citation`,
   );
 
-  const hits = SWEPT.flatMap((relative) => {
+  const documents = swept();
+  assert.ok(
+    documents.length > 15,
+    `the sweep found only ${documents.length} documents; it is not walking the specs`,
+  );
+
+  const hits = documents.flatMap((relative) => {
     const target = path.join(REPO_ROOT, relative);
     assert.ok(existsSync(target), `${relative} does not exist`);
     return citationHits(readFileSync(target, 'utf8'), seen).map((hit) => `${relative}:${hit}`);

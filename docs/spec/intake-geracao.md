@@ -36,14 +36,14 @@ continua coberto.** Por isso a leitura do argv não mora no `.mjs`.
 
 ```
 npm run intake --workspace @cartografo/runner -- \
-  "<pedido>" --classe <nome> \
+  "<pedido>" --class <nome> \
   [--url <url>] [--dir <caminho>] [--token <token>]
 ```
 
 | Argumento | Obrigatório | Default | Papel |
 |---|---|---|---|
 | `<pedido>` | sim (posicional) | — | O pedido em linguagem natural, como a pessoa o descreve. |
-| `--classe` | **sim** | — | A classe **já registrada** cujo grafo os tickets vão atravessar. |
+| `--class` | **sim** | — | A classe **já registrada** cujo grafo os tickets vão atravessar. |
 | `--url` | não | `http://127.0.0.1:4317` | Control plane. |
 | `--dir` | não | um diretório temporário | Onde a sessão roda e escreve a resposta. |
 | `--token` | não | `CARTOGRAFO_TOKEN` do ambiente | Credencial do control plane. |
@@ -75,7 +75,7 @@ faz sentido tentar de novo.
 ```
 GET /v1/classes
         │
-        ├─ a classe de --classe NÃO está registrada ──▶ sai 1, SEM abrir sessão
+        ├─ a classe de --class NÃO está registrada ──▶ sai 1, SEM abrir sessão
         ▼
 UMA sessão de EngineAdapter, com o prompt do §5
         │
@@ -95,7 +95,7 @@ imprime o id  ──▶  fim. Confirmar é do humano.
 
 A primeira etapa é decisão, não acaso: a recusa de classe desconhecida vem
 **antes** de qualquer sessão, espelhando a ordem que o sintetizador aplica à sua
-própria pré-checagem. Descobrir um erro de digitação em `--classe` depois de
+própria pré-checagem. Descobrir um erro de digitação em `--class` depois de
 gastar uma sessão inteira é descobrir tarde. O código de erro ecoa o da API
 (`grafo_desconhecido`, [`routes/intake.ts`](../../packages/core/src/routes/intake.ts))
 para que as duas recusas sejam obviamente a mesma recusa.

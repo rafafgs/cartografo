@@ -120,7 +120,7 @@ princípio 5 é sobre mudança que **outro** propôs.
 O que a página produz é byte a byte o que um cliente scriptado produziria: o
 aceite `AC1` registra o mesmo grafo em **dois control planes** independentes,
 dirige a página em um e repete o corpo da requisição dela no outro, e exige que o
-`grafo_versao.id` — que é o hash do snapshot — seja o mesmo dos dois lados.
+`graph_version.id` — que é o hash do snapshot — seja o mesmo dos dois lados.
 
 ---
 

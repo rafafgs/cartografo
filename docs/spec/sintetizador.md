@@ -18,7 +18,7 @@ qualquer detalhe:
   /v1/graphs` nesta camada e o cliente dela nem tem o método — mesma disciplina
   que mantém `aplicar` fora do cliente do topógrafo.
 - **O sintetizador não nomeia classe.** [D8](../../DECISOES.md) põe isso na mão
-  do usuário: `--classe` é obrigatória, e as classes parecidas que o comando
+  do usuário: `--class` é obrigatória, e as classes parecidas que o comando
   calcula são *sugestão*, impressas e embutidas no prompt, sem poder nenhum
   sobre o nome.
 
@@ -48,16 +48,16 @@ alcança sem precisar subir um processo.
 
 ```
 npm run synthesize --workspace @cartografo/runner -- \
-  "<declaração do problema>" --classe <nome> \
-  [--url <url>] [--saida <caminho>] [--timeout <segundos>]
+  "<declaração do problema>" --class <nome> \
+  [--url <url>] [--out <caminho>] [--timeout <segundos>]
 ```
 
 | Argumento | Obrigatório | Default | Papel |
 |---|---|---|---|
 | `<declaração>` | sim (posicional) | — | O problema em linguagem natural, como a pessoa o descreve. |
-| `--classe` | **sim** | — | O nome da classe. Quem nomeia é o usuário (D8). |
+| `--class` | **sim** | — | O nome da classe. Quem nomeia é o usuário (D8). |
 | `--url` | não | `http://127.0.0.1:4317` | Control plane. |
-| `--saida` | não | `<classe>.grafo.rascunho.json` no diretório atual | Onde gravar o rascunho. |
+| `--out` | não | `<classe>.grafo.rascunho.json` no diretório atual | Onde gravar o rascunho. |
 | `--timeout` | não | `900` | Limite de relógio da sessão, em segundos. |
 
 Os códigos de saída são o contrato, porque é isso que uma pessoa (ou um script)
@@ -79,7 +79,7 @@ novo.
 ```
 GET /v1/classes
         │
-        ├─ a classe de --classe já tem grafo base ──▶ sai 1, SEM abrir sessão
+        ├─ a classe de --class já tem grafo base ──▶ sai 1, SEM abrir sessão
         ▼
 para cada classe com versão corrente:
   GET /v1/graph-versions/:id  ──▶  similarity(declaração, nome + descricao)

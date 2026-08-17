@@ -174,7 +174,7 @@ exceção.
 Um `tick()` é uma passada completa do loop de despacho:
 
 ```
-GET /v1/trabalhos  → filtra bloqueado === false
+GET /v1/jobs → filtra bloqueado === false
         ↓
 para cada candidato, em ordem: POST /v1/leases
         ↓ (recusa por trabalho_ja_leased: tenta o próximo)
@@ -427,7 +427,7 @@ cabe à ficha que ligar os dois lados.
 A divisão de responsabilidade que isso produz é, aliás, a correta:
 
 - **elegibilidade** (o trabalho está bloqueado? em que nó está?) é decidida por
-  `GET /v1/trabalhos`, consultada pelo controller **antes** de pedir a lease;
+  `GET /v1/jobs`, consultada pelo controller **antes** de pedir a lease;
 - **exclusividade e capacidade** são decididas por `POST /v1/leases`.
 
 ---
@@ -452,8 +452,8 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 - **Abrir sessão de verdade** pelo `EngineAdapter` — `despachar` é callback
   injetado (`t106`/`t109`). **Construído pela `t106`:**
   [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch.ts)
-  é uma implementação desse callback — abre a sessão, grava `sessao.aberta` e
-  `sessao.finalizada`, e transforma um pedido de escalação em pergunta pela
+  é uma implementação desse callback — abre a sessão, grava `session.opened` e
+  `session.finished`, e transforma um pedido de escalação em pergunta pela
   API ([escalacao-humana.md](escalacao-humana.md)). O controller continua sem
   saber que engine existe: nada neste arquivo mudou para isso acontecer, que
   era o ponto da costura. **Fechado pela `t161`:** a instrução do nó vem do

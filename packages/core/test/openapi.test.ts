@@ -17,10 +17,11 @@
  * registered route while the document may or may not carry it would compare two
  * different things.
  *
- * The document's own interfaces are hand-written below instead of imported from
+ * The document's own interfaces are hand-written instead of imported from
  * `openapi-types`: they ARE the shape this suite demands, and a contract that
  * imports itself from the producer demands nothing (same reason `support.ts`
- * hand-writes the projections).
+ * hand-writes the projections). Since t200 they live in `support.ts` itself,
+ * together with the per-family assertion the five sibling tickets import.
  */
 
 import assert from 'node:assert/strict';
@@ -32,34 +33,50 @@ import test from 'node:test';
 import { applyPragmas, openDatabase } from '../src/db/connection.ts';
 import { migrate } from '../src/db/migrate.ts';
 import { API_PREFIX, createApp } from '../src/server.ts';
-import { MIGRATIONS_DIR, PACKAGE_ROOT, requireArtifacts, request, startControlPlane } from './support.ts';
+import {
+  MIGRATIONS_DIR,
+  PACKAGE_ROOT,
+  assertJsonSchema,
+  assertOperationSchemas,
+  fetchDocument,
+  operationAt,
+  requireArtifacts,
+  request,
+  startControlPlane,
+  type OpenApiDocument,
+  type OperationExpectation,
+} from './support.ts';
 
 /** Artifacts this ticket touches; the initial red names them instead of blowing up. */
 const ARTIFACTS = ['src/server.ts', 'src/routes/common.ts'];
 
-/** A JSON Schema, as it travels inside the document — opaque here on purpose. */
-type SchemaObject = Record<string, unknown>;
-
-/** One media type of a request body or a response. */
-interface MediaTypeObject {
-  schema?: SchemaObject;
-}
-
-/** One documented operation. */
-interface OperationObject {
-  operationId?: string;
-  parameters?: Array<{ name: string; in: string }>;
-  requestBody?: { content?: Record<string, MediaTypeObject> };
-  responses?: Record<string, { content?: Record<string, MediaTypeObject> }>;
-}
-
-/** The document, in the slice this suite reads. */
-interface OpenApiDocument {
-  openapi: string;
-  info: { title: string; version: string; description?: string };
-  servers: Array<{ url: string }>;
-  paths: Record<string, Record<string, OperationObject>>;
-}
+/**
+ * The graphs + proposals family, operation by operation (t200, FR1/FR5).
+ *
+ * Every status is one the handler answers TODAY, read off the two route files —
+ * the point of this ticket is documenting what is there, not deciding what
+ * should be. `hasRequestBody` is absent wherever the handler never touches
+ * `request.body`: `/approve` and `/apply` act on the `:id` alone.
+ */
+const GRAPH_AND_PROPOSAL_OPERATIONS: OperationExpectation[] = [
+  { method: 'post', route: '/v1/graphs', statuses: ['201', '400', '409', '422'], hasRequestBody: true },
+  { method: 'post', route: '/v1/graphs/{id}/fork', statuses: ['201', '400', '404', '409'], hasRequestBody: true },
+  { method: 'post', route: '/v1/graphs/{id}/promote', statuses: ['201', '400', '404', '409', '422'], hasRequestBody: true },
+  { method: 'post', route: '/v1/graphs/{id}/offer', statuses: ['201', '400', '404', '409', '422'], hasRequestBody: true },
+  { method: 'get', route: '/v1/classes', statuses: ['200'] },
+  { method: 'get', route: '/v1/graphs', statuses: ['200'] },
+  { method: 'get', route: '/v1/graphs/{id}', statuses: ['200', '404'] },
+  { method: 'get', route: '/v1/graphs/{id}/versions', statuses: ['200', '404'] },
+  { method: 'get', route: '/v1/graph-versions/{id}', statuses: ['200', '404'] },
+  { method: 'post', route: '/v1/proposals', statuses: ['201', '400'], hasRequestBody: true },
+  { method: 'post', route: '/v1/proposals/{id}/approve', statuses: ['200', '404', '409'] },
+  { method: 'post', route: '/v1/proposals/{id}/reject', statuses: ['200', '400', '404', '409'], hasRequestBody: true },
+  { method: 'post', route: '/v1/proposals/{id}/apply', statuses: ['200', '404', '409', '422'] },
+  { method: 'post', route: '/v1/proposals/{id}/revert', statuses: ['200', '400', '404', '409'], hasRequestBody: true },
+  { method: 'post', route: '/v1/proposals/{id}/outcome', statuses: ['200', '400', '404', '409', '422'], hasRequestBody: true },
+  { method: 'get', route: '/v1/proposals', statuses: ['200'] },
+  { method: 'get', route: '/v1/proposals/{id}', statuses: ['200', '404'] },
+];
 
 /**
  * Verbs that are an operation in a path item.
@@ -84,13 +101,6 @@ function packageVersion(): string {
     readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'),
   ) as { version: string };
   return manifest.version;
-}
-
-/** Fetches the public document from a running control plane. */
-async function fetchDocument(url: string): Promise<OpenApiDocument> {
-  const response = await fetch(`${url}/openapi.json`);
-  assert.equal(response.status, 200, 'GET /openapi.json has to answer');
-  return (await response.json()) as OpenApiDocument;
 }
 
 /**
@@ -147,34 +157,6 @@ async function registeredOperations(): Promise<Set<string>> {
   db.close();
   rmSync(base, { recursive: true, force: true });
   return routes;
-}
-
-/** Reads one operation out of the document by the full address a client calls. */
-function operationAt(
-  document: OpenApiDocument,
-  method: string,
-  fullPath: string,
-): OperationObject {
-  const base = document.servers[0]?.url ?? '';
-  assert.ok(fullPath.startsWith(base), `${fullPath} is not under the declared server ${base}`);
-  const route = fullPath.slice(base.length);
-  const item = document.paths[route];
-  assert.ok(item !== undefined, `the document has no path ${route} (server ${base})`);
-  const operation = item[method];
-  assert.ok(operation !== undefined, `the document has no ${method.toUpperCase()} ${route}`);
-  return operation;
-}
-
-/** Asserts that a media map carries a JSON schema with something in it. */
-function assertJsonSchema(
-  content: Record<string, MediaTypeObject> | undefined,
-  what: string,
-): void {
-  assert.ok(content !== undefined, `${what}: no content declared`);
-  const media = content['application/json'];
-  assert.ok(media !== undefined, `${what}: no application/json media type`);
-  assert.ok(media.schema !== undefined, `${what}: the media type declares no schema`);
-  assert.ok(Object.keys(media.schema).length > 0, `${what}: the schema is empty`);
 }
 
 test('t171 AT1 — GET /openapi.json serves a parseable OpenAPI 3.x document', async (t) => {
@@ -271,6 +253,73 @@ test('t171 AT3 — the three routes of the basic flow carry request and response
     (answer.parameters ?? []).some((item) => item.name === 'id' && item.in === 'path'),
     'PATCH /v1/input-requests/{id}/answer does not declare its path parameter',
   );
+});
+
+test('t200 AT1 — the whole graphs+proposals family carries request and response schemas', async (t) => {
+  requireArtifacts(...ARTIFACTS, 'src/routes/graphs.ts', 'src/routes/proposals.ts');
+  const ctx = await startControlPlane(t);
+  const document = await fetchDocument(ctx.url);
+
+  // FR1: one response entry per status the handler already answers, and a
+  // request body declared only where the handler reads one. The table is above,
+  // and it is what t240–t244 will each write for their own family.
+  assertOperationSchemas(document, GRAPH_AND_PROPOSAL_OPERATIONS);
+
+  assert.equal(
+    GRAPH_AND_PROPOSAL_OPERATIONS.length,
+    17,
+    'the family is 9 operations of routes/graphs.ts plus 8 of routes/proposals.ts',
+  );
+});
+
+test('t200 AT2 — POST /v1/graphs names the real graph contract in its description', async (t) => {
+  requireArtifacts(...ARTIFACTS, 'src/routes/graphs.ts');
+  const ctx = await startControlPlane(t);
+  const document = await fetchDocument(ctx.url);
+
+  // FR3: the body schema stays `{type: 'object'}` because `schema/grafo.schema.json`
+  // is draft 2020-12 and the ajv Fastify compiles with is draft-07, and swapping the
+  // app's whole schema compiler for one route is a decision far bigger than this
+  // document. What a client cannot guess from an open body is WHERE the real
+  // contract is, so the operation says it — the fact used to live only in a source
+  // comment, where a reader of the document never gets to it.
+  const description = operationAt(document, 'post', '/v1/graphs').description ?? '';
+  assert.ok(
+    description.includes('schema/grafo.schema.json'),
+    `POST /v1/graphs does not name the graph schema file: ${description}`,
+  );
+  assert.ok(
+    description.includes('urn:cartografo:schema:grafo:1.0.0'),
+    `POST /v1/graphs does not name the graph schema $id: ${description}`,
+  );
+});
+
+test('t200 AT3 — every :id of the family is documented as a string path parameter', async (t) => {
+  requireArtifacts(...ARTIFACTS, 'src/routes/graphs.ts', 'src/routes/proposals.ts');
+  const ctx = await startControlPlane(t);
+  const document = await fetchDocument(ctx.url);
+
+  // The regression guard for the coercion hazard `routes/proposals.ts:670-675`
+  // documents: `load()` answers 404 for a non-numeric proposal id, on purpose. The
+  // moment any of these declares `integer`, ajv refuses the request before the
+  // handler runs and that 404 silently becomes a 400 from the framework — a
+  // behaviour change nothing else in the suite would notice.
+  const withId = GRAPH_AND_PROPOSAL_OPERATIONS.filter((entry) => entry.route.includes('{id}'));
+  assert.equal(withId.length, 12, 'the family has 12 operations taking a path :id');
+
+  for (const { method, route } of withId) {
+    const operation = operationAt(document, method, route);
+    const label = `${method.toUpperCase()} ${route}`;
+    const id = (operation.parameters ?? []).find(
+      (item) => item.name === 'id' && item.in === 'path',
+    );
+    assert.ok(id !== undefined, `${label}: does not declare its {id} path parameter`);
+    assert.equal(
+      id.schema?.type,
+      'string',
+      `${label}: {id} is documented as ${JSON.stringify(id.schema)}, and anything but "string" makes ajv coerce a path segment the handler wants raw`,
+    );
+  }
 });
 
 test('t197 FR6 — the document says which status an unusable body gets, and names the exception', async (t) => {

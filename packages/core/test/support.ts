@@ -300,3 +300,141 @@ export async function createJob(
   assert.equal(response.status, 201, `POST /v1/jobs returned ${response.status}`);
   return response.body;
 }
+
+/* -------------------------------------------------------------------------- */
+/* The public OpenAPI document (t200, FR4)                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Everything below came out of `test/openapi.test.ts`, where t171 wrote it for
+ * the three routes of the basic flow.
+ *
+ * It moved here because it stopped being one file's business: t200 documents the
+ * graphs + proposals family and t240–t244 document the five that are left, one
+ * family per ticket, each asserting the same two things about its own operations.
+ * A helper living in a `*.test.ts` file cannot be imported by another one without
+ * dragging that file's tests into the importer's run, so `support.ts` — this
+ * package's existing home for what more than one suite needs — is where it goes.
+ *
+ * The interfaces stay hand-written rather than imported from `openapi-types`, for
+ * the same reason as the projections above: they ARE the shape the suites demand
+ * of the document, and a contract that imports itself from the producer demands
+ * nothing.
+ */
+
+/** A JSON Schema, as it travels inside the document — opaque here on purpose. */
+export type SchemaObject = Record<string, unknown>;
+
+/** One media type of a request body or a response. */
+export interface MediaTypeObject {
+  schema?: SchemaObject;
+}
+
+/**
+ * One documented operation.
+ *
+ * `description` and a parameter's `schema` are the two fields t200 added to what
+ * t171 wrote: FR3 puts the graph document's real contract in the operation's own
+ * description, and the family's `:id` has to be readable as a STRING to guard the
+ * coercion hazard `routes/proposals.ts` documents.
+ */
+export interface OperationObject {
+  operationId?: string;
+  description?: string;
+  parameters?: Array<{ name: string; in: string; schema?: SchemaObject }>;
+  requestBody?: { content?: Record<string, MediaTypeObject> };
+  responses?: Record<string, { content?: Record<string, MediaTypeObject> }>;
+}
+
+/** The document, in the slice these suites read. */
+export interface OpenApiDocument {
+  openapi: string;
+  info: { title: string; version: string; description?: string };
+  servers: Array<{ url: string }>;
+  paths: Record<string, Record<string, OperationObject>>;
+}
+
+/** Fetches the public document from a running control plane. */
+export async function fetchDocument(url: string): Promise<OpenApiDocument> {
+  const response = await fetch(`${url}/openapi.json`);
+  assert.equal(response.status, 200, 'GET /openapi.json has to answer');
+  return (await response.json()) as OpenApiDocument;
+}
+
+/** Reads one operation out of the document by the full address a client calls. */
+export function operationAt(
+  document: OpenApiDocument,
+  method: string,
+  fullPath: string,
+): OperationObject {
+  const base = document.servers[0]?.url ?? '';
+  assert.ok(fullPath.startsWith(base), `${fullPath} is not under the declared server ${base}`);
+  const route = fullPath.slice(base.length);
+  const item = document.paths[route];
+  assert.ok(item !== undefined, `the document has no path ${route} (server ${base})`);
+  const operation = item[method];
+  assert.ok(operation !== undefined, `the document has no ${method.toUpperCase()} ${route}`);
+  return operation;
+}
+
+/** Asserts that a media map carries a JSON schema with something in it. */
+export function assertJsonSchema(
+  content: Record<string, MediaTypeObject> | undefined,
+  what: string,
+): void {
+  assert.ok(content !== undefined, `${what}: no content declared`);
+  const media = content['application/json'];
+  assert.ok(media !== undefined, `${what}: no application/json media type`);
+  assert.ok(media.schema !== undefined, `${what}: the media type declares no schema`);
+  assert.ok(Object.keys(media.schema).length > 0, `${what}: the schema is empty`);
+}
+
+/**
+ * What one operation of a route family has to declare.
+ *
+ * `statuses` is every status the handler can answer TODAY — the list is read off
+ * the handler, not wished for — and `hasRequestBody` is false by default because
+ * an operation that never reads `request.body` must not document one: a client
+ * generated from the document would then offer a payload the route ignores.
+ */
+export interface OperationExpectation {
+  method: string;
+  route: string;
+  statuses: string[];
+  hasRequestBody?: boolean;
+}
+
+/**
+ * Asserts that a whole route family carries real request/response schemas.
+ *
+ * This is the assertion t200 wrote for graphs + proposals and that t240–t244
+ * reuse for the five families that are left; its shape is fixed here so the five
+ * do not each invent their own. It checks PRESENCE of a schema per declared
+ * status and per request body, never the shape inside — the bodies of this
+ * surface are deliberately open (`OPEN_OBJECT_SCHEMA`), and asserting a shape
+ * here would be asking the routes to narrow what they accept and serialize.
+ *
+ * @param document The fetched public document.
+ * @param expectations One entry per operation of the family.
+ */
+export function assertOperationSchemas(
+  document: OpenApiDocument,
+  expectations: OperationExpectation[],
+): void {
+  for (const { method, route, statuses, hasRequestBody } of expectations) {
+    const operation = operationAt(document, method, route);
+    const label = `${method.toUpperCase()} ${route}`;
+
+    if (hasRequestBody === true) {
+      assert.ok(operation.requestBody !== undefined, `${label}: no requestBody declared`);
+      assertJsonSchema(operation.requestBody.content, `${label} requestBody`);
+    }
+
+    assert.ok(operation.responses !== undefined, `${label}: no responses declared`);
+    for (const status of statuses) {
+      const response = operation.responses[status];
+      assert.ok(response !== undefined, `${label}: status ${status} is not documented`);
+      assertJsonSchema(response.content, `${label} response ${status}`);
+    }
+  }
+}

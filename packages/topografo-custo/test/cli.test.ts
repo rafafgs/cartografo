@@ -140,9 +140,9 @@ test('AT9 — avaliar creates exactly one pending proposal from the cost lens', 
   // --- seeding: the graph as data, one job and two sessions of distinct nodes
   const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
   const record = (await call(baseUrl, '/v1/graphs', 'POST', document)) as {
-    grafo_versao: { id: string };
+    graph_version: { id: string };
   };
-  const versionId = record.grafo_versao.id;
+  const versionId = record.graph_version.id;
 
   const job = (await call(baseUrl, '/v1/jobs', 'POST', {
     titulo: 'nota sobre custo',
@@ -191,16 +191,16 @@ test('AT9 — avaliar creates exactly one pending proposal from the cost lens', 
   );
   assert.equal(creations.length, 1, 'only "redigir" passes the ceiling; "revisar" makes nothing');
 
-  const { proposta: proposal } = creations[0].response as {
-    proposta: { id: number; status: string; evidencia: Record<string, unknown> };
+  const { proposal: proposal } = creations[0].response as {
+    proposal: { id: number; status: string; evidence: Record<string, unknown> };
   };
-  assert.equal(proposal.status, 'pendente');
-  assert.equal(proposal.evidencia.lente, 'custo');
-  assert.equal(proposal.evidencia.tipo, 'teto');
-  assert.equal(proposal.evidencia.no_id, 'redigir');
-  assert.equal(proposal.evidencia.grafo_versao_id, versionId);
-  assert.equal(proposal.evidencia.tokens_total, 5000);
-  assert.equal(proposal.evidencia.teto_excedido, 'tokens');
+  assert.equal(proposal.status, 'pending');
+  assert.equal(proposal.evidence.lente, 'custo');
+  assert.equal(proposal.evidence.tipo, 'teto');
+  assert.equal(proposal.evidence.no_id, 'redigir');
+  assert.equal(proposal.evidence.grafo_versao_id, versionId);
+  assert.equal(proposal.evidence.tokens_total, 5000);
+  assert.equal(proposal.evidence.teto_excedido, 'tokens');
 
   const lines = printed.join('').trimEnd().split('\n').filter((line) => line !== '');
   assert.equal(lines.length, 1, 'one line per proposal created');
@@ -215,13 +215,13 @@ test('AT9 — avaliar touches only the four routes of the contract, and never /a
 
   const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
   const record = (await call(baseUrl, '/v1/graphs', 'POST', document)) as {
-    grafo_versao: { id: string };
+    graph_version: { id: string };
   };
   const job = (await call(baseUrl, '/v1/jobs', 'POST', {
     titulo: 'nota sobre custo',
     no_entrada_id: 'redigir',
     execucao_id: EXECUTION_ID,
-    grafo_versao_id: record.grafo_versao.id,
+    grafo_versao_id: record.graph_version.id,
   })) as { id: number };
   await seedSession(baseUrl, job.id, 'redigir', 5000);
 

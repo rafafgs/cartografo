@@ -175,14 +175,14 @@ function nodeDescriptionInSnapshot(version: GraphVersion | undefined, nodeId: st
  */
 export async function evaluateExecution(options: EvaluateOptions): Promise<CreatedProposal[]> {
   const { url, executionId, doFetch } = options;
-  const filter = { execucao_id: executionId };
+  const filter = { execution_id: executionId };
 
   const [sessions, jobs] = await Promise.all([
     getSessions(url, filter, doFetch),
     getJobs(url, filter, doFetch),
   ]);
 
-  const versionByJob = new Map(jobs.map((job) => [job.id, job.grafo_versao_id] as const));
+  const versionByJob = new Map(jobs.map((job) => [job.id, job.graph_version_id] as const));
   const rows = identifiedRows(aggregateCost(sessions, versionByJob));
 
   // One snapshot per distinct version, not one per candidate: the same version
@@ -210,11 +210,11 @@ export async function evaluateExecution(options: EvaluateOptions): Promise<Creat
     const proposal = await createProposal(
       url,
       {
-        grafo_id: version.grafo_id,
-        versao_alvo: version.id,
-        operacoes: candidate.operacoes,
-        evidencia: candidate.evidencia,
-        metrica_esperada: candidate.metrica_esperada,
+        graph_id: version.graph_id,
+        target_version: version.id,
+        operations: candidate.operacoes,
+        evidence: candidate.evidencia,
+        expected_metric: candidate.metrica_esperada,
       },
       doFetch,
     );

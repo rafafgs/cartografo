@@ -5,15 +5,18 @@
  *
  * | Route | What for |
  * |---|---|
- * | `GET /v1/sessions?execucao_id=` | tokens (`uso`) and time (`aberta_em`/`finalizada_em`) per `no_id` |
- * | `GET /v1/jobs?execucao_id=` | the `trabalho_id -> grafo_versao_id` map |
+ * | `GET /v1/sessions?execution_id=` | tokens (`usage`) and time (`opened_at`/`finished_at`) per `node_id` |
+ * | `GET /v1/jobs?execution_id=` | the `id -> graph_version_id` map |
  * | `GET /v1/graph-versions/:id` | the node's current `description`, which becomes the `de` of the operation |
  * | `POST /v1/proposals` | the candidate, as a pending proposal |
  *
- * The PATH is English (D18, t127); the body KEYS stay in Portuguese
- * (`sessoes`, `trabalhos`, `grafo_versao`, `proposta`), because they are format
- * keys and D18 explicitly takes them out of the scope of English — D20 later
- * froze them as wire vocabulary, to migrate only under t213.
+ * The PATH was already English (D18, t127); since t226 the body KEYS are too
+ * (`sessions`, `jobs`, `graph_version`, `proposal`) — that is the API child of
+ * D20, applying `docs/spec/glossario-wire.md` §1.
+ *
+ * What `evidence` and `expected_metric` CARRY is a different matter and does not
+ * move: those blobs are `domain/hypothesis.ts`'s frozen shape (`{nome, direcao,
+ * de, para}`), which no D20 child unfreezes — see `policy.ts`.
  *
  * There is no `POST /v1/proposals/:id/apply` here, and the absence is the rule:
  * applying a proposal is a human decision at the gate (README, principle 5).
@@ -35,7 +38,7 @@ import type { ChangeNodeDescription, CostEvidence, ExpectedMetric } from './poli
  */
 export interface ObservedJob {
   id: number;
-  grafo_versao_id: string | null;
+  graph_version_id: string | null;
 }
 
 /** A node of the snapshot, in the subset the lens reads. */
@@ -47,17 +50,18 @@ export interface SnapshotNode {
 /** A graph version with the whole snapshot, as the route returns it. */
 export interface GraphVersion {
   id: string;
-  grafo_id: string;
+  graph_id: string;
   snapshot: { nodes?: SnapshotNode[] };
 }
 
 /** Body of `POST /v1/proposals`. The five keys the route demands. */
 export interface ProposalInput {
-  grafo_id: string;
-  versao_alvo: string;
-  operacoes: ChangeNodeDescription[];
-  evidencia: CostEvidence | Record<string, unknown>;
-  metrica_esperada: ExpectedMetric | Record<string, unknown>;
+  graph_id: string;
+  target_version: string;
+  /** The operation vocabulary inside is D20's THIRD child, and does not move. */
+  operations: ChangeNodeDescription[];
+  evidence: CostEvidence | Record<string, unknown>;
+  expected_metric: ExpectedMetric | Record<string, unknown>;
 }
 
 /** A proposal, in the subset the lens reads from the answer. */
@@ -68,7 +72,7 @@ export interface Proposal {
 
 /** Narrowing by execution. Without it, the route returns everything. */
 export interface ExecutionFilter {
-  execucao_id?: number;
+  execution_id?: number;
 }
 
 /**
@@ -96,10 +100,10 @@ function normalize(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
 }
 
-/** Builds `?execucao_id=N`, or empty text — never a dangling `?`. */
+/** Builds `?execution_id=N`, or empty text — never a dangling `?`. */
 function query(filter: ExecutionFilter): string {
-  if (filter.execucao_id === undefined) return '';
-  return `?execucao_id=${encodeURIComponent(String(filter.execucao_id))}`;
+  if (filter.execution_id === undefined) return '';
+  return `?execution_id=${encodeURIComponent(String(filter.execution_id))}`;
 }
 
 /**
@@ -160,7 +164,7 @@ export async function getSessions(
   filter: ExecutionFilter = {},
   doFetch: typeof fetch = fetch,
 ): Promise<ObservedSession[]> {
-  const { sessoes: sessions } = await get<{ sessoes: ObservedSession[] }>(
+  const { sessions } = await get<{ sessions: ObservedSession[] }>(
     baseUrl,
     `/v1/sessions${query(filter)}`,
     doFetch,
@@ -181,7 +185,7 @@ export async function getJobs(
   filter: ExecutionFilter = {},
   doFetch: typeof fetch = fetch,
 ): Promise<ObservedJob[]> {
-  const { trabalhos: jobs } = await get<{ trabalhos: ObservedJob[] }>(
+  const { jobs } = await get<{ jobs: ObservedJob[] }>(
     baseUrl,
     `/v1/jobs${query(filter)}`,
     doFetch,
@@ -202,7 +206,7 @@ export async function getGraphVersion(
   id: string,
   doFetch: typeof fetch = fetch,
 ): Promise<GraphVersion> {
-  const { grafo_versao: version } = await get<{ grafo_versao: GraphVersion }>(
+  const { graph_version: version } = await get<{ graph_version: GraphVersion }>(
     baseUrl,
     `/v1/graph-versions/${encodeURIComponent(id)}`,
     doFetch,
@@ -211,7 +215,7 @@ export async function getGraphVersion(
 }
 
 /**
- * Creates the proposal. It is born `pendente`: the human gate is what applies it.
+ * Creates the proposal. It is born `pending`: the human gate is what applies it.
  *
  * @param baseUrl Base URL of the control plane.
  * @param input The five keys of the route's contract.
@@ -229,6 +233,6 @@ export async function createProposal(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(input),
   });
-  const { proposta: proposal } = await parseResponse<{ proposta: Proposal }>(path, 'POST', response);
+  const { proposal } = await parseResponse<{ proposal: Proposal }>(path, 'POST', response);
   return proposal;
 }

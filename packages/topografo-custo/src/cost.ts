@@ -42,11 +42,11 @@ export interface SessionUsage {
  * is what lets this lens survive new fields in the core without changing a line.
  */
 export interface ObservedSession {
-  trabalho_id: number | null;
-  no_id: string | null;
-  uso: SessionUsage | null;
-  aberta_em: string;
-  finalizada_em: string | null;
+  job_id: number | null;
+  node_id: string | null;
+  usage: SessionUsage | null;
+  opened_at: string;
+  finished_at: string | null;
 }
 
 /** Which graph version each job belongs to (`trabalho.grafo_versao_id`). */
@@ -94,9 +94,9 @@ function totalTokens(usage: SessionUsage): number {
  * `sessoes_sem_tempo` — never as zero.
  */
 function durationMs(session: ObservedSession): number | null {
-  if (session.finalizada_em === null || session.aberta_em === null) return null;
-  const start = Date.parse(session.aberta_em);
-  const end = Date.parse(session.finalizada_em);
+  if (session.finished_at === null || session.opened_at === null) return null;
+  const start = Date.parse(session.opened_at);
+  const end = Date.parse(session.finished_at);
   if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
   return end - start;
 }
@@ -117,9 +117,9 @@ function compareNullLast(a: string | null, b: string | null): number {
 /**
  * Aggregates the sessions of an execution by `(graph version, node)` (FR2).
  *
- * @param sessions Sessions as `GET /v1/sessions?execucao_id=` returned them.
- * @param versionByJob Map `trabalho_id -> grafo_versao_id`, built from
- *   `GET /v1/jobs?execucao_id=`. A job absent from the map is treated as an
+ * @param sessions Sessions as `GET /v1/sessions?execution_id=` returned them.
+ * @param versionByJob Map `job id -> graph_version_id`, built from
+ *   `GET /v1/jobs?execution_id=`. A job absent from the map is treated as an
  *   unknown version, not as an error.
  * @returns One row per distinct pair observed; identified pairs first, the group
  *   with `null` on either end last.
@@ -132,8 +132,8 @@ export function aggregateCost(
 
   for (const session of sessions) {
     const graphVersionId =
-      session.trabalho_id === null ? null : (versionByJob.get(session.trabalho_id) ?? null);
-    const nodeId = session.no_id;
+      session.job_id === null ? null : (versionByJob.get(session.job_id) ?? null);
+    const nodeId = session.node_id;
 
     let row = byPair.get(key(graphVersionId, nodeId));
     if (row === undefined) {
@@ -150,11 +150,11 @@ export function aggregateCost(
       byPair.set(key(graphVersionId, nodeId), row);
     }
 
-    if (session.uso === null) {
+    if (session.usage === null) {
       row.sessoes_sem_uso += 1;
     } else {
       row.sessoes_com_uso += 1;
-      row.tokens_total += totalTokens(session.uso);
+      row.tokens_total += totalTokens(session.usage);
     }
 
     const duration = durationMs(session);

@@ -58,27 +58,27 @@ function spy(answerBody: unknown): { calls: Call[]; doFetch: typeof fetch } {
 test('AT8 — getSessions and getJobs put execucao_id in the query when it is given', async () => {
   const { getSessions, getJobs } = await load();
 
-  const forSessions = spy({ sessoes: [{ id: 1 }] });
+  const forSessions = spy({ sessions: [{ id: 1 }] });
   const sessions = await getSessions(
     'http://127.0.0.1:4317',
-    { execucao_id: 7 },
+    { execution_id: 7 },
     forSessions.doFetch,
   );
   assert.equal(sessions.length, 1);
   assert.deepEqual(
     forSessions.calls.map((call) => call.url),
-    ['http://127.0.0.1:4317/v1/sessions?execucao_id=7'],
+    ['http://127.0.0.1:4317/v1/sessions?execution_id=7'],
   );
 
-  const forJobs = spy({ trabalhos: [{ id: 1 }] });
-  await getJobs('http://127.0.0.1:4317', { execucao_id: 7 }, forJobs.doFetch);
+  const forJobs = spy({ jobs: [{ id: 1 }] });
+  await getJobs('http://127.0.0.1:4317', { execution_id: 7 }, forJobs.doFetch);
   assert.deepEqual(
     forJobs.calls.map((call) => call.url),
-    ['http://127.0.0.1:4317/v1/jobs?execucao_id=7'],
+    ['http://127.0.0.1:4317/v1/jobs?execution_id=7'],
   );
 
   // With no filter there is no dangling `?` left on the URL.
-  const noFilter = spy({ sessoes: [] });
+  const noFilter = spy({ sessions: [] });
   await getSessions('http://127.0.0.1:4317/', {}, noFilter.doFetch);
   assert.deepEqual(
     noFilter.calls.map((call) => call.url),
@@ -91,9 +91,9 @@ test('AT8 — createProposal does POST /v1/proposals with the five keys of the c
   const { createProposal } = await load();
 
   const input = {
-    grafo_id: 'nota-curta',
-    versao_alvo: 'sha256:v1',
-    operacoes: [
+    graph_id: 'nota-curta',
+    target_version: 'sha256:v1',
+    operations: [
       {
         tipo: 'alterar_campo_no' as const,
         no_id: 'redigir',
@@ -109,11 +109,11 @@ test('AT8 — createProposal does POST /v1/proposals with the five keys of the c
         },
       },
     ],
-    evidencia: { lente: 'custo' as const },
-    metrica_esperada: { descricao: 'cair abaixo do teto' },
+    evidence: { lente: 'custo' as const },
+    expected_metric: { descricao: 'cair abaixo do teto' },
   };
 
-  const { calls, doFetch } = spy({ proposta: { id: 42, status: 'pendente' } });
+  const { calls, doFetch } = spy({ proposal: { id: 42, status: 'pendente' } });
   const proposal = await createProposal('http://127.0.0.1:4317', input, doFetch);
 
   assert.equal(proposal.id, 42);
@@ -121,11 +121,11 @@ test('AT8 — createProposal does POST /v1/proposals with the five keys of the c
   assert.equal(calls[0].url, 'http://127.0.0.1:4317/v1/proposals');
   assert.equal(calls[0].method, 'POST');
   assert.deepEqual(Object.keys(calls[0].body as object).sort(), [
-    'evidencia',
-    'grafo_id',
-    'metrica_esperada',
-    'operacoes',
-    'versao_alvo',
+    'evidence',
+    'expected_metric',
+    'graph_id',
+    'operations',
+    'target_version',
   ]);
   assert.deepEqual(calls[0].body, input);
 });
@@ -134,11 +134,11 @@ test('AT8 — getGraphVersion reads the snapshot through the public version rout
   const { getGraphVersion } = await load();
 
   const { calls, doFetch } = spy({
-    grafo_versao: { id: 'sha256:v1', grafo_id: 'nota-curta', snapshot: { nodes: [] } },
+    graph_version: { id: 'sha256:v1', graph_id: 'nota-curta', snapshot: { nodes: [] } },
   });
   const version = await getGraphVersion('http://127.0.0.1:4317', 'sha256:v1', doFetch);
 
-  assert.equal(version.grafo_id, 'nota-curta');
+  assert.equal(version.graph_id, 'nota-curta');
   assert.deepEqual(
     calls.map((call) => call.url),
     ['http://127.0.0.1:4317/v1/graph-versions/sha256%3Av1'],
@@ -223,7 +223,7 @@ test('AT8 — an error answer becomes an exception with status and body, not sil
     });
 
   await assert.rejects(
-    () => getSessions('http://127.0.0.1:4317', { execucao_id: 7 }, doFetch),
+    () => getSessions('http://127.0.0.1:4317', { execution_id: 7 }, doFetch),
     (error: unknown) => {
       assert.ok(error instanceof ApiError);
       assert.equal(error.status, 400);
@@ -255,7 +255,7 @@ test('t156 — a non-JSON error body becomes an ApiError with the raw text, not 
   );
 
   await assert.rejects(
-    () => getSessions('http://127.0.0.1:4317', { execucao_id: 7 }, doFetch),
+    () => getSessions('http://127.0.0.1:4317', { execution_id: 7 }, doFetch),
     (error: unknown) => {
       assert.ok(
         error instanceof ApiError,

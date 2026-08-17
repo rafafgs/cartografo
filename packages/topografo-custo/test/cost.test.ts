@@ -47,11 +47,11 @@ function usage(
 /** A session as `GET /v1/sessions` returns it, in the subset the lens reads. */
 function session(partial: Partial<CostModule.ObservedSession>): CostModule.ObservedSession {
   return {
-    trabalho_id: 1,
-    no_id: 'redigir',
-    uso: null,
-    aberta_em: '2026-08-14T10:00:00.000Z',
-    finalizada_em: '2026-08-14T10:00:30.000Z',
+    job_id: 1,
+    node_id: 'redigir',
+    usage: null,
+    opened_at: '2026-08-14T10:00:00.000Z',
+    finished_at: '2026-08-14T10:00:30.000Z',
     ...partial,
   };
 }
@@ -61,8 +61,8 @@ test('AT1 — sums the four usage subkeys of two sessions of the same pair into 
 
   const rows = aggregateCost(
     [
-      session({ trabalho_id: 1, no_id: 'redigir', uso: usage(100, 20, 3, 7) }),
-      session({ trabalho_id: 1, no_id: 'redigir', uso: usage(1, 2, 3, 4) }),
+      session({ job_id: 1, node_id: 'redigir', usage: usage(100, 20, 3, 7) }),
+      session({ job_id: 1, node_id: 'redigir', usage: usage(1, 2, 3, 4) }),
     ],
     new Map([[1, 'sha256:v1']]),
   );
@@ -80,8 +80,8 @@ test('AT2 — a session with a null usage does not move tokens_total and counts 
 
   const rows = aggregateCost(
     [
-      session({ trabalho_id: 1, no_id: 'redigir', uso: usage(10, 10, 10, 10) }),
-      session({ trabalho_id: 1, no_id: 'redigir', uso: null }),
+      session({ job_id: 1, node_id: 'redigir', usage: usage(10, 10, 10, 10) }),
+      session({ job_id: 1, node_id: 'redigir', usage: null }),
     ],
     new Map([[1, 'sha256:v1']]),
   );
@@ -98,16 +98,16 @@ test('AT3 — a session with no finalizada_em stays out of the time and counts i
   const rows = aggregateCost(
     [
       session({
-        trabalho_id: 1,
-        no_id: 'redigir',
-        aberta_em: '2026-08-14T10:00:00.000Z',
-        finalizada_em: '2026-08-14T10:00:30.000Z',
+        job_id: 1,
+        node_id: 'redigir',
+        opened_at: '2026-08-14T10:00:00.000Z',
+        finished_at: '2026-08-14T10:00:30.000Z',
       }),
       session({
-        trabalho_id: 1,
-        no_id: 'redigir',
-        aberta_em: '2026-08-14T11:00:00.000Z',
-        finalizada_em: null,
+        job_id: 1,
+        node_id: 'redigir',
+        opened_at: '2026-08-14T11:00:00.000Z',
+        finished_at: null,
       }),
     ],
     new Map([[1, 'sha256:v1']]),
@@ -125,11 +125,11 @@ test('AT4 — pairs with a null grafo_versao_id or no_id land in a group apart, 
   const rows = aggregateCost(
     [
       // A job with no declared graph version: the version comes out null.
-      session({ trabalho_id: 9, no_id: 'redigir', uso: usage(1, 1, 1, 1) }),
+      session({ job_id: 9, node_id: 'redigir', usage: usage(1, 1, 1, 1) }),
       // A discovery session: no node, no job.
-      session({ trabalho_id: null, no_id: null, uso: usage(2, 2, 2, 2) }),
-      session({ trabalho_id: 1, no_id: 'revisar', uso: usage(3, 3, 3, 3) }),
-      session({ trabalho_id: 1, no_id: 'redigir', uso: usage(4, 4, 4, 4) }),
+      session({ job_id: null, node_id: null, usage: usage(2, 2, 2, 2) }),
+      session({ job_id: 1, node_id: 'revisar', usage: usage(3, 3, 3, 3) }),
+      session({ job_id: 1, node_id: 'redigir', usage: usage(4, 4, 4, 4) }),
     ],
     new Map<number, string | null>([
       [1, 'sha256:v1'],

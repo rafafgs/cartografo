@@ -71,19 +71,19 @@ sem os dois campos não há nó a apontar nem snapshot em que ler a descrição.
 
 | Política | Pergunta | Precisa de |
 |---|---|---|
-| `teto` | este nó passou de N tokens (ou de N segundos)? | um teto declarado |
+| `ceiling` | este nó passou de N tokens (ou de N segundos)? | um teto declarado |
 | `tier` | este nó custa muito mais que os vizinhos da mesma versão? | base amostral |
 
-**`teto` é absoluta e cala quando não sabe.** Sem `--teto-tokens` nem
-`--teto-segundos`, a política não roda: não há o que exceder, e inventar um
+**`ceiling` é absoluta e cala quando não sabe.** Sem `--token-cap` nem
+`--second-cap`, a política não roda: não há o que exceder, e inventar um
 número default seria a lente decidindo por conta própria o que é caro. "Excede"
 é estritamente maior. Uma linha que estoura os dois tetos continua sendo **uma**
 candidata — o alvo é o nó, não o limite; `tokens` leva o rótulo por ser a
 métrica primária, e o número de tempo vai na evidência de qualquer jeito.
 
 **`tier` é relativa e exige base.** Um nó é candidato quando seu `tokens_total`
-é ≥ `tierFator` vezes a **mediana** da própria versão, e só quando a versão tem
-ao menos `tierMinimoNos` nós com dado de uso. Três escolhas com motivo:
+é ≥ `tierFactor` vezes a **mediana** da própria versão, e só quando a versão tem
+ao menos `tierMinNodes` nós com dado de uso. Três escolhas com motivo:
 
 - **mediana, não média** — a métrica serve para achar outlier, e média é
   puxada exatamente pelo outlier que se está procurando;
@@ -97,7 +97,7 @@ ao menos `tierMinimoNos` nós com dado de uso. Três escolhas com motivo:
 Mediana zero desliga a política: com metade dos nós medidos em zero tokens,
 qualquer valor positivo passaria em qualquer fator, e todo nó viraria outlier.
 
-Os defaults (`tierFator = 3`, `tierMinimoNos = 3`) são calibração, não
+Os defaults (`tierFactor = 3`, `tierMinNodes = 3`) são calibração, não
 arquitetura, e estão expostos como opção de linha de comando para poderem ser
 recalibrados sem tocar no desenho.
 
@@ -127,7 +127,7 @@ descrição atual do nó:
   "node_id": "implementar",
   "field": "description",
   "from": "<descrição atual>",
-  "to": "<descrição atual>\n\n[topógrafo-custo] teto de tokens excedido: …",
+  "to": "<descrição atual>\n\n[cost-surveyor] token ceiling exceeded: …",
   "inverse": {
     "type": "change_node_field",
     "node_id": "implementar",
@@ -138,33 +138,44 @@ descrição atual do nó:
 }
 ```
 
-Os números de verdade vão em `evidencia` e `metrica_esperada`, que são JSON
-livre por design (D15):
+Os números de verdade vão em `evidence` e `expected_metric`, que são JSON livre
+por design (D15):
 
 ```json
 {
-  "evidencia": {
-    "lente": "custo",
-    "no_id": "implementar",
-    "grafo_versao_id": "sha256:…",
+  "evidence": {
+    "lens": "cost",
+    "node_id": "implementar",
+    "graph_version_id": "sha256:…",
     "tokens_total": 412000,
-    "tempo_total_segundos": 5400,
-    "sessoes_com_uso": 9,
-    "sessoes_sem_uso": 1,
-    "teto_excedido": "tokens",
-    "tipo": "teto"
+    "total_seconds": 5400,
+    "sessions_with_usage": 9,
+    "sessions_without_usage": 1,
+    "ceiling_exceeded": "tokens",
+    "type": "ceiling"
   },
-  "metrica_esperada": {
-    "descricao": "tokens_total do nó \"implementar\" volta a ficar dentro do teto declarado",
-    "alvo": 200000,
-    "teto_ou_fator": 200000
+  "expected_metric": {
+    "nome": "tokens_total of node \"implementar\" goes back under the declared ceiling",
+    "direcao": "cai",
+    "de": 412000,
+    "para": 200000
   }
 }
 ```
 
-`alvo` é o número que a métrica deveria alcançar (o teto, ou o limiar
-`fator × mediana`); `teto_ou_fator` é o botão configurado que produziu esse
-alvo.
+As chaves da candidata falam inglês desde o t255
+([glossário](glossario-wire.md) §5.5); o CONTEÚDO de `expected_metric` continua
+`{nome, direcao, de, para}` porque é o formato de hipótese congelado do
+[`domain/hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts) — e é
+exatamente por isso que ele está aqui. Até o t255 esta lente inventava uma
+métrica própria — uma frase, um alvo e o botão que produziu o alvo —, que
+parecia uma hipótese e não era: o `POST /v1/proposals/:id/outcome` recusava com
+`422 invalid_expected_metric`, e nenhuma proposta desta lente conseguia fechar o
+próprio experimento.
+
+`de` é o número medido; `para` é onde ele deveria chegar (o teto, ou o limiar
+`fator × mediana`). `direcao` é sempre `cai`: toda candidata desta lente é um
+corte de custo.
 
 **A consequência honesta:** aplicar uma proposta desta lente não reduz custo
 nenhum sozinha — ela informa quem lê o nó. Enforcement mecânico de teto ou de
@@ -179,14 +190,14 @@ e só a operação muda.
 ## 4. O comando
 
 ```
-topografo-custo avaliar --url <url> --execution <id>
-                        [--token-cap N] [--second-cap N]
-                        [--tier-fator N] [--tier-minimo-nos N]
+topografo-custo evaluate --url <url> --execution <id>
+                         [--token-cap N] [--second-cap N]
+                         [--tier-factor N] [--tier-min-nodes N]
 ```
 
 O caminho inteiro, em ordem:
 
-1. `GET /v1/sessions?execucao_id=` e `GET /v1/jobs?execucao_id=` (em
+1. `GET /v1/sessions?execution_id=` e `GET /v1/jobs?execution_id=` (em
    paralelo);
 2. monta o mapa `trabalho_id -> grafo_versao_id`;
 3. agrega por `(versão, nó)` e descarta as linhas não identificadas;

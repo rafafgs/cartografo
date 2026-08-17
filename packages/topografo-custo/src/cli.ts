@@ -1,12 +1,12 @@
 /**
  * The `topografo-custo` command (t114, FR5).
  *
- * A single subcommand: `avaliar`. It reads the telemetry of an execution through
+ * A single subcommand: `evaluate`. It reads the telemetry of an execution through
  * the public API, aggregates cost by `(version, node)`, applies the policies and
  * creates one **pending** proposal per candidate.
  *
  * ```
- * topografo-custo avaliar --url http://127.0.0.1:4317 --execution 7 --token-cap 200000
+ * topografo-custo evaluate --url http://127.0.0.1:4317 --execution 7 --token-cap 200000
  * ```
  *
  * What it deliberately does NOT do:
@@ -46,17 +46,19 @@ import { evaluatePolicies } from './policy.ts';
  * `--teto-tokens` and `--teto-segundos` became `--execution`, `--token-cap` and
  * `--second-cap`, spelled the way the API already spells the same words
  * (`execution_id` in §1.1, `runner_cap`/`project_cap` in §1.5) rather than
- * invented here. Nothing answers to the old names; `avaliar` refuses whatever
+ * invented here. Nothing answers to the old names; `evaluate` refuses whatever
  * it did not consume.
  *
- * The `avaliar` subcommand and the `--tier-*` options did NOT move: the
- * glossary has no row for them, t230's Scope does not name them, and a rename
- * nobody decided is not a rename.
+ * t230 left the subcommand and the two `--tier-*` options behind, on the grounds
+ * that the glossary had no row for them. t255 wrote the rows (§5.2) and finished
+ * the move: `avaliar` → `evaluate`, `--tier-fator` → `--tier-factor`,
+ * `--tier-minimo-nos` → `--tier-min-nodes`. D20's text says "flags de CLI" with
+ * no exception, and a subcommand is as typed as a flag.
  */
-export const USAGE = `usage: topografo-custo avaliar --url <url> --execution <id> [options]
+export const USAGE = `usage: topografo-custo evaluate --url <url> --execution <id> [options]
 
 subcommands:
-  avaliar                reads the telemetry of an execution, aggregates cost by
+  evaluate               reads the telemetry of an execution, aggregates cost by
                          (graph version, node) and creates one pending proposal
                          per policy candidate. It never applies a proposal.
 
@@ -64,11 +66,10 @@ options:
   --url <url>            control plane to query (required)
   --execution <id>       execution to evaluate (required)
   --token-cap <n>        a candidate when tokens_total of the node passes <n>
-  --second-cap <n>       a candidate when tempo_total_segundos of the node
-                         passes <n>
-  --tier-fator <n>       multiple of the version median that makes an outlier
+  --second-cap <n>       a candidate when the node's total_seconds passes <n>
+  --tier-factor <n>      multiple of the version median that makes an outlier
                          (default 3)
-  --tier-minimo-nos <n>  fewest measured nodes in a version for tier to be
+  --tier-min-nodes <n>   fewest measured nodes in a version for tier to be
                          evaluated (default 3)
   --token <token>        control plane credential (env CARTOGRAFO_TOKEN); it is
                          printed the first time the control plane starts
@@ -85,7 +86,7 @@ export class UsageError extends Error {
   }
 }
 
-/** What `avaliar` needs to know. */
+/** What `evaluate` needs to know. */
 export interface EvaluateOptions {
   url: string;
   executionId: number;
@@ -97,13 +98,19 @@ export interface EvaluateOptions {
   doFetch?: typeof fetch;
 }
 
-/** A proposal this command has just created. */
+/**
+ * A proposal this command has just created.
+ *
+ * The three fields that are not the proposal's own come straight off the
+ * candidate, and take its names (§5.5) since t255 — one vocabulary between the
+ * policy, the body posted and the line printed.
+ */
 export interface CreatedProposal {
   id: number;
   status: string;
-  no_id: string;
-  grafo_versao_id: string;
-  tipo: 'teto' | 'tier';
+  node_id: string;
+  graph_version_id: string;
+  type: 'ceiling' | 'tier';
 }
 
 /** What can be injected into a run of the command. All of it for tests only. */
@@ -168,7 +175,7 @@ function nodeDescriptionInSnapshot(version: GraphVersion | undefined, nodeId: st
 }
 
 /**
- * The body of the `avaliar` subcommand (FR5).
+ * The body of the `evaluate` subcommand (FR5).
  *
  * Fetches the sessions and jobs of the execution, builds the map
  * `trabalho_id -> grafo_versao_id`, aggregates, reads the snapshot of each
@@ -210,7 +217,7 @@ export async function evaluateExecution(options: EvaluateOptions): Promise<Creat
 
   const created: CreatedProposal[] = [];
   for (const candidate of candidates) {
-    const version = snapshots.get(candidate.grafo_versao_id);
+    const version = snapshots.get(candidate.graph_version_id);
     if (version === undefined) continue;
 
     const proposal = await createProposal(
@@ -218,9 +225,9 @@ export async function evaluateExecution(options: EvaluateOptions): Promise<Creat
       {
         graph_id: version.graph_id,
         target_version: version.id,
-        operations: candidate.operacoes,
-        evidence: candidate.evidencia,
-        expected_metric: candidate.metrica_esperada,
+        operations: candidate.operations,
+        evidence: candidate.evidence,
+        expected_metric: candidate.expected_metric,
       },
       doFetch,
     );
@@ -228,9 +235,9 @@ export async function evaluateExecution(options: EvaluateOptions): Promise<Creat
     created.push({
       id: proposal.id,
       status: proposal.status,
-      no_id: candidate.no_id,
-      grafo_versao_id: candidate.grafo_versao_id,
-      tipo: candidate.tipo,
+      node_id: candidate.node_id,
+      graph_version_id: candidate.graph_version_id,
+      type: candidate.type,
     });
   }
 
@@ -239,7 +246,7 @@ export async function evaluateExecution(options: EvaluateOptions): Promise<Creat
 
 /** One report line per proposal created. */
 function reportLine(created: CreatedProposal): string {
-  return `proposal ${created.id} · node ${created.no_id} · ${created.tipo} · ${created.status}\n`;
+  return `proposal ${created.id} · node ${created.node_id} · ${created.type} · ${created.status}\n`;
 }
 
 /**
@@ -261,7 +268,7 @@ export async function runCli(args: string[], context: CliContext = {}): Promise<
   }
 
   const subcommand = args[0];
-  if (subcommand !== 'avaliar') {
+  if (subcommand !== 'evaluate') {
     process.stderr.write(`topografo-custo: unknown subcommand: "${subcommand ?? ''}"\n${USAGE}\n`);
     return 2;
   }
@@ -329,7 +336,7 @@ export function withCredential(doFetch: typeof fetch = fetch, token?: string): t
   };
 }
 
-/** Reads the options of `avaliar`, refusing what it does not understand. */
+/** Reads the options of `evaluate`, refusing what it does not understand. */
 function parseArguments(
   args: string[],
   doFetch?: typeof fetch,
@@ -340,17 +347,17 @@ function parseArguments(
   const fromExecution = extractValue(fromToken.rest, '--execution');
   const fromTokenCeiling = extractValue(fromExecution.rest, '--token-cap');
   const fromSecondCeiling = extractValue(fromTokenCeiling.rest, '--second-cap');
-  const fromFactor = extractValue(fromSecondCeiling.rest, '--tier-fator');
-  const fromMinNodes = extractValue(fromFactor.rest, '--tier-minimo-nos');
+  const fromFactor = extractValue(fromSecondCeiling.rest, '--tier-factor');
+  const fromMinNodes = extractValue(fromFactor.rest, '--tier-min-nodes');
 
   if (fromMinNodes.rest.length > 0) {
     throw new UsageError(
-      `avaliar does not understand: ${fromMinNodes.rest.map((extra) => `"${extra}"`).join(', ')}`,
+      `evaluate does not understand: ${fromMinNodes.rest.map((extra) => `"${extra}"`).join(', ')}`,
     );
   }
 
-  if (fromUrl.value === undefined) throw new UsageError('avaliar needs --url');
-  if (fromExecution.value === undefined) throw new UsageError('avaliar needs --execution');
+  if (fromUrl.value === undefined) throw new UsageError('evaluate needs --url');
+  if (fromExecution.value === undefined) throw new UsageError('evaluate needs --execution');
 
   const executionId = Number(fromExecution.value);
   if (!Number.isInteger(executionId)) {
@@ -362,15 +369,15 @@ function parseArguments(
     executionId,
     tokenCeiling: asNumber('--token-cap', fromTokenCeiling.value),
     secondCeiling: asNumber('--second-cap', fromSecondCeiling.value),
-    tierFactor: asNumber('--tier-fator', fromFactor.value),
-    tierMinNodes: asNumber('--tier-minimo-nos', fromMinNodes.value),
+    tierFactor: asNumber('--tier-factor', fromFactor.value),
+    tierMinNodes: asNumber('--tier-min-nodes', fromMinNodes.value),
     doFetch: withCredential(doFetch, fromToken.value?.trim() ?? env[ENV_TOKEN]?.trim()),
   };
 }
 
 // The production path is the package's own `bin` (t199, FR3), and it imports
 // this module rather than executing it:
-// `npx topografo-custo avaliar --url ... --execution ...`.
+// `npx topografo-custo evaluate --url ... --execution ...`.
 // The guard stays here for the OTHER half: without it, any `import { runCli }`
 // (which is what `test/cli.test.ts` does) would run the CLI just by loading the
 // file. As a bonus, `node --import tsx src/cli.ts` keeps working for whoever is

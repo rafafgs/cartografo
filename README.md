@@ -146,7 +146,7 @@ Depois de uma rodada, para a lente de custo ler a telemetria dela:
 
 ```bash
 CARTOGRAFO_TOKEN=<o token do passo 2> \
-  npx topografo-custo avaliar --url http://127.0.0.1:4317 \
+  npx topografo-custo evaluate --url http://127.0.0.1:4317 \
     --execution 7 --token-cap 200000
 ```
 

@@ -35,6 +35,13 @@
  * the KEYS that carry those blobs (`evidence`, `expected_metric`, `result`) and
  * not one byte of what is inside them (FR5). Whoever renames them does it on
  * purpose, in a ticket that says so.
+ *
+ * t255 is the ticket that proved the freeze is load-bearing rather than an
+ * oversight, and it changed nothing here: the cost surveyor was writing an
+ * `expected_metric` of its own invention (`{descricao, alvo, teto_ou_fator}`),
+ * so every outcome it opened came back `422 invalid_expected_metric` from the
+ * check below. The fix was on the lens's side — emit the shape this validator
+ * already accepts — and not a second shape for this validator to learn.
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';

@@ -15,8 +15,9 @@
  * out, and a live socket would prove the routes of t101/t117 instead. The real
  * gate, against a real control plane, is `synthesize.e2e.test.ts`.
  *
- * English per D18; the payload keys (`classes`, `grafo_versao`, `skills`) are
- * the API's own wire format.
+ * English per D18; the payload keys (`classes`, `graph_version`, `skills`) are
+ * the API's own wire format, which D20 took to English as well — t226 translated
+ * them here (`docs/spec/glossario-wire.md`).
  */
 
 import assert from 'node:assert/strict';
@@ -80,8 +81,8 @@ interface CapturedRequest {
  */
 function recorder(captured: CapturedRequest[]): typeof fetch {
   const body = JSON.stringify({
-    classes: [],
-    grafo_versao: { id: VERSION_ID, grafo_id: 'nota-curta', snapshot: { metadata: {} } },
+    classes: [REGISTERED_CLASS],
+    graph_version: REGISTERED_VERSION,
     skills: [],
   });
 

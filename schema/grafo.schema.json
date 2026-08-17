@@ -342,7 +342,7 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[a-z0-9][a-z0-9_-]*$",
-          "description": "NOME da chave do HMAC, nunca a chave. O valor mora em segredo_gancho, no banco do deployment, registrado por PUT /v1/hook-secrets/:nome e resolvido pelo control plane no enfileiramento — o mesmo instante em que a url é copiada. O documento é endereçado por conteúdo, servido inteiro pela API, escrito em disco pelo export e publicado no atlas: chave escrita aqui é chave de todo mundo que lê o mapa. Mesma classe de caracteres de um id de nó, porque o nome também atravessa um caminho de URL."
+          "description": "NOME da chave do HMAC, nunca a chave. O valor mora em segredo_gancho, no banco do deployment, registrado por PUT /v1/hook-secrets/:nome e resolvido pelo control plane no enfileiramento — o mesmo instante em que a url é copiada. O documento é endereçado por conteúdo, servido inteiro pela API, escrito em disco pelo export e publicado no atlas: chave escrita aqui é chave de todo mundo que lê o mapa. Por isso esta forma não é só declarada aqui: desde t256 ela é COBRADA na escrita por scripts/validar-grafo.mjs e packages/core/src/domain/graph.ts, que recusam o documento com hook_raw_secret quando o destination traz um secret cru e com invalid_hook_destination quando não traz secret_ref nenhum — o mesmo lugar onde a validação referencial do gancho já vivia. Mesma classe de caracteres de um id de nó, porque o nome também atravessa um caminho de URL."
         }
       }
     },

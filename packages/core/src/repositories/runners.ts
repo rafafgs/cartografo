@@ -19,20 +19,39 @@
 
 import type { Database } from '../db/connection.ts';
 import { now } from './common.ts';
-import type { ExpirationReason } from './leases.ts';
+import { toExpirationReason, type ExpirationReason } from './leases.ts';
 
-/** A paired runner. */
+/** A paired runner, as the row spells it. */
 export interface RunnerRow {
   id: string;
   nome: string | null;
   registrado_em: string;
 }
 
-/** The last lease a runner lost to the deadline — the stale-sweep signal (t164). */
-export interface RunnerExpiration {
+/** A paired runner, as `/v1` publishes it (t226, FR1). */
+export interface Runner {
+  id: string;
+  name: string | null;
+  registered_at: string;
+}
+
+/** Row to wire: the one place the runner's column names meet the API's. */
+export function toRunner(row: RunnerRow): Runner {
+  return { id: row.id, name: row.nome, registered_at: row.registrado_em };
+}
+
+/** The last lease a runner lost to the deadline, as the row spells it (t164). */
+interface RunnerExpirationRow {
   trabalho_id: number;
   expira_em: string;
   motivo_expiracao: ExpirationReason | null;
+}
+
+/** The same fact, as `/v1` publishes it (t226, FR1). */
+export interface RunnerExpiration {
+  job_id: number;
+  expires_at: string;
+  expiration_reason: string | null;
 }
 
 /**
@@ -43,9 +62,9 @@ export interface RunnerExpiration {
  * The price is written down in the ticket and worth repeating — a runner that
  * never held a lease is indistinguishable from one that is down.
  */
-export interface RunnerHealth extends RunnerRow {
+export interface RunnerHealth extends Runner {
   /** Leases this runner is holding right now. */
-  leases_ativas: number;
+  active_leases: number;
   /**
    * When it was last heard from, across EVERY lease it ever held.
    *
@@ -53,9 +72,9 @@ export interface RunnerHealth extends RunnerRow {
    * jobs would otherwise go blank the instant its last lease closed — which is
    * the opposite of what "last heartbeat" is read for.
    */
-  ultimo_heartbeat: string | null;
+  last_heartbeat: string | null;
   /** Its most recently expired lease, or `null` if it never lost one. */
-  ultima_expiracao: RunnerExpiration | null;
+  last_expiration: RunnerExpiration | null;
 }
 
 const COLUMNS = 'id, nome, registrado_em';
@@ -119,13 +138,25 @@ export function listRunnersWithHealth(db: Database): RunnerHealth[] {
                 WHERE status = 'expirada')
         WHERE recency = 1`,
     )
-    .all() as Array<RunnerExpiration & { runner_id: string }>;
+    .all() as Array<RunnerExpirationRow & { runner_id: string }>;
 
   const byRunner = new Map(
-    lost.map(({ runner_id: runnerId, ...expiration }) => [runnerId, expiration]),
+    lost.map(({ runner_id: runnerId, ...expiration }) => [
+      runnerId,
+      {
+        job_id: expiration.trabalho_id,
+        expires_at: expiration.expira_em,
+        expiration_reason: toExpirationReason(expiration.motivo_expiracao),
+      },
+    ]),
   );
 
-  return fleet.map((runner) => ({ ...runner, ultima_expiracao: byRunner.get(runner.id) ?? null }));
+  return fleet.map((runner) => ({
+    ...toRunner(runner),
+    active_leases: runner.leases_ativas,
+    last_heartbeat: runner.ultimo_heartbeat,
+    last_expiration: byRunner.get(runner.id) ?? null,
+  }));
 }
 
 /**

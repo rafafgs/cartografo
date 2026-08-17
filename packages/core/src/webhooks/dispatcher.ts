@@ -175,8 +175,8 @@ export function registerWebhookDispatcher(
   const fanout = (): void => {
     for (const subscription of listSubscriptions(db, { activeOnly: true })) {
       const matched = listEvents(db, {
-        projetoId: subscription.projeto_id,
-        tipos: subscription.tipos ?? undefined,
+        projetoId: subscription.project_id,
+        tipos: subscription.filter_types ?? undefined,
         sinceId: fanoutCursor(db, subscription),
         limit: fanoutCeiling,
       });

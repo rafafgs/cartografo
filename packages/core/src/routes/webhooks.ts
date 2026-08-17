@@ -21,9 +21,13 @@
  * taxonomy's catalogue, and it is the same check the stream's `?tipo=` does
  * (`src/routes/events.ts:104-120`). One catalogue, two consumers.
  *
- * The request and response field names stay in Portuguese: they mirror the
- * migration's columns and are the wire format a third party reads
- * (`docs/spec/webhooks-eventos.md`, t127 FR8).
+ * Since t226 the request and response field names are English
+ * (`docs/spec/glossario-wire.md` §1): the body declares `project_id`, `url`,
+ * `secret` and `filter_types`, and `repositories/webhooks.ts`'s `toSubscription`
+ * is where the columns — still `projeto_id`/`segredo`/`tipos_filtro` — meet it.
+ *
+ * `tipo` inside `filter_types` is NOT translated: those are taxonomy event-type
+ * names (`trabalho.criado`), which are D20's second child.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -74,7 +78,7 @@ function readUrl(value: unknown, problems: string[]): string {
 /** Reads the caller-supplied secret; the server never generates one. */
 function readSecret(value: unknown, problems: string[]): string {
   if (typeof value !== 'string' || value === '') {
-    problems.push('segredo has to be a non-empty string');
+    problems.push('secret has to be a non-empty string');
     return '';
   }
   return value;
@@ -91,7 +95,7 @@ function readTypes(value: unknown, problems: string[]): string[] | null {
   if (value === undefined || value === null) return null;
 
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
-    problems.push('tipos has to be a list of taxonomy type strings');
+    problems.push('filter_types has to be a list of taxonomy type strings');
     return null;
   }
 
@@ -111,7 +115,7 @@ function readTypes(value: unknown, problems: string[]): string[] | null {
 function readProject(value: unknown, problems: string[]): number {
   if (value === undefined || value === null) return DEFAULT_PROJECT;
   if (!Number.isInteger(value)) {
-    problems.push('projeto_id has to be an integer');
+    problems.push('project_id has to be an integer');
     return DEFAULT_PROJECT;
   }
   return value as number;
@@ -123,10 +127,10 @@ function readSubscription(raw: unknown): NewSubscription {
   const problems: string[] = [];
 
   const declared: NewSubscription = {
-    projeto_id: readProject(body.projeto_id, problems),
+    projeto_id: readProject(body.project_id, problems),
     url: readUrl(body.url, problems),
-    segredo: readSecret(body.segredo, problems),
-    tipos: readTypes(body.tipos, problems),
+    segredo: readSecret(body.secret, problems),
+    tipos: readTypes(body.filter_types, problems),
   };
 
   if (problems.length > 0) throw new ValidationError(problems);
@@ -149,14 +153,13 @@ export function registerWebhooks(app: FastifyInstance, db: Database): void {
   );
 
   app.get('/webhooks', async (request, reply) =>
-    withValidation(reply, () => ({
-      webhooks: listSubscriptions(db, {
-        projeto_id: integerFromQuery(
-          'projeto_id',
-          (request.query as { projeto_id?: string }).projeto_id,
-        ),
-      }),
-    })),
+    withValidation(reply, () => {
+      const projectId = integerFromQuery(
+        'project_id',
+        (request.query as { project_id?: string }).project_id,
+      );
+      return { webhooks: listSubscriptions(db, { projeto_id: projectId }) };
+    }),
   );
 
   // `DELETE` and not `POST /webhooks/:id/deactivations`: unlike a job's blocks

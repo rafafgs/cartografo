@@ -113,6 +113,74 @@ function toSession(row: SessionRow): Session {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* The row → wire boundary (t226, FR1).                                        */
+/*                                                                             */
+/* Only the READ side crosses it. `POST /v1/sessions`, `PATCH /finish` and      */
+/* `/permission-denials` still take their Portuguese bodies, because those go   */
+/* straight into `validateEvent` — see `routes/common.ts` for the whole story.  */
+/*                                                                             */
+/* `status` is NOT translated, and that is a decision, not an omission: the     */
+/* terminal values (`concluida`, `falhou`, `tempo_esgotado`, …) are the         */
+/* `sessao.finalizada` event's `dados.status`, which is D20's SECOND child. The */
+/* API ticket's own FR1 lists the enums it converts — lease status and reason,  */
+/* proposal status, lineage type, draft status, input-request status and kind — */
+/* and session status is deliberately not among them. Translating it here would */
+/* also split the route in two: `/finish` accepts `concluida` and would answer  */
+/* `completed`, for a value the caller had just sent.                          */
+/* -------------------------------------------------------------------------- */
+
+/** A session, as `/v1` publishes it. */
+export interface WireSession {
+  id: number;
+  job_id: number | null;
+  execution_id: number | null;
+  node_id: string | null;
+  engine: string;
+  engine_session_ref: string | null;
+  working_dir: string;
+  prompt: string;
+  timeout_seconds: number | null;
+  silence_seconds: number | null;
+  /** Still the column's value — see the note above this type. */
+  status: string;
+  exit_code: number | null;
+  timeout_reason: string | null;
+  usage: SessionUsage | null;
+  models: string[] | null;
+  transcript: string | null;
+  transcript_truncated: boolean;
+  transcript_original_size: number | null;
+  opened_at: string;
+  finished_at: string | null;
+}
+
+/** Projection to wire: the one place the session's column names meet the API's. */
+export function toWireSession(session: Session): WireSession {
+  return {
+    id: session.id,
+    job_id: session.trabalho_id,
+    execution_id: session.execucao_id,
+    node_id: session.no_id,
+    engine: session.engine,
+    engine_session_ref: session.engine_session_ref,
+    working_dir: session.working_dir,
+    prompt: session.prompt,
+    timeout_seconds: session.timeout_seconds,
+    silence_seconds: session.silence_seconds,
+    status: session.status,
+    exit_code: session.exit_code,
+    timeout_reason: session.timeout_reason,
+    usage: session.uso,
+    models: session.modelos,
+    transcript: session.transcricao,
+    transcript_truncated: session.transcricao_truncada,
+    transcript_original_size: session.transcricao_tamanho_original,
+    opened_at: session.aberta_em,
+    finished_at: session.finalizada_em,
+  };
+}
+
 /** What the cap left of an incoming transcript, and what it cost. */
 interface CappedTranscript {
   /** The text to store; `null` when nothing was reported. */

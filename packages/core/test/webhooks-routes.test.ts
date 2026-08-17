@@ -42,14 +42,14 @@ const T142_ARTIFACTS = Object.freeze({
 /** A subscription, as the API returns it — `segredo` is not part of the shape. */
 interface Subscription {
   id: number;
-  projeto_id: number;
+  project_id: number;
   url: string;
   /** The taxonomy types this subscription wants; `null` means every type. */
-  tipos: string[] | null;
+  filter_types: string[] | null;
   /** `MAX(evento.id)` at creation time: where the fan-out starts. */
-  evento_inicial_id: number;
-  criada_em: string;
-  desativada_em: string | null;
+  initial_event_id: number;
+  created_at: string;
+  deactivated_at: string | null;
 }
 
 /** The error envelope of `src/routes/common.ts`. */
@@ -73,17 +73,17 @@ test('AT1 — POST /v1/webhooks registers a subscription and never echoes the se
 
   const response = await request<Subscription>(ctx, 'POST', '/v1/webhooks', {
     url: 'https://exemplo.invalid/hook',
-    segredo: SECRET,
+    secret: SECRET,
   });
 
   assert.equal(response.status, 201);
   assert.ok(Number.isInteger(response.body.id) && response.body.id > 0);
   assert.equal(response.body.url, 'https://exemplo.invalid/hook');
-  assert.equal(response.body.projeto_id, 1, 'without projeto_id the subscription is the default one');
-  assert.equal(response.body.tipos, null, 'without tipos the subscription wants every type');
-  assert.equal(response.body.desativada_em, null, 'a fresh subscription is active');
-  assert.equal(typeof response.body.criada_em, 'string');
-  assert.equal(response.body.evento_inicial_id, 0, 'the log of this control plane is empty');
+  assert.equal(response.body.project_id, 1, 'without projeto_id the subscription is the default one');
+  assert.equal(response.body.filter_types, null, 'without tipos the subscription wants every type');
+  assert.equal(response.body.deactivated_at, null, 'a fresh subscription is active');
+  assert.equal(typeof response.body.created_at, 'string');
+  assert.equal(response.body.initial_event_id, 0, 'the log of this control plane is empty');
   assertNoSecret(response.body);
 });
 
@@ -102,17 +102,17 @@ test('AT2 — an invalid url, a missing secret or an unknown type is a 400', asy
     return response.body;
   };
 
-  await refused({ url: 'ftp://exemplo.invalid/hook', segredo: SECRET });
-  await refused({ url: 'nao-e-uma-url', segredo: SECRET });
-  await refused({ url: '/apenas/um/caminho', segredo: SECRET });
-  await refused({ segredo: SECRET });
+  await refused({ url: 'ftp://exemplo.invalid/hook', secret: SECRET });
+  await refused({ url: 'nao-e-uma-url', secret: SECRET });
+  await refused({ url: '/apenas/um/caminho', secret: SECRET });
+  await refused({ secret: SECRET });
   await refused({ url: 'https://exemplo.invalid/hook' });
-  await refused({ url: 'https://exemplo.invalid/hook', segredo: '' });
+  await refused({ url: 'https://exemplo.invalid/hook', secret: '' });
 
   const unknownType = await refused({
     url: 'https://exemplo.invalid/hook',
-    segredo: SECRET,
-    tipos: ['nao_existe'],
+    secret: SECRET,
+    filter_types: ['nao_existe'],
   });
   assert.ok(
     (unknownType.details ?? []).some((detail) => detail.includes('nao_existe')),
@@ -135,13 +135,13 @@ test('AT3 — GET /v1/webhooks lists the subscriptions, filtered and without sec
 
   const mine = await create({
     url: 'https://exemplo.invalid/projeto-1',
-    segredo: SECRET,
-    tipos: ['trabalho.criado'],
+    secret: SECRET,
+    filter_types: ['trabalho.criado'],
   });
   const other = await create({
     url: 'https://exemplo.invalid/projeto-9',
-    segredo: SECRET,
-    projeto_id: 9,
+    secret: SECRET,
+    project_id: 9,
   });
 
   const all = await request<{ webhooks: Subscription[] }>(ctx, 'GET', '/v1/webhooks');
@@ -151,7 +151,7 @@ test('AT3 — GET /v1/webhooks lists the subscriptions, filtered and without sec
     [mine.id, other.id].sort(),
   );
   assert.deepEqual(
-    all.body.webhooks.find((subscription) => subscription.id === mine.id)?.tipos,
+    all.body.webhooks.find((subscription) => subscription.id === mine.id)?.filter_types,
     ['trabalho.criado'],
   );
   assertNoSecret(all.body);
@@ -159,7 +159,7 @@ test('AT3 — GET /v1/webhooks lists the subscriptions, filtered and without sec
   const filtered = await request<{ webhooks: Subscription[] }>(
     ctx,
     'GET',
-    '/v1/webhooks?projeto_id=9',
+    '/v1/webhooks?project_id=9',
   );
   assert.equal(filtered.status, 200);
   assert.deepEqual(
@@ -175,20 +175,20 @@ test('AT4 — DELETE deactivates, is idempotent, and 404s on an unknown id', asy
 
   const created = await request<Subscription>(ctx, 'POST', '/v1/webhooks', {
     url: 'https://exemplo.invalid/hook',
-    segredo: SECRET,
+    secret: SECRET,
   });
   assert.equal(created.status, 201);
 
   const removed = await request<Subscription>(ctx, 'DELETE', `/v1/webhooks/${created.body.id}`);
   assert.equal(removed.status, 200);
-  assert.equal(typeof removed.body.desativada_em, 'string');
+  assert.equal(typeof removed.body.deactivated_at, 'string');
   assertNoSecret(removed.body);
 
   const again = await request<Subscription>(ctx, 'DELETE', `/v1/webhooks/${created.body.id}`);
   assert.equal(again.status, 200, 'deactivating twice is not an error');
   assert.equal(
-    again.body.desativada_em,
-    removed.body.desativada_em,
+    again.body.deactivated_at,
+    removed.body.deactivated_at,
     'the second call does not move the instant of the first',
   );
 
@@ -198,7 +198,7 @@ test('AT4 — DELETE deactivates, is idempotent, and 404s on an unknown id', asy
     list.body.webhooks.map((subscription) => subscription.id),
     [created.body.id],
   );
-  assert.equal(list.body.webhooks[0].desativada_em, removed.body.desativada_em);
+  assert.equal(list.body.webhooks[0].deactivated_at, removed.body.deactivated_at);
 
   const unknown = await request<ErrorBody>(ctx, 'DELETE', '/v1/webhooks/9999');
   assert.equal(unknown.status, 404);

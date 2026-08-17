@@ -5,8 +5,15 @@
  * EngineAdapter and reports the opening and the end to the control plane, which
  * is the only writer of the database (D1). The runner never opens SQLite.
  *
- * The request/response field names stay in Portuguese: they mirror the untouched
- * migration columns (t127, FR8).
+ * Same split as the job routes, and `routes/common.ts` spells it out: what a GET
+ * returns is English since t226 (`repositories/session.ts`'s `toWireSession`),
+ * and what `POST /sessions`, `PATCH /finish` and `/permission-denials` accept is
+ * still Portuguese, because those bodies reach `validateEvent`.
+ *
+ * `status` is the one FIELD VALUE that does not translate either, on both sides:
+ * `concluida`/`falhou`/`tempo_esgotado` are `sessao.finalizada`'s payload
+ * vocabulary, which the events child owns — the reasoning is written out over
+ * `toWireSession`.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -20,6 +27,7 @@ import {
   getSessionTranscript,
   listSessions,
   recordPermissionDenial,
+  toWireSession,
 } from '../repositories/session.ts';
 import { withValidation, routeId, notFound, conflict } from './common.ts';
 
@@ -51,7 +59,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
       const session = openSession(db, (request.body ?? {}) as Record<string, unknown>);
       if (session === null) return notFound(reply, 'job');
       reply.code(201);
-      return session;
+      return toWireSession(session);
     }),
   );
 
@@ -69,7 +77,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
       }
 
       const session = finishSession(db, id, (request.body ?? {}) as Record<string, unknown>);
-      return session ?? notFound(reply, 'session');
+      return session === null ? notFound(reply, 'session') : toWireSession(session);
     }),
   );
 
@@ -82,7 +90,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
         routeId(request.params),
         (request.body ?? {}) as Record<string, unknown>,
       );
-      return session ?? notFound(reply, 'session');
+      return session === null ? notFound(reply, 'session') : toWireSession(session);
     }),
   );
 
@@ -100,13 +108,11 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
 
   app.get('/sessions', async (request, reply) =>
     withValidation(reply, () => {
-      const query = request.query as { execucao_id?: string; trabalho_id?: string };
-      return {
-        sessoes: listSessions(db, {
-          execucao_id: integerFromQuery('execucao_id', query.execucao_id),
-          trabalho_id: integerFromQuery('trabalho_id', query.trabalho_id),
-        }),
-      };
+      const query = request.query as { execution_id?: string; job_id?: string };
+      const executionId = integerFromQuery('execution_id', query.execution_id);
+      const jobId = integerFromQuery('job_id', query.job_id);
+      const sessions = listSessions(db, { execucao_id: executionId, trabalho_id: jobId });
+      return { sessions: sessions.map(toWireSession) };
     }),
   );
 }

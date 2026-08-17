@@ -17,10 +17,12 @@
  * and no cache to invalidate: a runner that comes back reports what is true
  * now, exactly as `POST /v1/runners` already treats re-pairing.
  *
- * The request and response field names are the migration's columns, so they
- * stay in Portuguese (t127, FR8). The two values of `origem` stay English:
- * they are the `EngineAdapter`'s vocabulary, produced by the adapter, on the
- * same terms as `timeout_reason`'s `wall_clock`/`silence`.
+ * Since t226 the request and response field names are English
+ * (`docs/spec/glossario-wire.md` §1): a report declares `models`, each with
+ * `model_id`, `label` and `source`. The two VALUES of `source` were already
+ * English and stay so — they are the `EngineAdapter`'s vocabulary, produced by
+ * the adapter, on the same terms as `timeout_reason`'s `wall_clock`/`silence`.
+ * The columns behind all of it are untouched (D20's fourth child).
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -34,16 +36,14 @@ import {
   type ReportedModel,
 } from '../repositories/engine-models.ts';
 import { isObject } from '../util/is-object.ts';
+import { refusal, type ErrorResponse } from './common.ts';
 
 interface NameParam {
   Params: { name: string };
 }
 
-/** A refusal, in the `erro`/`mensagem` shape the rest of the API answers with. */
-interface Refusal {
-  erro: string;
-  mensagem: string;
-}
+/** A refusal, in the one envelope the rest of the API answers with. */
+type Refusal = ErrorResponse;
 
 function isFilledText(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
@@ -61,47 +61,47 @@ function isFilledText(value: unknown): value is string {
  * @returns The models to store, or the refusal to answer with.
  */
 function readReport(body: unknown): { models: ReportedModel[] } | { refusal: Refusal } {
-  const declared = isObject(body) ? body.modelos : undefined;
+  const declared = isObject(body) ? body.models : undefined;
   if (!Array.isArray(declared)) {
     return {
       refusal: {
-        erro: 'modelos_obrigatorio',
-        mensagem: 'a report declares "modelos" as a list — an empty list is how an engine says it offers nothing',
+        error: 'models_required',
+        message: 'a report declares "models" as a list — an empty list is how an engine says it offers nothing',
       },
     };
   }
 
   const models: ReportedModel[] = [];
   for (const [index, entry] of declared.entries()) {
-    if (!isObject(entry) || !isFilledText(entry.modelo_id)) {
+    if (!isObject(entry) || !isFilledText(entry.model_id)) {
       return {
         refusal: {
-          erro: 'modelo_invalido',
-          mensagem: `model #${index}: "modelo_id" has to be a non-empty string — it is what goes after the engine's model flag`,
+          error: 'invalid_model',
+          message: `model #${index}: "model_id" has to be a non-empty string — it is what goes after the engine's model flag`,
         },
       };
     }
-    if (typeof entry.origem !== 'string' || !MODEL_ORIGINS.includes(entry.origem as ModelOrigin)) {
+    if (typeof entry.source !== 'string' || !MODEL_ORIGINS.includes(entry.source as ModelOrigin)) {
       return {
         refusal: {
-          erro: 'origem_invalida',
-          mensagem: `model #${index}: "origem" has to be one of ${MODEL_ORIGINS.join(', ')} — the difference between "the engine confirmed it" and "the adapter believes it" is not a detail`,
+          error: 'invalid_source',
+          message: `model #${index}: "source" has to be one of ${MODEL_ORIGINS.join(', ')} — the difference between "the engine confirmed it" and "the adapter believes it" is not a detail`,
         },
       };
     }
-    if (entry.rotulo !== undefined && entry.rotulo !== null && typeof entry.rotulo !== 'string') {
+    if (entry.label !== undefined && entry.label !== null && typeof entry.label !== 'string') {
       return {
         refusal: {
-          erro: 'modelo_invalido',
-          mensagem: `model #${index}: "rotulo", when sent, has to be a string`,
+          error: 'invalid_model',
+          message: `model #${index}: "label", when sent, has to be a string`,
         },
       };
     }
 
     models.push({
-      modelo_id: entry.modelo_id.trim(),
-      rotulo: typeof entry.rotulo === 'string' ? entry.rotulo : null,
-      origem: entry.origem as ModelOrigin,
+      modelo_id: entry.model_id.trim(),
+      rotulo: typeof entry.label === 'string' ? entry.label : null,
+      origem: entry.source as ModelOrigin,
     });
   }
 
@@ -118,11 +118,12 @@ export function registerEngines(app: FastifyInstance, db: Database): void {
   app.post<NameParam>('/engines/:name/models', async (request, reply) => {
     const name = request.params.name.trim();
     if (name === '') {
-      reply.code(400);
-      return {
-        erro: 'motor_invalido',
-        mensagem: 'the engine names itself: :name has to be a non-empty string',
-      } satisfies Refusal;
+      return refusal(
+        reply,
+        400,
+        'invalid_engine',
+        'the engine names itself: :name has to be a non-empty string',
+      );
     }
 
     const read = readReport(request.body);
@@ -138,5 +139,5 @@ export function registerEngines(app: FastifyInstance, db: Database): void {
     return reportEngineModels(db, name, read.models);
   });
 
-  app.get('/engines', async () => ({ motores: listEngineCatalogs(db) }));
+  app.get('/engines', async () => ({ engines: listEngineCatalogs(db) }));
 }

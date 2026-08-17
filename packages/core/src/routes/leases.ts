@@ -9,7 +9,7 @@
  * Two contract choices worth explaining:
  *
  * - **A refusal is not an error.** A cap reached and a job that already has an
- *   owner return `200` with `{lease: null, motivo}`, not `409`. From the
+ *   owner return `200` with `{lease: null, reason}`, not `409`. From the
  *   runner's point of view that is "not now, try the next one", and it is the
  *   common case of a healthy pool — not the exception. Errors are left for what
  *   is an error: an invalid body (`400`), an unknown runner (`404`), a
@@ -20,7 +20,7 @@
  *   once there is a concrete consumer (the screen, a project whose runners are
  *   all idle).
  * - **The runner declares its caps; the server decides them** (t157, FR1). The
- *   body keeps carrying `teto_runner`/`teto_projeto` — a runner knows things
+ *   body keeps carrying `runner_cap`/`project_cap` — a runner knows things
  *   about itself the control plane does not — but what `grantLease` enforces is
  *   `min(declared, ceiling)`, and the ceiling comes from this process's
  *   configuration. Without that half, a request would be declaring AND deciding
@@ -38,42 +38,48 @@
  * an operator credential (and the clock-injected assembly in the tests, which
  * has no gate at all) behaves exactly as it did before.
  *
- * `trabalho_id` is an opaque integer here: these four verbs never look the job
- * up, and the column carries no foreign key (`migrations/0004_runner_lease.sql`).
+ * `job_id` is an opaque integer here: these four verbs never look the job up,
+ * and the column carries no foreign key (`migrations/0004_runner_lease.sql`).
  * A lease is about who holds WHAT, not about whether the what is eligible —
  * that judgement belongs to the controller, which filters through
  * `GET /v1/jobs` before it ever asks for one.
  *
- * The request/response field names and the status/reason values stay in
- * Portuguese: they mirror the untouched migration columns and are the wire shape
- * the runner parses (t127, FR8).
+ * Since t226 every field and every status/reason value on this wire is English
+ * (`docs/spec/glossario-wire.md` §1.5/§1.6). The columns are not: the
+ * translation is `repositories/leases.ts`'s `toLease`/`toGrantResult` on the way
+ * out and `leaseStatusColumn` plus the body reads below on the way in, and the
+ * comparisons in this file keep reading the ROW (`lease.status !== 'ativa'`)
+ * because the migration is D20's fourth child.
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import { credentialRunnerId, outOfScope } from '../auth.ts';
 import type { Database } from '../db/connection.ts';
 import {
   getLease,
   grantLease,
+  leaseStatusColumn,
   releaseLease,
   listLeases,
   renewLease,
+  toGrantResult,
+  toLease,
+  LEASE_STATUSES,
   type LeaseFilters,
-  type LeaseStatus,
+  type LeaseRow,
 } from '../repositories/leases.ts';
 import { getRunner } from '../repositories/runners.ts';
 import { isObject } from '../util/is-object.ts';
+import { refusal } from './common.ts';
 
 interface IdParam {
   Params: { id: string };
 }
 
 interface ListQuery {
-  Querystring: { projeto_id?: string; runner_id?: string; status?: string };
+  Querystring: { project_id?: string; runner_id?: string; status?: string };
 }
-
-const VALID_STATUSES: LeaseStatus[] = ['ativa', 'liberada', 'expirada'];
 
 /**
  * Ceiling of simultaneous active leases per runner, when nothing is configured
@@ -130,8 +136,7 @@ export function registerLeases(
 
     const runnerId = body.runner_id;
     if (typeof runnerId !== 'string' || runnerId.trim() === '') {
-      reply.code(400);
-      return { erro: 'corpo_invalido', campo: 'runner_id' };
+      return refusal(reply, 400, 'invalid_body', undefined, { field: 'runner_id' });
     }
 
     // Before the rest of the body is even looked at: whether the caller may
@@ -145,58 +150,57 @@ export function registerLeases(
       );
     }
 
-    for (const field of ['projeto_id', 'trabalho_id', 'teto_runner', 'teto_projeto'] as const) {
+    for (const field of ['project_id', 'job_id', 'runner_cap', 'project_cap'] as const) {
       if (!isInteger(body[field])) {
-        reply.code(400);
-        return { erro: 'corpo_invalido', campo: field, mensagem: `${field} has to be an integer` };
+        return refusal(reply, 400, 'invalid_body', `${field} has to be an integer`, { field });
       }
     }
 
-    if (!isInteger(body.ttl_segundos) || body.ttl_segundos <= 0) {
-      reply.code(400);
-      return {
-        erro: 'corpo_invalido',
-        campo: 'ttl_segundos',
-        mensagem: 'ttl_segundos has to be a positive integer: a lease with no deadline never expires',
-      };
+    if (!isInteger(body.ttl_seconds) || body.ttl_seconds <= 0) {
+      return refusal(
+        reply,
+        400,
+        'invalid_body',
+        'ttl_seconds has to be a positive integer: a lease with no deadline never expires',
+        { field: 'ttl_seconds' },
+      );
     }
 
     // A lease is the right of a paired runner. An unknown id is not a capacity
     // refusal — it is a runner that does not exist for the control plane.
     if (getRunner(db, runnerId) === undefined) {
-      reply.code(404);
-      return { erro: 'runner_desconhecido', runner_id: runnerId };
+      return refusal(reply, 404, 'unknown_runner', undefined, { runner_id: runnerId });
     }
 
     // The clamp, and not a refusal: a declaration above the ceiling is not a
     // malformed request, it is a runner asking for more than this control plane
     // hands out. It gets what there is, and the refusal that follows is the
-    // ordinary `{lease: null, motivo}` — same contract as any other full cap.
+    // ordinary `{lease: null, reason}` — same contract as any other full cap.
     const result = grantLease(
       db,
       {
         runner_id: runnerId,
-        projeto_id: body.projeto_id as number,
-        trabalho_id: body.trabalho_id as number,
-        teto_runner: Math.min(body.teto_runner as number, ceilings.runner),
-        teto_projeto: Math.min(body.teto_projeto as number, ceilings.projeto),
-        ttl_segundos: body.ttl_segundos,
+        projeto_id: body.project_id as number,
+        trabalho_id: body.job_id as number,
+        teto_runner: Math.min(body.runner_cap as number, ceilings.runner),
+        teto_projeto: Math.min(body.project_cap as number, ceilings.projeto),
+        ttl_segundos: body.ttl_seconds,
       },
       options,
     );
 
-    if (result.lease === null) return result;
+    const granted = toGrantResult(result);
+    if (granted.lease === null) return granted;
 
     reply.code(201);
-    return { lease: result.lease };
+    return granted;
   });
 
   app.post<IdParam>('/leases/:id/heartbeats', async (request, reply) => {
     const id = routeId(request.params.id);
     const lease = id === undefined ? undefined : getLease(db, id);
     if (lease === undefined) {
-      reply.code(404);
-      return { erro: 'lease_desconhecida', id: request.params.id };
+      return refusal(reply, 404, 'unknown_lease', undefined, { id: request.params.id });
     }
 
     const beating = credentialRunnerId(request);
@@ -207,31 +211,22 @@ export function registerLeases(
       );
     }
 
-    if (lease.status !== 'ativa') {
-      reply.code(409);
-      return {
-        erro: 'lease_nao_ativa',
-        mensagem: `only an active lease takes a heartbeat; this one is "${lease.status}"`,
-        status: lease.status,
-      };
-    }
+    if (lease.status !== 'ativa') return notActive(reply, lease, 'takes a heartbeat');
 
     const body = isObject(request.body) ? request.body : {};
-    const ttl = body.ttl_segundos;
+    const ttl = body.ttl_seconds;
     if (ttl !== undefined && (!isInteger(ttl) || ttl <= 0)) {
-      reply.code(400);
-      return { erro: 'corpo_invalido', campo: 'ttl_segundos' };
+      return refusal(reply, 400, 'invalid_body', undefined, { field: 'ttl_seconds' });
     }
 
-    return { lease: renewLease(db, { id: lease.id, ttl_segundos: ttl }, options) };
+    return { lease: toLease(renewLease(db, { id: lease.id, ttl_segundos: ttl }, options)) };
   });
 
   app.post<IdParam>('/leases/:id/releases', async (request, reply) => {
     const id = routeId(request.params.id);
     const lease = id === undefined ? undefined : getLease(db, id);
     if (lease === undefined) {
-      reply.code(404);
-      return { erro: 'lease_desconhecida', id: request.params.id };
+      return refusal(reply, 404, 'unknown_lease', undefined, { id: request.params.id });
     }
 
     const releasing = credentialRunnerId(request);
@@ -242,27 +237,19 @@ export function registerLeases(
       );
     }
 
-    if (lease.status !== 'ativa') {
-      reply.code(409);
-      return {
-        erro: 'lease_nao_ativa',
-        mensagem: `only an active lease can be released; this one is "${lease.status}"`,
-        status: lease.status,
-      };
-    }
+    if (lease.status !== 'ativa') return notActive(reply, lease, 'can be released');
 
-    return { lease: releaseLease(db, lease.id, options) };
+    return { lease: toLease(releaseLease(db, lease.id, options)) };
   });
 
   app.get<ListQuery>('/leases', async (request, reply) => {
-    const { projeto_id: project, runner_id: runner, status } = request.query;
+    const { project_id: project, runner_id: runner, status } = request.query;
     const filters: LeaseFilters = {};
 
     if (project !== undefined) {
       const parsed = Number(project);
       if (!Number.isInteger(parsed)) {
-        reply.code(400);
-        return { erro: 'filtro_invalido', campo: 'projeto_id' };
+        return refusal(reply, 400, 'invalid_filter', undefined, { field: 'project_id' });
       }
       filters.projeto_id = parsed;
     }
@@ -283,13 +270,32 @@ export function registerLeases(
     else if (runner !== undefined) filters.runner_id = runner;
 
     if (status !== undefined) {
-      if (!VALID_STATUSES.includes(status as LeaseStatus)) {
-        reply.code(400);
-        return { erro: 'filtro_invalido', campo: 'status', esperado: VALID_STATUSES };
+      const column = leaseStatusColumn(status);
+      if (column === undefined) {
+        return refusal(reply, 400, 'invalid_filter', undefined, {
+          field: 'status',
+          expected: LEASE_STATUSES,
+        });
       }
-      filters.status = status as LeaseStatus;
+      filters.status = column;
     }
 
-    return { leases: listLeases(db, filters) };
+    const leases = listLeases(db, filters);
+    return { leases: leases.map(toLease) };
+  });
+}
+
+/**
+ * The 409 the heartbeat and the release share: this lease is no longer active.
+ *
+ * @param reply Fastify reply, marked 409.
+ * @param lease The lease, still in its row form.
+ * @param what What only an active lease does, as the sentence continues.
+ * @returns The refusal body.
+ */
+function notActive(reply: FastifyReply, lease: LeaseRow, what: string): Record<string, unknown> {
+  const status = toLease(lease).status;
+  return refusal(reply, 409, 'lease_not_active', `only an active lease ${what}; this one is "${status}"`, {
+    status,
   });
 }

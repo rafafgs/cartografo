@@ -98,6 +98,25 @@ function scannedFiles(): string[] {
  */
 const FOREIGN_REPORT_KEYS = ['estrutura', 'soundness'];
 
+/**
+ * The frozen hypothesis vocabulary, and the ONE file allowed to spell it.
+ *
+ * `domain/hypothesis.ts` documents `{nome, direcao, de, para}` and `{veredito,
+ * antes, depois, execucao_id, avaliado_em}` as a data format D18 left out of the
+ * English rule; the glossary maps none of it, and D20's list of what it unfreezes
+ * does not mention it either. t226's FR5 therefore keeps the whole outcome flow
+ * as one unit — `POST /proposals/:id/outcome`'s body, `?veredito=`, and the
+ * refusal that echoes back the field it just read.
+ *
+ * Scoped to the file AND to the terms, deliberately: `routes/proposals.ts`
+ * spelling any OTHER glossary term still fails this sweep, and any other file
+ * spelling `execucao_id` still fails it too. A blanket exemption for the word
+ * would be a hole; this is a door with one key.
+ */
+const FROZEN_HYPOTHESIS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  'proposals.ts': ['execucao_id', 'depois', 'veredito', 'antes', 'avaliado_em'],
+});
+
 /** Modules whose exported names are the layer BELOW the wire. */
 const LOWER_LAYERS = ['../repositories/', '../domain/', '../db/', './repositories/', './db/'];
 
@@ -359,10 +378,20 @@ function hitsFor(masked: string, entry: Term): Array<{ line: number; detail: str
   return hits;
 }
 
-/** Every hit in one file's source. */
-export function wireHits(source: string, terms: readonly Term[]): string[] {
+/**
+ * Every hit in one file's source.
+ *
+ * @param source File contents.
+ * @param terms The glossary's `api` rows.
+ * @param fileName Base name, used to look up the FR5 exemption; omitted in the
+ *   unit cases below, which are not any file.
+ * @returns One entry per hit, as `line: what`.
+ */
+export function wireHits(source: string, terms: readonly Term[], fileName = ''): string[] {
   const masked = maskWireSource(source);
+  const frozen = FROZEN_HYPOTHESIS[fileName] ?? [];
   return terms
+    .filter((entry) => !frozen.includes(entry.term))
     .flatMap((entry) => hitsFor(masked, entry).map((hit) => `${hit.line}: ${hit.detail}`))
     .sort();
 }
@@ -373,9 +402,11 @@ test('FR9 — every /v1 body speaks the English wire vocabulary of glossario-wir
   assert.ok(files.length > 10, `the sweep found only ${files.length} files; it is not walking the routes`);
 
   const hits = files.flatMap((relative) =>
-    wireHits(readFileSync(path.join(PACKAGE_ROOT, relative), 'utf8'), terms).map(
-      (hit) => `${relative}:${hit}`,
-    ),
+    wireHits(
+      readFileSync(path.join(PACKAGE_ROOT, relative), 'utf8'),
+      terms,
+      path.basename(relative),
+    ).map((hit) => `${relative}:${hit}`),
   );
 
   assert.deepEqual(
@@ -428,4 +459,23 @@ test('FR9 — the sweep does NOT bite on the boundaries D20 leaves in Portuguese
   for (const source of allowed) {
     assert.deepEqual(wireHits(source, terms), [], `the sweep flagged a D20 boundary: ${source}`);
   }
+});
+
+test('FR5 — the hypothesis exemption is scoped to its file and to its own words', () => {
+  const terms = apiTerms();
+  const outcome = "return refusal(reply, 422, 'x', undefined, { execucao_id: id });";
+
+  assert.deepEqual(
+    wireHits(outcome, terms, 'proposals.ts'),
+    [],
+    'the outcome flow keeps `execucao_id`, and the sweep has to let that one through',
+  );
+  assert.ok(
+    wireHits(outcome, terms, 'jobs.ts').length > 0,
+    'the same word anywhere else is still a hit: the exemption is a door, not a hole',
+  );
+  assert.ok(
+    wireHits("return { propostas: rows };", terms, 'proposals.ts').length > 0,
+    'and inside proposals.ts every OTHER glossary term is still swept',
+  );
 });

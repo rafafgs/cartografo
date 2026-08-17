@@ -74,6 +74,77 @@ const COLUMNS = `
   trabalhos_criados, criado_em, atualizado_em
 `;
 
+/* -------------------------------------------------------------------------- */
+/* The row → wire boundary (t226, FR1).                                        */
+/*                                                                             */
+/* `Draft` above stays the INTERNAL projection, in the column's Portuguese: the */
+/* routes compare `draft.status !== 'pendente'` and `confirmDraft` reads        */
+/* `draft.classe`, and FR1 is explicit that internal logic keeps reading the    */
+/* row's values. `WireDraft` is what leaves the process.                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `intake_rascunho.status`, both ways (`glossario-wire.md` §1.6).
+ *
+ * `migrations/0006_intake.sql` holds the three in a `CHECK`, which makes them
+ * schema and not format — the reasoning `skill.ts`'s `ROLE_COLUMN` wrote first.
+ */
+const STATUS_FIELD: Record<string, string> = {
+  pendente: 'pending',
+  confirmado: 'confirmed',
+  descartado: 'discarded',
+};
+
+const STATUS_COLUMN: Record<string, DraftStatus> = {
+  pending: 'pendente',
+  confirmed: 'confirmado',
+  discarded: 'descartado',
+};
+
+/** The three statuses a `?status=` filter may name, in the wire's spelling. */
+export const DRAFT_STATUSES: readonly string[] = Object.freeze(Object.keys(STATUS_COLUMN));
+
+/** The English `status` a request declared, as the column spells it. */
+export function draftStatusColumn(value: string): DraftStatus | undefined {
+  return STATUS_COLUMN[value];
+}
+
+/** A draft, as `/v1` publishes it. */
+export interface WireDraft {
+  id: number;
+  project_id: number;
+  execution_id: number | null;
+  class: string;
+  request: string;
+  /**
+   * The proposed breakdown, passed through byte for byte.
+   *
+   * The item's own keys (`ref`, `titulo`, `depende_de`, …) are `domain/intake.ts`'s
+   * format, which no child of D20 renames; the glossary maps none of them.
+   */
+  items: DraftItem[];
+  status: string;
+  created_jobs: Record<string, number> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Draft to wire: the one place the column names meet the API's. */
+export function toWireDraft(draft: Draft): WireDraft {
+  return {
+    id: draft.id,
+    project_id: draft.projeto_id,
+    execution_id: draft.execucao_id,
+    class: draft.classe,
+    request: draft.pedido,
+    items: draft.itens,
+    status: STATUS_FIELD[draft.status] ?? draft.status,
+    created_jobs: draft.trabalhos_criados,
+    created_at: draft.criado_em,
+    updated_at: draft.atualizado_em,
+  };
+}
+
 function toDraft(row: DraftRow): Draft {
   return {
     ...row,

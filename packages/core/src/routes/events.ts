@@ -28,8 +28,10 @@
  * (`test/event-append-only.test.ts`, AT16), and the same direct read of the
  * table already has a precedent in `src/repositories/job.ts:283-289`.
  *
- * The event-type strings and the query field names stay in Portuguese: they are
- * the taxonomy's vocabulary and the wire format (t127, FR8).
+ * The QUERY PARAMETER names are English since t226 (`?project_id=`, `?type=`),
+ * because they are API vocabulary; the VALUES of `?type=` are not, and neither
+ * is anything inside a pushed event — the taxonomy is D20's second child, and
+ * renaming an event type is rewriting an append-only history.
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -87,15 +89,15 @@ interface Connection {
  * (`src/repositories/common.ts:97-105`).
  */
 function readFilter(query: unknown): EventFilter {
-  const asked = (query ?? {}) as { projeto_id?: string; tipo?: string };
+  const asked = (query ?? {}) as { project_id?: string; type?: string };
   return {
-    projetoId: integerFromQuery('projeto_id', asked.projeto_id),
-    tipos: readTypes(asked.tipo),
+    projetoId: integerFromQuery('project_id', asked.project_id),
+    tipos: readTypes(asked.type),
   };
 }
 
 /**
- * Reads `?tipo=a,b` against the taxonomy's catalogue.
+ * Reads `?type=a,b` against the taxonomy's catalogue.
  *
  * The list of types is not re-declared here: `KNOWN_TYPES` already is the
  * catalogue (`src/db/event-validation.ts`), and a second copy would be a second
@@ -112,7 +114,7 @@ function readTypes(raw: string | undefined): string[] | undefined {
   const strangers = asked.filter((item) => !KNOWN_TYPES.includes(item));
   if (strangers.length > 0) {
     throw new ValidationError(
-      strangers.map((item) => `tipo "${item}" is not in the taxonomy (see KNOWN_TYPES)`),
+      strangers.map((item) => `type "${item}" is not in the taxonomy (see KNOWN_TYPES)`),
     );
   }
 

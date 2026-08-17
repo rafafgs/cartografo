@@ -23,9 +23,11 @@
  *   `credencial_fora_de_escopo`, and this family is deliberately not on that
  *   list. A runner dispatches sessions; it has no business registering keys.
  *
- * The request and response field names stay in Portuguese: they mirror the
- * migration's columns and are the wire format an operator scripts against
- * (t127, FR8).
+ * Since t226 the request and response field names are English
+ * (`docs/spec/glossario-wire.md` §1): the path segment is `:name`, the body
+ * carries `value`, and what comes back is `{name, created_at, revoked_at}` out
+ * of `repositories/hook-secrets.ts`'s `toHookSecret`. The COLUMNS are still
+ * `nome`/`valor`/`criada_em` — renaming those is D20's fourth child.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -41,7 +43,7 @@ import { notFound, withValidation } from './common.ts';
 
 /** Route parameters of the two routes addressed by name. */
 interface NameParam {
-  Params: { nome: string };
+  Params: { name: string };
 }
 
 /**
@@ -57,10 +59,10 @@ const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 /** Reads the name out of the path, or says why it is not one. */
 function readName(params: unknown): string {
-  const raw = (params as { nome?: string }).nome ?? '';
+  const raw = (params as { name?: string }).name ?? '';
   if (!NAME_PATTERN.test(raw)) {
     throw new ValidationError([
-      `nome has to match ${NAME_PATTERN.source} — the same charset as a node id (got: ${raw})`,
+      `name has to match ${NAME_PATTERN.source} — the same charset as a node id (got: ${raw})`,
     ]);
   }
   return raw;
@@ -68,9 +70,9 @@ function readName(params: unknown): string {
 
 /** Reads the caller-supplied value; the server never generates one. */
 function readValue(raw: unknown): string {
-  const value = (raw as { valor?: unknown } | null)?.valor;
+  const value = (raw as { value?: unknown } | null)?.value;
   if (typeof value !== 'string' || value === '') {
-    throw new ValidationError(['valor has to be a non-empty string']);
+    throw new ValidationError(['value has to be a non-empty string']);
   }
   return value;
 }
@@ -86,25 +88,25 @@ export function registerHookSecrets(app: FastifyInstance, db: Database): void {
   // revoked is still a resource this API lists, so registering under it again
   // is a rotation of something that exists — a `201` there would claim a
   // creation the `GET` does not agree with.
-  app.put<NameParam>('/hook-secrets/:nome', async (request, reply) =>
+  app.put<NameParam>('/hook-secrets/:name', async (request, reply) =>
     withValidation(reply, () => {
-      const nome = readName(request.params);
-      const valor = readValue(request.body);
+      const name = readName(request.params);
+      const value = readValue(request.body);
 
-      const { secret, rotated } = setHookSecret(db, { nome, valor });
+      const { secret, rotated } = setHookSecret(db, { nome: name, valor: value });
       reply.code(rotated ? 200 : 201);
-      return { nome: secret.nome, criada_em: secret.criada_em };
+      return { name: secret.name, created_at: secret.created_at };
     }),
   );
 
   app.get('/hook-secrets', async (_request, reply) =>
-    withValidation(reply, () => ({ segredos: listHookSecretNames(db) })),
+    withValidation(reply, () => ({ secrets: listHookSecretNames(db) })),
   );
 
-  // `DELETE` and not `POST /hook-secrets/:nome/revocations`: this is the end of
+  // `DELETE` and not `POST /hook-secrets/:name/revocations`: this is the end of
   // the resource seen from the outside, like `DELETE /v1/webhooks/:id`. What the
   // verb does NOT mean is a row leaving the database (D15/D2).
-  app.delete<NameParam>('/hook-secrets/:nome', async (request, reply) =>
+  app.delete<NameParam>('/hook-secrets/:name', async (request, reply) =>
     withValidation(reply, () => {
       const revoked = revokeHookSecret(db, readName(request.params));
       return revoked ?? notFound(reply, 'hook secret');

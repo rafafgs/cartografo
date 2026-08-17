@@ -18,7 +18,7 @@
  *   assertion is on the raw JSON text, not on a parsed field: a nested copy
  *   would slip past `body.valor`.
  * - **Nothing is deleted.** `DELETE` sets `revogada_em`, mirroring
- *   `credencial.revogada_em` and `assinatura_webhook.desativada_em`, and
+ *   `credencial.revoked_at` and `assinatura_webhook.desativada_em`, and
  *   rotating writes a NEW row instead of overwriting the old one (D15/D2).
  *
  * The repository is called directly for the two questions the wire cannot ask:
@@ -53,15 +53,15 @@ const T194_ARTIFACTS = Object.freeze({
 
 /** A named secret, as the API shows it — `valor` is not part of the shape. */
 interface HookSecret {
-  nome: string;
-  criada_em: string;
-  revogada_em: string | null;
+  name: string;
+  created_at: string;
+  revoked_at: string | null;
 }
 
 /** What `PUT` answers: the name and when THIS registration was written. */
 interface RegisteredSecret {
-  nome: string;
-  criada_em: string;
+  name: string;
+  created_at: string;
 }
 
 /** The error envelope of `src/routes/common.ts`. */
@@ -72,8 +72,8 @@ interface ErrorBody {
 
 /** The `{erro, mensagem}` body the credential gate answers with. */
 interface GateBody {
-  erro?: string;
-  mensagem?: string;
+  error?: string;
+  message?: string;
 }
 
 /** The surface `src/repositories/hook-secrets.ts` has to expose. */
@@ -134,17 +134,17 @@ async function call<T>(
   return { status: response.status, body: (text === '' ? undefined : JSON.parse(text)) as T };
 }
 
-test('AT1 — PUT /v1/hook-secrets/:nome registers a secret and never echoes the value', async (t) => {
+test('AT1 — PUT /v1/hook-secrets/:name registers a secret and never echoes the value', async (t) => {
   requireArtifacts(T194_ARTIFACTS.migration, T194_ARTIFACTS.routes, T194_ARTIFACTS.server);
   const ctx = await startControlPlane(t);
 
   const response = await request<RegisteredSecret>(ctx, 'PUT', `/v1/hook-secrets/${NAME}`, {
-    valor: VALUE,
+    value: VALUE,
   });
 
   assert.equal(response.status, 201, 'the first registration of a name creates it');
-  assert.equal(response.body.nome, NAME);
-  assert.equal(typeof response.body.criada_em, 'string');
+  assert.equal(response.body.name, NAME);
+  assert.equal(typeof response.body.created_at, 'string');
   assertNoValue(response.body, VALUE);
 
   const { resolveHookSecret } = await loadRepository();
@@ -161,15 +161,15 @@ test('AT2 — a second PUT rotates the secret, and the new value is what resolve
   const { resolveHookSecret } = await loadRepository();
 
   const first = await request<RegisteredSecret>(ctx, 'PUT', `/v1/hook-secrets/${NAME}`, {
-    valor: VALUE,
+    value: VALUE,
   });
   assert.equal(first.status, 201);
 
   const second = await request<RegisteredSecret>(ctx, 'PUT', `/v1/hook-secrets/${NAME}`, {
-    valor: ROTATED,
+    value: ROTATED,
   });
   assert.equal(second.status, 200, 'rotating an existing name is not a creation');
-  assert.equal(second.body.nome, NAME);
+  assert.equal(second.body.name, NAME);
   assertNoValue(second.body, VALUE, ROTATED);
 
   assert.equal(
@@ -207,18 +207,18 @@ test('AT3 — an empty value, a missing value or a name outside the charset is a
   };
 
   await refused(`/v1/hook-secrets/${NAME}`, {});
-  await refused(`/v1/hook-secrets/${NAME}`, { valor: '' });
-  await refused(`/v1/hook-secrets/${NAME}`, { valor: 42 });
+  await refused(`/v1/hook-secrets/${NAME}`, { value: '' });
+  await refused(`/v1/hook-secrets/${NAME}`, { value: 42 });
 
   // The same charset a node id and `secret_ref` are constrained to: the name has
   // to round-trip through a URL path and through the graph document alike.
-  await refused('/v1/hook-secrets/Gancho', { valor: VALUE });
-  await refused('/v1/hook-secrets/-comeca-com-hifen', { valor: VALUE });
-  await refused('/v1/hook-secrets/com.ponto', { valor: VALUE });
-  await refused('/v1/hook-secrets/com%20espaco', { valor: VALUE });
+  await refused('/v1/hook-secrets/Gancho', { value: VALUE });
+  await refused('/v1/hook-secrets/-comeca-com-hifen', { value: VALUE });
+  await refused('/v1/hook-secrets/com.ponto', { value: VALUE });
+  await refused('/v1/hook-secrets/com%20espaco', { value: VALUE });
 
-  const list = await request<{ segredos: HookSecret[] }>(ctx, 'GET', '/v1/hook-secrets');
-  assert.deepEqual(list.body.segredos, [], 'a refused registration writes nothing');
+  const list = await request<{ secrets: HookSecret[] }>(ctx, 'GET', '/v1/hook-secrets');
+  assert.deepEqual(list.body.secrets, [], 'a refused registration writes nothing');
 });
 
 test('AT4 — GET /v1/hook-secrets lists the names, oldest first, with no value anywhere', async (t) => {
@@ -226,24 +226,24 @@ test('AT4 — GET /v1/hook-secrets lists the names, oldest first, with no value 
   const ctx = await startControlPlane(t);
 
   const registered = await request<RegisteredSecret>(ctx, 'PUT', `/v1/hook-secrets/${NAME}`, {
-    valor: VALUE,
+    value: VALUE,
   });
   assert.equal(registered.status, 201);
   const other = await request<RegisteredSecret>(ctx, 'PUT', '/v1/hook-secrets/gancho-bloqueio', {
-    valor: 'outra-chave-194',
+    value: 'outra-chave-194',
   });
   assert.equal(other.status, 201);
 
-  const list = await request<{ segredos: HookSecret[] }>(ctx, 'GET', '/v1/hook-secrets');
+  const list = await request<{ secrets: HookSecret[] }>(ctx, 'GET', '/v1/hook-secrets');
   assert.equal(list.status, 200);
   assert.deepEqual(
-    list.body.segredos.map((secret) => secret.nome),
+    list.body.secrets.map((secret) => secret.name),
     [NAME, 'gancho-bloqueio'],
     'oldest first',
   );
-  for (const secret of list.body.segredos) {
-    assert.equal(typeof secret.criada_em, 'string');
-    assert.equal(secret.revogada_em, null, 'a fresh registration is live');
+  for (const secret of list.body.secrets) {
+    assert.equal(typeof secret.created_at, 'string');
+    assert.equal(secret.revoked_at, null, 'a fresh registration is live');
   }
   assertNoValue(list.body, VALUE, 'outra-chave-194');
 });
@@ -253,31 +253,31 @@ test('AT5 — DELETE revokes, is idempotent, and 404s on a name nobody registere
   const ctx = await startControlPlane(t);
 
   const created = await request<RegisteredSecret>(ctx, 'PUT', `/v1/hook-secrets/${NAME}`, {
-    valor: VALUE,
+    value: VALUE,
   });
   assert.equal(created.status, 201);
 
   const revoked = await request<HookSecret>(ctx, 'DELETE', `/v1/hook-secrets/${NAME}`);
   assert.equal(revoked.status, 200);
-  assert.equal(revoked.body.nome, NAME);
-  assert.equal(typeof revoked.body.revogada_em, 'string');
+  assert.equal(revoked.body.name, NAME);
+  assert.equal(typeof revoked.body.revoked_at, 'string');
   assertNoValue(revoked.body, VALUE);
 
   const again = await request<HookSecret>(ctx, 'DELETE', `/v1/hook-secrets/${NAME}`);
   assert.equal(again.status, 200, 'revoking twice is not an error');
   assert.equal(
-    again.body.revogada_em,
-    revoked.body.revogada_em,
+    again.body.revoked_at,
+    revoked.body.revoked_at,
     'the second call does not move the instant of the first',
   );
 
   // Nothing was physically deleted: the row is still listed, now revoked.
-  const list = await request<{ segredos: HookSecret[] }>(ctx, 'GET', '/v1/hook-secrets');
+  const list = await request<{ secrets: HookSecret[] }>(ctx, 'GET', '/v1/hook-secrets');
   assert.deepEqual(
-    list.body.segredos.map((secret) => secret.nome),
+    list.body.secrets.map((secret) => secret.name),
     [NAME],
   );
-  assert.equal(list.body.segredos[0].revogada_em, revoked.body.revogada_em);
+  assert.equal(list.body.secrets[0].revoked_at, revoked.body.revoked_at);
 
   const unknown = await request<ErrorBody>(ctx, 'DELETE', '/v1/hook-secrets/nunca-registrado');
   assert.equal(unknown.status, 404);
@@ -294,7 +294,7 @@ test('AT6 — a revoked secret resolves to nothing at all', async (t) => {
   const { resolveHookSecret } = await loadRepository();
 
   const created = await request<RegisteredSecret>(ctx, 'PUT', `/v1/hook-secrets/${NAME}`, {
-    valor: VALUE,
+    value: VALUE,
   });
   assert.equal(created.status, 201);
   assert.equal(resolveHookSecret(ctx.db, NAME), VALUE);
@@ -324,10 +324,10 @@ test('AT7 — a runner credential is out of scope on all three routes', async (t
   const denied = async (method: string, routePath: string, body?: unknown): Promise<void> => {
     const response = await call<GateBody>(ctx, method, routePath, token, body);
     assert.equal(response.status, 403, `${method} ${routePath} has to refuse a runner`);
-    assert.equal(response.body.erro, 'credencial_fora_de_escopo');
+    assert.equal(response.body.error, 'out_of_scope_credential');
   };
 
-  await denied('PUT', `/v1/hook-secrets/${NAME}`, { valor: VALUE });
+  await denied('PUT', `/v1/hook-secrets/${NAME}`, { value: VALUE });
   await denied('GET', '/v1/hook-secrets');
   await denied('DELETE', `/v1/hook-secrets/${NAME}`);
 

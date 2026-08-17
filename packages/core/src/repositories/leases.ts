@@ -100,6 +100,119 @@ export interface LeaseFilters {
 const COLUMNS = `id, runner_id, trabalho_id, projeto_id, status, ttl_segundos,
                  concedida_em, heartbeat_em, expira_em, liberada_em, motivo_expiracao`;
 
+/* -------------------------------------------------------------------------- */
+/* The row → wire boundary (t226, FR1).                                        */
+/*                                                                             */
+/* Three enums cross here, and all three are `CHECK`-constrained in            */
+/* `migrations/0004_runner_lease.sql`, which is what makes them schema rather  */
+/* than format — the same reasoning `skill.ts`'s `ROLE_COLUMN` pair wrote down */
+/* first. The wire says `active`; the column keeps saying `ativa` until D20's  */
+/* fourth child.                                                              */
+/* -------------------------------------------------------------------------- */
+
+const STATUS_FIELD: Record<string, string> = {
+  ativa: 'active',
+  liberada: 'released',
+  expirada: 'expired',
+};
+
+const STATUS_COLUMN: Record<string, LeaseStatus> = {
+  active: 'ativa',
+  released: 'liberada',
+  expired: 'expirada',
+};
+
+const EXPIRATION_FIELD: Record<string, string> = {
+  heartbeat_perdido: 'heartbeat_lost',
+  expirou: 'ttl_elapsed',
+};
+
+/**
+ * The English `expiration_reason` of a row's `motivo_expiracao`.
+ *
+ * Exported because `repositories/runners.ts` republishes the very same value
+ * inside `RunnerHealth.last_expiration`, and two copies of one map is how two
+ * spellings of one word start.
+ *
+ * @param value The column's value, or `null` when the lease is not expired.
+ * @returns The wire's value, or `null`.
+ */
+export function toExpirationReason(value: string | null): string | null {
+  if (value === null) return null;
+  return EXPIRATION_FIELD[value] ?? value;
+}
+
+/**
+ * Why a request did not become a lease, on the wire.
+ *
+ * `teto_runner`/`teto_projeto` are one term each in the glossary (§1.5): the
+ * same word is the BODY FIELD a runner declares and the VALUE that comes back
+ * refusing it, so one name serves both — `runner_cap` in and `runner_cap` out.
+ */
+const REFUSAL_FIELD: Record<RefusalReason, string> = {
+  trabalho_ja_leased: 'job_already_leased',
+  teto_runner: 'runner_cap',
+  teto_projeto: 'project_cap',
+};
+
+/** The three statuses a `?status=` filter may name, in the wire's spelling. */
+export const LEASE_STATUSES: readonly string[] = Object.freeze(Object.keys(STATUS_COLUMN));
+
+/** The English `status` a request declared, as the column spells it. */
+export function leaseStatusColumn(value: string): LeaseStatus | undefined {
+  return STATUS_COLUMN[value];
+}
+
+/** A lease, as `/v1` publishes it. */
+export interface Lease {
+  id: number;
+  runner_id: string;
+  job_id: number;
+  project_id: number;
+  status: string;
+  ttl_seconds: number;
+  granted_at: string;
+  heartbeat_at: string;
+  expires_at: string;
+  released_at: string | null;
+  expiration_reason: string | null;
+}
+
+/** Row to wire: the one place the lease's column names meet the API's. */
+export function toLease(row: LeaseRow): Lease {
+  return {
+    id: row.id,
+    runner_id: row.runner_id,
+    job_id: row.trabalho_id,
+    project_id: row.projeto_id,
+    status: STATUS_FIELD[row.status] ?? row.status,
+    ttl_seconds: row.ttl_segundos,
+    granted_at: row.concedida_em,
+    heartbeat_at: row.heartbeat_em,
+    expires_at: row.expira_em,
+    released_at: row.liberada_em,
+    expiration_reason: toExpirationReason(row.motivo_expiracao),
+  };
+}
+
+/**
+ * The grant's answer, on the wire.
+ *
+ * The refusal keeps its `200`: from a runner's point of view a full cap is "not
+ * now, try the next one" and is the common case of a healthy pool, not an
+ * error — so `{lease: null, reason}` is a successful answer that happens to
+ * carry no lease, and t226 renames the key without touching the status (FR4).
+ */
+export type WireGrantResult =
+  | { lease: Lease; reason?: undefined }
+  | { lease: null; reason: string };
+
+/** Grant result to wire, refusal reason included. */
+export function toGrantResult(result: GrantResult): WireGrantResult {
+  if (result.lease === null) return { lease: null, reason: REFUSAL_FIELD[result.motivo] };
+  return { lease: toLease(result.lease) };
+}
+
 /** An ISO 8601 instant shifted by seconds — the lease's deadline arithmetic. */
 function addSeconds(instant: string, seconds: number): string {
   return new Date(Date.parse(instant) + seconds * 1000).toISOString();

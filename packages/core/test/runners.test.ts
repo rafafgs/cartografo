@@ -38,8 +38,8 @@ interface TestHook {
 
 interface RunnerRow {
   id: string;
-  nome: string | null;
-  registrado_em: string;
+  name: string | null;
+  registered_at: string;
 }
 
 let connectionCache: typeof ConnectionModule | null = null;
@@ -128,17 +128,17 @@ test('AT1 — POST /v1/runners creates the record and returns 201', async (t) =>
   const response = await fetch(`${address}/v1/runners`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ id: 'runner-a', nome: 'laptop do fundador' }),
+    body: JSON.stringify({ id: 'runner-a', name: 'laptop do fundador' }),
   });
 
   assert.equal(response.status, 201);
   const body = (await response.json()) as { runner: RunnerRow };
   assert.equal(body.runner.id, 'runner-a');
-  assert.equal(body.runner.nome, 'laptop do fundador');
-  assert.equal(typeof body.runner.registrado_em, 'string');
+  assert.equal(body.runner.name, 'laptop do fundador');
+  assert.equal(typeof body.runner.registered_at, 'string');
   assert.ok(
-    !Number.isNaN(Date.parse(body.runner.registrado_em)),
-    'registrado_em has to be an ISO 8601 instant',
+    !Number.isNaN(Date.parse(body.runner.registered_at)),
+    'registered_at has to be an ISO 8601 instant',
   );
 });
 
@@ -149,14 +149,14 @@ test('AT2 — POST /v1/runners with the same id is idempotent: 200 and a single 
   const first = await fetch(`${address}/v1/runners`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ id: 'runner-a', nome: 'nome antigo' }),
+    body: JSON.stringify({ id: 'runner-a', name: 'nome antigo' }),
   });
   assert.equal(first.status, 201);
 
   const second = await fetch(`${address}/v1/runners`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ id: 'runner-a', nome: 'nome novo' }),
+    body: JSON.stringify({ id: 'runner-a', name: 'nome novo' }),
   });
   assert.equal(
     second.status,
@@ -166,7 +166,7 @@ test('AT2 — POST /v1/runners with the same id is idempotent: 200 and a single 
 
   const body = (await second.json()) as { runner: RunnerRow };
   assert.equal(body.runner.id, 'runner-a');
-  assert.equal(body.runner.nome, 'nome novo', 're-registering updates the name that was sent');
+  assert.equal(body.runner.name, 'nome novo', 're-registering updates the name that was sent');
 
   const registered = listRunners(db);
   assert.equal(registered.length, 1, 'the second registration cannot duplicate the row');
@@ -187,12 +187,12 @@ interface PairingResponse {
 async function pair(
   address: string,
   id: string,
-  nome?: string,
+  name?: string,
 ): Promise<{ status: number; body: PairingResponse }> {
   const response = await fetch(`${address}/v1/runners`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(nome === undefined ? { id } : { id, nome }),
+    body: JSON.stringify(name === undefined ? { id } : { id, name }),
   });
   return { status: response.status, body: (await response.json()) as PairingResponse };
 }
@@ -270,32 +270,32 @@ test('t143 AT — POST /v1/runners/:id/revocations kills the runner credential a
 
   const revoked = await fetch(`${address}/v1/runners/runner-a/revocations`, { method: 'POST' });
   assert.equal(revoked.status, 200);
-  assert.deepEqual(await revoked.json(), { revogadas: 1 });
+  assert.deepEqual(await revoked.json(), { revoked: 1 });
 
   const dead = await fetch(`${address}/v1/jobs`, {
     headers: { authorization: `Bearer ${token}` },
   });
   assert.equal(dead.status, 401, 'the revoked token fails on its very next request');
-  assert.equal(((await dead.json()) as { erro?: string }).erro, 'credencial_invalida');
+  assert.equal(((await dead.json()) as { error?: string }).error, 'invalid_credential');
 
   const repeated = await fetch(`${address}/v1/runners/runner-a/revocations`, { method: 'POST' });
   assert.equal(repeated.status, 200, 'revoking twice is not an error');
-  assert.deepEqual(await repeated.json(), { revogadas: 0 });
+  assert.deepEqual(await repeated.json(), { revoked: 0 });
 
   assert.equal(liveCredentials(db, 'runner-a'), 0);
 });
 
-test('t143 AT — revoking an id that was never paired is 404 runner_desconhecido', async (t) => {
+test('t143 AT — revoking an id that was never paired is 404 unknown_runner', async (t) => {
   const { address } = await start(t);
 
   const response = await fetch(`${address}/v1/runners/runner-fantasma/revocations`, {
     method: 'POST',
   });
   assert.equal(response.status, 404);
-  const body = (await response.json()) as { erro?: string; runner_id?: string };
+  const body = (await response.json()) as { error?: string; runner_id?: string };
   assert.equal(
-    body.erro,
-    'runner_desconhecido',
+    body.error,
+    'unknown_runner',
     'the same vocabulary the lease route already uses for the same condition',
   );
   assert.equal(body.runner_id, 'runner-fantasma');
@@ -313,12 +313,12 @@ const NO_CAP = 50;
 
 /** What `GET /v1/runners` answers, and what `listRunnersWithHealth` returns. */
 interface RunnerHealth extends RunnerRow {
-  leases_ativas: number;
-  ultimo_heartbeat: string | null;
-  ultima_expiracao: {
-    trabalho_id: number;
-    expira_em: string;
-    motivo_expiracao: string | null;
+  active_leases: number;
+  last_heartbeat: string | null;
+  last_expiration: {
+    job_id: number;
+    expires_at: string;
+    expiration_reason: string | null;
   } | null;
 }
 
@@ -385,35 +385,35 @@ test('t164 AT — listRunnersWithHealth counts live leases and reads liveness of
   assert.deepEqual(
     fleet.map((runner) => runner.id),
     ['runner-a', 'runner-b', 'runner-c'],
-    'the same order as listRunners: registrado_em, then id',
+    'the same order as listRunners: registered_at, then id',
   );
 
   const [first, second, third] = fleet;
 
-  assert.equal(first.nome, 'o que trabalha', 'the health row carries the runner itself');
-  assert.equal(first.leases_ativas, 1, 'only the `ativa` rows of THAT runner count');
+  assert.equal(first.name, 'o que trabalha', 'the health row carries the runner itself');
+  assert.equal(first.active_leases, 1, 'only the `ativa` rows of THAT runner count');
   assert.equal(
-    first.ultimo_heartbeat,
+    first.last_heartbeat,
     at(20),
     'the last heartbeat comes from every lease it ever held, whatever the status',
   );
   assert.deepEqual(
-    first.ultima_expiracao,
-    { trabalho_id: 13, expira_em: at(7), motivo_expiracao: 'heartbeat_perdido' },
+    first.last_expiration,
+    { job_id: 13, expires_at: at(7), expiration_reason: 'heartbeat_lost' },
     'the stale-sweep signal is the most recently expired lease, not the first one',
   );
 
-  assert.equal(second.leases_ativas, 1, "runner-b's count is its own");
-  assert.equal(second.ultimo_heartbeat, at(11));
-  assert.equal(second.ultima_expiracao, null, 'runner-b never lost a lease');
+  assert.equal(second.active_leases, 1, "runner-b's count is its own");
+  assert.equal(second.last_heartbeat, at(11));
+  assert.equal(second.last_expiration, null, 'runner-b never lost a lease');
 
-  assert.equal(third.leases_ativas, 0);
+  assert.equal(third.active_leases, 0);
   assert.equal(
-    third.ultimo_heartbeat,
+    third.last_heartbeat,
     null,
     'a runner that never held a lease has no liveness to show — and says so',
   );
-  assert.equal(third.ultima_expiracao, null);
+  assert.equal(third.last_expiration, null);
 });
 
 test('t164 AT — GET /v1/runners answers the fleet to an operator and 403 to a runner', async (t) => {
@@ -432,11 +432,11 @@ test('t164 AT — GET /v1/runners answers the fleet to an operator and 403 to a 
   );
   assert.deepEqual(body.runners[0], {
     id: 'runner-a',
-    nome: 'o primeiro pareado',
-    registrado_em: first.body.runner.registrado_em,
-    leases_ativas: 0,
-    ultimo_heartbeat: null,
-    ultima_expiracao: null,
+    name: 'o primeiro pareado',
+    registered_at: first.body.runner.registered_at,
+    active_leases: 0,
+    last_heartbeat: null,
+    last_expiration: null,
   });
 
   // Fleet-wide health is the operator's view, exactly like `GET /v1/executions`
@@ -446,8 +446,8 @@ test('t164 AT — GET /v1/runners answers the fleet to an operator and 403 to a 
   });
   assert.equal(asRunner.status, 403);
   assert.equal(
-    ((await asRunner.json()) as { erro?: string }).erro,
-    'credencial_fora_de_escopo',
+    ((await asRunner.json()) as { error?: string }).error,
+    'out_of_scope_credential',
     'a live runner credential outside its own four routes is out of scope, not invalid',
   );
 });
@@ -461,17 +461,17 @@ test('t180 — the two registration refusals are English', async (t) => {
     body: JSON.stringify({}),
   });
   assert.equal(noId.status, 400);
-  const missing = (await noId.json()) as { erro: string; mensagem: string };
-  assert.equal(missing.erro, 'id_obrigatorio', 'the code is frozen (FR2)');
-  assert.equal(missing.mensagem, 'a runner declares its own identity: id has to be a non-empty string');
+  const missing = (await noId.json()) as { error: string; message: string };
+  assert.equal(missing.error, 'id_required', 'the code is frozen (FR2)');
+  assert.equal(missing.message, 'a runner declares its own identity: id has to be a non-empty string');
 
   const badName = await fetch(`${address}/v1/runners`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ id: 'runner-a', nome: 7 }),
+    body: JSON.stringify({ id: 'runner-a', name: 7 }),
   });
   assert.equal(badName.status, 400);
-  const wrong = (await badName.json()) as { erro: string; mensagem: string };
-  assert.equal(wrong.erro, 'nome_invalido');
-  assert.equal(wrong.mensagem, 'nome, when sent, has to be a string');
+  const wrong = (await badName.json()) as { error: string; message: string };
+  assert.equal(wrong.error, 'invalid_name');
+  assert.equal(wrong.message, 'name, when sent, has to be a string');
 });

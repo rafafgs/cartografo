@@ -43,17 +43,26 @@ export interface ClockOptions {
   now?: () => string;
 }
 
-/** A subscription as the API shows it — deliberately without `segredo`. */
+/**
+ * A subscription as the API shows it — deliberately without the secret.
+ *
+ * This type IS the wire (t226, FR1): nothing inside the package reads it, so
+ * there is no second, Portuguese projection beside it. The columns it comes
+ * from are still `projeto_id`/`tipos_filtro`/`criada_em`, and `toSubscription`
+ * is where the two meet — which is also where the leak this ticket closed was:
+ * before t226 the mapper renamed `tipos_filtro` and let five other column names
+ * straight through.
+ */
 export interface Subscription {
   id: number;
-  projeto_id: number;
+  project_id: number;
   url: string;
   /** Taxonomy types this subscription wants; `null` means every type. */
-  tipos: string[] | null;
+  filter_types: string[] | null;
   /** `MAX(evento.id)` at creation time — where the fan-out starts (FR4). */
-  evento_inicial_id: number;
-  criada_em: string;
-  desativada_em: string | null;
+  initial_event_id: number;
+  created_at: string;
+  deactivated_at: string | null;
 }
 
 /** What the caller declares when registering a subscription. */
@@ -116,12 +125,12 @@ const DEACTIVATED = 'subscription deactivated';
 function toSubscription(row: SubscriptionRow): Subscription {
   return {
     id: row.id,
-    projeto_id: row.projeto_id,
+    project_id: row.projeto_id,
     url: row.url,
-    tipos: jsonOrNull<string[]>(row.tipos_filtro),
-    evento_inicial_id: row.evento_inicial_id,
-    criada_em: row.criada_em,
-    desativada_em: row.desativada_em,
+    filter_types: jsonOrNull<string[]>(row.tipos_filtro),
+    initial_event_id: row.evento_inicial_id,
+    created_at: row.criada_em,
+    deactivated_at: row.desativada_em,
   };
 }
 
@@ -238,7 +247,7 @@ export function deactivateSubscription(
   return db.transaction((): Subscription | undefined => {
     const current = getSubscription(db, id);
     if (current === undefined) return undefined;
-    if (current.desativada_em !== null) return current;
+    if (current.deactivated_at !== null) return current;
 
     const moment = clock();
     db.prepare(
@@ -297,13 +306,13 @@ export function enqueueDeliveries(
  * @param db Open database.
  * @param subscription The subscription being fanned out.
  * @returns The highest event id already enqueued for it, or its
- *   `evento_inicial_id` when it has never received anything.
+ *   `initial_event_id` when it has never received anything.
  */
 export function fanoutCursor(db: Database, subscription: Subscription): number {
   const row = db
     .prepare('SELECT MAX(evento_id) AS last_id FROM entrega_webhook WHERE assinatura_id = ?')
     .get(subscription.id) as { last_id: number | null };
-  return row.last_id ?? subscription.evento_inicial_id;
+  return row.last_id ?? subscription.initial_event_id;
 }
 
 /**

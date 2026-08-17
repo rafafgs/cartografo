@@ -186,6 +186,92 @@ function toJob(db: Database, row: JobRow): Job {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* The row → wire boundary (t226, FR1).                                        */
+/*                                                                             */
+/* `Job` above stays the INTERNAL projection, spelled like the columns: the     */
+/* dispatch path, `intake.ts` and the transition gate all read it. `WireJob` is */
+/* what a `/v1` GET returns.                                                   */
+/*                                                                             */
+/* Only the READ side crosses this boundary. `POST /v1/jobs` and the three      */
+/* sub-resources still take their Portuguese body, because it goes straight to  */
+/* `validateEvent` — the event surface is D20's second child, and `routes/      */
+/* common.ts` explains the asymmetry in full.                                  */
+/* -------------------------------------------------------------------------- */
+
+/** A job, as `/v1` publishes it. */
+export interface WireJob {
+  id: number;
+  project_id: number;
+  execution_id: number | null;
+  title: string;
+  body: string | null;
+  acceptance_criteria: string[] | null;
+  /** The class's own field values; the KEYS inside are the class's, not ours. */
+  fields: ScalarMap | null;
+  tier: 'trivial' | 'standard' | null;
+  entry_node_id: string;
+  current_node_id: string;
+  blocked: boolean;
+  block_reason: string | null;
+  graph_version_id: string | null;
+  completed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Projection to wire: the one place the job's column names meet the API's. */
+export function toWireJob(job: Job): WireJob {
+  return {
+    id: job.id,
+    project_id: job.projeto_id,
+    execution_id: job.execucao_id,
+    title: job.titulo,
+    body: job.corpo,
+    acceptance_criteria: job.criterios_de_aceite,
+    fields: job.campos,
+    tier: job.tier,
+    entry_node_id: job.no_entrada_id,
+    current_node_id: job.no_atual,
+    blocked: job.bloqueado,
+    block_reason: job.motivo_bloqueio,
+    graph_version_id: job.grafo_versao_id,
+    completed: job.concluido,
+    created_at: job.criado_em,
+    updated_at: job.atualizado_em,
+  };
+}
+
+/** One row of the version × telemetry grouping, as `/v1` publishes it. */
+export interface WireMetricByVersion {
+  graph_version_id: string | null;
+  jobs: number;
+  events: number;
+}
+
+/** Metric row to wire. */
+export function toWireMetricByVersion(row: MetricByVersion): WireMetricByVersion {
+  return { graph_version_id: row.grafo_versao_id, jobs: row.trabalhos, events: row.eventos };
+}
+
+/** One row of `GET /v1/executions`, as `/v1` publishes it. */
+export interface WireExecutionSummary {
+  execution_id: number | null;
+  jobs: number;
+  blocked_jobs: number;
+  pending_input_requests: number;
+}
+
+/** Execution summary to wire. */
+export function toWireExecutionSummary(row: ExecutionSummary): WireExecutionSummary {
+  return {
+    execution_id: row.execucao_id,
+    jobs: row.trabalhos,
+    blocked_jobs: row.trabalhos_bloqueados,
+    pending_input_requests: row.perguntas_pendentes,
+  };
+}
+
 function readRow(db: Database, id: number): JobRow | undefined {
   return db.prepare(`SELECT ${COLUMNS} FROM trabalho WHERE id = ?`).get(id) as
     | JobRow

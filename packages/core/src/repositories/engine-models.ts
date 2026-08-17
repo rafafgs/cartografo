@@ -30,7 +30,7 @@ export type ModelOrigin = 'cli' | 'catalog';
 /** The two values `origem` accepts, as the migration's CHECK spells them. */
 export const MODEL_ORIGINS: readonly ModelOrigin[] = ['cli', 'catalog'];
 
-/** One model an engine offers, as a runner reported it. */
+/** One model an engine offers, as a runner reported it — the row's spelling. */
 export interface EngineModelRow {
   modelo_id: string;
   rotulo: string | null;
@@ -38,10 +38,35 @@ export interface EngineModelRow {
   atualizado_em: string;
 }
 
-/** One engine, with everything reported for it. */
+/** One model an engine offers, as `/v1` publishes it (t226, FR1). */
+export interface EngineModel {
+  model_id: string;
+  label: string | null;
+  /**
+   * Where the entry came from: the CLI answered, or the adapter knew.
+   *
+   * The KEY translates (`glossario-wire.md` §4.2); the two VALUES do not,
+   * because they already are English — they are the `EngineAdapter`'s own
+   * vocabulary, on the same terms as `timeout_reason`'s `wall_clock`/`silence`.
+   */
+  source: ModelOrigin;
+  updated_at: string;
+}
+
+/** One engine, with everything reported for it, as `/v1` publishes it. */
 export interface EngineCatalog {
-  motor: string;
-  modelos: EngineModelRow[];
+  engine: string;
+  models: EngineModel[];
+}
+
+/** Row to wire, for one reported model. */
+export function toEngineModel(row: EngineModelRow): EngineModel {
+  return {
+    model_id: row.modelo_id,
+    label: row.rotulo,
+    source: row.origem,
+    updated_at: row.atualizado_em,
+  };
 }
 
 /** One model of an incoming report, already shape-checked by the route. */
@@ -83,7 +108,7 @@ export function reportEngineModels(
     }
   })();
 
-  return { motor: engine, modelos: listEngineModels(db, engine) };
+  return { engine, models: listEngineModels(db, engine).map(toEngineModel) };
 }
 
 /**
@@ -119,8 +144,8 @@ export function listEngineCatalogs(db: Database): EngineCatalog[] {
 
   const byEngine = new Map<string, EngineCatalog>();
   for (const { motor, ...model } of rows) {
-    const catalog = byEngine.get(motor) ?? { motor, modelos: [] };
-    catalog.modelos.push(model);
+    const catalog = byEngine.get(motor) ?? { engine: motor, models: [] };
+    catalog.models.push(toEngineModel(model));
     byEngine.set(motor, catalog);
   }
   return [...byEngine.values()];

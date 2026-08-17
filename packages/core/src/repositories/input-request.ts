@@ -85,6 +85,89 @@ function toInputRequest(row: InputRequestRow): InputRequest {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* The row → wire boundary (t226, FR1).                                        */
+/*                                                                             */
+/* Read side only: `POST /v1/input-requests` and the two answer routes still    */
+/* take their Portuguese bodies, because those reach `validateEvent` — D20's    */
+/* second child owns that vocabulary (`routes/common.ts` explains it in full).  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `pergunta.status` and `pergunta.tipo`, both ways (`glossario-wire.md` §1.6).
+ *
+ * `tipo` is the one row of §1.6 that is QUALIFIED, and the glossary says why:
+ * the bare word `pergunta` is the ENTITY and becomes `input_request`, while
+ * `pergunta.tipo = pergunta` is the KIND of escalation and becomes `question`.
+ * One word, two concepts, two English names — which is exactly what a glossary
+ * exists to keep straight.
+ */
+const STATUS_FIELD: Record<string, string> = { pendente: 'pending', respondida: 'answered' };
+const STATUS_COLUMN: Record<string, string> = { pending: 'pendente', answered: 'respondida' };
+const KIND_FIELD: Record<string, string> = { pergunta: 'question', aprovacao: 'approval' };
+
+/** The two statuses a `?status=` filter may name, in the wire's spelling. */
+export const INPUT_REQUEST_STATUSES: readonly string[] = Object.freeze(Object.keys(STATUS_COLUMN));
+
+/** The English `status` a request declared, as the column spells it. */
+export function inputRequestStatusColumn(value: string): string | undefined {
+  return STATUS_COLUMN[value];
+}
+
+/** An input request, as `/v1` publishes it. */
+export interface WireInputRequest {
+  id: number;
+  job_id: number;
+  session_id: number | null;
+  execution_id: number | null;
+  node_id: string | null;
+  kind: string;
+  question: string;
+  context: string | null;
+  options: string[] | null;
+  recommendation: string | null;
+  default_answer: string | null;
+  auto_approvable: boolean;
+  status: string;
+  answer: string | null;
+  answered_by: string | null;
+  /**
+   * Where the decision came from.
+   *
+   * The KEY translates (`glossario-wire.md` §4.2); the VALUES do not. They are
+   * the `pergunta.respondida`/`auto_resolvida` payload's vocabulary
+   * (`usuario`, `recomendacao`, `resposta_padrao`, `precedente`), which is
+   * D20's second child — the same line this ticket draws for session status.
+   */
+  source: string | null;
+  created_at: string;
+  answered_at: string | null;
+}
+
+/** Projection to wire: the one place the column names meet the API's. */
+export function toWireInputRequest(request: InputRequest): WireInputRequest {
+  return {
+    id: request.id,
+    job_id: request.trabalho_id,
+    session_id: request.sessao_id,
+    execution_id: request.execucao_id,
+    node_id: request.no_id,
+    kind: KIND_FIELD[request.tipo] ?? request.tipo,
+    question: request.pergunta,
+    context: request.contexto,
+    options: request.opcoes,
+    recommendation: request.recomendacao,
+    default_answer: request.resposta_padrao,
+    auto_approvable: request.auto_aprovavel,
+    status: STATUS_FIELD[request.status] ?? request.status,
+    answer: request.resposta,
+    answered_by: request.respondido_por,
+    source: request.origem,
+    created_at: request.criada_em,
+    answered_at: request.respondida_em,
+  };
+}
+
 function readRow(db: Database, id: number): InputRequestRow | undefined {
   return db.prepare(`SELECT ${COLUMNS} FROM pergunta WHERE id = ?`).get(id) as
     | InputRequestRow
@@ -436,6 +519,17 @@ export interface QuestionsByNode {
   perguntas: number;
 }
 
+/** The same row, as `/v1` publishes it (t226, FR1). */
+export interface WireQuestionsByNode {
+  node_id: string | null;
+  input_requests: number;
+}
+
+/** Per-node count to wire. */
+export function toWireQuestionsByNode(row: QuestionsByNode): WireQuestionsByNode {
+  return { node_id: row.no_id, input_requests: row.perguntas };
+}
+
 /**
  * How many questions each node raised, in one execution (t167).
  *
@@ -482,9 +576,9 @@ export function questionsByNode(db: Database, executionId: number): QuestionsByN
  * answering right now needs to see: knowing that something similar was asked
  * before is not enough — one has to know what was decided, by whom and when.
  *
- * The field names mirror the untouched migration columns, so they stay in
- * Portuguese (t127, FR8); `similaridade` is the one computed field and follows
- * the same wire vocabulary as its neighbours.
+ * The field names below mirror the untouched migration columns; what leaves the
+ * process is `toWirePrecedent`'s output (t226, FR1). `similaridade` is the one
+ * computed field and follows its neighbours across that boundary too.
  */
 export interface Precedent {
   id: number;
@@ -497,6 +591,34 @@ export interface Precedent {
   respondida_em: string | null;
   /** Score in `[0, 1]`, rounded to 2 decimals — see `domain/similarity.ts`. */
   similaridade: number;
+}
+
+/** A precedent, as `/v1` publishes it (t226, FR1). */
+export interface WirePrecedent {
+  id: number;
+  kind: string;
+  question: string;
+  answer: string | null;
+  answered_by: string | null;
+  source: string | null;
+  created_at: string;
+  answered_at: string | null;
+  similarity: number;
+}
+
+/** Precedent to wire. */
+export function toWirePrecedent(row: Precedent): WirePrecedent {
+  return {
+    id: row.id,
+    kind: KIND_FIELD[row.tipo] ?? row.tipo,
+    question: row.pergunta,
+    answer: row.resposta,
+    answered_by: row.respondido_por,
+    source: row.origem,
+    created_at: row.criada_em,
+    answered_at: row.respondida_em,
+    similarity: row.similaridade,
+  };
 }
 
 type PrecedentRow = Omit<Precedent, 'similaridade'>;

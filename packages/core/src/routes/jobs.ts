@@ -7,8 +7,13 @@
  * "correcting" a job's position in the graph without leaving a trace. `PATCH` is
  * left only for what really is content editing (FR7).
  *
- * The request/response field names stay in Portuguese: they mirror the untouched
- * migration columns (t127, FR8).
+ * This family is where D20's split shows most plainly, and `routes/common.ts`
+ * documents it in full: what a GET RETURNS is English since t226
+ * (`repositories/job.ts`'s `toWireJob`), and what the four writes ACCEPT is
+ * still Portuguese, because those bodies go straight into `validateEvent` and
+ * `trabalho.criado`'s contract belongs to D20's second child. Translating them
+ * here would make a validator that still speaks Portuguese reject every
+ * legitimate write.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -23,6 +28,7 @@ import {
   amendJob,
   jobTimeline,
   listJobs,
+  toWireJob,
   transitionJob,
   type Job,
 } from '../repositories/job.ts';
@@ -61,31 +67,34 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
     withValidation(reply, () => {
       const job = createJob(db, (request.body ?? {}) as Record<string, unknown>);
       reply.code(201);
-      return job;
+      return toWireJob(job);
     }),
   );
 
   app.get('/jobs', async (request, reply) =>
     withValidation(reply, () => {
       const executionId = integerFromQuery(
-        'execucao_id',
-        (request.query as { execucao_id?: string }).execucao_id,
+        'execution_id',
+        (request.query as { execution_id?: string }).execution_id,
       );
-      return { trabalhos: listJobs(db, { execucao_id: executionId }) };
+      const jobs = listJobs(db, { execucao_id: executionId });
+      return { jobs: jobs.map(toWireJob) };
     }),
   );
 
   app.get('/jobs/:id', async (request, reply) =>
     withValidation(reply, () => {
       const job = getJob(db, routeId(request.params));
-      return job ?? notFound(reply, 'job');
+      return job === null ? notFound(reply, 'job') : toWireJob(job);
     }),
   );
 
   app.get('/jobs/:id/events', async (request, reply) =>
     withValidation(reply, () => {
+      // The envelope key is English; each event inside keeps its own shape, which
+      // is the taxonomy's and therefore D20's second child.
       const events = jobTimeline(db, routeId(request.params));
-      return events === null ? notFound(reply, 'job') : { eventos: events };
+      return events === null ? notFound(reply, 'job') : { events };
     }),
   );
 
@@ -112,7 +121,7 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
             routeId(request.params),
             (request.body ?? {}) as Record<string, unknown>,
           );
-          return updated ?? notFound(reply, 'job');
+          return updated === null ? notFound(reply, 'job') : toWireJob(updated);
         },
         method === 'patch' ? 422 : 400,
       ),

@@ -21,16 +21,24 @@
  * allowlist, so a `runner`-type credential — including the one being revoked —
  * gets a `403` before this file runs.
  *
- * The request/response field names stay in Portuguese: they mirror the untouched
- * migration columns (t127, FR8).
+ * Since t226 the request and response field names are English
+ * (`docs/spec/glossario-wire.md` §1): the pairing body declares `name`, and what
+ * comes back is `toRunner`/`toRunnerHealth`'s output. The COLUMNS are still
+ * `nome`/`registrado_em` — D20's fourth child renames those.
  */
 
 import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { issueCredential, revokeRunnerCredentials } from '../repositories/credentials.ts';
-import { getRunner, listRunnersWithHealth, registerRunner } from '../repositories/runners.ts';
+import {
+  getRunner,
+  listRunnersWithHealth,
+  registerRunner,
+  toRunner,
+} from '../repositories/runners.ts';
 import { isObject } from '../util/is-object.ts';
+import { refusal } from './common.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -48,17 +56,17 @@ export function registerRunners(app: FastifyInstance, db: Database): void {
 
     const id = body.id;
     if (typeof id !== 'string' || id.trim() === '') {
-      reply.code(400);
-      return {
-        erro: 'id_obrigatorio',
-        mensagem: 'a runner declares its own identity: id has to be a non-empty string',
-      };
+      return refusal(
+        reply,
+        400,
+        'id_required',
+        'a runner declares its own identity: id has to be a non-empty string',
+      );
     }
 
-    const name = body.nome;
+    const name = body.name;
     if (name !== undefined && name !== null && typeof name !== 'string') {
-      reply.code(400);
-      return { erro: 'nome_invalido', mensagem: 'nome, when sent, has to be a string' };
+      return refusal(reply, 400, 'invalid_name', 'name, when sent, has to be a string');
     }
 
     const { runner, created } = registerRunner(db, { id, nome: name ?? null });
@@ -69,7 +77,7 @@ export function registerRunners(app: FastifyInstance, db: Database): void {
     const token = created ? issueCredential(db, { tipo: 'runner', runnerId: runner.id }).token : null;
 
     reply.code(created ? 201 : 200);
-    return { runner, token };
+    return { runner: toRunner(runner), token };
   });
 
   // The fleet, with the liveness the lease table already recorded (t164, FR1).
@@ -87,10 +95,9 @@ export function registerRunners(app: FastifyInstance, db: Database): void {
     // the two apart is the difference between "done" and "you decommissioned
     // nothing". Same vocabulary `leases.ts` answers for the same condition.
     if (getRunner(db, id) === undefined) {
-      reply.code(404);
-      return { erro: 'runner_desconhecido', runner_id: id };
+      return refusal(reply, 404, 'unknown_runner', undefined, { runner_id: id });
     }
 
-    return { revogadas: revokeRunnerCredentials(db, id) };
+    return { revoked: revokeRunnerCredentials(db, id) };
   });
 }

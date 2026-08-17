@@ -6,8 +6,11 @@
  * between approved-by-a-person and approved-by-the-system is precisely the one
  * nobody should be able to erase by passing a different parameter.
  *
- * The request/response field names stay in Portuguese: they mirror the untouched
- * migration columns (t127, FR8).
+ * Same split as the job and session routes, spelled out in `routes/common.ts`:
+ * a GET returns English since t226 (`repositories/input-request.ts`'s
+ * `toWireInputRequest`), while `POST /input-requests` and the two answer routes
+ * still accept `{resposta, respondido_por}` — those bodies reach `validateEvent`
+ * and `pergunta.criada`/`pergunta.respondida` are D20's second child.
  */
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -19,8 +22,11 @@ import {
   createInputRequest,
   getInputRequest,
   getPrecedents,
+  inputRequestStatusColumn,
   listInputRequests,
   answerInputRequest,
+  toWireInputRequest,
+  toWirePrecedent,
 } from '../repositories/input-request.ts';
 import {
   withValidation,
@@ -76,7 +82,7 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
       );
       if (inputRequest === null) return notFound(reply, 'job');
       reply.code(201);
-      return inputRequest;
+      return toWireInputRequest(inputRequest);
     }),
   );
 
@@ -115,7 +121,9 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
         id,
         (request.body ?? {}) as Record<string, unknown>,
       );
-      return inputRequest ?? notFound(reply, 'input request');
+      return inputRequest === null
+        ? notFound(reply, 'input request')
+        : toWireInputRequest(inputRequest);
     }),
   );
 
@@ -130,7 +138,9 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
         id,
         (request.body ?? {}) as Record<string, unknown>,
       );
-      return inputRequest ?? notFound(reply, 'input request');
+      return inputRequest === null
+        ? notFound(reply, 'input request')
+        : toWireInputRequest(inputRequest);
     }),
   );
 
@@ -138,16 +148,24 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
     withValidation(reply, () => {
       const query = request.query as {
         status?: string;
-        execucao_id?: string;
-        trabalho_id?: string;
+        execution_id?: string;
+        job_id?: string;
       };
-      return {
-        perguntas: listInputRequests(db, {
-          status: query.status,
-          execucao_id: integerFromQuery('execucao_id', query.execucao_id),
-          trabalho_id: integerFromQuery('trabalho_id', query.trabalho_id),
-        }),
-      };
+      // A status nobody publishes is passed through rather than dropped: the
+      // repository turns an unknown value into an empty result, which is the
+      // honest answer, and swallowing the filter would widen the query instead.
+      const status =
+        query.status === undefined
+          ? undefined
+          : (inputRequestStatusColumn(query.status) ?? query.status);
+      const executionId = integerFromQuery('execution_id', query.execution_id);
+      const jobId = integerFromQuery('job_id', query.job_id);
+      const found = listInputRequests(db, {
+        status,
+        execucao_id: executionId,
+        trabalho_id: jobId,
+      });
+      return { input_requests: found.map(toWireInputRequest) };
     }),
   );
 
@@ -157,13 +175,14 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
   // information that only matters when somebody opens ONE of them to answer it.
   app.get('/input-requests/:id/precedents', async (request, reply) =>
     withValidation(reply, () => {
-      const query = request.query as { limite?: string };
-      const precedents = getPrecedents(db, routeId(request.params), {
-        limit: integerFromQuery('limite', query.limite),
-      });
+      const query = request.query as { limit?: string };
+      const limit = integerFromQuery('limit', query.limit);
+      const precedents = getPrecedents(db, routeId(request.params), { limit });
       // An empty list is a legitimate response: "nobody asked this before" is a
       // fact about the project, not a failure of the query.
-      return precedents === null ? notFound(reply, 'input request') : { precedentes: precedents };
+      return precedents === null
+        ? notFound(reply, 'input request')
+        : { precedents: precedents.map(toWirePrecedent) };
     }),
   );
 }

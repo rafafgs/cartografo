@@ -20,9 +20,10 @@
  *   wrote down, and for the same reason: one compromised machine must not
  *   become a map of the fleet.
  *
- * The wire field names are the migration's columns (`motor`, `modelo_id`,
- * `rotulo`, `origem`), so they stay in Portuguese (t127, FR8). The two values of
- * `origem` are English on purpose: they are the `EngineAdapter`'s vocabulary,
+ * The wire field names are English since t226 (`engine`, `model_id`, `label`,
+ * `source`), while the migration's columns behind them are untouched. The two
+ * values of `source` were already English: they are the `EngineAdapter`'s own
+ * vocabulary,
  * produced by the adapter, exactly as `timeout_reason`'s `wall_clock`/`silence`
  * already are.
  */
@@ -40,27 +41,27 @@ const T166_ARTIFACTS = Object.freeze({
 });
 
 /** One model, as the wire carries it. */
-interface EngineModelRow {
-  modelo_id: string;
-  rotulo: string | null;
-  origem: string;
-  atualizado_em?: string;
+interface EngineModel {
+  model_id: string;
+  label: string | null;
+  source: string;
+  updated_at?: string;
 }
 
 /** One engine with everything reported for it. */
 interface EngineRow {
-  motor: string;
-  modelos: EngineModelRow[];
+  engine: string;
+  models: EngineModel[];
 }
 
 interface ReportBody {
-  motor: string;
-  modelos: EngineModelRow[];
+  engine: string;
+  models: EngineModel[];
 }
 
 interface ErrorBody {
-  erro?: string;
-  mensagem?: string;
+  error?: string;
+  message?: string;
 }
 
 /** A request built header by header — this suite needs credentials of its own. */
@@ -95,13 +96,13 @@ async function pairedRunnerToken(ctx: TestContext, id: string): Promise<string> 
 async function report(
   ctx: TestContext,
   engine: string,
-  models: Array<{ modelo_id: string; rotulo?: string | null; origem: string }>,
+  models: Array<{ model_id: string; label?: string | null; source: string }>,
 ): Promise<ReportBody> {
   const response = await request<ReportBody>(
     ctx,
     'POST',
     `/v1/engines/${encodeURIComponent(engine)}/models`,
-    { modelos: models },
+    { models: models },
   );
   assert.equal(response.status, 200, JSON.stringify(response.body));
   return response.body;
@@ -109,41 +110,41 @@ async function report(
 
 /** Reads the whole catalog with the operator credential. */
 async function listEngines(ctx: TestContext): Promise<EngineRow[]> {
-  const response = await request<{ motores: EngineRow[] }>(ctx, 'GET', '/v1/engines');
+  const response = await request<{ engines: EngineRow[] }>(ctx, 'GET', '/v1/engines');
   assert.equal(response.status, 200, JSON.stringify(response.body));
-  return response.body.motores;
+  return response.body.engines;
 }
 
-test('t166 AT — a reported catalog comes back out of GET /v1/engines with origem intact', async (t) => {
+test('t166 AT — a reported catalog comes back out of GET /v1/engines with source intact', async (t) => {
   requireArtifacts(...Object.values(T166_ARTIFACTS));
   const ctx = await startControlPlane(t);
 
   assert.deepEqual(await listEngines(ctx), [], 'nothing is known before a runner says so');
 
   const reported = await report(ctx, 'claude-code', [
-    { modelo_id: 'claude-opus-5', rotulo: 'Claude Opus 5', origem: 'catalog' },
-    { modelo_id: 'claude-haiku-4-5', rotulo: 'Claude Haiku 4.5', origem: 'catalog' },
+    { model_id: 'claude-opus-5', label: 'Claude Opus 5', source: 'catalog' },
+    { model_id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', source: 'catalog' },
   ]);
-  assert.equal(reported.motor, 'claude-code');
-  assert.equal(reported.modelos.length, 2);
+  assert.equal(reported.engine, 'claude-code');
+  assert.equal(reported.models.length, 2);
 
   const engines = await listEngines(ctx);
   assert.equal(engines.length, 1);
-  assert.equal(engines[0]?.motor, 'claude-code');
+  assert.equal(engines[0]?.engine, 'claude-code');
   assert.deepEqual(
-    engines[0]?.modelos.map((model) => ({
-      modelo_id: model.modelo_id,
-      rotulo: model.rotulo,
-      origem: model.origem,
+    engines[0]?.models.map((model) => ({
+      model_id: model.model_id,
+      label: model.label,
+      source: model.source,
     })),
     [
-      { modelo_id: 'claude-haiku-4-5', rotulo: 'Claude Haiku 4.5', origem: 'catalog' },
-      { modelo_id: 'claude-opus-5', rotulo: 'Claude Opus 5', origem: 'catalog' },
+      { model_id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', source: 'catalog' },
+      { model_id: 'claude-opus-5', label: 'Claude Opus 5', source: 'catalog' },
     ],
     'every model comes back, in a stable order, with the origin the adapter declared',
   );
-  for (const model of engines[0]?.modelos ?? []) {
-    assert.equal(typeof model.atualizado_em, 'string', 'a catalog with no date cannot be judged stale');
+  for (const model of engines[0]?.models ?? []) {
+    assert.equal(typeof model.updated_at, 'string', 'a catalog with no date cannot be judged stale');
   }
 });
 
@@ -152,22 +153,22 @@ test('t166 AT — a second report REPLACES the first: a dropped model does not l
   const ctx = await startControlPlane(t);
 
   await report(ctx, 'codex', [
-    { modelo_id: 'gpt-5.6-sol', origem: 'catalog' },
-    { modelo_id: 'gpt-5.4', origem: 'catalog' },
+    { model_id: 'gpt-5.6-sol', source: 'catalog' },
+    { model_id: 'gpt-5.4', source: 'catalog' },
   ]);
   await report(ctx, 'codex', [
-    { modelo_id: 'gpt-5.6-sol', rotulo: 'GPT-5.6-Sol', origem: 'catalog' },
-    { modelo_id: 'gpt-5.6-luna', origem: 'catalog' },
+    { model_id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', source: 'catalog' },
+    { model_id: 'gpt-5.6-luna', source: 'catalog' },
   ]);
 
   const [engine] = await listEngines(ctx);
   assert.deepEqual(
-    engine?.modelos.map((model) => model.modelo_id).sort(),
+    engine?.models.map((model) => model.model_id).sort(),
     ['gpt-5.6-luna', 'gpt-5.6-sol'],
     'the model the second report dropped has to be gone, not merged in',
   );
   assert.equal(
-    engine?.modelos.find((model) => model.modelo_id === 'gpt-5.6-sol')?.rotulo,
+    engine?.models.find((model) => model.model_id === 'gpt-5.6-sol')?.label,
     'GPT-5.6-Sol',
     'the surviving row carries the label of the LAST report',
   );
@@ -177,13 +178,13 @@ test('t166 AT — one engine\'s report never touches another engine\'s catalog',
   requireArtifacts(...Object.values(T166_ARTIFACTS));
   const ctx = await startControlPlane(t);
 
-  await report(ctx, 'claude-code', [{ modelo_id: 'claude-opus-5', origem: 'catalog' }]);
-  await report(ctx, 'codex', [{ modelo_id: 'gpt-5.6-sol', origem: 'catalog' }]);
-  await report(ctx, 'codex', [{ modelo_id: 'gpt-5.6-luna', origem: 'catalog' }]);
+  await report(ctx, 'claude-code', [{ model_id: 'claude-opus-5', source: 'catalog' }]);
+  await report(ctx, 'codex', [{ model_id: 'gpt-5.6-sol', source: 'catalog' }]);
+  await report(ctx, 'codex', [{ model_id: 'gpt-5.6-luna', source: 'catalog' }]);
 
   const engines = await listEngines(ctx);
   assert.deepEqual(
-    engines.map((engine) => [engine.motor, engine.modelos.map((model) => model.modelo_id)]),
+    engines.map((engine) => [engine.engine, engine.models.map((model) => model.model_id)]),
     [
       ['claude-code', ['claude-opus-5']],
       ['codex', ['gpt-5.6-luna']],
@@ -196,12 +197,12 @@ test('t166 AT — an empty report clears the engine, and says so in its own answ
   requireArtifacts(...Object.values(T166_ARTIFACTS));
   const ctx = await startControlPlane(t);
 
-  await report(ctx, 'claude-code', [{ modelo_id: 'claude-opus-5', origem: 'catalog' }]);
+  await report(ctx, 'claude-code', [{ model_id: 'claude-opus-5', source: 'catalog' }]);
   const cleared = await report(ctx, 'claude-code', []);
 
   // The report's OWN answer names the engine, which is the only place an empty
   // catalog stays visible...
-  assert.deepEqual(cleared, { motor: 'claude-code', modelos: [] });
+  assert.deepEqual(cleared, { engine: 'claude-code', models: [] });
 
   // ...and the listing loses the engine entirely. That is the stated price of
   // `motor_modelo` being rows-of-models and not rows-of-engines (FR12): with no
@@ -216,26 +217,26 @@ test('t166 AT — a malformed report is refused, and writes nothing', async (t) 
   requireArtifacts(...Object.values(T166_ARTIFACTS));
   const ctx = await startControlPlane(t);
 
-  await report(ctx, 'claude-code', [{ modelo_id: 'claude-opus-5', origem: 'catalog' }]);
+  await report(ctx, 'claude-code', [{ model_id: 'claude-opus-5', source: 'catalog' }]);
 
   const refusals: Array<[string, unknown]> = [
-    ['modelos_obrigatorio', {}],
-    ['modelos_obrigatorio', { modelos: 'claude-opus-5' }],
-    ['modelo_invalido', { modelos: [{ origem: 'catalog' }] }],
-    ['modelo_invalido', { modelos: [{ modelo_id: '  ', origem: 'catalog' }] }],
-    ['origem_invalida', { modelos: [{ modelo_id: 'claude-opus-5' }] }],
-    ['origem_invalida', { modelos: [{ modelo_id: 'claude-opus-5', origem: 'catalogo' }] }],
+    ['models_required', {}],
+    ['models_required', { models: 'claude-opus-5' }],
+    ['invalid_model', { models: [{ source: 'catalog' }] }],
+    ['invalid_model', { models: [{ model_id: '  ', source: 'catalog' }] }],
+    ['invalid_source', { models: [{ model_id: 'claude-opus-5' }] }],
+    ['invalid_source', { models: [{ model_id: 'claude-opus-5', source: 'catalogo' }] }],
   ];
 
   for (const [code, body] of refusals) {
     const response = await request<ErrorBody>(ctx, 'POST', '/v1/engines/claude-code/models', body);
     assert.equal(response.status, 400, `${JSON.stringify(body)} should be refused`);
-    assert.equal(response.body.erro, code, JSON.stringify(response.body));
-    assert.ok((response.body.mensagem ?? '').length > 0, 'a refusal says what to fix');
+    assert.equal(response.body.error, code, JSON.stringify(response.body));
+    assert.ok((response.body.message ?? '').length > 0, 'a refusal says what to fix');
   }
 
   assert.deepEqual(
-    (await listEngines(ctx))[0]?.modelos.map((model) => model.modelo_id),
+    (await listEngines(ctx))[0]?.models.map((model) => model.model_id),
     ['claude-opus-5'],
     'a refused report leaves the previous catalog exactly as it was',
   );
@@ -247,7 +248,7 @@ test('t166 AT — a runner credential may report, and is refused the operator re
   const token = await pairedRunnerToken(ctx, 'runner-a');
 
   const allowed = await call<ReportBody>(ctx, 'POST', '/v1/engines/claude-code/models', token, {
-    modelos: [{ modelo_id: 'claude-opus-5', origem: 'catalog' }],
+    models: [{ model_id: 'claude-opus-5', source: 'catalog' }],
   });
   assert.equal(
     allowed.status,
@@ -257,11 +258,11 @@ test('t166 AT — a runner credential may report, and is refused the operator re
 
   const denied = await call<ErrorBody>(ctx, 'GET', '/v1/engines', token);
   assert.equal(denied.status, 403, 'reading the whole fleet\'s menu is the operator\'s, not a runner\'s');
-  assert.equal(denied.body.erro, 'credencial_fora_de_escopo');
+  assert.equal(denied.body.error, 'out_of_scope_credential');
 
   // ...and what the runner reported is there, for the operator who may read it.
   assert.deepEqual(
-    (await listEngines(ctx))[0]?.modelos.map((model) => model.modelo_id),
+    (await listEngines(ctx))[0]?.models.map((model) => model.model_id),
     ['claude-opus-5'],
   );
 });
@@ -276,7 +277,7 @@ test('t166 AT — neither route answers without a credential', async (t) => {
     const response = await fetch(`${ctx.url}${route}`, {
       method,
       headers: { 'content-type': 'application/json' },
-      body: method === 'POST' ? JSON.stringify({ modelos: [] }) : undefined,
+      body: method === 'POST' ? JSON.stringify({ models: [] }) : undefined,
     });
     assert.equal(response.status, 401, `${method} ${route} answered without a credential`);
   }

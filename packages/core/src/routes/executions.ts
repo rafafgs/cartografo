@@ -7,16 +7,22 @@
  * is only a read here, and why an execution with no job at all answers 200 with
  * an empty list instead of a 404: there is no object to exist or not exist.
  *
- * The response field names stay in Portuguese: they mirror the untouched
- * migration columns (t127, FR8).
+ * The response field names are English since t226
+ * (`docs/spec/glossario-wire.md` §1). The EVENTS inside `events` keep their own
+ * envelope, which is the taxonomy's and therefore D20's second child.
  */
 
 import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { listEvents } from '../db/events.ts';
-import { questionsByNode } from '../repositories/input-request.ts';
-import { listExecutions, metricsByVersion } from '../repositories/job.ts';
+import { questionsByNode, toWireQuestionsByNode } from '../repositories/input-request.ts';
+import {
+  listExecutions,
+  metricsByVersion,
+  toWireExecutionSummary,
+  toWireMetricByVersion,
+} from '../repositories/job.ts';
 import { withValidation, routeId } from './common.ts';
 
 /**
@@ -30,13 +36,16 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
   // without it nobody discovers which executions exist without already knowing
   // the id.
   app.get('/executions', async (_request, reply) =>
-    withValidation(reply, () => ({ execucoes: listExecutions(db) })),
+    withValidation(reply, () => {
+      const executions = listExecutions(db);
+      return { executions: executions.map(toWireExecutionSummary) };
+    }),
   );
 
   /**
    * The round's numbers: per version, and per node.
    *
-   * `perguntas_por_no` rides here rather than on a route of its own (t167)
+   * `input_requests_by_node` rides here rather than on a route of its own (t167)
    * because it is the same question the metrics answer, sliced on the other
    * axis — "which step keeps stopping to ask?" beside "did the new version
    * behave better?". Whoever is judging a per-node escalation policy reads both,
@@ -48,10 +57,12 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
   app.get('/executions/:id/metrics-by-version', async (request, reply) =>
     withValidation(reply, () => {
       const executionId = routeId(request.params);
+      const metrics = metricsByVersion(db, executionId);
+      const byNode = questionsByNode(db, executionId);
       return {
-        execucao_id: executionId,
-        metricas: metricsByVersion(db, executionId),
-        perguntas_por_no: questionsByNode(db, executionId),
+        execution_id: executionId,
+        metrics: metrics.map(toWireMetricByVersion),
+        input_requests_by_node: byNode.map(toWireQuestionsByNode),
       };
     }),
   );
@@ -71,7 +82,7 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
   app.get('/executions/:id/events', async (request, reply) =>
     withValidation(reply, () => {
       const executionId = routeId(request.params);
-      return { execucao_id: executionId, eventos: listEvents(db, { execucao_id: executionId }) };
+      return { execution_id: executionId, events: listEvents(db, { execucao_id: executionId }) };
     }),
   );
 }

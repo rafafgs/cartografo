@@ -16,7 +16,7 @@
  *   path with real time is proven in AT17
  *   (`packages/runner/test/controller/dispatch-e-lease.e2e.test.ts`).
  *
- * `trabalho_id` is an opaque integer throughout this suite: the `trabalho` table
+ * `job_id` is an opaque integer throughout this suite: the `trabalho` table
  * belongs to t102 and this route never reads it (Out of Scope).
  *
  * The response field names and the status/reason values stay in Portuguese: they
@@ -49,20 +49,20 @@ interface TestHook {
 interface LeaseRow {
   id: number;
   runner_id: string;
-  trabalho_id: number;
-  projeto_id: number;
-  status: 'ativa' | 'liberada' | 'expirada';
-  ttl_segundos: number;
-  concedida_em: string;
-  heartbeat_em: string;
-  expira_em: string;
-  liberada_em: string | null;
-  motivo_expiracao: 'heartbeat_perdido' | 'expirou' | null;
+  job_id: number;
+  project_id: number;
+  status: 'active' | 'released' | 'expired';
+  ttl_seconds: number;
+  granted_at: string;
+  heartbeat_at: string;
+  expires_at: string;
+  released_at: string | null;
+  expiration_reason: 'heartbeat_lost' | 'ttl_elapsed' | null;
 }
 
 interface GrantResponse {
   lease: LeaseRow | null;
-  motivo?: string;
+  reason?: string;
 }
 
 let connectionCache: typeof ConnectionModule | null = null;
@@ -222,11 +222,11 @@ function controlledClock(start = '2026-08-14T12:00:00.000Z'): {
 
 interface LeaseRequestBody {
   runner_id: string;
-  projeto_id?: number;
-  trabalho_id: number;
-  teto_runner?: number;
-  teto_projeto?: number;
-  ttl_segundos?: number;
+  project_id?: number;
+  job_id: number;
+  runner_cap?: number;
+  project_cap?: number;
+  ttl_seconds?: number;
 }
 
 async function requestLease(
@@ -241,10 +241,10 @@ async function requestLease(
     method: 'POST',
     headers,
     body: JSON.stringify({
-      projeto_id: 1,
-      teto_runner: 8,
-      teto_projeto: 8,
-      ttl_segundos: 60,
+      project_id: 1,
+      runner_cap: 8,
+      project_cap: 8,
+      ttl_seconds: 60,
       ...request,
     }),
   });
@@ -264,7 +264,7 @@ async function registerRunners(db: ConnectionModule.Database, ...ids: string[]):
 test('AT3 — POST /v1/leases with an unregistered runner_id returns 404', async (t) => {
   const { address } = await start(t);
 
-  const response = await requestLease(address, { runner_id: 'runner-fantasma', trabalho_id: 1 });
+  const response = await requestLease(address, { runner_id: 'runner-fantasma', job_id: 1 });
 
   assert.equal(
     response.status,
@@ -273,36 +273,36 @@ test('AT3 — POST /v1/leases with an unregistered runner_id returns 404', async
   );
   // The body matters: a 404 from a nonexistent route would also be a 404, and
   // would pass this test without the rule existing at all.
-  const body = (await response.json()) as { erro?: string; runner_id?: string };
-  assert.equal(body.erro, 'runner_desconhecido');
+  const body = (await response.json()) as { error?: string; runner_id?: string };
+  assert.equal(body.error, 'unknown_runner');
   assert.equal(body.runner_id, 'runner-fantasma');
 });
 
-test('AT4 — lease granted nasce ativa e com expira_em = concedida_em + ttl_segundos', async (t) => {
+test('AT4 — a granted lease is born active with expires_at = granted_at + ttl_seconds', async (t) => {
   const { address, db } = await start(t);
   await registerRunners(db, 'runner-a');
 
   const response = await requestLease(address, {
     runner_id: 'runner-a',
-    trabalho_id: 7,
-    ttl_segundos: 30,
+    job_id: 7,
+    ttl_seconds: 30,
   });
 
   assert.equal(response.status, 201);
   const { lease } = (await response.json()) as GrantResponse;
   assert.ok(lease !== null, 'with no competing lease, the grant cannot fail');
-  assert.equal(lease.status, 'ativa');
+  assert.equal(lease.status, 'active');
   assert.equal(lease.runner_id, 'runner-a');
-  assert.equal(lease.trabalho_id, 7);
-  assert.equal(lease.ttl_segundos, 30);
-  assert.equal(lease.heartbeat_em, lease.concedida_em, 'a newborn lease has never been renewed');
+  assert.equal(lease.job_id, 7);
+  assert.equal(lease.ttl_seconds, 30);
+  assert.equal(lease.heartbeat_at, lease.granted_at, 'a newborn lease has never been renewed');
   assert.equal(
-    Date.parse(lease.expira_em) - Date.parse(lease.concedida_em),
+    Date.parse(lease.expires_at) - Date.parse(lease.granted_at),
     30_000,
-    'expira_em is concedida_em + ttl_segundos',
+    'expires_at is granted_at + ttl_seconds',
   );
-  assert.equal(lease.liberada_em, null);
-  assert.equal(lease.motivo_expiracao, null);
+  assert.equal(lease.released_at, null);
+  assert.equal(lease.expiration_reason, null);
 });
 
 test('AT5 — the per-runner cap is never exceeded', async (t) => {
@@ -311,24 +311,24 @@ test('AT5 — the per-runner cap is never exceeded', async (t) => {
 
   const first = await requestLease(address, {
     runner_id: 'runner-a',
-    trabalho_id: 1,
-    teto_runner: 1,
+    job_id: 1,
+    runner_cap: 1,
   });
   assert.equal(first.status, 201);
 
   const second = await requestLease(address, {
     runner_id: 'runner-a',
-    trabalho_id: 2,
-    teto_runner: 1,
+    job_id: 2,
+    runner_cap: 1,
   });
   assert.equal(second.status, 200, 'a reached cap is not a client error: it is "not now"');
   const body = (await second.json()) as GrantResponse;
   assert.equal(body.lease, null);
-  assert.equal(body.motivo, 'teto_runner');
+  assert.equal(body.reason, 'runner_cap');
 
-  const active = await listLeasesHttp(address, '?status=ativa');
+  const active = await listLeasesHttp(address, '?status=active');
   assert.equal(active.length, 1, 'the first lease stays active and is the only one');
-  assert.equal(active[0].trabalho_id, 1);
+  assert.equal(active[0].job_id, 1);
 });
 
 test('AT6 — the per-project cap is never exceeded, across different runners', async (t) => {
@@ -337,28 +337,28 @@ test('AT6 — the per-project cap is never exceeded, across different runners', 
 
   const first = await requestLease(address, {
     runner_id: 'runner-a',
-    trabalho_id: 1,
-    projeto_id: 42,
-    teto_projeto: 1,
+    job_id: 1,
+    project_id: 42,
+    project_cap: 1,
   });
   assert.equal(first.status, 201);
 
   const second = await requestLease(address, {
     runner_id: 'runner-b',
-    trabalho_id: 2,
-    projeto_id: 42,
-    teto_projeto: 1,
+    job_id: 2,
+    project_id: 42,
+    project_cap: 1,
   });
   assert.equal(second.status, 200);
   const body = (await second.json()) as GrantResponse;
   assert.equal(body.lease, null);
   assert.equal(
-    body.motivo,
-    'teto_projeto',
+    body.reason,
+    'project_cap',
     'the project cap applies to the whole project, not per runner',
   );
 
-  const active = await listLeasesHttp(address, '?status=ativa&projeto_id=42');
+  const active = await listLeasesHttp(address, '?status=active&project_id=42');
   assert.equal(active.length, 1);
 });
 
@@ -366,13 +366,13 @@ test('AT7 — a job that already has an active lease does not get a second one',
   const { address, db } = await start(t);
   await registerRunners(db, 'runner-a', 'runner-b');
 
-  assert.equal((await requestLease(address, { runner_id: 'runner-a', trabalho_id: 99 })).status, 201);
+  assert.equal((await requestLease(address, { runner_id: 'runner-a', job_id: 99 })).status, 201);
 
-  const response = await requestLease(address, { runner_id: 'runner-b', trabalho_id: 99 });
+  const response = await requestLease(address, { runner_id: 'runner-b', job_id: 99 });
   assert.equal(response.status, 200);
   const body = (await response.json()) as GrantResponse;
   assert.equal(body.lease, null);
-  assert.equal(body.motivo, 'trabalho_ja_leased');
+  assert.equal(body.reason, 'job_already_leased');
 
   const all = await listLeasesHttp(address);
   assert.equal(all.length, 1, 'a lost dispute cannot leave a row behind');
@@ -383,7 +383,7 @@ test('AT8 — a heartbeat extends the deadline; over a non-active lease it is 40
   await registerRunners(db, 'runner-a');
 
   const granted = (await (
-    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1, ttl_segundos: 30 })
+    await requestLease(address, { runner_id: 'runner-a', job_id: 1, ttl_seconds: 30 })
   ).json()) as GrantResponse;
   assert.ok(granted.lease !== null);
   const leaseId = granted.lease.id;
@@ -391,19 +391,19 @@ test('AT8 — a heartbeat extends the deadline; over a non-active lease it is 40
   const beat = await fetch(`${address}/v1/leases/${leaseId}/heartbeats`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ttl_segundos: 300 }),
+    body: JSON.stringify({ ttl_seconds: 300 }),
   });
   assert.equal(beat.status, 200);
   const renewed = ((await beat.json()) as { lease: LeaseRow }).lease;
-  assert.equal(renewed.status, 'ativa');
-  assert.equal(renewed.ttl_segundos, 300, 'the ttl sent in the heartbeat starts to hold');
+  assert.equal(renewed.status, 'active');
+  assert.equal(renewed.ttl_seconds, 300, 'the ttl sent in the heartbeat starts to hold');
   assert.ok(
-    Date.parse(renewed.expira_em) > Date.parse(granted.lease.expira_em),
-    'a heartbeat pushes expira_em forward',
+    Date.parse(renewed.expires_at) > Date.parse(granted.lease.expires_at),
+    'a heartbeat pushes expires_at forward',
   );
   assert.ok(
-    Date.parse(renewed.heartbeat_em) >= Date.parse(granted.lease.heartbeat_em),
-    'heartbeat_em records the last beat',
+    Date.parse(renewed.heartbeat_at) >= Date.parse(granted.lease.heartbeat_at),
+    'heartbeat_at records the last beat',
   );
 
   const missing = await fetch(`${address}/v1/leases/987654/heartbeats`, {
@@ -433,16 +433,16 @@ test('AT9 — releasing returns the capacity right away', async (t) => {
   await registerRunners(db, 'runner-a');
 
   const first = (await (
-    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1, teto_runner: 1 })
+    await requestLease(address, { runner_id: 'runner-a', job_id: 1, runner_cap: 1 })
   ).json()) as GrantResponse;
   assert.ok(first.lease !== null);
 
   const blocked = await requestLease(address, {
     runner_id: 'runner-a',
-    trabalho_id: 2,
-    teto_runner: 1,
+    job_id: 2,
+    runner_cap: 1,
   });
-  assert.equal(((await blocked.json()) as GrantResponse).motivo, 'teto_runner');
+  assert.equal(((await blocked.json()) as GrantResponse).reason, 'runner_cap');
 
   const release = await fetch(`${address}/v1/leases/${first.lease.id}/releases`, {
     method: 'POST',
@@ -451,13 +451,13 @@ test('AT9 — releasing returns the capacity right away', async (t) => {
   });
   assert.equal(release.status, 200);
   const released = ((await release.json()) as { lease: LeaseRow }).lease;
-  assert.equal(released.status, 'liberada');
-  assert.ok(released.liberada_em !== null, 'releasing stamps when');
+  assert.equal(released.status, 'released');
+  assert.ok(released.released_at !== null, 'releasing stamps when');
 
   const after = await requestLease(address, {
     runner_id: 'runner-a',
-    trabalho_id: 2,
-    teto_runner: 1,
+    job_id: 2,
+    runner_cap: 1,
   });
   assert.equal(after.status, 201, 'the released slot counts immediately in the next grant');
 
@@ -482,7 +482,7 @@ test('AT10 — a runner dies, the lease expires, another runner takes the same j
   await registerRunners(db, 'runner-a', 'runner-b');
 
   const first = (await (
-    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 55, ttl_segundos: 5 })
+    await requestLease(address, { runner_id: 'runner-a', job_id: 55, ttl_seconds: 5 })
   ).json()) as GrantResponse;
   assert.ok(first.lease !== null);
   const deadLeaseId = first.lease.id;
@@ -492,8 +492,8 @@ test('AT10 — a runner dies, the lease expires, another runner takes the same j
 
   const response = await requestLease(address, {
     runner_id: 'runner-b',
-    trabalho_id: 55,
-    ttl_segundos: 5,
+    job_id: 55,
+    ttl_seconds: 5,
   });
 
   assert.equal(
@@ -504,29 +504,29 @@ test('AT10 — a runner dies, the lease expires, another runner takes the same j
   const fresh = ((await response.json()) as GrantResponse).lease;
   assert.ok(fresh !== null);
   assert.equal(fresh.runner_id, 'runner-b');
-  assert.equal(fresh.trabalho_id, 55);
-  assert.equal(fresh.status, 'ativa');
+  assert.equal(fresh.job_id, 55);
+  assert.equal(fresh.status, 'active');
   assert.notEqual(fresh.id, deadLeaseId);
 
   const all = await listLeasesHttp(address);
   const old = all.find((lease) => lease.id === deadLeaseId);
   assert.ok(old !== undefined);
-  assert.equal(old.status, 'expirada', 'the dead runner\'s lease becomes expired, it does not disappear');
+  assert.equal(old.status, 'expired', 'the dead runner\'s lease becomes expired, it does not disappear');
 
-  const active = all.filter((lease) => lease.status === 'ativa');
+  const active = all.filter((lease) => lease.status === 'active');
   assert.equal(active.length, 1, 'the re-queued job has exactly one new owner');
 });
 
-test('AT11 — motivo_expiracao tells never-renewed apart from heartbeat-lost', async (t) => {
+test('AT11 — expiration_reason tells never-renewed apart from heartbeat-lost', async (t) => {
   const clock = controlledClock();
   const { address, db } = await startWithClock(t, clock.now);
   await registerRunners(db, 'runner-a', 'runner-b', 'runner-c');
 
   const neverRenewed = (await (
-    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1, ttl_segundos: 10 })
+    await requestLease(address, { runner_id: 'runner-a', job_id: 1, ttl_seconds: 10 })
   ).json()) as GrantResponse;
   const withHeartbeat = (await (
-    await requestLease(address, { runner_id: 'runner-b', trabalho_id: 2, ttl_segundos: 10 })
+    await requestLease(address, { runner_id: 'runner-b', job_id: 2, ttl_seconds: 10 })
   ).json()) as GrantResponse;
   assert.ok(neverRenewed.lease !== null && withHeartbeat.lease !== null);
 
@@ -543,7 +543,7 @@ test('AT11 — motivo_expiracao tells never-renewed apart from heartbeat-lost', 
 
   // Any new request reconciles the expired ones before deciding (FR9).
   assert.equal(
-    (await requestLease(address, { runner_id: 'runner-c', trabalho_id: 3, ttl_segundos: 10 })).status,
+    (await requestLease(address, { runner_id: 'runner-c', job_id: 3, ttl_seconds: 10 })).status,
     201,
   );
 
@@ -552,17 +552,17 @@ test('AT11 — motivo_expiracao tells never-renewed apart from heartbeat-lost', 
   const withRenewal = all.find((lease) => lease.id === withHeartbeat.lease?.id);
   assert.ok(withoutRenewal !== undefined && withRenewal !== undefined);
 
-  assert.equal(withoutRenewal.status, 'expirada');
+  assert.equal(withoutRenewal.status, 'expired');
   assert.equal(
-    withoutRenewal.motivo_expiracao,
-    'expirou',
-    'never renewed (heartbeat_em == concedida_em): the deadline simply passed',
+    withoutRenewal.expiration_reason,
+    'ttl_elapsed',
+    'never renewed (heartbeat_at == granted_at): the deadline simply passed',
   );
 
-  assert.equal(withRenewal.status, 'expirada');
+  assert.equal(withRenewal.status, 'expired');
   assert.equal(
-    withRenewal.motivo_expiracao,
-    'heartbeat_perdido',
+    withRenewal.expiration_reason,
+    'heartbeat_lost',
     'renewed at least once and then silent: it is the heartbeat that was lost',
   );
 });
@@ -600,7 +600,7 @@ test('t143 AT — POST /v1/leases with a runner credential can only ask on its o
 
   const impersonated = await requestLease(
     address,
-    { runner_id: 'runner-b', trabalho_id: 1 },
+    { runner_id: 'runner-b', job_id: 1 },
     tokenA,
   );
   assert.equal(
@@ -609,12 +609,12 @@ test('t143 AT — POST /v1/leases with a runner credential can only ask on its o
     'a route family is not a scope: within it, a runner credential is still only that runner',
   );
   assert.equal(
-    ((await impersonated.json()) as { erro?: string }).erro,
-    'credencial_fora_de_escopo',
+    ((await impersonated.json()) as { error?: string }).error,
+    'out_of_scope_credential',
   );
   assert.equal((await listLeasesHttp(address)).length, 0, 'a refused request grants nothing');
 
-  const own = await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1 }, tokenA);
+  const own = await requestLease(address, { runner_id: 'runner-a', job_id: 1 }, tokenA);
   assert.equal(own.status, 201, 'asking for itself is exactly what the credential is for');
 });
 
@@ -625,7 +625,7 @@ test('t143 AT — a heartbeat or a release over somebody else\'s lease is refuse
   const tokenB = await runnerToken(db, 'runner-b');
 
   const granted = (await (
-    await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1 }, tokenA)
+    await requestLease(address, { runner_id: 'runner-a', job_id: 1 }, tokenA)
   ).json()) as GrantResponse;
   assert.ok(granted.lease !== null);
   const leaseId = granted.lease.id;
@@ -633,7 +633,7 @@ test('t143 AT — a heartbeat or a release over somebody else\'s lease is refuse
   for (const action of ['heartbeats', 'releases'] as const) {
     const intruder = await leaseAction(address, leaseId, action, tokenB);
     assert.equal(intruder.status, 403, `${action} over a lease of another runner is refused`);
-    assert.equal(((await intruder.json()) as { erro?: string }).erro, 'credencial_fora_de_escopo');
+    assert.equal(((await intruder.json()) as { error?: string }).error, 'out_of_scope_credential');
   }
 
   const beat = await leaseAction(address, leaseId, 'heartbeats', tokenA);
@@ -641,7 +641,7 @@ test('t143 AT — a heartbeat or a release over somebody else\'s lease is refuse
 
   const released = await leaseAction(address, leaseId, 'releases', tokenA);
   assert.equal(released.status, 200);
-  assert.equal(((await released.json()) as { lease: LeaseRow }).lease.status, 'liberada');
+  assert.equal(((await released.json()) as { lease: LeaseRow }).lease.status, 'released');
 });
 
 test('t143 AT — GET /v1/leases with a runner credential sees only its own leases', async (t) => {
@@ -650,8 +650,8 @@ test('t143 AT — GET /v1/leases with a runner credential sees only its own leas
   const tokenA = await runnerToken(db, 'runner-a');
 
   // Seeded with the operator credential, which stays unrestricted.
-  assert.equal((await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1 })).status, 201);
-  assert.equal((await requestLease(address, { runner_id: 'runner-b', trabalho_id: 2 })).status, 201);
+  assert.equal((await requestLease(address, { runner_id: 'runner-a', job_id: 1 })).status, 201);
+  assert.equal((await requestLease(address, { runner_id: 'runner-b', job_id: 2 })).status, 201);
   assert.equal(
     (await listLeasesHttp(address)).length,
     2,
@@ -673,9 +673,9 @@ test('t143 AT — GET /v1/leases with a runner credential sees only its own leas
     headers: { authorization: `Bearer ${tokenA}` },
   });
   assert.equal(foreign.status, 403, 'naming somebody else is a refusal, not a silent rewrite');
-  assert.equal(((await foreign.json()) as { erro?: string }).erro, 'credencial_fora_de_escopo');
+  assert.equal(((await foreign.json()) as { error?: string }).error, 'out_of_scope_credential');
 
-  const explicit = await fetch(`${address}/v1/leases?runner_id=runner-a&status=ativa`, {
+  const explicit = await fetch(`${address}/v1/leases?runner_id=runner-a&status=active`, {
     headers: { authorization: `Bearer ${tokenA}` },
   });
   assert.equal(explicit.status, 200, 'naming ITSELF is allowed, and composes with the other filters');
@@ -686,48 +686,48 @@ test('t143 AT — GET /v1/leases with a runner credential sees only its own leas
 /* t157 — the cap is DECIDED on the server, only declared by the runner (D1).  */
 /* -------------------------------------------------------------------------- */
 
-test('t157 AT — teto_runner declared above the server ceiling is capped at the ceiling', async (t) => {
+test('t157 AT — runner_cap declared above the server ceiling is capped at the ceiling', async (t) => {
   const { address, db } = await startWithCeilings(t, { runner: 2, projeto: 2 });
   await registerRunners(db, 'runner-a');
 
   // The runner declares 100 on every call: if the number in the body were the
   // one enforced, all three of these would be granted.
-  for (const trabalho_id of [1, 2]) {
+  for (const jobId of [1, 2]) {
     const response = await requestLease(address, {
       runner_id: 'runner-a',
-      trabalho_id,
-      teto_runner: 100,
-      teto_projeto: 100,
+      job_id: jobId,
+      runner_cap: 100,
+      project_cap: 100,
     });
-    assert.equal(response.status, 201, `job ${trabalho_id} is inside the server ceiling`);
+    assert.equal(response.status, 201, `job ${jobId} is inside the server ceiling`);
   }
 
   const refused = await requestLease(address, {
     runner_id: 'runner-a',
-    trabalho_id: 3,
-    teto_runner: 100,
-    teto_projeto: 100,
+    job_id: 3,
+    runner_cap: 100,
+    project_cap: 100,
   });
   assert.equal(refused.status, 200, 'a ceiling reached is still "not now", not an error');
   const body = (await refused.json()) as GrantResponse;
   assert.equal(body.lease, null);
-  assert.equal(body.motivo, 'teto_runner');
+  assert.equal(body.reason, 'runner_cap');
 
-  const active = await listLeasesHttp(address, '?status=ativa');
+  const active = await listLeasesHttp(address, '?status=active');
   assert.equal(active.length, 2, 'the request declares; the control plane decides (D1)');
 });
 
-test('t157 AT — teto_projeto declared above the server ceiling is capped at the ceiling', async (t) => {
+test('t157 AT — project_cap declared above the server ceiling is capped at the ceiling', async (t) => {
   const { address, db } = await startWithCeilings(t, { runner: 2, projeto: 2 });
   await registerRunners(db, 'runner-a', 'runner-b', 'runner-c');
 
   for (const [index, runner] of ['runner-a', 'runner-b'].entries()) {
     const response = await requestLease(address, {
       runner_id: runner,
-      trabalho_id: index + 1,
-      projeto_id: 42,
-      teto_runner: 100,
-      teto_projeto: 100,
+      job_id: index + 1,
+      project_id: 42,
+      runner_cap: 100,
+      project_cap: 100,
     });
     assert.equal(response.status, 201, `${runner} is inside the project ceiling`);
   }
@@ -736,17 +736,17 @@ test('t157 AT — teto_projeto declared above the server ceiling is capped at th
   // refuse this one.
   const refused = await requestLease(address, {
     runner_id: 'runner-c',
-    trabalho_id: 3,
-    projeto_id: 42,
-    teto_runner: 100,
-    teto_projeto: 100,
+    job_id: 3,
+    project_id: 42,
+    runner_cap: 100,
+    project_cap: 100,
   });
   assert.equal(refused.status, 200);
   const body = (await refused.json()) as GrantResponse;
   assert.equal(body.lease, null);
-  assert.equal(body.motivo, 'teto_projeto');
+  assert.equal(body.reason, 'project_cap');
 
-  const active = await listLeasesHttp(address, '?status=ativa&projeto_id=42');
+  const active = await listLeasesHttp(address, '?status=active&project_id=42');
   assert.equal(active.length, 2, 'the project ceiling holds across runners');
 });
 
@@ -755,19 +755,19 @@ test('t157 AT — a declaration BELOW the ceiling still holds: the clamp is a mi
   await registerRunners(db, 'runner-a');
 
   assert.equal(
-    (await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1, teto_runner: 1 })).status,
+    (await requestLease(address, { runner_id: 'runner-a', job_id: 1, runner_cap: 1 })).status,
     201,
   );
 
   const refused = await requestLease(address, {
     runner_id: 'runner-a',
-    trabalho_id: 2,
-    teto_runner: 1,
+    job_id: 2,
+    runner_cap: 1,
   });
   assert.equal(refused.status, 200);
   assert.equal(
-    ((await refused.json()) as GrantResponse).motivo,
-    'teto_runner',
+    ((await refused.json()) as GrantResponse).reason,
+    'runner_cap',
     'a runner that asks for less than the ceiling gets what it asked for',
   );
 });
@@ -780,13 +780,13 @@ test('AT12 — the cap is respected under simultaneous calls', async (t) => {
   const JOBS = [1, 2, 3, 4, 5, 6, 7, 8];
 
   const responses = await Promise.all(
-    JOBS.map(async (trabalho_id) =>
+    JOBS.map(async (jobId) =>
       requestLease(address, {
         runner_id: 'runner-a',
-        trabalho_id,
-        projeto_id: 7,
-        teto_runner: JOBS.length,
-        teto_projeto: PROJECT_CAP,
+        job_id: jobId,
+        project_id: 7,
+        runner_cap: JOBS.length,
+        project_cap: PROJECT_CAP,
       }),
     ),
   );
@@ -803,13 +803,13 @@ test('AT12 — the cap is respected under simultaneous calls', async (t) => {
   for (const response of refused) {
     const body = (await response.json()) as GrantResponse;
     assert.equal(body.lease, null);
-    assert.equal(body.motivo, 'teto_projeto');
+    assert.equal(body.reason, 'project_cap');
   }
 
-  const active = await listLeasesHttp(address, '?status=ativa&projeto_id=7');
+  const active = await listLeasesHttp(address, '?status=active&project_id=7');
   assert.equal(active.length, PROJECT_CAP, 'the state in the database never exceeds the configured cap');
   assert.equal(
-    new Set(active.map((lease) => lease.trabalho_id)).size,
+    new Set(active.map((lease) => lease.job_id)).size,
     PROJECT_CAP,
     'no job received two leases in the race',
   );
@@ -821,17 +821,17 @@ test('t180 — a lease of another runner is refused in English, quoting both ids
   const tokenA = await runnerToken(db, 'runner-a');
   const tokenB = await runnerToken(db, 'runner-b');
 
-  const granted = await requestLease(address, { runner_id: 'runner-a', trabalho_id: 1 }, tokenA);
+  const granted = await requestLease(address, { runner_id: 'runner-a', job_id: 1 }, tokenA);
   assert.equal(granted.status, 201);
   const { lease } = (await granted.json()) as { lease: { id: number } };
 
   for (const action of ['heartbeats', 'releases'] as const) {
     const foreign = await leaseAction(address, lease.id, action, tokenB);
     assert.equal(foreign.status, 403);
-    const body = (await foreign.json()) as { erro: string; mensagem: string };
-    assert.equal(body.erro, 'credencial_fora_de_escopo', 'the code is frozen (FR2)');
+    const body = (await foreign.json()) as { error: string; message: string };
+    assert.equal(body.error, 'out_of_scope_credential', 'the code is frozen (FR2)');
     assert.equal(
-      body.mensagem,
+      body.message,
       `lease ${lease.id} belongs to runner "runner-a"; the credential presented belongs to runner "runner-b"`,
     );
   }

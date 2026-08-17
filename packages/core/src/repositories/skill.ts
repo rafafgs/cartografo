@@ -83,7 +83,14 @@ export interface Skill {
   permissions: Record<string, unknown>;
   instructions: string;
   origin: Record<string, unknown>;
-  registrado_em: string;
+  /**
+   * When the manifest entered the registry.
+   *
+   * English since t226: this was the ONE field `toSkill` still let through with
+   * the column's own name, and the wire gate of D20's API child is what found
+   * it. The COLUMN is still `registrado_em` (`migrations/0005_skill.sql`).
+   */
+  registered_at: string;
 }
 
 /** The `skill` table's own projection, in its own Portuguese (see the header). */
@@ -168,7 +175,7 @@ function toSkill(row: SkillRow): Skill {
     permissions: JSON.parse(row.permissoes) as Record<string, unknown>,
     instructions: row.instrucoes,
     origin: JSON.parse(row.origem) as Record<string, unknown>,
-    registrado_em: row.registrado_em,
+    registered_at: row.registrado_em,
   };
 }
 

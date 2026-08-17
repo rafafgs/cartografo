@@ -16,17 +16,20 @@
  * scope: `itens` arrives already decomposed, whoever wrote it. This route
  * dispatches no session and knows no engine.
  *
- * The request/response field names and the error codes stay in Portuguese: they
- * mirror the untouched migration columns and follow the wire vocabulary of the
- * graph and proposal routes (t127, FR8). The one exception is what this layer
- * does not decide: a broken EVENT envelope is refused by the same
- * `validateEvent` as every other route, so it comes back through
- * `withValidation` in the same `validation_failed` words it comes back for them
- * — a caller that has to fix its own `ator` should not need to learn a second
- * error shape to know it (t139).
+ * Since t226 the request and response field names are English
+ * (`docs/spec/glossario-wire.md` §1), with ONE deliberate exception, and it is
+ * the same boundary the job and session routes have: `POST /intake/:id/
+ * confirmations` writes EVENTS through `confirmDraft`, so its body still carries
+ * `ator` and its `tipo`/`ref` — the event envelope is D20's second child, and
+ * `routes/common.ts` documents the whole asymmetry. Everything the confirmation
+ * RETURNS is translated like any other read.
+ *
+ * The `itens` a draft carries are `domain/intake.ts`'s format, not this API's
+ * vocabulary: they pass through byte for byte, keys included, and the glossary
+ * maps none of them.
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { validateItems } from '../domain/intake.ts';
@@ -37,13 +40,16 @@ import {
   confirmDraft,
   createDraft,
   discardDraft,
+  draftStatusColumn,
   getDraft,
   listDrafts,
+  toWireDraft,
   INTAKE_ACTOR,
   type Draft,
 } from '../repositories/intake.ts';
+import { toWireJob } from '../repositories/job.ts';
 import { isObject } from '../util/is-object.ts';
-import { withValidation } from './common.ts';
+import { refusal, withValidation } from './common.ts';
 
 interface IdParam {
   Params: { id: string };
@@ -74,145 +80,117 @@ function load(db: Database, raw: string): Draft | undefined {
  */
 export function registerIntake(app: FastifyInstance, db: Database): void {
   /** The 404 of a draft that does not exist, and of an unusable `:id`. */
-  const unknownDraft = (raw: string): { erro: string; id: string } => ({
-    erro: 'rascunho_desconhecido',
-    id: raw,
-  });
+  const unknownDraft = (reply: FastifyReply, raw: string): Record<string, unknown> =>
+    refusal(reply, 404, 'unknown_draft', undefined, { id: raw });
 
   /** The 409 of anything that only holds while the draft is pending. */
-  const notPending = (draft: Draft): Record<string, unknown> => ({
-    erro: 'rascunho_nao_pendente',
-    mensagem: `only a pending draft accepts this operation; this one is "${draft.status}"`,
-    status: draft.status,
-  });
+  const notPending = (reply: FastifyReply, draft: Draft): Record<string, unknown> => {
+    const status = toWireDraft(draft).status;
+    return refusal(
+      reply,
+      409,
+      'draft_not_pending',
+      `only a pending draft accepts this operation; this one is "${status}"`,
+      { status },
+    );
+  };
 
   app.post('/intake', async (request, reply) => {
     const body = isObject(request.body) ? request.body : {};
 
-    if (!isFilledText(body.classe) || !isFilledText(body.pedido)) {
-      reply.code(400);
-      return {
-        erro: 'campo_obrigatorio_ausente',
-        mensagem: '"classe" and "pedido" are required texts',
-        classe: body.classe ?? null,
-      };
+    if (!isFilledText(body.class) || !isFilledText(body.request)) {
+      return refusal(reply, 400, 'missing_required_field', '"class" and "request" are required texts', {
+        class: body.class ?? null,
+      });
     }
 
     // The class has to name a lineage that already exists: suggesting a class by
     // similarity (D8) and graph variants (D13) are out of scope, so without an
     // exact match there is no entry node to be born on.
-    const graph = getClassBase(db, body.classe);
+    const graph = getClassBase(db, body.class);
     if (graph === undefined) {
-      reply.code(404);
-      return {
-        erro: 'grafo_desconhecido',
-        mensagem: `class "${body.classe}" has no base graph registered`,
-        classe: body.classe,
-      };
+      return refusal(reply, 404, 'unknown_graph', `class "${body.class}" has no base graph registered`, {
+        class: body.class,
+      });
     }
 
-    const report = validateItems(body.itens);
+    const report = validateItems(body.items);
     if (!report.valido) {
-      reply.code(400);
-      return { erro: 'itens_invalidos', problemas: report.problemas };
+      return refusal(reply, 400, 'invalid_items', undefined, { problems: report.problemas });
     }
 
-    const projectId = body.projeto_id;
+    const projectId = body.project_id;
     if (projectId !== undefined && projectId !== null && !Number.isInteger(projectId)) {
-      reply.code(400);
-      return { erro: 'campo_invalido', mensagem: '"projeto_id" has to be an integer' };
+      return refusal(reply, 400, 'invalid_field', '"project_id" has to be an integer');
     }
-    const executionId = body.execucao_id;
+    const executionId = body.execution_id;
     if (executionId !== undefined && executionId !== null && !Number.isInteger(executionId)) {
-      reply.code(400);
-      return { erro: 'campo_invalido', mensagem: '"execucao_id" has to be an integer' };
+      return refusal(reply, 400, 'invalid_field', '"execution_id" has to be an integer');
     }
 
     const draft = createDraft(db, {
       projeto_id: (projectId as number | undefined | null) ?? DEFAULT_PROJECT,
       execucao_id: (executionId as number | undefined | null) ?? null,
-      classe: body.classe,
-      pedido: body.pedido,
+      classe: body.class,
+      pedido: body.request,
       itens: report.itens,
     });
 
     reply.code(201);
-    return { rascunho: draft };
+    return { draft: toWireDraft(draft) };
   });
 
   app.get('/intake', async (request, reply) => {
     const query = (request.query ?? {}) as Record<string, string | undefined>;
 
     let projectId: number | undefined;
-    if (query.projeto_id !== undefined && query.projeto_id !== '') {
-      projectId = Number(query.projeto_id);
+    if (query.project_id !== undefined && query.project_id !== '') {
+      projectId = Number(query.project_id);
       if (!Number.isInteger(projectId)) {
-        reply.code(400);
-        return { erro: 'campo_invalido', mensagem: '"projeto_id" has to be an integer' };
+        return refusal(reply, 400, 'invalid_field', '"project_id" has to be an integer');
       }
     }
 
-    return {
-      rascunhos: listDrafts(db, {
-        status: query.status,
-        classe: query.classe,
-        projeto_id: projectId,
-      }),
-    };
+    const status =
+      query.status === undefined ? undefined : (draftStatusColumn(query.status) ?? query.status);
+    const drafts = listDrafts(db, {
+      status,
+      classe: query.class,
+      projeto_id: projectId,
+    });
+    return { drafts: drafts.map(toWireDraft) };
   });
 
   app.get<IdParam>('/intake/:id', async (request, reply) => {
     const draft = load(db, request.params.id);
-    if (draft === undefined) {
-      reply.code(404);
-      return unknownDraft(request.params.id);
-    }
-    return { rascunho: draft };
+    if (draft === undefined) return unknownDraft(reply, request.params.id);
+    return { draft: toWireDraft(draft) };
   });
 
   app.patch<IdParam>('/intake/:id', async (request, reply) => {
     const draft = load(db, request.params.id);
-    if (draft === undefined) {
-      reply.code(404);
-      return unknownDraft(request.params.id);
-    }
-    if (draft.status !== 'pendente') {
-      reply.code(409);
-      return notPending(draft);
-    }
+    if (draft === undefined) return unknownDraft(reply, request.params.id);
+    if (draft.status !== 'pendente') return notPending(reply, draft);
 
     const body = isObject(request.body) ? request.body : {};
-    const report = validateItems(body.itens);
+    const report = validateItems(body.items);
     if (!report.valido) {
-      reply.code(400);
-      return { erro: 'itens_invalidos', problemas: report.problemas };
+      return refusal(reply, 400, 'invalid_items', undefined, { problems: report.problemas });
     }
 
     const amended = amendDraft(db, draft.id, report.itens);
-    if (amended === null) {
-      reply.code(409);
-      return notPending(getDraft(db, draft.id) ?? draft);
-    }
-    return { rascunho: amended };
+    if (amended === null) return notPending(reply, getDraft(db, draft.id) ?? draft);
+    return { draft: toWireDraft(amended) };
   });
 
   app.post<IdParam>('/intake/:id/discards', async (request, reply) => {
     const draft = load(db, request.params.id);
-    if (draft === undefined) {
-      reply.code(404);
-      return unknownDraft(request.params.id);
-    }
-    if (draft.status !== 'pendente') {
-      reply.code(409);
-      return notPending(draft);
-    }
+    if (draft === undefined) return unknownDraft(reply, request.params.id);
+    if (draft.status !== 'pendente') return notPending(reply, draft);
 
     const discarded = discardDraft(db, draft.id);
-    if (discarded === null) {
-      reply.code(409);
-      return notPending(getDraft(db, draft.id) ?? draft);
-    }
-    return { rascunho: discarded };
+    if (discarded === null) return notPending(reply, getDraft(db, draft.id) ?? draft);
+    return { draft: toWireDraft(discarded) };
   });
 
   // The only intake route that writes an EVENT, and therefore the only one whose
@@ -222,14 +200,8 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
   app.post<IdParam>('/intake/:id/confirmations', async (request, reply) =>
     withValidation(reply, () => {
       const draft = load(db, request.params.id);
-      if (draft === undefined) {
-        reply.code(404);
-        return unknownDraft(request.params.id);
-      }
-      if (draft.status !== 'pendente') {
-        reply.code(409);
-        return notPending(draft);
-      }
+      if (draft === undefined) return unknownDraft(reply, request.params.id);
+      if (draft.status !== 'pendente') return notPending(reply, draft);
 
       // The pointer is read HERE, at confirmation time, and not when the draft was
       // opened: between proposing a breakdown and accepting it the class may have
@@ -240,14 +212,18 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
           ? undefined
           : getVersion(db, graph.versao_corrente_id);
       if (graph === undefined || version === undefined) {
-        reply.code(404);
-        return {
-          erro: 'grafo_desconhecido',
-          mensagem: `class "${draft.classe}" has no graph version in force`,
-          classe: draft.classe,
-        };
+        return refusal(
+          reply,
+          404,
+          'unknown_graph',
+          `class "${draft.classe}" has no graph version in force`,
+          { class: draft.classe },
+        );
       }
 
+      // `ator` stays Portuguese: it is the EVENT envelope's actor, checked by
+      // `validateEvent` inside `confirmDraft` (t226, FR2). What comes back is
+      // translated like every other read.
       const body = isObject(request.body) ? request.body : {};
       const confirmation = confirmDraft(db, {
         draft,
@@ -257,7 +233,10 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       });
 
       reply.code(201);
-      return confirmation;
+      return {
+        draft: toWireDraft(confirmation.rascunho),
+        jobs: confirmation.trabalhos.map(toWireJob),
+      };
     }),
   );
 }

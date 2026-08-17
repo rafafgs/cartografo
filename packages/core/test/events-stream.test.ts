@@ -241,13 +241,13 @@ test('AT1 — the stream delivers the envelope the events route would return', a
   await waitFor(() => stream.messages.length >= 1, 'the created job to reach the stream');
 
   const [message] = stream.messages;
-  const recorded = await request<{ eventos: Event[] }>(
+  const recorded = await request<{ events: Event[] }>(
     ctx,
     'GET',
     '/v1/executions/41/events',
   );
   assert.equal(recorded.status, 200);
-  const [expected] = recorded.body.eventos;
+  const [expected] = recorded.body.events;
 
   assert.equal(message.event, 'trabalho.criado');
   assert.equal(message.id, String(expected.id));
@@ -255,12 +255,12 @@ test('AT1 — the stream delivers the envelope the events route would return', a
   assert.equal((JSON.parse(message.data) as Event).entidade.id, job.id);
 });
 
-test('AT2 — ?tipo filters the stream down to the asked types', async (t) => {
+test('AT2 — ?type filters the stream down to the asked types', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes);
   const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
-  const stream = await openStream(`${url}/v1/events/stream?tipo=trabalho.transicao`);
+  const stream = await openStream(`${url}/v1/events/stream?type=trabalho.transicao`);
   t.after(() => stream.abort());
 
   const job = await createJob(ctx, { titulo: 'anda', no_entrada_id: 'entrada' });
@@ -276,12 +276,12 @@ test('AT2 — ?tipo filters the stream down to the asked types', async (t) => {
   );
 });
 
-test('AT3 — ?projeto_id keeps another project out of the stream', async (t) => {
+test('AT3 — ?project_id keeps another project out of the stream', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes);
   const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
-  const stream = await openStream(`${url}/v1/events/stream?projeto_id=42`);
+  const stream = await openStream(`${url}/v1/events/stream?project_id=42`);
   t.after(() => stream.abort());
 
   await createJob(ctx, { titulo: 'de outro projeto', no_entrada_id: 'entrada', projeto_id: 7 });
@@ -304,7 +304,7 @@ test('AT4 — an unknown ?tipo is a 400, and nothing is upgraded to SSE', async 
   requireArtifacts(T123_ARTIFACTS.streamRoutes, T123_ARTIFACTS.server);
   const ctx = await startAuthorizedControlPlane(t);
 
-  const response = await fetch(`${ctx.url}/v1/events/stream?tipo=nao_existe`);
+  const response = await fetch(`${ctx.url}/v1/events/stream?type=nao_existe`);
   const body = (await response.json()) as { error: string; details?: string[] };
 
   assert.equal(response.status, 400);

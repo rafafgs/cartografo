@@ -47,17 +47,37 @@ export interface ClockOptions {
   now?: () => string;
 }
 
-/** A registration as the API shows it — deliberately without `valor`. */
+/**
+ * A registration as the API shows it — deliberately without the value.
+ *
+ * This type IS the wire (t226, FR1): nothing inside the package reads it, so
+ * there is no second, Portuguese projection to keep beside it. The COLUMNS it
+ * comes from are still `nome`/`criada_em`/`revogada_em`, and `toHookSecret` is
+ * where the two meet.
+ */
 export interface HookSecret {
   /** The name a hook's `destination.secret_ref` points at. */
+  name: string;
+  created_at: string;
+  /** When this registration stopped being the live one; `null` while it is. */
+  revoked_at: string | null;
+}
+
+/** The row as SQLite returns it, spelled by the untouched migration. */
+interface HookSecretRow {
   nome: string;
   criada_em: string;
-  /** When this registration stopped being the live one; `null` while it is. */
   revogada_em: string | null;
+}
+
+/** Row to wire: the one place the column names meet the API's. */
+export function toHookSecret(row: HookSecretRow): HookSecret {
+  return { name: row.nome, created_at: row.criada_em, revoked_at: row.revogada_em };
 }
 
 /** What the caller declares when registering or rotating a secret. */
 export interface NewHookSecret {
+  /** The name, as the route read it off the path (already validated). */
   nome: string;
   /** The raw HMAC key. Supplied by the caller; the server never generates one. */
   valor: string;
@@ -119,10 +139,10 @@ export function setHookSecret(
         `SELECT ${COLUMNS} FROM segredo_gancho
           WHERE nome = ? AND revogada_em IS NULL`,
       )
-      .get(data.nome) as HookSecret | undefined;
+      .get(data.nome) as HookSecretRow | undefined;
     if (written === undefined) throw new Error('the hook secret was not written');
 
-    return { secret: written, rotated: existing !== undefined };
+    return { secret: toHookSecret(written), rotated: existing !== undefined };
   })();
 }
 
@@ -160,9 +180,10 @@ export function resolveHookSecret(db: Database, name: string): string | undefine
  * @returns The registrations, without their values.
  */
 export function listHookSecretNames(db: Database): HookSecret[] {
-  return db
+  const rows = db
     .prepare(`SELECT ${COLUMNS} FROM segredo_gancho ORDER BY id`)
-    .all() as HookSecret[];
+    .all() as HookSecretRow[];
+  return rows.map(toHookSecret);
 }
 
 /**
@@ -192,15 +213,15 @@ export function revokeHookSecret(
   return db.transaction((): HookSecret | undefined => {
     const latest = db
       .prepare(`SELECT ${COLUMNS} FROM segredo_gancho WHERE nome = ? ORDER BY id DESC LIMIT 1`)
-      .get(name) as HookSecret | undefined;
+      .get(name) as HookSecretRow | undefined;
     if (latest === undefined) return undefined;
-    if (latest.revogada_em !== null) return latest;
+    if (latest.revogada_em !== null) return toHookSecret(latest);
 
     const moment = clock();
     db.prepare(
       'UPDATE segredo_gancho SET revogada_em = ? WHERE nome = ? AND revogada_em IS NULL',
     ).run(moment, name);
 
-    return { ...latest, revogada_em: moment };
+    return toHookSecret({ ...latest, revogada_em: moment });
   })();
 }

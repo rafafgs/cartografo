@@ -36,10 +36,10 @@ import {
  * test charges for, and importing it from `src/` would charge nothing.
  */
 interface ExecutionSummary {
-  execucao_id: number | null;
-  trabalhos: number;
-  trabalhos_bloqueados: number;
-  perguntas_pendentes: number;
+  execution_id: number | null;
+  jobs: number;
+  blocked_jobs: number;
+  pending_input_requests: number;
 }
 
 test('AT15 — GET /v1/executions/:id/metrics-by-version groups jobs and events by version', async (t) => {
@@ -93,17 +93,17 @@ test('AT15 — GET /v1/executions/:id/metrics-by-version groups jobs and events 
   // v2: 1 created + 1 block = 2 events.
   await request(ctx, 'POST', `/v1/jobs/${v2.id}/blocks`, { motivo: 'travou' });
 
-  const response = await request<{ execucao_id: number; metricas: MetricByVersion[] }>(
+  const response = await request<{ execution_id: number; metrics: MetricByVersion[] }>(
     ctx,
     'GET',
     '/v1/executions/7/metrics-by-version',
   );
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.execucao_id, 7);
-  assert.deepEqual(response.body.metricas, [
-    { grafo_versao_id: 'v1', trabalhos: 2, eventos: 5 },
-    { grafo_versao_id: 'v2', trabalhos: 1, eventos: 2 },
+  assert.equal(response.body.execution_id, 7);
+  assert.deepEqual(response.body.metrics, [
+    { graph_version_id: 'v1', jobs: 2, events: 5 },
+    { graph_version_id: 'v2', jobs: 1, events: 2 },
   ]);
 });
 
@@ -111,14 +111,14 @@ test('AT15 — an execution with no job at all returns an empty list, not 404', 
   requireArtifacts(T102_ARTIFACTS.migration, T102_ARTIFACTS.executionRoutes);
   const ctx = await startControlPlane(t);
 
-  const response = await request<{ execucao_id: number; metricas: MetricByVersion[] }>(
+  const response = await request<{ execution_id: number; metrics: MetricByVersion[] }>(
     ctx,
     'GET',
     '/v1/executions/99/metrics-by-version',
   );
 
   assert.equal(response.status, 200, 'an execution is an opaque grouper: nothing to exist or not');
-  assert.deepEqual(response.body.metricas, []);
+  assert.deepEqual(response.body.metrics, []);
 });
 
 test('t107 AT1 — GET /v1/executions groups by execution, counts blocked and pending, null last', async (t) => {
@@ -170,13 +170,13 @@ test('t107 AT1 — GET /v1/executions groups by execution, counts blocked and pe
   });
   assert.ok(pending.id !== answered.id);
 
-  const response = await request<{ execucoes: ExecutionSummary[] }>(ctx, 'GET', '/v1/executions');
+  const response = await request<{ executions: ExecutionSummary[] }>(ctx, 'GET', '/v1/executions');
 
   assert.equal(response.status, 200);
-  assert.deepEqual(response.body.execucoes, [
-    { execucao_id: 7, trabalhos: 2, trabalhos_bloqueados: 1, perguntas_pendentes: 1 },
-    { execucao_id: 8, trabalhos: 1, trabalhos_bloqueados: 0, perguntas_pendentes: 0 },
-    { execucao_id: null, trabalhos: 1, trabalhos_bloqueados: 0, perguntas_pendentes: 0 },
+  assert.deepEqual(response.body.executions, [
+    { execution_id: 7, jobs: 2, blocked_jobs: 1, pending_input_requests: 1 },
+    { execution_id: 8, jobs: 1, blocked_jobs: 0, pending_input_requests: 0 },
+    { execution_id: null, jobs: 1, blocked_jobs: 0, pending_input_requests: 0 },
   ]);
 });
 
@@ -184,15 +184,15 @@ test('t107 AT1 — with no job at all, GET /v1/executions returns an empty list'
   requireArtifacts(T102_ARTIFACTS.migration, T102_ARTIFACTS.executionRoutes);
   const ctx = await startControlPlane(t);
 
-  const response = await request<{ execucoes: ExecutionSummary[] }>(ctx, 'GET', '/v1/executions');
+  const response = await request<{ executions: ExecutionSummary[] }>(ctx, 'GET', '/v1/executions');
   assert.equal(response.status, 200);
-  assert.deepEqual(response.body.execucoes, []);
+  assert.deepEqual(response.body.executions, []);
 });
 
-/** One row of `perguntas_por_no`, beside `metricas` on the same route (t167). */
+/** One row of `input_requests_by_node`, beside `metrics` on the same route (t167). */
 interface QuestionsByNode {
-  no_id: string | null;
-  perguntas: number;
+  node_id: string | null;
+  input_requests: number;
 }
 
 test('t167 — the execution report counts the questions each node raised', async (t) => {
@@ -241,31 +241,31 @@ test('t167 — the execution report counts the questions each node raised', asyn
   await ask(elsewhere.id, 'pergunta de outra rodada');
 
   const response = await request<{
-    execucao_id: number;
-    metricas: MetricByVersion[];
-    perguntas_por_no: QuestionsByNode[];
+    execution_id: number;
+    metrics: MetricByVersion[];
+    input_requests_by_node: QuestionsByNode[];
   }>(ctx, 'GET', '/v1/executions/1670/metrics-by-version');
 
   assert.equal(response.status, 200);
   assert.deepEqual(
-    response.body.perguntas_por_no,
+    response.body.input_requests_by_node,
     [
-      { no_id: 'redigir', perguntas: 1 },
-      { no_id: 'revisar', perguntas: 2 },
+      { node_id: 'redigir', input_requests: 1 },
+      { node_id: 'revisar', input_requests: 2 },
     ],
     'one row per node that asked something; a node with zero questions is simply absent',
   );
   assert.ok(
-    Array.isArray(response.body.metricas),
+    Array.isArray(response.body.metrics),
     'it rides beside the metrics that were already there, not instead of them',
   );
 
-  const empty = await request<{ perguntas_por_no: QuestionsByNode[] }>(
+  const empty = await request<{ input_requests_by_node: QuestionsByNode[] }>(
     ctx,
     'GET',
     '/v1/executions/99/metrics-by-version',
   );
-  assert.deepEqual(empty.body.perguntas_por_no, [], 'a round nobody asked anything in is empty');
+  assert.deepEqual(empty.body.input_requests_by_node, [], 'a round nobody asked anything in is empty');
 });
 
 test('t127 — the old Portuguese execution path no longer exists', async (t) => {
@@ -285,8 +285,8 @@ test('t127 — the old Portuguese execution path no longer exists', async (t) =>
 
 /** What `GET /v1/executions/:id/events` gives back (FR1). */
 interface ExecutionLog {
-  execucao_id: number;
-  eventos: Event[];
+  execution_id: number;
+  events: Event[];
 }
 
 /**
@@ -349,9 +349,9 @@ test('t110 — GET /v1/executions/:id/events returns the execution log in ascend
   const response = await request<ExecutionLog>(ctx, 'GET', '/v1/executions/11/events');
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.execucao_id, 11);
+  assert.equal(response.body.execution_id, 11);
 
-  const events = response.body.eventos;
+  const events = response.body.events;
   assert.deepEqual(
     events.map((event) => event.tipo),
     [
@@ -385,7 +385,7 @@ test('t110 — GET /v1/executions/:id/events returns the execution log in ascend
   assert.equal(typeof opened.ocorrido_em, 'string');
 
   const fromTheOther = await request<ExecutionLog>(ctx, 'GET', '/v1/executions/12/events');
-  assert.equal(fromTheOther.body.eventos.length, events.length, 'each execution sees only its own');
+  assert.equal(fromTheOther.body.events.length, events.length, 'each execution sees only its own');
 });
 
 test('t110 — an execution with no events answers 200 with an empty list, never 404', async (t) => {
@@ -395,6 +395,6 @@ test('t110 — an execution with no events answers 200 with an empty list, never
   const response = await request<ExecutionLog>(ctx, 'GET', '/v1/executions/99/events');
 
   assert.equal(response.status, 200, 'an execution is an opaque grouper: nothing to exist or not');
-  assert.equal(response.body.execucao_id, 99);
-  assert.deepEqual(response.body.eventos, []);
+  assert.equal(response.body.execution_id, 99);
+  assert.deepEqual(response.body.events, []);
 });

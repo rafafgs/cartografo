@@ -1510,3 +1510,239 @@ test('t215 AT — a proposal that moves a pin to a registered version applies li
   // Append-only: the version somebody already ran under keeps the old pin (D15).
   assert.deepEqual(requireNode(await readSnapshot(address, version.id), 'revisar').skill_ref, pinned);
 });
+
+/* -------------------------------------------------------------------------- */
+/* t246 — D21 2/3: repeated signal strengthens the pending proposal (D21).      */
+/*                                                                            */
+/* `POST /proposals` used to write a new `pending` row on every call, and both  */
+/* surveyors run manually and can run twice over the same signal — the cost     */
+/* lens said so out loud in its own doc comment. D21 closes the gap at the only */
+/* place that can enforce it for every caller at once: the control plane.       */
+/*                                                                            */
+/* The key is `(lens, target_version, operations)`, computed by the SERVER and  */
+/* never accepted from the client. `lens` is read off `evidence.lens`, which is */
+/* where the cost lens already carries it; anything that sends no lens buckets  */
+/* under `null`, which is the same "do not clone an identical repeat" rule       */
+/* extended to it for free. Uniqueness is scoped to `pending`: a triple that     */
+/* left that state never blocks a fresh proposal.                               */
+/* -------------------------------------------------------------------------- */
+
+/** Posts a proposal body straight through, because here the STATUS is the claim. */
+async function postProposal(
+  address: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; proposal: Proposal }> {
+  const response = await post(address, '/v1/proposals', body);
+  const parsed = await jsonBody<{ proposal: Proposal }>(response);
+  assert.ok(parsed.proposal !== undefined, JSON.stringify(parsed));
+  return { status: response.status, proposal: parsed.proposal };
+}
+
+/** The evidence of the cost lens, which has carried `lens` on the wire since t255. */
+const COST_EVIDENCE = {
+  lens: 'cost',
+  node_id: 'redigir',
+  graph_version_id: `sha256:${'a'.repeat(64)}`,
+  tokens_total: 412000,
+  ceiling_exceeded: 'tokens',
+};
+
+test('t246 AT-D1 — reposting the identical triple strengthens the pending proposal instead of cloning it', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+
+  const body = {
+    graph_id: graph.id,
+    target_version: version.id,
+    operations: passingOperations(),
+    evidence: COST_EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
+  };
+
+  const first = await postProposal(address, body);
+  assert.equal(first.status, 201, 'the first signal opens the hypothesis, as it always did');
+  assert.equal(first.proposal.status, 'pending');
+  assert.deepEqual(first.proposal.evidence, COST_EVIDENCE, 'one occurrence is not a list');
+  assert.ok(
+    !Object.hasOwn(first.proposal as unknown as Record<string, unknown>, 'dedupe_key'),
+    'the key is internal bookkeeping and never leaves the server',
+  );
+
+  const repeat = await postProposal(address, body);
+  assert.equal(repeat.status, 200, 'a repeated signal is not a new proposal');
+  assert.equal(repeat.proposal.id, first.proposal.id, 'and it is the SAME proposal');
+
+  const strengthened = await getProposal(address, first.proposal.id);
+  assert.deepEqual(
+    strengthened.evidence,
+    [COST_EVIDENCE, COST_EVIDENCE],
+    'the first repeat wraps the original and appends the repeat, in that order',
+  );
+
+  // The `expected_metric` is the original hypothesis and stays it: only evidence
+  // accumulates (D21 out of scope — nothing is recomputed or merged).
+  assert.deepEqual(strengthened.expected_metric, EXPECTED_METRIC);
+  assert.equal(strengthened.status, 'pending');
+
+  // A third occurrence appends to the list it already is, and the order is
+  // observable because this one differs in a field the key does not cover.
+  const louder = { ...COST_EVIDENCE, tokens_total: 480000 };
+  const third = await postProposal(address, { ...body, evidence: louder });
+  assert.equal(third.status, 200);
+  assert.equal(third.proposal.id, first.proposal.id);
+  assert.deepEqual(
+    (await getProposal(address, first.proposal.id)).evidence,
+    [COST_EVIDENCE, COST_EVIDENCE, louder],
+    'evidence accumulates in arrival order',
+  );
+
+  // And exactly one row exists for the three calls.
+  const all = await listProposals(address);
+  assert.deepEqual(
+    all.map((proposal) => proposal.id),
+    [first.proposal.id],
+    'three identical signals, one proposal',
+  );
+});
+
+test('t246 AT-D2 — the same target and lens with different operations are two proposals', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+
+  const base = {
+    graph_id: graph.id,
+    target_version: version.id,
+    evidence: COST_EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
+  };
+
+  const first = await postProposal(address, { ...base, operations: passingOperations() });
+  assert.equal(first.status, 201);
+
+  const second = await postProposal(address, { ...base, operations: roleChange('copidesque') });
+  assert.equal(second.status, 201, 'a different diff is a different hypothesis');
+  assert.notEqual(second.proposal.id, first.proposal.id);
+
+  assert.deepEqual(
+    (await listProposals(address)).map((proposal) => proposal.id),
+    [first.proposal.id, second.proposal.id],
+    'both are listed: the operations are part of the key',
+  );
+
+  // And the key really discriminates rather than letting everything through:
+  // repeating the FIRST diff strengthens the first proposal, not the second.
+  const repeat = await postProposal(address, { ...base, operations: passingOperations() });
+  assert.equal(repeat.status, 200);
+  assert.equal(repeat.proposal.id, first.proposal.id, 'the repeat found its own bucket');
+  assert.deepEqual((await getProposal(address, second.proposal.id)).evidence, COST_EVIDENCE);
+});
+
+test('t246 AT-D3 — the same target and operations under a different lens are two proposals', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+
+  const operations = passingOperations();
+  const base = {
+    graph_id: graph.id,
+    target_version: version.id,
+    operations,
+    expected_metric: EXPECTED_METRIC,
+  };
+
+  // `EVIDENCE` carries no `lens` at all, so it buckets under `null` — the tela's
+  // manual-edit proposals are that case, and the cost lens is the other.
+  const withoutLens = await postProposal(address, { ...base, evidence: EVIDENCE });
+  assert.equal(withoutLens.status, 201);
+
+  const withLens = await postProposal(address, { ...base, evidence: COST_EVIDENCE });
+  assert.equal(
+    withLens.status,
+    201,
+    'two lenses proposing the same diff are two proposals: the reasoning is different evidence',
+  );
+  assert.notEqual(withLens.proposal.id, withoutLens.proposal.id);
+
+  assert.deepEqual(
+    (await listProposals(address)).map((proposal) => proposal.id),
+    [withoutLens.proposal.id, withLens.proposal.id],
+  );
+  assert.deepEqual(
+    (await getProposal(address, withoutLens.proposal.id)).evidence,
+    EVIDENCE,
+    'neither of them was strengthened: they never collided',
+  );
+
+  // `null` is a bucket like any other, and not "no bucket": repeating the
+  // lens-less signal strengthens the lens-less proposal, and only it.
+  const repeat = await postProposal(address, { ...base, evidence: EVIDENCE });
+  assert.equal(repeat.status, 200);
+  assert.equal(repeat.proposal.id, withoutLens.proposal.id);
+  assert.deepEqual(
+    (await getProposal(address, withLens.proposal.id)).evidence,
+    COST_EVIDENCE,
+    'the cost lens proposal is untouched by a repeat of the other one',
+  );
+});
+
+test('t246 AT-D4 — a triple that left pending never blocks a fresh proposal', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+
+  const body = {
+    graph_id: graph.id,
+    target_version: version.id,
+    operations: passingOperations(),
+    evidence: COST_EVIDENCE,
+    expected_metric: EXPECTED_METRIC,
+  };
+
+  const first = await postProposal(address, body);
+  assert.equal(first.status, 201);
+
+  const rejection = await post(address, `/v1/proposals/${first.proposal.id}/reject`, {
+    reason: 'o nó novo repete a checagem que o portão de teste já faz',
+  });
+  assert.equal(rejection.status, 200);
+  assert.equal((await getProposal(address, first.proposal.id)).status, 'rejected');
+
+  const again = await postProposal(address, body);
+  assert.equal(again.status, 201, 'uniqueness is scoped to pending, and this one is not pending');
+  assert.notEqual(
+    again.proposal.id,
+    first.proposal.id,
+    'the repost is a NEW proposal, never a 200 reusing a decided one',
+  );
+  assert.equal(again.proposal.status, 'pending');
+  assert.deepEqual(again.proposal.evidence, COST_EVIDENCE, 'and it starts its own evidence over');
+
+  assert.deepEqual(
+    (await listProposals(address)).map((proposal) => proposal.id),
+    [first.proposal.id, again.proposal.id],
+    'append-only: the rejected one stays where it is',
+  );
+
+  // The fresh row carries its own key, so it dedupes on its own from now on —
+  // and the rejected one is never the proposal a repeat lands on.
+  const third = await postProposal(address, body);
+  assert.equal(third.status, 200);
+  assert.equal(third.proposal.id, again.proposal.id, 'the pending one is the one that grows');
+  assert.deepEqual((await getProposal(address, first.proposal.id)).evidence, COST_EVIDENCE);
+});
+
+test('t246 AT-D5 — a proposal nobody repeated keeps evidence exactly as it was posted', async (t) => {
+  const address = await startApp(t);
+  const { graph, version } = await registerBase(address);
+
+  // The non-dedup path is unchanged from before this ficha, and that is what keeps
+  // every other `createProposal()` in this file passing untouched: evidence
+  // becomes a list only from the SECOND occurrence on, never on the first.
+  const proposal = await createProposal(address, graph.id, version.id, passingOperations());
+  assert.deepEqual(proposal.evidence, EVIDENCE, 'a plain object, not a one-element list');
+
+  const stored = await getProposal(address, proposal.id);
+  assert.deepEqual(stored.evidence, EVIDENCE, 'and it reads back the same way');
+  assert.ok(!Array.isArray(stored.evidence));
+
+  const [listed] = await listProposals(address);
+  assert.deepEqual(listed.evidence, EVIDENCE, 'the listing tells the same story');
+});

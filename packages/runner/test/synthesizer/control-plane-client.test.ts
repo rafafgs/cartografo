@@ -15,8 +15,9 @@
  * out, and a live socket would prove the routes of t101/t117 instead. The real
  * gate, against a real control plane, is `synthesize.e2e.test.ts`.
  *
- * English per D18; the payload keys (`classes`, `grafo_versao`, `skills`) are
- * the API's own wire format.
+ * English per D18; the payload keys (`classes`, `graph_version`, `skills`) are
+ * the API's own wire format, which D20 took to English as well — t226 translated
+ * them here (`docs/spec/glossario-wire.md`).
  */
 
 import assert from 'node:assert/strict';
@@ -32,6 +33,26 @@ const MODULE_PATH = 'src/synthesizer/control-plane-client.ts';
 const BASE_URL = 'http://127.0.0.1:4317';
 const TOKEN = 'ct_um_token_de_operador';
 const VERSION_ID = 'sha256:aaa';
+
+/**
+ * The one class the fake registry knows, and the version behind it.
+ *
+ * Typed against the module rather than written as loose object literals: with
+ * the type on them, a field the reader renames stops the typecheck here instead
+ * of quietly turning into an `undefined` at runtime. The envelope KEYS around
+ * them are not typed anywhere — `getJson` names them inline — so those are
+ * pinned by the assertions of the t233 test below.
+ */
+const REGISTERED_CLASS: ClientModule.ClassEntry = {
+  class: 'nota-curta',
+  current_version_id: VERSION_ID,
+};
+
+const REGISTERED_VERSION: ClientModule.GraphVersion = {
+  id: VERSION_ID,
+  graph_id: 'nota-curta',
+  snapshot: { metadata: {} },
+};
 
 let cache: typeof ClientModule | null = null;
 
@@ -60,8 +81,8 @@ interface CapturedRequest {
  */
 function recorder(captured: CapturedRequest[]): typeof fetch {
   const body = JSON.stringify({
-    classes: [],
-    grafo_versao: { id: VERSION_ID, grafo_id: 'nota-curta', snapshot: { metadata: {} } },
+    classes: [REGISTERED_CLASS],
+    graph_version: REGISTERED_VERSION,
     skills: [],
   });
 
@@ -161,6 +182,26 @@ test('t193 — a control plane that never answers is a rejection on the deadline
     outcome.error instanceof Error && outcome.error.name === 'TimeoutError',
     `the rejection has to be recognizable as a timeout, got: ${String(outcome.error)}`,
   );
+});
+
+test('t233 — each read gives back what its envelope carried, not `undefined`', async () => {
+  const { createControlPlaneReader } = await loadClient();
+
+  // The two tests above drive all three reads and look only at what went OUT,
+  // so they stay green against a fake whose envelope keys no longer match the
+  // control plane's: a key the reader cannot find yields `undefined`, and
+  // `undefined` is silent. This is the assertion that makes the fake's shape
+  // load-bearing — `deepEqual(undefined, [])` is a failure, which is exactly
+  // the alarm the translation of t226 needed and did not have.
+  const reader = createControlPlaneReader(BASE_URL, { fetchImpl: recorder([]) });
+
+  assert.deepEqual(await reader.fetchClasses(), [REGISTERED_CLASS], 'the `classes` envelope');
+  assert.deepEqual(
+    await reader.fetchClassVersion(VERSION_ID),
+    REGISTERED_VERSION,
+    'the `graph_version` envelope, English since t226',
+  );
+  assert.deepEqual(await reader.fetchSkills(), [], 'the `skills` envelope');
 });
 
 test('AT4 — the three exported reads keep their `(baseUrl, fetchImpl)` signature', async () => {

@@ -26,8 +26,11 @@
  * accident — the same reasoning that keeps `aplicar` out of the surveyor's
  * client.
  *
- * The payload field names are the API's own, which D18 leaves in Portuguese
- * (`DECISOES.md:153-155`); the route paths and the identifiers here are English.
+ * The payload field names are the API's own. D18 left them in Portuguese and D20
+ * took them to English, which t226 applied here (`docs/spec/glossario-wire.md`);
+ * the route paths and the identifiers were already English. The one thing that
+ * did NOT move is `GraphMetadata` below — a key of the graph document's own
+ * format, not of the wire, as its comment records.
  */
 
 import { DEFAULT_REQUEST_TIMEOUT_MS, requestJson } from '../controller/http-client.ts';

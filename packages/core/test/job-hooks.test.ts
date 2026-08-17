@@ -79,12 +79,12 @@ const secretFor = (reference: string): string => `chave-hmac-de-${reference}`;
 /** One row of `entrega_gancho`, read straight from the table. */
 interface HookDelivery {
   id: number;
-  projeto_id: number;
-  execucao_id: number | null;
-  trabalho_id: number;
-  gancho_id: string;
-  no_id: string;
-  grafo_versao_id: string | null;
+  project_id: number;
+  execution_id: number | null;
+  job_id: number;
+  hook_id: string;
+  node_id: string;
+  graph_version_id: string | null;
   evento_id: number;
   url: string;
   segredo: string;
@@ -93,7 +93,7 @@ interface HookDelivery {
   proxima_tentativa_em: string;
   criada_em: string;
   entregue_em: string | null;
-  ultimo_erro: string | null;
+  last_error: string | null;
 }
 
 /** The slice of `fetch` the dispatcher is allowed to use. */
@@ -173,9 +173,9 @@ function registerGraph(db: Database, document: GraphDocument): string {
 /** Creates a job standing on `redigir`, optionally tied to a graph version. */
 function newJob(db: Database, graphVersionId: string | null): Job {
   return createJob(db, {
-    titulo: 'a nota que dispara ganchos',
-    no_entrada_id: 'redigir',
-    grafo_versao_id: graphVersionId ?? undefined,
+    title: 'a nota que dispara ganchos',
+    entry_node_id: 'redigir',
+    graph_version_id: graphVersionId ?? undefined,
   });
 }
 
@@ -232,14 +232,14 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   const versionId = registerGraph(db, document);
   const job = newJob(db, versionId);
 
-  const moved = transitionJob(db, job.id, { para_no_id: 'revisar' });
+  const moved = transitionJob(db, job.id, { to_node_id: 'revisar' });
   assert.equal(moved?.no_atual, 'revisar', 'the traversal itself is untouched');
 
   const enqueued = only(hookDeliveries(db));
   assert.equal(enqueued.gancho_id, ON_ENTER);
   assert.equal(enqueued.no_id, 'revisar');
   assert.equal(enqueued.trabalho_id, job.id);
-  assert.equal(enqueued.projeto_id, job.projeto_id);
+  assert.equal(enqueued.project_id, job.project_id);
   assert.equal(enqueued.grafo_versao_id, versionId);
   assert.equal(enqueued.status, 'pendente');
   assert.equal(enqueued.tentativas, 0);
@@ -268,7 +268,7 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
         WHERE entidade_tipo = 'trabalho' AND entidade_id = ? ORDER BY id DESC LIMIT 1`,
     )
     .get(String(job.id)) as { id: number; tipo: string };
-  assert.equal(trigger.tipo, 'trabalho.transicao');
+  assert.equal(trigger.tipo, 'job.transitioned');
   assert.equal(enqueued.evento_id, trigger.id);
 });
 
@@ -282,7 +282,7 @@ test('AT5 — blocking fires only the node_blocked hook of the node it blocked o
 
   // Blocked on `redigir`, which is exactly where the node_blocked hook points.
   const stuck = newJob(db, versionId);
-  const blocked = blockJob(db, stuck.id, { motivo: 'a redação parou esperando o tema' });
+  const blocked = blockJob(db, stuck.id, { reason: 'a redação parou esperando o tema' });
   assert.equal(blocked?.bloqueado, true);
 
   const enqueued = only(hookDeliveries(db));
@@ -293,10 +293,10 @@ test('AT5 — blocking fires only the node_blocked hook of the node it blocked o
   // A block on `revisar` matches nothing: its only hook is a node_entered one,
   // and a trigger is half of the match, never a detail of it.
   const walking = newJob(db, versionId);
-  transitionJob(db, walking.id, { para_no_id: 'revisar' });
+  transitionJob(db, walking.id, { to_node_id: 'revisar' });
   const afterMoving = hookDeliveries(db).length;
 
-  blockJob(db, walking.id, { motivo: 'a revisão parou' });
+  blockJob(db, walking.id, { reason: 'a revisão parou' });
 
   assert.equal(
     hookDeliveries(db).length,
@@ -312,9 +312,9 @@ test('AT6 — a job with no graph version enqueues nothing, and raises nothing',
   const job = newJob(db, null);
   assert.equal(job.grafo_versao_id, null);
 
-  const moved = transitionJob(db, job.id, { para_no_id: 'revisar' });
+  const moved = transitionJob(db, job.id, { to_node_id: 'revisar' });
   assert.equal(moved?.no_atual, 'revisar');
-  const blocked = blockJob(db, job.id, { motivo: 'sem grafo, e mesmo assim travado' });
+  const blocked = blockJob(db, job.id, { reason: 'sem grafo, e mesmo assim travado' });
   assert.equal(blocked?.bloqueado, true);
 
   assert.deepEqual(hookDeliveries(db), [], 'nothing to look hooks up in is not an error');
@@ -328,8 +328,8 @@ test('AT7 — a graph version with no hooks key enqueues nothing, and raises not
   assert.ok(!Object.hasOwn(document, 'hooks'), 'the minimal fixture is the "absent" case');
 
   const job = newJob(db, registerGraph(db, document));
-  transitionJob(db, job.id, { para_no_id: 'revisar' });
-  blockJob(db, job.id, { motivo: 'a revisão parou' });
+  transitionJob(db, job.id, { to_node_id: 'revisar' });
+  blockJob(db, job.id, { reason: 'a revisão parou' });
 
   assert.deepEqual(
     hookDeliveries(db),
@@ -372,7 +372,7 @@ test('AT7 — the write path answers 200 even when the hook destination rejects'
   const response = await fetch(`${url}/v1/jobs/${job.id}/transitions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ para_no_id: 'revisar' }),
+    body: JSON.stringify({ to_node_id: 'revisar' }),
   });
   const body = (await response.json()) as WireJob;
 

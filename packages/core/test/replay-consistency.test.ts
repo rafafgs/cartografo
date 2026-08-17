@@ -54,8 +54,8 @@ async function historyFromApi(ctx: TestContext, jobId: number): Promise<string[]
 
   const history: string[] = [];
   for (const event of response.body.events) {
-    if (event.tipo === 'trabalho.criado') history.push(event.dados.no_entrada_id as string);
-    if (event.tipo === 'trabalho.transicao') history.push(event.dados.para_no_id as string);
+    if (event.type === 'job.created') history.push(event.data.entry_node_id as string);
+    if (event.type === 'job.transitioned') history.push(event.data.to_node_id as string);
   }
   return history;
 }
@@ -70,22 +70,22 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
 
   // --- the execution, end to end, through the API only ----------------------
   const job = await createJob(ctx, {
-    titulo: 'trabalho que anda',
-    no_entrada_id: 'entrada',
-    execucao_id: EXECUTION,
-    grafo_versao_id: 'v1',
+    title: 'trabalho que anda',
+    entry_node_id: 'entrada',
+    execution_id: EXECUTION,
+    graph_version_id: 'v1',
   });
   await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {
-    para_no_id: 'refinamento',
+    to_node_id: 'refinamento',
   });
   await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, {
-    para_no_id: 'desenvolvimento',
+    to_node_id: 'desenvolvimento',
   });
-  await request(ctx, 'PATCH', `/v1/jobs/${job.id}`, { titulo: 'título emendado' });
+  await request(ctx, 'PATCH', `/v1/jobs/${job.id}`, { title: 'título emendado' });
 
   const session = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    trabalho_id: job.id,
-    no_id: 'desenvolvimento',
+    job_id: job.id,
+    node_id: 'desenvolvimento',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'implemente a ficha',
@@ -94,23 +94,23 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   assert.equal(session.status, 201);
 
   const inputRequest = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
-    trabalho_id: job.id,
-    sessao_id: session.body.id,
-    tipo: 'pergunta',
-    pergunta: 'renumerar a migração?',
-    recomendacao: 'manter 0002',
-    auto_aprovavel: true,
+    job_id: job.id,
+    session_id: session.body.id,
+    kind: 'question',
+    question: 'renumerar a migração?',
+    recommendation: 'manter 0002',
+    auto_approvable: true,
   });
   assert.equal(inputRequest.status, 201);
 
   await request(ctx, 'PATCH', `/v1/input-requests/${inputRequest.body.id}/answer`, {
-    resposta: 'manter 0002',
-    respondido_por: 'rafael',
+    answer: 'manter 0002',
+    answered_by: 'rafael',
   });
   await request(ctx, 'PATCH', `/v1/sessions/${session.body.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
-    uso: {
+    usage: {
       input_tokens: 100,
       output_tokens: 20,
       cache_creation_input_tokens: 0,
@@ -121,31 +121,31 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   // A second job, blocked and auto-resolved: it covers the ends the main
   // sequence does not touch (blocked flag, automatic origin).
   const stopped = await createJob(ctx, {
-    titulo: 'trabalho que para',
-    no_entrada_id: 'entrada',
-    execucao_id: EXECUTION,
-    grafo_versao_id: 'v2',
+    title: 'trabalho que para',
+    entry_node_id: 'entrada',
+    execution_id: EXECUTION,
+    graph_version_id: 'v2',
   });
   const auto = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
-    trabalho_id: stopped.id,
-    tipo: 'aprovacao',
-    pergunta: 'aprova o artefato?',
-    resposta_padrao: 'aprovar',
-    auto_aprovavel: true,
+    job_id: stopped.id,
+    kind: 'approval',
+    question: 'aprova o artefato?',
+    default_answer: 'aprovar',
+    auto_approvable: true,
   });
   assert.equal(auto.status, 201);
   await request(ctx, 'PATCH', `/v1/input-requests/${auto.body.id}/auto-resolution`, {
-    resposta: 'aprovar',
-    baseada_em: 'resposta_padrao',
+    answer: 'aprovar',
+    based_on: 'default_answer',
   });
   // The manual block comes AFTER the auto-resolution since t106: asking already
   // blocks and answering already unblocks (in the same transaction), so blocking
   // first would leave the job unblocked at the end and the "flag raised" end with
   // no coverage at all. The sequence as it is now exercises both origins of a
   // block — the automatic one from the escalation and the manual one.
-  await request(ctx, 'POST', `/v1/jobs/${stopped.id}/blocks`, { motivo: 'esperando humano' });
+  await request(ctx, 'POST', `/v1/jobs/${stopped.id}/blocks`, { reason: 'esperando humano' });
   const otherSession = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    execucao_id: EXECUTION,
+    execution_id: EXECUTION,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'sessão que fica aberta',
@@ -188,23 +188,15 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     projectedSessions[String(row.id)] = { status: row.status, exit_code: row.exit_code };
   }
 
-  /**
-   * The wire's status, back in the log's words (t226).
-   *
-   * The reducer replays EVENTS, whose vocabulary is D20's second child and is
-   * still Portuguese; the API projection went English with the API child. Both
-   * halves of the comparison have to be in ONE vocabulary or the assertion below
-   * stops being about replay and starts being about spelling — so the projection
-   * is translated back here, at the same boundary
-   * `repositories/input-request.ts` translates it forward. When the events child
-   * lands, this map is what disappears.
-   */
-  const asLogged: Record<string, string> = { pending: 'pendente', answered: 'respondida' };
-
+  // No translation layer any more (t227): the reducer's derived `status` and
+  // `origem` are the same English words the API projection publishes, so the
+  // comparison below is about REPLAY again and not about spelling. The two keys
+  // that stay Portuguese — `perguntas` and `origem` — are the reducer's own
+  // output shape, which no glossary row governs.
   const projectedInputRequests: ReconstructedState['perguntas'] = {};
   for (const row of inputRequests.body.input_requests) {
     projectedInputRequests[String(row.id)] = {
-      status: asLogged[row.status] ?? row.status,
+      status: row.status,
       resposta: row.answer,
       origem: row.source,
     };

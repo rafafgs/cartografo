@@ -214,10 +214,10 @@ async function startStreamApp(
   return { url, app };
 }
 
-/** Records a `trabalho.transicao` through the API. */
+/** Records a `job.transitioned` through the API. */
 async function moveJob(ctx: TestContext, id: number, target: string): Promise<void> {
   const response = await request<Job>(ctx, 'POST', `/v1/jobs/${id}/transitions`, {
-    para_no_id: target,
+    to_node_id: target,
   });
   assert.equal(response.status, 200, `POST /v1/jobs/${id}/transitions returned ${response.status}`);
 }
@@ -233,9 +233,9 @@ test('AT1 — the stream delivers the envelope the events route would return', a
   assert.equal(stream.contentType, 'text/event-stream');
 
   const job = await createJob(ctx, {
-    titulo: 'primeiro trabalho da rodada',
-    no_entrada_id: 'entrada',
-    execucao_id: 41,
+    title: 'primeiro trabalho da rodada',
+    entry_node_id: 'entrada',
+    execution_id: 41,
   });
 
   await waitFor(() => stream.messages.length >= 1, 'the created job to reach the stream');
@@ -249,10 +249,10 @@ test('AT1 — the stream delivers the envelope the events route would return', a
   assert.equal(recorded.status, 200);
   const [expected] = recorded.body.events;
 
-  assert.equal(message.event, 'trabalho.criado');
+  assert.equal(message.event, 'job.created');
   assert.equal(message.id, String(expected.id));
   assert.deepEqual(JSON.parse(message.data), expected);
-  assert.equal((JSON.parse(message.data) as Event).entidade.id, job.id);
+  assert.equal((JSON.parse(message.data) as Event).entity.id, job.id);
 });
 
 test('AT2 — ?type filters the stream down to the asked types', async (t) => {
@@ -260,10 +260,10 @@ test('AT2 — ?type filters the stream down to the asked types', async (t) => {
   const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
-  const stream = await openStream(`${url}/v1/events/stream?type=trabalho.transicao`);
+  const stream = await openStream(`${url}/v1/events/stream?type=job.transitioned`);
   t.after(() => stream.abort());
 
-  const job = await createJob(ctx, { titulo: 'anda', no_entrada_id: 'entrada' });
+  const job = await createJob(ctx, { title: 'anda', entry_node_id: 'entrada' });
   await moveJob(ctx, job.id, 'revisao');
 
   await waitFor(() => stream.messages.length >= 1, 'the transition to reach the stream');
@@ -272,7 +272,7 @@ test('AT2 — ?type filters the stream down to the asked types', async (t) => {
   assert.equal(stream.messages.length, 1, 'only the transition was asked for');
   assert.deepEqual(
     stream.messages.map((message) => message.event),
-    ['trabalho.transicao'],
+    ['job.transitioned'],
   );
 });
 
@@ -284,11 +284,11 @@ test('AT3 — ?project_id keeps another project out of the stream', async (t) =>
   const stream = await openStream(`${url}/v1/events/stream?project_id=42`);
   t.after(() => stream.abort());
 
-  await createJob(ctx, { titulo: 'de outro projeto', no_entrada_id: 'entrada', projeto_id: 7 });
+  await createJob(ctx, { title: 'de outro projeto', entry_node_id: 'entrada', project_id: 7 });
   const mine = await createJob(ctx, {
-    titulo: 'do projeto 42',
-    no_entrada_id: 'entrada',
-    projeto_id: 42,
+    title: 'do projeto 42',
+    entry_node_id: 'entrada',
+    project_id: 42,
   });
 
   await waitFor(() => stream.messages.length >= 1, "project 42's job to reach the stream");
@@ -296,11 +296,11 @@ test('AT3 — ?project_id keeps another project out of the stream', async (t) =>
 
   assert.equal(stream.messages.length, 1, "the other project's event must not be delivered");
   const delivered = JSON.parse(stream.messages[0].data) as Event;
-  assert.equal(delivered.projeto_id, 42);
-  assert.equal(delivered.entidade.id, mine.id);
+  assert.equal(delivered.project_id, 42);
+  assert.equal(delivered.entity.id, mine.id);
 });
 
-test('AT4 — an unknown ?tipo is a 400, and nothing is upgraded to SSE', async (t) => {
+test('AT4 — an unknown ?type is a 400, and nothing is upgraded to SSE', async (t) => {
   requireArtifacts(T123_ARTIFACTS.streamRoutes, T123_ARTIFACTS.server);
   const ctx = await startAuthorizedControlPlane(t);
 
@@ -322,13 +322,13 @@ test('AT5 — Last-Event-ID resumes without gaps and without repeating', async (
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
   const first = await openStream(`${url}/v1/events/stream`);
-  await createJob(ctx, { titulo: 'antes da queda', no_entrada_id: 'entrada' });
+  await createJob(ctx, { title: 'antes da queda', entry_node_id: 'entrada' });
   await waitFor(() => first.messages.length >= 1, 'the first event to reach the stream');
   const cursor = first.messages[0].id;
   assert.ok(cursor !== null);
   first.abort();
 
-  const second = await createJob(ctx, { titulo: 'durante a queda', no_entrada_id: 'entrada' });
+  const second = await createJob(ctx, { title: 'durante a queda', entry_node_id: 'entrada' });
   await moveJob(ctx, second.id, 'revisao');
 
   const resumed = await openStream(`${url}/v1/events/stream`, { 'last-event-id': cursor });
@@ -339,7 +339,7 @@ test('AT5 — Last-Event-ID resumes without gaps and without repeating', async (
 
   assert.deepEqual(
     resumed.messages.map((message) => message.event),
-    ['trabalho.criado', 'trabalho.transicao'],
+    ['job.created', 'job.transitioned'],
   );
   assert.ok(
     resumed.messages.every((message) => Number(message.id) > Number(cursor)),
@@ -352,20 +352,20 @@ test('AT6 — without Last-Event-ID the stream never replays what is already in 
   const ctx = await startAuthorizedControlPlane(t);
   const { url } = await startStreamApp(t, ctx, { pollIntervalMs: 20 });
 
-  const old = await createJob(ctx, { titulo: 'já estava no log', no_entrada_id: 'entrada' });
+  const old = await createJob(ctx, { title: 'já estava no log', entry_node_id: 'entrada' });
 
   const stream = await openStream(`${url}/v1/events/stream`);
   t.after(() => stream.abort());
 
-  const fresh = await createJob(ctx, { titulo: 'depois da conexão', no_entrada_id: 'entrada' });
+  const fresh = await createJob(ctx, { title: 'depois da conexão', entry_node_id: 'entrada' });
 
   await waitFor(() => stream.messages.length >= 1, 'the new event to reach the stream');
   await settle();
 
   assert.equal(stream.messages.length, 1, 'history is not replayed by accident');
   const delivered = JSON.parse(stream.messages[0].data) as Event;
-  assert.equal(delivered.entidade.id, fresh.id);
-  assert.notEqual(delivered.entidade.id, old.id);
+  assert.equal(delivered.entity.id, fresh.id);
+  assert.notEqual(delivered.entity.id, old.id);
 });
 
 test('AT7 — an idle stream sends the keep-alive comment', async (t) => {
@@ -404,14 +404,14 @@ test('AT8 — a client that goes away leaves no timer and no error behind', asyn
   t.after(() => process.off('uncaughtException', collect));
 
   const stream = await openStream(`${url}/v1/events/stream`);
-  await createJob(ctx, { titulo: 'antes do abandono', no_entrada_id: 'entrada' });
+  await createJob(ctx, { title: 'antes do abandono', entry_node_id: 'entrada' });
   await waitFor(() => stream.messages.length >= 1, 'the first event to reach the stream');
 
   stream.abort();
   await settle();
 
   // The write path does not care that nobody is listening any more (FR6).
-  const orphan = await createJob(ctx, { titulo: 'depois do abandono', no_entrada_id: 'entrada' });
+  const orphan = await createJob(ctx, { title: 'depois do abandono', entry_node_id: 'entrada' });
   assert.ok(orphan.id > 0);
   await settle();
 

@@ -14,9 +14,9 @@
  * `src/`: they ARE the contract the tests demand of the API, and a contract
  * that imports itself from the implementation demands nothing.
  *
- * The JSON field names below stay in Portuguese on purpose: they mirror the
- * untouched migration columns, and the D18 rename does not translate wire
- * fields that are a direct passthrough of a column (t127, FR8).
+ * The JSON field names below are English on every surface since t227: the API
+ * child (t226) translated the reads and the events child translated the writes,
+ * so nothing here mirrors a migration column's spelling any more.
  */
 
 import assert from 'node:assert/strict';
@@ -67,24 +67,22 @@ export function requireArtifacts(...relatives: string[]): void {
 /** Event envelope, as the taxonomy (t98) defines it. */
 export interface Event {
   id: number;
-  tipo: string;
-  projeto_id: number;
-  execucao_id: number | null;
-  entidade: { tipo: string; id: number | string };
-  ator: { tipo: string; ref: string };
-  ocorrido_em: string;
-  dados: Record<string, unknown>;
+  type: string;
+  project_id: number;
+  execution_id: number | null;
+  entity: { type: string; id: number | string };
+  actor: { type: string; ref: string };
+  occurred_at: string;
+  data: Record<string, unknown>;
 }
 
 /**
  * Job projection, as the API returns it.
  *
- * English since t226 — and only the RESPONSE is. What `createJob` below SENDS
- * is still `{titulo, no_entrada_id, …}`, because that body goes into
- * `validateEvent` and `trabalho.criado`'s contract is D20's second child. The
- * asymmetry is deliberate, it is documented in `src/routes/common.ts`, and
- * `jobs.test.ts` asserts both halves so a later ticket cannot close it by
- * accident.
+ * English on both sides since t227: the response went English with the API
+ * child (t226), and what `createJob` below SENDS followed with the events
+ * child, because that body goes straight into `validateEvent` and
+ * `job.created`'s contract is what D20's second child renamed.
  */
 export interface Job {
   id: number;
@@ -159,7 +157,7 @@ export interface InputRequest {
   status: string;
   answer: string | null;
   answered_by: string | null;
-  /** Where the decision came from; the VALUES stay Portuguese (event surface). */
+  /** Where the decision came from — `user` or `auto` since t227. */
   source: string | null;
   created_at: string;
   answered_at: string | null;
@@ -279,7 +277,7 @@ export async function request<T>(
 export interface EventsModule {
   recordEvent: unknown;
   listEvents: (db: Database) => Event[];
-  getEventsByEntity: (db: Database, tipo: string, id: number | string) => Event[];
+  getEventsByEntity: (db: Database, type: string, id: number | string) => Event[];
 }
 
 /** Loads `src/db/events.ts` on demand (named initial red). */

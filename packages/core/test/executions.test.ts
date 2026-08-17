@@ -54,44 +54,44 @@ test('AT15 — GET /v1/executions/:id/metrics-by-version groups jobs and events 
 
   // Execution 7: two jobs on v1, one on v2.
   const v1a = await createJob(ctx, {
-    titulo: 'v1 a',
-    no_entrada_id: 'entrada',
-    execucao_id: 7,
-    grafo_versao_id: 'v1',
+    title: 'v1 a',
+    entry_node_id: 'entrada',
+    execution_id: 7,
+    graph_version_id: 'v1',
   });
   const v1b = await createJob(ctx, {
-    titulo: 'v1 b',
-    no_entrada_id: 'entrada',
-    execucao_id: 7,
-    grafo_versao_id: 'v1',
+    title: 'v1 b',
+    entry_node_id: 'entrada',
+    execution_id: 7,
+    graph_version_id: 'v1',
   });
   const v2 = await createJob(ctx, {
-    titulo: 'v2',
-    no_entrada_id: 'entrada',
-    execucao_id: 7,
-    grafo_versao_id: 'v2',
+    title: 'v2',
+    entry_node_id: 'entrada',
+    execution_id: 7,
+    graph_version_id: 'v2',
   });
 
   // Execution 8, same version: must not leak into the report of 7.
   await createJob(ctx, {
-    titulo: 'de outra execução',
-    no_entrada_id: 'entrada',
-    execucao_id: 8,
-    grafo_versao_id: 'v1',
+    title: 'de outra execução',
+    entry_node_id: 'entrada',
+    execution_id: 8,
+    graph_version_id: 'v1',
   });
 
   // v1: 2 created + 2 transitions + 1 session = 5 events.
-  await request(ctx, 'POST', `/v1/jobs/${v1a.id}/transitions`, { para_no_id: 'implementacao' });
-  await request(ctx, 'POST', `/v1/jobs/${v1b.id}/transitions`, { para_no_id: 'implementacao' });
+  await request(ctx, 'POST', `/v1/jobs/${v1a.id}/transitions`, { to_node_id: 'implementacao' });
+  await request(ctx, 'POST', `/v1/jobs/${v1b.id}/transitions`, { to_node_id: 'implementacao' });
   await request(ctx, 'POST', '/v1/sessions', {
-    trabalho_id: v1a.id,
+    job_id: v1a.id,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'trabalhe',
   });
 
   // v2: 1 created + 1 block = 2 events.
-  await request(ctx, 'POST', `/v1/jobs/${v2.id}/blocks`, { motivo: 'travou' });
+  await request(ctx, 'POST', `/v1/jobs/${v2.id}/blocks`, { reason: 'travou' });
 
   const response = await request<{ execution_id: number; metrics: MetricByVersion[] }>(
     ctx,
@@ -133,30 +133,30 @@ test('t107 AT1 — GET /v1/executions groups by execution, counts blocked and pe
 
   // Eight is created BEFORE seven on purpose: the response is ordered by
   // `execucao_id`, not by the order the jobs came in.
-  await createJob(ctx, { titulo: 'só da oito', no_entrada_id: 'entrada', execucao_id: 8 });
+  await createJob(ctx, { title: 'só da oito', entry_node_id: 'entrada', execution_id: 8 });
 
   const blocked = await createJob(ctx, {
-    titulo: 'travado',
-    no_entrada_id: 'entrada',
-    execucao_id: 7,
+    title: 'travado',
+    entry_node_id: 'entrada',
+    execution_id: 7,
   });
   const moving = await createJob(ctx, {
-    titulo: 'andando',
-    no_entrada_id: 'entrada',
-    execucao_id: 7,
+    title: 'andando',
+    entry_node_id: 'entrada',
+    execution_id: 7,
   });
 
   // A job with no execution: falls into the `null` group instead of vanishing.
-  await createJob(ctx, { titulo: 'sem rodada', no_entrada_id: 'entrada' });
+  await createJob(ctx, { title: 'sem rodada', entry_node_id: 'entrada' });
 
-  await request(ctx, 'POST', `/v1/jobs/${blocked.id}/blocks`, { motivo: 'esperando gente' });
+  await request(ctx, 'POST', `/v1/jobs/${blocked.id}/blocks`, { reason: 'esperando gente' });
 
   const ask = async (jobId: number): Promise<InputRequest> => {
     const response = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
-      trabalho_id: jobId,
-      tipo: 'pergunta',
-      pergunta: 'e agora?',
-      auto_aprovavel: false,
+      job_id: jobId,
+      kind: 'question',
+      question: 'e agora?',
+      auto_approvable: false,
     });
     assert.equal(response.status, 201);
     return response.body;
@@ -165,8 +165,8 @@ test('t107 AT1 — GET /v1/executions groups by execution, counts blocked and pe
   const pending = await ask(blocked.id);
   const answered = await ask(moving.id);
   await request(ctx, 'PATCH', `/v1/input-requests/${answered.id}/answer`, {
-    resposta: 'siga',
-    respondido_por: 'rafael',
+    answer: 'siga',
+    answered_by: 'rafael',
   });
   assert.ok(pending.id !== answered.id);
 
@@ -206,10 +206,10 @@ test('t167 — the execution report counts the questions each node raised', asyn
 
   const ask = async (jobId: number, question: string): Promise<void> => {
     const response = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
-      trabalho_id: jobId,
-      tipo: 'pergunta',
-      pergunta: question,
-      auto_aprovavel: false,
+      job_id: jobId,
+      kind: 'question',
+      question: question,
+      auto_approvable: false,
     });
     assert.equal(response.status, 201);
   };
@@ -217,26 +217,26 @@ test('t167 — the execution report counts the questions each node raised', asyn
   // Two jobs of the same round: one asks twice from `revisar`, the other once
   // from `redigir`. A third node exists in nobody's question at all.
   const twice = await createJob(ctx, {
-    titulo: 'trava duas vezes na revisão',
-    no_entrada_id: 'revisar',
-    execucao_id: 1670,
+    title: 'trava duas vezes na revisão',
+    entry_node_id: 'revisar',
+    execution_id: 1670,
   });
   await ask(twice.id, 'sigo com a nota curta?');
   await request(ctx, 'POST', `/v1/jobs/${twice.id}/unblocks`, {});
   await ask(twice.id, 'e o título, mantenho?');
 
   const once = await createJob(ctx, {
-    titulo: 'trava uma vez na redação',
-    no_entrada_id: 'redigir',
-    execucao_id: 1670,
+    title: 'trava uma vez na redação',
+    entry_node_id: 'redigir',
+    execution_id: 1670,
   });
   await ask(once.id, 'qual fonte vale?');
 
   // Another round, same nodes: nothing of it may leak into this report.
   const elsewhere = await createJob(ctx, {
-    titulo: 'de outra rodada',
-    no_entrada_id: 'revisar',
-    execucao_id: 1671,
+    title: 'de outra rodada',
+    entry_node_id: 'revisar',
+    execution_id: 1671,
   });
   await ask(elsewhere.id, 'pergunta de outra rodada');
 
@@ -298,35 +298,35 @@ interface ExecutionLog {
  */
 async function seedExecution(ctx: TestContext, executionId: number): Promise<Job> {
   const job = await createJob(ctx, {
-    titulo: `travessia da execução ${executionId}`,
-    no_entrada_id: 'redigir',
-    execucao_id: executionId,
-    grafo_versao_id: 'sha256:t110',
+    title: `travessia da execução ${executionId}`,
+    entry_node_id: 'redigir',
+    execution_id: executionId,
+    graph_version_id: 'sha256:t110',
   });
 
-  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { para_no_id: 'revisar' });
+  await request(ctx, 'POST', `/v1/jobs/${job.id}/transitions`, { to_node_id: 'revisar' });
 
   const session = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    trabalho_id: job.id,
-    no_id: 'revisar',
+    job_id: job.id,
+    node_id: 'revisar',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'revise',
   });
   await request(ctx, 'PATCH', `/v1/sessions/${session.body.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
-    uso: null,
+    usage: null,
   });
 
   // Asking also blocks the work, in the same transaction (t106) — two more
   // events, both carrying the owner's `execucao_id`.
   await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
-    trabalho_id: job.id,
-    sessao_id: session.body.id,
-    tipo: 'pergunta',
-    pergunta: 'sigo com a nota curta?',
-    auto_aprovavel: true,
+    job_id: job.id,
+    session_id: session.body.id,
+    kind: 'question',
+    question: 'sigo com a nota curta?',
+    auto_approvable: true,
   });
 
   return job;
@@ -353,14 +353,14 @@ test('t110 — GET /v1/executions/:id/events returns the execution log in ascend
 
   const events = response.body.events;
   assert.deepEqual(
-    events.map((event) => event.tipo),
+    events.map((event) => event.type),
     [
-      'trabalho.criado',
-      'trabalho.transicao',
-      'sessao.aberta',
-      'sessao.finalizada',
-      'pergunta.criada',
-      'trabalho.bloqueado',
+      'job.created',
+      'job.transitioned',
+      'session.opened',
+      'session.finished',
+      'input_request.created',
+      'job.blocked',
     ],
     'the stream crosses job, session and input request, in the order the log recorded them',
   );
@@ -369,9 +369,9 @@ test('t110 — GET /v1/executions/:id/events returns the execution log in ascend
   assert.deepEqual(ids, [...ids].sort((a, b) => a - b), 'ordered by id, the only total ordering');
 
   for (const event of events) {
-    assert.equal(event.execucao_id, 11, 'no event of another execution may leak in');
+    assert.equal(event.execution_id, 11, 'no event of another execution may leak in');
     assert.notEqual(
-      event.entidade.id,
+      event.entity.id,
       other.id,
       'the other execution has its own work; this one never mentions it',
     );
@@ -379,10 +379,10 @@ test('t110 — GET /v1/executions/:id/events returns the execution log in ascend
 
   // The envelope arrives whole: the surveyor computes intervals from
   // `ocorrido_em` and attributes them by `dados`.
-  const opened = events.find((event) => event.tipo === 'sessao.aberta');
+  const opened = events.find((event) => event.type === 'session.opened');
   assert.ok(opened !== undefined);
-  assert.equal(opened.dados.no_id, 'revisar');
-  assert.equal(typeof opened.ocorrido_em, 'string');
+  assert.equal(opened.data.no_id, 'revisar');
+  assert.equal(typeof opened.occurred_at, 'string');
 
   const fromTheOther = await request<ExecutionLog>(ctx, 'GET', '/v1/executions/12/events');
   assert.equal(fromTheOther.body.events.length, events.length, 'each execution sees only its own');

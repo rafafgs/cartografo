@@ -148,7 +148,7 @@ interface Delivery {
   proxima_tentativa_em: string;
   criada_em: string;
   entregue_em: string | null;
-  ultimo_erro: string | null;
+  last_error: string | null;
 }
 
 /** A dispatcher running against a throwaway database. */
@@ -252,29 +252,29 @@ async function unsubscribe(ctx: DispatchContext, id: number): Promise<Subscripti
   return (await response.json()) as Subscription;
 }
 
-/** Records a `trabalho.criado`, the way any route of the control plane would. */
+/** Records a `job.created`, the way any route of the control plane would. */
 function recordJobCreated(db: Database, id: number, title: string, projectId = 1): Event {
   return recordEvent(db, {
-    tipo: 'trabalho.criado',
-    projeto_id: projectId,
-    execucao_id: null,
-    entidade: { tipo: 'trabalho', id },
-    ator: { tipo: 'sistema', ref: 'control-plane' },
-    ocorrido_em: new Date().toISOString(),
-    dados: { titulo: title, no_entrada_id: 'entrada' },
+    type: 'job.created',
+    project_id: projectId,
+    execution_id: null,
+    entity: { type: 'job', id },
+    actor: { type: 'system', ref: 'control-plane' },
+    occurred_at: new Date().toISOString(),
+    data: { title: title, entry_node_id: 'entrada' },
   });
 }
 
-/** Records a `trabalho.transicao` — the second type AT7 filters against. */
+/** Records a `job.transitioned` — the second type AT7 filters against. */
 function recordJobMoved(db: Database, id: number, target: string): Event {
   return recordEvent(db, {
-    tipo: 'trabalho.transicao',
-    projeto_id: 1,
-    execucao_id: null,
-    entidade: { tipo: 'trabalho', id },
-    ator: { tipo: 'sistema', ref: 'control-plane' },
-    ocorrido_em: new Date().toISOString(),
-    dados: { de_no_id: null, para_no_id: target },
+    type: 'job.transitioned',
+    project_id: 1,
+    execution_id: null,
+    entity: { type: 'job', id },
+    actor: { type: 'system', ref: 'control-plane' },
+    occurred_at: new Date().toISOString(),
+    data: { from_node_id: null, to_node_id: target },
   });
 }
 
@@ -387,7 +387,7 @@ test('AT5 — the event is pushed with the envelope and a verifiable signature',
 
   // The body is the taxonomy's envelope, byte for byte what the stream's `data:`
   // field carries — read here through a path the dispatcher does not use.
-  const [expected] = getEventsByEntity(ctx.db, 'trabalho', 1);
+  const [expected] = getEventsByEntity(ctx.db, 'job', 1);
   assert.deepEqual(JSON.parse(call.body), expected);
 
   const signature = headerValue(call.headers, SIGNATURE_HEADER);
@@ -440,7 +440,7 @@ test('AT7 — filter_types narrows the fan-out to the asked types', async (t) =>
   const subscription = await subscribe(ctx, {
     url: 'https://exemplo.invalid/hook',
     secret: SECRET,
-    filter_types: ['trabalho.criado'],
+    filter_types: ['job.created'],
   });
   recordJobCreated(ctx.db, 1, 'entra');
   recordJobMoved(ctx.db, 1, 'revisao');
@@ -450,8 +450,8 @@ test('AT7 — filter_types narrows the fan-out to the asked types', async (t) =>
   await drive(t);
 
   assert.deepEqual(
-    ctx.calls.map((call) => (JSON.parse(call.body) as Event).tipo),
-    ['trabalho.criado', 'trabalho.criado'],
+    ctx.calls.map((call) => (JSON.parse(call.body) as Event).type),
+    ['job.created', 'job.created'],
   );
   assert.equal(deliveries(ctx.db, subscription.id).length, 2, 'the transition was never enqueued');
 });

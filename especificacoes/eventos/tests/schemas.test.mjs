@@ -1,7 +1,7 @@
 // Testes de contrato dos schemas de evento (t98, teste de aceite 1).
 //
 // A tabela abaixo É a especificação: cada tipo de evento, a entidade que ele
-// descreve e os campos do payload `dados` (os marcados como opcionais ficam
+// descreve e os campos do payload `data` (os marcados como opcionais ficam
 // fora de `required`, mas continuam declarados em `properties`). Qualquer
 // divergência entre um arquivo de schema e esta tabela é um erro do schema,
 // nunca do teste — a tabela reproduz a seção "Schema / Mudanças de Dados" da
@@ -17,130 +17,130 @@ const DIR_SCHEMAS = fileURLToPath(new URL('../schemas/', import.meta.url));
 
 /** tipo -> { entidade, obrigatorios, opcionais } */
 export const TABELA = {
-  'trabalho.criado': {
-    entidade: 'trabalho',
-    obrigatorios: ['titulo', 'no_entrada_id'],
-    // `corpo` e `criterios_de_aceite` entraram com o intake (t122): um trabalho
+  'job.created': {
+    entidade: 'job',
+    obrigatorios: ['title', 'entry_node_id'],
+    // `body` e `acceptance_criteria` entraram com o intake (t122): um trabalho
     // pode nascer com conteúdo, e os critérios que o intake grava são
-    // preliminares — quem tem a palavra final é o nó `refinar`. `campos` entrou
+    // preliminares — quem tem a palavra final é o nó `refinar`. `fields` entrou
     // com os campos customizados por classe (t168): o que a classe declara no
     // grafo dela, o trabalho carrega aqui. `tier` entrou com a triagem barata
     // (t175): quanto o trabalho CUSTA para rodar, nunca por qual aresta ele
     // sai — o grafo segue congelado.
-    opcionais: ['corpo', 'criterios_de_aceite', 'campos', 'tier'],
+    opcionais: ['body', 'acceptance_criteria', 'fields', 'tier'],
   },
-  'trabalho.transicao': {
-    entidade: 'trabalho',
-    obrigatorios: ['para_no_id'],
-    opcionais: ['de_no_id'],
+  'job.transitioned': {
+    entidade: 'job',
+    obrigatorios: ['to_node_id'],
+    opcionais: ['from_node_id'],
   },
-  'trabalho.bloqueado': {
-    entidade: 'trabalho',
-    obrigatorios: ['motivo'],
+  'job.blocked': {
+    entidade: 'job',
+    obrigatorios: ['reason'],
     opcionais: [],
   },
-  'trabalho.desbloqueado': {
-    entidade: 'trabalho',
+  'job.unblocked': {
+    entidade: 'job',
     obrigatorios: [],
     opcionais: [],
   },
-  'trabalho.emendado': {
-    entidade: 'trabalho',
-    obrigatorios: ['campos_alterados'],
+  'job.amended': {
+    entidade: 'job',
+    obrigatorios: ['changed_fields'],
     opcionais: [],
   },
-  'trabalho.dependencia_declarada': {
-    entidade: 'trabalho',
-    obrigatorios: ['depende_de_trabalho_id'],
+  'job.dependency_declared': {
+    entidade: 'job',
+    obrigatorios: ['depends_on_job_id'],
     opcionais: [],
   },
   // O 18º tipo entrou com os ganchos declarados no grafo (t169): quando a
   // entrega de um gancho esgota as seis tentativas, o único rastro observável
   // fora da tabela de entregas é este evento. Os quatro campos são
-  // obrigatórios pela mesma razão dos de `sessao.permissao_negada` — sem saber
+  // obrigatórios pela mesma razão dos de `session.permission_denied` — sem saber
   // QUAL gancho, de QUAL nó, para QUAL url e com QUAL erro, o incidente não é
   // auditável, e este log existe para ser auditado.
-  'trabalho.gancho_falhou': {
-    entidade: 'trabalho',
-    obrigatorios: ['gancho_id', 'no_id', 'url', 'ultimo_erro'],
+  'job.hook_failed': {
+    entidade: 'job',
+    obrigatorios: ['hook_id', 'node_id', 'url', 'last_error'],
     opcionais: [],
   },
   // `silence_seconds` entrou com o segundo cão de guarda (t163): a sessão passa
   // a declarar dois orçamentos independentes — relógio de parede e silêncio —
   // e ambos são opcionais pela mesma razão, ausência = sem política própria.
-  'sessao.aberta': {
-    entidade: 'sessao',
+  'session.opened': {
+    entidade: 'session',
     obrigatorios: ['engine', 'working_dir', 'prompt'],
     opcionais: [
-      'trabalho_id',
-      'no_id',
+      'job_id',
+      'node_id',
       'engine_session_ref',
       'timeout_seconds',
       'silence_seconds',
     ],
   },
-  'sessao.finalizada': {
-    entidade: 'sessao',
+  'session.finished': {
+    entidade: 'session',
     obrigatorios: ['status'],
     // `timeout_reason` (t163) é o que separa as duas paradas nossas sem que o
     // enum de `status` cresça: os dois cães de guarda desembocam em
-    // `tempo_esgotado`, e a causa viaja no payload.
+    // `timed_out`, e a causa viaja no payload.
     //
-    // `modelos` (t172) é a identidade que faltava para a pergunta "custo por
-    // modelo": até aqui o log dizia qual MOTOR rodou (`sessao.aberta.engine`) e
+    // `models` (t172) é a identidade que faltava para a pergunta "custo por
+    // modelo": até aqui o log dizia qual MOTOR rodou (`session.opened.engine`) e
     // nunca qual modelo. É lista porque uma sessão roda mais de um — medido
     // contra a CLI real, um turno só devolveu dois — e colapsar em "o" modelo
     // atribuiria a conta inteira ao errado.
-    opcionais: ['exit_code', 'uso', 'timeout_reason', 'modelos'],
+    opcionais: ['exit_code', 'usage', 'timeout_reason', 'models'],
   },
   // O 17º tipo entrou com o enforcement de permissão (t125): toda tentativa de
   // usar uma ferramenta que a política da sessão negou vira telemetria. Os três
   // campos são obrigatórios — uma negação sem recurso, sem ferramenta ou sem
   // motivo não é auditável, e este log existe para ser auditado.
-  'sessao.permissao_negada': {
-    entidade: 'sessao',
-    obrigatorios: ['recurso', 'ferramenta', 'motivo'],
+  'session.permission_denied': {
+    entidade: 'session',
+    obrigatorios: ['resource', 'tool', 'reason'],
     opcionais: [],
   },
-  'pergunta.criada': {
-    entidade: 'pergunta',
-    obrigatorios: ['trabalho_id', 'tipo', 'pergunta', 'auto_aprovavel'],
-    // `no_id` desde a t167: de qual nó a pergunta veio, carimbado pelo servidor.
-    opcionais: ['sessao_id', 'no_id', 'contexto', 'opcoes', 'recomendacao', 'resposta_padrao'],
+  'input_request.created': {
+    entidade: 'input_request',
+    obrigatorios: ['job_id', 'kind', 'question', 'auto_approvable'],
+    // `node_id` desde a t167: de qual nó a pergunta veio, carimbado pelo servidor.
+    opcionais: ['session_id', 'node_id', 'context', 'options', 'recommendation', 'default_answer'],
   },
-  'pergunta.respondida': {
-    entidade: 'pergunta',
-    obrigatorios: ['resposta', 'respondido_por'],
+  'input_request.answered': {
+    entidade: 'input_request',
+    obrigatorios: ['answer', 'answered_by'],
     opcionais: [],
   },
-  'pergunta.auto_resolvida': {
-    entidade: 'pergunta',
-    obrigatorios: ['resposta', 'baseada_em'],
+  'input_request.auto_resolved': {
+    entidade: 'input_request',
+    obrigatorios: ['answer', 'based_on'],
     opcionais: [],
   },
-  'lease.concedida': {
+  'lease.granted': {
     entidade: 'lease',
-    obrigatorios: ['trabalho_id', 'runner_id', 'expira_em'],
+    obrigatorios: ['job_id', 'runner_id', 'expires_at'],
     opcionais: [],
   },
-  'lease.expirada': {
+  'lease.expired': {
     entidade: 'lease',
-    obrigatorios: ['runner_id', 'motivo'],
+    obrigatorios: ['runner_id', 'reason'],
     opcionais: [],
   },
-  'grafo_versao.registrada': {
-    entidade: 'grafo_versao',
-    obrigatorios: ['grafo_id', 'origem'],
-    opcionais: ['versao_pai', 'proposta_id'],
+  'graph_version.registered': {
+    entidade: 'graph_version',
+    obrigatorios: ['graph_id', 'source'],
+    opcionais: ['parent_version', 'proposal_id'],
   },
-  'grafo_versao.aplicada': {
-    entidade: 'grafo_versao',
-    obrigatorios: ['grafo_id'],
-    opcionais: ['proposta_id'],
+  'graph_version.applied': {
+    entidade: 'graph_version',
+    obrigatorios: ['graph_id'],
+    opcionais: ['proposal_id'],
   },
-  'grafo_versao.revertida': {
-    entidade: 'grafo_versao',
-    obrigatorios: ['grafo_id', 'versao_alvo', 'motivo'],
+  'graph_version.reverted': {
+    entidade: 'graph_version',
+    obrigatorios: ['graph_id', 'target_version', 'reason'],
     opcionais: [],
   },
 };
@@ -172,27 +172,27 @@ test('o envelope declara os campos comuns a todo evento', () => {
 
   assert.deepEqual(
     [...envelope.required].sort(),
-    ['ator', 'dados', 'entidade', 'execucao_id', 'id', 'ocorrido_em', 'projeto_id', 'tipo'],
+    ['actor', 'data', 'entity', 'execution_id', 'id', 'occurred_at', 'project_id', 'type'],
   );
 
   assert.equal(envelope.properties.id.type, 'integer');
-  assert.equal(envelope.properties.tipo.type, 'string');
-  assert.equal(envelope.properties.projeto_id.type, 'integer');
-  assert.deepEqual([...envelope.properties.execucao_id.type].sort(), ['integer', 'null']);
-  assert.equal(envelope.properties.ocorrido_em.format, 'date-time');
-  assert.equal(envelope.properties.dados.type, 'object');
+  assert.equal(envelope.properties.type.type, 'string');
+  assert.equal(envelope.properties.project_id.type, 'integer');
+  assert.deepEqual([...envelope.properties.execution_id.type].sort(), ['integer', 'null']);
+  assert.equal(envelope.properties.occurred_at.format, 'date-time');
+  assert.equal(envelope.properties.data.type, 'object');
 
-  const entidade = envelope.properties.entidade;
-  assert.deepEqual([...entidade.required].sort(), ['id', 'tipo']);
+  const entidade = envelope.properties.entity;
+  assert.deepEqual([...entidade.required].sort(), ['id', 'type']);
   assert.deepEqual(
-    [...entidade.properties.tipo.enum].sort(),
-    ['grafo_versao', 'lease', 'pergunta', 'sessao', 'trabalho'],
+    [...entidade.properties.type.enum].sort(),
+    ['graph_version', 'input_request', 'job', 'lease', 'session'],
   );
   assert.deepEqual([...entidade.properties.id.type].sort(), ['integer', 'string']);
 
-  const ator = envelope.properties.ator;
-  assert.deepEqual([...ator.required].sort(), ['ref', 'tipo']);
-  assert.deepEqual([...ator.properties.tipo.enum].sort(), ['agente', 'sistema', 'usuario']);
+  const ator = envelope.properties.actor;
+  assert.deepEqual([...ator.required].sort(), ['ref', 'type']);
+  assert.deepEqual([...ator.properties.type.enum].sort(), ['agent', 'system', 'user']);
   assert.equal(ator.properties.ref.type, 'string');
 });
 
@@ -209,48 +209,48 @@ for (const [tipo, spec] of Object.entries(TABELA)) {
     );
   });
 
-  test(`${arquivo} fixa properties.tipo.const igual ao nome do arquivo`, () => {
+  test(`${arquivo} fixa properties.type.const igual ao nome do arquivo`, () => {
     const schema = lerSchema(arquivo);
-    assert.equal(schema.properties.tipo.const, tipo);
+    assert.equal(schema.properties.type.const, tipo);
   });
 
   test(`${arquivo} fixa a entidade do evento`, () => {
     const schema = lerSchema(arquivo);
-    assert.equal(schema.properties.entidade.properties.tipo.const, spec.entidade);
+    assert.equal(schema.properties.entity.properties.type.const, spec.entidade);
   });
 
   test(`${arquivo} declara os campos de dados da tabela`, () => {
     const schema = lerSchema(arquivo);
-    const dados = schema.properties.dados;
+    const dados = schema.properties.data;
 
     assert.deepEqual(
       [...dados.required].sort(),
       [...spec.obrigatorios].sort(),
-      `${arquivo}: dados.required diverge da tabela`,
+      `${arquivo}: data.required diverge da tabela`,
     );
     assert.deepEqual(
       Object.keys(dados.properties ?? {}).sort(),
       [...spec.obrigatorios, ...spec.opcionais].sort(),
-      `${arquivo}: dados.properties diverge da tabela`,
+      `${arquivo}: data.properties diverge da tabela`,
     );
     assert.equal(
       dados.additionalProperties,
       false,
-      `${arquivo}: dados deve fechar additionalProperties`,
+      `${arquivo}: data deve fechar additionalProperties`,
     );
   });
 }
 
-test('t175 — trabalho.criado.dados.tier fecha o conjunto em trivial, standard e null', () => {
+test('t175 — job.created.data.tier fecha o conjunto em trivial, standard e null', () => {
   // Estrutural, como o resto deste diretório (`exemplos.test.mjs` escreve a
   // razão): sem ajv, o que se confere é a DECLARAÇÃO — e um enum declarado é
   // exatamente o que separa "aceita os dois valores e o nulo" de "aceita
   // qualquer string". A tabela em `src/db/event-validation.ts` é a duplicata
   // que o servidor cobra em tempo de escrita; as duas têm que andar juntas, e
   // é a asserção de `opcionais` acima que pega a divergência.
-  const tier = lerSchema('trabalho.criado.schema.json').properties.dados.properties.tier;
+  const tier = lerSchema('job.created.schema.json').properties.data.properties.tier;
 
-  assert.ok(tier, 'trabalho.criado não declara dados.tier');
+  assert.ok(tier, 'job.created não declara dados.tier');
   assert.deepEqual([...tier.type].sort(), ['null', 'string'], 'null é resposta válida');
   assert.deepEqual(
     [...tier.enum].sort((a, b) => String(a).localeCompare(String(b))),

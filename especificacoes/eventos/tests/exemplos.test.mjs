@@ -3,7 +3,7 @@
 // Sem ajv e sem package.json: o repo ainda é pré-implementação e a primeira
 // dependência do projeto não entra por uma ficha de especificação. A validação
 // aqui é estrutural — chaves obrigatórias presentes, enums respeitados,
-// nenhuma chave de `dados` fora do contrato — que é o suficiente para provar
+// nenhuma chave de `data` fora do contrato — que é o suficiente para provar
 // que o exemplo e os schemas falam do mesmo formato.
 
 import { test } from 'node:test';
@@ -24,7 +24,7 @@ function lerSchemas() {
   for (const nome of readdirSync(DIR_SCHEMAS)) {
     if (!nome.endsWith('.schema.json') || nome === ENVELOPE) continue;
     const schema = JSON.parse(readFileSync(join(DIR_SCHEMAS, nome), 'utf8'));
-    porTipo.set(schema.properties.tipo.const, schema);
+    porTipo.set(schema.properties.type.const, schema);
   }
   return { envelope, porTipo };
 }
@@ -51,7 +51,7 @@ test('o log de exemplo não está vazio', () => {
 });
 
 for (const { evento, numero } of linhas) {
-  const rotulo = `linha ${numero} (${evento.tipo})`;
+  const rotulo = `linha ${numero} (${evento.type})`;
 
   test(`${rotulo}: envelope completo e bem tipado`, () => {
     for (const chave of envelope.required) {
@@ -59,56 +59,79 @@ for (const { evento, numero } of linhas) {
     }
     assert.equal(typeof evento.id, 'number');
     assert.ok(Number.isInteger(evento.id), `${rotulo}: id precisa ser inteiro`);
-    assert.equal(typeof evento.projeto_id, 'number');
+    assert.equal(typeof evento.project_id, 'number');
     assert.ok(
-      evento.execucao_id === null || Number.isInteger(evento.execucao_id),
-      `${rotulo}: execucao_id precisa ser inteiro ou null`,
+      evento.execution_id === null || Number.isInteger(evento.execution_id),
+      `${rotulo}: execution_id precisa ser inteiro ou null`,
     );
-    assert.match(evento.ocorrido_em, ISO_8601, `${rotulo}: ocorrido_em não é date-time ISO 8601`);
+    assert.match(evento.occurred_at, ISO_8601, `${rotulo}: occurred_at não é date-time ISO 8601`);
 
     assert.ok(
-      envelope.properties.entidade.properties.tipo.enum.includes(evento.entidade.tipo),
-      `${rotulo}: entidade.tipo "${evento.entidade.tipo}" fora do enum`,
+      envelope.properties.entity.properties.type.enum.includes(evento.entity.type),
+      `${rotulo}: entity.type "${evento.entity.type}" fora do enum`,
     );
     assert.ok(
-      ['number', 'string'].includes(typeof evento.entidade.id),
-      `${rotulo}: entidade.id precisa ser inteiro ou string`,
+      ['number', 'string'].includes(typeof evento.entity.id),
+      `${rotulo}: entity.id precisa ser inteiro ou string`,
     );
     assert.ok(
-      envelope.properties.ator.properties.tipo.enum.includes(evento.ator.tipo),
-      `${rotulo}: ator.tipo "${evento.ator.tipo}" fora do enum`,
+      envelope.properties.actor.properties.type.enum.includes(evento.actor.type),
+      `${rotulo}: actor.type "${evento.actor.type}" fora do enum`,
     );
-    assert.equal(typeof evento.ator.ref, 'string');
-    assert.equal(typeof evento.dados, 'object');
-    assert.ok(evento.dados !== null, `${rotulo}: dados não pode ser null`);
+    assert.equal(typeof evento.actor.ref, 'string');
+    assert.equal(typeof evento.data, 'object');
+    assert.ok(evento.data !== null, `${rotulo}: data não pode ser null`);
+
+    // O envelope fecha `additionalProperties`, e sem ajv é aqui que isso é
+    // cobrado. Depois da t227 a checagem tem um segundo trabalho: uma chave
+    // sobrevivente do vocabulário antigo (`tipo`, `entidade`, `ator`, `dados`)
+    // não é campo extra qualquer — é a tradução pela metade, e ela some
+    // exatamente por este assert.
+    const declaradas = Object.keys(envelope.properties);
+    for (const chave of Object.keys(evento)) {
+      assert.ok(
+        declaradas.includes(chave),
+        `${rotulo}: ${chave} não existe no envelope (declaradas: ${declaradas.join(', ')})`,
+      );
+    }
+    for (const sub of [
+      { nome: 'entity', valor: evento.entity, chaves: ['type', 'id'] },
+      { nome: 'actor', valor: evento.actor, chaves: ['type', 'ref'] },
+    ]) {
+      assert.deepEqual(
+        Object.keys(sub.valor).sort(),
+        [...sub.chaves].sort(),
+        `${rotulo}: ${sub.nome} tem que carregar exatamente ${sub.chaves.join(' e ')}`,
+      );
+    }
   });
 
   test(`${rotulo}: bate com o schema do seu tipo`, () => {
-    const schema = porTipo.get(evento.tipo);
-    assert.ok(schema, `${rotulo}: nenhum schema declara o tipo "${evento.tipo}"`);
+    const schema = porTipo.get(evento.type);
+    assert.ok(schema, `${rotulo}: nenhum schema declara o tipo "${evento.type}"`);
 
     assert.equal(
-      evento.entidade.tipo,
-      schema.properties.entidade.properties.tipo.const,
-      `${rotulo}: entidade.tipo diverge do schema`,
+      evento.entity.type,
+      schema.properties.entity.properties.type.const,
+      `${rotulo}: entity.type diverge do schema`,
     );
 
-    const dados = schema.properties.dados;
+    const dados = schema.properties.data;
     for (const chave of dados.required) {
-      assert.ok(chave in evento.dados, `${rotulo}: falta dados.${chave}`);
+      assert.ok(chave in evento.data, `${rotulo}: falta data.${chave}`);
     }
     const declaradas = Object.keys(dados.properties ?? {});
-    for (const chave of Object.keys(evento.dados)) {
+    for (const chave of Object.keys(evento.data)) {
       assert.ok(
         declaradas.includes(chave),
-        `${rotulo}: dados.${chave} não está declarado no schema`,
+        `${rotulo}: data.${chave} não está declarado no schema`,
       );
     }
   });
 }
 
 test('todos os tipos de evento aparecem pelo menos uma vez', () => {
-  const presentes = new Set(linhas.map(({ evento }) => evento.tipo));
+  const presentes = new Set(linhas.map(({ evento }) => evento.type));
   const faltando = [...porTipo.keys()].filter((tipo) => !presentes.has(tipo)).sort();
   assert.deepEqual(faltando, [], `tipos ausentes do log de exemplo: ${faltando.join(', ')}`);
 });
@@ -122,10 +145,10 @@ test('os ids são monotônicos — a ordem do log', () => {
 
 test('o log descreve uma única execução ponta a ponta', () => {
   const execucoes = new Set(
-    linhas.map(({ evento }) => evento.execucao_id).filter((id) => id !== null),
+    linhas.map(({ evento }) => evento.execution_id).filter((id) => id !== null),
   );
   assert.equal(execucoes.size, 1, `esperava uma execução só, achei ${[...execucoes].join(', ')}`);
 
-  const projetos = new Set(linhas.map(({ evento }) => evento.projeto_id));
+  const projetos = new Set(linhas.map(({ evento }) => evento.project_id));
   assert.equal(projetos.size, 1, `esperava um projeto só, achei ${[...projetos].join(', ')}`);
 });

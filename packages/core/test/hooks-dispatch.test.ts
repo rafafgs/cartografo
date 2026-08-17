@@ -98,7 +98,7 @@ const SETTLE_TICKS = 15;
 const BACKOFF_MS = [10_000, 60_000, 300_000, 1_800_000, 7_200_000];
 
 /** The event type the control plane records when a hook gives up (FR9). */
-const FAILURE_TYPE = 'trabalho.gancho_falhou';
+const FAILURE_TYPE = 'job.hook_failed';
 
 /** One delivery attempt, as the injected `fetch` saw it. */
 interface DeliveryCall {
@@ -139,16 +139,16 @@ interface HookSecretsModule {
 /** One row of `entrega_gancho`, read straight from the table. */
 interface HookDelivery {
   id: number;
-  trabalho_id: number;
-  gancho_id: string;
-  no_id: string;
+  job_id: number;
+  hook_id: string;
+  node_id: string;
   evento_id: number;
   url: string;
   status: string;
   tentativas: number;
   proxima_tentativa_em: string;
   entregue_em: string | null;
-  ultimo_erro: string | null;
+  last_error: string | null;
 }
 
 /** A dispatcher running against a throwaway database. */
@@ -258,9 +258,9 @@ async function startDispatcher(
 function jobOn(db: Database, hooks: DeclaredHook[]): Job {
   const versionId = registerBaseGraph(db, graphWith(hooks)).version.id;
   return createJob(db, {
-    titulo: 'a nota que dispara ganchos',
-    no_entrada_id: 'redigir',
-    grafo_versao_id: versionId,
+    title: 'a nota que dispara ganchos',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
   });
 }
 
@@ -281,9 +281,9 @@ function only(rows: HookDelivery[]): HookDelivery {
   return rows[0];
 }
 
-/** The `trabalho.gancho_falhou` events in the log, in order. */
+/** The `job.hook_failed` events in the log, in order. */
 function failureEvents(db: Database): ReturnType<typeof listEvents> {
-  return listEvents(db).filter((event) => event.tipo === FAILURE_TYPE);
+  return listEvents(db).filter((event) => event.type === FAILURE_TYPE);
 }
 
 /** Moves the injected clock forward. */
@@ -363,7 +363,7 @@ test('AT8 — the delivery carries the triggering event, signed with the hook\'s
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 200 }) });
 
   const job = jobOn(ctx.db, [hook('avisar-revisao', 'node_entered', 'revisar', 'https://exemplo.invalid/gancho')]);
-  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
+  transitionJob(ctx.db, job.id, { to_node_id: 'revisar' }, { now: () => ctx.clock.value });
 
   await waitFor(
 t,
@@ -377,8 +377,8 @@ t,
   // The body is the taxonomy's envelope, byte for byte the same object the
   // stream and t142's webhooks serve — read here through a path the dispatcher
   // does not use.
-  const trigger = listEvents(ctx.db, { trabalho_id: job.id }).find(
-    (event) => event.tipo === 'trabalho.transicao',
+  const trigger = listEvents(ctx.db, { job_id: job.id }).find(
+    (event) => event.type === 'job.transitioned',
   );
   assert.ok(trigger !== undefined, 'the transition has to be in the log');
   assert.equal(call.body, JSON.stringify(trigger), 'the body is the envelope, byte for byte');
@@ -396,7 +396,7 @@ test('AT9 — a 2xx closes the delivery in silence: no event is recorded', async
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 204 }) });
 
   const job = jobOn(ctx.db, [hook('avisar-bloqueio', 'node_blocked', 'redigir', 'https://exemplo.invalid/gancho')]);
-  blockJob(ctx.db, job.id, { motivo: 'a redação parou esperando o tema' }, { now: () => ctx.clock.value });
+  blockJob(ctx.db, job.id, { reason: 'a redação parou esperando o tema' }, { now: () => ctx.clock.value });
   const recorded = listEvents(ctx.db).length;
 
   await waitFor(
@@ -423,7 +423,7 @@ test('AT10 — a failed attempt is rescheduled by t142\'s backoff step, and retr
   });
 
   const job = jobOn(ctx.db, [hook('avisar-revisao', 'node_entered', 'revisar', 'https://exemplo.invalid/gancho')]);
-  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
+  transitionJob(ctx.db, job.id, { to_node_id: 'revisar' }, { now: () => ctx.clock.value });
 
   await waitFor(
 t,
@@ -454,11 +454,11 @@ t,
   assert.deepEqual(failureEvents(ctx.db), [], 'a transient failure is not an incident yet');
 });
 
-test('AT11 — the sixth failed attempt gives up and records one trabalho.gancho_falhou', async (t) => {
+test('AT11 — the sixth failed attempt gives up and records one job.hook_failed', async (t) => {
   const ctx = await startDispatcher(t, { respond: async () => ({ status: 500 }) });
 
   const job = jobOn(ctx.db, [hook('avisar-revisao', 'node_entered', 'revisar', 'https://exemplo.invalid/gancho')]);
-  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
+  transitionJob(ctx.db, job.id, { to_node_id: 'revisar' }, { now: () => ctx.clock.value });
 
   // Six attempts in total: the first one, plus one per step of the schedule.
   for (let attempt = 1; attempt <= BACKOFF_MS.length + 1; attempt += 1) {
@@ -479,16 +479,16 @@ test('AT11 — the sixth failed attempt gives up and records one trabalho.gancho
   const incidents = failureEvents(ctx.db);
   assert.equal(incidents.length, 1, 'exhaustion records exactly one event, not one per attempt');
   const [incident] = incidents;
-  assert.equal(incident.entidade.tipo, 'trabalho');
-  assert.equal(incident.entidade.id, job.id);
-  assert.equal(incident.ator.tipo, 'sistema');
-  assert.deepEqual(incident.dados, {
-    gancho_id: 'avisar-revisao',
-    no_id: 'revisar',
+  assert.equal(incident.entity.type, 'job');
+  assert.equal(incident.entity.id, job.id);
+  assert.equal(incident.actor.type, 'system');
+  assert.deepEqual(incident.data, {
+    hook_id: 'avisar-revisao',
+    node_id: 'revisar',
     url: 'https://exemplo.invalid/gancho',
-    ultimo_erro: exhausted.ultimo_erro,
+    last_error: exhausted.ultimo_erro,
   });
-  assert.ok(String(incident.dados.ultimo_erro).includes('500'), 'the last failure is what is reported');
+  assert.ok(String(incident.data.ultimo_erro).includes('500'), 'the last failure is what is reported');
 
   // However far the clock goes, a terminal delivery is not a delivery any more —
   // and it never records a second incident.
@@ -511,7 +511,7 @@ test('AT12 — a dead hook does not hold up another hook of the same batch', asy
     hook('avisar-morto', 'node_entered', 'revisar', 'https://exemplo.invalid/morto'),
     hook('avisar-vivo', 'node_entered', 'revisar', 'https://exemplo.invalid/vivo'),
   ]);
-  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
+  transitionJob(ctx.db, job.id, { to_node_id: 'revisar' }, { now: () => ctx.clock.value });
 
   // One event, two hooks, two independent deliveries (FR5).
   await waitFor(
@@ -550,7 +550,7 @@ test('t194 — a secret_ref that resolves to nothing enqueues nothing, and is si
     ),
     hook('avisar-vivo', 'node_entered', 'revisar', 'https://exemplo.invalid/vivo'),
   ]);
-  transitionJob(ctx.db, job.id, { para_no_id: 'revisar' }, { now: () => ctx.clock.value });
+  transitionJob(ctx.db, job.id, { to_node_id: 'revisar' }, { now: () => ctx.clock.value });
 
   await waitFor(
 t,

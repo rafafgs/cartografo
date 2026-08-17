@@ -3,7 +3,7 @@
  *
  * The session is the run of an agent by an EngineAdapter. In flowpilot it was a
  * mutable row born `pending` and updated until `completed`; here there are two
- * events (`sessao.aberta`, `sessao.finalizada`) and a projection — consequence 2
+ * events (`session.opened`, `session.finished`) and a projection — consequence 2
  * of the taxonomy's append-only rule.
  *
  * The JSON field names stay in Portuguese: they mirror the untouched migration
@@ -67,7 +67,7 @@ interface Transcript {
 /** Opens a job-less session — what every t159 case starts from. */
 async function openBareSession(ctx: TestContext): Promise<Session> {
   const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    execucao_id: 7,
+    execution_id: 7,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'faça algo e conte o que aconteceu',
@@ -83,20 +83,20 @@ const USAGE = {
   cache_read_input_tokens: 120344,
 };
 
-test('AT8 — POST /v1/sessions records sessao.aberta and creates the open row', async (t) => {
+test('AT8 — POST /v1/sessions records session.opened and creates the open row', async (t) => {
   requireArtifacts(...ARTIFACTS, T102_ARTIFACTS.jobRepository, T102_ARTIFACTS.jobRoutes);
   const ctx = await startControlPlane(t);
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, {
-    titulo: 'com sessão',
-    no_entrada_id: 'entrada',
-    execucao_id: 7,
+    title: 'com sessão',
+    entry_node_id: 'entrada',
+    execution_id: 7,
   });
 
   const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    trabalho_id: job.id,
-    no_id: 'refinamento',
+    job_id: job.id,
+    node_id: 'refinamento',
     engine: 'claude-code',
     engine_session_ref: 'cc-9f2b41d0',
     working_dir: '/Users/rafael/cartografo-ticket-102',
@@ -115,13 +115,13 @@ test('AT8 — POST /v1/sessions records sessao.aberta and creates the open row',
   assert.equal(session.finished_at, null);
   assert.ok(!Number.isNaN(Date.parse(session.opened_at)));
 
-  const events = getEventsByEntity(ctx.db, 'sessao', session.id);
+  const events = getEventsByEntity(ctx.db, 'session', session.id);
   assert.equal(events.length, 1);
-  assert.equal(events[0].tipo, 'sessao.aberta');
-  assert.deepEqual(events[0].entidade, { tipo: 'sessao', id: session.id });
-  assert.deepEqual(events[0].dados, {
-    trabalho_id: job.id,
-    no_id: 'refinamento',
+  assert.equal(events[0].type, 'session.opened');
+  assert.deepEqual(events[0].entity, { type: 'session', id: session.id });
+  assert.deepEqual(events[0].data, {
+    job_id: job.id,
+    node_id: 'refinamento',
     engine: 'claude-code',
     engine_session_ref: 'cc-9f2b41d0',
     working_dir: '/Users/rafael/cartografo-ticket-102',
@@ -141,7 +141,7 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
 
   const open = async (): Promise<Session> => {
     const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
-      execucao_id: 7,
+      execution_id: 7,
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
       prompt: 'faça algo',
@@ -152,48 +152,48 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
 
   const withUsage = await open();
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${withUsage.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
-    uso: USAGE,
+    usage: USAGE,
   });
   assert.equal(finished.status, 200);
-  assert.equal(finished.body.status, 'concluida');
+  assert.equal(finished.body.status, 'completed');
   assert.equal(finished.body.exit_code, 0, 'zero is a success exit code, not absence');
   assert.deepEqual(finished.body.usage, USAGE);
   assert.ok(!Number.isNaN(Date.parse(finished.body.finished_at ?? '')));
 
   const withoutUsage = await open();
   const paused = await request<Session>(ctx, 'PATCH', `/v1/sessions/${withoutUsage.id}/finish`, {
-    status: 'pausada_cota',
+    status: 'quota_paused',
   });
   assert.equal(paused.status, 200);
-  assert.equal(paused.body.status, 'pausada_cota');
+  assert.equal(paused.body.status, 'quota_paused');
   assert.equal(paused.body.usage, null, 'the engine reported nothing: null');
   assert.notEqual(paused.body.usage, 0, 'never collapse absent usage into zero');
   assert.equal(paused.body.exit_code, null);
 
-  const events = getEventsByEntity(ctx.db, 'sessao', withUsage.id);
+  const events = getEventsByEntity(ctx.db, 'session', withUsage.id);
   assert.deepEqual(
-    events.map((event: Event) => event.tipo),
-    ['sessao.aberta', 'sessao.finalizada'],
+    events.map((event: Event) => event.type),
+    ['session.opened', 'session.finished'],
   );
   // Every optional field the type declares appears normalized, with an explicit
-  // `null` for what the client did not send — `modelos` included since t172.
-  assert.deepEqual(events[1].dados, {
-    status: 'concluida',
+  // `null` for what the client did not send — `models` included since t172.
+  assert.deepEqual(events[1].data, {
+    status: 'completed',
     exit_code: 0,
-    uso: USAGE,
+    usage: USAGE,
     timeout_reason: null,
-    modelos: null,
+    models: null,
   });
 
-  const withoutUsageEvents = getEventsByEntity(ctx.db, 'sessao', withoutUsage.id);
-  assert.deepEqual(withoutUsageEvents[1].dados, {
-    status: 'pausada_cota',
+  const withoutUsageEvents = getEventsByEntity(ctx.db, 'session', withoutUsage.id);
+  assert.deepEqual(withoutUsageEvents[1].data, {
+    status: 'quota_paused',
     exit_code: null,
-    uso: null,
+    usage: null,
     timeout_reason: null,
-    modelos: null,
+    models: null,
   });
 });
 
@@ -203,7 +203,7 @@ test('AT10 — GET /v1/sessions?execution_id=7 returns only that execution\'s se
 
   const open = async (executionId: number, prompt: string): Promise<Session> => {
     const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
-      execucao_id: executionId,
+      execution_id: executionId,
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
       prompt,
@@ -229,7 +229,7 @@ test('t127 — the old Portuguese session paths no longer exist', async (t) => {
   const ctx = await startControlPlane(t);
 
   const created = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    execucao_id: 7,
+    execution_id: 7,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'faça algo',
@@ -245,7 +245,7 @@ test('t127 — the old Portuguese session paths no longer exist', async (t) => {
       ctx,
       method,
       routePath,
-      method === 'GET' ? undefined : { status: 'concluida' },
+      method === 'GET' ? undefined : { status: 'completed' },
     );
     assert.equal(response.status, 404, `${method} ${routePath} should be gone (D18)`);
   }
@@ -258,19 +258,19 @@ test('t107 AT2 — GET /v1/sessions?job_id= slices by job inside the same execut
   // Both jobs live in the SAME execution: that is what makes this test prove
   // the new filter, and not the `execucao_id` that already existed.
   const watched = await createJob(ctx, {
-    titulo: 'o que a tela abre',
-    no_entrada_id: 'entrada',
-    execucao_id: 7,
+    title: 'o que a tela abre',
+    entry_node_id: 'entrada',
+    execution_id: 7,
   });
   const neighbour = await createJob(ctx, {
-    titulo: 'o outro da mesma rodada',
-    no_entrada_id: 'entrada',
-    execucao_id: 7,
+    title: 'o outro da mesma rodada',
+    entry_node_id: 'entrada',
+    execution_id: 7,
   });
 
   const openSessionFor = async (jobId: number, prompt: string): Promise<Session> => {
     const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
-      trabalho_id: jobId,
+      job_id: jobId,
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
       prompt,
@@ -328,13 +328,13 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, {
-    titulo: 'com skill de terceiro',
-    no_entrada_id: 'entrada',
-    execucao_id: 9,
+    title: 'com skill de terceiro',
+    entry_node_id: 'entrada',
+    execution_id: 9,
   });
 
   const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    trabalho_id: job.id,
+    job_id: job.id,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'faça algo sem rede',
@@ -347,9 +347,9 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
     'POST',
     `/v1/sessions/${session.id}/permission-denials`,
     {
-      recurso: 'rede',
-      ferramenta: 'WebFetch',
-      motivo: 'Claude requested permissions to use WebFetch, but you have not granted it.',
+      resource: 'network',
+      tool: 'WebFetch',
+      reason: 'Claude requested permissions to use WebFetch, but you have not granted it.',
     },
   );
 
@@ -359,18 +359,18 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
   assert.equal(denied.body.finished_at, null);
   assert.equal(denied.body.exit_code, null);
 
-  const events = getEventsByEntity(ctx.db, 'sessao', session.id);
+  const events = getEventsByEntity(ctx.db, 'session', session.id);
   assert.deepEqual(
-    events.map((event: Event) => event.tipo),
-    ['sessao.aberta', 'sessao.permissao_negada'],
+    events.map((event: Event) => event.type),
+    ['session.opened', 'session.permission_denied'],
   );
-  assert.deepEqual(events[1].entidade, { tipo: 'sessao', id: session.id });
-  assert.deepEqual(events[1].ator, { tipo: 'sistema', ref: 'runner' });
-  assert.equal(events[1].execucao_id, 9, 'the denial belongs to the round the session serves');
-  assert.deepEqual(events[1].dados, {
-    recurso: 'rede',
-    ferramenta: 'WebFetch',
-    motivo: 'Claude requested permissions to use WebFetch, but you have not granted it.',
+  assert.deepEqual(events[1].entity, { type: 'session', id: session.id });
+  assert.deepEqual(events[1].actor, { type: 'system', ref: 'runner' });
+  assert.equal(events[1].execution_id, 9, 'the denial belongs to the round the session serves');
+  assert.deepEqual(events[1].data, {
+    resource: 'network',
+    tool: 'WebFetch',
+    reason: 'Claude requested permissions to use WebFetch, but you have not granted it.',
   });
 
   // The same session can be denied more than once: the log is append-only and
@@ -379,10 +379,10 @@ test('t125 — POST /v1/sessions/:id/permission-denials records the denial witho
     ctx,
     'POST',
     `/v1/sessions/${session.id}/permission-denials`,
-    { recurso: 'filesystem', ferramenta: 'Write', motivo: 'write scope is empty for this skill' },
+    { resource: 'filesystem', tool: 'Write', reason: 'write scope is empty for this skill' },
   );
   assert.equal(again.status, 200);
-  assert.equal(getEventsByEntity(ctx.db, 'sessao', session.id).length, 3);
+  assert.equal(getEventsByEntity(ctx.db, 'session', session.id).length, 3);
 });
 
 /**
@@ -401,8 +401,8 @@ test('t157 — a job-less session keeps its own project at finish and at denial'
 
   const open = async (): Promise<Session> => {
     const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
-      projeto_id: OTHER_PROJECT,
-      execucao_id: 7,
+      project_id: OTHER_PROJECT,
+      execution_id: 7,
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
       prompt: 'uma sessão de descoberta, sem trabalho dono',
@@ -414,23 +414,23 @@ test('t157 — a job-less session keeps its own project at finish and at denial'
 
   const closed = await open();
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${closed.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
   });
   assert.equal(finished.status, 200);
 
-  const closedEvents = getEventsByEntity(ctx.db, 'sessao', closed.id);
+  const closedEvents = getEventsByEntity(ctx.db, 'session', closed.id);
   assert.deepEqual(
-    closedEvents.map((event: Event) => event.tipo),
-    ['sessao.aberta', 'sessao.finalizada'],
+    closedEvents.map((event: Event) => event.type),
+    ['session.opened', 'session.finished'],
   );
   assert.equal(
-    closedEvents[0].projeto_id,
+    closedEvents[0].project_id,
     OTHER_PROJECT,
     'control: the opening already recorded the declared project',
   );
   assert.equal(
-    closedEvents[1].projeto_id,
+    closedEvents[1].project_id,
     OTHER_PROJECT,
     'the end belongs to the same project as the opening, not to DEFAULT_PROJECT',
   );
@@ -440,17 +440,17 @@ test('t157 — a job-less session keeps its own project at finish and at denial'
     ctx,
     'POST',
     `/v1/sessions/${denied.id}/permission-denials`,
-    { recurso: 'rede', ferramenta: 'WebFetch', motivo: 'sem rede nesta sessão' },
+    { resource: 'network', tool: 'WebFetch', reason: 'sem rede nesta sessão' },
   );
   assert.equal(denial.status, 200);
 
-  const deniedEvents = getEventsByEntity(ctx.db, 'sessao', denied.id);
+  const deniedEvents = getEventsByEntity(ctx.db, 'session', denied.id);
   assert.deepEqual(
-    deniedEvents.map((event: Event) => event.tipo),
-    ['sessao.aberta', 'sessao.permissao_negada'],
+    deniedEvents.map((event: Event) => event.type),
+    ['session.opened', 'session.permission_denied'],
   );
   assert.equal(
-    deniedEvents[1].projeto_id,
+    deniedEvents[1].project_id,
     OTHER_PROJECT,
     'the denial is attributed the same way the end is',
   );
@@ -462,17 +462,17 @@ test('t157 — a session that serves a job is still attributed to the job\'s pro
   const { getEventsByEntity } = await loadEvents();
 
   const job = await createJob(ctx, {
-    titulo: 'de outro projeto',
-    no_entrada_id: 'entrada',
-    projeto_id: OTHER_PROJECT,
-    execucao_id: 9,
+    title: 'de outro projeto',
+    entry_node_id: 'entrada',
+    project_id: OTHER_PROJECT,
+    execution_id: 9,
   });
 
   const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    trabalho_id: job.id,
+    job_id: job.id,
     // Deliberately contradicting the job: the owner's project is the one that
     // holds, at the opening and at every event after it.
-    projeto_id: 999,
+    project_id: 999,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'faça algo pelo trabalho',
@@ -483,13 +483,13 @@ test('t157 — a session that serves a job is still attributed to the job\'s pro
     ctx,
     'PATCH',
     `/v1/sessions/${opened.body.id}/finish`,
-    { status: 'concluida', exit_code: 0 },
+    { status: 'completed', exit_code: 0 },
   );
   assert.equal(finished.status, 200);
 
-  const events = getEventsByEntity(ctx.db, 'sessao', opened.body.id);
+  const events = getEventsByEntity(ctx.db, 'session', opened.body.id);
   assert.deepEqual(
-    events.map((event: Event) => event.projeto_id),
+    events.map((event: Event) => event.project_id),
     [OTHER_PROJECT, OTHER_PROJECT],
     'the job owns the project, and the end says the same thing the opening said',
   );
@@ -501,7 +501,7 @@ test('t149 AT5 — finishing an already finished session is a 409, and the first
   const { getEventsByEntity } = await loadEvents();
 
   const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    execucao_id: 7,
+    execution_id: 7,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'faça algo',
@@ -510,9 +510,9 @@ test('t149 AT5 — finishing an already finished session is a 409, and the first
   const session = opened.body;
 
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
-    uso: USAGE,
+    usage: USAGE,
   });
   assert.equal(finished.status, 200);
 
@@ -522,12 +522,12 @@ test('t149 AT5 — finishing an already finished session is a 409, and the first
     ctx,
     'PATCH',
     `/v1/sessions/${session.id}/finish`,
-    { status: 'falhou', exit_code: 1 },
+    { status: 'failed', exit_code: 1 },
   );
   assert.equal(retry.status, 409, 'a session ends once');
   assert.equal(retry.body.error, 'conflict');
   assert.ok(
-    retry.body.details.some((detail) => detail.includes('concluida')),
+    retry.body.details.some((detail) => detail.includes('completed')),
     `the 409 has to say what state refused it: ${JSON.stringify(retry.body.details)}`,
   );
 
@@ -535,15 +535,15 @@ test('t149 AT5 — finishing an already finished session is a 409, and the first
   assert.equal(listed.status, 200);
   const stored = listed.body.sessions.find((item) => item.id === session.id);
   assert.ok(stored !== undefined, 'the session disappeared from the listing');
-  assert.equal(stored.status, 'concluida');
+  assert.equal(stored.status, 'completed');
   assert.equal(stored.exit_code, 0);
   assert.deepEqual(stored.usage, USAGE, 'the refused retry never NULLs the usage of the first end');
   assert.equal(stored.finished_at, finished.body.finished_at);
 
-  const events = getEventsByEntity(ctx.db, 'sessao', session.id);
+  const events = getEventsByEntity(ctx.db, 'session', session.id);
   assert.deepEqual(
-    events.map((event: Event) => event.tipo),
-    ['sessao.aberta', 'sessao.finalizada'],
+    events.map((event: Event) => event.type),
+    ['session.opened', 'session.finished'],
     'the refused retry writes NOTHING: no second end in the log',
   );
 });
@@ -553,7 +553,7 @@ test('t149 AT6 — finishing a session that does not exist is still a 404', asyn
   const ctx = await startControlPlane(t);
 
   const unknown = await request<{ error: string }>(ctx, 'PATCH', '/v1/sessions/98765/finish', {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
   });
   assert.equal(unknown.status, 404, 'reading before writing did not turn a 404 into a 409');
@@ -565,7 +565,7 @@ test('t125 — a denial outside the contract is a 400, and an unknown session a 
   const ctx = await startControlPlane(t);
 
   const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    execucao_id: 9,
+    execution_id: 9,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'faça algo',
@@ -576,7 +576,7 @@ test('t125 — a denial outside the contract is a 400, and an unknown session a 
     ctx,
     'POST',
     `/v1/sessions/${opened.body.id}/permission-denials`,
-    { recurso: 'memoria', ferramenta: 'WebFetch', motivo: 'inventado' },
+    { resource: 'memoria', tool: 'WebFetch', reason: 'inventado' },
   );
   assert.equal(outsideEnum.status, 400);
   assert.equal(outsideEnum.body.error, 'validation_failed');
@@ -589,14 +589,14 @@ test('t125 — a denial outside the contract is a 400, and an unknown session a 
     ctx,
     'POST',
     `/v1/sessions/${opened.body.id}/permission-denials`,
-    { recurso: 'rede' },
+    { resource: 'network' },
   );
-  assert.equal(missingField.status, 400, 'ferramenta and motivo are required');
+  assert.equal(missingField.status, 400, 'tool and reason are required');
 
   const unknown = await request(ctx, 'POST', '/v1/sessions/98765/permission-denials', {
-    recurso: 'rede',
-    ferramenta: 'WebFetch',
-    motivo: 'a sessão não existe',
+    resource: 'network',
+    tool: 'WebFetch',
+    reason: 'a sessão não existe',
   });
   assert.equal(unknown.status, 404);
 });
@@ -614,9 +614,9 @@ test('t159 AT1 — a small transcript is stored verbatim, and the projection and
   assert.notEqual(bytes, output.length, 'the sample has to be multi-byte to prove anything');
 
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
-    status: 'falhou',
+    status: 'failed',
     exit_code: 1,
-    transcricao: output,
+    transcript: output,
   });
   assert.equal(finished.status, 200);
   assert.equal(finished.body.transcript, output, 'stored verbatim, byte for byte');
@@ -645,9 +645,9 @@ test('t159 AT2 — a transcript past the cap keeps the TAIL and reports the size
   assert.equal(Buffer.byteLength(output, 'utf8'), output.length, 'the sample has to be ASCII');
 
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
-    status: 'falhou',
+    status: 'failed',
     exit_code: 1,
-    transcricao: output,
+    transcript: output,
   });
   assert.equal(finished.status, 200);
   assert.equal(finished.body.transcript_truncated, true, 'truncation is never silent');
@@ -690,9 +690,9 @@ test('t159 — the cap cuts on a character boundary, never in the middle of a ru
   assert.ok(Buffer.byteLength(output, 'utf8') > TRANSCRIPT_CAP_BYTES);
 
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
-    status: 'falhou',
+    status: 'failed',
     exit_code: 1,
-    transcricao: output,
+    transcript: output,
   });
   assert.equal(finished.status, 200);
   assert.equal(finished.body.transcript_truncated, true);
@@ -718,7 +718,7 @@ test('t159 AT3 — an absent transcript is null, never an empty string; an empty
     ctx,
     'PATCH',
     `/v1/sessions/${silent.id}/finish`,
-    { status: 'pausada_cota' },
+    { status: 'quota_paused' },
   );
   assert.equal(withoutTranscript.status, 200);
   assert.equal(withoutTranscript.body.transcript, null, 'nothing was reported: null');
@@ -748,9 +748,9 @@ test('t159 AT3 — an absent transcript is null, never an empty string; an empty
   // and is a different fact from "nobody reported anything".
   const quiet = await openBareSession(ctx);
   const empty = await request<Session>(ctx, 'PATCH', `/v1/sessions/${quiet.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
-    transcricao: '',
+    transcript: '',
   });
   assert.equal(empty.status, 200);
   assert.equal(empty.body.transcript, '', 'an empty transcript is stored as given');
@@ -764,18 +764,18 @@ test('t159 AT3 — an absent transcript is null, never an empty string; an empty
     transcript_original_size: 0,
   });
 
-  // Anything that is not a string is a 400, the same shape a malformed `uso` gets.
+  // Anything that is not a string is a 400, the same shape a malformed `usage` gets.
   const wrongType = await openBareSession(ctx);
   const refused = await request<{ error: string; details: string[] }>(
     ctx,
     'PATCH',
     `/v1/sessions/${wrongType.id}/finish`,
-    { status: 'concluida', exit_code: 0, transcricao: 42 },
+    { status: 'completed', exit_code: 0, transcript: 42 },
   );
   assert.equal(refused.status, 400);
   assert.equal(refused.body.error, 'validation_failed');
   assert.ok(
-    refused.body.details.some((detail) => detail.includes('transcricao')),
+    refused.body.details.some((detail) => detail.includes('transcript')),
     `the 400 has to name the offending field: ${JSON.stringify(refused.body.details)}`,
   );
 
@@ -784,7 +784,7 @@ test('t159 AT3 — an absent transcript is null, never an empty string; an empty
     ctx,
     'PATCH',
     `/v1/sessions/${wrongType.id}/finish`,
-    { status: 'concluida', exit_code: 0 },
+    { status: 'completed', exit_code: 0 },
   );
   assert.equal(stillFinishable.status, 200);
 });
@@ -798,39 +798,39 @@ test('t159 AT4 — the transcript of a session that does not exist is a 404', as
   assert.equal(unknown.body.error, 'not_found');
 });
 
-test('t159 AT5 — the transcript stays OUT of the sessao.finalizada event', async (t) => {
+test('t159 AT5 — the transcript stays OUT of the session.finished event', async (t) => {
   requireArtifacts(...ARTIFACTS, T159_MIGRATION);
   const ctx = await startControlPlane(t);
   const { getEventsByEntity } = await loadEvents();
 
   const session = await openBareSession(ctx);
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
-    uso: USAGE,
-    transcricao: 'a saída inteira da sessão, que o log NÃO carrega',
+    usage: USAGE,
+    transcript: 'a saída inteira da sessão, que o log NÃO carrega',
   });
   assert.equal(finished.status, 200);
   assert.equal(finished.body.transcript, 'a saída inteira da sessão, que o log NÃO carrega');
 
-  const events = getEventsByEntity(ctx.db, 'sessao', session.id);
+  const events = getEventsByEntity(ctx.db, 'session', session.id);
   assert.deepEqual(
-    events.map((event: Event) => event.tipo),
-    ['sessao.aberta', 'sessao.finalizada'],
+    events.map((event: Event) => event.type),
+    ['session.opened', 'session.finished'],
   );
   // Raw diagnostic material hangs off the projection, not off the append-only
   // envelope: `dados` carries the contract's own fields and nothing else —
-  // which since t172 includes `modelos`, normalized to null like every other
+  // which since t172 includes `models`, normalized to null like every other
   // optional field the caller did not send.
-  assert.deepEqual(events[1].dados, {
-    status: 'concluida',
+  assert.deepEqual(events[1].data, {
+    status: 'completed',
     exit_code: 0,
-    uso: USAGE,
+    usage: USAGE,
     timeout_reason: null,
-    modelos: null,
+    models: null,
   });
   assert.ok(
-    !JSON.stringify(events[1]).includes('transcricao'),
+    !JSON.stringify(events[1]).includes('transcript'),
     'no corner of the event carries the transcript',
   );
 });
@@ -844,7 +844,7 @@ test('t163 — POST /v1/sessions persists and returns the silence budget', async
   const { getEventsByEntity } = await loadEvents();
 
   const response = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    execucao_id: 163,
+    execution_id: 163,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'trabalhe e vá falando',
@@ -865,8 +865,8 @@ test('t163 — POST /v1/sessions persists and returns the silence budget', async
     'a session that is still open ran no watchdog out',
   );
 
-  const events = getEventsByEntity(ctx.db, 'sessao', response.body.id);
-  assert.equal(events[0].dados.silence_seconds, 900);
+  const events = getEventsByEntity(ctx.db, 'session', response.body.id);
+  assert.equal(events[0].data.silence_seconds, 900);
 });
 
 test('t163 — a session with no declared budget reads back as null, never as zero', async (t) => {
@@ -878,7 +878,7 @@ test('t163 — a session with no declared budget reads back as null, never as ze
   assert.notEqual(
     session.silence_seconds,
     0,
-    'absence of a policy is not a budget of zero seconds — the same discipline `uso` has',
+    'absence of a policy is not a budget of zero seconds — the same discipline `usage` has',
   );
 });
 
@@ -889,7 +889,7 @@ test('t163 — PATCH /finish persists the cause of a watchdog stop', async (t) =
 
   const session = await openBareSession(ctx);
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${session.id}/finish`, {
-    status: 'tempo_esgotado',
+    status: 'timed_out',
     exit_code: null,
     timeout_reason: 'silence',
   });
@@ -897,25 +897,25 @@ test('t163 — PATCH /finish persists the cause of a watchdog stop', async (t) =
   assert.equal(finished.status, 200);
   assert.equal(
     finished.body.status,
-    'tempo_esgotado',
+    'timed_out',
     'silence does not get a status of its own; it gets a cause',
   );
   assert.equal(finished.body.timeout_reason, 'silence');
 
-  const events = getEventsByEntity(ctx.db, 'sessao', session.id);
-  assert.equal(events[1].dados.timeout_reason, 'silence');
+  const events = getEventsByEntity(ctx.db, 'session', session.id);
+  assert.equal(events[1].data.timeout_reason, 'silence');
 
   // ...and the other cause reads back just as plainly.
   const other = await openBareSession(ctx);
   const byClock = await request<Session>(ctx, 'PATCH', `/v1/sessions/${other.id}/finish`, {
-    status: 'tempo_esgotado',
+    status: 'timed_out',
     timeout_reason: 'wall_clock',
   });
   assert.equal(byClock.body.timeout_reason, 'wall_clock');
 
   const refused = await request(ctx, 'PATCH', `/v1/sessions/${(await openBareSession(ctx)).id}/finish`, {
-    status: 'tempo_esgotado',
-    timeout_reason: 'travada',
+    status: 'timed_out',
+    timeout_reason: 'stuck',
   });
   assert.equal(refused.status, 400, 'a cause outside the two is a 400, never a stored string');
 });
@@ -925,7 +925,7 @@ test('t163 — GET /v1/sessions surfaces both new fields on the projection', asy
   const ctx = await startControlPlane(t);
 
   const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    execucao_id: 1631,
+    execution_id: 1631,
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'trabalhe e cale-se',
@@ -933,7 +933,7 @@ test('t163 — GET /v1/sessions surfaces both new fields on the projection', asy
   });
   assert.equal(opened.status, 201);
   await request<Session>(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
-    status: 'tempo_esgotado',
+    status: 'timed_out',
     timeout_reason: 'silence',
   });
 
@@ -958,24 +958,24 @@ const T172_MIGRATION = 'migrations/0013_sessao_modelos.sql';
 /** What a real `claude` run reported: two models on one single-turn session. */
 const MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-5'];
 
-test('t172 — modelos round-trips through the projection; absent reads null, never []', async (t) => {
+test('t172 — models round-trips through the projection; absent reads null, never []', async (t) => {
   requireArtifacts(...ARTIFACTS, T172_MIGRATION);
   const ctx = await startControlPlane(t);
   const { getEventsByEntity } = await loadEvents();
 
   const reported = await openBareSession(ctx);
   const finished = await request<Session>(ctx, 'PATCH', `/v1/sessions/${reported.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
-    uso: USAGE,
-    modelos: MODELS,
+    usage: USAGE,
+    models: MODELS,
   });
   assert.equal(finished.status, 200);
   assert.deepEqual(finished.body.models, MODELS, 'the single-session projection carries it');
 
   const silent = await openBareSession(ctx);
   const withoutModels = await request<Session>(ctx, 'PATCH', `/v1/sessions/${silent.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
   });
   assert.equal(withoutModels.status, 200);
@@ -989,7 +989,7 @@ test('t172 — modelos round-trips through the projection; absent reads null, ne
     [],
     '[] would read as "it ran under zero models", which is a claim nobody measured',
   );
-  assert.equal(withoutModels.body.usage, null, 'and the same discipline `uso` already had');
+  assert.equal(withoutModels.body.usage, null, 'and the same discipline `usage` already had');
 
   const listed = await request<{ sessions: Session[] }>(ctx, 'GET', '/v1/sessions?execution_id=7');
   assert.equal(listed.status, 200);
@@ -998,22 +998,22 @@ test('t172 — modelos round-trips through the projection; absent reads null, ne
   assert.equal(byId.get(silent.id)?.models, null);
 
   // The log is where the fact lives; the row is a projection of it (t102).
-  const events = getEventsByEntity(ctx.db, 'sessao', reported.id);
-  assert.deepEqual(events[1].dados, {
-    status: 'concluida',
+  const events = getEventsByEntity(ctx.db, 'session', reported.id);
+  assert.deepEqual(events[1].data, {
+    status: 'completed',
     exit_code: 0,
-    uso: USAGE,
+    usage: USAGE,
     timeout_reason: null,
-    modelos: MODELS,
+    models: MODELS,
   });
   assert.deepEqual(
-    getEventsByEntity(ctx.db, 'sessao', silent.id)[1].dados.modelos,
+    getEventsByEntity(ctx.db, 'session', silent.id)[1].data.models,
     null,
     'the normalized payload says the absence out loud, as it does for every optional field',
   );
 });
 
-test('t172 — a modelos that is not a list of non-empty strings is refused', async (t) => {
+test('t172 — a models that is not a list of non-empty strings is refused', async (t) => {
   requireArtifacts(...ARTIFACTS, T172_MIGRATION);
   const ctx = await startControlPlane(t);
 
@@ -1028,12 +1028,12 @@ test('t172 — a modelos that is not a list of non-empty strings is refused', as
       ctx,
       'PATCH',
       `/v1/sessions/${session.id}/finish`,
-      { status: 'concluida', exit_code: 0, modelos: refused.value },
+      { status: 'completed', exit_code: 0, models: refused.value },
     );
     assert.equal(
       response.status,
       400,
-      `${refused.label} has to be a 400, the same shape a malformed \`uso\` gets`,
+      `${refused.label} has to be a 400, the same shape a malformed \`usage\` gets`,
     );
     assert.equal(response.body.error, 'validation_failed');
 
@@ -1055,7 +1055,7 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
   const HAIKU = 'claude-haiku-4-5';
   const SONNET = 'claude-sonnet-5';
 
-  /** A `uso` whose total is the sum of its four counts — the lens's own rule. */
+  /** A `usage` whose total is the sum of its four counts — the lens's own rule. */
   const usage = (total: number): Record<string, number> => ({
     input_tokens: total,
     output_tokens: 0,
@@ -1064,16 +1064,16 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
   });
 
   const jobOne = await createJob(ctx, {
-    titulo: 'ficha na v1',
-    no_entrada_id: 'implementar',
-    execucao_id: EXECUTION,
-    grafo_versao_id: V1,
+    title: 'ficha na v1',
+    entry_node_id: 'implementar',
+    execution_id: EXECUTION,
+    graph_version_id: V1,
   });
   const jobTwo = await createJob(ctx, {
-    titulo: 'ficha na v2',
-    no_entrada_id: 'implementar',
-    execucao_id: EXECUTION,
-    grafo_versao_id: V2,
+    title: 'ficha na v2',
+    entry_node_id: 'implementar',
+    execution_id: EXECUTION,
+    graph_version_id: V2,
   });
 
   /** Opens a session on a job's node and closes it with the given accounting. */
@@ -1084,18 +1084,18 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
     models: string[],
   ): Promise<void> => {
     const opened = await request<Session>(ctx, 'POST', '/v1/sessions', {
-      trabalho_id: jobId,
-      no_id: nodeId,
+      job_id: jobId,
+      node_id: nodeId,
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
       prompt: `trabalhe em ${nodeId}`,
     });
     assert.equal(opened.status, 201);
     const closed = await request<Session>(ctx, 'PATCH', `/v1/sessions/${opened.body.id}/finish`, {
-      status: 'concluida',
+      status: 'completed',
       exit_code: 0,
-      uso: usage(tokens),
-      modelos: models,
+      usage: usage(tokens),
+      models: models,
     });
     assert.equal(closed.status, 200);
   };
@@ -1106,14 +1106,14 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
   // A session the engine told nothing about: it may not move a single total.
   await spend(jobTwo.id, 'revisar', 0, [HAIKU]);
   const silent = await request<Session>(ctx, 'POST', '/v1/sessions', {
-    trabalho_id: jobTwo.id,
-    no_id: 'revisar',
+    job_id: jobTwo.id,
+    node_id: 'revisar',
     engine: 'claude-code',
     working_dir: '/tmp/cartografo',
     prompt: 'sessão que morreu sem reportar nada',
   });
   await request<Session>(ctx, 'PATCH', `/v1/sessions/${silent.body.id}/finish`, {
-    status: 'falhou',
+    status: 'failed',
     exit_code: 1,
   });
 
@@ -1133,13 +1133,13 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
   assert.equal(jobs.status, 200);
 
   const versionOf = new Map(jobs.body.jobs.map((job) => [job.id, job.graph_version_id]));
-  const total = (uso: Session['usage']): number =>
-    uso === null
+  const total = (usage: Session['usage']): number =>
+    usage === null
       ? 0
-      : uso.input_tokens +
-        uso.output_tokens +
-        uso.cache_creation_input_tokens +
-        uso.cache_read_input_tokens;
+      : usage.input_tokens +
+        usage.output_tokens +
+        usage.cache_creation_input_tokens +
+        usage.cache_read_input_tokens;
 
   /** Sums tokens per key, ignoring what nobody reported — absence is not zero. */
   const groupBy = (key: (session: Session) => readonly (string | number | null)[]): Map<string, number> => {

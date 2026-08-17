@@ -11,7 +11,7 @@
  * no API route hands it over ready-made:
  *
  * - `GET /v1/jobs/:id/events` gives the transitions, but deliberately EXCLUDES
- *   `sessao.finalizada` and `pergunta.respondida` (those event schemas carry no
+ *   `session.finished` and `input_request.answered` (those event schemas carry no
  *   `trabalho_id`; see `packages/core/src/db/eventos.ts`);
  * - `GET /v1/sessions?trabalho_id=` gives the end of the sessions;
  * - `GET /v1/input-requests?trabalho_id=` gives the end of the waits.
@@ -79,34 +79,34 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
   const cp = await startControlPlane(t);
 
   const job = await createJob(cp, {
-    titulo: 'o trabalho observado',
-    no_entrada_id: 'refinar',
-    execucao_id: 7,
+    title: 'o trabalho observado',
+    entry_node_id: 'refinar',
+    execution_id: 7,
   });
 
   await wait(SLACK_MS);
-  await api(cp, 'POST', `/v1/jobs/${job.id}/transitions`, { para_no_id: 'implementar' });
+  await api(cp, 'POST', `/v1/jobs/${job.id}/transitions`, { to_node_id: 'implementar' });
 
   await wait(SLACK_MS);
-  const session = await openSession(cp, { trabalho_id: job.id, no_id: 'implementar' });
+  const session = await openSession(cp, { job_id: job.id, node_id: 'implementar' });
 
   await wait(SLACK_MS);
   const finished = await api<Session>(cp, 'PATCH', `/v1/sessions/${session.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
   });
   assert.equal(finished.status, 200);
 
   await wait(SLACK_MS);
   const question = await createQuestion(cp, {
-    trabalho_id: job.id,
-    pergunta: 'seguir assim?',
+    job_id: job.id,
+    question: 'seguir assim?',
   });
 
   await wait(SLACK_MS);
   const answered = await api<Question>(cp, 'PATCH', `/v1/input-requests/${question.id}/answer`, {
-    resposta: 'siga',
-    respondido_por: 'rafael',
+    answer: 'siga',
+    answered_by: 'rafael',
   });
   assert.equal(answered.status, 200);
 
@@ -195,10 +195,10 @@ test('t152 — GET /trabalhos/:id on a freshly created job says "em curso", neve
   );
   const cp = await startControlPlane(t);
 
-  // Nothing but `trabalho.criado`: no session, no question, no graph version.
+  // Nothing but `job.created`: no session, no question, no graph version.
   // It is the most common state on a board — and the one the old heuristic
   // reported as finished, because "nothing is open" was read as "it is over".
-  const job = await createJob(cp, { titulo: 'acabou de nascer', no_entrada_id: 'refinar' });
+  const job = await createJob(cp, { title: 'acabou de nascer', entry_node_id: 'refinar' });
 
   const screen = await startScreen(t, cp);
   const page = await openPage(screen, `/trabalhos/${job.id}`);
@@ -233,24 +233,24 @@ test('t107 AT7 — the three-bucket rule, as a pure function', async () => {
     events: [
       {
         id: 1,
-        tipo: 'trabalho.criado',
-        ocorrido_em: instant(0),
-        dados: { titulo: 'x', no_entrada_id: 'refinar' },
+        type: 'job.created',
+        occurred_at: instant(0),
+        data: { title: 'x', entry_node_id: 'refinar' },
       },
       {
         id: 2,
-        tipo: 'trabalho.transicao',
-        ocorrido_em: instant(10),
-        dados: { de_no_id: null, para_no_id: 'implementar' },
+        type: 'job.transitioned',
+        occurred_at: instant(10),
+        data: { from_node_id: null, to_node_id: 'implementar' },
       },
-      { id: 3, tipo: 'sessao.aberta', ocorrido_em: instant(20), dados: { trabalho_id: 1 } },
-      { id: 4, tipo: 'pergunta.criada', ocorrido_em: instant(40), dados: { trabalho_id: 1 } },
+      { id: 3, type: 'session.opened', occurred_at: instant(20), data: { job_id: 1 } },
+      { id: 4, type: 'input_request.created', occurred_at: instant(40), data: { job_id: 1 } },
     ],
     sessions: [
       {
         id: 1,
         engine: 'claude-code',
-        status: 'concluida',
+        status: 'completed',
         opened_at: instant(20),
         finished_at: instant(30),
       },
@@ -309,12 +309,12 @@ test('t107 AT7 — an open session and a pending question stay open, and the job
     events: [
       {
         id: 1,
-        tipo: 'trabalho.criado',
-        ocorrido_em: instant(0),
-        dados: { titulo: 'x', no_entrada_id: 'refinar' },
+        type: 'job.created',
+        occurred_at: instant(0),
+        data: { title: 'x', entry_node_id: 'refinar' },
       },
-      { id: 2, tipo: 'sessao.aberta', ocorrido_em: instant(10), dados: { trabalho_id: 1 } },
-      { id: 3, tipo: 'pergunta.criada', ocorrido_em: instant(20), dados: { trabalho_id: 1 } },
+      { id: 2, type: 'session.opened', occurred_at: instant(10), data: { job_id: 1 } },
+      { id: 3, type: 'input_request.created', occurred_at: instant(20), data: { job_id: 1 } },
     ],
     sessions: [
       {
@@ -367,11 +367,11 @@ test('t107 AT7 — a blocked, parked job keeps accruing queue, left open', async
     events: [
       {
         id: 1,
-        tipo: 'trabalho.criado',
-        ocorrido_em: instant(0),
-        dados: { titulo: 'x', no_entrada_id: 'refinar' },
+        type: 'job.created',
+        occurred_at: instant(0),
+        data: { title: 'x', entry_node_id: 'refinar' },
       },
-      { id: 2, tipo: 'trabalho.bloqueado', ocorrido_em: instant(5), dados: { motivo: 'travou' } },
+      { id: 2, type: 'job.blocked', occurred_at: instant(5), data: { reason: 'travou' } },
     ],
     sessions: [],
     questions: [],
@@ -397,9 +397,9 @@ test('t152 — a job one event old is not done: nothing open is not the same as 
     events: [
       {
         id: 1,
-        tipo: 'trabalho.criado',
-        ocorrido_em: '2026-08-15T10:00:00.000Z',
-        dados: { titulo: 'x', no_entrada_id: 'redigir' },
+        type: 'job.created',
+        occurred_at: '2026-08-15T10:00:00.000Z',
+        data: { title: 'x', entry_node_id: 'redigir' },
       },
     ],
     sessions: [],
@@ -432,11 +432,11 @@ test('t152 — concluído from the server is necessary, never sufficient: an ope
     events: [
       {
         id: 1,
-        tipo: 'trabalho.criado',
-        ocorrido_em: instant(0),
-        dados: { titulo: 'x', no_entrada_id: 'revisar' },
+        type: 'job.created',
+        occurred_at: instant(0),
+        data: { title: 'x', entry_node_id: 'revisar' },
       },
-      { id: 2, tipo: 'sessao.aberta', ocorrido_em: instant(10), dados: { trabalho_id: 1 } },
+      { id: 2, type: 'session.opened', occurred_at: instant(10), data: { job_id: 1 } },
     ],
     sessions: [
       {

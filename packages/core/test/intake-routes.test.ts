@@ -418,7 +418,7 @@ test('AT12 — confirming creates one job per item, on the current entry node', 
     ctx,
     'POST',
     `/v1/intake/${draft.id}/confirmations`,
-    { ator: { tipo: 'usuario', ref: 'rafael' } },
+    { actor: { type: 'user', ref: 'rafael' } },
   );
 
   assert.equal(response.status, 201);
@@ -537,7 +537,7 @@ test('AT13 — a declared dependency becomes one row and one event, resolved to 
 
   assert.deepEqual(
     dependencyRows(ctx),
-    [{ trabalho_id: dependent, depende_de_trabalho_id: dependedOn }],
+    [{ trabalho_id: dependent, depends_on_job_id: dependedOn }],
     'the row points from the dependent to the one it depends on',
   );
 
@@ -548,15 +548,15 @@ test('AT13 — a declared dependency becomes one row and one event, resolved to 
   );
   assert.equal(timeline.status, 200);
   const declared = timeline.body.events.filter(
-    (event) => event.tipo === 'trabalho.dependencia_declarada',
+    (event) => event.type === 'job.dependency_declared',
   );
   assert.equal(declared.length, 1);
   assert.deepEqual(
-    declared[0].entidade,
-    { tipo: 'trabalho', id: dependent },
+    declared[0].entity,
+    { type: 'job', id: dependent },
     'the subject of the event is the DEPENDENT job',
   );
-  assert.deepEqual(declared[0].dados, { depende_de_trabalho_id: dependedOn });
+  assert.deepEqual(declared[0].data, { depends_on_job_id: dependedOn });
 
   const other = await request<{ events: Event[] }>(
     ctx,
@@ -564,8 +564,8 @@ test('AT13 — a declared dependency becomes one row and one event, resolved to 
     `/v1/jobs/${dependedOn}/events`,
   );
   assert.deepEqual(
-    other.body.events.map((event) => event.tipo),
-    ['trabalho.criado'],
+    other.body.events.map((event) => event.type),
+    ['job.created'],
     'the job that is depended on has no event of its own about it',
   );
 });
@@ -610,7 +610,7 @@ test('AT14 — confirming twice is 409 and does not duplicate anything', async (
   );
 });
 
-test('AT15 — trabalho.criado of a confirmed job carries corpo and criterios_de_aceite', async (t) => {
+test('AT15 — job.created of a confirmed job carries body and acceptance_criteria', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
@@ -637,14 +637,14 @@ test('AT15 — trabalho.criado of a confirmed job carries corpo and criterios_de
 
   const timeline = await request<{ events: Event[] }>(ctx, 'GET', `/v1/jobs/${jobId}/events`);
   assert.equal(timeline.status, 200);
-  const created = timeline.body.events.find((event) => event.tipo === 'trabalho.criado');
+  const created = timeline.body.events.find((event) => event.type === 'job.created');
   assert.ok(created !== undefined, 'the creation is in the log');
-  assert.deepEqual(created.dados, {
-    titulo: 'Ficha com conteúdo',
-    no_entrada_id: entryNode(),
-    corpo: 'O que ela pede, em prosa.',
-    criterios_de_aceite: ['o teste de aceite existe'],
-    campos: null,
+  assert.deepEqual(created.data, {
+    title: 'Ficha com conteúdo',
+    entry_node_id: entryNode(),
+    body: 'O que ela pede, em prosa.',
+    acceptance_criteria: ['o teste de aceite existe'],
+    fields: null,
     // The batch this test confirms declared no tier (t175), and an item nobody
     // triaged reaches the log as an explicit `null` — the same normalization
     // the three fields above already get.
@@ -656,7 +656,7 @@ test('AT15 — trabalho.criado of a confirmed job carries corpo and criterios_de
  * t168 — the class's declared fields cross the confirmation gate.
  *
  * The interesting half is the LOG: the projection carrying `campos` and the
- * `trabalho.criado` carrying the same map is what makes the value replayable,
+ * `job.created` carrying the same map is what makes the value replayable,
  * and a field that only reached the table would be state the log cannot explain.
  */
 test('t168 — confirming a draft carries each item\'s campos into the job and into the log', async (t) => {
@@ -692,9 +692,9 @@ test('t168 — confirming a draft carries each item\'s campos into the job and i
     `/v1/jobs/${withFields.id}/events`,
   );
   assert.equal(timeline.status, 200);
-  const created = timeline.body.events.find((event) => event.tipo === 'trabalho.criado');
+  const created = timeline.body.events.find((event) => event.type === 'job.created');
   assert.ok(created !== undefined, 'the creation is in the log');
-  assert.deepEqual(created.dados.campos, filled);
+  assert.deepEqual(created.data.fields, filled);
 });
 
 test('AT16 — confirming a draft creates no graph version and moves no pointer', async (t) => {
@@ -817,13 +817,13 @@ interface ValidationFailure {
   details?: string[];
 }
 
-/** A malformed `ator`: a bare string where the envelope demands `{tipo, ref}`. */
+/** A malformed `actor`: a bare string where the envelope demands `{type, ref}`. */
 const MALFORMED_ACTOR = 'tester';
 
 /** The one message `validateActor` produces for it. */
-const MALFORMED_ACTOR_DETAIL = 'ator has to be an object {tipo, ref}';
+const MALFORMED_ACTOR_DETAIL = 'actor has to be an object {type, ref}';
 
-test('t139 — a malformed ator on the confirmation is 400 validation_failed, not 500', async (t) => {
+test('t139 — a malformed actor on the confirmation is 400 validation_failed, not 500', async (t) => {
   requireArtifacts(...ARTIFACTS, 'src/routes/common.ts');
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
@@ -841,7 +841,7 @@ test('t139 — a malformed ator on the confirmation is 400 validation_failed, no
     ctx,
     'POST',
     `/v1/intake/${draft.id}/confirmations`,
-    { ator: MALFORMED_ACTOR },
+    { actor: MALFORMED_ACTOR },
   );
 
   assert.equal(
@@ -867,13 +867,13 @@ test('t139 — a malformed ator on the confirmation is 400 validation_failed, no
     ctx,
     'POST',
     `/v1/intake/${draft.id}/confirmations`,
-    { ator: { tipo: 'usuario', ref: 'rafael' } },
+    { actor: { type: 'user', ref: 'rafael' } },
   );
   assert.equal(retry.status, 201);
   assert.equal(retry.body.jobs.length, 2);
 });
 
-test('t139 — the confirmation and POST /v1/jobs refuse the same ator in the same words', async (t) => {
+test('t139 — the confirmation and POST /v1/jobs refuse the same actor in the same words', async (t) => {
   requireArtifacts(...ARTIFACTS, 'src/routes/common.ts');
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
@@ -884,12 +884,12 @@ test('t139 — the confirmation and POST /v1/jobs refuse the same ator in the sa
     ctx,
     'POST',
     `/v1/intake/${draft.id}/confirmations`,
-    { ator: MALFORMED_ACTOR },
+    { actor: MALFORMED_ACTOR },
   );
   const job = await request<ValidationFailure>(ctx, 'POST', '/v1/jobs', {
-    titulo: 'uma ficha à mão',
-    no_entrada_id: entryNode(),
-    ator: MALFORMED_ACTOR,
+    title: 'uma ficha à mão',
+    entry_node_id: entryNode(),
+    actor: MALFORMED_ACTOR,
   });
 
   assert.equal(job.status, 400, 'the reference behaviour this ticket converges on');

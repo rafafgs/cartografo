@@ -13,7 +13,7 @@
  * control. The timestamps are round on purpose — every expected number below is
  * a subtraction the reader can do by eye.
  *
- * The fold over `trabalho.transicao` is the same technique
+ * The fold over `job.transitioned` is the same technique
  * `especificacoes/eventos/reducers/reconstruir-estado.mjs` already uses to
  * rebuild `no_atual`: the log is the only place the node a work sat on at a
  * given moment exists.
@@ -35,11 +35,11 @@ const METRICS_MODULE = 'src/surveyor/metrics.ts';
 /** One envelope, in the taxonomy's shape (t98), reduced to what the fold reads. */
 interface Event {
   id: number;
-  tipo: string;
-  execucao_id: number | null;
-  entidade: { tipo: string; id: number | string };
-  ocorrido_em: string;
-  dados: Record<string, unknown>;
+  type: string;
+  execution_id: number | null;
+  entity: { type: string; id: number | string };
+  occurred_at: string;
+  data: Record<string, unknown>;
 }
 
 let cache: typeof MetricsModule | null = null;
@@ -65,16 +65,16 @@ function at(seconds: number): string {
 function event(
   id: number,
   type: string,
-  entity: { tipo: string; id: number },
+  entity: { type: string; id: number },
   seconds: number,
   payload: Record<string, unknown> = {},
 ): Event {
-  return { id, tipo: type, execucao_id: 7, entidade: entity, ocorrido_em: at(seconds), dados: payload };
+  return { id, type, execution_id: 7, entity, occurred_at: at(seconds), data: payload };
 }
 
-const work = (id: number): { tipo: string; id: number } => ({ tipo: 'trabalho', id });
-const session = (id: number): { tipo: string; id: number } => ({ tipo: 'sessao', id });
-const question = (id: number): { tipo: string; id: number } => ({ tipo: 'pergunta', id });
+const work = (id: number): { type: string; id: number } => ({ type: 'job', id });
+const session = (id: number): { type: string; id: number } => ({ type: 'session', id });
+const question = (id: number): { type: string; id: number } => ({ type: 'input_request', id });
 
 /**
  * One execution with a deliberate imbalance: `revisar` burns agent time, waits
@@ -83,63 +83,63 @@ const question = (id: number): { tipo: string; id: number } => ({ tipo: 'pergunt
  */
 function unbalancedLog(): Event[] {
   return [
-    event(1, 'trabalho.criado', work(1), 0, { titulo: 'nota curta', no_entrada_id: 'redigir' }),
+    event(1, 'job.created', work(1), 0, { title: 'nota curta', entry_node_id: 'redigir' }),
 
     // redigir: 3s of agent time, nothing else.
-    event(2, 'sessao.aberta', session(10), 2, {
-      trabalho_id: 1,
-      no_id: 'redigir',
+    event(2, 'session.opened', session(10), 2, {
+      job_id: 1,
+      node_id: 'redigir',
       engine: 'claude-code',
       working_dir: '/tmp/x',
       prompt: 'redija',
     }),
-    event(3, 'sessao.finalizada', session(10), 5, { status: 'concluida', exit_code: 0, uso: null }),
+    event(3, 'session.finished', session(10), 5, { status: 'completed', exit_code: 0, usage: null }),
 
     // revisar: lands at 6s, session only opens at 36s — 30s of queue.
-    event(4, 'trabalho.transicao', work(1), 6, { de_no_id: null, para_no_id: 'revisar' }),
-    event(5, 'sessao.aberta', session(11), 36, {
-      trabalho_id: 1,
-      no_id: 'revisar',
+    event(4, 'job.transitioned', work(1), 6, { from_node_id: null, to_node_id: 'revisar' }),
+    event(5, 'session.opened', session(11), 36, {
+      job_id: 1,
+      node_id: 'revisar',
       engine: 'claude-code',
       working_dir: '/tmp/x',
       prompt: 'revise',
     }),
-    event(6, 'pergunta.criada', question(20), 40, {
-      trabalho_id: 1,
-      sessao_id: 11,
-      tipo: 'pergunta',
-      pergunta: 'sigo?',
-      auto_aprovavel: true,
+    event(6, 'input_request.created', question(20), 40, {
+      job_id: 1,
+      session_id: 11,
+      kind: 'question',
+      question: 'sigo?',
+      auto_approvable: true,
     }),
-    event(7, 'trabalho.bloqueado', work(1), 40, { motivo: 'aguardando resposta da pergunta 20' }),
-    event(8, 'sessao.finalizada', session(11), 45, { status: 'concluida', exit_code: 0, uso: null }),
+    event(7, 'job.blocked', work(1), 40, { reason: 'aguardando resposta da pergunta 20' }),
+    event(8, 'session.finished', session(11), 45, { status: 'completed', exit_code: 0, usage: null }),
     // The answer is not what ends the wait — the unblock is.
-    event(9, 'pergunta.respondida', question(20), 160, { resposta: 'siga', respondido_por: 'rafael' }),
-    event(10, 'trabalho.desbloqueado', work(1), 160, {}),
+    event(9, 'input_request.answered', question(20), 160, { answer: 'siga', answered_by: 'rafael' }),
+    event(10, 'job.unblocked', work(1), 160, {}),
 
     // implantar: 1s of queue, 2s of agent.
-    event(11, 'trabalho.transicao', work(1), 161, { de_no_id: 'revisar', para_no_id: 'implantar' }),
-    event(12, 'sessao.aberta', session(12), 162, {
-      trabalho_id: 1,
-      no_id: 'implantar',
+    event(11, 'job.transitioned', work(1), 161, { from_node_id: 'revisar', to_node_id: 'implantar' }),
+    event(12, 'session.opened', session(12), 162, {
+      job_id: 1,
+      node_id: 'implantar',
       engine: 'claude-code',
       working_dir: '/tmp/x',
       prompt: 'implante',
     }),
-    event(13, 'sessao.finalizada', session(12), 164, {
-      status: 'concluida',
+    event(13, 'session.finished', session(12), 164, {
+      status: 'completed',
       exit_code: 0,
-      uso: null,
+      usage: null,
     }),
 
     // A question nobody can attribute: no session, so no node. Counting it
     // anywhere would be inventing a number.
-    event(14, 'pergunta.criada', question(21), 165, {
-      trabalho_id: 1,
-      sessao_id: null,
-      tipo: 'pergunta',
-      pergunta: 'e agora?',
-      auto_aprovavel: true,
+    event(14, 'input_request.created', question(21), 165, {
+      job_id: 1,
+      session_id: null,
+      kind: 'question',
+      question: 'e agora?',
+      auto_approvable: true,
     }),
   ];
 }
@@ -151,7 +151,7 @@ test('t110 — the flow lens computes the four numbers per node and names the bo
 
   assert.deepEqual(metrics.por_no, [
     {
-      no_id: 'revisar',
+      node_id: 'revisar',
       tempo_agente_ms: 9_000,
       tempo_espera_ms: 120_000,
       tempo_fila_ms: 30_000,
@@ -160,7 +160,7 @@ test('t110 — the flow lens computes the four numbers per node and names the bo
       eventos: [4, 5, 6, 7, 8, 10],
     },
     {
-      no_id: 'implantar',
+      node_id: 'implantar',
       tempo_agente_ms: 2_000,
       tempo_espera_ms: 0,
       tempo_fila_ms: 1_000,
@@ -169,7 +169,7 @@ test('t110 — the flow lens computes the four numbers per node and names the bo
       eventos: [11, 12, 13],
     },
     {
-      no_id: 'redigir',
+      node_id: 'redigir',
       tempo_agente_ms: 3_000,
       tempo_espera_ms: 0,
       tempo_fila_ms: 0,
@@ -193,9 +193,9 @@ test('t110 — a run with no time signal at all has no bottleneck', async () => 
   // Two works that were created and moved, and nothing ever ran: no session
   // opened, nothing blocked. Every total is zero.
   const flat: Event[] = [
-    event(1, 'trabalho.criado', work(1), 0, { titulo: 'a', no_entrada_id: 'redigir' }),
-    event(2, 'trabalho.criado', work(2), 0, { titulo: 'b', no_entrada_id: 'redigir' }),
-    event(3, 'trabalho.transicao', work(1), 0, { de_no_id: null, para_no_id: 'revisar' }),
+    event(1, 'job.created', work(1), 0, { title: 'a', entry_node_id: 'redigir' }),
+    event(2, 'job.created', work(2), 0, { title: 'b', entry_node_id: 'redigir' }),
+    event(3, 'job.transitioned', work(1), 0, { from_node_id: null, to_node_id: 'revisar' }),
   ];
 
   const metrics = calculateFlowMetrics(flat, NODES);
@@ -217,36 +217,36 @@ test('t110 — a tie is broken by node id, and nodes outside the graph are ignor
   const { calculateFlowMetrics } = await loadMetrics();
 
   const tied: Event[] = [
-    event(1, 'trabalho.criado', work(1), 0, { titulo: 'a', no_entrada_id: 'redigir' }),
-    event(2, 'sessao.aberta', session(10), 0, {
-      trabalho_id: 1,
-      no_id: 'revisar',
+    event(1, 'job.created', work(1), 0, { title: 'a', entry_node_id: 'redigir' }),
+    event(2, 'session.opened', session(10), 0, {
+      job_id: 1,
+      node_id: 'revisar',
       engine: 'claude-code',
       working_dir: '/tmp/x',
       prompt: 'p',
     }),
-    event(3, 'sessao.finalizada', session(10), 5, { status: 'concluida', exit_code: 0, uso: null }),
-    event(4, 'sessao.aberta', session(11), 0, {
-      trabalho_id: 1,
-      no_id: 'implantar',
+    event(3, 'session.finished', session(10), 5, { status: 'completed', exit_code: 0, usage: null }),
+    event(4, 'session.opened', session(11), 0, {
+      job_id: 1,
+      node_id: 'implantar',
       engine: 'claude-code',
       working_dir: '/tmp/x',
       prompt: 'p',
     }),
-    event(5, 'sessao.finalizada', session(11), 5, { status: 'concluida', exit_code: 0, uso: null }),
+    event(5, 'session.finished', session(11), 5, { status: 'completed', exit_code: 0, usage: null }),
     // A node the graph does not have: telemetry of a version that already
     // changed. Attributing it to anything would be a made-up number.
-    event(6, 'sessao.aberta', session(12), 0, {
-      trabalho_id: 1,
-      no_id: 'no_que_nao_existe_mais',
+    event(6, 'session.opened', session(12), 0, {
+      job_id: 1,
+      node_id: 'no_que_nao_existe_mais',
       engine: 'claude-code',
       working_dir: '/tmp/x',
       prompt: 'p',
     }),
-    event(7, 'sessao.finalizada', session(12), 600, {
-      status: 'concluida',
+    event(7, 'session.finished', session(12), 600, {
+      status: 'completed',
       exit_code: 0,
-      uso: null,
+      usage: null,
     }),
   ];
 

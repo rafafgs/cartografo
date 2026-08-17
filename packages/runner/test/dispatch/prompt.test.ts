@@ -59,13 +59,13 @@ const JOB = Object.freeze({
   execution_id: null,
 });
 
-/** One `pergunta.criada` envelope of the work's timeline. */
+/** One `input_request.created` envelope of the work's timeline. */
 function asked(questionId: number): PromptModule.Event {
   return {
     id: questionId * 10,
-    tipo: 'pergunta.criada',
-    entidade: { tipo: 'pergunta', id: questionId },
-    dados: {},
+    type: 'input_request.created',
+    entity: { type: 'input_request', id: questionId },
+    data: {},
   };
 }
 
@@ -171,14 +171,14 @@ test('AT5 — two answered questions render in the LOG order, not the projection
   assert.ok(prompt.indexOf('Primeira resposta') < prompt.indexOf('Segunda resposta'));
 });
 
-test('AT6 — an event that is not `pergunta.criada` renders nothing', async () => {
+test('AT6 — an event that is not `input_request.created` renders nothing', async () => {
   const { buildPrompt } = await loadPrompt();
 
   const prompt = buildPrompt(
     JOB,
     [
-      { id: 1, tipo: 'trabalho.criado', entidade: { tipo: 'trabalho', id: JOB.id }, dados: {} },
-      { id: 2, tipo: 'sessao.aberta', entidade: { tipo: 'sessao', id: 1 }, dados: {} },
+      { id: 1, type: 'job.created', entity: { type: 'job', id: JOB.id }, data: {} },
+      { id: 2, type: 'session.opened', entity: { type: 'session', id: 1 }, data: {} },
     ],
     [question({ id: 1 })],
   );

@@ -136,7 +136,7 @@ test('AT3 — GET /v1/webhooks lists the subscriptions, filtered and without sec
   const mine = await create({
     url: 'https://exemplo.invalid/projeto-1',
     secret: SECRET,
-    filter_types: ['trabalho.criado'],
+    filter_types: ['job.created'],
   });
   const other = await create({
     url: 'https://exemplo.invalid/projeto-9',
@@ -152,7 +152,7 @@ test('AT3 — GET /v1/webhooks lists the subscriptions, filtered and without sec
   );
   assert.deepEqual(
     all.body.webhooks.find((subscription) => subscription.id === mine.id)?.filter_types,
-    ['trabalho.criado'],
+    ['job.created'],
   );
   assertNoSecret(all.body);
 

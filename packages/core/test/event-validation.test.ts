@@ -4,18 +4,25 @@
  * `src/db/event-validation.ts` adds a rule the JSON schemas of
  * `especificacoes/eventos/schemas/` do not declare: a `string` field cannot be
  * the empty string. That rule is this file's own contract — and until t157 it
- * applied to scalar strings only, so `campos_alterados: ['']` walked into the
- * log while `titulo: ''` was refused. An internally inconsistent mirror is the
+ * applied to scalar strings only, so `changed_fields: ['']` walked into the
+ * log while `title: ''` was refused. An internally inconsistent mirror is the
  * drift the header of that file exists to prevent.
  *
- * The event-type strings and the payload keys stay in Portuguese: they mirror
- * the taxonomy (t127, FR8).
+ * Since t227 the event-type strings, the envelope keys and the payload keys are
+ * the English ones of `docs/spec/glossario-wire.md` §2 — and the last block of
+ * this file is the gate on that: the old Portuguese spellings are not accepted
+ * "as well", they are unknown.
  */
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ValidationError, requireValidData } from '../src/db/event-validation.ts';
+import {
+  KNOWN_TYPES,
+  ValidationError,
+  requireValidData,
+  requireValidEvent,
+} from '../src/db/event-validation.ts';
 
 /** Asserts that a payload is refused, and that the message names the field. */
 function refuses(type: string, data: Record<string, unknown>, field: string): void {
@@ -34,59 +41,59 @@ function refuses(type: string, data: Record<string, unknown>, field: string): vo
 }
 
 test('t157 FR5 — an empty item is refused in a required string-list', () => {
-  refuses('trabalho.emendado', { campos_alterados: [''] }, 'campos_alterados');
-  refuses('trabalho.emendado', { campos_alterados: ['titulo', ''] }, 'campos_alterados');
+  refuses('job.amended', { changed_fields: [''] }, 'changed_fields');
+  refuses('job.amended', { changed_fields: ['title', ''] }, 'changed_fields');
 });
 
 test('t157 FR5 — an empty item is refused in an optional string-list too', () => {
   refuses(
-    'trabalho.criado',
-    { titulo: 'x', no_entrada_id: 'y', criterios_de_aceite: [''] },
-    'criterios_de_aceite',
+    'job.created',
+    { title: 'x', entry_node_id: 'y', acceptance_criteria: [''] },
+    'acceptance_criteria',
   );
   refuses(
-    'pergunta.criada',
+    'input_request.created',
     {
-      trabalho_id: 1,
-      tipo: 'pergunta',
-      pergunta: 'qual caminho?',
-      opcoes: ['seguir', ''],
-      auto_aprovavel: false,
+      job_id: 1,
+      kind: 'question',
+      question: 'qual caminho?',
+      options: ['seguir', ''],
+      auto_approvable: false,
     },
-    'opcoes',
+    'options',
   );
 });
 
 test('t157 FR5 — the rule is the same one scalar strings already carry', () => {
-  refuses('trabalho.criado', { titulo: '', no_entrada_id: 'y' }, 'titulo');
+  refuses('job.created', { title: '', entry_node_id: 'y' }, 'title');
 });
 
 test('t157 FR5 — a list of real strings still passes', () => {
-  assert.deepEqual(requireValidData('trabalho.emendado', { campos_alterados: ['titulo'] }), {
-    campos_alterados: ['titulo'],
+  assert.deepEqual(requireValidData('job.amended', { changed_fields: ['title'] }), {
+    changed_fields: ['title'],
   });
   assert.deepEqual(
-    requireValidData('trabalho.criado', {
-      titulo: 'x',
-      no_entrada_id: 'y',
-      criterios_de_aceite: ['a nota cabe em uma tela'],
+    requireValidData('job.created', {
+      title: 'x',
+      entry_node_id: 'y',
+      acceptance_criteria: ['a nota cabe em uma tela'],
     }),
     {
-      titulo: 'x',
-      no_entrada_id: 'y',
-      corpo: null,
-      criterios_de_aceite: ['a nota cabe em uma tela'],
-      campos: null,
+      title: 'x',
+      entry_node_id: 'y',
+      body: null,
+      acceptance_criteria: ['a nota cabe em uma tela'],
+      fields: null,
       tier: null,
     },
   );
   // An absent optional list is still absent, not an empty-item violation.
-  assert.deepEqual(requireValidData('trabalho.criado', { titulo: 'x', no_entrada_id: 'y' }), {
-    titulo: 'x',
-    no_entrada_id: 'y',
-    corpo: null,
-    criterios_de_aceite: null,
-    campos: null,
+  assert.deepEqual(requireValidData('job.created', { title: 'x', entry_node_id: 'y' }), {
+    title: 'x',
+    entry_node_id: 'y',
+    body: null,
+    acceptance_criteria: null,
+    fields: null,
     tier: null,
   });
 });
@@ -100,7 +107,7 @@ test('t157 FR5 — a list of real strings still passes', () => {
  * type. What the two do share is the discipline every optional field of this
  * taxonomy follows — absent normalizes to `null`, and `null` is not `{}`.
  */
-test('t168 — trabalho.criado accepts campos as a map of scalars', () => {
+test('t168 — job.created accepts fields as a map of scalars', () => {
   const filled = {
     premise_source: 'relatório trimestral 2026Q2, página 12',
     downside: -12.5,
@@ -109,13 +116,13 @@ test('t168 — trabalho.criado accepts campos as a map of scalars', () => {
   };
 
   assert.deepEqual(
-    requireValidData('trabalho.criado', { titulo: 'x', no_entrada_id: 'y', campos: filled }),
+    requireValidData('job.created', { title: 'x', entry_node_id: 'y', fields: filled }),
     {
-      titulo: 'x',
-      no_entrada_id: 'y',
-      corpo: null,
-      criterios_de_aceite: null,
-      campos: filled,
+      title: 'x',
+      entry_node_id: 'y',
+      body: null,
+      acceptance_criteria: null,
+      fields: filled,
       tier: null,
     },
   );
@@ -124,19 +131,19 @@ test('t168 — trabalho.criado accepts campos as a map of scalars', () => {
   // declares fields and this ticket filled none" is a statement somebody made,
   // and it is not the same fact as never having been asked.
   assert.deepEqual(
-    requireValidData('trabalho.criado', { titulo: 'x', no_entrada_id: 'y', campos: {} }).campos,
+    requireValidData('job.created', { title: 'x', entry_node_id: 'y', fields: {} }).fields,
     {},
   );
 });
 
 test('t168 — a job born with no declared field records null, never an empty map', () => {
   assert.equal(
-    requireValidData('trabalho.criado', { titulo: 'x', no_entrada_id: 'y' }).campos,
+    requireValidData('job.created', { title: 'x', entry_node_id: 'y' }).fields,
     null,
   );
 });
 
-test('t168 — a non-scalar entry in campos is refused', () => {
+test('t168 — a non-scalar entry in fields is refused', () => {
   for (const broken of [
     { premise_source: { pagina: 12 } },
     { downside: [12] },
@@ -144,20 +151,20 @@ test('t168 — a non-scalar entry in campos is refused', () => {
     ['premise_source'],
     'premise_source=x',
   ]) {
-    refuses('trabalho.criado', { titulo: 'x', no_entrada_id: 'y', campos: broken }, 'campos');
+    refuses('job.created', { title: 'x', entry_node_id: 'y', fields: broken }, 'fields');
   }
 });
 
-/** Everything `sessao.aberta` requires, so a case only has to vary its own field. */
+/** Everything `session.opened` requires, so a case only has to vary its own field. */
 const OPEN_SESSION = Object.freeze({
   engine: 'claude-code',
   working_dir: '/tmp/cartografo',
   prompt: 'faça algo e conte o que aconteceu',
 });
 
-test('t163 — sessao.aberta accepts the silence budget, and absent reads as null', () => {
+test('t163 — session.opened accepts the silence budget, and absent reads as null', () => {
   assert.equal(
-    requireValidData('sessao.aberta', { ...OPEN_SESSION, silence_seconds: 900 }).silence_seconds,
+    requireValidData('session.opened', { ...OPEN_SESSION, silence_seconds: 900 }).silence_seconds,
     900,
   );
   // Zero is a legitimate measurement here, exactly as it is for `timeout_seconds`:
@@ -165,34 +172,255 @@ test('t163 — sessao.aberta accepts the silence budget, and absent reads as nul
   // number. What a non-positive DECLARED budget means is `resolveBudget`'s
   // business, one layer up, and not this contract's.
   assert.equal(
-    requireValidData('sessao.aberta', { ...OPEN_SESSION, silence_seconds: 0 }).silence_seconds,
+    requireValidData('session.opened', { ...OPEN_SESSION, silence_seconds: 0 }).silence_seconds,
     0,
   );
   assert.equal(
-    requireValidData('sessao.aberta', { ...OPEN_SESSION }).silence_seconds,
+    requireValidData('session.opened', { ...OPEN_SESSION }).silence_seconds,
     null,
     'an absent budget is a session that declares no policy, never a zero',
   );
-  refuses('sessao.aberta', { ...OPEN_SESSION, silence_seconds: -1 }, 'silence_seconds');
-  refuses('sessao.aberta', { ...OPEN_SESSION, silence_seconds: '900' }, 'silence_seconds');
+  refuses('session.opened', { ...OPEN_SESSION, silence_seconds: -1 }, 'silence_seconds');
+  refuses('session.opened', { ...OPEN_SESSION, silence_seconds: '900' }, 'silence_seconds');
 });
 
-test('t163 — sessao.finalizada accepts the two watchdog causes and nothing else', () => {
+test('t163 — session.finished accepts the two watchdog causes and nothing else', () => {
   for (const reason of ['wall_clock', 'silence']) {
     assert.equal(
-      requireValidData('sessao.finalizada', { status: 'tempo_esgotado', timeout_reason: reason })
+      requireValidData('session.finished', { status: 'timed_out', timeout_reason: reason })
         .timeout_reason,
       reason,
     );
   }
   assert.equal(
-    requireValidData('sessao.finalizada', { status: 'concluida' }).timeout_reason,
+    requireValidData('session.finished', { status: 'completed' }).timeout_reason,
     null,
     'a session that did not run a watchdog out has no cause to report',
   );
   refuses(
-    'sessao.finalizada',
-    { status: 'tempo_esgotado', timeout_reason: 'travada' },
+    'session.finished',
+    { status: 'timed_out', timeout_reason: 'stuck' },
     'timeout_reason',
   );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t227 / AT4 — the wire vocabulary of the log is English, and only English.    */
+/* -------------------------------------------------------------------------- */
+
+/** A whole envelope in the new vocabulary, so a case only varies its own field. */
+function envelope(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    type: 'job.created',
+    project_id: 1,
+    execution_id: 7,
+    entity: { type: 'job', id: 101 },
+    actor: { type: 'user', ref: 'rafael' },
+    occurred_at: '2026-08-17T09:00:00Z',
+    data: { title: 'x', entry_node_id: 'entrada' },
+    ...overrides,
+  };
+}
+
+/** Asserts that a whole envelope is refused, and that the message names `field`. */
+function refusesEvent(input: Record<string, unknown>, field: string): void {
+  assert.throws(
+    () => requireValidEvent(input),
+    (error: unknown) => {
+      assert.ok(error instanceof ValidationError, 'the envelope has to fail with a ValidationError');
+      assert.ok(
+        error.errors.some((detail) => detail.includes(field)),
+        `the errors have to name ${field}: ${JSON.stringify(error.errors)}`,
+      );
+      return true;
+    },
+    `the envelope ${JSON.stringify(input)} was accepted`,
+  );
+}
+
+test('t227 AT4 — the catalogue is the 13 English type names of glossario-wire.md §2.1', () => {
+  assert.deepEqual(
+    [...KNOWN_TYPES],
+    [
+      'job.created',
+      'job.transitioned',
+      'job.blocked',
+      'job.unblocked',
+      'job.amended',
+      'job.dependency_declared',
+      'job.hook_failed',
+      'session.opened',
+      'session.finished',
+      'session.permission_denied',
+      'input_request.created',
+      'input_request.answered',
+      'input_request.auto_resolved',
+    ],
+  );
+});
+
+test('t227 AT4 — a whole envelope in the new vocabulary is accepted', () => {
+  const event = requireValidEvent(envelope());
+
+  assert.equal(event.type, 'job.created');
+  assert.equal(event.project_id, 1);
+  assert.equal(event.execution_id, 7);
+  assert.deepEqual(event.entity, { type: 'job', id: 101 });
+  assert.deepEqual(event.actor, { type: 'user', ref: 'rafael' });
+  assert.equal(event.occurred_at, '2026-08-17T09:00:00Z');
+  assert.equal(event.data.title, 'x');
+  assert.equal(event.data.entry_node_id, 'entrada');
+});
+
+test('t227 AT4 — every entity and actor type of §2.3 is the English one', () => {
+  const payloads: Record<string, Record<string, unknown>> = {
+    'job.created': { title: 'x', entry_node_id: 'entrada' },
+    'session.opened': { engine: 'claude-code', working_dir: '/tmp', prompt: 'p' },
+    'input_request.created': { job_id: 1, kind: 'question', question: 'q?', auto_approvable: false },
+  };
+
+  for (const [type, entity] of [
+    ['job.created', 'job'],
+    ['session.opened', 'session'],
+    ['input_request.created', 'input_request'],
+  ]) {
+    refusesEvent(
+      envelope({ type, entity: { type: 'trabalho', id: 1 }, data: payloads[type] }),
+      'entity.type',
+    );
+    const accepted = requireValidEvent(
+      envelope({ type, entity: { type: entity, id: 1 }, data: payloads[type] }),
+    );
+    assert.equal(accepted.entity.type, entity);
+  }
+
+  for (const actor of ['user', 'agent', 'system']) {
+    assert.equal(
+      requireValidEvent(envelope({ actor: { type: actor, ref: 'r' } })).actor.type,
+      actor,
+    );
+  }
+  for (const actor of ['usuario', 'agente', 'sistema']) {
+    refusesEvent(envelope({ actor: { type: actor, ref: 'r' } }), 'actor.type');
+  }
+});
+
+test('t227 AT4 — the old Portuguese type names are unknown, not aliases', () => {
+  for (const type of [
+    'trabalho.criado',
+    'trabalho.transicao',
+    'trabalho.bloqueado',
+    'trabalho.desbloqueado',
+    'trabalho.emendado',
+    'trabalho.dependencia_declarada',
+    'trabalho.gancho_falhou',
+    'sessao.aberta',
+    'sessao.finalizada',
+    'sessao.permissao_negada',
+    'pergunta.criada',
+    'pergunta.respondida',
+    'pergunta.auto_resolvida',
+  ]) {
+    assert.ok(!KNOWN_TYPES.includes(type), `"${type}" is still in the catalogue`);
+    assert.throws(
+      () => requireValidData(type, {}),
+      ValidationError,
+      `requireValidData still knows "${type}"`,
+    );
+    refusesEvent(envelope({ type }), 'unknown type');
+  }
+});
+
+test('t227 AT4 — the old Portuguese envelope keys do not exist any more', () => {
+  for (const key of [
+    'tipo',
+    'projeto_id',
+    'execucao_id',
+    'entidade',
+    'ator',
+    'ocorrido_em',
+    'dados',
+  ]) {
+    refusesEvent(
+      { ...envelope(), [key]: 'seja o que for' },
+      `${key} does not exist in the envelope`,
+    );
+  }
+  refusesEvent(envelope({ entity: { tipo: 'job', id: 1 } }), 'entity.tipo does not exist');
+  refusesEvent(envelope({ actor: { tipo: 'user', ref: 'r' } }), 'actor.tipo does not exist');
+});
+
+test('t227 AT4 — the old Portuguese payload keys are outside every contract', () => {
+  const cases: Array<[string, Record<string, unknown>, string]> = [
+    ['job.created', { titulo: 'x', no_entrada_id: 'y' }, 'titulo'],
+    ['job.transitioned', { para_no_id: 'x' }, 'para_no_id'],
+    ['job.blocked', { motivo: 'x' }, 'motivo'],
+    ['job.amended', { campos_alterados: ['x'] }, 'campos_alterados'],
+    ['job.dependency_declared', { depende_de_trabalho_id: 1 }, 'depende_de_trabalho_id'],
+    ['job.hook_failed', { gancho_id: 'g', no_id: 'n', url: 'u', ultimo_erro: 'e' }, 'gancho_id'],
+    [
+      'session.opened',
+      { engine: 'e', working_dir: 'w', prompt: 'p', trabalho_id: 1 },
+      'trabalho_id',
+    ],
+    ['session.finished', { status: 'completed', uso: null }, 'uso'],
+    ['session.permission_denied', { recurso: 'network', ferramenta: 'W', motivo: 'm' }, 'recurso'],
+    ['input_request.created', { trabalho_id: 1 }, 'trabalho_id'],
+    ['input_request.answered', { resposta: 'a', respondido_por: 'r' }, 'resposta'],
+    ['input_request.auto_resolved', { resposta: 'a', baseada_em: 'recommendation' }, 'resposta'],
+  ];
+
+  for (const [type, data, key] of cases) {
+    refuses(type, data, key);
+  }
+});
+
+test('t227 AT4 / FR5 — the four enum-valued payload fields carry English values', () => {
+  for (const status of [
+    'completed',
+    'failed',
+    'stuck',
+    'timed_out',
+    'quota_paused',
+    'resume_failed',
+  ]) {
+    assert.equal(requireValidData('session.finished', { status }).status, status);
+  }
+  for (const status of [
+    'concluida',
+    'falhou',
+    'travada',
+    'tempo_esgotado',
+    'pausada_cota',
+    'retomada_falhou',
+  ]) {
+    refuses('session.finished', { status }, 'status');
+  }
+
+  const denial = { tool: 'WebFetch', reason: 'sem permissão' };
+  for (const resource of ['filesystem', 'network']) {
+    assert.equal(
+      requireValidData('session.permission_denied', { ...denial, resource }).resource,
+      resource,
+    );
+  }
+  refuses('session.permission_denied', { ...denial, resource: 'rede' }, 'resource');
+
+  const asked = { job_id: 1, question: 'q?', auto_approvable: false };
+  for (const kind of ['question', 'approval']) {
+    assert.equal(requireValidData('input_request.created', { ...asked, kind }).kind, kind);
+  }
+  for (const kind of ['pergunta', 'aprovacao']) {
+    refuses('input_request.created', { ...asked, kind }, 'kind');
+  }
+
+  for (const basis of ['recommendation', 'default_answer', 'precedent']) {
+    assert.equal(
+      requireValidData('input_request.auto_resolved', { answer: 'a', based_on: basis }).based_on,
+      basis,
+    );
+  }
+  for (const basis of ['recomendacao', 'resposta_padrao', 'precedente']) {
+    refuses('input_request.auto_resolved', { answer: 'a', based_on: basis }, 'based_on');
+  }
 });

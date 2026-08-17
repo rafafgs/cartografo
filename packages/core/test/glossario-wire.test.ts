@@ -276,9 +276,85 @@ function glossaryRows(): Row[] {
   return parsed;
 }
 
-/** Rows of one surface. */
-function ofSurface(surface: string): Row[] {
-  return glossaryRows().filter((row) => row.surface === surface);
+/**
+ * The five checks, each as a function of the rows alone.
+ *
+ * Written this way so the last test can run them over a document broken on
+ * purpose: a sweep that never fires is a sweep nobody notices going quiet, and
+ * this file's whole job is to fire.
+ */
+
+/** Terms of {@link REQUIRED_TERMS} that no row maps. */
+function unmapped(rows: readonly Row[]): string[] {
+  const mapped = new Set(rows.flatMap((row) => row.terms));
+  return REQUIRED_TERMS.filter((term) => !mapped.has(term));
+}
+
+/** Terms listed more than once on one surface (FR3). */
+function repeated(rows: readonly Row[]): string[] {
+  const problems: string[] = [];
+  for (const surface of SURFACES) {
+    const seen = new Map<string, number>();
+    for (const row of rows.filter((candidate) => candidate.surface === surface)) {
+      for (const term of row.terms) {
+        const first = seen.get(term);
+        if (first === undefined) seen.set(term, row.line);
+        else problems.push(`line ${row.line}: "${term}" is already mapped on "${surface}" at line ${first}`);
+      }
+    }
+  }
+  return problems;
+}
+
+/** Two terms of one surface translated to the same English name (FR3). */
+function colliding(rows: readonly Row[]): string[] {
+  const problems: string[] = [];
+  for (const surface of SURFACES) {
+    const claimed = new Map<string, Row>();
+    for (const row of rows.filter((candidate) => candidate.surface === surface)) {
+      const owner = claimed.get(row.en);
+      if (owner === undefined) claimed.set(row.en, row);
+      else {
+        problems.push(
+          `line ${row.line}: "${row.en}" is already the replacement of "${owner.pt}" on "${surface}" (line ${owner.line})`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/** One term translated two ways across the document (FR3). */
+function inconsistent(rows: readonly Row[]): string[] {
+  const problems: string[] = [];
+  const chosen = new Map<string, Row>();
+  for (const row of rows) {
+    for (const term of row.terms) {
+      const first = chosen.get(term);
+      if (first === undefined) chosen.set(term, row);
+      else if (first.en !== row.en) {
+        problems.push(
+          `line ${row.line}: "${term}" becomes "${row.en}" here and "${first.en}" at line ${first.line}`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/** An already-English name taken by a concept that does not own it (FR2). */
+function misusedEnglish(rows: readonly Row[]): string[] {
+  const problems: string[] = [];
+  for (const row of rows) {
+    const owners = ALREADY_ENGLISH[nameOf(row.en)];
+    if (owners === undefined) continue;
+    const allowed = owners.map((term) => nameOf(term));
+    if (row.terms.some((term) => allowed.includes(nameOf(term)))) continue;
+    problems.push(
+      `line ${row.line}: "${row.en}" is the name the code already uses for "${owners.join(', ')}", not for "${row.pt}"`,
+    );
+  }
+  return problems;
 }
 
 test('every glossary table parses into surface/pt/en/source rows', () => {
@@ -294,74 +370,61 @@ test('every glossary table parses into surface/pt/en/source rows', () => {
   }
 
   for (const surface of SURFACES) {
-    assert.ok(ofSurface(surface).length > 0, `surface "${surface}" has no row`);
+    const ofSurface = rows.filter((row) => row.surface === surface);
+    assert.ok(ofSurface.length > 0, `surface "${surface}" has no row`);
   }
 });
 
 test('every wire term t213 names has a row', () => {
-  const mapped = new Set(glossaryRows().flatMap((row) => row.terms));
-  const missing = REQUIRED_TERMS.filter((term) => !mapped.has(term));
-  assert.deepEqual(missing, [], `terms with no row in ${GLOSSARY_LABEL}: ${missing.join(', ')}`);
+  assert.deepEqual(unmapped(glossaryRows()), [], `terms with no row in ${GLOSSARY_LABEL}`);
 });
 
 test('no Portuguese term is listed twice on the same surface', () => {
-  for (const surface of SURFACES) {
-    const seen = new Map<string, number>();
-    for (const row of ofSurface(surface)) {
-      for (const term of row.terms) {
-        const first = seen.get(term);
-        assert.equal(
-          first,
-          undefined,
-          `${GLOSSARY_LABEL}:${row.line}: "${term}" is already mapped on surface "${surface}" at line ${String(first)}`,
-        );
-        seen.set(term, row.line);
-      }
-    }
-  }
+  assert.deepEqual(repeated(glossaryRows()), [], `repeated terms in ${GLOSSARY_LABEL}`);
 });
 
 test('two terms of one surface never claim the same English name', () => {
-  for (const surface of SURFACES) {
-    const claimed = new Map<string, Row>();
-    for (const row of ofSurface(surface)) {
-      const owner = claimed.get(row.en);
-      assert.equal(
-        owner,
-        undefined,
-        `${GLOSSARY_LABEL}:${row.line}: "${row.en}" is already the replacement of "${owner?.pt ?? ''}" on surface "${surface}" (line ${String(owner?.line ?? 0)})`,
-      );
-      claimed.set(row.en, row);
-    }
-  }
+  assert.deepEqual(colliding(glossaryRows()), [], `colliding replacements in ${GLOSSARY_LABEL}`);
 });
 
 test('a term mapped on more than one surface maps to the same English name', () => {
-  const chosen = new Map<string, Row>();
-  for (const row of glossaryRows()) {
-    for (const term of row.terms) {
-      const first = chosen.get(term);
-      if (first === undefined) {
-        chosen.set(term, row);
-        continue;
-      }
-      assert.equal(
-        row.en,
-        first.en,
-        `${GLOSSARY_LABEL}:${row.line}: "${term}" becomes "${row.en}" here and "${first.en}" at line ${String(first.line)}`,
-      );
-    }
-  }
+  assert.deepEqual(inconsistent(glossaryRows()), [], `terms translated two ways in ${GLOSSARY_LABEL}`);
 });
 
 test('a name the code already spells in English is reused only for its own concept', () => {
-  for (const row of glossaryRows()) {
-    const claimed = ALREADY_ENGLISH[nameOf(row.en)];
-    if (claimed === undefined) continue;
-    const owners = claimed.map((term) => nameOf(term));
-    assert.ok(
-      row.terms.some((term) => owners.includes(nameOf(term))),
-      `${GLOSSARY_LABEL}:${row.line}: "${row.en}" is the name the code already uses for "${claimed.join(', ')}", not for "${row.pt}"`,
-    );
-  }
+  assert.deepEqual(misusedEnglish(glossaryRows()), [], `English names taken in ${GLOSSARY_LABEL}`);
+});
+
+test('the checks bite on a glossary broken on purpose', () => {
+  const broken = parseRows(
+    [
+      '| superfície | hoje | vira | onde está hoje |',
+      '|---|---|---|---|',
+      '| api | `trabalho` | `task` | `x.ts` |',
+      '| api | `trabalho` | `chore` | `x.ts` |',
+      '| api | `servico` | `chore` | `x.ts` |',
+      '| events | `servico` | `service` | `x.ts` |',
+      '',
+      '| coluna | que não é | do glossário | nenhuma |',
+      '|---|---|---|---|',
+      '| api | `nada` | `nothing` | `x.ts` |',
+    ].join('\n'),
+  );
+
+  assert.equal(broken.length, 4, 'a table that is not a glossary table has to be skipped whole');
+  assert.ok(unmapped(broken).length > 0, 'the fixture list has to notice a missing term');
+  assert.equal(repeated(broken).length, 1, '"trabalho" is listed twice on "api"');
+  assert.equal(colliding(broken).length, 1, '"chore" is claimed twice on "api"');
+  assert.equal(
+    inconsistent(broken).length,
+    2,
+    '"trabalho" and "servico" are each translated two ways',
+  );
+  assert.equal(misusedEnglish(broken).length, 0, 'no row here claims an already-English name');
+  assert.equal(
+    misusedEnglish(parseRows('| superfície | a | b | c |\n|---|---|---|---|\n| api | `x` | `job` | `y` |'))
+      .length,
+    1,
+    '"job" belongs to "trabalho" and to nothing else',
+  );
 });

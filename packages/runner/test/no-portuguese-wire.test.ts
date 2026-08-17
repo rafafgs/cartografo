@@ -97,10 +97,19 @@ function surfaceTerms(): Term[] {
   return terms;
 }
 
-/** The §5.2 rows: the flags a person types at these commands. */
+/**
+ * The §5.2 rows: the flags a person types at a command of this repository.
+ *
+ * Not only this package's. §5.2 also carries the cost lens's flags — since t255,
+ * which moved them out of a local array in that package's own gate and into the
+ * glossary — and sweeping them here costs nothing and claims nothing: a runner
+ * command that ever spelled one would be caught by the row that already exists.
+ * The floor is a floor and not an equality for that reason: another package's
+ * row landing in §5.2 must not turn this gate red.
+ */
 function flagTerms(): Term[] {
   const flags = surfaceTerms().filter((entry) => entry.term.startsWith('--'));
-  assert.equal(flags.length, 2, 'the glossary maps two CLI flags on this surface (§5.2)');
+  assert.ok(flags.length >= 2, `the glossary's §5.2 parsed to only ${flags.length} CLI flags`);
   return flags;
 }
 

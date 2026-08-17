@@ -323,7 +323,7 @@ test('t124 AT — CARTOGRAFO_TOKEN is the fallback, and the browser cannot swap 
   );
 });
 
-test('AT5 — an unreachable control plane becomes 502 control_plane_indisponivel, never a stack trace', async (t) => {
+test('AT5 — an unreachable control plane becomes 502 control_plane_unavailable, never a stack trace', async (t) => {
   const deadPort = await freePort();
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: `http://127.0.0.1:${deadPort}` });
 
@@ -331,22 +331,26 @@ test('AT5 — an unreachable control plane becomes 502 control_plane_indisponive
   assert.equal(response.status, 502);
   assert.match(response.headers.get('content-type') ?? '', /^application\/json/);
 
-  const body = (await response.json()) as { erro: string; mensagem: string };
-  assert.equal(body.erro, 'control_plane_indisponivel');
+  const body = (await response.json()) as { error: string; message: string };
+  assert.equal(body.error, 'control_plane_unavailable');
   assert.ok(
-    body.mensagem.includes(`127.0.0.1:${deadPort}`),
+    body.message.includes(`127.0.0.1:${deadPort}`),
     'the message says which address did not answer',
   );
-  assert.doesNotMatch(body.mensagem, /\n\s*at |Error:|ECONNREFUSED/);
+  assert.doesNotMatch(body.message, /\n\s*at |Error:|ECONNREFUSED/);
 });
 
 /* -------------------------------------------------------------------------- */
 /* t180 — the two surfaces of the screen that are API plumbing, not UI copy.   */
 /*                                                                            */
 /* t133's decision stands whole: the screen RENDERS its pages in Portuguese on */
-/* purpose, and the wire vocabulary it reads (`erro`, `mensagem`, `pendente`)  */
-/* is frozen. What moves here is the prose of the two failures the screen      */
+/* purpose. What moves here is the prose of the two failures the screen        */
 /* answers by itself, which a person meets as an API body and not as a page.   */
+/*                                                                            */
+/* Their ENVELOPE moved later, in t255: the core's converged on               */
+/* `{error, message}` with t226 and this proxy went on answering               */
+/* `{erro, mensagem}` for four more tickets, which is why `messageOf()` in     */
+/* `public/inbox.js` reads both and shows "falha 502" when it hits this one.   */
 /* -------------------------------------------------------------------------- */
 
 test('t180 — the 502 and the static 404 keep their shape and say it in English', async (t) => {
@@ -354,19 +358,59 @@ test('t180 — the 502 and the static 404 keep their shape and say it in English
 
   const down = unavailableResponse('http://127.0.0.1:4317');
   assert.equal(down.status, 502);
-  const body = JSON.parse(down.body.toString('utf8')) as { erro: string; mensagem: string };
-  assert.equal(body.erro, 'control_plane_indisponivel', 'the code is frozen');
+  const body = JSON.parse(down.body.toString('utf8')) as { error: string; message: string };
+  assert.equal(body.error, 'control_plane_unavailable', 'the code is the wire’s since t255');
   assert.equal(
-    body.mensagem,
+    body.message,
     'could not reach the control plane at http://127.0.0.1:4317 — run `npx cartografo` first (or point somewhere else with CARTOGRAFO_URL)',
   );
 
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: 'http://127.0.0.1:4317' });
   const missing = await fetch(`${screen.url}/nao-existe.js`);
   assert.equal(missing.status, 404);
-  const notFound = (await missing.json()) as { erro: string; mensagem: string };
-  assert.equal(notFound.erro, 'arquivo_nao_encontrado', 'the code is frozen');
-  assert.equal(notFound.mensagem, 'the screen does not serve "/nao-existe.js"');
+  const notFound = (await missing.json()) as { error: string; message: string };
+  assert.equal(notFound.error, 'file_not_found', 'the code is the wire’s since t255');
+  assert.equal(notFound.message, 'the screen does not serve "/nao-existe.js"');
+});
+
+test('t255 — every body this proxy invents is the core’s {error, message} envelope', async () => {
+  const {
+    unavailableResponse,
+    untrustedOriginResponse,
+    bodyTooLargeResponse,
+    UPSTREAM_DOWN_CODE,
+    UNTRUSTED_ORIGIN_CODE,
+    BODY_TOO_LARGE_CODE,
+  } = await loadProxy();
+  // The static 404 is the fourth body this package invents, and it is the same
+  // claim; `static.ts` is loaded here rather than mirrored into its own suite.
+  const staticPath = path.join(PACKAGE_ROOT, 'src', 'static.ts');
+  assert.ok(existsSync(staticPath), 'artifact does not exist yet: packages/tela/src/static.ts');
+  const { serveStatic } = (await import(new URL('../src/static.ts', import.meta.url).href)) as {
+    serveStatic: (pathname: string) => Promise<{ status: number; body: Buffer }>;
+  };
+
+  assert.equal(UPSTREAM_DOWN_CODE, 'control_plane_unavailable');
+  assert.equal(UNTRUSTED_ORIGIN_CODE, 'untrusted_origin');
+  assert.equal(BODY_TOO_LARGE_CODE, 'body_too_large');
+
+  const invented = [
+    unavailableResponse('http://127.0.0.1:4317'),
+    untrustedOriginResponse(),
+    bodyTooLargeResponse(1024),
+    await serveStatic('/nao-existe.js'),
+  ];
+
+  for (const response of invented) {
+    const body = JSON.parse(response.body.toString('utf8')) as Record<string, unknown>;
+    assert.deepEqual(
+      Object.keys(body).sort(),
+      ['error', 'message'],
+      `this proxy still answers a shape the page cannot read: ${JSON.stringify(body)}`,
+    );
+    assert.equal(typeof body.error, 'string');
+    assert.ok(String(body.message).length > 0, 'a refusal that says nothing is not a refusal');
+  }
 });
 
 test('t180 — a bad configuration fails at startup in English', async () => {
@@ -641,14 +685,14 @@ test('AT6 — a /v1 body past PROXY_BODY_LIMIT is refused with 413, and never fo
     'what was not read must not be parsed as the next request on a kept-alive socket',
   );
 
-  const body = (await refused.json()) as { erro: string; mensagem: string };
-  assert.equal(body.erro, 'corpo_grande_demais', 'the code is Portuguese, like its two siblings');
+  const body = (await refused.json()) as { error: string; message: string };
+  assert.equal(body.error, 'body_too_large', 'the code is English, like its two siblings');
   assert.ok(
-    body.mensagem.includes(String(PROXY_BODY_LIMIT)),
-    `the message has to name the ceiling that was crossed, got: ${body.mensagem}`,
+    body.message.includes(String(PROXY_BODY_LIMIT)),
+    `the message has to name the ceiling that was crossed, got: ${body.message}`,
   );
   assert.doesNotMatch(
-    body.mensagem,
+    body.message,
     /[áâãàçéêíóôõú]/i,
     'this body is API plumbing, and t180 keeps that in English',
   );

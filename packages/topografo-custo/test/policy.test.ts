@@ -1,7 +1,7 @@
 /**
  * Acceptance tests of the cost policies (t114, AT5–AT7).
  *
- * The two policies say different things. `teto` is absolute ("this node went
+ * The two policies say different things. `ceiling` is absolute ("this node went
  * past N tokens") and only exists when somebody declares the ceiling; `tier` is
  * relative ("this node costs much more than its neighbours in the same version")
  * and demands a sample base so as not to call the only measured node an outlier.
@@ -9,7 +9,12 @@
  * AT7 guards the boundary of that ticket: neither the graph document nor the
  * skill manifest has a field for cost or tier today, and opening those schemas
  * is forbidden by AC1. Therefore every candidate is advisory — a recommendation
- * appended to the node's `description`, with the real numbers in `evidencia`.
+ * appended to the node's `description`, with the real numbers in `evidence`.
+ *
+ * The candidate's own keys are English since t255 (glossario-wire.md §5.5), and
+ * its `expected_metric` is the hypothesis shape `POST /proposals/:id/outcome`
+ * reads — the two halves of what the v2 review found still Portuguese and still
+ * unclosable here.
  */
 
 import assert from 'node:assert/strict';
@@ -58,12 +63,21 @@ test('AT5 — a ceiling makes a candidate when tokens_total exceeds it, and noth
 
   const withCeiling = evaluatePolicies([row('redigir', 5000)], { tokenCeiling: 1000 });
   assert.equal(withCeiling.length, 1);
-  assert.equal(withCeiling[0].tipo, 'teto');
-  assert.equal(withCeiling[0].no_id, 'redigir');
-  assert.equal(withCeiling[0].evidencia.lente, 'custo');
-  assert.equal(withCeiling[0].evidencia.teto_excedido, 'tokens');
-  assert.equal(withCeiling[0].evidencia.tokens_total, 5000);
-  assert.equal(withCeiling[0].metrica_esperada.teto_ou_fator, 1000);
+  assert.equal(withCeiling[0].type, 'ceiling');
+  assert.equal(withCeiling[0].node_id, 'redigir');
+  assert.equal(withCeiling[0].evidence.lens, 'cost');
+  assert.equal(withCeiling[0].evidence.ceiling_exceeded, 'tokens');
+  assert.equal(withCeiling[0].evidence.tokens_total, 5000);
+  // t255 — the hypothesis, in the ONE shape `POST /proposals/:id/outcome` can
+  // read (`domain/hypothesis.ts`): the number observed, and the number it should
+  // come back to. `{descricao, alvo, teto_ou_fator}` looked like a metric and
+  // closed no experiment — every outcome of this lens came back 422.
+  assert.deepEqual(withCeiling[0].expected_metric, {
+    nome: 'tokens_total of node "redigir" goes back under the declared ceiling',
+    direcao: 'cai',
+    de: 5000,
+    para: 1000,
+  });
 
   const withoutCeiling = evaluatePolicies([row('redigir', 5000)], {});
   assert.deepEqual(withoutCeiling, [], 'with no declared ceiling there is nothing to exceed');
@@ -81,10 +95,15 @@ test('AT6 — tier makes a candidate over the version median, and only with a sa
   // "c" passes.
   const withBase = evaluatePolicies(version, { tierFactor: 3, tierMinNodes: 3 });
   assert.equal(withBase.length, 1);
-  assert.equal(withBase[0].tipo, 'tier');
-  assert.equal(withBase[0].no_id, 'c');
-  assert.equal(withBase[0].evidencia.teto_excedido, null, 'tier is not a ceiling violation');
-  assert.equal(withBase[0].metrica_esperada.teto_ou_fator, 3);
+  assert.equal(withBase[0].type, 'tier');
+  assert.equal(withBase[0].node_id, 'c');
+  assert.equal(withBase[0].evidence.ceiling_exceeded, null, 'tier is not a ceiling violation');
+  assert.deepEqual(withBase[0].expected_metric, {
+    nome: 'tokens_total of node "c" falls below 3x the version median',
+    direcao: 'cai',
+    de: 1000,
+    para: 300,
+  });
 
   const withoutBase = evaluatePolicies(version, { tierFactor: 3, tierMinNodes: 4 });
   assert.deepEqual(
@@ -113,19 +132,19 @@ test('AT7 — every candidate carries a single change_node_field over descriptio
   });
 
   assert.ok(
-    candidates.some((candidate) => candidate.tipo === 'teto'),
+    candidates.some((candidate) => candidate.type === 'ceiling'),
     'the scenario has to produce both types for the rule to hold for both',
   );
-  assert.ok(candidates.some((candidate) => candidate.tipo === 'tier'));
+  assert.ok(candidates.some((candidate) => candidate.type === 'tier'));
 
   for (const candidate of candidates) {
-    assert.equal(candidate.operacoes.length, 1, 'one recommendation is one operation');
+    assert.equal(candidate.operations.length, 1, 'one recommendation is one operation');
 
-    const operation = candidate.operacoes[0];
+    const operation = candidate.operations[0];
     assert.equal(operation.type, 'change_node_field');
     assert.equal(operation.field, 'description');
-    assert.equal(operation.node_id, candidate.no_id);
-    assert.equal(operation.from, `descrição de ${candidate.no_id} em sha256:v1`);
+    assert.equal(operation.node_id, candidate.node_id);
+    assert.equal(operation.from, `descrição de ${candidate.node_id} em sha256:v1`);
     assert.notEqual(operation.to, operation.from, 'the recommendation has to change something');
     assert.ok(
       String(operation.to).startsWith(String(operation.from)),
@@ -139,8 +158,9 @@ test('AT7 — every candidate carries a single change_node_field over descriptio
     assert.equal(operation.inverse.to, operation.from);
 
     // t228: the operation's OWN keys are §3's, and nothing else leaks in. The
-    // candidate around it keeps this module's vocabulary (`operacoes`,
-    // `evidencia`, `metrica_esperada`) — that surface is not §3's.
+    // candidate around it took §5.5's with t255 (`operations`, `evidence`,
+    // `expected_metric`), so the mapping into `createProposal` is a
+    // pass-through instead of a translation.
     assert.deepEqual(Object.keys(operation).sort(), [
       'field',
       'from',
@@ -150,6 +170,52 @@ test('AT7 — every candidate carries a single change_node_field over descriptio
       'type',
     ]);
   }
+});
+
+test('t255 — the candidate and its evidence carry the English keys of §5.5', async () => {
+  const { evaluatePolicies } = await load();
+
+  const [candidate] = evaluatePolicies([row('redigir', 5000)], {
+    tokenCeiling: 1000,
+    secondCeiling: 1,
+  });
+  assert.ok(candidate !== undefined, 'the scenario has to produce a candidate');
+
+  assert.deepEqual(Object.keys(candidate).sort(), [
+    'evidence',
+    'expected_metric',
+    'graph_version_id',
+    'node_id',
+    'operations',
+    'type',
+  ]);
+  assert.deepEqual(Object.keys(candidate.evidence).sort(), [
+    'ceiling_exceeded',
+    'graph_version_id',
+    'lens',
+    'node_id',
+    'sessions_with_usage',
+    'sessions_without_usage',
+    'tokens_total',
+    'total_seconds',
+    'type',
+  ]);
+
+  // The values travel too: `custo` and `teto` were as Portuguese as the keys
+  // around them, and `tier` and `tokens` were already English.
+  assert.equal(candidate.evidence.lens, 'cost');
+  assert.equal(candidate.evidence.type, 'ceiling');
+  assert.equal(candidate.evidence.ceiling_exceeded, 'tokens');
+  assert.equal(candidate.evidence.total_seconds, 10, 'the seconds keep their number, not their name');
+  assert.equal(candidate.evidence.sessions_with_usage, 1);
+  assert.equal(candidate.evidence.sessions_without_usage, 0);
+  assert.equal(candidate.evidence.graph_version_id, 'sha256:v1');
+  assert.equal(candidate.evidence.node_id, 'redigir');
+
+  // `expected_metric` is the one key whose CONTENT does not move: it is the
+  // frozen hypothesis format, and it is what makes the outcome closable.
+  assert.deepEqual(Object.keys(candidate.expected_metric).sort(), ['de', 'direcao', 'nome', 'para']);
+  assert.equal(candidate.expected_metric.direcao, 'cai', 'every candidate of this lens cuts cost');
 });
 
 /* -------------------------------------------------------------------------- */
@@ -182,7 +248,7 @@ test('t234 — every operation example of the spec is the operation the policy e
     currentDescription: () => 'descrição atual',
   });
   assert.ok(candidate !== undefined, 'the scenario has to produce a candidate to compare against');
-  const emitted = candidate.operacoes[0];
+  const emitted = candidate.operations[0];
 
   const spec = readFileSync(SPEC_PATH, 'utf8');
   const examples = jsonBlocks(spec).filter((block) => block.type === 'change_node_field');
@@ -207,15 +273,6 @@ test('t234 — every operation example of the spec is the operation the policy e
   }
 });
 
-/**
- * The single `descricao` the spec keeps: the key of `metrica_esperada`.
- *
- * That one is this module's own vocabulary — the same key `t180` pins in the
- * candidates above — and D20 does not reach it. Every OTHER `descricao` in the
- * document names the node's field, which is `description`.
- */
-const KEPT_METRIC_KEY = /^\s*"descricao":/;
-
 test('t234 — no `descricao` names the node field anywhere in the spec', () => {
   const spec = readFileSync(SPEC_PATH, 'utf8');
 
@@ -226,18 +283,16 @@ test('t234 — no `descricao` names the node field anywhere in the spec', () => 
     // reader reads, not a field name, and it is not what this sweep is about.
     .filter(({ text }) => /\bdescricao\b/.test(text));
 
-  const offenders = hits.filter(({ text }) => !KEPT_METRIC_KEY.test(text));
   assert.deepEqual(
-    offenders.map(({ line, text }) => `${line}: ${text.trim()}`),
+    hits.map(({ line, text }) => `${line}: ${text.trim()}`),
     [],
     'the spec names the node field `descricao`, which the API refuses (field_not_changeable)',
   );
 
-  assert.equal(
-    hits.length,
-    1,
-    'the one kept `descricao` is the `metrica_esperada` key, and it stays alone',
-  );
+  // Until t255 exactly one `descricao` survived here: the key of the old
+  // `{descricao, alvo, teto_ou_fator}` metric. That shape closed no experiment,
+  // so it was replaced by the hypothesis's `{nome, direcao, de, para}` — and the
+  // last `descricao` of this document went with it.
 });
 
 test('t158 — a time ceiling cites the time sample, not the token one', async () => {
@@ -260,9 +315,9 @@ test('t158 — a time ceiling cites the time sample, not the token one', async (
   );
 
   assert.equal(candidates.length, 1);
-  assert.equal(candidates[0].evidencia.teto_excedido, 'tempo', 'only the time ceiling blew');
+  assert.equal(candidates[0].evidence.ceiling_exceeded, 'time', 'only the time ceiling blew');
 
-  const { to } = candidates[0].operacoes[0];
+  const { to } = candidates[0].operations[0];
   assert.ok(
     to.includes('2 sessions with time reported'),
     `the time recommendation leans on the time sample; it came out: ${to}`,
@@ -274,7 +329,8 @@ test('t158 — a time ceiling cites the time sample, not the token one', async (
 });
 
 /* -------------------------------------------------------------------------- */
-/* t180 — the text a person reads in the proposal is English; the keys are not. */
+/* t180 — the text a person reads in the proposal is English; the keys around  */
+/* it are the hypothesis format's, frozen (domain/hypothesis.ts).             */
 /* -------------------------------------------------------------------------- */
 
 test('t180 — the marker and the ceiling and tier recommendations are in English', async () => {
@@ -288,28 +344,28 @@ test('t180 — the marker and the ceiling and tier recommendations are in Englis
     tierMinNodes: 3,
   });
 
-  const ceiling = candidates.find((candidate) => candidate.tipo === 'teto');
+  const ceiling = candidates.find((candidate) => candidate.type === 'ceiling');
   assert.ok(ceiling !== undefined, 'the scenario has to produce a ceiling candidate');
   assert.equal(
-    ceiling.operacoes[0].to,
+    ceiling.operations[0].to,
     '[cost-surveyor] token ceiling exceeded: 9000 tokens observed against a ceiling of 1000, ' +
       'over 1 sessions with usage reported. Reduce the scope of this node, split it, or revisit the ceiling.',
   );
   assert.equal(
-    ceiling.metrica_esperada.descricao,
+    ceiling.expected_metric.nome,
     'tokens_total of node "c" goes back under the declared ceiling',
-    'the name of the metric is a format key and does not get translated',
+    'the label of the metric is read by a person, so t180 keeps it English',
   );
 
-  const tier = candidates.find((candidate) => candidate.tipo === 'tier');
+  const tier = candidates.find((candidate) => candidate.type === 'tier');
   assert.ok(tier !== undefined, 'the scenario has to produce a tier candidate');
   assert.equal(
-    tier.operacoes[0].to,
+    tier.operations[0].to,
     '[cost-surveyor] cost out of line in this version: 9000 tokens, 90.0x the median of 100 ' +
       'across the 3 measured nodes (factor 3). Candidate for a cheaper model tier, or for a split into smaller nodes.',
   );
   assert.equal(
-    tier.metrica_esperada.descricao,
+    tier.expected_metric.nome,
     'tokens_total of node "c" falls below 3x the version median',
   );
 });

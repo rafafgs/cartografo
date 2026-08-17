@@ -109,8 +109,10 @@ test('AT8 — createProposal does POST /v1/proposals with the five keys of the c
         },
       },
     ],
-    evidence: { lente: 'custo' as const },
-    expected_metric: { descricao: 'cair abaixo do teto' },
+    evidence: { lens: 'cost' as const },
+    // The candidate's keys are English since t255; what `expected_metric` CARRIES
+    // is the frozen hypothesis shape, which is why it reads Portuguese inside.
+    expected_metric: { nome: 'tokens_total do nó "redigir"', direcao: 'cai', de: 5000, para: 1000 },
   };
 
   const { calls, doFetch } = spy({ proposal: { id: 42, status: 'pendente' } });

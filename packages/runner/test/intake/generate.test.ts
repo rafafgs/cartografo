@@ -9,20 +9,21 @@
  *    applied here so a typo in `--class` does not cost a whole session;
  * 2. a session that came back well formed produces EXACTLY ONE
  *    `POST /v1/intake`, carrying what the session wrote, verbatim. Nothing here
- *    re-validates `itens`: a bad draft is cheap and reversible (discard it), the
- *    server already answers the whole `itens_invalidos` report, and a second copy
+ *    re-validates `items`: a bad draft is cheap and reversible (discard it), the
+ *    server already answers the whole `invalid_items` report, and a second copy
  *    of `validateItems` on this side is a copy that can drift;
  * 3. a session that did not end `completed` posts nothing;
  * 4. neither does one whose file is missing, unreadable as JSON, or carrying no
- *    usable `itens`.
+ *    usable `items`.
  *
  * The engine is real (`ClaudeCodeAdapter` driving `test/fixtures/fake-engine.mjs`,
  * the seam the conformance kit uses); the control plane is faked on both sides —
  * the read of `/v1/classes` and the write of `/v1/intake` — because what this
  * file proves is the runner's behaviour, and t101/t122 prove their own routes.
  *
- * English per D18; the payload keys and the file name the session writes are the
- * published, Portuguese surface.
+ * English per D18. The payload keys are the published wire, English since t255;
+ * the file name the session writes stays as it is, because that is data the
+ * prompt names and not a field of the API.
  */
 
 import assert from 'node:assert/strict';
@@ -57,11 +58,11 @@ const REQUEST = 'Fechar a camada de intake: propor a quebra e confirmar num port
 const ITEMS: ReadonlyArray<Record<string, unknown>> = Object.freeze([
   {
     ref: 'migracao',
-    titulo: 'Migracao do intake',
-    corpo: 'As duas tabelas e as colunas novas.',
-    criterios_de_aceite: ['a migracao roda do zero'],
+    title: 'Migracao do intake',
+    body: 'As duas tabelas e as colunas novas.',
+    acceptance_criteria: ['a migracao roda do zero'],
   },
-  { ref: 'rotas', titulo: 'Rotas do intake', depende_de: ['migracao'] },
+  { ref: 'rotas', title: 'Rotas do intake', depends_on: ['migracao'] },
 ]);
 
 let generateCache: typeof GenerateModule | null = null;
@@ -189,7 +190,7 @@ test('AT3a — a class that is not registered is refused, with no session and no
         className: CLASS_NAME,
         workingDir,
         timeoutSeconds: 60,
-        envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ itens: ITEMS })),
+        envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS })),
       }),
     (error: unknown) => {
       assert.ok(error instanceof IntakeError, `expected an IntakeError, got: ${String(error)}`);
@@ -223,7 +224,7 @@ test('AT3b — a well-formed session lands exactly one draft, carrying what it w
     className: CLASS_NAME,
     workingDir: scratch(t, 'sessao-boa'),
     timeoutSeconds: 60,
-    envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ itens: ITEMS }, null, 2)),
+    envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS }, null, 2)),
   });
 
   assert.equal(adapter.sessions, 1, 'exactly one agent session decomposes the request');
@@ -251,9 +252,9 @@ test('t175 — an item written with a tier reaches the draft with the tier intac
   const { OUTPUT_FILE } = await loadPrompt();
 
   const triaged: ReadonlyArray<Record<string, unknown>> = Object.freeze([
-    { ref: 'renomear', titulo: 'Renomear a coluna', tier: 'trivial' },
-    { ref: 'feature', titulo: 'A feature inteira', tier: 'standard' },
-    { ref: 'sem-triagem', titulo: 'Ninguem triou esta' },
+    { ref: 'renomear', title: 'Renomear a coluna', tier: 'trivial' },
+    { ref: 'feature', title: 'A feature inteira', tier: 'standard' },
+    { ref: 'sem-triagem', title: 'Ninguem triou esta' },
   ]);
 
   const client = new RecordingClient();
@@ -266,7 +267,7 @@ test('t175 — an item written with a tier reaches the draft with the tier intac
     className: CLASS_NAME,
     workingDir: scratch(t, 'sessao-com-tier'),
     timeoutSeconds: 60,
-    envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ itens: triaged })),
+    envOverrides: engineWriting(OUTPUT_FILE, JSON.stringify({ items: triaged })),
   });
 
   assert.deepEqual(
@@ -298,7 +299,7 @@ test('AT3c — a session that did not complete posts nothing', async (t) => {
         workingDir: scratch(t, 'sessao-morta'),
         timeoutSeconds: 60,
         envOverrides: {
-          ...engineWriting(OUTPUT_FILE, JSON.stringify({ itens: ITEMS })),
+          ...engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS })),
           FAKE_ENGINE_EXIT_CODE: '3',
         },
       }),
@@ -338,17 +339,26 @@ test('AT3d — a missing, unreadable or empty answer posts nothing', async (t) =
     { label: 'sem-arquivo', env: {}, code: 'missing_output' },
     {
       label: 'json-torto',
-      env: engineWriting(OUTPUT_FILE, '{"itens": [ isto nao e json'),
+      env: engineWriting(OUTPUT_FILE, '{"items": [ isto nao e json'),
       code: 'invalid_output',
     },
     {
-      label: 'sem-itens',
+      label: 'sem-items',
       env: engineWriting(OUTPUT_FILE, JSON.stringify({ observacao: 'esqueci a lista' })),
       code: 'missing_items',
     },
     {
-      label: 'itens-vazios',
-      env: engineWriting(OUTPUT_FILE, JSON.stringify({ itens: [] })),
+      label: 'items-vazios',
+      env: engineWriting(OUTPUT_FILE, JSON.stringify({ items: [] })),
+      code: 'missing_items',
+    },
+    // t255 — a session that wrote the retired envelope is a session that wrote
+    // nothing this run can use. It fails loudly rather than posting an empty
+    // batch: `document.itens` is not read any more, and a silent `[]` here would
+    // land a draft with no ticket in it.
+    {
+      label: 'envelope-antigo',
+      env: engineWriting(OUTPUT_FILE, JSON.stringify({ itens: ITEMS })),
       code: 'missing_items',
     },
   ];

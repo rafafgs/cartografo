@@ -9,9 +9,9 @@
  *
  * What this proves is the gap the ticket closes: until now this package only
  * ran as `node --import tsx src/cli.ts`, even though its own usage text has
- * documented `topografo-custo avaliar …` since t180. The bin registers the tsx
- * loader in process and imports `src/cli.ts` — whoever runs the command does
- * not have to know that tsx exists.
+ * documented `topografo-custo avaliar …` since t180 — `evaluate` since t255. The
+ * bin registers the tsx loader in process and imports `src/cli.ts` — whoever runs
+ * the command does not have to know that tsx exists.
  */
 
 import assert from 'node:assert/strict';
@@ -39,7 +39,7 @@ test('AT — `topografo-custo --help` exits 0 and prints the usage text', () => 
   const result = run('--help');
 
   assert.equal(result.code, 0, `stderr:\n${result.stderr}`);
-  assert.match(result.stdout, /^usage: topografo-custo avaliar/m);
+  assert.match(result.stdout, /^usage: topografo-custo evaluate/m);
   assert.match(result.stdout, /--token-cap/);
   assert.equal(result.stderr, '', 'asking for help is stdout, not an error');
 });

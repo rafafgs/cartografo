@@ -14,6 +14,17 @@
  * the same judgement a proposal suffers when applied, and therefore cannot
  * diverge from it.
  *
+ * t200 CLOSED that question rather than leaving it open. Ajv v8 does ship a
+ * 2020-12 compiler (`ajv/dist/2020.js`), but Fastify only reaches it by replacing
+ * the whole app's `schemaController.compilersFactory`, which would put every
+ * other route's body under a different validator — a blast radius out of all
+ * proportion to documenting one endpoint, and one no route needs, since
+ * `validateGraph` below already enforces the real contract. So the body stays
+ * open and `POST /graphs` NAMES `schema/grafo.schema.json` in its own
+ * `schema.description`, where a reader of the public document (not of this file)
+ * finds it. Reopening it means enforcing the schema for real, which is a decision
+ * with its own ticket and its own analysis of every other route.
+ *
  * One function per route, and `registerGraphs` is the list of them (t210). This
  * was one function of 333 lines, which meant every graph ticket landed on the
  * same lines and conflicted with every other. The handlers below take `db` as
@@ -60,58 +71,128 @@ import {
 } from '../repositories/graphs.ts';
 import { createProposal, getProposal, toProposal } from '../repositories/proposals.ts';
 import { isObject } from '../util/is-object.ts';
-import { refusal } from './common.ts';
+import { ERROR_RESPONSE_SCHEMA, OPEN_OBJECT_SCHEMA, refusal } from './common.ts';
 
 interface IdParam {
   Params: { id: string };
 }
 
 /**
- * Contract of `POST /graphs` in the public document (t171, FR4).
+ * A lineage's `:id` on the wire, for the six routes that take one.
  *
- * The body stays `{type: 'object'}` and nothing more, on purpose: the header of
- * this file explains why no ajv schema is declared against
- * `schema/grafo.schema.json`, and pointing a draft-07 compiler at a draft
- * 2020-12 document would reopen exactly that. What goes in is "a JSON object";
- * whether it is a GRAPH is `validateGraph`'s judgement and stays so.
+ * Declared a STRING, deliberately, the same call `routes/input-requests.ts`
+ * makes: a path segment IS text, and any other type here would put Fastify's ajv
+ * in front of handlers that answer their own `404` for an id nobody registered.
+ * A graph id is a problem class (`nota-curta`) and a version id is a hash
+ * (`sha256:…`), so there is nothing to coerce even in principle.
+ */
+const ID_PARAM_SCHEMA = {
+  type: 'object',
+  properties: { id: { type: 'string' } },
+  required: ['id'],
+} as const;
+
+/**
+ * What `POST /graphs` accepts, said in prose because ajv cannot say it (t200, FR3).
+ *
+ * The file header explains the whole decision; this is the half of it a client
+ * reads. The description travels into the public document as the operation's own
+ * `description`, which is the only place a consumer who never opens this
+ * repository would look.
+ */
+const GRAPH_DOCUMENT_DESCRIPTION =
+  'The body is the pure graph document, with no envelope — the same `grafo.json` of the factory bundle. ' +
+  'Its real contract is `schema/grafo.schema.json` (`$id: urn:cartografo:schema:grafo:1.0.0`), which a client has to read separately: ' +
+  'that schema is JSON Schema draft 2020-12 and the validator wired into this API compiles draft-07, so the body is declared here as a plain object and judged by the server\'s own structure/soundness gate instead.';
+
+/**
+ * Contract of `POST /graphs` in the public document (t171, FR4; t200, FR2/FR3).
+ *
+ * The body stays `{type: 'object'}` and nothing more, on purpose — see the file
+ * header, and `GRAPH_DOCUMENT_DESCRIPTION` for what a client is told instead.
+ * What goes in is "a JSON object"; whether it is a GRAPH is `validateGraph`'s
+ * judgement and stays so.
  *
  * The four statuses are the ones the handler already answers — `201` with the
  * lineage and its first version, `422` with the validator's report, `400` for a
  * lineage that is not base, `409` for a class already registered. Since t226 the
- * refusal body is the one envelope of `routes/common.ts`, so this is that
- * schema's shape and not a second one.
+ * refusal body is the one envelope of `routes/common.ts`, and since t200 this
+ * file no longer keeps a second copy of that envelope's schema: the local
+ * `REFUSAL_SCHEMA` was `ERROR_RESPONSE_SCHEMA` minus `details`, which is one
+ * shape too many for one wire contract.
  *
- * Only `error` and `message` are typed, and only because every refusal below
- * builds them as string literals. The rest travels through
- * `additionalProperties: true`: a Fastify `response` schema serializes, so a
- * declared type is a COERCION — `lineage_type` echoes back whatever the body
- * carried, and typing it would turn a number into a string on the wire (FR6).
+ * The `201` keeps naming its two properties, and both are open objects: a
+ * Fastify `response` schema serializes, so a declared type is a COERCION —
+ * `lineage_type` echoes back whatever the body carried, and typing it would turn
+ * a number into a string on the wire (FR6).
  */
-const REFUSAL_SCHEMA = {
-  type: 'object',
-  properties: {
-    error: { type: 'string' },
-    message: { type: 'string' },
-  },
-  required: ['error'],
-  additionalProperties: true,
-} as const;
-
 const REGISTER_GRAPH_SCHEMA = {
-  body: { type: 'object', additionalProperties: true },
+  description: GRAPH_DOCUMENT_DESCRIPTION,
+  body: OPEN_OBJECT_SCHEMA,
   response: {
     201: {
       type: 'object',
       properties: {
-        graph: { type: 'object', additionalProperties: true },
-        graph_version: { type: 'object', additionalProperties: true },
+        graph: OPEN_OBJECT_SCHEMA,
+        graph_version: OPEN_OBJECT_SCHEMA,
       },
       required: ['graph', 'graph_version'],
       additionalProperties: true,
     },
-    400: REFUSAL_SCHEMA,
-    409: REFUSAL_SCHEMA,
-    422: REFUSAL_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+    409: ERROR_RESPONSE_SCHEMA,
+    422: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
+
+/**
+ * `POST /graphs/:id/fork` — D13's branch, and the statuses it already answers.
+ *
+ * No `422`: forking judges the base and the body, never a document's soundness —
+ * the snapshot it copies passed the gate when it was registered.
+ */
+const FORK_GRAPH_SCHEMA = {
+  params: ID_PARAM_SCHEMA,
+  body: OPEN_OBJECT_SCHEMA,
+  response: {
+    201: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
+    409: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
+
+/**
+ * `POST /graphs/:id/promote` and `POST /graphs/:id/offer`, which answer the same
+ * five statuses because they share `openProposal` — the `422` is its empty diff.
+ *
+ * One constant for both: the two directions of D13 are one contract read from
+ * either end, and giving them separate schemas would let them drift apart on
+ * paper while the handler kept them together.
+ */
+const OPEN_PROPOSAL_SCHEMA = {
+  params: ID_PARAM_SCHEMA,
+  body: OPEN_OBJECT_SCHEMA,
+  response: {
+    201: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
+    409: ERROR_RESPONSE_SCHEMA,
+    422: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
+
+/** The two listings, which take nothing and cannot refuse. */
+const LIST_SCHEMA = {
+  response: { 200: OPEN_OBJECT_SCHEMA },
+} as const;
+
+/** The three reads by id: the row, or the `404` that says there is none. */
+const READ_BY_ID_SCHEMA = {
+  params: ID_PARAM_SCHEMA,
+  response: {
+    200: OPEN_OBJECT_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
   },
 } as const;
 
@@ -126,15 +207,27 @@ export function registerGraphs(app: FastifyInstance, db: Database): void {
     create(db, request, reply),
   );
 
-  app.post<IdParam>('/graphs/:id/fork', (request, reply) => fork(db, request, reply));
-  app.post<IdParam>('/graphs/:id/promote', (request, reply) => promote(db, request, reply));
-  app.post<IdParam>('/graphs/:id/offer', (request, reply) => offer(db, request, reply));
+  app.post<IdParam>('/graphs/:id/fork', { schema: FORK_GRAPH_SCHEMA }, (request, reply) =>
+    fork(db, request, reply),
+  );
+  app.post<IdParam>('/graphs/:id/promote', { schema: OPEN_PROPOSAL_SCHEMA }, (request, reply) =>
+    promote(db, request, reply),
+  );
+  app.post<IdParam>('/graphs/:id/offer', { schema: OPEN_PROPOSAL_SCHEMA }, (request, reply) =>
+    offer(db, request, reply),
+  );
 
-  app.get('/classes', () => readClasses(db));
-  app.get('/graphs', () => readGraphs(db));
-  app.get<IdParam>('/graphs/:id', (request, reply) => readGraph(db, request, reply));
-  app.get<IdParam>('/graphs/:id/versions', (request, reply) => readVersions(db, request, reply));
-  app.get<IdParam>('/graph-versions/:id', (request, reply) => readVersion(db, request, reply));
+  app.get('/classes', { schema: LIST_SCHEMA }, () => readClasses(db));
+  app.get('/graphs', { schema: LIST_SCHEMA }, () => readGraphs(db));
+  app.get<IdParam>('/graphs/:id', { schema: READ_BY_ID_SCHEMA }, (request, reply) =>
+    readGraph(db, request, reply),
+  );
+  app.get<IdParam>('/graphs/:id/versions', { schema: READ_BY_ID_SCHEMA }, (request, reply) =>
+    readVersions(db, request, reply),
+  );
+  app.get<IdParam>('/graph-versions/:id', { schema: READ_BY_ID_SCHEMA }, (request, reply) =>
+    readVersion(db, request, reply),
+  );
 }
 
 /** `POST /graphs` — a graph document becomes a lineage plus its first version. */

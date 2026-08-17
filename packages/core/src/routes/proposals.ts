@@ -67,11 +67,137 @@ import {
 } from '../repositories/proposals.ts';
 import { getSkill } from '../repositories/skill.ts';
 import { isObject } from '../util/is-object.ts';
-import { refusal } from './common.ts';
+import { ERROR_RESPONSE_SCHEMA, OPEN_OBJECT_SCHEMA, refusal } from './common.ts';
 
 interface IdParam {
   Params: { id: string };
 }
+
+/**
+ * A proposal's `:id` on the wire (t200, FR1).
+ *
+ * A STRING, and this one is load-bearing rather than merely tidy: `load()` at the
+ * bottom of this file turns a non-numeric id into a `404` on purpose, and
+ * `test/proposal-routes.test.ts` pins it (`/v1/proposals/nao-numerico` → 404).
+ * Declaring `integer` here would hand the request to ajv first, which would
+ * refuse it with a `400` in the framework's own shape and delete a documented
+ * behaviour in the name of documenting it.
+ */
+const ID_PARAM_SCHEMA = {
+  type: 'object',
+  properties: { id: { type: 'string' } },
+  required: ['id'],
+} as const;
+
+/**
+ * `POST /proposals` — the two statuses the handler answers.
+ *
+ * The body is open, like every other on this surface: `create` below checks
+ * `graph_id`, `target_version`, the hypothesis pair and the operations by hand,
+ * one refusal code each, and a schema that pre-empted any of them would replace a
+ * named `{error, …}` with ajv's own (t171, FR5).
+ */
+const CREATE_PROPOSAL_SCHEMA = {
+  body: OPEN_OBJECT_SCHEMA,
+  response: {
+    201: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
+
+/**
+ * `POST /proposals/:id/approve` — the human gate's yes.
+ *
+ * No `body` entry, and that is the declaration and not an omission: the handler
+ * never reads `request.body`, so documenting one would put a payload in every
+ * generated client for a route that ignores it. Same for `/apply` below.
+ */
+const APPROVE_SCHEMA = {
+  params: ID_PARAM_SCHEMA,
+  response: {
+    200: OPEN_OBJECT_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
+    409: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
+
+/**
+ * `POST /proposals/:id/reject` and `POST /proposals/:id/revert`, which answer the
+ * same four statuses: both demand a `reason` in the body (`400` when it is
+ * missing) and both refuse a proposal that is in the wrong state (`409`).
+ */
+const REASONED_DECISION_SCHEMA = {
+  params: ID_PARAM_SCHEMA,
+  body: OPEN_OBJECT_SCHEMA,
+  response: {
+    200: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
+    409: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
+
+/**
+ * `POST /proposals/:id/apply` — the D15 flow, and the only route here whose `422`
+ * is the gate's verdict on the document that would come out.
+ */
+const APPLY_SCHEMA = {
+  params: ID_PARAM_SCHEMA,
+  response: {
+    200: OPEN_OBJECT_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
+    409: ERROR_RESPONSE_SCHEMA,
+    422: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
+
+/**
+ * `POST /proposals/:id/outcome` — the experiment closes.
+ *
+ * The body stays open for the usual reason and for one more: its keys are
+ * `execucao_id`/`depois`, the frozen hypothesis vocabulary this file's header
+ * defends, and naming them in a schema would be the first place anyone renamed
+ * them by accident.
+ */
+const OUTCOME_SCHEMA = {
+  params: ID_PARAM_SCHEMA,
+  body: OPEN_OBJECT_SCHEMA,
+  response: {
+    200: OPEN_OBJECT_SCHEMA,
+    400: ERROR_RESPONSE_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
+    409: ERROR_RESPONSE_SCHEMA,
+    422: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
+
+/**
+ * `GET /proposals` — the listing and its two optional filters.
+ *
+ * Both are untyped strings and neither is an enum: `list()` maps an unknown
+ * `?status=` to a query that matches nothing, and `?veredito=` is the frozen
+ * hypothesis vocabulary. An enum here would turn "matches nothing" into a `400`,
+ * which is a different answer to the same request.
+ */
+const LIST_PROPOSALS_SCHEMA = {
+  querystring: {
+    type: 'object',
+    properties: {
+      status: { type: 'string' },
+      veredito: { type: 'string' },
+    },
+  },
+  response: { 200: OPEN_OBJECT_SCHEMA },
+} as const;
+
+/** `GET /proposals/:id` — one proposal, or the `404` that says there is none. */
+const READ_PROPOSAL_SCHEMA = {
+  params: ID_PARAM_SCHEMA,
+  response: {
+    200: OPEN_OBJECT_SCHEMA,
+    404: ERROR_RESPONSE_SCHEMA,
+  },
+} as const;
 
 /**
  * Registers the proposal routes in the given scope (already carrying the /v1 prefix).
@@ -80,17 +206,27 @@ interface IdParam {
  * @param db Already open database; the routes never open their own (D1).
  */
 export function registerProposals(app: FastifyInstance, db: Database): void {
-  app.post('/proposals', (request, reply) => create(db, request, reply));
+  app.post('/proposals', { schema: CREATE_PROPOSAL_SCHEMA }, (request, reply) =>
+    create(db, request, reply),
+  );
 
   /* ------------------------------------------------------------------------ */
   /* t165 — the human gate. The tela has offered `Aprovar`/`Rejeitar` since     */
   /* t111 against routes that did not exist; these are them.                    */
   /* ------------------------------------------------------------------------ */
 
-  app.post<IdParam>('/proposals/:id/approve', (request, reply) => approve(db, request, reply));
-  app.post<IdParam>('/proposals/:id/reject', (request, reply) => reject(db, request, reply));
-  app.post<IdParam>('/proposals/:id/apply', (request, reply) => apply(db, request, reply));
-  app.post<IdParam>('/proposals/:id/revert', (request, reply) => revert(db, request, reply));
+  app.post<IdParam>('/proposals/:id/approve', { schema: APPROVE_SCHEMA }, (request, reply) =>
+    approve(db, request, reply),
+  );
+  app.post<IdParam>('/proposals/:id/reject', { schema: REASONED_DECISION_SCHEMA }, (request, reply) =>
+    reject(db, request, reply),
+  );
+  app.post<IdParam>('/proposals/:id/apply', { schema: APPLY_SCHEMA }, (request, reply) =>
+    apply(db, request, reply),
+  );
+  app.post<IdParam>('/proposals/:id/revert', { schema: REASONED_DECISION_SCHEMA }, (request, reply) =>
+    revert(db, request, reply),
+  );
 
   /* ------------------------------------------------------------------------ */
   /* t112 — the next run closes the proposal. Route segments are code and were  */
@@ -99,10 +235,14 @@ export function registerProposals(app: FastifyInstance, db: Database): void {
   /* vocabulary the file header explains (t226, FR5).                           */
   /* ------------------------------------------------------------------------ */
 
-  app.post<IdParam>('/proposals/:id/outcome', (request, reply) => outcome(db, request, reply));
+  app.post<IdParam>('/proposals/:id/outcome', { schema: OUTCOME_SCHEMA }, (request, reply) =>
+    outcome(db, request, reply),
+  );
 
-  app.get('/proposals', (request) => list(db, request));
-  app.get<IdParam>('/proposals/:id', (request, reply) => read(db, request, reply));
+  app.get('/proposals', { schema: LIST_PROPOSALS_SCHEMA }, (request) => list(db, request));
+  app.get<IdParam>('/proposals/:id', { schema: READ_PROPOSAL_SCHEMA }, (request, reply) =>
+    read(db, request, reply),
+  );
 }
 
 /** `POST /proposals` — opens a hypothesis over a version that exists. */

@@ -19,7 +19,7 @@
  * (`especificacoes/formatos/exemplos/`).
  */
 
-import type { Job } from './dispatch.ts';
+import type { Job } from './options.ts';
 
 /**
  * One envelope of the work's timeline.

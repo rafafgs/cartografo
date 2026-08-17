@@ -58,42 +58,47 @@
  * **And a placeholder never reaches a model as text** (t204). The manifest body
  * a node's skill carries may name this node's input — `{{input.<caminho>}}` —
  * and since this ficha those are resolved before the session is built, against
- * whatever {@link ClaudeCodeDispatchOptions.resolveInput} hands over. One that
- * does not resolve refuses the dispatch in the same window the two pin errors
+ * whatever `ClaudeCodeDispatchOptions.resolveInput` hands over. One that does
+ * not resolve refuses the dispatch in the same window the two pin errors
  * already do, before a worktree exists. With nothing wired to that option the
- * input is `{}`, which is the honest state today: nothing in this system assembles a
- * node's input yet, so a skill with placeholders fails closed instead of
- * opening a session on a half-written prompt.
+ * input is `{}`, which is the honest state today: nothing in this system
+ * assembles a node's input yet, so a skill with placeholders fails closed
+ * instead of opening a session on a half-written prompt.
  *
  * **And since t202 this file is the ORCHESTRATOR and nothing else.** It had
  * grown to 1,333 lines owning five different jobs at once, and every ficha that
- * touched dispatch touched it. What is left here is resolution (engine, model,
- * skill), the worktree bracketing, the session's own lifecycle and the SEQUENCE
- * — the order the writes happen in and the precedence of what failed, which is
- * the part with the load-bearing guarantees (t148, t207-B). The three pieces
- * that were only ever passengers moved out and are imported back: the prompt
- * (`prompt.ts`), the HTTP client (`control-plane-client.ts`) and every write the
- * runner owes once an outcome is known (`report.ts`). No export was renamed and
- * no behaviour changed; the file it is defined in is all that moved.
+ * touched dispatch touched it. What is left here is the worktree bracketing, the
+ * session's own lifecycle and the SEQUENCE — the order the writes happen in and
+ * the precedence of what failed, which is the part with the load-bearing
+ * guarantees (t148, t207-B). Everything that was only ever a passenger is
+ * imported back: the prompt (`prompt.ts`), the HTTP client
+ * (`control-plane-client.ts`), every write the runner owes once an outcome is
+ * known (`report.ts`), and — since t223, which is what finally brought the file
+ * under the 600-line budget FR9 declared and nobody enforced — the routing
+ * decisions (`resolve-engine.ts`) and the whole configuration surface
+ * (`options.ts`). No export was renamed and no behaviour changed in either
+ * split; the file a declaration is written in is all that moved, and the
+ * re-exports below are what makes that true for every caller.
  *
  * English per D18. The prompt and instruction CONTENT stays in Portuguese: it
  * is — since t161 — the registered skill manifest itself, and those are written
  * in Portuguese (`especificacoes/formatos/exemplos/`); what is left of the old
- * fixed literal is {@link DEFAULT_INSTRUCTIONS}, for a work with no graph.
+ * fixed literal is `DEFAULT_INSTRUCTIONS`, in `options.ts`.
  */
 
 import { resolvePermissions } from '../engine/permission-policy.ts';
 import { resolveBudget } from '../engine/resolve-budget.ts';
-import type {
-  EngineAdapter,
-  SessionPermissions,
-  SessionSpec,
-  SessionStatus,
-} from '../engine/types.ts';
+import type { SessionStatus } from '../engine/types.ts';
 import { createDispatchControlPlaneClient } from './control-plane-client.ts';
+import {
+  DEFAULT_INSTRUCTIONS,
+  DEFAULT_SILENCE_SECONDS,
+  DEFAULT_TIMEOUT_SECONDS,
+  type ClaudeCodeDispatchOptions,
+  type Job,
+} from './options.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
 import { PermissionDenialTracker } from './parse-permission-denial.ts';
-import { buildPrompt, type Event, type Question } from './prompt.ts';
 import {
   PermissionDenialReporter,
   advance,
@@ -104,26 +109,42 @@ import {
   type Outcome,
 } from './report.ts';
 import {
-  ESCALATION_PROTOCOL,
   renderSkillInstructions,
   type RegisteredSkill,
   type RenderedSkill,
 } from './render-skill-instructions.ts';
+import { UnknownEngineError, resolveEngine } from './resolve-engine.ts';
 import {
   resolveEscalationPolicy,
   resolveNode,
   type GraphVersionBody,
-  type ResolvedNode,
 } from './resolve-node.ts';
+import { buildSessionSpec } from './session-spec.ts';
 import { decodeClaudeCodeSessionText } from './session-text.ts';
-import type { WorktreeManager } from './session-worktree.ts';
 
+/**
+ * The surface this module has always had, re-exported from the files that own
+ * each piece now (t202, t223).
+ *
+ * Every name below was DECLARED here at some point and is imported from here by
+ * `cli/run.ts`, by the spikes and by this package's tests. Re-exporting rather
+ * than asking each caller to follow the declaration is the rule both splits ran
+ * under: a refactor that renames nothing may not make anybody edit an import.
+ */
 export {
-  ESCALATION_PROTOCOL,
   SkillNotRegisteredError,
   SkillPinMismatchError,
   UnresolvedPlaceholderError,
 } from './render-skill-instructions.ts';
+
+/**
+ * The escalation paragraph every instruction carries (t167).
+ *
+ * Declared in `escalation-protocol.ts` since t223 and composed into
+ * `DEFAULT_INSTRUCTIONS` from there; re-exported here because this is where it
+ * was declared when the spikes started importing it.
+ */
+export { ESCALATION_PROTOCOL } from './escalation-protocol.ts';
 
 /**
  * The taxonomy table every session closure is recorded through (t98).
@@ -135,269 +156,44 @@ export {
 export { TAXONOMY_STATUS } from './report.ts';
 
 /**
+ * The configuration surface of a dispatch, declared in `options.ts` since t223.
+ *
+ * It moved as one piece and for one reason: 250 lines of interface and default
+ * are not orchestration, and while they were written here nobody could read the
+ * sequence without scrolling past them.
+ */
+export {
+  DEFAULT_INSTRUCTIONS,
+  DEFAULT_SILENCE_SECONDS,
+  type ClaudeCodeDispatchOptions,
+  type Job,
+} from './options.ts';
+
+/**
+ * Which engine and which model run the node, and what happens when the graph
+ * names one nobody registered (t141, t166).
+ *
+ * Declared in `resolve-engine.ts` since t223, next to `resolve-node.ts`, whose
+ * answer both of them read.
+ */
+export { DEFAULT_ENGINE, UnknownEngineError, type EngineRoute } from './resolve-engine.ts';
+
+/**
  * Which escalation policy governs the node being dispatched (t167, FR4).
  *
- * Re-exported here, where {@link DEFAULT_ENGINE} and `resolveEngine` live,
- * because this is the module that ACTS on the answer: the two places that would
- * raise a question resolve it first, and `never` routes them to
- * `POST /v1/jobs/:id/blocks` instead. It is defined next to the field it reads
- * (`resolve-node.ts`) so that the instruction renderer can ask the same question
- * without the two modules importing each other — the same shape
+ * Re-exported here because this is the module that ACTS on the answer: the two
+ * places that would raise a question resolve it first, and `never` routes them
+ * to `POST /v1/jobs/:id/blocks` instead. It is defined next to the field it
+ * reads (`resolve-node.ts`) so that the instruction renderer can ask the same
+ * question without the two modules importing each other — the same shape
  * `ESCALATION_PROTOCOL` above already has.
  */
 export { resolveEscalationPolicy, DEFAULT_ESCALATION_POLICY } from './resolve-node.ts';
 export type { EscalationPolicy } from './resolve-node.ts';
 
-/**
- * The instruction of a work with NO resolvable node, fixed and literal, exactly
- * as t104's spike wrote it.
- *
- * It stopped being the instruction of every session in t161: a work standing on
- * a node of a registered graph is dispatched with that node's skill rendered
- * into it (`render-skill-instructions.ts`), which is what the manifest format
- * had been waiting for since t117. What is left here is the honest fallback for
- * the case that has no graph to read — a work created by hand, which is every
- * work this package's own suite dispatches — and it composes
- * {@link ESCALATION_PROTOCOL} rather than restating it, so that the two texts
- * cannot drift apart on the one paragraph both of them need.
- */
-export const DEFAULT_INSTRUCTIONS = [
-  'Você é uma sessão de trabalho despachada pelo runner do cartografo.',
-  '',
-  'Trabalhe no diretório atual e faça o que o trabalho pede.',
-  '',
-  ESCALATION_PROTOCOL,
-].join('\n');
-
-/**
- * What `GET /v1/jobs/:id` gives back, in the part this module reads.
- *
- * Exported since t204 for one reason: {@link ClaudeCodeDispatchOptions.resolveInput}
- * is handed the work, and whoever writes that function has to be able to name
- * its argument.
- */
-export interface Job {
-  id: number;
-  titulo: string;
-  no_atual: string;
-  bloqueado: boolean;
-  execucao_id: number | null;
-  /**
-   * The graph version this work traverses, when it has one (t101).
-   *
-   * `null` is ordinary and not a defect: a work created by hand names an entry
-   * node and no graph at all, and that is the shape every dispatch had before
-   * t141. It is the first of the three ways {@link DEFAULT_ENGINE} is reached.
-   */
-  grafo_versao_id?: string | null;
-
-  /**
-   * What this work costs to run, as the intake triaged it (t175).
-   *
-   * Optional and nullable for the same reason `grafo_versao_id` above is: a work
-   * created by hand names no tier, and every work born before the column existed
-   * reads `null`. Absent and `null` mean the same thing here — nobody
-   * classified it — and neither means `trivial`.
-   */
-  tier?: 'trivial' | 'standard' | null;
-}
-
 /** A session, as `POST /v1/sessions` gives it back. */
 interface Session {
   id: number;
-}
-
-/**
- * The engine name used when the graph says nothing (t141, FR3).
- *
- * Exported and named, never silently implied: three different situations land
- * here — a work with no `grafo_versao_id`, a node the snapshot does not carry,
- * and a node that simply declares no `engine` — and in all three the telemetry
- * has to be able to say WHICH engine ran without anyone guessing.
- */
-export const DEFAULT_ENGINE = 'claude-code';
-
-/**
- * One engine this dispatch can route to: who opens the session, and how to read
- * back what it printed.
- */
-export interface EngineRoute {
-  /** Production passes a real adapter; tests pass one pointed at the fake engine. */
-  adapter: EngineAdapter;
-  /**
-   * Decodes the lines that reached `onOutput` into the text the model produced.
-   *
-   * Part of the route and not of the adapter because it is the DISPATCH that
-   * needs the text — to find an escalation block — while the adapter's contract
-   * stops at delivering lines verbatim (invariant 4). Adding it to
-   * `EngineAdapter` would have grown a frozen interface (v1) for the benefit of
-   * exactly one consumer.
-   */
-  decodeSessionText: (lines: readonly string[]) => string;
-}
-
-/** Configuration of a dispatch. */
-export interface ClaudeCodeDispatchOptions {
-  /**
-   * Base URL of the control plane. Named as in `ClienteControle`, on purpose:
-   * whoever wires both passes the same value to both.
-   */
-  urlBase: string;
-  /**
-   * Credential presented on every call (t124, t147).
-   *
-   * Generic on purpose: any token this control plane accepts. In production it
-   * has to be the operator token, and that is not a shortcut — the five routes
-   * a pairing credential reaches (`RUNNER_SURFACE`, `packages/core/src/auth.ts`)
-   * do not include a single one of the seven this module calls, so a runner
-   * credential answers `403 credencial_fora_de_escopo` on all of them rather
-   * than degrading into anything usable. Cutting a credential that reaches
-   * exactly these routes is another ticket, the same one t146 deferred for the
-   * flow surveyor (`docs/spec/topografo-fluxo.md`).
-   *
-   * With no token no header goes out, and the API answers 401 — which is the
-   * honest outcome: an empty header would look like a credential.
-   */
-  token?: string;
-  /**
-   * The engines this dispatch can route to, by the name a node declares (t141,
-   * FR4).
-   *
-   * A table and not a single adapter, because the choice belongs to the NODE:
-   * `POST /v1/sessions` has recorded `engine` dynamically since t124/t147, but
-   * until this ficha there was only ever one adapter to record. The key is what
-   * `no.engine` says in the graph document; the absence of that field resolves
-   * to {@link DEFAULT_ENGINE}, so a graph that declares nothing behaves exactly
-   * as it did before.
-   *
-   * Whoever wires this owns the pairing: an adapter and the decoder for the
-   * frames that adapter's engine prints. Getting that pair wrong is how a
-   * session's escalation stops being readable, so they travel together rather
-   * than being resolved from the engine name in two different places.
-   */
-  engines: Record<string, EngineRoute>;
-  /**
-   * Who gives each session the directory it runs in (t160, FR6).
-   *
-   * It replaced a static `workingDir: string`, and the replacement IS the
-   * enforcement: while that field existed, every session this dispatch ever
-   * opened wrote in the same tree — including the operator's own checkout — and
-   * any "isolate it" logic would have had a value to quietly fall back to.
-   * There is no such value here anymore.
-   *
-   * Required, with no default: a manager chosen by this module would be a guess
-   * about which repository sessions may write in, and that guess is what gap #6
-   * of the first dogfood run cost.
-   */
-  worktrees: WorktreeManager;
-  /** Wall-clock limit of the session. Default: one hour. */
-  timeoutSeconds?: number;
-  /**
-   * Silence tolerated before the session is stopped (t163, FR9).
-   *
-   * The second watchdog, and the second budget: it resolves through
-   * {@link resolveBudget} against {@link DEFAULT_SILENCE_SECONDS}, so declaring
-   * a shorter one shortens it and declaring a longer one does nothing. Zero and
-   * negative are "no override", never "no watchdog".
-   *
-   * This is where a skill's declared `orcamentos.silencio_s` will arrive when
-   * something finally renders a registered manifest into a dispatch — the same
-   * seam `permissions` below already is, and for the same missing pipeline.
-   */
-  silenceSeconds?: number;
-  /**
-   * Node instructions, for a work with no resolvable node.
-   *
-   * Since t161 it is a FALLBACK and no longer an override: a work standing on a
-   * node of a registered graph is dispatched with that node's skill rendered
-   * into the session, and a dispatch-wide literal that replaced it would be
-   * exactly the hand-cranked mode this ficha closes — one instruction for every
-   * node of every graph, decided by whoever wired the process. What still
-   * arrives here is the text for a work with no graph, or one whose node the
-   * snapshot does not carry. Default: {@link DEFAULT_INSTRUCTIONS}.
-   */
-  instructions?: string;
-  /**
-   * What this node's `{{input.<caminho>}}` placeholders resolve against
-   * (t204, FR8).
-   *
-   * Called once per dispatch, and only for a work standing on a node the
-   * snapshot carries — a graph-less work renders no manifest, so there is
-   * nothing to interpolate.
-   *
-   * **The default resolves nothing, on purpose.** There is no per-node context
-   * projection in this system yet: no event and no table carries a node's
-   * structured output, so nothing can assemble the object the next node's
-   * `input` schema declares. Until that ficha exists, production wiring passes
-   * `{}` and every skill whose body has a placeholder fails closed with
-   * `UnresolvedPlaceholderError` — which is the honest state, and a loud one.
-   * What it replaces is worse: the same skill used to open a session with
-   * `{{input.tese_triada.titulo}}` in the prompt and nobody the wiser.
-   *
-   * It is a seam and not a hardcoded `{}` for the same reason `silenceSeconds`
-   * above is one: the mechanism that will fill it belongs to another ficha, and
-   * a named parameter is what lets the piece be tested — and wired — the day it
-   * arrives, without reopening this function.
-   */
-  resolveInput?: (job: Job, resolved: ResolvedNode) => Record<string, unknown>;
-  /** Opaque additions to the engine's environment. */
-  envOverrides?: Readonly<Record<string, string>>;
-  /**
-   * Permission policy of a session with no resolvable node (t125).
-   *
-   * The seam t125 left open is filled: a dispatch that resolves a node resolves
-   * its skill too, and the session runs under the policy that skill's manifest
-   * declares — registry lookup and hash check included (t161, FR6). This field
-   * is what is left for a work with no graph behind it, and for those it behaves
-   * exactly as it always did.
-   *
-   * The precedence is not a preference. `permissions` is inside the manifest's
-   * content hash on purpose, so a skill that opens a permission changes hash and
-   * reappears at the human gate; letting a dispatch-wide option override it
-   * would make that whole mechanism decorative.
-   */
-  permissions?: SessionPermissions;
-  /** `fetch` implementation. Default: the global one. Test seam only. */
-  doFetch?: typeof fetch;
-  /**
-   * Deadline of every control-plane call this dispatch makes, in milliseconds
-   * (t193, FR4). Default: {@link DEFAULT_REQUEST_TIMEOUT_MS}.
-   *
-   * The session's own budgets are elsewhere and stay there
-   * ({@link timeoutSeconds}, {@link silenceSeconds}): this one is about the
-   * seven HTTP calls around the session, none of which had a deadline before —
-   * a control plane that accepted the connection and went quiet used to hang
-   * the dispatch between two writes it owed, with an engine still running.
-   */
-  requestTimeoutMs?: number;
-  /**
-   * Called the moment a session is live, with the one function that can take it
-   * down (t193, FR9).
-   *
-   * It exists for the shutdown and for nothing else. Whoever owns the process
-   * (`cli/index.ts`) has to be able to end a session that is already running —
-   * a stop that could only wait would wait up to {@link timeoutSeconds}, and a
-   * process that just died would leave the engine writing in a worktree nobody
-   * is left to give back.
-   *
-   * The cancel handed over goes through `EngineAdapter.cancel`, so everything
-   * downstream of it is the path this module already has for an adapter-driven
-   * end: `cancelled` is recorded as `travada`, the worktree is KEPT (a session
-   * that was cancelled did not complete), the lease goes back through the
-   * controller's own `finally`, and the dispatch rejects with the
-   * {@link DispatchError} the loop already logs and moves past. No new way of
-   * closing out a session is invented here — only a new caller of the one that
-   * exists.
-   */
-  onSessionStarted?: (cancel: () => Promise<void>) => void;
-  /**
-   * Called once the session's outcome is known, on every path (t193, FR9).
-   *
-   * The other half of {@link onSessionStarted}, and the half that makes the
-   * reference safe to hold: between the two calls there is a live process, and
-   * outside them there is nothing to cancel.
-   */
-  onSessionEnded?: () => void;
 }
 
 /** A session that started but did not end well. */
@@ -412,57 +208,6 @@ export class DispatchError extends Error {
     this.exitCode = exitCode;
   }
 }
-
-/**
- * A node asked for an engine this dispatch has no route for (t141, FR5).
- *
- * Thrown BEFORE any session opens, and never softened into a fallback: routing
- * the work to whatever engine happens to be registered would run it on an engine
- * nobody chose AND record that engine as if the graph had asked for it. The
- * telemetry would be internally consistent and false, which is worse than a
- * dispatch that stops.
- *
- * It propagates untouched, the same way `SessionStartError` does: the controller's
- * `finally` returns the lease, and the work is simply not advanced.
- */
-export class UnknownEngineError extends Error {
-  /** The engine the node declared. */
-  readonly engine: string;
-  /** The node that declared it. */
-  readonly nodeId: string;
-  /** The engines that DO have a route, for the message a human reads. */
-  readonly known: readonly string[];
-
-  constructor(engine: string, nodeId: string, known: readonly string[]) {
-    super(
-      `node "${nodeId}" asks for engine "${engine}", which has no route in this dispatch ` +
-        `(registered: ${known.length === 0 ? 'none' : known.join(', ')})`,
-    );
-    this.name = 'UnknownEngineError';
-    this.engine = engine;
-    this.nodeId = nodeId;
-    this.known = known;
-  }
-}
-
-/** Default wall-clock limit, in seconds. */
-const DEFAULT_TIMEOUT_SECONDS = 3_600;
-
-/**
- * Server ceiling for silence, in seconds (t163, FR9).
- *
- * 300s is flowpilot's own `DEFAULT_SILENCE_SECONDS`: short enough that a stuck
- * session is noticed while somebody still cares, long enough that a session
- * thinking hard between two tool calls is not murdered for it. Exported because
- * it IS the ceiling — whoever reads a skill's declared budget resolves against
- * this number, and a ceiling nobody can name is a ceiling nobody can check.
- *
- * "Server config" in the ticket's sense is exactly this: a constant plus a
- * dispatch option, the same shape {@link DEFAULT_TIMEOUT_SECONDS} has had since
- * t106. There is no configuration subsystem in `packages/core` to put it in, and
- * inventing one for two numbers is how a knob nobody turns gets born.
- */
-export const DEFAULT_SILENCE_SECONDS = 300;
 
 /**
  * Everything the session said, with Claude Code's frames decoded back into text.
@@ -492,57 +237,6 @@ export function createClaudeCodeDispatch(
   // purpose: a route that assembled its own headers is a route that could
   // forget the credential.
   const call = createDispatchControlPlaneClient(options);
-
-  /**
-   * Which engine handles the node this work is sitting on RIGHT NOW (t141, FR3).
-   *
-   * The current node and not the entry one: a work moves, and the engine is a
-   * property of the step being executed, not of the traversal that contains it.
-   *
-   * Three roads lead to {@link DEFAULT_ENGINE}, and all three are ordinary: the
-   * work carries no graph version, the snapshot has no node with this id, or the
-   * node declares no `engine`. A missing graph version the work explicitly
-   * points at is NOT one of them — that is a dangling reference, and it rejects
-   * out of `resolveNode` rather than being papered over with a default.
-   *
-   * Since t161 the fetch is `resolveNode`'s and this function is pure: the first
-   * two roads are the same `null` the rest of the dispatch reads, so the engine
-   * that ran and the edge that was taken come from ONE read of ONE snapshot.
-   *
-   * @param resolved The node this dispatch resolved, or `null`.
-   * @returns The engine name to route on.
-   */
-  const resolveEngine = (resolved: ResolvedNode | null): string => {
-    const declared = resolved?.node.engine;
-    // Free text at the schema level on purpose (Out of Scope: no closed enum),
-    // so "declared" means a non-empty string and nothing else.
-    if (typeof declared !== 'string' || declared.trim() === '') return DEFAULT_ENGINE;
-    return declared;
-  };
-
-  /**
-   * Which model of that engine runs the node this work is sitting on (t166, FR5).
-   *
-   * The mirror of {@link resolveEngine}, with the one difference that matters:
-   * there is no `DEFAULT_MODEL` to fall back to, and there must not be. The
-   * runner has no way of knowing which models a given installation can reach,
-   * so the honest absence is `undefined` — no flag assembled, the engine picks
-   * its own default, and the telemetry records that nobody chose. A constant
-   * here would put a decision into every session that no graph ever made.
-   *
-   * The blank-string guard is the same one `resolveEngine` has, and it earns
-   * its place for a different reason: a `model: "  "` that survived into a
-   * snapshot would otherwise reach the CLI as an empty `--model`, and the
-   * session would die on a flag nobody typed.
-   *
-   * @param resolved The node this dispatch resolved, or `null`.
-   * @returns The model identifier to pin, or `undefined` for the engine's own.
-   */
-  const resolveModel = (resolved: ResolvedNode | null): string | undefined => {
-    const declared = resolved?.node.model;
-    if (typeof declared !== 'string' || declared.trim() === '') return undefined;
-    return declared;
-  };
 
   return async (jobId: number): Promise<void> => {
     const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
@@ -626,46 +320,18 @@ export function createClaudeCodeDispatch(
     };
 
     try {
-      const { eventos: events } = await call<{ eventos: Event[] }>(
-        `/v1/jobs/${jobId}/events`,
-        'GET',
-      );
-      const { perguntas: questions } = await call<{ perguntas: Question[] }>(
-        '/v1/input-requests?status=respondida',
-        'GET',
-      );
-
-      const prompt = buildPrompt(
-        job,
-        events,
-        questions.filter((question) => question.trabalho_id === jobId),
-      );
-
-      // Read from the SAME resolved node the engine came from, and spread only
-      // when there is one: a `model: undefined` key present in the object would
-      // still be a key, and `buildCommand` reads absence, not falsiness.
-      const model = resolveModel(resolved);
-
-      // The tier comes off the WORK, not off the node — it is a property of what
-      // is being done, not of the step doing it, so it is set once here and
-      // travels to whichever engine this node resolved to. Which model that
-      // buys is the adapter's answer, below boundary 1, where model names live.
-      // Same conditional spread and same reason as `model` above: `null` is the
-      // ordinary "nobody triaged this", and it has to reach the adapters as an
-      // absent key rather than a present one holding nothing.
-      const modelTier = job.tier ?? undefined;
-
-      const spec: SessionSpec = {
+      // The two reads the prompt needs, and the spec they get packed into
+      // (`session-spec.ts`). Inside the `try` and after the worktree, where they
+      // have always been: a read that fails here retains the tree and opens no
+      // session, which is the cheapest failure this dispatch still has left.
+      const spec = await buildSessionSpec(call, job, resolved, {
         workingDir: worktree.path,
         instructions,
-        prompt,
         timeoutSeconds,
         silenceSeconds,
-        ...(model === undefined ? {} : { model }),
-        ...(modelTier === undefined ? {} : { modelTier }),
         ...(options.envOverrides === undefined ? {} : { envOverrides: options.envOverrides }),
         ...(permissions === undefined ? {} : { permissions }),
-      };
+      });
 
       const lines: string[] = [];
       let engineRef: string | null = null;

@@ -218,7 +218,9 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
       while (Date.now() < deadline) {
         const [lease] = await leasesOf(urlBase, token);
         assert.ok(lease !== undefined, 'the lease being dispatched under has to be visible');
-        if (Date.parse(lease.heartbeat_at) > Date.parse(lease.granted_at)) return;
+        if (Date.parse(lease.heartbeat_at) > Date.parse(lease.granted_at)) {
+          return { blocked: false };
+        }
         await delay(100);
       }
       throw new Error(`no heartbeat reached the control plane within ${DEADLINE_MS}ms`);

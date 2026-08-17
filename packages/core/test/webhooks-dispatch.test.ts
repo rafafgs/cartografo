@@ -141,14 +141,14 @@ interface Subscription {
 /** A delivery row, read straight from the table the migration creates. */
 interface Delivery {
   id: number;
-  assinatura_id: number;
-  evento_id: number;
+  subscription_id: number;
+  event_id: number;
   status: string;
-  tentativas: number;
-  proxima_tentativa_em: string;
-  criada_em: string;
-  entregue_em: string | null;
-  ultimo_erro: string | null;
+  attempts: number;
+  next_attempt_at: string;
+  created_at: string;
+  delivered_at: string | null;
+  last_error: string | null;
 }
 
 /** A dispatcher running against a throwaway database. */
@@ -282,9 +282,9 @@ function recordJobMoved(db: Database, id: number, target: string): Event {
 function deliveries(db: Database, subscriptionId: number): Delivery[] {
   return db
     .prepare(
-      `SELECT id, assinatura_id, evento_id, status, tentativas, proxima_tentativa_em,
-              criada_em, entregue_em, ultimo_erro
-         FROM entrega_webhook WHERE assinatura_id = ? ORDER BY id`,
+      `SELECT id, subscription_id, event_id, status, attempts, next_attempt_at,
+              created_at, delivered_at, last_error
+         FROM webhook_delivery WHERE subscription_id = ? ORDER BY id`,
     )
     .all(subscriptionId) as Delivery[];
 }
@@ -403,8 +403,8 @@ test('AT5 — the event is pushed with the envelope and a verifiable signature',
     'the 2xx to close the delivery',
   );
   const delivery = only(deliveries(ctx.db, subscription.id));
-  assert.equal(typeof delivery.entregue_em, 'string');
-  assert.equal(delivery.ultimo_erro, null);
+  assert.equal(typeof delivery.delivered_at, 'string');
+  assert.equal(delivery.last_error, null);
 });
 
 test('AT6 — a subscription never replays what was already in the log', async (t) => {
@@ -429,7 +429,7 @@ test('AT6 — a subscription never replays what was already in the log', async (
   assert.equal(ctx.calls.length, 1, 'history is not replayed by accident');
   assert.equal((JSON.parse(ctx.calls[0].body) as Event).id, fresh.id);
   assert.deepEqual(
-    deliveries(ctx.db, subscription.id).map((delivery) => delivery.evento_id),
+    deliveries(ctx.db, subscription.id).map((delivery) => delivery.event_id),
     [fresh.id],
   );
 });
@@ -476,17 +476,17 @@ test('AT8 — a failed attempt is rescheduled by the backoff step, and retried',
   );
   await waitFor(
     t,
-    () => only(deliveries(ctx.db, subscription.id)).tentativas === 1,
+    () => only(deliveries(ctx.db, subscription.id)).attempts === 1,
     'the first attempt to be recorded',
   );
 
   const failed = only(deliveries(ctx.db, subscription.id));
   assert.equal(failed.status, 'pendente', 'a failure does not end the delivery');
-  assert.equal(failed.proxima_tentativa_em, after(BACKOFF_MS[0]));
-  assert.equal(failed.entregue_em, null);
+  assert.equal(failed.next_attempt_at, after(BACKOFF_MS[0]));
+  assert.equal(failed.delivered_at, null);
   assert.ok(
-    (failed.ultimo_erro ?? '').includes('sem rota para o host'),
-    `the failure is recorded: ${String(failed.ultimo_erro)}`,
+    (failed.last_error ?? '').includes('sem rota para o host'),
+    `the failure is recorded: ${String(failed.last_error)}`,
   );
 
   await drive(t);
@@ -496,14 +496,14 @@ test('AT8 — a failed attempt is rescheduled by the backoff step, and retried',
   await waitFor(t, () => ctx.calls.length >= 2, 'the retry once the step has passed');
   await waitFor(
     t,
-    () => only(deliveries(ctx.db, subscription.id)).tentativas === 2,
+    () => only(deliveries(ctx.db, subscription.id)).attempts === 2,
     'the second attempt to be recorded',
   );
 
   const retried = only(deliveries(ctx.db, subscription.id));
   assert.equal(retried.status, 'pendente');
   assert.equal(
-    retried.proxima_tentativa_em,
+    retried.next_attempt_at,
     after(BACKOFF_MS[0] + BACKOFF_MS[1]),
     'the second failure waits the second step of the schedule',
   );
@@ -525,7 +525,7 @@ test('AT9 — past the last step the delivery is esgotada, and never tried again
     await waitFor(t, () => ctx.calls.length >= attempt, `attempt number ${attempt}`);
     await waitFor(
       t,
-      () => only(deliveries(ctx.db, subscription.id)).tentativas >= attempt,
+      () => only(deliveries(ctx.db, subscription.id)).attempts >= attempt,
       `the result of attempt number ${attempt}`,
     );
     // Past the longest step of the schedule, so the next attempt is always due.
@@ -534,9 +534,9 @@ test('AT9 — past the last step the delivery is esgotada, and never tried again
 
   const exhausted = only(deliveries(ctx.db, subscription.id));
   assert.equal(exhausted.status, 'esgotada');
-  assert.equal(exhausted.tentativas, BACKOFF_MS.length + 1);
-  assert.equal(exhausted.entregue_em, null);
-  assert.ok((exhausted.ultimo_erro ?? '').includes('500'), 'the last failure is kept');
+  assert.equal(exhausted.attempts, BACKOFF_MS.length + 1);
+  assert.equal(exhausted.delivered_at, null);
+  assert.ok((exhausted.last_error ?? '').includes('500'), 'the last failure is kept');
 
   // However far the clock goes, a terminal delivery is not a delivery any more.
   const spent = ctx.calls.length;
@@ -572,8 +572,8 @@ test('AT10 — a broken subscriber does not hold up a healthy one', async (t) =>
 
   const stuck = only(deliveries(ctx.db, broken.id));
   assert.equal(stuck.status, 'pendente', 'the broken one keeps its own failure');
-  assert.ok(stuck.tentativas >= 1);
-  assert.equal(only(deliveries(ctx.db, healthy.id)).ultimo_erro, null);
+  assert.ok(stuck.attempts >= 1);
+  assert.equal(only(deliveries(ctx.db, healthy.id)).last_error, null);
 });
 
 test('AT11 — deactivating stops the retry in flight and every future fan-out', async (t) => {
@@ -591,7 +591,7 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
 
   await waitFor(
     t,
-    () => deliveries(ctx.db, subscription.id).some((delivery) => delivery.tentativas === 1),
+    () => deliveries(ctx.db, subscription.id).some((delivery) => delivery.attempts === 1),
     'the first attempt, so there is a pending retry to stop',
   );
   const spent = ctx.calls.length;
@@ -612,7 +612,7 @@ test('AT11 — deactivating stops the retry in flight and every future fan-out',
 
   assert.equal(ctx.calls.length, spent, 'a deactivated subscription is never called again');
   assert.deepEqual(
-    deliveries(ctx.db, subscription.id).map((delivery) => delivery.evento_id),
+    deliveries(ctx.db, subscription.id).map((delivery) => delivery.event_id),
     [pushed.id],
     'and the fan-out never enqueues anything else for it',
   );

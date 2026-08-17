@@ -268,6 +268,89 @@ test('AT5 — the package 0001_init.sql creates schema_migrations with id and ap
   assert.equal(appliedAt.notnull, 1, 'applied_at is NOT NULL');
 });
 
+/** The 15 tables §4.1 renames, in the glossary's own order. */
+const RENAMED_TABLES = Object.freeze([
+  'graph',
+  'graph_version',
+  'proposal',
+  'event',
+  'job',
+  'session',
+  'input_request',
+  'job_dependency',
+  'intake_draft',
+  'credential',
+  'webhook_subscription',
+  'webhook_delivery',
+  'engine_model',
+  'hook_delivery',
+  'hook_secret',
+]);
+
+/** The three §4.1 already spells in English — no `RENAME TO` touches them. */
+const UNCHANGED_TABLES = Object.freeze(['runner', 'lease', 'skill']);
+
+/** The Portuguese spellings §4.1 retires; no table and no index may still carry one. */
+const RETIRED_TABLE_WORDS = Object.freeze([
+  'grafo',
+  'grafo_versao',
+  'proposta',
+  'evento',
+  'trabalho',
+  'sessao',
+  'pergunta',
+  'trabalho_dependencia',
+  'intake_rascunho',
+  'credencial',
+  'assinatura_webhook',
+  'entrega_webhook',
+  'motor_modelo',
+  'entrega_gancho',
+  'segredo_gancho',
+]);
+
+test('t229 AT — after 0019 the schema speaks the English of glossario-wire.md §4.1', async (t) => {
+  const { openDatabase, applyPragmas } = await loadConnection();
+  const { migrate } = await loadMigrate();
+
+  const base = temporaryArea(t);
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  t.after(() => db.close());
+  applyPragmas(db);
+
+  migrate(db, REAL_MIGRATIONS_DIR);
+
+  const tables = new Set(
+    (
+      db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table'").all() as Array<{
+        name: string;
+      }>
+    ).map((row) => row.name),
+  );
+  for (const wanted of [...RENAMED_TABLES, ...UNCHANGED_TABLES]) {
+    assert.ok(tables.has(wanted), `the table "${wanted}" has to exist after the rename`);
+  }
+
+  // Indexes as well as tables: SQLite renames the COLUMNS an index references on
+  // its own, never the index's own name, so every one of them that spelled a
+  // retired word has to have been dropped and recreated by hand (FR2).
+  const objects = db
+    .prepare("SELECT type, name FROM sqlite_schema WHERE type IN ('table', 'index') ORDER BY name")
+    .all() as Array<{ type: string; name: string }>;
+
+  const survivors = objects
+    .filter((row) =>
+      RETIRED_TABLE_WORDS.some((word) => new RegExp(`(^|_)${word}(_|$)`).test(row.name)),
+    )
+    .map((row) => `${row.type} ${row.name}`);
+
+  assert.deepEqual(
+    survivors,
+    [],
+    'no table and no index may still be named after a §4.1 Portuguese word',
+  );
+});
+
 test('t165 AT7 — migration 0010 rebuilds proposta and round-trips the rows already there', async (t) => {
   const { openDatabase, applyPragmas } = await loadConnection();
   const { listMigrations, migrate } = await loadMigrate();

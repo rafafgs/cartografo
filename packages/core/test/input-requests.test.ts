@@ -227,7 +227,7 @@ test('t167 — a job with no current node stamps node_id null, never a guess', a
   // database directly. What is under test is the reading: absent position is
   // recorded as `null`, the same way `sessao.engine_session_ref` treats "not
   // known yet", and never backfilled with the entry node.
-  ctx.db.prepare('UPDATE trabalho SET no_atual = ? WHERE id = ?').run('', job.id);
+  ctx.db.prepare('UPDATE job SET current_node_id = ? WHERE id = ?').run('', job.id);
 
   const response = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
     job_id: job.id,

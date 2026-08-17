@@ -11,9 +11,12 @@
  * `test/support.ts`: on the initial red the failure has to NAME the missing
  * artifact instead of blowing up with a module resolution error.
  *
- * The column names below are Portuguese because the table is (`credencial`,
- * `criada_em`, `revogada_em`), like every other domain table; the TypeScript
- * around it is English (D18, and the ticket's Refinement Log).
+ * The column names below are English since D20's fourth child renamed the schema
+ * (t229): the table is `credential` and its dates are `created_at`/`revoked_at`.
+ * What the REPOSITORY returns still spells `tipo`/`criada_em`, because its
+ * `SELECT` aliases the renamed columns back into the field names `src/auth.ts`
+ * reads (t229, FR4) — so a raw `SELECT *` here and a `CredentialRow` there
+ * legitimately disagree.
  */
 
 import assert from 'node:assert/strict';
@@ -71,10 +74,10 @@ async function loadRepository(): Promise<typeof CredentialsModule> {
   return await load<typeof CredentialsModule>(T124_ARTIFACTS.repository);
 }
 
-test('t124 AT — the migration creates `credencial` with the declared shape', async (t) => {
+test('t124 AT — the migration creates `credential` with the declared shape', async (t) => {
   const db = await openMigrated(t);
 
-  const columns = db.prepare('PRAGMA table_info(credencial)').all() as Array<{
+  const columns = db.prepare('PRAGMA table_info(credential)').all() as Array<{
     name: string;
     type: string;
     notnull: number;
@@ -82,25 +85,25 @@ test('t124 AT — the migration creates `credencial` with the declared shape', a
 
   assert.deepEqual(
     columns.map((column) => column.name).sort(),
-    ['criada_em', 'hash', 'id', 'revogada_em', 'runner_id', 'tipo'].sort(),
+    ['created_at', 'hash', 'id', 'revoked_at', 'runner_id', 'owner_type'].sort(),
     'the table carries exactly the six declared columns (FR1)',
   );
 
   const required = new Set(
     columns.filter((column) => column.notnull === 1).map((column) => column.name),
   );
-  assert.ok(required.has('tipo'), 'tipo is NOT NULL');
+  assert.ok(required.has('owner_type'), 'owner_type is NOT NULL');
   assert.ok(required.has('hash'), 'hash is NOT NULL');
-  assert.ok(required.has('criada_em'), 'criada_em is NOT NULL');
+  assert.ok(required.has('created_at'), 'created_at is NOT NULL');
   assert.ok(!required.has('runner_id'), 'runner_id is nullable: a user credential has no runner');
-  assert.ok(!required.has('revogada_em'), 'revogada_em is nullable: a live credential has no date');
+  assert.ok(!required.has('revoked_at'), 'revoked_at is nullable: a live credential has no date');
 
   // The CHECK is what keeps the type vocabulary closed — `runner` is declared
   // now precisely so the pairing ticket needs no second migration on this table.
   assert.throws(
     () =>
       db
-        .prepare('INSERT INTO credencial (tipo, hash, criada_em) VALUES (?, ?, ?)')
+        .prepare('INSERT INTO credential (owner_type, hash, created_at) VALUES (?, ?, ?)')
         .run('inventado', 'x'.repeat(64), new Date().toISOString()),
     /CHECK/i,
     'only `usuario` and `runner` are accepted types',
@@ -116,14 +119,14 @@ test('t124 AT — issueCredential returns the raw token once and persists only i
   assert.equal(typeof issued.id, 'number');
   assert.match(issued.token, /^[0-9a-f]{64}$/, '32 random bytes, in hex (Refinement Log)');
 
-  const stored = db.prepare('SELECT * FROM credencial WHERE id = ?').get(issued.id) as Record<
+  const stored = db.prepare('SELECT * FROM credential WHERE id = ?').get(issued.id) as Record<
     string,
     unknown
   >;
-  assert.equal(stored.tipo, 'usuario');
+  assert.equal(stored.owner_type, 'usuario');
   assert.equal(stored.runner_id, null);
-  assert.equal(stored.revogada_em, null);
-  assert.equal(typeof stored.criada_em, 'string');
+  assert.equal(stored.revoked_at, null);
+  assert.equal(typeof stored.created_at, 'string');
   assert.equal(
     stored.hash,
     createHash('sha256').update(issued.token).digest('hex'),
@@ -162,7 +165,7 @@ test('t124 AT — verifyToken resolves a live credential and refuses everything 
   // There is no revoke path in this ticket (Out of Scope): the column is written
   // by hand here so that `verifyToken`'s half of the contract — a revoked
   // credential stops authenticating — is proven before anything depends on it.
-  db.prepare('UPDATE credencial SET revogada_em = ? WHERE id = ?').run(
+  db.prepare('UPDATE credential SET revoked_at = ? WHERE id = ?').run(
     new Date().toISOString(),
     issued.id,
   );
@@ -173,10 +176,10 @@ test('t143 AT — revokeRunnerCredentials revokes every live credential of one r
   const db = await openMigrated(t);
   const { issueCredential, revokeRunnerCredentials, verifyToken } = await loadRepository();
 
-  // `credencial.runner_id` REFERENCES `runner(id)`: a credential of a runner
+  // `credential.runner_id` REFERENCES `runner(id)`: a credential of a runner
   // that does not exist is refused by the schema itself, so the rows come first.
   for (const id of ['runner-a', 'runner-b']) {
-    db.prepare('INSERT INTO runner (id, nome, registrado_em) VALUES (?, NULL, ?)').run(
+    db.prepare('INSERT INTO runner (id, name, registered_at) VALUES (?, NULL, ?)').run(
       id,
       new Date().toISOString(),
     );
@@ -201,11 +204,11 @@ test('t143 AT — revokeRunnerCredentials revokes every live credential of one r
   );
 
   for (const id of [first.id, second.id]) {
-    const row = db.prepare('SELECT revogada_em FROM credencial WHERE id = ?').get(id) as {
-      revogada_em: string | null;
+    const row = db.prepare('SELECT revoked_at FROM credential WHERE id = ?').get(id) as {
+      revoked_at: string | null;
     };
-    assert.equal(typeof row.revogada_em, 'string');
-    assert.ok(!Number.isNaN(Date.parse(row.revogada_em ?? '')), 'revogada_em is an ISO instant');
+    assert.equal(typeof row.revoked_at, 'string');
+    assert.ok(!Number.isNaN(Date.parse(row.revoked_at ?? '')), 'revoked_at is an ISO instant');
   }
 
   assert.equal(

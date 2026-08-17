@@ -181,12 +181,12 @@ test('AT2 — a second PUT rotates the secret, and the new value is what resolve
   // The old value is not merely unreachable through the API: it stopped being
   // the live one, which is what "rotating" has to mean for a key in use.
   const live = ctx.db
-    .prepare('SELECT COUNT(*) AS total FROM segredo_gancho WHERE nome = ? AND revogada_em IS NULL')
+    .prepare('SELECT COUNT(*) AS total FROM hook_secret WHERE name = ? AND revoked_at IS NULL')
     .get(NAME) as { total: number };
   assert.equal(live.total, 1, 'at most one live row per name, ever');
 
   const rows = ctx.db
-    .prepare('SELECT COUNT(*) AS total FROM segredo_gancho WHERE nome = ?')
+    .prepare('SELECT COUNT(*) AS total FROM hook_secret WHERE name = ?')
     .get(NAME) as { total: number };
   assert.equal(rows.total, 2, 'the revoked registration stays: nothing is deleted (D15/D2)');
 });
@@ -331,7 +331,7 @@ test('AT7 — a runner credential is out of scope on all three routes', async (t
   await denied('GET', '/v1/hook-secrets');
   await denied('DELETE', `/v1/hook-secrets/${NAME}`);
 
-  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM segredo_gancho').get() as {
+  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM hook_secret').get() as {
     total: number;
   };
   assert.equal(rows.total, 0, 'a refused request writes nothing');

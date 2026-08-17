@@ -10,7 +10,10 @@
  * Two rules here:
  *
  * 1. `src/db/events.ts` exports EXACTLY three functions at runtime;
- * 2. no other module of `src/` writes update/delete SQL against `evento`.
+ * 2. no other module of `src/` writes update/delete SQL against `event`.
+ *
+ * The table is `event` and no longer `evento` since D20's fourth child (t229)
+ * renamed the schema; the rule it guards did not move by one inch.
  */
 
 import assert from 'node:assert/strict';
@@ -25,8 +28,8 @@ const SOURCE_DIR = path.join(PACKAGE_ROOT, 'src');
 /** The module that owns the log — the only one exempt from the sweep. */
 const LOG_OWNER = path.join(PACKAGE_ROOT, T102_ARTIFACTS.events);
 
-/** `UPDATE evento` / `DELETE FROM evento`, in any case and spacing. */
-const DESTRUCTIVE_WRITE = new RegExp(String.raw`\b(?:update|delete\s+from)\s+evento\b`, 'i');
+/** `UPDATE event` / `DELETE FROM event`, in any case and spacing. */
+const DESTRUCTIVE_WRITE = new RegExp(String.raw`\b(?:update|delete\s+from)\s+event\b`, 'i');
 
 /** Lists the `.ts` files under a directory, recursively. */
 function listSources(dir: string): string[] {
@@ -66,7 +69,7 @@ test('AT16 — src/db/events.ts exposes only insert and reads', async () => {
   }
 });
 
-test('AT16 — no module of src/ writes UPDATE/DELETE against the evento table', () => {
+test('AT16 — no module of src/ writes UPDATE/DELETE against the event table', () => {
   requireArtifacts(T102_ARTIFACTS.events);
 
   const violations: string[] = [];
@@ -88,10 +91,10 @@ test('AT16 — no module of src/ writes UPDATE/DELETE against the evento table',
 test('AT16 — the gate really does catch a destructive write', () => {
   // Without this proof the test above could be passing by accident — a regex
   // that never matches anything is indistinguishable from clean code.
-  assert.ok(DESTRUCTIVE_WRITE.test("db.prepare('UPDATE evento SET dados = ? WHERE id = ?')"));
-  assert.ok(DESTRUCTIVE_WRITE.test('db.exec("delete from evento")'));
-  assert.ok(DESTRUCTIVE_WRITE.test("db.exec('DELETE   FROM   evento WHERE id = 1')"));
-  assert.ok(!DESTRUCTIVE_WRITE.test("db.prepare('UPDATE trabalho SET no_atual = ?')"));
-  assert.ok(!DESTRUCTIVE_WRITE.test("db.prepare('INSERT INTO evento (tipo) VALUES (?)')"));
-  assert.ok(!DESTRUCTIVE_WRITE.test(withoutComments('// never do UPDATE evento here')));
+  assert.ok(DESTRUCTIVE_WRITE.test("db.prepare('UPDATE event SET data = ? WHERE id = ?')"));
+  assert.ok(DESTRUCTIVE_WRITE.test('db.exec("delete from event")'));
+  assert.ok(DESTRUCTIVE_WRITE.test("db.exec('DELETE   FROM   event WHERE id = 1')"));
+  assert.ok(!DESTRUCTIVE_WRITE.test("db.prepare('UPDATE job SET current_node_id = ?')"));
+  assert.ok(!DESTRUCTIVE_WRITE.test("db.prepare('INSERT INTO event (type) VALUES (?)')"));
+  assert.ok(!DESTRUCTIVE_WRITE.test(withoutComments('// never do UPDATE event here')));
 });

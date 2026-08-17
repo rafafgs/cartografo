@@ -287,7 +287,7 @@ export async function loadEvents(): Promise<EventsModule> {
 
 /** How many events exist in the log, in total. */
 export function countEvents(ctx: TestContext): number {
-  const row = ctx.db.prepare('SELECT COUNT(*) AS total FROM evento').get() as { total: number };
+  const row = ctx.db.prepare('SELECT COUNT(*) AS total FROM event').get() as { total: number };
   return row.total;
 }
 

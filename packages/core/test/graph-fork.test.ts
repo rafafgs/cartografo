@@ -136,8 +136,8 @@ async function readVersion(ctx: TestContext, id: string): Promise<GraphVersionWi
 
 /** How many rows the two tables hold — the "nothing was written" assertion. */
 function counts(ctx: TestContext): { lineages: number; versions: number } {
-  const lineages = ctx.db.prepare('SELECT COUNT(*) AS total FROM grafo').get() as { total: number };
-  const versions = ctx.db.prepare('SELECT COUNT(*) AS total FROM grafo_versao').get() as {
+  const lineages = ctx.db.prepare('SELECT COUNT(*) AS total FROM graph').get() as { total: number };
+  const versions = ctx.db.prepare('SELECT COUNT(*) AS total FROM graph_version').get() as {
     total: number;
   };
   return { lineages: lineages.total, versions: versions.total };
@@ -419,8 +419,8 @@ test('t118 AT14 — a base with no current version is a 409, not a crash', async
   // because the invariant is defensive and has to hold anyway.
   ctx.db
     .prepare(
-      `INSERT INTO grafo (id, classe, linhagem_tipo, base_classe, origem_proposta_id,
-                          versao_corrente_id, criado_em)
+      `INSERT INTO graph (id, class, lineage_type, base_class, origin_proposal_id,
+                          current_version_id, created_at)
        VALUES ('nota-orfa', 'nota-orfa', 'base', NULL, NULL, NULL, '2026-08-14T00:00:00.000Z')`,
     )
     .run();

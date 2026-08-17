@@ -229,6 +229,40 @@ export async function blockForUncommittedWork(
 }
 
 /**
+ * Stops the work because the dispatch could not even get to a session (t252, FR3).
+ *
+ * The third reason a dispatch stops a work on its own account, and the one that
+ * happens EARLIEST: before a worktree, before a session, before a token is
+ * spent. What it is for is a failure that will reproduce identically on every
+ * retry — a placeholder that does not resolve, a skill nobody registered, a pin
+ * that stopped matching, an engine with no route, a `graph_version_id` the
+ * control plane no longer has. Until this ficha each of those was thrown, logged
+ * by `cli/run.ts` and retried two seconds later, forever, with nothing in
+ * anybody's inbox and no other job of the project ever reached.
+ *
+ * Same route, same actor and same shape as the two blocks above, and a function
+ * of its own for the same reason they are two: a single helper taking a string
+ * would make three different facts indistinguishable at the call site. The
+ * reason itself is composed elsewhere (`pre-session-failure.ts`) — WHICH failure
+ * this was is a classification, and posting it is a write.
+ *
+ * @param call The dispatch's control-plane client.
+ * @param job The work being dispatched.
+ * @param reason Why it stopped, naming the cause concretely: it is what whoever
+ *   opens the work reads first, and what tells them which of the five it was.
+ */
+export async function blockForPreSessionFailure(
+  call: ControlPlaneCall,
+  job: JobRef,
+  reason: string,
+): Promise<void> {
+  await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
+    reason,
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
+  });
+}
+
+/**
  * Asks a human which way the work goes (t161, FR9).
  *
  * Reached when a node with more than one way out finished without naming one

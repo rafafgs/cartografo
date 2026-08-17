@@ -303,17 +303,18 @@ test('t164 AT — two runners racing over the LAN take every job exactly once, a
 
   const dispatchOf =
     (runnerId: string) =>
-    async (jobId: number): Promise<void> => {
+    async (jobId: number): Promise<ControllerModule.DispatchAttempt> => {
       // A dispatch that lands after the race was decided is not part of the
       // proof: by then the leases are going back and a free job is a job
       // anybody may legitimately take again.
-      if (!racing) return;
+      if (!racing) return { blocked: false };
 
       dispatched.push({ runnerId, jobId });
       if (dispatched.length === JOB_COUNT) racing = false;
 
       // Nobody hands a lease back while the race is on (see the header).
       while (racing && Date.now() < deadline) await delay(POLL_MS);
+      return { blocked: false };
     };
 
   const fleet = [
@@ -449,6 +450,7 @@ test('t164 AT — the per-project ceiling holds across two runners racing withou
       dispatch: async () => {
         dispatches += 1;
         await delay(25);
+        return { blocked: false };
       },
     });
 
@@ -551,7 +553,7 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
       }, `no heartbeat of ${RUNNER_A} reached the control plane`);
 
       alive = false;
-      return await new Promise<void>(() => undefined);
+      return await new Promise<ControllerModule.DispatchAttempt>(() => undefined);
     },
   });
 
@@ -572,6 +574,7 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
       // Holds the reclaimed lease open: "runner-b ended up with a NEW active
       // lease" is only observable while it is still active.
       await waitFor(() => !holdingReclaimed, 'the assertions never released runner-b');
+      return { blocked: false };
     },
   });
 

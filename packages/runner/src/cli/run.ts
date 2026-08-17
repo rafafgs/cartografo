@@ -22,7 +22,10 @@
  *   in its own `finally` (`controller.ts:143-160`) whatever the dispatch did.
  *   So what is left to decide is only whether ONE bad job may end a runner's
  *   day, and it may not — a graph node asking for an engine this runner has no
- *   route for is exactly that kind of local failure.
+ *   route for is exactly that kind of local failure. Since t252 that particular
+ *   example no longer reaches this catch at all: five pre-session failures that
+ *   would reproduce on every retry block the work with a reason instead, so
+ *   what still lands here is what is genuinely worth retrying.
  * - **Shutdown waits for the dispatch in flight — but not forever** (t193).
  *   Aborting stops the loop from SCHEDULING, never mid-session: killing a live
  *   session from out here would leave a process writing in its worktree with

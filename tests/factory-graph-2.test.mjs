@@ -218,10 +218,10 @@ test("AT1 — grafo.json passes validarEstrutura, validarSoundness and t96's sch
   const { validateAgainstSchema } = await bundleValidator();
   const doc = readJson(GRAPH_PATH);
 
-  assert.deepEqual(validarEstrutura(doc).erros, []);
-  assert.equal(validarEstrutura(doc).valido, true);
-  assert.deepEqual(validarSoundness(doc).violacoes, []);
-  assert.equal(validarSoundness(doc).valido, true);
+  assert.deepEqual(validarEstrutura(doc).errors, []);
+  assert.equal(validarEstrutura(doc).valid, true);
+  assert.deepEqual(validarSoundness(doc).violations, []);
+  assert.equal(validarSoundness(doc).valid, true);
 
   // The bundle does not validate shape against `schema/grafo.schema.json` —
   // only structure and soundness. This document is new content, so the shape is

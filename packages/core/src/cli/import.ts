@@ -138,13 +138,13 @@ export function verifyBundle(directory: string, document: unknown): BundleProble
 
   // 1. the graph is valid and sound.
   const report = validateGraph(document);
-  for (const error of report.estrutura.erros) {
-    problems.push({ scope: 'graph', message: `estrutura ${error.codigo}: ${error.mensagem}` });
+  for (const error of report.structure.errors) {
+    problems.push({ scope: 'graph', message: `structure ${error.code}: ${error.message}` });
   }
-  for (const violation of report.soundness.violacoes) {
+  for (const violation of report.soundness.violations) {
     problems.push({
       scope: 'graph',
-      message: `soundness ${violation.regra}: ${JSON.stringify(violation.alvo)}`,
+      message: `soundness ${violation.rule}: ${JSON.stringify(violation.target)}`,
     });
   }
 
@@ -366,15 +366,15 @@ export async function runImport(options: ImportOptions): Promise<number> {
 
   if (response.status === 422) {
     process.stderr.write(`cartografo: invalid_graph — ${graphPath}\n`);
-    const structure = isObject(body.estrutura) ? body.estrutura : {};
+    const structure = isObject(body.structure) ? body.structure : {};
     const soundness = isObject(body.soundness) ? body.soundness : {};
-    for (const error of Array.isArray(structure.erros) ? structure.erros : []) {
+    for (const error of Array.isArray(structure.errors) ? structure.errors : []) {
       const item = isObject(error) ? error : {};
-      process.stderr.write(`  estrutura  ${String(item.codigo)}: ${String(item.mensagem)}\n`);
+      process.stderr.write(`  structure  ${String(item.code)}: ${String(item.message)}\n`);
     }
-    for (const violation of Array.isArray(soundness.violacoes) ? soundness.violacoes : []) {
+    for (const violation of Array.isArray(soundness.violations) ? soundness.violations : []) {
       const item = isObject(violation) ? violation : {};
-      process.stderr.write(`  soundness  ${String(item.regra)}: ${JSON.stringify(item.alvo)}\n`);
+      process.stderr.write(`  soundness  ${String(item.rule)}: ${JSON.stringify(item.target)}\n`);
     }
     return 1;
   }

@@ -261,9 +261,8 @@ test('t230 — --classe and --saida are not aliases of --class and --out', async
   assert.ok(oldOut.kind === 'run');
   assert.equal(oldOut.options.outputPath, undefined, '--saida no longer chooses where the draft lands');
 
-  const help = HELP.join('\n');
-  assert.ok(!help.includes('--classe'), `the help text still documents --classe:\n${help}`);
-  assert.ok(!help.includes('--saida'), `the help text still documents --saida:\n${help}`);
+  assert.ok(!HELP.includes('--classe'), `the help text still documents --classe:\n${HELP}`);
+  assert.ok(!HELP.includes('--saida'), `the help text still documents --saida:\n${HELP}`);
 });
 
 test('t180 — a missing `claude` CLI says so in English', () => {

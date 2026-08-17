@@ -9,17 +9,18 @@
  * fixtures through both validators and demands identical reports (AT1). Any rule
  * change has to happen in both places, or the parity test fails.
  *
- * That parity is why the report's own keys, codes and rule labels stay in
- * Portuguese: this report IS the wire format of the 422, and the reference
- * validator it is compared against byte for byte freezes them too (t127, FR8).
- * The message PROSE moved to English with t180, in both files at once — a
- * sentence that changed here and not there is what `deepEqual` catches.
+ * That parity is also the rule for the report's own vocabulary. This report IS
+ * the wire format of the 422, and t230 — the fifth child of D20 — moved its
+ * keys, codes and rule labels to the English of `docs/spec/glossario-wire.md`
+ * §5.3/5.4, in the same delivery as the reference validator. A key renamed here
+ * and not there is exactly what `deepEqual` catches.
  *
- * The DOCUMENT's own keys moved with t178 (the 2026-08-15 D18 amendment), which
- * is why the two vocabularies now sit side by side: `doc.nodes` read out of an
- * English document, `erros`/`violacoes` written into a frozen Portuguese report.
- * The field names quoted INSIDE a message moved with the document, because a
- * message naming a key that no longer exists is wrong, not merely untranslated.
+ * It is the last of three moves that had to happen in lockstep for the same
+ * reason: the message PROSE went English with t180, the field names quoted
+ * INSIDE a message with the DOCUMENT's own keys in t178 (the 2026-08-15 D18
+ * amendment), and the report's frame with t230. What used to be two vocabularies
+ * side by side — `doc.nodes` read out of an English document, `erros` written
+ * into a Portuguese report — is now one, from the document out to the 422.
  *
  * Two checks, deliberately separate:
  *
@@ -38,10 +39,10 @@ import type { CustomFieldDefinition } from './custom-fields.ts';
 
 /** Names of the four soundness rules, in the order they run. */
 export const RULES = Object.freeze({
-  REACHABLE: 'alcançável',
-  TERMINATES: 'termina',
-  EDGE_WITH_CONDITION: 'aresta_com_condicao',
-  NODE_WITH_CONTRACT: 'no_com_contrato',
+  REACHABLE: 'reachable',
+  TERMINATES: 'terminates',
+  EDGE_WITH_CONDITION: 'edge_with_condition',
+  NODE_WITH_CONTRACT: 'node_with_contract',
 });
 
 /**
@@ -162,31 +163,31 @@ export interface GraphDocument {
 
 /** A shape or referential-integrity problem. */
 export interface StructureError {
-  codigo: string;
-  mensagem: string;
-  alvo: unknown;
+  code: string;
+  message: string;
+  target: unknown;
 }
 
 /** A broken soundness rule, with the target that broke it. */
 export interface SoundnessViolation {
-  regra: string;
-  alvo: unknown;
+  rule: string;
+  target: unknown;
 }
 
 export interface StructureReport {
-  valido: boolean;
-  erros: StructureError[];
+  valid: boolean;
+  errors: StructureError[];
 }
 
 export interface SoundnessReport {
-  valido: boolean;
-  violacoes: SoundnessViolation[];
+  valid: boolean;
+  violations: SoundnessViolation[];
 }
 
 /** Combined report — it is the 422 body of the graph and proposal routes. */
 export interface GraphReport {
-  valido: boolean;
-  estrutura: StructureReport;
+  valid: boolean;
+  structure: StructureReport;
   soundness: SoundnessReport;
 }
 
@@ -223,19 +224,19 @@ function isFilledText(value: unknown): value is string {
  */
 export function validateStructure(doc: unknown): StructureReport {
   const errors: StructureError[] = [];
-  const note = (codigo: string, mensagem: string, alvo: unknown = null): void => {
-    errors.push({ codigo, mensagem, alvo });
+  const note = (code: string, message: string, target: unknown = null): void => {
+    errors.push({ code, message, target });
   };
 
   if (!isObject(doc)) {
-    note('documento_invalido', 'graph document has to be a JSON object');
-    return { valido: false, erros: errors };
+    note('invalid_document', 'graph document has to be a JSON object');
+    return { valid: false, errors };
   }
 
   for (const field of REQUIRED_DOCUMENT_FIELDS) {
     if (doc[field] === undefined || doc[field] === null) {
       note(
-        'campo_obrigatorio_ausente',
+        'missing_required_field',
         `required field missing from the document: "${field}"`,
         field,
       );
@@ -243,23 +244,23 @@ export function validateStructure(doc: unknown): StructureReport {
   }
 
   if (doc.nodes !== undefined && !Array.isArray(doc.nodes)) {
-    note('campo_invalido', '"nodes" has to be a list', 'nodes');
+    note('invalid_field', '"nodes" has to be a list', 'nodes');
   }
   if (doc.edges !== undefined && !Array.isArray(doc.edges)) {
-    note('campo_invalido', '"edges" has to be a list', 'edges');
+    note('invalid_field', '"edges" has to be a list', 'edges');
   }
   if (doc.final_nodes !== undefined && !Array.isArray(doc.final_nodes)) {
-    note('campo_invalido', '"final_nodes" has to be a list', 'final_nodes');
+    note('invalid_field', '"final_nodes" has to be a list', 'final_nodes');
   }
   // The list itself and nothing inside it: what each declaration has to look
   // like is the schema's business, and cross-checking `required_at` against the
   // node ids is deliberately not done here (t168, out of scope) — an unreachable
   // `required_at` fails inertly, demanding nothing of nobody.
   if (doc.custom_fields !== undefined && !Array.isArray(doc.custom_fields)) {
-    note('campo_invalido', '"custom_fields" has to be a list', 'custom_fields');
+    note('invalid_field', '"custom_fields" has to be a list', 'custom_fields');
   }
   if (doc.hooks !== undefined && !Array.isArray(doc.hooks)) {
-    note('campo_invalido', '"hooks" has to be a list', 'hooks');
+    note('invalid_field', '"hooks" has to be a list', 'hooks');
   }
 
   const nodes: unknown[] = Array.isArray(doc.nodes) ? doc.nodes : [];
@@ -268,13 +269,13 @@ export function validateStructure(doc: unknown): StructureReport {
 
   nodes.forEach((node, index) => {
     if (!isObject(node)) {
-      note('no_invalido', `the node at position ${index} has to be an object`, index);
+      note('invalid_node', `the node at position ${index} has to be an object`, index);
       return;
     }
     for (const field of REQUIRED_NODE_FIELDS) {
       if (node[field] === undefined || node[field] === null) {
         note(
-          'campo_obrigatorio_ausente',
+          'missing_required_field',
           `required field missing from node "${node.id ?? `#${index}`}": "${field}"`,
           node.id ?? index,
         );
@@ -286,7 +287,7 @@ export function validateStructure(doc: unknown): StructureReport {
       // never entering `knownIds`, never being checked by soundness.
       if (node.id !== undefined && node.id !== null) {
         note(
-          'id_invalido',
+          'invalid_id',
           `the id of the node at position ${index} has to be a filled text: ${JSON.stringify(node.id)}`,
           index,
         );
@@ -295,7 +296,7 @@ export function validateStructure(doc: unknown): StructureReport {
     }
     if (knownIds.has(node.id)) {
       if (!alreadyReportedIds.has(node.id)) {
-        note('id_no_duplicado', `duplicate node id in the document: "${node.id}"`, node.id);
+        note('duplicate_node_id', `duplicate node id in the document: "${node.id}"`, node.id);
         alreadyReportedIds.add(node.id);
       }
       return;
@@ -306,15 +307,15 @@ export function validateStructure(doc: unknown): StructureReport {
   const edges: unknown[] = Array.isArray(doc.edges) ? doc.edges : [];
   edges.forEach((edge, index) => {
     if (!isObject(edge)) {
-      note('aresta_invalida', `the edge at position ${index} has to be an object`, index);
+      note('invalid_edge', `the edge at position ${index} has to be an object`, index);
       return;
     }
     for (const field of REQUIRED_EDGE_FIELDS) {
       if (edge[field] === undefined || edge[field] === null) {
         note(
-          'campo_obrigatorio_ausente',
+          'missing_required_field',
           `required field missing from edge #${index}: "${field}"`,
-          { de: edge.from ?? null, para: edge.to ?? null },
+          { from: edge.from ?? null, to: edge.to ?? null },
         );
       }
     }
@@ -323,18 +324,18 @@ export function validateStructure(doc: unknown): StructureReport {
       if (!isFilledText(target)) {
         if (target !== undefined && target !== null) {
           note(
-            'id_invalido',
+            'invalid_id',
             `edge #${index} needs a filled text in "${end}": ${JSON.stringify(target)}`,
-            { de: edge.from ?? null, para: edge.to ?? null },
+            { from: edge.from ?? null, to: edge.to ?? null },
           );
         }
         continue;
       }
       if (!knownIds.has(target)) {
         note(
-          'aresta_no_inexistente',
+          'edge_unknown_node',
           `edge #${index} references in "${end}" a node that does not exist: "${target}"`,
-          { de: edge.from ?? null, para: edge.to ?? null },
+          { from: edge.from ?? null, to: edge.to ?? null },
         );
       }
     }
@@ -346,14 +347,14 @@ export function validateStructure(doc: unknown): StructureReport {
   if (!isFilledText(doc.initial_node)) {
     if (doc.initial_node !== undefined && doc.initial_node !== null) {
       note(
-        'id_invalido',
+        'invalid_id',
         `initial_node has to be a filled text: ${JSON.stringify(doc.initial_node)}`,
         'initial_node',
       );
     }
   } else if (!knownIds.has(doc.initial_node)) {
     note(
-      'no_inicial_inexistente',
+      'unknown_initial_node',
       `initial_node references a node that does not exist: "${doc.initial_node}"`,
       doc.initial_node,
     );
@@ -361,21 +362,21 @@ export function validateStructure(doc: unknown): StructureReport {
 
   const finals: unknown[] = Array.isArray(doc.final_nodes) ? doc.final_nodes : [];
   if (Array.isArray(doc.final_nodes) && finals.length === 0) {
-    note('campo_invalido', '"final_nodes" has to list at least one node', 'final_nodes');
+    note('invalid_field', '"final_nodes" has to list at least one node', 'final_nodes');
   }
   // No required-fields loop covers an entry of the array, so here the absent
   // value (`null`, `undefined`) is an invalid id like any other.
   finals.forEach((final, index) => {
     if (!isFilledText(final)) {
       note(
-        'id_invalido',
+        'invalid_id',
         `the id in final_nodes at position ${index} has to be a filled text: ${JSON.stringify(final)}`,
         index,
       );
       return;
     }
     if (!knownIds.has(final)) {
-      note('no_final_inexistente', `final_nodes references a node that does not exist: "${final}"`, final);
+      note('unknown_final_node', `final_nodes references a node that does not exist: "${final}"`, final);
     }
   });
 
@@ -391,13 +392,13 @@ export function validateStructure(doc: unknown): StructureReport {
 
   hooks.forEach((hook, index) => {
     if (!isObject(hook)) {
-      note('gancho_invalido', `the hook at position ${index} has to be an object`, index);
+      note('invalid_hook', `the hook at position ${index} has to be an object`, index);
       return;
     }
     for (const field of REQUIRED_HOOK_FIELDS) {
       if (hook[field] === undefined || hook[field] === null) {
         note(
-          'campo_obrigatorio_ausente',
+          'missing_required_field',
           `required field missing from hook "${hook.id ?? `#${index}`}": "${field}"`,
           hook.id ?? index,
         );
@@ -407,14 +408,14 @@ export function validateStructure(doc: unknown): StructureReport {
     if (!isFilledText(hook.id)) {
       if (hook.id !== undefined && hook.id !== null) {
         note(
-          'id_invalido',
+          'invalid_id',
           `the id of the hook at position ${index} has to be a filled text: ${JSON.stringify(hook.id)}`,
           index,
         );
       }
     } else if (knownHookIds.has(hook.id)) {
       if (!alreadyReportedHookIds.has(hook.id)) {
-        note('id_gancho_duplicado', `duplicate hook id in the document: "${hook.id}"`, hook.id);
+        note('duplicate_hook_id', `duplicate hook id in the document: "${hook.id}"`, hook.id);
         alreadyReportedHookIds.add(hook.id);
       }
     } else {
@@ -425,7 +426,7 @@ export function validateStructure(doc: unknown): StructureReport {
     if (!isFilledText(target)) {
       if (target !== undefined && target !== null) {
         note(
-          'id_invalido',
+          'invalid_id',
           `hook #${index} needs a filled text in "node_id": ${JSON.stringify(target)}`,
           hook.id ?? index,
         );
@@ -434,14 +435,14 @@ export function validateStructure(doc: unknown): StructureReport {
     }
     if (!knownIds.has(target)) {
       note(
-        'gancho_no_inexistente',
+        'hook_unknown_node',
         `hook #${index} references a node that does not exist: "${target}"`,
         hook.id ?? index,
       );
     }
   });
 
-  return { valido: errors.length === 0, erros: errors };
+  return { valid: errors.length === 0, errors };
 }
 
 /**
@@ -480,7 +481,7 @@ export function validateSoundness(doc: unknown): SoundnessReport {
     (id) => outgoing.get(id) ?? [],
   );
   for (const id of ids) {
-    if (!reached.has(id)) violations.push({ regra: RULES.REACHABLE, alvo: id });
+    if (!reached.has(id)) violations.push({ rule: RULES.REACHABLE, target: id });
   }
 
   // 2. terminates — from every node there is a path to some final node. Computed
@@ -494,15 +495,15 @@ export function validateSoundness(doc: unknown): SoundnessReport {
   );
   const reachTheEnd = traverse(finals, (id) => incoming.get(id) ?? []);
   for (const id of ids) {
-    if (!reachTheEnd.has(id)) violations.push({ regra: RULES.TERMINATES, alvo: id });
+    if (!reachTheEnd.has(id)) violations.push({ rule: RULES.TERMINATES, target: id });
   }
 
   // 3. edge-with-condition — no transition without a label.
   for (const edge of edges) {
     if (!isFilledText(edge.condition)) {
       violations.push({
-        regra: RULES.EDGE_WITH_CONDITION,
-        alvo: { de: edge.from ?? null, para: edge.to ?? null },
+        rule: RULES.EDGE_WITH_CONDITION,
+        target: { from: edge.from ?? null, to: edge.to ?? null },
       });
     }
   }
@@ -510,11 +511,11 @@ export function validateSoundness(doc: unknown): SoundnessReport {
   // 4. node-with-contract — holds for a gate too, which is a node like any other.
   for (const node of nodes) {
     if (!hasSkillRef(node) || !hasContract(node)) {
-      violations.push({ regra: RULES.NODE_WITH_CONTRACT, alvo: node.id ?? null });
+      violations.push({ rule: RULES.NODE_WITH_CONTRACT, target: node.id ?? null });
     }
   }
 
-  return { valido: violations.length === 0, violacoes: violations };
+  return { valid: violations.length === 0, violations };
 }
 
 /**
@@ -524,9 +525,9 @@ export function validateSoundness(doc: unknown): SoundnessReport {
  * @returns Structure and soundness reports, with the joint verdict.
  */
 export function validateGraph(doc: unknown): GraphReport {
-  const estrutura = validateStructure(doc);
+  const structure = validateStructure(doc);
   const soundness = validateSoundness(doc);
-  return { valido: estrutura.valido && soundness.valido, estrutura, soundness };
+  return { valid: structure.valid && soundness.valid, structure, soundness };
 }
 
 /** Breadth-first search from several seeds; returns the visited set. */

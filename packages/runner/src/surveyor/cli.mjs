@@ -29,7 +29,7 @@
  *
  * Usage:
  *   npm run surveyor --workspace @cartografo/runner -- \
- *     <execucao_id> [url] [dir] [--token <token>]
+ *     <execution_id> [url] [dir] [--token <token>]
  *
  * Defaults: url `http://127.0.0.1:4317`, dir a fresh temporary directory,
  * token the `CARTOGRAFO_TOKEN` of the environment. Every `/v1` route this

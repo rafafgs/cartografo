@@ -19,7 +19,7 @@
  * choice as the other two bins, so that output in flight finishes being written
  * before the process ends.
  *
- * Usage: `npx topografo-custo avaliar --url <url> --execucao <id> [options]`.
+ * Usage: `npx topografo-custo avaliar --url <url> --execution <id> [options]`.
  * Configuration: `CARTOGRAFO_TOKEN` (control plane credential).
  */
 

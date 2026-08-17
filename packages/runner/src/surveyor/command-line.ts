@@ -36,9 +36,9 @@ export const ENV_TOKEN = 'CARTOGRAFO_TOKEN';
 
 /** Usage text. Printed on stderr whenever the command line is refused. */
 export const USAGE = `usage: npm run surveyor --workspace @cartografo/runner -- \\
-  <execucao_id> [url] [dir] [--token <token>]
+  <execution_id> [url] [dir] [--token <token>]
 
-  execucao_id   the run to read, an integer (required)
+  execution_id  the run to read, an integer (required)
   url           control plane to read it from (default: ${DEFAULT_URL})
   dir           working directory of the session (default: a temporary one)
   --token       control plane credential (env ${ENV_TOKEN}); it is printed on
@@ -120,7 +120,7 @@ export function parseArguments(
 
   const executionId = Number(rawId);
   if (rawId === undefined || !Number.isInteger(executionId)) {
-    return refuse(`execucao_id has to be an integer (got: ${JSON.stringify(rawId)})`);
+    return refuse(`execution_id has to be an integer (got: ${JSON.stringify(rawId)})`);
   }
 
   const token = usableToken(flagged) ?? usableToken(env[ENV_TOKEN]);

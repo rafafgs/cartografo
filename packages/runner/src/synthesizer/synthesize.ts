@@ -12,7 +12,7 @@
  *   (t108) on the file they edited — the same command that already runs the
  *   structure and soundness gate. Writing a second validator here would give the
  *   person two verdicts to reconcile and duplicate `domain/graph.ts`;
- * - **it names no class.** D8 puts that in the user's hands; `--classe` is
+ * - **it names no class.** D8 puts that in the user's hands; `--class` is
  *   required, and the similar classes this module computes are printed as
  *   suggestions with no power to change anything;
  * - **it never writes a partial draft.** A session that fails, times out or
@@ -27,7 +27,7 @@
  *
  * English per D18, and since t180 that includes everything this command PRINTS.
  * What stays Portuguese is the surface a person types or a machine matches: the
- * flags (`--classe`, `--saida`), the error codes that echo the API's own
+ * flags (`--class`, `--out`), the error codes that echo the API's own
  * vocabulary (`class_already_registered`) and the draft file name.
  */
 
@@ -75,7 +75,7 @@ export interface SynthesisOptions {
   adapter: EngineAdapter;
   /** Directory the session runs in. Nothing is written there by us. */
   workingDir: string;
-  /** Where the draft goes; default `<classe>.grafo.rascunho.json` under `cwd`. */
+  /** Where the draft goes; default `<class>.grafo.rascunho.json` under `cwd`. */
   outputPath?: string;
   /** Base for the default draft path. Default: the process's directory. */
   cwd?: string;
@@ -112,12 +112,12 @@ export const ENV_TOKEN = 'CARTOGRAFO_TOKEN';
 /**
  * Where the draft lands.
  *
- * `--saida` wins whole, resolved against the working directory so a relative
+ * `--out` wins whole, resolved against the working directory so a relative
  * path means what the person typing it meant. Without it, the class names the
  * file: a directory with three drafts in it should say which is which.
  *
  * @param className The class the user named.
- * @param outputPath What `--saida` carried, if anything.
+ * @param outputPath What `--out` carried, if anything.
  * @param cwd Base for both branches. Default: the process's directory.
  * @returns An absolute path.
  */
@@ -136,17 +136,17 @@ export const HELP = [
   '',
   'Usage:',
   '  npm run synthesize --workspace @cartografo/runner -- \\',
-  '    "<problem declaration>" --classe <name> [options]',
+  '    "<problem declaration>" --class <name> [options]',
   '',
   'Arguments:',
   '  <declaration>       required, positional: the problem in natural language.',
-  '  --classe <name>     required: the name of the class. Naming it is yours to',
+  '  --class <name>      required: the name of the class. Naming it is yours to',
   '                      do (D8) — this command never invents a name.',
   '',
   'Options:',
   `  --url <url>         control plane (default ${DEFAULT_URL}).`,
-  '  --saida <path>      where to write the draft (default',
-  `                      <classe>${DRAFT_SUFFIX} in the current directory).`,
+  '  --out <path>        where to write the draft (default',
+  `                      <class>${DRAFT_SUFFIX} in the current directory).`,
   `  --timeout <sec>     limit of the session (default ${DEFAULT_TIMEOUT_SECONDS}).`,
   `  --token <token>     control plane credential (env ${ENV_TOKEN}); it is`,
   '                      printed on the readiness line of the control plane the',
@@ -229,11 +229,11 @@ export function parseArguments(
     };
   }
 
-  const className = flags.get('classe');
+  const className = flags.get('class');
   if (className === undefined || className.trim() === '') {
     return {
       kind: 'usage',
-      message: '--classe is required: you name the class, not the synthesizer (D8)',
+      message: '--class is required: you name the class, not the synthesizer (D8)',
     };
   }
 
@@ -243,7 +243,7 @@ export function parseArguments(
     return { kind: 'usage', message: `--timeout has to be a number of seconds: ${rawTimeout}` };
   }
 
-  const outputPath = flags.get('saida');
+  const outputPath = flags.get('out');
   // A blank token is "none presented", not a credential: the whole point of
   // sending no header is that the 401 says what it means.
   const token = [flags.get('token'), env[ENV_TOKEN]]

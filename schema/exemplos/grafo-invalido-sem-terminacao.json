@@ -5,7 +5,7 @@
   },
   "metadata": {
     "name": "Contraexemplo — sem terminação garantida",
-    "description": "Viola SÓ a regra \"termina\": todo nó é alcançável, mas reprocessar_item só tem aresta para si mesmo — quem cai nele nunca chega a concluir_item. É o ciclo de retrabalho a que esqueceram de dar saída.",
+    "description": "Viola SÓ a regra \"terminates\": todo nó é alcançável, mas reprocessar_item só tem aresta para si mesmo — quem cai nele nunca chega a concluir_item. É o ciclo de retrabalho a que esqueceram de dar saída.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-14",
     "source": "contraexemplo da especificação"

@@ -16,12 +16,12 @@
  * |---|---|
  * | `/v1/*` | verbatim proxy to the control plane (`proxy.ts`) |
  * | a file from `src/public/` (`/`, `/inbox.js`, `/style.css`, …) | `static.ts` |
- * | anything else | the views rendered here (`/quadro`, `/execucoes`, …) |
+ * | anything else | the views rendered here (`/board`, `/executions`, …) |
  *
  * The order is the contract: the proxy comes first because `/v1` belongs to the
  * API and not to the screen; static comes before rendering because
  * `resolveStaticFile` only returns a path for a known extension, and it is
- * precisely its `null` that hands `/execucoes` and `/trabalhos/7` to the views
+ * precisely its `null` that hands `/executions` and `/jobs/7` to the views
  * instead of 404-ing them as a missing file.
  *
  * **One thing this handler decides before forwarding anything (t192):** whether
@@ -44,8 +44,18 @@
  * process, and can die without the control plane noticing — that is the proof,
  * and not just the promise, that it is one more client of the public API.
  *
- * The route paths stay in Portuguese: they are the product's own URL surface,
- * and changing one would be a route change rather than a rename (t133, AC3).
+ * The route paths are English since t230, out of `docs/spec/glossario-wire.md`
+ * §5.1. They used to be exempt for being the product's own URL surface rather
+ * than an identifier (t133, AC3); D20 names `/quadro` and `/perguntas` among
+ * what it moves, which supersedes that exemption for exactly these six paths.
+ * Each one takes the name the API already publishes for the same entity —
+ * `/input-requests` and not `/questions`, because the route behind it is
+ * `GET /v1/input-requests` — and `/runners` was already there. Nothing is
+ * public yet (D20), so no old path redirects: they simply do not exist.
+ *
+ * What did NOT move is everything a person reads: the nav link text, the page
+ * titles, the `.quadro`/`.pergunta` class names and the `data-*` markers are
+ * product copy in Portuguese (t133, exceptions 9 and 10).
  *
  * Control plane address precedence, the same as the core's CLI
  * (`packages/core/src/cli/url.ts`): `--url` > `CARTOGRAFO_URL` >
@@ -343,16 +353,16 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
   const method = request.method ?? 'GET';
 
   if (method === 'GET') {
-    // `/quadro`, and not `/`: the root belongs to the proposal inbox (t111),
+    // `/board`, and not `/`: the root belongs to the proposal inbox (t111),
     // which was already this package's static `index.html` when this half
     // arrived. The two halves link to each other through the navigation;
     // neither disappears.
-    if (pathname === '/quadro') return await boardPage(client);
-    if (pathname === '/execucoes') return await executionsPage(client);
-    if (pathname === '/perguntas') return await questionsPage(client);
+    if (pathname === '/board') return await boardPage(client);
+    if (pathname === '/executions') return await executionsPage(client);
+    if (pathname === '/input-requests') return await questionsPage(client);
     if (pathname === '/runners') return await runnersPage(client);
 
-    const executionMatch = /^\/execucoes\/([^/]+)$/.exec(pathname);
+    const executionMatch = /^\/executions\/([^/]+)$/.exec(pathname);
     if (executionMatch !== null) {
       const id = routeId(executionMatch[1]);
       return id === null
@@ -360,7 +370,7 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
         : await executionPage(client, id);
     }
 
-    const jobMatch = /^\/trabalhos\/([^/]+)$/.exec(pathname);
+    const jobMatch = /^\/jobs\/([^/]+)$/.exec(pathname);
     if (jobMatch !== null) {
       const id = routeId(jobMatch[1]);
       return id === null
@@ -370,7 +380,7 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
   }
 
   if (method === 'POST') {
-    const answerMatch = /^\/perguntas\/([^/]+)\/resposta$/.exec(pathname);
+    const answerMatch = /^\/input-requests\/([^/]+)\/answer$/.exec(pathname);
     if (answerMatch !== null) {
       // The same gate the proxy gets (t192), and for the same reason: this is a
       // same-site form post, so a form on any other page can aim at it. It comes
@@ -396,7 +406,7 @@ async function route(client: ApiClient, request: IncomingMessage): Promise<Route
 }
 
 /**
- * `POST /perguntas/:id/resposta` — the screen's only write (FR9).
+ * `POST /input-requests/:id/answer` — the screen's only write (FR9).
  *
  * It writes to the control plane FOR REAL and redirects (303) to the queue,
  * which is reloaded from the API. The question disappears because the state
@@ -432,7 +442,7 @@ async function submitAnswer(
 
   // 303 and not 302: after a POST the way back is a GET — that is what stops
   // the browser from resending the answer when someone reloads the page.
-  return { redirect: '/perguntas' };
+  return { redirect: '/input-requests' };
 }
 
 /** The screen, up. */

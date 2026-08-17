@@ -8,11 +8,12 @@
  * it. The rows that belong here are `superfície = routes-cli-report` — the flag
  * half of §5.2, since the routes are the screen's and the report is the core's.
  *
- * The sweep is raw text and masks nothing, comments included, because a flag is
+ * The sweep is raw text over everything outside a comment, because a flag is
  * never anything but a flag: `--classe` in this package only ever appears in the
- * argv it parses, in the help it prints, or in prose about one of the two. There
- * is no legitimate `--classe` left here after t230, so the strict check is also
- * the honest one.
+ * argv it parses or in the help it prints, and both are code. Comments are
+ * masked for the reason the core's original gives — prose about a name is
+ * documentation, not the name, and explaining a rename means writing both
+ * sides of it down.
  *
  * ## The two positionals, which the glossary does not carry
  *
@@ -103,6 +104,13 @@ function flagTerms(): Term[] {
   return flags;
 }
 
+/** Blanks every comment, so prose about a name is not read as the name. */
+function maskComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (span) => span.replace(/[^\n]/g, ' '))
+    .replace(/\/\/[^\n]*/g, (span) => span.replace(/[^\n]/g, ' '));
+}
+
 /**
  * Every hit of an old spelling in one source text, as `line: what`.
  *
@@ -113,7 +121,7 @@ function flagTerms(): Term[] {
 export function cliHits(source: string, terms: ReadonlyArray<Term>): string[] {
   const hits: string[] = [];
 
-  source.split('\n').forEach((line, index) => {
+  maskComments(source).split('\n').forEach((line, index) => {
     for (const entry of terms) {
       if (new RegExp(`${entry.term}(?![A-Za-z0-9_-])`).test(line)) {
         hits.push(`${index + 1}: "${entry.term}" (English: "${entry.english}")`);
@@ -170,9 +178,8 @@ test('t230 — the sweep bites on the old spellings and lets the new ones throug
 
   const caught = [
     "  '    \"<request>\" --classe <name> [options]',",
-    "const KNOWN_FLAGS = ['classe', 'url', 'dir', 'token'];\nif (name === '--classe') return 1;",
+    "if (name === '--classe') return 1;",
     "  '  --saida <path>      where to write the draft (default',",
-    ' * flags (`--classe`, `--saida`), the error codes that echo the API',
   ];
   for (const source of caught) {
     assert.ok(cliHits(source, flags).length > 0, `the sweep missed an old flag: ${source}`);
@@ -183,6 +190,8 @@ test('t230 — the sweep bites on the old spellings and lets the new ones throug
     "  '  --out <path>        where to write the draft (default',",
     // A flag that merely starts the same way is not the old one.
     "  '  --classes-url <url> where the registry lives',",
+    // Prose about the rename, which is how a header explains one.
+    '/** flags (`--classe`, `--saida`), renamed by t230 to `--class` and `--out`. */',
   ];
   for (const source of allowed) {
     assert.deepEqual(cliHits(source, flags), [], `the sweep flagged the new spelling: ${source}`);

@@ -15,8 +15,10 @@
  *   whole: the body keys the lens reads and writes (`sessoes`, `trabalhos`,
  *   `grafo_versao`, `proposta`, `no_id`, `evidencia`, `metrica_esperada`), the
  *   free-JSON values it emits (`teto`, `tier`, `custo`) and the CLI surface a
- *   person types (`avaliar`, `--teto-tokens`, `--tier-minimo-nos`). D20 freezes
- *   all of it as wire vocabulary, migrating only under t213 — not here.
+ *   person types (`avaliar`, `--tier-minimo-nos`). D20 treats all of it as wire
+ *   vocabulary, migrating under t213's children and never under a per-package
+ *   D18 sweep — which is how `--teto-tokens` became `--token-cap` under t230,
+ *   with `no-portuguese-wire.test.ts` next door as the gate that keeps it there.
  * - **Regular-expression literals**, for the same reason the screen's port
  *   masks them: a route or a wire word matched by regex is still the wire.
  * - **Key and member positions.** A field the lens mirrors from a core JSON
@@ -547,19 +549,18 @@ test('t211 — the sweep does NOT bite on the frozen exceptions', () => {
     // the free-JSON values the lens emits, which t213 owns and this ticket does not
     'const kind = over ? "teto" : "tier";',
     'const evidence = { lente: "custo", teto_excedido: exceeded };',
-    // the CLI surface a person types, frozen by D20
-    'const fromCeiling = extractValue(args, "--teto-tokens");',
+    // the CLI surface a person types, which t230 left in Portuguese
     'if (subcommand !== "avaliar") return 2;',
     'const fromMinNodes = extractValue(rest, "--tier-minimo-nos");',
-    'const match = /^--execucao=(.+)$/.exec(argument);',
+    'const match = /^--tier-fator=(.+)$/.exec(argument);',
     // English code that merely contains a forbidden token as a substring
     'export class ValidationError extends Error { readonly errors: string[]; }',
     'const parts = Partial<CostRow>;',
     'const half = total / 1000;',
     // a backticked frozen name inside English prose
-    '/** The `evidencia` / `metrica_esperada` free JSON and the `--teto-tokens` flag stay as they are. */',
+    '/** The `evidencia` / `metrica_esperada` free JSON and the `--tier-fator` flag stay as they are. */',
     // the multi-line form of the same quoting: a whole invocation, fenced
-    '/**\n * ```\n * topografo-custo avaliar --url http://127.0.0.1:4317 --execucao 7 --teto-tokens 200000\n * ```\n */',
+    '/**\n * ```\n * topografo-custo avaliar --url http://127.0.0.1:4317 --execution 7 --tier-minimo-nos 5\n * ```\n */',
   ];
   for (const source of allowed) {
     assert.deepEqual(hitsInSource(source), [], `the sweep flagged a frozen exception: ${source}`);

@@ -335,7 +335,7 @@ test('t180 — the sweep does NOT bite on the FR2 exceptions', () => {
     // English messages that QUOTE a wire name
     '[cost-surveyor]',
     'evaluate needs --url',
-    '  --teto-tokens <n>      candidate when the node passes <n>',
+    '  --token-cap <n>        candidate when the node passes <n>',
     'tokens_total of node ',
     'tempo_total_segundos goes back under the declared ceiling',
   ];

@@ -286,10 +286,8 @@ async function apply(
   // come out. If it fails, nothing enters the database beyond the status and
   // the report.
   const report = validateGraph(document);
-  if (!report.valido) {
+  if (!report.valid) {
     reply.code(422);
-    // The validator's report keeps its Portuguese keys: it is D20's fifth child
-    // (routes, flags and report), even riding inside a `/v1` 422.
     return {
       error: 'invalid_graph',
       ...report,

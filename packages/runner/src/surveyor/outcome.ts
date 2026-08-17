@@ -106,10 +106,10 @@ export function describeBottleneck(metrics: FlowMetrics): string {
 
 /** Usage text. Printed on stderr whenever the command line is refused. */
 export const OUTCOME_USAGE = `usage: npm run close-outcome --workspace @cartografo/runner -- \\
-  <proposta_id> <execucao_id> [url] [--token <token>]
+  <proposal_id> <execution_id> [url] [--token <token>]
 
-  proposta_id   the applied proposal whose hypothesis is being closed (integer)
-  execucao_id   the NEXT round, the one that ran under the applied version (integer)
+  proposal_id   the applied proposal whose hypothesis is being closed (integer)
+  execution_id  the NEXT round, the one that ran under the applied version (integer)
   url           control plane to read it from (default: ${DEFAULT_URL})
   --token       control plane credential (env ${ENV_TOKEN}); it is printed on
                 the readiness line of the control plane's first startup`;
@@ -190,12 +190,12 @@ export function parseOutcomeArguments(
 
   const proposalId = Number(rawProposal);
   if (rawProposal === undefined || !Number.isInteger(proposalId)) {
-    return { kind: 'usage', message: `proposta_id has to be an integer (got: ${JSON.stringify(rawProposal)})` };
+    return { kind: 'usage', message: `proposal_id has to be an integer (got: ${JSON.stringify(rawProposal)})` };
   }
 
   const executionId = Number(rawExecution);
   if (rawExecution === undefined || !Number.isInteger(executionId)) {
-    return { kind: 'usage', message: `execucao_id has to be an integer (got: ${JSON.stringify(rawExecution)})` };
+    return { kind: 'usage', message: `execution_id has to be an integer (got: ${JSON.stringify(rawExecution)})` };
   }
 
   const token = usableToken(flagged) ?? usableToken(env[ENV_TOKEN]);

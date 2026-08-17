@@ -108,9 +108,9 @@ function layout(title: string, body: string): string {
 <header class="topo">
   <h1>cartografo</h1>
   <nav>
-    <a href="/quadro">quadro</a>
-    <a href="/execucoes">execuções</a>
-    <a href="/perguntas">perguntas</a>
+    <a href="/board">quadro</a>
+    <a href="/executions">execuções</a>
+    <a href="/input-requests">perguntas</a>
     <a href="/runners">runners</a>
     <a href="/">propostas</a>
     <a href="/graph-editor.html">grafo</a>
@@ -146,7 +146,7 @@ function jobCard(job: Job): string {
         : '';
   return `<article class="${classes}" data-trabalho="${job.id}">
       <div class="id">#${job.id}</div>
-      <a href="/trabalhos/${job.id}">${escapeHtml(job.title)}</a>
+      <a href="/jobs/${job.id}">${escapeHtml(job.title)}</a>
       ${reason}
     </article>`;
 }
@@ -206,7 +206,7 @@ function sessionsTable(sessions: Session[]): string {
         : `${session.usage.input_tokens} in / ${session.usage.output_tokens} out`;
     return `<tr data-sessao="${session.id}">
       <td>#${session.id}</td>
-      <td>${session.job_id === null ? '—' : `<a href="/trabalhos/${session.job_id}">#${session.job_id}</a>`}</td>
+      <td>${session.job_id === null ? '—' : `<a href="/jobs/${session.job_id}">#${session.job_id}</a>`}</td>
       <td>${escapeHtml(session.engine)}</td>
       <td>${escapeHtml(session.status)}</td>
       <td>${escapeHtml(session.opened_at)}</td>
@@ -224,11 +224,11 @@ function sessionsTable(sessions: Session[]): string {
 </table>`;
 }
 
-/** A question in read mode — the version with a form lives at `/perguntas`. */
+/** A question in read mode — the version with a form lives at `/input-requests`. */
 function questionSummary(question: Question): string {
   return `<article class="pergunta" data-pergunta="${question.id}">
   <strong>${escapeHtml(question.question)}</strong>
-  <p class="motivo">trabalho <a href="/trabalhos/${question.job_id}">#${question.job_id}</a> · desde ${escapeHtml(question.created_at)} · <a href="/perguntas">responder</a></p>
+  <p class="motivo">trabalho <a href="/jobs/${question.job_id}">#${question.job_id}</a> · desde ${escapeHtml(question.created_at)} · <a href="/input-requests">responder</a></p>
 </article>`;
 }
 
@@ -266,13 +266,13 @@ function questionCard(question: Question): string {
   return `<article class="pergunta" data-pergunta="${question.id}">
   <strong>${escapeHtml(question.question)}</strong>
   <dl>
-    <dt>trabalho</dt><dd><a href="/trabalhos/${question.job_id}">#${question.job_id}</a></dd>
+    <dt>trabalho</dt><dd><a href="/jobs/${question.job_id}">#${question.job_id}</a></dd>
     ${field('criada em', question.created_at)}
     ${field('contexto', question.context)}
     ${field('recomendação', question.recommendation)}
     ${field('resposta padrão', question.default_answer)}
   </dl>
-  <form method="post" action="/perguntas/${question.id}/resposta">
+  <form method="post" action="/input-requests/${question.id}/answer">
     ${options}
     <label for="resposta-${question.id}">sua resposta</label>
     <textarea id="resposta-${question.id}" name="resposta" required placeholder="a resposta, como você a daria a uma pessoa">${escapeHtml(question.default_answer ?? '')}</textarea>
@@ -323,7 +323,7 @@ function totalsHtml(timeline: Timeline): string {
 }
 
 /**
- * `GET /quadro` — the whole board (FR5).
+ * `GET /board` — the whole board (FR5).
  *
  * @param client Client of the public API.
  * @returns The board page.
@@ -337,7 +337,7 @@ export async function boardPage(client: ApiClient): Promise<Page> {
 }
 
 /**
- * `GET /execucoes` — the list of rounds (FR6).
+ * `GET /executions` — the list of rounds (FR6).
  *
  * @param client Client of the public API.
  * @returns The executions list page.
@@ -349,7 +349,7 @@ export async function executionsPage(client: ApiClient): Promise<Page> {
     const label =
       execution.execution_id === null
         ? '<span class="vazio">sem execução</span>'
-        : `<a href="/execucoes/${execution.execution_id}">#${execution.execution_id}</a>`;
+        : `<a href="/executions/${execution.execution_id}">#${execution.execution_id}</a>`;
     return `<tr data-execucao="${execution.execution_id ?? ''}">
       <td>${label}</td>
       <td data-campo="trabalhos">${execution.jobs}</td>
@@ -426,7 +426,7 @@ export async function runnersPage(client: ApiClient): Promise<Page> {
 }
 
 /**
- * `GET /execucoes/:id` — board, sessions and questions of one round (FR7).
+ * `GET /executions/:id` — board, sessions and questions of one round (FR7).
  *
  * An execution is an opaque grouper, not an entity: a round with nothing in it
  * answers 200 with an empty page, never 404 — the same reading the control
@@ -463,7 +463,7 @@ ${questionQueue}`,
 }
 
 /**
- * `GET /perguntas` — the escalation inbox, with inline answering (FR8).
+ * `GET /input-requests` — the escalation inbox, with inline answering (FR8).
  *
  * @param client Client of the public API.
  * @returns The question queue page.
@@ -483,7 +483,7 @@ export async function questionsPage(client: ApiClient): Promise<Page> {
 }
 
 /**
- * `GET /trabalhos/:id` — the timeline in three buckets (FR10).
+ * `GET /jobs/:id` — the timeline in three buckets (FR10).
  *
  * The three calls go out in parallel and the reconstruction happens in
  * `timeline.ts`; here it is only drawn. The header comes from a fourth read,
@@ -517,7 +517,7 @@ export async function jobPage(client: ApiClient, jobId: number): Promise<Page> {
   const execution =
     job.execution_id === null
       ? '<span class="vazio">sem execução</span>'
-      : `<a href="/execucoes/${job.execution_id}">#${job.execution_id}</a>`;
+      : `<a href="/executions/${job.execution_id}">#${job.execution_id}</a>`;
 
   const segments =
     timeline.segments.length === 0
@@ -551,7 +551,7 @@ export function errorPage(status: number, title: string, detail: string): Page {
     status,
     html: layout(
       title,
-      `<h2>${escapeHtml(title)}</h2>\n<p>${escapeHtml(detail)}</p>\n<p><a href="/quadro">voltar ao quadro</a></p>`,
+      `<h2>${escapeHtml(title)}</h2>\n<p>${escapeHtml(detail)}</p>\n<p><a href="/board">voltar ao quadro</a></p>`,
     ),
   };
 }

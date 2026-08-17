@@ -5,7 +5,7 @@
   },
   "metadata": {
     "name": "Contraexemplo — aresta sem condição",
-    "description": "Viola SÓ a regra \"aresta_com_condicao\": a topologia é sound, mas a única aresta tem condicao vazia. Uma transição sem rótulo é um caminho que o executor não sabe quando tomar — e o que a regra impede é justamente o nó escolhendo caminho livremente em runtime (princípio 2 do README). Este contraexemplo também é inválido contra o JSON Schema (condicao tem minLength 1): a regra existe em separado porque o sintetizador monta grafo em memória, antes de qualquer serialização.",
+    "description": "Viola SÓ a regra \"edge_with_condition\": a topologia é sound, mas a única aresta tem condicao vazia. Uma transição sem rótulo é um caminho que o executor não sabe quando tomar — e o que a regra impede é justamente o nó escolhendo caminho livremente em runtime (princípio 2 do README). Este contraexemplo também é inválido contra o JSON Schema (condicao tem minLength 1): a regra existe em separado porque o sintetizador monta grafo em memória, antes de qualquer serialização.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-14",
     "source": "contraexemplo da especificação"

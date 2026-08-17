@@ -136,12 +136,12 @@ API.
 ## 4. Dependência declarada é registro, não bandeira
 
 ```sql
-CREATE TABLE trabalho_dependencia (
-  id                     INTEGER PRIMARY KEY AUTOINCREMENT,
-  trabalho_id            INTEGER NOT NULL REFERENCES trabalho(id),
-  depende_de_trabalho_id INTEGER NOT NULL REFERENCES trabalho(id),
-  criado_em              TEXT NOT NULL,
-  CHECK (trabalho_id != depende_de_trabalho_id)
+CREATE TABLE job_dependency (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id            INTEGER NOT NULL REFERENCES job(id),
+  depends_on_job_id INTEGER NOT NULL REFERENCES job(id),
+  created_at        TEXT NOT NULL,
+  CHECK (job_id != depends_on_job_id)
 );
 ```
 

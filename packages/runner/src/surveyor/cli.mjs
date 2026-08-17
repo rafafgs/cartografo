@@ -12,13 +12,13 @@
  * What it does: reads one execution's telemetry through the public API,
  * computes time per node, and — if some node actually cost time — dispatches a
  * single real `claude` session to choose the semantic diff, then posts exactly
- * one proposal. The proposal lands `pendente` and nothing applies it.
+ * one proposal. The proposal lands `pending` and nothing applies it.
  *
  * Exit codes are the contract, because this is what a person or a cron reads:
  *
  * - `0` — a proposal was created (its id is printed), OR the run had no signal
  *   and there was nothing to propose. Both are successful outcomes;
- * - `1` — the session failed, timed out, returned no usable `operacoes`, or the
+ * - `1` — the session failed, timed out, returned no usable `operations`, or the
  *   control plane refused the credential. Nothing was posted.
  *
  * This file is wiring and nothing else: the command line — argv, the
@@ -110,11 +110,15 @@ async function main() {
     return;
   }
 
+  // The four fields of the proposal are read off the `Proposta` the control
+  // plane answered, and it is spelled the way `/v1/proposals` spells it since
+  // t226: `graph_id`, `target_version`. Reading the old names printed the string
+  // `undefined` on the only two lines a person runs this command for.
   console.log('\n===== proposal =====');
-  console.log(`proposta.id:      ${result.proposta.id}`);
+  console.log(`proposal.id:      ${result.proposta.id}`);
   console.log(`status:           ${result.proposta.status}`);
-  console.log(`grafo:            ${result.proposta.grafo_id}`);
-  console.log(`versao_alvo:      ${result.proposta.versao_alvo}`);
+  console.log(`graph:            ${result.proposta.graph_id}`);
+  console.log(`target_version:   ${result.proposta.target_version}`);
   console.log(`gargalo:          ${result.gargalo.no_id}`);
   console.log(`evidencia:        ${JSON.stringify(result.evidencia)}`);
   console.log(`metrica_esperada: ${JSON.stringify(result.metrica_esperada)}`);

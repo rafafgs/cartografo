@@ -57,10 +57,10 @@
  *
  * Three field names the `api` surface does not carry BY NAME are listed inline
  * in {@link DERIVED_FIELDS}, the same way {@link DISPLAYED_POSITIONALS} already
- * is and for the same reason — the glossary's §1.1 says entity fields "espelham
- * 1:1 as colunas", so `concluido`, `bloqueado` and `versao_alvo` take the
- * spelling their already-converged `database` rows (§4.2) gave the columns,
- * without editing a document no child ticket has touched since t213.
+ * is and for the same reason — the glossary's §1.1 says an entity field on the
+ * wire mirrors its column 1:1, so `concluido`, `bloqueado` and `versao_alvo`
+ * take the spelling their already-converged `database` rows (§4.2) gave those
+ * columns, without editing a document no child ticket has touched since t213.
  *
  * And one span is exempted, in {@link EXEMPT_SPANS}: `result.proposta` in the
  * surveyor's command is not a wire read at all — it is the runner-internal

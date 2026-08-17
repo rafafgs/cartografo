@@ -604,7 +604,10 @@ export class ClienteControle {
       fetchImpl: this.#buscar,
       buildError: ({ status, body }) =>
         new ErroDoControlPlane(
-          `${verbo} ${caminho} respondeu ${status}`,
+          // A mensagem é o que um operador lê no stderr de `prune`, de `intake`
+          // e do topógrafo, e por isso ela é inglesa desde a t254 — como a
+          // vizinha "the control plane did not answer for it" já era.
+          `${verbo} ${caminho} answered ${status}`,
           status,
           decodeErrorBody(body),
         ),

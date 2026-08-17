@@ -247,7 +247,7 @@ tipo "este nó para de chamar gente".
 `no_atual` do trabalho dono — nunca vinda do corpo do pedido, a mesma fronteira
 de confiança que `projeto_id` e `execucao_id` já tinham. O evento
 `pergunta.criada` carrega o mesmo campo, e
-`GET /v1/executions/:id/metrics-by-version` devolve `perguntas_por_no` ao lado
+`GET /v1/executions/:id/metrics-by-version` devolve `input_requests_by_node` ao lado
 das métricas por versão.
 
 Sem isso, uma política por nó seria uma política que ninguém consegue avaliar:

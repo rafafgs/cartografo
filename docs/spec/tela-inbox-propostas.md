@@ -37,15 +37,15 @@ O navegador fala só com a origem de onde a página veio; a tela continua sendo
 mais um cliente HTTP da API pública. Nada na fronteira do core muda.
 
 **Verbatim é literal, e por um motivo.** `409 proposta_nao_pendente` e
-`422 grafo_invalido` são **respostas** que o inbox precisa mostrar, não erros que
+`422 invalid_graph` são **respostas** que o inbox precisa mostrar, não erros que
 o proxy possa reescrever em "deu ruim". A única resposta que o proxy inventa é a
 do control plane fora do ar:
 
 ```json
-{ "erro": "control_plane_indisponivel", "mensagem": "não deu para falar com o control plane em http://127.0.0.1:4317 — rode `npx cartografo` primeiro (ou aponte outro endereço com CARTOGRAFO_URL)" }
+{ "error": "control_plane_indisponivel", "message": "não deu para falar com o control plane em http://127.0.0.1:4317 — rode `npx cartografo` primeiro (ou aponte outro endereço com CARTOGRAFO_URL)" }
 ```
 
-`502`, com o mesmo par `erro` / `mensagem` que toda resposta de erro do core usa
+`502`, com o mesmo par `error` / `message` que toda resposta de erro do core usa
 (§6 de [`entidades-versionamento.md`](entidades-versionamento.md)) — a página tem
 um jeito só de mostrar falha, em vez de dois. A causa (`ECONNREFUSED`, stack
 trace) é descartada de propósito: para quem olha o inbox, o acionável é o
@@ -117,7 +117,7 @@ Envelope de resposta que a tela espera — e como ela se protege de estar errada
 - lista: `{propostas: [...]}` (um array cru também é aceito);
 - detalhe e ações: `{proposta: {...}}` (a proposta crua também é aceita), mais
   `{grafo_versao: {id}}` no `apply`, que é o que a linha passa a exibir;
-- erro: `{erro, mensagem}`, em qualquer status não-2xx.
+- erro: `{error, message}`, em qualquer status não-2xx.
 
 **A incompatibilidade que a `t165` resolveu.** Até ela,
 [`routes/proposals.ts`](../../packages/core/src/routes/proposals.ts) exigia
@@ -170,7 +170,7 @@ em Node mesmo rodando no navegador.
 
 Depois de uma ação bem-sucedida **só aquela linha muda** — status novo e, no
 `aplicar`, a `grafo_versao` retornada. Nada de recarregar a página. Uma ação
-malsucedida mostra `erro: mensagem` na própria linha; a lista inteira só recarrega
+malsucedida mostra `error: message` na própria linha; a lista inteira só recarrega
 no botão "Atualizar" (não há polling nem websocket nesta fase).
 
 ---

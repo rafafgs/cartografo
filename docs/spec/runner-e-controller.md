@@ -107,12 +107,13 @@ quando alguém ligar a emissão de eventos, a projeção desta tabela e o evento
 falam a mesma língua, sem tradução — a tabela `evento` que eles precisam já
 existe desde o `t102`.
 
-### `motivo` de recusa ≠ `motivo_expiracao`
+### `reason` de recusa ≠ `expiration_reason`
 
-São dois vocabulários distintos e vale não confundi-los. `motivo_expiracao` é
-uma coluna: por que uma lease morreu. `motivo` é campo de resposta de
+São dois vocabulários distintos e vale não confundi-los. `expiration_reason` é
+o nome de fio de uma coluna (`motivo_expiracao`, que a t226 não renomeou — é do
+quarto filho da D20): por que uma lease morreu. `reason` é campo de resposta de
 `POST /v1/leases`: por que um pedido **não virou** lease
-(`trabalho_ja_leased`, `teto_runner`, `teto_projeto`).
+(`job_already_leased`, `runner_cap`, `project_cap`).
 
 ---
 
@@ -124,11 +125,11 @@ síncrona, sem nenhum `await` no meio:
 ```
 reivindicar toda lease ativa cujo prazo venceu   ← trabalho de runner morto volta à fila
         ↓
-o trabalho já tem dono ativo?     → 200 {lease: null, motivo: "trabalho_ja_leased"}
+o trabalho já tem dono ativo?     → 200 {lease: null, reason: "job_already_leased"}
         ↓
-o runner já bateu teto_runner?    → 200 {lease: null, motivo: "teto_runner"}
+o runner já bateu runner_cap?     → 200 {lease: null, reason: "runner_cap"}
         ↓
-o projeto já bateu teto_projeto?  → 200 {lease: null, motivo: "teto_projeto"}
+o projeto já bateu project_cap?   → 200 {lease: null, reason: "project_cap"}
         ↓
 gravar a lease                    → 201 {lease}
 ```
@@ -339,18 +340,18 @@ nada tenha sido escrito para recusá-la — pela mesma porta por onde
 | Método | Rota | Quem chama | O que faz |
 |---|---|---|---|
 | `POST` | `/v1/runners` | operador | Pareia um runner. `201` na primeira vez — com `token`, a credencial do runner, devolvida uma única vez —, `200` (idempotente) com `token: null` se o `id` já existe. |
-| `GET` | `/v1/runners` | operador | Lista a frota com a saúde de cada runner: `leases_ativas`, `ultimo_heartbeat` (o maior `heartbeat_em` de **qualquer** lease que ele já teve) e `ultima_expiracao` (`{trabalho_id, expira_em, motivo_expiracao}` da última que venceu, ou `null`). Tudo derivado da tabela `lease`; não existe ping de runner. |
-| `POST` | `/v1/runners/:id/revocations` | operador | Revoga toda credencial viva daquele runner. `200 {revogadas: <quantas>}`, inclusive `0`: chamar de novo não é erro. |
-| `POST` | `/v1/leases` | runner ou operador | Reivindica expiradas e tenta conceder. `201` com a lease, ou `200` com `{lease: null, motivo}`. |
-| `POST` | `/v1/leases/:id/heartbeats` | runner ou operador | Renova o prazo. Corpo opcional `{ttl_segundos}`; sem ele, mantém o TTL da lease. |
+| `GET` | `/v1/runners` | operador | Lista a frota com a saúde de cada runner: `active_leases`, `last_heartbeat` (o maior `heartbeat_at` de **qualquer** lease que ele já teve) e `last_expiration` (`{job_id, expires_at, expiration_reason}` da última que venceu, ou `null`). Tudo derivado da tabela `lease`; não existe ping de runner. |
+| `POST` | `/v1/runners/:id/revocations` | operador | Revoga toda credencial viva daquele runner. `200 {revoked: <quantas>}`, inclusive `0`: chamar de novo não é erro. |
+| `POST` | `/v1/leases` | runner ou operador | Reivindica expiradas e tenta conceder. `201` com a lease, ou `200` com `{lease: null, reason}`. |
+| `POST` | `/v1/leases/:id/heartbeats` | runner ou operador | Renova o prazo. Corpo opcional `{ttl_seconds}`; sem ele, mantém o TTL da lease. |
 | `POST` | `/v1/leases/:id/releases` | runner ou operador | Encerra a lease e devolve a vaga na hora. |
-| `GET` | `/v1/leases` | runner ou operador | Lista, com filtros `projeto_id`, `runner_id` e `status`. Sem paginação nesta fase. |
+| `GET` | `/v1/leases` | runner ou operador | Lista, com filtros `project_id`, `runner_id` e `status`. Sem paginação nesta fase. |
 
 ### O escopo da credencial de runner
 
 A credencial nasce em `POST /v1/runners` (`201`), no formato do token de
 bootstrap: 32 bytes aleatórios em hex, devolvidos uma vez, guardados só como
-digest SHA-256. Ela é recusada com `403 credencial_fora_de_escopo` em duas
+digest SHA-256. Ela é recusada com `403 out_of_scope_credential` em duas
 situações, e a diferença entre elas importa:
 
 - **Fora da lista de rotas** — a lista é literal, em
@@ -364,7 +365,7 @@ situações, e a diferença entre elas importa:
   apontando para outro, é recusado.
 
 Revogar (`POST /v1/runners/:id/revocations`) carimba `revogada_em` e nada mais:
-o token morto cai no `401 credencial_invalida` já na requisição seguinte, junto
+o token morto cai no `401 invalid_credential` já na requisição seguinte, junto
 com os tokens que nunca existiram. Não há reemissão sob o mesmo `id` — recuperar
 o acesso de um runner revogado é pareá-lo com um `id` novo.
 
@@ -373,11 +374,11 @@ Corpo de `POST /v1/leases`:
 ```json
 {
   "runner_id": "runner-a",
-  "projeto_id": 3,
-  "trabalho_id": 42,
-  "teto_runner": 2,
-  "teto_projeto": 4,
-  "ttl_segundos": 30
+  "project_id": 3,
+  "job_id": 42,
+  "runner_cap": 2,
+  "project_cap": 4,
+  "ttl_seconds": 30
 }
 ```
 
@@ -388,15 +389,15 @@ default passa a vir dela e o parâmetro vira sobreposição.
 
 Códigos de erro:
 
-| Situação | Código | `erro` |
+| Situação | Código | `error` |
 |---|---|---|
-| `id` de runner ausente ou vazio | `400` | `id_obrigatorio` |
-| Campo de pedido ausente ou de tipo errado | `400` | `corpo_invalido` (com `campo`) |
-| Filtro de listagem inválido | `400` | `filtro_invalido` (com `campo`) |
-| `runner_id` não pareado (pedido de lease ou revogação) | `404` | `runner_desconhecido` |
-| Lease inexistente | `404` | `lease_desconhecida` |
-| Credencial de runner fora das rotas dela, ou agindo por outro runner | `403` | `credencial_fora_de_escopo` |
-| Heartbeat ou liberação sobre lease não `ativa` | `409` | `lease_nao_ativa` (com `status`) |
+| `id` de runner ausente ou vazio | `400` | `id_required` |
+| Campo de pedido ausente ou de tipo errado | `400` | `invalid_body` (com `field`) |
+| Filtro de listagem inválido | `400` | `invalid_filter` (com `field`) |
+| `runner_id` não pareado (pedido de lease ou revogação) | `404` | `unknown_runner` |
+| Lease inexistente | `404` | `unknown_lease` |
+| Credencial de runner fora das rotas dela, ou agindo por outro runner | `403` | `out_of_scope_credential` |
+| Heartbeat ou liberação sobre lease não `ativa` | `409` | `lease_not_active` (com `status`) |
 
 Recusa por teto ou por trabalho já leased **não** aparece nesta tabela: é `200`
 com `motivo`, pelas razões do §3.

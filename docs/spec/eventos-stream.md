@@ -180,10 +180,10 @@ resolve, a resposta é `401` — também `application/json`, também sem virar
 `text/event-stream`:
 
 ```json
-{"erro": "credencial_ausente", "mensagem": "esta rota exige `Authorization: Bearer <token>` — ..."}
+{"error": "missing_credential", "message": "esta rota exige `Authorization: Bearer <token>` — ..."}
 ```
 
-`credencial_ausente` é "não veio cabeçalho usável" e `credencial_invalida` é
+`missing_credential` é "não veio cabeçalho usável" e `invalid_credential` é
 "veio e não vale (desconhecida ou revogada)". Nenhum dos dois melhora com
 retentativa: é configuração, não indisponibilidade.
 

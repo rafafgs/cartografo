@@ -96,12 +96,12 @@ desta especificação) quando:
    (`Mozilla/`, `Chrome/`, `Safari/`, `Firefox/`, `Edg/`) — navegador anterior ao
    fetch metadata continua sendo navegador.
 
-A recusa do proxy é `403` com o mesmo envelope `{erro, mensagem}` do `502`, e
-com `mensagem` em inglês pelo mesmo motivo (`t180`: encanamento de API, não
+A recusa do proxy é `403` com o mesmo envelope `{error, message}` do `502`, e
+com `message` em inglês pelo mesmo motivo (`t180`: encanamento de API, não
 texto renderizado):
 
 ```json
-{"erro": "origem_nao_confiavel", "mensagem": "this proxy only forwards writes that started on the screen's own page — …"}
+{"error": "origem_nao_confiavel", "message": "this proxy only forwards writes that started on the screen's own page — …"}
 ```
 
 A do formulário é a página de erro `403` normal da tela, em português como todas

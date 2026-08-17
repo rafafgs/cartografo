@@ -378,8 +378,8 @@ produção dela agora é essa rota
 que `GET /v1/jobs/:id/context` devolve na chave `input` é exatamente o objeto
 contra o qual `{{input.<caminho>}}` resolve. E o produtor do `output` que a
 projeção lê também passou a existir — toda sessão cujo nó declara
-`output_schema` é instruída a fechar o turno com um bloco cercado `resultado`
-trazendo esse objeto, e o despacho o manda no `/finish`. O bundle de fábrica de
+`output_schema` é instruída a fechar o turno com o bloco cercado que a seção
+abaixo mostra, e o despacho manda o objeto no `/finish`. O bundle de fábrica de
 software declara `produces` e `project` e atravessa `refinar` → `desenvolver` →
 `integrar` vivo. Falta ainda `contexto_falha`, que só se preenche num ciclo de
 retrabalho e espera a ficha que exercitar `testar → desenvolver` ponta a ponta.
@@ -387,12 +387,18 @@ retrabalho e espera a ficha que exercitar `testar → desenvolver` ponta a ponta
 Além dos cinco campos que a renderização cita, o runner injeta na sessão o
 **contrato do próprio nó** (`input_schema`, `output_schema`, `checks`, que vivem
 no grafo e não no manifesto) e — desde a `t259`, em todo nó que declara
-`output_schema`, portão ou não — o protocolo de relato: UM bloco cercado
-`resultado` com o objeto que aquele schema pede. Num nó com duas ou mais saídas,
-a chave `resultado` vai DENTRO desse mesmo objeto nomeando a `condition` da
-aresta escolhida, e não num segundo bloco ao lado. O vocabulário de rota é o do
-**grafo**, nunca o `outcome` do `output` da skill — são dois enums diferentes, de
-propósito ([`docs/spec/grafo.md`](../../docs/spec/grafo.md)).
+`output_schema`, portão ou não — o protocolo de relato: UM bloco cercado com o
+objeto que aquele schema pede, aberto assim:
+
+```resultado
+{...exatamente o que o output_schema deste nó declara}
+```
+
+Num nó com duas ou mais saídas, a chave de rota vai DENTRO desse mesmo objeto,
+nomeando a `condition` da aresta escolhida, e não num segundo bloco ao lado. O
+vocabulário de rota é o do **grafo**, nunca o `outcome` do `output` da skill —
+são dois enums diferentes, de propósito
+([`docs/spec/grafo.md`](../../docs/spec/grafo.md)).
 
 ## Regra de importação (D4)
 

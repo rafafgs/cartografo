@@ -139,9 +139,9 @@ export function resultProtocol(edges: readonly GraphEdge[], canAsk: boolean): st
     ...(routes
       ? whenNothingMatches(canAsk)
       : [
-          'Um bloco malformado, ou nenhum bloco, não é uma falha da sessão: é uma',
-          'etapa que terminou sem dizer o que produziu, e quem vier depois não vai',
-          'ter o que ler.',
+          'Sem esse bloco — ou com ele malformado — a etapa termina sem dizer o que',
+          'produziu. Nada falha na hora, e é justamente esse o problema: quem vier',
+          'depois não vai ter o que ler.',
         ]),
   ];
 }

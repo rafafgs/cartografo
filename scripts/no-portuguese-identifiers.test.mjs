@@ -2,27 +2,28 @@
  * D18 gate: no Portuguese code identifier left in `scripts/` (t133, AC1).
  *
  * Port of `packages/core/test/no-portuguese-identifiers.test.ts`, with one
- * addition the core original does not need: a per-file list of FROZEN tokens.
+ * addition the core original does not need: a list of frozen EXPORT names.
  *
- * ## Why `validar-grafo.mjs` is exempt, and only it
+ * ## Why `validar-grafo.mjs` keeps four names, and nothing else
  *
- * `packages/core/test/domain-graph.test.ts` — out of this ticket's scope —
- * imports `scripts/validar-grafo.mjs` BY PATH, destructures it by the names
- * `validarEstrutura` / `validarSoundness`, and `deepEqual`s its report against
- * `packages/core/src/domain/graph.ts` on every fixture in `schema/exemplos/`.
- * `packages/core/src/domain/graph.ts:1-13` says so in its own header: the
- * reference validator it is compared against byte for byte is outside the D18
- * rename scope.
+ * `packages/core/test/domain-graph.test.ts` imports `scripts/validar-grafo.mjs`
+ * BY PATH, destructures it by the names `validarEstrutura` / `validarSoundness`,
+ * and `deepEqual`s its report against `packages/core/src/domain/graph.ts` on
+ * every fixture in `schema/exemplos/`. Renaming one of those four exports turns
+ * core's suite red without a line of core changing, so they are masked here —
+ * moving them is `scripts/`' own D18 identifier migration, and that ticket does
+ * not exist yet.
  *
- * So the exported names and the whole report shape — `valido`, `erros`,
- * `violacoes`, `codigo`, `mensagem`, `alvo`, `regra` — are frozen: renaming any
- * of them turns core's suite red without a line of core changing. Everything
- * ELSE in that file (locals, helpers, comments, CLI output) translates like any
- * other script, and this sweep still bites on it.
+ * The REPORT that file answers with used to be frozen alongside them, and this
+ * file carried a per-file token exemption for it. t230 (D20's fifth child) moved
+ * the whole report vocabulary to English in lockstep with the port, so the
+ * exemption went with it: `valido`, `erros`, `violacoes`, `codigo`, `mensagem`,
+ * `alvo`, `regra` and `estrutura` are now ordinary Portuguese words in a script,
+ * and the general sweep below is what keeps them from coming back.
  *
- * `check-single-writer.mjs` keeps its path for the same kind of reason — three
- * packages spawn it by path and read its exit code — but nothing imports a name
- * out of it, so its insides are freely renamable and get no exemption here.
+ * `check-single-writer.mjs` keeps its path for the same kind of reason as the
+ * file name above — three packages spawn it by path and read its exit code — but
+ * nothing imports a name out of it, so its insides are freely renamable.
  */
 
 import assert from 'node:assert/strict';
@@ -44,7 +45,7 @@ const FORBIDDEN = Object.freeze([
   { bare: ['manifesto', 'documento'], camel: ['Manifesto', 'Documento'] },
   { bare: ['versao', 'versoes'], camel: ['Versao'] },
 
-  // Report vocabulary (frozen inside `validar-grafo.mjs`, live everywhere else).
+  // Report vocabulary (English since t230, `validar-grafo.mjs` included).
   { bare: ['valido', 'validos'], camel: ['Valido'] },
   { bare: ['violacao', 'violacoes'], camel: ['Violacao', 'Violacoes'] },
   { bare: ['regra', 'regras'], camel: ['Regra', 'Regras'] },
@@ -115,32 +116,6 @@ const FROZEN_IDENTIFIERS = Object.freeze([
   'validarGrafo',
   'carregarGrafo',
 ]);
-
-/**
- * Tokens a given file is allowed to keep, because something outside this
- * ticket's scope pins them. See this file's header for why.
- *
- * Only `validar-grafo.mjs`, and only the report vocabulary: those words are the
- * keys core `deepEqual`s against, plus the locals whose shorthand builds them
- * (`return { valido: erros.length === 0, erros }`).
- */
-const FROZEN_TOKENS_BY_FILE = Object.freeze({
-  'validar-grafo.mjs': Object.freeze([
-    'valido',
-    'erro',
-    'erros',
-    'Erro',
-    'violacao',
-    'violacoes',
-    'codigo',
-    'mensagem',
-    'alvo',
-    'regra',
-    'regras',
-    'estrutura',
-    'Estrutura',
-  ]),
-});
 
 /** Replaces a span with same-length blanks, so line numbers stay honest. */
 function blank(text) {
@@ -409,17 +384,14 @@ function scannedFiles() {
  * Every forbidden-token hit in one source text, as `line — token` pairs.
  *
  * @param {string} source File contents.
- * @param {readonly string[]} frozen Tokens this file is allowed to keep.
  */
-export function hitsInSource(source, frozen = []) {
+export function hitsInSource(source) {
   const masked = maskFrozenIdentifiers(maskLiteralsAndCommentQuotes(source));
-  const exempt = new Set(frozen);
   const hits = [];
 
   masked.split('\n').forEach((rawLine, index) => {
     for (const group of FORBIDDEN) {
       for (const word of group.bare) {
-        if (exempt.has(word)) continue;
         let line = rawLine;
         for (const token of [word, word[0].toUpperCase() + word.slice(1)]) {
           line = maskKeyAndMemberPositions(line, token);
@@ -434,7 +406,6 @@ export function hitsInSource(source, frozen = []) {
         }
       }
       for (const word of group.camel) {
-        if (exempt.has(word)) continue;
         const line = maskKeyAndMemberPositions(rawLine, word);
         if (new RegExp(`${word}(?![a-z])`).test(line)) {
           hits.push({ line: index + 1, token: word });
@@ -463,10 +434,9 @@ test('AC1 — no Portuguese identifier survives in scripts/*.mjs', () => {
   assert.ok(files.length >= 4, `the sweep found only ${files.length} files; it is not reading the directory`);
 
   const hits = files.flatMap((name) =>
-    hitsInSource(
-      readFileSync(path.join(SCRIPTS_DIR, name), 'utf8'),
-      FROZEN_TOKENS_BY_FILE[name] ?? [],
-    ).map((hit) => `${name}:${hit.line} — ${hit.token}`),
+    hitsInSource(readFileSync(path.join(SCRIPTS_DIR, name), 'utf8')).map(
+      (hit) => `${name}:${hit.line} — ${hit.token}`,
+    ),
   );
 
   assert.deepEqual(hits, [], `Portuguese identifiers still present (D18):\n${hits.join('\n')}`);
@@ -482,9 +452,8 @@ test('AC1 — no script file name is in Portuguese, bar the two pinned from outs
   }
 });
 
-test('exception 5 — validar-grafo.mjs keeps the names and report shape core pins', async () => {
-  const name = 'validar-grafo.mjs';
-  const source = readFileSync(path.join(SCRIPTS_DIR, name), 'utf8');
+test('exception 5 — validar-grafo.mjs keeps the four names core pins, and nothing more', async () => {
+  const source = readFileSync(path.join(SCRIPTS_DIR, 'validar-grafo.mjs'), 'utf8');
 
   // The four exports `packages/core/test/domain-graph.test.ts` imports by name.
   const validator = await import('./validar-grafo.mjs');
@@ -492,25 +461,24 @@ test('exception 5 — validar-grafo.mjs keeps the names and report shape core pi
     assert.equal(typeof validator[exported], 'function', `${exported} is pinned by core's suite`);
   }
 
-  // The report shape it `deepEqual`s against `packages/core/src/domain/graph.ts`.
+  // The report shape it `deepEqual`s against `packages/core/src/domain/graph.ts`
+  // — English since t230, in both files at once, or that parity test falls over.
   const structure = validator.validarEstrutura(null);
-  assert.deepEqual(Object.keys(structure).sort(), ['erros', 'valido']);
-  assert.deepEqual(Object.keys(structure.erros[0]).sort(), ['alvo', 'codigo', 'mensagem']);
+  assert.deepEqual(Object.keys(structure).sort(), ['errors', 'valid']);
+  assert.deepEqual(Object.keys(structure.errors[0]).sort(), ['code', 'message', 'target']);
 
-  // The DOCUMENT it is fed speaks English since t178; the REPORT it answers
-  // with does not, and that asymmetry is exactly what this test pins.
   const soundness = validator.validarSoundness({ nodes: [{ id: 'a' }], edges: [] });
-  assert.deepEqual(Object.keys(soundness).sort(), ['valido', 'violacoes']);
-  assert.deepEqual(Object.keys(soundness.violacoes[0]).sort(), ['alvo', 'regra']);
+  assert.deepEqual(Object.keys(soundness).sort(), ['valid', 'violations']);
+  assert.deepEqual(Object.keys(soundness.violations[0]).sort(), ['rule', 'target']);
 
-  // And the exemption is load-bearing, not decorative: without it the sweep
-  // would flag exactly these tokens and force a rename core's suite forbids.
-  const withException = hitsInSource(source, FROZEN_TOKENS_BY_FILE[name]);
-  const withoutException = hitsInSource(source);
-  assert.deepEqual(withException, [], 'the frozen file still has renamable Portuguese in it');
+  // The exception is now the four names and only the four names: with the
+  // report in English, the general sweep runs over this file with no exemption
+  // at all, and `FROZEN_IDENTIFIERS` is what keeps it from demanding a rename
+  // core's suite forbids.
+  assert.deepEqual(hitsInSource(source), [], 'the pinned file still has renamable Portuguese in it');
   assert.ok(
-    withoutException.length > 0,
-    'the exemption list is dead code; the sweep no longer bites on the frozen tokens',
+    hitsInSource(source.replace(/\bvalidarEstrutura\b/g, 'validarShape')).length > 0,
+    'the export mask is dead code; the sweep no longer bites on a Portuguese export name',
   );
 });
 
@@ -551,7 +519,7 @@ test('AC1 — the sweep does NOT bite on the frozen exceptions', () => {
     "import { validarGrafo } from './validar-grafo.mjs';",
     'const report = validarGrafo(carregarGrafo(filePath));',
     // a backticked frozen name inside English prose
-    '/** `validarEstrutura` and its `valido` / `erros` report are pinned by core. */',
+    '/** `validarEstrutura` is pinned by core; its `valido` / `erros` report is not. */',
   ];
   for (const source of allowed) {
     assert.deepEqual(hitsInSource(source), [], `the sweep flagged a frozen exception: ${source}`);

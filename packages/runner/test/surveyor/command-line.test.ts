@@ -16,7 +16,7 @@
  *    (`packages/core/src/cli/url.ts`) and the cost lens
  *    (`packages/topografo-custo/src/cli.ts`) already use, because a person who
  *    exported the variable once should not have to learn a third rule;
- * 2. the positional contract does not move: `<execucao_id> [url] [dir]` is what
+ * 2. the positional contract does not move: `<execution_id> [url] [dir]` is what
  *    the spec documents and what the flag has to survive;
  * 3. the token reaches the WIRE — an `Authorization: Bearer …` on the request —
  *    and its absence sends no header at all, which is the honest behaviour the
@@ -144,8 +144,8 @@ test('AT4 — the positional contract of the spec is unchanged', async () => {
   assert.equal(bare.url, DEFAULT_URL);
   assert.equal(bare.workingDir, undefined);
 
-  assert.match(refusal(parseArguments([], EMPTY_ENV)), /execucao_id/);
-  assert.match(refusal(parseArguments(['nao-e-numero'], EMPTY_ENV)), /execucao_id/);
+  assert.match(refusal(parseArguments([], EMPTY_ENV)), /execution_id/);
+  assert.match(refusal(parseArguments(['nao-e-numero'], EMPTY_ENV)), /execution_id/);
   assert.match(refusal(parseArguments(['7', 'url', 'dir', 'extra'], EMPTY_ENV)), /extra/);
 });
 
@@ -162,6 +162,12 @@ test('AT5 — a flag with no value is refused, and the usage text says how to pa
     USAGE.includes('CARTOGRAFO_TOKEN'),
     `the usage text does not mention CARTOGRAFO_TOKEN:\n${USAGE}`,
   );
+
+  // t230 — the DISPLAYED name of the positional is English (D20 §5.1). The
+  // `execucao_id` this command later sends inside a `/v1` body is the frozen
+  // hypothesis vocabulary and is a different thing entirely.
+  assert.ok(USAGE.includes('<execution_id>'), `the usage text still shows the old positional:\n${USAGE}`);
+  assert.ok(!USAGE.includes('execucao_id'), `the usage text still shows execucao_id:\n${USAGE}`);
 });
 
 test('AT6 — the token reaches the wire as a bearer, and its absence sends no header', async () => {

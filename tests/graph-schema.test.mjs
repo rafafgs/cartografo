@@ -143,12 +143,12 @@ test('AT2 — the minimal example passes validarEstrutura and validarSoundness',
   const doc = readExample('grafo-valido-minimo.json');
 
   const structure = validarEstrutura(doc);
-  assert.deepEqual(structure.erros, []);
-  assert.equal(structure.valido, true);
+  assert.deepEqual(structure.errors, []);
+  assert.equal(structure.valid, true);
 
   const soundness = validarSoundness(doc);
-  assert.deepEqual(soundness.violacoes, []);
-  assert.equal(soundness.valido, true);
+  assert.deepEqual(soundness.violations, []);
+  assert.equal(soundness.valid, true);
 });
 
 /*
@@ -193,8 +193,8 @@ test('AT3 — the flowpilot graph is sound and maps 1:1 onto the activity states
   const { validarEstrutura, validarSoundness } = await loadValidator();
   const doc = readExample('grafo-valido-flowpilot.json');
 
-  assert.deepEqual(validarEstrutura(doc).erros, []);
-  assert.deepEqual(validarSoundness(doc).violacoes, []);
+  assert.deepEqual(validarEstrutura(doc).errors, []);
+  assert.deepEqual(validarSoundness(doc).violations, []);
 
   const expectedIds = Object.values(FLOWPILOT_NODE_BY_STATE).sort();
   assert.deepEqual(doc.nodes.map((node) => node.id).sort(), expectedIds);
@@ -217,41 +217,41 @@ test('AT3 — the flowpilot graph is sound and maps 1:1 onto the activity states
   assert.deepEqual(doc.final_nodes, ['implantar']);
 });
 
-test('AT4 — an unreachable node produces exactly one "alcançável" violation', async () => {
+test('AT4 — an unreachable node produces exactly one "reachable" violation', async () => {
   const { validarSoundness } = await loadValidator();
-  const doc = readExample('grafo-invalido-no-inalcancavel.json');
+  const doc = readExample('grafo-invalido-unreachable-node.json');
 
-  const { valido: valid, violacoes: violations } = validarSoundness(doc);
+  const { valid, violations } = validarSoundness(doc);
   assert.equal(valid, false);
   assert.equal(violations.length, 1);
-  assert.equal(violations[0].regra, 'alcançável');
+  assert.equal(violations[0].rule, 'reachable');
   assert.ok(
-    doc.nodes.some((node) => node.id === violations[0].alvo),
+    doc.nodes.some((node) => node.id === violations[0].target),
     'the target has to be the id of a node in the document',
   );
   assert.ok(
-    !doc.edges.some((edge) => edge.to === violations[0].alvo),
+    !doc.edges.some((edge) => edge.to === violations[0].target),
     'the target has to be the orphan node (with no incoming edge)',
   );
 });
 
-test('AT5 — a node stuck in a cycle with no way out produces a "termina" violation', async () => {
+test('AT5 — a node stuck in a cycle with no way out produces a "terminates" violation', async () => {
   const { validarSoundness } = await loadValidator();
   const doc = readExample('grafo-invalido-sem-terminacao.json');
 
-  const { valido: valid, violacoes: violations } = validarSoundness(doc);
+  const { valid, violations } = validarSoundness(doc);
   assert.equal(valid, false);
   assert.equal(violations.length, 1);
-  assert.equal(violations[0].regra, 'termina');
+  assert.equal(violations[0].rule, 'terminates');
 
-  const stuck = violations[0].alvo;
+  const stuck = violations[0].target;
   assert.ok(
     doc.nodes.some((node) => node.id === stuck),
     'the target has to be the id of a node in the document',
   );
   assert.ok(
     !doc.final_nodes.includes(stuck),
-    'a final node can never be the target of the "termina" rule',
+    'a final node can never be the target of the "terminates" rule',
   );
   assert.ok(
     doc.edges.some((edge) => edge.from === stuck && edge.to === stuck),
@@ -259,11 +259,11 @@ test('AT5 — a node stuck in a cycle with no way out produces a "termina" viola
   );
 });
 
-test('AT6 — an edge with no condition produces an "aresta_com_condicao" violation', async () => {
+test('AT6 — an edge with no condition produces an "edge_with_condition" violation', async () => {
   const { validarSoundness } = await loadValidator();
   const doc = readExample('grafo-invalido-aresta-sem-condicao.json');
 
-  const { valido: valid, violacoes: violations } = validarSoundness(doc);
+  const { valid, violations } = validarSoundness(doc);
   assert.equal(valid, false);
   assert.equal(violations.length, 1);
 
@@ -271,23 +271,23 @@ test('AT6 — an edge with no condition produces an "aresta_com_condicao" violat
     (edge) => typeof edge.condition !== 'string' || edge.condition.trim() === '',
   );
   assert.deepEqual(violations[0], {
-    regra: 'aresta_com_condicao',
-    alvo: { de: withoutCondition.from, para: withoutCondition.to },
+    rule: 'edge_with_condition',
+    target: { from: withoutCondition.from, to: withoutCondition.to },
   });
 });
 
-test('AT7 — a node with no contract produces a "no_com_contrato" violation', async () => {
+test('AT7 — a node with no contract produces a "node_with_contract" violation', async () => {
   const { validarSoundness } = await loadValidator();
   const doc = readExample('grafo-invalido-no-sem-contrato.json');
 
-  const { valido: valid, violacoes: violations } = validarSoundness(doc);
+  const { valid, violations } = validarSoundness(doc);
   assert.equal(valid, false);
   assert.equal(violations.length, 1);
 
   const withoutContract = doc.nodes.find((node) => node.contract == null || node.skill_ref == null);
   assert.deepEqual(violations[0], {
-    regra: 'no_com_contrato',
-    alvo: withoutContract.id,
+    rule: 'node_with_contract',
+    target: withoutContract.id,
   });
 });
 
@@ -339,23 +339,23 @@ test('AT8 — validarEstrutura rejects a duplicate id and an edge pointing at a 
   const withDuplicateId = structuredClone(base);
   withDuplicateId.nodes.push(structuredClone(withDuplicateId.nodes[0]));
   const duplicate = validarEstrutura(withDuplicateId);
-  assert.equal(duplicate.valido, false);
-  const duplicateError = duplicate.erros.find((e) => e.codigo === 'id_no_duplicado');
-  assert.ok(duplicateError, 'expected identifiable error: id_no_duplicado');
-  assert.equal(duplicateError.alvo, base.nodes[0].id);
+  assert.equal(duplicate.valid, false);
+  const duplicateError = duplicate.errors.find((e) => e.code === 'duplicate_node_id');
+  assert.ok(duplicateError, 'expected identifiable error: duplicate_node_id');
+  assert.equal(duplicateError.target, base.nodes[0].id);
   assert.ok(
-    duplicateError.mensagem.includes(base.nodes[0].id),
+    duplicateError.message.includes(base.nodes[0].id),
     'the message has to name the duplicated id',
   );
 
   const withDanglingEdge = structuredClone(base);
   withDanglingEdge.edges[0].to = 'no_que_nao_existe';
   const dangling = validarEstrutura(withDanglingEdge);
-  assert.equal(dangling.valido, false);
-  const danglingError = dangling.erros.find((e) => e.codigo === 'aresta_no_inexistente');
-  assert.ok(danglingError, 'expected identifiable error: aresta_no_inexistente');
+  assert.equal(dangling.valid, false);
+  const danglingError = dangling.errors.find((e) => e.code === 'edge_unknown_node');
+  assert.ok(danglingError, 'expected identifiable error: edge_unknown_node');
   assert.ok(
-    danglingError.mensagem.includes('no_que_nao_existe'),
+    danglingError.message.includes('no_que_nao_existe'),
     'the message has to name the missing node',
   );
 });
@@ -382,8 +382,8 @@ test('t166 AT — the model fixture is shape-clean, sound, and exercises both pr
     [],
     'the fixture has to validate against the schema unchanged',
   );
-  assert.deepEqual(validarEstrutura(doc).erros, []);
-  assert.deepEqual(validarSoundness(doc).violacoes, []);
+  assert.deepEqual(validarEstrutura(doc).errors, []);
+  assert.deepEqual(validarSoundness(doc).violations, []);
 
   const declaring = doc.nodes.filter((node) => node.model !== undefined);
   assert.ok(declaring.length >= 1, 'at least one node has to declare a model');
@@ -419,8 +419,8 @@ test('t169 AT — the hooks fixture is shape-clean, and both validators pass it'
     [],
     'the fixture has to validate against the schema unchanged',
   );
-  assert.deepEqual(validarEstrutura(doc).erros, []);
-  assert.deepEqual(validarSoundness(doc).violacoes, []);
+  assert.deepEqual(validarEstrutura(doc).errors, []);
+  assert.deepEqual(validarSoundness(doc).violations, []);
 
   // One of each trigger, which is the whole trigger vocabulary of this ticket.
   assert.deepEqual(

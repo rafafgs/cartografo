@@ -486,7 +486,7 @@ test('AC4 — neither half of the screen is a dead end', async (t) => {
   const cp = await startControlPlane(t);
   const screen = await startScreen(t, cp);
 
-  for (const from of ['/quadro', '/']) {
+  for (const from of ['/board', '/']) {
     const page = await openPage(screen, from);
     assert.equal(page.status, 200, `${from} returned ${page.status}`);
     assert.ok(
@@ -498,7 +498,7 @@ test('AC4 — neither half of the screen is a dead end', async (t) => {
   const editor = await openPage(screen, '/graph-editor.html');
   assert.equal(editor.status, 200, `/graph-editor.html returned ${editor.status}`);
   assert.ok(
-    editor.html.includes('href="/quadro"') || editor.html.includes('href="/"'),
+    editor.html.includes('href="/board"') || editor.html.includes('href="/"'),
     'the graph editor links back to neither half of the screen',
   );
 });

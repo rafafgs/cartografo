@@ -12,9 +12,11 @@
  * boundary between the two. What is asserted here is the wire, so the
  * expectations below are the English side of that boundary.
  *
- * The `estrutura`/`soundness` report riding inside the 422 is NOT translated,
- * and the assertions on it are the pin: it is the graph validator's own
- * vocabulary, which D20 hands to its fifth child (routes, flags and report).
+ * The `structure`/`soundness` report riding inside the 422 speaks English too
+ * since t230 — D20's fifth child, `docs/spec/glossario-wire.md` §5.3/5.4 — and
+ * the assertions on it are the pin. It moved as one unit with
+ * `scripts/validar-grafo.mjs`, because `domain-graph.test.ts` `deepEqual`s the
+ * two reports against each other.
  */
 
 import assert from 'node:assert/strict';
@@ -67,9 +69,9 @@ interface GraphVersion {
 
 interface ValidationReport {
   error: string;
-  valido: boolean;
-  estrutura: { valido: boolean; erros: Array<{ codigo: string; alvo: unknown }> };
-  soundness: { valido: boolean; violacoes: Array<{ regra: string; alvo: unknown }> };
+  valid: boolean;
+  structure: { valid: boolean; errors: Array<{ code: string; target: unknown }> };
+  soundness: { valid: boolean; violations: Array<{ rule: string; target: unknown }> };
 }
 
 let connectionCache: typeof ConnectionModule | null = null;
@@ -226,17 +228,17 @@ test('AT8 — registering a variant returns 400 (D13/t118 are out of this ticket
 
 test('AT9 — a graph that breaks soundness returns 422 with the validator report', async (t) => {
   const address = await startApp(t);
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-invalido-no-inalcancavel.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-invalido-unreachable-node.json'));
 
   const response = await post(address, '/v1/graphs', document);
   assert.equal(response.status, 422);
 
   const body = await jsonBody<ValidationReport>(response);
   assert.equal(body.error, 'invalid_graph');
-  assert.equal(body.valido, false);
+  assert.equal(body.valid, false);
   assert.deepEqual(
-    body.soundness.violacoes,
-    [{ regra: 'alcançável', alvo: 'revisar_lote' }],
+    body.soundness.violations,
+    [{ rule: 'reachable', target: 'revisar_lote' }],
     'the report has to be the same one as scripts/validar-grafo.mjs',
   );
 
@@ -266,10 +268,10 @@ test('t153 — a graph whose ids are not filled strings returns 422 and register
   const body = await jsonBody<ValidationReport>(response);
   assert.equal(response.status, 422, JSON.stringify(body));
   assert.equal(body.error, 'invalid_graph');
-  assert.equal(body.valido, false);
+  assert.equal(body.valid, false);
   assert.ok(
-    body.estrutura.erros.some((item) => item.codigo === 'id_invalido'),
-    `the report has to name the invalid ids: ${JSON.stringify(body.estrutura.erros)}`,
+    body.structure.errors.some((item) => item.code === 'invalid_id'),
+    `the report has to name the invalid ids: ${JSON.stringify(body.structure.errors)}`,
   );
 
   // Nothing was written: a document that fails the gate does not become a lineage.

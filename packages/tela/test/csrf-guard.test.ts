@@ -291,7 +291,7 @@ test("t192 AT7 — the server-rendered form refuses a cross-site submit, and not
   });
 
   const screen = await startScreen(t, cp);
-  const submission = await fetch(`${screen.url}/perguntas/${question.id}/resposta`, {
+  const submission = await fetch(`${screen.url}/input-requests/${question.id}/answer`, {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',

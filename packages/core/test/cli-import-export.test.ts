@@ -30,7 +30,7 @@ import {
 
 const FACTORY_CLASS = 'desenvolvimento-de-software';
 const FACTORY_GRAPH = path.join(FACTORY_BUNDLE, 'grafo.json');
-const INVALID_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-invalido-no-inalcancavel.json');
+const INVALID_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-invalido-unreachable-node.json');
 
 /** The fixture that declares hooks, and the class it registers as (t194). */
 const HOOKS_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-com-ganchos.json');
@@ -215,7 +215,7 @@ test('AT6 — importing an invalid graph prints the violations of the 422', { ti
 
   assert.notEqual(result.code, 0, 'an invalid graph cannot exit 0');
   assert.match(result.stderr, /invalid_graph/);
-  assert.match(result.stderr, /alcançável/, 'the soundness violation comes out on the error output');
+  assert.match(result.stderr, /reachable/, 'the soundness violation comes out on the error output');
   assert.match(result.stderr, /revisar_lote/, 'the violation comes out with the target that broke it');
   assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
 

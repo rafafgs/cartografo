@@ -176,9 +176,9 @@ test('AT9 — avaliar creates exactly one pending proposal from the cost lens', 
       'avaliar',
       '--url',
       baseUrl,
-      '--execucao',
+      '--execution',
       String(EXECUTION_ID),
-      '--teto-tokens',
+      '--token-cap',
       String(TOKEN_CEILING),
     ],
     { doFetch, write: (text) => printed.push(text) },
@@ -232,7 +232,7 @@ test('AT9 — avaliar touches only the four routes of the contract, and never /a
   };
 
   await runCli(
-    ['avaliar', '--url', baseUrl, '--execucao', String(EXECUTION_ID), '--teto-tokens', '1000'],
+    ['avaliar', '--url', baseUrl, '--execution', String(EXECUTION_ID), '--token-cap', '1000'],
     { doFetch, write: () => undefined },
   );
 
@@ -267,21 +267,44 @@ test('t180 — --help prints the usage in English, still naming avaliar and the 
 
   assert.equal(exitCode, 0);
   assert.equal(printed.join(''), `${USAGE}\n`);
-  assert.match(USAGE, /^usage: topografo-custo avaliar --url <url> --execucao <id> \[options\]$/m);
+  assert.match(USAGE, /^usage: topografo-custo avaliar --url <url> --execution <id> \[options\]$/m);
   assert.match(USAGE, /^subcommands:$/m);
   assert.match(USAGE, /^options:$/m);
   assert.match(USAGE, /control plane to query \(required\)/);
   assert.match(USAGE, /With no ceiling declared, the ceiling policy does not run/);
-  // What the person types does not change (D20 freezes the published surface).
-  assert.match(USAGE, new RegExp('--teto-tokens <n>'));
+  // The flags D20 §5.2 moved, and the two it left alone: `--tier-*` has no
+  // glossary row, so it is still spelled the way it always was.
+  assert.match(USAGE, new RegExp('--token-cap <n>'));
+  assert.match(USAGE, new RegExp('--second-cap <n>'));
   assert.match(USAGE, new RegExp('--tier-minimo-nos <n>'));
+  for (const gone of ['--execucao', '--teto-tokens', '--teto-segundos']) {
+    assert.ok(!USAGE.includes(gone), `the usage still documents ${gone}`);
+  }
+});
+
+test('t230 — the pre-D20 spellings are refused, not accepted as synonyms', async () => {
+  const { runCli } = await loadCli();
+
+  // `avaliar` refuses whatever it did not consume, so an old flag comes back as
+  // an argument the command does not understand — never as an alias that
+  // quietly keeps working alongside the new name.
+  for (const gone of ['--execucao', '--teto-tokens', '--teto-segundos']) {
+    const stderr = await stderrOf(() =>
+      runCli(['avaliar', '--url', 'http://127.0.0.1:1', gone, '7'], { write: () => undefined }),
+    );
+    assert.match(
+      stderr,
+      new RegExp(`avaliar does not understand: "${gone}"`),
+      `${gone} is still understood by the command`,
+    );
+  }
 });
 
 test('t180 — the usage errors of avaliar are English', async () => {
   const { runCli } = await loadCli();
 
   assert.equal(
-    await stderrOf(() => runCli(['avaliar', '--execucao', '7'], { write: () => undefined })),
+    await stderrOf(() => runCli(['avaliar', '--execution', '7'], { write: () => undefined })),
     'topografo-custo: avaliar needs --url\ntopografo-custo: run `topografo-custo --help` for the usage\n',
   );
 
@@ -289,7 +312,7 @@ test('t180 — the usage errors of avaliar are English', async () => {
     await stderrOf(() =>
       runCli(['avaliar', '--url', 'http://127.0.0.1:1'], { write: () => undefined }),
     ),
-    'topografo-custo: avaliar needs --execucao\ntopografo-custo: run `topografo-custo --help` for the usage\n',
+    'topografo-custo: avaliar needs --execution\ntopografo-custo: run `topografo-custo --help` for the usage\n',
   );
 });
 

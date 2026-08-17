@@ -63,7 +63,7 @@ async function loadServer(): Promise<typeof ScreenServerModule> {
 /**
  * A control plane that answers whatever the rendered views ask of it.
  *
- * Same fake as `server-proxy.test.ts` uses: enough for `/quadro` to render a
+ * Same fake as `server-proxy.test.ts` uses: enough for `/board` to render a
  * real 200 after the abort, which is the whole point of AT2.
  */
 async function startFakeUpstream(t: Cleanup): Promise<string> {
@@ -233,7 +233,7 @@ test('AT2 — the screen keeps serving the next request after a client aborted o
 
   await abortMidBody(screen.port, '/v1/algum-caminho', 'application/json');
 
-  const board = await fetch(`${screen.url}/quadro`);
+  const board = await fetch(`${screen.url}/board`);
   assert.equal(board.status, 200, 'the screen survived the abort and still answers');
   assert.match(await board.text(), /<html/i);
 
@@ -245,7 +245,7 @@ test('AT3 — the same abort against the form route leaves nothing unhandled eit
   const collected = watchUnhandledRejections(t);
   const stderr = watchStderr(t);
 
-  await abortMidBody(screen.port, '/perguntas/1/resposta', 'application/x-www-form-urlencoded');
+  await abortMidBody(screen.port, '/input-requests/1/answer', 'application/x-www-form-urlencoded');
 
   assert.deepEqual(
     collected,
@@ -261,7 +261,7 @@ test('AT3 — the same abort against the form route leaves nothing unhandled eit
     `the form reader labels the abort too, got ${JSON.stringify(stderr)}`,
   );
 
-  const board = await fetch(`${screen.url}/quadro`);
+  const board = await fetch(`${screen.url}/board`);
   assert.equal(board.status, 200, 'the screen survived the aborted form too');
 });
 
@@ -282,7 +282,7 @@ test('AT4 — a request target the URL parser refuses is answered or closed, nev
   );
   assert.deepEqual(collected, [], describeCollected(collected));
 
-  const board = await fetch(`${screen.url}/quadro`);
+  const board = await fetch(`${screen.url}/board`);
   assert.equal(board.status, 200, 'a fresh connection is still served afterwards');
 });
 

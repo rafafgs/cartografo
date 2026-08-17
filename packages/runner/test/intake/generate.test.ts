@@ -6,7 +6,7 @@
  *
  * 1. a class that names no registered lineage is refused BEFORE any session
  *    opens — the same ordering `synthesize.ts` records for its own pre-check,
- *    applied here so a typo in `--classe` does not cost a whole session;
+ *    applied here so a typo in `--class` does not cost a whole session;
  * 2. a session that came back well formed produces EXACTLY ONE
  *    `POST /v1/intake`, carrying what the session wrote, verbatim. Nothing here
  *    re-validates `itens`: a bad draft is cheap and reversible (discard it), the

@@ -3,11 +3,15 @@
  *
  * The glossary's own placeholder for this file (`docs/spec/glossario-wire.md`,
  * "O que este glossário não decide") says the wire gate arrives "when there is
- * already an English wire to check". This ticket is the one that builds it, so
- * the gate lands with it — scoped to exactly the surface t226 migrates (`api`),
- * and no wider. The remaining four surfaces stay Portuguese until their own
- * child ticket, and a sweep that flagged them now would be a sweep somebody
- * turns off.
+ * already an English wire to check". t226 is the ticket that built it, scoped to
+ * exactly the surface it migrates (`api`), and each child since has widened it
+ * to its own surface as that surface turned English.
+ *
+ * t230 (D20's fifth child) adds the second scan below: the graph validation
+ * report, `superfície = routes-cli-report` in §5.3/5.4, over the three files of
+ * this package that write or read it. It is the same machinery pointed at
+ * another set of rows — a surface is a filter over the glossary here, never a
+ * second gate.
  *
  * Complement, not substitute, of `no-portuguese-identifiers.test.ts`: that one
  * guards IDENTIFIERS and deliberately masks key and string positions — which is
@@ -39,10 +43,11 @@
  *   values alike. A `const document: GraphDocument = {…}` is the graph document
  *   format (`schema/grafo.schema.json`), which is nobody's surface in D20, and
  *   its `lineage.type: 'variante'` is that format's value and not this API's.
- * - **The `estrutura`/`soundness` report objects.** They ride inside `/v1`
- *   bodies, and Out of Scope names them explicitly: the whole structural-report
- *   vocabulary is child 5's, "including where that report rides inside a `/v1`
- *   422 body".
+ *
+ * The validation report used to be masked here too, as another surface's
+ * vocabulary riding inside a `/v1` 422. t230 renamed it, so the mask went with
+ * it: a `mensagem` inside a `structure` object is now exactly as wrong as one
+ * anywhere else, and the api sweep says so without a special case.
  *
  * What is left after masking is a key or a value this API actually publishes.
  */
@@ -56,8 +61,33 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
 
-/** The surface this ticket migrates, as the glossary tags it. */
+/** The surface t226 migrated, as the glossary tags it. */
 const SURFACE = 'api';
+
+/**
+ * The surface t230 migrated: screen routes, CLI flags and the report.
+ *
+ * Only the report half of it lands in this package. The routes are the screen's
+ * and the flags are the runner's and the cost lens's, each policed by that
+ * package's own port of this file — the same way `no-portuguese-identifiers`
+ * is ported four times instead of reaching across package boundaries.
+ */
+const REPORT_SURFACE = 'routes-cli-report';
+
+/**
+ * The three files of this package that write or read the validation report.
+ *
+ * `domain/graph.ts` produces it, `routes/graphs.ts` hand-builds one literal of
+ * it around the `problem_class` check, and `cli/import.ts` reads it twice — once
+ * off `validateGraph` for a local bundle, once off the control plane's 422.
+ * `routes/proposals.ts` only spreads what `validateGraph` returned, so it has no
+ * report vocabulary of its own to police; the api sweep above covers it anyway.
+ */
+const REPORT_FILES = [
+  path.join('src', 'domain', 'graph.ts'),
+  path.join('src', 'routes', 'graphs.ts'),
+  path.join('src', 'cli', 'import.ts'),
+];
 
 /**
  * `GET /health` is not `/v1`, and this ticket's Goal is the `/v1` surface.
@@ -90,15 +120,6 @@ function scannedFiles(): string[] {
 }
 
 /**
- * Keys whose object value is a report of another D20 surface (Out of Scope).
- *
- * The graph validation report is child 5's vocabulary and it travels inside a
- * `/v1` 422; skipping it here is what keeps this sweep from demanding a rename
- * that ticket owns.
- */
-const FOREIGN_REPORT_KEYS = ['estrutura', 'soundness'];
-
-/**
  * The frozen hypothesis vocabulary, and the ONE file allowed to spell it.
  *
  * `domain/hypothesis.ts` documents `{nome, direcao, de, para}` and `{veredito,
@@ -119,6 +140,18 @@ const FROZEN_HYPOTHESIS: Readonly<Record<string, readonly string[]>> = Object.fr
 
 /** Modules whose exported names are the layer BELOW the wire. */
 const LOWER_LAYERS = ['../repositories/', '../domain/', '../db/', './repositories/', './db/'];
+
+/**
+ * Domain types that are NOT below the wire: they are the wire.
+ *
+ * `maskLowerLayerLiterals` blanks a literal annotated with an imported domain
+ * type, because a `const document: GraphDocument = {…}` is the graph document
+ * format and nobody's D20 surface. The validation report is imported from the
+ * same module and is the exact opposite — `routes/graphs.ts` hand-builds one
+ * `StructureReport` literal that goes straight out in a 422 — so it is taken
+ * out of that mask, or the sweep would skip the one thing it exists to check.
+ */
+const WIRE_TYPES = ['StructureReport', 'SoundnessReport', 'GraphReport'];
 
 /** Rough test for "this string literal is SQL", not a parser. */
 const SQL = /\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|CREATE\s+TABLE)\b/i;
@@ -268,22 +301,6 @@ function maskLowerLayerLiterals(source: string, names: readonly string[]): strin
   return out;
 }
 
-/** Blanks the report objects that belong to another D20 surface. */
-function maskForeignReports(source: string): string {
-  let out = source;
-
-  for (const key of FOREIGN_REPORT_KEYS) {
-    const entry = new RegExp(`\\b${key}\\s*:\\s*\\{`, 'g');
-    for (const match of [...out.matchAll(entry)]) {
-      const open = match.index + match[0].length - 1;
-      const end = matchDelimiter(out, open);
-      out = blankRange(out, open + 1, end - 1);
-    }
-  }
-
-  return out;
-}
-
 /** Blanks SQL literals and the operands of a comparison (row values, FR1). */
 function maskRowValues(source: string): string {
   let out = source;
@@ -312,14 +329,13 @@ function maskRowValues(source: string): string {
 export function maskWireSource(source: string): string {
   const withoutComments = maskComments(source);
   const names = lowerLayerNames(withoutComments);
+  const formats = names.filter((name) => !WIRE_TYPES.includes(name));
   return maskRowValues(
-    maskForeignReports(
-      maskLowerLayerLiterals(maskLowerLayerArguments(withoutComments, names), names),
-    ),
+    maskLowerLayerLiterals(maskLowerLayerArguments(withoutComments, names), formats),
   );
 }
 
-/** A term of the glossary's API surface, with where it is written down. */
+/** A term of the glossary, with where it is written down. */
 interface Term {
   term: string;
   english: string;
@@ -327,14 +343,18 @@ interface Term {
 }
 
 /**
- * Every Portuguese term the glossary maps on the `api` surface.
+ * Every Portuguese term the glossary maps on one surface.
  *
  * Rows whose replacement equals the term itself are dropped: they exist to say
- * "this name does not change" (`runner`), and scanning for them would fail a
- * file for spelling a word correctly. A qualified row (`pergunta.tipo=pergunta`)
- * contributes the VALUE, which is what travels.
+ * "this name does not change" (`runner`, `/runners`, `soundness`), and scanning
+ * for them would fail a file for spelling a word correctly. A qualified row
+ * (`pergunta.tipo=pergunta`) contributes the VALUE, which is what travels.
+ *
+ * @param surface The `superfície` cell to filter on.
+ * @param minimum Fewest rows the surface must parse to; a parser that quietly
+ *   stopped matching the table would otherwise read as a clean sweep.
  */
-function apiTerms(): Term[] {
+function termsFor(surface: string, minimum: number): Term[] {
   assert.ok(existsSync(GLOSSARY), `${GLOSSARY} does not exist`);
   const terms: Term[] = [];
 
@@ -344,7 +364,7 @@ function apiTerms(): Term[] {
       const cells = line.trim();
       if (!cells.startsWith('|')) return;
       const parts = cells.slice(1).split('|').map((cell) => cell.replace(/`/g, '').trim());
-      if (parts[0] !== SURFACE) return;
+      if (parts[0] !== surface) return;
 
       const english = parts[2] ?? '';
       for (const spelling of (parts[1] ?? '').split(' / ')) {
@@ -354,17 +374,49 @@ function apiTerms(): Term[] {
       }
     });
 
-  assert.ok(terms.length > 50, `the glossary's "${SURFACE}" surface parsed to only ${terms.length} terms`);
+  assert.ok(
+    terms.length >= minimum,
+    `the glossary's "${surface}" surface parsed to only ${terms.length} terms`,
+  );
   return terms;
 }
 
-/** Every hit of one term in already-masked source, as `line — what` records. */
-function hitsFor(masked: string, entry: Term): Array<{ line: number; detail: string }> {
+/** The `api` rows, which are what the first sweep below scans for. */
+function apiTerms(): Term[] {
+  return termsFor(SURFACE, 51);
+}
+
+/**
+ * The `routes-cli-report` rows, minus the ones no file of this package can hold.
+ *
+ * A screen route and a CLI flag are other packages' surfaces; leaving them in
+ * would cost nothing but would also claim a coverage this file does not have.
+ */
+function reportTerms(): Term[] {
+  return termsFor(REPORT_SURFACE, 25).filter((entry) => !entry.term.startsWith('/') && !entry.term.startsWith('--'));
+}
+
+/**
+ * Every hit of one term in already-masked source, as `line — what` records.
+ *
+ * @param masked Source with the boundaries above already blanked out.
+ * @param entry The glossary row being looked for.
+ * @param members Also count a MEMBER read (`report.estrutura`). Off for the api
+ *   sweep, where a route legitimately reads a Portuguese column off a row it got
+ *   from the repository layer; on for the report sweep, where the same member
+ *   read IS the report's own vocabulary.
+ */
+function hitsFor(
+  masked: string,
+  entry: Term,
+  members: boolean,
+): Array<{ line: number; detail: string }> {
   const hits: Array<{ line: number; detail: string }> = [];
   // A key of an object literal or of an inline type, and a whole string
   // literal — the two shapes a Portuguese name still takes on the wire.
   const asKey = new RegExp(`(^|[{,(\\s])${entry.term}\\s*\\??\\s*:`);
   const asValue = new RegExp(`(['"\`])${entry.term}\\1`);
+  const asMember = new RegExp(`\\.${entry.term}(?![A-Za-z0-9_])`);
 
   masked.split('\n').forEach((line, index) => {
     if (asKey.test(line)) {
@@ -372,6 +424,9 @@ function hitsFor(masked: string, entry: Term): Array<{ line: number; detail: str
     }
     if (asValue.test(line)) {
       hits.push({ line: index + 1, detail: `value "${entry.term}" (glossary says "${entry.english}")` });
+    }
+    if (members && asMember.test(line)) {
+      hits.push({ line: index + 1, detail: `read of ".${entry.term}" (glossary says "${entry.english}")` });
     }
   });
 
@@ -382,17 +437,23 @@ function hitsFor(masked: string, entry: Term): Array<{ line: number; detail: str
  * Every hit in one file's source.
  *
  * @param source File contents.
- * @param terms The glossary's `api` rows.
+ * @param terms The glossary rows to look for.
  * @param fileName Base name, used to look up the FR5 exemption; omitted in the
  *   unit cases below, which are not any file.
+ * @param members Whether a member read counts as a hit; see {@link hitsFor}.
  * @returns One entry per hit, as `line: what`.
  */
-export function wireHits(source: string, terms: readonly Term[], fileName = ''): string[] {
+export function wireHits(
+  source: string,
+  terms: readonly Term[],
+  fileName = '',
+  members = false,
+): string[] {
   const masked = maskWireSource(source);
   const frozen = FROZEN_HYPOTHESIS[fileName] ?? [];
   return terms
     .filter((entry) => !frozen.includes(entry.term))
-    .flatMap((entry) => hitsFor(masked, entry).map((hit) => `${hit.line}: ${hit.detail}`))
+    .flatMap((entry) => hitsFor(masked, entry, members).map((hit) => `${hit.line}: ${hit.detail}`))
     .sort();
 }
 
@@ -449,8 +510,9 @@ test('FR9 — the sweep does NOT bite on the boundaries D20 leaves in Portuguese
       "import type { GraphDocument } from '../domain/graph.ts';",
       "const document: GraphDocument = { lineage: { type: 'variante' } };",
     ].join('\n'),
-    // The structural report, riding inside a /v1 422 (child 5, Out of Scope).
-    "return { error: 'invalid_graph', estrutura: { erros: [{ mensagem: 'x' }] } };",
+    // The structural report, riding inside a /v1 422 — English since t230, so
+    // this line is a boundary only because there is nothing Portuguese left in it.
+    "return { error: 'invalid_graph', structure: { errors: [{ message: 'x' }] } };",
     // English prose that merely contains a mapped word.
     'const message = `only a pending proposal can be approved`;',
     // A comment quoting the frozen vocabulary.
@@ -478,4 +540,65 @@ test('FR5 — the hypothesis exemption is scoped to its file and to its own word
     wireHits("return { propostas: rows };", terms, 'proposals.ts').length > 0,
     'and inside proposals.ts every OTHER glossary term is still swept',
   );
+});
+
+test('t230 — the graph validation report speaks the English of glossario-wire.md §5.3/5.4', () => {
+  const terms = reportTerms();
+
+  const hits = REPORT_FILES.flatMap((relative) =>
+    wireHits(
+      readFileSync(path.join(PACKAGE_ROOT, relative), 'utf8'),
+      terms,
+      path.basename(relative),
+      true,
+    ).map((hit) => `${relative}:${hit}`),
+  );
+
+  assert.deepEqual(
+    hits,
+    [],
+    `Portuguese still in the validation report (D20, glossario-wire.md §5):\n${hits.join('\n')}`,
+  );
+});
+
+test('t230 — the report sweep bites on every shape the old vocabulary took', () => {
+  const terms = reportTerms();
+  const caught = [
+    // The report's own type, and the literal that builds one.
+    'export interface StructureError { codigo: string; mensagem: string; alvo: unknown }',
+    "note('campo_invalido', '\"nodes\" has to be a list', 'nodes');",
+    "violations.push({ regra: RULES.REACHABLE, alvo: id });",
+    "return { valido: errors.length === 0, erros: errors };",
+    // And every way of READING one back, which is what `cli/import.ts` does.
+    'for (const error of report.estrutura.erros) print(error.codigo);',
+    'for (const violation of soundness.violacoes) print(violation.regra);',
+  ];
+  for (const source of caught) {
+    assert.ok(
+      wireHits(source, terms, '', true).length > 0,
+      `the report sweep missed a Portuguese report name: ${source}`,
+    );
+  }
+});
+
+test('t230 — the report sweep does NOT bite on what §5 leaves alone', () => {
+  const terms = reportTerms();
+  const allowed = [
+    // `soundness` is a §5.3 row whose `hoje` equals its `vira`: it never moved.
+    "return { valid: errors.length === 0, soundness: { valid: true, violations: [] } };",
+    // The English report, whole.
+    "note('invalid_field', '\"nodes\" has to be a list', 'nodes');",
+    'for (const error of report.structure.errors) print(error.code, error.message);',
+    // The document's own vocabulary, which is not this surface.
+    "const document = { initial_node: 'redigir', final_nodes: ['revisar'] };",
+    // A comment recalling the old spelling while explaining the rename.
+    '/** `erros`/`violacoes` became `errors`/`violations` in t230. */',
+  ];
+  for (const source of allowed) {
+    assert.deepEqual(
+      wireHits(source, terms, '', true),
+      [],
+      `the report sweep flagged something §5 leaves alone: ${source}`,
+    );
+  }
 });

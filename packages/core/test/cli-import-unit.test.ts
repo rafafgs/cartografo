@@ -121,7 +121,7 @@ test('a graph that does not validate is reported, by structure and by soundness'
     writeGraph(directory, document);
   });
   const structural = messagesOf(verifyBundle(withoutNodes, graphOf(withoutNodes)), 'graph');
-  assert.ok(structural.some((message) => message.startsWith('estrutura ')), structural.join('\n'));
+  assert.ok(structural.some((message) => message.startsWith('structure ')), structural.join('\n'));
 
   const withoutEdges = bundleCopy(t, (directory) => {
     writeGraph(directory, { ...graphOf(directory), edges: [] });
@@ -421,8 +421,8 @@ test('a graph the control plane refuses is printed rule by rule', async (t) => {
   const plane = await startFakeControlPlane(t, () => ({
     status: 422,
     body: {
-      estrutura: { erros: [{ codigo: 'campo_obrigatorio_ausente', mensagem: '"nodes" is missing' }] },
-      soundness: { violacoes: [{ regra: 'alcançável', alvo: { no: 'implantar' } }] },
+      structure: { errors: [{ code: 'missing_required_field', message: '"nodes" is missing' }] },
+      soundness: { violations: [{ rule: 'reachable', target: { no: 'implantar' } }] },
     },
   }));
   const directory = bundleCopy(t);
@@ -433,8 +433,8 @@ test('a graph the control plane refuses is printed rule by rule', async (t) => {
 
   assert.equal(run.code, 1);
   assert.match(run.stderr, /invalid_graph/);
-  assert.match(run.stderr, /estrutura {2}campo_obrigatorio_ausente: "nodes" is missing/);
-  assert.match(run.stderr, /soundness {2}alcançável: \{"no":"implantar"\}/);
+  assert.match(run.stderr, /structure {2}missing_required_field: "nodes" is missing/);
+  assert.match(run.stderr, /soundness {2}reachable: \{"no":"implantar"\}/);
 });
 
 test('a 422 with nothing to list is still a refusal, not a crash', async (t) => {

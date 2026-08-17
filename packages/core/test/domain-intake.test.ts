@@ -480,7 +480,10 @@ test('t255 — an item written with the retired Portuguese keys is refused, neve
 
   assert.equal(report.valid, false, 'the old spelling cannot keep working as a synonym');
   assert.deepEqual(codes(report), ['missing_required_field']);
-  assert.match(asText(report), /"title"/, 'the refusal names the key that is missing');
+  assert.ok(
+    report.problems[0].message.includes('"title"'),
+    `the refusal names the key that is missing: ${asText(report)}`,
+  );
 
   // And the same item, spelled the way the wire spells it now, goes through with
   // every optional field read rather than dropped.

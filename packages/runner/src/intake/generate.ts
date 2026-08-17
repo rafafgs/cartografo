@@ -23,10 +23,10 @@
  *
  * Two absences are as much of the design as what is here:
  *
- * - **nothing re-validates `itens`.** Unlike the surveyor's mirror of
+ * - **nothing re-validates `items`.** Unlike the surveyor's mirror of
  *   `validateOperation` — which exists because a bad `POST /v1/proposals` is
  *   costly to have made — a bad `POST /v1/intake` is cheap and reversible, and
- *   the server answers the whole `itens_invalidos` report at once. A second copy
+ *   the server answers the whole `invalid_items` report at once. A second copy
  *   of that judgement here is a copy that can drift;
  * - **nothing confirms, amends or discards.** Those are t122's human gate, and
  *   the client this module writes through does not have the methods.
@@ -36,8 +36,10 @@
  * that costs a whole session is a typo found too late.
  *
  * English per D18, and since t180 that includes everything this module PRINTS.
- * What stays Portuguese is the surface a machine matches: the payload keys and
- * the error code that echoes the API's own vocabulary (`grafo_desconhecido`).
+ * The payload keys followed the API with t255 — `document.items`, and the item
+ * keys the prompt teaches — so what is left in Portuguese is one error code that
+ * echoes the API's own vocabulary (`grafo_desconhecido`), which is nobody's
+ * surface in D20 and no ticket has moved.
  */
 
 import { readFileSync } from 'node:fs';
@@ -130,7 +132,7 @@ interface Outcome {
  *
  * Everything that can go wrong here ends in an {@link IntakeError} and no
  * `POST`: a session that dies, one that writes nothing, one that writes
- * something that is not a JSON document with a non-empty `itens` in it. What is
+ * something that is not a JSON document with a non-empty `items` in it. What is
  * NOT checked is whether those items are well formed — that is the server's
  * `validateItems`, and duplicating it here would be a second verdict on the same
  * batch.
@@ -180,7 +182,7 @@ async function decompose(
   } catch {
     throw new IntakeError(
       'missing_output',
-      `the session ended without writing ${OUTPUT_FILE} in ${options.workingDir}: with no "itens", there is no draft`,
+      `the session ended without writing ${OUTPUT_FILE} in ${options.workingDir}: with no "items", there is no draft`,
       lines.slice(-10),
     );
   }
@@ -195,11 +197,11 @@ async function decompose(
     );
   }
 
-  const items = isObject(document) ? document.itens : undefined;
+  const items = isObject(document) ? document.items : undefined;
   if (!Array.isArray(items) || items.length === 0) {
     throw new IntakeError(
       'missing_items',
-      `${OUTPUT_FILE} has to carry "itens" as a non-empty list — a breakdown with no ticket in it is not a breakdown`,
+      `${OUTPUT_FILE} has to carry "items" as a non-empty list — a breakdown with no ticket in it is not a breakdown`,
     );
   }
 

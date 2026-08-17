@@ -20,17 +20,20 @@
  * to be stated here, and "has to" is literal: the session runs in an empty
  * temporary directory, so it cannot open that file and read the format for
  * itself. A rule that lives only in the validator is a rule the session cannot
- * follow, and the bill arrives as an `itens_invalidos` nobody asked for — the
+ * follow, and the bill arrives as an `invalid_items` nobody asked for — the
  * same failure mode t138 was for the synthesizer.
  *
- * The nuance that is easiest to get wrong is `criterios_de_aceite`: `null` is
+ * The nuance that is easiest to get wrong is `acceptance_criteria`: `null` is
  * NOT `[]` (`domain/intake.ts:34-43`). "Nobody has written any criteria yet" and
  * "it was declared that there are none" are different statements, and the node
  * that refines is the one that has to tell them apart.
  *
  * English per D18; the prompt's own PROSE is Portuguese, like every other agent
- * instruction in this repository, and so are the payload keys it teaches — they
- * are the wire format of `POST /v1/intake`, not identifiers of ours.
+ * instruction in this repository. The payload KEYS it teaches went English with
+ * t255, and for the same reason they were Portuguese before: they are the wire
+ * format of `POST /v1/intake`, not identifiers of ours — so they move when that
+ * format moves. A prompt left behind teaches a shape the validator refuses, and
+ * the session has no way of finding that out.
  */
 
 /**
@@ -70,35 +73,35 @@ export const INTAKE_INSTRUCTIONS = [
   'exatamente esta forma e nada mais:',
   '',
   '```json',
-  '{"itens": [ ... ]}',
+  '{"items": [ ... ]}',
   '```',
   '',
   'Cada item tem esta forma:',
   '',
   '```json',
   '{"ref": "migracao",',
-  ' "titulo": "Migração do intake",',
-  ' "corpo": "O que precisa acontecer, em uma ou duas frases.",',
-  ' "criterios_de_aceite": ["a migração roda do zero"],',
+  ' "title": "Migração do intake",',
+  ' "body": "O que precisa acontecer, em uma ou duas frases.",',
+  ' "acceptance_criteria": ["a migração roda do zero"],',
   ' "tier": "standard",',
-  ' "depende_de": ["dominio"]}',
+  ' "depends_on": ["dominio"]}',
   '```',
   '',
   'Regras duras:',
   '',
-  '- `ref` e `titulo` são obrigatórios em todo item. `corpo`,',
-  '  `criterios_de_aceite`, `tier` e `depende_de` são opcionais;',
+  '- `ref` e `title` são obrigatórios em todo item. `body`,',
+  '  `acceptance_criteria`, `tier` e `depends_on` são opcionais;',
   '- `ref` é identidade LOCAL AO LOTE: ela existe só para um item citar outro, e',
   '  morre na confirmação, quando cada uma vira um id real. Nunca escreva id de',
   '  ticket que já existe, nem número: escreva um apelido curto e legível;',
-  '- `depende_de` cita SOMENTE `ref` de itens deste mesmo lote. Dependência de',
+  '- `depends_on` cita SOMENTE `ref` de itens deste mesmo lote. Dependência de',
   '  trabalho que já existe, ou de outro lote, não é suportada e reprova o lote',
   '  inteiro;',
   '- nenhum item depende de si mesmo, e as dependências não podem fechar ciclo.',
   '  Diamante pode (`a` depende de `b` e de `c`, os dois dependendo de `d`);',
   '  volta pode não (`a` → `b` → `a` reprova o lote);',
   '- dois itens nunca usam o mesmo `ref`;',
-  '- `criterios_de_aceite` só entra quando você SABE o critério. Se não sabe,',
+  '- `acceptance_criteria` só entra quando você SABE o critério. Se não sabe,',
   '  omita o campo — `null` não é `[]`. Lista vazia afirma "declarei que não há',
   '  critério", e quem refina depois precisa distinguir isso de "ninguém escreveu',
   '  ainda". Os critérios daqui são preliminares de qualquer forma: quem os produz',
@@ -135,13 +138,13 @@ export function buildIntakePrompt(request: string, className: string): string {
     '',
     '# O que devolver',
     '',
-    `Escreva \`${OUTPUT_FILE}\` no diretório atual, com \`{"itens": [ ... ]}\` e nada`,
+    `Escreva \`${OUTPUT_FILE}\` no diretório atual, com \`{"items": [ ... ]}\` e nada`,
     'além disso. Vale relembrar, porque é o que mais reprova lote:',
     '',
-    '- `ref` e `titulo` em todo item, `ref` local ao lote e nunca um id real;',
-    '- `depende_de` só com `ref` deste lote, sem citar a si mesmo e sem fechar',
+    '- `ref` e `title` em todo item, `ref` local ao lote e nunca um id real;',
+    '- `depends_on` só com `ref` deste lote, sem citar a si mesmo e sem fechar',
     '  ciclo;',
-    '- `criterios_de_aceite` só quando houver critério de verdade — `null` não é',
+    '- `acceptance_criteria` só quando houver critério de verdade — `null` não é',
     '  `[]`.',
     '',
     'Quebre pelo que o pedido realmente pede. Se ele já vem com as partes',

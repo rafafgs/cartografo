@@ -121,8 +121,11 @@ export interface WireDraft {
   /**
    * The proposed breakdown, passed through byte for byte.
    *
-   * The item's own keys (`ref`, `titulo`, `depende_de`, …) are `domain/intake.ts`'s
-   * format, which no child of D20 renames; the glossary maps none of them.
+   * The item's own keys (`ref`, `title`, `depends_on`, …) went English with t255,
+   * and the note that used to sit here — that no child of D20 renames them and
+   * the glossary maps none of them — is what t255 removed: they are fields of the
+   * JSON of `POST /v1/intake`, which is exactly what D20's text migrates. They
+   * are mapped in `glossario-wire.md` §1.1 and §1.4 now.
    */
   items: DraftItem[];
   status: string;
@@ -339,15 +342,15 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
 
     for (const item of draft.itens) {
       const job = createJob(db, {
-        title: item.titulo,
-        body: item.corpo,
-        acceptance_criteria: item.criterios_de_aceite,
+        title: item.title,
+        body: item.body,
+        acceptance_criteria: item.acceptance_criteria,
         // The class's declared fields, filled in at intake (t168). They ride
         // straight through: `validateItems` already judged their shape, and
         // whether the class demands one is the transition gate's question, not
         // the confirmation's — a ticket may perfectly well be born on the entry
         // node with a field the node it later leaves will demand.
-        fields: item.campos,
+        fields: item.fields,
         // The triage the intake session did for free (t175). It rides through
         // the same way `fields` does: `validateItems` already closed the set of
         // values, and what the tier COSTS is the runner's question, one layer
@@ -364,7 +367,7 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
     }
 
     for (const item of draft.itens) {
-      for (const dependency of item.depende_de) {
+      for (const dependency of item.depends_on) {
         const dependent = created[item.ref];
         const dependedOn = created[dependency];
         db.prepare(

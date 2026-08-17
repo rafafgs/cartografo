@@ -3,14 +3,14 @@
 **Versão da API:** `v1` · **Implementação:** [`packages/runner/src/intake/`](../../packages/runner/src/intake)
 **Camada consumida:** [`docs/spec/intake.md`](./intake.md) (t122) — esta ficha não
 acrescenta rota, coluna nem migração; ela é o primeiro cliente que **produz**
-`itens`
+`items`
 
 A [t122](./intake.md) entregou o intake em duas fases: `POST /v1/intake` propõe
-um rascunho a partir de uma lista de `itens` já decomposta, e
+um rascunho a partir de uma lista de `items` já decomposta, e
 `POST /v1/intake/:id/confirmations` é o portão humano que transforma o rascunho
 em `trabalho`. O §8 daquela especificação nomeava exatamente o que faltava —
 *gerar o rascunho a partir do pedido em linguagem natural* — e dizia que quem
-escreve `itens` era decisão de ficha futura. Esta é a ficha futura.
+escreve `items` era decisão de ficha futura. Esta é a ficha futura.
 
 Uma frase resume o desenho: **a sessão decompõe, o comando grava o rascunho, e o
 humano continua sendo quem confirma.** Nada aqui cria ticket.
@@ -81,12 +81,12 @@ UMA sessão de EngineAdapter, com o prompt do §5
         │
         ├─ status != completed
         ├─ intake-proposto.json ausente, ou não é JSON
-        ├─ sem `itens`, ou `itens` vazio
+        ├─ sem `items`, ou `items` vazio
         │  ──▶ sai 1, NENHUM POST /v1/intake
         ▼
-POST /v1/intake  {classe, pedido, itens}
+POST /v1/intake  {class, request, items}
         │
-        ├─ 404 grafo_desconhecido · 400 itens_invalidos ──▶ sai 1
+        ├─ 404 unknown_graph · 400 invalid_items ──▶ sai 1
         ▼
 201 {rascunho} — status `pendente`, nenhum evento, nenhum ticket
         ▼
@@ -150,7 +150,7 @@ chegam concatenados pelo chamador.
 A sessão escreve `intake-proposto.json` no diretório atual, com exatamente:
 
 ```json
-{"itens": [ ... ]}
+{"items": [ ... ]}
 ```
 
 Arquivo e não bloco ` ```cercado ``` ` em stdout, e isto é a cicatriz da
@@ -172,21 +172,21 @@ mesma razão.
 `workingDir` é um diretório temporário vazio: a sessão **não consegue abrir**
 [`domain/intake.ts`](../../packages/core/src/domain/intake.ts). Toda regra que
 `validateItems` aplica e que o prompt não diz é uma regra que a sessão não tem
-como seguir — e a conta chega como um `itens_invalidos` que ninguém pediu. É a
+como seguir — e a conta chega como um `invalid_items` que ninguém pediu. É a
 mesma lição da t138, um andar acima.
 
 Então o prompt diz, por extenso:
 
 | Regra | Código que reprova |
 |---|---|
-| `ref` e `titulo` são obrigatórios | `campo_obrigatorio_ausente` |
+| `ref` e `title` são obrigatórios | `missing_required_field` |
 | `ref` é identidade **local ao lote**, nunca um id real | — (morre na confirmação) |
-| dois itens nunca usam o mesmo `ref` | `ref_duplicado` |
-| `depende_de` cita só `ref` deste lote | `dependencia_desconhecida` |
-| nenhum item depende de si mesmo | `dependencia_de_si_mesmo` |
-| as dependências não fecham ciclo (diamante pode) | `ciclo_de_dependencia` |
-| `criterios_de_aceite` só quando houver critério de verdade | — |
-| `tier` só `"trivial"` ou `"standard"`, e omitir é permitido | `campo_invalido` |
+| dois itens nunca usam o mesmo `ref` | `duplicate_ref` |
+| `depends_on` cita só `ref` deste lote | `unknown_dependency` |
+| nenhum item depende de si mesmo | `self_dependency` |
+| as dependências não fecham ciclo (diamante pode) | `dependency_cycle` |
+| `acceptance_criteria` só quando houver critério de verdade | — |
+| `tier` só `"trivial"` ou `"standard"`, e omitir é permitido | `invalid_field` |
 
 A penúltima é a que mais engana e por isso é dita com ênfase: **`null` não é `[]`**
 ([`domain/intake.ts:34-43`](../../packages/core/src/domain/intake.ts)). "Ninguém
@@ -216,7 +216,7 @@ ao topógrafo, que espelha `validateOperation` do lado do runner:
   a forma antes de gastar a escrita;
 - uma `POST /v1/intake` ruim é **barata e reversível**: o rascunho é descartado,
   nenhum ticket nasceu, nenhum evento foi emitido. E o server já devolve o
-  relatório inteiro (`itens_invalidos` com todos os problemas, nunca o primeiro).
+  relatório inteiro (`invalid_items` com todos os problemas, nunca o primeiro).
 
 Duplicar aquele julgamento aqui seria uma segunda cópia que pode divergir da
 primeira, e a pessoa ficaria com dois veredictos para reconciliar.
@@ -240,7 +240,7 @@ Uma leitura e uma escrita. `/confirmations`, `/discards` e `PATCH` existem
 | Não faz | Por quê |
 |---|---|
 | Confirmar, emendar ou descartar o rascunho | É o portão humano da t122, intacto. O cliente nem tem os métodos. |
-| Revalidar `itens` do lado do runner | §7. |
+| Revalidar `items` do lado do runner | §7. |
 | `--projeto-id` / `--execucao-id` | A rota tem default para os dois (`DEFAULT_PROJECT`); o flag entra no dia em que alguém precisar. |
 | Entrar na travessia ou no laço de despacho do runner | Manual e de um tiro só, como `synthesize` e o topógrafo (README, princípio 5). |
 | Conversa multi-turno para refinar o lote | Uma sessão só: retomada está fora do `EngineAdapter` v0. Editar depois é `PATCH /v1/intake/:id`, que já existe. |

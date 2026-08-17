@@ -45,9 +45,10 @@
  * What is still Portuguese underneath is not the DATABASE — D20's FOURTH child
  * (t229) renamed it to `job`, `entity_type`, `created_at` — but the repository
  * layer's own field names, which that ticket kept by aliasing every renamed
- * column back onto them; and the intake's `itens` (`{ref, titulo, corpo, …}`),
- * which is `domain/intake.ts`'s document format and which the glossary maps
- * nowhere.
+ * column back onto them. The intake's items used to be listed here as the second
+ * half of that sentence, on the grounds that `{ref, titulo, corpo, …}` was
+ * `domain/intake.ts`'s own document format; t255 read D20 the other way and
+ * moved them, because they are the body of `POST /v1/intake` (§1.1).
  */
 
 import type { FastifyReply } from 'fastify';

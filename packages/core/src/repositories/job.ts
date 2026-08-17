@@ -10,9 +10,11 @@
  * The functions return `null` when the job does not exist; translating that into
  * a 404 is the route's job.
  *
- * The projection's field names, the table and column names and the event-type
- * strings mirror the untouched migration and the event taxonomy, so they stay in
- * Portuguese (t127, FR8). Only the code around them is English.
+ * The TABLE and its columns are English since D20's fourth child (t229); the
+ * projection's field names are not, because `routes/*.ts`, `intake.ts` and the
+ * dispatch path read them and those are outside that ticket's surface — so every
+ * `SELECT` aliases the renamed column back onto the field it already fed (t229,
+ * FR4). The event-type strings went English with the second child (t227).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -85,7 +87,7 @@ export interface Job {
   no_atual: string;
   bloqueado: boolean;
   motivo_bloqueio: string | null;
-  /** Graph version the job runs under. Loose: `grafo_versao` belongs to t101 (D15). */
+  /** Graph version the job runs under. Loose: `graph_version` belongs to t101 (D15). */
   grafo_versao_id: string | null;
   /**
    * The job arrived: its current node is a final node of its graph version
@@ -119,30 +121,45 @@ export interface ExecutionSummary {
 interface JobRow
   extends Omit<Job, 'bloqueado' | 'criterios_de_aceite' | 'campos' | 'concluido'> {
   bloqueado: number;
-  /** JSON in a TEXT column, like `sessao.uso` and `pergunta.opcoes`. */
+  /** JSON in a TEXT column, like `session.usage` and `input_request.options`. */
   criterios_de_aceite: string | null;
   /** JSON in a TEXT column too, for the same reason (t168). */
   campos: string | null;
 }
 
+/**
+ * The row, read back into {@link Job}'s spelling (t229, FR4).
+ *
+ * `corpo` and `criterios_de_aceite` carry no alias because they carry no new
+ * name: `glossario-wire.md` §4.2 has no row for either, and inventing one is
+ * exactly what the glossary exists to prevent. Closing that gap is the sixth
+ * child's, or a ficha of its own.
+ */
 const COLUMNS = `
-  id, projeto_id, execucao_id, titulo, corpo, criterios_de_aceite, campos, tier,
-  no_entrada_id, no_atual, bloqueado, motivo_bloqueio, grafo_versao_id,
-  criado_em, atualizado_em
+  id, project_id AS projeto_id, execution_id AS execucao_id, title AS titulo,
+  corpo, criterios_de_aceite, fields AS campos, tier,
+  entry_node_id AS no_entrada_id, current_node_id AS no_atual,
+  blocked AS bloqueado, block_reason AS motivo_bloqueio,
+  graph_version_id AS grafo_versao_id,
+  created_at AS criado_em, updated_at AS atualizado_em
 `;
 
 /**
  * Predicate for "this event talks about this job", in SQL.
  *
  * It is the same rule as the timeline (FR9), here as a subquery so it can count
- * without materializing. Pure read: whoever WRITES to `evento` is still only
+ * without materializing. Pure read: whoever WRITES to `event` is still only
  * `src/db/events.ts`.
+ *
+ * The three quoted values stay Portuguese on purpose: D20's fourth child renamed
+ * identifiers only, and `entity_type`'s vocabulary is pinned by the `CHECK` of
+ * migration `0003` (founder decision, 2026-08-17).
  */
 const JOB_EVENTS = `
-  SELECT COUNT(*) FROM evento e
-   WHERE (e.entidade_tipo = 'trabalho' AND e.entidade_id = CAST(t.id AS TEXT))
-      OR (e.entidade_tipo IN ('sessao','pergunta')
-          AND json_extract(e.dados, '$.job_id') = t.id)
+  SELECT COUNT(*) FROM event e
+   WHERE (e.entity_type = 'trabalho' AND e.entity_id = CAST(t.id AS TEXT))
+      OR (e.entity_type IN ('sessao','pergunta')
+          AND json_extract(e.data, '$.job_id') = t.id)
 `;
 
 /**
@@ -152,7 +169,7 @@ const JOB_EVENTS = `
  * done, whatever node it is standing on — the flag stops the report of an end
  * the same way it stops everything else. A job with no `grafo_versao_id` has no
  * graph to ask, and so has no terminal state to arrive at. And a version id that
- * no longer resolves is treated as no graph at all: `trabalho.grafo_versao_id`
+ * no longer resolves is treated as no graph at all: `job.graph_version_id`
  * is loose text, not a foreign key (a job created with `'v1'` in hand is an
  * ordinary case here), and inventing a completion out of a version nobody can
  * read would be worse than admitting ignorance.
@@ -160,7 +177,7 @@ const JOB_EVENTS = `
  * One lookup per job, on purpose: the value is derived on read and never cached,
  * so a job cannot go on reporting a conclusion its version no longer declares.
  * On `listJobs` that is a query per row — correctness first; batching by
- * `grafo_versao_id` is the follow-up if a board ever grows enough to feel it.
+ * `graph_version_id` is the follow-up if a board ever grows enough to feel it.
  *
  * @param db Open handle.
  * @param row The job's row, as it is in the table.
@@ -273,7 +290,7 @@ export function toWireExecutionSummary(row: ExecutionSummary): WireExecutionSumm
 }
 
 function readRow(db: Database, id: number): JobRow | undefined {
-  return db.prepare(`SELECT ${COLUMNS} FROM trabalho WHERE id = ?`).get(id) as
+  return db.prepare(`SELECT ${COLUMNS} FROM job WHERE id = ?`).get(id) as
     | JobRow
     | undefined;
 }
@@ -360,10 +377,10 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     const timestamp = now();
     const result = db
       .prepare(
-        `INSERT INTO trabalho (
-           projeto_id, execucao_id, titulo, corpo, criterios_de_aceite, campos, tier,
-           no_entrada_id, no_atual, bloqueado, motivo_bloqueio, grafo_versao_id,
-           criado_em, atualizado_em
+        `INSERT INTO job (
+           project_id, execution_id, title, corpo, criterios_de_aceite, fields, tier,
+           entry_node_id, current_node_id, blocked, block_reason, graph_version_id,
+           created_at, updated_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`,
       )
       .run(
@@ -433,7 +450,7 @@ function mutate(
 
   const apply = db.transaction((): Job => {
     const timestamp = now();
-    db.prepare(`UPDATE trabalho SET ${sql}, atualizado_em = ? WHERE id = ?`).run(
+    db.prepare(`UPDATE job SET ${sql}, updated_at = ? WHERE id = ?`).run(
       ...values,
       timestamp,
       id,
@@ -540,8 +557,8 @@ export function transitionJob(
   const alreadyWalked =
     db
       .prepare(
-        `SELECT 1 FROM evento
-          WHERE tipo = 'job.transitioned' AND entidade_tipo = 'trabalho' AND entidade_id = ?
+        `SELECT 1 FROM event
+          WHERE type = 'job.transitioned' AND entity_type = 'trabalho' AND entity_id = ?
           LIMIT 1`,
       )
       .get(String(id)) !== undefined;
@@ -559,7 +576,7 @@ export function transitionJob(
           from_node_id: alreadyWalked ? row.no_atual : null,
           to_node_id: input.to_node_id,
         },
-        sql: 'no_atual = ?',
+        sql: 'current_node_id = ?',
         values: [input.to_node_id],
       };
     },
@@ -617,7 +634,7 @@ export function blockJob(
     API_ACTOR,
     () => ({
       data: { reason: input.reason },
-      sql: 'bloqueado = ?, motivo_bloqueio = ?',
+      sql: 'blocked = ?, block_reason = ?',
       values: [asInteger(true), input.reason],
     }),
     (row, _data, event) => {
@@ -656,7 +673,7 @@ export interface UnblockInput {
 export function unblockJob(db: Database, id: number, input: UnblockInput): Job | null {
   return mutate(db, id, 'job.unblocked', input.actor, API_ACTOR, () => ({
     data: {},
-    sql: 'bloqueado = ?, motivo_bloqueio = NULL',
+    sql: 'blocked = ?, block_reason = NULL',
     values: [asInteger(false)],
   }));
 }
@@ -709,7 +726,7 @@ export function amendJob(db: Database, id: number, input: AmendInput): Job | nul
         throw new ValidationError(['title has to be a non-empty string']);
       }
       changed.push('title');
-      assignments.push('titulo = ?');
+      assignments.push('title = ?');
       values.push(input.title);
     }
 
@@ -724,7 +741,7 @@ export function amendJob(db: Database, id: number, input: AmendInput): Job | nul
       // want" is a simpler contract than a patch language over a map — the same
       // reasoning `amendDraft` wrote for the intake's item list.
       changed.push('fields');
-      assignments.push('campos = ?');
+      assignments.push('fields = ?');
       values.push(JSON.stringify(input.fields));
     }
 
@@ -751,9 +768,9 @@ export function listJobs(
 ): Job[] {
   const rows = (
     filter.execucao_id === undefined
-      ? db.prepare(`SELECT ${COLUMNS} FROM trabalho ORDER BY id`).all()
+      ? db.prepare(`SELECT ${COLUMNS} FROM job ORDER BY id`).all()
       : db
-          .prepare(`SELECT ${COLUMNS} FROM trabalho WHERE execucao_id = ? ORDER BY id`)
+          .prepare(`SELECT ${COLUMNS} FROM job WHERE execution_id = ? ORDER BY id`)
           .all(filter.execucao_id)
   ) as JobRow[];
   return rows.map((row) => toJob(db, row));
@@ -787,12 +804,12 @@ export function jobTimeline(db: Database, id: number): Event[] | null {
 export function metricsByVersion(db: Database, executionId: number): MetricByVersion[] {
   const rows = db
     .prepare(
-      `SELECT t.grafo_versao_id           AS grafo_versao_id,
+      `SELECT t.graph_version_id          AS grafo_versao_id,
               COUNT(*)                    AS trabalhos,
               COALESCE(SUM((${JOB_EVENTS})), 0) AS eventos
-         FROM trabalho t
-        WHERE t.execucao_id = ?
-        GROUP BY t.grafo_versao_id`,
+         FROM job t
+        WHERE t.execution_id = ?
+        GROUP BY t.graph_version_id`,
     )
     .all(executionId) as MetricByVersion[];
 
@@ -806,8 +823,8 @@ export function metricsByVersion(db: Database, executionId: number): MetricByVer
 /**
  * The executions that exist, one row per round (t107, FR1).
  *
- * There is no "execution" entity in this v1 — `execucao_id` is an opaque
- * grouper, and this list is an AGGREGATION over `trabalho`, not a table. It
+ * There is no "execution" entity in this v1 — `execution_id` is an opaque
+ * grouper, and this list is an AGGREGATION over `job`, not a table. It
  * exists because without it the screen has no way to DISCOVER which rounds
  * exist: until here one could only query an execution already knowing its id,
  * which serves whoever already knows and nobody else. D11 calls that a bug of
@@ -826,14 +843,14 @@ export function metricsByVersion(db: Database, executionId: number): MetricByVer
 export function listExecutions(db: Database): ExecutionSummary[] {
   const rows = db
     .prepare(
-      `SELECT t.execucao_id            AS execucao_id,
+      `SELECT t.execution_id           AS execucao_id,
               COUNT(*)                 AS trabalhos,
-              COALESCE(SUM(t.bloqueado), 0) AS trabalhos_bloqueados,
-              (SELECT COUNT(*) FROM pergunta p
-                WHERE p.status = 'pendente' AND p.execucao_id IS t.execucao_id)
+              COALESCE(SUM(t.blocked), 0) AS trabalhos_bloqueados,
+              (SELECT COUNT(*) FROM input_request p
+                WHERE p.status = 'pendente' AND p.execution_id IS t.execution_id)
                                        AS perguntas_pendentes
-         FROM trabalho t
-        GROUP BY t.execucao_id`,
+         FROM job t
+        GROUP BY t.execution_id`,
     )
     .all() as ExecutionSummary[];
 

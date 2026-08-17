@@ -10,10 +10,11 @@
  *   `GET /v1/input-requests?status=pending`.
  *
  * The last two used to be the literal `null`, with a comment claiming the
- * entities did not exist yet. Both halves of that were wrong (t199, FR1): the
- * table is `pergunta`, not `input_request`, and `trabalho`/`sessao`/`pergunta`
- * have existed since `migrations/0003_trabalho_sessao_evento_pergunta.sql`,
- * delivered by t102. What survives of the old care is the distinction the whole
+ * entities did not exist yet. That was wrong (t199, FR1): `job`, `session` and
+ * `input_request` have existed since
+ * `migrations/0003_trabalho_sessao_evento_pergunta.sql`, delivered by t102 —
+ * under the Portuguese names D20's fourth child (t229) has since renamed. What
+ * survives of the old care is the distinction the whole
  * report is built on: `null` means "could not be queried" and `0` means "queried,
  * and empty". A server that is down answers `null` on everything, because
  * claiming an empty queue nobody looked at is exactly how a dashboard earns

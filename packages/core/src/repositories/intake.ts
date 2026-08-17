@@ -5,14 +5,14 @@
  * (once per class) and breaking work down produces TICKETS (every execution).
  * This module is the second one, in two phases: a DRAFT that proposes the
  * breakdown over the class's already registered graph, and a CONFIRMATION that
- * is the human gate turning that proposal into `trabalho` rows.
+ * is the human gate turning that proposal into `job` rows.
  *
  * Three boundaries that are the whole point of the design:
  *
  * - **The draft emits no event.** Creating, amending and discarding a draft are
  *   work in progress, not facts of audit. The log only gains a line when a
  *   traveller really is born — which is why the projection here can be updated
- *   in place without breaking the replay: nothing in `intake_rascunho` is
+ *   in place without breaking the replay: nothing in `intake_draft` is
  *   reconstructed from the log, because nothing about it was ever recorded.
  * - **Confirming never touches the graph.** It READS the class's current
  *   pointer, and no path from here reaches `registerBaseGraph`, `insertVersion`
@@ -21,9 +21,10 @@
  *   every event land together or none does — the same discipline as `createJob`,
  *   nested here as a savepoint.
  *
- * The projection's field names, the table and column names and the event-type
- * strings mirror the untouched migration and the event taxonomy, so they stay in
- * Portuguese (t127, FR8). Only the code around them is English.
+ * The TABLE and its columns are English since D20's fourth child (t229); the
+ * projection's field names are not, because `routes/intake.ts` reads them, so
+ * every `SELECT` aliases the renamed column back onto the field (t229, FR4). The
+ * event-type strings went English with the second child (t227).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -58,7 +59,7 @@ export interface Draft {
   pedido: string;
   itens: DraftItem[];
   status: DraftStatus;
-  /** `ref` → real `trabalho.id`; only after the confirmation. */
+  /** `ref` → real `job.id`; only after the confirmation. */
   trabalhos_criados: Record<string, number> | null;
   criado_em: string;
   atualizado_em: string;
@@ -69,9 +70,12 @@ interface DraftRow extends Omit<Draft, 'itens' | 'trabalhos_criados'> {
   trabalhos_criados: string | null;
 }
 
+/** The row, read back into {@link Draft}'s spelling (t229, FR4). */
 const COLUMNS = `
-  id, projeto_id, execucao_id, classe, pedido, itens, status,
-  trabalhos_criados, criado_em, atualizado_em
+  id, project_id AS projeto_id, execution_id AS execucao_id, class AS classe,
+  request AS pedido, items AS itens, status,
+  created_jobs AS trabalhos_criados, created_at AS criado_em,
+  updated_at AS atualizado_em
 `;
 
 /* -------------------------------------------------------------------------- */
@@ -84,7 +88,7 @@ const COLUMNS = `
 /* -------------------------------------------------------------------------- */
 
 /**
- * `intake_rascunho.status`, both ways (`glossario-wire.md` §1.6).
+ * `intake_draft.status`, both ways (`glossario-wire.md` §1.6).
  *
  * `migrations/0006_intake.sql` holds the three in a `CHECK`, which makes them
  * schema and not format — the reasoning `skill.ts`'s `ROLE_COLUMN` wrote first.
@@ -154,7 +158,7 @@ function toDraft(row: DraftRow): Draft {
 }
 
 function readRow(db: Database, id: number): DraftRow | undefined {
-  return db.prepare(`SELECT ${COLUMNS} FROM intake_rascunho WHERE id = ?`).get(id) as
+  return db.prepare(`SELECT ${COLUMNS} FROM intake_draft WHERE id = ?`).get(id) as
     | DraftRow
     | undefined;
 }
@@ -195,9 +199,9 @@ export function createDraft(db: Database, data: CreateDraftData): Draft {
   const timestamp = now();
   const result = db
     .prepare(
-      `INSERT INTO intake_rascunho (
-         projeto_id, execucao_id, classe, pedido, itens, status,
-         trabalhos_criados, criado_em, atualizado_em
+      `INSERT INTO intake_draft (
+         project_id, execution_id, class, request, items, status,
+         created_jobs, created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, 'pendente', NULL, ?, ?)`,
     )
     .run(
@@ -238,17 +242,17 @@ export function listDrafts(db: Database, filter: DraftFilter = {}): Draft[] {
     values.push(filter.status);
   }
   if (filter.classe !== undefined) {
-    conditions.push('classe = ?');
+    conditions.push('class = ?');
     values.push(filter.classe);
   }
   if (filter.projeto_id !== undefined) {
-    conditions.push('projeto_id = ?');
+    conditions.push('project_id = ?');
     values.push(filter.projeto_id);
   }
 
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;
   const rows = db
-    .prepare(`SELECT ${COLUMNS} FROM intake_rascunho ${where} ORDER BY id`)
+    .prepare(`SELECT ${COLUMNS} FROM intake_draft ${where} ORDER BY id`)
     .all(...values) as DraftRow[];
   return rows.map(toDraft);
 }
@@ -268,7 +272,7 @@ export function listDrafts(db: Database, filter: DraftFilter = {}): Draft[] {
 export function amendDraft(db: Database, id: number, itens: DraftItem[]): Draft | null {
   const effect = db
     .prepare(
-      `UPDATE intake_rascunho SET itens = ?, atualizado_em = ?
+      `UPDATE intake_draft SET items = ?, updated_at = ?
         WHERE id = ? AND status = 'pendente'`,
     )
     .run(JSON.stringify(itens), now(), id);
@@ -286,7 +290,7 @@ export function amendDraft(db: Database, id: number, itens: DraftItem[]): Draft 
 export function discardDraft(db: Database, id: number): Draft | null {
   const effect = db
     .prepare(
-      `UPDATE intake_rascunho SET status = 'descartado', atualizado_em = ?
+      `UPDATE intake_draft SET status = 'descartado', updated_at = ?
         WHERE id = ? AND status = 'pendente'`,
     )
     .run(now(), id);
@@ -366,7 +370,7 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
         const dependent = created[item.ref];
         const dependedOn = created[dependency];
         db.prepare(
-          `INSERT INTO trabalho_dependencia (trabalho_id, depende_de_trabalho_id, criado_em)
+          `INSERT INTO job_dependency (job_id, depends_on_job_id, created_at)
            VALUES (?, ?, ?)`,
         ).run(dependent, dependedOn, timestamp);
 
@@ -387,7 +391,7 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
 
     const effect = db
       .prepare(
-        `UPDATE intake_rascunho SET status = 'confirmado', trabalhos_criados = ?, atualizado_em = ?
+        `UPDATE intake_draft SET status = 'confirmado', created_jobs = ?, updated_at = ?
           WHERE id = ? AND status = 'pendente'`,
       )
       .run(JSON.stringify(created), timestamp, draft.id);

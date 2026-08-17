@@ -16,9 +16,12 @@
  *
  * The field names below are the envelope's and the payloads' wire keys, and
  * since t227 they are the English ones of `docs/spec/glossario-wire.md` §2 —
- * D20's second child. What they do NOT follow are the migration columns: those
- * still spell `entidade_tipo`, `ator_tipo` and `ocorrido_em`, and translating
- * them is D20's FIFTH child. `db/events.ts` is where the two vocabularies meet.
+ * D20's second child. The migration columns caught up with D20's FOURTH child
+ * (t229): `entity_type`, `actor_type` and `occurred_at` are the column names
+ * now. What did NOT move is the VALUE inside two of those columns, which the
+ * `CHECK` of migration `0003` still pins to Portuguese — so `db/events.ts` is
+ * still where the two vocabularies meet, for the values and no longer for the
+ * names.
  */
 
 // The one import this mirror allows itself, and only because the alternative is

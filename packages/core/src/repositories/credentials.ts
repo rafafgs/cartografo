@@ -1,5 +1,5 @@
 /**
- * Access to the `credencial` table (t124, FR2).
+ * Access to the `credential` table (t124, FR2).
  *
  * Two functions, and the asymmetry between them IS the design: issuing is the
  * only moment the raw token exists, and verifying never sees a stored one. What
@@ -10,8 +10,10 @@
  * chose. A KDF buys resistance to guessing, and there is nothing here to guess.
  *
  * Like the other repositories, it receives the already-open database and never
- * touches the driver (D1). The row's field names mirror the untouched migration
- * columns, so they stay in Portuguese (t127, FR8).
+ * touches the driver (D1). The COLUMNS are English since D20's fourth child
+ * (t229); {@link CredentialRow}'s field names are not, because `src/auth.ts`
+ * reads them and that file is outside that ticket's surface — so every `SELECT`
+ * aliases the renamed column back onto the field (t229, FR4).
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -42,7 +44,8 @@ export interface IssuedCredential {
   token: string;
 }
 
-const COLUMNS = 'id, tipo, runner_id, hash, criada_em, revogada_em';
+const COLUMNS =
+  'id, owner_type AS tipo, runner_id, hash, created_at AS criada_em, revoked_at AS revogada_em';
 
 /** Bytes of entropy per token. 32 is the size of the digest that hides it. */
 const TOKEN_BYTES = 32;
@@ -71,7 +74,7 @@ export function issueCredential(
 ): IssuedCredential {
   const token = randomBytes(TOKEN_BYTES).toString('hex');
   const result = db
-    .prepare('INSERT INTO credencial (tipo, runner_id, hash, criada_em) VALUES (?, ?, ?, ?)')
+    .prepare('INSERT INTO credential (owner_type, runner_id, hash, created_at) VALUES (?, ?, ?, ?)')
     .run(data.tipo, data.runnerId ?? null, hashToken(token), now());
 
   return { id: Number(result.lastInsertRowid), token };
@@ -95,7 +98,7 @@ export function verifyToken(db: Database, rawToken: string): CredentialRow | nul
   if (rawToken === '') return null;
 
   const found = db
-    .prepare(`SELECT ${COLUMNS} FROM credencial WHERE hash = ? AND revogada_em IS NULL`)
+    .prepare(`SELECT ${COLUMNS} FROM credential WHERE hash = ? AND revoked_at IS NULL`)
     .get(hashToken(rawToken)) as CredentialRow | undefined;
 
   return found ?? null;
@@ -122,7 +125,7 @@ export function verifyToken(db: Database, rawToken: string): CredentialRow | nul
 export function revokeRunnerCredentials(db: Database, runnerId: string): number {
   const result = db
     .prepare(
-      "UPDATE credencial SET revogada_em = ? WHERE tipo = 'runner' AND runner_id = ? AND revogada_em IS NULL",
+      "UPDATE credential SET revoked_at = ? WHERE owner_type = 'runner' AND runner_id = ? AND revoked_at IS NULL",
     )
     .run(now(), runnerId);
 
@@ -143,7 +146,7 @@ export function revokeRunnerCredentials(db: Database, runnerId: string): number 
  */
 export function hasLiveCredential(db: Database, tipo: CredentialType): boolean {
   const row = db
-    .prepare('SELECT 1 AS one FROM credencial WHERE tipo = ? AND revogada_em IS NULL LIMIT 1')
+    .prepare('SELECT 1 AS one FROM credential WHERE owner_type = ? AND revoked_at IS NULL LIMIT 1')
     .get(tipo) as { one: number } | undefined;
   return row !== undefined;
 }

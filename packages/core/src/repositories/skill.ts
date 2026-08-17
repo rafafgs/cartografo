@@ -47,14 +47,10 @@
  *
  * This module is the translation boundary the t178 rename leans on. `Skill` —
  * what the API returns — and every manifest-shaped rule below speak the format's
- * new English vocabulary; `SkillRow` and `COLUMNS` keep the Portuguese COLUMN
- * names of `migrations/0005_skill.sql`, because the database schema is a
- * separate slice with a migration of its own. `toSkill` is where the two meet,
- * and it is the only place that has to know both.
- *
- * That migration's own header still justifies its Portuguese columns by citing
- * the D18 carve-out this ticket lifted. The justification is stale; the columns
- * are not wrong until somebody migrates them.
+ * new English vocabulary. The COLUMNS followed with D20's fourth child (t229);
+ * `SkillRow` did not, because it is the shape `toSkill` was written against, and
+ * `COLUMNS` aliases each renamed column back onto it (t229, FR4). `toSkill` is
+ * where the two meet, and it is the only place that has to know both.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -88,12 +84,12 @@ export interface Skill {
    *
    * English since t226: this was the ONE field `toSkill` still let through with
    * the column's own name, and the wire gate of D20's API child is what found
-   * it. The COLUMN is still `registrado_em` (`migrations/0005_skill.sql`).
+   * it. The COLUMN is `registered_at` since D20's fourth child (t229).
    */
   registered_at: string;
 }
 
-/** The `skill` table's own projection, in its own Portuguese (see the header). */
+/** The shape `toSkill` reads, which `COLUMNS` aliases the row onto. */
 interface SkillRow {
   id: string;
   versao: string;
@@ -141,19 +137,22 @@ const CHECK_TYPES = ['deterministic', 'agentic'];
  * `role`, as the `skill` table spells it — the other half of the translation
  * boundary, and the one that is not cosmetic.
  *
- * `migrations/0005_skill.sql:47` puts a `CHECK (papel IN ('fazer', 'portao'))`
- * on the column, which makes the Portuguese values part of the DB schema rather
- * than of the format. Renaming them belongs to the DB-entity slice, with its own
- * migration; until then a manifest that says `work` is stored as `fazer`, and
- * comes back out as `work`. Every other column is either free text or JSON, so
- * this is the only value the boundary has to carry across.
+ * `migrations/0005_skill.sql:47` puts a `CHECK (role IN ('fazer', 'portao'))` on
+ * the column, which makes the Portuguese VALUES part of the DB schema rather
+ * than of the format. D20's fourth child (t229) renamed the column and left
+ * them exactly there (founder decision, 2026-08-17), so a manifest that says
+ * `work` is still stored as `fazer` and comes back out as `work`. Every other
+ * column is either free text or JSON, so this is the only value the boundary has
+ * to carry across.
  */
 const ROLE_COLUMN: Record<string, string> = { work: 'fazer', gate: 'portao' };
 const ROLE_FIELD: Record<string, string> = { fazer: 'work', portao: 'gate' };
 
 const COLUMNS = `
-  id, versao, hash, papel, descricao, entrada, saida, pre_condicoes,
-  checks, permissoes, instrucoes, origem, registrado_em
+  id, version AS versao, hash, role AS papel, description AS descricao,
+  input AS entrada, output AS saida, preconditions AS pre_condicoes,
+  checks, permissions AS permissoes, instructions AS instrucoes,
+  source AS origem, registered_at AS registrado_em
 `;
 
 function isText(value: unknown): value is string {
@@ -445,8 +444,8 @@ export function registerSkill(db: Database, manifest: unknown): Skill {
   const timestamp = now();
   db.prepare(
     `INSERT INTO skill (
-       id, versao, hash, papel, descricao, entrada, saida, pre_condicoes,
-       checks, permissoes, instrucoes, origem, registrado_em
+       id, version, hash, role, description, input, output, preconditions,
+       checks, permissions, instructions, source, registered_at
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,

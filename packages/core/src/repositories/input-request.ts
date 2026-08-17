@@ -1,7 +1,7 @@
 /**
  * Input-request repository — human escalation as a first-class entity.
  *
- * A question and an approval are the same animal; the `tipo` field is the only
+ * A question and an approval are the same animal; the `kind` column is the only
  * difference. And the ORIGIN of the answer is the EVENT TYPE
  * (`input_request.answered` vs `input_request.auto_resolved`), not a column of the log:
  * the audit of "was this approved by a person or by the system?" has to survive
@@ -14,9 +14,10 @@
  * Re-dispatching the session is on the other side of the boundary (the runner's
  * `Controller`, t103/t106) — see `docs/spec/escalacao-humana.md`.
  *
- * The projection's field names, the table/column names and the event-type
- * strings mirror the untouched migration and the event taxonomy, so they stay in
- * Portuguese (t127, FR8).
+ * The TABLE and its columns are English since D20's fourth child (t229); the
+ * projection's field names are not, because `routes/input-requests.ts` reads
+ * them, so every `SELECT` aliases the renamed column back onto the field (t229,
+ * FR4). The event-type strings went English with the second child (t227).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -71,10 +72,14 @@ interface InputRequestRow extends Omit<InputRequest, 'opcoes' | 'auto_aprovavel'
   auto_aprovavel: number;
 }
 
+/** The row, read back into {@link InputRequest}'s spelling (t229, FR4). */
 const COLUMNS = `
-  id, trabalho_id, sessao_id, execucao_id, no_id, tipo, pergunta, contexto,
-  opcoes, recomendacao, resposta_padrao, auto_aprovavel, status, resposta,
-  respondido_por, origem, criada_em, respondida_em
+  id, job_id AS trabalho_id, session_id AS sessao_id, execution_id AS execucao_id,
+  node_id AS no_id, kind AS tipo, question AS pergunta, context AS contexto,
+  options AS opcoes, recommendation AS recomendacao,
+  default_answer AS resposta_padrao, auto_approvable AS auto_aprovavel, status,
+  answer AS resposta, answered_by AS respondido_por, source AS origem,
+  created_at AS criada_em, answered_at AS respondida_em
 `;
 
 function toInputRequest(row: InputRequestRow): InputRequest {
@@ -94,10 +99,11 @@ function toInputRequest(row: InputRequestRow): InputRequest {
 /* -------------------------------------------------------------------------- */
 
 /**
- * `pergunta.status` and `pergunta.tipo`, row → wire (`glossario-wire.md` §1.6).
+ * `input_request.status` and `input_request.kind`, row → wire
+ * (`glossario-wire.md` §1.6).
  *
  * `tipo` is the one row of §1.6 that is QUALIFIED, and the glossary says why:
- * the bare word `pergunta` is the ENTITY and becomes `input_request`, while
+ * the bare word `pergunta` was the ENTITY and became `input_request`, while
  * `pergunta.tipo = pergunta` is the KIND of escalation and becomes `question`.
  * One word, two concepts, two English names — which is exactly what a glossary
  * exists to keep straight.
@@ -109,17 +115,18 @@ const KIND_FIELD: Record<string, string> = { pergunta: 'question', aprovacao: 'a
 /**
  * ...and the way back, which t227 is what created the need for.
  *
- * `pergunta.tipo` carries a `CHECK (tipo IN ('pergunta','aprovacao'))` since
- * migration `0003`, so the column cannot simply take the event's new word. The
- * wire says `question`/`approval` and the row keeps saying what its constraint
- * demands, exactly as lease status and draft status already do here and in
- * `repositories/leases.ts`. Renaming the column and its CHECK is D20's fifth
- * child; when it lands this map is what disappears.
+ * The column carries a `CHECK (kind IN ('pergunta','aprovacao'))` since
+ * migration `0003`, so it cannot simply take the event's new word. The wire says
+ * `question`/`approval` and the row keeps saying what its constraint demands,
+ * exactly as lease status and draft status already do here and in
+ * `repositories/leases.ts`. D20's FOURTH child (t229) renamed the column and
+ * left the constraint's VALUES alone (founder decision, 2026-08-17), so this map
+ * stays exactly where it is.
  */
 const KIND_COLUMN: Record<string, string> = { question: 'pergunta', approval: 'aprovacao' };
 
 /**
- * `pergunta.origem`, row → wire.
+ * `input_request.source`, row → wire.
  *
  * The column's two values are `usuario` and `auto` (`CHECK` of migration
  * `0003`); `auto` is already English and `usuario` is not, and the glossary maps
@@ -191,7 +198,7 @@ export function toWireInputRequest(request: InputRequest): WireInputRequest {
 }
 
 function readRow(db: Database, id: number): InputRequestRow | undefined {
-  return db.prepare(`SELECT ${COLUMNS} FROM pergunta WHERE id = ?`).get(id) as
+  return db.prepare(`SELECT ${COLUMNS} FROM input_request WHERE id = ?`).get(id) as
     | InputRequestRow
     | undefined;
 }
@@ -257,11 +264,15 @@ export function createInputRequest(
   });
 
   const jobId = data.job_id as number;
-  // `no_atual` rides along with `projeto_id`/`execucao_id` — one lookup, one
-  // trust boundary: everything an input request says about its owner comes from
-  // the owner's row, and nothing from the body (t167).
+  // `current_node_id` rides along with `project_id`/`execution_id` — one lookup,
+  // one trust boundary: everything an input request says about its owner comes
+  // from the owner's row, and nothing from the body (t167).
   const owner = db
-    .prepare('SELECT projeto_id, execucao_id, no_atual FROM trabalho WHERE id = ?')
+    .prepare(
+      `SELECT project_id AS projeto_id, execution_id AS execucao_id,
+              current_node_id AS no_atual
+         FROM job WHERE id = ?`,
+    )
     .get(jobId) as
     | { projeto_id: number; execucao_id: number | null; no_atual: string | null }
     | undefined;
@@ -280,10 +291,10 @@ export function createInputRequest(
     const timestamp = now();
     const result = db
       .prepare(
-        `INSERT INTO pergunta (
-           trabalho_id, sessao_id, execucao_id, no_id, tipo, pergunta, contexto,
-           opcoes, recomendacao, resposta_padrao, auto_aprovavel, status, resposta,
-           respondido_por, origem, criada_em, respondida_em
+        `INSERT INTO input_request (
+           job_id, session_id, execution_id, node_id, kind, question, context,
+           options, recommendation, default_answer, auto_approvable, status, answer,
+           answered_by, source, created_at, answered_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', NULL, NULL, NULL, ?, NULL)`,
       )
       .run(
@@ -335,7 +346,7 @@ export function createInputRequest(
  * job that was waiting on it (FR14/FR15; t106).
  *
  * The template shared by FR14 and FR15: the only things that change between a
- * human and the automatic gate are the event type, the projection's `origem` and
+ * human and the automatic gate are the event type, the projection's `source` and
  * the actor.
  *
  * The unblock reuses the SAME actor as the answer event — `user` when a person
@@ -365,16 +376,17 @@ function answer(
 
   const data = requireValidData(type, raw);
 
-  const owner = db.prepare('SELECT projeto_id FROM trabalho WHERE id = ?').get(row.trabalho_id) as
-    | { projeto_id: number }
-    | undefined;
+  const owner = db
+    .prepare('SELECT project_id AS projeto_id FROM job WHERE id = ?')
+    .get(row.trabalho_id) as { projeto_id: number } | undefined;
 
   const close = db.transaction((): InputRequest => {
     const timestamp = now();
     const effect = db
       .prepare(
-        `UPDATE pergunta
-            SET status = 'respondida', resposta = ?, respondido_por = ?, origem = ?, respondida_em = ?
+        `UPDATE input_request
+            SET status = 'respondida', answer = ?, answered_by = ?, source = ?,
+                answered_at = ?
           WHERE id = ? AND status = 'pendente'`,
       )
       .run(data.answer as string, answeredBy, origin, timestamp, id);
@@ -520,17 +532,17 @@ export function listInputRequests(
     values.push(filter.status);
   }
   if (filter.execucao_id !== undefined) {
-    conditions.push('execucao_id = ?');
+    conditions.push('execution_id = ?');
     values.push(filter.execucao_id);
   }
   if (filter.trabalho_id !== undefined) {
-    conditions.push('trabalho_id = ?');
+    conditions.push('job_id = ?');
     values.push(filter.trabalho_id);
   }
 
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;
   const rows = db
-    .prepare(`SELECT ${COLUMNS} FROM pergunta ${where} ORDER BY id`)
+    .prepare(`SELECT ${COLUMNS} FROM input_request ${where} ORDER BY id`)
     .all(...values) as InputRequestRow[];
   return rows.map(toInputRequest);
 }
@@ -576,10 +588,10 @@ export function toWireQuestionsByNode(row: QuestionsByNode): WireQuestionsByNode
 export function questionsByNode(db: Database, executionId: number): QuestionsByNode[] {
   const rows = db
     .prepare(
-      `SELECT no_id AS no_id, COUNT(*) AS perguntas
-         FROM pergunta
-        WHERE execucao_id = ?
-        GROUP BY no_id`,
+      `SELECT node_id AS no_id, COUNT(*) AS perguntas
+         FROM input_request
+        WHERE execution_id = ?
+        GROUP BY node_id`,
     )
     .all(executionId) as QuestionsByNode[];
 
@@ -594,12 +606,13 @@ export function questionsByNode(db: Database, executionId: number): QuestionsByN
  * A precedent: an already-answered input request of the same project, together
  * with how much it looks like the one being queried.
  *
- * It carries the DECISION (`resposta`) and where that decision came from
- * (`origem`, `respondido_por`, `respondida_em`), because that is what whoever is
+ * It carries the DECISION (`answer`) and where that decision came from
+ * (`source`, `answered_by`, `answered_at`), because that is what whoever is
  * answering right now needs to see: knowing that something similar was asked
  * before is not enough — one has to know what was decided, by whom and when.
  *
- * The field names below mirror the untouched migration columns; what leaves the
+ * The field names below mirror {@link InputRequest}'s, which is what the
+ * `SELECT` aliases the renamed columns back onto (t229, FR4); what leaves the
  * process is `toWirePrecedent`'s output (t226, FR1). `similaridade` is the one
  * computed field and follows its neighbours across that boundary too.
  */
@@ -653,8 +666,9 @@ const DEFAULT_PRECEDENT_LIMIT = 5;
 const MAXIMUM_PRECEDENT_LIMIT = 20;
 
 const PRECEDENT_COLUMNS = `
-  p.id, p.tipo, p.pergunta, p.resposta, p.respondido_por, p.origem,
-  p.criada_em, p.respondida_em
+  p.id, p.kind AS tipo, p.question AS pergunta, p.answer AS resposta,
+  p.answered_by AS respondido_por, p.source AS origem,
+  p.created_at AS criada_em, p.answered_at AS respondida_em
 `;
 
 /** Two decimals: the score is there to be READ and compared, not computed on. */
@@ -666,7 +680,7 @@ function roundScore(score: number): number {
  * The already-answered input requests of the same project that most look like
  * the one at `:id` (t113).
  *
- * The slice is the project of whoever is asking — `projeto_id` arrives through
+ * The slice is the project of whoever is asking — `project_id` arrives through
  * the owning job, the same path `createInputRequest` already walks. A precedent
  * from another project would be a decision taken in another context entering as
  * if it were this project's own history, and project isolation is exactly what
@@ -696,9 +710,9 @@ export function getPrecedents(
   // The project of whoever asks comes from the owning job — same path as
   // `createInputRequest`. A missing job is impossible through the FK, and even
   // then the honest answer is "no precedents", never a failure.
-  const owner = db.prepare('SELECT projeto_id FROM trabalho WHERE id = ?').get(target.trabalho_id) as
-    | { projeto_id: number }
-    | undefined;
+  const owner = db
+    .prepare('SELECT project_id AS projeto_id FROM job WHERE id = ?')
+    .get(target.trabalho_id) as { projeto_id: number } | undefined;
   if (owner === undefined) return [];
 
   const limit = Math.min(
@@ -709,11 +723,11 @@ export function getPrecedents(
   const candidates = db
     .prepare(
       `SELECT ${PRECEDENT_COLUMNS}
-         FROM pergunta p
-         JOIN trabalho t ON t.id = p.trabalho_id
+         FROM input_request p
+         JOIN job t ON t.id = p.job_id
         WHERE p.status = 'respondida'
           AND p.id <> ?
-          AND t.projeto_id = ?`,
+          AND t.project_id = ?`,
     )
     .all(id, owner.projeto_id) as PrecedentRow[];
 

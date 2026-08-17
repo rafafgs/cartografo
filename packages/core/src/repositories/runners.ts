@@ -2,7 +2,7 @@
  * Access to the `runner` table (t103, FR2).
  *
  * Pairing is only identity: a runner declares an id and starts existing for the
- * control plane. There is no project scope here — `projeto_id` is declared on
+ * control plane. There is no project scope here — `project_id` is declared on
  * every lease request, because one physical runner can serve different projects
  * over time.
  *
@@ -13,8 +13,10 @@
  * event into an incident.
  *
  * Like the other repositories, it receives the already-open database and never
- * touches the driver (D1). The row's field names mirror the untouched migration
- * columns, so they stay in Portuguese (t127, FR8).
+ * touches the driver (D1). The COLUMNS are English since D20's fourth child
+ * (t229); {@link RunnerRow}'s field names are not, because `routes/runners.ts`
+ * reads them, so every `SELECT` aliases the renamed column back onto the field
+ * (t229, FR4).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -77,7 +79,8 @@ export interface RunnerHealth extends Runner {
   last_expiration: RunnerExpiration | null;
 }
 
-const COLUMNS = 'id, nome, registrado_em';
+/** The row, read back into {@link RunnerRow}'s spelling (t229, FR4). */
+const COLUMNS = 'id, name AS nome, registered_at AS registrado_em';
 
 /**
  * @param db Open database.
@@ -96,7 +99,7 @@ export function getRunner(db: Database, id: string): RunnerRow | undefined {
  */
 export function listRunners(db: Database): RunnerRow[] {
   return db
-    .prepare(`SELECT ${COLUMNS} FROM runner ORDER BY registrado_em, id`)
+    .prepare(`SELECT ${COLUMNS} FROM runner ORDER BY registered_at, id`)
     .all() as RunnerRow[];
 }
 
@@ -106,7 +109,7 @@ export function listRunners(db: Database): RunnerRow[] {
  * Two queries and a join in memory, rather than one query per runner: a fleet
  * is small, but "small" is not a reason to write an N+1 that grows with it.
  *
- * The second query is a window function and not `MAX(expira_em)` with bare
+ * The second query is a window function and not `MAX(expires_at)` with bare
  * columns: SQLite would answer that too, but the tie-break between two leases
  * that fell due in the same millisecond would be its choice and not this
  * file's, and the fleet page would flip between two rows for no reason.
@@ -117,22 +120,23 @@ export function listRunners(db: Database): RunnerRow[] {
 export function listRunnersWithHealth(db: Database): RunnerHealth[] {
   const fleet = db
     .prepare(
-      `SELECT r.id, r.nome, r.registrado_em,
+      `SELECT r.id, r.name AS nome, r.registered_at AS registrado_em,
               COUNT(CASE WHEN l.status = 'ativa' THEN 1 END) AS leases_ativas,
-              MAX(l.heartbeat_em) AS ultimo_heartbeat
+              MAX(l.heartbeat_at) AS ultimo_heartbeat
          FROM runner r
          LEFT JOIN lease l ON l.runner_id = r.id
-        GROUP BY r.id, r.nome, r.registrado_em
-        ORDER BY r.registrado_em, r.id`,
+        GROUP BY r.id, r.name, r.registered_at
+        ORDER BY r.registered_at, r.id`,
     )
     .all() as Array<RunnerRow & { leases_ativas: number; ultimo_heartbeat: string | null }>;
 
   const lost = db
     .prepare(
-      `SELECT runner_id, trabalho_id, expira_em, motivo_expiracao
-         FROM (SELECT runner_id, trabalho_id, expira_em, motivo_expiracao,
+      `SELECT runner_id, job_id AS trabalho_id, expires_at AS expira_em,
+              expiration_reason AS motivo_expiracao
+         FROM (SELECT runner_id, job_id, expires_at, expiration_reason,
                       ROW_NUMBER() OVER (
-                        PARTITION BY runner_id ORDER BY expira_em DESC, id DESC
+                        PARTITION BY runner_id ORDER BY expires_at DESC, id DESC
                       ) AS recency
                  FROM lease
                 WHERE status = 'expirada')
@@ -163,7 +167,7 @@ export function listRunnersWithHealth(db: Database): RunnerHealth[] {
  * Registers (or re-registers) a runner.
  *
  * A second call with the same id is NOT an error and does not duplicate a row:
- * it updates the name, if one came, and returns the row. `registrado_em` stays
+ * it updates the name, if one came, and returns the row. `registered_at` stays
  * the first pairing — it is the date that id appeared in the system, and
  * rewriting it on every restart would erase the only trace of the runner's age.
  *
@@ -180,7 +184,7 @@ export function registerRunner(
     const existing = getRunner(db, data.id);
 
     if (existing === undefined) {
-      db.prepare('INSERT INTO runner (id, nome, registrado_em) VALUES (?, ?, ?)').run(
+      db.prepare('INSERT INTO runner (id, name, registered_at) VALUES (?, ?, ?)').run(
         data.id,
         data.nome ?? null,
         now(),
@@ -189,7 +193,7 @@ export function registerRunner(
     }
 
     if (data.nome !== undefined && data.nome !== null) {
-      db.prepare('UPDATE runner SET nome = ? WHERE id = ?').run(data.nome, data.id);
+      db.prepare('UPDATE runner SET name = ? WHERE id = ?').run(data.nome, data.id);
     }
     return false;
   })();

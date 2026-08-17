@@ -1,5 +1,5 @@
 /**
- * Access to `segredo_gancho` — the key a hook REFERENCES (t194).
+ * Access to `hook_secret` — the key a hook REFERENCES (t194).
  *
  * Sibling of `src/repositories/webhooks.ts` in posture and of
  * `src/repositories/hooks.ts` in subject: a hook is declared by the graph
@@ -14,9 +14,9 @@
  *   accident; the only reader is `resolveHookSecret`, which hands it to the
  *   enqueue. That is a stronger guarantee than remembering to strip a field in
  *   every response — the same one `Subscription` gives for
- *   `assinatura_webhook.segredo`.
+ *   `webhook_subscription.secret`.
  * - **Rotating writes a row; it never rewrites one.** `setHookSecret` revokes
- *   the live row and inserts a new one, in one transaction. `UPDATE valor`
+ *   the live row and inserts a new one, in one transaction. `UPDATE value`
  *   would erase the answer to "when did the old key stop being valid", which is
  *   the audit question the whole append-only discipline exists for (D15/D2).
  *   The migration's partial unique index is what makes "at most one live row per
@@ -27,16 +27,18 @@
  *   and "this never worked" are one outcome.
  *
  * The value is stored in the clear, not hashed. That is not an oversight and
- * not a weaker posture than `credencial`: the signature is an HMAC, so the key
+ * not a weaker posture than `credential`: the signature is an HMAC, so the key
  * has to be REUSED on every delivery and a digest could never produce one. It is
- * exactly what `assinatura_webhook.segredo` does, and this ticket moves where
+ * exactly what `webhook_subscription.secret` does, and this ticket moves where
  * the key lives, not how it is kept.
  *
  * `now` is injectable (default: the real clock), like every other repository
  * here.
  *
- * The row field names mirror the migration's columns, so they stay in
- * Portuguese (t127, FR8).
+ * The COLUMNS are English since D20's fourth child (t229); {@link HookSecretRow}
+ * and {@link NewHookSecret} are not, because `routes/hook-secrets.ts` builds the
+ * second one — so the `SELECT` aliases the renamed column back onto the field
+ * (t229, FR4).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -52,8 +54,8 @@ export interface ClockOptions {
  *
  * This type IS the wire (t226, FR1): nothing inside the package reads it, so
  * there is no second, Portuguese projection to keep beside it. The COLUMNS it
- * comes from are still `nome`/`criada_em`/`revogada_em`, and `toHookSecret` is
- * where the two meet.
+ * comes from are `name`/`created_at`/`revoked_at` since t229, and
+ * `toHookSecret` is where the two meet.
  */
 export interface HookSecret {
   /** The name a hook's `destination.secret_ref` points at. */
@@ -63,7 +65,7 @@ export interface HookSecret {
   revoked_at: string | null;
 }
 
-/** The row as SQLite returns it, spelled by the untouched migration. */
+/** The row as `COLUMNS` aliases it back, for {@link toHookSecret} to read. */
 interface HookSecretRow {
   nome: string;
   criada_em: string;
@@ -99,10 +101,10 @@ export interface RegisteredHookSecret {
 }
 
 /** Every column of the registration EXCEPT the value. */
-const COLUMNS = 'nome, criada_em, revogada_em';
+const COLUMNS = 'name AS nome, created_at AS criada_em, revoked_at AS revogada_em';
 
 /**
- * Registers a secret under `nome`, revoking whatever was live there.
+ * Registers a secret under `name`, revoking whatever was live there.
  *
  * Both writes are one transaction because they are one fact: "this name means
  * something else from now on". Doing them apart would leave a window with two
@@ -123,21 +125,23 @@ export function setHookSecret(
 
   return db.transaction((): RegisteredHookSecret => {
     const existing = db
-      .prepare('SELECT 1 AS one FROM segredo_gancho WHERE nome = ? LIMIT 1')
+      .prepare('SELECT 1 AS one FROM hook_secret WHERE name = ? LIMIT 1')
       .get(data.nome) as { one: number } | undefined;
 
     const moment = clock();
     db.prepare(
-      'UPDATE segredo_gancho SET revogada_em = ? WHERE nome = ? AND revogada_em IS NULL',
+      'UPDATE hook_secret SET revoked_at = ? WHERE name = ? AND revoked_at IS NULL',
     ).run(moment, data.nome);
-    db.prepare(
-      'INSERT INTO segredo_gancho (nome, valor, criada_em) VALUES (?, ?, ?)',
-    ).run(data.nome, data.valor, moment);
+    db.prepare('INSERT INTO hook_secret (name, value, created_at) VALUES (?, ?, ?)').run(
+      data.nome,
+      data.valor,
+      moment,
+    );
 
     const written = db
       .prepare(
-        `SELECT ${COLUMNS} FROM segredo_gancho
-          WHERE nome = ? AND revogada_em IS NULL`,
+        `SELECT ${COLUMNS} FROM hook_secret
+          WHERE name = ? AND revoked_at IS NULL`,
       )
       .get(data.nome) as HookSecretRow | undefined;
     if (written === undefined) throw new Error('the hook secret was not written');
@@ -163,7 +167,7 @@ export function setHookSecret(
  */
 export function resolveHookSecret(db: Database, name: string): string | undefined {
   const row = db
-    .prepare('SELECT valor FROM segredo_gancho WHERE nome = ? AND revogada_em IS NULL')
+    .prepare('SELECT value AS valor FROM hook_secret WHERE name = ? AND revoked_at IS NULL')
     .get(name) as { valor: string } | undefined;
   return row?.valor;
 }
@@ -181,7 +185,7 @@ export function resolveHookSecret(db: Database, name: string): string | undefine
  */
 export function listHookSecretNames(db: Database): HookSecret[] {
   const rows = db
-    .prepare(`SELECT ${COLUMNS} FROM segredo_gancho ORDER BY id`)
+    .prepare(`SELECT ${COLUMNS} FROM hook_secret ORDER BY id`)
     .all() as HookSecretRow[];
   return rows.map(toHookSecret);
 }
@@ -212,14 +216,14 @@ export function revokeHookSecret(
 
   return db.transaction((): HookSecret | undefined => {
     const latest = db
-      .prepare(`SELECT ${COLUMNS} FROM segredo_gancho WHERE nome = ? ORDER BY id DESC LIMIT 1`)
+      .prepare(`SELECT ${COLUMNS} FROM hook_secret WHERE name = ? ORDER BY id DESC LIMIT 1`)
       .get(name) as HookSecretRow | undefined;
     if (latest === undefined) return undefined;
     if (latest.revogada_em !== null) return toHookSecret(latest);
 
     const moment = clock();
     db.prepare(
-      'UPDATE segredo_gancho SET revogada_em = ? WHERE nome = ? AND revogada_em IS NULL',
+      'UPDATE hook_secret SET revoked_at = ? WHERE name = ? AND revoked_at IS NULL',
     ).run(moment, name);
 
     return toHookSecret({ ...latest, revogada_em: moment });

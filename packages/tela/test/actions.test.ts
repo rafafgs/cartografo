@@ -38,23 +38,23 @@ async function loadActions(): Promise<typeof ActionsModule> {
 
 test('AT8 — a pending proposal offers approve and reject, in that order', async () => {
   const { resolveActionsForStatus } = await loadActions();
-  assert.deepEqual(resolveActionsForStatus('pendente'), ['approve', 'reject']);
+  assert.deepEqual(resolveActionsForStatus('pending'), ['approve', 'reject']);
 });
 
 test('AT9 — an approved proposal offers only apply', async () => {
   const { resolveActionsForStatus } = await loadActions();
-  assert.deepEqual(resolveActionsForStatus('aprovada'), ['apply']);
+  assert.deepEqual(resolveActionsForStatus('approved'), ['apply']);
 });
 
 test('AT10 — an applied proposal offers only revert', async () => {
   const { resolveActionsForStatus } = await loadActions();
-  assert.deepEqual(resolveActionsForStatus('aplicada'), ['revert']);
+  assert.deepEqual(resolveActionsForStatus('applied'), ['revert']);
 });
 
 test('AT11 — reverted and rejected proposals are read-only', async () => {
   const { resolveActionsForStatus } = await loadActions();
-  assert.deepEqual(resolveActionsForStatus('revertida'), []);
-  assert.deepEqual(resolveActionsForStatus('rejeitada'), []);
+  assert.deepEqual(resolveActionsForStatus('reverted'), []);
+  assert.deepEqual(resolveActionsForStatus('rejected'), []);
 });
 
 test('AT12 — an unknown status fails safe: no actions, no throw', async () => {
@@ -75,9 +75,9 @@ test('AT12 — every offered action carries the label and route its row needs', 
   const { ACTIONS, resolveActionsForStatus } = await loadActions();
 
   const offered = new Set([
-    ...resolveActionsForStatus('pendente'),
-    ...resolveActionsForStatus('aprovada'),
-    ...resolveActionsForStatus('aplicada'),
+    ...resolveActionsForStatus('pending'),
+    ...resolveActionsForStatus('approved'),
+    ...resolveActionsForStatus('applied'),
   ]);
 
   for (const action of offered) {

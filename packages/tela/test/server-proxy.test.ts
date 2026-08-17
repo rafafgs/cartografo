@@ -154,7 +154,7 @@ async function startScreenFor(
 }
 
 test('AT1 — GET /v1/proposals reaches CARTOGRAFO_URL and comes back body and status verbatim', async (t) => {
-  const listBody = '{"propostas":[{"id":1,"status":"pendente"},{"id":2,"status":"aplicada"}]}';
+  const listBody = '{"proposals":[{"id":1,"status":"pending"},{"id":2,"status":"applied"}]}';
   const conflictBody = '{"erro":"proposta_nao_pendente","status":"aplicada"}';
 
   const upstream = await startFakeUpstream(t, (request, response) => {
@@ -267,7 +267,7 @@ test('AT4 — the screen listens on CARTOGRAFO_TELA_PORT, and on 4318 when it is
 test('t124 AT — the screen presents its service credential on every call it makes upstream', async (t) => {
   const upstream = await startFakeUpstream(t, (request, response) => {
     response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-    response.end(request.target.startsWith('/v1/jobs') ? '{"trabalhos":[]}' : '{"propostas":[]}');
+    response.end(request.target.startsWith('/v1/jobs') ? '{"jobs":[]}' : '{"proposals":[]}');
   });
 
   const screen = await startScreenFor(t, {
@@ -303,7 +303,7 @@ test('t124 AT — the screen presents its service credential on every call it ma
 test('t124 AT — CARTOGRAFO_TOKEN is the fallback, and the browser cannot swap the credential', async (t) => {
   const upstream = await startFakeUpstream(t, (_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-    response.end('{"propostas":[]}');
+    response.end('{"proposals":[]}');
   });
 
   const shared = await startScreenFor(t, {

@@ -271,13 +271,13 @@ async function readFromControlPlane(
   jobId: number,
   questionId: number,
 ): Promise<Question> {
-  const response = await api<{ perguntas: Question[] }>(
+  const response = await api<{ input_requests: Question[] }>(
     cp,
     'GET',
     `/v1/input-requests?trabalho_id=${jobId}`,
   );
   assert.equal(response.status, 200);
-  const found = response.body.perguntas.find((question) => question.id === questionId);
+  const found = response.body.input_requests.find((question) => question.id === questionId);
   assert.ok(found !== undefined, `the control plane does not know question ${questionId}`);
   return found;
 }
@@ -308,6 +308,6 @@ test("t192 AT7 — the server-rendered form refuses a cross-site submit, and not
   // The proof is not the page: it is the state, read back through the public API
   // without going through the screen at all.
   const after = await readFromControlPlane(cp, job.id, question.id);
-  assert.equal(after.status, 'pendente', 'nothing was written');
-  assert.equal(after.resposta, null);
+  assert.equal(after.status, 'pending', 'nothing was written');
+  assert.equal(after.answer, null);
 });

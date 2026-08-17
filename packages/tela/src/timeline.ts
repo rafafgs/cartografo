@@ -27,8 +27,8 @@
  *
  * ## The rules, one sentence each
  *
- * - **`agente_trabalhando`** is `[aberta_em, finalizada_em]` of each session.
- * - **`esperando_humano`** is `[criada_em, respondida_em]` of each question.
+ * - **`agente_trabalhando`** is `[opened_at, finished_at]` of each session.
+ * - **`esperando_humano`** is `[created_at, answered_at]` of each question.
  * - **`fila`** is the COMPLEMENT: every interval with no open session and no
  *   pending question. A transition CUTS the queue in two, even with nothing
  *   happening in between — "two days parked in refinement and an hour in
@@ -37,7 +37,7 @@
  *   totals: closing a segment with the clock of whoever opened the page would
  *   invent a fact the log does not have.
  *
- * **A finished job** is the control plane's `concluido` AND nothing open AND no
+ * **A finished job** is the control plane's `completed` AND nothing open AND no
  * block (t152). The flag is the real terminal signal — the job's current node is
  * a final node of its own graph version — and it comes READ from
  * `GET /v1/jobs/:id`, because `final_nodes` lives in the graph snapshot and the
@@ -75,17 +75,17 @@ export interface TimelineSession {
   id: number;
   engine: string;
   status: string;
-  aberta_em: string;
-  finalizada_em: string | null;
+  opened_at: string;
+  finished_at: string | null;
 }
 
 /** A question, in the slice the reconstruction reads. */
 export interface TimelineQuestion {
   id: number;
   status: string;
-  pergunta: string;
-  criada_em: string;
-  respondida_em: string | null;
+  question: string;
+  created_at: string;
+  answered_at: string | null;
 }
 
 /** A slice of the job's life, in one of the three buckets. */
@@ -127,13 +127,13 @@ export interface TimelineSources {
   sessions: TimelineSession[];
   questions: TimelineQuestion[];
   /**
-   * `concluido` of `GET /v1/jobs/:id` — the server's answer, not a guess here.
+   * `completed` of `GET /v1/jobs/:id` — the server's answer, not a guess here.
    *
    * Required, and not optional with a default: a caller that forgets it would
    * silently get back the old heuristic's verdict, and this field exists
    * precisely because that verdict was wrong (t152).
    */
-  concluido: boolean;
+  completed: boolean;
 }
 
 /** Tie-break order when two segments start at the same instant. */
@@ -239,30 +239,30 @@ export function buildTimeline(sources: TimelineSources): Timeline {
 
   const occupancies: Occupancy[] = [
     ...sources.sessions.map((session) => ({
-      start: instant(session.aberta_em),
-      end: instantOrNull(session.finalizada_em),
+      start: instant(session.opened_at),
+      end: instantOrNull(session.finished_at),
     })),
     ...sources.questions.map((question) => ({
-      start: instant(question.criada_em),
-      end: instantOrNull(question.respondida_em),
+      start: instant(question.created_at),
+      end: instantOrNull(question.answered_at),
     })),
   ];
 
   const segments: Segment[] = [
     ...sources.sessions.map((session) => {
-      const start = instant(session.aberta_em);
-      return makeSegment('agente_trabalhando', start, instantOrNull(session.finalizada_em), {
+      const start = instant(session.opened_at);
+      return makeSegment('agente_trabalhando', start, instantOrNull(session.finished_at), {
         nodeId: nodeAt(milestones, start.ms),
         ref: session.id,
         detail: `${session.engine} · ${session.status}`,
       });
     }),
     ...sources.questions.map((question) => {
-      const start = instant(question.criada_em);
-      return makeSegment('esperando_humano', start, instantOrNull(question.respondida_em), {
+      const start = instant(question.created_at);
+      return makeSegment('esperando_humano', start, instantOrNull(question.answered_at), {
         nodeId: nodeAt(milestones, start.ms),
         ref: question.id,
-        detail: question.pergunta,
+        detail: question.question,
       });
     }),
   ];
@@ -271,7 +271,7 @@ export function buildTimeline(sources: TimelineSources): Timeline {
   // halves are needed: a session still open on a final node is an agent that has
   // not handed the work back yet (t152).
   const hasOpen = occupancies.some((occupancy) => occupancy.end === null);
-  const done = sources.concluido && !hasOpen && !blocked;
+  const done = sources.completed && !hasOpen && !blocked;
 
   const known = [
     ...sources.events.map((event) => instant(event.ocorrido_em)),

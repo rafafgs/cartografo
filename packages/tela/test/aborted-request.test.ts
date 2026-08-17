@@ -71,7 +71,7 @@ async function startFakeUpstream(t: Cleanup): Promise<string> {
     request.resume();
     request.on('end', () => {
       response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-      response.end((request.url ?? '').startsWith('/v1/jobs') ? '{"trabalhos":[]}' : '{"propostas":[]}');
+      response.end((request.url ?? '').startsWith('/v1/jobs') ? '{"jobs":[]}' : '{"proposals":[]}');
     });
   });
 

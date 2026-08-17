@@ -89,8 +89,8 @@ export function mount(doc, request) {
         ok: false,
         status: 0,
         body: {
-          erro: 'tela_sem_resposta',
-          mensagem: `a tela não respondeu (${cause instanceof Error ? cause.message : 'falha de rede'})`,
+          error: 'tela_sem_resposta',
+          message: `a tela não respondeu (${cause instanceof Error ? cause.message : 'falha de rede'})`,
         },
       };
     }
@@ -100,7 +100,7 @@ export function mount(doc, request) {
       try {
         body = JSON.parse(text);
       } catch {
-        body = { erro: 'resposta_ilegivel', mensagem: text.slice(0, 200) };
+        body = { error: 'resposta_ilegivel', message: text.slice(0, 200) };
       }
     }
     return { ok: response.ok, status: response.status, body };
@@ -109,7 +109,7 @@ export function mount(doc, request) {
   /**
    * The human-readable half of an error body, in the core's own vocabulary.
    *
-   * `erro` + `mensagem` is what every error of the API carries. `message` is
+   * `error` + `message` is what every error of the API carries since t226.
    * the fallback for the one error the core does NOT write itself: Fastify's
    * own 404, which is exactly what a screen pointed at a control plane without
    * the inbox routes gets back — a real message beats "falha 404" there.
@@ -119,27 +119,27 @@ export function mount(doc, request) {
    */
   function messageOf(body, status) {
     if (body === null || typeof body !== 'object') return `falha ${status}`;
-    if (typeof body.mensagem === 'string' && body.mensagem !== '') {
-      return typeof body.erro === 'string' ? `${body.erro}: ${body.mensagem}` : body.mensagem;
+    if (typeof body.message === 'string' && body.message !== '') {
+      return typeof body.error === 'string' ? `${body.error}: ${body.message}` : body.message;
     }
-    if (typeof body.erro === 'string') return body.erro;
+    if (typeof body.error === 'string') return body.error;
     if (typeof body.message === 'string' && body.message !== '') return body.message;
     return `falha ${status}`;
   }
 
-  /** Accepts `{propostas: [...]}` or a bare array — the envelope is t111's call. */
+  /** Accepts `{proposals: [...]}` or a bare array — the envelope is t111's call. */
   function proposalsOf(body) {
     if (Array.isArray(body)) return body;
-    if (body !== null && typeof body === 'object' && Array.isArray(body.propostas)) {
-      return body.propostas;
+    if (body !== null && typeof body === 'object' && Array.isArray(body.proposals)) {
+      return body.proposals;
     }
     return [];
   }
 
-  /** Accepts `{proposta: {...}}` or the proposal itself. */
+  /** Accepts `{proposal: {...}}` or the proposal itself. */
   function proposalOf(body) {
     if (body === null || typeof body !== 'object') return null;
-    if (body.proposta !== undefined && body.proposta !== null) return body.proposta;
+    if (body.proposal !== undefined && body.proposal !== null) return body.proposal;
     return body.id === undefined ? null : body;
   }
 
@@ -178,24 +178,24 @@ export function mount(doc, request) {
 
     const blocks = [
       el('h3', undefined, `Proposta #${proposal.id} — ${proposal.status ?? 'sem status'}`),
-      field('Grafo', proposal.grafo_id),
-      field('Versão-alvo', proposal.versao_alvo),
+      field('Grafo', proposal.graph_id),
+      field('Versão-alvo', proposal.target_version),
     ];
 
     const diff = el('div', 'diff');
     diff.append(el('h4', undefined, 'Diff semântico'));
-    for (const line of renderOperations(proposal.operacoes)) {
+    for (const line of renderOperations(proposal.operations)) {
       diff.append(el('p', `op ${lineClass(line)}`, line));
     }
     blocks.push(diff);
 
-    blocks.push(block('Evidência', asText(proposal.evidencia)));
-    blocks.push(block('Métrica esperada', asText(proposal.metrica_esperada)));
-    if (proposal.resultado !== undefined && proposal.resultado !== null) {
-      blocks.push(block('Resultado', asText(proposal.resultado)));
+    blocks.push(block('Evidência', asText(proposal.evidence)));
+    blocks.push(block('Métrica esperada', asText(proposal.expected_metric)));
+    if (proposal.result !== undefined && proposal.result !== null) {
+      blocks.push(block('Resultado', asText(proposal.result)));
     }
-    if (proposal.motivo_rejeicao) blocks.push(block('Motivo da rejeição', proposal.motivo_rejeicao));
-    if (proposal.motivo_reversao) blocks.push(block('Motivo da reversão', proposal.motivo_reversao));
+    if (proposal.rejection_reason) blocks.push(block('Motivo da rejeição', proposal.rejection_reason));
+    if (proposal.revert_reason) blocks.push(block('Motivo da reversão', proposal.revert_reason));
 
     fill(detail, ...blocks);
   }
@@ -233,7 +233,7 @@ export function mount(doc, request) {
     const row = el('li', 'proposal');
 
     const head = el('p', 'head');
-    const title = el('button', 'link', `#${proposal.id} · ${proposal.grafo_id ?? 'sem grafo'}`);
+    const title = el('button', 'link', `#${proposal.id} · ${proposal.graph_id ?? 'sem grafo'}`);
     title.type = 'button';
     title.addEventListener('click', () => {
       void showDetail(proposal.id);
@@ -242,7 +242,7 @@ export function mount(doc, request) {
     head.append(title, status);
 
     const version = el('p', 'version');
-    if (proposal.versao_aplicada_id) version.textContent = `versão ${proposal.versao_aplicada_id}`;
+    if (proposal.applied_version_id) version.textContent = `versão ${proposal.applied_version_id}`;
 
     const message = el('p', 'message');
     const controls = el('p', 'actions');
@@ -329,7 +329,7 @@ export function mount(doc, request) {
       const { ok, status: code, body } = await call(`${LIST_URL}/${proposal.id}/${name}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(reason === undefined ? {} : { motivo: reason }),
+        body: JSON.stringify(reason === undefined ? {} : { reason }),
       });
 
       if (!ok) {
@@ -344,7 +344,7 @@ export function mount(doc, request) {
       Object.assign(proposal, updated ?? {});
       status.textContent = proposal.status ?? 'sem status';
 
-      const newVersion = body?.grafo_versao?.id ?? proposal.versao_aplicada_id;
+      const newVersion = body?.graph_version?.id ?? proposal.applied_version_id;
       if (newVersion) version.textContent = `versão ${newVersion}`;
 
       message.textContent =

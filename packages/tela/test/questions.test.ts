@@ -46,13 +46,13 @@ async function readFromControlPlane(
   jobId: number,
   questionId: number,
 ): Promise<Question> {
-  const response = await api<{ perguntas: Question[] }>(
+  const response = await api<{ input_requests: Question[] }>(
     cp,
     'GET',
     `/v1/input-requests?trabalho_id=${jobId}`,
   );
   assert.equal(response.status, 200);
-  const found = response.body.perguntas.find((question) => question.id === questionId);
+  const found = response.body.input_requests.find((question) => question.id === questionId);
   assert.ok(found !== undefined, `the control plane does not know question ${questionId}`);
   return found;
 }
@@ -111,7 +111,7 @@ test('t107 AT6 — the submit answers FOR REAL in the control plane and leaves t
   const question = await createQuestion(cp, { trabalho_id: job.id, ...FULL_BODY });
 
   const before = await readFromControlPlane(cp, job.id, question.id);
-  assert.equal(before.status, 'pendente');
+  assert.equal(before.status, 'pending');
 
   const screen = await startScreen(t, cp);
   const submission = await submitForm(screen, `/perguntas/${question.id}/resposta`, {
@@ -125,10 +125,10 @@ test('t107 AT6 — the submit answers FOR REAL in the control plane and leaves t
   // The proof: an independent read, straight against the control plane. What
   // matters is that the STATE changed, not that the screen said it changed.
   const after = await readFromControlPlane(cp, job.id, question.id);
-  assert.equal(after.status, 'respondida');
-  assert.equal(after.resposta, 'Manter 0002');
-  assert.equal(after.respondido_por, 'rafael');
-  assert.ok(after.respondida_em !== null);
+  assert.equal(after.status, 'answered');
+  assert.equal(after.answer, 'Manter 0002');
+  assert.equal(after.answered_by, 'rafael');
+  assert.ok(after.answered_at !== null);
 
   const queue = await openPage(screen, '/perguntas');
   assert.equal(queue.status, 200);
@@ -156,7 +156,7 @@ test('t107 AT6 — a blank answer is refused by the screen, with nothing written
   // The event schema accepts an empty string; the one that has to stop the
   // accidental click is the screen, BEFORE a contentless fact reaches the log.
   const after = await readFromControlPlane(cp, job.id, question.id);
-  assert.equal(after.status, 'pendente', 'nothing was written');
+  assert.equal(after.status, 'pending', 'nothing was written');
 });
 
 test('t107 AT6 — answering a nonexistent question propagates the control plane 404', async (t) => {

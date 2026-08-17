@@ -137,16 +137,16 @@ export function formatDuration(ms: number | null): string {
 }
 
 function jobCard(job: Job): string {
-  const classes = job.bloqueado ? 'cartao bloqueado' : 'cartao';
+  const classes = job.blocked ? 'cartao bloqueado' : 'cartao';
   const reason =
-    job.bloqueado && job.motivo_bloqueio !== null
-      ? `<p class="motivo">⛔ ${escapeHtml(job.motivo_bloqueio)}</p>`
-      : job.bloqueado
+    job.blocked && job.block_reason !== null
+      ? `<p class="motivo">⛔ ${escapeHtml(job.block_reason)}</p>`
+      : job.blocked
         ? '<p class="motivo">⛔ bloqueado, sem motivo declarado</p>'
         : '';
   return `<article class="${classes}" data-trabalho="${job.id}">
       <div class="id">#${job.id}</div>
-      <a href="/trabalhos/${job.id}">${escapeHtml(job.titulo)}</a>
+      <a href="/trabalhos/${job.id}">${escapeHtml(job.title)}</a>
       ${reason}
     </article>`;
 }
@@ -165,9 +165,9 @@ function jobBoard(jobs: Job[]): string {
 
   const byNode = new Map<string, Job[]>();
   for (const job of jobs) {
-    const group = byNode.get(job.no_atual) ?? [];
+    const group = byNode.get(job.current_node_id) ?? [];
     group.push(job);
-    byNode.set(job.no_atual, group);
+    byNode.set(job.current_node_id, group);
   }
 
   const columns = [...byNode.entries()]
@@ -201,16 +201,16 @@ function sessionsTable(sessions: Session[]): string {
 
   const rows = sessions.map((session) => {
     const usage =
-      session.uso === null
+      session.usage === null
         ? '—'
-        : `${session.uso.input_tokens} in / ${session.uso.output_tokens} out`;
+        : `${session.usage.input_tokens} in / ${session.usage.output_tokens} out`;
     return `<tr data-sessao="${session.id}">
       <td>#${session.id}</td>
-      <td>${session.trabalho_id === null ? '—' : `<a href="/trabalhos/${session.trabalho_id}">#${session.trabalho_id}</a>`}</td>
+      <td>${session.job_id === null ? '—' : `<a href="/trabalhos/${session.job_id}">#${session.job_id}</a>`}</td>
       <td>${escapeHtml(session.engine)}</td>
       <td>${escapeHtml(session.status)}</td>
-      <td>${escapeHtml(session.aberta_em)}</td>
-      <td>${session.finalizada_em === null ? '<span class="vazio">em andamento</span>' : escapeHtml(session.finalizada_em)}</td>
+      <td>${escapeHtml(session.opened_at)}</td>
+      <td>${session.finished_at === null ? '<span class="vazio">em andamento</span>' : escapeHtml(session.finished_at)}</td>
       <td>${escapeHtml(usage)}</td>
       <td><a data-transcricao="${session.id}" href="/v1/sessions/${session.id}/transcript">ver saída</a></td>
     </tr>`;
@@ -227,8 +227,8 @@ function sessionsTable(sessions: Session[]): string {
 /** A question in read mode — the version with a form lives at `/perguntas`. */
 function questionSummary(question: Question): string {
   return `<article class="pergunta" data-pergunta="${question.id}">
-  <strong>${escapeHtml(question.pergunta)}</strong>
-  <p class="motivo">trabalho <a href="/trabalhos/${question.trabalho_id}">#${question.trabalho_id}</a> · desde ${escapeHtml(question.criada_em)} · <a href="/perguntas">responder</a></p>
+  <strong>${escapeHtml(question.question)}</strong>
+  <p class="motivo">trabalho <a href="/trabalhos/${question.job_id}">#${question.job_id}</a> · desde ${escapeHtml(question.created_at)} · <a href="/perguntas">responder</a></p>
 </article>`;
 }
 
@@ -254,9 +254,9 @@ function questionCard(question: Question): string {
     value === null || value === '' ? '' : `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`;
 
   const options =
-    question.opcoes === null || question.opcoes.length === 0
+    question.options === null || question.options.length === 0
       ? ''
-      : `<div class="opcoes">${question.opcoes
+      : `<div class="opcoes">${question.options
           .map(
             (option) =>
               `<button type="button" data-opcao="${escapeHtml(option)}">${escapeHtml(option)}</button>`,
@@ -264,18 +264,18 @@ function questionCard(question: Question): string {
           .join('\n      ')}</div>`;
 
   return `<article class="pergunta" data-pergunta="${question.id}">
-  <strong>${escapeHtml(question.pergunta)}</strong>
+  <strong>${escapeHtml(question.question)}</strong>
   <dl>
-    <dt>trabalho</dt><dd><a href="/trabalhos/${question.trabalho_id}">#${question.trabalho_id}</a></dd>
-    ${field('criada em', question.criada_em)}
-    ${field('contexto', question.contexto)}
-    ${field('recomendação', question.recomendacao)}
-    ${field('resposta padrão', question.resposta_padrao)}
+    <dt>trabalho</dt><dd><a href="/trabalhos/${question.job_id}">#${question.job_id}</a></dd>
+    ${field('criada em', question.created_at)}
+    ${field('contexto', question.context)}
+    ${field('recomendação', question.recommendation)}
+    ${field('resposta padrão', question.default_answer)}
   </dl>
   <form method="post" action="/perguntas/${question.id}/resposta">
     ${options}
     <label for="resposta-${question.id}">sua resposta</label>
-    <textarea id="resposta-${question.id}" name="resposta" required placeholder="a resposta, como você a daria a uma pessoa">${escapeHtml(question.resposta_padrao ?? '')}</textarea>
+    <textarea id="resposta-${question.id}" name="resposta" required placeholder="a resposta, como você a daria a uma pessoa">${escapeHtml(question.default_answer ?? '')}</textarea>
     <p>
       <label>quem responde <input name="respondido_por" value="${escapeHtml(DEFAULT_ANSWERED_BY)}"></label>
       <button type="submit">responder</button>
@@ -347,14 +347,14 @@ export async function executionsPage(client: ApiClient): Promise<Page> {
 
   const row = (execution: ExecutionSummary): string => {
     const label =
-      execution.execucao_id === null
+      execution.execution_id === null
         ? '<span class="vazio">sem execução</span>'
-        : `<a href="/execucoes/${execution.execucao_id}">#${execution.execucao_id}</a>`;
-    return `<tr data-execucao="${execution.execucao_id ?? ''}">
+        : `<a href="/execucoes/${execution.execution_id}">#${execution.execution_id}</a>`;
+    return `<tr data-execucao="${execution.execution_id ?? ''}">
       <td>${label}</td>
-      <td data-campo="trabalhos">${execution.trabalhos}</td>
-      <td data-campo="trabalhos_bloqueados">${execution.trabalhos_bloqueados}</td>
-      <td data-campo="perguntas_pendentes">${execution.perguntas_pendentes}</td>
+      <td data-campo="trabalhos">${execution.jobs}</td>
+      <td data-campo="trabalhos_bloqueados">${execution.blocked_jobs}</td>
+      <td data-campo="perguntas_pendentes">${execution.pending_input_requests}</td>
     </tr>`;
   };
 
@@ -395,19 +395,19 @@ export async function runnersPage(client: ApiClient): Promise<Page> {
 
   const row = (runner: RunnerHealth): string => {
     const expiration =
-      runner.ultima_expiracao === null
+      runner.last_expiration === null
         ? missing('nenhuma')
         : escapeHtml(
-            `trabalho #${runner.ultima_expiracao.trabalho_id} (${
-              runner.ultima_expiracao.motivo_expiracao ?? 'sem motivo declarado'
-            }) às ${runner.ultima_expiracao.expira_em}`,
+            `trabalho #${runner.last_expiration.job_id} (${
+              runner.last_expiration.expiration_reason ?? 'sem motivo declarado'
+            }) às ${runner.last_expiration.expires_at}`,
           );
 
     return `<tr data-runner="${escapeHtml(runner.id)}">
       <td>${escapeHtml(runner.id)}</td>
-      <td data-campo="nome">${runner.nome === null ? missing('sem nome') : escapeHtml(runner.nome)}</td>
-      <td data-campo="leases_ativas">${runner.leases_ativas}</td>
-      <td data-campo="ultimo_heartbeat">${runner.ultimo_heartbeat === null ? missing('nunca') : escapeHtml(runner.ultimo_heartbeat)}</td>
+      <td data-campo="nome">${runner.name === null ? missing('sem nome') : escapeHtml(runner.name)}</td>
+      <td data-campo="leases_ativas">${runner.active_leases}</td>
+      <td data-campo="ultimo_heartbeat">${runner.last_heartbeat === null ? missing('nunca') : escapeHtml(runner.last_heartbeat)}</td>
       <td data-campo="ultima_expiracao">${expiration}</td>
     </tr>`;
   };
@@ -438,9 +438,9 @@ export async function runnersPage(client: ApiClient): Promise<Page> {
  */
 export async function executionPage(client: ApiClient, executionId: number): Promise<Page> {
   const [jobs, sessions, questions] = await Promise.all([
-    client.listJobs({ execucao_id: executionId }),
-    client.listSessions({ execucao_id: executionId }),
-    client.listQuestions({ execucao_id: executionId, status: 'pendente' }),
+    client.listJobs({ execution_id: executionId }),
+    client.listSessions({ execution_id: executionId }),
+    client.listQuestions({ execution_id: executionId, status: 'pending' }),
   ]);
 
   const questionQueue =
@@ -469,7 +469,7 @@ ${questionQueue}`,
  * @returns The question queue page.
  */
 export async function questionsPage(client: ApiClient): Promise<Page> {
-  const questions = await client.listQuestions({ status: 'pendente' });
+  const questions = await client.listQuestions({ status: 'pending' });
 
   const body =
     questions.length === 0
@@ -499,25 +499,25 @@ export async function jobPage(client: ApiClient, jobId: number): Promise<Page> {
   const [job, events, sessions, questions] = await Promise.all([
     client.getJob(jobId),
     client.jobEvents(jobId),
-    client.listSessions({ trabalho_id: jobId }),
-    client.listQuestions({ trabalho_id: jobId }),
+    client.listSessions({ job_id: jobId }),
+    client.listQuestions({ job_id: jobId }),
   ]);
 
   if (job === null || events === null) {
     return errorPage(404, 'trabalho não encontrado', `Não existe trabalho #${jobId}.`);
   }
 
-  const timeline = buildTimeline({ events, sessions, questions, concluido: job.concluido });
+  const timeline = buildTimeline({ events, sessions, questions, completed: job.completed });
   const state = timeline.done
     ? 'concluído'
-    : job.bloqueado
-      ? `bloqueado — ${job.motivo_bloqueio ?? 'sem motivo declarado'}`
+    : job.blocked
+      ? `bloqueado — ${job.block_reason ?? 'sem motivo declarado'}`
       : 'em curso';
 
   const execution =
-    job.execucao_id === null
+    job.execution_id === null
       ? '<span class="vazio">sem execução</span>'
-      : `<a href="/execucoes/${job.execucao_id}">#${job.execucao_id}</a>`;
+      : `<a href="/execucoes/${job.execution_id}">#${job.execution_id}</a>`;
 
   const segments =
     timeline.segments.length === 0
@@ -527,9 +527,9 @@ export async function jobPage(client: ApiClient, jobId: number): Promise<Page> {
   return {
     status: 200,
     html: layout(
-      job.titulo,
-      `<h2>#${job.id} · ${escapeHtml(job.titulo)}</h2>
-<p>nó atual <strong>${escapeHtml(job.no_atual)}</strong> · execução ${execution} · ${escapeHtml(state)}</p>
+      job.title,
+      `<h2>#${job.id} · ${escapeHtml(job.title)}</h2>
+<p>nó atual <strong>${escapeHtml(job.current_node_id)}</strong> · execução ${execution} · ${escapeHtml(state)}</p>
 <h2>linha do tempo</h2>
 ${segments}
 <h2>totais</h2>

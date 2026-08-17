@@ -149,42 +149,50 @@ export async function api<T>(
   return { status: response.status, body: (text === '' ? undefined : JSON.parse(text)) as T };
 }
 
-/** Job projection, as the public API returns it. */
+/**
+ * Job projection, as the public API returns it.
+ *
+ * English since t226. The three `create*` shortcuts below still POST Portuguese
+ * bodies, and that is the API's own asymmetry, not this file's: those three
+ * routes validate against the event contract, which is D20's second child
+ * (`packages/core/src/routes/common.ts` documents it in full).
+ */
 export interface Job {
   id: number;
-  execucao_id: number | null;
-  titulo: string;
-  no_atual: string;
-  bloqueado: boolean;
-  motivo_bloqueio: string | null;
-  criado_em: string;
+  execution_id: number | null;
+  title: string;
+  current_node_id: string;
+  blocked: boolean;
+  block_reason: string | null;
+  created_at: string;
 }
 
 /** Session projection, as the public API returns it. */
 export interface Session {
   id: number;
-  trabalho_id: number | null;
-  execucao_id: number | null;
+  job_id: number | null;
+  execution_id: number | null;
   engine: string;
+  /** Still the column's value: session status is the event surface (t226). */
   status: string;
-  aberta_em: string;
-  finalizada_em: string | null;
+  opened_at: string;
+  finished_at: string | null;
 }
 
 /** Input-request projection, as the public API returns it. */
 export interface Question {
   id: number;
-  trabalho_id: number;
-  pergunta: string;
-  contexto: string | null;
-  opcoes: string[] | null;
-  recomendacao: string | null;
-  resposta_padrao: string | null;
+  job_id: number;
+  question: string;
+  context: string | null;
+  options: string[] | null;
+  recommendation: string | null;
+  default_answer: string | null;
   status: string;
-  resposta: string | null;
-  respondido_por: string | null;
-  criada_em: string;
-  respondida_em: string | null;
+  answer: string | null;
+  answered_by: string | null;
+  created_at: string;
+  answered_at: string | null;
 }
 
 /** Shortcut: creates a job through the public API. */

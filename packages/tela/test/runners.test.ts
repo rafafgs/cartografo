@@ -37,14 +37,14 @@ const BASE_URL = 'http://127.0.0.1:4317';
 /** A runner's health, as `GET /v1/runners` returns it. */
 interface RunnerHealth {
   id: string;
-  nome: string | null;
-  registrado_em: string;
-  leases_ativas: number;
-  ultimo_heartbeat: string | null;
-  ultima_expiracao: {
-    trabalho_id: number;
-    expira_em: string;
-    motivo_expiracao: string | null;
+  name: string | null;
+  registered_at: string;
+  active_leases: number;
+  last_heartbeat: string | null;
+  last_expiration: {
+    job_id: number;
+    expires_at: string;
+    expiration_reason: string | null;
   } | null;
 }
 
@@ -87,23 +87,23 @@ test('t164 AT — /runners renders one row per runner, with the four fields and 
     clientAnswering([
       {
         id: 'runner-a',
-        nome: '<script>alert(1)</script>',
-        registrado_em: '2026-08-15T10:00:00.000Z',
-        leases_ativas: 2,
-        ultimo_heartbeat: '2026-08-15T10:20:00.000Z',
-        ultima_expiracao: {
-          trabalho_id: 42,
-          expira_em: '2026-08-15T10:07:00.000Z',
-          motivo_expiracao: 'heartbeat_perdido',
+        name: '<script>alert(1)</script>',
+        registered_at: '2026-08-15T10:00:00.000Z',
+        active_leases: 2,
+        last_heartbeat: '2026-08-15T10:20:00.000Z',
+        last_expiration: {
+          job_id: 42,
+          expires_at: '2026-08-15T10:07:00.000Z',
+          expiration_reason: 'heartbeat_lost',
         },
       },
       {
         id: 'runner-b',
-        nome: null,
-        registrado_em: '2026-08-15T10:01:00.000Z',
-        leases_ativas: 0,
-        ultimo_heartbeat: null,
-        ultima_expiracao: null,
+        name: null,
+        registered_at: '2026-08-15T10:01:00.000Z',
+        active_leases: 0,
+        last_heartbeat: null,
+        last_expiration: null,
       },
     ]),
   );
@@ -130,7 +130,7 @@ test('t164 AT — /runners renders one row per runner, with the four fields and 
   );
   assert.match(
     busy.excerpt,
-    /trabalho #42 \(heartbeat_perdido\) às 2026-08-15T10:07:00.000Z/,
+    /trabalho #42 \(heartbeat_lost\) às 2026-08-15T10:07:00.000Z/,
     'the last expiration names the job it lost, why, and when',
   );
 
@@ -167,15 +167,15 @@ test('t164 AT — GET /runners is served against a real control plane, and the n
   requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  await api(cp, 'POST', '/v1/runners', { id: 'runner-a', nome: 'laptop do fundador' });
+  await api(cp, 'POST', '/v1/runners', { id: 'runner-a', name: 'laptop do fundador' });
   await api(cp, 'POST', '/v1/runners', { id: 'runner-b' });
-  const lease = await api<{ lease: { trabalho_id: number } }>(cp, 'POST', '/v1/leases', {
+  const lease = await api<{ lease: { job_id: number } }>(cp, 'POST', '/v1/leases', {
     runner_id: 'runner-a',
-    projeto_id: 3,
-    trabalho_id: 77,
-    teto_runner: 4,
-    teto_projeto: 4,
-    ttl_segundos: 600,
+    project_id: 3,
+    job_id: 77,
+    runner_cap: 4,
+    project_cap: 4,
+    ttl_seconds: 600,
   });
   assert.equal(lease.status, 201, 'the fixture lease is what gives the page something to show');
 

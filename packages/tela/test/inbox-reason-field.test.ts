@@ -91,8 +91,8 @@ async function openInbox(proposals: readonly Record<string, unknown>[]): Promise
     const match = /\/v1\/proposals\/(?<id>[^/]+)$/.exec(url);
     const body =
       match === null
-        ? { propostas: proposals }
-        : { proposta: proposals.find((proposal) => String(proposal.id) === match.groups?.id) };
+        ? { proposals: proposals }
+        : { proposal: proposals.find((proposal) => String(proposal.id) === match.groups?.id) };
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -119,14 +119,14 @@ function clickAction(row: FakeElement, label: string): void {
   button.click();
 }
 
-const PENDING = { id: 7, grafo_id: 'grafo-fabrica-1', status: 'pendente', operacoes: [] };
-const OTHER_PENDING = { id: 8, grafo_id: 'grafo-fabrica-1', status: 'pendente', operacoes: [] };
+const PENDING = { id: 7, graph_id: 'grafo-fabrica-1', status: 'pending', operations: [] };
+const OTHER_PENDING = { id: 8, graph_id: 'grafo-fabrica-1', status: 'pending', operations: [] };
 const APPLIED = {
   id: 9,
-  grafo_id: 'grafo-fabrica-1',
-  status: 'aplicada',
-  versao_aplicada_id: 'abc123',
-  operacoes: [],
+  graph_id: 'grafo-fabrica-1',
+  status: 'applied',
+  applied_version_id: 'abc123',
+  operations: [],
 };
 
 test('AT1 — the reason field of Rejeitar has an accessible name', async () => {

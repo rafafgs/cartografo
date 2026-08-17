@@ -114,7 +114,7 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
   const page = await openPage(screen, `/trabalhos/${job.id}`);
 
   assert.equal(page.status, 200);
-  assert.ok(page.html.includes(job.titulo), 'the page identifies itself by the job');
+  assert.ok(page.html.includes(job.title), 'the page identifies itself by the job');
 
   const segments = segmentsOf(page.html);
   assert.ok(segments.length >= 3, `expected at least three segments, got ${segments.length}`);
@@ -134,7 +134,7 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
   assert.deepEqual(instants, [...instants].sort(), 'the segments come out in chronological order');
   assert.equal(
     segments[0].start,
-    job.criado_em,
+    job.created_at,
     'the timeline starts when the job came into existence',
   );
 
@@ -144,8 +144,8 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
     [
       {
         category: 'agente_trabalhando',
-        start: session.aberta_em,
-        end: finished.body.finalizada_em ?? '',
+        start: session.opened_at,
+        end: finished.body.finished_at ?? '',
       },
     ],
     "the agent bucket is exactly the session's [aberta_em, finalizada_em]",
@@ -157,8 +157,8 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
     [
       {
         category: 'esperando_humano',
-        start: question.criada_em,
-        end: answered.body.respondida_em ?? '',
+        start: question.created_at,
+        end: answered.body.answered_at ?? '',
       },
     ],
     "the human bucket is exactly the question's [criada_em, respondida_em]",
@@ -172,8 +172,8 @@ test('t107 AT7 — GET /trabalhos/:id builds queue, agent and human in chronolog
     segments.some(
       (segment) =>
         segment.category === 'fila' &&
-        segment.start === finished.body.finalizada_em &&
-        segment.end === question.criada_em,
+        segment.start === finished.body.finished_at &&
+        segment.end === question.created_at,
     ),
     'the gap between the end of the session and the creation of the question is queue',
   );
@@ -251,23 +251,23 @@ test('t107 AT7 — the three-bucket rule, as a pure function', async () => {
         id: 1,
         engine: 'claude-code',
         status: 'concluida',
-        aberta_em: instant(20),
-        finalizada_em: instant(30),
+        opened_at: instant(20),
+        finished_at: instant(30),
       },
     ],
     questions: [
       {
         id: 1,
         status: 'respondida',
-        pergunta: 'e aí?',
-        criada_em: instant(40),
-        respondida_em: instant(50),
+        question: 'e aí?',
+        created_at: instant(40),
+        answered_at: instant(50),
       },
     ],
     // The server's answer, not a re-derivation here (t152): the job walked to a
     // final node of its graph version, and that is the only terminal signal
     // this system has.
-    concluido: true,
+    completed: true,
   });
 
   assert.deepEqual(
@@ -321,20 +321,20 @@ test('t107 AT7 — an open session and a pending question stay open, and the job
         id: 1,
         engine: 'claude-code',
         status: 'aberta',
-        aberta_em: instant(10),
-        finalizada_em: null,
+        opened_at: instant(10),
+        finished_at: null,
       },
     ],
     questions: [
       {
         id: 1,
         status: 'pendente',
-        pergunta: 'e aí?',
-        criada_em: instant(20),
-        respondida_em: null,
+        question: 'e aí?',
+        created_at: instant(20),
+        answered_at: null,
       },
     ],
-    concluido: false,
+    completed: false,
   });
 
   assert.deepEqual(
@@ -375,7 +375,7 @@ test('t107 AT7 — a blocked, parked job keeps accruing queue, left open', async
     ],
     sessions: [],
     questions: [],
-    concluido: false,
+    completed: false,
   });
 
   assert.equal(timeline.blocked, true);
@@ -404,7 +404,7 @@ test('t152 — a job one event old is not done: nothing open is not the same as 
     ],
     sessions: [],
     questions: [],
-    concluido: false,
+    completed: false,
   });
 
   assert.equal(
@@ -443,12 +443,12 @@ test('t152 — concluído from the server is necessary, never sufficient: an ope
         id: 1,
         engine: 'claude-code',
         status: 'aberta',
-        aberta_em: instant(10),
-        finalizada_em: null,
+        opened_at: instant(10),
+        finished_at: null,
       },
     ],
     questions: [],
-    concluido: true,
+    completed: true,
   });
 
   assert.equal(

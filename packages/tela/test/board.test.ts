@@ -69,7 +69,7 @@ test('t107 AT4 — GET /quadro shows jobs grouped by node, with the block reason
   );
 
   for (const job of [refining, implementing, stuck]) {
-    assert.ok(page.html.includes(job.titulo), `the board does not show the title "${job.titulo}"`);
+    assert.ok(page.html.includes(job.title), `the board does not show the title "${job.title}"`);
   }
 
   const groups = blocks(page.html, 'no-atual');
@@ -81,16 +81,16 @@ test('t107 AT4 — GET /quadro shows jobs grouped by node, with the block reason
 
   const [inImplement, inRefine] = groups;
   assert.ok(
-    inImplement.excerpt.includes(implementing.titulo) &&
-      inImplement.excerpt.includes(stuck.titulo),
+    inImplement.excerpt.includes(implementing.title) &&
+      inImplement.excerpt.includes(stuck.title),
     'the two that transitioned are under the "implementar" group',
   );
   assert.ok(
-    !inImplement.excerpt.includes(refining.titulo),
+    !inImplement.excerpt.includes(refining.title),
     'whoever did not move cannot show up in the next node group',
   );
   assert.ok(
-    inRefine.excerpt.includes(refining.titulo),
+    inRefine.excerpt.includes(refining.title),
     'whoever did not move stays under the entry node group',
   );
 

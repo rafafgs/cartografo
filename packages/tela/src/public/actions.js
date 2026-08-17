@@ -4,7 +4,7 @@
  * The safety ladder of principle 5 says a change to the graph passes a human
  * gate. This table IS that gate's shape on screen: a proposal shows exactly the
  * actions the API would accept for the status it is in, and nothing else. An
- * offered button that comes back `409 proposta_nao_pendente` teaches the person
+ * offered button that comes back `409 proposal_not_pending` teaches the person
  * to distrust the screen, which is worse than one button fewer.
  *
  * Pure and side-effect free so it can be tested in Node while running in the
@@ -24,7 +24,7 @@
  * @typedef {object} ActionDescriptor
  * @property {ActionName} route Last segment of `POST /v1/proposals/:id/<route>`.
  * @property {string} label Button text, in Portuguese, like the rest of the page.
- * @property {boolean} requiresReason Whether a `motivo` is mandatory (FR7).
+ * @property {boolean} requiresReason Whether a `reason` is mandatory (FR7).
  * @property {string} reasonLabel Visible label — and accessible name — of the reason field, when there is one.
  */
 
@@ -60,22 +60,23 @@ export const ACTIONS = Object.freeze({
 /**
  * The state machine, written out.
  *
- * `pendente` and `aprovada` are the two states waiting on a person; `aplicada`
- * is the one that can still be undone; `revertida` and `rejeitada` are history.
+ * `pending` and `approved` are the two states waiting on a person; `applied`
+ * is the one that can still be undone; `reverted` and `rejected` are history.
+ * English since t226: this is the `status` the API publishes.
  * A rejected proposal is negative knowledge for the topographer (`t110`), which
  * is why it stays on the page as read-only instead of disappearing.
  */
 /** @type {Readonly<Record<string, readonly ActionName[]>>} */
 const ACTIONS_BY_STATUS = Object.freeze({
-  pendente: Object.freeze(['approve', 'reject']),
-  aprovada: Object.freeze(['apply']),
-  aplicada: Object.freeze(['revert']),
-  revertida: Object.freeze([]),
-  rejeitada: Object.freeze([]),
+  pending: Object.freeze(['approve', 'reject']),
+  approved: Object.freeze(['apply']),
+  applied: Object.freeze(['revert']),
+  reverted: Object.freeze([]),
+  rejected: Object.freeze([]),
 });
 
 /** Statuses that are still waiting on a person — the "Pendentes" section (FR3). */
-export const OPEN_STATUSES = Object.freeze(['pendente', 'aprovada']);
+export const OPEN_STATUSES = Object.freeze(['pending', 'approved']);
 
 /**
  * Actions valid for a status.

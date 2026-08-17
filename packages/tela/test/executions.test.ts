@@ -109,8 +109,8 @@ test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of tha
   const page = await openPage(screen, '/execucoes/7');
 
   assert.equal(page.status, 200);
-  assert.ok(page.html.includes(fromSeven.titulo), "the execution board shows that execution's job");
-  assert.ok(!page.html.includes(fromEight.titulo), 'a job from another execution must not leak');
+  assert.ok(page.html.includes(fromSeven.title), "the execution board shows that execution's job");
+  assert.ok(!page.html.includes(fromEight.title), 'a job from another execution must not leak');
 
   const sessions = blocks(page.html, 'sessao');
   assert.deepEqual(
@@ -125,7 +125,7 @@ test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of tha
   assert.ok(sessions[0].excerpt.includes('claude-code'), 'the session shows the engine');
   assert.ok(sessions[0].excerpt.includes('concluida'), 'the session shows the status');
   assert.ok(
-    sessions[0].excerpt.includes(sessionOfSeven.aberta_em),
+    sessions[0].excerpt.includes(sessionOfSeven.opened_at),
     'the session shows when it opened',
   );
 
@@ -136,7 +136,7 @@ test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of tha
     'only the pending questions of that execution',
   );
   assert.ok(
-    !page.html.includes(questionOfEight.pergunta),
+    !page.html.includes(questionOfEight.question),
     'a question from another execution does not leak',
   );
 });

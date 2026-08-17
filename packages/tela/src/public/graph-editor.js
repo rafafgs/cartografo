@@ -40,9 +40,11 @@
  * and D4 treats agent-authored content as an injection vector — the same rule
  * `inbox.js` follows.
  *
- * The wire keys (`grafo_id`, `versao_alvo`, `operacoes`, `evidencia`,
- * `metrica_esperada`, `proposta`, `grafo_versao`) stay in Portuguese, and so
- * does every string the browser shows (t133, exceptions 9 and 10).
+ * The wire keys (`graph_id`, `target_version`, `operations`, `evidence`,
+ * `expected_metric`, `proposal`, `graph_version`) went English with the API in
+ * t226; every string the browser SHOWS stays Portuguese (t133, exceptions 9 and
+ * 10), and so do `MANUAL_EVIDENCE`/`MANUAL_METRIC` below, which are the frozen
+ * hypothesis shape `domain/hypothesis.ts` owns and D20 does not unfreeze.
  */
 
 import { diffGraphs, FROZEN_NODE_FIELDS } from './graph-operations.js';
@@ -57,7 +59,7 @@ const PROPOSALS_URL = '/v1/proposals';
 /**
  * The evidence every proposal written here carries.
  *
- * `POST /v1/proposals` demands `evidencia` and `metrica_esperada` because a
+ * `POST /v1/proposals` demands `evidence` and `expected_metric` because a
  * proposal is a HYPOTHESIS (D15) — and a person dragging a node is not making
  * one. Inventing a metric to satisfy the field would be worse than admitting
  * the gap, so the two are fixed, inert and honest about where the change came
@@ -428,8 +430,8 @@ export function mount(doc, request) {
         ok: false,
         status: 0,
         body: {
-          erro: 'tela_sem_resposta',
-          mensagem: `a tela não respondeu (${cause instanceof Error ? cause.message : 'falha de rede'})`,
+          error: 'tela_sem_resposta',
+          message: `a tela não respondeu (${cause instanceof Error ? cause.message : 'falha de rede'})`,
         },
       };
     }
@@ -439,7 +441,7 @@ export function mount(doc, request) {
       try {
         body = JSON.parse(text);
       } catch {
-        body = { erro: 'resposta_ilegivel', mensagem: text.slice(0, 200) };
+        body = { error: 'resposta_ilegivel', message: text.slice(0, 200) };
       }
     }
     return { ok: response.ok, status: response.status, body };
@@ -457,10 +459,10 @@ export function mount(doc, request) {
   /** The human-readable half of an error body, in the core's own vocabulary. */
   function messageOf(body, status) {
     if (!isObject(body)) return `falha ${status}`;
-    if (typeof body.mensagem === 'string' && body.mensagem !== '') {
-      return typeof body.erro === 'string' ? `${body.erro}: ${body.mensagem}` : body.mensagem;
+    if (typeof body.message === 'string' && body.message !== '') {
+      return typeof body.error === 'string' ? `${body.error}: ${body.message}` : body.message;
     }
-    if (typeof body.erro === 'string') return body.erro;
+    if (typeof body.error === 'string') return body.error;
     if (typeof body.message === 'string' && body.message !== '') return body.message;
     return `falha ${status}`;
   }
@@ -485,8 +487,8 @@ export function mount(doc, request) {
     fill(
       picker,
       ...classes.map((entry) => {
-        const option = el('option', undefined, `${String(entry.classe)} (${String(entry.grafo_id)})`);
-        option.value = String(entry.grafo_id);
+        const option = el('option', undefined, `${String(entry.class)} (${String(entry.graph_id)})`);
+        option.value = String(entry.graph_id);
         return option;
       }),
     );
@@ -524,8 +526,8 @@ export function mount(doc, request) {
       return;
     }
 
-    const graph = isObject(lineage.body) ? lineage.body.grafo : undefined;
-    const current = isObject(graph) ? graph.versao_corrente_id : null;
+    const graph = isObject(lineage.body) ? lineage.body.graph : undefined;
+    const current = isObject(graph) ? graph.current_version_id : null;
     if (typeof current !== 'string' || current === '') {
       setNotice('este grafo não aponta para versão corrente nenhuma', true);
       return;
@@ -537,7 +539,7 @@ export function mount(doc, request) {
       return;
     }
 
-    const row = isObject(version.body) ? version.body.grafo_versao : undefined;
+    const row = isObject(version.body) ? version.body.graph_version : undefined;
     const snapshot = isObject(row) ? row.snapshot : undefined;
     if (!isObject(snapshot)) {
       setNotice('a versão veio sem snapshot; não há o que editar', true);
@@ -673,18 +675,18 @@ export function mount(doc, request) {
     setNotice(`enviando ${operations.length} operação(ões)…`, false);
 
     const created = await post(PROPOSALS_URL, {
-      grafo_id: graphId,
-      versao_alvo: versionId,
-      operacoes: operations,
-      evidencia: MANUAL_EVIDENCE,
-      metrica_esperada: MANUAL_METRIC,
+      graph_id: graphId,
+      target_version: versionId,
+      operations,
+      evidence: MANUAL_EVIDENCE,
+      expected_metric: MANUAL_METRIC,
     });
     if (!created.ok) {
       refuse(created, 'a proposta não foi criada');
       return;
     }
 
-    const proposal = isObject(created.body) ? created.body.proposta : undefined;
+    const proposal = isObject(created.body) ? created.body.proposal : undefined;
     const proposalId = isObject(proposal) ? proposal.id : undefined;
     if (proposalId === undefined || proposalId === null) {
       setNotice('a API criou a proposta sem devolver o id dela', true);
@@ -703,7 +705,7 @@ export function mount(doc, request) {
       return;
     }
 
-    const written = isObject(applied.body) ? applied.body.grafo_versao : undefined;
+    const written = isObject(applied.body) ? applied.body.graph_version : undefined;
     const newVersion = isObject(written) && typeof written.id === 'string' ? written.id : null;
     appliedVersionId = newVersion;
 
@@ -723,21 +725,21 @@ export function mount(doc, request) {
    * Three shapes, and each one is a different conversation:
    * - `422 grafo_invalido` carries the whole gate report, which becomes one
    *   prose line per problem (`graph-soundness.js`);
-   * - `422 operacao_inaplicavel` / `versao_sem_efeito` already wrote a sentence
-   *   about the snapshot, and it is shown as it came;
-   * - `409 proposta_desatualizada` is the base having moved, and the answer is
+   * - `422 inapplicable_operation` / `version_without_effect` already wrote a
+   *   sentence about the snapshot, and it is shown as it came;
+   * - `409 stale_proposal` is the base having moved, and the answer is
    *   a button, not a retry.
    */
   function refuse(answer, headline) {
     const body = isObject(answer.body) ? answer.body : {};
 
-    if (answer.status === 422 && body.erro === 'grafo_invalido') {
+    if (answer.status === 422 && body.error === 'invalid_graph') {
       showLines(renderReport(body), true);
       setNotice(`${headline}: o portão de soundness reprovou`, true);
       return;
     }
 
-    if (answer.status === 409 && body.erro === 'proposta_desatualizada') {
+    if (answer.status === 409 && body.error === 'stale_proposal') {
       showLines(['a base do grafo mudou enquanto você editava'], true);
       problems.append(reloadAction('Recarregar'));
       setNotice(headline, true);

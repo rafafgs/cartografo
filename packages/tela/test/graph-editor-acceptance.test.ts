@@ -186,12 +186,12 @@ const NEW_NODE = {
 
 /** The lineage envelope every graph route answers with. */
 interface LineageBody {
-  grafo: { id: string; versao_corrente_id: string | null };
+  graph: { id: string; current_version_id: string | null };
 }
 
 /** `POST /v1/graphs` also hands back the first version it wrote. */
 interface RegisteredBody extends LineageBody {
-  grafo_versao: { id: string };
+  graph_version: { id: string };
 }
 
 /** Registers a graph — the base one unless another document is handed in. */
@@ -237,7 +237,7 @@ test('AC1 — the page produces the same version the API would, through the same
   const registered = await registerBase(driven);
   await registerBase(replayed);
 
-  const { doc, editor, log } = await openEditor(screen.url, registered.grafo.id);
+  const { doc, editor, log } = await openEditor(screen.url, registered.graph.id);
 
   doc.require('add-node').click();
   fillCard(cards(doc, 'node-list', 'data-node').at(-1) as FakeElement, NEW_NODE);
@@ -266,8 +266,8 @@ test('AC1 — the page produces the same version the API would, through the same
   // not a path fragment it gets to trust.
   assert.deepEqual(log.map(shapeOf), [
     'GET /v1/classes',
-    `GET /v1/graphs/${registered.grafo.id}`,
-    `GET /v1/graph-versions/${encodeURIComponent(registered.grafo.versao_corrente_id ?? '')}`,
+    `GET /v1/graphs/${registered.graph.id}`,
+    `GET /v1/graph-versions/${encodeURIComponent(registered.graph.current_version_id ?? '')}`,
     'POST /v1/proposals',
     'POST /v1/proposals/:id/approve',
     'POST /v1/proposals/:id/apply',
@@ -281,14 +281,14 @@ test('AC1 — the page produces the same version the API would, through the same
   const sent = log.find((call) => shapeOf(call) === 'POST /v1/proposals');
   assert.ok(sent !== undefined, 'the page never created a proposal');
 
-  const created = await api<{ proposta: { id: number } }>(replayed, 'POST', '/v1/proposals', sent.body);
+  const created = await api<{ proposal: { id: number } }>(replayed, 'POST', '/v1/proposals', sent.body);
   assert.equal(created.status, 201, `POST /v1/proposals returned ${created.status}`);
-  const proposalId = created.body.proposta.id;
+  const proposalId = created.body.proposal.id;
 
   const approved = await api(replayed, 'POST', `/v1/proposals/${proposalId}/approve`, {});
   assert.equal(approved.status, 200, `approve returned ${approved.status}`);
 
-  const done = await api<{ grafo_versao: { id: string } }>(
+  const done = await api<{ graph_version: { id: string } }>(
     replayed,
     'POST',
     `/v1/proposals/${proposalId}/apply`,
@@ -298,7 +298,7 @@ test('AC1 — the page produces the same version the API would, through the same
 
   assert.equal(
     applied,
-    done.body.grafo_versao.id,
+    done.body.graph_version.id,
     'the page and the raw API produced different versions of the same edit',
   );
 });
@@ -341,7 +341,7 @@ test('AC1 — two parallel edges stay two edges, from the cards to the version i
   const registered = await registerBase(driven, parallelBaseGraph());
   await registerBase(replayed, parallelBaseGraph());
 
-  const { doc, editor, log } = await openEditor(screen.url, registered.grafo.id);
+  const { doc, editor, log } = await openEditor(screen.url, registered.graph.id);
 
   const drawn = cards(doc, 'edge-list', 'data-edge');
   assert.equal(drawn.length, 2, 'the page did not draw one card per parallel edge');
@@ -366,14 +366,14 @@ test('AC1 — two parallel edges stay two edges, from the cards to the version i
   // What was actually written: the sibling the person never touched, and the
   // edge they typed. Keyed by the two ends alone, the diff removed whichever
   // parallel edge came first and this read came back `reprovado, escala`.
-  const version = await api<{ grafo_versao: { snapshot: Record<string, unknown> } }>(
+  const version = await api<{ graph_version: { snapshot: Record<string, unknown> } }>(
     driven,
     'GET',
     `/v1/graph-versions/${encodeURIComponent(applied)}`,
   );
   assert.equal(version.status, 200, `GET /v1/graph-versions returned ${version.status}`);
   assert.deepEqual(
-    conditionsOf(version.body.grafo_versao.snapshot),
+    conditionsOf(version.body.graph_version.snapshot),
     ['aprovado', 'escala'],
     'the version kept the wrong half of the parallel pair',
   );
@@ -383,14 +383,14 @@ test('AC1 — two parallel edges stay two edges, from the cards to the version i
   const sent = log.find((call) => shapeOf(call) === 'POST /v1/proposals');
   assert.ok(sent !== undefined, 'the page never created a proposal');
 
-  const created = await api<{ proposta: { id: number } }>(replayed, 'POST', '/v1/proposals', sent.body);
+  const created = await api<{ proposal: { id: number } }>(replayed, 'POST', '/v1/proposals', sent.body);
   assert.equal(created.status, 201, `POST /v1/proposals returned ${created.status}`);
-  const proposalId = created.body.proposta.id;
+  const proposalId = created.body.proposal.id;
 
   const approved = await api(replayed, 'POST', `/v1/proposals/${proposalId}/approve`, {});
   assert.equal(approved.status, 200, `approve returned ${approved.status}`);
 
-  const done = await api<{ grafo_versao: { id: string } }>(
+  const done = await api<{ graph_version: { id: string } }>(
     replayed,
     'POST',
     `/v1/proposals/${proposalId}/apply`,
@@ -400,7 +400,7 @@ test('AC1 — two parallel edges stay two edges, from the cards to the version i
 
   assert.equal(
     applied,
-    done.body.grafo_versao.id,
+    done.body.graph_version.id,
     'the page and the raw API produced different versions of the same edit',
   );
 });
@@ -412,7 +412,7 @@ test('AC2 — a soundness failure is shown with its reason, and nothing is writt
   const screen = await startScreen(t, cp);
   const registered = await registerBase(cp);
 
-  const { doc, editor, log } = await openEditor(screen.url, registered.grafo.id);
+  const { doc, editor, log } = await openEditor(screen.url, registered.graph.id);
 
   // A node with no edge at all: unreachable from the initial node, and with no
   // path to a final one. Two rules, one edit.
@@ -436,11 +436,11 @@ test('AC2 — a soundness failure is shown with its reason, and nothing is writt
 
   assert.equal(editor.state().appliedVersionId, null, 'the page recorded a version that was refused');
 
-  const after = await api<LineageBody>(cp, 'GET', `/v1/graphs/${registered.grafo.id}`);
+  const after = await api<LineageBody>(cp, 'GET', `/v1/graphs/${registered.graph.id}`);
   assert.equal(after.status, 200);
   assert.equal(
-    after.body.grafo.versao_corrente_id,
-    registered.grafo.versao_corrente_id,
+    after.body.graph.current_version_id,
+    registered.graph.current_version_id,
     'the lineage moved even though the gate refused',
   );
 });
@@ -452,7 +452,7 @@ test('AC3 — an existing node offers no control for `id`, `node_type` or `engin
   const screen = await startScreen(t, cp);
   const registered = await registerBase(cp);
 
-  const { doc } = await openEditor(screen.url, registered.grafo.id);
+  const { doc } = await openEditor(screen.url, registered.graph.id);
 
   const existing = cards(doc, 'node-list', 'data-node').filter(
     (card) => card.getAttribute('data-new') === null,

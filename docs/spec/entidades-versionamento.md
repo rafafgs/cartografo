@@ -134,47 +134,58 @@ operações tipadas, cada uma com a própria inversa. É o que torna a proposta
 julgável ("acrescenta um portão de red team antes de implantar") em vez de
 legível apenas como patch, e o que dá caminho de volta a qualquer mudança.
 
+O vocabulário viaja no fio em inglês desde a D20 (`glossario-wire.md` §3): o
+nome do tipo, as chaves da operação e o relatório de validação. Nada do que já
+estava gravado em `proposta.operacoes` foi migrado — os bancos de
+desenvolvimento são recriados, e uma operação ainda escrita em português é tipo
+desconhecido, não um dialeto antigo aceito em paralelo.
+
 | Tipo | Campos | Inversa |
 |---|---|---|
-| `adicionar_no` | `no` (documento do nó) | `remover_no` do mesmo `id` |
-| `remover_no` | `no_id` | `adicionar_no` do mesmo nó |
-| `adicionar_aresta` | `aresta` (`de`, `para`, `condicao`) | `remover_aresta` da mesma aresta |
-| `remover_aresta` | `aresta` (`de`, `para`, `condicao?`) | `adicionar_aresta` da mesma aresta |
-| `alterar_campo_no` | `no_id`, `campo`, `de`, `para` | `alterar_campo_no` com `de`/`para` trocados |
+| `add_node` | `node` (documento do nó) | `remove_node` do mesmo `id` |
+| `remove_node` | `node_id` | `add_node` do mesmo nó |
+| `add_edge` | `edge` (`from`, `to`, `condition`) | `remove_edge` da mesma aresta |
+| `remove_edge` | `edge` (`from`, `to`, `condition?`) | `add_edge` da mesma aresta |
+| `change_node_field` | `node_id`, `field`, `from`, `to` | `change_node_field` com `from`/`to` trocados |
 
-`alterar_campo_no` troca `papel`, `descricao`, `skill_ref` ou `contrato`
+O par antes/depois da operação chama-se `from`/`to` pelo mesmo nome que a aresta
+do documento já usava para as pontas dela, e é de propósito: são dois formatos
+que se encontram dentro da mesma operação, e passam a dizer a mesma palavra para
+a mesma coisa.
+
+`change_node_field` troca `papel`, `descricao`, `skill_ref` ou `contrato`
 inteiro. `id` e `tipo_no` **não** são campos alteráveis: o id é a chave por onde
 arestas, telemetria e propostas se referem ao nó, e trocá-lo é operação
 semântica própria, não rename cosmético.
 
 ```json
 {
-  "tipo": "adicionar_aresta",
-  "aresta": { "de": "testar", "para": "red_team", "condicao": "aprovado" },
-  "inversa": {
-    "tipo": "remover_aresta",
-    "aresta": { "de": "testar", "para": "red_team", "condicao": "aprovado" }
+  "type": "add_edge",
+  "edge": { "from": "testar", "to": "red_team", "condition": "aprovado" },
+  "inverse": {
+    "type": "remove_edge",
+    "edge": { "from": "testar", "to": "red_team", "condition": "aprovado" }
   }
 }
 ```
 
-**`condicao` no alvo de `remover_aresta` é opcional, e é o que desempata aresta
+**`condition` no alvo de `remove_edge` é opcional, e é o que desempata aresta
 paralela.** Duas arestas entre o mesmo par de nós com condições diferentes são
 duas arestas (o schema sempre permitiu: são dois desfechos do mesmo passo), e um
-alvo com só as duas pontas não diz qual delas remover. Com `condicao`, a
+alvo com só as duas pontas não diz qual delas remover. Com `condition`, a
 operação remove exatamente aquela; sem, remove a primeira aresta entre aquelas
-duas pontas — que é o que a operação sempre significou e o que mantém aplicando
-igual toda operação já gravada em `proposta.operacoes` (D2: nada é reescrito no
-lugar). Pelo mesmo motivo, a inversa só é incompatível quando os DOIS lados
-declaram `condicao` e elas divergem; um lado que não declara casa com o outro.
+duas pontas — que é o que a operação sempre significou. Pelo mesmo motivo, a
+inversa só é incompatível quando os DOIS lados declaram `condition` e elas
+divergem; um lado que não declara casa com o outro.
 
 Duas fronteiras:
 
 - **Validar operação é estrutural.** `validarOperacao` confere chaves, tipos e a
   compatibilidade da inversa (tipo pareado e **mesmo alvo** — inversa de outro
-  nó não é inversa). Ela não impede a operação de produzir um grafo quebrado:
-  quem reprova isso é o portão de soundness, depois de aplicar. Uma aresta com
-  `condicao: ""` é operação bem formada **e** grafo não sound; os dois
+  nó não é inversa), e responde `{valid, errors: [{code, message}]}`. Ela não
+  impede a operação de produzir um grafo quebrado: quem reprova isso é o portão
+  de soundness, depois de aplicar. Uma aresta com
+  `condition: ""` é operação bem formada **e** grafo não sound; os dois
   julgamentos são de camadas diferentes, e é isso que faz o erro chegar ao
   cliente com o nome da regra em vez de um 400 genérico.
 - **Aplicar recusa alvo inexistente.** Remover um nó que não está no snapshot
@@ -213,23 +224,23 @@ Como cada diferença vira operação:
 
 | Diferença | Operações |
 |---|---|
-| Nó só em `from` | `remover_no` |
-| Nó só em `to` | `adicionar_no` |
-| Mesmo `id`, muda só `papel`/`descricao`/`skill_ref`/`contrato` | um `alterar_campo_no` por campo, na ordem fixa `papel`, `descricao`, `skill_ref`, `contrato` |
-| Mesmo `id`, muda `tipo_no` ou qualquer chave fora dessas quatro | `remover_no` + `adicionar_no` (troca inteira) |
-| Aresta (`de`, `para`) só em um lado | `remover_aresta` / `adicionar_aresta` |
-| Mesmas pontas, muda `condicao` (ou qualquer chave) | `remover_aresta` + `adicionar_aresta` |
+| Nó só em `from` | `remove_node` |
+| Nó só em `to` | `add_node` |
+| Mesmo `id`, muda só `papel`/`descricao`/`skill_ref`/`contrato` | um `change_node_field` por campo, na ordem fixa `papel`, `descricao`, `skill_ref`, `contrato` |
+| Mesmo `id`, muda `tipo_no` ou qualquer chave fora dessas quatro | `remove_node` + `add_node` (troca inteira) |
+| Aresta (`from`, `to`) só em um lado | `remove_edge` / `add_edge` |
+| Mesmas pontas, muda `condition` (ou qualquer chave) | `remove_edge` + `add_edge` |
 
 Um campo alterável presente de um lado e ausente do outro também cai na troca
-inteira: `alterar_campo_no` grava a chave, nunca a apaga, e uma operação com
-`para: undefined` perde a chave ao ser serializada em `proposta.operacoes` e
+inteira: `change_node_field` grava a chave, nunca a apaga, e uma operação com
+`to: undefined` perde a chave ao ser serializada em `proposta.operacoes` e
 volta malformada.
 
 A ordem de emissão é fixa e faz parte do contrato: (a) remoções de nó em ordem
-de `from`, (b) adições de nó em ordem de `to`, (c) `alterar_campo_no` em ordem
+de `from`, (b) adições de nó em ordem de `to`, (c) `change_node_field` em ordem
 de `to`, (d) remoções de aresta em ordem de `from`, (e) adições de aresta em
 ordem de `to`. Remoção antes de adição é o que deixa a troca (remover e re-somar
-o mesmo `id`) aplicar sem esbarrar em `no_duplicado`; ler cada lista na ordem
+o mesmo `id`) aplicar sem esbarrar em `duplicate_node`; ler cada lista na ordem
 dela é o que faz o ida-e-volta reproduzir `to`, porque canonicalizar ordena
 chaves, não posições de lista.
 

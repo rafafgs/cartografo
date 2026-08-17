@@ -160,7 +160,7 @@ Quatro coisas que o campo decide, e que valem mais escritas do que inferidas:
   não validação**: serve para quem escreve grafo saber o que existe, e nada
   compara o nó contra ele antes do despacho.
 - **Trocar o modelo é mudança de versão.** `model` é dado de grafo, então
-  mudá-lo é proposta: `alterar_campo_no` com `campo: "model"` passa pelo
+  mudá-lo é proposta: `change_node_field` com `field: "model"` passa pelo
   mesmo caminho de sempre — aplicar, validar soundness, gravar `grafo_versao`
   nova, mover o ponteiro (D15) — e vale para `engine` do mesmo jeito desde a
   t166. Vem com inversa e com evidência, como qualquer outra proposta, e o que
@@ -224,7 +224,7 @@ Quatro coisas que o campo decide, e que valem mais escritas do que inferidas:
   `POST /v1/input-requests` por `POST /v1/jobs/:id/blocks`, e essa troca não
   depende de a sessão obedecer à instrução.
 
-Trocar a política de um nó é uma proposta `alterar_campo_no` como outra qualquer
+Trocar a política de um nó é uma proposta `change_node_field` como outra qualquer
 (`packages/core/src/domain/operations.ts`, `CHANGEABLE_FIELDS`): produz uma nova
 `grafo_versao`, revalida o documento inteiro e tem inversa. É de propósito que
 não exista caminho próprio para mudá-la — um segundo jeito de mudar um nó teria

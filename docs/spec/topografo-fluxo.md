@@ -19,7 +19,7 @@ qualquer detalhe:
   "analisadores lendo a mesma telemetria e emitindo propostas no mesmo formato".
 - **O agente decide UMA coisa.** Os números, a evidência e a hipótese saem do
   nosso código, deterministicamente, a partir do log. A sessão de agente escolhe
-  só as `operacoes` — o diff semântico — e devolve isso num arquivo. É o que faz
+  só as `operations` — o diff semântico — e devolve isso num arquivo. É o que faz
   "evidência rastreável a números do log" ser garantia estrutural em vez de
   promessa sobre a memória do modelo.
 
@@ -139,7 +139,7 @@ A `SessionSpec` que ele recebe é:
 - `workingDir` — um diretório de rascunho, que é o único lugar que a sessão
   toca.
 
-A saída é o arquivo `proposta-topografo.json`, com a forma `{"operacoes": [...]}`
+A saída é o arquivo `proposta-topografo.json`, com a forma `{"operations": [...]}`
 e nada mais. Arquivo, e não stdout, porque a saída de uma CLI real é um fluxo de
 quadros com prosa no meio ([`escalacao-humana.md` §4](escalacao-humana.md)) —
 um contrato que sobrevive a isso é o que a sessão cumpre com uma escrita só.
@@ -167,7 +167,7 @@ montar evidência + métrica esperada   (nosso código, determinístico)
         ▼
 uma sessão de EngineAdapter escolhe as operações
         │
-        ├─ falhou / estourou o relógio / arquivo ausente / `operacoes` vazias
+        ├─ falhou / estourou o relógio / arquivo ausente / `operations` vazias
         │  ou malformadas ──▶ erro, ZERO chamadas a POST /v1/proposals
         ▼
 POST /v1/proposals  (exatamente uma vez)  ──▶  proposta `pendente`
@@ -221,7 +221,7 @@ fazer a respeito.
 
 Códigos de saída: `0` quando gravou a proposta (o id vai para stdout) **ou**
 quando não havia o que propor; `1` quando a sessão falhou, não devolveu
-`operacoes` utilizáveis ou teve a credencial recusada — e nesse caso nada foi
+`operations` utilizáveis ou teve a credencial recusada — e nesse caso nada foi
 gravado.
 
 A prova manual contra a CLI real é

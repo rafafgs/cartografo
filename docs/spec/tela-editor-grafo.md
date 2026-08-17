@@ -29,7 +29,7 @@ ficha original em três.
 
 | Editável | Como |
 |---|---|
-| Acrescentar nó | Cartão novo, com `id`, `node_type`, `engine`, `role`, `descrição`, `skill_ref` e `contract` — tudo dentro de uma única operação `adicionar_no`. |
+| Acrescentar nó | Cartão novo, com `id`, `node_type`, `engine`, `role`, `descrição`, `skill_ref` e `contract` — tudo dentro de uma única operação `add_node`. |
 | Remover nó | Um botão por cartão. As arestas que tocavam o nó saem junto, e a tela **diz** quantas saíram. |
 | Editar nó existente | `role`, `descrição`, `skill_ref` (`id`/`version`/`hash`) e `contract` (JSON cru). Nada além disso — §3. |
 | Acrescentar / remover aresta | Um cartão por aresta, com `from`, `to`, `condition` e `descrição`. |

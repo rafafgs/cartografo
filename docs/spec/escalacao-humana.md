@@ -236,7 +236,7 @@ fingisse conferir isso estaria conferindo nada.
 
 `escalation_policy` e `escalation_recipient` entraram em `CHANGEABLE_FIELDS`
 (`packages/core/src/domain/operations.ts`), então mudar a política de um nó é uma
-operação `alterar_campo_no` como outra qualquer: passa pelo portão humano,
+operação `change_node_field` como outra qualquer: passa pelo portão humano,
 produz uma `grafo_versao` nova, revalida o documento inteiro e tem inversa. Quem
 mudou, quando e para quê fica no histórico — que é o mínimo para uma decisão do
 tipo "este nó para de chamar gente".

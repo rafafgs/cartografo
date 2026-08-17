@@ -117,23 +117,23 @@ segundo topógrafo cabe na API existente sem alterar formato compartilhado —
 alterar um schema para caber seria refutar a própria tese.
 
 Sobra a única mutação que o vocabulário de operações atual permite sobre um nó
-sem inventar campo: `alterar_campo_no` sobre `descricao`. Então toda candidata
+sem inventar campo: `change_node_field` sobre `descricao`. Então toda candidata
 carrega exatamente uma operação, que **anexa** uma recomendação legível à
 descrição atual do nó:
 
 ```json
 {
-  "tipo": "alterar_campo_no",
-  "no_id": "implementar",
-  "campo": "descricao",
-  "de": "<descrição atual>",
-  "para": "<descrição atual>\n\n[topógrafo-custo] teto de tokens excedido: …",
-  "inversa": {
-    "tipo": "alterar_campo_no",
-    "no_id": "implementar",
-    "campo": "descricao",
-    "de": "<para>",
-    "para": "<de>"
+  "type": "change_node_field",
+  "node_id": "implementar",
+  "field": "descricao",
+  "from": "<descrição atual>",
+  "to": "<descrição atual>\n\n[topógrafo-custo] teto de tokens excedido: …",
+  "inverse": {
+    "type": "change_node_field",
+    "node_id": "implementar",
+    "field": "descricao",
+    "from": "<to>",
+    "to": "<from>"
   }
 }
 ```

@@ -185,18 +185,22 @@ vocabulário do §3 de [`entidades-versionamento.md`](entidades-versionamento.md
 
 | Operação | Linha |
 |---|---|
-| `adicionar_no` | `+ nó "red_team" (tipo portao)` |
-| `remover_no` | `- nó "revisar_manual"` |
-| `adicionar_aresta` | `+ aresta testar → red_team (condição: aprovado)` |
-| `remover_aresta` | `- aresta testar → implantar` |
-| `alterar_campo_no` | `~ nó "implementar": campo "papel" de "fazer" para "conferir"` |
+| `add_node` | `+ nó "red_team" (tipo portao)` |
+| `remove_node` | `- nó "revisar_manual"` |
+| `add_edge` | `+ aresta testar → red_team (condição: aprovado)` |
+| `remove_edge` | `- aresta testar → implantar` |
+| `change_node_field` | `~ nó "implementar": campo "papel" de "fazer" para "conferir"` |
 | tipo desconhecido | `? operação de tipo desconhecido ("mover_no")` |
 | entrada malformada | `? operação malformada` |
 | `operacoes` vazio/ausente | `nenhuma alteração` |
 
-Valor de objeto (um `contrato` inteiro em `alterar_campo_no`) sai como JSON
+Valor de objeto (um `contrato` inteiro em `change_node_field`) sai como JSON
 compacto truncado em 60 caracteres: é o **valor** que muda, não a operação, e
-escondê-lo tornaria `alterar_campo_no` não julgável.
+escondê-lo tornaria `change_node_field` não julgável.
+
+O nome do tipo é o que a operação traz no fio (inglês, `glossario-wire.md` §3);
+a linha renderizada continua em português, palavra por palavra. O que se moveu
+foi a chave, não o texto que uma pessoa lê antes de aprovar.
 
 Nada aqui lança. As operações vêm de um topógrafo que esta tela nunca viu, e uma
 linha estranha é um render ruim — uma exceção é a página inteira em branco.

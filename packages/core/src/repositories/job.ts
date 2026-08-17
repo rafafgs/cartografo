@@ -10,11 +10,12 @@
  * The functions return `null` when the job does not exist; translating that into
  * a 404 is the route's job.
  *
- * The TABLE and its columns are English since D20's fourth child (t229); the
- * projection's field names are not, because `routes/*.ts`, `intake.ts` and the
- * dispatch path read them and those are outside that ticket's surface — so every
- * `SELECT` aliases the renamed column back onto the field it already fed (t229,
- * FR4). The event-type strings went English with the second child (t227).
+ * The TABLE and its columns are English since D20's fourth child (t229), and the
+ * values they store since its fifth (t235); the projection's field names are not,
+ * because `routes/*.ts`, `intake.ts` and the dispatch path read them and those are
+ * outside both tickets' surface — so every `SELECT` aliases the renamed column back
+ * onto the field it already fed (t229, FR4; t235, FR5). The event-type strings went
+ * English with the second child (t227).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -151,9 +152,10 @@ const COLUMNS = `
  * without materializing. Pure read: whoever WRITES to `event` is still only
  * `src/db/events.ts`.
  *
- * The three quoted values stay Portuguese on purpose: D20's fourth child renamed
- * identifiers only, and `entity_type`'s vocabulary is pinned by the `CHECK` of
- * migration `0003` (founder decision, 2026-08-17).
+ * The three quoted values are the English the column really holds: D20's fourth
+ * child (t229) renamed `entity_type` and left its vocabulary alone, and its fifth
+ * (t235) rewrote migration `0003` so the `CHECK` itself spells
+ * `('job','session','input_request','lease','graph_version')`.
  */
 const JOB_EVENTS = `
   SELECT COUNT(*) FROM event e

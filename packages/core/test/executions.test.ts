@@ -730,9 +730,12 @@ test('t245 AT4 — GET /v1/events/stream?type=execution.finished filters to it',
   const second = await travellerOf(ctx, 2452, version, 'nota que anda depois');
   await moveTo(ctx, first.id, 'revisar');
   await settle();
-  assert.deepEqual(
-    stream.messages,
-    [],
+  // The length, and not `deepEqual(messages, [])`: node's own types read that
+  // second form as an assertion that narrows `messages` to `never[]`, and every
+  // read of it after this line stops compiling.
+  assert.equal(
+    stream.messages.length,
+    0,
     'two creations and a transition happened, and none of them is what was asked for',
   );
 

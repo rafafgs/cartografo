@@ -34,7 +34,22 @@ import { isScalarMap } from '../domain/custom-fields.ts';
 import { isObject } from '../util/is-object.ts';
 
 /** Possible subjects of an event (`envelope.schema.json`). */
-export type EntityType = 'job' | 'session' | 'input_request' | 'lease' | 'graph_version';
+export type EntityType =
+  | 'job'
+  | 'session'
+  | 'input_request'
+  | 'lease'
+  | 'graph_version'
+  /**
+   * The round itself (D21, t245).
+   *
+   * The sixth, and the one with no table behind it: `execution_id` is still an
+   * opaque grouper and there is still nothing to `SELECT` from. What it has is
+   * a FACT — the control plane declaring the round over — and a fact needs a
+   * subject. `entity.id` is the `execution_id`, an integer like everybody
+   * else's but `graph_version`'s.
+   */
+  | 'execution';
 
 /** Who caused the event. Parity with flowpilot's `ActorType`. */
 export type ActorType = 'user' | 'agent' | 'system';
@@ -42,7 +57,11 @@ export type ActorType = 'user' | 'agent' | 'system';
 /** The subject of the event — the join key of telemetry with the rest of the database. */
 export interface Entity {
   type: EntityType;
-  /** Integer for `job`/`session`/`input_request`/`lease`; string (hash) for `graph_version` (D15). */
+  /**
+   * Integer for `job`/`session`/`input_request`/`lease`/`execution` — on the
+   * last one it is the `execution_id` itself (t245); string (hash) for
+   * `graph_version` (D15).
+   */
   id: number | string;
 }
 
@@ -96,6 +115,7 @@ const ENTITY_TYPES: readonly EntityType[] = [
   'input_request',
   'lease',
   'graph_version',
+  'execution',
 ];
 
 const ACTOR_TYPES: readonly ActorType[] = ['user', 'agent', 'system'];
@@ -156,11 +176,12 @@ const optional = (shape: FieldRule['shape'], extra: Partial<FieldRule> = {}): Fi
  *
  * A type enters here together with the code that emits it, never before — that
  * is how `job.dependency_declared` arrived, with the intake that declares it
- * (t122). The five last ones are the exception that proves the rule: `lease.*`
- * and `graph_version.*` had a schema, an example and a case in the reference
+ * (t122). The five `lease.*`/`graph_version.*` ones are the exception that
+ * proves the rule: they had a schema, an example and a case in the reference
  * reducer since t98, and no writer at all until t196 wired the repositories that
- * were already producing the facts. With them the mirror finally reflects the
- * WHOLE taxonomy — eighteen types, and no sixth one waiting for an owner.
+ * were already producing the facts. The nineteenth, `execution.finished`,
+ * arrives the ordinary way again — with the helper in `repositories/job.ts` that
+ * detects the end of a round (D21, t245).
  */
 const RULES: Record<string, TypeRule> = {
   'job.created': {
@@ -383,6 +404,15 @@ const RULES: Record<string, TypeRule> = {
       target_version: required('string'),
       reason: required('string'),
     },
+  },
+  // The round is over (D21, t245): every job of it arrived and no lease is
+  // still holding one. Empty payload for the same reason `job.unblocked` has
+  // one — the envelope's `execution_id`, `entity.id` and `occurred_at` already
+  // say which round ended and when, and repeating that inside `data` would be
+  // the same fact twice in one event.
+  'execution.finished': {
+    entity: 'execution',
+    fields: {},
   },
 };
 

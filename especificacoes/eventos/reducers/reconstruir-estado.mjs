@@ -20,6 +20,7 @@ function estadoVazio() {
     perguntas: {},
     leases: {},
     grafo_versao_corrente: {},
+    execucoes: {},
   };
 }
 
@@ -43,7 +44,7 @@ function trabalhoNovo(noEntrada) {
  * congelar o formato depois).
  *
  * @param {Array<object>} eventos Eventos no formato do envelope.
- * @returns {{trabalhos: object, sessoes: object, perguntas: object, leases: object, grafo_versao_corrente: object}}
+ * @returns {{trabalhos: object, sessoes: object, perguntas: object, leases: object, grafo_versao_corrente: object, execucoes: object}}
  */
 export function reconstruirEstado(eventos) {
   const estado = estadoVazio();
@@ -168,6 +169,20 @@ export function reconstruirEstado(eventos) {
       // abandonada continua no log e no banco, com a telemetria dela.
       case 'graph_version.reverted':
         estado.grafo_versao_corrente[data.graph_id] = data.target_version;
+        break;
+
+      // --- execução ---------------------------------------------------------
+      // O fim da rodada (D21, t245). A chave é `entity.id`, que aqui é o
+      // próprio `execution_id`, e o instante é o `occurred_at` do envelope — o
+      // evento não carrega payload nenhum, e não precisa: quando a rodada
+      // acabou é o quando do fato.
+      //
+      // Rodada que ninguém declarou concluída fica AUSENTE deste mapa, nunca
+      // presente com `finalizada_em: null`. É a mesma postura de `trabalhos`:
+      // chave existe porque houve fato, e o control plane só afirma este uma
+      // vez (`packages/core/src/repositories/job.ts`).
+      case 'execution.finished':
+        estado.execucoes[id] = { finalizada_em: evento.occurred_at };
         break;
 
       default:

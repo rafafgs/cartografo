@@ -238,7 +238,7 @@ function refusesEvent(input: Record<string, unknown>, field: string): void {
   );
 }
 
-test('t196 AT9 — the catalogue is the 18 type names of the taxonomy, in its order', () => {
+test('t196 AT9 — the catalogue is the 19 type names of the taxonomy, in its order', () => {
   assert.deepEqual(
     [...KNOWN_TYPES],
     [
@@ -260,6 +260,10 @@ test('t196 AT9 — the catalogue is the 18 type names of the taxonomy, in its or
       'graph_version.registered',
       'graph_version.applied',
       'graph_version.reverted',
+      // The sixth group, and the nineteenth type: the control plane declaring a
+      // round over (D21, t245). It is last here because it is last in the
+      // taxonomy's own catalogue, which is what this assertion mirrors.
+      'execution.finished',
     ],
   );
 });

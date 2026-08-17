@@ -177,10 +177,13 @@ test(
       // count moved with it, deliberately and in the same commit. t253 added
       // `0020_sessao_saida.sql`, which is not that either — it gives the session
       // somewhere to keep the node's structured report — and moved it again.
+      // t245 added `0021_execucao_finalizada.sql`, which widens the `CHECK` of
+      // `event.entity_type` so the round can be the subject of an event (D21),
+      // and moved it once more.
       assert.equal(
         first.readiness.migrationsApplied,
-        20,
-        'a brand-new database applies the twenty migrations the package ships',
+        21,
+        'a brand-new database applies the twenty-one migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

@@ -1,5 +1,5 @@
 /**
- * Structural gate over the PT→EN wire glossary (t213, FR1-FR5).
+ * Structural gate over the PT→EN wire glossary (t213, FR1-FR5; t257, FR24).
  *
  * D20 splits the D18 wire rename into six surface tickets — API/errors, events,
  * proposal operations, database, routes/CLI/report, docs and gate — and this
@@ -32,6 +32,26 @@
  * Repo convention (the same as `domain-graph.test.ts` and `support.ts`): the
  * artifact is required behind an explicit `existsSync`, so the initial red names
  * the missing document instead of blowing up somewhere inside a parser.
+ *
+ * ## The one non-structural check: a citation that names a line (t257, FR24)
+ *
+ * `onde está hoje` is the fourth cell, and when it names a LINE it is making a
+ * claim a test can settle: the row's name is written on that line of that file.
+ * The t255 round copied two citations out of its own ticket text instead of
+ * re-reading the tree it had just changed, and both landed next to the code they
+ * meant — the signature header three lines past the JSDoc block the same commit
+ * added above it, and the screen's `404` bodies four lines off. A reader who
+ * follows either one lands on an import list or a success path and has no way to
+ * tell a stale citation from a name that moved.
+ *
+ * Only the files of {@link RESOLVED_FILES} are resolved, and that is a scope, not
+ * a rule about which citations matter. The document carries around a hundred and
+ * forty line-numbered citations whose lines drifted the same way, over months of
+ * tickets editing code without coming back here, and re-pointing all of them is a
+ * ticket of its own — one that has to decide, name by name, WHICH line a term
+ * with several occurrences should point at. This gate holds the citations t255
+ * wrote, so at least the ones a reader was just told to trust are true; widening
+ * it is adding a path to that list and fixing what turns red.
  */
 
 import assert from 'node:assert/strict';
@@ -65,6 +85,19 @@ const SURFACES = Object.freeze([
 
 /** First header cell of a glossary table, normalized. */
 const TABLE_MARKER = 'superficie';
+
+/**
+ * The files whose line-numbered citations this gate resolves (FR24).
+ *
+ * Both arrived with t255 — §1.7's header constant and the three §1.4 rows that
+ * point at the screen's own `404` — and both were wrong the day they were
+ * written. The header says why the list is two paths and not every file the
+ * document cites.
+ */
+const RESOLVED_FILES = Object.freeze([
+  'packages/core/src/webhooks/signature.ts',
+  'packages/tela/src/static.ts',
+]);
 
 /** Separator between two spellings of one term inside a single cell. */
 const SPELLING_SEPARATOR = ' / ';
@@ -367,6 +400,116 @@ function misusedEnglish(rows: readonly Row[]): string[] {
   return problems;
 }
 
+/**
+ * The sixth check, which is the only one that reads something other than the rows.
+ *
+ * It takes the file reader by injection for the same reason the fixture at the
+ * bottom of this file exists: a sweep that resolves paths against the real tree
+ * cannot be shown to fire without editing the tree.
+ */
+
+/**
+ * A citation that names lines: a path, then `41`, `75,88` or `72-87` after a `:`.
+ *
+ * One cell holds several citations separated by commas — the same comma the
+ * `75,88` tail uses — so the path is what anchors a match and the tail is read as
+ * far as digits, commas and hyphens go.
+ */
+const LINE_CITATION = /([\w./-]+\.[a-z]+):(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)/g;
+
+/** One piece of a tail: the lines it covers, and how the cell writes it. */
+interface Claim {
+  written: string;
+  lines: number[];
+}
+
+/** A citation of one file by one row, split into its claims. */
+interface Citation {
+  row: Row;
+  /** The path as the cell writes it, relative to the repository root. */
+  file: string;
+  claims: Claim[];
+}
+
+/**
+ * The claims a tail makes: one per comma-separated piece, ranges expanded.
+ *
+ * A piece is a claim of its own because that is what the notation means. `75,88`
+ * says the name is on both lines and `72-87` says it is somewhere in that block,
+ * so a range is satisfied by one of its lines and a bare number only by itself.
+ */
+function claimsOf(tail: string): Claim[] {
+  return tail.split(',').map((piece) => {
+    const [first, last = first] = piece.split('-').map(Number);
+    return {
+      written: piece,
+      lines: Array.from({ length: last - first + 1 }, (_, offset) => first + offset),
+    };
+  });
+}
+
+/** Every line-numbered citation the rows make of one of `files`. */
+function citationsOf(rows: readonly Row[], files: readonly string[]): Citation[] {
+  const found: Citation[] = [];
+
+  for (const row of rows) {
+    for (const [, file, tail] of row.source.matchAll(LINE_CITATION)) {
+      if (!files.includes(file)) continue;
+      found.push({ row, file, claims: claimsOf(tail) });
+    }
+  }
+
+  return found;
+}
+
+/**
+ * Every citation whose lines do not carry the name the row is about (FR24).
+ *
+ * Either spelling counts — the English one the code stands on after its surface
+ * converges, the Portuguese one before — so the check reads the same on both
+ * sides of a rename and never asks a row to be edited twice.
+ *
+ * @param citations What to resolve.
+ * @param read The file's lines, or `null` when there is no such file.
+ * @returns One entry per claim that misses, naming the lines that DO carry the
+ *   name, so the failure message is already the fix.
+ */
+function misplaced(
+  citations: readonly Citation[],
+  read: (file: string) => string[] | null,
+): string[] {
+  const problems: string[] = [];
+
+  for (const citation of citations) {
+    const where = `line ${citation.row.line}`;
+    const lines = read(citation.file);
+    if (lines === null) {
+      problems.push(`${where}: ${citation.file} does not exist`);
+      continue;
+    }
+
+    const spellings = [...citation.row.terms, citation.row.en];
+    const carries = (number: number): boolean =>
+      spellings.some((spelling) => (lines[number - 1] ?? '').includes(spelling));
+    const missed = citation.claims.filter((claim) => !claim.lines.some(carries));
+    if (missed.length === 0) continue;
+
+    const real = lines.map((_, index) => index + 1).filter(carries);
+    problems.push(
+      `${where}: ${citation.file}:${missed.map((claim) => claim.written).join(',')} does not write ` +
+        `"${citation.row.en}"; it is on ${real.length === 0 ? 'no line of that file' : `line ${real.join(', ')}`}`,
+    );
+  }
+
+  return problems;
+}
+
+/** The lines of one repository file, or `null` when it is not there. */
+function readLines(file: string): string[] | null {
+  const absolute = path.join(REPO_ROOT, file);
+  return existsSync(absolute) ? readFileSync(absolute, 'utf8').split('\n') : null;
+}
+
 test('every glossary table parses into surface/pt/en/source rows', () => {
   const rows = glossaryRows();
   assert.ok(rows.length > 0, `${GLOSSARY_LABEL} has no glossary table`);
@@ -403,6 +546,45 @@ test('a term mapped on more than one surface maps to the same English name', () 
 
 test('a name the code already spells in English is reused only for its own concept', () => {
   assert.deepEqual(misusedEnglish(glossaryRows()), [], `English names taken in ${GLOSSARY_LABEL}`);
+});
+
+test('FR24 — a citation that names a line points at the line the name is on', () => {
+  const citations = citationsOf(glossaryRows(), RESOLVED_FILES);
+  assert.ok(
+    citations.length >= 4,
+    `only ${citations.length} line-numbered citations of ${RESOLVED_FILES.join(' and ')} were parsed`,
+  );
+
+  assert.deepEqual(
+    misplaced(citations, readLines),
+    [],
+    `a row of ${GLOSSARY_LABEL} sends the reader to the wrong line`,
+  );
+});
+
+test('FR24 — the citation check bites on a line number that drifted', () => {
+  const rows = parseRows(
+    [
+      '| superfície | hoje | vira | onde está hoje |',
+      '|---|---|---|---|',
+      '| api | `assinatura` | `signature` | `a/b.ts:1` |',
+      '| api | `cabecalho` | `header` | `a/b.ts:1` |',
+      '| api | `fim` | `tail` | `a/b.ts:1-3` |',
+      '| api | `nada` | `absent` | `a/b.ts:1-3` |',
+      '| api | `perdido` | `lost` | `a/c.ts:1` |',
+      '| api | `sem_linha` | `no_line` | `a/b.ts` |',
+    ].join('\n'),
+  );
+  const body = ['const header = 1;', "const signature = 'x';", 'const tail = 2;'];
+  const citations = citationsOf(rows, ['a/b.ts', 'a/c.ts']);
+
+  assert.equal(citations.length, 5, 'a citation with no line number is not this check’s business');
+
+  const problems = misplaced(citations, (file) => (file === 'a/b.ts' ? body : null));
+  assert.equal(problems.length, 3, `unexpected problems:\n${problems.join('\n')}`);
+  assert.match(problems[0], /a\/b\.ts:1 does not write "signature"; it is on line 2$/);
+  assert.match(problems[1], /a\/b\.ts:1-3 does not write "absent"; it is on no line of that file$/);
+  assert.match(problems[2], /a\/c\.ts does not exist$/);
 });
 
 test('the checks bite on a glossary broken on purpose', () => {

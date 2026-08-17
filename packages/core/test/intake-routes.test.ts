@@ -145,7 +145,7 @@ async function registerFactoryGraph(ctx: TestContext): Promise<string> {
 
 /** How many drafts exist in the table — the "nothing was written" probe. */
 function countDrafts(ctx: TestContext): number {
-  const row = ctx.db.prepare('SELECT COUNT(*) AS total FROM intake_rascunho').get() as {
+  const row = ctx.db.prepare('SELECT COUNT(*) AS total FROM intake_draft').get() as {
     total: number;
   };
   return row.total;
@@ -153,19 +153,17 @@ function countDrafts(ctx: TestContext): number {
 
 /** How many jobs exist in the table. */
 function countJobs(ctx: TestContext): number {
-  const row = ctx.db.prepare('SELECT COUNT(*) AS total FROM trabalho').get() as { total: number };
+  const row = ctx.db.prepare('SELECT COUNT(*) AS total FROM job').get() as { total: number };
   return row.total;
 }
 
 /** The declared dependency edges, as rows. */
 function dependencyRows(
   ctx: TestContext,
-): Array<{ trabalho_id: number; depende_de_trabalho_id: number }> {
+): Array<{ job_id: number; depends_on_job_id: number }> {
   return ctx.db
-    .prepare(
-      'SELECT trabalho_id, depende_de_trabalho_id FROM trabalho_dependencia ORDER BY id',
-    )
-    .all() as Array<{ trabalho_id: number; depende_de_trabalho_id: number }>;
+    .prepare('SELECT job_id, depends_on_job_id FROM job_dependency ORDER BY id')
+    .all() as Array<{ job_id: number; depends_on_job_id: number }>;
 }
 
 /** The version chain of a lineage, straight from the API. */
@@ -537,7 +535,7 @@ test('AT13 — a declared dependency becomes one row and one event, resolved to 
 
   assert.deepEqual(
     dependencyRows(ctx),
-    [{ trabalho_id: dependent, depende_de_trabalho_id: dependedOn }],
+    [{ job_id: dependent, depends_on_job_id: dependedOn }],
     'the row points from the dependent to the one it depends on',
   );
 
@@ -735,7 +733,7 @@ test('AT16 — confirming a draft creates no graph version and moves no pointer'
     'the pointer did not move',
   );
 
-  const everyVersion = ctx.db.prepare('SELECT COUNT(*) AS total FROM grafo_versao').get() as {
+  const everyVersion = ctx.db.prepare('SELECT COUNT(*) AS total FROM graph_version').get() as {
     total: number;
   };
   assert.equal(everyVersion.total, 1, 'no version in ANY lineage, not just in this one');

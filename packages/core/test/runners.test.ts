@@ -201,7 +201,7 @@ async function pair(
 function liveCredentials(db: ConnectionModule.Database, runnerId: string): number {
   const row = db
     .prepare(
-      "SELECT COUNT(*) AS total FROM credencial WHERE tipo = 'runner' AND runner_id = ? AND revogada_em IS NULL",
+      "SELECT COUNT(*) AS total FROM credential WHERE owner_type = 'runner' AND runner_id = ? AND revoked_at IS NULL",
     )
     .get(runnerId) as { total: number };
   return row.total;
@@ -220,16 +220,16 @@ test('t143 AT — first pairing mints the runner credential and returns it exact
   );
 
   const stored = db
-    .prepare('SELECT tipo, runner_id, revogada_em, hash FROM credencial WHERE runner_id = ?')
+    .prepare('SELECT owner_type, runner_id, revoked_at, hash FROM credential WHERE runner_id = ?')
     .all('runner-a') as Array<{
-    tipo: string;
+    owner_type: string;
     runner_id: string;
-    revogada_em: string | null;
+    revoked_at: string | null;
     hash: string;
   }>;
   assert.equal(stored.length, 1, 'pairing mints one credential, not one per call');
-  assert.equal(stored[0].tipo, 'runner');
-  assert.equal(stored[0].revogada_em, null);
+  assert.equal(stored[0].owner_type, 'runner');
+  assert.equal(stored[0].revoked_at, null);
   assert.notEqual(stored[0].hash, paired.body.token, 'what is stored is the digest, never the token');
 
   // The point of the token: it opens the runner's own surface, with no operator

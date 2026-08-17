@@ -11,7 +11,7 @@ quatro regras formais que separam um grafo executável de um desenho bonito.
 É o ponto de extensão nº 1 do projeto — dos quatro formatos tratados como
 produto (`notas/2026-08-14-extensao-e-qualidade.md`), este é o primeiro, e tudo
 o que vem depois o consome: o control plane guarda este documento inteiro na
-coluna `snapshot` de `grafo_versao`; os grafos de fábrica são escritos nele; o
+coluna `snapshot` de `graph_version`; os grafos de fábrica são escritos nele; o
 atlas o empacota.
 
 ---
@@ -445,7 +445,7 @@ escolha — zero dependências).
 
 Versionamos como o git pensa, sem o git no núcleo (D15). O snapshot de uma
 versão de grafo é **este documento inteiro**, e é isso que a coluna `snapshot` de
-`grafo_versao` guarda quando o control plane existir (`t100`/`t101`). Como o
+`graph_version` guarda quando o control plane existir (`t100`/`t101`). Como o
 documento é autocontido, ele **já é o bundle mínimo exportável**: uma versão
 qualquer sai como um arquivo, atravessa a borda (atlas, backup, espelho em repo
 do usuário, futura aprovação via PR) e volta sem precisar do banco de origem.

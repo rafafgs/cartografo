@@ -21,84 +21,84 @@ volta e não apaga nada — é o que deixa o topógrafo (`t110`) cruzar depois
 
 | Entidade | O que é | Muda? |
 |---|---|---|
-| `grafo` | A **linhagem**: a classe, o tipo de linhagem (base ou variante) e o ponteiro para a versão que vale hoje. | Só o ponteiro. |
-| `grafo_versao` | Um **snapshot** imutável do documento inteiro, endereçado pelo hash do conteúdo, com ponteiro para o pai. | Nunca. |
-| `proposta` | Uma **hipótese**: versão-alvo, diff semântico com inversas, evidência que a motivou e métrica que ela espera mover. | Só o status e o resultado. |
+| `graph` | A **linhagem**: a classe, o tipo de linhagem (base ou variante) e o ponteiro para a versão que vale hoje. | Só o ponteiro. |
+| `graph_version` | Um **snapshot** imutável do documento inteiro, endereçado pelo hash do conteúdo, com ponteiro para o pai. | Nunca. |
+| `proposal` | Uma **hipótese**: versão-alvo, diff semântico com inversas, evidência que a motivou e métrica que ela espera mover. | Só o status e o resultado. |
 
-`classe` é coluna de `grafo`, não tabela própria: a D8 fixa a classe como
+`class` é coluna de `graph`, não tabela própria: a D8 fixa a classe como
 identidade nomeada pelo usuário e **raiz de versionamento**, e a D13 descreve
 classe e variante como atributos do grafo, não como entidade com ciclo de vida
-próprio. Por isso a linhagem base de uma classe nasce com `id = classe`. Se um
+próprio. Por isso a linhagem base de uma classe nasce com `id = class`. Se um
 dia existir classe navegável sem grafo (t118), extrair a tabela é aditivo.
 
 ```sql
-CREATE TABLE grafo (
+CREATE TABLE graph (
   id                  TEXT PRIMARY KEY,          -- classe, para a linhagem base (D8)
-  classe              TEXT NOT NULL,
-  linhagem_tipo       TEXT NOT NULL CHECK (linhagem_tipo IN ('base', 'variante')),
-  base_classe         TEXT,                      -- só variante (D13)
-  origem_proposta_id  INTEGER REFERENCES proposta(id),
-  versao_corrente_id  TEXT REFERENCES grafo_versao(id),
-  criado_em           TEXT NOT NULL,
+  class               TEXT NOT NULL,
+  lineage_type        TEXT NOT NULL CHECK (lineage_type IN ('base', 'variante')),
+  base_class          TEXT,                      -- só variante (D13)
+  origin_proposal_id  INTEGER REFERENCES proposal(id),
+  current_version_id  TEXT REFERENCES graph_version(id),
+  created_at          TEXT NOT NULL,
   CHECK (
-    (linhagem_tipo = 'base' AND base_classe IS NULL)
-    OR (linhagem_tipo = 'variante' AND base_classe IS NOT NULL)
+    (lineage_type = 'base' AND base_class IS NULL)
+    OR (lineage_type = 'variante' AND base_class IS NOT NULL)
   )
 );
 
-CREATE UNIQUE INDEX grafo_classe_base_unico ON grafo (classe) WHERE linhagem_tipo = 'base';
+CREATE UNIQUE INDEX graph_class_base_unique ON graph (class) WHERE lineage_type = 'base';
 
-CREATE TABLE grafo_versao (
-  id          TEXT PRIMARY KEY,        -- sha256:<64 hex> do snapshot canônico (§2)
-  grafo_id    TEXT NOT NULL REFERENCES grafo(id),
-  versao_pai  TEXT REFERENCES grafo_versao(id),
-  snapshot    TEXT NOT NULL,           -- documento de grafo completo, canonicalizado
-  origem      TEXT NOT NULL CHECK (origem IN ('manual', 'sintetizador', 'proposta')),
-  proposta_id INTEGER REFERENCES proposta(id),
-  criado_em   TEXT NOT NULL
+CREATE TABLE graph_version (
+  id             TEXT PRIMARY KEY,     -- sha256:<64 hex> do snapshot canônico (§2)
+  graph_id       TEXT NOT NULL REFERENCES graph(id),
+  parent_version TEXT REFERENCES graph_version(id),
+  snapshot       TEXT NOT NULL,        -- documento de grafo completo, canonicalizado
+  source         TEXT NOT NULL CHECK (source IN ('manual', 'sintetizador', 'proposta')),
+  proposal_id    INTEGER REFERENCES proposal(id),
+  created_at     TEXT NOT NULL
 );
 
-CREATE TABLE proposta (
+CREATE TABLE proposal (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-  grafo_id            TEXT NOT NULL REFERENCES grafo(id),
-  versao_alvo         TEXT NOT NULL REFERENCES grafo_versao(id),
-  operacoes           TEXT NOT NULL,   -- JSON: Operacao[] (§3)
-  evidencia           TEXT NOT NULL,   -- JSON
-  metrica_esperada    TEXT NOT NULL,   -- JSON
+  graph_id            TEXT NOT NULL REFERENCES graph(id),
+  target_version      TEXT NOT NULL REFERENCES graph_version(id),
+  operations          TEXT NOT NULL,   -- JSON: Operacao[] (§3)
+  evidence            TEXT NOT NULL,   -- JSON
+  expected_metric     TEXT NOT NULL,   -- JSON
   status              TEXT NOT NULL DEFAULT 'pendente'
                         CHECK (status IN ('pendente', 'aplicada', 'revertida', 'rejeitada')),
-  versao_aplicada_id  TEXT REFERENCES grafo_versao(id),
-  motivo_reversao     TEXT,
-  resultado           TEXT,            -- JSON
-  criado_em           TEXT NOT NULL,
-  atualizado_em       TEXT NOT NULL
+  applied_version_id  TEXT REFERENCES graph_version(id),
+  revert_reason       TEXT,
+  result              TEXT,            -- JSON
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT NOT NULL
 );
 ```
 
 Notas de leitura:
 
-- **`versao_corrente_id` é o único campo que responde "o que vale hoje".** Não
-  há flag `ativa` em `grafo_versao`: duas fontes para o mesmo fato divergem.
-- **`origem` distingue quem produziu o snapshot** — `manual` (importado ou
+- **`current_version_id` é o único campo que responde "o que vale hoje".** Não
+  há flag `ativa` em `graph_version`: duas fontes para o mesmo fato divergem.
+- **`source` distingue quem produziu o snapshot** — `manual` (importado ou
   escrito à mão), `sintetizador` (D10) ou `proposta` (topógrafo). Na PoC só
   `manual` e `proposta` acontecem; o valor existe porque origem é fato do dado,
   não da fase.
 - **Os nomes de coluna copiam literalmente os schemas de evento** já
   especificados em
   [`especificacoes/eventos/schemas/`](../../especificacoes/eventos/schemas)
-  (`grafo_id`, `versao_pai`, `origem`, `proposta_id`, `motivo`). Nenhuma rota
+  (`graph_id`, `parent_version`, `source`, `proposal_id`, `reason`). Nenhuma rota
   desta camada emite evento, e a tabela append-only de eventos já existe (`t102`,
-  migração `0003`, com `grafo_versao` entre os `entidade_tipo` válidos): ligar a
+  migração `0003`, com `grafo_versao` entre os `entity_type` válidos): ligar a
   emissão é mapeamento direto, não tradução — e é item aberto da §7, sem ficha
   dona ainda.
-- **Nada se apaga.** Não existe `DELETE` nem `UPDATE` de `grafo_versao` em
-  nenhum caminho de código. O único `UPDATE` de `grafo` é o do ponteiro.
+- **Nada se apaga.** Não existe `DELETE` nem `UPDATE` de `graph_version` em
+  nenhum caminho de código. O único `UPDATE` de `graph` é o do ponteiro.
 
 ---
 
 ## 2. Identidade de uma versão: o hash do snapshot
 
-`grafo_versao.id` é `sha256:` seguido do sha256 da serialização JSON **canônica**
+`graph_version.id` é `sha256:` seguido do sha256 da serialização JSON **canônica**
 (chaves ordenadas recursivamente, a parte da RFC 8785 que estes formatos usam)
 do documento de grafo **inteiro**.
 
@@ -136,7 +136,7 @@ legível apenas como patch, e o que dá caminho de volta a qualquer mudança.
 
 O vocabulário viaja no fio em inglês desde a D20 (`glossario-wire.md` §3): o
 nome do tipo, as chaves da operação e o relatório de validação. Nada do que já
-estava gravado em `proposta.operacoes` foi migrado — os bancos de
+estava gravado em `proposal.operations` foi migrado — os bancos de
 desenvolvimento são recriados, e uma operação ainda escrita em português é tipo
 desconhecido, não um dialeto antigo aceito em paralelo.
 
@@ -233,7 +233,7 @@ Como cada diferença vira operação:
 
 Um campo alterável presente de um lado e ausente do outro também cai na troca
 inteira: `change_node_field` grava a chave, nunca a apaga, e uma operação com
-`to: undefined` perde a chave ao ser serializada em `proposta.operacoes` e
+`to: undefined` perde a chave ao ser serializada em `proposal.operations` e
 volta malformada.
 
 A ordem de emissão é fixa e faz parte do contrato: (a) remoções de nó em ordem
@@ -288,8 +288,8 @@ Implementação: [`packages/core/src/dominio/grafo.ts`](../../packages/core/src/
 ### Registrar uma linhagem nova
 
 `POST /v1/grafos` recebe o documento cru e faz, em uma transação: valida →
-cria `grafo` → cria `grafo_versao` (`versao_pai: null`, `origem: "manual"`) →
-aponta `versao_corrente_id` para ela.
+cria `graph` → cria `graph_version` (`parent_version: null`, `source: "manual"`) →
+aponta `current_version_id` para ela.
 
 Registrar **não** move o ponteiro
 ([`taxonomia.md`](../../especificacoes/eventos/taxonomia.md)) — exceto aqui, no
@@ -307,11 +307,11 @@ conferir que :id existe e é linhagem base
         ↓
 montar o documento: snapshot CORRENTE do base, só trocando linhagem
         ↓ (hash já existente em qualquer linhagem: 409, nada é escrito)
-gravar grafo (linhagem_tipo = variante, classe e base_classe = classe do base)
+gravar graph (lineage_type = variante, class e base_class = classe do base)
         ↓
-gravar grafo_versao (versao_pai = versão corrente do base)
+gravar graph_version (parent_version = versão corrente do base)
         ↓
-mover versao_corrente_id da variante
+mover current_version_id da variante
 ```
 
 Semântica de branch: bifurcar **não carrega diff nenhum**. Um `git branch` não
@@ -321,15 +321,15 @@ especial para variante.
 
 Duas consequências que o desenho assume de propósito:
 
-- **O parentesco atravessa a linhagem.** `versao_pai` da primeira versão da
-  variante é a versão corrente do **base**. O schema permite: `versao_pai` só
-  referencia `grafo_versao(id)`, sem exigir o mesmo `grafo_id`. É esse ponteiro
+- **O parentesco atravessa a linhagem.** `parent_version` da primeira versão da
+  variante é a versão corrente do **base**. O schema permite: `parent_version` só
+  referencia `graph_version(id)`, sem exigir o mesmo `graph_id`. É esse ponteiro
   que registra o ponto de bifurcação — a promoção e a oferta ainda **não** o
   usam (o diff delas compara os dois snapshots correntes, §3.1), e é dele que
   um merge de três vias vai sair quando existir (§7).
 - **O hash é global, não escopado por linhagem.** Duas bifurcações do mesmo base
   com a mesma origem (ou ambas sem origem) produziriam o mesmo documento, e
-  `grafo_versao.grafo_id` é coluna única — uma linha não pode pertencer a duas
+  `graph_version.graph_id` é coluna única — uma linha não pode pertencer a duas
   linhagens ao mesmo tempo. A segunda é recusada com `409
   bifurcacao_sem_efeito`, antes de qualquer escrita.
 
@@ -341,7 +341,7 @@ Quando presente, a versão nasce com `origem: "proposta"`; ausente, com
 versão sem proposta por trás.
 
 O tipo do campo diverge de propósito entre banco e documento:
-`grafo.origem_proposta_id` é `INTEGER REFERENCES proposta(id)`, e
+`graph.origin_proposal_id` é `INTEGER REFERENCES proposal(id)`, e
 `linhagem.origem_proposta_id` é `string` no
 [`grafo.schema.json`](../../schema/grafo.schema.json) — pensado para acomodar
 id de fora, como o de um atlas importado. O inteiro fica no banco e vira
@@ -360,14 +360,14 @@ não é negociável:
 aplicar operações sobre uma CÓPIA do snapshot-alvo
         ↓
 validar estrutura + soundness NO RESULTADO
-        ↓ (reprovado: status = rejeitada, relatório em resultado, 422)
+        ↓ (reprovado: status = rejeitada, relatório em result, 422)
 calcular o hash do documento resultante
         ↓
-gravar grafo_versao (versao_pai = versao_alvo, origem = proposta)
+gravar graph_version (parent_version = target_version, source = proposta)
         ↓
-mover grafo.versao_corrente_id
+mover graph.current_version_id
         ↓
-status = aplicada, versao_aplicada_id = hash
+status = aplicada, applied_version_id = hash
 ```
 
 O portão roda sobre o documento que **sairia**, não sobre o que entrou: é a
@@ -380,9 +380,9 @@ topógrafo, não lixo.
 
 ### Reverter
 
-`POST /v1/propostas/:id/reverter` move `versao_corrente_id` de volta para
-`versao_alvo` e grava `motivo_reversao`. A versão abandonada continua em
-`grafo_versao` e continua listada no histórico — append-only não tem exceção.
+`POST /v1/propostas/:id/reverter` move `current_version_id` de volta para
+`target_version` e grava `revert_reason`. A versão abandonada continua em
+`graph_version` e continua listada no histórico — append-only não tem exceção.
 
 `motivo` é **obrigatório**, espelhando `dados.motivo` do evento
 [`grafo_versao.revertida`](../../especificacoes/eventos/schemas/grafo_versao.revertida.schema.json):
@@ -394,15 +394,15 @@ Reverter sem dizer por quê perde a metade útil do fato.
 Proposta é hipótese, aprovação é experimento, a telemetria da rodada seguinte é
 o resultado ([`notas/2026-08-14-aprendizado.md`](../../notas/2026-08-14-aprendizado.md)).
 `POST /v1/propostas/:id/resultado` é onde esse ciclo fecha: recebe
-`{execucao_id, depois}` e grava o veredito da hipótese em `proposta.resultado`.
+`{execucao_id, depois}` e grava o veredito da hipótese em `proposal.result`.
 
 Duas formas até então opacas ficam exigidas **aqui, e só aqui**:
 
 ```jsonc
-// proposta.metrica_esperada — o que a hipótese declarou que ia mover
+// proposal.expected_metric — o que a hipótese declarou que ia mover
 { "nome": "retrabalho_por_travessia", "direcao": "cai", "de": 0.4, "para": 0.1 }
 
-// proposta.resultado — o veredito, escrito uma única vez
+// proposal.result — o veredito, escrito uma única vez
 { "veredito": "piorou", "antes": 0.4, "depois": 0.9,
   "execucao_id": 7, "avaliado_em": "2026-08-14T18:20:31.004Z" }
 ```
@@ -429,10 +429,10 @@ Três garantias em volta do cálculo:
   quem calcula é o topógrafo (`t110`), que já precisou calcular a mesma métrica
   para escrever `metrica_esperada` na criação da proposta.
 - **A execução seguinte é demonstrada, não alegada.** `execucao_id` é conferido
-  contra `metricasPorVersao` (entregue pelo `t102`, FR17): sem ao menos um `trabalho` daquela
-  execução registrado sob `versao_aplicada_id`, é `422 execucao_sem_evidencia`.
+  contra `metricasPorVersao` (entregue pelo `t102`, FR17): sem ao menos um `job` daquela
+  execução registrado sob `applied_version_id`, é `422 execucao_sem_evidencia`.
   É o join que prova que a versão aplicada realmente rodou.
-- **Só a primeira chamada conta.** Com `resultado` já preenchido, a rota é
+- **Só a primeira chamada conta.** Com `result` já preenchido, a rota é
   `409 proposta_ja_avaliada` e nada muda. Reavaliar seria reescrever o passado
   de uma hipótese.
 
@@ -473,14 +473,14 @@ diferentes de propósito:
 
 | Quem rejeitou | De que estado | Onde fica o porquê |
 |---|---|---|
-| Uma pessoa, pela inbox | `pendente` | `motivo_rejeicao` (texto livre, obrigatório) |
-| O portão de soundness, durante o `aplicar` | `aprovada` | `resultado` (o relatório inteiro do §4) |
+| Uma pessoa, pela inbox | `pendente` | `rejection_reason` (texto livre, obrigatório) |
+| O portão de soundness, durante o `aplicar` | `aprovada` | `result` (o relatório inteiro do §4) |
 
-Linha `rejeitada` anterior à `t165` tem `motivo_rejeicao = NULL`, e isso é o
+Linha `rejeitada` anterior à `t165` tem `rejection_reason = NULL`, e isso é o
 correto: ela nunca foi rejeitada por gente. Não houve backfill.
 
-O veredito é ortogonal a este diagrama: ele escreve `resultado` e deixa o estado
-onde estava. `resultado` acumula dois usos que nunca coexistem — o relatório que
+O veredito é ortogonal a este diagrama: ele escreve `result` e deixa o estado
+onde estava. `result` acumula dois usos que nunca coexistem — o relatório que
 reprovou uma proposta `rejeitada`, ou o veredito da hipótese de uma proposta que
 chegou a ser `aplicada`. Uma proposta revertida **mantém** o veredito que
 justificou a reversão.
@@ -581,8 +581,8 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 - **Executar a inversa** de uma operação — aqui só a forma é validada (`t118`).
 - **Registrar versão manual nova sobre linhagem existente**, fora do fluxo de
   proposta.
-- **Reverter para versão arbitrária**, fora do par `versao_alvo` /
-  `versao_aplicada_id` de uma proposta.
+- **Reverter para versão arbitrária**, fora do par `target_version` /
+  `applied_version_id` de uma proposta.
 - **Aprovação/rejeição humana** como ação de API (`t111`).
 - **Cálculo automático de `depois`** a partir da telemetria, e disparo do
   veredito "quando a execução termina": não existe motor de métricas nomeadas
@@ -590,8 +590,8 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   ([`routes/executions.ts`](../../packages/core/src/routes/executions.ts)).
   Fechar o experimento é sempre chamada explícita de API (§5).
 - **Emissão de eventos** `grafo_versao.registrada/.aplicada/.revertida` — a
-  tabela `evento` que eles pedem já veio com o `t102`, e `grafo_versao` já é um
-  `entidade_tipo` válido; o que falta é a emissão, que nenhuma ficha aberta
+  tabela `event` que eles pedem já veio com o `t102`, e `grafo_versao` já é um
+  `entity_type` válido; o que falta é a emissão, que nenhuma ficha aberta
   declara. Enquanto isso, uma versão registrada não deixa rastro no log.
 - **Identidade de quem chama.** A `t124` fechou a autenticação — todas estas
   rotas exigem credencial —, mas um token prova posse, não pessoa: o `ator` dos

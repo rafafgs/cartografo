@@ -60,7 +60,7 @@ const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-m
 const SIGNATURE_HEADER = 'x-cartografo-assinatura';
 
 /**
- * The HMAC key itself — registered in `segredo_gancho`, never in the document.
+ * The HMAC key itself — registered in `hook_secret`, never in the document.
  *
  * The signature assertion below is unchanged by t194 and that is the point: what
  * moved is where the key is READ from, not what it signs.
@@ -136,19 +136,19 @@ interface HookSecretsModule {
   setHookSecret: (db: Database, data: { nome: string; valor: string }) => unknown;
 }
 
-/** One row of `entrega_gancho`, read straight from the table. */
+/** One row of `hook_delivery`, read straight from the table. */
 interface HookDelivery {
   id: number;
-  trabalho_id: number;
-  gancho_id: string;
-  no_id: string;
-  evento_id: number;
+  job_id: number;
+  hook_id: string;
+  node_id: string;
+  event_id: number;
   url: string;
   status: string;
-  tentativas: number;
-  proxima_tentativa_em: string;
-  entregue_em: string | null;
-  ultimo_erro: string | null;
+  attempts: number;
+  next_attempt_at: string;
+  delivered_at: string | null;
+  last_error: string | null;
 }
 
 /** A dispatcher running against a throwaway database. */
@@ -268,9 +268,9 @@ function jobOn(db: Database, hooks: DeclaredHook[]): Job {
 function deliveries(db: Database): HookDelivery[] {
   return db
     .prepare(
-      `SELECT id, trabalho_id, gancho_id, no_id, evento_id, url, status, tentativas,
-              proxima_tentativa_em, entregue_em, ultimo_erro
-         FROM entrega_gancho ORDER BY id`,
+      `SELECT id, job_id, hook_id, node_id, event_id, url, status, attempts,
+              next_attempt_at, delivered_at, last_error
+         FROM hook_delivery ORDER BY id`,
     )
     .all() as HookDelivery[];
 }
@@ -382,7 +382,7 @@ t,
   );
   assert.ok(trigger !== undefined, 'the transition has to be in the log');
   assert.equal(call.body, JSON.stringify(trigger), 'the body is the envelope, byte for byte');
-  assert.equal(only(deliveries(ctx.db)).evento_id, trigger.id);
+  assert.equal(only(deliveries(ctx.db)).event_id, trigger.id);
 
   const signature = headerValue(call.headers, SIGNATURE_HEADER);
   assert.equal(
@@ -405,9 +405,9 @@ t,
   await drive(t);
 
   const delivered = only(deliveries(ctx.db));
-  assert.equal(delivered.tentativas, 1);
-  assert.equal(typeof delivered.entregue_em, 'string');
-  assert.equal(delivered.ultimo_erro, null);
+  assert.equal(delivered.attempts, 1);
+  assert.equal(typeof delivered.delivered_at, 'string');
+  assert.equal(delivered.last_error, null);
   assert.equal(
     listEvents(ctx.db).length,
     recorded,
@@ -427,15 +427,15 @@ test('AT10 — a failed attempt is rescheduled by t142\'s backoff step, and retr
 
   await waitFor(
 t,
-() => only(deliveries(ctx.db)).tentativas === 1, 'the first attempt to be recorded');
+() => only(deliveries(ctx.db)).attempts === 1, 'the first attempt to be recorded');
 
   const failed = only(deliveries(ctx.db));
   assert.equal(failed.status, 'pendente', 'a failure does not end the delivery');
-  assert.equal(failed.proxima_tentativa_em, after(BACKOFF_MS[0]));
-  assert.equal(failed.entregue_em, null);
+  assert.equal(failed.next_attempt_at, after(BACKOFF_MS[0]));
+  assert.equal(failed.delivered_at, null);
   assert.ok(
-    (failed.ultimo_erro ?? '').includes('sem rota para o host'),
-    `the failure is recorded: ${String(failed.ultimo_erro)}`,
+    (failed.last_error ?? '').includes('sem rota para o host'),
+    `the failure is recorded: ${String(failed.last_error)}`,
   );
 
   await drive(t);
@@ -444,10 +444,10 @@ t,
   advance(ctx.clock, BACKOFF_MS[0]);
   await waitFor(
 t,
-() => only(deliveries(ctx.db)).tentativas === 2, 'the second attempt to be recorded');
+() => only(deliveries(ctx.db)).attempts === 2, 'the second attempt to be recorded');
 
   assert.equal(
-    only(deliveries(ctx.db)).proxima_tentativa_em,
+    only(deliveries(ctx.db)).next_attempt_at,
     after(BACKOFF_MS[0] + BACKOFF_MS[1]),
     'the second failure waits the second step of the schedule',
   );
@@ -464,7 +464,7 @@ test('AT11 — the sixth failed attempt gives up and records one job.hook_failed
   for (let attempt = 1; attempt <= BACKOFF_MS.length + 1; attempt += 1) {
     await waitFor(
       t,
-      () => only(deliveries(ctx.db)).tentativas >= attempt,
+      () => only(deliveries(ctx.db)).attempts >= attempt,
       `the result of attempt number ${attempt}`,
     );
     // Past the longest step of the schedule, so the next attempt is always due.
@@ -473,8 +473,8 @@ test('AT11 — the sixth failed attempt gives up and records one job.hook_failed
 
   const exhausted = only(deliveries(ctx.db));
   assert.equal(exhausted.status, 'esgotada');
-  assert.equal(exhausted.tentativas, BACKOFF_MS.length + 1);
-  assert.equal(exhausted.entregue_em, null);
+  assert.equal(exhausted.attempts, BACKOFF_MS.length + 1);
+  assert.equal(exhausted.delivered_at, null);
 
   const incidents = failureEvents(ctx.db);
   assert.equal(incidents.length, 1, 'exhaustion records exactly one event, not one per attempt');
@@ -486,7 +486,7 @@ test('AT11 — the sixth failed attempt gives up and records one job.hook_failed
     hook_id: 'avisar-revisao',
     node_id: 'revisar',
     url: 'https://exemplo.invalid/gancho',
-    last_error: exhausted.ultimo_erro,
+    last_error: exhausted.last_error,
   });
   assert.ok(String(incident.data.last_error).includes('500'), 'the last failure is what is reported');
 
@@ -518,10 +518,10 @@ test('AT12 — a dead hook does not hold up another hook of the same batch', asy
 t,
 () => deliveries(ctx.db).length === 2, 'both hooks to be enqueued');
   const [first, second] = deliveries(ctx.db);
-  assert.equal(first.evento_id, second.evento_id, 'the same event fired both');
+  assert.equal(first.event_id, second.event_id, 'the same event fired both');
 
   const healthy = (): HookDelivery => {
-    const found = deliveries(ctx.db).find((row) => row.gancho_id === 'avisar-vivo');
+    const found = deliveries(ctx.db).find((row) => row.hook_id === 'avisar-vivo');
     assert.ok(found !== undefined, 'the healthy hook has to keep its row');
     return found;
   };
@@ -529,12 +529,12 @@ t,
   await waitFor(
 t,
 () => healthy().status === 'entregue', 'the healthy hook to be delivered');
-  assert.equal(healthy().ultimo_erro, null);
+  assert.equal(healthy().last_error, null);
 
-  const broken = deliveries(ctx.db).find((row) => row.gancho_id === 'avisar-morto');
+  const broken = deliveries(ctx.db).find((row) => row.hook_id === 'avisar-morto');
   assert.ok(broken !== undefined);
   assert.equal(broken.status, 'pendente', 'the dead one keeps its own failure');
-  assert.ok(broken.tentativas >= 1);
+  assert.ok(broken.attempts >= 1);
 });
 
 test('t194 — a secret_ref that resolves to nothing enqueues nothing, and is silent about it', async (t) => {
@@ -562,7 +562,7 @@ t,
   // `hooks` — a reference the deployment never registered is the same kind of
   // "nothing to look this up in".
   assert.deepEqual(
-    deliveries(ctx.db).map((row) => row.gancho_id),
+    deliveries(ctx.db).map((row) => row.hook_id),
     ['avisar-vivo'],
     'a hook with no live secret produces no delivery row at all',
   );

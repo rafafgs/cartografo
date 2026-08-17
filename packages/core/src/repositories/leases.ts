@@ -2,7 +2,7 @@
  * Access to the `lease` table (t103, FR3/FR9) — the mechanism of D5.
  *
  * A lease is a runner's temporary right over a job: it is born with a deadline
- * (`expira_em`), is pushed forward by heartbeats and ends in three ways —
+ * (`expires_at`), is pushed forward by heartbeats and ends in three ways —
  * released by its owner, expired past its deadline, or replaced when the runner
  * dies and another one claims the job.
  *
@@ -25,12 +25,15 @@
  * AT17.
  *
  * This file does NOT emit `lease.concedida`/`lease.expirada`: both depend on the
- * `evento` table and on `src/db/events.ts`, deliverables of t102 (the same cut
- * t101 made for `grafo_versao.*`). The columns below already carry everything
+ * `event` table and on `src/db/events.ts`, deliverables of t102 (the same cut
+ * t101 made for `graph_version.*`). The columns below already carry everything
  * the two events ask for.
  *
- * The row's field names and the status/reason values mirror the untouched
- * migration and the event taxonomy, so they stay in Portuguese (t127, FR8).
+ * The COLUMNS are English since D20's fourth child (t229); {@link LeaseRow}'s
+ * field names are not, because `routes/leases.ts` and `runners.ts` read them, so
+ * every `SELECT` aliases the renamed column back onto the field (t229, FR4). The
+ * status and reason VALUES stay Portuguese — that child renamed identifiers
+ * only.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -97,8 +100,12 @@ export interface LeaseFilters {
   status?: LeaseStatus;
 }
 
-const COLUMNS = `id, runner_id, trabalho_id, projeto_id, status, ttl_segundos,
-                 concedida_em, heartbeat_em, expira_em, liberada_em, motivo_expiracao`;
+/** The row, read back into {@link LeaseRow}'s spelling (t229, FR4). */
+const COLUMNS = `id, runner_id, job_id AS trabalho_id, project_id AS projeto_id,
+                 status, ttl_seconds AS ttl_segundos, granted_at AS concedida_em,
+                 heartbeat_at AS heartbeat_em, expires_at AS expira_em,
+                 released_at AS liberada_em,
+                 expiration_reason AS motivo_expiracao`;
 
 /* -------------------------------------------------------------------------- */
 /* The row → wire boundary (t226, FR1).                                        */
@@ -106,8 +113,9 @@ const COLUMNS = `id, runner_id, trabalho_id, projeto_id, status, ttl_segundos,
 /* Three enums cross here, and all three are `CHECK`-constrained in            */
 /* `migrations/0004_runner_lease.sql`, which is what makes them schema rather  */
 /* than format — the same reasoning `skill.ts`'s `ROLE_COLUMN` pair wrote down */
-/* first. The wire says `active`; the column keeps saying `ativa` until D20's  */
-/* fourth child.                                                              */
+/* first. The wire says `active` and the column keeps saying `ativa`: D20's    */
+/* fourth child (t229) renamed the column, never the values it holds (founder  */
+/* decision, 2026-08-17), so all three maps stay.                             */
 /* -------------------------------------------------------------------------- */
 
 const STATUS_FIELD: Record<string, string> = {
@@ -128,7 +136,7 @@ const EXPIRATION_FIELD: Record<string, string> = {
 };
 
 /**
- * The English `expiration_reason` of a row's `motivo_expiracao`.
+ * The English `expiration_reason` of a row's `expiration_reason` column.
  *
  * Exported because `repositories/runners.ts` republishes the very same value
  * inside `RunnerHealth.last_expiration`, and two copies of one map is how two
@@ -239,7 +247,7 @@ export function listLeases(db: Database, filters: LeaseFilters = {}): LeaseRow[]
   const values: Array<string | number> = [];
 
   if (filters.projeto_id !== undefined) {
-    conditions.push('projeto_id = ?');
+    conditions.push('project_id = ?');
     values.push(filters.projeto_id);
   }
   if (filters.runner_id !== undefined) {
@@ -264,8 +272,8 @@ export function listLeases(db: Database, filters: LeaseFilters = {}): LeaseRow[]
  * reconciles (the grant) or inside the transaction of `claimExpired`.
  *
  * The reason distinguishes the two possible deaths, with the vocabulary of the
- * `lease.expirada` event: a lease that was NEVER renewed (`heartbeat_em` still
- * equal to `concedida_em`) simply ran out — the runner may not even have
+ * `lease.expirada` event: a lease that was NEVER renewed (`heartbeat_at` still
+ * equal to `granted_at`) simply ran out — the runner may not even have
  * started; one that was renewed at least once and then stopped lost its
  * heartbeat, which is the sign of a runner dead mid-job.
  *
@@ -275,18 +283,18 @@ export function listLeases(db: Database, filters: LeaseFilters = {}): LeaseRow[]
  */
 function expireOverdue(db: Database, moment: string): LeaseRow[] {
   const overdue = db
-    .prepare("SELECT id FROM lease WHERE status = 'ativa' AND expira_em < ?")
+    .prepare("SELECT id FROM lease WHERE status = 'ativa' AND expires_at < ?")
     .all(moment) as Array<{ id: number }>;
   if (overdue.length === 0) return [];
 
   db.prepare(
     `UPDATE lease
         SET status = 'expirada',
-            motivo_expiracao = CASE
-              WHEN heartbeat_em = concedida_em THEN 'expirou'
+            expiration_reason = CASE
+              WHEN heartbeat_at = granted_at THEN 'expirou'
               ELSE 'heartbeat_perdido'
             END
-      WHERE status = 'ativa' AND expira_em < ?`,
+      WHERE status = 'ativa' AND expires_at < ?`,
   ).run(moment);
 
   return overdue.map(({ id }) => {
@@ -322,7 +330,7 @@ export function claimExpired(db: Database, options: ClockOptions = {}): LeaseRow
  * `teto_projeto` active leases — the count that decides is the same one the
  * write uses.
  *
- * `trabalho_id` is an opaque integer: this function does not read the `trabalho`
+ * `job_id` is an opaque integer: this function does not read the `job`
  * table (t102). Real eligibility (blocked, current node) is decided by the
  * controller before getting here.
  *
@@ -346,7 +354,7 @@ export function grantLease(
     expireOverdue(db, moment);
 
     const owner = db
-      .prepare("SELECT id FROM lease WHERE trabalho_id = ? AND status = 'ativa'")
+      .prepare("SELECT id FROM lease WHERE job_id = ? AND status = 'ativa'")
       .get(request.trabalho_id);
     if (owner !== undefined) return { lease: null, motivo: 'trabalho_ja_leased' };
 
@@ -356,14 +364,14 @@ export function grantLease(
     if (ofRunner.total >= request.teto_runner) return { lease: null, motivo: 'teto_runner' };
 
     const ofProject = db
-      .prepare("SELECT COUNT(*) AS total FROM lease WHERE projeto_id = ? AND status = 'ativa'")
+      .prepare("SELECT COUNT(*) AS total FROM lease WHERE project_id = ? AND status = 'ativa'")
       .get(request.projeto_id) as { total: number };
     if (ofProject.total >= request.teto_projeto) return { lease: null, motivo: 'teto_projeto' };
 
     const effect = db
       .prepare(
-        `INSERT INTO lease (runner_id, trabalho_id, projeto_id, status, ttl_segundos,
-                            concedida_em, heartbeat_em, expira_em)
+        `INSERT INTO lease (runner_id, job_id, project_id, status, ttl_seconds,
+                            granted_at, heartbeat_at, expires_at)
          VALUES (?, ?, ?, 'ativa', ?, ?, ?, ?)`,
       )
       .run(
@@ -372,7 +380,7 @@ export function grantLease(
         request.projeto_id,
         request.ttl_segundos,
         moment,
-        // Born equal to `concedida_em`: that is how a never-renewed lease is told
+        // Born equal to `granted_at`: that is how a never-renewed lease is told
         // apart from one that lost its heartbeat, when the deadline passes.
         moment,
         addSeconds(moment, request.ttl_segundos),
@@ -411,7 +419,7 @@ export function renewLease(
     const ttl = data.ttl_segundos ?? current.ttl_segundos;
     const effect = db
       .prepare(
-        `UPDATE lease SET ttl_segundos = ?, heartbeat_em = ?, expira_em = ?
+        `UPDATE lease SET ttl_seconds = ?, heartbeat_at = ?, expires_at = ?
           WHERE id = ? AND status = 'ativa'`,
       )
       .run(ttl, moment, addSeconds(moment, ttl), data.id);
@@ -446,7 +454,9 @@ export function releaseLease(
 
   db.transaction(() => {
     const effect = db
-      .prepare("UPDATE lease SET status = 'liberada', liberada_em = ? WHERE id = ? AND status = 'ativa'")
+      .prepare(
+        "UPDATE lease SET status = 'liberada', released_at = ? WHERE id = ? AND status = 'ativa'",
+      )
       .run(clock(), id);
 
     if (effect.changes !== 1) {

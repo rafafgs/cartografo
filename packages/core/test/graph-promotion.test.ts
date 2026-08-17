@@ -141,7 +141,7 @@ async function currentSnapshot(ctx: TestContext, id: string): Promise<Record<str
 
 /** How many proposals exist — the "nothing was written" assertion. */
 function proposalCount(ctx: TestContext): number {
-  const row = ctx.db.prepare('SELECT COUNT(*) AS total FROM proposta').get() as { total: number };
+  const row = ctx.db.prepare('SELECT COUNT(*) AS total FROM proposal').get() as { total: number };
   return row.total;
 }
 
@@ -552,7 +552,7 @@ test('t140 FR9 — a lineage with no current version is a 409, not a crash', asy
 
   // Impossible through the API — written straight into the database on purpose,
   // because the invariant is defensive and has to hold anyway.
-  ctx.db.prepare('UPDATE grafo SET versao_corrente_id = NULL WHERE id = ?').run(VARIANT_ID);
+  ctx.db.prepare('UPDATE graph SET current_version_id = NULL WHERE id = ?').run(VARIANT_ID);
 
   const promoted = await promote(ctx, VARIANT_ID, {
     evidence: EVIDENCE,

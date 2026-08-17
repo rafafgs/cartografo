@@ -1,7 +1,7 @@
 /**
  * The event log — the control plane's source of truth (t102, FR2).
  *
- * This module is the ONLY one that touches the `evento` table, and its surface
+ * This module is the ONLY one that touches the `event` table, and its surface
  * is the taxonomy's append-only rule turned into code: one insert and two reads,
  * nothing else. There is no `updateEvent`, there is no `deleteEvent`, and that
  * is not an oversight — a fact recorded wrong is corrected by ANOTHER fact,
@@ -19,16 +19,17 @@
  *
  * This module is also the row ↔ wire boundary of the log (t227). The envelope,
  * the event types and the payload keys are English since D20's second child;
- * the TABLE is untouched, and two of its columns are not free text — migration
- * `0003` pins `entidade_tipo` and `ator_tipo` to their five and three
- * Portuguese values with a `CHECK`. So those two values are translated here,
- * both ways, exactly as
+ * the TABLE and its columns followed with D20's FOURTH child (t229), and two of
+ * those columns are not free text — migration `0003` pins `entity_type` and
+ * `actor_type` to their five and three Portuguese VALUES with a `CHECK`. So
+ * those two values are translated here, both ways, exactly as
  * `repositories/leases.ts` and `repositories/input-request.ts` already do for
- * their own CHECK-constrained enums. Renaming the columns AND their values is
- * D20's FIFTH child; when it lands, the two maps below are what disappears.
+ * their own CHECK-constrained enums. The fourth child renamed identifiers ONLY
+ * (founder decision, 2026-08-17): the stored values stay Portuguese, and the two
+ * maps below stay exactly where they are.
  *
- * `tipo` and `dados` have no CHECK and take the new vocabulary straight, which
- * is why a database written before this ticket cannot be read after it — the
+ * `type` and `data` have no CHECK and take the new vocabulary straight, which
+ * is why a database written before that ticket cannot be read after it — the
  * README says so, and D20's answer is to recreate it, never to migrate it.
  */
 
@@ -41,7 +42,7 @@ import {
 } from './event-validation.ts';
 
 /**
- * The `entidade_tipo` column's five values, wire ↔ column.
+ * The `entity_type` column's five values, wire ↔ column.
  *
  * Not a `Record<EntityType, string>` by accident: the reverse direction reads a
  * value that came out of the database, which is a `string` and not an
@@ -63,7 +64,7 @@ const ENTITY_FIELD: Record<string, string> = {
   grafo_versao: 'graph_version',
 };
 
-/** The `ator_tipo` column's three values, wire ↔ column. */
+/** The `actor_type` column's three values, wire ↔ column. */
 const ACTOR_COLUMN: Record<string, string> = {
   user: 'usuario',
   agent: 'agente',
@@ -90,9 +91,18 @@ interface EventRow {
   dados: string;
 }
 
+/**
+ * The row, read back into {@link EventRow}'s spelling.
+ *
+ * Every renamed column is aliased onto the field name this module's own row
+ * interface already had (t229, FR4): the SCHEMA is English from D20's fourth
+ * child on, and the layer above the alias did not have to move for it.
+ */
 const COLUMNS = `
-  id, tipo, projeto_id, execucao_id, entidade_tipo, entidade_id,
-  ator_tipo, ator_ref, ocorrido_em, dados
+  id, type AS tipo, project_id AS projeto_id, execution_id AS execucao_id,
+  entity_type AS entidade_tipo, entity_id AS entidade_id,
+  actor_type AS ator_tipo, actor_ref AS ator_ref, occurred_at AS ocorrido_em,
+  data AS dados
 `;
 
 /**
@@ -143,9 +153,9 @@ export function recordEvent(db: Database, input: unknown): Event {
 
   const result = db
     .prepare(
-      `INSERT INTO evento (
-         tipo, projeto_id, execucao_id, entidade_tipo, entidade_id,
-         ator_tipo, ator_ref, ocorrido_em, dados
+      `INSERT INTO event (
+         type, project_id, execution_id, entity_type, entity_id,
+         actor_type, actor_ref, occurred_at, data
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
@@ -178,8 +188,8 @@ export interface EventFilter {
   trabalho_id?: number;
 
   /**
-   * The whole log of one execution (t110, FR2): every event whose `execucao_id`
-   * column matches, be it from a `trabalho`, a `sessao` or a `pergunta`.
+   * The whole log of one execution (t110, FR2): every event whose `execution_id`
+   * column matches, be it from a `job`, a `session` or an `input_request`.
    *
    * This is not the union of the timelines of that round's jobs: the link here
    * is the COLUMN, written by whoever recorded the fact from the owning job
@@ -203,7 +213,7 @@ export interface EventFilter {
    */
   sinceId?: number;
 
-  /** The events of one project — the `projeto_id` column, exactly (t123, FR3). */
+  /** The events of one project — the `project_id` column, exactly (t123, FR3). */
   projetoId?: number;
 
   /**
@@ -230,7 +240,7 @@ export interface EventFilter {
 /**
  * The log, in `id` order.
  *
- * The order is the id's because `ocorrido_em` is not a total ordering: two
+ * The order is the id's because `occurred_at` is not a total ordering: two
  * events can carry the same timestamp.
  *
  * @param db Open handle.
@@ -243,17 +253,17 @@ export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
 
   if (filter.trabalho_id !== undefined) {
     conditions.push(
-      `((entidade_tipo = 'trabalho' AND entidade_id = @id_texto)
-        OR (entidade_tipo IN ('sessao','pergunta')
-            AND json_extract(dados, '$.job_id') = @id))`,
+      `((entity_type = 'trabalho' AND entity_id = @id_texto)
+        OR (entity_type IN ('sessao','pergunta')
+            AND json_extract(data, '$.job_id') = @id))`,
     );
     parameters.id = filter.trabalho_id;
     parameters.id_texto = String(filter.trabalho_id);
   }
 
   if (filter.execucao_id !== undefined) {
-    conditions.push('execucao_id = @execucao_id');
-    parameters.execucao_id = filter.execucao_id;
+    conditions.push('execution_id = @execution_id');
+    parameters.execution_id = filter.execucao_id;
   }
 
   if (filter.sinceId !== undefined) {
@@ -262,17 +272,17 @@ export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
   }
 
   if (filter.projetoId !== undefined) {
-    conditions.push('projeto_id = @projeto_id');
-    parameters.projeto_id = filter.projetoId;
+    conditions.push('project_id = @project_id');
+    parameters.project_id = filter.projetoId;
   }
 
   if (filter.tipos !== undefined && filter.tipos.length > 0) {
     // One named parameter per type, and never interpolation: the list comes from
     // a query string, and the only reason it is safe is that it never touches
     // the SQL text.
-    conditions.push(`tipo IN (${filter.tipos.map((_, index) => `@tipo_${index}`).join(', ')})`);
+    conditions.push(`type IN (${filter.tipos.map((_, index) => `@type_${index}`).join(', ')})`);
     filter.tipos.forEach((value, index) => {
-      parameters[`tipo_${index}`] = value;
+      parameters[`type_${index}`] = value;
     });
   }
 
@@ -282,7 +292,7 @@ export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
 
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;
   const ceiling = filter.limit === undefined ? '' : 'LIMIT @limit';
-  const statement = db.prepare(`SELECT ${COLUMNS} FROM evento ${where} ORDER BY id ${ceiling}`);
+  const statement = db.prepare(`SELECT ${COLUMNS} FROM event ${where} ORDER BY id ${ceiling}`);
   const rows = (
     Object.keys(parameters).length === 0 ? statement.all() : statement.all(parameters)
   ) as EventRow[];
@@ -305,8 +315,8 @@ export function getEventsByEntity(
 ): Event[] {
   const rows = db
     .prepare(
-      `SELECT ${COLUMNS} FROM evento
-        WHERE entidade_tipo = ? AND entidade_id = ?
+      `SELECT ${COLUMNS} FROM event
+        WHERE entity_type = ? AND entity_id = ?
         ORDER BY id`,
     )
     .all(ENTITY_COLUMN[type], String(id)) as EventRow[];

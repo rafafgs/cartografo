@@ -1,5 +1,5 @@
 /**
- * Access to `entrega_gancho` — the deliveries a GRAPH asked for (t169).
+ * Access to `hook_delivery` — the deliveries a GRAPH asked for (t169).
  *
  * Sibling of `src/repositories/webhooks.ts`, and deliberately not a branch of
  * it. A webhook subscription is a contract somebody REGISTERS through the API;
@@ -21,8 +21,8 @@
  *   finish against the destination that was declared when it was enqueued —
  *   reading the snapshot again at attempt time would silently redirect it.
  *   Since t194 only the URL is copied out of the DOCUMENT: the key is resolved
- *   from `segredo_gancho` by name, at this same instant and for this same
- *   reason. A rotation after the fact does not reach a delivery already queued.
+ *   from `hook_secret` by name, at this same instant and for this same reason.
+ *   A rotation after the fact does not reach a delivery already queued.
  * - **Exhaustion writes to the log, and it is the only place in the delivery
  *   path that does.** t142's dispatcher never touches `recordEvent` (its own
  *   header says so, and that is what makes a dead subscriber nobody else's
@@ -35,8 +35,10 @@
  * `now` is injectable (default: the real clock), like `repositories/webhooks.ts`:
  * "the backoff step has passed" has to be testable without a two-hour `sleep`.
  *
- * The row field names mirror the migration's columns, so they stay in
- * Portuguese (t127, FR8).
+ * The COLUMNS are English since D20's fourth child (t229); {@link HookOccurrence}
+ * and {@link HookDeliveryTask} are not, because `job.ts` builds the first one and
+ * `src/hooks/dispatcher.ts` reads the second — so the `SELECT` aliases the
+ * renamed column back onto the field (t229, FR4).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -92,7 +94,7 @@ export interface HookDeliveryTask {
 /** What a failed attempt reports back. */
 export interface FailedHookAttempt {
   id: number;
-  /** What went wrong, as it goes into `ultimo_erro`. */
+  /** What went wrong, as it goes into `last_error`. */
   message: string;
   /** The retry schedule; its length is how many retries there are. */
   backoff: readonly number[];
@@ -120,7 +122,7 @@ const isFilledText = (value: unknown): value is string =>
  * Is this entry a hook this occurrence has to deliver?
  *
  * Read defensively even though the document was validated on the way in: what
- * comes back from `grafo_versao.snapshot` is whatever was written when that
+ * comes back from `graph_version.snapshot` is whatever was written when that
  * version was registered, and a reader that assumes shape is a reader that turns
  * an old document into a 500 on a job transition.
  */
@@ -148,10 +150,10 @@ function matches(hook: unknown, occurrence: HookOccurrence): hook is GraphHook {
  * hook failure never blocks the traversal" true by construction and not by a
  * `try/catch` somebody has to remember.
  *
- * A job with no `grafo_versao_id`, a version id that no longer resolves, a
+ * A job with no `graph_version_id`, a version id that no longer resolves, a
  * snapshot with no `hooks` key and — since t194 — a `secret_ref` that names no
  * live secret are all the same answer: zero rows, no error. The first two are
- * ordinary (`trabalho.grafo_versao_id` is loose text, not a foreign key), the
+ * ordinary (`job.graph_version_id` is loose text, not a foreign key), the
  * third is every graph written before t169, and the fourth is a deployment that
  * imported a graph without registering what it references. Giving a signal for
  * that last one — an event, a gate, a warning at import time — is deliberately
@@ -179,12 +181,12 @@ export function enqueueHookDeliveries(
   if (firing.length === 0) return 0;
 
   const moment = (options.now ?? now)();
-  // `INSERT OR IGNORE` over the migration's `UNIQUE (evento_id, gancho_id)`:
+  // `INSERT OR IGNORE` over the migration's `UNIQUE (event_id, hook_id)`:
   // belt and suspenders, since an event is written exactly once ever.
   const statement = db.prepare(
-    `INSERT OR IGNORE INTO entrega_gancho
-       (projeto_id, execucao_id, trabalho_id, gancho_id, no_id, grafo_versao_id, evento_id,
-        url, segredo, status, tentativas, proxima_tentativa_em, criada_em)
+    `INSERT OR IGNORE INTO hook_delivery
+       (project_id, execution_id, job_id, hook_id, node_id, graph_version_id, event_id,
+        url, secret, status, attempts, next_attempt_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente', 0, ?, ?)`,
   );
 
@@ -235,9 +237,10 @@ export function dueHookDeliveries(
 ): HookDeliveryTask[] {
   return db
     .prepare(
-      `SELECT id, evento_id, tentativas, url, segredo
-         FROM entrega_gancho
-        WHERE status = 'pendente' AND proxima_tentativa_em <= ?
+      `SELECT id, event_id AS evento_id, attempts AS tentativas, url,
+              secret AS segredo
+         FROM hook_delivery
+        WHERE status = 'pendente' AND next_attempt_at <= ?
         ORDER BY id
         LIMIT ?`,
     )
@@ -260,8 +263,8 @@ export function recordHookDeliverySuccess(
   options: ClockOptions = {},
 ): void {
   db.prepare(
-    `UPDATE entrega_gancho
-        SET status = 'entregue', tentativas = tentativas + 1, entregue_em = ?, ultimo_erro = NULL
+    `UPDATE hook_delivery
+        SET status = 'entregue', attempts = attempts + 1, delivered_at = ?, last_error = NULL
       WHERE id = ? AND status = 'pendente'`,
   ).run((options.now ?? now)(), id);
 }
@@ -292,7 +295,9 @@ export function recordHookDeliveryFailure(
 
   db.transaction(() => {
     const current = db
-      .prepare("SELECT tentativas FROM entrega_gancho WHERE id = ? AND status = 'pendente'")
+      .prepare(
+        "SELECT attempts AS tentativas FROM hook_delivery WHERE id = ? AND status = 'pendente'",
+      )
       .get(attempt.id) as { tentativas: number } | undefined;
     if (current === undefined) return;
 
@@ -301,21 +306,22 @@ export function recordHookDeliveryFailure(
 
     if (step !== undefined) {
       db.prepare(
-        `UPDATE entrega_gancho SET tentativas = ?, ultimo_erro = ?, proxima_tentativa_em = ?
+        `UPDATE hook_delivery SET attempts = ?, last_error = ?, next_attempt_at = ?
           WHERE id = ? AND status = 'pendente'`,
       ).run(made, attempt.message, addMilliseconds(clock(), step), attempt.id);
       return;
     }
 
     db.prepare(
-      `UPDATE entrega_gancho SET status = 'esgotada', tentativas = ?, ultimo_erro = ?
+      `UPDATE hook_delivery SET status = 'esgotada', attempts = ?, last_error = ?
         WHERE id = ? AND status = 'pendente'`,
     ).run(made, attempt.message, attempt.id);
 
     const row = db
       .prepare(
-        `SELECT projeto_id, execucao_id, trabalho_id, gancho_id, no_id, url
-           FROM entrega_gancho WHERE id = ?`,
+        `SELECT project_id AS projeto_id, execution_id AS execucao_id,
+                job_id AS trabalho_id, hook_id AS gancho_id, node_id AS no_id, url
+           FROM hook_delivery WHERE id = ?`,
       )
       .get(attempt.id) as ExhaustedRow;
 

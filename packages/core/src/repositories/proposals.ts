@@ -1,10 +1,10 @@
 /**
- * Access to the `proposta` table (t101, FR7/FR8/FR9).
+ * Access to the `proposal` table (t101, FR7/FR8/FR9).
  *
  * A proposal is a HYPOTHESIS (`notas/2026-08-14-aprendizado.md`): target
  * artifact and version, semantic diff, the evidence that motivated it and the
- * metric it expects to move. The JSON columns (`operacoes`, `evidencia`,
- * `metrica_esperada`, `resultado`) go in and come out parsed by this module —
+ * metric it expects to move. The JSON columns (`operations`, `evidence`,
+ * `expected_metric`, `result`) go in and come out parsed by this module —
  * the caller never sees a string.
  *
  * The two state transitions that touch the whole database live here, each in ONE
@@ -15,8 +15,10 @@
  * append-only.
  *
  * Like `repositories/graphs.ts`, it receives the already-open database and never
- * touches the driver (D1). The row's field names mirror the untouched migration
- * columns, so they stay in Portuguese (t127, FR8).
+ * touches the driver (D1). The COLUMNS are English since D20's fourth child
+ * (t229); {@link ProposalRow}'s field names are not, because
+ * `routes/proposals.ts` and `cli/` read them, so every `SELECT` aliases the
+ * renamed column back onto the field (t229, FR4).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -52,7 +54,7 @@ export interface ProposalRow {
   status: ProposalStatus;
   versao_aplicada_id: string | null;
   motivo_reversao: string | null;
-  /** Why a PERSON refused the hypothesis; the soundness gate writes `resultado` instead. */
+  /** Why a PERSON refused the hypothesis; the soundness gate writes `result` instead. */
   motivo_rejeicao: string | null;
   resultado: unknown;
   criado_em: string;
@@ -76,9 +78,14 @@ interface RawRow {
   atualizado_em: string;
 }
 
-const COLUMNS = `id, grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada, status,
-                 versao_aplicada_id, motivo_reversao, motivo_rejeicao, resultado,
-                 criado_em, atualizado_em`;
+/** The row, read back into {@link ProposalRow}'s spelling (t229, FR4). */
+const COLUMNS = `id, graph_id AS grafo_id, target_version AS versao_alvo,
+                 operations AS operacoes, evidence AS evidencia,
+                 expected_metric AS metrica_esperada, status,
+                 applied_version_id AS versao_aplicada_id,
+                 revert_reason AS motivo_reversao,
+                 rejection_reason AS motivo_rejeicao, result AS resultado,
+                 created_at AS criado_em, updated_at AS atualizado_em`;
 
 function hydrate(row: RawRow): ProposalRow {
   return {
@@ -95,12 +102,13 @@ function hydrate(row: RawRow): ProposalRow {
 /* -------------------------------------------------------------------------- */
 
 /**
- * `proposta.status`, both ways (`glossario-wire.md` §1.6).
+ * `proposal.status`, both ways (`glossario-wire.md` §1.6).
  *
  * `migrations/0010_proposta_aprovada.sql` holds these five in a `CHECK`, so they
  * are schema and not format — same reasoning as `skill.ts`'s `ROLE_COLUMN`, and
- * the same fix: the wire says `pending`, the column keeps saying `pendente`
- * until D20's fourth child renames it.
+ * the same fix: the wire says `pending` and the column keeps saying `pendente`.
+ * D20's fourth child (t229) renamed the COLUMNS around this map and left the
+ * values it holds alone (founder decision, 2026-08-17), so the map stays.
  */
 const STATUS_FIELD: Record<string, string> = {
   pendente: 'pending',
@@ -182,7 +190,7 @@ export function toProposal(row: ProposalRow): Proposal {
  * @returns The hydrated proposal, or `undefined`.
  */
 export function getProposal(db: Database, id: number): ProposalRow | undefined {
-  const row = db.prepare(`SELECT ${COLUMNS} FROM proposta WHERE id = ?`).get(id) as
+  const row = db.prepare(`SELECT ${COLUMNS} FROM proposal WHERE id = ?`).get(id) as
     | RawRow
     | undefined;
   return row === undefined ? undefined : hydrate(row);
@@ -210,8 +218,8 @@ export function createProposal(
   const createdAt = now();
   const result = db
     .prepare(
-      `INSERT INTO proposta (grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada,
-                             status, criado_em, atualizado_em)
+      `INSERT INTO proposal (graph_id, target_version, operations, evidence, expected_metric,
+                             status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, 'pendente', ?, ?)`,
     )
     .run(
@@ -233,8 +241,8 @@ export function createProposal(
  * Marks the proposal as rejected and keeps the report that failed it.
  *
  * This is the SOUNDNESS GATE's rejection, the one that happens inside `apply`,
- * and its story goes in `resultado`. The human refusal is
- * {@link rejectProposalByHuman}, whose story goes in `motivo_rejeicao` — two
+ * and its story goes in `result`. The human refusal is
+ * {@link rejectProposalByHuman}, whose story goes in `rejection_reason` — two
  * columns because the two facts are different, and telling them apart later is
  * the whole point (t165).
  *
@@ -243,12 +251,12 @@ export function createProposal(
  *
  * @param db Open database.
  * @param id Proposal.
- * @param report Validation report, written into `resultado`.
+ * @param report Validation report, written into `result`.
  * @returns The updated proposal.
  */
 export function rejectProposal(db: Database, id: number, report: unknown): ProposalRow {
   db.prepare(
-    `UPDATE proposta SET status = 'rejeitada', resultado = ?, atualizado_em = ?
+    `UPDATE proposal SET status = 'rejeitada', result = ?, updated_at = ?
       WHERE id = ? AND status = 'aprovada'`,
   ).run(JSON.stringify(report), now(), id);
 
@@ -273,7 +281,7 @@ export function rejectProposal(db: Database, id: number, report: unknown): Propo
 export function approveProposal(db: Database, id: number): ProposalRow {
   const effect = db
     .prepare(
-      `UPDATE proposta SET status = 'aprovada', atualizado_em = ?
+      `UPDATE proposal SET status = 'aprovada', updated_at = ?
         WHERE id = ? AND status = 'pendente'`,
     )
     .run(now(), id);
@@ -288,7 +296,7 @@ export function approveProposal(db: Database, id: number): ProposalRow {
 /**
  * The human gate says no: `pendente` → `rejeitada`, with the reason (t165, FR3).
  *
- * `resultado` is deliberately untouched. That column carries either the report
+ * `result` is deliberately untouched. That column carries either the report
  * of the soundness gate that failed a proposal or the verdict of a hypothesis
  * that was applied; a human "not worth it" is a third fact, and giving it its
  * own column is what keeps the three readable apart afterwards.
@@ -303,7 +311,7 @@ export function approveProposal(db: Database, id: number): ProposalRow {
 export function rejectProposalByHuman(db: Database, id: number, reason: string): ProposalRow {
   const effect = db
     .prepare(
-      `UPDATE proposta SET status = 'rejeitada', motivo_rejeicao = ?, atualizado_em = ?
+      `UPDATE proposal SET status = 'rejeitada', rejection_reason = ?, updated_at = ?
         WHERE id = ? AND status = 'pendente'`,
     )
     .run(reason, now(), id);
@@ -344,7 +352,7 @@ export function applyProposal(
 
     const effect = db
       .prepare(
-        `UPDATE proposta SET status = 'aplicada', versao_aplicada_id = ?, atualizado_em = ?
+        `UPDATE proposal SET status = 'aplicada', applied_version_id = ?, updated_at = ?
           WHERE id = ? AND status = 'aprovada'`,
       )
       .run(versionId, moment, proposal.id);
@@ -369,7 +377,7 @@ export function applyProposal(
 /**
  * Reverts the proposal: the pointer goes back to the target version and nothing is erased.
  *
- * The abandoned version stays in `grafo_versao`, including in the history
+ * The abandoned version stays in `graph_version`, including in the history
  * listing — it is where the topographer will pull telemetry from later, crossing
  * it with the reason recorded here.
  *
@@ -390,7 +398,7 @@ export function revertProposal(
 
     const effect = db
       .prepare(
-        `UPDATE proposta SET status = 'revertida', motivo_reversao = ?, atualizado_em = ?
+        `UPDATE proposal SET status = 'revertida', revert_reason = ?, updated_at = ?
           WHERE id = ? AND status = 'aplicada'`,
       )
       .run(reason, moment, proposal.id);
@@ -410,7 +418,7 @@ export function revertProposal(
 /* payload keys stay in Portuguese, mirroring what is already published (FR8).  */
 /* -------------------------------------------------------------------------- */
 
-/** What gets written into `proposta.resultado` when the experiment closes. */
+/** What gets written into `proposal.result` when the experiment closes. */
 export interface HypothesisOutcome {
   veredito: Verdict;
   /** The `de` the proposal declared — the baseline the verdict compared against. */
@@ -436,7 +444,7 @@ export interface VerdictRecord {
  * `aplicada`, and reverting remains a human decision (README, princípio 5).
  * "Piorou" is data, not an action.
  *
- * The `UPDATE` is guarded by `resultado IS NULL AND status = 'aplicada'`, the
+ * The `UPDATE` is guarded by `result IS NULL AND status = 'aplicada'`, the
  * same concurrency pattern `applyProposal`/`revertProposal` use: two callers
  * closing the same experiment at once is a `409`, never a verdict silently
  * overwritten by whoever arrived last.
@@ -459,8 +467,8 @@ export function recordVerdict(db: Database, data: VerdictRecord): ProposalRow {
 
   const effect = db
     .prepare(
-      `UPDATE proposta SET resultado = ?, atualizado_em = ?
-        WHERE id = ? AND resultado IS NULL AND status = 'aplicada'`,
+      `UPDATE proposal SET result = ?, updated_at = ?
+        WHERE id = ? AND result IS NULL AND status = 'aplicada'`,
     )
     .run(JSON.stringify(outcome), outcome.avaliado_em, proposal.id);
 
@@ -476,7 +484,7 @@ export function recordVerdict(db: Database, data: VerdictRecord): ProposalRow {
 /** Optional cuts of the proposal listing (t112, FR8). */
 export interface ProposalFilter {
   status?: string;
-  /** Read out of `resultado.veredito`; a proposal with no outcome never matches. */
+  /** Read out of `result.veredito`; a proposal with no outcome never matches. */
   veredito?: string;
 }
 
@@ -500,13 +508,13 @@ export function listProposals(db: Database, filter: ProposalFilter = {}): Propos
     values.push(filter.status);
   }
   if (filter.veredito !== undefined) {
-    conditions.push("json_extract(resultado, '$.veredito') = ?");
+    conditions.push("json_extract(result, '$.veredito') = ?");
     values.push(filter.veredito);
   }
 
   const where = conditions.length === 0 ? '' : ` WHERE ${conditions.join(' AND ')}`;
   const rows = db
-    .prepare(`SELECT ${COLUMNS} FROM proposta${where} ORDER BY id`)
+    .prepare(`SELECT ${COLUMNS} FROM proposal${where} ORDER BY id`)
     .all(...values) as RawRow[];
   return rows.map(hydrate);
 }

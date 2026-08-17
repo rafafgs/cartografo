@@ -1,20 +1,22 @@
 /**
- * Access to the `grafo` and `grafo_versao` tables (t101, FR5/FR6).
+ * Access to the `graph` and `graph_version` tables (t101, FR5/FR6).
  *
  * Receives the already-open `Database` and never touches the driver — the owner
  * of the database is `src/db/` (D1), and `scripts/check-single-writer.mjs` is
  * the gate of that rule.
  *
  * Append-only by construction: there is no DELETE and no UPDATE of
- * `grafo_versao` in this module, and the only UPDATE of `grafo` is the pointer's.
- * That is what holds up D15's "nothing is erased" — and what makes reverting a
- * pointer move rather than an undo.
+ * `graph_version` in this module, and the only UPDATE of `graph` is the
+ * pointer's. That is what holds up D15's "nothing is erased" — and what makes
+ * reverting a pointer move rather than an undo.
  *
- * The row interfaces mirror the untouched migration columns, so their field
- * names stay in Portuguese (t127, FR8). Since t226 they no longer leave the
- * package that way: `toGraph`/`toGraphVersion`/`toClass` at the bottom are the
- * translation boundary D20 puts between the database and the wire, and the
- * routes return their output and never a row.
+ * The COLUMNS are English since D20's fourth child (t229); the row interfaces'
+ * field names are not, because `routes/graphs.ts` and `routes/proposals.ts` read
+ * them, so every `SELECT` aliases the renamed column back onto the field (t229,
+ * FR4). Since t226 the rows no longer leave the package that way either:
+ * `toGraph`/`toGraphVersion`/`toClass` at the bottom are the translation
+ * boundary D20 puts between the database and the wire, and the routes return
+ * their output and never a row.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -56,9 +58,11 @@ export interface ClassRow {
   criado_em: string;
 }
 
-const GRAPH_COLUMNS =
-  'id, classe, linhagem_tipo, base_classe, origem_proposta_id, versao_corrente_id, criado_em';
-const VERSION_COLUMNS = 'id, grafo_id, versao_pai, origem, proposta_id, criado_em';
+const GRAPH_COLUMNS = `id, class AS classe, lineage_type AS linhagem_tipo,
+   base_class AS base_classe, origin_proposal_id AS origem_proposta_id,
+   current_version_id AS versao_corrente_id, created_at AS criado_em`;
+const VERSION_COLUMNS = `id, graph_id AS grafo_id, parent_version AS versao_pai,
+   source AS origem, proposal_id AS proposta_id, created_at AS criado_em`;
 
 /**
  * @param db Open database.
@@ -66,7 +70,7 @@ const VERSION_COLUMNS = 'id, grafo_id, versao_pai, origem, proposta_id, criado_e
  * @returns The lineage, or `undefined` if it does not exist.
  */
 export function getGraph(db: Database, id: string): GraphRow | undefined {
-  return db.prepare(`SELECT ${GRAPH_COLUMNS} FROM grafo WHERE id = ?`).get(id) as
+  return db.prepare(`SELECT ${GRAPH_COLUMNS} FROM graph WHERE id = ?`).get(id) as
     | GraphRow
     | undefined;
 }
@@ -77,7 +81,7 @@ export function getGraph(db: Database, id: string): GraphRow | undefined {
  */
 export function listGraphs(db: Database): GraphRow[] {
   return db
-    .prepare(`SELECT ${GRAPH_COLUMNS} FROM grafo ORDER BY criado_em, id`)
+    .prepare(`SELECT ${GRAPH_COLUMNS} FROM graph ORDER BY created_at, id`)
     .all() as GraphRow[];
 }
 
@@ -92,10 +96,11 @@ export function listGraphs(db: Database): GraphRow[] {
 export function listClasses(db: Database): ClassRow[] {
   return db
     .prepare(
-      `SELECT classe, id AS grafo_id, versao_corrente_id, criado_em
-         FROM grafo
-        WHERE linhagem_tipo = 'base'
-        ORDER BY classe`,
+      `SELECT class AS classe, id AS grafo_id,
+              current_version_id AS versao_corrente_id, created_at AS criado_em
+         FROM graph
+        WHERE lineage_type = 'base'
+        ORDER BY class`,
     )
     .all() as ClassRow[];
 }
@@ -109,7 +114,9 @@ export function listClasses(db: Database): ClassRow[] {
  */
 export function listVersions(db: Database, graphId: string): GraphVersionRow[] {
   return db
-    .prepare(`SELECT ${VERSION_COLUMNS} FROM grafo_versao WHERE grafo_id = ? ORDER BY criado_em, id`)
+    .prepare(
+      `SELECT ${VERSION_COLUMNS} FROM graph_version WHERE graph_id = ? ORDER BY created_at, id`,
+    )
     .all(graphId) as GraphVersionRow[];
 }
 
@@ -123,7 +130,7 @@ export function getVersion(
   id: string,
 ): GraphVersionRowWithSnapshot | undefined {
   const row = db
-    .prepare(`SELECT ${VERSION_COLUMNS}, snapshot FROM grafo_versao WHERE id = ?`)
+    .prepare(`SELECT ${VERSION_COLUMNS}, snapshot FROM graph_version WHERE id = ?`)
     .get(id) as (GraphVersionRow & { snapshot: string }) | undefined;
   if (row === undefined) return undefined;
   return { ...row, snapshot: JSON.parse(row.snapshot) as GraphDocument };
@@ -137,7 +144,7 @@ export function getVersion(
  * @returns The version metadata, or `undefined`.
  */
 export function getVersionSummary(db: Database, id: string): GraphVersionRow | undefined {
-  return db.prepare(`SELECT ${VERSION_COLUMNS} FROM grafo_versao WHERE id = ?`).get(id) as
+  return db.prepare(`SELECT ${VERSION_COLUMNS} FROM graph_version WHERE id = ?`).get(id) as
     | GraphVersionRow
     | undefined;
 }
@@ -149,7 +156,7 @@ export function getVersionSummary(db: Database, id: string): GraphVersionRow | u
  */
 export function getClassBase(db: Database, className: string): GraphRow | undefined {
   return db
-    .prepare(`SELECT ${GRAPH_COLUMNS} FROM grafo WHERE classe = ? AND linhagem_tipo = 'base'`)
+    .prepare(`SELECT ${GRAPH_COLUMNS} FROM graph WHERE class = ? AND lineage_type = 'base'`)
     .get(className) as GraphRow | undefined;
 }
 
@@ -172,7 +179,7 @@ export function insertVersion(
   },
 ): void {
   db.prepare(
-    `INSERT INTO grafo_versao (id, grafo_id, versao_pai, snapshot, origem, proposta_id, criado_em)
+    `INSERT INTO graph_version (id, graph_id, parent_version, snapshot, source, proposal_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     data.id,
@@ -196,7 +203,7 @@ export function insertVersion(
  * @param versionId Version that starts to hold.
  */
 export function movePointer(db: Database, graphId: string, versionId: string): void {
-  db.prepare('UPDATE grafo SET versao_corrente_id = ? WHERE id = ?').run(versionId, graphId);
+  db.prepare('UPDATE graph SET current_version_id = ? WHERE id = ?').run(versionId, graphId);
 }
 
 /**
@@ -221,7 +228,7 @@ export function registerBaseGraph(
 
   db.transaction(() => {
     db.prepare(
-      `INSERT INTO grafo (id, classe, linhagem_tipo, base_classe, origem_proposta_id, versao_corrente_id, criado_em)
+      `INSERT INTO graph (id, class, lineage_type, base_class, origin_proposal_id, current_version_id, created_at)
        VALUES (?, ?, 'base', NULL, NULL, NULL, ?)`,
     ).run(className, className, createdAt);
 
@@ -267,8 +274,8 @@ export interface VariantFork {
  * Branch semantics: the first version of the variant IS the base's current
  * snapshot, with no diff, and `versao_pai` points at the version it was forked
  * from — a parenthood that crosses lineages, which the schema allows because
- * `grafo_versao.versao_pai` only references `grafo_versao(id)`, with no demand
- * that both sides share a `grafo_id`.
+ * `graph_version.parent_version` only references `graph_version(id)`, with no
+ * demand that both sides share a `graph_id`.
  *
  * It moves the pointer for the same reason `registerBaseGraph` does: this is the
  * lineage's first version and there is no previous "current" to preserve.
@@ -286,7 +293,7 @@ export function forkVariant(
 
   db.transaction(() => {
     db.prepare(
-      `INSERT INTO grafo (id, classe, linhagem_tipo, base_classe, origem_proposta_id, versao_corrente_id, criado_em)
+      `INSERT INTO graph (id, class, lineage_type, base_class, origin_proposal_id, current_version_id, created_at)
        VALUES (?, ?, 'variante', ?, ?, NULL, ?)`,
     ).run(id, base.classe, base.classe, originProposalId, createdAt);
 
@@ -329,7 +336,7 @@ export function forkVariant(
 /* -------------------------------------------------------------------------- */
 
 /**
- * `linhagem_tipo`, both ways.
+ * `lineage_type`, both ways.
  *
  * `migrations/0002_grafo_versao_proposta.sql` puts the Portuguese values in a
  * `CHECK`, which makes them part of the DB schema rather than of the format —
@@ -342,7 +349,7 @@ const LINEAGE_FIELD: Record<string, string> = { base: 'base', variante: 'variant
 const LINEAGE_COLUMN: Record<string, string> = { base: 'base', variant: 'variante' };
 
 /**
- * `grafo_versao.origem`, both ways.
+ * `graph_version.source`, both ways.
  *
  * `manual` is already English; the other two are not (`glossario-wire.md` §1.6,
  * which routes the value `proposta` through its §1.3 row on purpose — one word,

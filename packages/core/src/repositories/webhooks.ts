@@ -1,5 +1,5 @@
 /**
- * Access to `assinatura_webhook` and `entrega_webhook` (t142, FR1–FR6).
+ * Access to `webhook_subscription` and `webhook_delivery` (t142, FR1–FR6).
  *
  * Two tables, one repository, because they are one story: what was contracted
  * and what happened to it. Everything that decides WHEN a delivery is attempted
@@ -13,17 +13,17 @@
  *   accident; the only reader is `dueDeliveries`, which hands it to the signer.
  *   That is a stronger guarantee than remembering to strip a field in every
  *   response.
- * - **The fan-out cursor is derived, never stored.** It is `MAX(evento_id)`
+ * - **The fan-out cursor is derived, never stored.** It is `MAX(event_id)`
  *   among the subscription's own delivery rows, falling back to
- *   `evento_inicial_id`. A mutable cursor column would be a second piece of
+ *   `initial_event_id`. A mutable cursor column would be a second piece of
  *   state that can disagree with what was actually enqueued; this one cannot,
  *   because it IS what was enqueued.
  * - **Re-running the fan-out is free.** `enqueueDeliveries` is
- *   `INSERT OR IGNORE` over the `UNIQUE (assinatura_id, evento_id)` of the
+ *   `INSERT OR IGNORE` over the `UNIQUE (subscription_id, event_id)` of the
  *   migration, so a tick that died halfway costs a repeated read and nothing
  *   else.
  *
- * The `evento` table is only ever READ from here (`MAX(id)`, at creation time),
+ * The `event` table is only ever READ from here (`MAX(id)`, at creation time),
  * the same direct read the stream already does (`src/routes/events.ts:143-146`)
  * and for the same reason: `src/db/events.ts` keeps exactly three exports
  * (`test/event-append-only.test.ts`, AT16).
@@ -31,8 +31,10 @@
  * `now` is injectable (default: the real clock), like `repositories/leases.ts`:
  * "the backoff step has passed" has to be testable without a two-hour `sleep`.
  *
- * The row field names mirror the untouched migration columns, so they stay in
- * Portuguese (t127, FR8).
+ * The COLUMNS are English since D20's fourth child (t229); {@link DeliveryTask}
+ * and {@link NewSubscription} are not, because `src/webhooks/dispatcher.ts` and
+ * `routes/webhooks.ts` read them — so every `SELECT` aliases the renamed column
+ * back onto the field (t229, FR4).
  */
 
 import type { Database } from '../db/connection.ts';
@@ -48,9 +50,9 @@ export interface ClockOptions {
  *
  * This type IS the wire (t226, FR1): nothing inside the package reads it, so
  * there is no second, Portuguese projection beside it. The columns it comes
- * from are still `projeto_id`/`tipos_filtro`/`criada_em`, and `toSubscription`
- * is where the two meet — which is also where the leak this ticket closed was:
- * before t226 the mapper renamed `tipos_filtro` and let five other column names
+ * from are `project_id`/`filter_types`/`created_at` since t229, and
+ * `toSubscription` is where the two meet — which is also where the leak t226
+ * closed was: before it the mapper renamed one column and let five other names
  * straight through.
  */
 export interface Subscription {
@@ -59,7 +61,7 @@ export interface Subscription {
   url: string;
   /** Taxonomy types this subscription wants; `null` means every type. */
   filter_types: string[] | null;
-  /** `MAX(evento.id)` at creation time — where the fan-out starts (FR4). */
+  /** `MAX(event.id)` at creation time — where the fan-out starts (FR4). */
   initial_event_id: number;
   created_at: string;
   deactivated_at: string | null;
@@ -97,7 +99,7 @@ export interface DeliveryTask {
 /** What a failed attempt reports back. */
 export interface FailedAttempt {
   id: number;
-  /** What went wrong, as it goes into `ultimo_erro`. */
+  /** What went wrong, as it goes into `last_error`. */
   message: string;
   /** The retry schedule; its length is how many retries there are (FR6). */
   backoff: readonly number[];
@@ -114,11 +116,14 @@ interface SubscriptionRow {
   desativada_em: string | null;
 }
 
-/** Every column of the subscription EXCEPT the secret. */
-const SUBSCRIPTION_COLUMNS = `id, projeto_id, url, tipos_filtro, evento_inicial_id,
-                              criada_em, desativada_em`;
+/** Every column of the subscription EXCEPT the secret, in the row's spelling. */
+const SUBSCRIPTION_COLUMNS = `id, project_id AS projeto_id, url,
+                              filter_types AS tipos_filtro,
+                              initial_event_id AS evento_inicial_id,
+                              created_at AS criada_em,
+                              deactivated_at AS desativada_em`;
 
-/** What `ultimo_erro` records when the subscription itself went away (FR3). */
+/** What `last_error` records when the subscription itself went away (FR3). */
 const DEACTIVATED = 'subscription deactivated';
 
 /** Translates the row into the view the API returns. */
@@ -142,7 +147,7 @@ function addMilliseconds(instant: string, ms: number): string {
 /**
  * Registers a subscription, anchored at the current end of the log.
  *
- * Reading `MAX(evento.id)` and writing the row happen in one transaction: an
+ * Reading `MAX(event.id)` and writing the row happen in one transaction: an
  * event landing between the two would otherwise decide, by luck, whether the
  * brand-new subscription receives it.
  *
@@ -159,14 +164,14 @@ export function createSubscription(
   const clock = options.now ?? now;
 
   return db.transaction((): Subscription => {
-    const last = db.prepare('SELECT MAX(id) AS last_id FROM evento').get() as {
+    const last = db.prepare('SELECT MAX(id) AS last_id FROM event').get() as {
       last_id: number | null;
     };
 
     const effect = db
       .prepare(
-        `INSERT INTO assinatura_webhook
-           (projeto_id, url, segredo, tipos_filtro, evento_inicial_id, criada_em)
+        `INSERT INTO webhook_subscription
+           (project_id, url, secret, filter_types, initial_event_id, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(
@@ -191,7 +196,7 @@ export function createSubscription(
  */
 export function getSubscription(db: Database, id: number): Subscription | undefined {
   const row = db
-    .prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM assinatura_webhook WHERE id = ?`)
+    .prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM webhook_subscription WHERE id = ?`)
     .get(id) as SubscriptionRow | undefined;
   return row === undefined ? undefined : toSubscription(row);
 }
@@ -209,14 +214,14 @@ export function listSubscriptions(
   const values: number[] = [];
 
   if (filters.projeto_id !== undefined) {
-    conditions.push('projeto_id = ?');
+    conditions.push('project_id = ?');
     values.push(filters.projeto_id);
   }
-  if (filters.activeOnly === true) conditions.push('desativada_em IS NULL');
+  if (filters.activeOnly === true) conditions.push('deactivated_at IS NULL');
 
   const where = conditions.length === 0 ? '' : ` WHERE ${conditions.join(' AND ')}`;
   const rows = db
-    .prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM assinatura_webhook${where} ORDER BY id`)
+    .prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM webhook_subscription${where} ORDER BY id`)
     .all(...values) as SubscriptionRow[];
   return rows.map(toSubscription);
 }
@@ -251,11 +256,11 @@ export function deactivateSubscription(
 
     const moment = clock();
     db.prepare(
-      'UPDATE assinatura_webhook SET desativada_em = ? WHERE id = ? AND desativada_em IS NULL',
+      'UPDATE webhook_subscription SET deactivated_at = ? WHERE id = ? AND deactivated_at IS NULL',
     ).run(moment, id);
     db.prepare(
-      `UPDATE entrega_webhook SET status = 'esgotada', ultimo_erro = ?
-        WHERE assinatura_id = ? AND status = 'pendente'`,
+      `UPDATE webhook_delivery SET status = 'esgotada', last_error = ?
+        WHERE subscription_id = ? AND status = 'pendente'`,
     ).run(DEACTIVATED, id);
 
     return getSubscription(db, id);
@@ -265,11 +270,11 @@ export function deactivateSubscription(
 /**
  * Enqueues one delivery per event, skipping what is already enqueued (FR4).
  *
- * `INSERT OR IGNORE` plus the migration's `UNIQUE (assinatura_id, evento_id)`
+ * `INSERT OR IGNORE` plus the migration's `UNIQUE (subscription_id, event_id)`
  * is the whole idempotency story: the same window can be fanned out any number
  * of times and produce the same rows.
  *
- * The delivery is born due (`proxima_tentativa_em` = now), so the same tick that
+ * The delivery is born due (`next_attempt_at` = now), so the same tick that
  * enqueues it can also attempt it.
  *
  * @param db Open database.
@@ -286,8 +291,8 @@ export function enqueueDeliveries(
 ): number {
   const moment = (options.now ?? now)();
   const statement = db.prepare(
-    `INSERT OR IGNORE INTO entrega_webhook
-       (assinatura_id, evento_id, status, proxima_tentativa_em, criada_em)
+    `INSERT OR IGNORE INTO webhook_delivery
+       (subscription_id, event_id, status, next_attempt_at, created_at)
      VALUES (?, ?, 'pendente', ?, ?)`,
   );
 
@@ -310,7 +315,7 @@ export function enqueueDeliveries(
  */
 export function fanoutCursor(db: Database, subscription: Subscription): number {
   const row = db
-    .prepare('SELECT MAX(evento_id) AS last_id FROM entrega_webhook WHERE assinatura_id = ?')
+    .prepare('SELECT MAX(event_id) AS last_id FROM webhook_delivery WHERE subscription_id = ?')
     .get(subscription.id) as { last_id: number | null };
   return row.last_id ?? subscription.initial_event_id;
 }
@@ -331,14 +336,19 @@ export function fanoutCursor(db: Database, subscription: Subscription): number {
 export function dueDeliveries(db: Database, moment: string, limit: number): DeliveryTask[] {
   return db
     .prepare(
-      `SELECT entrega.id, entrega.assinatura_id, entrega.evento_id, entrega.tentativas,
-              assinatura.url, assinatura.segredo
-         FROM entrega_webhook AS entrega
-         JOIN assinatura_webhook AS assinatura ON assinatura.id = entrega.assinatura_id
-        WHERE entrega.status = 'pendente'
-          AND entrega.proxima_tentativa_em <= ?
-          AND assinatura.desativada_em IS NULL
-        ORDER BY entrega.id
+      `SELECT delivery.id,
+              delivery.subscription_id AS assinatura_id,
+              delivery.event_id        AS evento_id,
+              delivery.attempts        AS tentativas,
+              subscription.url,
+              subscription.secret      AS segredo
+         FROM webhook_delivery AS delivery
+         JOIN webhook_subscription AS subscription
+           ON subscription.id = delivery.subscription_id
+        WHERE delivery.status = 'pendente'
+          AND delivery.next_attempt_at <= ?
+          AND subscription.deactivated_at IS NULL
+        ORDER BY delivery.id
         LIMIT ?`,
     )
     .all(moment, limit) as DeliveryTask[];
@@ -356,8 +366,8 @@ export function dueDeliveries(db: Database, moment: string, limit: number): Deli
  */
 export function recordDeliverySuccess(db: Database, id: number, options: ClockOptions = {}): void {
   db.prepare(
-    `UPDATE entrega_webhook
-        SET status = 'entregue', tentativas = tentativas + 1, entregue_em = ?, ultimo_erro = NULL
+    `UPDATE webhook_delivery
+        SET status = 'entregue', attempts = attempts + 1, delivered_at = ?, last_error = NULL
       WHERE id = ? AND status = 'pendente'`,
   ).run((options.now ?? now)(), id);
 }
@@ -384,7 +394,9 @@ export function recordDeliveryFailure(
 
   db.transaction(() => {
     const current = db
-      .prepare("SELECT tentativas FROM entrega_webhook WHERE id = ? AND status = 'pendente'")
+      .prepare(
+        "SELECT attempts AS tentativas FROM webhook_delivery WHERE id = ? AND status = 'pendente'",
+      )
       .get(attempt.id) as { tentativas: number } | undefined;
     if (current === undefined) return;
 
@@ -393,14 +405,14 @@ export function recordDeliveryFailure(
 
     if (step === undefined) {
       db.prepare(
-        `UPDATE entrega_webhook SET status = 'esgotada', tentativas = ?, ultimo_erro = ?
+        `UPDATE webhook_delivery SET status = 'esgotada', attempts = ?, last_error = ?
           WHERE id = ? AND status = 'pendente'`,
       ).run(made, attempt.message, attempt.id);
       return;
     }
 
     db.prepare(
-      `UPDATE entrega_webhook SET tentativas = ?, ultimo_erro = ?, proxima_tentativa_em = ?
+      `UPDATE webhook_delivery SET attempts = ?, last_error = ?, next_attempt_at = ?
         WHERE id = ? AND status = 'pendente'`,
     ).run(made, attempt.message, addMilliseconds(clock(), step), attempt.id);
   })();

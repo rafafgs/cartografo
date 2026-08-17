@@ -12,7 +12,7 @@
 > (o passo de publicação: recusa, cópia, idempotência, atlas multi-classe) e
 > [`packages/core/test/cli-atlas-publish.test.ts`](../../packages/core/test/cli-atlas-publish.test.ts)
 > (a volta inteira: publicar → commitar → clonar → importar, com o mesmo
-> `grafo_versao.id` e o mesmo pino por skill). Julgamento arquitetural é portão
+> `graph_version.id` e o mesmo pino por skill). Julgamento arquitetural é portão
 > humano.
 
 ## Por que este documento existe
@@ -88,7 +88,7 @@ verificável sem confiar em quem publicou:
 
 | O quê | Onde mora | O que ele prova |
 |---|---|---|
-| `grafo_versao.id` | calculado no control plane, hash canônico do documento inteiro (`docs/spec/entidades-versionamento.md` §2) | que o mapa que entrou é byte a byte o mesmo que saiu — reimportar tem que reproduzir o mesmo id |
+| `graph_version.id` | calculado no control plane, hash canônico do documento inteiro (`docs/spec/entidades-versionamento.md` §2) | que o mapa que entrou é byte a byte o mesmo que saiu — reimportar tem que reproduzir o mesmo id |
 | `skill_ref.hash` de cada nó | dentro do `grafo.json`, pinando o conteúdo do manifesto (D4) | que o manifesto ao lado é o manifesto que o autor do grafo revisou |
 | `hash` de cada manifesto | dentro do próprio `skills/*.json` | que o manifesto não foi editado sem passar pelo pino |
 
@@ -116,7 +116,7 @@ A checagem acontece em três lugares independentes, e as duas primeiras rodam
 
 **A volta que fecha a prova.** Publicar os dois grafos de fábrica num
 repositório git, commitar, clonar num diretório limpo e importar o clone
-produz o **mesmo `grafo_versao.id`** e o **mesmo hash por skill** que importar
+produz o **mesmo `graph_version.id`** e o **mesmo hash por skill** que importar
 `grafos-de-fabrica/<classe>/` direto daqui. É o que
 [`packages/core/test/cli-atlas-publish.test.ts`](../../packages/core/test/cli-atlas-publish.test.ts)
 roda a cada `npm test`; se a travessia mudasse um byte, o hash mudaria junto e

@@ -6,14 +6,16 @@
  * and a projection derived from them — consequence 2 of the taxonomy's
  * append-only rule.
  *
- * The care that runs through the file: an absent `uso` is `null`, never zero.
+ * The care that runs through the file: an absent `usage` is `null`, never zero.
  * Zero tokens is a measurement; absence is the engine not having reported
  * anything, and collapsing the two destroys the only cost metric the PoC will
  * have.
  *
- * {@link Session} below is the ROW, so its field names mirror the untouched
- * migration and stay in Portuguese; {@link WireSession} is what `/v1` publishes
- * and is English, event-type strings included, since t227.
+ * The TABLE and its columns are English since D20's fourth child (t229);
+ * {@link Session}'s field names are not, because `routes/sessions.ts` and the
+ * topographer's reader consume them, so every `SELECT` aliases the renamed
+ * column back onto the field (t229, FR4). {@link WireSession} is what `/v1`
+ * publishes and is English, event-type strings included, since t227.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -94,18 +96,28 @@ interface SessionRow extends Omit<Session, 'uso' | 'modelos' | 'transcricao_trun
   transcricao_truncada: number;
 }
 
+/**
+ * The row, read back into {@link Session}'s spelling (t229, FR4).
+ *
+ * `transcricao_truncada` and `transcricao_tamanho_original` carry no alias
+ * because they carry no new name: `glossario-wire.md` §4.2 registers
+ * `transcricao` and neither of its two siblings, and inventing a spelling the
+ * glossary does not hold is what the glossary exists to prevent.
+ */
 const COLUMNS = `
-  id, trabalho_id, execucao_id, no_id, engine, engine_session_ref, working_dir,
+  id, job_id AS trabalho_id, execution_id AS execucao_id, node_id AS no_id,
+  engine, engine_session_ref, working_dir,
   prompt, timeout_seconds, silence_seconds, status, exit_code, timeout_reason,
-  uso, modelos, transcricao, transcricao_truncada, transcricao_tamanho_original,
-  aberta_em, finalizada_em
+  usage AS uso, models AS modelos, transcript AS transcricao,
+  transcricao_truncada, transcricao_tamanho_original,
+  opened_at AS aberta_em, finished_at AS finalizada_em
 `;
 
 function toSession(row: SessionRow): Session {
   return {
     ...row,
     uso: jsonOrNull<SessionUsage>(row.uso),
-    // Same JSON-in-a-column convention `uso` above already uses, and the same
+    // Same JSON-in-a-column convention `usage` above already uses, and the same
     // reading of a NULL: nothing was reported. A row written before t172 lands
     // here as `null` with no backfill and no special case.
     modelos: jsonOrNull<string[]>(row.modelos),
@@ -126,8 +138,9 @@ function toSession(row: SessionRow): Session {
 /* column takes whatever `session.finished`'s `data.status` carries, and since */
 /* t227 that is `completed`, `failed`, `timed_out`, … — so `/finish` accepts   */
 /* the same word it answers, with nothing in between. The column has no CHECK  */
-/* (migration `0003`), which is why the value could simply change; renaming    */
-/* the COLUMNS is D20's fifth child.                                           */
+/* (migration `0003`), which is why the value could simply change. Renaming    */
+/* the COLUMNS was D20's FOURTH child (t229), and it renamed identifiers only: */
+/* it moved no stored value and retired no map.                                */
 /* -------------------------------------------------------------------------- */
 
 /** A session, as `/v1` publishes it. */
@@ -271,7 +284,7 @@ function capTranscript(value: unknown): CappedTranscript {
 }
 
 function readRow(db: Database, id: number): SessionRow | undefined {
-  return db.prepare(`SELECT ${COLUMNS} FROM sessao WHERE id = ?`).get(id) as
+  return db.prepare(`SELECT ${COLUMNS} FROM session WHERE id = ?`).get(id) as
     | SessionRow
     | undefined;
 }
@@ -279,19 +292,19 @@ function readRow(db: Database, id: number): SessionRow | undefined {
 /**
  * The project this session was opened under (t157, FR3/FR4).
  *
- * The `sessao` table has no `projeto_id` column: `openSession` resolves the
+ * The `session` table has no `project_id` column: `openSession` resolves the
  * project — the served job's, or the one declared in the body — and records it
  * in the envelope of `session.opened`, and that event is where it lives. Every
  * later event of the session reads it from there.
  *
- * Deriving it again from `trabalho` (which is what this file did until t157)
+ * Deriving it again from `job` (which is what this file did until t157)
  * quietly loses the answer for a session with no job — a discovery session, a
  * conversation turn, the very case `session.opened`'s contract calls out: the
  * join finds nothing and the end of the session gets filed under
  * `DEFAULT_PROJECT`, whatever project it actually opened under. The log already
  * knew; nobody was asking it.
  *
- * Read-only, over the `evento` table: the append-only rule is untouched.
+ * Read-only, over the `event` table: the append-only rule is untouched.
  *
  * @param db Open handle.
  * @param id Session id.
@@ -362,7 +375,11 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
   const owner =
     jobId === null
       ? undefined
-      : (db.prepare('SELECT projeto_id, execucao_id FROM trabalho WHERE id = ?').get(jobId) as
+      : (db
+          .prepare(
+            'SELECT project_id AS projeto_id, execution_id AS execucao_id FROM job WHERE id = ?',
+          )
+          .get(jobId) as
           | { projeto_id: number; execucao_id: number | null }
           | undefined);
   if (jobId !== null && owner === undefined) return null;
@@ -376,10 +393,10 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
     const timestamp = now();
     const result = db
       .prepare(
-        `INSERT INTO sessao (
-           trabalho_id, execucao_id, no_id, engine, engine_session_ref, working_dir,
-           prompt, timeout_seconds, silence_seconds, status, exit_code, uso,
-           aberta_em, finalizada_em
+        `INSERT INTO session (
+           job_id, execution_id, node_id, engine, engine_session_ref, working_dir,
+           prompt, timeout_seconds, silence_seconds, status, exit_code, usage,
+           opened_at, finished_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'aberta', NULL, NULL, ?, NULL)`,
       )
       .run(
@@ -470,9 +487,9 @@ export function finishSession(
     const timestamp = now();
     const effect = db
       .prepare(
-        `UPDATE sessao SET status = ?, exit_code = ?, timeout_reason = ?, uso = ?,
-                modelos = ?, transcricao = ?, transcricao_truncada = ?,
-                transcricao_tamanho_original = ?, finalizada_em = ?
+        `UPDATE session SET status = ?, exit_code = ?, timeout_reason = ?, usage = ?,
+                models = ?, transcript = ?, transcricao_truncada = ?,
+                transcricao_tamanho_original = ?, finished_at = ?
           WHERE id = ? AND status = 'aberta'`,
       )
       .run(
@@ -523,8 +540,8 @@ export function finishSession(
 /**
  * What `GET /v1/sessions/:id/transcript` reads, in the column's own words.
  *
- * The names mirror the untouched migration, like every other projection in this
- * file; what LEAVES the process is `toWireSessionTranscript`'s output (t232).
+ * The names mirror {@link Session}'s, like every other projection in this file;
+ * what LEAVES the process is `toWireSessionTranscript`'s output (t232).
  */
 export interface SessionTranscript {
   transcricao: string | null;
@@ -570,7 +587,7 @@ export interface PermissionDenialInput {
  * Records an attempt at a tool the session's permission policy denied
  * (t125, FR9).
  *
- * **Event only: the `sessao` row does not move.** A denial is an incident, not
+ * **Event only: the `session` row does not move.** A denial is an incident, not
  * an outcome — the session goes on, and may be denied again. Writing a status
  * here would turn "it tried a closed door" into "it ended", which is a
  * different fact about a session that is still running.
@@ -635,17 +652,17 @@ export function listSessions(
   const values: unknown[] = [];
 
   if (filter.execucao_id !== undefined) {
-    conditions.push('execucao_id = ?');
+    conditions.push('execution_id = ?');
     values.push(filter.execucao_id);
   }
   if (filter.trabalho_id !== undefined) {
-    conditions.push('trabalho_id = ?');
+    conditions.push('job_id = ?');
     values.push(filter.trabalho_id);
   }
 
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;
   const rows = db
-    .prepare(`SELECT ${COLUMNS} FROM sessao ${where} ORDER BY id`)
+    .prepare(`SELECT ${COLUMNS} FROM session ${where} ORDER BY id`)
     .all(...values) as SessionRow[];
   return rows.map(toSession);
 }

@@ -5,7 +5,7 @@
  * central guarantee turned into two suites: enqueuing is synchronous and
  * transactional with the fact that triggered it, and DELIVERING is not. Here
  * nothing is ever delivered — no dispatcher runs in the first four tests, and
- * the assertions read the `entrega_gancho` table straight. What a hook does with
+ * the assertions read the `hook_delivery` table straight. What a hook does with
  * a socket is the other file's problem, and that separation is the point.
  *
  * The repositories are called DIRECTLY rather than through the API, for the same
@@ -76,24 +76,24 @@ const ON_BLOCK = 'avisar-bloqueio';
  */
 const secretFor = (reference: string): string => `chave-hmac-de-${reference}`;
 
-/** One row of `entrega_gancho`, read straight from the table. */
+/** One row of `hook_delivery`, read straight from the table. */
 interface HookDelivery {
   id: number;
-  projeto_id: number;
-  execucao_id: number | null;
-  trabalho_id: number;
-  gancho_id: string;
-  no_id: string;
-  grafo_versao_id: string | null;
-  evento_id: number;
+  project_id: number;
+  execution_id: number | null;
+  job_id: number;
+  hook_id: string;
+  node_id: string;
+  graph_version_id: string | null;
+  event_id: number;
   url: string;
-  segredo: string;
+  secret: string;
   status: string;
-  tentativas: number;
-  proxima_tentativa_em: string;
-  criada_em: string;
-  entregue_em: string | null;
-  ultimo_erro: string | null;
+  attempts: number;
+  next_attempt_at: string;
+  created_at: string;
+  delivered_at: string | null;
+  last_error: string | null;
 }
 
 /** The slice of `fetch` the dispatcher is allowed to use. */
@@ -183,10 +183,10 @@ function newJob(db: Database, graphVersionId: string | null): Job {
 function hookDeliveries(db: Database): HookDelivery[] {
   return db
     .prepare(
-      `SELECT id, projeto_id, execucao_id, trabalho_id, gancho_id, no_id, grafo_versao_id,
-              evento_id, url, segredo, status, tentativas, proxima_tentativa_em,
-              criada_em, entregue_em, ultimo_erro
-         FROM entrega_gancho ORDER BY id`,
+      `SELECT id, project_id, execution_id, job_id, hook_id, node_id, graph_version_id,
+              event_id, url, secret, status, attempts, next_attempt_at,
+              created_at, delivered_at, last_error
+         FROM hook_delivery ORDER BY id`,
     )
     .all() as HookDelivery[];
 }
@@ -236,15 +236,15 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   assert.equal(moved?.no_atual, 'revisar', 'the traversal itself is untouched');
 
   const enqueued = only(hookDeliveries(db));
-  assert.equal(enqueued.gancho_id, ON_ENTER);
-  assert.equal(enqueued.no_id, 'revisar');
-  assert.equal(enqueued.trabalho_id, job.id);
-  assert.equal(enqueued.projeto_id, job.projeto_id);
-  assert.equal(enqueued.grafo_versao_id, versionId);
+  assert.equal(enqueued.hook_id, ON_ENTER);
+  assert.equal(enqueued.node_id, 'revisar');
+  assert.equal(enqueued.job_id, job.id);
+  assert.equal(enqueued.project_id, job.projeto_id);
+  assert.equal(enqueued.graph_version_id, versionId);
   assert.equal(enqueued.status, 'pendente');
-  assert.equal(enqueued.tentativas, 0);
-  assert.equal(enqueued.entregue_em, null);
-  assert.equal(enqueued.ultimo_erro, null);
+  assert.equal(enqueued.attempts, 0);
+  assert.equal(enqueued.delivered_at, null);
+  assert.equal(enqueued.last_error, null);
 
   // The URL is carried from the graph document, which is what makes the reaction
   // versioned with it instead of registered out of band. The KEY is not: since
@@ -254,9 +254,9 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   const declared = document.hooks?.find((hook) => hook.id === ON_ENTER);
   assert.ok(declared !== undefined, 'the fixture has to declare the node_entered hook');
   assert.equal(enqueued.url, declared.destination.url);
-  assert.equal(enqueued.segredo, secretFor(declared.destination.secret_ref));
+  assert.equal(enqueued.secret, secretFor(declared.destination.secret_ref));
   assert.notEqual(
-    enqueued.segredo,
+    enqueued.secret,
     declared.destination.secret_ref,
     'what is copied is the resolved key, not the name the document carries',
   );
@@ -264,12 +264,12 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   // And the delivery points at the very event that triggered it.
   const trigger = db
     .prepare(
-      `SELECT id, tipo FROM evento
-        WHERE entidade_tipo = 'trabalho' AND entidade_id = ? ORDER BY id DESC LIMIT 1`,
+      `SELECT id, type FROM event
+        WHERE entity_type = 'trabalho' AND entity_id = ? ORDER BY id DESC LIMIT 1`,
     )
-    .get(String(job.id)) as { id: number; tipo: string };
-  assert.equal(trigger.tipo, 'job.transitioned');
-  assert.equal(enqueued.evento_id, trigger.id);
+    .get(String(job.id)) as { id: number; type: string };
+  assert.equal(trigger.type, 'job.transitioned');
+  assert.equal(enqueued.event_id, trigger.id);
 });
 
 test('AT5 — blocking fires only the node_blocked hook of the node it blocked on', async (t) => {
@@ -286,8 +286,8 @@ test('AT5 — blocking fires only the node_blocked hook of the node it blocked o
   assert.equal(blocked?.bloqueado, true);
 
   const enqueued = only(hookDeliveries(db));
-  assert.equal(enqueued.gancho_id, ON_BLOCK);
-  assert.equal(enqueued.no_id, 'redigir');
+  assert.equal(enqueued.hook_id, ON_BLOCK);
+  assert.equal(enqueued.node_id, 'redigir');
   assert.equal(enqueued.status, 'pendente');
 
   // A block on `revisar` matches nothing: its only hook is a node_entered one,
@@ -383,7 +383,7 @@ test('AT7 — the write path answers 200 even when the hook destination rejects'
 
   // The delivery exists and is retried in the background; the response above did
   // not wait for a single one of those attempts.
-  assert.equal(only(hookDeliveries(db)).gancho_id, ON_ENTER);
+  assert.equal(only(hookDeliveries(db)).hook_id, ON_ENTER);
   await waitFor(() => attempts >= 1, 'the background dispatcher to attempt the delivery');
   assert.ok(attempts >= 1, 'and the dispatcher does attempt it, after the answer went out');
   assert.equal(only(hookDeliveries(db)).status, 'pendente', 'a failed attempt is not terminal');

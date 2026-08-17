@@ -74,7 +74,7 @@ test('t124 AT — a /v1 request with no Authorization header is denied with miss
   assert.equal(typeof denied.body.message, 'string');
   assert.ok((denied.body.message ?? '').length > 0, 'the refusal says what to do about it');
 
-  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM trabalho').get() as { total: number };
+  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM job').get() as { total: number };
   assert.equal(rows.total, 0, 'a denied request writes nothing');
 });
 
@@ -107,7 +107,7 @@ test('t124 AT — a valid token reaches the handler and the route behaves exactl
   assert.equal(created.status, 201, 'an authenticated write is the same write it always was');
   assert.equal(typeof created.body.id, 'number');
 
-  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM trabalho').get() as { total: number };
+  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM job').get() as { total: number };
   assert.equal(rows.total, 1);
 
   // Case-insensitive scheme: `Authorization: bearer <token>` is the same header.
@@ -175,7 +175,7 @@ test('t143 AT — a runner credential is refused outside its route family', asyn
   assert.equal(denied.body.error, 'out_of_scope_credential');
   assert.ok((denied.body.message ?? '').length > 0, 'the refusal says what the credential may do');
 
-  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM trabalho').get() as { total: number };
+  const rows = ctx.db.prepare('SELECT COUNT(*) AS total FROM job').get() as { total: number };
   assert.equal(rows.total, 0, 'a refused request writes nothing');
 
   const allowed = await call(ctx, 'GET', '/v1/jobs', token);

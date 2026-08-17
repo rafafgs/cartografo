@@ -1,5 +1,5 @@
 /**
- * Access to the `motor_modelo` table (t166, FR13).
+ * Access to the `engine_model` table (t166, FR13).
  *
  * The control plane still does not know what an engine is. What it keeps here
  * is a RELAY: a runner started, asked its adapter which models exist on that
@@ -16,9 +16,11 @@
  * catalog is a property of the ENGINE and not of the machine.
  *
  * Like every other repository it receives the already-open database and never
- * touches the driver (D1). The row's field names mirror the migration's columns,
- * so they stay in Portuguese (t127, FR8); the two values of `origem` stay
- * English because they are the `EngineAdapter`'s own vocabulary.
+ * touches the driver (D1). The COLUMNS are English since D20's fourth child
+ * (t229); {@link EngineModelRow}'s field names are not, because
+ * `routes/engine-models.ts` reads them, so every `SELECT` aliases the renamed
+ * column back onto the field (t229, FR4). The two VALUES of `source` were
+ * already English — they are the `EngineAdapter`'s own vocabulary.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -27,7 +29,7 @@ import { now } from './common.ts';
 /** Where a catalog entry came from: the CLI answered, or the adapter knew. */
 export type ModelOrigin = 'cli' | 'catalog';
 
-/** The two values `origem` accepts, as the migration's CHECK spells them. */
+/** The two values `source` accepts, as the migration's CHECK spells them. */
 export const MODEL_ORIGINS: readonly ModelOrigin[] = ['cli', 'catalog'];
 
 /** One model an engine offers, as a runner reported it — the row's spelling. */
@@ -76,7 +78,8 @@ export interface ReportedModel {
   origem: ModelOrigin;
 }
 
-const COLUMNS = 'modelo_id, rotulo, origem, atualizado_em';
+const COLUMNS =
+  'model_id AS modelo_id, label AS rotulo, source AS origem, updated_at AS atualizado_em';
 
 /**
  * Replaces the stored catalog of one engine with what was just reported.
@@ -99,9 +102,9 @@ export function reportEngineModels(
   const timestamp = now();
 
   db.transaction(() => {
-    db.prepare('DELETE FROM motor_modelo WHERE motor = ?').run(engine);
+    db.prepare('DELETE FROM engine_model WHERE engine = ?').run(engine);
     const insert = db.prepare(
-      'INSERT INTO motor_modelo (motor, modelo_id, rotulo, origem, atualizado_em) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO engine_model (engine, model_id, label, source, updated_at) VALUES (?, ?, ?, ?, ?)',
     );
     for (const model of models) {
       insert.run(engine, model.modelo_id, model.rotulo ?? null, model.origem, timestamp);
@@ -118,7 +121,7 @@ export function reportEngineModels(
  */
 export function listEngineModels(db: Database, engine: string): EngineModelRow[] {
   return db
-    .prepare(`SELECT ${COLUMNS} FROM motor_modelo WHERE motor = ? ORDER BY modelo_id`)
+    .prepare(`SELECT ${COLUMNS} FROM engine_model WHERE engine = ? ORDER BY model_id`)
     .all(engine) as EngineModelRow[];
 }
 
@@ -130,7 +133,7 @@ export function listEngineModels(db: Database, engine: string): EngineModelRow[]
  * grows with it.
  *
  * An engine that reported an EMPTY catalog disappears from this listing, and
- * that is a real limitation of storing only rows — there is no `motor` table to
+ * that is a real limitation of storing only rows — there is no `engine` table to
  * carry the name on its own. The route is what keeps the empty case visible,
  * by answering the report with the engine it just wrote.
  *
@@ -139,7 +142,7 @@ export function listEngineModels(db: Database, engine: string): EngineModelRow[]
  */
 export function listEngineCatalogs(db: Database): EngineCatalog[] {
   const rows = db
-    .prepare(`SELECT motor, ${COLUMNS} FROM motor_modelo ORDER BY motor, modelo_id`)
+    .prepare(`SELECT engine AS motor, ${COLUMNS} FROM engine_model ORDER BY engine, model_id`)
     .all() as Array<EngineModelRow & { motor: string }>;
 
   const byEngine = new Map<string, EngineCatalog>();

@@ -143,7 +143,7 @@ function readCursor(header: string | string[] | undefined, db: Database): number
     return parsed;
   }
 
-  const row = db.prepare('SELECT MAX(id) AS last_id FROM evento').get() as {
+  const row = db.prepare('SELECT MAX(id) AS last_id FROM event').get() as {
     last_id: number | null;
   };
   return row.last_id ?? 0;

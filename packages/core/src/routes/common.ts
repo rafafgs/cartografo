@@ -42,10 +42,12 @@
  * `PATCH /input-requests/:id/{answer,auto-resolution}` and
  * `POST /intake/:id/confirmations` included.
  *
- * What is still Portuguese underneath is the DATABASE (`trabalho`,
- * `entidade_tipo`, `criado_em`), which is D20's fifth child, and the intake's
- * `itens` (`{ref, titulo, corpo, …}`), which is `domain/intake.ts`'s document
- * format and which the glossary maps nowhere.
+ * What is still Portuguese underneath is not the DATABASE — D20's FOURTH child
+ * (t229) renamed it to `job`, `entity_type`, `created_at` — but the repository
+ * layer's own field names, which that ticket kept by aliasing every renamed
+ * column back onto them; and the intake's `itens` (`{ref, titulo, corpo, …}`),
+ * which is `domain/intake.ts`'s document format and which the glossary maps
+ * nowhere.
  */
 
 import type { FastifyReply } from 'fastify';

@@ -341,7 +341,7 @@ Quando presente, a versão nasce com `origem: "proposta"`; ausente, com
 versão sem proposta por trás.
 
 O tipo do campo diverge de propósito entre banco e documento:
-`grafo.origem_proposta_id` é `INTEGER REFERENCES proposta(id)`, e
+`graph.origin_proposal_id` é `INTEGER REFERENCES proposal(id)`, e
 `linhagem.origem_proposta_id` é `string` no
 [`grafo.schema.json`](../../schema/grafo.schema.json) — pensado para acomodar
 id de fora, como o de um atlas importado. O inteiro fica no banco e vira

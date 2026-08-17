@@ -556,3 +556,60 @@ test('t196 AT9 — an event whose entity is not the type\'s own subject is refus
     { type: 'graph_version', id: 'sha256:abc' },
   );
 });
+
+/* -------------------------------------------------------------------------- */
+/* t253 — session.finished carries the node's structured report.               */
+/* -------------------------------------------------------------------------- */
+
+test('t253 FR1 — session.finished round-trips an arbitrary output object', () => {
+  const output = { branch: 'ticket-253', arquivos: ['a.ts', 'b.ts'], aninhado: { ok: true } };
+
+  assert.deepEqual(
+    requireValidData('session.finished', { status: 'completed', output }).output,
+    output,
+    'the SHAPE inside is the skill schema\'s business, not the envelope\'s',
+  );
+  assert.equal(
+    requireValidData('session.finished', { status: 'completed' }).output,
+    null,
+    'absent and null are the same fact, like usage and models beside it',
+  );
+  assert.equal(
+    requireValidData('session.finished', { status: 'completed', output: null }).output,
+    null,
+  );
+});
+
+test('t253 FR1 — an output that is not an object never enters the log', () => {
+  for (const output of ['a nota', 42, true, ['uma', 'lista']]) {
+    refuses('session.finished', { status: 'completed', output }, 'output');
+  }
+});
+
+test('t253 FR4 — output_schema_error is the list of reasons, and never empty', () => {
+  const problems = ['data has to have required property texto', 'data must NOT have additional properties'];
+
+  assert.deepEqual(
+    requireValidData('session.finished', {
+      status: 'completed',
+      output: null,
+      output_schema_error: problems,
+    }).output_schema_error,
+    problems,
+  );
+  assert.equal(
+    requireValidData('session.finished', { status: 'completed' }).output_schema_error,
+    null,
+    'nothing was wrong: the absence normalizes to null like every other optional',
+  );
+  refuses(
+    'session.finished',
+    { status: 'completed', output_schema_error: [] },
+    'output_schema_error',
+  );
+  refuses(
+    'session.finished',
+    { status: 'completed', output_schema_error: 'um motivo só' },
+    'output_schema_error',
+  );
+});

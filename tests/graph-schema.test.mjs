@@ -46,8 +46,11 @@ const TOP_LEVEL_KEYS = [
  *
  * `hooks` entered with t169 and is optional for the same reason `engine` was on
  * the node: every graph written before it stays valid without being touched.
+ * `project` entered with t253 under the same rule — it is the static, per-class
+ * configuration the node input projection publishes at `input.project`, and a
+ * graph that declares none projects an empty object rather than refusing.
  */
-const OPTIONAL_TOP_LEVEL_KEYS = ['hooks'];
+const OPTIONAL_TOP_LEVEL_KEYS = ['hooks', 'project'];
 
 /** Reads a JSON file from the repo, failing with its relative path if missing. */
 function readJson(filePath) {
@@ -596,4 +599,62 @@ test('t166 AT — $defs.node declares model as an optional free-text string, sib
     !node.required.includes('model'),
     'model is optional: absent means the engine\'s own default',
   );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t253 — the two additive fields the node input projection needs.             */
+/* -------------------------------------------------------------------------- */
+
+test('t253 — contract.produces is an optional bucket name, sibling of the two schemas', async () => {
+  const schema = readJson(SCHEMA_PATH);
+  const contract = schema.$defs.contract;
+
+  assert.deepEqual(
+    [...contract.required].sort(),
+    ['checks', 'input_schema', 'output_schema'],
+    'produces is NOT required: a graph written before it stays valid untouched',
+  );
+  assert.ok(contract.properties.produces, '$defs.contract does not declare "produces"');
+  assert.equal(contract.properties.produces.type, 'string');
+  assert.ok(
+    typeof contract.properties.produces.description === 'string' &&
+      contract.properties.produces.description.length > 0,
+    'the field says what it is for, like every other field of this schema',
+  );
+
+  // And a document that DECLARES it is accepted, with nothing else changed.
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+  const document = readExample('grafo-valido-minimo.json');
+  document.nodes[0].contract.produces = 'artefato';
+  assert.deepEqual(validateAgainstSchema(document, schema), []);
+});
+
+test('t253 — project is an optional top-level object, and both bundles still validate', async () => {
+  const schema = readJson(SCHEMA_PATH);
+
+  assert.equal(schema.properties.project.type, 'object');
+  assert.equal(
+    schema.properties.project.additionalProperties,
+    true,
+    'the keys inside belong to the CLASS, not to this schema',
+  );
+  assert.ok(!schema.required.includes('project'));
+
+  const { validateAgainstSchema } = await import(
+    new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
+  );
+
+  const document = readExample('grafo-valido-minimo.json');
+  document.project = { repo: 'git@github.com:rafaelgomes/cartografo.git' };
+  assert.deepEqual(validateAgainstSchema(document, schema), []);
+
+  // The non-breaking claim, checked against the two real consumers: neither
+  // bundle declares either field, and both still pass the schema unchanged.
+  for (const bundle of ['desenvolvimento-de-software', 'bets-assimetricas']) {
+    const graph = readJson(path.join(ROOT, 'grafos-de-fabrica', bundle, 'grafo.json'));
+    assert.equal(graph.project, undefined, `${bundle} declares no project yet (ticket 2 does)`);
+    assert.deepEqual(validateAgainstSchema(graph, schema), [], `${bundle}: shape`);
+  }
 });

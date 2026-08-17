@@ -842,3 +842,239 @@ test('t127 — the old Portuguese job paths no longer exist', async (t) => {
     assert.equal(response.status, 404, `${method} ${routePath} should be gone (D18)`);
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* t253 — GET /v1/jobs/:id/context: the `input` a node's skill reads.           */
+/*                                                                             */
+/* The merge algorithm itself is proved pure in `domain-context.test.ts`. What  */
+/* is proved here is the OTHER half: that the four reads the route performs —   */
+/* the job, the version's snapshot, the completed sessions and the answered     */
+/* escalations — feed that algorithm the real rows, over a real server.         */
+/* -------------------------------------------------------------------------- */
+
+/** The migration that gives a session somewhere to keep its output (t253, FR2). */
+const T253_MIGRATION = 'migrations/0020_sessao_saida.sql';
+
+/** The pure module the route is a thin read over. */
+const T253_ARTIFACTS = ['src/domain/context.ts'];
+
+/** A session, in the slice these cases assert on. */
+interface SessionRef {
+  id: number;
+  status: string;
+  output: Record<string, unknown> | null;
+}
+
+/**
+ * A three-node graph that declares a `project` object and two `produces`
+ * buckets, patched onto the example document.
+ *
+ * `revisar` is the gate in the middle and declares no bucket: it is what proves
+ * the bucket survives a step that produces no artifact of its own.
+ */
+async function registerGraphWithBuckets(ctx: TestContext): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  document.problem_class = 'nota-curta-com-baldes';
+  document.project = {
+    repo: 'git@github.com:rafaelgomes/cartografo.git',
+    comando_testes: 'npm test',
+  };
+
+  const nodes = document.nodes as Array<Record<string, unknown>>;
+  (nodes[0].contract as Record<string, unknown>).produces = 'artefato';
+  // A third node after the gate, sharing the first one's bucket. The example
+  // document ends at `revisar`, so the edge and the final node move with it.
+  nodes.push({
+    ...JSON.parse(JSON.stringify(nodes[0])) as Record<string, unknown>,
+    id: 'publicar',
+    description: 'Publica a nota revisada.',
+  });
+  (document.edges as unknown[]).push({
+    from: 'revisar',
+    to: 'publicar',
+    condition: 'aprovado',
+    description: 'A nota aprovada segue para publicação.',
+  });
+  document.final_nodes = ['publicar'];
+
+  const response = await request<{ graph_version: { id: string } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(response.status, 201, `POST /v1/graphs returned ${response.status}`);
+  return response.body.graph_version.id;
+}
+
+/** Opens a session on `nodeId` and closes it with the given status and output. */
+async function runNode(
+  ctx: TestContext,
+  jobId: number,
+  nodeId: string,
+  status: string,
+  output: Record<string, unknown> | null,
+): Promise<SessionRef> {
+  const opened = await request<SessionRef>(ctx, 'POST', '/v1/sessions', {
+    job_id: jobId,
+    node_id: nodeId,
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: `Rode ${nodeId}.`,
+  });
+  assert.equal(opened.status, 201);
+
+  const finished = await request<SessionRef>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${opened.body.id}/finish`,
+    { status, exit_code: 0, output },
+  );
+  assert.equal(finished.status, 200, `PATCH /finish returned ${finished.status}`);
+  return finished.body;
+}
+
+test('t253 AT4 — GET /v1/jobs/:id/context is a 404 for a job that does not exist', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const response = await request<{ error: string }>(ctx, 'GET', '/v1/jobs/98765/context');
+  assert.equal(response.status, 404);
+  assert.equal(response.body.error, 'not_found');
+});
+
+test('t253 AT4 — the route assembles the input from job, project, buckets and answers', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const versionId = await registerGraphWithBuckets(ctx);
+  const job = await createJob(ctx, {
+    title: 'Nota sobre a projeção de contexto',
+    body: 'o pedido bruto',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+    execution_id: 7,
+  });
+
+  await runNode(ctx, job.id, 'redigir', 'completed', { branch: 'nota-1', texto: 'primeiro corte' });
+  await runNode(ctx, job.id, 'revisar', 'completed', { outcome: 'pass', evidencia: 'confere' });
+  await runNode(ctx, job.id, 'publicar', 'completed', { url: 'https://exemplo/nota-1' });
+  // Neither of these two is a fact about the graph: one failed, and one is still
+  // running. Their reports must not reach the projection.
+  await runNode(ctx, job.id, 'redigir', 'failed', { branch: 'nao-conta' });
+  const opened = await request<SessionRef>(ctx, 'POST', '/v1/sessions', {
+    job_id: job.id,
+    node_id: 'redigir',
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'ainda rodando',
+  });
+  assert.equal(opened.status, 201);
+
+  const asked = await request<{ id: number }>(ctx, 'POST', '/v1/input-requests', {
+    job_id: job.id,
+    kind: 'question',
+    question: 'Publicar hoje?',
+    auto_approvable: false,
+  });
+  assert.equal(asked.status, 201);
+  const answered = await request<unknown>(
+    ctx,
+    'PATCH',
+    `/v1/input-requests/${asked.body.id}/answer`,
+    { answer: 'Publique amanhã.', answered_by: 'rafael' },
+  );
+  assert.equal(answered.status, 200);
+
+  const response = await request<{ input: Record<string, unknown> }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${job.id}/context`,
+  );
+  assert.equal(response.status, 200);
+  const { input } = response.body;
+
+  assert.deepEqual(input.job, {
+    id: job.id,
+    title: 'Nota sobre a projeção de contexto',
+    body: 'o pedido bruto',
+  });
+  assert.deepEqual(input.project, {
+    repo: 'git@github.com:rafaelgomes/cartografo.git',
+    comando_testes: 'npm test',
+  });
+  assert.deepEqual(
+    input.artefato,
+    { branch: 'nota-1', texto: 'primeiro corte', url: 'https://exemplo/nota-1' },
+    'the bucket accumulates across the gate that declares none',
+  );
+  assert.equal(input.outcome, 'pass', 'the gate merged at the top level');
+  assert.equal(input.evidencia, 'confere');
+  assert.deepEqual(input.perguntas_respondidas, [
+    { id: String(asked.body.id), pergunta: 'Publicar hoje?', resposta: 'Publique amanhã.' },
+  ]);
+  assert.equal(
+    JSON.stringify(input).includes('nao-conta'),
+    false,
+    'only a completed session reports a fact about the graph',
+  );
+});
+
+test('t253 AT4 — the route answers exactly what the pure module builds', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { buildNodeInput } = await import('../src/domain/context.ts');
+
+  const versionId = await registerGraphWithBuckets(ctx);
+  const job = await createJob(ctx, {
+    title: 'Nota curta',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+    fields: { premise_source: 'nota de 2026-08-17' },
+  });
+
+  const first = await runNode(ctx, job.id, 'redigir', 'completed', { branch: 'nota-2' });
+  const second = await runNode(ctx, job.id, 'revisar', 'completed', { outcome: 'pass' });
+
+  const response = await request<{ input: Record<string, unknown> }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${job.id}/context`,
+  );
+  assert.equal(response.status, 200);
+
+  const sessions = await request<{ sessions: Array<SessionRef & { node_id: string | null; finished_at: string | null }> }>(
+    ctx,
+    'GET',
+    `/v1/sessions?job_id=${job.id}`,
+  );
+  assert.equal(sessions.status, 200);
+  assert.deepEqual(
+    sessions.body.sessions.map((session) => session.id),
+    [first.id, second.id],
+  );
+
+  const expected = buildNodeInput({
+    job: { id: job.id, title: 'Nota curta', body: null, fields: { premise_source: 'nota de 2026-08-17' } },
+    snapshot: {
+      nodes: [
+        { id: 'redigir', contract: { produces: 'artefato' } },
+        { id: 'revisar', contract: {} },
+        { id: 'publicar', contract: { produces: 'artefato' } },
+      ],
+      project: {
+        repo: 'git@github.com:rafaelgomes/cartografo.git',
+        comando_testes: 'npm test',
+      },
+    },
+    outputs: sessions.body.sessions.map((session) => ({
+      node_id: session.node_id,
+      output: session.output,
+      finished_at: session.finished_at,
+      session_id: session.id,
+    })),
+    answered: [],
+  });
+
+  assert.deepEqual(response.body.input, expected);
+});

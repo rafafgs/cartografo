@@ -11,9 +11,13 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
+  PACKAGE_ROOT,
   T102_ARTIFACTS,
   createJob,
   loadEvents,
@@ -1192,4 +1196,347 @@ test('t172 — GET /v1/sessions + GET /v1/jobs answer cost by ticket, node, vers
     1,
     'and the same one reported no model',
   );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t253 — the session reports its node's structured result at /finish.         */
+/*                                                                             */
+/* This is the half of the projection that WRITES: without a place to keep      */
+/* what a node produced, nothing can assemble the `input` the next node's       */
+/* skill declares (`especificacoes/formatos/manifesto-skill.md`, step 2). The   */
+/* half that READS is `GET /v1/jobs/:id/context`, exercised in `jobs.test.ts`   */
+/* and, pure, in `domain-context.test.ts`.                                      */
+/* -------------------------------------------------------------------------- */
+
+/** The migration that gives the session somewhere to keep its output (t253, FR2). */
+const T253_MIGRATION = 'migrations/0020_sessao_saida.sql';
+
+/** The pure module the projection lives in, and the route family that reads it. */
+const T253_ARTIFACTS = ['src/domain/context.ts', 'src/routes/graphs.ts', 'src/routes/skills.ts'];
+
+/** The example graph this file patches into a document with a registrable pin. */
+const MINIMAL_GRAPH = path.join(
+  PACKAGE_ROOT,
+  '..',
+  '..',
+  'schema',
+  'exemplos',
+  'grafo-valido-minimo.json',
+);
+
+/**
+ * The session projection with the column this ticket adds.
+ *
+ * Local to this file, like `JobWithTier` in `jobs.test.ts`: `support.ts` carries
+ * what every ficha shares, and whoever adds a field declares it where the
+ * assertions are.
+ */
+interface SessionWithOutput extends Session {
+  output: Record<string, unknown> | null;
+}
+
+/** Canonical JSON, key-sorted at every depth — the hash's own ordering. */
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (typeof value === 'object' && value !== null) {
+    const source = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) sorted[key] = canonicalValue(source[key]);
+    return sorted;
+  }
+  return value;
+}
+
+/**
+ * The pin, recomputed here rather than imported (`skill-routes.test.ts`'s rule).
+ *
+ * A test that asks the implementation what the right hash is proves only that
+ * the implementation agrees with itself, and the hash is exactly the value D4
+ * says nobody takes on trust.
+ */
+function contentHash(manifest: Record<string, unknown>): string {
+  const subset = {
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
+    checks: manifest.checks,
+    permissions: manifest.permissions,
+  };
+  return `sha256:${createHash('sha256').update(JSON.stringify(canonicalValue(subset)), 'utf8').digest('hex')}`;
+}
+
+/** The `output` schema every case below is judged against. */
+const NOTE_OUTPUT_SCHEMA = {
+  type: 'object',
+  required: ['texto'],
+  additionalProperties: false,
+  properties: { texto: { type: 'string', minLength: 1 } },
+};
+
+/**
+ * Registers a skill whose `output` schema demands exactly one non-empty string.
+ *
+ * @param ctx Control plane running.
+ * @returns The pin the graph node has to carry.
+ */
+async function registerNoteSkill(
+  ctx: TestContext,
+): Promise<{ id: string; version: string; hash: string }> {
+  const manifest: Record<string, unknown> = {
+    id: 'redigir-nota',
+    version: '1.0.0',
+    hash: `sha256:${'0'.repeat(64)}`,
+    role: 'work',
+    description: 'Redige uma nota curta a partir do tema declarado.',
+    input: { type: 'object', properties: { tema: { type: 'string' } } },
+    output: NOTE_OUTPUT_SCHEMA,
+    preconditions: [],
+    checks: [],
+    permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: false } },
+    instructions: '# Redigir nota\n\nEscreva sobre {{input.tema}}.',
+    origin: { type: 'native' },
+  };
+  manifest.hash = contentHash(manifest);
+
+  const response = await request<{ id: string }>(ctx, 'POST', '/v1/skills', manifest);
+  assert.equal(response.status, 201, `POST /v1/skills returned ${response.status}`);
+  return { id: 'redigir-nota', version: '1.0.0', hash: manifest.hash as string };
+}
+
+/**
+ * Registers a graph whose first node pins the skill just registered.
+ *
+ * The example document is patched instead of hand-written, the same way
+ * `jobs.test.ts` patches it: what has to survive here is the registration gate,
+ * and a snapshot invented in a test file proves nothing about it. The one thing
+ * that has to change is the pin — `cartografo/redigir-nota` carries a slash and
+ * the registry's `id` is kebab-case, so the fixture's own pin names a skill that
+ * can never be registered.
+ *
+ * @param ctx Control plane running.
+ * @returns Id of the version born with the lineage.
+ */
+async function registerGraphPinningNoteSkill(ctx: TestContext): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  document.problem_class = 'nota-curta-com-saida';
+  const nodes = document.nodes as Array<Record<string, unknown>>;
+  nodes[0].skill_ref = await registerNoteSkill(ctx);
+
+  const response = await request<{ graph_version: { id: string } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(response.status, 201, `POST /v1/graphs returned ${response.status}`);
+  return response.body.graph_version.id;
+}
+
+/** Opens a session standing on `redigir` of the graph above. */
+async function openNodeSession(ctx: TestContext, jobId: number): Promise<SessionWithOutput> {
+  const response = await request<SessionWithOutput>(ctx, 'POST', '/v1/sessions', {
+    job_id: jobId,
+    node_id: 'redigir',
+    engine: 'claude-code',
+    working_dir: '/tmp/cartografo',
+    prompt: 'Redija a nota.',
+  });
+  assert.equal(response.status, 201);
+  return response.body;
+}
+
+/** The session, re-read off the API — the round trip the projection has to survive. */
+async function readSessions(ctx: TestContext, jobId: number): Promise<SessionWithOutput[]> {
+  const response = await request<{ sessions: SessionWithOutput[] }>(
+    ctx,
+    'GET',
+    `/v1/sessions?job_id=${jobId}`,
+  );
+  assert.equal(response.status, 200);
+  return response.body.sessions;
+}
+
+test('t253 AT1 — an output matching the node\'s skill schema is stored and round-trips', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const versionId = await registerGraphPinningNoteSkill(ctx);
+  const job = await createJob(ctx, {
+    title: 'com saída estruturada',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  const session = await openNodeSession(ctx, job.id);
+
+  const finished = await request<SessionWithOutput>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    { status: 'completed', exit_code: 0, output: { texto: 'a nota redigida' } },
+  );
+  assert.equal(finished.status, 200);
+  assert.deepEqual(finished.body.output, { texto: 'a nota redigida' });
+
+  const [stored] = await readSessions(ctx, job.id);
+  assert.deepEqual(stored.output, { texto: 'a nota redigida' }, 'the column round-trips');
+
+  const events = getEventsByEntity(ctx.db, 'session', session.id);
+  assert.deepEqual(
+    events.map((event: Event) => event.type),
+    ['session.opened', 'session.finished'],
+  );
+  assert.deepEqual(events[1].data.output, { texto: 'a nota redigida' });
+  assert.equal(
+    events[1].data.output_schema_error,
+    null,
+    'nothing was wrong: the mismatch field normalizes to null like every other optional',
+  );
+});
+
+test('t253 AT2 — an output that does NOT match still closes the session', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const versionId = await registerGraphPinningNoteSkill(ctx);
+  const job = await createJob(ctx, {
+    title: 'com saída torta',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  const session = await openNodeSession(ctx, job.id);
+
+  const finished = await request<SessionWithOutput>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    {
+      status: 'completed',
+      exit_code: 0,
+      usage: USAGE,
+      models: ['claude-sonnet-5'],
+      // `texto` is missing and `nota` is not in the schema: two problems, so the
+      // report has to carry more than the first one.
+      output: { nota: 'a nota, na chave errada' },
+    },
+  );
+
+  // FR4: the terminal status is recorded exactly as it always was. Losing the
+  // end of a session over a malformed self-report would leave it `open` forever,
+  // with no route left to close it — and the self-report was never evidence.
+  assert.equal(finished.status, 200);
+  assert.equal(finished.body.status, 'completed');
+  assert.equal(finished.body.exit_code, 0);
+  assert.deepEqual(finished.body.usage, USAGE);
+  assert.deepEqual(finished.body.models, ['claude-sonnet-5']);
+  assert.ok(!Number.isNaN(Date.parse(finished.body.finished_at ?? '')));
+
+  assert.equal(finished.body.output, null, 'what did not validate is not stored');
+  const [stored] = await readSessions(ctx, job.id);
+  assert.equal(stored.output, null);
+
+  const events = getEventsByEntity(ctx.db, 'session', session.id);
+  const data = events[1].data;
+  assert.equal(data.output, null, 'the log does not carry the value either');
+  assert.ok(Array.isArray(data.output_schema_error), 'the reason is recorded');
+  assert.ok(
+    (data.output_schema_error as string[]).length >= 2,
+    `both problems have to be reported: ${JSON.stringify(data.output_schema_error)}`,
+  );
+  assert.ok(
+    (data.output_schema_error as string[]).some((detail) => detail.includes('texto')),
+    `the report has to name the missing field: ${JSON.stringify(data.output_schema_error)}`,
+  );
+
+  // Internal telemetry, not a published field: whoever reads a session gets the
+  // projection `toWireSession` builds, and that one has no such key.
+  assert.equal(
+    Object.hasOwn(stored as unknown as Record<string, unknown>, 'output_schema_error'),
+    false,
+    'output_schema_error is not part of the session on the wire',
+  );
+  assert.equal(
+    Object.hasOwn(finished.body as unknown as Record<string, unknown>, 'output_schema_error'),
+    false,
+  );
+});
+
+test('t253 AT3 — a session with no resolvable node stores its output unvalidated', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  // No job at all: there is no graph to ask, which is the shape every dispatch
+  // had before graphs existed (`resolve-node.ts`: `null` is not a defect).
+  const bare = await openBareSession(ctx);
+  const anything = { qualquer: { forma: [1, 2, 3] }, sem_schema: true };
+  const finishedBare = await request<SessionWithOutput>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${bare.id}/finish`,
+    { status: 'completed', exit_code: 0, output: anything },
+  );
+  assert.equal(finishedBare.status, 200);
+  assert.deepEqual(finishedBare.body.output, anything, 'stored verbatim: nothing to check it against');
+
+  // A job with no `graph_version_id`: same answer, for the same reason.
+  const job = await createJob(ctx, { title: 'sem grafo', entry_node_id: 'redigir' });
+  const session = await openNodeSession(ctx, job.id);
+  const finished = await request<SessionWithOutput>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    { status: 'completed', exit_code: 0, output: anything },
+  );
+  assert.equal(finished.status, 200);
+  assert.deepEqual(finished.body.output, anything);
+});
+
+test('t253 FR1 — an absent output and an explicit null are the same fact', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const absent = await openBareSession(ctx);
+  const withoutOutput = await request<SessionWithOutput>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${absent.id}/finish`,
+    { status: 'completed', exit_code: 0 },
+  );
+  assert.equal(withoutOutput.status, 200);
+  assert.equal(withoutOutput.body.output, null);
+
+  const explicit = await openBareSession(ctx);
+  const withNull = await request<SessionWithOutput>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${explicit.id}/finish`,
+    { status: 'completed', exit_code: 0, output: null },
+  );
+  assert.equal(withNull.status, 200);
+  assert.equal(withNull.body.output, null);
+});
+
+test('t253 FR1 — an output that is not an object is refused before anything is written', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const session = await openBareSession(ctx);
+  for (const output of ['a nota', 42, ['uma', 'lista']]) {
+    const response = await request<{ error: string; details: string[] }>(
+      ctx,
+      'PATCH',
+      `/v1/sessions/${session.id}/finish`,
+      { status: 'completed', output },
+    );
+    assert.equal(response.status, 400, `output ${JSON.stringify(output)} was accepted`);
+    assert.equal(response.body.error, 'validation_failed');
+  }
+
+  const [still] = await readSessions(ctx, -1).catch(() => [undefined]);
+  assert.equal(still, undefined, 'no job owns this session; the list above is empty');
+
+  const reread = await request<{ sessions: SessionWithOutput[] }>(ctx, 'GET', '/v1/sessions');
+  const found = reread.body.sessions.find((entry) => entry.id === session.id);
+  assert.equal(found?.status, 'open', 'a refused body leaves the session exactly as it was');
 });

@@ -91,7 +91,22 @@ export const TABELA = {
     // nunca qual modelo. É lista porque uma sessão roda mais de um — medido
     // contra a CLI real, um turno só devolveu dois — e colapsar em "o" modelo
     // atribuiria a conta inteira ao errado.
-    opcionais: ['exit_code', 'usage', 'timeout_reason', 'models'],
+    //
+    // `output` e `output_schema_error` entraram com a projeção de input por nó
+    // (t253): `output` é o resultado ESTRUTURADO que a sessão relata do nó, sem
+    // `required` aninhado nenhum, porque a forma de dentro é conferida contra o
+    // schema `output` da própria skill (D9) e não contra este envelope. Quando
+    // essa conferência recusa, o valor não é gravado e o que viaja no lugar dele
+    // é a lista de motivos em `output_schema_error` — nunca ao custo de registrar
+    // o status terminal da sessão, que é o fato que ninguém pode perder.
+    opcionais: [
+      'exit_code',
+      'usage',
+      'timeout_reason',
+      'models',
+      'output',
+      'output_schema_error',
+    ],
   },
   // O 17º tipo entrou com o enforcement de permissão (t125): toda tentativa de
   // usar uma ferramenta que a política da sessão negou vira telemetria. Os três

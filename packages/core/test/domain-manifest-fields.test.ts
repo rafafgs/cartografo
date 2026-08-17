@@ -90,12 +90,15 @@ test('AT8 — MANIFEST_ROLES is exactly the schema\'s role enum', () => {
  * that `required` and `properties` be the same set. `hooks` broke that by
  * design: it is optional so that every graph written before it stays valid
  * untouched, the same non-breaking posture `engine` already had on the node.
+ * `project` joined it with t253, under exactly the same rule: it is the class's
+ * static configuration, read by the node input projection, and a document that
+ * declares none projects `{}` instead of refusing.
  *
  * Naming it here instead of loosening the check to a subset keeps the claim
  * total — a top-level key that is neither required nor listed here still fails,
  * which is the property that catches a rename or a stray addition.
  */
-const OPTIONAL_DOCUMENT_FIELDS = ['hooks'];
+const OPTIONAL_DOCUMENT_FIELDS = ['hooks', 'project'];
 
 test('AT8 — the document, node, edge and hook field sets are exactly the graph schema\'s', () => {
   const schema = readSchema(GRAPH_SCHEMA_PATH);

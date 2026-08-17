@@ -18,10 +18,10 @@
  * since t227 they are the English ones of `docs/spec/glossario-wire.md` §2 —
  * D20's second child. The migration columns caught up with D20's FOURTH child
  * (t229): `entity_type`, `actor_type` and `occurred_at` are the column names
- * now. What did NOT move is the VALUE inside two of those columns, which the
- * `CHECK` of migration `0003` still pins to Portuguese — so `db/events.ts` is
- * still where the two vocabularies meet, for the values and no longer for the
- * names.
+ * now. The VALUES inside the first two followed with the FIFTH (t235), which
+ * rewrote the `CHECK` of migration `0003` into the envelope's own words — so
+ * there is no longer a place where two vocabularies meet, here or in
+ * `db/events.ts`.
  */
 
 // The one import this mirror allows itself, and only because the alternative is
@@ -147,11 +147,13 @@ const optional = (shape: FieldRule['shape'], extra: Partial<FieldRule> = {}): Fi
 /**
  * The types the control plane emits today, in taxonomy order.
  *
- * The rest of the catalogue is left to its owners: `lease.*` belongs to t103
- * (runner and controller) and `graph_version.*` to t101 — each enters here
- * together with the code that emits it, never before. That is how
- * `job.dependency_declared` arrived: with the intake that declares it
- * (t122).
+ * A type enters here together with the code that emits it, never before — that
+ * is how `job.dependency_declared` arrived, with the intake that declares it
+ * (t122). The five last ones are the exception that proves the rule: `lease.*`
+ * and `graph_version.*` had a schema, an example and a case in the reference
+ * reducer since t98, and no writer at all until t196 wired the repositories that
+ * were already producing the facts. With them the mirror finally reflects the
+ * WHOLE taxonomy — eighteen types, and no sixth one waiting for an owner.
  */
 const RULES: Record<string, TypeRule> = {
   'job.created': {
@@ -305,6 +307,61 @@ const RULES: Record<string, TypeRule> = {
       based_on: required('string', {
         values: ['recommendation', 'default_answer', 'precedent'],
       }),
+    },
+  },
+  // A runner took possession of a job for a while (D5). `expires_at` is an
+  // instant like `occurred_at` and is validated as a string for the same reason
+  // the envelope's own timestamps are: the schema says `format: date-time`, and
+  // this mirror has never enforced a format anybody could disagree about.
+  'lease.granted': {
+    entity: 'lease',
+    fields: {
+      job_id: required('integer'),
+      runner_id: required('string'),
+      expires_at: required('string'),
+    },
+  },
+  // The possession lapsed and the job goes back to the queue. The two reasons
+  // are the SAME two `lease.expiration_reason` holds
+  // (`repositories/leases.ts`), and the set closes here for the same motive
+  // every other closed enum of this file does: a third word is not new data, it
+  // is a mistake by whoever wrote it.
+  'lease.expired': {
+    entity: 'lease',
+    fields: {
+      runner_id: required('string'),
+      reason: required('string', { values: ['heartbeat_lost', 'ttl_elapsed'] }),
+    },
+  },
+  // A new version entered the database (D15). Registering does NOT move the
+  // pointer — the event that does is `graph_version.applied`, and a call site
+  // that does both in one transaction owes the log both facts.
+  'graph_version.registered': {
+    entity: 'graph_version',
+    fields: {
+      graph_id: required('string'),
+      /** `null` on the first version of a lineage, which has no parent. */
+      parent_version: optional('string'),
+      source: required('string', { values: ['synthesizer', 'manual', 'proposal'] }),
+      proposal_id: optional('integer'),
+    },
+  },
+  'graph_version.applied': {
+    entity: 'graph_version',
+    fields: {
+      graph_id: required('string'),
+      proposal_id: optional('integer'),
+    },
+  },
+  // Rollback: the pointer went back and nothing was erased. `entity.id` is the
+  // ABANDONED version — the one whose telemetry the surveyor will cross with
+  // the `reason` recorded here — and `target_version` is where the pointer went.
+  'graph_version.reverted': {
+    entity: 'graph_version',
+    fields: {
+      graph_id: required('string'),
+      target_version: required('string'),
+      reason: required('string'),
     },
   },
 };

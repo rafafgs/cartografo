@@ -33,6 +33,7 @@ import test from 'node:test';
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
 import type * as RenderModule from '../../src/dispatch/render-skill-instructions.ts';
 import type * as ResolveModule from '../../src/dispatch/resolve-node.ts';
+import { composeSingleArgument, type SessionSpec } from '../../src/engine/types.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const MODULE_PATH = 'src/dispatch/render-skill-instructions.ts';
@@ -466,14 +467,109 @@ test('t167 — a node with no policy renders exactly what it rendered before', a
     'declaring the default has to be indistinguishable from declaring nothing',
   );
 
-  // The regression pin: today's text opens with the escalation protocol and the
-  // separator, and neither of the two new paragraphs appears anywhere in it.
+  // The regression pin, in the layout t261 moved it to: the paragraph is the
+  // LAST section of the text, separated by the same divider every other section
+  // uses, and neither of the two other paragraphs appears anywhere in it. It
+  // used to be the first thing in the text, and that is precisely what made
+  // every claude-code session on this prompt come back refused.
   assert.ok(
-    absent.startsWith(`${ESCALATION_PROTOCOL}\n\n---\n\n`),
+    !absent.startsWith(ESCALATION_PROTOCOL),
+    'the rendered text may not OPEN with the escalation paragraph (t261)',
+  );
+  assert.ok(
+    absent.endsWith(`\n\n---\n\n${ESCALATION_PROTOCOL}`),
     'nothing may be inserted around the paragraph every session already had',
   );
   assert.ok(!absent.includes(ALWAYS_ESCALATION_PROTOCOL));
   assert.ok(!absent.includes(NEVER_ESCALATION_PROTOCOL));
+});
+
+/* -------------------------------------------------------------------------- */
+/* t261 — the escalation paragraph renders LAST, and never opens the prompt    */
+/*                                                                            */
+/* Measured, not guessed (plantão, 2026-08-17): `claude --print` answers       */
+/* `stop_reason: "refusal"` with `stop_details.category:                       */
+/* "reasoning_extraction"` on the exact prompt this module rendered for the    */
+/* node `triagem`, 5/5. The bisection isolated it to POSITION: the same        */
+/* paragraph moved to the end of the same prompt reaches `end_turn` 2/2, and a */
+/* softer rewording left at the top still refuses. A fenced JSON template that */
+/* OPENS a system prompt is what the safeguard classifier bites on.            */
+/* -------------------------------------------------------------------------- */
+
+test('t261 — the rendered instructions never open with the escalation block', async () => {
+  const { ESCALATION_PROTOCOL, ALWAYS_ESCALATION_PROTOCOL, NEVER_ESCALATION_PROTOCOL } =
+    await loadModule();
+
+  for (const policy of [undefined, 'on_uncertainty', 'always', 'never']) {
+    const text = await renderPolicy(policy);
+    assert.ok(
+      !text.trimStart().startsWith('```input-request'),
+      `a "${String(policy)}" node's prompt may not open with the fence: it is refused before it runs`,
+    );
+    assert.ok(
+      text.startsWith('# Nó `conferir` — skill'),
+      `a "${String(policy)}" node's prompt opens with the node header, and with nothing before it`,
+    );
+  }
+
+  assert.ok(!(await renderPolicy(undefined)).startsWith(ESCALATION_PROTOCOL));
+  assert.ok(!(await renderPolicy('on_uncertainty')).startsWith(ESCALATION_PROTOCOL));
+  assert.ok(
+    !(await renderPolicy('always')).startsWith(`${ESCALATION_PROTOCOL}\n\n${ALWAYS_ESCALATION_PROTOCOL}`),
+    'the `always` variant is the same paragraph plus a sentence, and it moves with it',
+  );
+  assert.ok(!(await renderPolicy('never')).startsWith(NEVER_ESCALATION_PROTOCOL));
+});
+
+test('t261 — the escalation paragraph lands after the result-report block', async () => {
+  const { ESCALATION_PROTOCOL, ALWAYS_ESCALATION_PROTOCOL, NEVER_ESCALATION_PROTOCOL } =
+    await loadModule();
+
+  // The standard node declares an `output_schema`, so `resultProtocol` renders
+  // the ```resultado block — and the bisected position is AFTER that block, not
+  // merely "somewhere below the top".
+  const cases: ReadonlyArray<readonly [string | undefined, string]> = [
+    [undefined, ESCALATION_PROTOCOL],
+    ['always', ALWAYS_ESCALATION_PROTOCOL],
+    ['never', NEVER_ESCALATION_PROTOCOL],
+  ];
+
+  for (const [policy, paragraph] of cases) {
+    const text = await renderPolicy(policy);
+    const report = text.indexOf('```resultado');
+    assert.ok(report > 0, `the "${String(policy)}" case renders a report block, or it proves nothing`);
+    assert.ok(
+      text.indexOf(paragraph) > report,
+      `a "${String(policy)}" node's escalation paragraph has to come after the report block`,
+    );
+  }
+});
+
+test('t261 — the codex composition still does not open with the fence', async () => {
+  const { renderSkillInstructions, ESCALATION_PROTOCOL } = await loadModule();
+
+  const rendered = await renderSkillInstructions(
+    resolvedNode(SINGLE_EDGE),
+    (await makeReader(registeredSkill())).read,
+    {},
+  );
+  assert.ok(rendered !== null);
+
+  // The other adapter reads the SAME string: claude-code hands it to
+  // `--system-prompt`, codex concatenates it ahead of the prompt. Reordering
+  // inside the renderer is what fixes both, and this is that claim run rather
+  // than read.
+  const spec: SessionSpec = {
+    workingDir: '/tmp/t261',
+    instructions: rendered.instructions,
+    prompt: 'Faça o que o nó pede.',
+    timeoutSeconds: 60,
+  };
+  const composed = composeSingleArgument(spec);
+
+  assert.ok(!composed.trimStart().startsWith('```input-request'));
+  assert.ok(!composed.startsWith(ESCALATION_PROTOCOL), 'and not with the paragraph that carries it');
+  assert.ok(composed.includes(ESCALATION_PROTOCOL), 'the paragraph still travels — only its place moved');
 });
 
 test('AT11 — a node that declares no skill_ref renders nothing, instead of inventing one', async () => {

@@ -105,6 +105,23 @@ esta tese.
 8. `metrics-by-version` mostra só `jobs`/`events` por versão — sem tokens/tempo
    por nó (a lente de custo tem que recomputar das sessões). → **t264**
 
+### O que o t264 achou dos quatro que lhe couberam (2026-08-18)
+
+Os buracos 3, 7 e 8 eram os três defeitos que a lista dizia que eram, e foram
+fechados: a rodada passa a ser declarada terminada também quando o fato que
+fecha a condição é a devolução do lease (e não uma transição), a evidência da
+lente de fluxo migrou para o inglês da §5.6 do glossário, e cada linha de
+`metrics-by-version` ganhou `nodes` com sessões, tokens e tempo de agente por nó.
+
+O **buraco 4 não era defeito**, e é o único item desta lista que se fecha sem
+uma linha de código. `from_node_id: null` é o contrato documentado da PRIMEIRA
+transição de um trabalho — o `job.transitioned.schema.json` e a
+[`taxonomia.md`](../especificacoes/eventos/taxonomia.md) dizem isso, e o
+`jobs.test.ts` já fixava a forma. `null` significa "saiu do nó de entrada", e o
+nó de entrada do job 2 era `triagem`: quem escreveu a nota leu "o trabalho
+estava em triagem" como contradizendo o `null`, e as duas coisas são a mesma. O
+t264 investigou e não mexeu em nada por causa dele.
+
 ## O que a rodada prova e o que não prova
 
 Prova: o mapa recebe uma tese pelo trabalho, projeta a entrada do primeiro nó a

@@ -221,7 +221,9 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   // ticks. It is the same device the t106 acceptance test uses, and it is what
   // lets one controller loop drive a gate that reproves once and then approves.
   const worktrees = directoryWorktrees(root);
-  const dispatchWith = (lines: string): ((jobId: number) => Promise<void>) =>
+  const dispatchWith = (
+    lines: string,
+  ): ((jobId: number) => Promise<DispatchModule.DispatchOutcome>) =>
     createClaudeCodeDispatch({
       urlBase: baseUrl,
       token,

@@ -143,7 +143,7 @@ Cada evento vira um POST:
 POST /cartografo HTTP/1.1
 Host: meu-servico.exemplo
 Content-Type: application/json
-X-Cartografo-Assinatura: sha256=8f4c...  (64 caracteres hex)
+X-Cartografo-Signature: sha256=8f4c...  (64 caracteres hex)
 
 {"id":129,"type":"job.created","project_id":1,"execution_id":2,"entity":{"type":"job","id":7},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-15T12:00:03.114Z","data":{"title":"exemplo do doc","entry_node_id":"entrada","body":null,"acceptance_criteria":null}}
 ```
@@ -153,7 +153,7 @@ O corpo é o envelope inteiro, byte a byte o mesmo objeto que
 
 A receita da assinatura, inteira:
 
-> `X-Cartografo-Assinatura` = `sha256=` + HMAC-SHA256 do **corpo cru**,
+> `X-Cartografo-Signature` = `sha256=` + HMAC-SHA256 do **corpo cru**,
 > com o seu `segredo` como chave, em hex minúsculo.
 
 Três detalhes que decidem se a sua verificação funciona:
@@ -280,7 +280,7 @@ createServer((requisicao, resposta) => {
     const esperado = `sha256=${createHmac('sha256', segredo).update(corpoCru, 'utf8').digest('hex')}`;
 
     // Node normaliza o nome do cabeçalho para minúsculas.
-    if (!confere(esperado, requisicao.headers['x-cartografo-assinatura'])) {
+    if (!confere(esperado, requisicao.headers['x-cartografo-signature'])) {
       console.error('assinatura não confere — descartando');
       resposta.writeHead(401).end();
       return;

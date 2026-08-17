@@ -124,7 +124,7 @@ token.
 lê o histórico e deposita propostas na sua caixa de entrada, cada uma com o
 diff, a evidência e a métrica que espera mover. Você aprova, nasce a versão
 nova. Hoje o avaliador que existe é o de custo (tokens e tempo por nó), e ele se
-chama pela mão — `npx topografo-custo avaliar …` —, como o sintetizador.
+chama pela mão — `npx topografo-custo evaluate …` —, como o sintetizador.
 Projetos que divergem ganham variante própria do mapa, e o que a variante
 aprende volta ao mapa-base como proposta, pelo mesmo portão.
 

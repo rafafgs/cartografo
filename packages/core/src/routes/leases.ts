@@ -19,6 +19,18 @@
  *   transaction that replaces it. An independent sweep route only makes sense
  *   once there is a concrete consumer (the screen, a project whose runners are
  *   all idle).
+ *
+ *   Since t256 "asking" means asking ANYTHING, and not only asking for work.
+ *   `grantLease` was the only caller of the reconcile, so a runner that died
+ *   with nobody else disputing its job — the ordinary state of a small pool —
+ *   stayed `active` in the listing forever, took heartbeats that pushed its
+ *   deadline forward and could be released long after its owner was gone; and
+ *   `lease.expired`, which t196 exists to record, was never written at all. So
+ *   the three read-or-act verbs below open with `claimExpired`, on the module's
+ *   own clock, before the read they decide on. It is still not a sweep: nothing
+ *   ticks in the background, and a control plane nobody talks to reconciles
+ *   nothing — it simply stops being possible to ASK about a lease and be told it
+ *   is alive when it is not.
  * - **The runner declares its caps; the server decides them** (t157, FR1). The
  *   body keeps carrying `runner_cap`/`project_cap` — a runner knows things
  *   about itself the control plane does not — but what `grantLease` enforces is
@@ -57,6 +69,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { credentialRunnerId, outOfScope } from '../auth.ts';
 import type { Database } from '../db/connection.ts';
 import {
+  claimExpired,
   getLease,
   grantLease,
   leaseStatusColumn,
@@ -197,6 +210,11 @@ export function registerLeases(
   });
 
   app.post<IdParam>('/leases/:id/heartbeats', async (request, reply) => {
+    // Before the read, and on the same clock as the read: a beat that arrives
+    // after the deadline finds the lease already `expired` and gets the 409
+    // below, instead of renewing a lease whose job may have another owner.
+    claimExpired(db, options);
+
     const id = routeId(request.params.id);
     const lease = id === undefined ? undefined : getLease(db, id);
     if (lease === undefined) {
@@ -223,6 +241,10 @@ export function registerLeases(
   });
 
   app.post<IdParam>('/leases/:id/releases', async (request, reply) => {
+    // Same reason as the heartbeat's, and the same shape: this route has the
+    // identical `status !== 'active'` check, so it had the identical bug.
+    claimExpired(db, options);
+
     const id = routeId(request.params.id);
     const lease = id === undefined ? undefined : getLease(db, id);
     if (lease === undefined) {
@@ -279,6 +301,14 @@ export function registerLeases(
       }
       filters.status = column;
     }
+
+    // The reconcile goes here and not at the top of the handler: a refused
+    // filter above writes nothing, exactly as it did before. Filtered or not,
+    // the listing reconciles BEFORE it reads — `?status=active` asking the
+    // database straight is what used to report a dead runner's lease as alive,
+    // and a listing that answers with a state the control plane itself no longer
+    // believes is worse than a listing that costs one transaction more.
+    claimExpired(db, options);
 
     const leases = listLeases(db, filters);
     return { leases: leases.map(toLease) };

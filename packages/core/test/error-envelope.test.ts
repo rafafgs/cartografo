@@ -228,6 +228,55 @@ test('t197 AT3 — an address nobody registered answers the same envelope, not F
   }
 });
 
+/**
+ * t256 — the two client mistakes that used to answer in Fastify's own words.
+ *
+ * The handler above hands any error carrying a `statusCode` straight back, and
+ * for a genuine Fastify-internal failure (a payload over the limit) that is
+ * still right. But a body that is not JSON and a body that is JSON but not an
+ * object are ORDINARY client mistakes, and both arrived here with
+ * `statusCode: 400` — so the API answered `{statusCode, error: 'Bad Request',
+ * message}`, an envelope with a different shape and a `error` that is an English
+ * phrase where every other refusal on `/v1` carries a snake_case code.
+ */
+const MALFORMED_BODIES: Array<{ name: string; body: string; code: string }> = [
+  { name: 'not JSON at all', body: '{not valid json', code: 'invalid_json' },
+  { name: 'JSON, but not an object', body: JSON.stringify([1, 2, 3]), code: 'invalid_body' },
+];
+
+test('t256 — an unusable body answers the house envelope, not Fastify\'s', async (t) => {
+  const harness = await startApp(t);
+
+  for (const scenario of MALFORMED_BODIES) {
+    // `POST /v1/graphs`: authenticated, and its body schema is the
+    // `OPEN_OBJECT_SCHEMA` that turns a non-object into an FST_ERR_VALIDATION.
+    const response = await fetch(`${harness.url}/v1/graphs`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${harness.token}`,
+        'content-type': 'application/json',
+      },
+      body: scenario.body,
+    });
+    assert.equal(response.status, 400, `${scenario.name} has to be a 400`);
+
+    const text = await response.text();
+    const body = JSON.parse(text) as Record<string, unknown>;
+
+    assert.equal(typeof body.message, 'string', `${scenario.name}: the message describes the shape`);
+    assert.ok((body.message as string).length > 0, `${scenario.name}: an empty message says nothing`);
+    assert.deepEqual(
+      { ...body, message: '<message>' },
+      { error: scenario.code, message: '<message>' },
+      `${scenario.name}: the body is the two-key envelope and nothing else`,
+    );
+    assert.ok(
+      !text.includes('Bad Request'),
+      `${scenario.name} answers the router's own phrase: ${text}`,
+    );
+  }
+});
+
 test('t197 AT4 — a refusal a route already sent is untouched by the global handler', async (t) => {
   const harness = await startApp(t);
 

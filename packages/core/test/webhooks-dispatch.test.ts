@@ -54,7 +54,7 @@ const T142_ARTIFACTS = Object.freeze({
 });
 
 /** Header the delivery carries; HTTP header names are case-insensitive. */
-const SIGNATURE_HEADER = 'x-cartografo-assinatura';
+const SIGNATURE_HEADER = 'x-cartografo-signature';
 
 /** The secret the caller supplies — the server never generates one. */
 const SECRET = 'segredo-do-consumidor-142';
@@ -395,6 +395,14 @@ test('AT5 — the event is pushed with the envelope and a verifiable signature',
     signature,
     `sha256=${createHmac('sha256', SECRET).update(call.body, 'utf8').digest('hex')}`,
     'the signature is the HMAC-SHA256 of the raw body, keyed with the secret',
+  );
+  // t255 — the header itself is wire vocabulary, and it was the one D20 surface
+  // no child ever named. A consumer that verifies one header has to be verifying
+  // the only one there is, so the retired spelling is gone rather than doubled.
+  assert.equal(
+    headerValue(call.headers, 'x-cartografo-assinatura'),
+    undefined,
+    'the delivery still carries the pre-D20 header name',
   );
 
   await waitFor(

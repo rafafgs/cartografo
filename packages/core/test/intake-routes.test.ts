@@ -16,8 +16,10 @@
  * D3's "the path stays frozen": confirming a draft creates travellers and NEVER
  * a new `grafo_versao`, in any class.
  *
- * The JSON field names stay in Portuguese: they mirror the untouched migration
- * columns (t127, FR8). Only the route paths and the code identifiers are English.
+ * The JSON field names are English: the envelope converged with t226 and the
+ * item's own keys with t255, which is D20 read as written — the fields of the
+ * API's JSON travel in English, and `DraftItem` travels in the body of
+ * `POST /v1/intake`.
  *
  * The t139 block at the bottom adds what the alpha round caught: the confirmation
  * gate is the only intake route that can raise a `ValidationError` — it is the
@@ -61,14 +63,14 @@ const ARTIFACTS = [
 /** An item of a draft, as the API stores and returns it. */
 interface DraftItem {
   ref: string;
-  titulo: string;
-  corpo: string | null;
-  criterios_de_aceite: string[] | null;
+  title: string;
+  body: string | null;
+  acceptance_criteria: string[] | null;
   /** The class's declared fields, filled in at intake (t168). */
-  campos: Record<string, string | number | boolean> | null;
+  fields: Record<string, string | number | boolean> | null;
   /** The triage tier the session proposed (t175); `null` when nobody classified it. */
   tier: 'trivial' | 'standard' | null;
-  depende_de: string[];
+  depends_on: string[];
 }
 
 /** Draft projection, as the API returns it. */
@@ -81,9 +83,9 @@ interface Draft {
   /**
    * The proposed breakdown.
    *
-   * `DraftItem`'s own keys stay Portuguese, and deliberately: the item is
-   * `domain/intake.ts`'s data format, which no child of D20 renames and which
-   * the glossary maps nowhere. Only the envelope around it moved (t226, FR1).
+   * `DraftItem`'s own keys are English since t255. They are fields of the API's
+   * JSON — D20's own words — and the glossary maps them in §1.7; the envelope
+   * around them had already moved with t226 (FR1).
    */
   items: DraftItem[];
   status: string;
@@ -112,7 +114,7 @@ interface ConfirmationResponse {
 
 interface ErrorResponse {
   error: string;
-  problems?: Array<{ codigo: string; mensagem: string; alvo: unknown }>;
+  problems?: Array<{ code: string; message: string; target: unknown }>;
 }
 
 interface VersionRow {
@@ -198,7 +200,7 @@ test('AT7 — a class with no registered base graph is 404 and writes nothing', 
   const response = await request<ErrorResponse>(ctx, 'POST', '/v1/intake', {
     class: 'classe-que-ninguem-registrou',
     request: 'um pedido qualquer',
-    items: [{ ref: 'a', titulo: 'uma ficha' }],
+    items: [{ ref: 'a', title: 'uma ficha' }],
   });
 
   assert.equal(response.status, 404);
@@ -218,11 +220,11 @@ test('AT8 — POST /v1/intake with 2 independent items opens a pending draft', a
     items: [
       {
         ref: 'migracao',
-        titulo: 'Migração 0005',
-        corpo: 'Colunas novas em trabalho e as duas tabelas do intake.',
-        criterios_de_aceite: ['a migração roda do zero'],
+        title: 'Migração 0005',
+        body: 'Colunas novas em trabalho e as duas tabelas do intake.',
+        acceptance_criteria: ['a migração roda do zero'],
       },
-      { ref: 'rotas', titulo: 'Rotas de rascunho e confirmação' },
+      { ref: 'rotas', title: 'Rotas de rascunho e confirmação' },
     ],
   });
 
@@ -238,9 +240,9 @@ test('AT8 — POST /v1/intake with 2 independent items opens a pending draft', a
     draft.items.map((item) => item.ref),
     ['migracao', 'rotas'],
   );
-  assert.deepEqual(draft.items[0].criterios_de_aceite, ['a migração roda do zero']);
-  assert.equal(draft.items[1].corpo, null);
-  assert.deepEqual(draft.items[1].depende_de, []);
+  assert.deepEqual(draft.items[0].acceptance_criteria, ['a migração roda do zero']);
+  assert.equal(draft.items[1].body, null);
+  assert.deepEqual(draft.items[1].depends_on, []);
 
   assert.equal(countJobs(ctx), 0, 'a draft is a proposal, not a job');
 
@@ -258,9 +260,9 @@ test('AT9 — a malformed item is 400 with the WHOLE list of problems and writes
     class: CLASS,
     request: 'um lote torto',
     items: [
-      { ref: 'a', titulo: '' },
-      { ref: 'a', titulo: 'ref repetido' },
-      { ref: 'c', titulo: 'depende do nada', depende_de: ['fantasma'] },
+      { ref: 'a', title: '' },
+      { ref: 'a', title: 'ref repetido' },
+      { ref: 'c', title: 'depende do nada', depends_on: ['fantasma'] },
     ],
   });
 
@@ -268,14 +270,37 @@ test('AT9 — a malformed item is 400 with the WHOLE list of problems and writes
   assert.equal(response.body.error, 'invalid_items');
   const problems = response.body.problems ?? [];
   assert.deepEqual(
-    problems.map((problem) => problem.codigo).sort(),
-    ['campo_obrigatorio_ausente', 'dependencia_desconhecida', 'ref_duplicado'],
+    problems.map((problem) => problem.code).sort(),
+    ['duplicate_ref', 'missing_required_field', 'unknown_dependency'],
     'three problems in, three problems out — never only the first',
   );
   for (const problem of problems) {
-    assert.ok(problem.mensagem.length > 0, 'every problem explains itself');
+    assert.ok(problem.message.length > 0, 'every problem explains itself');
+    // t255 — the report inside the 400 is the API's JSON, so its own keys are
+    // the English of `glossario-wire.md` §1.4, like the graph report's since t230.
+    assert.deepEqual(Object.keys(problem).sort(), ['code', 'message', 'target']);
   }
   assert.equal(countDrafts(ctx), 0);
+});
+
+test('t255 — an item sent with the retired Portuguese keys is refused, never half-read', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  await registerFactoryGraph(ctx);
+
+  const response = await request<ErrorResponse>(ctx, 'POST', '/v1/intake', {
+    class: CLASS,
+    request: 'um lote na grafia antiga',
+    items: [{ ref: 'migracao', titulo: 'Migração 0005', corpo: 'as duas tabelas' }],
+  });
+
+  assert.equal(response.status, 400, 'the old spelling is not a synonym of the new one');
+  assert.equal(response.body.error, 'invalid_items');
+  assert.deepEqual(
+    (response.body.problems ?? []).map((problem) => problem.code),
+    ['missing_required_field'],
+  );
+  assert.equal(countDrafts(ctx), 0, 'nothing is written out of a batch nobody can read');
 });
 
 test('AT9 — class and request are required', async (t) => {
@@ -284,9 +309,9 @@ test('AT9 — class and request are required', async (t) => {
   await registerFactoryGraph(ctx);
 
   for (const body of [
-    { request: 'sem classe', items: [{ ref: 'a', titulo: 'x' }] },
-    { class: CLASS, items: [{ ref: 'a', titulo: 'x' }] },
-    { class: CLASS, request: '   ', items: [{ ref: 'a', titulo: 'x' }] },
+    { request: 'sem classe', items: [{ ref: 'a', title: 'x' }] },
+    { class: CLASS, items: [{ ref: 'a', title: 'x' }] },
+    { class: CLASS, request: '   ', items: [{ ref: 'a', title: 'x' }] },
   ]) {
     const response = await request<ErrorResponse>(ctx, 'POST', '/v1/intake', body);
     assert.equal(response.status, 400, JSON.stringify(body));
@@ -308,29 +333,29 @@ test('AT10 — PATCH replaces items while pending, and is 409 once the draft is 
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
 
-  const draft = await createDraft(ctx, { items: [{ ref: 'a', titulo: 'primeira ideia' }] });
+  const draft = await createDraft(ctx, { items: [{ ref: 'a', title: 'primeira ideia' }] });
 
   const amended = await request<DraftResponse>(ctx, 'PATCH', `/v1/intake/${draft.id}`, {
     items: [
-      { ref: 'a', titulo: 'ideia melhor' },
-      { ref: 'b', titulo: 'e mais uma', depende_de: ['a'] },
+      { ref: 'a', title: 'ideia melhor' },
+      { ref: 'b', title: 'e mais uma', depends_on: ['a'] },
     ],
   });
   assert.equal(amended.status, 200);
   assert.equal(amended.body.draft.status, 'pending');
   assert.deepEqual(
-    amended.body.draft.items.map((item) => item.titulo),
+    amended.body.draft.items.map((item) => item.title),
     ['ideia melhor', 'e mais uma'],
     'the list is REPLACED, not merged',
   );
-  assert.deepEqual(amended.body.draft.items[1].depende_de, ['a']);
+  assert.deepEqual(amended.body.draft.items[1].depends_on, ['a']);
   assert.ok(
     amended.body.draft.updated_at >= draft.updated_at,
     'amending stamps atualizado_em',
   );
 
   const broken = await request<ErrorResponse>(ctx, 'PATCH', `/v1/intake/${draft.id}`, {
-    items: [{ ref: 'a', titulo: 'a', depende_de: ['a'] }],
+    items: [{ ref: 'a', title: 'a', depends_on: ['a'] }],
   });
   assert.equal(broken.status, 400, 'the amendment suffers the same validation as the creation');
   assert.equal(broken.body.error, 'invalid_items');
@@ -344,18 +369,18 @@ test('AT10 — PATCH replaces items while pending, and is 409 once the draft is 
   assert.equal(confirmed.status, 201);
 
   const late = await request<ErrorResponse>(ctx, 'PATCH', `/v1/intake/${draft.id}`, {
-    items: [{ ref: 'a', titulo: 'tarde demais' }],
+    items: [{ ref: 'a', title: 'tarde demais' }],
   });
   assert.equal(late.status, 409);
   assert.equal(late.body.error, 'draft_not_pending');
 
-  const discarded = await createDraft(ctx, { items: [{ ref: 'a', titulo: 'descartável' }] });
+  const discarded = await createDraft(ctx, { items: [{ ref: 'a', title: 'descartável' }] });
   assert.equal(
     (await request(ctx, 'POST', `/v1/intake/${discarded.id}/discards`, {})).status,
     200,
   );
   const overDiscarded = await request<ErrorResponse>(ctx, 'PATCH', `/v1/intake/${discarded.id}`, {
-    items: [{ ref: 'a', titulo: 'também tarde' }],
+    items: [{ ref: 'a', title: 'também tarde' }],
   });
   assert.equal(overDiscarded.status, 409);
   assert.equal(overDiscarded.body.error, 'draft_not_pending');
@@ -368,8 +393,8 @@ test('AT11 — discarding closes the draft, twice is 409, and no job is ever cre
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', titulo: 'ficha que não vai existir' },
-      { ref: 'b', titulo: 'nem esta', depende_de: ['a'] },
+      { ref: 'a', title: 'ficha que não vai existir' },
+      { ref: 'b', title: 'nem esta', depends_on: ['a'] },
     ],
   });
 
@@ -404,11 +429,11 @@ test('AT12 — confirming creates one job per item, on the current entry node', 
     items: [
       {
         ref: 'a',
-        titulo: 'Primeira ficha',
-        corpo: 'O corpo preliminar da primeira.',
-        criterios_de_aceite: ['npm test passa', 'npm run lint passa'],
+        title: 'Primeira ficha',
+        body: 'O corpo preliminar da primeira.',
+        acceptance_criteria: ['npm test passa', 'npm run lint passa'],
       },
-      { ref: 'b', titulo: 'Segunda ficha' },
+      { ref: 'b', title: 'Segunda ficha' },
     ],
   });
 
@@ -473,9 +498,9 @@ test('t175 — confirming a mixed-tier batch carries each item tier onto its own
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'renomear', titulo: 'Renomear a coluna', tier: 'trivial' },
-      { ref: 'feature', titulo: 'A feature inteira', tier: 'standard' },
-      { ref: 'sem-triagem', titulo: 'Ninguém triou esta' },
+      { ref: 'renomear', title: 'Renomear a coluna', tier: 'trivial' },
+      { ref: 'feature', title: 'A feature inteira', tier: 'standard' },
+      { ref: 'sem-triagem', title: 'Ninguém triou esta' },
     ],
   });
 
@@ -515,8 +540,8 @@ test('AT13 — a declared dependency becomes one row and one event, resolved to 
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', titulo: 'depende', depende_de: ['b'] },
-      { ref: 'b', titulo: 'é dependido' },
+      { ref: 'a', title: 'depende', depends_on: ['b'] },
+      { ref: 'b', title: 'é dependido' },
     ],
   });
 
@@ -575,8 +600,8 @@ test('AT14 — confirming twice is 409 and does not duplicate anything', async (
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', titulo: 'uma só vez', depende_de: ['b'] },
-      { ref: 'b', titulo: 'a outra' },
+      { ref: 'a', title: 'uma só vez', depends_on: ['b'] },
+      { ref: 'b', title: 'a outra' },
     ],
   });
 
@@ -617,9 +642,9 @@ test('AT15 — job.created of a confirmed job carries body and acceptance_criter
     items: [
       {
         ref: 'a',
-        titulo: 'Ficha com conteúdo',
-        corpo: 'O que ela pede, em prosa.',
-        criterios_de_aceite: ['o teste de aceite existe'],
+        title: 'Ficha com conteúdo',
+        body: 'O que ela pede, em prosa.',
+        acceptance_criteria: ['o teste de aceite existe'],
       },
     ],
   });
@@ -653,11 +678,11 @@ test('AT15 — job.created of a confirmed job carries body and acceptance_criter
 /**
  * t168 — the class's declared fields cross the confirmation gate.
  *
- * The interesting half is the LOG: the projection carrying `campos` and the
+ * The interesting half is the LOG: the projection carrying `fields` and the
  * `job.created` carrying the same map is what makes the value replayable,
  * and a field that only reached the table would be state the log cannot explain.
  */
-test('t168 — confirming a draft carries each item\'s campos into the job and into the log', async (t) => {
+test('t168 — confirming a draft carries each item\'s fields into the job and into the log', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
@@ -665,12 +690,12 @@ test('t168 — confirming a draft carries each item\'s campos into the job and i
   const filled = { premise_source: 'relatório trimestral 2026Q2', downside: -12.5, upside: 40 };
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', titulo: 'A tese do cobre', campos: filled },
-      { ref: 'b', titulo: 'Sem campo nenhum' },
+      { ref: 'a', title: 'A tese do cobre', fields: filled },
+      { ref: 'b', title: 'Sem campo nenhum' },
     ],
   });
-  assert.deepEqual(draft.items[0].campos, filled, 'the draft already stores them');
-  assert.equal(draft.items[1].campos, null);
+  assert.deepEqual(draft.items[0].fields, filled, 'the draft already stores them');
+  assert.equal(draft.items[1].fields, null);
 
   const response = await request<ConfirmationResponse>(
     ctx,
@@ -709,9 +734,9 @@ test('AT16 — confirming a draft creates no graph version and moves no pointer'
   const draft = await createDraft(ctx, {
     request: 'o pedido inteiro, em linguagem natural',
     items: [
-      { ref: 'a', titulo: 'Primeira', depende_de: ['b'] },
-      { ref: 'b', titulo: 'Segunda' },
-      { ref: 'c', titulo: 'Terceira', depende_de: ['a'] },
+      { ref: 'a', title: 'Primeira', depends_on: ['b'] },
+      { ref: 'b', title: 'Segunda' },
+      { ref: 'c', title: 'Terceira', depends_on: ['a'] },
     ],
   });
 
@@ -744,8 +769,8 @@ test('FR6 — GET /v1/intake lists drafts, with filters, and 404s on a stranger'
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
 
-  const pending = await createDraft(ctx, { items: [{ ref: 'a', titulo: 'pendente' }] });
-  const discarded = await createDraft(ctx, { items: [{ ref: 'a', titulo: 'descartado' }] });
+  const pending = await createDraft(ctx, { items: [{ ref: 'a', title: 'pendente' }] });
+  const discarded = await createDraft(ctx, { items: [{ ref: 'a', title: 'descartado' }] });
   await request(ctx, 'POST', `/v1/intake/${discarded.id}/discards`, {});
 
   const all = await request<{ drafts: Draft[] }>(ctx, 'GET', '/v1/intake');
@@ -789,7 +814,7 @@ test('FR6 — GET /v1/intake lists drafts, with filters, and 404s on a stranger'
     ['POST', `/v1/intake/${pending.id + 999}/confirmations`],
   ] as const) {
     const response = await request<ErrorResponse>(ctx, method, routePath, {
-      items: [{ ref: 'a', titulo: 'x' }],
+      items: [{ ref: 'a', title: 'x' }],
     });
     assert.equal(response.status, 404, `${method} ${routePath} should be 404`);
     assert.equal(response.body.error, 'unknown_draft');
@@ -806,7 +831,7 @@ test('FR6 — GET /v1/intake lists drafts, with filters, and 404s on a stranger'
  *
  * The two shapes live side by side on purpose and this file asserts both: the
  * intake's OWN refusals (an unknown class, a malformed item, a draft that is no
- * longer pending) are its Portuguese wire vocabulary, while a broken EVENT
+ * longer pending) are its own report vocabulary, while a broken EVENT
  * envelope is refused by the same `validateEvent` that serves every other route,
  * and so has to come back in the same words it comes back for them (t127, FR7).
  */
@@ -828,8 +853,8 @@ test('t139 — a malformed actor on the confirmation is 400 validation_failed, n
 
   const draft = await createDraft(ctx, {
     items: [
-      { ref: 'a', titulo: 'a primeira', depende_de: ['b'] },
-      { ref: 'b', titulo: 'a segunda' },
+      { ref: 'a', title: 'a primeira', depends_on: ['b'] },
+      { ref: 'b', title: 'a segunda' },
     ],
   });
 
@@ -876,7 +901,7 @@ test('t139 — the confirmation and POST /v1/jobs refuse the same actor in the s
   const ctx = await startControlPlane(t);
   await registerFactoryGraph(ctx);
 
-  const draft = await createDraft(ctx, { items: [{ ref: 'a', titulo: 'uma ficha' }] });
+  const draft = await createDraft(ctx, { items: [{ ref: 'a', title: 'uma ficha' }] });
 
   const confirmation = await request<ValidationFailure>(
     ctx,
@@ -905,13 +930,13 @@ test('t180 — the intake refusals are English prose in the one envelope', async
   await registerFactoryGraph(ctx);
 
   const missing = await request<{ error: string; message: string }>(ctx, 'POST', '/v1/intake', {
-    items: [{ ref: 'a', titulo: 'uma ficha' }],
+    items: [{ ref: 'a', title: 'uma ficha' }],
   });
   assert.equal(missing.status, 400);
   assert.equal(missing.body.error, 'missing_required_field', 'the code is frozen (FR2)');
   assert.equal(missing.body.message, '"class" and "request" are required texts');
 
-  const cycle = await request<{ problems: { codigo: string; mensagem: string }[] }>(
+  const cycle = await request<{ problems: { code: string; message: string }[] }>(
     ctx,
     'POST',
     '/v1/intake',
@@ -919,14 +944,14 @@ test('t180 — the intake refusals are English prose in the one envelope', async
       class: CLASS,
       request: 'quebrar o pedido em fichas',
       items: [
-        { ref: 'a', titulo: 'a', depende_de: ['b'] },
-        { ref: 'b', titulo: 'b', depende_de: ['a'] },
+        { ref: 'a', title: 'a', depends_on: ['b'] },
+        { ref: 'b', title: 'b', depends_on: ['a'] },
       ],
     },
   );
   assert.equal(cycle.status, 400);
   assert.equal(
-    cycle.body.problems.find((problem) => problem.codigo === 'ciclo_de_dependencia')?.mensagem,
+    cycle.body.problems.find((problem) => problem.code === 'dependency_cycle')?.message,
     'the dependencies close a cycle: a → b → a',
   );
 });

@@ -9,6 +9,10 @@
  *
  * It serves five files. It is not a file server, and
  * `../../.cartografo/cartografo.db` is exactly the request it refuses.
+ *
+ * The 404 it answers is a body the screen INVENTS, so it carries the core's
+ * envelope — `{error, message}` since t255, `{erro, mensagem}` before it, which
+ * is the same drift `proxy.ts`'s three refusals had.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -68,8 +72,8 @@ export async function serveStatic(pathname: string): Promise<ProxiedResponse> {
   const file = resolveStaticFile(pathname);
   if (file === null) {
     return jsonResponse(404, {
-      erro: 'arquivo_nao_encontrado',
-      mensagem: `the screen does not serve "${pathname}"`,
+      error: 'file_not_found',
+      message: `the screen does not serve "${pathname}"`,
     });
   }
 
@@ -81,8 +85,8 @@ export async function serveStatic(pathname: string): Promise<ProxiedResponse> {
     };
   } catch {
     return jsonResponse(404, {
-      erro: 'arquivo_nao_encontrado',
-      mensagem: `the screen does not serve "${pathname}"`,
+      error: 'file_not_found',
+      message: `the screen does not serve "${pathname}"`,
     });
   }
 }

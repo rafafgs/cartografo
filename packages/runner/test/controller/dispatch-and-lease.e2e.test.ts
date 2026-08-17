@@ -146,7 +146,7 @@ test('AT17 — a runner dies, the lease expires and the other runner takes the s
     heartbeatIntervalMs: 60_000,
     dispatch: async () => {
       announceDispatched();
-      return new Promise<void>(() => undefined);
+      return new Promise<ControllerModule.DispatchAttempt>(() => undefined);
     },
   });
 
@@ -160,6 +160,7 @@ test('AT17 — a runner dies, the lease expires and the other runner takes the s
     ttlSeconds: TTL_SECONDS,
     dispatch: async (jobId) => {
       dispatched.push(jobId);
+      return { blocked: false };
     },
   });
 

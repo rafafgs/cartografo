@@ -11,12 +11,11 @@
  * What one dispatch does, in order:
  *
  * 1. reads the work and its timeline;
- * 2. builds the prompt — the node's (fixed, for now) instruction plus every
- *    question already asked AND answered for this work. That block is what
- *    keeps a re-dispatch from asking the same thing forever: engine-native
- *    resume is out of scope for the v0 adapter
- *    (`docs/formatos/engine-adapter.md`, "Fora de escopo (v0)"), so "resuming"
- *    is always a fresh session that was told what happened;
+ * 2. builds the prompt — the node's instruction plus every question already
+ *    asked AND answered for this work. That block is what keeps a re-dispatch
+ *    from asking the same thing forever: engine-native resume is out of scope
+ *    for the v0 adapter (`docs/formatos/engine-adapter.md`), so "resuming" is
+ *    always a fresh session that was told what happened;
  * 3. opens the session and records `sessao.aberta` with the engine ref known so
  *    far — it may be `null`, and there is no endpoint to fill it in later;
  * 4. reports every attempt at a tool the session's permission policy denied,
@@ -33,9 +32,8 @@
  * runs in is its entire write scope (`docs/formatos/engine-adapter.md`,
  * invariant 7), so it is acquired per dispatch from a `WorktreeManager` and
  * given back on every path out of here — kept for diagnosis unless the session
- * completed. There is no static working directory left to fall back to, which
- * is the point: with one, every session of every job wrote in the same tree as
- * the operator.
+ * completed. There is no static working directory to fall back to, which is the
+ * point: with one, every session of every job wrote in the operator's own tree.
  *
  * **Asking is not failing, and neither is being denied.** A dispatch that ends
  * with a pending question and a blocked work resolves normally: the lease goes
@@ -55,29 +53,34 @@
  * the closure and the question are attempted write by write, so that neither
  * one can swallow the other.
  *
- * **And a placeholder never reaches a model as text** (t204). The manifest body
- * a node's skill carries may name this node's input — `{{input.<caminho>}}` —
- * and since this ficha those are resolved before the session is built, against
- * whatever `ClaudeCodeDispatchOptions.resolveInput` hands over. One that does
- * not resolve refuses the dispatch in the same window the two pin errors
- * already do, before a worktree exists. With nothing wired to that option the
- * input is `{}`, which is the honest state today: nothing in this system
- * assembles a node's input yet, so a skill with placeholders fails closed
- * instead of opening a session on a half-written prompt.
+ * **And a placeholder never reaches a model as text** (t204). A manifest body
+ * may name this node's input — `{{input.<caminho>}}` — and those are resolved
+ * before the session is built, against whatever
+ * `ClaudeCodeDispatchOptions.resolveInput` hands over. With nothing wired to
+ * that option the input is `{}`, which is the honest state today: nothing in
+ * this system assembles a node's input yet, so a skill with placeholders fails
+ * closed instead of opening a session on a half-written prompt.
+ *
+ * **And a failure BEFORE the session is a block, not a throw** (t252). Five of
+ * the ways the window below can fail reproduce identically on every retry — a
+ * dangling `graph_version_id`, an engine with no route, an unregistered skill,
+ * a pin that stopped matching, a placeholder that does not resolve. Thrown, each
+ * of them was a job retried every two seconds forever, invisibly, with the rest
+ * of the project's queue stuck behind it. So they stop the work with a reason a
+ * person can read and resolve `{blocked: true}`; everything else still throws,
+ * because a 5xx heals itself and the retry is the right answer for it.
  *
  * **And since t202 this file is the ORCHESTRATOR and nothing else.** It had
- * grown to 1,333 lines owning five different jobs at once, and every ficha that
- * touched dispatch touched it. What is left here is the worktree bracketing, the
+ * grown to 1,333 lines owning five jobs at once, and every ficha that touched
+ * dispatch touched it. What is left here is the worktree bracketing, the
  * session's own lifecycle and the SEQUENCE — the order the writes happen in and
  * the precedence of what failed, which is the part with the load-bearing
  * guarantees (t148, t207-B). Everything that was only ever a passenger is
- * imported back: the prompt (`prompt.ts`), the HTTP client
- * (`control-plane-client.ts`), every write the runner owes once an outcome is
- * known (`report.ts`), and — since t223, which is what finally brought the file
+ * imported back: the prompt, the HTTP client, every write the runner owes once
+ * an outcome is known (`report.ts`), and — since t223, which brought the file
  * under the 600-line budget FR9 declared and nobody enforced — the routing
- * decisions (`resolve-engine.ts`) and the whole configuration surface
- * (`options.ts`). No export was renamed and no behaviour changed in either
- * split; the file a declaration is written in is all that moved, and the
+ * decisions (`resolve-engine.ts`) and the configuration surface (`options.ts`).
+ * No export was renamed and no behaviour changed in either split, and the
  * re-exports below are what makes that true for every caller.
  *
  * English per D18. The prompt and instruction CONTENT stays in Portuguese: it
@@ -99,9 +102,11 @@ import {
 } from './options.ts';
 import { parseInputRequest, type InputRequest } from './parse-input-request.ts';
 import { PermissionDenialTracker } from './parse-permission-denial.ts';
+import { classifyPreSessionFailure } from './pre-session-failure.ts';
 import {
   PermissionDenialReporter,
   advance,
+  blockForPreSessionFailure,
   blockForUncommittedWork,
   blockWithNobodyToAsk,
   finishSession,
@@ -113,11 +118,12 @@ import {
   type RegisteredSkill,
   type RenderedSkill,
 } from './render-skill-instructions.ts';
-import { UnknownEngineError, resolveEngine } from './resolve-engine.ts';
+import { UnknownEngineError, resolveEngine, type EngineRoute } from './resolve-engine.ts';
 import {
   resolveEscalationPolicy,
   resolveNode,
   type GraphVersionBody,
+  type ResolvedNode,
 } from './resolve-node.ts';
 import { buildSessionSpec } from './session-spec.ts';
 import { decodeClaudeCodeSessionText } from './session-text.ts';
@@ -130,64 +136,26 @@ import { decodeClaudeCodeSessionText } from './session-text.ts';
  * `cli/run.ts`, by the spikes and by this package's tests. Re-exporting rather
  * than asking each caller to follow the declaration is the rule both splits ran
  * under: a refactor that renames nothing may not make anybody edit an import.
+ * Each one now lives next to what it is about — the three refusals next to the
+ * renderer that raises them, the taxonomy table next to the write that uses it,
+ * the escalation paragraph and the policy next to the field they read, the
+ * routing decisions next to `resolve-node.ts`'s answer, and 250 lines of
+ * configuration out of the way of the sequence.
  */
 export {
   SkillNotRegisteredError,
   SkillPinMismatchError,
   UnresolvedPlaceholderError,
 } from './render-skill-instructions.ts';
-
-/**
- * The escalation paragraph every instruction carries (t167).
- *
- * Declared in `escalation-protocol.ts` since t223 and composed into
- * `DEFAULT_INSTRUCTIONS` from there; re-exported here because this is where it
- * was declared when the spikes started importing it.
- */
 export { ESCALATION_PROTOCOL } from './escalation-protocol.ts';
-
-/**
- * The taxonomy table every session closure is recorded through (t98).
- *
- * Defined in `report.ts`, where the write that uses it lives, and re-exported
- * here unchanged: it was part of this module's surface before the t202 split,
- * and the split renames nothing (FR1).
- */
 export { TAXONOMY_STATUS } from './report.ts';
-
-/**
- * The configuration surface of a dispatch, declared in `options.ts` since t223.
- *
- * It moved as one piece and for one reason: 250 lines of interface and default
- * are not orchestration, and while they were written here nobody could read the
- * sequence without scrolling past them.
- */
 export {
   DEFAULT_INSTRUCTIONS,
   DEFAULT_SILENCE_SECONDS,
   type ClaudeCodeDispatchOptions,
   type Job,
 } from './options.ts';
-
-/**
- * Which engine and which model run the node, and what happens when the graph
- * names one nobody registered (t141, t166).
- *
- * Declared in `resolve-engine.ts` since t223, next to `resolve-node.ts`, whose
- * answer both of them read.
- */
 export { DEFAULT_ENGINE, UnknownEngineError, type EngineRoute } from './resolve-engine.ts';
-
-/**
- * Which escalation policy governs the node being dispatched (t167, FR4).
- *
- * Re-exported here because this is the module that ACTS on the answer: the two
- * places that would raise a question resolve it first, and `never` routes them
- * to `POST /v1/jobs/:id/blocks` instead. It is defined next to the field it
- * reads (`resolve-node.ts`) so that the instruction renderer can ask the same
- * question without the two modules importing each other — the same shape
- * `ESCALATION_PROTOCOL` above already has.
- */
 export { resolveEscalationPolicy, DEFAULT_ESCALATION_POLICY } from './resolve-node.ts';
 export type { EscalationPolicy } from './resolve-node.ts';
 
@@ -195,6 +163,20 @@ export type { EscalationPolicy } from './resolve-node.ts';
 interface Session {
   id: number;
 }
+
+/**
+ * How a dispatch ended, for the controller waiting on it (t252).
+ *
+ * Two answers and not three: a session ran (whatever it then did — asked, was
+ * denied, advanced), or the work was stopped before anything opened. A session
+ * that DIED is still a rejection, and always was.
+ *
+ * The reason travels with the block because the caller may want it and the
+ * controller does not: `ControllerOptions.dispatch` declares the narrower
+ * `{blocked: boolean}` of its own, which this satisfies structurally without
+ * either file importing the other.
+ */
+export type DispatchOutcome = { blocked: false } | { blocked: true; reason: string };
 
 /** A session that started but did not end well. */
 export class DispatchError extends Error {
@@ -213,8 +195,7 @@ export class DispatchError extends Error {
  * Everything the session said, with Claude Code's frames decoded back into text.
  *
  * @deprecated Moved to `./session-text.ts` as `decodeClaudeCodeSessionText`
- * (t141, FR6) — one decoder per engine, now that there is more than one engine
- * to decode. Re-exported here, unchanged, so nothing that imported it breaks.
+ * (t141, FR6) — one decoder per engine. Re-exported unchanged all the same.
  */
 export const sessionText = decodeClaudeCodeSessionText;
 
@@ -227,7 +208,7 @@ export const sessionText = decodeClaudeCodeSessionText;
  */
 export function createClaudeCodeDispatch(
   options: ClaudeCodeDispatchOptions,
-): (jobId: number) => Promise<void> {
+): (jobId: number) => Promise<DispatchOutcome> {
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const silenceSeconds = resolveBudget(options.silenceSeconds, DEFAULT_SILENCE_SECONDS);
   const resolveInput = options.resolveInput ?? ((): Record<string, unknown> => ({}));
@@ -238,38 +219,60 @@ export function createClaudeCodeDispatch(
   // forget the credential.
   const call = createDispatchControlPlaneClient(options);
 
-  return async (jobId: number): Promise<void> => {
+  return async (jobId: number): Promise<DispatchOutcome> => {
     const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
 
-    // ONE read of the graph version, and it is the first thing the dispatch
-    // does: the engine, the skill, the contract and the edges all come out of
-    // this (FR1). A version the work points at and that does not resolve
-    // rejects right here, which is where stopping is cheapest.
-    const resolved = await resolveNode(job, (route) => call<GraphVersionBody>(route, 'GET'));
+    let resolved: ResolvedNode | null;
+    let route: EngineRoute;
+    let rendered: RenderedSkill | null;
 
-    // Resolved before anything is read for the prompt and long before a session
-    // opens: an engine nobody registered has to stop the dispatch while stopping
-    // it is still free (t141, FR5).
-    const engineName = resolveEngine(resolved);
-    const route = options.engines[engineName];
-    if (route === undefined) {
-      throw new UnknownEngineError(engineName, job.current_node_id, Object.keys(options.engines));
+    // The whole window before a worktree exists, under ONE catch (t252). Which
+    // of its failures blocks the work instead of throwing — and why exactly
+    // five — is the paragraph at the top of this file; where the line is drawn
+    // is `pre-session-failure.ts`, and nothing but that module draws it.
+    try {
+      // ONE read of the graph version, and it is the first thing the dispatch
+      // does: the engine, the skill, the contract and the edges all come out of
+      // this (FR1). A version the work points at and that does not resolve
+      // stops right here, which is where stopping is cheapest.
+      resolved = await resolveNode(job, (versionRoute) =>
+        call<GraphVersionBody>(versionRoute, 'GET'),
+      );
+
+      // Resolved before anything is read for the prompt and long before a
+      // session opens: an engine nobody registered has to stop the dispatch
+      // while stopping it is still free (t141, FR5).
+      const engineName = resolveEngine(resolved);
+      const registered = options.engines[engineName];
+      if (registered === undefined) {
+        throw new UnknownEngineError(engineName, job.current_node_id, Object.keys(options.engines));
+      }
+      route = registered;
+
+      // Then the skill, in the same window and for the same reason: an
+      // unregistered skill, a pin that stopped matching, or — since t204 — a
+      // body whose placeholders this dispatch cannot resolve stops it before a
+      // worktree is cut, before a session exists and before a single token is
+      // spent (FR3). A refusal after the engine is running is a refusal that
+      // already let the instructions out.
+      rendered =
+        resolved === null
+          ? null
+          : await renderSkillInstructions(
+              resolved,
+              (skillRoute) => call<RegisteredSkill>(skillRoute, 'GET'),
+              resolveInput(job, resolved),
+            );
+    } catch (error) {
+      // `null` is "this one may well work next time": it goes up untouched, the
+      // controller's tick rejects, and the loop retries. A reason is the other
+      // half, and the block is what makes the work stop being a candidate at
+      // all — no new bookkeeping, just the filter `GET /v1/jobs` already has.
+      const reason = classifyPreSessionFailure(error, job);
+      if (reason === null) throw error;
+      await blockForPreSessionFailure(call, job, reason);
+      return { blocked: true, reason };
     }
-
-    // Then the skill, in the same window and for the same reason: an
-    // unregistered skill, a pin that stopped matching, or — since t204 — a body
-    // whose placeholders this dispatch cannot resolve refuses the dispatch
-    // before a worktree is cut, before a session exists and before a single
-    // token is spent (FR3). A refusal after the engine is running is a refusal
-    // that already let the instructions out.
-    const rendered: RenderedSkill | null =
-      resolved === null
-        ? null
-        : await renderSkillInstructions(
-            resolved,
-            (skillRoute) => call<RegisteredSkill>(skillRoute, 'GET'),
-            resolveInput(job, resolved),
-          );
 
     // The manifest wins over the dispatch's own configuration wherever it has
     // something to say, and falls back to it where it does not (FR4/FR6).
@@ -302,12 +305,10 @@ export function createClaudeCodeDispatch(
      * Idempotent because the paths overlap on purpose: the terminal path
      * releases with the fate the outcome earned, and the catch below releases
      * whatever it finds still held — including what the terminal path already
-     * handed over on its way to throwing.
-     *
-     * The failure is captured, never thrown from here, exactly as
-     * `denialFailure` and `finishFailure` are: a cleanup that could not be done
-     * is a fault worth reporting, and never a reason to replace the error that
-     * is already unwinding with a symptom of it.
+     * handed over on its way to throwing. The failure is captured and never
+     * thrown from here, exactly as `denialFailure` and `finishFailure` are: a
+     * cleanup that could not be done is a fault worth reporting, never a reason
+     * to replace the error already unwinding with a symptom of it.
      */
     const release = async (keep: boolean): Promise<void> => {
       if (released) return;
@@ -448,8 +449,7 @@ export function createClaudeCodeDispatch(
       // single decision is taken on top of it (t207-B). It used to happen at the
       // very end, after the advance, and the order was not neutral: what the
       // manager answers — did the directory survive? — is an input to that
-      // advance, and a decision taken before the answer exists is a decision
-      // that cannot use it.
+      // advance, and a decision taken before the answer exists cannot use it.
       //
       // The OUTCOME is still what decides the fate asked for (FR8): what a
       // completed session produced belongs in its branch's history, so the
@@ -461,11 +461,11 @@ export function createClaudeCodeDispatch(
       // A session that ended `completed` and whose tree was kept ANYWAY: the
       // manager looked at `git status --porcelain` and found work nobody
       // committed (`session-worktree.ts`). The premise the old cleanup ran on —
-      // "committed work already lives in the branch's history" — is false for
-      // this session, and everything it produced exists in exactly one
-      // directory. It is not the machine's to reconcile: no commit and no
-      // discard is made on anybody's behalf, uniformly, whether the dirt is a
-      // forgotten `git commit` or scratch the node legitimately produces.
+      // "committed work already lives in the branch's history" — is false here,
+      // and everything that session produced exists in exactly one directory.
+      // It is not the machine's to reconcile: no commit and no discard is made
+      // on anybody's behalf, whether the dirt is a forgotten `git commit` or
+      // scratch the node legitimately produces.
       const dirtyDespiteCompleted = outcome.status === 'completed' && keptByManager === true;
 
       // Drained BEFORE the end of the session, so the log reads in the order
@@ -529,16 +529,16 @@ export function createClaudeCodeDispatch(
       // And here is where a traversal stops needing an operator (FR7-FR10).
       //
       // Four conditions, and each one is a different way of not having earned
-      // an advance. No resolved node: there is no graph to say where "next"
-      // even is. A session that did not complete: recording progress for work
-      // that died would make the log claim something that did not happen. A
-      // session that asked: it is blocked behind a person now, and the next
-      // dispatch re-enters this same node with the answer already in the
-      // prompt — moving it on would answer its question by walking away from
-      // it (`docs/spec/escalacao-humana.md`). And, since t207-B, a session whose
-      // tree was retained: its output is uncommitted, so advancing would move
-      // the work off a node whose result lives nowhere the next node can read
-      // it — and would clear the very state a human has to look at.
+      // an advance. No resolved node: there is no graph to say where "next" even
+      // is. A session that did not complete: recording progress for work that
+      // died would make the log claim something that did not happen. A session
+      // that asked: it is blocked behind a person now, and the next dispatch
+      // re-enters this same node with the answer already in the prompt — moving
+      // it on would answer its question by walking away from it
+      // (`docs/spec/escalacao-humana.md`). And, since t207-B, a session whose
+      // tree was retained: its output is uncommitted, so advancing would move the
+      // work off a node whose result lives nowhere the next node can read it —
+      // and would clear the very state a human has to look at.
       //
       // BEFORE the captured failures are rethrown, on purpose: a denial or a
       // closure the control plane refused is telemetry the runner owes, and
@@ -555,12 +555,11 @@ export function createClaudeCodeDispatch(
 
       // A write that could not be made is not the session's fault, but it is a
       // fault: the control plane refused something the runner owes it, and a
-      // silent swallow here would leave the log claiming a clean session.
-      //
-      // The FIRST one captured is the one that surfaces — a denial happens during
-      // the session, the closure after it, the cleanup last of all — which is the
-      // precedent the denials' failure already set when it was alone. Reporting
-      // more than one at a time is a multi-error type nobody has needed yet.
+      // silent swallow here would leave the log claiming a clean session. The
+      // FIRST one captured is the one that surfaces — a denial happens during
+      // the session, the closure after it, the cleanup last of all — which is
+      // the precedent the denials' failure set when it was alone. Reporting more
+      // than one at a time is a multi-error type nobody has needed yet.
       const failure = denials.failure ?? finishFailure ?? releaseFailure;
       if (failure !== null) throw failure;
 
@@ -575,6 +574,10 @@ export function createClaudeCodeDispatch(
           outcome.exitCode,
         );
       }
+
+      // A session ran and everything it owed was written. Said out loud since
+      // t252, because the caller now has two normal endings to tell apart.
+      return { blocked: false };
     } catch (error) {
       // Every exit that is not the terminal one lands here — a read that failed
       // before the session opened, the control-plane failure that cancels a live
@@ -586,9 +589,8 @@ export function createClaudeCodeDispatch(
       // A no-op for anything that threw AFTER the terminal release above, which
       // since t207-B includes the refused transition: that release already ran
       // with the outcome's own fate, and a clean tree it removed took nothing
-      // with it — what that session produced is in the branch. The one case
-      // where the directory really was the only copy is the dirty one, and that
-      // one is retained by the manager before any of this is reached.
+      // with it. The one case where the directory really was the only copy is
+      // the dirty one, and the manager retains that before any of this.
       await release(true);
       throw error;
     }

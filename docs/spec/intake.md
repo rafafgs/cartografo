@@ -37,7 +37,7 @@ campo de status que alguém edita, pela mesma razão que o trabalho tem
 `/transitions` e `/blocks`: cada uma corresponde a um **fato** distinto.
 
 **O que está fora:** como o rascunho é PRODUZIDO a partir do pedido em
-linguagem natural. `itens` chega já decomposto no corpo da requisição, venha de
+linguagem natural. `items` chega já decomposto no corpo da requisição, venha de
 uma pessoa digitando, de uma sessão de agente rodada à parte ou de uma futura
 tela de chat. Esta camada não despacha sessão e não conhece engine.
 
@@ -47,17 +47,23 @@ tela de chat. Esta camada não despacha sessão e não conhece engine.
 
 ```json
 {"ref": "migracao",
- "titulo": "Migração 0005",
- "corpo": "Colunas novas em trabalho e as duas tabelas do intake.",
- "criterios_de_aceite": ["a migração roda do zero"],
+ "title": "Migração 0005",
+ "body": "Colunas novas em trabalho e as duas tabelas do intake.",
+ "acceptance_criteria": ["a migração roda do zero"],
  "tier": "standard",
- "depende_de": ["dominio"]}
+ "depends_on": ["dominio"]}
 ```
 
-`ref` e `titulo` são obrigatórios; `corpo`, `criterios_de_aceite`, `tier` e
-`depende_de` são opcionais. `ref` é identidade **local ao lote**: ela existe
-para que um item cite outro, e morre na confirmação, quando cada `ref` vira um
-`job.id` real.
+`ref` e `title` são obrigatórios; `body`, `acceptance_criteria`, `fields`,
+`tier` e `depends_on` são opcionais. `ref` é identidade **local ao lote**: ela
+existe para que um item cite outro, e morre na confirmação, quando cada `ref`
+vira um `job.id` real.
+
+As chaves do item falam inglês desde o t255 ([glossário](glossario-wire.md)
+§1.1): elas viajam no corpo do `POST /v1/intake`, que é o que a D20 chama de
+"campos e parâmetros de query do JSON da API". Nada responde à grafia antiga —
+um item com `titulo` volta como `missing_required_field`, porque `title` é que
+é obrigatório.
 
 Os critérios que o intake grava são **preliminares**. Quem os produz de verdade
 é o nó `refinar` do grafo de fábrica 1, cujo contrato recebe `{ticket_id,
@@ -74,14 +80,23 @@ primeiro (`validateItems`, linha 242):
 
 | Código | Quando |
 |---|---|
-| `lista_invalida` | `itens` não é lista, ou é lista vazia |
-| `item_invalido` | um item não é objeto |
-| `campo_obrigatorio_ausente` | falta `ref` ou `titulo` |
-| `campo_invalido` | `corpo`, `criterios_de_aceite`, `campos`, `tier` ou `depende_de` com forma errada |
-| `ref_duplicado` | dois itens do lote usam o mesmo `ref` |
-| `dependencia_desconhecida` | `depende_de` cita `ref` que não é de nenhum item do lote |
-| `dependencia_de_si_mesmo` | o item cita o próprio `ref` |
-| `ciclo_de_dependencia` | as dependências fecham um ciclo |
+| `invalid_list` | `items` não é lista, ou é lista vazia |
+| `invalid_item` | um item não é objeto |
+| `missing_required_field` | falta `ref` ou `title` |
+| `invalid_field` | `body`, `acceptance_criteria`, `fields`, `tier` ou `depends_on` com forma errada |
+| `duplicate_ref` | dois itens do lote usam o mesmo `ref` |
+| `unknown_dependency` | `depends_on` cita `ref` que não é de nenhum item do lote |
+| `self_dependency` | o item cita o próprio `ref` |
+| `dependency_cycle` | as dependências fecham um ciclo |
+
+Cada problema é `{code, message, target}` — a mesma forma do relatório de grafo
+(§5.3 do glossário), e em inglês desde o t255 pela mesma razão que o item: esse
+relatório É o corpo do `400`.
+
+Os dois primeiros códigos de campo são os que a rota ao lado já respondia
+(`missing_required_field`, `invalid_field`): o t255 dobrou os dois do validador
+neles em vez de traduzi-los, para que um mesmo item não volte com duas grafias
+do mesmo problema.
 
 O ciclo é procurado por busca em profundidade com três cores
 (`findCycles`, linha 209). Cinza = no caminho atual, preto = já fechado: bater
@@ -163,7 +178,7 @@ ordem — bloquear automaticamente, ordenar despacho, contar WIP por dependênci
 é decisão de outra ficha, e uma bandeira que ninguém sabe baixar seria pior que
 bandeira nenhuma.
 
-Dependência **não atravessa lote**: `depende_de` só resolve `ref` de itens do
+Dependência **não atravessa lote**: `depends_on` só resolve `ref` de itens do
 mesmo rascunho. Declarar dependência sobre um `trabalho` que já existe não é
 suportado nesta versão.
 

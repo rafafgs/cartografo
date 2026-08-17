@@ -186,6 +186,7 @@ arma o heartbeat periódico  ─────────────┐
    despachar(trabalhoId)                 │ a cada ttl/3
         ↓ (resolve OU rejeita)  ◀────────┘
 para o heartbeat + POST /v1/leases/:id/liberacoes
+        ↓ (resolveu bloqueado: tenta o próximo candidato, na MESMA passada)
 ```
 
 Quatro decisões de projeto sustentam esse desenho:
@@ -239,6 +240,60 @@ de projeto pela transação do server — o caminho que
 já prova (§3). Rodar N sessões dentro de um processo foi recusado pelo founder
 na `t208`, e continua reversível por outra decisão se a necessidade aparecer
 concreta.
+
+### Falha antes da sessão bloqueia, não retenta para sempre (`t252`)
+
+Um despacho faz quatro leituras **antes** de pegar worktree e abrir sessão: o
+trabalho, a versão de grafo, a rota do engine e a skill fixada pelo nó. Cinco
+falhas dessa janela se reproduzem **idênticas** em toda retentativa:
+
+| Causa | De onde vem |
+|---|---|
+| `graph_version_id` pendurado | `GET /v1/graph-versions/:id` responde 404 |
+| engine sem rota neste runner | tabela `engines` do despacho não tem o nome |
+| skill fora do registro | `GET /v1/skills/:id?version=` responde 404 |
+| pin que parou de casar | hash registrado ≠ hash declarado pelo nó (D4) |
+| placeholder que não resolve | `{{input.<caminho>}}` sem valor na entrada do nó |
+
+Até a `t252` todas elas **estouravam**. O erro subia do despacho, subia do
+`tick()`, e o loop do `cartografo-runner run` fazia a única coisa que sabe fazer
+com um tick que falhou: escrevia uma linha no stderr e perguntava de novo no
+intervalo seguinte (`--interval-ms`, dois segundos por padrão). Como nada tinha
+marcado o trabalho, `GET /v1/jobs` devolvia o
+**mesmo** trabalho na cabeça da fila, a lease era concedida de novo, e o
+despacho caía no mesmo erro — para sempre, sem linha em `pergunta`, sem
+`bloqueado`, sem nada na caixa de entrada. E, como o `tick()` termina na
+primeira lease da passada, nenhum outro trabalho do projeto era tentado
+enquanto esse estivesse na frente.
+
+Agora essas cinco **bloqueiam o trabalho** com um motivo que nomeia a causa —
+`POST /v1/jobs/:id/blocks`, ator `sistema/runner`, o mesmo mecanismo que os dois
+bloqueios que o despacho já fazia por conta própria. Nada de novo é inventado:
+como `GET /v1/jobs` filtra `bloqueado === false`, um trabalho bloqueado
+simplesmente deixa de ser candidato, e é esse filtro — nenhuma escrita a mais —
+que transforma "para sempre" em "uma vez". Quem desbloqueia é uma pessoa, pelo
+`POST /v1/jobs/:id/unblocks` de sempre, depois de corrigir o que o motivo aponta.
+
+Três limites que fazem parte da decisão:
+
+**Só essas cinco.** Qualquer outro erro da mesma janela — 500, 502, 503, timeout
+de rede, o 404 da leitura do **próprio trabalho** — continua estourando, e
+continua sendo retentado no intervalo seguinte. Um control plane fora do ar
+passa sozinho; bloquear um trabalho por causa dele seria pedir a uma pessoa que
+desfaça um soluço na mão. É por isso que a classificação é um módulo puro e
+fechado (`packages/runner/src/dispatch/pre-session-failure.ts`): a fronteira é o
+conteúdo do arquivo, e uma sexta causa é decisão de outra ficha.
+
+**O `tick()` segue na mesma passada.** Um bloqueio não é capacidade recusada nem
+trabalho feito: a lease já voltou pelo `finally` de sempre, e o candidato
+seguinte é tentado imediatamente, sem esperar o próximo intervalo. Se todos os
+candidatos bloquearem, a passada devolve `null`, exatamente como a passada que
+não ganhou lease nenhuma.
+
+**Nada abre.** O bloqueio acontece antes de `worktrees.acquire`, então não há
+árvore para devolver, não há `POST /v1/sessions`, não há processo de engine e
+não há token gasto. Falha depois que a sessão subiu é outro assunto, e continua
+sendo o que sempre foi (`DispatchError`, cancelamento, árvore retida).
 
 ### Toda chamada tem prazo (`t193`)
 

@@ -143,9 +143,9 @@ async function startAgreeableUpstream(t: Cleanup): Promise<FakeUpstream> {
 async function assertRefused(response: Response): Promise<void> {
   assert.equal(response.status, 403);
   assert.match(response.headers.get('content-type') ?? '', /^application\/json/);
-  const body = (await response.json()) as { erro: string; mensagem: string };
-  assert.equal(body.erro, 'origem_nao_confiavel');
-  assert.ok(body.mensagem.length > 0, 'the refusal says what to do about it');
+  const body = (await response.json()) as { error: string; message: string };
+  assert.equal(body.error, 'untrusted_origin');
+  assert.ok(body.message.length > 0, 'the refusal says what to do about it');
 }
 
 test('t192 AT1 — a cross-site POST to /v1/* is refused, and the control plane never sees it', async (t) => {

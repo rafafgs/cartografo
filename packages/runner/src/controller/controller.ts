@@ -34,6 +34,27 @@
 
 import type { ClienteControle, Lease } from './cliente-controle.ts';
 
+/**
+ * What one dispatch reports back about the work it was handed (t252).
+ *
+ * One field, and it answers one question: is this job still a candidate? A
+ * dispatch that hit a failure which will reproduce on every retry — an engine
+ * with no route, a skill nobody registered, a placeholder that does not resolve
+ * — blocks the work itself and says so here, and the pass moves on to the next
+ * candidate instead of returning as if a session had run.
+ *
+ * **Declared here, and deliberately not imported from `dispatch.ts`.** This file
+ * has never imported that one, which is what the paragraph above means by "the
+ * only seam is an injected callback": the controller opens no session and knows
+ * about no engine. `dispatch.ts` answers with a richer shape of its own — it
+ * carries the reason it blocked with — and structural typing means it satisfies
+ * this without either module naming the other.
+ */
+export interface DispatchAttempt {
+  /** `true` when the dispatch stopped the work rather than running it. */
+  blocked: boolean;
+}
+
 /** Configuration of the controller. */
 export interface ControllerOptions {
   /** Client already pointed at the control plane. */
@@ -63,8 +84,12 @@ export interface ControllerOptions {
   /**
    * What to do with the work won. Resolves when the session ends; rejects when
    * it dies. In both cases the lease is given back.
+   *
+   * Since t252 it also resolves — with {@link DispatchAttempt.blocked} true —
+   * for a work it stopped before opening anything, which is neither of those two
+   * and must not be reported as either.
    */
-  dispatch: (jobId: number) => Promise<void>;
+  dispatch: (jobId: number) => Promise<DispatchAttempt>;
   /**
    * Interval between heartbeats. Default: a third of the TTL — slack for two
    * missed beats before the server gives the runner up for dead.
@@ -140,8 +165,17 @@ export class Controller {
    * at the next interval, and by then a lease somewhere may have been released
    * or expired — which is the retry mechanism this layer already had.
    *
+   * There is a third answer since t252, and it belongs to the DISPATCH rather
+   * than to the lease: a work the dispatch blocked before opening anything. It
+   * is not capacity refused and it is not work done, so the loop simply tries
+   * the next candidate in the same pass — the blocked work has already left the
+   * candidate list on the server (`GET /v1/jobs` filters `blocked === false`),
+   * and waiting for the next interval to discover that would let one broken job
+   * hold up every other released job of the project.
+   *
    * @returns The work dispatched and the lease used, or `null` when there was
-   *   no released work or no candidate yielded a lease.
+   *   no released work, no candidate yielded a lease, or every candidate that
+   *   did blocked itself.
    */
   async tick(): Promise<DispatchResult | null> {
     const candidates = await this.#options.client.listarTrabalhosLiberados();
@@ -161,7 +195,12 @@ export class Controller {
         continue;
       }
 
-      await this.#dispatch(lease, job.id);
+      const attempt = await this.#dispatch(lease, job.id);
+      // A block is a normal resolution, never an error: the lease has already
+      // gone back through `#dispatch`'s own `finally`, and what is in front of
+      // the loop now is simply one candidate fewer.
+      if (attempt.blocked) continue;
+
       return { jobId: job.id, leaseId: lease.id };
     }
 
@@ -169,11 +208,14 @@ export class Controller {
   }
 
   /** Dispatches under the lease, with the heartbeat armed, and returns it at the end. */
-  async #dispatch(lease: Lease, jobId: number): Promise<void> {
+  async #dispatch(lease: Lease, jobId: number): Promise<DispatchAttempt> {
     const stopHeartbeat = this.#armHeartbeat(lease);
 
     try {
-      await this.#options.dispatch(jobId);
+      // Awaited and not just returned: a bare `return` would hand the promise
+      // over before the `finally` below could run, and the lease would go back
+      // while the dispatch was still in flight.
+      return await this.#options.dispatch(jobId);
     } finally {
       // `finally`, and not the happy path: work that blows up gives the lease
       // back exactly like work that ends well. The dispatch error keeps

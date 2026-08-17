@@ -29,10 +29,16 @@ import { createHmac } from 'node:crypto';
  * Header the delivery carries the signature in.
  *
  * Lowercase because that is how every HTTP/2 and Node receiver sees it; the
- * public spec writes it `X-Cartografo-Assinatura`, which is the same header —
+ * public spec writes it `X-Cartografo-Signature`, which is the same header —
  * field names are case-insensitive.
+ *
+ * English since t255, and it is the last thing on this wire that was not: a
+ * header name is as much published vocabulary as a JSON key, and no child of
+ * D20 ever looked at one — the five surface tickets each swept keys, values,
+ * routes and flags. `glossario-wire.md` §1.7 carries the row now, so the next
+ * sweep sees it.
  */
-export const SIGNATURE_HEADER = 'x-cartografo-assinatura';
+export const SIGNATURE_HEADER = 'x-cartografo-signature';
 
 /**
  * Signs the body of one delivery.

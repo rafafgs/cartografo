@@ -27,8 +27,16 @@ abre (D7) com dois vocabulários em vez de um.
 | §2 | `events` | convergida | t227 |
 | §3 | `proposal-ops` | convergida | t228 |
 | §4.1 e §4.2 | `database` | convergida | t229 (nomes), t235 (valores) |
-| §5 | `routes-cli-report` | convergida | t230 |
+| §5.1 a §5.4 | `routes-cli-report` | convergida | t230 |
+| §1.1 e §1.4 (intake), §1.7, §5.2 (custo), §5.5 | `api`, `routes-cli-report`, `cost-lens` | convergida | t255 (as sobras) |
 | todas, nas especificações | — | convergida | t231 (docs e portão) |
+
+A penúltima linha é do t255, que não é filho do t213: é a ficha que a revisão v2
+abriu ao encontrar seis sobras que os portões não pegavam, todas por não estarem
+mapeadas aqui. Cinco delas viraram linha nova (item de intake, códigos do proxy
+da tela, cabeçalho de assinatura, linha de comando da lente de custo, candidata
+da lente de custo); a sexta era de forma, não de idioma, e está contada na
+`policy.ts` daquele pacote.
 
 A última linha é a do filho que fecha a D20: o CÓDIGO de cada superfície já
 tinha portão próprio quando ela começou (um `no-portuguese-wire.test.ts` por
@@ -55,9 +63,12 @@ código, e mascara exatamente o que este documento mapeia — o valor no fio.
 ## Como ler as tabelas
 
 - **`superfície`** é a etiqueta do ticket filho a que a linha pertence: `api`,
-  `events`, `proposal-ops`, `database`, `routes-cli-report`. Uma superfície pode
-  aparecer em mais de uma tabela (a `api` está dividida por grupo, para caber na
-  cabeça de quem lê); o que vale é a etiqueta da linha, não o título da seção.
+  `events`, `proposal-ops`, `database`, `routes-cli-report`. A sexta,
+  `cost-lens`, chegou com o t255 e não é filho de ninguém: é o vocabulário que a
+  lente de custo põe no fio (§5.5), e existe separada porque o portão que a lê é
+  o daquele pacote e só ele. Uma superfície pode aparecer em mais de uma tabela
+  (a `api` está dividida por grupo, para caber na cabeça de quem lê); o que vale
+  é a etiqueta da linha, não o título da seção.
 - **`hoje`** é o termo em português como ele está escrito no código agora.
   **`vira`** é o nome em inglês que a renomeação vai usar. **`onde está hoje`**
   é o arquivo que define o termo — o ponto de partida do ticket filho.
@@ -98,8 +109,19 @@ inventário do t213 cita por nome.
 | api | `trabalho_id` | `job_id` | `packages/core/src/routes/leases.ts`, `packages/core/src/repositories/session.ts` |
 | api | `grafo_id` | `graph_id` | `packages/core/src/routes/proposals.ts` |
 | api | `no_atual` | `current_node_id` | `packages/core/src/repositories/job.ts` |
-| api | `titulo` | `title` | `packages/core/src/repositories/job.ts` |
+| api | `titulo` | `title` | `packages/core/src/repositories/job.ts`, `packages/core/src/domain/intake.ts` |
 | api | `classe` | `class` | `packages/core/src/routes/graphs.ts`, `packages/core/src/routes/intake.ts` |
+| api | `corpo` | `body` | `packages/core/src/domain/intake.ts` |
+| api | `criterios_de_aceite` | `acceptance_criteria` | `packages/core/src/domain/intake.ts` |
+| api | `campos` | `fields` | `packages/core/src/domain/intake.ts` |
+| api | `depende_de` | `depends_on` | `packages/core/src/domain/intake.ts` |
+
+As quatro últimas são do item de intake (`DraftItem`), que viaja no corpo do
+`POST /v1/intake` e volta no `GET /v1/intake/:id`. Elas entraram com o t255, e
+não com o filho da API: o t226 e o t229 trataram o item como formato de terceiro
+("o glossário não mapeia nenhuma delas", dizia o comentário), quando o texto da
+D20 já dizia "campos e parâmetros de query do JSON da API". `ref` e `tier` não
+viram linha porque já estão em inglês.
 
 ### 1.2 Parâmetros de consulta
 
@@ -145,20 +167,39 @@ ou se dobra em `details`) é decisão do ticket filho da API — o que este
 glossário fixa é que `erro` é `error` e `mensagem` é `message`, nunca outra
 palavra.
 
+A tela tem envelope próprio para as quatro respostas que ela INVENTA (o control
+plane fora do ar, a escrita de outra origem, o corpo grande demais e o arquivo
+estático que não existe). Ele é o mesmo envelope — a citação do `proxy.ts` e do
+`static.ts` nas duas primeiras linhas é isso —, e os quatro códigos que ele
+carrega entraram com o t255, quando a revisão v2 achou a tela ainda respondendo
+`{erro, mensagem}` quatro tickets depois de o núcleo ter convergido.
+
+`codigo`, `mensagem` e `alvo` também são as três chaves de cada problema do
+relatório de itens do intake (`domain/intake.ts`), que viaja dentro do `400` de
+`POST /v1/intake` — mesma forma do relatório de grafo da §5.3, e mesmo inglês.
+
 | superfície | hoje | vira | onde está hoje |
 |---|---|---|---|
-| api | `erro` | `error` | `packages/core/src/routes/graphs.ts:72-87` |
-| api | `mensagem` | `message` | `packages/core/src/routes/graphs.ts:72-87` |
+| api | `erro` | `error` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:71,84` |
+| api | `mensagem` | `message` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:71,84` |
 | api | `campo` | `field` | `packages/core/src/routes/leases.ts:148` |
+| api | `codigo` | `code` | `packages/core/src/domain/intake.ts` |
+| api | `alvo` | `target` | `packages/core/src/domain/intake.ts` |
+| api | `arquivo_nao_encontrado` | `file_not_found` | `packages/tela/src/static.ts:71,84` |
 | api | `base_invalida` | `invalid_base` | `packages/core/src/routes/graphs.ts` |
 | api | `bifurcacao_sem_efeito` | `fork_without_effect` | `packages/core/src/routes/graphs.ts` |
 | api | `campo_invalido` | `invalid_field` | `packages/core/src/routes/leases.ts`, `packages/core/src/routes/proposals.ts` |
 | api | `campo_obrigatorio_ausente` | `missing_required_field` | `packages/core/src/routes/intake.ts` |
+| api | `ciclo_de_dependencia` | `dependency_cycle` | `packages/core/src/domain/intake.ts` |
 | api | `classe_ja_registrada` | `class_already_registered` | `packages/core/src/routes/graphs.ts` |
+| api | `control_plane_indisponivel` | `control_plane_unavailable` | `packages/tela/src/proxy.ts:57` |
+| api | `corpo_grande_demais` | `body_too_large` | `packages/tela/src/proxy.ts:63` |
 | api | `corpo_invalido` | `invalid_body` | `packages/core/src/routes/leases.ts:148` |
 | api | `credencial_ausente` | `missing_credential` | `packages/core/src/auth.ts:43` |
 | api | `credencial_fora_de_escopo` | `out_of_scope_credential` | `packages/core/src/auth.ts:49` |
 | api | `credencial_invalida` | `invalid_credential` | `packages/core/src/auth.ts:46` |
+| api | `dependencia_de_si_mesmo` | `self_dependency` | `packages/core/src/domain/intake.ts` |
+| api | `dependencia_desconhecida` | `unknown_dependency` | `packages/core/src/domain/intake.ts` |
 | api | `diff_sem_efeito` | `diff_without_effect` | `packages/core/src/routes/proposals.ts` |
 | api | `esperado` | `expected` | `packages/core/src/routes/leases.ts:288` |
 | api | `execucao_sem_evidencia` | `execution_without_evidence` | `packages/core/src/routes/proposals.ts` |
@@ -169,10 +210,12 @@ palavra.
 | api | `grafo_versao_desconhecida` | `unknown_graph_version` | `packages/core/src/routes/proposals.ts` |
 | api | `id_ja_registrado` | `id_already_registered` | `packages/core/src/routes/hook-secrets.ts` |
 | api | `id_obrigatorio` | `id_required` | `packages/core/src/routes/hook-secrets.ts` |
+| api | `item_invalido` | `invalid_item` | `packages/core/src/domain/intake.ts` |
 | api | `itens_invalidos` | `invalid_items` | `packages/core/src/routes/intake.ts` |
 | api | `lease_desconhecida` | `unknown_lease` | `packages/core/src/routes/leases.ts:181` |
 | api | `lease_nao_ativa` | `lease_not_active` | `packages/core/src/routes/leases.ts` |
 | api | `linhagem_nao_base` | `lineage_not_base` | `packages/core/src/routes/graphs.ts` |
+| api | `lista_invalida` | `invalid_list` | `packages/core/src/domain/intake.ts` |
 | api | `metrica_esperada_invalida` | `invalid_expected_metric` | `packages/core/src/routes/proposals.ts` |
 | api | `modelo_invalido` | `invalid_model` | `packages/core/src/routes/engines.ts` |
 | api | `modelos_obrigatorio` | `models_required` | `packages/core/src/routes/sessions.ts` |
@@ -182,6 +225,7 @@ palavra.
 | api | `operacao_inaplicavel` | `inapplicable_operation` | `packages/core/src/routes/proposals.ts` |
 | api | `operacoes_invalidas` | `invalid_operations` | `packages/core/src/routes/proposals.ts` |
 | api | `origem_invalida` | `invalid_source` | `packages/core/src/routes/engines.ts` |
+| api | `origem_nao_confiavel` | `untrusted_origin` | `packages/tela/src/proxy.ts:60` |
 | api | `origem_proposta_desconhecida` | `unknown_origin_proposal` | `packages/core/src/routes/graphs.ts` |
 | api | `origem_proposta_id_invalido` | `invalid_origin_proposal_id` | `packages/core/src/routes/graphs.ts` |
 | api | `proposta_desatualizada` | `stale_proposal` | `packages/core/src/routes/proposals.ts` |
@@ -192,6 +236,7 @@ palavra.
 | api | `proposta_nao_pendente` | `proposal_not_pending` | `packages/core/src/routes/proposals.ts` |
 | api | `rascunho_desconhecido` | `unknown_draft` | `packages/core/src/routes/intake.ts` |
 | api | `rascunho_nao_pendente` | `draft_not_pending` | `packages/core/src/routes/intake.ts` |
+| api | `ref_duplicado` | `duplicate_ref` | `packages/core/src/domain/intake.ts` |
 | api | `runner_desconhecido` | `unknown_runner` | `packages/core/src/routes/leases.ts:174` |
 | api | `variante_invalida` | `invalid_variant` | `packages/core/src/routes/graphs.ts` |
 | api | `versao_alvo_desconhecida` | `unknown_target_version` | `packages/core/src/routes/proposals.ts` |
@@ -266,6 +311,19 @@ padrão de `ativa` → `active`.
 | api | `recomendacao` | `recommendation` | `packages/core/src/db/event-validation.ts:290` |
 | api | `resposta_padrao` | `default_answer` | `packages/core/src/db/event-validation.ts:290` |
 | api | `precedente` | `precedent` | `packages/core/src/db/event-validation.ts:290` |
+
+### 1.7 Cabeçalho de assinatura
+
+Não é chave de JSON: é o nome do cabeçalho HTTP que toda entrega de webhook e de
+gancho carrega, e a receita publicada em `docs/spec/webhooks-eventos.md` §5 é
+sobre ele. Ficou fora das listas de todos os filhos da D20 — nenhum deles olhou
+para cabeçalho — e por isso sobreviveu até o t255. Nome de cabeçalho não
+distingue maiúscula de minúscula: a especificação escreve
+`X-Cartografo-Signature`, o código escreve a mesma coisa em minúsculas.
+
+| superfície | hoje | vira | onde está hoje |
+|---|---|---|---|
+| api | `x-cartografo-assinatura` | `x-cartografo-signature` | `packages/core/src/webhooks/signature.ts:35` |
 
 ---
 
@@ -580,12 +638,30 @@ nome de entidade que a API já publica: `/perguntas` vira `/input-requests` e n�
 | routes-cli-report | `/trabalhos/:id` | `/jobs/:id` | `packages/tela/src/router.ts:363` |
 | routes-cli-report | `/runners` | `/runners` | `packages/tela/src/router.ts:353` |
 
-### 5.2 Flags de CLI
+### 5.2 Linha de comando: subcomandos e flags
+
+O que uma pessoa DIGITA, e não só o que começa com `--`: um subcomando é tão
+digitado quanto uma flag, e `avaliar` ficou uma linha fora do portão que o teria
+pego porque a leitura do t230 filtrava por `--`.
+
+As seis linhas do `topografo-custo` entraram com o t255. Três delas
+(`--execucao`, `--teto-tokens`, `--teto-segundos`) o t230 já tinha renomeado no
+código, mas deixadas num array local do teste daquele pacote em vez de aqui, e
+as outras três ele declarou fora do próprio escopo. Nenhuma das duas coisas era
+decisão: a D20 diz "flags de CLI" sem exceção. A grafia vem das linhas já
+aplicadas para as mesmas palavras — `execucao_id` → `execution_id` (§1.1),
+`teto_runner` → `runner_cap` (§1.5) — e não foi inventada aqui.
 
 | superfície | hoje | vira | onde está hoje |
 |---|---|---|---|
 | routes-cli-report | `--classe` | `--class` | `packages/runner/src/synthesizer/synthesize.ts:139`, `packages/runner/src/intake/command-line.ts:49` |
 | routes-cli-report | `--saida` | `--out` | `packages/runner/src/synthesizer/synthesize.ts:149` |
+| routes-cli-report | `avaliar` | `evaluate` | `packages/topografo-custo/src/cli.ts` |
+| routes-cli-report | `--execucao` | `--execution` | `packages/topografo-custo/src/cli.ts` |
+| routes-cli-report | `--teto-tokens` | `--token-cap` | `packages/topografo-custo/src/cli.ts` |
+| routes-cli-report | `--teto-segundos` | `--second-cap` | `packages/topografo-custo/src/cli.ts` |
+| routes-cli-report | `--tier-fator` | `--tier-factor` | `packages/topografo-custo/src/cli.ts` |
+| routes-cli-report | `--tier-minimo-nos` | `--tier-min-nodes` | `packages/topografo-custo/src/cli.ts` |
 
 ### 5.3 Chaves do relatório de validação de grafo
 
@@ -635,6 +711,40 @@ junto.
 | routes-cli-report | `gancho_invalido` | `invalid_hook` | `packages/core/src/domain/graph.ts` |
 | routes-cli-report | `id_gancho_duplicado` | `duplicate_hook_id` | `packages/core/src/domain/graph.ts` |
 | routes-cli-report | `gancho_no_inexistente` | `hook_unknown_node` | `packages/core/src/domain/graph.ts:437` |
+
+### 5.5 Candidata e evidência da lente de custo
+
+O que o `topografo-custo` PÕE no fio: as chaves do candidato e da evidência que
+viajam dentro do `POST /v1/proposals`. Etiqueta própria (`cost-lens`) porque não
+é rota de tela, não é flag e não é o relatório de grafo — é o vocabulário de uma
+lente, e o portão daquele pacote é o único que precisa lê-la.
+
+Duas coisas NÃO estão aqui, e por motivos diferentes. `tokens_total` já é
+inglês. E o CONTEÚDO de `metrica_esperada` continua `{nome, direcao, de, para}`:
+é o formato de hipótese do `domain/hypothesis.ts`, congelado, e é justamente o
+que o t255 passou a emitir — a chave viaja em inglês, o que ela carrega não
+viaja de jeito nenhum.
+
+`IdentifiedCostRow` (`cost.ts`) também não está: é a camada de onde a `policy.ts`
+LÊ, nunca serializada, e mascarar leitura de camada de baixo é a mesma convenção
+do portão do núcleo.
+
+| superfície | hoje | vira | onde está hoje |
+|---|---|---|---|
+| cost-lens | `lente` | `lens` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `custo` | `cost` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `no_id` | `node_id` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `grafo_versao_id` | `graph_version_id` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `tempo_total_segundos` | `total_seconds` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `sessoes_com_uso` | `sessions_with_usage` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `sessoes_sem_uso` | `sessions_without_usage` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `teto_excedido` | `ceiling_exceeded` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `tipo` | `type` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `teto` | `ceiling` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `tempo` | `time` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `operacoes` | `operations` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `evidencia` | `evidence` | `packages/topografo-custo/src/policy.ts` |
+| cost-lens | `metrica_esperada` | `expected_metric` | `packages/topografo-custo/src/policy.ts` |
 
 ---
 

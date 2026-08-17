@@ -13,7 +13,7 @@
  * draft's content.
  *
  * How the breakdown is PRODUCED out of the request in natural language is out of
- * scope: `itens` arrives already decomposed, whoever wrote it. This route
+ * scope: `items` arrives already decomposed, whoever wrote it. This route
  * dispatches no session and knows no engine.
  *
  * Since t226 the request and response field names are English
@@ -22,9 +22,12 @@
  * `confirmDraft`, so its body carries `actor` and its `type`/`ref` — the event
  * envelope, D20's second child.
  *
- * The `itens` a draft carries are `domain/intake.ts`'s format, not this API's
- * vocabulary: they pass through byte for byte, keys included, and the glossary
- * maps none of them.
+ * The `items` a draft carries pass through byte for byte, keys included — and
+ * since t255 those keys are English too (§1.1/§1.4). What used to be written
+ * here, that they are `domain/intake.ts`'s format and the glossary maps none of
+ * them, was t226 declaring a boundary D20 never drew: an item of the body of
+ * `POST /v1/intake` is a field of the JSON of this API, which is the first thing
+ * D20's text names.
  */
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -113,8 +116,8 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
     }
 
     const report = validateItems(body.items);
-    if (!report.valido) {
-      return refusal(reply, 400, 'invalid_items', undefined, { problems: report.problemas });
+    if (!report.valid) {
+      return refusal(reply, 400, 'invalid_items', undefined, { problems: report.problems });
     }
 
     const projectId = body.project_id;
@@ -131,7 +134,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       execucao_id: (executionId as number | undefined | null) ?? null,
       classe: body.class,
       pedido: body.request,
-      itens: report.itens,
+      itens: report.items,
     });
 
     reply.code(201);
@@ -172,11 +175,11 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
 
     const body = isObject(request.body) ? request.body : {};
     const report = validateItems(body.items);
-    if (!report.valido) {
-      return refusal(reply, 400, 'invalid_items', undefined, { problems: report.problemas });
+    if (!report.valid) {
+      return refusal(reply, 400, 'invalid_items', undefined, { problems: report.problems });
     }
 
-    const amended = amendDraft(db, draft.id, report.itens);
+    const amended = amendDraft(db, draft.id, report.items);
     if (amended === null) return notPending(reply, getDraft(db, draft.id) ?? draft);
     return { draft: toWireDraft(amended) };
   });

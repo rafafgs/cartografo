@@ -1468,9 +1468,9 @@ test("t141 — the engine is resolved from the node the work is standing on", as
   );
 
   await parent.test(
-    "AT5 — a node declaring an engine nobody registered fails before any session opens",
+    "AT5 — a node declaring an engine nobody registered blocks the work before any session opens",
     async (t) => {
-      const { createClaudeCodeDispatch, UnknownEngineError } =
+      const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
       const workDir = mkdtempSync(
@@ -1501,11 +1501,16 @@ test("t141 — the engine is resolved from the node the work is standing on", as
       );
 
       // A spy that counts, so "before any session opens" is a measured claim and
-      // not an inference from the absence of a row.
-      const posts: string[] = [];
+      // not an inference from the absence of a row. Since t252 it keeps the
+      // bodies too: what the work gets blocked WITH is the whole of what a
+      // person sees in the inbox.
+      const posts: { route: string; body: unknown }[] = [];
       const doFetch: typeof fetch = async (input, init) => {
         if ((init?.method ?? "GET") === "POST")
-          posts.push(String(input).slice(baseUrl.length));
+          posts.push({
+            route: String(input).slice(baseUrl.length),
+            body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+          });
         return fetch(input, init);
       };
 
@@ -1527,23 +1532,33 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         },
       });
 
-      await assert.rejects(
-        async () => dispatch(work.id),
-        (error: unknown) => {
-          assert.ok(
-            error instanceof UnknownEngineError,
-            `expected UnknownEngineError, got: ${String(error)}`,
-          );
-          assert.equal(error.engine, "gemini");
-          assert.equal(error.nodeId, "revisar");
-          return true;
-        },
+      // It RESOLVES since t252, and that is the whole ficha: an engine with no
+      // route reproduces identically on every retry, so throwing it put the same
+      // job back at the head of the same queue every two seconds, forever, with
+      // nothing a human could see.
+      const outcome = await dispatch(work.id);
+      if (!outcome.blocked) {
+        assert.fail("a deterministic pre-session failure resolves blocked, it never throws");
+      }
+      assert.ok(
+        outcome.reason.includes("gemini") && outcome.reason.includes("revisar"),
+        `the reason has to name the engine and the node, and it reads: ${outcome.reason}`,
+      );
+
+      const blocks = posts.filter((post) =>
+        post.route.endsWith(`/v1/jobs/${work.id}/blocks`),
+      );
+      assert.equal(blocks.length, 1, "exactly one block is posted, by exactly one owner");
+      assert.equal(
+        (blocks[0].body as { reason: string }).reason,
+        outcome.reason,
+        "what the work is blocked with is what the dispatch reported back",
       );
 
       // Never a silent fallback: a session recorded against another engine would
       // make the telemetry lie about what actually ran.
       assert.deepEqual(
-        posts.filter((route) => route === "/v1/sessions"),
+        posts.filter((post) => post.route === "/v1/sessions"),
         [],
         "POST /v1/sessions must never be reached for an engine that has no route",
       );
@@ -1558,6 +1573,19 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         token,
       );
       assert.equal(sessions.sessions.length, 0);
+
+      // And this is what turns "forever" into "once": `GET /v1/jobs` filters
+      // `blocked === false`, so the job simply stops being a candidate.
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${work.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.blocked, true);
+      assert.equal(after.block_reason, outcome.reason);
     },
   );
 });
@@ -2696,9 +2724,9 @@ test("t161 — the node's skill drives the session, and the session advances the
   );
 
   await parent.test(
-    "AT13 — a skill-hash mismatch refuses before POST /v1/sessions is reached",
+    "AT13 — a skill-hash mismatch blocks the work before POST /v1/sessions is reached",
     async (t) => {
-      const { createClaudeCodeDispatch, SkillPinMismatchError } =
+      const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
       const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t161-pin-"));
@@ -2756,18 +2784,22 @@ test("t161 — the node's skill drives the session, and the session advances the
         },
       });
 
-      await assert.rejects(
-        async () => dispatch(job.id),
-        (error: unknown) => {
-          assert.ok(
-            error instanceof SkillPinMismatchError,
-            `expected SkillPinMismatchError, got: ${String(error)}`,
-          );
-          assert.equal(error.nodeId, "publicar");
-          assert.equal(error.registered, workSkill.hash);
-          return true;
-        },
+      const outcome = await dispatch(job.id);
+      if (!outcome.blocked) {
+        assert.fail("a pin that stopped matching resolves blocked, it never throws (t252)");
+      }
+      assert.ok(
+        outcome.reason.includes(workSkill.hash) &&
+          outcome.reason.includes("publicar"),
+        `the reason has to name the node and the registered hash, and it reads: ${outcome.reason}`,
       );
+
+      const blocks = calls.filter(
+        (call) =>
+          call.method === "POST" && call.route === `/v1/jobs/${job.id}/blocks`,
+      );
+      assert.equal(blocks.length, 1, "exactly one block is posted, by exactly one owner");
+      assert.equal((blocks[0].body as { reason: string }).reason, outcome.reason);
 
       assert.deepEqual(
         calls.filter(
@@ -2790,6 +2822,278 @@ test("t161 — the node's skill drives the session, and the session advances the
         token,
       );
       assert.equal(sessions.sessions.length, 0);
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.blocked, true);
+      assert.equal(after.block_reason, outcome.reason);
+    },
+  );
+
+  await parent.test(
+    "t252 — a node pinning a skill nobody registered blocks the work, naming the skill",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t252-sem-registro-"),
+      );
+      const record = path.join(workDir, "nunca-despachado.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      // The other half of AT13's supply-chain pair: there the registry carried
+      // the skill and the content had moved, here the registry never heard of
+      // the id at all — a deployment missing a piece, which reproduces on every
+      // single retry until somebody registers the manifest.
+      const missing = "skill-que-ninguem-registrou";
+      const document = traversalGraph("travessia-t252-sem-registro");
+      const nodes = document.nodes as Array<Record<string, unknown>>;
+      const versionId = await registerGraph(baseUrl, token, {
+        ...document,
+        nodes: nodes.map((node) =>
+          node.id === "publicar"
+            ? {
+                ...node,
+                skill_ref: {
+                  ...(node.skill_ref as Record<string, unknown>),
+                  id: missing,
+                },
+              }
+            : node,
+        ),
+      });
+
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          title: "ficha cujo nó fixa uma skill que ninguém registrou",
+          entry_node_id: "publicar",
+          execution_id: 2521,
+          graph_version_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+      const outcome = await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      })(job.id);
+
+      if (!outcome.blocked) {
+        assert.fail("an unregistered skill resolves blocked, it never throws");
+      }
+      assert.ok(
+        outcome.reason.includes(missing),
+        `the reason has to name the skill, and it reads: ${outcome.reason}`,
+      );
+
+      assert.deepEqual(
+        calls.filter(
+          (call) => call.method === "POST" && call.route === "/v1/sessions",
+        ),
+        [],
+        "POST /v1/sessions must never be reached for a skill nobody registered",
+      );
+      assert.ok(!existsSync(record), "and no engine process may have been spawned");
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.blocked, true);
+      assert.equal(after.block_reason, outcome.reason);
+    },
+  );
+
+  await parent.test(
+    "t252 — a dangling graph_version_id blocks the work instead of retrying forever",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t252-pendurada-"),
+      );
+      const record = path.join(workDir, "nunca-despachado.json");
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      // `graph_version_id` is loose text on the work, never a foreign key, so a
+      // version the control plane does not have is an ordinary state — and one
+      // that answers 404 on every retry, identically.
+      const dangling = `sha256:${"e".repeat(64)}`;
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          title: "ficha apontando para uma versão de grafo que ninguém registrou",
+          entry_node_id: "publicar",
+          execution_id: 2522,
+          graph_version_id: dangling,
+        },
+        201,
+        token,
+      );
+
+      const { doFetch, calls } = spy();
+      const outcome = await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_RECORD: record,
+          FAKE_ENGINE_LINES: linesWithoutBlock(),
+        },
+      })(job.id);
+
+      if (!outcome.blocked) {
+        assert.fail("a dangling graph version resolves blocked, it never throws");
+      }
+      assert.ok(
+        outcome.reason.includes(dangling),
+        `the reason has to name the version, and it reads: ${outcome.reason}`,
+      );
+
+      assert.deepEqual(
+        calls.filter(
+          (call) => call.method === "POST" && call.route === "/v1/sessions",
+        ),
+        [],
+        "POST /v1/sessions must never be reached with no snapshot to run against",
+      );
+      assert.ok(!existsSync(record), "and no engine process may have been spawned");
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.blocked, true);
+    },
+  );
+
+  await parent.test(
+    "t252 — a graph-version read that answers 503 still throws, and blocks nothing",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+      const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
+        "src/controller/cliente-controle.ts",
+      );
+
+      const workDir = mkdtempSync(
+        path.join(tmpdir(), "cartografo-t252-transitorio-"),
+      );
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t252-transitorio"),
+      );
+      const job = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          title: "ficha cujo control plane teve um soluço",
+          entry_node_id: "publicar",
+          execution_id: 2523,
+          graph_version_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      // The boundary of the whole ficha, from the other side: a 503 is the
+      // control plane having a bad day, it does NOT reproduce on every retry,
+      // and blocking a work over it would need a human to undo a hiccup.
+      const calls: { method: string; route: string }[] = [];
+      const doFetch: typeof fetch = async (input, init) => {
+        const route = String(input).slice(baseUrl.length);
+        calls.push({ method: init?.method ?? "GET", route });
+        if (route.startsWith("/v1/graph-versions/")) {
+          return new Response(JSON.stringify({ erro: "fora do ar" }), {
+            status: 503,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return fetch(input, init);
+      };
+
+      const dispatch = createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+      });
+
+      await assert.rejects(
+        async () => dispatch(job.id),
+        (error: unknown) => {
+          assert.ok(
+            error instanceof ErroDoControlPlane,
+            `expected ErroDoControlPlane, got: ${String(error)}`,
+          );
+          assert.equal(error.status, 503);
+          return true;
+        },
+      );
+
+      assert.deepEqual(
+        calls.filter(
+          (call) => call.method === "POST" && call.route.endsWith("/blocks"),
+        ),
+        [],
+        "a transient failure retries at the next tick: nothing is blocked over it",
+      );
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(after.blocked, false);
     },
   );
 
@@ -4232,7 +4536,7 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
   );
 
   await parent.test(
-    "AT20 — with nothing to resolve against, the dispatch refuses before any session",
+    "AT20 — with nothing to resolve against, the dispatch blocks before any session",
     async (t) => {
       const { createClaudeCodeDispatch, UnresolvedPlaceholderError } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
@@ -4294,18 +4598,14 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         },
       });
 
-      await assert.rejects(
-        async () => dispatch(job.id),
-        (error: unknown) => {
-          assert.ok(
-            error instanceof UnresolvedPlaceholderError,
-            `expected UnresolvedPlaceholderError, got: ${String(error)}`,
-          );
-          assert.equal(error.nodeId, "publicar");
-          assert.equal(error.skillId, manifest.id);
-          assert.ok(error.paths.length > 0);
-          return true;
-        },
+      const outcome = await dispatch(job.id);
+      if (!outcome.blocked) {
+        assert.fail("a placeholder that does not resolve blocks the work (t252)");
+      }
+      assert.ok(
+        outcome.reason.includes("publicar") &&
+          outcome.reason.includes(String(manifest.id)),
+        `the reason has to name the node and the skill, and it reads: ${outcome.reason}`,
       );
 
       assert.deepEqual(
@@ -4330,14 +4630,25 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
       );
       assert.equal(sessions.sessions.length, 0);
 
+      // Until t252 this asserted the OPPOSITE — "no block of its own" — and the
+      // refusal travelled up through the controller's `finally` instead. That
+      // is exactly the loop t252 closes: nothing about this failure changes
+      // between one tick and the next, so the retry was infinite and silent.
       const blocks = calls.filter(
         (call) => call.method === "POST" && call.route.endsWith("/blocks"),
       );
-      assert.deepEqual(
-        blocks,
-        [],
-        "the refusal propagates through the controller's finally, like the two pin errors: no block of its own",
+      assert.equal(blocks.length, 1, "exactly one block is posted, by exactly one owner");
+
+      const after = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${job.id}`,
+        undefined,
+        200,
+        token,
       );
+      assert.equal(after.blocked, true);
+      assert.equal(after.block_reason, outcome.reason);
     },
   );
 });

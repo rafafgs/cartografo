@@ -1,5 +1,6 @@
 /**
- * End-to-end acceptance test of the `avaliar` subcommand (t114, AT9).
+ * End-to-end acceptance test of the `evaluate` subcommand (t114, AT9; `avaliar`
+ * until t255).
  *
  * It starts the real control plane as a child process — the same pattern as
  * `packages/runner/test/controller/dispatch-e-lease.e2e.test.ts` — seeds an
@@ -133,7 +134,7 @@ interface SpiedCall {
   response: unknown;
 }
 
-test('AT9 — avaliar creates exactly one pending proposal from the cost lens', async (t) => {
+test('AT9 — evaluate creates exactly one pending proposal from the cost lens', async (t) => {
   const { runCli } = await loadCli();
   const baseUrl = await bootAuthorized(t);
 
@@ -173,7 +174,7 @@ test('AT9 — avaliar creates exactly one pending proposal from the cost lens', 
   const printed: string[] = [];
   const exitCode = await runCli(
     [
-      'avaliar',
+      'evaluate',
       '--url',
       baseUrl,
       '--execution',
@@ -195,21 +196,21 @@ test('AT9 — avaliar creates exactly one pending proposal from the cost lens', 
     proposal: { id: number; status: string; evidence: Record<string, unknown> };
   };
   assert.equal(proposal.status, 'pending');
-  assert.equal(proposal.evidence.lente, 'custo');
-  assert.equal(proposal.evidence.tipo, 'teto');
-  assert.equal(proposal.evidence.no_id, 'redigir');
-  assert.equal(proposal.evidence.grafo_versao_id, versionId);
+  assert.equal(proposal.evidence.lens, 'cost');
+  assert.equal(proposal.evidence.type, 'ceiling');
+  assert.equal(proposal.evidence.node_id, 'redigir');
+  assert.equal(proposal.evidence.graph_version_id, versionId);
   assert.equal(proposal.evidence.tokens_total, 5000);
-  assert.equal(proposal.evidence.teto_excedido, 'tokens');
+  assert.equal(proposal.evidence.ceiling_exceeded, 'tokens');
 
   const lines = printed.join('').trimEnd().split('\n').filter((line) => line !== '');
   assert.equal(lines.length, 1, 'one line per proposal created');
   assert.match(lines[0], new RegExp(`\\b${proposal.id}\\b`));
   assert.match(lines[0], /redigir/);
-  assert.match(lines[0], /teto/);
+  assert.match(lines[0], /ceiling/);
 });
 
-test('AT9 — avaliar touches only the four routes of the contract, and never /aplicar', async (t) => {
+test('AT9 — evaluate touches only the four routes of the contract, and never /aplicar', async (t) => {
   const { runCli } = await loadCli();
   const baseUrl = await bootAuthorized(t);
 
@@ -232,7 +233,7 @@ test('AT9 — avaliar touches only the four routes of the contract, and never /a
   };
 
   await runCli(
-    ['avaliar', '--url', baseUrl, '--execution', String(EXECUTION_ID), '--token-cap', '1000'],
+    ['evaluate', '--url', baseUrl, '--execution', String(EXECUTION_ID), '--token-cap', '1000'],
     { doFetch, write: () => undefined },
   );
 
@@ -254,12 +255,93 @@ test('AT9 — avaliar touches only the four routes of the contract, and never /a
   );
 });
 
+test('t255 — a proposal from this lens closes its experiment instead of 422-ing', async (t) => {
+  const { runCli } = await loadCli();
+  const baseUrl = await bootAuthorized(t);
+
+  // --- the same seeding as AT9: one expensive node under one version
+  const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
+  const record = (await call(baseUrl, '/v1/graphs', 'POST', document)) as {
+    graph_version: { id: string };
+  };
+  const versionId = record.graph_version.id;
+
+  const job = (await call(baseUrl, '/v1/jobs', 'POST', {
+    title: 'nota sobre custo',
+    entry_node_id: 'redigir',
+    execution_id: EXECUTION_ID,
+    graph_version_id: versionId,
+  })) as { id: number };
+  await seedSession(baseUrl, job.id, 'redigir', 5000);
+
+  const created: unknown[] = [];
+  const doFetch: typeof fetch = async (input, init) => {
+    const response = await fetch(input, init);
+    if (String(input).endsWith('/v1/proposals') && init?.method === 'POST') {
+      created.push(JSON.parse(await response.clone().text()));
+    }
+    return response;
+  };
+
+  const exitCode = await runCli(
+    ['evaluate', '--url', baseUrl, '--execution', String(EXECUTION_ID), '--token-cap', String(TOKEN_CEILING)],
+    { doFetch, write: () => undefined },
+  );
+  assert.equal(exitCode, 0);
+  assert.equal(created.length, 1, 'the scenario has to produce exactly one proposal to close');
+
+  const { proposal } = created[0] as {
+    proposal: { id: number; expected_metric: Record<string, unknown> };
+  };
+
+  // The human gate, by hand: this lens applies nothing (AT9 above pins that), so
+  // the two calls a person makes at the inbox are made here.
+  await call(baseUrl, `/v1/proposals/${proposal.id}/approve`, 'POST', {});
+  const applied = (await call(baseUrl, `/v1/proposals/${proposal.id}/apply`, 'POST', {})) as {
+    proposal: { applied_version_id: string };
+  };
+
+  // The next round, demonstrable from telemetry: one job under the version the
+  // proposal wrote, which is what `/outcome` demands before it judges anything.
+  const nextExecution = EXECUTION_ID + 1;
+  await call(baseUrl, '/v1/jobs', 'POST', {
+    title: 'a rodada seguinte',
+    entry_node_id: 'redigir',
+    execution_id: nextExecution,
+    graph_version_id: applied.proposal.applied_version_id,
+  });
+
+  const response = await fetch(`${baseUrl}/v1/proposals/${proposal.id}/outcome`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    // `execucao_id` and `depois` are the frozen hypothesis vocabulary, which this
+    // ticket does not touch: what was broken was the metric this lens WROTE.
+    body: JSON.stringify({ execucao_id: nextExecution, depois: 900 }),
+  });
+  const body = (await response.json()) as {
+    error?: string;
+    proposal?: { result: { veredito: string; antes: number; depois: number } };
+  };
+
+  assert.equal(
+    response.status,
+    200,
+    `the cost lens still writes a metric nobody can read: ${JSON.stringify(body)}`,
+  );
+  assert.equal(body.proposal?.result.veredito, 'confirmada', '5000 tokens fell to 900');
+  assert.equal(
+    body.proposal?.result.antes,
+    proposal.expected_metric.de,
+    'the "antes" of the verdict is the `de` this lens declared',
+  );
+});
+
 /* -------------------------------------------------------------------------- */
 /* t180 — the output of the command is English; the subcommand and the options  */
 /* stay as they are, because that is what a person types.                      */
 /* -------------------------------------------------------------------------- */
 
-test('t180 — --help prints the usage in English, still naming avaliar and the options', async () => {
+test('t180 — --help prints the usage in English, naming the subcommand and the options', async () => {
   const { runCli, USAGE } = await loadCli();
 
   const printed: string[] = [];
@@ -267,17 +349,18 @@ test('t180 — --help prints the usage in English, still naming avaliar and the 
 
   assert.equal(exitCode, 0);
   assert.equal(printed.join(''), `${USAGE}\n`);
-  assert.match(USAGE, /^usage: topografo-custo avaliar --url <url> --execution <id> \[options\]$/m);
+  assert.match(USAGE, /^usage: topografo-custo evaluate --url <url> --execution <id> \[options\]$/m);
   assert.match(USAGE, /^subcommands:$/m);
   assert.match(USAGE, /^options:$/m);
   assert.match(USAGE, /control plane to query \(required\)/);
   assert.match(USAGE, /With no ceiling declared, the ceiling policy does not run/);
-  // The flags D20 §5.2 moved, and the two it left alone: `--tier-*` has no
-  // glossary row, so it is still spelled the way it always was.
+  // Every flag §5.2 maps for this command, all of them English since t255: the
+  // `--tier-*` pair was the last thing here a person typed in Portuguese.
   assert.match(USAGE, new RegExp('--token-cap <n>'));
   assert.match(USAGE, new RegExp('--second-cap <n>'));
-  assert.match(USAGE, new RegExp('--tier-minimo-nos <n>'));
-  for (const gone of ['--execucao', '--teto-tokens', '--teto-segundos']) {
+  assert.match(USAGE, new RegExp('--tier-min-nodes <n>'));
+  assert.match(USAGE, new RegExp('--tier-factor <n>'));
+  for (const gone of ['--execucao', '--teto-tokens', '--teto-segundos', '--tier-fator', '--tier-minimo-nos', 'avaliar']) {
     assert.ok(!USAGE.includes(gone), `the usage still documents ${gone}`);
   }
 });
@@ -285,34 +368,68 @@ test('t180 — --help prints the usage in English, still naming avaliar and the 
 test('t230 — the pre-D20 spellings are refused, not accepted as synonyms', async () => {
   const { runCli } = await loadCli();
 
-  // `avaliar` refuses whatever it did not consume, so an old flag comes back as
+  // `evaluate` refuses whatever it did not consume, so an old flag comes back as
   // an argument the command does not understand — never as an alias that
   // quietly keeps working alongside the new name.
-  for (const gone of ['--execucao', '--teto-tokens', '--teto-segundos']) {
+  for (const gone of ['--execucao', '--teto-tokens', '--teto-segundos', '--tier-fator', '--tier-minimo-nos']) {
     const stderr = await stderrOf(() =>
-      runCli(['avaliar', '--url', 'http://127.0.0.1:1', gone, '7'], { write: () => undefined }),
+      runCli(['evaluate', '--url', 'http://127.0.0.1:1', gone, '7'], { write: () => undefined }),
     );
     assert.match(
       stderr,
-      new RegExp(`avaliar does not understand: "${gone}"`),
+      new RegExp(`evaluate does not understand: "${gone}"`),
       `${gone} is still understood by the command`,
     );
   }
 });
 
-test('t180 — the usage errors of avaliar are English', async () => {
+test('t255 — the tier options parse under their English names, and only under those', async () => {
+  const { runCli } = await loadCli();
+
+  // Nobody is listening on port 1, so a command line that PARSED gets as far as
+  // the network and comes back 1 ("could not reach"). Exit 2 would mean the
+  // parser refused it, which is exactly what the old spellings get.
+  const parsed = await runCli(
+    [
+      'evaluate',
+      '--url',
+      'http://127.0.0.1:1',
+      '--execution',
+      '7',
+      '--tier-factor',
+      '5',
+      '--tier-min-nodes',
+      '2',
+    ],
+    { write: () => undefined },
+  );
+  assert.equal(parsed, 1, 'the English tier options are the ones this command takes');
+
+  const stderr = await stderrOf(() =>
+    runCli(['avaliar', '--url', 'http://127.0.0.1:1', '--execution', '7'], {
+      write: () => undefined,
+    }),
+  );
+  assert.match(
+    stderr,
+    /unknown subcommand: "avaliar"/,
+    'the retired subcommand answers as an unknown one, never as an alias',
+  );
+});
+
+test('t180 — the usage errors of evaluate are English', async () => {
   const { runCli } = await loadCli();
 
   assert.equal(
-    await stderrOf(() => runCli(['avaliar', '--execution', '7'], { write: () => undefined })),
-    'topografo-custo: avaliar needs --url\ntopografo-custo: run `topografo-custo --help` for the usage\n',
+    await stderrOf(() => runCli(['evaluate', '--execution', '7'], { write: () => undefined })),
+    'topografo-custo: evaluate needs --url\ntopografo-custo: run `topografo-custo --help` for the usage\n',
   );
 
   assert.equal(
     await stderrOf(() =>
-      runCli(['avaliar', '--url', 'http://127.0.0.1:1'], { write: () => undefined }),
+      runCli(['evaluate', '--url', 'http://127.0.0.1:1'], { write: () => undefined }),
     ),
-    'topografo-custo: avaliar needs --execution\ntopografo-custo: run `topografo-custo --help` for the usage\n',
+    'topografo-custo: evaluate needs --execution\ntopografo-custo: run `topografo-custo --help` for the usage\n',
   );
 });
 

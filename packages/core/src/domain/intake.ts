@@ -11,7 +11,7 @@
  * - **The whole report, never the first problem.** Whoever submits a batch of
  *   eight tickets with three broken references wants three lines back, not three
  *   round trips. Same discipline as the graph report and as event validation.
- * - **A dependency only resolves INSIDE the batch.** `depende_de` cites the
+ * - **A dependency only resolves INSIDE the batch.** `depends_on` cites the
  *   `ref` of a sibling item, never a `trabalho` that already exists — crossing
  *   batches is explicitly out of scope, and the confirmation is what turns each
  *   local `ref` into a real id.
@@ -20,10 +20,20 @@
  * question, and a 404), and whether the dependency should block anybody (it
  * should not — FR14 only records the edge).
  *
- * The report's keys and codes stay in Portuguese: this report IS the body of the
- * 400 the intake routes answer, the same convention as the graph report
- * (t127, FR8). The message text around them is English since t180 — the codes
- * are what a caller branches on, the prose is what a person reads.
+ * The item's keys and the report's are the WIRE, and are English since t255.
+ * `DraftItem` is the body of `POST /v1/intake` and `ItemProblem[]` is the body of
+ * that route's 400, which is D20's own first sentence — "campos e parâmetros de
+ * query do JSON da API". Three comments used to claim the opposite here and in
+ * `routes/intake.ts`; they were t226 and t229 narrowing their own delivery, not a
+ * decision, and the founder settled it on 2026-08-17. The message text around the
+ * codes has been English since t180 — the code is what a caller branches on, the
+ * prose is what a person reads.
+ *
+ * Two codes did not survive the translation: `campo_obrigatorio_ausente` and
+ * `campo_invalido` became `missing_required_field` and `invalid_field`, which the
+ * route beside this one already answered (`routes/intake.ts:100`). One item
+ * coming back with two spellings of the same problem was the reason to fold them
+ * rather than translate them twice.
  */
 
 import { isObject } from '../util/is-object.ts';
@@ -31,11 +41,11 @@ import { isScalarMap, type ScalarMap } from './custom-fields.ts';
 
 /** An item of the draft, already normalized. */
 export interface DraftItem {
-  /** Identity of the item INSIDE the batch — what `depende_de` cites. */
+  /** Identity of the item INSIDE the batch — what `depends_on` cites. */
   ref: string;
-  titulo: string;
+  title: string;
   /** Preliminary body; `null` when nobody wrote one. `null` is not `''`. */
-  corpo: string | null;
+  body: string | null;
   /**
    * Preliminary acceptance criteria; `null` when none was declared.
    *
@@ -43,17 +53,17 @@ export interface DraftItem {
    * criteria out of the raw request, and it has to be able to tell "nobody wrote
    * any yet" from "it was declared that there are none".
    */
-  criterios_de_aceite: string[] | null;
+  acceptance_criteria: string[] | null;
   /**
    * Values of the fields the CLASS declares in its graph (`custom_fields`, t168);
    * `null` when the item declares none.
    *
-   * Only the SHAPE is judged here — a map of scalars, like `criterios_de_aceite`
+   * Only the SHAPE is judged here — a map of scalars, like `acceptance_criteria`
    * beside it is a list of texts. Whether the class really declares a field by
    * that name is a graph question, and demanding a mandatory one is the
    * transition gate's business, one layer down and one decision later.
    */
-  campos: Record<string, string | number | boolean> | null;
+  fields: Record<string, string | number | boolean> | null;
   /**
    * What this item costs to RUN, as the session triaged it (t175); `null` when
    * it did not classify this one.
@@ -62,16 +72,16 @@ export interface DraftItem {
    * no second session, no extra call — and it is carried onto the job at
    * confirmation. `null` is "unclassified", never "trivial": reading absence as
    * cheap would put every untriaged ticket on a smaller model than anybody
-   * chose, which is the same distinction `criterios_de_aceite` draws between
+   * chose, which is the same distinction `acceptance_criteria` draws between
    * `null` and `[]` above.
    */
   tier: 'trivial' | 'standard' | null;
   /** Refs of the OTHER items of the batch this one depends on; `[]` when none. */
-  depende_de: string[];
+  depends_on: string[];
 }
 
 /**
- * The two tiers, closed here rather than left open like `campos`' keys.
+ * The two tiers, closed here rather than left open like `fields`' keys.
  *
  * This vocabulary is the triage's own — not the class's, not the engine's — so
  * a third value is a mistake by whoever wrote it and not a value some consumer
@@ -82,30 +92,30 @@ const TIERS: readonly string[] = ['trivial', 'standard'];
 
 /** One problem found in the batch. Same shape as `StructureError` of the graph. */
 export interface ItemProblem {
-  codigo: string;
-  mensagem: string;
+  code: string;
+  message: string;
   /** The `ref` of the offending item, its position when it has no usable `ref`, or the refs of a cycle. */
-  alvo: unknown;
+  target: unknown;
 }
 
 /** Verdict over a batch: every problem, and the normalized list when there is none. */
 export interface ItemsReport {
-  valido: boolean;
-  problemas: ItemProblem[];
-  /** Normalized items — only filled in when `valido` is true. */
-  itens: DraftItem[];
+  valid: boolean;
+  problems: ItemProblem[];
+  /** Normalized items — only filled in when `valid` is true. */
+  items: DraftItem[];
 }
 
 /** The codes this validator emits, so callers do not have to spell them. */
 export const PROBLEM_CODES = Object.freeze({
-  LIST: 'lista_invalida',
-  ITEM: 'item_invalido',
-  MISSING_FIELD: 'campo_obrigatorio_ausente',
-  INVALID_FIELD: 'campo_invalido',
-  DUPLICATE_REF: 'ref_duplicado',
-  UNKNOWN_DEPENDENCY: 'dependencia_desconhecida',
-  SELF_DEPENDENCY: 'dependencia_de_si_mesmo',
-  CYCLE: 'ciclo_de_dependencia',
+  LIST: 'invalid_list',
+  ITEM: 'invalid_item',
+  MISSING_FIELD: 'missing_required_field',
+  INVALID_FIELD: 'invalid_field',
+  DUPLICATE_REF: 'duplicate_ref',
+  UNKNOWN_DEPENDENCY: 'unknown_dependency',
+  SELF_DEPENDENCY: 'self_dependency',
+  CYCLE: 'dependency_cycle',
 });
 
 function isFilledText(value: unknown): value is string {
@@ -123,14 +133,14 @@ function uniqueTexts(values: string[]): string[] {
 
 /**
  * One item as it comes out of the shape pass: what could be read, plus whether
- * its `depende_de` is usable by the graph pass.
+ * its `depends_on` is usable by the graph pass.
  */
 interface ParsedItem {
   item: DraftItem | null;
   /** `ref` when it is usable, `null` otherwise. The dependency graph ignores the rest. */
   ref: string | null;
   /** Declared dependencies, when the field was a well-formed list. */
-  depende_de: string[] | null;
+  depends_on: string[] | null;
 }
 
 /**
@@ -143,19 +153,19 @@ interface ParsedItem {
 function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => void): ParsedItem {
   if (!isObject(raw)) {
     note({
-      codigo: PROBLEM_CODES.ITEM,
-      mensagem: `the item at position ${index} has to be an object {ref, titulo, ...}`,
-      alvo: index,
+      code: PROBLEM_CODES.ITEM,
+      message: `the item at position ${index} has to be an object {ref, title, ...}`,
+      target: index,
     });
-    return { item: null, ref: null, depende_de: null };
+    return { item: null, ref: null, depends_on: null };
   }
 
   const reference = isFilledText(raw.ref) ? raw.ref.trim() : null;
   if (reference === null) {
     note({
-      codigo: PROBLEM_CODES.MISSING_FIELD,
-      mensagem: `required field missing from the item at position ${index}: "ref" (it is what depende_de cites)`,
-      alvo: index,
+      code: PROBLEM_CODES.MISSING_FIELD,
+      message: `required field missing from the item at position ${index}: "ref" (it is what depends_on cites)`,
+      target: index,
     });
   }
 
@@ -163,43 +173,43 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
   const target: unknown = reference ?? index;
   let broken = reference === null;
 
-  if (!isFilledText(raw.titulo)) {
+  if (!isFilledText(raw.title)) {
     note({
-      codigo: PROBLEM_CODES.MISSING_FIELD,
-      mensagem: `required field missing from item "${String(target)}": "titulo"`,
-      alvo: target,
+      code: PROBLEM_CODES.MISSING_FIELD,
+      message: `required field missing from item "${String(target)}": "title"`,
+      target: target,
     });
     broken = true;
   }
 
-  if (!isAbsent(raw.corpo) && typeof raw.corpo !== 'string') {
+  if (!isAbsent(raw.body) && typeof raw.body !== 'string') {
     note({
-      codigo: PROBLEM_CODES.INVALID_FIELD,
-      mensagem: `"corpo" of item "${String(target)}" has to be text`,
-      alvo: target,
+      code: PROBLEM_CODES.INVALID_FIELD,
+      message: `"body" of item "${String(target)}" has to be text`,
+      target: target,
     });
     broken = true;
   }
 
-  const criteria = raw.criterios_de_aceite;
+  const criteria = raw.acceptance_criteria;
   const criteriaValid =
     isAbsent(criteria) || (Array.isArray(criteria) && criteria.every(isFilledText));
   if (!criteriaValid) {
     note({
-      codigo: PROBLEM_CODES.INVALID_FIELD,
-      mensagem: `"criterios_de_aceite" of item "${String(target)}" has to be a list of filled texts`,
-      alvo: target,
+      code: PROBLEM_CODES.INVALID_FIELD,
+      message: `"acceptance_criteria" of item "${String(target)}" has to be a list of filled texts`,
+      target: target,
     });
     broken = true;
   }
 
-  const fields = raw.campos;
+  const fields = raw.fields;
   const fieldsValid = isAbsent(fields) || isScalarMap(fields);
   if (!fieldsValid) {
     note({
-      codigo: PROBLEM_CODES.INVALID_FIELD,
-      mensagem: `"campos" of item "${String(target)}" has to be a map of string, number or boolean values`,
-      alvo: target,
+      code: PROBLEM_CODES.INVALID_FIELD,
+      message: `"fields" of item "${String(target)}" has to be a map of string, number or boolean values`,
+      target: target,
     });
     broken = true;
   }
@@ -208,21 +218,21 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
   const tierValid = isAbsent(tier) || (typeof tier === 'string' && TIERS.includes(tier));
   if (!tierValid) {
     note({
-      codigo: PROBLEM_CODES.INVALID_FIELD,
-      mensagem: `"tier" of item "${String(target)}" has to be one of: ${TIERS.join(', ')}`,
-      alvo: target,
+      code: PROBLEM_CODES.INVALID_FIELD,
+      message: `"tier" of item "${String(target)}" has to be one of: ${TIERS.join(', ')}`,
+      target: target,
     });
     broken = true;
   }
 
-  const dependencies = raw.depende_de;
+  const dependencies = raw.depends_on;
   const dependenciesValid =
     isAbsent(dependencies) || (Array.isArray(dependencies) && dependencies.every(isFilledText));
   if (!dependenciesValid) {
     note({
-      codigo: PROBLEM_CODES.INVALID_FIELD,
-      mensagem: `"depende_de" of item "${String(target)}" has to be a list of refs from the batch itself`,
-      alvo: target,
+      code: PROBLEM_CODES.INVALID_FIELD,
+      message: `"depends_on" of item "${String(target)}" has to be a list of refs from the batch itself`,
+      target: target,
     });
     broken = true;
   }
@@ -236,15 +246,15 @@ function parseItem(raw: unknown, index: number, note: (problem: ItemProblem) => 
       ? null
       : {
           ref: reference as string,
-          titulo: (raw.titulo as string).trim(),
-          corpo: isAbsent(raw.corpo) ? null : (raw.corpo as string),
-          criterios_de_aceite: isAbsent(criteria) ? null : (criteria as string[]),
-          campos: isAbsent(fields) ? null : (fields as ScalarMap),
+          title: (raw.title as string).trim(),
+          body: isAbsent(raw.body) ? null : (raw.body as string),
+          acceptance_criteria: isAbsent(criteria) ? null : (criteria as string[]),
+          fields: isAbsent(fields) ? null : (fields as ScalarMap),
           tier: isAbsent(tier) ? null : (tier as DraftItem['tier']),
-          depende_de: declared ?? [],
+          depends_on: declared ?? [],
         },
     ref: reference,
-    depende_de: declared,
+    depends_on: declared,
   };
 }
 
@@ -288,9 +298,9 @@ function findCycles(edges: Map<string, string[]>, order: string[]): string[][] {
 }
 
 /**
- * Validates the `itens` of a draft: shape, unique refs, dependencies and cycles.
+ * Validates the `items` of a draft: shape, unique refs, dependencies and cycles.
  *
- * @param raw The `itens` list exactly as it came in the request body.
+ * @param raw The `items` list exactly as it came in the request body.
  * @returns Every problem found, and the normalized items when there is none.
  */
 export function validateItems(raw: unknown): ItemsReport {
@@ -301,22 +311,22 @@ export function validateItems(raw: unknown): ItemsReport {
 
   if (!Array.isArray(raw) || raw.length === 0) {
     return {
-      valido: false,
-      problemas: [
+      valid: false,
+      problems: [
         {
-          codigo: PROBLEM_CODES.LIST,
-          mensagem: '"itens" has to be a non-empty list: intake breaks work down into tickets',
-          alvo: null,
+          code: PROBLEM_CODES.LIST,
+          message: '"items" has to be a non-empty list: intake breaks work down into tickets',
+          target: null,
         },
       ],
-      itens: [],
+      items: [],
     };
   }
 
   const parsed = raw.map((item, index) => parseItem(item, index, note));
 
   // Unique refs, reported once per repeated ref: the same `ref` twice makes
-  // every `depende_de` that cites it ambiguous.
+  // every `depends_on` that cites it ambiguous.
   const known = new Set<string>();
   const alreadyReported = new Set<string>();
   for (const entry of parsed) {
@@ -324,9 +334,9 @@ export function validateItems(raw: unknown): ItemsReport {
     if (known.has(entry.ref)) {
       if (!alreadyReported.has(entry.ref)) {
         note({
-          codigo: PROBLEM_CODES.DUPLICATE_REF,
-          mensagem: `two items of the batch use the same ref: "${entry.ref}"`,
-          alvo: entry.ref,
+          code: PROBLEM_CODES.DUPLICATE_REF,
+          message: `two items of the batch use the same ref: "${entry.ref}"`,
+          target: entry.ref,
         });
         alreadyReported.add(entry.ref);
       }
@@ -341,25 +351,25 @@ export function validateItems(raw: unknown): ItemsReport {
   const edges = new Map<string, string[]>();
   const order: string[] = [];
   for (const entry of parsed) {
-    if (entry.ref === null || entry.depende_de === null) continue;
+    if (entry.ref === null || entry.depends_on === null) continue;
     if (!edges.has(entry.ref)) {
       edges.set(entry.ref, []);
       order.push(entry.ref);
     }
-    for (const dependency of entry.depende_de) {
+    for (const dependency of entry.depends_on) {
       if (dependency === entry.ref) {
         note({
-          codigo: PROBLEM_CODES.SELF_DEPENDENCY,
-          mensagem: `item "${entry.ref}" declares that it depends on itself`,
-          alvo: entry.ref,
+          code: PROBLEM_CODES.SELF_DEPENDENCY,
+          message: `item "${entry.ref}" declares that it depends on itself`,
+          target: entry.ref,
         });
         continue;
       }
       if (!known.has(dependency)) {
         note({
-          codigo: PROBLEM_CODES.UNKNOWN_DEPENDENCY,
-          mensagem: `item "${entry.ref}" depends on "${dependency}", which is not the ref of any item in this batch`,
-          alvo: { ref: entry.ref, depende_de: dependency },
+          code: PROBLEM_CODES.UNKNOWN_DEPENDENCY,
+          message: `item "${entry.ref}" depends on "${dependency}", which is not the ref of any item in this batch`,
+          target: { ref: entry.ref, depends_on: dependency },
         });
         continue;
       }
@@ -369,16 +379,16 @@ export function validateItems(raw: unknown): ItemsReport {
 
   for (const cycle of findCycles(edges, order)) {
     note({
-      codigo: PROBLEM_CODES.CYCLE,
-      mensagem: `the dependencies close a cycle: ${cycle.join(' → ')}`,
-      alvo: cycle,
+      code: PROBLEM_CODES.CYCLE,
+      message: `the dependencies close a cycle: ${cycle.join(' → ')}`,
+      target: cycle,
     });
   }
 
   const valid = problems.length === 0;
   return {
-    valido: valid,
-    problemas: problems,
-    itens: valid ? parsed.map((entry) => entry.item as DraftItem) : [],
+    valid: valid,
+    problems: problems,
+    items: valid ? parsed.map((entry) => entry.item as DraftItem) : [],
   };
 }

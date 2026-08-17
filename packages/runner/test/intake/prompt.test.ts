@@ -7,16 +7,18 @@
  * directory, so it cannot open `packages/core/src/domain/intake.ts` and read the
  * item format for itself — every rule `validateItems` enforces and the prompt
  * does not state is a rule the session has no way to follow, and the bill
- * arrives as an `itens_invalidos` the person never asked for.
+ * arrives as an `invalid_items` the person never asked for.
  *
  * Four rules make up that contract, and the fourth is the one that is easy to
- * get wrong: `criterios_de_aceite` is written ONLY when real criteria are known.
+ * get wrong: `acceptance_criteria` is written ONLY when real criteria are known.
  * `null` is not `[]` (`domain/intake.ts:34-43`) — "nobody wrote any yet" and "it
  * was declared that there are none" are different statements, and the node that
  * refines has to be able to tell them apart.
  *
  * English per D18; the prompt's own prose is Portuguese, like every other agent
- * instruction in this repository, and so are the payload keys it teaches.
+ * instruction in this repository. The payload KEYS it teaches are English since
+ * t255: they are the wire format of `POST /v1/intake`, and a prompt that taught
+ * the retired spelling would be teaching a batch the validator refuses.
  */
 
 import assert from 'node:assert/strict';
@@ -59,20 +61,20 @@ async function loadPrompt(): Promise<typeof PromptModule> {
  */
 const RULES: ReadonlyArray<{ claim: string; tokens: readonly string[] }> = Object.freeze([
   {
-    claim: '`ref` and `titulo` are the two required fields of an item',
-    tokens: ['`ref`', '`titulo`', 'obrigat'],
+    claim: '`ref` and `title` are the two required fields of an item',
+    tokens: ['`ref`', '`title`', 'obrigat'],
   },
   {
-    claim: '`depende_de` cites only refs of the same batch',
-    tokens: ['`depende_de`', 'lote'],
+    claim: '`depends_on` cites only refs of the same batch',
+    tokens: ['`depends_on`', 'lote'],
   },
   {
     claim: 'an item never depends on itself and never closes a cycle',
     tokens: ['si mesmo', 'ciclo'],
   },
   {
-    claim: '`criterios_de_aceite` is written only when there are real criteria',
-    tokens: ['`criterios_de_aceite`', 'null', '[]'],
+    claim: '`acceptance_criteria` is written only when there are real criteria',
+    tokens: ['`acceptance_criteria`', 'null', '[]'],
   },
 ]);
 
@@ -115,7 +117,7 @@ test('AT1 — the output contract is one file, with one key in it', async () => 
   assert.equal(OUTPUT_FILE, 'intake-proposto.json');
   assert.ok(composed.includes(OUTPUT_FILE), `the session is never told where to write:\n${composed}`);
   assert.ok(
-    composed.includes('{"itens"'),
+    composed.includes('{"items"'),
     `the shape of the file is not stated, so the session has to guess it:\n${composed}`,
   );
 });
@@ -152,6 +154,26 @@ test('t175 — the contract teaches both tier values and when each applies', asy
     /opcional/i,
     'the field has to be stated as optional — an item that omits it stays valid',
   );
+});
+
+test('t255 — the shape the session is taught is the shape the validator accepts', async () => {
+  const { INTAKE_INSTRUCTIONS, buildIntakePrompt } = await loadPrompt();
+
+  const composed = `${INTAKE_INSTRUCTIONS}\n${buildIntakePrompt(REQUEST, CLASS_NAME)}`;
+
+  // The session writes `intake-proposto.json` and never sees `domain/intake.ts`,
+  // so the only thing standing between it and a refused batch is this text. Every
+  // key it teaches has to be one `validateItems` reads.
+  for (const key of ['"items"', '"title"', '"body"', '"acceptance_criteria"', '"depends_on"']) {
+    assert.ok(composed.includes(key), `the contract never teaches ${key}:\n${composed}`);
+  }
+
+  for (const retired of ['"itens"', '"titulo"', '"corpo"', '"criterios_de_aceite"', '"depende_de"']) {
+    assert.ok(
+      !composed.includes(retired),
+      `the contract still teaches ${retired}, which POST /v1/intake refuses since t255`,
+    );
+  }
 });
 
 test('AT1 — the session is told it writes the file and nothing else', async () => {

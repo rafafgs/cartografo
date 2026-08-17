@@ -29,9 +29,10 @@
  * before a draft is ever posted — so the lines `cli.mjs` prints afterwards were
  * covered by nothing, and shipped reading two fields the answer does not carry.
  *
-
- * English per D18; route segments, payload keys and the file the session writes
- * are the published, Portuguese surface.
+ * English per D18. Route segments and payload keys are the published wire, in
+ * English since t226 and — for the item's own keys — t255; the file the session
+ * writes keeps its Portuguese name, because that is data the prompt names and
+ * not a field of the API.
  */
 
 import assert from 'node:assert/strict';
@@ -70,11 +71,11 @@ const REQUEST = 'Fechar a camada de intake: propor a quebra e confirmar num port
 const ITEMS: ReadonlyArray<Record<string, unknown>> = Object.freeze([
   {
     ref: 'migracao',
-    titulo: 'Migracao do intake',
-    corpo: 'As duas tabelas e as colunas novas.',
-    criterios_de_aceite: ['a migracao roda do zero'],
+    title: 'Migracao do intake',
+    body: 'As duas tabelas e as colunas novas.',
+    acceptance_criteria: ['a migracao roda do zero'],
   },
-  { ref: 'rotas', titulo: 'Rotas do intake', depende_de: ['migracao'] },
+  { ref: 'rotas', title: 'Rotas do intake', depends_on: ['migracao'] },
 ]);
 
 interface TestHook {
@@ -246,7 +247,7 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
   const draft = await generateIntakeDraft({
     reader: createControlPlaneReader(plane.baseUrl, { token: plane.token }),
     client: new ClienteControle({ urlBase: plane.baseUrl, token: plane.token }),
-    adapter: engineWriting(OUTPUT_FILE, JSON.stringify({ itens: ITEMS }, null, 2)),
+    adapter: engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS }, null, 2)),
     request: REQUEST,
     className: CLASS_NAME,
     workingDir: scratch(t, 'workdir'),
@@ -268,12 +269,12 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
     ['migracao', 'rotas'],
   );
   assert.deepEqual(
-    stored.items[1].depende_de,
+    stored.items[1].depends_on,
     ['migracao'],
     'the dependency the session declared survived the round trip',
   );
   assert.equal(
-    stored.items[1].criterios_de_aceite,
+    stored.items[1].acceptance_criteria,
     null,
     'an item with no criteria is null, never the empty list (domain/intake.ts)',
   );
@@ -337,7 +338,10 @@ test('t254 — a spawned intake prints the draft it posted, over the real class,
     {
       PATH: `${fakeEngineOnPath(scratch(t, 'spawned-bin'))}${path.delimiter}${process.env.PATH ?? ''}`,
       FAKE_ENGINE_WRITE_FILES: JSON.stringify({
-        [OUTPUT_FILE]: JSON.stringify({ itens: ITEMS }, null, 2),
+        // `items`, not `itens`: t255 moved the envelope key the session writes
+        // to English along with the item's own, and `generate.ts` reads
+        // `document.items` now — a draft under the old key is `missing_items`.
+        [OUTPUT_FILE]: JSON.stringify({ items: ITEMS }, null, 2),
       }),
     },
   );

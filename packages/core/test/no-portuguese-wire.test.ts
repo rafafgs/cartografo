@@ -49,6 +49,12 @@
  * it: a `mensagem` inside a `structure` object is now exactly as wrong as one
  * anywhere else, and the api sweep says so without a special case.
  *
+ * The intake item followed in t255, from the other direction: it was never
+ * masked, it was simply out of reach, because `DraftItem` is declared one layer
+ * in (`domain/intake.ts`) and the route only ever spreads it. Sweeping that one
+ * domain module (see {@link WIRE_DOMAIN}) is what closes the gap — the body of
+ * `POST /v1/intake` is as much this API's JSON as the envelope around it.
+ *
  * What is left after masking is a key or a value this API actually publishes.
  */
 
@@ -101,6 +107,19 @@ const REPORT_FILES = [
 const OUTSIDE_V1 = ['health.ts'];
 
 /**
+ * Domain modules that publish a body of their own, and are swept as routes.
+ *
+ * `domain/intake.ts` is the whole list today (t255). It is not a route file, and
+ * it is here for `auth.ts`'s reason squared: `DraftItem` IS the body of
+ * `POST /v1/intake` and `ItemProblem[]` IS the body of that route's 400, so the
+ * route file the sweep already walks contains barely a word of the vocabulary it
+ * publishes. Until t255 those keys were declared an exemption in three comments;
+ * D20's own text — "campos e parâmetros de query do JSON da API" — never granted
+ * one, and the exemption is gone along with the Portuguese.
+ */
+const WIRE_DOMAIN = [path.join('src', 'domain', 'intake.ts')];
+
+/**
  * Files that publish the wire: every `/v1` route, plus the credential gate.
  *
  * `auth.ts` is not a route file and is swept anyway, because it answers three
@@ -116,6 +135,7 @@ function scannedFiles(): string[] {
       .map((entry) => path.join('src', 'routes', entry))
       .sort(),
     path.join('src', 'auth.ts'),
+    ...WIRE_DOMAIN,
   ];
 }
 
@@ -475,6 +495,43 @@ test('FR9 — every /v1 body speaks the English wire vocabulary of glossario-wir
     [],
     `Portuguese still on the wire (D20, glossario-wire.md §1):\n${hits.join('\n')}`,
   );
+});
+
+test('t255 — the intake item is swept like a route, and bites on its own old keys', () => {
+  const terms = apiTerms();
+
+  assert.ok(
+    scannedFiles().includes(path.join('src', 'domain', 'intake.ts')),
+    'the item the intake routes publish is not in the sweep',
+  );
+
+  // The pre-t255 `DraftItem` and `ItemProblem`, planted as source.
+  const planted = [
+    'export interface DraftItem { ref: string; titulo: string; corpo: string | null }',
+    'export interface ItemProblem { codigo: string; mensagem: string; alvo: unknown }',
+    "  criterios_de_aceite: string[] | null;",
+    '  campos: Record<string, string> | null;',
+    '  depende_de: string[];',
+    "note({ codigo: PROBLEM_CODES.CYCLE, mensagem: 'x', alvo: cycle });",
+    "export const PROBLEM_CODES = Object.freeze({ LIST: 'lista_invalida' });",
+    "export const PROBLEM_CODES = Object.freeze({ CYCLE: 'ciclo_de_dependencia' });",
+  ];
+  for (const source of planted) {
+    assert.ok(wireHits(source, terms).length > 0, `the sweep missed an intake wire name: ${source}`);
+  }
+
+  // And the English the same declarations take from t255 on.
+  const renamed = [
+    'export interface DraftItem { ref: string; title: string; body: string | null }',
+    'export interface ItemProblem { code: string; message: string; target: unknown }',
+    '  acceptance_criteria: string[] | null;',
+    '  fields: Record<string, string> | null;',
+    '  depends_on: string[];',
+    "export const PROBLEM_CODES = Object.freeze({ LIST: 'invalid_list', CYCLE: 'dependency_cycle' });",
+  ];
+  for (const source of renamed) {
+    assert.deepEqual(wireHits(source, terms), [], `the sweep flagged the English item: ${source}`);
+  }
 });
 
 test('FR9 — the sweep bites on Portuguese that really is on the wire', () => {

@@ -568,6 +568,89 @@ test('AT11 — expiration_reason tells never-renewed apart from heartbeat-lost',
 });
 
 /* -------------------------------------------------------------------------- */
+/* t256 — reconciling is part of ASKING ANYTHING, not only of asking for work. */
+/*                                                                            */
+/* AT10/AT11 above prove the expiration through a SUBSEQUENT GRANT, which was  */
+/* the only caller `expireOverdue` ever had. The three cases below remove that */
+/* second request: a runner dies and nobody else wants its job, which is the   */
+/* ordinary state of a small pool. Until this ticket the dead lease stayed     */
+/* `active` forever in the listing, and a late heartbeat or release found it   */
+/* alive and succeeded — resurrecting a lease whose owner is gone.             */
+/* -------------------------------------------------------------------------- */
+
+/** A lease already past its deadline, with no other request in flight. */
+async function abandonedLease(t: TestHook): Promise<{
+  address: string;
+  lease: LeaseRow;
+}> {
+  const clock = controlledClock();
+  const { address, db } = await startWithClock(t, clock.now);
+  await registerRunners(db, 'runner-a');
+
+  const granted = (await (
+    await requestLease(address, { runner_id: 'runner-a', job_id: 55, ttl_seconds: 5 })
+  ).json()) as GrantResponse;
+  assert.ok(granted.lease !== null, 'with no competing lease, the grant cannot fail');
+
+  // The runner dies here, and NOBODY asks for a lease afterwards.
+  clock.advance(6);
+
+  return { address, lease: granted.lease };
+}
+
+test('t256 — GET /v1/leases reconciles on its own, with no grant in flight', async (t) => {
+  const { address, lease } = await abandonedLease(t);
+
+  const all = await listLeasesHttp(address);
+  const dead = all.find((listed) => listed.id === lease.id);
+  assert.ok(dead !== undefined, 'the lease does not disappear, it changes state');
+  assert.equal(dead.status, 'expired', 'the listing itself is what discovers the death');
+  assert.equal(dead.expiration_reason, 'ttl_elapsed');
+
+  const active = await listLeasesHttp(address, '?status=active');
+  assert.deepEqual(
+    active.map((listed) => listed.id),
+    [],
+    'a lease past its deadline is never reported as active',
+  );
+});
+
+test('t256 — a heartbeat after the deadline is a 409, never a resurrection', async (t) => {
+  const { address, lease } = await abandonedLease(t);
+
+  const beat = await fetch(`${address}/v1/leases/${lease.id}/heartbeats`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(beat.status, 409, 'the lease was already dead when the beat arrived');
+  const body = (await beat.json()) as { error?: string; status?: string };
+  assert.equal(body.error, 'lease_not_active');
+  assert.equal(body.status, 'expired');
+
+  const [after] = await listLeasesHttp(address, `?status=expired`);
+  assert.equal(after.id, lease.id, 'the beat did not push the deadline forward');
+});
+
+test('t256 — a release after the deadline is a 409, not a transition over a dead lease', async (t) => {
+  const { address, lease } = await abandonedLease(t);
+
+  const release = await fetch(`${address}/v1/leases/${lease.id}/releases`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(release.status, 409);
+  assert.equal(((await release.json()) as { error?: string }).error, 'lease_not_active');
+
+  const all = await listLeasesHttp(address);
+  const dead = all.find((listed) => listed.id === lease.id);
+  assert.ok(dead !== undefined);
+  assert.equal(dead.status, 'expired', 'a dead lease is not "released" after the fact');
+  assert.equal(dead.released_at, null);
+});
+
+/* -------------------------------------------------------------------------- */
 /* t143 — a runner credential acts as ITSELF, not as any runner (FR3).         */
 /* -------------------------------------------------------------------------- */
 

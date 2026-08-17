@@ -14,9 +14,12 @@
  * (`sessions`, `jobs`, `graph_version`, `proposal`) — that is the API child of
  * D20, applying `docs/spec/glossario-wire.md` §1.
  *
- * What `evidence` and `expected_metric` CARRY is a different matter and does not
- * move: those blobs are `domain/hypothesis.ts`'s frozen shape (`{nome, direcao,
- * de, para}`), which no D20 child unfreezes — see `policy.ts`.
+ * What `expected_metric` CARRIES is a different matter and does not move: that
+ * blob is `domain/hypothesis.ts`'s frozen shape (`{nome, direcao, de, para}`),
+ * which no D20 child unfreezes — see `policy.ts`. `evidence` carries the cost
+ * lens's own object, and THAT one moved: its keys went English with t255
+ * (`glossario-wire.md` §5.5), which is what turned the mapping in `cli.ts` from
+ * a translation into a same-name pass-through.
  *
  * There is no `POST /v1/proposals/:id/apply` here, and the absence is the rule:
  * applying a proposal is a human decision at the gate (README, principle 5).

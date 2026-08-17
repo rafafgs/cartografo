@@ -3,7 +3,7 @@
  *
  * Two policies, and they say different things:
  *
- * - **`teto`** is absolute — "this node went past N tokens (or N seconds)". It
+ * - **`ceiling`** is absolute — "this node went past N tokens (or N seconds)". It
  *   only exists when somebody declares the ceiling; with no declared ceiling
  *   there is nothing to exceed, and the lens stays quiet instead of inventing a
  *   number.
@@ -19,7 +19,9 @@
  * altering a shared format. What was left was the only mutation the vocabulary
  * allowed over a node without inventing a field: `change_node_field` on
  * `description`, with the recommendation in text. The real numbers go in
- * `evidencia` and `metrica_esperada`, which are free JSON by design (D15).
+ * `evidence` and `expected_metric`, which are free JSON by design (D15) — free
+ * in what they carry, that is: since t255 `expected_metric` carries the frozen
+ * hypothesis shape, because that is what makes an outcome closable.
  *
  * **The half t166 unlocked.** `no.model` has existed since then, and it is
  * proposable (`CHANGEABLE_FIELDS`), so the recommendation "use a smaller model
@@ -65,10 +67,12 @@ export const MARKER = '[cost-surveyor]';
  * `packages/runner/src/controller/cliente-controle.ts`, which also redeclares
  * the subset of the contract it consumes.
  *
- * The keys are §3's since t228, and only the keys: what surrounds this operation
- * — `Candidate`'s `operacoes`/`evidencia`/`metrica_esperada`, its `tipo`
- * discriminator, `no_id` and `grafo_versao_id` — is this module's own
- * vocabulary, which D20 does not touch.
+ * The keys are §3's since t228. What surrounds this operation — `Candidate`'s
+ * `operations`/`evidence`/`expected_metric`, its `type` discriminator, `node_id`
+ * and `graph_version_id` — went English with t255 and has a section of its own
+ * (`glossario-wire.md` §5.5). It used to say here that this was "this module's
+ * own vocabulary, which D20 does not touch"; it travels inside
+ * `POST /v1/proposals`, so it was always the wire.
  */
 export interface ChangeNodeDescription {
   type: 'change_node_field';
@@ -87,37 +91,55 @@ export interface ChangeNodeDescription {
 
 /** What the lens saw, and what holds the candidate up. */
 export interface CostEvidence {
-  lente: 'custo';
-  no_id: string;
-  grafo_versao_id: string;
+  lens: 'cost';
+  node_id: string;
+  graph_version_id: string;
   tokens_total: number;
-  tempo_total_segundos: number;
-  sessoes_com_uso: number;
-  sessoes_sem_uso: number;
-  teto_excedido: 'tokens' | 'tempo' | null;
-  tipo: 'teto' | 'tier';
+  total_seconds: number;
+  sessions_with_usage: number;
+  sessions_without_usage: number;
+  ceiling_exceeded: 'tokens' | 'time' | null;
+  type: 'ceiling' | 'tier';
 }
 
-/** The hypothesis: which number is expected to move, and to where. */
+/**
+ * The hypothesis: which number is expected to move, and to where.
+ *
+ * `domain/hypothesis.ts`'s shape, redeclared here the way `ChangeNodeDescription`
+ * above redeclares the operation: this package is an ordinary client of the API
+ * and does not import the core (D1/D11). The keys are Portuguese because that
+ * format is frozen (D18 leaves data-format keys out of the English rule), and it
+ * is the ONE shape `POST /v1/proposals/:id/outcome` can read.
+ *
+ * Until t255 this module declared a metric of its own —
+ * `{descricao, alvo, teto_ou_fator}` — which looked like a hypothesis and was
+ * not one: `isExpectedMetric` refused it, so every proposal this lens created
+ * came back `422 invalid_expected_metric` at the gate that was supposed to close
+ * it. The flow surveyor (`packages/runner/src/surveyor/proposal.ts:354-370`) had
+ * been emitting the right shape all along; this is that mapping, for cost.
+ */
 export interface ExpectedMetric {
-  descricao: string;
-  /** Value the metric should reach (the ceiling, or the tier threshold). */
-  alvo: number;
-  /** The configured knob that produced the target: the ceiling, or the factor. */
-  teto_ou_fator: number;
+  /** Label of the metric and the node it belongs to; read by a person. */
+  nome: string;
+  /** Always `cai` here: every candidate this lens proposes is a cost cut. */
+  direcao: 'cai';
+  /** The value actually observed. */
+  de: number;
+  /** Where it should land: the ceiling, or the tier threshold. */
+  para: number;
 }
 
 /** A proposal not yet sent. */
 export interface Candidate {
-  tipo: 'teto' | 'tier';
-  grafo_versao_id: string;
-  no_id: string;
-  operacoes: [ChangeNodeDescription];
-  evidencia: CostEvidence;
-  metrica_esperada: ExpectedMetric;
+  type: 'ceiling' | 'tier';
+  graph_version_id: string;
+  node_id: string;
+  operations: [ChangeNodeDescription];
+  evidence: CostEvidence;
+  expected_metric: ExpectedMetric;
 }
 
-/** Knobs of the evaluation. All optional; with no declared ceiling, `teto` does not run. */
+/** Knobs of the evaluation. All optional; with no declared ceiling, `ceiling` does not run. */
 export interface PolicyOptions {
   tokenCeiling?: number;
   secondCeiling?: number;
@@ -169,31 +191,38 @@ function recommendationOperation(
   };
 }
 
-/** Closes the candidate around the row, the operation and the numbers. */
+/**
+ * Closes the candidate around the row, the operation and the numbers.
+ *
+ * The one place in this package where the two vocabularies meet: what comes in
+ * is an `IdentifiedCostRow` (`cost.ts`, the layer below, whose field names this
+ * ticket leaves alone) and what goes out is the wire's, English since t255 and
+ * mapped in `glossario-wire.md` §5.5.
+ */
 function buildCandidate(
   row: IdentifiedCostRow,
-  type: 'teto' | 'tier',
-  ceilingExceeded: 'tokens' | 'tempo' | null,
+  type: 'ceiling' | 'tier',
+  ceilingExceeded: 'tokens' | 'time' | null,
   operation: ChangeNodeDescription,
   expectedMetric: ExpectedMetric,
 ): Candidate {
   return {
-    tipo: type,
-    grafo_versao_id: row.grafo_versao_id,
-    no_id: row.no_id,
-    operacoes: [operation],
-    evidencia: {
-      lente: 'custo',
-      no_id: row.no_id,
-      grafo_versao_id: row.grafo_versao_id,
+    type,
+    graph_version_id: row.grafo_versao_id,
+    node_id: row.no_id,
+    operations: [operation],
+    evidence: {
+      lens: 'cost',
+      node_id: row.no_id,
+      graph_version_id: row.grafo_versao_id,
       tokens_total: row.tokens_total,
-      tempo_total_segundos: row.tempo_total_segundos,
-      sessoes_com_uso: row.sessoes_com_uso,
-      sessoes_sem_uso: row.sessoes_sem_uso,
-      teto_excedido: ceilingExceeded,
-      tipo: type,
+      total_seconds: row.tempo_total_segundos,
+      sessions_with_usage: row.sessoes_com_uso,
+      sessions_without_usage: row.sessoes_sem_uso,
+      ceiling_exceeded: ceilingExceeded,
+      type,
     },
-    metrica_esperada: expectedMetric,
+    expected_metric: expectedMetric,
   };
 }
 
@@ -218,10 +247,13 @@ function ceilingCandidates(
     const overTime = secondCeiling !== undefined && row.tempo_total_segundos > secondCeiling;
     if (!overTokens && !overTime) continue;
 
-    const exceeded = overTokens ? 'tokens' : 'tempo';
+    const exceeded = overTokens ? 'tokens' : 'time';
     const ceiling = (overTokens ? tokenCeiling : secondCeiling) as number;
     const observed = overTokens ? row.tokens_total : row.tempo_total_segundos;
-    const metric = overTokens ? 'tokens_total' : 'tempo_total_segundos';
+    // The name of the metric as the EVIDENCE spells it (§5.5), not as the row
+    // below does: this label rides in `expected_metric.nome`, which a person
+    // reads next to the evidence and not next to `cost.ts`.
+    const metric = overTokens ? 'tokens_total' : 'total_seconds';
     const unit = overTokens ? 'tokens' : 'seconds';
     // The sample follows the ceiling that blew, like the rest of the row. A
     // session may have reported `uso` and not have both time stamps, and vice
@@ -231,24 +263,29 @@ function ceilingCandidates(
     // sentence cannot end up saying one thing and counting another.
     const sample = overTokens ? row.sessoes_com_uso : row.sessoes_com_tempo;
     const sampleOf = overTokens ? 'usage' : 'time';
-    // `exceeded` is a format value (`evidencia.teto_excedido`) and does not
+    // `exceeded` is a format value (`evidence.ceiling_exceeded`) and does not
     // become prose; the sentence's label is kept apart from it for that reason.
     const label = overTokens ? 'token' : 'time';
 
     candidates.push(
       buildCandidate(
         row,
-        'teto',
+        'ceiling',
         exceeded,
         recommendationOperation(
           row.no_id,
           currentDescription(row.grafo_versao_id, row.no_id),
           `${label} ceiling exceeded: ${observed} ${unit} observed against a ceiling of ${ceiling}, over ${sample} sessions with ${sampleOf} reported. Reduce the scope of this node, split it, or revisit the ceiling.`,
         ),
+        // `de` is what was measured and `para` is the declared ceiling, so the
+        // next round's verdict is a comparison of two numbers this lens really
+        // knows. The old `teto_ou_fator` said the same thing as `alvo` here and
+        // was the reason the whole shape read as a metric without being one.
         {
-          descricao: `${metric} of node "${row.no_id}" goes back under the declared ceiling`,
-          alvo: ceiling,
-          teto_ou_fator: ceiling,
+          nome: `${metric} of node "${row.no_id}" goes back under the declared ceiling`,
+          direcao: 'cai',
+          de: observed,
+          para: ceiling,
         },
       ),
     );
@@ -305,10 +342,15 @@ function tierCandidates(
             currentDescription(row.grafo_versao_id, row.no_id),
             `cost out of line in this version: ${row.tokens_total} tokens, ${times}x the median of ${center} across the ${group.length} measured nodes (factor ${factor}). Candidate for a cheaper model tier, or for a split into smaller nodes.`,
           ),
+          // The threshold, and not the median, is the `para`: what this proposal
+          // claims is that the node stops being an outlier, which is a weaker
+          // and honest claim — nothing here knows what the median will be next
+          // round, and it moves when this node does.
           {
-            descricao: `tokens_total of node "${row.no_id}" falls below ${factor}x the version median`,
-            alvo: threshold,
-            teto_ou_fator: factor,
+            nome: `tokens_total of node "${row.no_id}" falls below ${factor}x the version median`,
+            direcao: 'cai',
+            de: row.tokens_total,
+            para: threshold,
           },
         ),
       );
@@ -324,7 +366,7 @@ function tierCandidates(
  *   `null` — with no version and node there is no operation target and no
  *   snapshot in which to read the description.
  * @param options Ceilings and tier calibration.
- * @returns `teto` candidates first, `tier` after, each group in the order of the
+ * @returns `ceiling` candidates first, `tier` after, each group in the order of the
  *   rows received. The same node may appear in both: they are two different
  *   judgements about the same fact.
  */

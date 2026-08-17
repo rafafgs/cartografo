@@ -57,7 +57,7 @@ const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
 
 /** Header the delivery carries; HTTP header names are case-insensitive. */
-const SIGNATURE_HEADER = 'x-cartografo-assinatura';
+const SIGNATURE_HEADER = 'x-cartografo-signature';
 
 /**
  * The HMAC key itself — registered in `hook_secret`, never in the document.

@@ -62,12 +62,17 @@
  * take the spelling their already-converged `database` rows (§4.2) gave those
  * columns, without editing a document no child ticket has touched since t213.
  *
- * And one span is exempted, in {@link EXEMPT_SPANS}: `result.proposta` in the
- * surveyor's command is not a wire read at all — it is the runner-internal
- * result of `proposeFlowImprovement`, whose keys (`gargalo`, `evidencia`,
- * `metrica_esperada`, `proposta`) are that module's own. What came off the wire
- * is what is INSIDE it, and reading `.graph_id` off THAT is precisely what t254
- * fixed.
+ * And two spans are exempted, in {@link EXEMPT_SPANS}, both for the same reason:
+ * the name belongs to this package, not to the wire. `result.proposta` in the
+ * surveyor's command is the runner-internal result of `proposeFlowImprovement`,
+ * whose keys (`gargalo`, `evidencia`, `metrica_esperada`, `proposta`) are that
+ * module's own — what came off the wire is what is INSIDE it, and reading
+ * `.graph_id` off THAT is precisely what t254 fixed. `this.corpo` in
+ * `cliente-controle.ts` is a field of `ErroDoControlPlane` being assigned, and
+ * it is here because of t255 rather than t254: that ficha mapped `corpo` →
+ * `body` on the `api` surface for the intake item that really carries it, and
+ * this file has no intake item — it has the decoded body of a failed call, under
+ * a name of its own.
  */
 
 import assert from 'node:assert/strict';
@@ -154,6 +159,19 @@ const EXEMPT_SPANS: ReadonlyArray<{ file: string; span: string; reason: string }
       'its keys are `src/surveyor/proposal.ts`’s own, and renaming them is that ' +
       'module’s identifier debt (t254, Out of Scope)',
   },
+  {
+    file: path.join('src', 'controller', 'cliente-controle.ts'),
+    span: '.corpo',
+    reason:
+      'the field of `ErroDoControlPlane`, this package’s own error class, being ' +
+      'ASSIGNED — not a field read off an answer. t255 mapped `corpo` → `body` ' +
+      'because the intake item carries it on the wire (`domain/intake.ts`), and ' +
+      'this file never reads that item: what it stores here is the whole decoded ' +
+      'body of a failed call, under a name its own consumers spell (`erro.corpo` ' +
+      'in `test/controller/cliente-controle.test.ts` and `test/dispatch/dispatch.test.ts`). ' +
+      'Renaming it is the same identifier debt the file’s own header flags, and ' +
+      't254’s Out of Scope keeps it out',
+  },
 ]);
 
 /** A term of the glossary, with the English it has to be written in. */
@@ -193,10 +211,19 @@ function surfaceTerms(surface: string, minimum: number): Term[] {
   return terms;
 }
 
-/** The §5.2 rows: the flags a person types at these commands. */
+/**
+ * The §5.2 rows: the flags a person types at a command of this repository.
+ *
+ * Not only this package's. §5.2 also carries the cost lens's flags — since t255,
+ * which moved them out of a local array in that package's own gate and into the
+ * glossary — and sweeping them here costs nothing and claims nothing: a runner
+ * command that ever spelled one would be caught by the row that already exists.
+ * The floor is a floor and not an equality for that reason: another package's
+ * row landing in §5.2 must not turn this gate red.
+ */
 function flagTerms(): Term[] {
   const flags = surfaceTerms(SURFACE, 25).filter((entry) => entry.term.startsWith('--'));
-  assert.equal(flags.length, 2, 'the glossary maps two CLI flags on this surface (§5.2)');
+  assert.ok(flags.length >= 2, `the glossary's §5.2 parsed to only ${flags.length} CLI flags`);
   return flags;
 }
 

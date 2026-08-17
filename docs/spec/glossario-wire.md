@@ -72,6 +72,14 @@ código, e mascara exatamente o que este documento mapeia — o valor no fio.
 - **`hoje`** é o termo em português como ele está escrito no código agora.
   **`vira`** é o nome em inglês que a renomeação vai usar. **`onde está hoje`**
   é o arquivo que define o termo — o ponto de partida do ticket filho.
+- Quando a citação nomeia LINHA (`static.ts:75,88`), a linha é a do nome DAQUELA
+  linha da tabela, não a do bloco em volta: `erro` aponta o `error:` e `mensagem`
+  aponta o `message:` logo abaixo, mesmo quando os dois estão no mesmo corpo. A
+  vírgula separa linhas independentes; o hífen é um bloco, e basta uma linha dele
+  escrever o nome. O `glossario-wire.test.ts` resolve as citações dos arquivos
+  que ele lista (as que o t255 escreveu, e que nasceram erradas por serem
+  copiadas do texto da ficha em vez de relidas na árvore); as outras ~139 ainda
+  não têm portão e derivaram — quem seguir uma delas confere antes de confiar.
 - Duas grafias do MESMO nome (`criado_em` e `criada_em`, uma coluna escrita por
   gênero) vão na mesma linha, separadas por ` / `: é um termo só, com uma
   tradução só.
@@ -180,12 +188,12 @@ relatório de itens do intake (`domain/intake.ts`), que viaja dentro do `400` de
 
 | superfície | hoje | vira | onde está hoje |
 |---|---|---|---|
-| api | `erro` | `error` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:71,84` |
-| api | `mensagem` | `message` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:71,84` |
+| api | `erro` | `error` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:75,88` |
+| api | `mensagem` | `message` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:76,89` |
 | api | `campo` | `field` | `packages/core/src/routes/leases.ts:148` |
 | api | `codigo` | `code` | `packages/core/src/domain/intake.ts` |
 | api | `alvo` | `target` | `packages/core/src/domain/intake.ts` |
-| api | `arquivo_nao_encontrado` | `file_not_found` | `packages/tela/src/static.ts:71,84` |
+| api | `arquivo_nao_encontrado` | `file_not_found` | `packages/tela/src/static.ts:75,88` |
 | api | `base_invalida` | `invalid_base` | `packages/core/src/routes/graphs.ts` |
 | api | `bifurcacao_sem_efeito` | `fork_without_effect` | `packages/core/src/routes/graphs.ts` |
 | api | `campo_invalido` | `invalid_field` | `packages/core/src/routes/leases.ts`, `packages/core/src/routes/proposals.ts` |
@@ -323,7 +331,7 @@ distingue maiúscula de minúscula: a especificação escreve
 
 | superfície | hoje | vira | onde está hoje |
 |---|---|---|---|
-| api | `x-cartografo-assinatura` | `x-cartografo-signature` | `packages/core/src/webhooks/signature.ts:35` |
+| api | `x-cartografo-assinatura` | `x-cartografo-signature` | `packages/core/src/webhooks/signature.ts:41` |
 
 ---
 

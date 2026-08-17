@@ -15,6 +15,10 @@
  * by a topographer this screen has never seen (`t110`) may carry a type this
  * vocabulary does not know — one strange line is a bad render, an exception is
  * a blank page over the whole inbox.
+ *
+ * What it READS is §3 English since D20's third child (t228); what it WRITES is
+ * the same Portuguese prose as ever. Only the property names moved — the text a
+ * person judges a proposal by did not.
  */
 
 /** Shown when a proposal carries no operations at all (AT7). */
@@ -49,7 +53,7 @@ function asId(value) {
  *
  * Strings come quoted, so an empty one is visible; objects (a whole `contract`)
  * come as compact JSON, truncated — that is the VALUE being changed, not the
- * operation, and hiding it entirely would make `alterar_campo_no` unjudgeable.
+ * operation, and hiding it entirely would make `change_node_field` unjudgeable.
  *
  * @param {unknown} value Value on either side of the change.
  * @returns {string} Readable text.
@@ -73,7 +77,7 @@ function describeValue(value) {
 /**
  * One edge, as `de → para`, with the condition when there is one.
  *
- * @param {unknown} edge The `aresta` field of the operation.
+ * @param {unknown} edge The `edge` field of the operation.
  * @returns {string} Readable text.
  */
 function describeEdge(edge) {
@@ -94,24 +98,24 @@ function describeEdge(edge) {
 function renderOperation(operation) {
   if (!isObject(operation)) return MALFORMED_LINE;
 
-  switch (operation.tipo) {
-    case 'adicionar_no': {
-      const node = operation.no;
+  switch (operation.type) {
+    case 'add_node': {
+      const node = operation.node;
       const id = asId(isObject(node) ? node.id : undefined);
       const kind = isObject(node) && typeof node.node_type === 'string' ? node.node_type : '';
       return `+ nó "${id}"${kind === '' ? '' : ` (tipo ${kind})`}`;
     }
-    case 'remover_no':
-      return `- nó "${asId(operation.no_id)}"`;
-    case 'adicionar_aresta':
-      return `+ aresta ${describeEdge(operation.aresta)}`;
-    case 'remover_aresta':
-      return `- aresta ${describeEdge(operation.aresta)}`;
-    case 'alterar_campo_no':
-      return `~ nó "${asId(operation.no_id)}": campo "${asId(operation.campo)}" de ${describeValue(operation.de)} para ${describeValue(operation.para)}`;
+    case 'remove_node':
+      return `- nó "${asId(operation.node_id)}"`;
+    case 'add_edge':
+      return `+ aresta ${describeEdge(operation.edge)}`;
+    case 'remove_edge':
+      return `- aresta ${describeEdge(operation.edge)}`;
+    case 'change_node_field':
+      return `~ nó "${asId(operation.node_id)}": campo "${asId(operation.field)}" de ${describeValue(operation.from)} para ${describeValue(operation.to)}`;
     default:
-      return typeof operation.tipo === 'string' && operation.tipo.trim() !== ''
-        ? `? operação de tipo desconhecido ("${operation.tipo}")`
+      return typeof operation.type === 'string' && operation.type.trim() !== ''
+        ? `? operação de tipo desconhecido ("${operation.type}")`
         : MALFORMED_LINE;
   }
 }

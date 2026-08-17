@@ -17,13 +17,13 @@
  * opening either of them was out of it by acceptance criterion — the point to
  * prove was that a second surveyor fits the API that already exists, without
  * altering a shared format. What was left was the only mutation the vocabulary
- * allowed over a node without inventing a field: `alterar_campo_no` on
+ * allowed over a node without inventing a field: `change_node_field` on
  * `description`, with the recommendation in text. The real numbers go in
  * `evidencia` and `metrica_esperada`, which are free JSON by design (D15).
  *
  * **The half t166 unlocked.** `no.model` has existed since then, and it is
  * proposable (`CHANGEABLE_FIELDS`), so the recommendation "use a smaller model
- * at this gate" CAN already become `alterar_campo_no` on `model` instead of
+ * at this gate" CAN already become `change_node_field` on `model` instead of
  * prose in `description`. Changing the operation this lens emits is a ticket of
  * its own — it needs to know which model to propose, and that wants the catalog
  * of `GET /v1/engines` and a notion of tier nobody has written yet. All that
@@ -57,26 +57,31 @@ export const DEFAULT_TIER_MIN_NODES = 3;
 export const MARKER = '[cost-surveyor]';
 
 /**
- * `alterar_campo_no` over `description`, with the inverse that undoes it.
+ * `change_node_field` over `description`, with the inverse that undoes it.
  *
- * Declared here instead of imported from `packages/core/src/dominio/operacoes.ts`
+ * Declared here instead of imported from `packages/core/src/domain/operations.ts`
  * on purpose: the surveyor is an ordinary client of the public API and does not
  * depend on the core package (D1/D11) — the same choice as
  * `packages/runner/src/controller/cliente-controle.ts`, which also redeclares
  * the subset of the contract it consumes.
+ *
+ * The keys are §3's since t228, and only the keys: what surrounds this operation
+ * — `Candidate`'s `operacoes`/`evidencia`/`metrica_esperada`, its `tipo`
+ * discriminator, `no_id` and `grafo_versao_id` — is this module's own
+ * vocabulary, which D20 does not touch.
  */
 export interface ChangeNodeDescription {
-  tipo: 'alterar_campo_no';
-  no_id: string;
-  campo: 'description';
-  de: string;
-  para: string;
-  inversa: {
-    tipo: 'alterar_campo_no';
-    no_id: string;
-    campo: 'description';
-    de: string;
-    para: string;
+  type: 'change_node_field';
+  node_id: string;
+  field: 'description';
+  from: string;
+  to: string;
+  inverse: {
+    type: 'change_node_field';
+    node_id: string;
+    field: 'description';
+    from: string;
+    to: string;
   };
 }
 
@@ -122,7 +127,7 @@ export interface PolicyOptions {
   tierMinNodes?: number;
   /**
    * Current description of the node, read from the version's snapshot. It is the
-   * `de` of the operation, and without it the inverse would have nowhere to go
+   * `from` of the operation, and without it the inverse would have nowhere to go
    * back to. Default: empty text.
    */
   currentDescription?: (graphVersionId: string, nodeId: string) => string;
@@ -149,17 +154,17 @@ function recommendationOperation(
   const text = `${MARKER} ${recommendation}`;
   const to = currentDescription === '' ? text : `${currentDescription}\n\n${text}`;
   return {
-    tipo: 'alterar_campo_no',
-    no_id: nodeId,
-    campo: 'description',
-    de: currentDescription,
-    para: to,
-    inversa: {
-      tipo: 'alterar_campo_no',
-      no_id: nodeId,
-      campo: 'description',
-      de: to,
-      para: currentDescription,
+    type: 'change_node_field',
+    node_id: nodeId,
+    field: 'description',
+    from: currentDescription,
+    to,
+    inverse: {
+      type: 'change_node_field',
+      node_id: nodeId,
+      field: 'description',
+      from: to,
+      to: currentDescription,
     },
   };
 }

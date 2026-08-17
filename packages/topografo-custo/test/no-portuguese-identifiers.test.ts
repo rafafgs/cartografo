@@ -63,9 +63,9 @@ const SCANNED_DIRS = ['src', 'test'];
  * the English word for negation and the head of half the wire fields the lens
  * reads, so a gate that flagged it would flag every English sentence in the
  * package; `nodeId` is enforced by the reviewer, not by this list. `de` and
- * `para` as PREPOSITIONS are likewise unreachable — they are operation keys
- * (`alterar_campo_no`), and every occurrence of them here is either a key or a
- * literal.
+ * `para` as PREPOSITIONS are likewise unreachable — they were the operation's
+ * before/after pair until t228 renamed it to `from`/`to`, and what is left of
+ * them here (`metrica_esperada`) is a key or a literal, never an identifier.
  */
 const FORBIDDEN = Object.freeze([
   // Domain vocabulary (t127 glossary, reused verbatim).

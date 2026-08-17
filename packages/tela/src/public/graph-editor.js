@@ -263,7 +263,7 @@ export function mount(doc, request) {
    * A node that exists in the loaded snapshot shows `id`, `node_type` and
    * `engine` read-only, with the sentence that says what to do instead. A node
    * being born has no identity to protect yet, so all three are typed here and
-   * travel inside the single `adicionar_no` operation.
+   * travel inside the single `add_node` operation.
    */
   function renderNode(entry) {
     const node = entry.node;

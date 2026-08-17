@@ -31,14 +31,14 @@
  * `from` order, then every node addition in `to` order, then every field swap in
  * `to` order, then the edge removals in `from` order and the edge additions in
  * `to` order. Removals before additions is what lets a swap (remove + re-add of
- * the same id) apply without tripping `no_duplicado`, and reading the arrays in
+ * the same id) apply without tripping `duplicate_node`, and reading the arrays in
  * their own order is what makes the round trip reproduce `to` — `canonicalize`
  * sorts keys, not array positions.
  *
- * The operation-type names stay in Portuguese — they are the format stored in
- * `proposta.operacoes` and returned on the wire (t127, FR8) — while the DOCUMENT
- * fragments the operations carry moved to English with t178. See the note at the
- * top of `domain/operations.ts`.
+ * The whole emitted vocabulary is English since D20's third child (t228): the
+ * type names and the operation's own keys speak `docs/spec/glossario-wire.md`
+ * §3, and the document fragments the operations carry had already moved with
+ * t178. See the note at the top of `domain/operations.ts`.
  */
 
 import type { GraphDocument, GraphEdge, GraphNode } from './graph.ts';
@@ -85,33 +85,33 @@ function byId(nodes: readonly GraphNode[]): Map<string, GraphNode> {
 
 function addNode(node: GraphNode): Operation {
   return {
-    tipo: 'adicionar_no',
-    no: structuredClone(node),
-    inversa: { tipo: 'remover_no', no_id: node.id },
+    type: 'add_node',
+    node: structuredClone(node),
+    inverse: { type: 'remove_node', node_id: node.id },
   };
 }
 
 function removeNode(node: GraphNode): Operation {
   return {
-    tipo: 'remover_no',
-    no_id: node.id,
-    inversa: { tipo: 'adicionar_no', no: structuredClone(node) },
+    type: 'remove_node',
+    node_id: node.id,
+    inverse: { type: 'add_node', node: structuredClone(node) },
   };
 }
 
 function addEdge(edge: GraphEdge): Operation {
   return {
-    tipo: 'adicionar_aresta',
-    aresta: structuredClone(edge),
-    inversa: { tipo: 'remover_aresta', aresta: { from: edge.from, to: edge.to } },
+    type: 'add_edge',
+    edge: structuredClone(edge),
+    inverse: { type: 'remove_edge', edge: { from: edge.from, to: edge.to } },
   };
 }
 
 function removeEdge(edge: GraphEdge): Operation {
   return {
-    tipo: 'remover_aresta',
-    aresta: { from: edge.from, to: edge.to },
-    inversa: { tipo: 'adicionar_aresta', aresta: structuredClone(edge) },
+    type: 'remove_edge',
+    edge: { from: edge.from, to: edge.to },
+    inverse: { type: 'add_edge', edge: structuredClone(edge) },
   };
 }
 
@@ -119,17 +119,17 @@ function changeField(node: GraphNode, field: ChangeableField, to: GraphNode): Op
   const before = structuredClone(node[field]);
   const after = structuredClone(to[field]);
   return {
-    tipo: 'alterar_campo_no',
-    no_id: node.id,
-    campo: field,
-    de: before,
-    para: after,
-    inversa: {
-      tipo: 'alterar_campo_no',
-      no_id: node.id,
-      campo: field,
-      de: structuredClone(after),
-      para: structuredClone(before),
+    type: 'change_node_field',
+    node_id: node.id,
+    field,
+    from: before,
+    to: after,
+    inverse: {
+      type: 'change_node_field',
+      node_id: node.id,
+      field,
+      from: structuredClone(after),
+      to: structuredClone(before),
     },
   };
 }
@@ -140,8 +140,8 @@ function changeField(node: GraphNode, field: ChangeableField, to: GraphNode): Op
  *
  * `undefined` means it cannot: either `node_type` moved, or a key outside the four
  * swappable ones differs, or one of those four is present on one side and absent
- * on the other. The last case is the subtle one — `alterar_campo_no` writes the
- * key, it never unsets it, and an operation carrying `para: undefined` loses that
+ * on the other. The last case is the subtle one — `change_node_field` writes the
+ * key, it never unsets it, and an operation carrying `to: undefined` loses that
  * key the moment it is serialized into `proposta.operacoes`, coming back out as a
  * malformed operation. Whenever a swap cannot round-trip, the pair falls to the
  * full remove + add, which always can.

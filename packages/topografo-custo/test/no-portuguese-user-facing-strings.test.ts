@@ -86,8 +86,9 @@ const STOPWORDS = Object.freeze([
  * Literals that ARE a frozen wire value, whole (FR2).
  *
  * Not "words allowed inside a message" — the literal's entire content has to be
- * one of these. `'para'` is a key of the `alterar_campo_no` operation this lens
- * emits, and of `metrica_esperada`.
+ * one of these. `'para'` is a key of `metrica_esperada`; it was also the
+ * operation's after-value until t228 renamed that pair to `from`/`to`, and it
+ * stays listed because the hypothesis shape did not move with it.
  */
 const WIRE_LITERALS: ReadonlySet<string> = new Set(['para']);
 

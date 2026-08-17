@@ -36,10 +36,12 @@
  * `packages/core/src/domain/operations.ts` says so in its own comment), which
  * is why the page offers no control for them and this diff never looks at them.
  *
- * The operation keys (`tipo`, `no`, `no_id`, `aresta`, `campo`, `de`, `para`,
- * `inversa`) are the format stored in `proposta.operacoes` and returned on the
- * wire; they stay in Portuguese, like every other wire key this package mirrors
- * (t133, exception 9).
+ * The operation keys (`type`, `node`, `node_id`, `edge`, `field`, `from`, `to`,
+ * `inverse`) are the format stored in `proposta.operacoes` and returned on the
+ * wire, and they speak `docs/spec/glossario-wire.md` §3 since D20's third child
+ * (t228). This module has to move in exact lockstep with
+ * `packages/core/src/domain/operations.ts`: whatever comes out of here is POSTed
+ * untouched, so one key out of step is a `400` on save.
  */
 
 /**
@@ -125,20 +127,20 @@ function fieldOf(node, field) {
   return value;
 }
 
-/** `de` → `para` for one field, plus the inverse that undoes it. */
+/** `from` → `to` for one field, plus the inverse that undoes it. */
 function changeField(nodeId, field, before, after) {
   return {
-    tipo: 'alterar_campo_no',
-    no_id: nodeId,
-    campo: field,
-    de: copy(before),
-    para: copy(after),
-    inversa: {
-      tipo: 'alterar_campo_no',
-      no_id: nodeId,
-      campo: field,
-      de: copy(after),
-      para: copy(before),
+    type: 'change_node_field',
+    node_id: nodeId,
+    field,
+    from: copy(before),
+    to: copy(after),
+    inverse: {
+      type: 'change_node_field',
+      node_id: nodeId,
+      field,
+      from: copy(after),
+      to: copy(before),
     },
   };
 }
@@ -218,9 +220,9 @@ export function diffGraphs(loaded, edited) {
     const still = edgesAfter.get(key);
     if (still !== undefined && same(edge, still)) continue;
     removedEdges.push({
-      tipo: 'remover_aresta',
-      aresta: endsOf(edge),
-      inversa: { tipo: 'adicionar_aresta', aresta: copy(edge) },
+      type: 'remove_edge',
+      edge: endsOf(edge),
+      inverse: { type: 'add_edge', edge: copy(edge) },
     });
   }
 
@@ -229,9 +231,9 @@ export function diffGraphs(loaded, edited) {
   for (const [id, node] of before) {
     if (after.has(id)) continue;
     removedNodes.push({
-      tipo: 'remover_no',
-      no_id: id,
-      inversa: { tipo: 'adicionar_no', no: copy(node) },
+      type: 'remove_node',
+      node_id: id,
+      inverse: { type: 'add_node', node: copy(node) },
     });
   }
 
@@ -239,9 +241,9 @@ export function diffGraphs(loaded, edited) {
   for (const [id, node] of after) {
     if (before.has(id)) continue;
     addedNodes.push({
-      tipo: 'adicionar_no',
-      no: copy(node),
-      inversa: { tipo: 'remover_no', no_id: id },
+      type: 'add_node',
+      node: copy(node),
+      inverse: { type: 'remove_node', node_id: id },
     });
   }
 
@@ -262,9 +264,9 @@ export function diffGraphs(loaded, edited) {
     const had = edgesBefore.get(key);
     if (had !== undefined && same(had, edge)) continue;
     addedEdges.push({
-      tipo: 'adicionar_aresta',
-      aresta: copy(edge),
-      inversa: { tipo: 'remover_aresta', aresta: endsOf(edge) },
+      type: 'add_edge',
+      edge: copy(edge),
+      inverse: { type: 'remove_edge', edge: endsOf(edge) },
     });
   }
 

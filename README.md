@@ -48,13 +48,17 @@ contra o mesmo banco sai com 1 e uma linha só, dizendo o pid do que já está
 rodando e o arquivo `<banco>.lock` que ele segura — só o servidor escreve no
 banco (D1), e isso vale entre processos, não só dentro de um.
 
-> **Subindo de uma versão anterior à t227? Apague `.cartografo/`.** A D20 traduziu
-> o vocabulário do log de eventos para inglês (`job.created` no lugar de
-> `trabalho.criado`, `data.title` no lugar de `dados.titulo`), e o log é
-> append-only: histórico não se reescreve. Como não existe dado de produção, a
-> resposta da própria decisão é **recriar** o banco de desenvolvimento, não
-> migrá-lo — `rm -rf .cartografo/` e `npx cartografo` de novo. Um banco com
-> eventos antigos sobe, mas quem os ler encontra as chaves velhas.
+> **Subindo de uma versão anterior à t228? Apague `.cartografo/`.** A D20 traduziu
+> para inglês o vocabulário do log de eventos (`job.created` no lugar de
+> `trabalho.criado`, `data.title` no lugar de `dados.titulo`) e o das operações
+> de proposta (`add_node` no lugar de `adicionar_no`, `{type, node_id, field,
+> from, to, inverse}` no lugar de `{tipo, no_id, campo, de, para, inversa}`). Os
+> dois são dado gravado que não se reescreve — o log é append-only, e uma
+> proposta guardada é o registro do que alguém propôs. Como não existe dado de
+> produção, a resposta da própria decisão é **recriar** o banco de
+> desenvolvimento, não migrá-lo — `rm -rf .cartografo/` e `npx cartografo` de
+> novo. Um banco antigo sobe, mas os eventos velhos vêm com as chaves velhas e
+> uma proposta velha é recusada no `apply` com `unknown_type`.
 
 O passo 3 registra o grafo de fábrica 1 (D14) como linhagem base — conferindo
 antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a

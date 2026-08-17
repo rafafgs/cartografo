@@ -15,10 +15,13 @@
  *   its current spelling, its exported symbol names are allowlisted wherever
  *   they are referenced — renaming them at the call sites is exactly the
  *   behaviour-neutral churn FR1 forbids.
- * - **String and template literals.** This is where the event-type strings
- *   (`'trabalho.criado'`), the taxonomy's status values (`'concluida'`), the
- *   semantic-diff operation vocabulary (`'adicionar_no'`) and the two prompt
- *   constants live. None of it is code, so none of it translates (FR2, FR3).
+ * - **String and template literals.** This is where the wire values and the two
+ *   prompt constants live. None of it is code, so none of it translates (FR2,
+ *   FR3). Much of what used to sit here has since gone English on its own
+ *   surface — the event types with t227, the operation vocabulary with t228 —
+ *   and the mask stays anyway: it is about the POSITION, not about which words
+ *   happen to be in it today, which is why the fixtures below still prove it
+ *   with Portuguese literals.
  * - **Key and member positions.** A wire field is still spelled in Portuguese
  *   in the code that builds or reads it — `{ trabalho_id: id }`, `evento.dados`,
  *   `evidencia.por_no`, `metricas.gargalo`. That is the data format, not code.

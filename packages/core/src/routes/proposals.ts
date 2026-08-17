@@ -139,13 +139,13 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
     return refusal(reply, 400, 'invalid_operations', 'operations has to be a non-empty list');
   }
 
-  // The per-operation report keeps its own vocabulary (`indice`, `erros`,
-  // `codigo`): the operation format is D20's THIRD child, and only the key that
-  // carries the list belongs to this ticket.
+  // The report's own vocabulary is English since D20's third child (t228). What
+  // stays is `indice`: it is this route's index into the list it received, not a
+  // §3 term, and the glossary has no row for it.
   const problems = rawOperations
     .map((operation, indice) => ({ indice, ...validateOperation(operation) }))
-    .filter((report) => !report.valido)
-    .map((report) => ({ indice: report.indice, erros: report.erros }));
+    .filter((report) => !report.valid)
+    .map((report) => ({ indice: report.indice, errors: report.errors }));
   if (problems.length > 0) {
     return refusal(reply, 400, 'invalid_operations', undefined, { operations: problems });
   }

@@ -16,31 +16,34 @@
  * - **Validating is structural.** `validateOperation` checks keys, types and the
  *   compatibility of the inverse. It does NOT stop an operation from producing a
  *   broken graph: what rejects that is the soundness gate, after applying (FR8).
- *   An edge with `condicao: ""` is a well-formed operation and an unsound graph —
+ *   An edge with `condition: ""` is a well-formed operation and an unsound graph —
  *   the two judgements belong to different layers.
  * - **Executing the inverse is out of this ticket** (promotion/offer between
  *   variant and base, t118). Here the inverse only has to exist and match the
  *   operation; nobody applies it yet.
  *
- * The operation-type names (`adicionar_no`, …), the operation's OWN keys (`no`,
- * `no_id`, `aresta`, `campo`, the before/after pair `de`/`para`, `inversa`) and
- * the report's keys stay in Portuguese: they are the format stored in
- * `proposta.operacoes` and returned on the wire, which the D18 rename does not
- * touch (t127, FR8).
+ * The whole vocabulary is English since D20's third child (t228,
+ * `docs/spec/glossario-wire.md` §3): the five type names (`add_node`, …), the
+ * operation's OWN keys (`node`, `node_id`, `edge`, `field`, the before/after
+ * pair `from`/`to`, `inverse`) and the validation report (`valid`, `errors`,
+ * `code`, `message`). What an operation CARRIES had already moved with the
+ * document in t178 — so `edge: {from, to, condition}` inside an operation whose
+ * own before/after pair is ALSO `from`/`to` is not a collision: `de`/`para`
+ * became `from`/`to` precisely because the edge of the document already spelled
+ * its ends that way, and two formats that meet now say the same word for the
+ * same thing.
  *
- * What an operation CARRIES is a different matter. `no` is a graph node and
- * `aresta` is a graph edge — fragments of the document, spliced straight into a
- * snapshot by `applyOperations` — so their keys moved with the document in t178
- * (the 2026-08-15 D18 amendment). Hence `aresta: {from, to, condition}` inside
- * an operation whose own before/after pair is still spelled `de`/`para`: two
- * formats meeting, each keeping its own vocabulary.
+ * Nothing migrates what is already stored in `proposta.operacoes`: D20 recreates
+ * the development databases, so an operation still written in Portuguese is not
+ * an older dialect to fall back on — it is an unknown type, and `validateOperation`
+ * says so.
  */
 
 import { isObject } from '../util/is-object.ts';
 import type { GraphEdge, GraphDocument, GraphNode } from './graph.ts';
 
 /**
- * Node fields that `alterar_campo_no` is allowed to swap.
+ * Node fields that `change_node_field` is allowed to swap.
  *
  * `engine` and `model` joined the list in t166, and the reason is the same for
  * both: they are execution POLICY carried as graph data, so changing one has to
@@ -71,7 +74,7 @@ export const CHANGEABLE_FIELDS = Object.freeze([
   'escalation_recipient',
 ]);
 
-/** A field swappable by `alterar_campo_no`. */
+/** A field swappable by `change_node_field`. */
 export type ChangeableField =
   | 'role'
   | 'description'
@@ -100,65 +103,65 @@ export interface EdgeReference {
 }
 
 export interface AddNodeInverse {
-  tipo: 'adicionar_no';
-  no: GraphNode;
+  type: 'add_node';
+  node: GraphNode;
 }
 
 export interface RemoveNodeInverse {
-  tipo: 'remover_no';
-  no_id: string;
+  type: 'remove_node';
+  node_id: string;
 }
 
 export interface AddEdgeInverse {
-  tipo: 'adicionar_aresta';
-  aresta: GraphEdge;
+  type: 'add_edge';
+  edge: GraphEdge;
 }
 
 export interface RemoveEdgeInverse {
-  tipo: 'remover_aresta';
-  aresta: EdgeReference;
+  type: 'remove_edge';
+  edge: EdgeReference;
 }
 
 export interface ChangeNodeFieldInverse {
-  tipo: 'alterar_campo_no';
-  no_id: string;
-  campo: ChangeableField;
-  de: unknown;
-  para: unknown;
+  type: 'change_node_field';
+  node_id: string;
+  field: ChangeableField;
+  from: unknown;
+  to: unknown;
 }
 
 export interface AddNodeOperation {
-  tipo: 'adicionar_no';
-  no: GraphNode;
-  inversa: RemoveNodeInverse;
+  type: 'add_node';
+  node: GraphNode;
+  inverse: RemoveNodeInverse;
 }
 
 export interface RemoveNodeOperation {
-  tipo: 'remover_no';
-  no_id: string;
-  inversa: AddNodeInverse;
+  type: 'remove_node';
+  node_id: string;
+  inverse: AddNodeInverse;
 }
 
 export interface AddEdgeOperation {
-  tipo: 'adicionar_aresta';
-  aresta: GraphEdge;
-  inversa: RemoveEdgeInverse;
+  type: 'add_edge';
+  edge: GraphEdge;
+  inverse: RemoveEdgeInverse;
 }
 
 export interface RemoveEdgeOperation {
-  tipo: 'remover_aresta';
-  aresta: EdgeReference;
-  inversa: AddEdgeInverse;
+  type: 'remove_edge';
+  edge: EdgeReference;
+  inverse: AddEdgeInverse;
 }
 
 export interface ChangeNodeFieldOperation {
-  tipo: 'alterar_campo_no';
-  no_id: string;
-  campo: ChangeableField;
+  type: 'change_node_field';
+  node_id: string;
+  field: ChangeableField;
   /** Previous value. Documentary: it is what builds the inverse, not a lock. */
-  de: unknown;
-  para: unknown;
-  inversa: ChangeNodeFieldInverse;
+  from: unknown;
+  to: unknown;
+  inverse: ChangeNodeFieldInverse;
 }
 
 /** A semantic operation with its inverse. */
@@ -171,31 +174,31 @@ export type Operation =
 
 /** The five types, in the order the specification presents them. */
 export const OPERATION_TYPES = Object.freeze([
-  'adicionar_no',
-  'remover_no',
-  'adicionar_aresta',
-  'remover_aresta',
-  'alterar_campo_no',
+  'add_node',
+  'remove_node',
+  'add_edge',
+  'remove_edge',
+  'change_node_field',
 ]);
 
-/** Which type undoes which. `alterar_campo_no` is its own inverse (de/para swapped). */
+/** Which type undoes which. `change_node_field` is its own inverse (from/to swapped). */
 const EXPECTED_INVERSE: Record<string, string> = {
-  adicionar_no: 'remover_no',
-  remover_no: 'adicionar_no',
-  adicionar_aresta: 'remover_aresta',
-  remover_aresta: 'adicionar_aresta',
-  alterar_campo_no: 'alterar_campo_no',
+  add_node: 'remove_node',
+  remove_node: 'add_node',
+  add_edge: 'remove_edge',
+  remove_edge: 'add_edge',
+  change_node_field: 'change_node_field',
 };
 
 /** A shape problem in the operation. */
 export interface OperationError {
-  codigo: string;
-  mensagem: string;
+  code: string;
+  message: string;
 }
 
 export interface OperationReport {
-  valido: boolean;
-  erros: OperationError[];
+  valid: boolean;
+  errors: OperationError[];
 }
 
 /** Failure APPLYING a well-formed operation to a snapshot that does not admit it. */
@@ -226,67 +229,67 @@ function isFilledText(value: unknown): value is string {
  */
 export function validateOperation(operation: unknown): OperationReport {
   const errors: OperationError[] = [];
-  const note = (codigo: string, mensagem: string): void => {
-    errors.push({ codigo, mensagem });
+  const note = (code: string, message: string): void => {
+    errors.push({ code, message });
   };
 
   if (!isObject(operation)) {
-    note('operacao_invalida', 'an operation has to be a JSON object');
-    return { valido: false, erros: errors };
+    note('invalid_operation', 'an operation has to be a JSON object');
+    return { valid: false, errors };
   }
 
-  const type = operation.tipo;
+  const type = operation.type;
   if (typeof type !== 'string' || !OPERATION_TYPES.includes(type)) {
     note(
-      'tipo_desconhecido',
+      'unknown_type',
       `unknown operation type: ${JSON.stringify(type)} (known: ${OPERATION_TYPES.join(', ')})`,
     );
-    return { valido: false, erros: errors };
+    return { valid: false, errors };
   }
 
   checkBody(type, operation, 'operation', note);
 
-  const inverse = operation.inversa;
+  const inverse = operation.inverse;
   if (inverse === undefined || inverse === null) {
-    note('inversa_ausente', `operation "${type}" has to declare its own inverse (D15)`);
-    return { valido: errors.length === 0, erros: errors };
+    note('missing_inverse', `operation "${type}" has to declare its own inverse (D15)`);
+    return { valid: errors.length === 0, errors };
   }
   if (!isObject(inverse)) {
-    note('inversa_invalida', 'the inverse has to be a JSON object');
-    return { valido: false, erros: errors };
+    note('invalid_inverse', 'the inverse has to be a JSON object');
+    return { valid: false, errors };
   }
-  if (inverse.tipo !== EXPECTED_INVERSE[type]) {
+  if (inverse.type !== EXPECTED_INVERSE[type]) {
     note(
-      'inversa_incompativel',
-      `the inverse of "${type}" has to be of type "${EXPECTED_INVERSE[type]}", got ${JSON.stringify(inverse.tipo)}`,
+      'incompatible_inverse',
+      `the inverse of "${type}" has to be of type "${EXPECTED_INVERSE[type]}", got ${JSON.stringify(inverse.type)}`,
     );
-    return { valido: false, erros: errors };
+    return { valid: false, errors };
   }
 
   checkBody(EXPECTED_INVERSE[type], inverse, 'inverse', note);
   checkInverseTarget(type, operation, inverse, note);
 
-  return { valido: errors.length === 0, erros: errors };
+  return { valid: errors.length === 0, errors };
 }
 
-type Note = (codigo: string, mensagem: string) => void;
+type Note = (code: string, message: string) => void;
 
 /** Keys and types each operation type demands of itself. */
 function checkBody(type: string, body: PlainObject, role: string, note: Note): void {
   const requireNodeId = (): void => {
-    if (!isFilledText(body.no_id)) {
-      note('campo_invalido', `${role} "${type}": "no_id" has to be a filled node id`);
+    if (!isFilledText(body.node_id)) {
+      note('invalid_field', `${role} "${type}": "node_id" has to be a filled node id`);
     }
   };
   const requireNode = (): void => {
-    if (!isObject(body.no) || !isFilledText(body.no.id)) {
-      note('campo_invalido', `${role} "${type}": "no" has to be an object with an "id"`);
+    if (!isObject(body.node) || !isFilledText(body.node.id)) {
+      note('invalid_field', `${role} "${type}": "node" has to be an object with an "id"`);
     }
   };
   const requireEnds = (): void => {
-    const edge = body.aresta;
+    const edge = body.edge;
     if (!isObject(edge) || !isFilledText(edge.from) || !isFilledText(edge.to)) {
-      note('campo_invalido', `${role} "${type}": "aresta" has to have "from" and "to"`);
+      note('invalid_field', `${role} "${type}": "edge" has to have "from" and "to"`);
       return;
     }
     // `condition` is only DEMANDED of an edge that enters the document. Demanding
@@ -297,34 +300,34 @@ function checkBody(type: string, body: PlainObject, role: string, note: Note): v
     // On a removal it is optional (t205): present, it pins the operation to one
     // of two parallel edges; absent, the removal means what it always meant. Its
     // TYPE is checked either way — a `condition` that is not text names no edge.
-    const declared = type === 'adicionar_aresta' || edge.condition !== undefined;
+    const declared = type === 'add_edge' || edge.condition !== undefined;
     if (declared && typeof edge.condition !== 'string') {
-      note('campo_invalido', `${role} "${type}": "aresta.condition" has to be a string`);
+      note('invalid_field', `${role} "${type}": "edge.condition" has to be a string`);
     }
   };
 
   switch (type) {
-    case 'adicionar_no':
+    case 'add_node':
       requireNode();
       break;
-    case 'remover_no':
+    case 'remove_node':
       requireNodeId();
       break;
-    case 'adicionar_aresta':
-    case 'remover_aresta':
+    case 'add_edge':
+    case 'remove_edge':
       requireEnds();
       break;
-    case 'alterar_campo_no':
+    case 'change_node_field':
       requireNodeId();
-      if (typeof body.campo !== 'string' || !CHANGEABLE_FIELDS.includes(body.campo)) {
+      if (typeof body.field !== 'string' || !CHANGEABLE_FIELDS.includes(body.field)) {
         note(
-          'campo_nao_alteravel',
-          `${role} "alterar_campo_no": "campo" has to be one of ${CHANGEABLE_FIELDS.join(', ')} — swapping id or node_type is an operation of its own, not a field swap`,
+          'field_not_changeable',
+          `${role} "change_node_field": "field" has to be one of ${CHANGEABLE_FIELDS.join(', ')} — swapping id or node_type is an operation of its own, not a field swap`,
         );
       }
-      for (const key of ['de', 'para']) {
+      for (const key of ['from', 'to']) {
         if (!Object.hasOwn(body, key)) {
-          note('campo_obrigatorio_ausente', `${role} "alterar_campo_no": "${key}" is missing`);
+          note('missing_required_field', `${role} "change_node_field": "${key}" is missing`);
         }
       }
       break;
@@ -341,7 +344,7 @@ function checkInverseTarget(
   note: Note,
 ): void {
   const incompatible = (detail: string): void => {
-    note('inversa_incompativel', `the inverse of "${type}" ${detail}`);
+    note('incompatible_inverse', `the inverse of "${type}" ${detail}`);
   };
 
   const ends = (value: unknown): string =>
@@ -357,36 +360,36 @@ function checkInverseTarget(
   };
 
   switch (type) {
-    case 'adicionar_no': {
-      const id = isObject(operation.no) ? operation.no.id : undefined;
-      if (inverse.no_id !== id) incompatible(`has to remove node "${String(id)}"`);
+    case 'add_node': {
+      const id = isObject(operation.node) ? operation.node.id : undefined;
+      if (inverse.node_id !== id) incompatible(`has to remove node "${String(id)}"`);
       break;
     }
-    case 'remover_no': {
-      const id = isObject(inverse.no) ? inverse.no.id : undefined;
-      if (id !== operation.no_id) incompatible(`has to re-add node "${String(operation.no_id)}"`);
+    case 'remove_node': {
+      const id = isObject(inverse.node) ? inverse.node.id : undefined;
+      if (id !== operation.node_id) incompatible(`has to re-add node "${String(operation.node_id)}"`);
       break;
     }
-    case 'adicionar_aresta':
-    case 'remover_aresta': {
+    case 'add_edge':
+    case 'remove_edge': {
       // The pair disagrees about WHICH edge only when both sides name a
       // condition and the two differ: with two parallel edges, undoing the
       // other one is not undoing this one (t205). A side that names none — every
       // pair written before t205, and everything `diff.ts` emits — goes on
       // matching whatever the other side says, which is why widening the
       // reference broke no stored proposal.
-      const declared = conditionOf(operation.aresta);
-      const undone = conditionOf(inverse.aresta);
+      const declared = conditionOf(operation.edge);
+      const undone = conditionOf(inverse.edge);
       const clash = declared !== undefined && undone !== undefined && declared !== undone;
-      if (clash || ends(operation.aresta) !== ends(inverse.aresta)) {
-        incompatible(`has to point at the same edge (${edgeLabel(operation.aresta)})`);
+      if (clash || ends(operation.edge) !== ends(inverse.edge)) {
+        incompatible(`has to point at the same edge (${edgeLabel(operation.edge)})`);
       }
       break;
     }
-    case 'alterar_campo_no': {
-      if (inverse.no_id !== operation.no_id || inverse.campo !== operation.campo) {
+    case 'change_node_field': {
+      if (inverse.node_id !== operation.node_id || inverse.field !== operation.field) {
         incompatible(
-          `has to change the same field of the same node ("${String(operation.no_id)}"."${String(operation.campo)}")`,
+          `has to change the same field of the same node ("${String(operation.node_id)}"."${String(operation.field)}")`,
         );
       }
       break;
@@ -426,78 +429,78 @@ export function applyOperations(
 
   operations.forEach((operation, index) => {
     const report = validateOperation(operation);
-    if (!report.valido) {
+    if (!report.valid) {
       throw new ApplicationError(
-        'operacao_invalida',
-        `operation #${index} is malformed: ${report.erros.map((error) => error.mensagem).join('; ')}`,
+        'invalid_operation',
+        `operation #${index} is malformed: ${report.errors.map((error) => error.message).join('; ')}`,
         index,
       );
     }
 
-    switch (operation.tipo) {
-      case 'adicionar_no': {
-        if (result.nodes.some((node) => node.id === operation.no.id)) {
+    switch (operation.type) {
+      case 'add_node': {
+        if (result.nodes.some((node) => node.id === operation.node.id)) {
           throw new ApplicationError(
-            'no_duplicado',
-            `node "${operation.no.id}" already exists in the snapshot`,
-            operation.no.id,
+            'duplicate_node',
+            `node "${operation.node.id}" already exists in the snapshot`,
+            operation.node.id,
           );
         }
-        result.nodes.push(structuredClone(operation.no));
+        result.nodes.push(structuredClone(operation.node));
         break;
       }
-      case 'remover_no': {
-        const position = result.nodes.findIndex((node) => node.id === operation.no_id);
+      case 'remove_node': {
+        const position = result.nodes.findIndex((node) => node.id === operation.node_id);
         if (position === -1) {
           throw new ApplicationError(
-            'no_inexistente',
-            `node "${operation.no_id}" does not exist in the snapshot`,
-            operation.no_id,
+            'unknown_node',
+            `node "${operation.node_id}" does not exist in the snapshot`,
+            operation.node_id,
           );
         }
         result.nodes.splice(position, 1);
         break;
       }
-      case 'adicionar_aresta': {
-        result.edges.push(structuredClone(operation.aresta));
+      case 'add_edge': {
+        result.edges.push(structuredClone(operation.edge));
         break;
       }
-      case 'remover_aresta': {
+      case 'remove_edge': {
         // A target that declares a `condition` names ONE edge, even where two
         // parallel ones share the ends; one that declares none removes the first
         // edge between those ends, which is what it has always meant and what
         // every operation stored before t205 counts on.
-        const wanted = operation.aresta.condition;
+        const wanted = operation.edge.condition;
         const position = result.edges.findIndex(
           (edge) =>
-            edge.from === operation.aresta.from &&
-            edge.to === operation.aresta.to &&
+            edge.from === operation.edge.from &&
+            edge.to === operation.edge.to &&
             (wanted === undefined || edge.condition === wanted),
         );
         if (position === -1) {
           throw new ApplicationError(
-            'aresta_inexistente',
-            `edge "${operation.aresta.from}"→"${operation.aresta.to}"${wanted === undefined ? '' : ` [${wanted}]`} does not exist in the snapshot`,
+            'unknown_edge',
+            `edge "${operation.edge.from}"→"${operation.edge.to}"${wanted === undefined ? '' : ` [${wanted}]`} does not exist in the snapshot`,
             {
-              de: operation.aresta.from,
-              para: operation.aresta.to,
-              ...(wanted === undefined ? {} : { condicao: wanted }),
+              from: operation.edge.from,
+              to: operation.edge.to,
+              ...(wanted === undefined ? {} : { condition: wanted }),
             },
           );
         }
         result.edges.splice(position, 1);
         break;
       }
-      case 'alterar_campo_no': {
-        const node = result.nodes.find((candidate) => candidate.id === operation.no_id);
+      case 'change_node_field': {
+        const node = result.nodes.find((candidate) => candidate.id === operation.node_id);
         if (node === undefined) {
           throw new ApplicationError(
-            'no_inexistente',
-            `node "${operation.no_id}" does not exist in the snapshot`,
-            operation.no_id,
+            'unknown_node',
+            `node "${operation.node_id}" does not exist in the snapshot`,
+            operation.node_id,
           );
         }
-        (node as PlainObject)[operation.campo] = structuredClone(operation.para);
+        (node as PlainObject)[operation.field] = structuredClone(operation.to);
         break;
       }
     }

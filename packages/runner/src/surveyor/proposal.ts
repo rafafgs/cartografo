@@ -17,7 +17,7 @@
  *   to numbers in the log" is true by construction and not by the agent's
  *   memory.
  * - **The session** does exactly one thing: turn a named bottleneck into
- *   `operacoes`, in the vocabulary of `docs/spec/entidades-versionamento.md`
+ *   `operations`, in the vocabulary of `docs/spec/entidades-versionamento.md`
  *   §3. It writes JSON to a file in its own working directory and is handed no
  *   URL, no token and no write access to anything else. The only `POST` in this
  *   ticket is ours.
@@ -28,8 +28,12 @@
  * A run with no signal (`gargalo === null`) opens no session at all and posts
  * nothing. "Nothing to propose" is a valid, silent outcome.
  *
- * English per D18; payload keys and the domain vocabulary stay in Portuguese,
- * because that is how they are already published in the book.
+ * English per D18. The proposal's outer keys went English with t226 and the
+ * OPERATIONS with t228 (`docs/spec/glossario-wire.md` §3) — mirror validator and
+ * session prompt together, because a prompt teaching the old spelling would
+ * produce exactly the 400 the mirror exists to prevent. What stays Portuguese is
+ * this module's own vocabulary: `evidencia`, `metrica_esperada` and the ranking
+ * it publishes, which are free JSON by design (D15) and nobody's surface in D20.
  */
 
 import { readFileSync } from 'node:fs';
@@ -72,18 +76,18 @@ const DEFAULT_TIMEOUT_SECONDS = 900;
 const EXPECTED_REDUCTION = 0.2;
 
 /** The five operation types, as `domain/operations.ts` defines them. */
-const OPERATION_TYPES = ['adicionar_no', 'remover_no', 'adicionar_aresta', 'remover_aresta', 'alterar_campo_no'];
+const OPERATION_TYPES = ['add_node', 'remove_node', 'add_edge', 'remove_edge', 'change_node_field'];
 
-/** Which type undoes which. `alterar_campo_no` is its own inverse. */
+/** Which type undoes which. `change_node_field` is its own inverse. */
 const EXPECTED_INVERSE: Record<string, string> = {
-  adicionar_no: 'remover_no',
-  remover_no: 'adicionar_no',
-  adicionar_aresta: 'remover_aresta',
-  remover_aresta: 'adicionar_aresta',
-  alterar_campo_no: 'alterar_campo_no',
+  add_node: 'remove_node',
+  remove_node: 'add_node',
+  add_edge: 'remove_edge',
+  remove_edge: 'add_edge',
+  change_node_field: 'change_node_field',
 };
 
-/** Node fields `alterar_campo_no` may swap. */
+/** Node fields `change_node_field` may swap. */
 const MUTABLE_FIELDS = ['role', 'description', 'skill_ref', 'contract'];
 
 /** The evidence a flow proposal carries into the book. */
@@ -197,7 +201,7 @@ function isFilledText(value: unknown): value is string {
 export function validateOperation(operation: unknown): string[] {
   if (!isObject(operation)) return ['an operation has to be a JSON object'];
 
-  const type = operation.tipo;
+  const type = operation.type;
   if (typeof type !== 'string' || !OPERATION_TYPES.includes(type)) {
     return [
       `unknown operation type: ${JSON.stringify(type)} (known: ${OPERATION_TYPES.join(', ')})`,
@@ -206,14 +210,14 @@ export function validateOperation(operation: unknown): string[] {
 
   const problems = checkBody(type, operation, 'operation');
 
-  const inverse = operation.inversa;
+  const inverse = operation.inverse;
   if (!isObject(inverse)) {
-    problems.push(`operation "${type}" has to declare its own "inversa" (D15)`);
+    problems.push(`operation "${type}" has to declare its own "inverse" (D15)`);
     return problems;
   }
-  if (inverse.tipo !== EXPECTED_INVERSE[type]) {
+  if (inverse.type !== EXPECTED_INVERSE[type]) {
     problems.push(
-      `the inverse of "${type}" has to be of type "${EXPECTED_INVERSE[type]}", got ${JSON.stringify(inverse.tipo)}`,
+      `the inverse of "${type}" has to be of type "${EXPECTED_INVERSE[type]}", got ${JSON.stringify(inverse.type)}`,
     );
     return problems;
   }
@@ -226,44 +230,44 @@ export function validateOperation(operation: unknown): string[] {
 /** Keys and types each operation type demands of itself. */
 function checkBody(type: string, body: PlainObject, role: string): string[] {
   const problems: string[] = [];
-  const edge = body.aresta;
+  const edge = body.edge;
 
   switch (type) {
-    case 'adicionar_no':
-      if (!isObject(body.no) || !isFilledText(body.no.id)) {
-        problems.push(`${role} "${type}": "no" has to be an object with an "id"`);
+    case 'add_node':
+      if (!isObject(body.node) || !isFilledText(body.node.id)) {
+        problems.push(`${role} "${type}": "node" has to be an object with an "id"`);
       }
       break;
-    case 'remover_no':
-      if (!isFilledText(body.no_id)) {
-        problems.push(`${role} "${type}": "no_id" has to be a filled node id`);
+    case 'remove_node':
+      if (!isFilledText(body.node_id)) {
+        problems.push(`${role} "${type}": "node_id" has to be a filled node id`);
       }
       break;
-    case 'adicionar_aresta':
-    case 'remover_aresta':
+    case 'add_edge':
+    case 'remove_edge':
       if (!isObject(edge) || !isFilledText(edge.from) || !isFilledText(edge.to)) {
-        problems.push(`${role} "${type}": "aresta" has to have "from" and "to"`);
+        problems.push(`${role} "${type}": "edge" has to have "from" and "to"`);
         break;
       }
       // `condition` is only demanded of the edge that ENTERS the document, and
       // as a string (even an empty one): a missing label is the soundness
       // gate's rejection, with the name of the rule, not a generic 400.
-      if (type === 'adicionar_aresta' && typeof edge.condition !== 'string') {
-        problems.push(`${role} "${type}": "aresta.condition" has to be a string`);
+      if (type === 'add_edge' && typeof edge.condition !== 'string') {
+        problems.push(`${role} "${type}": "edge.condition" has to be a string`);
       }
       break;
-    case 'alterar_campo_no':
-      if (!isFilledText(body.no_id)) {
-        problems.push(`${role} "${type}": "no_id" has to be a filled node id`);
+    case 'change_node_field':
+      if (!isFilledText(body.node_id)) {
+        problems.push(`${role} "${type}": "node_id" has to be a filled node id`);
       }
-      if (typeof body.campo !== 'string' || !MUTABLE_FIELDS.includes(body.campo)) {
+      if (typeof body.field !== 'string' || !MUTABLE_FIELDS.includes(body.field)) {
         problems.push(
-          `${role} "alterar_campo_no": "campo" has to be one of ${MUTABLE_FIELDS.join(', ')}`,
+          `${role} "change_node_field": "field" has to be one of ${MUTABLE_FIELDS.join(', ')}`,
         );
       }
-      for (const key of ['de', 'para']) {
+      for (const key of ['from', 'to']) {
         if (!Object.hasOwn(body, key)) {
-          problems.push(`${role} "alterar_campo_no": "${key}" is missing`);
+          problems.push(`${role} "change_node_field": "${key}" is missing`);
         }
       }
       break;
@@ -280,26 +284,26 @@ function checkInverseTarget(type: string, operation: PlainObject, inverse: Plain
     isObject(value) ? `${String(value.from)}→${String(value.to)}` : 'invalid';
 
   switch (type) {
-    case 'adicionar_no': {
-      const id = isObject(operation.no) ? operation.no.id : undefined;
-      return inverse.no_id === id ? [] : [`the inverse has to remove node "${String(id)}"`];
+    case 'add_node': {
+      const id = isObject(operation.node) ? operation.node.id : undefined;
+      return inverse.node_id === id ? [] : [`the inverse has to remove node "${String(id)}"`];
     }
-    case 'remover_no': {
-      const id = isObject(inverse.no) ? inverse.no.id : undefined;
-      return id === operation.no_id
+    case 'remove_node': {
+      const id = isObject(inverse.node) ? inverse.node.id : undefined;
+      return id === operation.node_id
         ? []
-        : [`the inverse has to add node "${String(operation.no_id)}" back`];
+        : [`the inverse has to add node "${String(operation.node_id)}" back`];
     }
-    case 'adicionar_aresta':
-    case 'remover_aresta':
-      return ends(operation.aresta) === ends(inverse.aresta)
+    case 'add_edge':
+    case 'remove_edge':
+      return ends(operation.edge) === ends(inverse.edge)
         ? []
-        : [`the inverse has to point at the same edge (${ends(operation.aresta)})`];
-    case 'alterar_campo_no':
-      return inverse.no_id === operation.no_id && inverse.campo === operation.campo
+        : [`the inverse has to point at the same edge (${ends(operation.edge)})`];
+    case 'change_node_field':
+      return inverse.node_id === operation.node_id && inverse.field === operation.field
         ? []
         : [
-            `the inverse has to change the same field of the same node ("${String(operation.no_id)}"."${String(operation.campo)}")`,
+            `the inverse has to change the same field of the same node ("${String(operation.node_id)}"."${String(operation.field)}")`,
           ];
     default:
       return [];
@@ -388,18 +392,18 @@ export const INSTRUCTIONS = [
   'exatamente esta forma e nada mais:',
   '',
   '```json',
-  '{"operacoes": [ ... ]}',
+  '{"operations": [ ... ]}',
   '```',
   '',
   'Cada operação é de UM destes cinco tipos, e carrega a própria inversa:',
   '',
-  '- `adicionar_no`    {"tipo","no",     "inversa": {"tipo":"remover_no","no_id"}}',
-  '- `remover_no`      {"tipo","no_id",  "inversa": {"tipo":"adicionar_no","no"}}',
-  '- `adicionar_aresta` {"tipo","aresta":{"from","to","condition"}, "inversa":{"tipo":"remover_aresta","aresta":{"from","to"}}}',
-  '- `remover_aresta`  {"tipo","aresta":{"from","to"}, "inversa":{"tipo":"adicionar_aresta","aresta":{"from","to","condition"}}}',
-  '- `alterar_campo_no` {"tipo","no_id","campo","de","para", "inversa": a mesma com de/para trocados}',
+  '- `add_node`          {"type","node",   "inverse": {"type":"remove_node","node_id"}}',
+  '- `remove_node`       {"type","node_id","inverse": {"type":"add_node","node"}}',
+  '- `add_edge`          {"type","edge":{"from","to","condition"}, "inverse":{"type":"remove_edge","edge":{"from","to"}}}',
+  '- `remove_edge`       {"type","edge":{"from","to"}, "inverse":{"type":"add_edge","edge":{"from","to","condition"}}}',
+  '- `change_node_field` {"type","node_id","field","from","to", "inverse": a mesma com from/to trocados}',
   '',
-  '`campo` só pode ser role, description, skill_ref ou contract. Trocar `id` ou',
+  '`field` só pode ser role, description, skill_ref ou contract. Trocar `id` ou',
   '`node_type` não é troca de campo, e não existe operação para isso aqui.',
   '',
   'Regras duras:',
@@ -522,7 +526,7 @@ async function chooseOperations(
   } catch {
     throw new SurveyorError(
       'missing_output',
-      `the session ended without writing ${OUTPUT_FILE} in ${options.workingDir}: with no "operacoes", there is no proposal`,
+      `the session ended without writing ${OUTPUT_FILE} in ${options.workingDir}: with no "operations", there is no proposal`,
       lines.slice(-10),
     );
   }
@@ -537,11 +541,11 @@ async function chooseOperations(
     );
   }
 
-  const operations = isObject(document) ? document.operacoes : undefined;
+  const operations = isObject(document) ? document.operations : undefined;
   if (!Array.isArray(operations) || operations.length === 0) {
     throw new SurveyorError(
       'missing_operations',
-      `${OUTPUT_FILE} has to carry "operacoes" as a non-empty list — a proposal that changes nothing is not a proposal`,
+      `${OUTPUT_FILE} has to carry "operations" as a non-empty list — a proposal that changes nothing is not a proposal`,
     );
   }
 
@@ -553,7 +557,7 @@ async function chooseOperations(
   if (problems.length > 0) {
     throw new SurveyorError(
       'invalid_operations',
-      `the session returned ${problems.length} shape problem(s) in "operacoes"; nothing was written`,
+      `the session returned ${problems.length} shape problem(s) in "operations"; nothing was written`,
       problems,
     );
   }
@@ -630,9 +634,9 @@ export async function proposeFlowImprovement(
 
   const operations = await chooseOperations(options, version, evidence, log);
 
-  // Only the OUTER keys of the input change language (t226): what `evidence` and
-  // `expected_metric` carry is the frozen hypothesis shape (FR5), and what is
-  // inside `operations` belongs to D20's third child.
+  // The outer keys went English with t226 and what is inside `operations` with
+  // t228 (D20's third child). What `evidence` and `expected_metric` carry is the
+  // frozen hypothesis shape (FR5), which is nobody's surface in D20.
   const proposal = await options.client.criarProposta({
     graph_id: version.graph_id,
     target_version: version.id,

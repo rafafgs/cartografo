@@ -63,6 +63,9 @@ const T117_ARTIFACTS = Object.freeze({
 
 const ARTIFACTS = Object.values(T117_ARTIFACTS);
 
+/** The migration that turns the registry into a lineage (t215, FR1). */
+const T215_MIGRATION = 'migrations/0019_skill_versao.sql';
+
 /** A registered skill, as the API returns it — the contract this test demands. */
 interface Skill {
   id: string;
@@ -78,6 +81,8 @@ interface Skill {
   instructions: string;
   origin: Record<string, unknown>;
   registered_at: string;
+  /** When this version was retired (t215, FR7); `null` while it is live. */
+  deprecated_at: string | null;
 }
 
 /** Error body of the registry. */
@@ -318,23 +323,40 @@ test('AT6 — an imported manifest with incomplete provenance is refused', async
   assert.match(reason(refused.body), /reviewed_by/);
 });
 
-test('AT7 — registering the same id twice is a conflict', async (t) => {
-  requireArtifacts(...ARTIFACTS);
+/**
+ * AT7 used to demand a 409 here, and t215 is why it does not any more.
+ *
+ * The content hash deliberately excludes `id`, `version` and `description`
+ * (`domain/manifest.ts`), so a second POST that only rewords the description is
+ * the SAME content under the same `(id, version)` — which FR2 answers `200`
+ * with the row that is already there. What the case still measures is the half
+ * that never changed: a repeated write is not an UPDATE. The registered
+ * description survives, because the registry hands back what it stored instead
+ * of taking the newer prose. The 409 moved to where the conflict really is —
+ * changed content under an unchanged version, in the t215 block below.
+ */
+test('AT7 — registering the same id and version again is idempotent, never an update (t215)', async (t) => {
+  requireArtifacts(...ARTIFACTS, T215_MIGRATION);
   const ctx = await startControlPlane(t);
 
   const first = await post(ctx, importedManifest());
   assert.equal(first.status, 201);
 
   const second = await post(ctx, importedManifest({ description: 'outra descrição para o mesmo id' }));
-  assert.equal(second.status, 409, `expected 409, got ${second.status}: ${JSON.stringify(second.body)}`);
-  assert.match(reason(second.body), /feature-dev/);
+  assert.equal(second.status, 200, `expected 200, got ${second.status}: ${JSON.stringify(second.body)}`);
+  assert.equal(second.body.id, 'feature-dev');
+  assert.equal(
+    second.body.registered_at,
+    first.body.registered_at,
+    'an idempotent write does not re-stamp the registration',
+  );
 
   const read = await request<Skill>(ctx, 'GET', '/v1/skills/feature-dev');
   assert.equal(read.status, 200);
   assert.equal(
     read.body.description,
     'Orchestrates new feature development following the full 4-phase protocol',
-    'the conflict cannot have overwritten the registered manifest',
+    'a repeated registration cannot have overwritten the registered manifest',
   );
 });
 
@@ -456,4 +478,197 @@ test('AT12 — a check with no id, type or description is refused, naming all th
 
   const read = await request<Skill>(ctx, 'GET', '/v1/skills/feature-dev');
   assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t215 — the registry is a lineage: versions of one skill coexist (D22).      */
+/*                                                                            */
+/* The registry was one row per id until here, and D22 says it is one row per  */
+/* (id, version): "skill tem id estável e versões (semver + hash de           */
+/* conteúdo)... o nó continua pinado por hash (D4) e nunca resolve 'a mais     */
+/* recente'". So the cases below are about the two reads that tell those apart */
+/* — the one that follows the lineage forward, and the one that pins an exact  */
+/* row — plus the three writes: a version that is new, a version whose content */
+/* moved underneath it, and a version taken out of the lineage's future.       */
+/* -------------------------------------------------------------------------- */
+
+/** The two versions every case below registers, told apart by their body. */
+const V1 = '1.0.0';
+const V2 = '1.1.0';
+const V1_TEXT = '# Feature Development Orchestrator\n\nSiga o protocolo.';
+const V2_TEXT = '# Feature Development Orchestrator\n\nSiga o protocolo, agora com fase 5.';
+
+/** Registers one version of `feature-dev`, asserting the status it deserves. */
+async function register(
+  ctx: TestContext,
+  version: string,
+  instructions: string,
+  expected = 201,
+): Promise<Skill> {
+  const created = await post(ctx, importedManifest({ version, instructions }));
+  assert.equal(
+    created.status,
+    expected,
+    `POST /v1/skills ${version} returned ${created.status}: ${JSON.stringify(created.body)}`,
+  );
+  return created.body;
+}
+
+/** `GET /v1/skills/feature-dev`, with whatever query the case is asking about. */
+async function readSkill(ctx: TestContext, query = ''): Promise<{ status: number; body: Skill }> {
+  const answer = await request<Skill>(ctx, 'GET', `/v1/skills/feature-dev${query}`);
+  return { status: answer.status, body: answer.body };
+}
+
+test('t215 AT — two versions of one skill coexist, and only the pinned read is exact', async (t) => {
+  requireArtifacts(...ARTIFACTS, T215_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const first = await register(ctx, V1, V1_TEXT);
+  const second = await register(ctx, V2, V2_TEXT);
+  assert.notEqual(first.hash, second.hash, 'the fixture has to give the two versions different content');
+
+  // No query: the latest live version. This is the ONLY read that resolves
+  // "forward", and it is deliberately not the one the runner uses (FR4).
+  const latest = await readSkill(ctx);
+  assert.equal(latest.status, 200);
+  assert.equal(latest.body.version, V2);
+  assert.equal(latest.body.instructions, V2_TEXT);
+  assert.equal(latest.body.deprecated_at, null, 'a live version carries no retirement stamp');
+
+  // `?version=`: the exact row, which is what keeps a map pinned to 1.0.0
+  // running after 1.1.0 lands — D22: improving a skill never breaks a map
+  // pinned to it.
+  const pinned = await readSkill(ctx, `?version=${V1}`);
+  assert.equal(pinned.status, 200);
+  assert.equal(pinned.body.version, V1);
+  assert.equal(pinned.body.instructions, V1_TEXT);
+  assert.equal(pinned.body.hash, first.hash);
+
+  // `?hash=`: the same row, reached from the pin the graph really carries.
+  const byHash = await readSkill(ctx, `?hash=${encodeURIComponent(first.hash)}`);
+  assert.equal(byHash.status, 200);
+  assert.equal(byHash.body.version, V1);
+
+  const missing = await readSkill(ctx, '?version=9.9.9');
+  assert.equal(missing.status, 404, 'a version the lineage does not carry is a 404, not the latest');
+
+  // The list stays FLAT — one entry per (id, version), no lineage envelope —
+  // so a capability reader sees no shape change from this ticket (FR3).
+  const listed = await request<{ skills: Skill[] }>(ctx, 'GET', '/v1/skills?id=feature-dev');
+  assert.equal(listed.status, 200);
+  assert.deepEqual(
+    listed.body.skills.map((skill) => `${skill.id}@${skill.version}`),
+    [`feature-dev@${V1}`, `feature-dev@${V2}`],
+    'the lineage lists every version, in version order',
+  );
+});
+
+test('t215 AT — the same version with the same content is a 200, with the original stamp', async (t) => {
+  requireArtifacts(...ARTIFACTS, T215_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const created = await register(ctx, V1, V1_TEXT);
+  const again = await register(ctx, V1, V1_TEXT, 200);
+
+  assert.equal(
+    again.registered_at,
+    created.registered_at,
+    'an idempotent reimport does not claim a write that did not happen',
+  );
+  assert.equal(again.hash, created.hash);
+
+  const listed = await request<{ skills: Skill[] }>(ctx, 'GET', '/v1/skills');
+  assert.deepEqual(
+    listed.body.skills.map((skill) => `${skill.id}@${skill.version}`),
+    [`feature-dev@${V1}`],
+    'the second POST did not add a row',
+  );
+});
+
+test('t215 AT — content that moved under an unchanged version is a 409 that says to bump it', async (t) => {
+  requireArtifacts(...ARTIFACTS, T215_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  const created = await register(ctx, V1, V1_TEXT);
+
+  const refused = await post(ctx, importedManifest({ version: V1, instructions: V2_TEXT }));
+  assert.equal(
+    refused.status,
+    409,
+    `expected 409, got ${refused.status}: ${JSON.stringify(refused.body)}`,
+  );
+  assert.equal(refused.body.error, 'skill_version_conflict');
+  const message = reason(refused.body);
+  assert.match(message, /feature-dev/, 'the refusal has to name the skill');
+  assert.match(message, new RegExp(V1.replace(/\./g, '\\.')), 'and the version that is taken');
+  assert.match(message, /bump/i, 'and the way out, which is a new version');
+
+  // Nothing moved: the row is the one that was registered first.
+  const stored = await readSkill(ctx, `?version=${V1}`);
+  assert.equal(stored.status, 200);
+  assert.equal(stored.body.instructions, V1_TEXT, 'a conflict cannot rewrite the registered content');
+  assert.equal(stored.body.hash, created.hash);
+  assert.equal(stored.body.registered_at, created.registered_at);
+});
+
+test('t215 AT — retiring a version takes it out of "latest" and out of nothing else', async (t) => {
+  requireArtifacts(...ARTIFACTS, T215_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  await register(ctx, V1, V1_TEXT);
+  const second = await register(ctx, V2, V2_TEXT);
+
+  const retired = await request<Skill>(ctx, 'PATCH', `/v1/skills/feature-dev/${V2}`);
+  assert.equal(retired.status, 200, `expected 200, got ${retired.status}: ${JSON.stringify(retired.body)}`);
+  assert.ok(
+    typeof retired.body.deprecated_at === 'string' && retired.body.deprecated_at.length > 0,
+    'retiring a version has to record when it happened',
+  );
+
+  // "Latest" skips it...
+  const latest = await readSkill(ctx);
+  assert.equal(latest.status, 200);
+  assert.equal(latest.body.version, V1, 'a deprecated version is not what a fresh graph should pin');
+
+  // ...and every exact read still resolves it, unchanged. A retirement must
+  // never look like "this skill stopped existing" to a node pinned to it (D22).
+  const pinned = await readSkill(ctx, `?version=${V2}`);
+  assert.equal(pinned.status, 200);
+  assert.equal(pinned.body.instructions, V2_TEXT);
+  assert.equal(pinned.body.hash, second.hash);
+  assert.equal(pinned.body.deprecated_at, retired.body.deprecated_at);
+
+  const byHash = await readSkill(ctx, `?hash=${encodeURIComponent(second.hash)}`);
+  assert.equal(byHash.status, 200);
+  assert.equal(byHash.body.version, V2);
+
+  // First write wins, same posture as `registered_at`.
+  const twice = await request<Skill>(ctx, 'PATCH', `/v1/skills/feature-dev/${V2}`);
+  assert.equal(twice.status, 200);
+  assert.equal(
+    twice.body.deprecated_at,
+    retired.body.deprecated_at,
+    'a second retirement does not re-stamp the first',
+  );
+
+  const unknown = await request<Skill>(ctx, 'PATCH', '/v1/skills/feature-dev/9.9.9');
+  assert.equal(unknown.status, 404, 'retiring a version that does not exist is a 404');
+});
+
+test('t215 AT — a lineage whose every version is retired still resolves, never a 404', async (t) => {
+  requireArtifacts(...ARTIFACTS, T215_MIGRATION);
+  const ctx = await startControlPlane(t);
+
+  await register(ctx, V1, V1_TEXT);
+  await register(ctx, V2, V2_TEXT);
+  for (const version of [V1, V2]) {
+    const retired = await request<Skill>(ctx, 'PATCH', `/v1/skills/feature-dev/${version}`);
+    assert.equal(retired.status, 200);
+  }
+
+  const latest = await readSkill(ctx);
+  assert.equal(latest.status, 200, 'deprecating everything must not make the lineage look unregistered');
+  assert.equal(latest.body.version, V2, 'with nothing live, the highest version overall answers');
+  assert.ok(typeof latest.body.deprecated_at === 'string');
 });

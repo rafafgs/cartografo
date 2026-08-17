@@ -34,6 +34,7 @@ import type * as MigrateModule from '../src/db/migrate.ts';
 import type * as OperationsModule from '../src/domain/operations.ts';
 import type * as ServerModule from '../src/server.ts';
 import type * as CredentialsModule from '../src/repositories/credentials.ts';
+import { manifestHash } from '../src/domain/manifest.ts';
 import { authorizeGlobalFetch } from './authorized-fetch.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
@@ -1353,4 +1354,159 @@ test('t166 AT — applying an engine change writes a new version and moves the p
   assert.ok(current !== null);
   assert.equal(requireNode(await readSnapshot(address, current), 'revisar').engine, 'codex');
   assert.equal(requireNode(await readSnapshot(address, version.id), 'revisar').engine, undefined);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t215 — moving a node's pin is a proposal, refused if the registry lacks it. */
+/*                                                                            */
+/* D22 puts it as one sentence: moving a node's pin to another version of the  */
+/* same skill is a change to the map like any other (D15), and it is refused   */
+/* when the hash does not exist in the registry. Until this ficha the second   */
+/* half of that sentence was not enforced anywhere in                          */
+/* the apply path — `domain/graph.ts` is pure and takes no `db` — so a         */
+/* proposal could point a node at content nobody ever registered, apply        */
+/* cleanly, and only fail much later at dispatch as a `SkillPinMismatchError`. */
+/*                                                                            */
+/* What is gated is the pin the proposal MOVES, and only that. A pin that was  */
+/* already in the base version is not re-judged here: the fixtures of this     */
+/* repository pin `cartografo/redigir-nota`, an id the registry can never      */
+/* accept (`ID_PATTERN` has no slash), and a gate that re-read them would      */
+/* refuse every proposal ever written against a graph that already exists —    */
+/* which is not what D22 asks for. The runner still refuses an unresolvable    */
+/* pin at dispatch, where it always did.                                       */
+/* -------------------------------------------------------------------------- */
+
+/** A registerable manifest, with the pin computed over whatever it carries. */
+function skillManifest(
+  id: string,
+  version: string,
+  instructions: string,
+): Record<string, unknown> {
+  const manifest: Record<string, unknown> = {
+    id,
+    version,
+    hash: '',
+    role: 'gate',
+    description: 'Confere a nota e roteia a travessia.',
+    input: { type: 'object', properties: { texto: { type: 'string' } } },
+    output: {
+      type: 'object',
+      required: ['outcome'],
+      properties: { outcome: { enum: ['pass', 'fail', 'escalate_human'] } },
+    },
+    preconditions: [],
+    checks: [
+      {
+        id: 'nota-existe',
+        type: 'deterministic',
+        description: 'A nota existe e não está vazia.',
+        command: 'test -s nota.md',
+      },
+    ],
+    permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: false } },
+    instructions,
+    origin: { type: 'native' },
+  };
+  manifest.hash = manifestHash(manifest);
+  return manifest;
+}
+
+/** Registers one manifest through the public route and returns the pin it got. */
+async function registerSkill(
+  address: string,
+  manifest: Record<string, unknown>,
+): Promise<{ id: string; version: string; hash: string }> {
+  const response = await post(address, '/v1/skills', manifest);
+  const body = await jsonBody<{ id: string; version: string; hash: string }>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
+  return { id: body.id, version: body.version, hash: body.hash };
+}
+
+/** The pin swap this block proposes, always on the `revisar` node. */
+function movePin(from: unknown, to: unknown): OperationsModule.Operation {
+  return swapNodeField('skill_ref', from, to);
+}
+
+test('t215 AT — a proposal that moves a pin the registry does not carry is refused, and nothing is written', async (t) => {
+  const address = await startApp(t);
+
+  const { document, graph, version } = await registerBase(address);
+  const pinned = requireNode(document, 'revisar').skill_ref;
+
+  // Registered, so the LINEAGE exists — what the registry has never seen is
+  // this hash under this version, which is the exact case D22 names.
+  const real = await registerSkill(address, skillManifest('revisar-nota', '1.0.0', '# Revisar\n\nConfira.'));
+  const invented = { id: real.id, version: real.version, hash: `sha256:${'e'.repeat(64)}` };
+
+  const proposal = await createProposal(address, graph.id, version.id, [movePin(pinned, invented)]);
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<ApplyResponse & { code?: string; message?: string; target?: unknown }>(
+    response,
+  );
+  assert.equal(response.status, 422, JSON.stringify(body));
+  assert.equal(body.error, 'unregistered_skill_pin');
+  assert.ok(typeof body.message === 'string' && body.message.includes('revisar'), body.message);
+  assert.deepEqual(
+    body.target,
+    { node_id: 'revisar', skill_ref: invented },
+    'the report names the node whose pin was refused, and the pin it was refused for',
+  );
+
+  assert.equal(body.proposal.status, 'rejected', 'the refusal rejects the proposal, like the gate above it');
+  assert.equal(
+    (await getGraph(address, graph.id)).current_version_id,
+    version.id,
+    'a refused pin cannot have moved the version pointer',
+  );
+
+  // The same refusal for a lineage the registry has never heard of at all.
+  const unknown = { id: 'skill-que-ninguem-registrou', version: '1.0.0', hash: `sha256:${'f'.repeat(64)}` };
+  const second = await createProposal(address, graph.id, version.id, [movePin(pinned, unknown)]);
+  await approve(address, second.id);
+
+  const refused = await post(address, `/v1/proposals/${second.id}/apply`, {});
+  const refusedBody = await jsonBody<ApplyResponse>(refused);
+  assert.equal(refused.status, 422, JSON.stringify(refusedBody));
+  assert.equal(refusedBody.error, 'unregistered_skill_pin');
+  assert.equal(
+    (await getGraph(address, graph.id)).current_version_id,
+    version.id,
+    'still nothing written',
+  );
+});
+
+test('t215 AT — a proposal that moves a pin to a registered version applies like any other', async (t) => {
+  const address = await startApp(t);
+
+  const { document, graph, version } = await registerBase(address);
+  const pinned = requireNode(document, 'revisar').skill_ref;
+
+  // A lineage with two versions: the pin moves to the SECOND one, which is the
+  // whole flow D22 describes — the registry improved, the map follows by proposal.
+  await registerSkill(address, skillManifest('revisar-nota', '1.0.0', '# Revisar\n\nConfira.'));
+  const newer = await registerSkill(
+    address,
+    skillManifest('revisar-nota', '1.1.0', '# Revisar\n\nConfira, e cite o trecho.'),
+  );
+
+  const proposal = await createProposal(address, graph.id, version.id, [movePin(pinned, newer)]);
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.ok(body.graph_version !== undefined);
+
+  const current = (await getGraph(address, graph.id)).current_version_id;
+  assert.equal(current, body.graph_version.id, 'the pointer moved to the version that was written');
+  assert.ok(current !== null);
+  assert.deepEqual(
+    requireNode(await readSnapshot(address, current), 'revisar').skill_ref,
+    newer,
+    'the new snapshot carries the pin the proposal moved to',
+  );
+  // Append-only: the version somebody already ran under keeps the old pin (D15).
+  assert.deepEqual(requireNode(await readSnapshot(address, version.id), 'revisar').skill_ref, pinned);
 });

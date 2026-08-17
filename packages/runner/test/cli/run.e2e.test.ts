@@ -37,6 +37,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -81,7 +82,46 @@ import type {
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const GRAPH_FIXTURE = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-dois-engines.json');
+const SKILL_FIXTURE = path.join(PACKAGE_ROOT, 'test', 'fixtures', 'skill-travessia-fazer.json');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
+
+/** The manifest this file registers, read fresh so a caller may edit its copy. */
+function skillFixture(): Record<string, unknown> {
+  return JSON.parse(readFileSync(SKILL_FIXTURE, 'utf8')) as Record<string, unknown>;
+}
+
+/** Sorts keys recursively — the canonicalization the manifest hash is defined over. */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (typeof value === 'object' && value !== null) {
+    const source = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) sorted[key] = canonical(source[key]);
+    return sorted;
+  }
+  return value;
+}
+
+/**
+ * The pin of a manifest, recomputed here rather than imported (t215).
+ *
+ * `packages/runner` declares no dependency on `packages/core` — it is an HTTP
+ * client of the public API and nothing more (D1, D11) — so the six-field
+ * procedure of `especificacoes/formatos/manifesto-skill.md` is written out. It
+ * is the same reason `packages/core/test/skill-routes.test.ts` writes it out:
+ * a hash the test asks the implementation for proves nothing about the pin.
+ */
+function manifestContentHash(manifest: Record<string, unknown>): string {
+  const subset = {
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
+    checks: manifest.checks,
+    permissions: manifest.permissions,
+    budgets: manifest.budgets,
+  };
+  return `sha256:${createHash('sha256').update(JSON.stringify(canonical(subset)), 'utf8').digest('hex')}`;
+}
 
 const RUN_MODULE = 'src/cli/run.ts';
 
@@ -387,12 +427,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     plane,
     'POST',
     '/v1/skills',
-    JSON.parse(
-      readFileSync(
-        path.join(PACKAGE_ROOT, 'test', 'fixtures', 'skill-travessia-fazer.json'),
-        'utf8',
-      ),
-    ) as Record<string, unknown>,
+    skillFixture(),
     201,
   );
   const fixture = JSON.parse(readFileSync(GRAPH_FIXTURE, 'utf8')) as Record<string, unknown>;
@@ -950,6 +985,128 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       git(repoRoot, 'status', '--porcelain'),
       '',
       'the operator\'s checkout has to be exactly as clean as it was before the dispatch',
+    );
+  });
+
+  /*
+   * t215 AC1 — a newer version of a skill does not reach a node pinned to the
+   * older one.
+   *
+   * This is the invariant D22 is built around — a node "nunca resolve 'a mais
+   * recente'", and improving a skill never breaks a map pinned to it — and this
+   * is the only place in the repository where it can be measured end to end: the
+   * real control plane serving a lineage with two versions, a real graph frozen
+   * with the older pin, and the fake engine's own record of the text it was
+   * handed.
+   *
+   * Two dispatches, and the SECOND one is the assertion. Before t215 the runner
+   * asked `GET /v1/skills/:id` with no query — which resolves the latest — so
+   * registering 1.1.0 would have made the second dispatch either render the new
+   * text or refuse on the hash check. Both are the same bug seen from two sides:
+   * a graph in flight changing behaviour because somebody improved a skill.
+   */
+  await parent.test('t215 AC1 — a node pinned to 1.0.0 still gets 1.0.0 after 1.1.0 is registered', async (t) => {
+    const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
+
+    const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't215-ac1');
+    t.after(async () => {
+      await blockEveryJob(plane);
+    });
+
+    /** The text the pinned version carries, straight off the registered fixture. */
+    const pinnedText = skillFixture().instructions as string;
+    const newerText = `${pinnedText}\n\nE, desde a 1.1.0, escreva também o que NÃO fez.`;
+
+    /** Runs one job to completion and gives back what the engine received. */
+    const dispatch = async (label: string, executionId: number): Promise<string> => {
+      const record = path.join(scratch, `${label}.json`);
+      const runner = await startRunner(t, runRunner, {
+        url: plane.baseUrl,
+        token: plane.token,
+        projectId: 1,
+        runnerId: `runner-t215-${label}`,
+        engine: 'claude-code',
+        repoRoot,
+        worktreesRoot,
+        runnerCap: 1,
+        projectCap: 4,
+        intervalMs: 500,
+        leaseTtlSeconds: 10,
+        engineFactory: fakeEngineFactory({
+          FAKE_ENGINE_LINES: QUIET_LINES,
+          FAKE_ENGINE_RECORD: record,
+        }),
+      });
+
+      await api<Job>(
+        plane,
+        'POST',
+        '/v1/jobs',
+        {
+          title: `travessia que prova o pino da skill (${label})`,
+          entry_node_id: DEFAULT_NODE,
+          execution_id: executionId,
+          graph_version_id: version.id,
+        },
+        201,
+      );
+
+      await waitFor(`the ${label} job being dispatched to completion`, async () => {
+        const { sessions: sessions } = await api<{ sessions: Session[] }>(
+          plane,
+          'GET',
+          `/v1/sessions?execution_id=${executionId}`,
+        );
+        return sessions.some((session) => session.status === 'completed');
+      });
+
+      await runner.stop();
+      await blockEveryJob(plane);
+
+      assert.ok(existsSync(record), `the ${label} session never ran through the fake engine`);
+      // argv AND the workdir files: the adapter moves `instructions` from the
+      // argv to an ephemeral file past 64 KiB (`command.ts`), and which channel
+      // carried it is not what this case is about.
+      const received = JSON.parse(readFileSync(record, 'utf8')) as {
+        argv: string[];
+        files: Record<string, string>;
+      };
+      return [...received.argv, ...Object.values(received.files)].join('\n');
+    };
+
+    const before = await dispatch('antes', 21_501);
+    assert.ok(
+      before.includes(pinnedText),
+      'the first dispatch did not carry the pinned version\'s instructions at all',
+    );
+
+    // The registry improves: a new version of the SAME lineage, with a body the
+    // pinned one does not have. Nothing about the graph changes.
+    const newer: Record<string, unknown> = {
+      ...skillFixture(),
+      version: '1.1.0',
+      instructions: newerText,
+    };
+    newer.hash = manifestContentHash(newer);
+    const registered = await api<{ id: string; version: string; hash: string }>(
+      plane,
+      'POST',
+      '/v1/skills',
+      newer,
+      201,
+    );
+    assert.equal(registered.version, '1.1.0');
+    assert.notEqual(registered.hash, skill.hash, 'the new version has to carry different content');
+
+    const after = await dispatch('depois', 21_502);
+    assert.ok(
+      after.includes(pinnedText),
+      'a node pinned to 1.0.0 stopped receiving 1.0.0 once 1.1.0 was registered',
+    );
+    assert.equal(
+      after.includes(newerText),
+      false,
+      'the newer version\'s text reached a session that never pinned it',
     );
   });
 });

@@ -338,16 +338,98 @@ test('a bundle offers every manifest to the registry before the graph', async (t
   );
 });
 
-test('a manifest the registry already has is a reimport, not a failure', async (t) => {
-  const plane = await startFakeControlPlane(t, (request) =>
-    request.path === '/v1/skills' ? { status: 409, body: { erro: 'skill_ja_registrada' } } : accepting()(request),
-  );
+/* ------------------------------------------------ t215: reimport of a bundle */
+
+/*
+ * The registry became a lineage (D22), and that inverts what the two statuses
+ * of a reimport mean to this command.
+ *
+ * Until t215 the registry was create-only: a second `POST /v1/skills` on a known
+ * id was a `409`, and treating it as a failure would have made `import`
+ * non-idempotent for nothing. Now `(id, version)` is the key, so the registry
+ * answers `200` for content it already holds under that version — and `409` for
+ * content that MOVED under an unchanged version, which is a real bundle-author
+ * mistake: whoever edited a manifest without bumping its `version` published two
+ * different bodies under one pin. The all-or-nothing rule of t135 has to catch
+ * that before the graph is sent, exactly as it catches a `422`.
+ */
+
+/** A registry that already holds every manifest of the bundle, unchanged. */
+function knownRegistry(): (request: { path: string; body?: unknown }) => FakeAnswer {
+  return (request) =>
+    request.path === '/v1/skills' ? { status: 200, body: request.body } : accepting()(request);
+}
+
+test('a manifest the registry already has at that version is a reimport, not a failure', async (t) => {
+  const plane = await startFakeControlPlane(t, knownRegistry());
   const directory = bundleCopy(t);
 
   const run = await capture(() => runImport({ path: directory, url: plane.url }));
 
-  assert.equal(run.code, 0, 'registration is create-only, so the second import finds them there');
+  assert.equal(run.code, 0, 'an unchanged reimport finds every version already there');
   assert.match(run.stdout, /skills\s+0 registered, 5 already in the registry/);
+});
+
+test('a bundle where one skill bumped its version registers exactly that version', async (t) => {
+  // The registry answers `201` for the one version it has never seen and `200`
+  // for the four it already holds — which is the shape of a bundle whose author
+  // improved one skill and bumped it.
+  const plane = await startFakeControlPlane(t, (request) => {
+    if (request.path !== '/v1/skills') return accepting()(request);
+    const manifest = request.body as { version?: string } | undefined;
+    return { status: manifest?.version === '1.1.0' ? 201 : 200, body: request.body };
+  });
+  const directory = bundleCopy(t, (copy) => {
+    const manifest = manifestOf(copy, 'refinar-ticket.json');
+    manifest.version = '1.1.0';
+    writeManifest(copy, 'refinar-ticket.json', manifest);
+
+    // The bundle's own pin has to follow, or `verifyBundle` refuses before any
+    // request happens — which is a different rule, already covered below.
+    const document = graphOf(copy);
+    for (const node of document.nodes as Record<string, unknown>[]) {
+      const pin = node.skill_ref as Record<string, unknown>;
+      if (pin.id === 'refinar-ticket') pin.version = '1.1.0';
+    }
+    writeGraph(copy, document);
+  });
+
+  const run = await capture(() => runImport({ path: directory, url: plane.url }));
+
+  assert.equal(run.code, 0, `stdout:\n${run.stdout}\nstderr:\n${run.stderr}`);
+  assert.match(run.stdout, /skills\s+1 registered, 4 already in the registry/);
+});
+
+test('a skill whose content moved under an unchanged version stops the import', async (t) => {
+  // `409` is no longer "this id is taken": it is "this version already names
+  // different content", and it aborts like every other refusal (t135).
+  const plane = await startFakeControlPlane(t, (request) => {
+    if (request.path !== '/v1/skills') return accepting()(request);
+    const manifest = request.body as { id?: string } | undefined;
+    return manifest?.id === 'integrar-branch'
+      ? {
+          status: 409,
+          body: {
+            error: 'skill_version_conflict',
+            details: ['integrar-branch 1.0.0 already names different content; bump the version'],
+          },
+        }
+      : { status: 200, body: request.body };
+  });
+  const directory = bundleCopy(t);
+
+  const run = await capture(() => runImport({ path: directory, url: plane.url }));
+
+  assert.equal(run.code, 1, 'a version naming two different bodies is a bundle to fix, not a reimport');
+  assert.match(run.stderr, /the registry refused a skill \(HTTP 409\)/);
+  assert.match(run.stderr, /integrar-branch/, 'the message names the skill, which is also its file');
+  assert.match(run.stderr, /skill_version_conflict/);
+  assert.match(run.stderr, /the graph was not sent to the control plane/);
+  assert.deepEqual(
+    plane.requests.map((request) => request.path),
+    ['/v1/skills', '/v1/skills', '/v1/skills'],
+    'it stops at the refusal: the two manifests after it were never offered, and neither was the graph',
+  );
 });
 
 test('a manifest the registry refuses stops the import, and the graph is never sent', async (t) => {

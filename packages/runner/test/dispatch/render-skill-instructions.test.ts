@@ -147,7 +147,9 @@ test('AT6 — the rendered text carries the manifest, the node contract and the 
   const rendered = await renderSkillInstructions(resolvedNode(SINGLE_EDGE), read, {});
 
   assert.ok(rendered !== null, 'a node with a registered, correctly pinned skill renders');
-  assert.deepEqual(routes, [`/v1/skills/${SKILL_ID}`], 'the registry is keyed by the skill id');
+  // Keyed by the id AND the version the node pins, since t215: the registry
+  // carries a lineage now, and asking by id alone would resolve "the latest".
+  assert.deepEqual(routes, [`/v1/skills/${SKILL_ID}?version=1.0.0`], 'the pin names the version it asks for');
 
   const text = rendered.instructions;
 
@@ -713,4 +715,44 @@ test('AT18 — the bets-assimetricas manifests resolve against the crossing fixt
       },
     );
   });
+});
+
+/* -------------------------------------------------------------------------- */
+/* t215 — the pin resolves by (id, version), never by "the latest".            */
+/*                                                                            */
+/* The header of the module under test used to say the version needed no       */
+/* separate check because "the registry is create-only, so an `id` only ever   */
+/* carried the one `hash` it was registered with". D22 ended that: a lineage   */
+/* has many versions, and asking `GET /v1/skills/:id` with no query resolves   */
+/* the LATEST one — so a node pinned to 1.0.0 would start refusing its own     */
+/* dispatch the instant somebody registered 1.1.0. The route has to name the   */
+/* version, and the hash check stays exactly what it was: tamper detection.    */
+/* -------------------------------------------------------------------------- */
+
+test('t215 AT — skillRoute names the pinned version, not just the id', async () => {
+  const { skillRoute } = await loadModule();
+
+  assert.equal(skillRoute('travessia-fazer', '1.2.3'), '/v1/skills/travessia-fazer?version=1.2.3');
+  assert.equal(
+    skillRoute('a/b', '1.0.0'),
+    '/v1/skills/a%2Fb?version=1.0.0',
+    'the id is still encoded: it is graph data, never a path fragment to trust',
+  );
+});
+
+test('t215 AT — the request renderSkillInstructions makes carries the version the node pins', async () => {
+  const { renderSkillInstructions } = await loadModule();
+
+  // A registry answering with 2.0.0's content while the node pins 1.0.0 is what
+  // "resolve the latest" would look like from here. The route the reader
+  // RECORDS is the assertion: it has to have asked for 1.0.0 in the first place.
+  const { read, routes } = await makeReader(registeredSkill());
+  const rendered = await renderSkillInstructions(resolvedNode(SINGLE_EDGE), read, {});
+
+  assert.ok(rendered !== null);
+  assert.deepEqual(routes, [`/v1/skills/${SKILL_ID}?version=1.0.0`]);
+  assert.ok(
+    routes.every((route) => route.includes('version=1.0.0')),
+    `the dispatch asked the registry for something other than the pinned version: ${routes.join(', ')}`,
+  );
 });

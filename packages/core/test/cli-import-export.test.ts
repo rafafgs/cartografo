@@ -138,14 +138,20 @@ test('AT5 — importing the factory bundle, refusing a reimport, exporting and t
     assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
   });
 
-  await t.test('reimporting is idempotent for the registry: the 409s are not errors', async () => {
+  await t.test('reimporting is idempotent for the registry: an unchanged manifest is not an error', async () => {
     const result = await runCli(['import', FACTORY_BUNDLE, '--url', first.url], { token: first.token });
 
     assert.notEqual(result.code, 0, 'the class is still already registered');
     assert.match(result.stderr, /class_already_registered/);
+    // Nothing about the SKILLS reaches stderr, and t215 is why the assertion is
+    // now about the whole message instead of about one code: the registry used
+    // to answer `409 skill_already_registered` here, and since D22 the same
+    // reimport is a `200` — the version it offers already holds that content.
+    // Whichever status the registry chooses, the only refusal this run may
+    // print is the class one above it.
     assert.doesNotMatch(
       result.stderr,
-      /skill_already_registered/,
+      /refused a skill/,
       'an already-registered manifest is the expected outcome of a reimport, not a failure',
     );
 

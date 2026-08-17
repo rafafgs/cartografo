@@ -171,12 +171,14 @@ test(
       assert.equal(first.readiness.database, databasePath);
       // The exact count, not `>= 1`: t235 deleted `0019_wire_database_rename.sql`
       // and rewrote `0001`–`0018` so the schema is born English, and this line
-      // is what makes a nineteenth file that quietly reappears — a rename
-      // migration for a database nobody has — fail on the way up (D20).
+      // is what makes a rename migration for a database nobody has fail on the
+      // way up if it quietly reappears (D20). t215 added `0019_skill_versao.sql`,
+      // which is not that — it turns the registry into a lineage (D22) — so the
+      // count moved with it, deliberately and in the same commit.
       assert.equal(
         first.readiness.migrationsApplied,
-        18,
-        'a brand-new database applies the eighteen migrations the package ships',
+        19,
+        'a brand-new database applies the nineteen migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

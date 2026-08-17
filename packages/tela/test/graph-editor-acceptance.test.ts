@@ -23,6 +23,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -258,16 +259,26 @@ test('AC1 — the page produces the same version the API would, through the same
 
   await editor.save();
 
-  // FR5: these three, in this order, and no other route. The page has no
-  // shortcut into the core, and this is where that stops being a promise.
+  // FR5: these calls, in this order, and no other route. The page has no
+  // shortcut into the core, and this is where that stops being a promise — the
+  // three WRITES at the bottom are the whole of how a graph moves.
   //
   // The version id is percent-encoded because it carries a `sha256:` prefix and
   // the page escapes every id it puts in a path — an id it read from the API is
   // not a path fragment it gets to trust.
+  //
+  // The two registry reads are t215's, one per distinct skill the loaded nodes
+  // pin, and they are reads: they exist so the page can offer the versions the
+  // registry carries (FR10) instead of asking a person to type a hash. This
+  // fixture's pins are placeholders no registry can hold, so both come back with
+  // nothing and no picker is drawn — which is exactly why the shape of the call
+  // list is the only trace of them here.
   assert.deepEqual(log.map(shapeOf), [
     'GET /v1/classes',
     `GET /v1/graphs/${registered.graph.id}`,
     `GET /v1/graph-versions/${encodeURIComponent(registered.graph.current_version_id ?? '')}`,
+    'GET /v1/skills?id=cartografo%2Fredigir-nota',
+    'GET /v1/skills?id=cartografo%2Frevisar-nota',
     'POST /v1/proposals',
     'POST /v1/proposals/:id/approve',
     'POST /v1/proposals/:id/apply',
@@ -501,4 +512,218 @@ test('AC4 — neither half of the screen is a dead end', async (t) => {
     editor.html.includes('href="/board"') || editor.html.includes('href="/"'),
     'the graph editor links back to neither half of the screen',
   );
+});
+
+/* ------------------------------------------------------------------ AC5 (t215) */
+
+/*
+ * The registry became a lineage (D22), so a node can be pinned to a version
+ * that is no longer the newest one — and the person editing the graph is the
+ * one who decides whether to follow. Moving the pin is a proposal like any
+ * other change, and this page already knows how to write one: what it was
+ * missing was any way to SEE that a newer version exists, and any way to fill
+ * in the three fields of a pin without typing a 64-character hash by hand.
+ *
+ * The picker is deliberately not an upgrade button. It writes the same
+ * `skill_ref` the three text inputs write, so the existing node diffing emits
+ * the same `change_node_field` it always did, and the gate that refuses an
+ * unregistered pin (`routes/proposals.ts`) still has the last word.
+ */
+
+/** The lineage the cases below register, told apart by the body of each version. */
+const PICKER_SKILL = 'revisar-nota';
+
+/** Sorts keys recursively — the canonicalization the manifest hash is defined over. */
+function canonicalManifest(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalManifest);
+  if (typeof value === 'object' && value !== null) {
+    const source = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) sorted[key] = canonicalManifest(source[key]);
+    return sorted;
+  }
+  return value;
+}
+
+/**
+ * The pin of a manifest, computed here rather than imported.
+ *
+ * `packages/tela` declares no dependency on `packages/core` — that is the whole
+ * point of D11 — so the procedure of
+ * `especificacoes/formatos/manifesto-skill.md` is written out, the same way
+ * `packages/core/test/skill-routes.test.ts` writes it out.
+ */
+function manifestPin(manifest: Record<string, unknown>): string {
+  const subset = {
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
+    checks: manifest.checks,
+    permissions: manifest.permissions,
+    budgets: manifest.budgets,
+  };
+  return `sha256:${createHash('sha256').update(JSON.stringify(canonicalManifest(subset)), 'utf8').digest('hex')}`;
+}
+
+/** One registerable version of {@link PICKER_SKILL}. */
+function skillManifest(version: string, instructions: string): Record<string, unknown> {
+  const manifest: Record<string, unknown> = {
+    id: PICKER_SKILL,
+    version,
+    hash: '',
+    role: 'gate',
+    description: 'Confere a nota contra o tema declarado.',
+    input: { type: 'object', properties: { texto: { type: 'string' } } },
+    output: {
+      type: 'object',
+      required: ['outcome'],
+      properties: { outcome: { enum: ['pass', 'fail', 'escalate_human'] } },
+    },
+    preconditions: [],
+    checks: [
+      {
+        id: 'nota-existe',
+        type: 'deterministic',
+        description: 'A nota existe e não está vazia.',
+        command: 'test -s nota.md',
+      },
+    ],
+    permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: false } },
+    instructions,
+    origin: { type: 'native' },
+  };
+  manifest.hash = manifestPin(manifest);
+  return manifest;
+}
+
+/** Registers one version and hands back the pin the registry stored. */
+async function registerSkill(
+  cp: RunningControlPlane,
+  version: string,
+  instructions: string,
+): Promise<{ id: string; version: string; hash: string }> {
+  const created = await api<{ id: string; version: string; hash: string }>(
+    cp,
+    'POST',
+    '/v1/skills',
+    skillManifest(version, instructions),
+  );
+  assert.equal(created.status, 201, `POST /v1/skills returned ${created.status}`);
+  return { id: created.body.id, version: created.body.version, hash: created.body.hash };
+}
+
+/** The base graph with `revisar` pinned to a pin the registry really carries. */
+function graphPinnedTo(pin: { id: string; version: string; hash: string }): Record<string, unknown> {
+  const graph = baseGraph();
+  graph.nodes = (graph.nodes as Record<string, unknown>[]).map((node) =>
+    node.id === 'revisar' ? { ...node, skill_ref: { ...pin } } : node,
+  );
+  return graph;
+}
+
+/** The version picker of one card, when the page drew one. */
+function versionPicker(card: FakeElement): FakeElement[] {
+  return card.descendants().filter((node) => node.getAttribute('data-skill-versions') !== null);
+}
+
+/** The card of one node, by id. */
+function cardOf(doc: FakeDocument, nodeId: string): FakeElement {
+  const found = cards(doc, 'node-list', 'data-node').filter(
+    (card) => card.getAttribute('data-node') === nodeId,
+  );
+  assert.equal(found.length, 1, `expected exactly one card for "${nodeId}", found ${found.length}`);
+  return found[0];
+}
+
+test('AC5 — a node whose skill has a newer version gets a picker that writes the pin (t215)', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const pinned = await registerSkill(cp, '1.0.0', '# Revisar\n\nConfira a nota.');
+  const newer = await registerSkill(cp, '1.1.0', '# Revisar\n\nConfira a nota, e cite o trecho.');
+  const registered = await registerBase(cp, graphPinnedTo(pinned));
+
+  const { doc, editor } = await openEditor(screen.url, registered.graph.id);
+
+  const card = cardOf(doc, 'revisar');
+  const picker = versionPicker(card);
+  assert.equal(picker.length, 1, 'a node with a newer version available has to say so');
+  assert.ok(
+    picker[0].textContent.includes('1.1.0'),
+    `the picker does not offer the newer version: ${picker[0].textContent}`,
+  );
+
+  // The node the person never pinned to this lineage shows nothing extra.
+  assert.deepEqual(versionPicker(cardOf(doc, 'redigir')), [], 'the other node has no lineage to offer');
+
+  // Choosing the newer version writes the three fields of the pin — the same
+  // three the text inputs write, so the diff is the `change_node_field` the
+  // page already produces for a hand-typed `skill_ref`.
+  const select = picker[0].byTag('select');
+  assert.equal(select.length, 1, 'the picker has to be a closed list, not free text');
+  select[0].typeText(newer.version);
+
+  const after = cardOf(doc, 'revisar');
+  assert.equal(control(after, 'skill_ref.id').value, newer.id, 'the id of the lineage does not move');
+  assert.equal(control(after, 'skill_ref.version').value, newer.version);
+  assert.equal(control(after, 'skill_ref.hash').value, newer.hash, 'the hash comes from the registry, not typed');
+
+  await editor.save();
+  assert.ok(
+    typeof editor.state().appliedVersionId === 'string',
+    'moving the pin to a registered version has to apply like any other edit',
+  );
+});
+
+test('AC5 — one known version, or no skill at all, shows nothing extra (t215)', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  const only = await registerSkill(cp, '1.0.0', '# Revisar\n\nConfira a nota.');
+  const registered = await registerBase(cp, graphPinnedTo(only));
+
+  const { doc } = await openEditor(screen.url, registered.graph.id);
+
+  assert.deepEqual(
+    versionPicker(cardOf(doc, 'revisar')),
+    [],
+    'a lineage with a single version has nothing to offer, and says nothing',
+  );
+
+  // A node being born has an empty `skill_ref.id`, so there is no lineage to ask
+  // about — and asking `GET /v1/skills?id=` would be a read with no question.
+  doc.require('add-node').click();
+  const fresh = cards(doc, 'node-list', 'data-node').at(-1) as FakeElement;
+  assert.deepEqual(versionPicker(fresh), [], 'an empty skill_ref.id offers nothing');
+});
+
+test('AC5 — a pin the registry does not carry is shown as such, never silently swapped (t215)', async (t) => {
+  const cp = await startControlPlane(t);
+  const screen = await startScreen(t, cp);
+
+  // The lineage exists and the node's version is not in it — a graph that came
+  // from elsewhere, or a version somebody registered and this database never
+  // saw. The `<select>` still has to say where this node stands.
+  const real = await registerSkill(cp, '2.0.0', '# Revisar\n\nConfira a nota.');
+  const registered = await registerBase(
+    cp,
+    graphPinnedTo({ id: real.id, version: '1.0.0', hash: `sha256:${'9'.repeat(64)}` }),
+  );
+
+  const { doc } = await openEditor(screen.url, registered.graph.id);
+
+  const picker = versionPicker(cardOf(doc, 'revisar'));
+  assert.equal(picker.length, 1, 'a lineage with another version has something to offer');
+
+  const options = picker[0].byTag('option');
+  const selected = options.filter((option) => option.value === '1.0.0');
+  assert.equal(selected.length, 1, 'the version this node pins has to be in the list');
+  assert.ok(
+    selected[0].textContent.includes('fora do registro'),
+    `the picker does not say the pin is unregistered: ${selected[0].textContent}`,
+  );
+  assert.equal(selected[0].disabled, true, 'and it is not something to choose');
+
+  // Nothing was written: the draft still pins what the snapshot pinned.
+  assert.equal(control(cardOf(doc, 'revisar'), 'skill_ref.version').value, '1.0.0');
 });

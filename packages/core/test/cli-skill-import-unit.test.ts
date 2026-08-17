@@ -192,6 +192,14 @@ test('an id already registered is a human decision, not an overwrite', async (t)
   assert.equal(run.code, 1);
   assert.match(run.stderr, /id "uma-skill" is already registered/);
   assert.match(run.stderr, /a collision is a human decision \(D4\)/);
+
+  // t215, FR8: the refusal STAYS — `scan-skill` derives from a fresh `SKILL.md`,
+  // and whether that is the same lineage or a name collision is still a
+  // person's call. What it may no longer read as is a dead end: since the
+  // registry carries versions, the escape hatch for "yes, same skill, newer
+  // content" already exists and needs no new code, so the message says it.
+  assert.match(run.stderr, /propose-skill/, 'the message has to name the way through');
+  assert.match(run.stderr, /version/, 'and say that the way through is a bumped version');
 });
 
 test('the draft leaves a placeholder wherever a human has to decide', async (t) => {

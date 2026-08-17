@@ -148,11 +148,11 @@ interface Session {
   finished_at: string | null;
 }
 
-/** Body of `GET /v1/sessions/:id/transcript` (t159). */
+/** Body of `GET /v1/sessions/:id/transcript` (t159; English since t232). */
 interface Transcript {
-  transcricao: string | null;
-  truncada: boolean;
-  tamanho_original: number | null;
+  transcript: string | null;
+  transcript_truncated: boolean;
+  transcript_original_size: number | null;
 }
 
 interface Event {
@@ -798,10 +798,10 @@ test("t159 — what the engine printed is what the finish call ships, and what a
     "GET",
     `/v1/sessions/${session.id}/transcript`,
   );
-  assert.equal(transcript.transcricao, printed);
-  assert.equal(transcript.truncada, false);
+  assert.equal(transcript.transcript, printed);
+  assert.equal(transcript.transcript_truncated, false);
   assert.equal(
-    transcript.tamanho_original,
+    transcript.transcript_original_size,
     Buffer.byteLength(printed, "utf8"),
   );
 });

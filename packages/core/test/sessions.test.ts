@@ -47,11 +47,21 @@ const T159_MIGRATION = 'migrations/0009_sessao_transcricao.sql';
  */
 const TRANSCRIPT_CAP_BYTES = 1_048_576;
 
-/** Body of `GET /v1/sessions/:id/transcript`. */
+/**
+ * Body of `GET /v1/sessions/:id/transcript` (t232).
+ *
+ * The SAME three names `PATCH /finish` already answers on the projection —
+ * `transcript`, `transcript_truncated`, `transcript_original_size` — and not a
+ * second spelling of the same three facts. The route came out of t226 still
+ * saying `{transcricao, truncada, tamanho_original}` because it is the one
+ * session payload built outside `toWireSession`, so the row → wire boundary
+ * never saw it; a client that reads the transcript off `/finish` and then off
+ * this route was parsing two vocabularies for one concept.
+ */
 interface Transcript {
-  transcricao: string | null;
-  truncada: boolean;
-  tamanho_original: number | null;
+  transcript: string | null;
+  transcript_truncated: boolean;
+  transcript_original_size: number | null;
 }
 
 /** Opens a job-less session — what every t159 case starts from. */
@@ -616,9 +626,9 @@ test('t159 AT1 — a small transcript is stored verbatim, and the projection and
   const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${session.id}/transcript`);
   assert.equal(read.status, 200);
   assert.deepEqual(read.body, {
-    transcricao: output,
-    truncada: false,
-    tamanho_original: bytes,
+    transcript: output,
+    transcript_truncated: false,
+    transcript_original_size: bytes,
   });
 });
 
@@ -660,9 +670,9 @@ test('t159 AT2 — a transcript past the cap keeps the TAIL and reports the size
   const read = await request<Transcript>(ctx, 'GET', `/v1/sessions/${session.id}/transcript`);
   assert.equal(read.status, 200);
   assert.deepEqual(read.body, {
-    transcricao: stored,
-    truncada: true,
-    tamanho_original: output.length,
+    transcript: stored,
+    transcript_truncated: true,
+    transcript_original_size: output.length,
   });
 });
 
@@ -718,13 +728,21 @@ test('t159 AT3 — an absent transcript is null, never an empty string; an empty
 
   const absent = await request<Transcript>(ctx, 'GET', `/v1/sessions/${silent.id}/transcript`);
   assert.equal(absent.status, 200, 'a session with no transcript is an answer, not a 404');
-  assert.deepEqual(absent.body, { transcricao: null, truncada: false, tamanho_original: null });
+  assert.deepEqual(absent.body, {
+    transcript: null,
+    transcript_truncated: false,
+    transcript_original_size: null,
+  });
 
   // A session still open has never recorded one either, and reads back the same.
   const open = await openBareSession(ctx);
   const stillOpen = await request<Transcript>(ctx, 'GET', `/v1/sessions/${open.id}/transcript`);
   assert.equal(stillOpen.status, 200);
-  assert.deepEqual(stillOpen.body, { transcricao: null, truncada: false, tamanho_original: null });
+  assert.deepEqual(stillOpen.body, {
+    transcript: null,
+    transcript_truncated: false,
+    transcript_original_size: null,
+  });
 
   // An explicit empty string is a MEASUREMENT — "this session printed nothing" —
   // and is a different fact from "nobody reported anything".
@@ -740,7 +758,11 @@ test('t159 AT3 — an absent transcript is null, never an empty string; an empty
   assert.equal(empty.body.transcript_original_size, 0);
 
   const readEmpty = await request<Transcript>(ctx, 'GET', `/v1/sessions/${quiet.id}/transcript`);
-  assert.deepEqual(readEmpty.body, { transcricao: '', truncada: false, tamanho_original: 0 });
+  assert.deepEqual(readEmpty.body, {
+    transcript: '',
+    transcript_truncated: false,
+    transcript_original_size: 0,
+  });
 
   // Anything that is not a string is a 400, the same shape a malformed `uso` gets.
   const wrongType = await openBareSession(ctx);

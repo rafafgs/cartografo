@@ -80,14 +80,19 @@ job.unblocked
 job.amended                lease.granted                graph_version.registered
 job.dependency_declared    lease.expired                graph_version.applied
 job.hook_failed                                         graph_version.reverted
+
+execution.finished
 ```
 
-São os dezoito da taxonomia, e o crescimento foi aditivo como prometido: o
+São os dezenove da taxonomia, e o crescimento foi aditivo como prometido: o
 filtro nunca declarou lista própria — ele valida contra `KNOWN_TYPES`
 (`packages/core/src/db/event-validation.ts`) —, então ligar a emissão de
 `lease.*` e `graph_version.*` na `t196` os tornou pedíveis sem uma linha de
-mudança de contrato aqui. Um tipo fora da taxonomia continua sendo `400`, e não
-uma conexão aberta que nunca entrega nada — que é o pior dos dois erros.
+mudança de contrato aqui, e `execution.finished` (D21, `t245`) entrou pelo mesmo
+caminho: quem quiser saber só do fim das rodadas assina
+`?type=execution.finished` e não recebe mais nada. Um tipo fora da taxonomia
+continua sendo `400`, e não uma conexão aberta que nunca entrega nada — que é o
+pior dos dois erros.
 
 ---
 

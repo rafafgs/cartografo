@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "execution.finished.schema.json",
+  "title": "execution.finished",
+  "description": "A execução acabou: todo trabalho dela chegou a um nó final e nenhuma lease ativa segura mais nenhum deles. Fato que só o control plane afirma (D1, D21), e é dele que o observador sem privilégio parte para rodar as lentes. Sem payload: envelope.execution_id, entity.id e occurred_at já dizem qual rodada acabou e quando.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "execution.finished"
+    },
+    "entity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "execution"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [],
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+}

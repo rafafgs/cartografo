@@ -1,11 +1,18 @@
 /**
  * Execution route (t102, FR17).
  *
- * There is no "execution" entity in this v1: `execucao_id` is an opaque INTEGER
- * grouper, and the taxonomy never listed it as a valid `entidade.tipo`
- * (`especificacoes/eventos/schemas/envelope.schema.json:41`). That is why there
- * is only a read here, and why an execution with no job at all answers 200 with
- * an empty list instead of a 404: there is no object to exist or not exist.
+ * There is no "execution" TABLE in this v1: `execucao_id` is an opaque INTEGER
+ * grouper. That is why there is only a read here, and why an execution with no
+ * job at all answers 200 with zeros and an empty list instead of a 404 — there
+ * is no row to exist or not exist, on any of the four routes below.
+ *
+ * The other half of what this header used to claim — that the taxonomy never
+ * listed execution as a valid `entity.type` — was narrowed by D21 and is no
+ * longer true. The round now IS the subject of one event,
+ * `execution.finished`, because the control plane declaring a round over is a
+ * fact only it can assert (D1) and a fact needs a subject. What did not change
+ * is everything else: no table, no row, and the `finished_at` published below
+ * derived from that event at read time (`repositories/job.ts`), never stored.
  *
  * The response field names are English since t226
  * (`docs/spec/glossario-wire.md` §1). The EVENTS inside `events` keep their own
@@ -18,6 +25,7 @@ import type { Database } from '../db/connection.ts';
 import { listEvents } from '../db/events.ts';
 import { questionsByNode, toWireQuestionsByNode } from '../repositories/input-request.ts';
 import {
+  getExecution,
   listExecutions,
   metricsByVersion,
   toWireExecutionSummary,
@@ -40,6 +48,24 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
       const executions = listExecutions(db);
       return { executions: executions.map(toWireExecutionSummary) };
     }),
+  );
+
+  /**
+   * One round, for whoever already knows which one they are asking about
+   * (t245, FR7).
+   *
+   * The same shape as a row of the list, `finished_at` included — and it exists
+   * because the list is a discovery route: reading one round out of it means
+   * fetching every round there is and filtering client-side, which is exactly
+   * what the observer of D21's third child would be doing on every poll.
+   *
+   * No 404, like the two sub-routes below it: an id nobody wrote a job under is
+   * a round with zero jobs, and zero jobs is never finished.
+   */
+  app.get('/executions/:id', async (request, reply) =>
+    withValidation(reply, () =>
+      toWireExecutionSummary(getExecution(db, routeId(request.params))),
+    ),
   );
 
   /**

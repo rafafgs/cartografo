@@ -49,7 +49,8 @@
             "session",
             "input_request",
             "lease",
-            "graph_version"
+            "graph_version",
+            "execution"
           ]
         },
         "id": {
@@ -57,7 +58,7 @@
             "integer",
             "string"
           ],
-          "description": "Id da própria entidade nomeada em entity.type. Inteiro para job/session/input_request/lease; string para graph_version, cujo id é o hash do snapshot (D15)."
+          "description": "Id da própria entidade nomeada em entity.type. Inteiro para job/session/input_request/lease/execution — na execução é o próprio execution_id; string para graph_version, cujo id é o hash do snapshot (D15)."
         }
       },
       "additionalProperties": false

@@ -118,6 +118,21 @@ export interface ExecutionSummary {
   trabalhos: number;
   trabalhos_bloqueados: number;
   perguntas_pendentes: number;
+  /**
+   * When the control plane declared this round over; `null` while it has not
+   * (t245, D21).
+   *
+   * Derived at read time from the `execution.finished` event and never stored,
+   * the same posture as `Job.concluido` — a projection that cached it could go
+   * on reporting an end the log does not carry.
+   *
+   * English, unlike its three neighbours, and that is not an oversight: those
+   * mirror columns D20's fourth child renamed and deliberately left aliased
+   * (t229, FR4), while this field has no column behind it and no caller from
+   * before the glossary. It is born spelled the way the wire spells it, so
+   * there is nothing here to translate.
+   */
+  finished_at: string | null;
 }
 
 interface JobRow
@@ -164,6 +179,40 @@ const JOB_EVENTS = `
       OR (e.entity_type IN ('session','input_request')
           AND json_extract(e.data, '$.job_id') = t.id)
 `;
+
+/**
+ * "When this round was declared over", in SQL (t245, FR6).
+ *
+ * A scalar subquery over the log and not a column: `finished_at` is derived on
+ * read like `Job.concluido`, so nothing can go on reporting an end the log does
+ * not carry. `LIMIT 1` after `ORDER BY e.id` is belt and braces — the writer
+ * guards against a second announcement — and it costs nothing to be honest
+ * about which one would win if the guard ever failed: the FIRST, because the
+ * end of a round happened once.
+ *
+ * `CAST` because `event.entity_id` is TEXT (one log for six entities, and one
+ * of them has a hash for an id — D15). A `NULL` subject casts to `NULL`, which
+ * matches nothing: the group of jobs with no execution has no end to report.
+ *
+ * The cast is for a COLUMN, and a bound parameter must not lean on it: the
+ * driver hands a JS number to SQLite as a float, so `CAST(@id AS TEXT)` of
+ * `2450` is the string `'2450.0'` and matches nothing at all. Whoever binds
+ * instead of correlating binds `String(id)` — which is what the column holds
+ * anyway — and the cast around it is then a no-op.
+ *
+ * @param subject SQL expression naming the execution id — a column of the outer
+ *   query, or a bound parameter. Never anything a request controls.
+ * @returns The subquery, parenthesized and ready to be aliased.
+ */
+function finishedAtOf(subject: string): string {
+  return `(SELECT e.occurred_at
+             FROM event e
+            WHERE e.type = 'execution.finished'
+              AND e.entity_type = 'execution'
+              AND e.entity_id = CAST(${subject} AS TEXT)
+            ORDER BY e.id
+            LIMIT 1)`;
+}
 
 /**
  * "The traveller arrived": the job's node is a final node of ITS version (t152).
@@ -280,6 +329,8 @@ export interface WireExecutionSummary {
   jobs: number;
   blocked_jobs: number;
   pending_input_requests: number;
+  /** Instant of this round's `execution.finished`; `null` while it has none (t245). */
+  finished_at: string | null;
 }
 
 /** Execution summary to wire. */
@@ -289,6 +340,7 @@ export function toWireExecutionSummary(row: ExecutionSummary): WireExecutionSumm
     jobs: row.trabalhos,
     blocked_jobs: row.trabalhos_bloqueados,
     pending_input_requests: row.perguntas_pendentes,
+    finished_at: row.finished_at,
   };
 }
 
@@ -350,6 +402,100 @@ export function jobContextSeed(db: Database, id: number): JobContextSeed | null 
     grafo_versao_id: row.grafo_versao_id,
     execucao_id: row.execucao_id,
   };
+}
+
+/**
+ * The end of a round, recorded once and only by the control plane (t245, D21).
+ *
+ * "Finished" is three conditions and never two: the execution has AT LEAST ONE
+ * job, every one of them arrived (`Job.concluido`, which is `isAtFinalNode` and
+ * therefore also refuses a blocked job), and no `lease` row with `status =
+ * 'active'` still holds any of them. Zero jobs is not vacuously finished — an
+ * execution nobody put work into is not a round that ended.
+ *
+ * It is written in the SAME transaction as the mutation that made the condition
+ * true, and guarded against a second write exactly like `transitionJob` guards
+ * `alreadyWalked`: the log is asked whether the fact is already in it. Once,
+ * ever — a job that leaves the final node and comes back does not produce a
+ * second announcement, because "the round ended" is not a state that toggles,
+ * it is a fact that happened.
+ *
+ * The actor is always `API_ACTOR`. This is the control plane asserting
+ * something about ITSELF (D1, D21) — the observer that reads it (D21's third
+ * child) needs to know the assertion came from the only writer there is, not
+ * from whoever happened to drive the last job.
+ *
+ * ## What this check cannot see yet, and why it is not a bug of this file
+ *
+ * It runs on the JOB path — here and in `transitionJob` — and nowhere else.
+ * `leases.ts` deliberately treats `job_id` as an opaque integer and never reads
+ * `job`/`execution_id` (migration `0004`'s header defers tying the two sides to
+ * "a ficha que ligar os dois lados"), and an ordinary release records no event
+ * at all: the taxonomy has no `lease.released`, a gap open since t196 and named
+ * in `leases.ts:34-36`.
+ *
+ * The consequence is concrete and was measured against the real runner: it
+ * releases the lease strictly AFTER reporting the transition
+ * (`packages/runner/src/controller/controller.ts:211-236`), so at the instant
+ * the last job's terminal transition lands, its own lease is typically still
+ * active — and nothing re-checks when that lease later clears. A round in that
+ * state is only declared over if some job of it moves again. Closing it means
+ * adding `lease.released` or letting `leases.ts` know about the job; t245 named
+ * the gap instead of shipping a check that structurally cannot fire.
+ *
+ * @param db Open handle, inside the mutation's own transaction.
+ * @param executionId Round the mutated job belongs to; `null` is a no-op —
+ *   there is no round to declare finished.
+ * @param projectId Project of the mutated job, which is the event's own.
+ * @param occurredAt The instant of the mutation that triggered the check, so
+ *   the fact is stamped with the moment it became true.
+ */
+function announceFinishedExecution(
+  db: Database,
+  executionId: number | null,
+  projectId: number,
+  occurredAt: string,
+): void {
+  if (executionId === null) return;
+
+  const jobs = listJobs(db, { execucao_id: executionId });
+  if (jobs.length === 0) return;
+  if (!jobs.every((job) => job.concluido)) return;
+
+  // One named parameter per id, never interpolation — the same rule
+  // `db/events.ts` writes for its type filter.
+  const held =
+    db
+      .prepare(
+        `SELECT 1 FROM lease
+          WHERE status = 'active'
+            AND job_id IN (${jobs.map((_, index) => `@job_${index}`).join(', ')})
+          LIMIT 1`,
+      )
+      .get(Object.fromEntries(jobs.map((job, index) => [`job_${index}`, job.id]))) !== undefined;
+  if (held) return;
+
+  const alreadyAnnounced =
+    db
+      .prepare(
+        `SELECT 1 FROM event
+          WHERE type = 'execution.finished'
+            AND entity_type = 'execution'
+            AND entity_id = ?
+          LIMIT 1`,
+      )
+      .get(String(executionId)) !== undefined;
+  if (alreadyAnnounced) return;
+
+  recordEvent(db, {
+    type: 'execution.finished',
+    project_id: projectId,
+    execution_id: executionId,
+    entity: { type: 'execution', id: executionId },
+    actor: API_ACTOR,
+    occurred_at: occurredAt,
+    data: {},
+  });
 }
 
 /** Body of `POST /v1/jobs`. */
@@ -453,6 +599,12 @@ export function createJob(db: Database, input: CreateJobInput): Job {
       occurred_at: timestamp,
       data,
     });
+
+    // A job can be BORN standing on a final node — a one-node graph, or a class
+    // whose `entry_node_id` is terminal — and then this creation is the fact
+    // that ends the round. Without the check here that round would stay
+    // unfinished forever, because nothing else would ever look at it again.
+    announceFinishedExecution(db, executionId, projectId, timestamp);
 
     return toJob(db, readRow(db, id) as JobRow);
   });
@@ -641,6 +793,12 @@ export function transitionJob(
         },
         options,
       );
+
+      // This is the transition that may have landed the LAST traveller of the
+      // round on a final node (t245). It reads the projection the `UPDATE`
+      // above already wrote, inside the same transaction, so a rolled-back
+      // transition takes the declaration down with it.
+      announceFinishedExecution(db, row.execucao_id, row.projeto_id, event.occurred_at);
     },
   );
 }
@@ -893,7 +1051,8 @@ export function listExecutions(db: Database): ExecutionSummary[] {
               COALESCE(SUM(t.blocked), 0) AS trabalhos_bloqueados,
               (SELECT COUNT(*) FROM input_request p
                 WHERE p.status = 'pending' AND p.execution_id IS t.execution_id)
-                                       AS perguntas_pendentes
+                                       AS perguntas_pendentes,
+              ${finishedAtOf('t.execution_id')} AS finished_at
          FROM job t
         GROUP BY t.execution_id`,
     )
@@ -904,4 +1063,43 @@ export function listExecutions(db: Database): ExecutionSummary[] {
     if (b.execucao_id === null) return -1;
     return a.execucao_id - b.execucao_id;
   });
+}
+
+/**
+ * One execution, by its id (t245, FR7).
+ *
+ * The same three counts of the list plus the end of the round, for whoever
+ * already knows which round they are asking about — the observer of D21's third
+ * child polls exactly this.
+ *
+ * It never answers "does not exist", and returning `null` here would be the
+ * wrong shape for the same reason the other two `/:id` routes of this family
+ * already answer `200`: `execution_id` is an opaque grouper, not a row, so an
+ * id nobody wrote a job under is a round with zero jobs — which is also, by
+ * FR1, a round that is not finished. The aggregate below has no `GROUP BY` on
+ * purpose: over zero rows it still answers one row, with the zeros in it.
+ *
+ * @param db Open handle.
+ * @param id Execution id.
+ * @returns The summary; zero counts and `finished_at: null` when no job cites
+ *   this round.
+ */
+export function getExecution(db: Database, id: number): ExecutionSummary {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*)                 AS trabalhos,
+              COALESCE(SUM(t.blocked), 0) AS trabalhos_bloqueados,
+              (SELECT COUNT(*) FROM input_request p
+                WHERE p.status = 'pending' AND p.execution_id = @execution_id)
+                                       AS perguntas_pendentes,
+              ${finishedAtOf('@execution_entity_id')} AS finished_at
+         FROM job t
+        WHERE t.execution_id = @execution_id`,
+    )
+    .get({ execution_id: id, execution_entity_id: String(id) }) as Omit<
+    ExecutionSummary,
+    'execucao_id'
+  >;
+
+  return { execucao_id: id, ...row };
 }

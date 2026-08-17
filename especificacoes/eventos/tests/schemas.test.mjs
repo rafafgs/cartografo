@@ -158,6 +158,16 @@ export const TABELA = {
     obrigatorios: ['graph_id', 'target_version', 'reason'],
     opcionais: [],
   },
+  // O 19º tipo entrou com a D21 (t245): o control plane declara a execução
+  // concluída, e é ele — só ele (D1) — quem afirma esse fato. Sem payload, pela
+  // mesma razão de `job.unblocked`: `execution_id`, `entity.id` e `occurred_at`
+  // do envelope já dizem de qual rodada se fala e quando ela acabou, e um campo
+  // a mais seria dado repetido dentro do próprio evento.
+  'execution.finished': {
+    entidade: 'execution',
+    obrigatorios: [],
+    opcionais: [],
+  },
 };
 
 const ENVELOPE = 'envelope.schema.json';
@@ -199,9 +209,13 @@ test('o envelope declara os campos comuns a todo evento', () => {
 
   const entidade = envelope.properties.entity;
   assert.deepEqual([...entidade.required].sort(), ['id', 'type']);
+  // `execution` entrou com a D21 (t245): a rodada virou sujeito de evento, e o
+  // `entity.id` dela é o próprio `execution_id` — inteiro, como o de quase todo
+  // mundo aqui. A 0003 e a `routes/executions.ts` diziam o contrário ("não
+  // existe entidade execução"), e as duas são anteriores à decisão.
   assert.deepEqual(
     [...entidade.properties.type.enum].sort(),
-    ['graph_version', 'input_request', 'job', 'lease', 'session'],
+    ['execution', 'graph_version', 'input_request', 'job', 'lease', 'session'],
   );
   assert.deepEqual([...entidade.properties.id.type].sort(), ['integer', 'string']);
 

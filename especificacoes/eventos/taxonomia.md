@@ -17,8 +17,8 @@ implementação.
 | Arquivo | O que é |
 |---|---|
 | `schemas/envelope.schema.json` | Os campos que existem em todo evento |
-| `schemas/<tipo>.schema.json` | Um por tipo de evento (18) |
-| `exemplos/log-exemplo.jsonl` | Uma execução ponta a ponta, com os 18 tipos |
+| `schemas/<tipo>.schema.json` | Um por tipo de evento (19) |
+| `exemplos/log-exemplo.jsonl` | Uma execução ponta a ponta, com os 19 tipos |
 | `exemplos/estado-final-esperado.json` | O estado que aquele log reconstrói |
 | `reducers/reconstruir-estado.mjs` | A dobra do log até esse estado |
 | `tests/` | Runner nativo do Node, sem `package.json` e sem dependência |
@@ -40,9 +40,10 @@ acima.
 > O intake de duas fases acrescentou o 16º tipo,
 > `job.dependency_declared` (t122), e o enforcement de permissão de
 > skill acrescentou o 17º, `session.permission_denied` (t125), e os ganchos
-> declarados no grafo acrescentaram o 18º, `job.hook_failed` (t169) —
+> declarados no grafo acrescentaram o 18º, `job.hook_failed` (t169), e o fim de
+> execução da D21 acrescentou o 19º, `execution.finished` (t245) —
 > crescer é aditivo, e é isso que a regra de "tipo desconhecido é ignorado"
-> compra. Hoje: **18 tipos + o envelope = 19 arquivos**.
+> compra. Hoje: **19 tipos + o envelope = 20 arquivos**.
 
 ## Envelope
 
@@ -55,14 +56,15 @@ inteiro dentro de `data`, e em lugar nenhum além dele.
 | `type` | string | Discriminador, ex. `"job.created"`. Cada valor tem um schema que o fixa com `const`. |
 | `project_id` | inteiro | Projeto dono do evento. |
 | `execution_id` | inteiro \| null | Execução à qual o evento pertence; `null` quando o fato acontece fora de uma rodada. |
-| `entity` | `{type, id}` | O sujeito do evento — a chave de join com o resto do banco. `type` ∈ `job`/`session`/`input_request`/`lease`/`graph_version`. |
+| `entity` | `{type, id}` | O sujeito do evento — a chave de join com o resto do banco. `type` ∈ `job`/`session`/`input_request`/`lease`/`graph_version`/`execution`. |
 | `actor` | `{type, ref}` | Quem causou. `type` ∈ `user`/`agent`/`system`; `ref` é string livre (login, papel do agente, nome do componente). |
 | `occurred_at` | string (date-time) | Quando o fato aconteceu, ISO 8601. |
 | `data` | objeto | Payload do tipo. |
 
 `entity.id` é sempre o id da entidade nomeada em `entity.type`: em
 `session.finished` é o id da sessão, em `graph_version.applied` é o hash do
-snapshot (string — D15), nunca o id do trabalho por trás.
+snapshot (string — D15), em `execution.finished` é o próprio `execution_id`
+(inteiro), nunca o id do trabalho por trás.
 
 Um evento inteiro, como ele sai do log:
 
@@ -112,7 +114,7 @@ Três consequências que atravessam esta ficha inteira:
 
 ## Catálogo
 
-18 tipos, em 5 grupos. "Quem emite" é o `actor.type` esperado; os exemplos
+19 tipos, em 6 grupos. "Quem emite" é o `actor.type` esperado; os exemplos
 mostram o conteúdo de `data` e saíram do `log-exemplo.jsonl`.
 
 ### Trabalho
@@ -481,6 +483,53 @@ Rollback move ponteiro e **nada se apaga**: a versão abandonada continua no
 banco com a telemetria dela, que é exatamente o que o topógrafo vai cruzar
 depois.
 
+### Execução
+
+A rodada inteira, como sujeito de um fato só (D21). `entity.type` =
+`execution`, e `entity.id` é o próprio `execution_id` — inteiro, como o de
+quase todo mundo aqui.
+
+Este grupo **corrige uma moldura anterior à decisão**. Até a D21 a taxonomia
+dizia que execução não era entidade de evento: `execution_id` era um agrupador
+opaco e ponto final, e é isso que ainda está escrito no cabeçalho da migração
+`0003` e no de `packages/core/src/routes/executions.ts`. Os dois são anteriores
+à D21, que registrou o contrário — "ao fim de cada execução, o control plane
+declara a execução concluída (fato que só ele afirma, D1)". A entidade nasce
+para carregar esse fato, e só ele: continua não havendo tabela `execution`, e o
+`finished_at` que a API publica é derivado deste evento em tempo de leitura,
+nunca uma coluna.
+
+#### `execution.finished` — [schema](schemas/execution.finished.schema.json)
+
+Emitido quando **todo** trabalho da rodada chegou a um nó final do grafo dele e
+**nenhuma lease ativa** segura mais nenhum deles. Ator: sempre `system` /
+`control-plane` — quem afirma é o control plane sobre si mesmo (D1), nunca o
+ator que por acaso empurrou o trabalho que fechou a conta.
+
+```json
+{}
+```
+
+**Sem payload**, pela mesma razão de `job.unblocked`: `execution_id`,
+`entity.id` e `occurred_at` do envelope já dizem qual rodada acabou e quando, e
+repetir isso dentro de `data` seria dado duplicado no próprio evento.
+
+**Uma vez, para sempre.** O fato é gravado na primeira vez que a condição vale,
+na MESMA transação da transição que a tornou verdadeira, e nunca de novo — um
+trabalho que sai do nó final e volta não produz um segundo evento. Zero trabalho
+nunca satisfaz a condição: uma rodada sem trabalho nenhum não é uma rodada
+concluída.
+
+**O que ele ainda não vê.** A verificação roda no caminho do trabalho
+(`transitionJob` e `createJob`, em `packages/core/src/repositories/job.ts`) e em
+lugar nenhum mais. Uma liberação comum de lease não grava evento — a taxonomia
+não declara `lease.released`, gap conhecido desde a t196 — então a rodada cujo
+último trabalho chega COM a lease dele ainda ativa (que é o caso comum do runner
+real: ele solta a lease depois de reportar a transição) só será declarada
+concluída se algum trabalho dela voltar a se mexer depois. Fechar isso é a ficha
+que ligar `lease` e `job` pelos dois lados, como o cabeçalho da migração `0004`
+já prevê.
+
 ## Paridade com o flowpilot
 
 Conferida linha a linha contra `~/flowpilot/app/models/ticket_event_model.py`,
@@ -556,6 +605,7 @@ estrutural desta ficha.
 | `lease.granted`, `lease.expired` | + | D5: com N runners, trabalho de runner morto volta para a fila. O flowpilot é de um runner só e não tem o problema. |
 | `graph_version.registered`, `.aplicada`, `.revertida` | + | D15: no flowpilot o fluxo é código, então não há o que versionar em banco. Aqui o grafo é dado, e é a linha que o topógrafo cruza com a telemetria. |
 | `execution_id` no envelope | + | Não existe entidade "execução" no flowpilot. |
+| `execution.finished` + `entity.type = execution` | + | A D21 amenda o "não existe entidade execução" que esta ficha escreveu antes dela: a rodada não tem tabela, mas tem um fato — o control plane declarando o fim dela (D1) — e um fato precisa de sujeito. Lá o fim de uma rodada não existe como conceito: cada ticket termina por conta própria. |
 | `entity` genérica | + | Um log só para o trio de tabelas de lá. |
 
 ## Replay: a prova
@@ -569,7 +619,8 @@ vN + inputs ⇒ execução replayável do log. A prova executável desta ficha �
   sessoes:    {[id]: {status, exit_code}},
   perguntas:  {[id]: {status, resposta, origem}},
   leases:     {[id]: {status}},
-  grafo_versao_corrente: {[grafo_id]: versao_id} }
+  grafo_versao_corrente: {[grafo_id]: versao_id},
+  execucoes:  {[execution_id]: {finalizada_em}} }
 ```
 
 `tests/replay.test.mjs` roda o reducer contra `exemplos/log-exemplo.jsonl` e

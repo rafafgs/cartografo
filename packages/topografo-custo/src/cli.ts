@@ -14,10 +14,18 @@
  * - **it applies nothing.** `POST /v1/proposals/:id/apply` is called nowhere in
  *   this package: applying is a human decision at the gate (README, principle 5),
  *   and the inbox is a ticket of its own (`t111`).
- * - **it does not deduplicate.** Running twice over the same telemetry creates
- *   repeated proposals. `GET /v1/proposals` exists and would allow a check, but
- *   idempotency is not what this ticket proves and nothing here implements it:
- *   declared out of scope (ticket, §6), not a silent bug.
+ * - **it does not deduplicate, and no longer has to.** Since t246 the control
+ *   plane does it for every caller at once (D21): `POST /v1/proposals` keys a
+ *   proposal by `(lens, target_version, operations)` — the lens read off
+ *   `evidence.lens`, which `policy.ts` already sends as `'cost'` — and a repeat
+ *   that matches a still-pending proposal answers `200` with that same proposal,
+ *   its evidence strengthened by one more occurrence, instead of `201` with a
+ *   clone. So running `evaluate` twice over the same telemetry no longer piles up
+ *   repeated candidates, and nothing in this package had to learn about it: both
+ *   statuses are a success to `client.ts`, which reads `{proposal}` either way.
+ *   What still creates a NEW proposal is a repeat whose match already left
+ *   `pending` — uniqueness is scoped to that state, so a rejection is not a
+ *   permanent, silent ban on the same signal ever being raised again.
  *
  * Exit codes, in the same convention as the `cartografo` CLI
  * (`packages/core/src/cli/index.ts`):

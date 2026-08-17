@@ -1,10 +1,12 @@
--- 0021_execucao_finalizada — a execução vira sujeito de evento (D21, t245).
+-- 0022_execucao_finalizada — a execução vira sujeito de evento (D21, t245).
 --
--- Numerada 0021 provisoriamente: outras fichas correm em paralelo e
--- `src/db/migrate.ts` falha alto em número repetido, então renumerar no merge é
--- obrigatório, não cosmético — mesmo precedente registrado no cabeçalho da 0003,
--- da 0005, da 0017 e da 0019. Nenhuma ordem de dependência: esta só mexe no
--- CHECK de `event`.
+-- Nasceu 0021 provisoriamente e foi renumerada para 0022 no merge, exatamente
+-- pelo motivo que o cabeçalho provisório antecipava: a t246 chegou primeiro na
+-- main com `0021_proposta_dedupe_key.sql` e `src/db/migrate.ts` falha alto em
+-- número repetido — mesmo precedente registrado no cabeçalho da 0003, da 0005,
+-- da 0017 e da 0019. Nenhuma ordem de dependência entre as duas: aquela adiciona
+-- coluna e índice em `proposal`, esta só mexe no CHECK de `event`, então rodar
+-- depois não muda nada do que ela faz.
 --
 -- ## O que muda, e o que não muda
 --

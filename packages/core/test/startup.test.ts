@@ -177,13 +177,19 @@ test(
       // count moved with it, deliberately and in the same commit. t253 added
       // `0020_sessao_saida.sql`, which is not that either — it gives the session
       // somewhere to keep the node's structured report — and moved it again.
-      // t245 added `0021_execucao_finalizada.sql`, which widens the `CHECK` of
+      // t246 added `0021_proposta_dedupe_key.sql`, which is not that either — it
+      // gives a proposal the key that makes a repeated signal strengthen it
+      // instead of cloning it (D21) — and moved it once more. t245 added
+      // `0022_execucao_finalizada.sql`, which widens the `CHECK` of
       // `event.entity_type` so the round can be the subject of an event (D21),
-      // and moved it once more.
+      // and moved it once more. That one was written as `0021` too and was
+      // renumbered at merge, which is the whole reason this count is spelled
+      // out: two tickets each adding a migration is the conflict git does not
+      // report.
       assert.equal(
         first.readiness.migrationsApplied,
-        21,
-        'a brand-new database applies the twenty-one migrations the package ships',
+        22,
+        'a brand-new database applies the twenty-two migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

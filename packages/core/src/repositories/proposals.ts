@@ -66,6 +66,16 @@ export interface ProposalRow {
   /** Why a PERSON refused the hypothesis; the soundness gate writes `result` instead. */
   motivo_rejeicao: string | null;
   resultado: unknown;
+  /**
+   * Deduplication key of the `(lens, target version, operations)` triple (t246).
+   *
+   * The one field of this interface whose name is NOT translated back to
+   * Portuguese by `COLUMNS`, because it never was Portuguese: it is internal
+   * bookkeeping born English with `migrations/0021_proposta_dedupe_key.sql`, and
+   * {@link toProposal} does not publish it. `null` on any row written before that
+   * migration, and on any proposal whose evidence named no lens.
+   */
+  dedupe_key: string | null;
   criado_em: string;
   atualizado_em: string;
 }
@@ -83,6 +93,7 @@ interface RawRow {
   motivo_reversao: string | null;
   motivo_rejeicao: string | null;
   resultado: string | null;
+  dedupe_key: string | null;
   criado_em: string;
   atualizado_em: string;
 }
@@ -94,6 +105,7 @@ const COLUMNS = `id, graph_id AS grafo_id, target_version AS versao_alvo,
                  applied_version_id AS versao_aplicada_id,
                  revert_reason AS motivo_reversao,
                  rejection_reason AS motivo_rejeicao, result AS resultado,
+                 dedupe_key,
                  created_at AS criado_em, updated_at AS atualizado_em`;
 
 function hydrate(row: RawRow): ProposalRow {
@@ -205,7 +217,10 @@ export function getProposal(db: Database, id: number): ProposalRow | undefined {
  * @param db Open database.
  * @param data Target (graph and version), operations already validated in shape,
  *   and the hypothesis: the evidence that motivated it and the metric it expects
- *   to move.
+ *   to move. `dedupeKey` is optional: `POST /proposals` computes and passes one
+ *   (t246), and the lineage diff of `routes/graphs.ts` does not — a proposal
+ *   nobody keyed reads `null`, which is what the partial unique index of
+ *   `migrations/0021_proposta_dedupe_key.sql` treats as always distinct.
  * @returns The proposal as it was written.
  */
 export function createProposal(
@@ -216,14 +231,15 @@ export function createProposal(
     operacoes: Operation[];
     evidencia: unknown;
     metrica_esperada: unknown;
+    dedupeKey?: string | null;
   },
 ): ProposalRow {
   const createdAt = now();
   const result = db
     .prepare(
       `INSERT INTO proposal (graph_id, target_version, operations, evidence, expected_metric,
-                             status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
+                             status, dedupe_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
     )
     .run(
       data.grafo_id,
@@ -231,12 +247,99 @@ export function createProposal(
       JSON.stringify(data.operacoes),
       JSON.stringify(data.evidencia),
       JSON.stringify(data.metrica_esperada),
+      data.dedupeKey ?? null,
       createdAt,
       createdAt,
     );
 
   const proposal = getProposal(db, Number(result.lastInsertRowid));
   if (proposal === undefined) throw new Error('the proposal was not written');
+  return proposal;
+}
+
+/* -------------------------------------------------------------------------- */
+/* t246 — D21: repeated signal strengthens the pending proposal.               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The PENDING proposal carrying this deduplication key, if there is one.
+ *
+ * `pending` is in the `WHERE` and not merely likely to be true: uniqueness is
+ * scoped to that state on purpose (`migrations/0021_proposta_dedupe_key.sql`), so
+ * a key shared with a proposal somebody already rejected, applied or reverted has
+ * to read as "no match" here — reposting the same signal after a decision opens a
+ * new hypothesis instead of reopening a closed one.
+ *
+ * `dedupe_key IS NULL` can never reach this: `routes/proposals.ts` always has a
+ * key to look up, and the `null` bucket is a real key over a `null` lens, not an
+ * absent column. Matching NULL here would be matching every unkeyed row at once.
+ *
+ * @param db Open database.
+ * @param dedupeKey The key `proposalDedupeKey` computed for the incoming signal.
+ * @returns The hydrated proposal, or `undefined` when nothing pending matches.
+ */
+export function findPendingProposalByDedupeKey(
+  db: Database,
+  dedupeKey: string,
+): ProposalRow | undefined {
+  const row = db
+    .prepare(`SELECT ${COLUMNS} FROM proposal WHERE dedupe_key = ? AND status = 'pending'`)
+    .get(dedupeKey) as RawRow | undefined;
+  return row === undefined ? undefined : hydrate(row);
+}
+
+/**
+ * Adds one more occurrence to a pending proposal's evidence (t246, FR4).
+ *
+ * The accumulation is a LIST, and it starts being one only from the second
+ * occurrence on: the first repeat wraps whatever was there into a one-element list
+ * and appends to it. That asymmetry is the whole reason every reader of
+ * `proposal.evidence.<field>` across `core`, `runner` and `topografo-custo` keeps
+ * working unchanged — a proposal nobody repeated is byte-for-byte the object that
+ * was posted.
+ *
+ * Nothing else about the proposal moves. `expected_metric` stays the original
+ * hypothesis, not recomputed and not merged: the second signal is more evidence
+ * for the same claim, not a new claim (D21, and the ticket's own out of scope).
+ *
+ * The read and the write are one transaction because they are one fact: two
+ * repeats arriving together must not each read the same list and each write it
+ * back with one element added.
+ *
+ * @param db Open database.
+ * @param id The pending proposal the route already found by key.
+ * @param evidence The new occurrence, exactly as it came off the wire.
+ * @returns The updated proposal.
+ * @throws {Error} When the row stopped being pending mid-flight — the same guard
+ *   {@link approveProposal} uses, for the same reason: strengthening a proposal
+ *   somebody just decided on would be writing over their decision.
+ */
+export function appendProposalEvidence(db: Database, id: number, evidence: unknown): ProposalRow {
+  db.transaction(() => {
+    const current = db
+      .prepare(`SELECT evidence FROM proposal WHERE id = ? AND status = 'pending'`)
+      .get(id) as { evidence: string } | undefined;
+    if (current === undefined) {
+      throw new Error(`proposal ${id} stopped being pending during the reinforcement`);
+    }
+
+    const stored: unknown = JSON.parse(current.evidence);
+    const accumulated = Array.isArray(stored) ? [...stored, evidence] : [stored, evidence];
+
+    const effect = db
+      .prepare(
+        `UPDATE proposal SET evidence = ?, updated_at = ?
+          WHERE id = ? AND status = 'pending'`,
+      )
+      .run(JSON.stringify(accumulated), now(), id);
+
+    if (effect.changes !== 1) {
+      throw new Error(`proposal ${id} stopped being pending during the reinforcement`);
+    }
+  })();
+
+  const proposal = getProposal(db, id);
+  if (proposal === undefined) throw new Error(`proposal ${id} is gone`);
   return proposal;
 }
 

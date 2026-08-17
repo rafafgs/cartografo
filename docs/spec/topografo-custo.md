@@ -177,6 +177,19 @@ próprio experimento.
 `fator × mediana`). `direcao` é sempre `cai`: toda candidata desta lente é um
 corte de custo.
 
+O `"lens": "cost"` do exemplo acima deixou de ser só uma etiqueta com a `t246`:
+ele é o discriminador de deduplicação do control plane (D21). O
+`POST /v1/proposals` chaveia cada proposta por `(lens, target_version,
+operations)` — chave calculada pelo servidor, nunca aceita no corpo e nunca
+devolvida na resposta — e um sinal repetido que casa com uma proposta ainda
+`pending` responde `200` com aquela mesma proposta, somando a nova evidência à
+lista dela, em vez de `201` com um clone. Rodar `evaluate` duas vezes sobre a
+mesma telemetria, portanto, não empilha mais candidatas repetidas. Duas lentes
+que proponham o mesmo diff continuam sendo duas propostas, de propósito: o
+raciocínio por trás de cada uma é evidência diferente mesmo quando o diff
+coincide. E a unicidade vale só dentro de `pending` — repor o sinal depois de
+uma rejeição abre proposta nova, porque a decisão anterior é passado.
+
 **A consequência honesta:** aplicar uma proposta desta lente não reduz custo
 nenhum sozinha — ela informa quem lê o nó. Enforcement mecânico de teto ou de
 tier espera uma superfície de política de verdade, que a

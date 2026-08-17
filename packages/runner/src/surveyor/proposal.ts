@@ -92,6 +92,22 @@ const MUTABLE_FIELDS = ['role', 'description', 'skill_ref', 'contract'];
 
 /** The evidence a flow proposal carries into the book. */
 export interface FlowEvidence {
+  /**
+   * The lens, as the control plane's deduplication key reads it (t246, D21).
+   *
+   * `POST /v1/proposals` keys a proposal by `(lens, target_version, operations)`
+   * and takes the lens off `evidence.lens` — the one place both lenses can carry
+   * it without widening the wire shape. The cost lens has sent it since t255;
+   * this is the flow lens joining the same dimension, so that two surveyors
+   * proposing the same diff stay two proposals and the SAME surveyor running
+   * twice over the same signal does not clone one.
+   *
+   * It does not replace {@link FlowEvidence.fonte}, which is untouched: `fonte`
+   * is this module's own provenance string and `lens` is the control plane's
+   * discriminator, and collapsing them would tie a server-side key to a label
+   * nobody promised to keep stable.
+   */
+  lens: 'flow';
   /** Which surveyor produced this. The second one (custo) will say otherwise. */
   fonte: string;
   execucao_id: number;
@@ -326,6 +342,7 @@ export function buildEvidence(
   versionId: string,
 ): FlowEvidence {
   return {
+    lens: 'flow',
     fonte: 'topografo/fluxo',
     execucao_id: executionId,
     grafo_versao_id: versionId,

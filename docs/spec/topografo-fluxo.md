@@ -91,6 +91,7 @@ monta as duas antes de qualquer agente entrar na história.
 
 ```json
 {
+  "lens": "flow",
   "fonte": "topografo/fluxo",
   "execution_id": 110,
   "grafo_versao_id": "sha256:55be71af…",
@@ -110,6 +111,18 @@ que cada número saiu, e é por eles que qualquer pessoa reconstrói a conta sem
 confiar em ninguém. Uma evidência que resume sem citar id é um parecer, não uma
 evidência. `por_no` viaja junto para que "por que ESTE nó?" seja respondível sem
 rodar nada de novo.
+
+`lens` é o campo que o control plane lê, e não o topógrafo: desde a `t246`
+(D21), o `POST /v1/proposals` deduplica por `(lens, target_version, operations)`
+— a chave é calculada pelo servidor, nunca aceita no corpo e nunca devolvida na
+resposta. Rodar esta lente duas vezes sobre a mesma execução **não** cria duas
+propostas: a segunda chamada responde `200` com a proposta que já existia e a
+evidência dela vira uma lista, com a nova ocorrência no fim. `fonte` continua
+onde sempre esteve e não foi substituída — ela é a procedência que este módulo
+declara, `lens` é o discriminador do servidor, e as duas lentes precisam do
+mesmo nome de campo (`cost` na de custo, desde a `t255`) para caírem na mesma
+dimensão. A unicidade vale só enquanto a proposta está `pending`: depois de
+rejeitada ou aplicada, o mesmo sinal abre uma proposta nova.
 
 A hipótese aponta o **componente dominante** do gargalo, não o total: "o nó
 custa 25s" não é acionável, "o nó passa 20s com agente aberto" é.

@@ -18,7 +18,7 @@
  * | `GET /v1/sessions?trabalho_id=` | the END of the sessions |
  * | `GET /v1/input-requests?trabalho_id=` | the END of the waits |
  *
- * The events route leaves out `sessao.finalizada` and `pergunta.respondida`
+ * The events route leaves out `session.finished` and `input_request.answered`
  * because those payloads carry no `trabalho_id` — the link was declared when
  * they opened, and repeating it would be duplicated data in the log
  * (`packages/core/src/db/eventos.ts`). "Whoever wants the end of the session
@@ -65,9 +65,9 @@ export type SegmentCategory = 'fila' | 'agente_trabalhando' | 'esperando_humano'
 /** An event, in the slice the reconstruction reads. */
 export interface TimelineEvent {
   id: number;
-  tipo: string;
-  ocorrido_em: string;
-  dados: Record<string, unknown>;
+  type: string;
+  occurred_at: string;
+  data: Record<string, unknown>;
 }
 
 /** A session, in the slice the reconstruction reads. */
@@ -178,10 +178,16 @@ interface Milestone {
 function nodeMilestones(events: TimelineEvent[]): Milestone[] {
   const milestones: Milestone[] = [];
   for (const event of events) {
-    if (event.tipo === 'trabalho.criado') {
-      milestones.push({ at: instant(event.ocorrido_em), nodeId: textOrNull(event.dados.no_entrada_id) });
-    } else if (event.tipo === 'trabalho.transicao') {
-      milestones.push({ at: instant(event.ocorrido_em), nodeId: textOrNull(event.dados.para_no_id) });
+    if (event.type === 'job.created') {
+      milestones.push({
+        at: instant(event.occurred_at),
+        nodeId: textOrNull(event.data.entry_node_id),
+      });
+    } else if (event.type === 'job.transitioned') {
+      milestones.push({
+        at: instant(event.occurred_at),
+        nodeId: textOrNull(event.data.to_node_id),
+      });
     }
   }
   return milestones.sort((a, b) => a.at.ms - b.at.ms);
@@ -205,8 +211,8 @@ function nodeAt(milestones: Milestone[], ms: number): string | null {
 function blockedAtEnd(events: TimelineEvent[]): boolean {
   let blocked = false;
   for (const event of events) {
-    if (event.tipo === 'trabalho.bloqueado') blocked = true;
-    if (event.tipo === 'trabalho.desbloqueado') blocked = false;
+    if (event.type === 'job.blocked') blocked = true;
+    if (event.type === 'job.unblocked') blocked = false;
   }
   return blocked;
 }
@@ -274,7 +280,7 @@ export function buildTimeline(sources: TimelineSources): Timeline {
   const done = sources.completed && !hasOpen && !blocked;
 
   const known = [
-    ...sources.events.map((event) => instant(event.ocorrido_em)),
+    ...sources.events.map((event) => instant(event.occurred_at)),
     ...occupancies.flatMap((occupancy) =>
       occupancy.end === null ? [occupancy.start] : [occupancy.start, occupancy.end],
     ),

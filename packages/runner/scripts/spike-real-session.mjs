@@ -18,11 +18,11 @@
  *    the database is t101/t102 and does not exist yet.
  * 3. The session actually WORKED — the file the prompt asked for is in the
  *    workdir. Without that, "it exited with 0" proves nothing.
- * 4. The listener's callbacks are projected into `sessao.aberta` and
- *    `sessao.finalizada` conforming to the taxonomy (t98) and validated with
+ * 4. The listener's callbacks are projected into `session.opened` and
+ *    `session.finished` conforming to the taxonomy (t98) and validated with
  *    ajv against the real schemas.
  * 5. The token accounting and the models the CLI reported are printed as the
- *    adapter parsed them, and they ride in `sessao.finalizada` (t172, FR12).
+ *    adapter parsed them, and they ride in `session.finished` (t172, FR12).
  *    That is the half no unit test can prove: the suite runs against a fake
  *    engine whose frames we wrote, so "the adapter parses `usage` correctly"
  *    is only a claim about a fixture until a real, credentialed CLI produces
@@ -63,16 +63,16 @@ const TIMEOUT_SECONDS = 300;
  * (t98). Two vocabularies on purpose: the interface's is the minimum every
  * headless CLI expresses, the taxonomy's describes the outcome of the WORK.
  *
- * `cancelled` lands on `travada` for want of anything better — the taxonomy has
- * no "cancelled". The description of `travada` is "a stop of ours", which does
+ * `cancelled` lands on `stuck` for want of anything better — the taxonomy has
+ * no "cancelled". The description of `stuck` is "a stop of ours", which does
  * the job, but the match is not exact and is worth recording before the runner
  * (t103) has to decide it alone.
  */
 const TAXONOMY_STATUS = {
-  completed: 'concluida',
-  failed: 'falhou',
-  timed_out: 'tempo_esgotado',
-  cancelled: 'travada',
+  completed: 'completed',
+  failed: 'failed',
+  timed_out: 'timed_out',
+  cancelled: 'stuck',
 };
 
 const log = (message) => console.log(`[spike] ${message}`);
@@ -101,14 +101,14 @@ function createDisposableRepo() {
 
 function buildValidator() {
   // `allowUnionTypes` because the taxonomy uses a type union on purpose:
-  // `entidade.id` is an integer for `trabalho`, `sessao`, `pergunta` and
+  // `entity.id` is an integer for `job`, `session`, `input_request` and
   // `lease`, and a string for `grafo_versao`, whose id is the snapshot hash
   // (D15). It is t98's
   // decision, not schema sloppiness — and changing another ticket's schema is
   // out of scope.
   const ajv = new Ajv2020({ strict: true, allowUnionTypes: true, allErrors: true });
   addFormats(ajv);
-  for (const name of ['envelope', 'sessao.aberta', 'sessao.finalizada']) {
+  for (const name of ['envelope', 'session.opened', 'session.finished']) {
     ajv.addSchema(JSON.parse(readFileSync(join(SCHEMAS_DIR, `${name}.schema.json`), 'utf8')));
   }
   return (type, event) => {
@@ -124,13 +124,13 @@ function buildValidator() {
 function envelope(id, type, payload) {
   return {
     id,
-    tipo: type,
-    projeto_id: 3,
-    execucao_id: null,
-    entidade: { tipo: 'sessao', id: 1 },
-    ator: { tipo: 'sistema', ref: 'runner/spike-t104' },
-    ocorrido_em: new Date().toISOString(),
-    dados: payload,
+    type,
+    project_id: 3,
+    execution_id: null,
+    entity: { type: 'session', id: 1 },
+    actor: { type: 'system', ref: 'runner/spike-t104' },
+    occurred_at: new Date().toISOString(),
+    data: payload,
   };
 }
 
@@ -199,19 +199,19 @@ async function main() {
 
   const validate = buildValidator();
 
-  // `sessao.aberta` goes out with the ref the session has already revealed: the
+  // `session.opened` goes out with the ref the session has already revealed: the
   // init frame is the first of the stream, so in practice it is known well
   // before the end.
-  const opened = envelope(1, 'sessao.aberta', {
+  const opened = envelope(1, 'session.opened', {
     engine: adapter.engineName,
     engine_session_ref: engineRef,
     working_dir: repo,
     prompt,
     timeout_seconds: TIMEOUT_SECONDS,
-    trabalho_id: null,
-    no_id: null,
+    job_id: null,
+    node_id: null,
   });
-  validate('sessao.aberta', opened);
+  validate('session.opened', opened);
 
   // The raw terminal frame, straight off the stream — the ONE thing this proof
   // exists to show for t172, because everything downstream of it is a fixture
@@ -237,15 +237,15 @@ async function main() {
   console.log(`detail.models: ${JSON.stringify(outcome.detail?.models ?? null)}`);
   console.log('====================================\n');
 
-  const finished = envelope(2, 'sessao.finalizada', {
+  const finished = envelope(2, 'session.finished', {
     status: TAXONOMY_STATUS[outcome.status],
     exit_code: outcome.exitCode,
     // What the engine counted, or null when it counted nothing (t172). `null`
     // is "the engine reported nothing" — never collapse it into zero.
-    uso: outcome.detail?.usage ?? null,
-    modelos: outcome.detail?.models ?? null,
+    usage: outcome.detail?.usage ?? null,
+    models: outcome.detail?.models ?? null,
   });
-  validate('sessao.finalizada', finished);
+  validate('session.finished', finished);
 
   const jsonl = join(root, 'eventos.jsonl');
   writeFileSync(jsonl, `${JSON.stringify(opened)}\n${JSON.stringify(finished)}\n`);

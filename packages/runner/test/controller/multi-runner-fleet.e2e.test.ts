@@ -228,9 +228,9 @@ async function seedJobs(cp: RunningControlPlane, howMany: number): Promise<numbe
   const ids: number[] = [];
   for (let index = 0; index < howMany; index += 1) {
     const job = await call<{ id: number }>(cp, 'POST', '/v1/jobs', cp.bootstrapToken, {
-      projeto_id: PROJECT_ID,
-      titulo: `trabalho disputado #${index + 1}`,
-      no_entrada_id: 'implementar',
+      project_id: PROJECT_ID,
+      title: `trabalho disputado #${index + 1}`,
+      entry_node_id: 'implementar',
     });
     assert.equal(job.status, 201);
     ids.push(job.body.id);

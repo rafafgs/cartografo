@@ -344,7 +344,7 @@ export async function runProposeSkill(options: ProposeSkillOptions): Promise<num
 
   const job = await requestJson(`${options.url}/v1/jobs`, {
     method: 'POST',
-    body: { titulo: `importar skill: ${id} de ${repo}@${ref}`, no_entrada_id: IMPORT_NODE },
+    body: { title: `importar skill: ${id} de ${repo}@${ref}`, entry_node_id: IMPORT_NODE },
   });
   if (job.status !== 201 || !isObject(job.body) || typeof job.body.id !== 'number') {
     process.stderr.write(
@@ -357,12 +357,12 @@ export async function runProposeSkill(options: ProposeSkillOptions): Promise<num
   const gate = await requestJson(`${options.url}/v1/input-requests`, {
     method: 'POST',
     body: {
-      trabalho_id: jobId,
-      tipo: 'aprovacao',
-      pergunta: `Approve importing skill ${id}?`,
-      contexto: `${JSON.stringify(manifest, null, 2)}\n\n${REVIEW_CHECKLIST}`,
+      job_id: jobId,
+      kind: 'approval',
+      question: `Approve importing skill ${id}?`,
+      context: `${JSON.stringify(manifest, null, 2)}\n\n${REVIEW_CHECKLIST}`,
       // Never auto-approvable, in any circumstance: D4's gate is a person.
-      auto_aprovavel: false,
+      auto_approvable: false,
     },
   });
   if (gate.status !== 201 || !isObject(gate.body) || typeof gate.body.id !== 'number') {

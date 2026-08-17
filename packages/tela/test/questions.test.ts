@@ -33,11 +33,11 @@ import {
 } from './support.ts';
 
 const FULL_BODY = {
-  pergunta: 'Renumerar a migração para 0003?',
-  contexto: 'A t101 corre em paralelo e é dona do mesmo espaço de numeração.',
-  opcoes: ['Renumerar para 0003', 'Manter 0002'],
-  recomendacao: 'Manter 0002 e renumerar só se colidir no merge.',
-  resposta_padrao: 'Manter 0002',
+  question: 'Renumerar a migração para 0003?',
+  context: 'A t101 corre em paralelo e é dona do mesmo espaço de numeração.',
+  options: ['Renumerar para 0003', 'Manter 0002'],
+  recommendation: 'Manter 0002 e renumerar só se colidir no merge.',
+  default_answer: 'Manter 0002',
 };
 
 /** Reads the question straight from the control plane, bypassing the screen. */
@@ -62,19 +62,19 @@ test('t107 AT6 — GET /perguntas shows the whole question, with what it takes t
   const cp = await startControlPlane(t);
 
   const job = await createJob(cp, {
-    titulo: 'que pergunta',
-    no_entrada_id: 'refinar',
-    execucao_id: 7,
+    title: 'que pergunta',
+    entry_node_id: 'refinar',
+    execution_id: 7,
   });
-  const question = await createQuestion(cp, { trabalho_id: job.id, ...FULL_BODY });
+  const question = await createQuestion(cp, { job_id: job.id, ...FULL_BODY });
 
   const answered = await createQuestion(cp, {
-    trabalho_id: job.id,
-    pergunta: 'esta já foi decidida',
+    job_id: job.id,
+    question: 'esta já foi decidida',
   });
   await api(cp, 'PATCH', `/v1/input-requests/${answered.id}/answer`, {
-    resposta: 'sim',
-    respondido_por: 'rafael',
+    answer: 'sim',
+    answered_by: 'rafael',
   });
 
   const screen = await startScreen(t, cp);
@@ -89,11 +89,11 @@ test('t107 AT6 — GET /perguntas shows the whole question, with what it takes t
   );
 
   const [card] = cards;
-  assert.ok(card.excerpt.includes(FULL_BODY.pergunta), 'shows the question');
-  assert.ok(card.excerpt.includes(FULL_BODY.contexto), 'shows the context');
-  assert.ok(card.excerpt.includes(FULL_BODY.recomendacao), 'shows the recommendation');
-  assert.ok(card.excerpt.includes(FULL_BODY.resposta_padrao), 'shows the default answer');
-  for (const option of FULL_BODY.opcoes) {
+  assert.ok(card.excerpt.includes(FULL_BODY.question), 'shows the question');
+  assert.ok(card.excerpt.includes(FULL_BODY.context), 'shows the context');
+  assert.ok(card.excerpt.includes(FULL_BODY.recommendation), 'shows the recommendation');
+  assert.ok(card.excerpt.includes(FULL_BODY.default_answer), 'shows the default answer');
+  for (const option of FULL_BODY.options) {
     assert.ok(card.excerpt.includes(option), `shows the option "${option}"`);
   }
   assert.ok(
@@ -107,8 +107,8 @@ test('t107 AT6 — the submit answers FOR REAL in the control plane and leaves t
   requireArtifacts(T107_ARTIFACTS.client, T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
-  const question = await createQuestion(cp, { trabalho_id: job.id, ...FULL_BODY });
+  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  const question = await createQuestion(cp, { job_id: job.id, ...FULL_BODY });
 
   const before = await readFromControlPlane(cp, job.id, question.id);
   assert.equal(before.status, 'pending');
@@ -143,8 +143,8 @@ test('t107 AT6 — a blank answer is refused by the screen, with nothing written
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
-  const question = await createQuestion(cp, { trabalho_id: job.id, ...FULL_BODY });
+  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  const question = await createQuestion(cp, { job_id: job.id, ...FULL_BODY });
 
   const screen = await startScreen(t, cp);
   const submission = await submitForm(screen, `/perguntas/${question.id}/resposta`, {

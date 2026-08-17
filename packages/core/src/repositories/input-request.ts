@@ -3,7 +3,7 @@
  *
  * A question and an approval are the same animal; the `tipo` field is the only
  * difference. And the ORIGIN of the answer is the EVENT TYPE
- * (`pergunta.respondida` vs `pergunta.auto_resolvida`), not a column of the log:
+ * (`input_request.answered` vs `input_request.auto_resolved`), not a column of the log:
  * the audit of "was this approved by a person or by the system?" has to survive
  * somebody altering a projection row. In the projection the origin becomes a
  * field again, because whoever reads state wants to compare, not to classify.
@@ -88,13 +88,13 @@ function toInputRequest(row: InputRequestRow): InputRequest {
 /* -------------------------------------------------------------------------- */
 /* The row → wire boundary (t226, FR1).                                        */
 /*                                                                             */
-/* Read side only: `POST /v1/input-requests` and the two answer routes still    */
-/* take their Portuguese bodies, because those reach `validateEvent` — D20's    */
-/* second child owns that vocabulary (`routes/common.ts` explains it in full).  */
+/* Both sides cross it since t227: `POST /v1/input-requests` and the two answer */
+/* routes take English bodies too, because those reach `validateEvent` and D20's*/
+/* second child renamed that vocabulary (`routes/common.ts` tells the story).   */
 /* -------------------------------------------------------------------------- */
 
 /**
- * `pergunta.status` and `pergunta.tipo`, both ways (`glossario-wire.md` §1.6).
+ * `pergunta.status` and `pergunta.tipo`, row → wire (`glossario-wire.md` §1.6).
  *
  * `tipo` is the one row of §1.6 that is QUALIFIED, and the glossary says why:
  * the bare word `pergunta` is the ENTITY and becomes `input_request`, while
@@ -105,6 +105,29 @@ function toInputRequest(row: InputRequestRow): InputRequest {
 const STATUS_FIELD: Record<string, string> = { pendente: 'pending', respondida: 'answered' };
 const STATUS_COLUMN: Record<string, string> = { pending: 'pendente', answered: 'respondida' };
 const KIND_FIELD: Record<string, string> = { pergunta: 'question', aprovacao: 'approval' };
+
+/**
+ * ...and the way back, which t227 is what created the need for.
+ *
+ * `pergunta.tipo` carries a `CHECK (tipo IN ('pergunta','aprovacao'))` since
+ * migration `0003`, so the column cannot simply take the event's new word. The
+ * wire says `question`/`approval` and the row keeps saying what its constraint
+ * demands, exactly as lease status and draft status already do here and in
+ * `repositories/leases.ts`. Renaming the column and its CHECK is D20's fifth
+ * child; when it lands this map is what disappears.
+ */
+const KIND_COLUMN: Record<string, string> = { question: 'pergunta', approval: 'aprovacao' };
+
+/**
+ * `pergunta.origem`, row → wire.
+ *
+ * The column's two values are `usuario` and `auto` (`CHECK` of migration
+ * `0003`); `auto` is already English and `usuario` is not, and the glossary maps
+ * it to `user` (§1.6). Translating it here is what lets the specification's
+ * reducer compare its `perguntas` projection against this one with no map in
+ * between — which is the whole point of `test/replay-consistency.test.ts`.
+ */
+const SOURCE_FIELD: Record<string, string> = { usuario: 'user', auto: 'auto' };
 
 /** The two statuses a `?status=` filter may name, in the wire's spelling. */
 export const INPUT_REQUEST_STATUSES: readonly string[] = Object.freeze(Object.keys(STATUS_COLUMN));
@@ -132,12 +155,11 @@ export interface WireInputRequest {
   answer: string | null;
   answered_by: string | null;
   /**
-   * Where the decision came from.
+   * Where the decision came from: `user` or `auto`.
    *
-   * The KEY translates (`glossario-wire.md` §4.2); the VALUES do not. They are
-   * the `pergunta.respondida`/`auto_resolvida` payload's vocabulary
-   * (`usuario`, `recomendacao`, `resposta_padrao`, `precedente`), which is
-   * D20's second child — the same line this ticket draws for session status.
+   * Both the key and the value translate since t227 (`glossario-wire.md` §4.2
+   * and §1.6). The column still says `usuario`, because its `CHECK` does —
+   * see {@link SOURCE_FIELD}.
    */
   source: string | null;
   created_at: string;
@@ -162,7 +184,7 @@ export function toWireInputRequest(request: InputRequest): WireInputRequest {
     status: STATUS_FIELD[request.status] ?? request.status,
     answer: request.resposta,
     answered_by: request.respondido_por,
-    source: request.origem,
+    source: request.origem === null ? null : (SOURCE_FIELD[request.origem] ?? request.origem),
     created_at: request.criada_em,
     answered_at: request.respondida_em,
   };
@@ -188,20 +210,20 @@ export function getInputRequest(db: Database, id: number): InputRequest | null {
 
 /** Body of `POST /v1/input-requests`. */
 export interface CreateInputRequestInput {
-  trabalho_id?: unknown;
-  sessao_id?: unknown;
-  tipo?: unknown;
-  pergunta?: unknown;
-  contexto?: unknown;
-  opcoes?: unknown;
-  recomendacao?: unknown;
-  resposta_padrao?: unknown;
-  auto_aprovavel?: unknown;
-  ator?: unknown;
+  job_id?: unknown;
+  session_id?: unknown;
+  kind?: unknown;
+  question?: unknown;
+  context?: unknown;
+  options?: unknown;
+  recommendation?: unknown;
+  default_answer?: unknown;
+  auto_approvable?: unknown;
+  actor?: unknown;
 }
 
 /**
- * Records the escalation request, writes `pergunta.criada` and BLOCKS the owning
+ * Records the escalation request, writes `input_request.created` and BLOCKS the owning
  * job in the same transaction (FR13; t106).
  *
  * The block is not a second step for the caller: whoever asks is a session that
@@ -222,19 +244,19 @@ export function createInputRequest(
   db: Database,
   input: CreateInputRequestInput,
 ): InputRequest | null {
-  const data = requireValidData('pergunta.criada', {
-    trabalho_id: input.trabalho_id,
-    sessao_id: input.sessao_id,
-    tipo: input.tipo,
-    pergunta: input.pergunta,
-    contexto: input.contexto,
-    opcoes: input.opcoes,
-    recomendacao: input.recomendacao,
-    resposta_padrao: input.resposta_padrao,
-    auto_aprovavel: input.auto_aprovavel,
+  const data = requireValidData('input_request.created', {
+    job_id: input.job_id,
+    session_id: input.session_id,
+    kind: input.kind,
+    question: input.question,
+    context: input.context,
+    options: input.options,
+    recommendation: input.recommendation,
+    default_answer: input.default_answer,
+    auto_approvable: input.auto_approvable,
   });
 
-  const jobId = data.trabalho_id as number;
+  const jobId = data.job_id as number;
   // `no_atual` rides along with `projeto_id`/`execucao_id` — one lookup, one
   // trust boundary: everything an input request says about its owner comes from
   // the owner's row, and nothing from the body (t167).
@@ -251,8 +273,8 @@ export function createInputRequest(
   const nodeId =
     typeof owner.no_atual === 'string' && owner.no_atual !== '' ? owner.no_atual : null;
 
-  const options = data.opcoes as string[] | null;
-  const actor = resolveActor(input.ator, API_ACTOR);
+  const options = data.options as string[] | null;
+  const actor = resolveActor(input.actor, API_ACTOR);
 
   const create = db.transaction((): InputRequest => {
     const timestamp = now();
@@ -266,40 +288,40 @@ export function createInputRequest(
       )
       .run(
         jobId,
-        data.sessao_id as number | null,
+        data.session_id as number | null,
         owner.execucao_id,
         nodeId,
-        data.tipo as string,
-        data.pergunta as string,
-        data.contexto as string | null,
+        KIND_COLUMN[data.kind as string],
+        data.question as string,
+        data.context as string | null,
         options === null ? null : JSON.stringify(options),
-        data.recomendacao as string | null,
-        data.resposta_padrao as string | null,
-        asInteger(data.auto_aprovavel as boolean),
+        data.recommendation as string | null,
+        data.default_answer as string | null,
+        asInteger(data.auto_approvable as boolean),
         timestamp,
       );
 
     const id = Number(result.lastInsertRowid);
     recordEvent(db, {
-      tipo: 'pergunta.criada',
-      projeto_id: owner.projeto_id,
-      execucao_id: owner.execucao_id,
-      entidade: { tipo: 'pergunta', id },
-      ator: actor,
-      ocorrido_em: timestamp,
+      type: 'input_request.created',
+      project_id: owner.projeto_id,
+      execution_id: owner.execucao_id,
+      entity: { type: 'input_request', id },
+      actor,
+      occurred_at: timestamp,
       // The node goes into the payload here and not into `requireValidData`
       // above, for the ordinary reason: it is not known until the owner has been
       // read, and the owner is read after the body has been judged. `recordEvent`
       // revalidates the whole envelope anyway, this field included.
-      dados: { ...data, no_id: nodeId },
+      data: { ...data, node_id: nodeId },
     });
 
     // The reason quotes the input request's id (the taxonomy's own example):
     // whoever reads the job discovers from the reason itself what has to happen
     // for it to start moving again.
     blockJob(db, jobId, {
-      motivo: `aguardando resposta da pergunta ${id}`,
-      ator: ESCALATION_ACTOR,
+      reason: `aguardando resposta da pergunta ${id}`,
+      actor: ESCALATION_ACTOR,
     });
 
     return toInputRequest(readRow(db, id) as InputRequestRow);
@@ -316,9 +338,9 @@ export function createInputRequest(
  * human and the automatic gate are the event type, the projection's `origem` and
  * the actor.
  *
- * The unblock reuses the SAME actor as the answer event — `usuario` when a person
+ * The unblock reuses the SAME actor as the answer event — `user` when a person
  * answered, the gate when it was automatic. The taxonomy asks for this explicitly
- * on `trabalho.desbloqueado`, and it is what stops the audit from concluding that
+ * on `job.unblocked`, and it is what stops the audit from concluding that
  * "the system" unblocked everything a human unblocked.
  *
  * Closing is exactly-once: the `UPDATE` is guarded by `status = 'pendente'` and a
@@ -331,7 +353,8 @@ export function createInputRequest(
 function answer(
   db: Database,
   id: number,
-  type: 'pergunta.respondida' | 'pergunta.auto_resolvida',
+  type: 'input_request.answered' | 'input_request.auto_resolved',
+  /** The COLUMN's value, whose `CHECK` still spells the first one Portuguese. */
   origin: 'usuario' | 'auto',
   raw: Record<string, unknown>,
   answeredBy: string | null,
@@ -354,7 +377,7 @@ function answer(
             SET status = 'respondida', resposta = ?, respondido_por = ?, origem = ?, respondida_em = ?
           WHERE id = ? AND status = 'pendente'`,
       )
-      .run(data.resposta as string, answeredBy, origin, timestamp, id);
+      .run(data.answer as string, answeredBy, origin, timestamp, id);
 
     // The whole transaction falls if the input request stopped being pending
     // between the route's check and this UPDATE: answering twice is a 409, never
@@ -366,13 +389,13 @@ function answer(
     }
 
     recordEvent(db, {
-      tipo: type,
-      projeto_id: owner?.projeto_id ?? DEFAULT_PROJECT,
-      execucao_id: row.execucao_id,
-      entidade: { tipo: 'pergunta', id },
-      ator: actor,
-      ocorrido_em: timestamp,
-      dados: data,
+      type,
+      project_id: owner?.projeto_id ?? DEFAULT_PROJECT,
+      execution_id: row.execucao_id,
+      entity: { type: 'input_request', id },
+      actor,
+      occurred_at: timestamp,
+      data,
     });
 
     // Lowers the flag `createInputRequest` raised. Deliberately without a
@@ -384,7 +407,7 @@ function answer(
     // What makes that safe is the guard above: only an answer that actually
     // closed a PENDING input request ever gets here, so a retried answer can no
     // longer unblock a job that is meanwhile waiting on a different question.
-    unblockJob(db, row.trabalho_id, { ator: actor });
+    unblockJob(db, row.trabalho_id, { actor });
 
     return toInputRequest(readRow(db, id) as InputRequestRow);
   });
@@ -394,15 +417,15 @@ function answer(
 
 /** Body of `PATCH /v1/input-requests/:id/answer`. */
 export interface AnswerInput {
-  resposta?: unknown;
-  respondido_por?: unknown;
-  ator?: unknown;
+  answer?: unknown;
+  answered_by?: unknown;
+  actor?: unknown;
 }
 
 /**
  * Records the human's answer (FR14).
  *
- * The default actor is `respondido_por` itself: `ator.ref` and the payload field
+ * The default actor is `answered_by` itself: `actor.ref` and the payload field
  * are redundant BY DESIGN — the audit of "what was asked, answered, when and by
  * whom" has to survive reading the payload alone.
  *
@@ -416,18 +439,18 @@ export function answerInputRequest(
   id: number,
   input: AnswerInput,
 ): InputRequest | null {
-  const answeredBy = typeof input.respondido_por === 'string' ? input.respondido_por : null;
-  const actor = resolveActor(input.ator, {
-    tipo: 'usuario',
+  const answeredBy = typeof input.answered_by === 'string' ? input.answered_by : null;
+  const actor = resolveActor(input.actor, {
+    type: 'user',
     ref: answeredBy ?? 'desconhecido',
   });
 
   return answer(
     db,
     id,
-    'pergunta.respondida',
+    'input_request.answered',
     'usuario',
-    { resposta: input.resposta, respondido_por: input.respondido_por },
+    { answer: input.answer, answered_by: input.answered_by },
     answeredBy,
     actor,
   );
@@ -435,15 +458,15 @@ export function answerInputRequest(
 
 /** Body of `PATCH /v1/input-requests/:id/auto-resolution`. */
 export interface AutoResolutionInput {
-  resposta?: unknown;
-  baseada_em?: unknown;
-  ator?: unknown;
+  answer?: unknown;
+  based_on?: unknown;
+  actor?: unknown;
 }
 
 /**
  * Records the answer given by the auto-approval gate on the human's behalf (FR15).
  *
- * `baseada_em` is a closed enum (`recomendacao`/`resposta_padrao`/`precedente`):
+ * `based_on` is a closed enum (`recommendation`/`default_answer`/`precedent`):
  * an auto-approval that cannot say where it got the answer from is a decision
  * with no trace, and the safety ladder of evolution depends on exactly that
  * trace.
@@ -461,11 +484,11 @@ export function autoResolveInputRequest(
   return answer(
     db,
     id,
-    'pergunta.auto_resolvida',
+    'input_request.auto_resolved',
     'auto',
-    { resposta: input.resposta, baseada_em: input.baseada_em },
+    { answer: input.answer, based_on: input.based_on },
     AUTO_APPROVAL_ACTOR.ref,
-    resolveActor(input.ator, AUTO_APPROVAL_ACTOR),
+    resolveActor(input.actor, AUTO_APPROVAL_ACTOR),
   );
 }
 
@@ -478,7 +501,7 @@ export function autoResolveInputRequest(
  *
  * The slice by job is symmetric to the one in `listSessions` and exists for the
  * same reason: the screen's timeline needs the end of the waits, and the
- * payload of `pergunta.respondida` does not carry `trabalho_id` — so that fact
+ * payload of `input_request.answered` does not carry `job_id` — so that fact
  * never shows up in `GET /v1/jobs/:id/events`. The filters add up as AND.
  *
  * @param db Open handle.
@@ -614,7 +637,7 @@ export function toWirePrecedent(row: Precedent): WirePrecedent {
     question: row.pergunta,
     answer: row.resposta,
     answered_by: row.respondido_por,
-    source: row.origem,
+    source: row.origem === null ? null : (SOURCE_FIELD[row.origem] ?? row.origem),
     created_at: row.criada_em,
     answered_at: row.respondida_em,
     similarity: row.similaridade,

@@ -318,10 +318,10 @@ async function main() {
       'POST',
       '/v1/jobs',
       {
-        titulo: 'ficha cujo nó aponta para uma skill adulterada',
-        no_entrada_id: document.initial_node,
-        execucao_id: EXECUTION_ID + 1,
-        grafo_versao_id: doctored.grafo_versao.id,
+        title: 'ficha cujo nó aponta para uma skill adulterada',
+        entry_node_id: document.initial_node,
+        execution_id: EXECUTION_ID + 1,
+        graph_version_id: doctored.grafo_versao.id,
       },
       201,
     );
@@ -340,7 +340,7 @@ async function main() {
       die(`the refusal opened ${poisonSessions.sessoes.length} session(s); it must open none`);
     }
     log(`tamper refused: ${refusal.message}`);
-    await api(url, 'POST', `/v1/jobs/${poison.id}/blocks`, { motivo: 'ficha envenenada, fora da fila' });
+    await api(url, 'POST', `/v1/jobs/${poison.id}/blocks`, { reason: 'ficha envenenada, fora da fila' });
 
     // --- 4. the real job, and then hands off ----------------------------------
     const job = await api(
@@ -348,20 +348,20 @@ async function main() {
       'POST',
       '/v1/jobs',
       {
-        titulo: 'somar dois números',
+        title: 'somar dois números',
         corpo: [
           'Crie `soma.js` na raiz do repositório, exportando via CommonJS uma função',
           '`soma(a, b)` que devolve a soma dos dois argumentos.',
           '',
           'É tudo. Não crie nenhum outro arquivo, não instale nada, não configure nada.',
         ].join('\n'),
-        criterios_de_aceite: [
+        acceptance_criteria: [
           '`soma.js` existe na raiz e exporta uma função de dois argumentos',
           '`make check` passa',
         ],
-        no_entrada_id: document.initial_node,
-        execucao_id: EXECUTION_ID,
-        grafo_versao_id: version.id,
+        entry_node_id: document.initial_node,
+        execution_id: EXECUTION_ID,
+        graph_version_id: version.id,
       },
       201,
     );
@@ -393,16 +393,16 @@ async function main() {
         // back, and the next tick re-enters the same node with the answer
         // already in the prompt.
         const { perguntas: questions } = await api(url, 'GET', '/v1/input-requests?status=pendente');
-        const pending = questions.find((question) => question.trabalho_id === job.id);
+        const pending = questions.find((question) => question.job_id === job.id);
         if (pending === undefined) die(`job ${job.id} is blocked with no pending question`);
 
-        const answer = pending.resposta_padrao ?? pending.recomendacao ?? 'Siga com o caminho mais simples.';
-        log(`node "${current.no_atual}" asked: ${pending.pergunta}`);
+        const answer = pending.default_answer ?? pending.recommendation ?? 'Siga com o caminho mais simples.';
+        log(`node "${current.no_atual}" asked: ${pending.question}`);
         await api(url, 'PATCH', `/v1/input-requests/${pending.id}/answer`, {
-          resposta: answer,
-          respondido_por: 'spike-t161',
+          answer: answer,
+          answered_by: 'spike-t161',
         });
-        answered.push({ node: current.no_atual, question: pending.pergunta, answer });
+        answered.push({ node: current.no_atual, question: pending.question, answer });
         continue;
       }
 
@@ -420,17 +420,17 @@ async function main() {
     }
 
     const { eventos: events } = await api(url, 'GET', `/v1/executions/${EXECUTION_ID}/events`);
-    const moves = events.filter((event) => event.tipo === 'trabalho.transicao');
+    const moves = events.filter((event) => event.type === 'job.transitioned');
     if (moves.length === 0) die('the job arrived without a single recorded movement');
 
     // THE claim of this ficha: every edge was taken by the runner. An operator
     // moving the job by hand would show up right here, as a different actor.
-    const drivers = [...new Set(moves.map((event) => `${event.ator.tipo}:${event.ator.ref}`))];
-    if (drivers.length !== 1 || drivers[0] !== 'sistema:runner') {
+    const drivers = [...new Set(moves.map((event) => `${event.actor.tipo}:${event.actor.ref}`))];
+    if (drivers.length !== 1 || drivers[0] !== 'system:runner') {
       die(`the traversal was driven by ${drivers.join(', ')} — it had to be the runner alone`);
     }
 
-    const walked = [document.initial_node, ...moves.map((event) => event.dados.para_no_id)];
+    const walked = [document.initial_node, ...moves.map((event) => event.data.to_node_id)];
     const gate = document.nodes.find((node) => node.node_type === 'gate');
     const revisits = walked.filter((id, index) => walked.indexOf(id) !== index);
 
@@ -439,11 +439,11 @@ async function main() {
 
     console.log('\n===== evidence =====');
     console.log(`graph/version:      ${graph.id} / ${version.id}`);
-    console.log(`execucao_id:        ${EXECUTION_ID}`);
+    console.log(`execution_id:        ${EXECUTION_ID}`);
     console.log(`path walked:        ${walked.join(' -> ')}`);
     console.log(`moved by:           ${drivers[0]} (zero operator movements)`);
     console.log(`tamper refusal:     ${refusal.name} on node "${document.initial_node}", no session opened`);
-    console.log(`sessions:           ${events.filter((e) => e.tipo === 'sessao.aberta').length}`);
+    console.log(`sessions:           ${events.filter((e) => e.type === 'session.opened').length}`);
     console.log(`questions answered: ${answered.length}`);
     for (const row of answered) console.log(`  - "${row.node}" asked: ${row.question}`);
     console.log(`rework cycle:       ${revisits.length > 0 ? `yes — revisited ${[...new Set(revisits)].join(', ')}` : 'NOT exercised this run'}`);

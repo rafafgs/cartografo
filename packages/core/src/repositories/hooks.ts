@@ -29,7 +29,7 @@
  *   problem). This is a scoped, deliberate exception: a hook nobody registered
  *   is a hook nobody is polling, so without an event a graph-declared reaction
  *   could fail forever in silence. It fires once, on the sixth failure, and it
- *   still cannot touch the traversal — nothing reads `trabalho.gancho_falhou`
+ *   still cannot touch the traversal — nothing reads `job.hook_failed`
  *   to decide where a job goes.
  *
  * `now` is injectable (default: the real clock), like `repositories/webhooks.ts`:
@@ -272,7 +272,7 @@ export function recordHookDeliverySuccess(
  * The schedule is read as the list of RETRY delays, so five steps mean six
  * attempts in total. When the attempt that just failed has no step left, the
  * delivery becomes `esgotada` AND — in the same transaction — the control plane
- * records one `trabalho.gancho_falhou`. The two writes are one fact: a hook that
+ * records one `job.hook_failed`. The two writes are one fact: a hook that
  * gave up without leaving an observable trace is a reaction that failed in
  * silence, which is exactly what the graph's author cannot debug.
  *
@@ -320,17 +320,17 @@ export function recordHookDeliveryFailure(
       .get(attempt.id) as ExhaustedRow;
 
     recordEvent(db, {
-      tipo: 'trabalho.gancho_falhou',
-      projeto_id: row.projeto_id,
-      execucao_id: row.execucao_id,
-      entidade: { tipo: 'trabalho', id: row.trabalho_id },
-      ator: API_ACTOR,
-      ocorrido_em: clock(),
-      dados: {
-        gancho_id: row.gancho_id,
-        no_id: row.no_id,
+      type: 'job.hook_failed',
+      project_id: row.projeto_id,
+      execution_id: row.execucao_id,
+      entity: { type: 'job', id: row.trabalho_id },
+      actor: API_ACTOR,
+      occurred_at: clock(),
+      data: {
+        hook_id: row.gancho_id,
+        node_id: row.no_id,
         url: row.url,
-        ultimo_erro: attempt.message,
+        last_error: attempt.message,
       },
     });
   })();

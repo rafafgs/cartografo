@@ -194,7 +194,7 @@ test('AT2 — POST /v1/proposals/:id/approve forwards method, body and content-t
 
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
 
-  const body = JSON.stringify({ motivo: 'métrica esperada não é observável' });
+  const body = JSON.stringify({ reason: 'métrica esperada não é observável' });
   const response = await fetch(`${screen.url}/v1/proposals/7/approve`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

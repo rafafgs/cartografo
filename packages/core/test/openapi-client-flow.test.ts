@@ -145,8 +145,8 @@ test('t171 AT5 — a client built only from /openapi.json runs the basic flow en
 
   // 2. Create a job under the version that was just born.
   const created = await operation(client, '/jobs', HttpMethod.Post)(undefined, {
-    titulo: 'primeira nota',
-    no_entrada_id: 'redigir',
+    title: 'primeira nota',
+    entry_node_id: 'redigir',
     grafo_versao_id: graph.graph_version.id,
   });
   assert.equal(
@@ -161,14 +161,14 @@ test('t171 AT5 — a client built only from /openapi.json runs the basic flow en
   // 3. The job asks, and the answer comes back through the templated path — the
   //    one call of the three that makes the client fill `{id}` from the document.
   const asked = await operation(client, '/input-requests', HttpMethod.Post)(undefined, {
-    trabalho_id: job.id,
-    tipo: 'pergunta',
-    pergunta: 'A nota fala do tema declarado?',
-    contexto: 'Primeira travessia do grafo mínimo.',
-    opcoes: ['Sim', 'Não'],
-    recomendacao: 'Sim',
-    resposta_padrao: 'Sim',
-    auto_aprovavel: false,
+    job_id: job.id,
+    kind: 'question',
+    question: 'A nota fala do tema declarado?',
+    context: 'Primeira travessia do grafo mínimo.',
+    options: ['Sim', 'Não'],
+    recommendation: 'Sim',
+    default_answer: 'Sim',
+    auto_approvable: false,
   });
   assert.equal(
     asked.status,
@@ -180,7 +180,7 @@ test('t171 AT5 — a client built only from /openapi.json runs the basic flow en
 
   const answered = await operation(client, '/input-requests/{id}/answer', HttpMethod.Patch)(
     { id: question.id },
-    { resposta: 'Sim', respondido_por: 'rafael' },
+    { answer: 'Sim', answered_by: 'rafael' },
   );
   assert.equal(
     answered.status,

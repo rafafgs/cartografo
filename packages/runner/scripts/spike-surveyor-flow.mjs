@@ -17,7 +17,7 @@
  *    database, and is the only writer (D1).
  * 2. A real work crosses a real graph: two `claude` sessions, dispatched by
  *    `createClaudeCodeDispatch`, one per node, each writing its own telemetry
- *    (`sessao.aberta` / `sessao.finalizada`) through the API.
+ *    (`session.opened` / `session.finished`) through the API.
  * 3. Between them the work is blocked and unblocked through the API — the
  *    operator action a human escalation would produce — so the run has real
  *    wait time on a real node.
@@ -253,10 +253,10 @@ async function main() {
       'POST',
       '/v1/jobs',
       {
-        titulo: 'nota curta sobre o topógrafo de fluxo',
-        no_entrada_id: 'redigir',
-        execucao_id: EXECUTION_ID,
-        grafo_versao_id: version.id,
+        title: 'nota curta sobre o topógrafo de fluxo',
+        entry_node_id: 'redigir',
+        execution_id: EXECUTION_ID,
+        graph_version_id: version.id,
       },
       201,
     );
@@ -278,7 +278,7 @@ async function main() {
 
     // --- 3. the work waits for a person (real wait time) ----------------------
     await api(url, 'POST', `/v1/jobs/${job.id}/blocks`, {
-      motivo: 'aguardando o operador liberar a revisão',
+      reason: 'aguardando o operador liberar a revisão',
     });
     log(`work blocked; waiting ${BLOCK_MS}ms of real clock`);
     await delay(BLOCK_MS);
@@ -337,7 +337,7 @@ async function main() {
 
     console.log('\n===== evidence =====');
     console.log(`CLI:              ${probe.version}`);
-    console.log(`execucao_id:      ${EXECUTION_ID}`);
+    console.log(`execution_id:      ${EXECUTION_ID}`);
     console.log(`events in the log: ${events.length}`);
     console.log(`proposta.id:      ${proposal.id}`);
     console.log(`status:           ${proposal.status}`);

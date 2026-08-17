@@ -49,8 +49,8 @@ Authorization: Bearer <token>
 ```json
 {"url": "https://meu-servico.exemplo/cartografo",
  "segredo": "uma-string-longa-e-aleatoria-que-eu-escolhi",
- "tipos": ["trabalho.criado", "trabalho.transicao"],
- "projeto_id": 1}
+ "tipos": ["job.created", "job.transitioned"],
+ "project_id": 1}
 ```
 
 | Campo | Obrigatório | Regra |
@@ -64,9 +64,9 @@ Resposta `201`:
 
 ```json
 {"id": 3,
- "projeto_id": 1,
+ "project_id": 1,
  "url": "https://meu-servico.exemplo/cartografo",
- "tipos": ["trabalho.criado", "trabalho.transicao"],
+ "tipos": ["job.created", "job.transitioned"],
  "evento_inicial_id": 128,
  "criada_em": "2026-08-15T12:00:00.000Z",
  "desativada_em": null}
@@ -80,12 +80,12 @@ Os valores aceitos em `tipos` são os tipos que o control plane grava hoje — o
 mesmo catálogo do stream:
 
 ```
-trabalho.criado          sessao.aberta       pergunta.criada
-trabalho.transicao       sessao.finalizada   pergunta.respondida
-trabalho.bloqueado                           pergunta.auto_resolvida
-trabalho.desbloqueado
-trabalho.emendado
-trabalho.dependencia_declarada
+job.created          session.opened       input_request.created
+job.transitioned       session.finished   input_request.answered
+job.blocked                           input_request.auto_resolved
+job.unblocked
+job.amended
+job.dependency_declared
 ```
 
 `lease.*` e `grafo_versao.*` estão declarados na taxonomia mas ainda não são
@@ -145,7 +145,7 @@ Host: meu-servico.exemplo
 Content-Type: application/json
 X-Cartografo-Assinatura: sha256=8f4c...  (64 caracteres hex)
 
-{"id":129,"tipo":"trabalho.criado","projeto_id":1,"execucao_id":2,"entidade":{"tipo":"trabalho","id":7},"ator":{"tipo":"sistema","ref":"control-plane"},"ocorrido_em":"2026-08-15T12:00:03.114Z","dados":{"titulo":"exemplo do doc","no_entrada_id":"entrada","corpo":null,"criterios_de_aceite":null}}
+{"id":129,"type":"job.created","project_id":1,"execution_id":2,"entity":{"type":"job","id":7},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-15T12:00:03.114Z","data":{"title":"exemplo do doc","entry_node_id":"entrada","body":null,"acceptance_criteria":null}}
 ```
 
 O corpo é o envelope inteiro, byte a byte o mesmo objeto que
@@ -175,7 +175,7 @@ se a sua conta não der exatamente isto, o problema é seu e não da entrega:
 | | |
 |---|---|
 | `segredo` | `segredo-de-exemplo` |
-| corpo cru | `{"id":1,"tipo":"trabalho.criado"}` |
+| corpo cru | `{"id":1,"type":"job.created"}` |
 | assinatura | `sha256=4d62c8b3801c05f74e912c122b02b34cf183e64ec81d1bb7dc38bb8f329b1bb2` |
 
 Em Node, a receita inteira é uma linha — a mesma que o servidor executa:
@@ -212,7 +212,7 @@ Cada entrega termina em um de dois estados, e os dois são finais:
 | Estado | Significa |
 |---|---|
 | `entregue` | um `2xx` chegou. `entregue_em` registra quando. |
-| `esgotada` | as seis tentativas falharam, ou a assinatura foi desativada com esta entrega pendente. `ultimo_erro` guarda a última falha. |
+| `esgotada` | as seis tentativas falharam, ou a assinatura foi desativada com esta entrega pendente. `last_error` guarda a última falha. |
 
 Uma entrega `esgotada` **não** é retentada, por mais tempo que passe, e não há
 rota para reenviar. A linha não é apagada, então "tentei seis vezes e desisti" é
@@ -288,7 +288,7 @@ createServer((requisicao, resposta) => {
 
     // Só depois de conferir é que o corpo vira objeto.
     const evento = JSON.parse(corpoCru);
-    console.log(`#${evento.id} ${evento.tipo} ${JSON.stringify(evento.dados)}`);
+    console.log(`#${evento.id} ${evento.type} ${JSON.stringify(evento.data)}`);
 
     // Responda antes de processar: 2xx encerra a entrega, e o servidor não lê
     // este corpo. Trabalho demorado vai para uma fila sua, não para cá.
@@ -309,9 +309,9 @@ curl -sS -X POST http://127.0.0.1:4317/v1/webhooks \
 E uma rodada acontecendo do outro lado:
 
 ```
-#129 trabalho.criado {"titulo":"rodada de demonstração","no_entrada_id":"entrada","corpo":null,"criterios_de_aceite":null}
-#130 trabalho.transicao {"de_no_id":null,"para_no_id":"refinar"}
-#131 trabalho.transicao {"de_no_id":"refinar","para_no_id":"construir"}
+#129 job.created {"title":"rodada de demonstração","entry_node_id":"entrada","body":null,"acceptance_criteria":null}
+#130 job.transitioned {"from_node_id":null,"to_node_id":"refinar"}
+#131 job.transitioned {"from_node_id":"refinar","to_node_id":"construir"}
 ```
 
 **Tipo desconhecido é para ser ignorado, não é erro.** Um receptor antigo

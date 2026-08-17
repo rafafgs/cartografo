@@ -28,10 +28,11 @@
  * (`test/event-append-only.test.ts`, AT16), and the same direct read of the
  * table already has a precedent in `src/repositories/job.ts:283-289`.
  *
- * The QUERY PARAMETER names are English since t226 (`?project_id=`, `?type=`),
- * because they are API vocabulary; the VALUES of `?type=` are not, and neither
- * is anything inside a pushed event — the taxonomy is D20's second child, and
- * renaming an event type is rewriting an append-only history.
+ * The QUERY PARAMETER names went English with t226 (`?project_id=`, `?type=`),
+ * because they are API vocabulary; the VALUES of `?type=` followed with t227,
+ * and so did every key of a pushed event — the taxonomy is D20's second child,
+ * and renaming an event type IS rewriting an append-only history, which is why
+ * D20's answer is to recreate the development databases (README, `.cartografo/`).
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -183,7 +184,7 @@ function begin(connection: Connection, open: Set<() => void>): void {
       if (batch.length === 0) return;
 
       for (const event of batch) {
-        raw.write(`id: ${event.id}\nevent: ${event.tipo}\ndata: ${JSON.stringify(event)}\n\n`);
+        raw.write(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
         cursor = event.id;
       }
       lastWrite = Date.now();

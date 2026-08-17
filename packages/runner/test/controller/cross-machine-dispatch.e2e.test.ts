@@ -183,17 +183,17 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
   assert.match(token, /^[0-9a-f]{64}$/, 'pairing hands back the runner credential (FR1)');
 
   const job = await call<{ id: number }>(urlBase, 'POST', '/v1/jobs', bootstrapToken, {
-    projeto_id: PROJECT_ID,
-    titulo: 'trabalho despachado de outra máquina',
-    no_entrada_id: 'implementar',
+    project_id: PROJECT_ID,
+    title: 'trabalho despachado de outra máquina',
+    entry_node_id: 'implementar',
   });
   assert.equal(job.status, 201);
 
   // The credential is scoped, and this is the cheapest possible proof of it on
   // the very connection the cycle is about to run over.
   const refused = await call<{ error?: string }>(urlBase, 'POST', '/v1/jobs', token, {
-    titulo: 'trabalho que um runner não cria',
-    no_entrada_id: 'implementar',
+    title: 'trabalho que um runner não cria',
+    entry_node_id: 'implementar',
   });
   assert.equal(refused.status, 403);
   assert.equal(refused.body.error, 'out_of_scope_credential');

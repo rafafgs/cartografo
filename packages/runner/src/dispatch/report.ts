@@ -9,7 +9,7 @@
  * closure over dispatch-local state there is nothing to boot, and a fake `call`
  * that records what it was handed pins a body that used to cost a control plane,
  * a fake engine and a database to read back. Eleven fichas shipped
- * `uso: null` hardcoded because nobody could ask that question cheaply (t172).
+ * `usage: null` hardcoded because nobody could ask that question cheaply (t172).
  *
  * The same rule is what keeps the dependency arrow pointing one way: this module
  * imports NOTHING from `dispatch.ts`. What it needs of a work is two fields, and
@@ -59,23 +59,29 @@ import {
  * it ever grows a third copy, it belongs in a module of its own.
  */
 export const TAXONOMY_STATUS: Readonly<Record<SessionStatus, string>> = Object.freeze({
-  pending: 'travada',
-  running: 'travada',
-  completed: 'concluida',
-  failed: 'falhou',
-  cancelled: 'travada',
-  timed_out: 'tempo_esgotado',
+  pending: 'stuck',
+  running: 'stuck',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'stuck',
+  timed_out: 'timed_out',
 });
 
 /**
- * `ator.ref` of every write this module makes on the runner's own account.
+ * `actor.ref` of every write this module makes on the runner's own account.
  *
- * `sistema` and not `agente`: the fact being recorded is not something the
+ * `system` and not `agent`: the fact being recorded is not something the
  * session decided, it is the wiring reporting what happened. Same `ref` the
  * control plane uses by default for a write coming from the runner, on purpose
  * — two spellings for one actor is how a log stops being groupable.
  */
 const RUNNER_ACTOR_REF = 'runner';
+
+/** `parse-permission-denial.ts`'s two resources, as the taxonomy spells them. */
+const DENIAL_RESOURCE: Readonly<Record<'filesystem' | 'rede', string>> = Object.freeze({
+  filesystem: 'filesystem',
+  rede: 'network',
+});
 
 /**
  * The part of a work a report names.
@@ -144,8 +150,8 @@ export async function transition(
   edge: GraphEdge,
 ): Promise<void> {
   await call(`/v1/jobs/${job.id}/transitions`, 'POST', {
-    para_no_id: edge.to,
-    ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+    to_node_id: edge.to,
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
   });
 }
 
@@ -169,18 +175,18 @@ export async function transition(
  *
  * @param call The dispatch's control-plane client.
  * @param job The work being dispatched.
- * @param motivo Why it stopped — it quotes the node and what walled the
+ * @param reason Why it stopped — it quotes the node and what walled the
  *   session, because `trabalho.motivo_bloqueio` is what whoever opens the work
  *   reads first.
  */
 export async function blockWithNobodyToAsk(
   call: ControlPlaneCall,
   job: JobRef,
-  motivo: string,
+  reason: string,
 ): Promise<void> {
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
-    motivo,
-    ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+    reason,
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
   });
 }
 
@@ -195,8 +201,8 @@ export async function blockWithNobodyToAsk(
  * taking a string would make them indistinguishable at every call site.
  *
  * No new field on `/finish` and no new schema: `POST /v1/jobs/:id/blocks` has
- * existed since t102 and takes a free `motivo`, and the finish route's
- * vocabulary is the t213/D20 migration's to touch, not this one's.
+ * existed since t102 and takes a free `reason` (`motivo` until t227), and the
+ * finish route's vocabulary was the t213/D20 migration's to touch.
  *
  * The reason names the tree, because that path is the whole point — whoever
  * opens the work reads `trabalho.motivo_bloqueio` first, and what they have to
@@ -212,13 +218,13 @@ export async function blockForUncommittedWork(
   worktreePath: string,
 ): Promise<void> {
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
-    motivo:
+    reason:
       `A sessão do nó \`${job.current_node_id}\` terminou como concluída, mas deixou ` +
       `trabalho não commitado em \`${worktreePath}\` — o \`git status\` da árvore ` +
       'não estava limpo. A árvore foi RETIDA em vez de removida, e o trabalho ' +
       'não avançou: o que essa sessão produziu só existe nesse diretório. ' +
       'Commite o que valer a pena, descarte o resto e desbloqueie.',
-    ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
   });
 }
 
@@ -279,21 +285,21 @@ export async function escalateRouting(
   }
 
   await call('/v1/input-requests', 'POST', {
-    trabalho_id: job.id,
-    sessao_id: sessionId,
-    tipo: 'pergunta',
-    pergunta: question,
-    contexto:
+    job_id: job.id,
+    session_id: sessionId,
+    kind: 'question',
+    question,
+    context:
       `Arestas que saem de \`${job.current_node_id}\`: ${routes}. ` +
       'A sessão terminou sem falhar; o que falta é a decisão de rota.',
-    opcoes: labels,
-    recomendacao: null,
-    resposta_padrao: null,
+    options: labels,
+    recommendation: null,
+    default_answer: null,
     // Written as `true` since t102, and nothing reads it to answer on its own:
     // a routing escalation is resolved by a person, same as every other
     // pending question today.
-    auto_aprovavel: true,
-    ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+    auto_approvable: true,
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
   });
 }
 
@@ -419,10 +425,15 @@ export class PermissionDenialReporter {
     this.#writes = this.#writes
       .then(() =>
         this.#call(`/v1/sessions/${id}/permission-denials`, 'POST', {
-          recurso: denial.recurso,
-          ferramenta: denial.ferramenta,
-          motivo: denial.motivo,
-          ator: { tipo: 'sistema', ref: RUNNER_ACTOR_REF },
+          // The parsed denial's own vocabulary is the engine's (`rede`), and
+          // the log's is the taxonomy's (`network`) since t227. One word maps
+          // to the other HERE, at the call, exactly like `TAXONOMY_STATUS`
+          // above: the parser answers what the CLI said, this module answers
+          // what `session.permission_denied` declares.
+          resource: DENIAL_RESOURCE[denial.recurso],
+          tool: denial.ferramenta,
+          reason: denial.motivo,
+          actor: { type: 'system', ref: RUNNER_ACTOR_REF },
         }),
       )
       .then(() => undefined)
@@ -483,14 +494,14 @@ export async function finishSession(
     await call(`/v1/sessions/${sessionId}/finish`, 'PATCH', {
       status: TAXONOMY_STATUS[outcome.status],
       exit_code: outcome.exitCode,
-      // Both watchdogs land on `tempo_esgotado`; this is what tells them
+      // Both watchdogs land on `timed_out`; this is what tells them
       // apart. `null` is "the adapter reported no cause" — for a cancel
       // somebody else drove, or for an adapter that predates the field —
       // and it may never be filled in with a guess.
       timeout_reason: outcome.timeoutReason ?? null,
       // What the session actually cost, as the engine counted it (t172).
-      // Until that ficha these two lines were a hardcoded `uso: null` and no
-      // `modelos` key at all, and every session this system ever ran
+      // Until that ficha these two lines were a hardcoded `usage: null` and no
+      // `models` key at all, and every session this system ever ran
       // recorded zero cost data — with the placeholder reading exactly like
       // an honest absence, which is why it survived so long.
       //
@@ -501,9 +512,9 @@ export async function finishSession(
       // The key is SENT, present and null — same posture as
       // `timeout_reason` above, so that what the runner claims is legible in
       // the call itself and not only in the row it produces.
-      uso: outcome.usage ?? null,
-      modelos: outcome.models ?? null,
-      transcricao: transcript,
+      usage: outcome.usage ?? null,
+      models: outcome.models ?? null,
+      transcript,
     });
   } catch (error) {
     return error;
@@ -519,7 +530,7 @@ export async function finishSession(
  * for an ordinary question — two owners for one flag is how a work ends up
  * blocked with nothing pending.
  *
- * `ator.tipo` is `agente` here and `sistema` everywhere else in this module,
+ * `actor.type` is `agent` here and `system` everywhere else in this module,
  * and that is the whole distinction: this one is a model asking for a decision.
  *
  * @param call The dispatch's control-plane client.
@@ -534,17 +545,17 @@ export async function postSessionQuestion(
   request: InputRequest,
 ): Promise<void> {
   await call('/v1/input-requests', 'POST', {
-    trabalho_id: job.id,
-    sessao_id: sessionId,
-    tipo: 'pergunta',
-    pergunta: request.question,
-    contexto: request.context ?? null,
-    opcoes: request.options ?? null,
-    recomendacao: request.recommendation ?? null,
-    resposta_padrao: request.default ?? null,
+    job_id: job.id,
+    session_id: sessionId,
+    kind: 'question',
+    question: request.question,
+    context: request.context ?? null,
+    options: request.options ?? null,
+    recommendation: request.recommendation ?? null,
+    default_answer: request.default ?? null,
     // The field exists since t102; nothing reads it to answer on its own —
     // the auto-answer policy is still outside the PoC.
-    auto_aprovavel: true,
-    ator: { tipo: 'agente', ref: job.current_node_id === '' ? 'sessao' : job.current_node_id },
+    auto_approvable: true,
+    actor: { type: 'agent', ref: job.current_node_id === '' ? 'sessao' : job.current_node_id },
   });
 }

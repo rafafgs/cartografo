@@ -363,7 +363,22 @@ test('t227 AT4 — the old Portuguese payload keys are outside every contract', 
       { engine: 'e', working_dir: 'w', prompt: 'p', trabalho_id: 1 },
       'trabalho_id',
     ],
-    ['session.finished', { status: 'completed', uso: null }, 'uso'],
+    // A REAL value, not `null`: `validateData` tolerates an explicit null on an
+    // undeclared key (it reads as "absent"), so a `uso: null` here would prove
+    // nothing about the key having been renamed.
+    [
+      'session.finished',
+      {
+        status: 'completed',
+        uso: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+      },
+      'uso',
+    ],
     ['session.permission_denied', { recurso: 'network', ferramenta: 'W', motivo: 'm' }, 'recurso'],
     ['input_request.created', { trabalho_id: 1 }, 'trabalho_id'],
     ['input_request.answered', { resposta: 'a', respondido_por: 'r' }, 'resposta'],

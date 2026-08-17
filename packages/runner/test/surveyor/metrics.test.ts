@@ -151,7 +151,7 @@ test('t110 — the flow lens computes the four numbers per node and names the bo
 
   assert.deepEqual(metrics.por_no, [
     {
-      node_id: 'revisar',
+      no_id: 'revisar',
       tempo_agente_ms: 9_000,
       tempo_espera_ms: 120_000,
       tempo_fila_ms: 30_000,
@@ -160,7 +160,7 @@ test('t110 — the flow lens computes the four numbers per node and names the bo
       eventos: [4, 5, 6, 7, 8, 10],
     },
     {
-      node_id: 'implantar',
+      no_id: 'implantar',
       tempo_agente_ms: 2_000,
       tempo_espera_ms: 0,
       tempo_fila_ms: 1_000,
@@ -169,7 +169,7 @@ test('t110 — the flow lens computes the four numbers per node and names the bo
       eventos: [11, 12, 13],
     },
     {
-      node_id: 'redigir',
+      no_id: 'redigir',
       tempo_agente_ms: 3_000,
       tempo_espera_ms: 0,
       tempo_fila_ms: 0,

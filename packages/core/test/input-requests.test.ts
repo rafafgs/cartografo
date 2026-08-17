@@ -105,7 +105,7 @@ test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owni
   assert.equal(inputRequest.answer, null);
   assert.equal(inputRequest.answered_at, null);
   assert.equal(inputRequest.auto_approvable, true);
-  assert.deepEqual(inputRequest.options, FULL_BODY.opcoes);
+  assert.deepEqual(inputRequest.options, FULL_BODY.options);
   assert.equal(inputRequest.execution_id, 7, 'the execution comes from the job that waits');
 
   // The route's shape does not change: whoever wants the block reads the job.
@@ -129,9 +129,9 @@ test('AT11 — POST /v1/input-requests creates a pending one AND blocks the owni
     session_id: null,
     kind: 'question',
     question: FULL_BODY.question,
-    context: FULL_BODY.contexto,
-    options: FULL_BODY.opcoes,
-    recommendation: FULL_BODY.recomendacao,
+    context: FULL_BODY.context,
+    options: FULL_BODY.options,
+    recommendation: FULL_BODY.recommendation,
     default_answer: FULL_BODY.default_answer,
     auto_approvable: true,
     // Stamped by the server from the job's position, never sent by the caller
@@ -184,8 +184,8 @@ test('t167 — the created pergunta is stamped with the node the job is standing
   const response = await request<InputRequest>(ctx, 'POST', '/v1/input-requests', {
     job_id: job.id,
     ...FULL_BODY,
-    // Sent on purpose, and it has to be ignored: `no_id` comes from the job the
-    // server looked up, the same trust boundary `projeto_id`/`execucao_id` have.
+    // Sent on purpose, and it has to be ignored: `node_id` comes from the job the
+    // server looked up, the same trust boundary `project_id`/`execution_id` have.
     node_id: 'um-no-que-ninguem-visitou',
   });
 
@@ -195,7 +195,7 @@ test('t167 — the created pergunta is stamped with the node the job is standing
   const events = getEventsByEntity(ctx.db, 'input_request', response.body.id);
   assert.equal(events[0].type, 'input_request.created');
   assert.equal(
-    events[0].data.no_id,
+    events[0].data.node_id,
     'revisar',
     'and the event carries it too, or the log cannot answer "which node asked?"',
   );
@@ -212,7 +212,7 @@ test('t167 — the created pergunta is stamped with the node the job is standing
   );
 });
 
-test('t167 — a job with no current node stamps no_id null, never a guess', async (t) => {
+test('t167 — a job with no current node stamps node_id null, never a guess', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
@@ -454,9 +454,9 @@ test('AT14 — GET /v1/input-requests?status=pending&execution_id=7 gives enough
 
   const [queued] = response.body.input_requests;
   assert.equal(queued.question, FULL_BODY.question);
-  assert.equal(queued.context, FULL_BODY.contexto);
-  assert.deepEqual(queued.options, FULL_BODY.opcoes);
-  assert.equal(queued.recommendation, FULL_BODY.recomendacao);
+  assert.equal(queued.context, FULL_BODY.context);
+  assert.deepEqual(queued.options, FULL_BODY.options);
+  assert.equal(queued.recommendation, FULL_BODY.recommendation);
   assert.equal(queued.default_answer, FULL_BODY.default_answer);
   assert.equal(queued.job_id, ofSeven.id);
 });

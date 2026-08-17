@@ -24,12 +24,10 @@
  * The method names of {@link ApiClient} were already English before this ticket
  * (D18 covers identifiers) and did not change: what moved is only what travels.
  *
- * ONE call still speaks Portuguese on the way IN, and it is deliberate:
- * {@link ApiClient.answerQuestion} PATCHes `{resposta, respondido_por}`. That
- * route's body is validated against the `pergunta.respondida` EVENT contract
- * (`packages/core/src/routes/common.ts` documents the whole asymmetry), and the
- * event vocabulary is D20's second child, not this one. What the same call
- * READS back is English like everything else.
+ * The one call that still spoke Portuguese on the way IN stopped with t227:
+ * {@link ApiClient.answerQuestion} PATCHes `{answer, answered_by}`. That
+ * route's body is validated against the `input_request.answered` EVENT
+ * contract, and the event vocabulary was D20's second child.
  *
  * `doFetch` is injectable for tests only; in production it is the global
  * `fetch`.
@@ -133,9 +131,9 @@ export interface RunnerHealth {
 /** Event envelope, in the slice the timeline reads. */
 export interface Event {
   id: number;
-  tipo: string;
-  ocorrido_em: string;
-  dados: Record<string, unknown>;
+  type: string;
+  occurred_at: string;
+  data: Record<string, unknown>;
 }
 
 /** The slice asked of a listing route. */
@@ -343,7 +341,7 @@ export class ApiClient {
   async answerQuestion(id: number, answer: string, answeredBy: string): Promise<Question> {
     return await this.#request<Question>(`/v1/input-requests/${id}/answer`, {
       method: 'PATCH',
-      body: { resposta: answer, respondido_por: answeredBy },
+      body: { answer, answered_by: answeredBy },
     });
   }
 

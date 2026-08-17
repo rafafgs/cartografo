@@ -91,7 +91,7 @@ function fetchWithSeededQueue(): typeof fetch {
           jobs: [
             {
               id: JOB_ID,
-              titulo: 'trabalho disputado',
+              title: 'trabalho disputado',
               current_node_id: 'implementar',
               blocked: false,
               // Derived by the control plane and read by the client since t161:
@@ -99,8 +99,8 @@ function fetchWithSeededQueue(): typeof fetch {
               // real route has always answered it; this simulation has to as
               // well, or the queue it seeds is one the client throws away.
               completed: false,
-              execucao_id: 1,
-              grafo_versao_id: 'sha256:e2e',
+              execution_id: 1,
+              graph_version_id: 'sha256:e2e',
             },
           ],
         }),

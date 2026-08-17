@@ -400,8 +400,8 @@ export function createClaudeCodeDispatch(
         // of scope), so `null` here means "the engine had not said it yet" and
         // never "this engine has no ref".
         session = await call<Session>('/v1/sessions', 'POST', {
-          trabalho_id: job.id,
-          no_id: job.current_node_id,
+          job_id: job.id,
+          node_id: job.current_node_id,
           engine: route.adapter.engineName,
           engine_session_ref: engineRef,
           working_dir: spec.workingDir,

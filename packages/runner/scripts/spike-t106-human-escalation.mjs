@@ -212,9 +212,9 @@ async function main() {
     await client.registrarRunner('spike-t106', 'the manual proof of human escalation');
 
     const work = await api('POST', '/v1/jobs', {
-      titulo: 'Criar o arquivo de prova da t106, com o nome que a pessoa escolher',
-      no_entrada_id: 'implementar',
-      execucao_id: 106,
+      title: 'Criar o arquivo de prova da t106, com o nome que a pessoa escolher',
+      entry_node_id: 'implementar',
+      execution_id: 106,
     });
     log(`job #${work.id} created`);
 
@@ -251,7 +251,7 @@ async function main() {
     const { perguntas: pending } = await api('GET', '/v1/input-requests?status=pendente');
     if (pending.length !== 1) die(`expected 1 pending question, found ${pending.length}`);
     const question = pending[0];
-    log(`question #${question.id}: ${question.pergunta}`);
+    log(`question #${question.id}: ${question.question}`);
     if (blocked.motivo_bloqueio !== `aguardando resposta da pergunta ${question.id}`) {
       die(`the block reason does not name the question: ${blocked.motivo_bloqueio}`);
     }
@@ -265,8 +265,8 @@ async function main() {
 
     // --- 2. a human answers ---------------------------------------------------
     const answered = await api('PATCH', `/v1/input-requests/${question.id}/answer`, {
-      resposta: `Use o nome ${CHOSEN_NAME}`,
-      respondido_por: 'spike-t106',
+      answer: `Use o nome ${CHOSEN_NAME}`,
+      answered_by: 'spike-t106',
     });
     log(`answer recorded: ${answered.resposta} (origem ${answered.origem})`);
 
@@ -297,12 +297,12 @@ async function main() {
     // --- 4. the evidence ------------------------------------------------------
     const { eventos: events } = await api('GET', `/v1/jobs/${work.id}/events`);
     const { sessoes: sessions } = await api('GET', '/v1/sessions?execucao_id=106');
-    const types = events.map((event) => event.tipo);
-    for (const expected of ['pergunta.criada', 'trabalho.bloqueado', 'trabalho.desbloqueado']) {
+    const types = events.map((event) => event.type);
+    for (const expected of ['input_request.created', 'job.blocked', 'job.unblocked']) {
       if (!types.includes(expected)) die(`${expected} is missing from the timeline: ${types.join(', ')}`);
     }
     if (sessions.length !== 2) die(`expected 2 sessions, found ${sessions.length}`);
-    if (!sessions[1].prompt.includes(question.pergunta)) {
+    if (!sessions[1].prompt.includes(question.question)) {
       die('the prompt of the second session does not carry the earlier question');
     }
 
@@ -316,11 +316,11 @@ async function main() {
     console.log('\n===== evidence =====');
     console.log(`CLI:            ${probe.version}`);
     console.log(`engineName:     ${adapter.engineName}`);
-    console.log(`pergunta:       ${JSON.stringify(question.pergunta)}`);
-    console.log(`contexto:       ${JSON.stringify(question.contexto)}`);
-    console.log(`opcoes:         ${JSON.stringify(question.opcoes)}`);
-    console.log(`recomendacao:   ${JSON.stringify(question.recomendacao)}`);
-    console.log(`resposta:       ${JSON.stringify(answered.resposta)}`);
+    console.log(`question:       ${JSON.stringify(question.question)}`);
+    console.log(`context:       ${JSON.stringify(question.context)}`);
+    console.log(`options:         ${JSON.stringify(question.options)}`);
+    console.log(`recommendation:   ${JSON.stringify(question.recommendation)}`);
+    console.log(`answer:       ${JSON.stringify(answered.resposta)}`);
     console.log(`eventos:        ${types.join(' -> ')}`);
     console.log(`${CHOSEN_NAME}:  ${JSON.stringify(content.trim())}`);
     console.log(`timeline:       ${timelinePath}`);

@@ -139,16 +139,16 @@ interface HookSecretsModule {
 /** One row of `entrega_gancho`, read straight from the table. */
 interface HookDelivery {
   id: number;
-  job_id: number;
-  hook_id: string;
-  node_id: string;
+  trabalho_id: number;
+  gancho_id: string;
+  no_id: string;
   evento_id: number;
   url: string;
   status: string;
   tentativas: number;
   proxima_tentativa_em: string;
   entregue_em: string | null;
-  last_error: string | null;
+  ultimo_erro: string | null;
 }
 
 /** A dispatcher running against a throwaway database. */
@@ -377,7 +377,7 @@ t,
   // The body is the taxonomy's envelope, byte for byte the same object the
   // stream and t142's webhooks serve — read here through a path the dispatcher
   // does not use.
-  const trigger = listEvents(ctx.db, { job_id: job.id }).find(
+  const trigger = listEvents(ctx.db, { trabalho_id: job.id }).find(
     (event) => event.type === 'job.transitioned',
   );
   assert.ok(trigger !== undefined, 'the transition has to be in the log');
@@ -488,7 +488,7 @@ test('AT11 — the sixth failed attempt gives up and records one job.hook_failed
     url: 'https://exemplo.invalid/gancho',
     last_error: exhausted.ultimo_erro,
   });
-  assert.ok(String(incident.data.ultimo_erro).includes('500'), 'the last failure is what is reported');
+  assert.ok(String(incident.data.last_error).includes('500'), 'the last failure is what is reported');
 
   // However far the clock goes, a terminal delivery is not a delivery any more —
   // and it never records a second incident.

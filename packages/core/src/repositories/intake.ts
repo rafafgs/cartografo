@@ -42,10 +42,10 @@ export type DraftStatus = 'pendente' | 'confirmado' | 'descartado';
  * The gate is human by design, and t124 authenticated the route — but a token
  * proves possession, not which person holds it. Rather than inventing a user,
  * the log honestly records the component that acted, and a caller that knows who
- * is on the other side sends `ator` in the body — the same convention as every
+ * is on the other side sends `actor` in the body — the same convention as every
  * other write of this API.
  */
-export const INTAKE_ACTOR: Actor = Object.freeze({ tipo: 'sistema', ref: 'intake' });
+export const INTAKE_ACTOR: Actor = Object.freeze({ type: 'system', ref: 'intake' });
 
 /** Draft projection, as the API returns it. */
 export interface Draft {
@@ -302,7 +302,7 @@ export interface ConfirmDraftData {
   /** Version in force, frozen into every job of the batch. */
   grafo_versao_id: string;
   /** Who confirmed; the human gate's caller when it identifies itself. */
-  ator: Actor;
+  actor: Actor;
 }
 
 /** What a confirmation produces: the closed draft and every job it created. */
@@ -337,25 +337,25 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
 
     for (const item of draft.itens) {
       const job = createJob(db, {
-        titulo: item.titulo,
-        corpo: item.corpo,
-        criterios_de_aceite: item.criterios_de_aceite,
+        title: item.titulo,
+        body: item.corpo,
+        acceptance_criteria: item.criterios_de_aceite,
         // The class's declared fields, filled in at intake (t168). They ride
         // straight through: `validateItems` already judged their shape, and
         // whether the class demands one is the transition gate's question, not
         // the confirmation's — a ticket may perfectly well be born on the entry
         // node with a field the node it later leaves will demand.
-        campos: item.campos,
+        fields: item.campos,
         // The triage the intake session did for free (t175). It rides through
-        // the same way `campos` does: `validateItems` already closed the set of
+        // the same way `fields` does: `validateItems` already closed the set of
         // values, and what the tier COSTS is the runner's question, one layer
         // out — nothing here translates it into a model.
         tier: item.tier,
-        no_entrada_id: data.no_inicial,
-        projeto_id: draft.projeto_id,
-        execucao_id: draft.execucao_id,
-        grafo_versao_id: data.grafo_versao_id,
-        ator: data.ator,
+        entry_node_id: data.no_inicial,
+        project_id: draft.projeto_id,
+        execution_id: draft.execucao_id,
+        graph_version_id: data.grafo_versao_id,
+        actor: data.actor,
       });
       created[item.ref] = job.id;
       jobs.push(job);
@@ -374,13 +374,13 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
         // that one" is a fact about whoever waits, and it is in that job's
         // timeline that somebody will look for the reason it has not moved.
         recordEvent(db, {
-          tipo: 'trabalho.dependencia_declarada',
-          projeto_id: draft.projeto_id,
-          execucao_id: draft.execucao_id,
-          entidade: { tipo: 'trabalho', id: dependent },
-          ator: data.ator,
-          ocorrido_em: timestamp,
-          dados: { depende_de_trabalho_id: dependedOn },
+          type: 'job.dependency_declared',
+          project_id: draft.projeto_id,
+          execution_id: draft.execucao_id,
+          entity: { type: 'job', id: dependent },
+          actor: data.actor,
+          occurred_at: timestamp,
+          data: { depends_on_job_id: dependedOn },
         });
       }
     }

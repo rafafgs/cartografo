@@ -25,7 +25,7 @@
  *    for. That is the same bar `spike-real-session-codex.mjs` names, and without
  *    it "it exited with 0" proves nothing.
  * 5. The log tells the truth about which engine ran where: for each node, the
- *    `sessao.aberta` carries the expected `engine`, and the `sessao.finalizada`
+ *    `session.opened` carries the expected `engine`, and the `session.finished`
  *    of that same session says `concluida`. Both validate against the taxonomy
  *    schemas (t98).
  *
@@ -259,7 +259,7 @@ function buildValidator() {
   // `grafo_versao`, whose id is the snapshot hash (D15).
   const ajv = new Ajv2020({ strict: true, allowUnionTypes: true, allErrors: true });
   addFormats(ajv);
-  for (const name of ['envelope', 'sessao.aberta', 'sessao.finalizada']) {
+  for (const name of ['envelope', 'session.opened', 'session.finished']) {
     ajv.addSchema(JSON.parse(readFileSync(join(SCHEMAS_DIR, `${name}.schema.json`), 'utf8')));
   }
   return (type, event) => {
@@ -337,10 +337,10 @@ async function main() {
       'POST',
       '/v1/jobs',
       {
-        titulo: 'travessia de dois engines num grafo só',
-        no_entrada_id: NODES[0].id,
-        execucao_id: EXECUTION_ID,
-        grafo_versao_id: version.id,
+        title: 'travessia de dois engines num grafo só',
+        entry_node_id: NODES[0].id,
+        execution_id: EXECUTION_ID,
+        graph_version_id: version.id,
       },
       201,
     );
@@ -412,31 +412,31 @@ async function main() {
     const validate = buildValidator();
     const { eventos: events } = await api(url, 'GET', `/v1/executions/${EXECUTION_ID}/events`);
 
-    const opened = events.filter((event) => event.tipo === 'sessao.aberta');
-    const finished = events.filter((event) => event.tipo === 'sessao.finalizada');
+    const opened = events.filter((event) => event.type === 'session.opened');
+    const finished = events.filter((event) => event.type === 'session.finished');
     if (opened.length !== NODES.length) {
-      die(`expected ${NODES.length} sessao.aberta, found ${opened.length}`);
+      die(`expected ${NODES.length} session.opened, found ${opened.length}`);
     }
 
     const evidence = [];
     for (const node of NODES) {
       // The pair, tied by the session the events are recorded against.
-      const open = opened.find((event) => event.dados.no_id === node.id);
-      if (open === undefined) die(`no sessao.aberta for node "${node.id}"`);
-      validate('sessao.aberta', open);
+      const open = opened.find((event) => event.data.no_id === node.id);
+      if (open === undefined) die(`no session.opened for node "${node.id}"`);
+      validate('session.opened', open);
 
-      if (open.dados.engine !== node.engine) {
+      if (open.data.engine !== node.engine) {
         die(
-          `node "${node.id}" ran on engine "${open.dados.engine}" — the fixture declares ` +
+          `node "${node.id}" ran on engine "${open.data.engine}" — the fixture declares ` +
             `${JSON.stringify(declared[node.id])}, so the dispatch had to resolve "${node.engine}"`,
         );
       }
 
-      const close = finished.find((event) => event.entidade.id === open.entidade.id);
-      if (close === undefined) die(`session ${open.entidade.id} ("${node.id}") never finished`);
-      validate('sessao.finalizada', close);
-      if (close.dados.status !== 'concluida') {
-        die(`the session of node "${node.id}" ended as "${close.dados.status}"`);
+      const close = finished.find((event) => event.entity.id === open.entity.id);
+      if (close === undefined) die(`session ${open.entity.id} ("${node.id}") never finished`);
+      validate('session.finished', close);
+      if (close.data.status !== 'concluida') {
+        die(`the session of node "${node.id}" ended as "${close.data.status}"`);
       }
 
       // ...and the session actually WORKED. Without this the two above only
@@ -450,11 +450,11 @@ async function main() {
 
       evidence.push({
         node: node.id,
-        engine: open.dados.engine,
-        session: open.entidade.id,
-        engineRef: open.dados.engine_session_ref,
-        status: close.dados.status,
-        exitCode: close.dados.exit_code,
+        engine: open.data.engine,
+        session: open.entity.id,
+        engineRef: open.data.engine_session_ref,
+        status: close.data.status,
+        exitCode: close.data.exit_code,
         file: node.file,
         bytes: content.length,
       });
@@ -471,7 +471,7 @@ async function main() {
 
     console.log('\n===== evidence =====');
     console.log(`graph/version:   ${graph.id} / ${version.id}`);
-    console.log(`execucao_id:     ${EXECUTION_ID}`);
+    console.log(`execution_id:     ${EXECUTION_ID}`);
     console.log(`events:          ${events.length} (full log: ${jsonl})`);
     for (const row of evidence) {
       console.log(

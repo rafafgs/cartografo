@@ -23,14 +23,17 @@
  * `createPollingDispatcher` in `src/util/polling-dispatcher.ts`.
  *
  * The ONE deliberate divergence: on the sixth failure this dispatcher's
- * repository call records a `trabalho.gancho_falhou` event, which t142's tick
+ * repository call records a `job.hook_failed` event, which t142's tick
  * never does. The reasoning is in `src/repositories/hooks.ts` — a hook nobody
  * registered is a hook nobody is polling — and the exception is as narrow as it
  * can be: only on exhaustion, only through that one function, and never on a
  * path that can reach the job's traversal.
  *
- * The event-type strings and the column names stay in Portuguese: they are the
- * taxonomy's vocabulary and the schema's (t127, FR8).
+ * The COLUMN names stay in Portuguese — the schema is untouched, and renaming
+ * it is D20's fifth child. The event this dispatcher delivers is English on
+ * every key since t227, and nothing here had to change for that: the body is
+ * `JSON.stringify(event)` and the signature is over those bytes, whatever they
+ * spell.
  */
 
 import type { FastifyInstance } from 'fastify';

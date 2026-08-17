@@ -147,17 +147,17 @@ mora, não como ela é guardada.
 
 | Gatilho | Dispara em | Casa quando |
 |---|---|---|
-| `node_entered` | `trabalho.transicao` | `dados.para_no_id` é igual ao `node_id` do gancho |
-| `node_blocked` | `trabalho.bloqueado` | o `no_atual` do trabalho no instante do bloqueio é o `node_id` do gancho |
+| `node_entered` | `job.transitioned` | `data.to_node_id` é igual ao `node_id` do gancho |
+| `node_blocked` | `job.blocked` | o `no_atual` do trabalho no instante do bloqueio é o `node_id` do gancho |
 
 Vários ganchos podem casar com o mesmo fato, e cada um vira uma entrega
 independente: uma que falha não atrasa nem cancela a outra (§6).
 
 **Um gancho no `initial_node` nunca dispara.** A colocação inicial do trabalho é
-um `trabalho.criado`, não uma `trabalho.transicao` — pela mesma razão que
-`de_no_id` é `null` na primeira transição. Não é uma limitação escondida: é o
+um `job.created`, não uma `job.transitioned` — pela mesma razão que
+`from_node_id` é `null` na primeira transição. Não é uma limitação escondida: é o
 que "entrou no nó" significa quando a chegada é o nascimento. Se você precisa
-reagir à criação, o transporte para isso é o webhook do tipo `trabalho.criado`.
+reagir à criação, o transporte para isso é o webhook do tipo `job.created`.
 
 **Desbloquear não dispara nada.** `node_unblocked`, `node_exited` e condições
 customizadas estão fora de escopo desta ficha.
@@ -209,7 +209,7 @@ Host: meu-servico.exemplo
 Content-Type: application/json
 X-Cartografo-Assinatura: sha256=8f4c...  (64 caracteres hex)
 
-{"id":131,"tipo":"trabalho.transicao","projeto_id":1,"execucao_id":2,"entidade":{"tipo":"trabalho","id":7},"ator":{"tipo":"sistema","ref":"control-plane"},"ocorrido_em":"2026-08-16T12:00:03.114Z","dados":{"de_no_id":"redigir","para_no_id":"revisar"}}
+{"id":131,"type":"job.transitioned","project_id":1,"execution_id":2,"entity":{"type":"job","id":7},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-16T12:00:03.114Z","data":{"from_node_id":"redigir","to_node_id":"revisar"}}
 ```
 
 O corpo é o envelope inteiro do evento que disparou o gancho, byte a byte o
@@ -281,24 +281,24 @@ seguido.
 | Estado | Significa |
 |---|---|
 | `entregue` | um `2xx` chegou. `entregue_em` registra quando, e **nada é gravado no log**. |
-| `esgotada` | as seis tentativas falharam. `ultimo_erro` guarda a última, e o control plane grava UM `trabalho.gancho_falhou`. |
+| `esgotada` | as seis tentativas falharam. `last_error` guarda a última, e o control plane grava UM `job.hook_failed`. |
 
 **Sucesso é mudo, desistência é evento.** Um gancho não tem assinante
 registrado: ninguém está fazendo polling da fila dele, então uma reação que
 falha para sempre em silêncio é exatamente o que quem escreveu o grafo não
 consegue descobrir. O
-[`trabalho.gancho_falhou`](../../especificacoes/eventos/schemas/trabalho.gancho_falhou.schema.json)
+[`job.hook_failed`](../../especificacoes/eventos/schemas/job.hook_failed.schema.json)
 resolve isso pelos transportes que já existem — ele aparece no stream e nos
 webhooks registrados sem trabalho nenhum a mais:
 
 ```json
-{"gancho_id":"avisar-revisao","no_id":"revisar",
- "url":"https://meu-servico.exemplo/cartografo","ultimo_erro":"HTTP 502"}
+{"hook_id":"avisar-revisao","node_id":"revisar",
+ "url":"https://meu-servico.exemplo/cartografo","last_error":"HTTP 502"}
 ```
 
 Ele é gravado **só no esgotamento**, nunca por tentativa: uma falha transitória
 é retentada e some sozinha, e um evento por tentativa encheria o log de ruído
-que se corrige. E ele é **incidente, não desfecho** — `entidade.id` é o
+que se corrige. E ele é **incidente, não desfecho** — `entity.id` é o
 trabalho, mas nada na travessia dele muda por causa disso.
 
 Uma entrega `esgotada` não é retentada, por mais tempo que passe, e não há rota

@@ -29,9 +29,9 @@ import type { Job } from './options.ts';
  */
 export interface Event {
   id: number;
-  tipo: string;
-  entidade: { tipo: string; id: number | string };
-  dados: Record<string, unknown>;
+  type: string;
+  entity: { type: string; id: number | string };
+  data: Record<string, unknown>;
 }
 
 /** A question, as `GET /v1/input-requests` projects it. */
@@ -46,7 +46,7 @@ export interface Question {
    * Where the decision came from.
    *
    * The KEY went English with the API in t226; the VALUES did not (`usuario`,
-   * `auto`, `recomendacao`, …) — those are the `pergunta.respondida` payload's
+   * `auto`, `recomendacao`, …) — those are the `input_request.answered` payload's
    * vocabulary, which is D20's second child.
    */
   source: string | null;
@@ -78,12 +78,12 @@ export function buildPrompt(
   const alreadyClosed: Question[] = [];
 
   // The ORDER comes from the log — the only total ordering there is — and the
-  // ANSWER from the projection: `pergunta.respondida` carries no `trabalho_id`,
+  // ANSWER from the projection: `input_request.answered` carries no `job_id`,
   // so the work's timeline structurally cannot show it (t102,
   // `packages/core/src/db/events.ts`, `EventFilter`).
   for (const event of events) {
-    if (event.tipo !== 'pergunta.criada') continue;
-    const question = byId.get(Number(event.entidade.id));
+    if (event.type !== 'input_request.created') continue;
+    const question = byId.get(Number(event.entity.id));
     if (question !== undefined && question.answer !== null) alreadyClosed.push(question);
   }
 

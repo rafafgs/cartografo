@@ -7,13 +7,11 @@
  * "correcting" a job's position in the graph without leaving a trace. `PATCH` is
  * left only for what really is content editing (FR7).
  *
- * This family is where D20's split shows most plainly, and `routes/common.ts`
- * documents it in full: what a GET RETURNS is English since t226
- * (`repositories/job.ts`'s `toWireJob`), and what the four writes ACCEPT is
- * still Portuguese, because those bodies go straight into `validateEvent` and
- * `trabalho.criado`'s contract belongs to D20's second child. Translating them
- * here would make a validator that still speaks Portuguese reject every
- * legitimate write.
+ * This family is where D20's split showed most plainly, and `routes/common.ts`
+ * still tells the story: what a GET RETURNS went English with t226
+ * (`repositories/job.ts`'s `toWireJob`), and what the four writes ACCEPT
+ * followed with t227, because those bodies go straight into `validateEvent`
+ * and `job.created`'s contract belongs to D20's second child.
  */
 
 import type { FastifyInstance } from 'fastify';

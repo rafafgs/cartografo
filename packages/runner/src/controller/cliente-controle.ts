@@ -71,13 +71,13 @@ export interface Trabalho {
  */
 export interface Evento {
   id: number;
-  tipo: string;
-  projeto_id: number;
-  execucao_id: number | null;
-  entidade: { tipo: string; id: number | string };
-  ator: { tipo: string; ref: string };
-  ocorrido_em: string;
-  dados: Record<string, unknown>;
+  type: string;
+  project_id: number;
+  execution_id: number | null;
+  entity: { type: string; id: number | string };
+  actor: { type: string; ref: string };
+  occurred_at: string;
+  data: Record<string, unknown>;
 }
 
 /** Uma linha de `GET /v1/executions/:id/metrics-by-version` (t102, FR17). */

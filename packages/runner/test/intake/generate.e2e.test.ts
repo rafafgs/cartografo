@@ -197,8 +197,8 @@ interface Job {
 }
 
 interface LogEvent {
-  tipo: string;
-  dados: Record<string, unknown>;
+  type: string;
+  data: Record<string, unknown>;
 }
 
 test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms it unchanged', async (t) => {
@@ -275,9 +275,9 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
     'GET',
     `/v1/jobs/${created.rotas}/events`,
   );
-  const declared = events.find((event) => event.tipo === 'trabalho.dependencia_declarada');
+  const declared = events.find((event) => event.type === 'job.dependency_declared');
   assert.ok(declared !== undefined, `no dependency was declared: ${JSON.stringify(events)}`);
-  assert.equal(declared.dados.depende_de_trabalho_id, created.migracao);
+  assert.equal(declared.data.depends_on_job_id, created.migracao);
 });
 
 test('AT5c — an unregistered class posts nothing, and the command exits 1', async (t) => {

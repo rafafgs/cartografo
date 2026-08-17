@@ -17,8 +17,8 @@
  *    closest stand-in for "skill coming from the database" available today.
  * 3. The session actually WORKED — the file the prompt asked for is in the
  *    workdir. Without that, "it exited with 0" proves nothing.
- * 4. The listener's callbacks are projected into `sessao.aberta` and
- *    `sessao.finalizada` conforming to the taxonomy (t98) and validated with
+ * 4. The listener's callbacks are projected into `session.opened` and
+ *    `session.finished` conforming to the taxonomy (t98) and validated with
  *    ajv against the real schemas.
  *
  * The JSONL is a local evidence artifact, not a table: the adapter does not
@@ -101,15 +101,15 @@ const BINARY_OVERRIDE = process.env.CODEX_BINARY_PATH?.trim();
  * (t98). Two vocabularies on purpose: the interface's is the minimum every
  * headless CLI expresses, the taxonomy's describes the outcome of the WORK.
  *
- * `cancelled` lands on `travada` for want of anything better — the taxonomy has
+ * `cancelled` lands on `stuck` for want of anything better — the taxonomy has
  * no "cancelled". Recorded as-is from the first adapter's proof: the mismatch is
  * the runner's to decide, not this script's to paper over.
  */
 const TAXONOMY_STATUS = {
-  completed: 'concluida',
-  failed: 'falhou',
-  timed_out: 'tempo_esgotado',
-  cancelled: 'travada',
+  completed: 'completed',
+  failed: 'failed',
+  timed_out: 'timed_out',
+  cancelled: 'stuck',
 };
 
 const log = (message) => console.log(`[spike] ${message}`);
@@ -158,12 +158,12 @@ function createDisposableRepo() {
 
 function buildValidator() {
   // `allowUnionTypes` because the taxonomy uses a type union on purpose:
-  // `entidade.id` is an integer for `trabalho`, `sessao`, `pergunta` and
+  // `entity.id` is an integer for `job`, `session`, `input_request` and
   // `lease`, and a string for `grafo_versao`, whose id is the snapshot hash
   // (D15). It is t98's decision, not schema sloppiness.
   const ajv = new Ajv2020({ strict: true, allowUnionTypes: true, allErrors: true });
   addFormats(ajv);
-  for (const name of ['envelope', 'sessao.aberta', 'sessao.finalizada']) {
+  for (const name of ['envelope', 'session.opened', 'session.finished']) {
     ajv.addSchema(JSON.parse(readFileSync(join(SCHEMAS_DIR, `${name}.schema.json`), 'utf8')));
   }
   return (type, event) => {
@@ -181,13 +181,13 @@ function buildValidator() {
 function envelope(id, type, payload) {
   return {
     id,
-    tipo: type,
-    projeto_id: 3,
-    execucao_id: null,
-    entidade: { tipo: 'sessao', id: 1 },
-    ator: { tipo: 'sistema', ref: 'runner/spike-t119' },
-    ocorrido_em: new Date().toISOString(),
-    dados: payload,
+    type,
+    project_id: 3,
+    execution_id: null,
+    entity: { type: 'session', id: 1 },
+    actor: { type: 'system', ref: 'runner/spike-t119' },
+    occurred_at: new Date().toISOString(),
+    data: payload,
   };
 }
 
@@ -263,28 +263,28 @@ async function main() {
 
   const validate = buildValidator();
 
-  // `sessao.aberta` goes out with the ref the session has already revealed: the
+  // `session.opened` goes out with the ref the session has already revealed: the
   // `thread.started` frame is the first of the stream, so in practice it is
   // known well before the end.
-  const opened = envelope(1, 'sessao.aberta', {
+  const opened = envelope(1, 'session.opened', {
     engine: adapter.engineName,
     engine_session_ref: engineRef,
     working_dir: repo,
     prompt,
     timeout_seconds: TIMEOUT_SECONDS,
-    trabalho_id: null,
-    no_id: null,
+    job_id: null,
+    node_id: null,
   });
-  validate('sessao.aberta', opened);
+  validate('session.opened', opened);
 
-  const finished = envelope(2, 'sessao.finalizada', {
+  const finished = envelope(2, 'session.finished', {
     status: TAXONOMY_STATUS[outcome.status],
     exit_code: outcome.exitCode,
     // The v0 interface reports no token usage (out of scope), and null here is
     // "the engine reported nothing" — never collapse it into zero.
-    uso: null,
+    usage: null,
   });
-  validate('sessao.finalizada', finished);
+  validate('session.finished', finished);
 
   const jsonl = join(root, 'eventos.jsonl');
   writeFileSync(jsonl, `${JSON.stringify(opened)}\n${JSON.stringify(finished)}\n`);

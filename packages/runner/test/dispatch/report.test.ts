@@ -8,7 +8,7 @@
  * real control plane over HTTP, run a fake engine against it and read the row
  * back out. Nineteen tests did exactly that, and they still do — that suite is
  * what proves the orchestration. What it cannot do is pin one call's BODY
- * cheaply, which is why `finish` shipped `uso: null` hardcoded for eleven
+ * cheaply, which is why `finish` shipped `usage: null` hardcoded for eleven
  * fichas with nobody the wiser (t172).
  *
  * Here each function takes its client as a parameter, so a fake `call` that
@@ -111,8 +111,8 @@ test('AT1 — `transition` posts the target node and the system actor', async ()
   assert.equal(sent[0].route, '/v1/jobs/7/transitions');
   assert.equal(sent[0].method, 'POST');
   assert.deepEqual(sent[0].body, {
-    para_no_id: 'entrega',
-    ator: { tipo: 'sistema', ref: 'runner' },
+    to_node_id: 'entrega',
+    actor: { type: 'system', ref: 'runner' },
   });
 });
 
@@ -126,8 +126,8 @@ test('AT2 — `blockWithNobodyToAsk` posts the reason it was given, as the syste
   assert.equal(sent[0].route, '/v1/jobs/7/blocks');
   assert.equal(sent[0].method, 'POST');
   assert.deepEqual(sent[0].body, {
-    motivo: 'Este nó não tem a quem perguntar.',
-    ator: { tipo: 'sistema', ref: 'runner' },
+    reason: 'Este nó não tem a quem perguntar.',
+    actor: { type: 'system', ref: 'runner' },
   });
 });
 
@@ -141,11 +141,11 @@ test('AT3 — `blockForUncommittedWork` names the tree that was retained', async
   assert.equal(sent[0].route, '/v1/jobs/7/blocks');
   assert.equal(sent[0].method, 'POST');
 
-  const motivo = body(sent[0]).motivo;
-  assert.equal(typeof motivo, 'string');
-  assert.ok((motivo as string).includes('/tmp/worktrees/job-7'));
-  assert.ok((motivo as string).includes(JOB.current_node_id));
-  assert.deepEqual(body(sent[0]).ator, { tipo: 'sistema', ref: 'runner' });
+  const reason = body(sent[0]).reason;
+  assert.equal(typeof reason, 'string');
+  assert.ok((reason as string).includes('/tmp/worktrees/job-7'));
+  assert.ok((reason as string).includes(JOB.current_node_id));
+  assert.deepEqual(body(sent[0]).actor, { type: 'system', ref: 'runner' });
 });
 
 /* -- the routing escalation, and its `never` twin --------------------------- */
@@ -166,15 +166,15 @@ test('AT4 — under an ordinary policy the routing escalation posts a question',
   assert.equal(sent[0].method, 'POST');
 
   const posted = body(sent[0]);
-  assert.equal(posted.trabalho_id, JOB.id);
-  assert.equal(posted.sessao_id, 31);
-  assert.equal(posted.tipo, 'pergunta');
-  assert.deepEqual(posted.opcoes, ['aprovado', 'retrabalho']);
-  assert.equal(posted.auto_aprovavel, true);
-  assert.deepEqual(posted.ator, { tipo: 'sistema', ref: 'runner' });
-  assert.ok(String(posted.pergunta).includes('"escala"'));
-  assert.ok(String(posted.contexto).includes('entrega'));
-  assert.ok(String(posted.contexto).includes('desenvolvimento'));
+  assert.equal(posted.job_id, JOB.id);
+  assert.equal(posted.session_id, 31);
+  assert.equal(posted.kind, 'question');
+  assert.deepEqual(posted.options, ['aprovado', 'retrabalho']);
+  assert.equal(posted.auto_approvable, true);
+  assert.deepEqual(posted.actor, { type: 'system', ref: 'runner' });
+  assert.ok(String(posted.question).includes('"escala"'));
+  assert.ok(String(posted.context).includes('entrega'));
+  assert.ok(String(posted.context).includes('desenvolvimento'));
 });
 
 test('AT5 — with no result observed at all the question says so', async () => {
@@ -183,7 +183,7 @@ test('AT5 — with no result observed at all the question says so', async () => 
 
   await escalateRouting(call, JOB, 31, TWO_EDGES, null, 'always');
 
-  assert.ok(String(body(sent[0]).pergunta).includes('nenhum'));
+  assert.ok(String(body(sent[0]).question).includes('nenhum'));
 });
 
 test('AT6 — under `never` it blocks instead, and posts no question at all', async () => {
@@ -195,7 +195,7 @@ test('AT6 — under `never` it blocks instead, and posts no question at all', as
   assert.equal(sent.length, 1);
   assert.equal(sent[0].route, '/v1/jobs/7/blocks');
   assert.ok(!sent.some((request) => request.route === '/v1/input-requests'));
-  assert.ok(String(body(sent[0]).motivo).includes('não tem a quem perguntar'));
+  assert.ok(String(body(sent[0]).reason).includes('não tem a quem perguntar'));
 });
 
 /* -- the decision on top of them ------------------------------------------- */
@@ -223,7 +223,7 @@ test('AT8 — `advance` on a single edge transitions whatever the session said',
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].route, '/v1/jobs/7/transitions');
-  assert.deepEqual(body(sent[0]).para_no_id, 'entrega');
+  assert.deepEqual(body(sent[0]).to_node_id, 'entrega');
 });
 
 test('AT9 — `advance` on two edges takes the one the result names', async () => {
@@ -237,7 +237,7 @@ test('AT9 — `advance` on two edges takes the one the result names', async () =
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].route, '/v1/jobs/7/transitions');
-  assert.equal(body(sent[0]).para_no_id, 'desenvolvimento');
+  assert.equal(body(sent[0]).to_node_id, 'desenvolvimento');
 });
 
 test('AT10 — `advance` on two edges escalates when nothing matches', async () => {
@@ -285,11 +285,11 @@ test('AT12 — a denial recorded before the session exists is queued, then flush
   assert.equal(sent.length, 2);
   assert.equal(sent[0].route, '/v1/sessions/31/permission-denials');
   assert.equal(sent[0].method, 'POST');
-  assert.equal(body(sent[0]).ferramenta, 'WebFetch');
-  assert.equal(body(sent[1]).ferramenta, 'Bash(curl *)');
-  assert.deepEqual(body(sent[0]).ator, { tipo: 'sistema', ref: 'runner' });
-  assert.equal(body(sent[0]).recurso, 'rede');
-  assert.equal(body(sent[0]).motivo, DENIAL.motivo);
+  assert.equal(body(sent[0]).tool, 'WebFetch');
+  assert.equal(body(sent[1]).tool, 'Bash(curl *)');
+  assert.deepEqual(body(sent[0]).actor, { type: 'system', ref: 'runner' });
+  assert.equal(body(sent[0]).resource, 'network');
+  assert.equal(body(sent[0]).reason, DENIAL.motivo);
   assert.equal(reporter.failure, null);
 });
 
@@ -345,9 +345,9 @@ test('AT15 — `finishSession` sends the three absent fields as null, never omit
   const posted = body(sent[0]);
   assert.equal(posted.status, TAXONOMY_STATUS.completed);
   assert.equal(posted.exit_code, 0);
-  assert.equal(posted.transcricao, 'linha um\nlinha dois');
+  assert.equal(posted.transcript, 'linha um\nlinha dois');
 
-  for (const field of ['timeout_reason', 'uso', 'modelos']) {
+  for (const field of ['timeout_reason', 'usage', 'models']) {
     assert.ok(field in posted, `\`${field}\` has to be SENT, not omitted`);
     assert.equal(posted[field], null, `\`${field}\` is null, never zeroed`);
   }
@@ -376,16 +376,16 @@ test('AT16 — `finishSession` ships what the engine did report', async () => {
   );
 
   const posted = body(sent[0]);
-  assert.equal(posted.status, 'tempo_esgotado');
+  assert.equal(posted.status, 'timed_out');
   assert.equal(posted.exit_code, 143);
   assert.equal(posted.timeout_reason, 'silence');
-  assert.deepEqual(posted.uso, {
+  assert.deepEqual(posted.usage, {
     input_tokens: 10,
     output_tokens: 20,
     cache_creation_input_tokens: 0,
     cache_read_input_tokens: 5,
   });
-  assert.deepEqual(posted.modelos, ['claude-opus-4']);
+  assert.deepEqual(posted.models, ['claude-opus-4']);
 });
 
 test('AT17 — a refused closure is given back, not thrown', async () => {
@@ -416,15 +416,15 @@ test('AT18 — `postSessionQuestion` posts as the AGENT, with the node as its re
   assert.equal(sent[0].route, '/v1/input-requests');
 
   const posted = body(sent[0]);
-  assert.equal(posted.trabalho_id, JOB.id);
-  assert.equal(posted.sessao_id, 31);
-  assert.equal(posted.pergunta, 'Renumerar a migração para 0003?');
-  assert.equal(posted.contexto, 'A t101 corre em paralelo.');
-  assert.deepEqual(posted.opcoes, ['Renumerar', 'Manter']);
-  assert.equal(posted.recomendacao, 'Manter 0002.');
-  assert.equal(posted.resposta_padrao, 'Manter 0002');
-  assert.equal(posted.auto_aprovavel, true);
-  assert.deepEqual(posted.ator, { tipo: 'agente', ref: 'revisao' });
+  assert.equal(posted.job_id, JOB.id);
+  assert.equal(posted.session_id, 31);
+  assert.equal(posted.question, 'Renumerar a migração para 0003?');
+  assert.equal(posted.context, 'A t101 corre em paralelo.');
+  assert.deepEqual(posted.options, ['Renumerar', 'Manter']);
+  assert.equal(posted.recommendation, 'Manter 0002.');
+  assert.equal(posted.default_answer, 'Manter 0002');
+  assert.equal(posted.auto_approvable, true);
+  assert.deepEqual(posted.actor, { type: 'agent', ref: 'revisao' });
 });
 
 test('AT19 — a question from a work standing on no node is signed `sessao`', async () => {
@@ -436,9 +436,9 @@ test('AT19 — a question from a work standing on no node is signed `sessao`', a
   });
 
   const posted = body(sent[0]);
-  assert.deepEqual(posted.ator, { tipo: 'agente', ref: 'sessao' });
-  assert.equal(posted.contexto, null);
-  assert.equal(posted.opcoes, null);
-  assert.equal(posted.recomendacao, null);
-  assert.equal(posted.resposta_padrao, null);
+  assert.deepEqual(posted.actor, { type: 'agent', ref: 'sessao' });
+  assert.equal(posted.context, null);
+  assert.equal(posted.options, null);
+  assert.equal(posted.recommendation, null);
+  assert.equal(posted.default_answer, null);
 });

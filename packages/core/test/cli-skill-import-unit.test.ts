@@ -287,10 +287,10 @@ test('the approval is opened on the job, never auto-approvable', async (t) => {
 
   assert.equal(run.code, 0);
   const gate = plane.requests[1].body as Record<string, unknown>;
-  assert.equal(gate.tipo, 'aprovacao');
-  assert.equal(gate.trabalho_id, 77);
-  assert.equal(gate.auto_aprovavel, false, 'D4 gate is a person, in every circumstance');
-  assert.match(String(gate.contexto), /What you sign off on by approving/);
+  assert.equal(gate.kind, 'approval');
+  assert.equal(gate.job_id, 77);
+  assert.equal(gate.auto_approvable, false, 'D4 gate is a person, in every circumstance');
+  assert.match(String(gate.context), /What you sign off on by approving/);
   assert.match(run.stdout, /input request\s+91/);
 });
 
@@ -304,7 +304,7 @@ test('a manifest with no id and no origin is described as what it is', async (t)
 
   assert.equal(run.code, 0);
   const job = plane.requests[0].body as Record<string, unknown>;
-  assert.equal(job.titulo, 'importar skill: (no id) de (origin not declared)@(ref not declared)');
+  assert.equal(job.title, 'importar skill: (no id) de (origin not declared)@(ref not declared)');
 });
 
 test('a control plane that refuses the job or the approval stops the proposal', async (t) => {

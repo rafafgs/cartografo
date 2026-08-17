@@ -42,26 +42,26 @@ uma linha em `proposta`, sempre com status `pendente`.
 
 | Medida | De que par de eventos sai | Atribuída a |
 |---|---|---|
-| `tempo_agente_ms` | `sessao.aberta` → `sessao.finalizada` | O nó em `sessao.aberta.dados.no_id`. |
-| `tempo_espera_ms` | `trabalho.bloqueado` → `trabalho.desbloqueado` | O nó em que o trabalho **estava no momento do bloqueio**. |
-| `tempo_fila_ms` | `trabalho.transicao` → o próximo `sessao.aberta` do mesmo trabalho **no mesmo nó** | O nó de destino da transição. É latência de despacho. |
-| `perguntas` | `pergunta.criada` | O nó da sessão que perguntou (`dados.sessao_id` → `sessao.aberta.dados.no_id`). |
+| `tempo_agente_ms` | `session.opened` → `session.finished` | O nó em `session.opened.data.node_id`. |
+| `tempo_espera_ms` | `job.blocked` → `job.unblocked` | O nó em que o trabalho **estava no momento do bloqueio**. |
+| `tempo_fila_ms` | `job.transitioned` → o próximo `session.opened` do mesmo trabalho **no mesmo nó** | O nó de destino da transição. É latência de despacho. |
+| `perguntas` | `input_request.created` | O nó da sessão que perguntou (`data.session_id` → `session.opened.data.node_id`). |
 
 Três regras atravessam a dobra, e cada uma delas é uma decisão:
 
-- **A ordem é o `id`, nunca `ocorrido_em`.** Dois eventos podem carregar o mesmo
+- **A ordem é o `id`, nunca `occurred_at`.** Dois eventos podem carregar o mesmo
   carimbo; só o id atribuído pelo servidor é ordenação total. Mesma regra do
   redutor de referência
   ([`reconstruir-estado.mjs`](../../especificacoes/eventos/reducers/reconstruir-estado.mjs)).
 - **O nó em que o trabalho estava é reconstruído do log**, dobrando
-  `trabalho.criado` e `trabalho.transicao`. A projeção só sabe onde o trabalho
+  `job.created` e `job.transitioned`. A projeção só sabe onde o trabalho
   está *agora*, e "onde ele estava quando bloqueou?" é pergunta sobre o passado.
 - **O que não dá para atribuir não é contado.** Pergunta sem sessão
-  (`sessao_id: null` é válido na taxonomia), sessão em nó que o grafo não tem
+  (`session_id: null` é válido na taxonomia), sessão em nó que o grafo não tem
   mais, intervalo que corre para trás: tudo descartado. Número inventado para
   não deixar buraco é pior que o buraco.
 
-O `trabalho.criado` **não** abre fila: fila é a espera entre chegar num nó por
+O `job.created` **não** abre fila: fila é a espera entre chegar num nó por
 transição e a sessão daquele nó abrir. Uma segunda transição sem sessão no meio
 descarta a fila pendente — o trabalho saiu do nó sem ninguém trabalhar nele, e
 não há a quem cobrar aquele tempo.
@@ -92,9 +92,9 @@ monta as duas antes de qualquer agente entrar na história.
 ```json
 {
   "fonte": "topografo/fluxo",
-  "execucao_id": 110,
+  "execution_id": 110,
   "grafo_versao_id": "sha256:55be71af…",
-  "no_id": "redigir",
+  "node_id": "redigir",
   "tempo_agente_ms": 20507,
   "tempo_espera_ms": 5009,
   "tempo_fila_ms": 0,

@@ -17,8 +17,19 @@
  * path, and it is what makes projection and event land together or not at all
  * (FR18).
  *
- * The table, column and event-type names stay in Portuguese: the migrations are
- * untouched and the taxonomy governs the event vocabulary (t127, FR8).
+ * This module is also the row ↔ wire boundary of the log (t227). The envelope,
+ * the event types and the payload keys are English since D20's second child;
+ * the TABLE is untouched, and two of its columns are not free text — migration
+ * `0003` pins `entidade_tipo` and `ator_tipo` to their five and three
+ * Portuguese values with a `CHECK`. So those two values are translated here,
+ * both ways, exactly as
+ * `repositories/leases.ts` and `repositories/input-request.ts` already do for
+ * their own CHECK-constrained enums. Renaming the columns AND their values is
+ * D20's FIFTH child; when it lands, the two maps below are what disappears.
+ *
+ * `tipo` and `dados` have no CHECK and take the new vocabulary straight, which
+ * is why a database written before this ticket cannot be read after it — the
+ * README says so, and D20's answer is to recreate it, never to migrate it.
  */
 
 import type { Database } from './connection.ts';
@@ -28,6 +39,42 @@ import {
   type Event,
   type EntityType,
 } from './event-validation.ts';
+
+/**
+ * The `entidade_tipo` column's five values, wire ↔ column.
+ *
+ * Not a `Record<EntityType, string>` by accident: the reverse direction reads a
+ * value that came out of the database, which is a `string` and not an
+ * `EntityType` until this map says so.
+ */
+const ENTITY_COLUMN: Record<string, string> = {
+  job: 'trabalho',
+  session: 'sessao',
+  input_request: 'pergunta',
+  lease: 'lease',
+  graph_version: 'grafo_versao',
+};
+
+const ENTITY_FIELD: Record<string, string> = {
+  trabalho: 'job',
+  sessao: 'session',
+  pergunta: 'input_request',
+  lease: 'lease',
+  grafo_versao: 'graph_version',
+};
+
+/** The `ator_tipo` column's three values, wire ↔ column. */
+const ACTOR_COLUMN: Record<string, string> = {
+  user: 'usuario',
+  agent: 'agente',
+  system: 'sistema',
+};
+
+const ACTOR_FIELD: Record<string, string> = {
+  usuario: 'user',
+  agente: 'agent',
+  sistema: 'system',
+};
 
 /** Raw table row, before becoming an envelope. */
 interface EventRow {
@@ -53,8 +100,10 @@ const COLUMNS = `
  *
  * The column is TEXT (one log for five entities, and one of them has a hash for
  * an id — D15), but the contract the client reads says integer for
- * `trabalho`/`sessao`/`pergunta`/`lease`. The conversion happens here, at the boundary,
- * and not in every consumer's head.
+ * `job`/`session`/`input_request`/`lease`. The conversion happens here, at the
+ * boundary, and not in every consumer's head.
+ *
+ * @param type Entity type as the COLUMN spells it, before {@link ENTITY_FIELD}.
  */
 function entityId(type: string, raw: string): number | string {
   return type === 'grafo_versao' ? raw : Number(raw);
@@ -64,16 +113,16 @@ function entityId(type: string, raw: string): number | string {
 function toEvent(row: EventRow): Event {
   return {
     id: row.id,
-    tipo: row.tipo,
-    projeto_id: row.projeto_id,
-    execucao_id: row.execucao_id,
-    entidade: {
-      tipo: row.entidade_tipo as EntityType,
+    type: row.tipo,
+    project_id: row.projeto_id,
+    execution_id: row.execucao_id,
+    entity: {
+      type: ENTITY_FIELD[row.entidade_tipo] as EntityType,
       id: entityId(row.entidade_tipo, row.entidade_id),
     },
-    ator: { tipo: row.ator_tipo as Event['ator']['tipo'], ref: row.ator_ref },
-    ocorrido_em: row.ocorrido_em,
-    dados: JSON.parse(row.dados) as Record<string, unknown>,
+    actor: { type: ACTOR_FIELD[row.ator_tipo] as Event['actor']['type'], ref: row.ator_ref },
+    occurred_at: row.ocorrido_em,
+    data: JSON.parse(row.dados) as Record<string, unknown>,
   };
 }
 
@@ -86,7 +135,7 @@ function toEvent(row: EventRow): Event {
  *
  * @param db Open handle.
  * @param input Envelope without an `id`.
- * @returns The recorded event, with `id` and normalized `dados`.
+ * @returns The recorded event, with `id` and normalized `data`.
  * @throws {ValidationError} When the envelope or the payload does not match.
  */
 export function recordEvent(db: Database, input: unknown): Event {
@@ -100,15 +149,15 @@ export function recordEvent(db: Database, input: unknown): Event {
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
-      event.tipo,
-      event.projeto_id,
-      event.execucao_id,
-      event.entidade.tipo,
-      String(event.entidade.id),
-      event.ator.tipo,
-      event.ator.ref,
-      event.ocorrido_em,
-      JSON.stringify(event.dados),
+      event.type,
+      event.project_id,
+      event.execution_id,
+      ENTITY_COLUMN[event.entity.type],
+      String(event.entity.id),
+      ACTOR_COLUMN[event.actor.type],
+      event.actor.ref,
+      event.occurred_at,
+      JSON.stringify(event.data),
     );
 
   return { ...event, id: Number(result.lastInsertRowid) };
@@ -118,11 +167,11 @@ export function recordEvent(db: Database, input: unknown): Event {
 export interface EventFilter {
   /**
    * The timeline of a job (FR9): ITS events, plus the session and input-request
-   * ones that cite it in `dados.trabalho_id`.
+   * ones that cite it in `data.job_id`.
    *
-   * Note that `sessao.finalizada`, `pergunta.respondida` and
-   * `pergunta.auto_resolvida` do NOT appear: the schemas of those types have no
-   * `trabalho_id` in the payload (the link was declared at opening/creation, and
+   * Note that `session.finished`, `input_request.answered` and
+   * `input_request.auto_resolved` do NOT appear: the schemas of those types have
+   * no `job_id` in the payload (the link was declared at opening/creation, and
    * repeating it would be duplicated data in the log). Whoever wants the end of
    * the session asks about the session.
    */
@@ -133,9 +182,9 @@ export interface EventFilter {
    * column matches, be it from a `trabalho`, a `sessao` or a `pergunta`.
    *
    * This is not the union of the timelines of that round's jobs: the link here
-   * is the COLUMN, written by whoever recorded the fact from the owning
-   * `trabalho` (`repositories/session.ts`, `repositories/input-request.ts`), and
-   * not a `json_extract` of the payload. It is what lets the surveyor cross
+   * is the COLUMN, written by whoever recorded the fact from the owning job
+   * (`repositories/session.ts`, `repositories/input-request.ts`), and not a
+   * `json_extract` of the payload. It is what lets the surveyor cross
    * different nodes of a single execution without asking job by job.
    *
    * Combined with `trabalho_id`, the two filters add up (AND, not OR).
@@ -196,7 +245,7 @@ export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
     conditions.push(
       `((entidade_tipo = 'trabalho' AND entidade_id = @id_texto)
         OR (entidade_tipo IN ('sessao','pergunta')
-            AND json_extract(dados, '$.trabalho_id') = @id))`,
+            AND json_extract(dados, '$.job_id') = @id))`,
     );
     parameters.id = filter.trabalho_id;
     parameters.id_texto = String(filter.trabalho_id);
@@ -244,13 +293,14 @@ export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
  * The events of one entity, in `id` order.
  *
  * @param db Open handle.
- * @param type Entity type (`trabalho`, `sessao`, `pergunta`, ...).
- * @param id Entity id; an integer for all of them except `grafo_versao`.
+ * @param type Entity type on the WIRE (`job`, `session`, `input_request`, ...);
+ *   the column's spelling is this module's business, not the caller's.
+ * @param id Entity id; an integer for all of them except `graph_version`.
  * @returns Events of that entity, from oldest to newest.
  */
 export function getEventsByEntity(
   db: Database,
-  type: Entity['tipo'],
+  type: Entity['type'],
   id: number | string,
 ): Event[] {
   const rows = db
@@ -259,6 +309,6 @@ export function getEventsByEntity(
         WHERE entidade_tipo = ? AND entidade_id = ?
         ORDER BY id`,
     )
-    .all(type, String(id)) as EventRow[];
+    .all(ENTITY_COLUMN[type], String(id)) as EventRow[];
   return rows.map(toEvent);
 }

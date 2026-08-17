@@ -181,7 +181,7 @@ test("t192 AT3 — the screen's own page is forwarded verbatim, by either signal
   });
   const screen = await startScreenFor(t, { CARTOGRAFO_URL: upstream.url });
 
-  const sent = JSON.stringify({ motivo: 'métrica esperada não é observável' });
+  const sent = JSON.stringify({ reason: 'métrica esperada não é observável' });
 
   // 1. What a current browser sends from the screen's own tab.
   const bySite = await fetch(`${screen.url}/v1/proposals/7/approve`, {
@@ -284,10 +284,10 @@ async function readFromControlPlane(
 
 test("t192 AT7 — the server-rendered form refuses a cross-site submit, and nothing is written", async (t) => {
   const cp = await startControlPlane(t);
-  const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
+  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
   const question = await createQuestion(cp, {
-    trabalho_id: job.id,
-    pergunta: 'Renumerar a migração para 0003?',
+    job_id: job.id,
+    question: 'Renumerar a migração para 0003?',
   });
 
   const screen = await startScreen(t, cp);

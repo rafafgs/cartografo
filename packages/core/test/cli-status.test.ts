@@ -48,7 +48,7 @@ async function seedOneJobAndOnePendingQuestion(url: string): Promise<CreatedJob>
   const jobResponse = await fetch(`${url}/v1/jobs`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ titulo: 'trabalho que o status conta', no_entrada_id: 'refinar' }),
+    body: JSON.stringify({ title: 'trabalho que o status conta', entry_node_id: 'refinar' }),
   });
   assert.equal(jobResponse.status, 201, `POST /v1/jobs returned ${jobResponse.status}`);
   const job = (await jobResponse.json()) as CreatedJob;
@@ -57,10 +57,10 @@ async function seedOneJobAndOnePendingQuestion(url: string): Promise<CreatedJob>
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      trabalho_id: job.id,
-      tipo: 'pergunta',
-      pergunta: 'Conta como pendente?',
-      auto_aprovavel: false,
+      job_id: job.id,
+      kind: 'question',
+      question: 'Conta como pendente?',
+      auto_approvable: false,
     }),
   });
   assert.equal(

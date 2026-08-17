@@ -30,19 +30,19 @@ test('t107 AT5 — GET /execucoes lists the executions with the right counts', a
   const cp = await startControlPlane(t);
 
   const fromSeven = await createJob(cp, {
-    titulo: 'primeiro da sete',
-    no_entrada_id: 'refinar',
-    execucao_id: 7,
+    title: 'primeiro da sete',
+    entry_node_id: 'refinar',
+    execution_id: 7,
   });
   await createJob(cp, {
-    titulo: 'segundo da sete',
-    no_entrada_id: 'refinar',
-    execucao_id: 7,
+    title: 'segundo da sete',
+    entry_node_id: 'refinar',
+    execution_id: 7,
   });
-  await createJob(cp, { titulo: 'único da oito', no_entrada_id: 'refinar', execucao_id: 8 });
+  await createJob(cp, { title: 'único da oito', entry_node_id: 'refinar', execution_id: 8 });
 
-  await api(cp, 'POST', `/v1/jobs/${fromSeven.id}/blocks`, { motivo: 'travou' });
-  await createQuestion(cp, { trabalho_id: fromSeven.id, pergunta: 'renumerar?' });
+  await api(cp, 'POST', `/v1/jobs/${fromSeven.id}/blocks`, { reason: 'travou' });
+  await createQuestion(cp, { job_id: fromSeven.id, question: 'renumerar?' });
 
   const screen = await startScreen(t, cp);
   const page = await openPage(screen, '/execucoes');
@@ -79,30 +79,30 @@ test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of tha
   const cp = await startControlPlane(t);
 
   const fromSeven = await createJob(cp, {
-    titulo: 'o trabalho da sete',
-    no_entrada_id: 'refinar',
-    execucao_id: 7,
+    title: 'o trabalho da sete',
+    entry_node_id: 'refinar',
+    execution_id: 7,
   });
   const fromEight = await createJob(cp, {
-    titulo: 'o trabalho da oito',
-    no_entrada_id: 'refinar',
-    execucao_id: 8,
+    title: 'o trabalho da oito',
+    entry_node_id: 'refinar',
+    execution_id: 8,
   });
 
-  const sessionOfSeven = await openSession(cp, { trabalho_id: fromSeven.id, no_id: 'refinar' });
-  const sessionOfEight = await openSession(cp, { trabalho_id: fromEight.id, no_id: 'refinar' });
+  const sessionOfSeven = await openSession(cp, { job_id: fromSeven.id, node_id: 'refinar' });
+  const sessionOfEight = await openSession(cp, { job_id: fromEight.id, node_id: 'refinar' });
   await api(cp, 'PATCH', `/v1/sessions/${sessionOfSeven.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
   });
 
   const questionOfSeven = await createQuestion(cp, {
-    trabalho_id: fromSeven.id,
-    pergunta: 'seguir pelo caminho curto?',
+    job_id: fromSeven.id,
+    question: 'seguir pelo caminho curto?',
   });
   const questionOfEight = await createQuestion(cp, {
-    trabalho_id: fromEight.id,
-    pergunta: 'pergunta da outra execução',
+    job_id: fromEight.id,
+    question: 'pergunta da outra execução',
   });
 
   const screen = await startScreen(t, cp);
@@ -123,7 +123,7 @@ test('t107 AT5 — GET /execucoes/:id slices jobs, sessions and questions of tha
     'a session from another execution must not leak',
   );
   assert.ok(sessions[0].excerpt.includes('claude-code'), 'the session shows the engine');
-  assert.ok(sessions[0].excerpt.includes('concluida'), 'the session shows the status');
+  assert.ok(sessions[0].excerpt.includes('completed'), 'the session shows the status');
   assert.ok(
     sessions[0].excerpt.includes(sessionOfSeven.opened_at),
     'the session shows when it opened',
@@ -146,17 +146,17 @@ test('t159 — every session row links its transcript, on the API route the prox
   const cp = await startControlPlane(t);
 
   const job = await createJob(cp, {
-    titulo: 'o que deixou saída para trás',
-    no_entrada_id: 'refinar',
-    execucao_id: 7,
+    title: 'o que deixou saída para trás',
+    entry_node_id: 'refinar',
+    execution_id: 7,
   });
 
-  const failed = await openSession(cp, { trabalho_id: job.id, no_id: 'refinar' });
-  const running = await openSession(cp, { trabalho_id: job.id, no_id: 'implementar' });
+  const failed = await openSession(cp, { job_id: job.id, node_id: 'refinar' });
+  const running = await openSession(cp, { job_id: job.id, node_id: 'implementar' });
   await api(cp, 'PATCH', `/v1/sessions/${failed.id}/finish`, {
-    status: 'falhou',
+    status: 'failed',
     exit_code: 1,
-    transcricao: 'erro: morri aqui, e sem isto ninguém sabe por quê',
+    transcript: 'erro: morri aqui, e sem isto ninguém sabe por quê',
   });
 
   const screen = await startScreen(t, cp);

@@ -581,7 +581,7 @@ test('t125 — a denial outside the contract is a 400, and an unknown session a 
   assert.equal(outsideEnum.status, 400);
   assert.equal(outsideEnum.body.error, 'validation_failed');
   assert.ok(
-    outsideEnum.body.details.some((detail) => detail.includes('recurso')),
+    outsideEnum.body.details.some((detail) => detail.includes('resource')),
     `the 400 has to name the offending field: ${JSON.stringify(outsideEnum.body.details)}`,
   );
 

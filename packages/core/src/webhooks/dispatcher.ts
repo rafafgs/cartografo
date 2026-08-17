@@ -39,8 +39,11 @@
  * lets `test/webhooks-dispatch.test.ts` prove a two-hour backoff step in
  * milliseconds and without opening a socket.
  *
- * The event-type strings and the column names stay in Portuguese: they are the
- * taxonomy's vocabulary and the schema's (t127, FR8).
+ * The COLUMN names stay in Portuguese — the schema is untouched, and renaming
+ * it is D20's fifth child. The event this dispatcher delivers is English on
+ * every key since t227, and nothing here had to change for that: the body is
+ * `JSON.stringify(event)` and the signature is over those bytes, whatever they
+ * spell.
  */
 
 import type { FastifyInstance } from 'fastify';

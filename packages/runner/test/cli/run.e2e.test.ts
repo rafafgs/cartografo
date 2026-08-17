@@ -100,7 +100,7 @@ interface TestHook {
 
 interface Job {
   id: number;
-  titulo: string;
+  title: string;
   current_node_id: string;
   blocked: boolean;
 }
@@ -115,15 +115,15 @@ interface Lease {
 interface Session {
   id: number;
   job_id: number | null;
-  no_id: string | null;
+  node_id: string | null;
   engine: string;
   status: string;
 }
 
 interface Event {
   id: number;
-  tipo: string;
-  dados: Record<string, unknown>;
+  type: string;
+  data: Record<string, unknown>;
 }
 
 async function loadModule<T>(relative: string): Promise<T> {
@@ -270,7 +270,7 @@ async function blockEveryJob(plane: RunningControlPlane): Promise<void> {
   const { jobs: jobs } = await api<{ jobs: Job[] }>(plane, 'GET', '/v1/jobs');
   for (const job of jobs) {
     if (job.blocked) continue;
-    await api(plane, 'POST', `/v1/jobs/${job.id}/blocks`, { motivo: 'fim do caso de teste' });
+    await api(plane, 'POST', `/v1/jobs/${job.id}/blocks`, { reason: 'fim do caso de teste' });
   }
 }
 
@@ -520,7 +520,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       plane,
       'POST',
       '/v1/jobs',
-      { titulo: 'trabalho que o runner empacotado despacha', no_entrada_id: DEFAULT_NODE, execucao_id: 1629 },
+      { title: 'trabalho que o runner empacotado despacha', entry_node_id: DEFAULT_NODE, execution_id: 1629 },
       201,
     );
 
@@ -548,7 +548,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         'GET',
         '/v1/sessions?execution_id=1629',
       );
-      return sessions.some((session) => session.status === 'concluida');
+      return sessions.some((session) => session.status === 'completed');
     });
 
     await runner.stop();
@@ -580,10 +580,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       'POST',
       '/v1/jobs',
       {
-        titulo: 'trabalho num nó que declara codex',
-        no_entrada_id: CODEX_NODE,
-        execucao_id: 16210,
-        grafo_versao_id: version.id,
+        title: 'trabalho num nó que declara codex',
+        entry_node_id: CODEX_NODE,
+        execution_id: 16210,
+        graph_version_id: version.id,
       },
       201,
     );
@@ -612,7 +612,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         'GET',
         '/v1/sessions?execution_id=16210',
       );
-      return sessions.some((session) => session.status === 'concluida');
+      return sessions.some((session) => session.status === 'completed');
     });
 
     await runner.stop();
@@ -622,10 +622,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       'GET',
       '/v1/executions/16210/events',
     );
-    const opened = events.filter((event) => event.tipo === 'sessao.aberta');
+    const opened = events.filter((event) => event.type === 'session.opened');
     assert.ok(opened.length > 0, 'a session was opened for this execution');
     assert.deepEqual(
-      [...new Set(opened.map((event) => event.dados.engine))],
+      [...new Set(opened.map((event) => event.data.engine))],
       ['codex'],
       'the engine the runner was told to use is the engine the log records',
     );
@@ -674,10 +674,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       'POST',
       '/v1/jobs',
       {
-        titulo: 'trabalho que pede um engine que este runner não tem',
-        no_entrada_id: CODEX_NODE,
-        execucao_id: 16211,
-        grafo_versao_id: version.id,
+        title: 'trabalho que pede um engine que este runner não tem',
+        entry_node_id: CODEX_NODE,
+        execution_id: 16211,
+        graph_version_id: version.id,
       },
       201,
     );
@@ -714,13 +714,13 @@ test('t162 — the packaged runner, against a real control plane', async (parent
 
     // Out of the queue, or the next tick would keep finding it first — the
     // controller stops at the first candidate that yields a lease.
-    await api(plane, 'POST', `/v1/jobs/${poison.id}/blocks`, { motivo: 'engine sem rota neste runner' });
+    await api(plane, 'POST', `/v1/jobs/${poison.id}/blocks`, { reason: 'engine sem rota neste runner' });
 
     const healthy = await api<Job>(
       plane,
       'POST',
       '/v1/jobs',
-      { titulo: 'trabalho que este runner sabe despachar', no_entrada_id: DEFAULT_NODE, execucao_id: 16212 },
+      { title: 'trabalho que este runner sabe despachar', entry_node_id: DEFAULT_NODE, execution_id: 16212 },
       201,
     );
 
@@ -730,7 +730,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         'GET',
         '/v1/sessions?execution_id=16212',
       );
-      return sessions.some((session) => session.status === 'concluida');
+      return sessions.some((session) => session.status === 'completed');
     });
 
     await runner.stop();
@@ -803,7 +803,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       plane,
       'POST',
       '/v1/jobs',
-      { titulo: 'trabalho com sessão demorada', no_entrada_id: DEFAULT_NODE, execucao_id: 16213 },
+      { title: 'trabalho com sessão demorada', entry_node_id: DEFAULT_NODE, execution_id: 16213 },
       201,
     );
 
@@ -870,7 +870,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     );
     assert.deepEqual(
       [...new Set(sessions.map((session) => session.status))],
-      ['concluida'],
+      ['completed'],
       'no session was killed halfway: the one in flight finished on its own',
     );
   });
@@ -894,7 +894,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       plane,
       'POST',
       '/v1/jobs',
-      { titulo: 'trabalho que prova o isolamento do worktree', no_entrada_id: DEFAULT_NODE, execucao_id: 17_901 },
+      { title: 'trabalho que prova o isolamento do worktree', entry_node_id: DEFAULT_NODE, execution_id: 17_901 },
       201,
     );
 
@@ -922,7 +922,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
         'GET',
         '/v1/sessions?execution_id=17901',
       );
-      return sessions.some((session) => session.status === 'concluida');
+      return sessions.some((session) => session.status === 'completed');
     });
 
     await runner.stop();

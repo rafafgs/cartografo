@@ -37,11 +37,11 @@ import {
 } from './support.ts';
 
 const QUESTION = {
-  pergunta: 'Renumerar a migração para 0003?',
-  contexto: 'A t101 corre em paralelo e é dona do mesmo espaço de numeração.',
-  opcoes: ['Renumerar para 0003', 'Manter 0002'],
-  recomendacao: 'Manter 0002 e renumerar só se colidir no merge.',
-  resposta_padrao: 'Manter 0002',
+  question: 'Renumerar a migração para 0003?',
+  context: 'A t101 corre em paralelo e é dona do mesmo espaço de numeração.',
+  options: ['Renumerar para 0003', 'Manter 0002'],
+  recommendation: 'Manter 0002 e renumerar só se colidir no merge.',
+  default_answer: 'Manter 0002',
 };
 
 /* --- reading the page ------------------------------------------------- */
@@ -149,8 +149,8 @@ test('t134 AT6 — the answer field on GET /perguntas has an accessible name', a
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
-  await createQuestion(cp, { trabalho_id: job.id, ...QUESTION });
+  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  await createQuestion(cp, { job_id: job.id, ...QUESTION });
 
   const screen = await startScreen(t, cp);
   const { cards } = await openQueue(screen);
@@ -168,8 +168,8 @@ test('t134 AT6 — the name comes from something that outlives the first keystro
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
-  await createQuestion(cp, { trabalho_id: job.id, ...QUESTION });
+  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  await createQuestion(cp, { job_id: job.id, ...QUESTION });
 
   const screen = await startScreen(t, cp);
   const { cards } = await openQueue(screen);
@@ -188,8 +188,8 @@ test('t134 AT6 — every field of the answer form has a name, not just a placeho
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { titulo: 'com pergunta', no_entrada_id: 'refinar' });
-  await createQuestion(cp, { trabalho_id: job.id, ...QUESTION });
+  const job = await createJob(cp, { title: 'com pergunta', entry_node_id: 'refinar' });
+  await createQuestion(cp, { job_id: job.id, ...QUESTION });
 
   const screen = await startScreen(t, cp);
   const { cards } = await openQueue(screen);
@@ -209,9 +209,9 @@ test('t134 AT6 — two pending questions keep one name each', async (t) => {
   requireArtifacts(T107_ARTIFACTS.pages, T107_ARTIFACTS.router);
   const cp = await startControlPlane(t);
 
-  const job = await createJob(cp, { titulo: 'com perguntas', no_entrada_id: 'refinar' });
-  await createQuestion(cp, { trabalho_id: job.id, ...QUESTION });
-  await createQuestion(cp, { trabalho_id: job.id, pergunta: 'E a outra, renumera?' });
+  const job = await createJob(cp, { title: 'com perguntas', entry_node_id: 'refinar' });
+  await createQuestion(cp, { job_id: job.id, ...QUESTION });
+  await createQuestion(cp, { job_id: job.id, question: 'E a outra, renumera?' });
 
   const screen = await startScreen(t, cp);
   const { html, cards } = await openQueue(screen);

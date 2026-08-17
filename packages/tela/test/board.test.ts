@@ -29,27 +29,27 @@ test('t107 AT4 — GET /quadro shows jobs grouped by node, with the block reason
   const cp = await startControlPlane(t);
 
   const refining = await createJob(cp, {
-    titulo: 'Tela mínima de observabilidade',
-    no_entrada_id: 'refinar',
-    execucao_id: 7,
+    title: 'Tela mínima de observabilidade',
+    entry_node_id: 'refinar',
+    execution_id: 7,
   });
   const implementing = await createJob(cp, {
-    titulo: 'Ciclo de pergunta e retomada',
-    no_entrada_id: 'refinar',
-    execucao_id: 7,
+    title: 'Ciclo de pergunta e retomada',
+    entry_node_id: 'refinar',
+    execution_id: 7,
   });
   const stuck = await createJob(cp, {
-    titulo: 'Grafo de fábrica 2',
-    no_entrada_id: 'refinar',
-    execucao_id: 7,
+    title: 'Grafo de fábrica 2',
+    entry_node_id: 'refinar',
+    execution_id: 7,
   });
 
   await api(cp, 'POST', `/v1/jobs/${implementing.id}/transitions`, {
-    para_no_id: 'implementar',
+    to_node_id: 'implementar',
   });
-  await api(cp, 'POST', `/v1/jobs/${stuck.id}/transitions`, { para_no_id: 'implementar' });
+  await api(cp, 'POST', `/v1/jobs/${stuck.id}/transitions`, { to_node_id: 'implementar' });
   await api(cp, 'POST', `/v1/jobs/${stuck.id}/blocks`, {
-    motivo: 'esperando decisão do fundador',
+    reason: 'esperando decisão do fundador',
   });
 
   const screen = await startScreen(t, cp);
@@ -130,8 +130,8 @@ test('t107 AT4 — the board escapes HTML coming from the control plane', async 
   // says nothing about what it carries: interpolating it raw would be HTML
   // injection on the project's very first screen.
   await createJob(cp, {
-    titulo: '<script>alert("xss")</script> & cia',
-    no_entrada_id: 'refinar',
+    title: '<script>alert("xss")</script> & cia',
+    entry_node_id: 'refinar',
   });
 
   const screen = await startScreen(t, cp);

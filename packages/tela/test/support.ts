@@ -226,8 +226,8 @@ export async function createQuestion(
   body: Record<string, unknown>,
 ): Promise<Question> {
   const response = await api<Question>(cp, 'POST', '/v1/input-requests', {
-    tipo: 'pergunta',
-    auto_aprovavel: false,
+    kind: 'question',
+    auto_approvable: false,
     ...body,
   });
   assert.equal(response.status, 201, `POST /v1/input-requests returned ${response.status}`);

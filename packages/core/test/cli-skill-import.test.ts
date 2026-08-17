@@ -295,7 +295,7 @@ test('AT10 — scan, complete, propose, approve, register: the whole D4 gate', {
   const answered = await fetch(`${controlPlane.url}/v1/input-requests/${ids.inputRequest}/answer`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ resposta: JSON.stringify(finalized), respondido_por: 'rafael' }),
+    body: JSON.stringify({ answer: JSON.stringify(finalized), answered_by: 'rafael' }),
   });
   assert.equal(answered.status, 200);
 
@@ -357,7 +357,7 @@ test('AT11 — a skill with no derivable check is refused by the registry, even 
   const answered = await fetch(`${controlPlane.url}/v1/input-requests/${ids.inputRequest}/answer`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ resposta: JSON.stringify(finalized), respondido_por: 'rafael' }),
+    body: JSON.stringify({ answer: JSON.stringify(finalized), answered_by: 'rafael' }),
   });
   assert.equal(answered.status, 200);
 

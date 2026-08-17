@@ -22,32 +22,30 @@
  * `status`, `class` — never folded into `details`. `refusal` below is how the
  * files that used to build the second shape write the first one.
  *
- * ## The asymmetry that is deliberate, and that a later ticket must not "fix"
+ * ## The asymmetry that lived here between t226 and t227, and why it is gone
  *
- * Four entities answer English on the way out and still demand Portuguese on the
- * way in: **job**, **session**, **input request** and the intake
- * `/confirmations` route. It is not an oversight and it is not half a migration.
+ * For one ticket four entities answered English on the way out and still
+ * demanded Portuguese on the way in: **job**, **session**, **input request**
+ * and the intake `/confirmations` route. It was never an oversight.
  *
  * Their write bodies do not stop here — they go straight into `validateEvent`
- * (`src/db/event-validation.ts`), which checks the `dados.*` contract of
- * `trabalho.criado`, `sessao.aberta`, `pergunta.criada` and friends. That
- * vocabulary is the EVENT surface, and D20 gives it to the second child ticket,
- * not to this one. Translating those bodies here would make a validator that
- * still speaks Portuguese reject every legitimate write.
+ * (`src/db/event-validation.ts`), which checks the `data.*` contract of
+ * `job.created`, `session.opened`, `input_request.created` and friends. That
+ * vocabulary is the EVENT surface, and D20 gave it to the SECOND child ticket:
+ * translating those bodies during the FIRST one would have made a validator
+ * that still spoke Portuguese reject every legitimate write.
  *
- * So, concretely, until the events child lands:
+ * The events child landed, so both halves speak the same words now —
+ * `POST /jobs`, `POST /jobs/:id/{transitions,blocks,unblocks}`,
+ * `PATCH /jobs/:id`, `POST /sessions`, `PATCH /sessions/:id/finish`,
+ * `POST /sessions/:id/permission-denials`, `POST /input-requests`,
+ * `PATCH /input-requests/:id/{answer,auto-resolution}` and
+ * `POST /intake/:id/confirmations` included.
  *
- * - `POST /jobs`, `POST /jobs/:id/{transitions,blocks,unblocks}`,
- *   `PATCH /jobs/:id`, `POST /sessions`, `PATCH /sessions/:id/finish`,
- *   `POST /sessions/:id/permission-denials`, `POST /input-requests`,
- *   `PATCH /input-requests/:id/{answer,auto-resolution}` and
- *   `POST /intake/:id/confirmations` keep taking the body they always took;
- * - everything those same routes RETURN — a projection, never an event — is
- *   translated by its repository's `toX` mapper like every other entity.
- *
- * The tests pin both halves on purpose (`test/jobs.test.ts`,
- * `test/sessions.test.ts`, `test/input-requests.test.ts`): each asserts the
- * English response AND that the Portuguese request body is still accepted.
+ * What is still Portuguese underneath is the DATABASE (`trabalho`,
+ * `entidade_tipo`, `criado_em`), which is D20's fifth child, and the intake's
+ * `itens` (`{ref, titulo, corpo, …}`), which is `domain/intake.ts`'s document
+ * format and which the glossary maps nowhere.
  */
 
 import type { FastifyReply } from 'fastify';

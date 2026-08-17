@@ -142,7 +142,7 @@ const JOB_EVENTS = `
   SELECT COUNT(*) FROM evento e
    WHERE (e.entidade_tipo = 'trabalho' AND e.entidade_id = CAST(t.id AS TEXT))
       OR (e.entidade_tipo IN ('sessao','pergunta')
-          AND json_extract(e.dados, '$.trabalho_id') = t.id)
+          AND json_extract(e.dados, '$.job_id') = t.id)
 `;
 
 /**
@@ -292,13 +292,13 @@ export function getJob(db: Database, id: number): Job | null {
 
 /** Body of `POST /v1/jobs`. */
 export interface CreateJobInput {
-  titulo?: unknown;
+  title?: unknown;
   /** Optional body (t122): manual creation still only needs a title. */
-  corpo?: unknown;
+  body?: unknown;
   /** Optional preliminary acceptance criteria (t122). */
-  criterios_de_aceite?: unknown;
+  acceptance_criteria?: unknown;
   /** Optional values of the class's declared fields (t168). */
-  campos?: unknown;
+  fields?: unknown;
   /**
    * Optional cost triage (t175), for jobs created outside the intake.
    *
@@ -307,26 +307,26 @@ export interface CreateJobInput {
    * defaulted here.
    */
   tier?: unknown;
-  no_entrada_id?: unknown;
-  execucao_id?: unknown;
-  projeto_id?: unknown;
-  grafo_versao_id?: unknown;
-  ator?: unknown;
+  entry_node_id?: unknown;
+  execution_id?: unknown;
+  project_id?: unknown;
+  graph_version_id?: unknown;
+  actor?: unknown;
 }
 
 /**
- * Creates the job on the entry node and records `trabalho.criado` (FR4).
+ * Creates the job on the entry node and records `job.created` (FR4).
  *
- * `grafo_versao_id` goes into the PROJECTION and not into the event payload: the
- * `trabalho.criado` schema does not declare it, and a log carrying a field
- * outside its contract is a log no consumer can validate. `corpo`,
- * `criterios_de_aceite`, `campos` and `tier` go into BOTH, because the schema
+ * `graph_version_id` goes into the PROJECTION and not into the event payload:
+ * the `job.created` schema does not declare it, and a log carrying a field
+ * outside its contract is a log no consumer can validate. `body`,
+ * `acceptance_criteria`, `fields` and `tier` go into BOTH, because the schema
  * does declare them (t122, t168, t175) — a job that is born with content, or
  * already triaged, has that as part of the fact.
  *
- * A job created by hand with no `grafo_versao_id` is NOT cross-checked against
+ * A job created by hand with no `graph_version_id` is NOT cross-checked against
  * any class's `custom_fields`: there is no graph to ask, exactly as there is
- * none for `no_entrada_id`, which is free text here for the same reason. The
+ * none for `entry_node_id`, which is free text here for the same reason. The
  * gate lives where the graph is known — the transition route.
  *
  * @param db Open handle.
@@ -337,21 +337,21 @@ export interface CreateJobInput {
 export function createJob(db: Database, input: CreateJobInput): Job {
   // Validate BEFORE opening the transaction: an invalid request must not even
   // consume an id from the sequence (FR3).
-  const data = requireValidData('trabalho.criado', {
-    titulo: input.titulo,
-    no_entrada_id: input.no_entrada_id,
-    corpo: input.corpo,
-    criterios_de_aceite: input.criterios_de_aceite,
-    campos: input.campos,
+  const data = requireValidData('job.created', {
+    title: input.title,
+    entry_node_id: input.entry_node_id,
+    body: input.body,
+    acceptance_criteria: input.acceptance_criteria,
+    fields: input.fields,
     tier: input.tier,
   });
-  const projectId = integerOrDefault('projeto_id', input.projeto_id, DEFAULT_PROJECT);
-  const executionId = integerOrNull('execucao_id', input.execucao_id);
-  const graphVersionId = textOrNull('grafo_versao_id', input.grafo_versao_id);
-  const actor = resolveActor(input.ator, API_ACTOR);
-  const entryNode = data.no_entrada_id as string;
-  const criteria = data.criterios_de_aceite as string[] | null;
-  const fields = data.campos as ScalarMap | null;
+  const projectId = integerOrDefault('project_id', input.project_id, DEFAULT_PROJECT);
+  const executionId = integerOrNull('execution_id', input.execution_id);
+  const graphVersionId = textOrNull('graph_version_id', input.graph_version_id);
+  const actor = resolveActor(input.actor, API_ACTOR);
+  const entryNode = data.entry_node_id as string;
+  const criteria = data.acceptance_criteria as string[] | null;
+  const fields = data.fields as ScalarMap | null;
   // Already normalized by `requireValidData`: absent came back as an explicit
   // `null`, and anything outside the two values threw before this line.
   const tier = data.tier as Job['tier'];
@@ -369,8 +369,8 @@ export function createJob(db: Database, input: CreateJobInput): Job {
       .run(
         projectId,
         executionId,
-        data.titulo as string,
-        data.corpo as string | null,
+        data.title as string,
+        data.body as string | null,
         criteria === null ? null : JSON.stringify(criteria),
         fields === null ? null : JSON.stringify(fields),
         tier,
@@ -383,13 +383,13 @@ export function createJob(db: Database, input: CreateJobInput): Job {
 
     const id = Number(result.lastInsertRowid);
     recordEvent(db, {
-      tipo: 'trabalho.criado',
-      projeto_id: projectId,
-      execucao_id: executionId,
-      entidade: { tipo: 'trabalho', id },
-      ator: actor,
-      ocorrido_em: timestamp,
-      dados: data,
+      type: 'job.created',
+      project_id: projectId,
+      execution_id: executionId,
+      entity: { type: 'job', id },
+      actor,
+      occurred_at: timestamp,
+      data,
     });
 
     return toJob(db, readRow(db, id) as JobRow);
@@ -439,13 +439,13 @@ function mutate(
       id,
     );
     const event = recordEvent(db, {
-      tipo: type,
-      projeto_id: row.projeto_id,
-      execucao_id: row.execucao_id,
-      entidade: { tipo: 'trabalho', id },
-      ator: finalActor,
-      ocorrido_em: timestamp,
-      dados: data,
+      type,
+      project_id: row.projeto_id,
+      execution_id: row.execucao_id,
+      entity: { type: 'job', id },
+      actor: finalActor,
+      occurred_at: timestamp,
+      data,
     });
     announce?.(row, data, event);
     return toJob(db, readRow(db, id) as JobRow);
@@ -456,8 +456,8 @@ function mutate(
 
 /** Body of `POST /v1/jobs/:id/transitions`. */
 export interface TransitionInput {
-  para_no_id?: unknown;
-  ator?: unknown;
+  to_node_id?: unknown;
+  actor?: unknown;
 }
 
 /**
@@ -502,9 +502,9 @@ function requireFieldsOfNode(db: Database, row: JobRow): void {
 }
 
 /**
- * Moves the job across nodes and records `trabalho.transicao` (FR5).
+ * Moves the job across nodes and records `job.transitioned` (FR5).
  *
- * `de_no_id` is `null` on the FIRST transition — the job leaving the entry node
+ * `from_node_id` is `null` on the FIRST transition — the job leaving the entry node
  * for the first time — and the current node from then on. What answers "first?"
  * is the log, not the projection: a job can come back to the entry node later,
  * and then `no_atual == no_entrada_id` no longer distinguishes anything.
@@ -517,7 +517,7 @@ function requireFieldsOfNode(db: Database, row: JobRow): void {
  *
  * It is also where a `node_entered` hook fires (t169): the node the job ARRIVED
  * at is the match key, which is why a hook on `initial_node` structurally never
- * fires — that placement is a `trabalho.criado`, never a transition. The hook is
+ * fires — that placement is a `job.created`, never a transition. The hook is
  * enqueued from `announce`, downstream of the t168 gate: a transition the gate
  * refuses never happened, so it fires nothing.
  *
@@ -541,7 +541,7 @@ export function transitionJob(
     db
       .prepare(
         `SELECT 1 FROM evento
-          WHERE tipo = 'trabalho.transicao' AND entidade_tipo = 'trabalho' AND entidade_id = ?
+          WHERE tipo = 'job.transitioned' AND entidade_tipo = 'trabalho' AND entidade_id = ?
           LIMIT 1`,
       )
       .get(String(id)) !== undefined;
@@ -549,15 +549,18 @@ export function transitionJob(
   return mutate(
     db,
     id,
-    'trabalho.transicao',
-    input.ator,
+    'job.transitioned',
+    input.actor,
     API_ACTOR,
     (row) => {
       requireFieldsOfNode(db, row);
       return {
-        data: { de_no_id: alreadyWalked ? row.no_atual : null, para_no_id: input.para_no_id },
+        data: {
+          from_node_id: alreadyWalked ? row.no_atual : null,
+          to_node_id: input.to_node_id,
+        },
         sql: 'no_atual = ?',
-        values: [input.para_no_id],
+        values: [input.to_node_id],
       };
     },
     // The node comes from the VALIDATED payload, so what the hook matches on is
@@ -567,7 +570,7 @@ export function transitionJob(
         db,
         {
           trigger: 'node_entered',
-          no_id: data.para_no_id as string,
+          no_id: data.to_node_id as string,
           trabalho_id: id,
           projeto_id: row.projeto_id,
           execucao_id: row.execucao_id,
@@ -582,12 +585,12 @@ export function transitionJob(
 
 /** Body of `POST /v1/jobs/:id/blocks`. */
 export interface BlockInput {
-  motivo?: unknown;
-  ator?: unknown;
+  reason?: unknown;
+  actor?: unknown;
 }
 
 /**
- * Raises the blocked flag and records `trabalho.bloqueado` (FR6).
+ * Raises the blocked flag and records `job.blocked` (FR6).
  *
  * Blocking is a flag fact, not a movement fact: the job does not leave the node.
  * That is exactly why a `node_blocked` hook matches on `no_atual` (t169): the
@@ -609,13 +612,13 @@ export function blockJob(
   return mutate(
     db,
     id,
-    'trabalho.bloqueado',
-    input.ator,
+    'job.blocked',
+    input.actor,
     API_ACTOR,
     () => ({
-      data: { motivo: input.motivo },
+      data: { reason: input.reason },
       sql: 'bloqueado = ?, motivo_bloqueio = ?',
-      values: [asInteger(true), input.motivo],
+      values: [asInteger(true), input.reason],
     }),
     (row, _data, event) => {
       enqueueHookDeliveries(
@@ -637,11 +640,11 @@ export function blockJob(
 
 /** Body of `POST /v1/jobs/:id/unblocks`. */
 export interface UnblockInput {
-  ator?: unknown;
+  actor?: unknown;
 }
 
 /**
- * Lowers the flag and records `trabalho.desbloqueado` (FR6).
+ * Lowers the flag and records `job.unblocked` (FR6).
  *
  * The event has no payload: the fact is the fall of the flag itself.
  *
@@ -651,7 +654,7 @@ export interface UnblockInput {
  * @returns The updated job, or `null` if it does not exist.
  */
 export function unblockJob(db: Database, id: number, input: UnblockInput): Job | null {
-  return mutate(db, id, 'trabalho.desbloqueado', input.ator, API_ACTOR, () => ({
+  return mutate(db, id, 'job.unblocked', input.actor, API_ACTOR, () => ({
     data: {},
     sql: 'bloqueado = ?, motivo_bloqueio = NULL',
     values: [asInteger(false)],
@@ -660,21 +663,21 @@ export function unblockJob(db: Database, id: number, input: UnblockInput): Job |
 
 /** Body of `PATCH /v1/jobs/:id`. */
 export interface AmendInput {
-  titulo?: unknown;
+  title?: unknown;
   /** New values for the class's declared fields (t168). */
-  campos?: unknown;
-  ator?: unknown;
+  fields?: unknown;
+  actor?: unknown;
 }
 
 /**
- * Amends the job's content and records `trabalho.emendado` (FR7).
+ * Amends the job's content and records `job.amended` (FR7).
  *
  * The event carries the NAMES of the changed fields and never the new content:
  * this is an audit record, not a version history. Whoever wants the new text
  * reads the job.
  *
  * That is also why the title is validated HERE and not by `requireValidData`:
- * the payload is the hardcoded `{campos_alterados: ['titulo']}`, which is
+ * the payload is the hardcoded `{changed_fields: ['title']}`, which is
  * well-formed whatever the body carries, so the type's contract has nothing to
  * say about the one value actually being written (t157, FR2). Without this
  * check the `UPDATE` bound `undefined` and the driver threw — a 500 for what is
@@ -687,7 +690,7 @@ export interface AmendInput {
  * Since t168 there are TWO amendable fields, and the rule stayed the one t157
  * wrote: what is written is what has to be validated. A body carrying neither is
  * unusable — not a no-op — because an amendment that changes nothing would still
- * record a `trabalho.emendado` claiming something was touched.
+ * record a `job.amended` claiming something was touched.
  *
  * @param db Open handle.
  * @param id Job id.
@@ -696,42 +699,42 @@ export interface AmendInput {
  * @throws {ValidationError} When neither field is usable.
  */
 export function amendJob(db: Database, id: number, input: AmendInput): Job | null {
-  return mutate(db, id, 'trabalho.emendado', input.ator, API_ACTOR, () => {
+  return mutate(db, id, 'job.amended', input.actor, API_ACTOR, () => {
     const changed: string[] = [];
     const assignments: string[] = [];
     const values: unknown[] = [];
 
-    if (input.titulo !== undefined && input.titulo !== null) {
-      if (typeof input.titulo !== 'string' || input.titulo.length === 0) {
-        throw new ValidationError(['titulo has to be a non-empty string']);
+    if (input.title !== undefined && input.title !== null) {
+      if (typeof input.title !== 'string' || input.title.length === 0) {
+        throw new ValidationError(['title has to be a non-empty string']);
       }
-      changed.push('titulo');
+      changed.push('title');
       assignments.push('titulo = ?');
-      values.push(input.titulo);
+      values.push(input.title);
     }
 
-    if (input.campos !== undefined && input.campos !== null) {
-      if (!isScalarMap(input.campos)) {
+    if (input.fields !== undefined && input.fields !== null) {
+      if (!isScalarMap(input.fields)) {
         throw new ValidationError([
-          'campos has to be an object of string, number or boolean values',
+          'fields has to be an object of string, number or boolean values',
         ]);
       }
       // Replaced whole, never merged: without that, a field somebody filled by
       // mistake could never be taken back out, and "send me the fields you
       // want" is a simpler contract than a patch language over a map — the same
       // reasoning `amendDraft` wrote for the intake's item list.
-      changed.push('campos');
+      changed.push('fields');
       assignments.push('campos = ?');
-      values.push(JSON.stringify(input.campos));
+      values.push(JSON.stringify(input.fields));
     }
 
     if (changed.length === 0) {
       throw new ValidationError([
-        'at least one of titulo or campos has to be present, and usable',
+        'at least one of title or fields has to be present, and usable',
       ]);
     }
 
-    return { data: { campos_alterados: changed }, sql: assignments.join(', '), values };
+    return { data: { changed_fields: changed }, sql: assignments.join(', '), values };
   });
 }
 

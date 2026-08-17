@@ -312,10 +312,10 @@ async function main() {
     'POST',
     '/v1/jobs',
     {
-      titulo: plan.titulo,
-      no_entrada_id: plan.nos[0].id,
-      execucao_id: plan.execucao_id,
-      grafo_versao_id: plan.grafo_versao_id,
+      title: plan.titulo,
+      entry_node_id: plan.nos[0].id,
+      execution_id: plan.execucao_id,
+      graph_version_id: plan.grafo_versao_id,
     },
     201,
   );
@@ -401,7 +401,7 @@ async function main() {
   // to start next to — and the reason is written down, because that is what
   // whoever finds the job blocked will want to read.
   await api(url, token, 'POST', `/v1/jobs/${job.id}/blocks`, {
-    motivo: `travessia da execução ${plan.execucao_id} concluída`,
+    reason: `travessia da execução ${plan.execucao_id} concluída`,
   });
 
   // The evidence is read back from the control plane, never asserted from here.

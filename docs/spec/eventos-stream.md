@@ -67,18 +67,18 @@ Os dois são opcionais e **somam** (AND, nunca OU).
 | `tipo` | lista separada por vírgula | Só os tipos citados, casando string exata. Tipo desconhecido é `400`. |
 
 ```
-GET /v1/events/stream?projeto_id=1&tipo=trabalho.transicao,trabalho.bloqueado
+GET /v1/events/stream?projeto_id=1&tipo=job.transitioned,job.blocked
 ```
 
 Os valores aceitos em `tipo` são os tipos que o control plane grava hoje:
 
 ```
-trabalho.criado          sessao.aberta       pergunta.criada
-trabalho.transicao       sessao.finalizada   pergunta.respondida
-trabalho.bloqueado                           pergunta.auto_resolvida
-trabalho.desbloqueado
-trabalho.emendado
-trabalho.dependencia_declarada
+job.created          session.opened       input_request.created
+job.transitioned       session.finished   input_request.answered
+job.blocked                           input_request.auto_resolved
+job.unblocked
+job.amended
+job.dependency_declared
 ```
 
 A taxonomia também declara `lease.*` e `grafo_versao.*`; eles ainda não são
@@ -95,7 +95,7 @@ Cada evento vira uma mensagem SSE com os três campos:
 
 - `id` — o `id` do envelope. **É o cursor**, e é a única ordenação total que
   existe ([taxonomia](../../especificacoes/eventos/taxonomia.md));
-- `event` — o `tipo` do evento, que é o que o `EventSource` do navegador usa
+- `event` — o `type` do evento, que é o que o `EventSource` do navegador usa
   para despachar por `addEventListener`;
 - `data` — o envelope inteiro em JSON, numa única linha.
 
@@ -103,8 +103,8 @@ Um trecho real do fio, capturado com `curl -sN`:
 
 ```
 id: 1
-event: trabalho.criado
-data: {"id":1,"tipo":"trabalho.criado","projeto_id":1,"execucao_id":2,"entidade":{"tipo":"trabalho","id":1},"ator":{"tipo":"sistema","ref":"control-plane"},"ocorrido_em":"2026-08-14T23:10:11.489Z","dados":{"titulo":"exemplo do doc","no_entrada_id":"entrada","corpo":null,"criterios_de_aceite":null}}
+event: job.created
+data: {"id":1,"type":"job.created","project_id":1,"execution_id":2,"entity":{"type":"job","id":1},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-14T23:10:11.489Z","data":{"title":"exemplo do doc","entry_node_id":"entrada","body":null,"acceptance_criteria":null}}
 
 : heartbeat
 
@@ -113,7 +113,7 @@ data: {"id":1,"tipo":"trabalho.criado","projeto_id":1,"execucao_id":2,"entidade"
 O objeto em `data` é byte a byte o mesmo envelope que
 `GET /v1/executions/:id/events` devolve — os oito campos da
 [taxonomia](../../especificacoes/eventos/taxonomia.md), com o payload
-específico do tipo inteiro dentro de `dados`.
+específico do tipo inteiro dentro de `data`.
 
 **Tipo desconhecido é para ser ignorado, não é erro.** Um cliente antigo lendo
 um log novo continua reconstruindo o que entende; é o que torna a taxonomia
@@ -200,7 +200,7 @@ Node ≥ 20, nada instalado. Ele reconecta sozinho pelo cursor:
 // events-stream.mjs — CARTOGRAFO_TOKEN=... node events-stream.mjs [http://127.0.0.1:4317]
 const base = process.argv[2] ?? 'http://127.0.0.1:4317';
 const token = process.env.CARTOGRAFO_TOKEN;
-const query = new URLSearchParams({ tipo: 'trabalho.criado,trabalho.transicao' });
+const query = new URLSearchParams({ tipo: 'job.created,job.transitioned' });
 
 let lastEventId = null;
 
@@ -246,7 +246,7 @@ for (;;) {
 
         lastEventId = message.id ?? lastEventId;
         const event = JSON.parse(message.data);
-        console.log(`#${event.id} ${event.tipo} ${JSON.stringify(event.dados)}`);
+        console.log(`#${event.id} ${event.type} ${JSON.stringify(event.data)}`);
       }
     }
   } catch (failure) {
@@ -263,19 +263,19 @@ for (;;) {
 Rodando contra um control plane com uma rodada acontecendo:
 
 ```
-#1 trabalho.criado {"titulo":"rodada de demonstração","no_entrada_id":"entrada","corpo":null,"criterios_de_aceite":null}
-#2 trabalho.transicao {"de_no_id":null,"para_no_id":"refinar"}
-#3 trabalho.transicao {"de_no_id":"refinar","para_no_id":"construir"}
+#1 job.created {"title":"rodada de demonstração","entry_node_id":"entrada","body":null,"acceptance_criteria":null}
+#2 job.transitioned {"from_node_id":null,"to_node_id":"refinar"}
+#3 job.transitioned {"from_node_id":"refinar","to_node_id":"construir"}
 ```
 
 No navegador o mesmo consumo cabe em cinco linhas, e a reconexão com
 `Last-Event-ID` é automática:
 
 ```javascript
-const stream = new EventSource('/v1/events/stream?tipo=trabalho.transicao');
-stream.addEventListener('trabalho.transicao', (message) => {
+const stream = new EventSource('/v1/events/stream?tipo=job.transitioned');
+stream.addEventListener('job.transitioned', (message) => {
   const event = JSON.parse(message.data);
-  console.log(event.entidade.id, event.dados.de_no_id, '→', event.dados.para_no_id);
+  console.log(event.entity.id, event.data.from_node_id, '→', event.data.to_node_id);
 });
 ```
 

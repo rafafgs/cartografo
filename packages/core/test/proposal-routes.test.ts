@@ -761,10 +761,10 @@ async function recordWorkUnderVersion(
   versionId: string,
 ): Promise<void> {
   const response = await post(address, '/v1/jobs', {
-    titulo: 'travessia da rodada seguinte',
-    no_entrada_id: 'redigir',
-    execucao_id: executionId,
-    grafo_versao_id: versionId,
+    title: 'travessia da rodada seguinte',
+    entry_node_id: 'redigir',
+    execution_id: executionId,
+    graph_version_id: versionId,
   });
   assert.equal(response.status, 201, 'the next round telemetry has to exist for real');
 }

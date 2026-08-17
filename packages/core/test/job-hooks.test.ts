@@ -79,12 +79,12 @@ const secretFor = (reference: string): string => `chave-hmac-de-${reference}`;
 /** One row of `entrega_gancho`, read straight from the table. */
 interface HookDelivery {
   id: number;
-  project_id: number;
-  execution_id: number | null;
-  job_id: number;
-  hook_id: string;
-  node_id: string;
-  graph_version_id: string | null;
+  projeto_id: number;
+  execucao_id: number | null;
+  trabalho_id: number;
+  gancho_id: string;
+  no_id: string;
+  grafo_versao_id: string | null;
   evento_id: number;
   url: string;
   segredo: string;
@@ -93,7 +93,7 @@ interface HookDelivery {
   proxima_tentativa_em: string;
   criada_em: string;
   entregue_em: string | null;
-  last_error: string | null;
+  ultimo_erro: string | null;
 }
 
 /** The slice of `fetch` the dispatcher is allowed to use. */
@@ -239,7 +239,7 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   assert.equal(enqueued.gancho_id, ON_ENTER);
   assert.equal(enqueued.no_id, 'revisar');
   assert.equal(enqueued.trabalho_id, job.id);
-  assert.equal(enqueued.project_id, job.project_id);
+  assert.equal(enqueued.projeto_id, job.projeto_id);
   assert.equal(enqueued.grafo_versao_id, versionId);
   assert.equal(enqueued.status, 'pendente');
   assert.equal(enqueued.tentativas, 0);

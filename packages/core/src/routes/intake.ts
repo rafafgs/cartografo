@@ -17,12 +17,10 @@
  * dispatches no session and knows no engine.
  *
  * Since t226 the request and response field names are English
- * (`docs/spec/glossario-wire.md` §1), with ONE deliberate exception, and it is
- * the same boundary the job and session routes have: `POST /intake/:id/
- * confirmations` writes EVENTS through `confirmDraft`, so its body still carries
- * `ator` and its `tipo`/`ref` — the event envelope is D20's second child, and
- * `routes/common.ts` documents the whole asymmetry. Everything the confirmation
- * RETURNS is translated like any other read.
+ * (`docs/spec/glossario-wire.md` §1), and since t227 so is the one exception
+ * that survived it: `POST /intake/:id/confirmations` writes EVENTS through
+ * `confirmDraft`, so its body carries `actor` and its `type`/`ref` — the event
+ * envelope, D20's second child.
  *
  * The `itens` a draft carries are `domain/intake.ts`'s format, not this API's
  * vocabulary: they pass through byte for byte, keys included, and the glossary
@@ -195,7 +193,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
 
   // The only intake route that writes an EVENT, and therefore the only one whose
   // body reaches `validateEvent`: `withValidation` is what turns the refusal of a
-  // malformed `ator` into the 400 every other route of this API answers with,
+  // malformed `actor` into the 400 every other route of this API answers with,
   // instead of letting the domain validator's message escape as a 500 (t139).
   app.post<IdParam>('/intake/:id/confirmations', async (request, reply) =>
     withValidation(reply, () => {
@@ -221,15 +219,15 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
         );
       }
 
-      // `ator` stays Portuguese: it is the EVENT envelope's actor, checked by
-      // `validateEvent` inside `confirmDraft` (t226, FR2). What comes back is
-      // translated like every other read.
+      // `actor` is the EVENT envelope's actor, checked by `validateEvent`
+      // inside `confirmDraft` (t226, FR2; English since t227). What comes back
+      // is translated like every other read.
       const body = isObject(request.body) ? request.body : {};
       const confirmation = confirmDraft(db, {
         draft,
         no_inicial: version.snapshot.initial_node,
         grafo_versao_id: version.id,
-        ator: resolveActor(body.ator, INTAKE_ACTOR),
+        actor: resolveActor(body.actor, INTAKE_ACTOR),
       });
 
       reply.code(201);

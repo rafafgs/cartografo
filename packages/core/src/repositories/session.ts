@@ -2,7 +2,7 @@
  * Session repository — the run of an agent by an EngineAdapter.
  *
  * In flowpilot this was a mutable row born `pending` and updated until
- * `completed`. Here there are TWO facts (`sessao.aberta`, `sessao.finalizada`)
+ * `completed`. Here there are TWO facts (`session.opened`, `session.finished`)
  * and a projection derived from them — consequence 2 of the taxonomy's
  * append-only rule.
  *
@@ -11,9 +11,9 @@
  * anything, and collapsing the two destroys the only cost metric the PoC will
  * have.
  *
- * The projection's field names, the table/column names and the event-type
- * strings mirror the untouched migration and the event taxonomy, so they stay in
- * Portuguese (t127, FR8).
+ * {@link Session} below is the ROW, so its field names mirror the untouched
+ * migration and stay in Portuguese; {@link WireSession} is what `/v1` publishes
+ * and is English, event-type strings included, since t227.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -114,20 +114,20 @@ function toSession(row: SessionRow): Session {
 }
 
 /* -------------------------------------------------------------------------- */
-/* The row → wire boundary (t226, FR1).                                        */
+/* The row → wire boundary (t226, FR1; closed by t227).                        */
 /*                                                                             */
-/* Only the READ side crosses it. `POST /v1/sessions`, `PATCH /finish` and      */
-/* `/permission-denials` still take their Portuguese bodies, because those go   */
-/* straight into `validateEvent` — see `routes/common.ts` for the whole story.  */
+/* Both sides cross it now. The reads went English with the API child, and the */
+/* three writes — `POST /v1/sessions`, `PATCH /finish`,                        */
+/* `/permission-denials` — followed with the events child, because their       */
+/* bodies go straight into `validateEvent` and that vocabulary is D20's second */
+/* child (`routes/common.ts` tells the whole story).                           */
 /*                                                                             */
-/* `status` is NOT translated, and that is a decision, not an omission: the     */
-/* terminal values (`concluida`, `falhou`, `tempo_esgotado`, …) are the         */
-/* `sessao.finalizada` event's `dados.status`, which is D20's SECOND child. The */
-/* API ticket's own FR1 lists the enums it converts — lease status and reason,  */
-/* proposal status, lineage type, draft status, input-request status and kind — */
-/* and session status is deliberately not among them. Translating it here would */
-/* also split the route in two: `/finish` accepts `concluida` and would answer  */
-/* `completed`, for a value the caller had just sent.                          */
+/* `status` still has no map, and for the OPPOSITE reason it used to: the      */
+/* column takes whatever `session.finished`'s `data.status` carries, and since */
+/* t227 that is `completed`, `failed`, `timed_out`, … — so `/finish` accepts   */
+/* the same word it answers, with nothing in between. The column has no CHECK  */
+/* (migration `0003`), which is why the value could simply change; renaming    */
+/* the COLUMNS is D20's fifth child.                                           */
 /* -------------------------------------------------------------------------- */
 
 /** A session, as `/v1` publishes it. */
@@ -142,7 +142,7 @@ export interface WireSession {
   prompt: string;
   timeout_seconds: number | null;
   silence_seconds: number | null;
-  /** Still the column's value — see the note above this type. */
+  /** The column's value, which is the wire's word since t227 — see the note above. */
   status: string;
   exit_code: number | null;
   timeout_reason: string | null;
@@ -237,7 +237,7 @@ interface CappedTranscript {
  * the broken head costs at most three bytes.
  *
  * Deliberately outside `requireValidData`: the transcript is not part of the
- * `sessao.finalizada` contract and never enters the event log, so its own type
+ * `session.finished` contract and never enters the event log, so its own type
  * check lives here — and still raises the `ValidationError` the route already
  * turns into a 400.
  *
@@ -250,7 +250,7 @@ function capTranscript(value: unknown): CappedTranscript {
     return { text: null, truncated: false, originalBytes: null };
   }
   if (typeof value !== 'string') {
-    throw new ValidationError(['transcricao has to be a string, or absent']);
+    throw new ValidationError(['transcript has to be a string, or absent']);
   }
 
   const bytes = Buffer.from(value, 'utf8');
@@ -281,12 +281,12 @@ function readRow(db: Database, id: number): SessionRow | undefined {
  *
  * The `sessao` table has no `projeto_id` column: `openSession` resolves the
  * project — the served job's, or the one declared in the body — and records it
- * in the envelope of `sessao.aberta`, and that event is where it lives. Every
+ * in the envelope of `session.opened`, and that event is where it lives. Every
  * later event of the session reads it from there.
  *
  * Deriving it again from `trabalho` (which is what this file did until t157)
  * quietly loses the answer for a session with no job — a discovery session, a
- * conversation turn, the very case `sessao.aberta`'s contract calls out: the
+ * conversation turn, the very case `session.opened`'s contract calls out: the
  * join finds nothing and the end of the session gets filed under
  * `DEFAULT_PROJECT`, whatever project it actually opened under. The log already
  * knew; nobody was asking it.
@@ -300,10 +300,10 @@ function readRow(db: Database, id: number): SessionRow | undefined {
  *   unreachable in practice.
  */
 function sessionProject(db: Database, id: number): number {
-  const opening = getEventsByEntity(db, 'sessao', id).find(
-    (event) => event.tipo === 'sessao.aberta',
+  const opening = getEventsByEntity(db, 'session', id).find(
+    (event) => event.type === 'session.opened',
   );
-  return opening?.projeto_id ?? DEFAULT_PROJECT;
+  return opening?.project_id ?? DEFAULT_PROJECT;
 }
 
 /**
@@ -320,36 +320,36 @@ export function getSession(db: Database, id: number): Session | null {
 
 /** Body of `POST /v1/sessions`. */
 export interface OpenSessionInput {
-  trabalho_id?: unknown;
-  no_id?: unknown;
+  job_id?: unknown;
+  node_id?: unknown;
   engine?: unknown;
   engine_session_ref?: unknown;
   working_dir?: unknown;
   prompt?: unknown;
   timeout_seconds?: unknown;
   silence_seconds?: unknown;
-  execucao_id?: unknown;
-  projeto_id?: unknown;
-  ator?: unknown;
+  execution_id?: unknown;
+  project_id?: unknown;
+  actor?: unknown;
 }
 
 /**
- * Opens the session and records `sessao.aberta` (FR10).
+ * Opens the session and records `session.opened` (FR10).
  *
- * `execucao_id` and `projeto_id` are inherited from the job served when there is
+ * `execution_id` and `project_id` are inherited from the job served when there is
  * one — the session belongs to the job's round, and asking the caller to repeat
  * that would invite divergence. Without a job (a discovery session, a
  * conversation turn), what came in the body holds.
  *
  * @param db Open handle.
  * @param input Request body.
- * @returns The open session, or `null` if the given `trabalho_id` does not exist.
+ * @returns The open session, or `null` if the given `job_id` does not exist.
  * @throws {ValidationError} When a required field is missing.
  */
 export function openSession(db: Database, input: OpenSessionInput): Session | null {
-  const data = requireValidData('sessao.aberta', {
-    trabalho_id: input.trabalho_id,
-    no_id: input.no_id,
+  const data = requireValidData('session.opened', {
+    job_id: input.job_id,
+    node_id: input.node_id,
     engine: input.engine,
     engine_session_ref: input.engine_session_ref,
     working_dir: input.working_dir,
@@ -358,7 +358,7 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
     silence_seconds: input.silence_seconds,
   });
 
-  const jobId = data.trabalho_id as number | null;
+  const jobId = data.job_id as number | null;
   const owner =
     jobId === null
       ? undefined
@@ -367,9 +367,10 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
           | undefined);
   if (jobId !== null && owner === undefined) return null;
 
-  const projectId = owner?.projeto_id ?? integerOrDefault('projeto_id', input.projeto_id, DEFAULT_PROJECT);
-  const executionId = owner?.execucao_id ?? integerOrNull('execucao_id', input.execucao_id);
-  const actor = resolveActor(input.ator, RUNNER_ACTOR);
+  const projectId =
+    owner?.projeto_id ?? integerOrDefault('project_id', input.project_id, DEFAULT_PROJECT);
+  const executionId = owner?.execucao_id ?? integerOrNull('execution_id', input.execution_id);
+  const actor = resolveActor(input.actor, RUNNER_ACTOR);
 
   const open = db.transaction((): Session => {
     const timestamp = now();
@@ -384,7 +385,7 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
       .run(
         jobId,
         executionId,
-        data.no_id as string | null,
+        data.node_id as string | null,
         data.engine as string,
         data.engine_session_ref as string | null,
         data.working_dir as string,
@@ -396,13 +397,13 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
 
     const id = Number(result.lastInsertRowid);
     recordEvent(db, {
-      tipo: 'sessao.aberta',
-      projeto_id: projectId,
-      execucao_id: executionId,
-      entidade: { tipo: 'sessao', id },
-      ator: actor,
-      ocorrido_em: timestamp,
-      dados: data,
+      type: 'session.opened',
+      project_id: projectId,
+      execution_id: executionId,
+      entity: { type: 'session', id },
+      actor,
+      occurred_at: timestamp,
+      data,
     });
 
     return toSession(readRow(db, id) as SessionRow);
@@ -416,32 +417,32 @@ export interface FinishSessionInput {
   status?: unknown;
   exit_code?: unknown;
   timeout_reason?: unknown;
-  uso?: unknown;
-  modelos?: unknown;
-  transcricao?: unknown;
-  ator?: unknown;
+  usage?: unknown;
+  models?: unknown;
+  transcript?: unknown;
+  actor?: unknown;
 }
 
 /**
- * Closes the session and records `sessao.finalizada` (FR11).
+ * Closes the session and records `session.finished` (FR11).
  *
  * Closing is exactly-once: the `UPDATE` is guarded by `status = 'aberta'` and a
  * lost claim throws before anything is appended, the same shape the sibling
  * repositories already use (t149). A second finish would rewrite the terminal
- * status and NULL the `uso` this whole file exists to protect — so it is refused
+ * status and NULL the `usage` this whole file exists to protect — so it is refused
  * with a 409 by the route, and never silently applied.
  *
  * The transcript (t159) rides in the SAME transaction, and there is no second
  * endpoint for it: one write, one caller. It is the raw stream the engine
  * printed, capped by {@link capTranscript} — and it goes to the row only, never
- * into `dados`, because the event schema does not know it exists.
+ * into `data`, because the event schema does not know it exists.
  *
  * @param db Open handle.
  * @param id Session id.
  * @param input Request body.
  * @returns The closed session, or `null` if it does not exist.
- * @throws {ValidationError} When the status is outside the enum, `uso` or
- *   `modelos` does not match, or `transcricao` is present and is not a string.
+ * @throws {ValidationError} When the status is outside the enum, `usage` or
+ *   `models` does not match, or `transcript` is present and is not a string.
  * @throws {Error} When the session stopped being open mid-flight.
  */
 export function finishSession(
@@ -452,17 +453,17 @@ export function finishSession(
   const row = readRow(db, id);
   if (row === undefined) return null;
 
-  const data = requireValidData('sessao.finalizada', {
+  const data = requireValidData('session.finished', {
     status: input.status,
     exit_code: input.exit_code,
     timeout_reason: input.timeout_reason,
-    uso: input.uso,
-    modelos: input.modelos,
+    usage: input.usage,
+    models: input.models,
   });
-  const usage = data.uso as SessionUsage | null;
-  const models = data.modelos as string[] | null;
-  const transcript = capTranscript(input.transcricao);
-  const actor = resolveActor(input.ator, RUNNER_ACTOR);
+  const usage = data.usage as SessionUsage | null;
+  const models = data.models as string[] | null;
+  const transcript = capTranscript(input.transcript);
+  const actor = resolveActor(input.actor, RUNNER_ACTOR);
   const projectId = sessionProject(db, id);
 
   const close = db.transaction((): Session => {
@@ -480,9 +481,9 @@ export function finishSession(
         // NULL is "no watchdog stopped this session" — for a natural end, for a
         // cancel somebody drove, and for an adapter that reported no cause.
         data.timeout_reason as string | null,
-        // An absent `uso` writes a real NULL, never an object of zeros.
+        // An absent `usage` writes a real NULL, never an object of zeros.
         usage === null ? null : JSON.stringify(usage),
-        // ...and an absent `modelos` writes a real NULL, never an empty list:
+        // ...and an absent `models` writes a real NULL, never an empty list:
         // "the engine named no model" and "it ran under zero models" are not
         // the same claim, and only the first one has ever been measured (t172).
         models === null ? null : JSON.stringify(models),
@@ -498,19 +499,19 @@ export function finishSession(
     // The whole transaction falls if the session stopped being open between the
     // route's check and this UPDATE: finishing twice is a 409, never a second
     // ending over the first (t149). Throwing HERE is what keeps the second
-    // `sessao.finalizada` out of the log.
+    // `session.finished` out of the log.
     if (effect.changes !== 1) {
       throw new Error(`session ${id} stopped being open during the finish`);
     }
 
     recordEvent(db, {
-      tipo: 'sessao.finalizada',
-      projeto_id: projectId,
-      execucao_id: row.execucao_id,
-      entidade: { tipo: 'sessao', id },
-      ator: actor,
-      ocorrido_em: timestamp,
-      dados: data,
+      type: 'session.finished',
+      project_id: projectId,
+      execution_id: row.execucao_id,
+      entity: { type: 'session', id },
+      actor,
+      occurred_at: timestamp,
+      data,
     });
 
     return toSession(readRow(db, id) as SessionRow);
@@ -559,10 +560,10 @@ export function getSessionTranscript(db: Database, id: number): SessionTranscrip
 
 /** Body of `POST /v1/sessions/:id/permission-denials`. */
 export interface PermissionDenialInput {
-  recurso?: unknown;
-  ferramenta?: unknown;
-  motivo?: unknown;
-  ator?: unknown;
+  resource?: unknown;
+  tool?: unknown;
+  reason?: unknown;
+  actor?: unknown;
 }
 
 /**
@@ -588,23 +589,23 @@ export function recordPermissionDenial(
   const row = readRow(db, id);
   if (row === undefined) return null;
 
-  const data = requireValidData('sessao.permissao_negada', {
-    recurso: input.recurso,
-    ferramenta: input.ferramenta,
-    motivo: input.motivo,
+  const data = requireValidData('session.permission_denied', {
+    resource: input.resource,
+    tool: input.tool,
+    reason: input.reason,
   });
-  const actor = resolveActor(input.ator, RUNNER_ACTOR);
+  const actor = resolveActor(input.actor, RUNNER_ACTOR);
 
   // No transaction: there is a single append and nothing to keep atomic with
   // it. `finishSession` needs one because it also moves the projection row.
   recordEvent(db, {
-    tipo: 'sessao.permissao_negada',
-    projeto_id: sessionProject(db, id),
-    execucao_id: row.execucao_id,
-    entidade: { tipo: 'sessao', id },
-    ator: actor,
-    ocorrido_em: now(),
-    dados: data,
+    type: 'session.permission_denied',
+    project_id: sessionProject(db, id),
+    execution_id: row.execucao_id,
+    entity: { type: 'session', id },
+    actor,
+    occurred_at: now(),
+    data,
   });
 
   return toSession(row);
@@ -615,7 +616,7 @@ export function recordPermissionDenial(
  *
  * The slice by job exists because the screen's timeline needs the END of the
  * sessions, and `GET /v1/jobs/:id/events` does not deliver it: the payload of
- * `sessao.finalizada` does not carry `trabalho_id`, and the comment in
+ * `session.finished` does not carry `job_id`, and the comment in
  * `src/db/events.ts` already said where to send whoever wants that fact —
  * "whoever wants the end of the session asks the session". Only the way to ask
  * was missing.

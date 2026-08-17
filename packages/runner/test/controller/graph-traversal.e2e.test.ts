@@ -59,16 +59,16 @@ interface Work {
 interface Question {
   id: number;
   job_id: number;
-  pergunta: string;
+  question: string;
   status: string;
 }
 
 interface Event {
   id: number;
-  tipo: string;
-  entidade: { tipo: string; id: number | string };
-  ator: { tipo: string; ref: string };
-  dados: Record<string, unknown>;
+  type: string;
+  entity: { type: string; id: number | string };
+  actor: { type: string; ref: string };
+  data: Record<string, unknown>;
 }
 
 async function loadModule<T>(relative: string): Promise<T> {
@@ -205,10 +205,10 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     'POST',
     '/v1/jobs',
     {
-      titulo: 'travessia inteira sem operador no meio',
-      no_entrada_id: 'implementar',
-      execucao_id: EXECUTION_ID,
-      grafo_versao_id: version.id,
+      title: 'travessia inteira sem operador no meio',
+      entry_node_id: 'implementar',
+      execution_id: EXECUTION_ID,
+      graph_version_id: version.id,
     },
     201,
   );
@@ -282,8 +282,8 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   assert.equal(pending.length, 1, 'exactly one question is waiting on a person');
 
   await api(baseUrl, token, 'PATCH', `/v1/input-requests/${pending[0].id}/answer`, {
-    resposta: 'Vale para os dois.',
-    respondido_por: 'rafael',
+    answer: 'Vale para os dois.',
+    answered_by: 'rafael',
   });
 
   // --- 3. the answer resumes the SAME node, and the gate reproves -----------
@@ -337,15 +337,15 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     'GET',
     `/v1/executions/${EXECUTION_ID}/events`,
   );
-  const moves = events.filter((event) => event.tipo === 'trabalho.transicao');
+  const moves = events.filter((event) => event.type === 'job.transitioned');
   assert.deepEqual(
-    moves.map((event) => String(event.dados.para_no_id)),
+    moves.map((event) => String(event.data.to_node_id)),
     ['conferir', 'implementar', 'conferir', 'publicar'],
     'the log tells the whole traversal, rework cycle and all',
   );
   assert.deepEqual(
-    [...new Set(moves.map((event) => `${event.ator.tipo}:${event.ator.ref}`))],
-    ['sistema:runner'],
+    [...new Set(moves.map((event) => `${event.actor.type}:${event.actor.ref}`))],
+    ['system:runner'],
     'and the log says who moved it: the runner, on every single edge',
   );
 });

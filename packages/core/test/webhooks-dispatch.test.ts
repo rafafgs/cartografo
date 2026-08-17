@@ -148,7 +148,7 @@ interface Delivery {
   proxima_tentativa_em: string;
   criada_em: string;
   entregue_em: string | null;
-  last_error: string | null;
+  ultimo_erro: string | null;
 }
 
 /** A dispatcher running against a throwaway database. */

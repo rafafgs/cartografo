@@ -378,10 +378,10 @@ test('t110 — GET /v1/executions/:id/events returns the execution log in ascend
   }
 
   // The envelope arrives whole: the surveyor computes intervals from
-  // `ocorrido_em` and attributes them by `dados`.
+  // `occurred_at` and attributes them by `data`.
   const opened = events.find((event) => event.type === 'session.opened');
   assert.ok(opened !== undefined);
-  assert.equal(opened.data.no_id, 'revisar');
+  assert.equal(opened.data.node_id, 'revisar');
   assert.equal(typeof opened.occurred_at, 'string');
 
   const fromTheOther = await request<ExecutionLog>(ctx, 'GET', '/v1/executions/12/events');

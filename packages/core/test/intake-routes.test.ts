@@ -537,7 +537,7 @@ test('AT13 — a declared dependency becomes one row and one event, resolved to 
 
   assert.deepEqual(
     dependencyRows(ctx),
-    [{ trabalho_id: dependent, depends_on_job_id: dependedOn }],
+    [{ trabalho_id: dependent, depende_de_trabalho_id: dependedOn }],
     'the row points from the dependent to the one it depends on',
   );
 

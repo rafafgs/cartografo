@@ -193,8 +193,8 @@ test('t162 — the runner is an installable command, started by plain node', asy
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         runner_id: runnerId,
-        projeto_id: 1,
-        trabalho_id: 999_162,
+        project_id: 1,
+        job_id: 999_162,
         teto_runner: 1,
         teto_projeto: 1,
         ttl_seconds: 1,
@@ -261,12 +261,12 @@ test('t162 — the runner is an installable command, started by plain node', asy
         token,
         'POST',
         '/v1/jobs',
-        { titulo: 'trabalho com sessão viva', no_entrada_id: 'fazer', execucao_id: 193016 },
+        { title: 'trabalho com sessão viva', entry_node_id: 'fazer', execution_id: 193016 },
         201,
       );
       t.after(async () => {
         await api(baseUrl, token, 'POST', `/v1/jobs/${job.id}/blocks`, {
-          motivo: 'fim do caso de teste',
+          reason: 'fim do caso de teste',
         });
       });
 

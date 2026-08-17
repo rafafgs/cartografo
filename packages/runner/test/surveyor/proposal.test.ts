@@ -187,16 +187,16 @@ async function seedBottleneck(baseUrl: string, versionId: string): Promise<void>
     'POST',
     '/v1/jobs',
     {
-      titulo: 'travessia com gargalo',
-      no_entrada_id: 'redigir',
-      execucao_id: EXECUTION_WITH_SIGNAL,
-      grafo_versao_id: versionId,
+      title: 'travessia com gargalo',
+      entry_node_id: 'redigir',
+      execution_id: EXECUTION_WITH_SIGNAL,
+      graph_version_id: versionId,
     },
     201,
   );
 
   // Lands on `revisar` and waits in the dispatch queue.
-  await api(baseUrl, 'POST', `/v1/jobs/${work.id}/transitions`, { para_no_id: 'revisar' });
+  await api(baseUrl, 'POST', `/v1/jobs/${work.id}/transitions`, { to_node_id: 'revisar' });
   await delay(GAP_MS);
 
   const session = await api<Session>(
@@ -204,8 +204,8 @@ async function seedBottleneck(baseUrl: string, versionId: string): Promise<void>
     'POST',
     '/v1/sessions',
     {
-      trabalho_id: work.id,
-      no_id: 'revisar',
+      job_id: work.id,
+      node_id: 'revisar',
       engine: 'claude-code',
       working_dir: '/tmp/cartografo',
       prompt: 'revise a nota',
@@ -219,24 +219,24 @@ async function seedBottleneck(baseUrl: string, versionId: string): Promise<void>
     'POST',
     '/v1/input-requests',
     {
-      trabalho_id: work.id,
-      sessao_id: session.id,
-      tipo: 'pergunta',
-      pergunta: 'a nota responde ao tema?',
-      auto_aprovavel: true,
+      job_id: work.id,
+      session_id: session.id,
+      kind: 'question',
+      question: 'a nota responde ao tema?',
+      auto_approvable: true,
     },
     201,
   );
   await delay(GAP_MS);
 
   await api(baseUrl, 'PATCH', `/v1/input-requests/${question.id}/answer`, {
-    resposta: 'responde, siga',
-    respondido_por: 'rafael',
+    answer: 'responde, siga',
+    answered_by: 'rafael',
   });
   await api(baseUrl, 'PATCH', `/v1/sessions/${session.id}/finish`, {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
-    uso: null,
+    usage: null,
   });
 }
 
@@ -262,10 +262,10 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
     'POST',
     '/v1/jobs',
     {
-      titulo: 'travessia sem sinal',
-      no_entrada_id: 'redigir',
-      execucao_id: FLAT_EXECUTION,
-      grafo_versao_id: version.id,
+      title: 'travessia sem sinal',
+      entry_node_id: 'redigir',
+      execution_id: FLAT_EXECUTION,
+      graph_version_id: version.id,
     },
     201,
   );

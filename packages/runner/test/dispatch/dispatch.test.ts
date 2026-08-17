@@ -157,10 +157,10 @@ interface Transcript {
 
 interface Event {
   id: number;
-  tipo: string;
-  entidade: { tipo: string; id: number | string };
-  ator: { tipo: string; ref: string };
-  dados: Record<string, unknown>;
+  type: string;
+  entity: { type: string; id: number | string };
+  actor: { type: string; ref: string };
+  data: Record<string, unknown>;
 }
 
 /** What the fake engine recorded about the process it was given. */
@@ -363,9 +363,9 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     "POST",
     "/v1/jobs",
     {
-      titulo: "ficha que escala",
-      no_entrada_id: "implementar",
-      execucao_id: 7,
+      title: "ficha que escala",
+      entry_node_id: "implementar",
+      execution_id: 7,
     },
     201,
   );
@@ -473,10 +473,10 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     baseUrl,
     "PATCH",
     `/v1/input-requests/${question.id}/answer`,
-    { resposta: ANSWER, respondido_por: ANSWERED_BY },
+    { answer: ANSWER, answered_by: ANSWERED_BY },
   );
   assert.equal(answered.status, "answered");
-  assert.equal(answered.source, "usuario");
+  assert.equal(answered.source, "user");
 
   const unblocked = await api<Work>(baseUrl, "GET", `/v1/jobs/${work.id}`);
   assert.equal(
@@ -528,16 +528,16 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     `/v1/jobs/${work.id}/events`,
   );
   assert.deepEqual(
-    timeline.events.map((event) => event.tipo),
+    timeline.events.map((event) => event.type),
     [
-      "trabalho.criado",
-      "sessao.aberta",
-      "pergunta.criada",
-      "trabalho.bloqueado",
-      "trabalho.desbloqueado",
-      "sessao.aberta",
+      "job.created",
+      "session.opened",
+      "input_request.created",
+      "job.blocked",
+      "job.unblocked",
+      "session.opened",
     ],
-    // `sessao.finalizada` and `pergunta.respondida` are absent BY CONTRACT, not
+    // `session.finished` and `input_request.answered` are absent BY CONTRACT, not
     // by omission: their payloads carry no `trabalho_id`, so the work timeline
     // cannot see them (t102, `packages/core/src/db/events.ts`
     // `FiltroDeEventos`). They are proven below, on the projections.
@@ -545,27 +545,27 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
   );
 
   const created = timeline.events.find(
-    (event) => event.tipo === "pergunta.criada",
+    (event) => event.type === "input_request.created",
   );
   assert.deepEqual(
-    created?.ator,
-    { tipo: "agente", ref: work.current_node_id },
+    created?.actor,
+    { type: "agent", ref: work.current_node_id },
     "the agent asked",
   );
   const blockEvent = timeline.events.find(
-    (event) => event.tipo === "trabalho.bloqueado",
+    (event) => event.type === "job.blocked",
   );
   assert.equal(
-    blockEvent?.ator.tipo,
-    "sistema",
+    blockEvent?.actor.type,
+    "system",
     "the flag was raised by the wiring",
   );
   const unblockEvent = timeline.events.find(
-    (event) => event.tipo === "trabalho.desbloqueado",
+    (event) => event.type === "job.unblocked",
   );
   assert.equal(
-    unblockEvent?.ator.tipo,
-    "usuario",
+    unblockEvent?.actor.type,
+    "user",
     "the flag was lowered by the human who answered",
   );
 
@@ -586,7 +586,7 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     assert.equal(session.working_dir, workDir);
     assert.equal(
       session.status,
-      "concluida",
+      "completed",
       "the taxonomy vocabulary, not the interface one",
     );
     assert.equal(session.exit_code, 0);
@@ -624,9 +624,9 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
     "POST",
     "/v1/jobs",
     {
-      titulo: "ficha com skill de terceiro",
-      no_entrada_id: "implementar",
-      execucao_id: 9,
+      title: "ficha com skill de terceiro",
+      entry_node_id: "implementar",
+      execution_id: 9,
     },
     201,
   );
@@ -678,7 +678,7 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
   const session = sessions.sessions[0];
   assert.equal(
     session.status,
-    "concluida",
+    "completed",
     "a denial is an incident, never a terminal status",
   );
 
@@ -696,10 +696,10 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
     `/v1/sessions/${session.id}/permission-denials`,
   );
   assert.deepEqual(denials[0].body, {
-    recurso: "rede",
-    ferramenta: "WebFetch",
-    motivo: DENIAL_TEXT,
-    ator: { tipo: "sistema", ref: "runner" },
+    resource: "network",
+    tool: "WebFetch",
+    reason: DENIAL_TEXT,
+    actor: { type: "system", ref: "runner" },
   });
 
   // ...and the policy really reached the engine process, by the only channel
@@ -725,9 +725,9 @@ test("t159 — what the engine printed is what the finish call ships, and what a
     "POST",
     "/v1/jobs",
     {
-      titulo: "a ficha cuja saída precisa sobreviver ao processo",
-      no_entrada_id: "implementar",
-      execucao_id: 11,
+      title: "a ficha cuja saída precisa sobreviver ao processo",
+      entry_node_id: "implementar",
+      execution_id: 11,
     },
     201,
   );
@@ -773,12 +773,12 @@ test("t159 — what the engine printed is what the finish call ships, and what a
   assert.equal(finishes[0].method, "PATCH");
   const body = finishes[0].body as Record<string, unknown>;
   assert.equal(
-    body.transcricao,
+    body.transcript,
     printed,
     "the finish call carries the raw lines, joined by newline",
   );
   assert.equal(
-    body.uso,
+    body.usage,
     null,
     "the transcript rides along with `uso`; it does not replace it",
   );
@@ -933,9 +933,9 @@ test("t147 — with no token, the dispatch is refused 401 on its very first call
     "POST",
     "/v1/jobs",
     {
-      titulo: "ficha despachada contra um control plane autenticado",
-      no_entrada_id: "implementar",
-      execucao_id: 147,
+      title: "ficha despachada contra um control plane autenticado",
+      entry_node_id: "implementar",
+      execution_id: 147,
     },
     201,
     token,
@@ -1006,9 +1006,9 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
     "POST",
     "/v1/jobs",
     {
-      titulo: "ficha despachada com credencial",
-      no_entrada_id: "implementar",
-      execucao_id: 147,
+      title: "ficha despachada com credencial",
+      entry_node_id: "implementar",
+      execution_id: 147,
     },
     201,
     token,
@@ -1050,7 +1050,7 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
   );
   assert.equal(
     sessions.sessions[0].status,
-    "concluida",
+    "completed",
     "and closed through PATCH /v1/sessions/:id/finish",
   );
 
@@ -1072,7 +1072,7 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
   // The execution stream and not the work timeline: a denial is recorded
   // against the session and its payload carries no `trabalho_id`, so the work's
   // own timeline structurally cannot show it — the same contract the t106 test
-  // above records for `sessao.finalizada`.
+  // above records for `session.finished`.
   const timeline = await api<{ events: Event[] }>(
     baseUrl,
     "GET",
@@ -1082,7 +1082,7 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
     token,
   );
   assert.ok(
-    timeline.events.some((event) => event.tipo === "sessao.permissao_negada"),
+    timeline.events.some((event) => event.type === "session.permission_denied"),
     "the denial reached POST /v1/sessions/:id/permission-denials",
   );
 });
@@ -1290,10 +1290,10 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha cujo nó declara codex",
-          no_entrada_id: "revisar",
-          execucao_id: 141,
-          grafo_versao_id: versionId,
+          title: "ficha cujo nó declara codex",
+          entry_node_id: "revisar",
+          execution_id: 141,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -1391,9 +1391,9 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha sem grafo",
-          no_entrada_id: "implementar",
-          execucao_id: 1410,
+          title: "ficha sem grafo",
+          entry_node_id: "implementar",
+          execution_id: 1410,
         },
         201,
         token,
@@ -1422,10 +1422,10 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha cujo nó não declara engine",
-          no_entrada_id: "implementar",
-          execucao_id: 1411,
-          grafo_versao_id: versionId,
+          title: "ficha cujo nó não declara engine",
+          entry_node_id: "implementar",
+          execution_id: 1411,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -1462,7 +1462,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
           DEFAULT_ENGINE,
           `execution ${executionId} must fall back to the default engine`,
         );
-        assert.equal(sessions.sessions[0].status, "concluida");
+        assert.equal(sessions.sessions[0].status, "completed");
       }
     },
   );
@@ -1491,10 +1491,10 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha cujo nó pede um engine que ninguém registrou",
-          no_entrada_id: "revisar",
-          execucao_id: 1412,
-          grafo_versao_id: versionId,
+          title: "ficha cujo nó pede um engine que ninguém registrou",
+          entry_node_id: "revisar",
+          execution_id: 1412,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -1677,9 +1677,9 @@ test("t148 — POST /v1/sessions fails after the engine started: the session is 
     "POST",
     "/v1/jobs",
     {
-      titulo: "ficha cujo POST /v1/sessions cai com o engine já de pé",
-      no_entrada_id: "implementar",
-      execucao_id: 148,
+      title: "ficha cujo POST /v1/sessions cai com o engine já de pé",
+      entry_node_id: "implementar",
+      execution_id: 148,
     },
     201,
     token,
@@ -1792,9 +1792,9 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
     "POST",
     "/v1/jobs",
     {
-      titulo: "ficha que pergunta e cujo fechamento de sessão cai",
-      no_entrada_id: "implementar",
-      execucao_id: 1481,
+      title: "ficha que pergunta e cujo fechamento de sessão cai",
+      entry_node_id: "implementar",
+      execution_id: 1481,
     },
     201,
     token,
@@ -1908,9 +1908,9 @@ test("t160 AT8 — the session runs in the directory the worktree manager handed
     "POST",
     "/v1/jobs",
     {
-      titulo: "ficha que roda no worktree que o runner criou",
-      no_entrada_id: "implementar",
-      execucao_id: 160,
+      title: "ficha que roda no worktree que o runner criou",
+      entry_node_id: "implementar",
+      execution_id: 160,
     },
     201,
     token,
@@ -1974,9 +1974,9 @@ test("t160 AT9 — a worktree that cannot be created blocks the dispatch before 
     "POST",
     "/v1/jobs",
     {
-      titulo: "ficha cujo worktree não pôde ser criado",
-      no_entrada_id: "implementar",
-      execucao_id: 1601,
+      title: "ficha cujo worktree não pôde ser criado",
+      entry_node_id: "implementar",
+      execution_id: 1601,
     },
     201,
     token,
@@ -2168,10 +2168,10 @@ test("t160 AT10 — the outcome decides whether the worktree is kept", async (pa
           "POST",
           "/v1/jobs",
           {
-            titulo: `ficha cuja sessão termina como ${label}`,
-            no_entrada_id: "implementar",
-            execucao_id: executionId,
-            grafo_versao_id: versionId,
+            title: `ficha cuja sessão termina como ${label}`,
+            entry_node_id: "implementar",
+            execution_id: executionId,
+            graph_version_id: versionId,
           },
           201,
           token,
@@ -2360,9 +2360,9 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
       "POST",
       "/v1/jobs",
       {
-        titulo: "ficha com orçamento de silêncio",
-        no_entrada_id: "implementar",
-        execucao_id: executionId,
+        title: "ficha com orçamento de silêncio",
+        entry_node_id: "implementar",
+        execution_id: executionId,
       },
       201,
       token,
@@ -2492,7 +2492,7 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
         const body = finished(calls);
         assert.equal(
           body.status,
-          "tempo_esgotado",
+          "timed_out",
           "both watchdogs land on the one status the taxonomy already has",
         );
         assert.equal(
@@ -2514,7 +2514,7 @@ test("t163 — the silence budget is resolved, dispatched and reported with its 
 
       assert.ok(failure instanceof DispatchError);
       const body = finished(calls);
-      assert.equal(body.status, "tempo_esgotado");
+      assert.equal(body.status, "timed_out");
       assert.equal(
         body.timeout_reason,
         null,
@@ -2587,7 +2587,7 @@ test("t161 — the node's skill drives the session, and the session advances the
       .filter(
         (call) => call.method === "POST" && call.route.endsWith("/transitions"),
       )
-      .map((call) => (call.body as { para_no_id: string }).para_no_id);
+      .map((call) => (call.body as { to_node_id: string }).to_node_id);
   }
 
   await parent.test(
@@ -2614,10 +2614,10 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha num nó com skill registrada",
-          no_entrada_id: "publicar",
-          execucao_id: 1612,
-          grafo_versao_id: versionId,
+          title: "ficha num nó com skill registrada",
+          entry_node_id: "publicar",
+          execution_id: 1612,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -2627,9 +2627,9 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha sem grafo nenhum",
-          no_entrada_id: "publicar",
-          execucao_id: 1612,
+          title: "ficha sem grafo nenhum",
+          entry_node_id: "publicar",
+          execution_id: 1612,
         },
         201,
         token,
@@ -2733,10 +2733,10 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha cujo nó aponta para uma skill adulterada",
-          no_entrada_id: "publicar",
-          execucao_id: 1613,
-          grafo_versao_id: versionId,
+          title: "ficha cujo nó aponta para uma skill adulterada",
+          entry_node_id: "publicar",
+          execution_id: 1613,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -2816,10 +2816,10 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha num nó de saída única",
-          no_entrada_id: "implementar",
-          execucao_id: 1614,
-          grafo_versao_id: versionId,
+          title: "ficha num nó de saída única",
+          entry_node_id: "implementar",
+          execution_id: 1614,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -2887,10 +2887,10 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha num portão que reprova",
-          no_entrada_id: "conferir",
-          execucao_id: 1615,
-          grafo_versao_id: versionId,
+          title: "ficha num portão que reprova",
+          entry_node_id: "conferir",
+          execution_id: 1615,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -2949,10 +2949,10 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha num portão que não sabe rotear",
-          no_entrada_id: "conferir",
-          execucao_id: 1616,
-          grafo_versao_id: versionId,
+          title: "ficha num portão que não sabe rotear",
+          entry_node_id: "conferir",
+          execution_id: 1616,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -2982,16 +2982,16 @@ test("t161 — the node's skill drives the session, and the session advances the
 
       const body = asked[0].body as Record<string, unknown>;
       assert.deepEqual(
-        body.ator,
-        { tipo: "sistema", ref: "runner" },
+        body.actor,
+        { type: "system", ref: "runner" },
         "the wiring raised this one, not the session — a session-authored one is `agente`",
       );
       assert.deepEqual(
-        body.opcoes,
+        body.options,
         ["aprovado", "retrabalho"],
         "the human is offered the edges that actually leave this node",
       );
-      const askedText = String(body.pergunta);
+      const askedText = String(body.question);
       assert.ok(askedText.includes("conferir"), askedText);
       assert.ok(askedText.includes("escala"), askedText);
 
@@ -3029,10 +3029,10 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha cuja sessão pergunta",
-          no_entrada_id: "implementar",
-          execucao_id: 1617,
-          grafo_versao_id: versionId,
+          title: "ficha cuja sessão pergunta",
+          entry_node_id: "implementar",
+          execution_id: 1617,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -3094,10 +3094,10 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha cuja transição o control plane recusa",
-          no_entrada_id: "implementar",
-          execucao_id: 1618,
-          grafo_versao_id: versionId,
+          title: "ficha cuja transição o control plane recusa",
+          entry_node_id: "implementar",
+          execution_id: 1618,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -3143,7 +3143,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         token,
       );
       assert.equal(sessions.sessions.length, 1);
-      assert.equal(sessions.sessions[0].status, "concluida");
+      assert.equal(sessions.sessions[0].status, "completed");
 
       const after = await api<Work>(
         baseUrl,
@@ -3179,10 +3179,10 @@ test("t161 — the node's skill drives the session, and the session advances the
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha num portão que não pode escrever",
-          no_entrada_id: "conferir",
-          execucao_id: 1619,
-          grafo_versao_id: versionId,
+          title: "ficha num portão que não pode escrever",
+          entry_node_id: "conferir",
+          execution_id: 1619,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -3303,10 +3303,10 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha num nó que não tem a quem perguntar",
-          no_entrada_id: "implementar",
-          execucao_id: 1671,
-          grafo_versao_id: versionId,
+          title: "ficha num nó que não tem a quem perguntar",
+          entry_node_id: "implementar",
+          execution_id: 1671,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -3332,11 +3332,11 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
       const blocks = posted(calls, `/v1/jobs/${job.id}/blocks`);
       assert.equal(blocks.length, 1, "it blocks unconditionally instead, through the route that already exists");
       assert.deepEqual(
-        blocks[0].ator,
-        { tipo: "sistema", ref: "runner" },
+        blocks[0].actor,
+        { type: "system", ref: "runner" },
         "the wiring raised this block, not the session and not a person",
       );
-      const motivo = String(blocks[0].motivo);
+      const motivo = String(blocks[0].reason);
       assert.ok(motivo.includes("implementar"), motivo);
       assert.ok(motivo.includes(ESCALATION.question), motivo);
 
@@ -3383,10 +3383,10 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha num nó que pergunta como sempre perguntou",
-          no_entrada_id: "implementar",
-          execucao_id: 1672,
-          grafo_versao_id: versionId,
+          title: "ficha num nó que pergunta como sempre perguntou",
+          entry_node_id: "implementar",
+          execution_id: 1672,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -3405,7 +3405,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
 
       const asked = posted(calls, "/v1/input-requests");
       assert.equal(asked.length, 1, "the cycle t106 built has to be untouched by this ficha");
-      assert.equal(asked[0].pergunta, ESCALATION.question);
+      assert.equal(asked[0].question, ESCALATION.question);
       assert.deepEqual(
         posted(calls, `/v1/jobs/${job.id}/blocks`),
         [],
@@ -3439,10 +3439,10 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha num portão que não sabe rotear e não tem a quem perguntar",
-          no_entrada_id: "conferir",
-          execucao_id: 1673,
-          grafo_versao_id: versionId,
+          title: "ficha num portão que não sabe rotear e não tem a quem perguntar",
+          entry_node_id: "conferir",
+          execution_id: 1673,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -3466,14 +3466,14 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
       assert.deepEqual(
         calls
           .filter((call) => call.method === "POST" && call.route.endsWith("/transitions"))
-          .map((call) => (call.body as { para_no_id: string }).para_no_id),
+          .map((call) => (call.body as { to_node_id: string }).to_node_id),
         [],
         "an unroutable result still moves nothing",
       );
 
       const blocks = posted(calls, `/v1/jobs/${job.id}/blocks`);
       assert.equal(blocks.length, 1);
-      const motivo = String(blocks[0].motivo);
+      const motivo = String(blocks[0].reason);
       assert.ok(motivo.includes("conferir"), motivo);
       assert.ok(motivo.includes("escala"), motivo);
 
@@ -3602,10 +3602,10 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       "POST",
       "/v1/jobs",
       {
-        titulo: options.title,
-        no_entrada_id: "revisar",
-        execucao_id: options.executionId,
-        grafo_versao_id: options.versionId,
+        title: options.title,
+        entry_node_id: "revisar",
+        execution_id: options.executionId,
+        graph_version_id: options.versionId,
       },
       201,
       token,
@@ -3813,9 +3813,9 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
       "POST",
       "/v1/jobs",
       {
-        titulo: "ficha que reporta uso e modelo",
-        no_entrada_id: "implementar",
-        execucao_id: executionId,
+        title: "ficha que reporta uso e modelo",
+        entry_node_id: "implementar",
+        execution_id: executionId,
       },
       201,
       token,
@@ -3871,8 +3871,8 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
         models: ["claude-haiku-4-5-20251001", "claude-sonnet-5"],
       });
 
-      assert.deepEqual(body.uso, USAGE, "the four counts cross untouched");
-      assert.deepEqual(body.modelos, ["claude-haiku-4-5-20251001", "claude-sonnet-5"]);
+      assert.deepEqual(body.usage, USAGE, "the four counts cross untouched");
+      assert.deepEqual(body.models, ["claude-haiku-4-5-20251001", "claude-sonnet-5"]);
 
       // ...and the control plane accepted them: a body the schema refuses would
       // have been a 400 the dispatch swallows into `finishFailure`, and the row
@@ -3896,18 +3896,18 @@ test('t172 — the tokens and the models the adapter reported reach the finish c
   );
 
   await parent.test(
-    "AT — an adapter that reported neither sends uso: null and modelos: null",
+    "AT — an adapter that reported neither sends usage: null and models: null",
     async (t) => {
       const { body } = await finishBodyOf(t, 1721, undefined);
 
       // Present-and-null, never absent: the same posture `timeout_reason` has
       // had since t163. An absent key and a null one read the same to the
       // server, and differently to whoever is reading the runner's calls.
-      assert.ok("uso" in body, "the key has to be sent, not omitted");
-      assert.ok("modelos" in body, "the key has to be sent, not omitted");
-      assert.equal(body.uso, null);
-      assert.equal(body.modelos, null);
-      assert.notEqual(body.uso, 0, "absence never collapses into zero");
+      assert.ok("usage" in body, "the key has to be sent, not omitted");
+      assert.ok("models" in body, "the key has to be sent, not omitted");
+      assert.equal(body.usage, null);
+      assert.equal(body.models, null);
+      assert.notEqual(body.usage, 0, "absence never collapses into zero");
     },
   );
 });
@@ -3954,10 +3954,10 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
       "POST",
       "/v1/jobs",
       {
-        titulo: options.title,
-        no_entrada_id: "revisar",
-        execucao_id: options.executionId,
-        grafo_versao_id: options.versionId,
+        title: options.title,
+        entry_node_id: "revisar",
+        execution_id: options.executionId,
+        graph_version_id: options.versionId,
         // Absent, not null: `POST /v1/jobs` treats both as unclassified, and
         // sending the key at all would prove less about the default path.
         ...(options.tier === null ? {} : { tier: options.tier }),
@@ -4182,10 +4182,10 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha num nó cuja skill tem placeholder",
-          no_entrada_id: "publicar",
-          execucao_id: 2041,
-          grafo_versao_id: versionId,
+          title: "ficha num nó cuja skill tem placeholder",
+          entry_node_id: "publicar",
+          execution_id: 2041,
+          graph_version_id: versionId,
         },
         201,
         token,
@@ -4261,10 +4261,10 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         "POST",
         "/v1/jobs",
         {
-          titulo: "ficha cuja entrada ninguém monta",
-          no_entrada_id: "publicar",
-          execucao_id: 2042,
-          grafo_versao_id: versionId,
+          title: "ficha cuja entrada ninguém monta",
+          entry_node_id: "publicar",
+          execution_id: 2042,
+          graph_version_id: versionId,
         },
         201,
         token,

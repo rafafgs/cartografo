@@ -107,17 +107,17 @@ async function seedSession(
   // The route returns the projection of the raw session in the body, with no
   // envelope (t102).
   const session = (await call(baseUrl, '/v1/sessions', 'POST', {
-    trabalho_id: jobId,
-    no_id: nodeId,
+    job_id: jobId,
+    node_id: nodeId,
     engine: 'claude-code',
     working_dir: '/tmp/t114',
     prompt: `trabalhar o nó ${nodeId}`,
   })) as { id: number };
 
   await call(baseUrl, `/v1/sessions/${session.id}/finish`, 'PATCH', {
-    status: 'concluida',
+    status: 'completed',
     exit_code: 0,
-    uso: {
+    usage: {
       input_tokens: tokens,
       output_tokens: 0,
       cache_creation_input_tokens: 0,
@@ -145,10 +145,10 @@ test('AT9 — avaliar creates exactly one pending proposal from the cost lens', 
   const versionId = record.graph_version.id;
 
   const job = (await call(baseUrl, '/v1/jobs', 'POST', {
-    titulo: 'nota sobre custo',
-    no_entrada_id: 'redigir',
-    execucao_id: EXECUTION_ID,
-    grafo_versao_id: versionId,
+    title: 'nota sobre custo',
+    entry_node_id: 'redigir',
+    execution_id: EXECUTION_ID,
+    graph_version_id: versionId,
   })) as { id: number };
 
   await seedSession(baseUrl, job.id, 'redigir', 5000);
@@ -218,10 +218,10 @@ test('AT9 — avaliar touches only the four routes of the contract, and never /a
     graph_version: { id: string };
   };
   const job = (await call(baseUrl, '/v1/jobs', 'POST', {
-    titulo: 'nota sobre custo',
-    no_entrada_id: 'redigir',
-    execucao_id: EXECUTION_ID,
-    grafo_versao_id: record.graph_version.id,
+    title: 'nota sobre custo',
+    entry_node_id: 'redigir',
+    execution_id: EXECUTION_ID,
+    graph_version_id: record.graph_version.id,
   })) as { id: number };
   await seedSession(baseUrl, job.id, 'redigir', 5000);
 

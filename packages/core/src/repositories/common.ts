@@ -5,10 +5,10 @@
  * SQLite (which has neither a native boolean nor native JSON) and the API's
  * JSON, plus the envelope defaults v0 has nowhere else to get.
  *
- * About the `ator` defaults: t124 authenticated the API, but a token proves
+ * About the `actor` defaults: t124 authenticated the API, but a token proves
  * POSSESSION and not identity — the control plane still has no way of knowing
  * WHO is on the other side. Instead of inventing a user, it honestly records
- * `sistema` + the component that acted, and accepts an explicit `ator` in the
+ * `system` + the component that acted, and accepts an explicit `actor` in the
  * body for when the caller knows more than it does — which is the case of the
  * runner (t103) and of the screen (t107).
  */
@@ -25,14 +25,14 @@ import { ValidationError, type Actor } from '../db/event-validation.ts';
 export const DEFAULT_PROJECT = 1;
 
 /** Default actor of a write coming from the API with no declared owner. */
-export const API_ACTOR: Actor = Object.freeze({ tipo: 'sistema', ref: 'control-plane' });
+export const API_ACTOR: Actor = Object.freeze({ type: 'system', ref: 'control-plane' });
 
 /** Default actor of a session: whoever dispatches is the runner (D5). */
-export const RUNNER_ACTOR: Actor = Object.freeze({ tipo: 'sistema', ref: 'runner' });
+export const RUNNER_ACTOR: Actor = Object.freeze({ type: 'system', ref: 'runner' });
 
-/** Actor of the auto-approval gate — never `usuario`, for audit reasons. */
+/** Actor of the auto-approval gate — never `user`, for audit reasons. */
 export const AUTO_APPROVAL_ACTOR: Actor = Object.freeze({
-  tipo: 'sistema',
+  type: 'system',
   ref: 'portao-auto-aprovacao',
 });
 
@@ -40,12 +40,12 @@ export const AUTO_APPROVAL_ACTOR: Actor = Object.freeze({
  * Actor of the automatic block that is born together with an input request (t106).
  *
  * Only the BLOCK uses this constant. The unblock carries the actor of whoever
- * answered — `usuario` when it was a person, the automatic gate when it was not —
+ * answered — `user` when it was a person, the automatic gate when it was not —
  * because "who unblocked this job?" is an audit question and the answer cannot
  * always be "the system".
  */
 export const ESCALATION_ACTOR: Actor = Object.freeze({
-  tipo: 'sistema',
+  type: 'system',
   ref: 'escalacao-humana',
 });
 

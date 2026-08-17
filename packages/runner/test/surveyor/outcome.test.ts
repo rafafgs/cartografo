@@ -131,5 +131,5 @@ test('t165 AT10 — a malformed or unknown name measures null instead of crashin
 
   // The prototype chain is not a vocabulary: `constructor` names no measure.
   assert.equal(measureForExpectedMetric(round, 'constructor:redigir'), null);
-  assert.equal(measureForExpectedMetric(round, 'no_id:redigir'), null, 'no_id is not a measure');
+  assert.equal(measureForExpectedMetric(round, 'node_id:redigir'), null, 'no_id is not a measure');
 });

@@ -14,14 +14,16 @@
  * any write, so that an invalid request leaves no trace at all — neither a
  * projection row nor an event.
  *
- * The field names below are the envelope's and the payloads' wire keys, which
- * mirror untouched migration columns and the event taxonomy: they stay in
- * Portuguese by FR8 (t127). The code around them is English.
+ * The field names below are the envelope's and the payloads' wire keys, and
+ * since t227 they are the English ones of `docs/spec/glossario-wire.md` §2 —
+ * D20's second child. What they do NOT follow are the migration columns: those
+ * still spell `entidade_tipo`, `ator_tipo` and `ocorrido_em`, and translating
+ * them is D20's FIFTH child. `db/events.ts` is where the two vocabularies meet.
  */
 
 // The one import this mirror allows itself, and only because the alternative is
 // worse: `isScalarMap` is the SAME predicate the intake validator and the
-// transition gate apply to `campos` (t168), and a second copy of "what a map of
+// transition gate apply to `fields` (t168), and a second copy of "what a map of
 // scalars is" would be a rule that could drift between the log and the check
 // that reads it. `domain/` is pure — no database, no clock — so nothing about
 // this direction costs the owner of the connection anything.
@@ -29,21 +31,21 @@ import { isScalarMap } from '../domain/custom-fields.ts';
 import { isObject } from '../util/is-object.ts';
 
 /** Possible subjects of an event (`envelope.schema.json`). */
-export type EntityType = 'trabalho' | 'sessao' | 'pergunta' | 'lease' | 'grafo_versao';
+export type EntityType = 'job' | 'session' | 'input_request' | 'lease' | 'graph_version';
 
 /** Who caused the event. Parity with flowpilot's `ActorType`. */
-export type ActorType = 'usuario' | 'agente' | 'sistema';
+export type ActorType = 'user' | 'agent' | 'system';
 
 /** The subject of the event — the join key of telemetry with the rest of the database. */
 export interface Entity {
-  tipo: EntityType;
-  /** Integer for `trabalho`/`sessao`/`pergunta`/`lease`; string (hash) for `grafo_versao` (D15). */
+  type: EntityType;
+  /** Integer for `job`/`session`/`input_request`/`lease`; string (hash) for `graph_version` (D15). */
   id: number | string;
 }
 
 /** Who caused the event. */
 export interface Actor {
-  tipo: ActorType;
+  type: ActorType;
   ref: string;
 }
 
@@ -54,13 +56,13 @@ export interface Actor {
  * assigns it, and that is why it never appears in the input.
  */
 export interface EventToRecord {
-  tipo: string;
-  projeto_id: number;
-  execucao_id: number | null;
-  entidade: Entity;
-  ator: Actor;
-  ocorrido_em: string;
-  dados: Record<string, unknown>;
+  type: string;
+  project_id: number;
+  execution_id: number | null;
+  entity: Entity;
+  actor: Actor;
+  occurred_at: string;
+  data: Record<string, unknown>;
 }
 
 /** An event as it exists in the log, already carrying the server's id. */
@@ -86,26 +88,26 @@ export class ValidationError extends Error {
 }
 
 const ENTITY_TYPES: readonly EntityType[] = [
-  'trabalho',
-  'sessao',
-  'pergunta',
+  'job',
+  'session',
+  'input_request',
   'lease',
-  'grafo_versao',
+  'graph_version',
 ];
 
-const ACTOR_TYPES: readonly ActorType[] = ['usuario', 'agente', 'sistema'];
+const ACTOR_TYPES: readonly ActorType[] = ['user', 'agent', 'system'];
 
 const ENVELOPE_FIELDS = [
-  'tipo',
-  'projeto_id',
-  'execucao_id',
-  'entidade',
-  'ator',
-  'ocorrido_em',
-  'dados',
+  'type',
+  'project_id',
+  'execution_id',
+  'entity',
+  'actor',
+  'occurred_at',
+  'data',
 ] as const;
 
-/** How a field of `dados` is checked. */
+/** How a field of `data` is checked. */
 interface FieldRule {
   /** Expected shape of the value. */
   shape: 'string' | 'integer' | 'boolean' | 'string-list' | 'usage' | 'scalar-map';
@@ -115,7 +117,7 @@ interface FieldRule {
   values?: readonly string[];
   /** Floor, for non-negative integers (`timeout_seconds`, tokens). */
   min?: number;
-  /** Minimum number of items, for lists (`campos_alterados` has `minItems: 1`). */
+  /** Minimum number of items, for lists (`changed_fields` has `minItems: 1`). */
   minItems?: number;
   /** Does the list have to have unique items? */
   unique?: boolean;
@@ -143,29 +145,29 @@ const optional = (shape: FieldRule['shape'], extra: Partial<FieldRule> = {}): Fi
  * The types the control plane emits today, in taxonomy order.
  *
  * The rest of the catalogue is left to its owners: `lease.*` belongs to t103
- * (runner and controller) and `grafo_versao.*` to t101 — each enters here
+ * (runner and controller) and `graph_version.*` to t101 — each enters here
  * together with the code that emits it, never before. That is how
- * `trabalho.dependencia_declarada` arrived: with the intake that declares it
+ * `job.dependency_declared` arrived: with the intake that declares it
  * (t122).
  */
 const RULES: Record<string, TypeRule> = {
-  'trabalho.criado': {
-    entity: 'trabalho',
+  'job.created': {
+    entity: 'job',
     fields: {
-      titulo: required('string'),
-      no_entrada_id: required('string'),
+      title: required('string'),
+      entry_node_id: required('string'),
       // Optional since the intake (t122): a job can be born already carrying
       // content. The criteria recorded here are PRELIMINARY — the node that
       // refines is the one that produces the real ones out of the raw request.
-      corpo: optional('string'),
-      criterios_de_aceite: optional('string-list'),
+      body: optional('string'),
+      acceptance_criteria: optional('string-list'),
       // The fields the CLASS declares in its own graph document (t168). The
       // keys are open on purpose: what may appear here is `custom_fields` of
       // the class's version, and freezing a list in this mirror would mean a
       // release of the control plane per problem class.
-      campos: optional('scalar-map'),
+      fields: optional('scalar-map'),
       // The cost triage (t175), and the exact opposite openness decision from
-      // `campos` above: this vocabulary is OURS, not the class's and not the
+      // `fields` above: this vocabulary is OURS, not the class's and not the
       // engine's, so the set closes here. A third value is not new data, it is
       // a mistake by whoever wrote it — the same reasoning `timeout_reason`
       // carries. Absent normalizes to `null` like every optional field of this
@@ -173,53 +175,53 @@ const RULES: Record<string, TypeRule> = {
       tier: optional('string', { values: ['trivial', 'standard'] }),
     },
   },
-  'trabalho.transicao': {
-    entity: 'trabalho',
+  'job.transitioned': {
+    entity: 'job',
     fields: {
-      de_no_id: optional('string'),
-      para_no_id: required('string'),
+      from_node_id: optional('string'),
+      to_node_id: required('string'),
     },
   },
-  'trabalho.bloqueado': {
-    entity: 'trabalho',
-    fields: { motivo: required('string') },
+  'job.blocked': {
+    entity: 'job',
+    fields: { reason: required('string') },
   },
-  'trabalho.desbloqueado': {
-    entity: 'trabalho',
+  'job.unblocked': {
+    entity: 'job',
     fields: {},
   },
-  'trabalho.emendado': {
-    entity: 'trabalho',
+  'job.amended': {
+    entity: 'job',
     fields: {
-      campos_alterados: required('string-list', { minItems: 1, unique: true }),
+      changed_fields: required('string-list', { minItems: 1, unique: true }),
     },
   },
-  'trabalho.dependencia_declarada': {
-    entity: 'trabalho',
+  'job.dependency_declared': {
+    entity: 'job',
     fields: {
-      depende_de_trabalho_id: required('integer'),
+      depends_on_job_id: required('integer'),
     },
   },
   // The graph-declared hook that gave up (t169). It is an incident and not an
-  // outcome — the same reading as `sessao.permissao_negada`: nothing about the
+  // outcome — the same reading as `session.permission_denied`: nothing about the
   // job's traversal changes, and the only reason the type exists is that a hook
   // nobody registered is a hook nobody is polling. Every field is required
   // because a failure that does not say which hook, from which node, to which
   // URL and with which error is not auditable.
-  'trabalho.gancho_falhou': {
-    entity: 'trabalho',
+  'job.hook_failed': {
+    entity: 'job',
     fields: {
-      gancho_id: required('string'),
-      no_id: required('string'),
+      hook_id: required('string'),
+      node_id: required('string'),
       url: required('string'),
-      ultimo_erro: required('string'),
+      last_error: required('string'),
     },
   },
-  'sessao.aberta': {
-    entity: 'sessao',
+  'session.opened': {
+    entity: 'session',
     fields: {
-      trabalho_id: optional('integer'),
-      no_id: optional('string'),
+      job_id: optional('integer'),
+      node_id: optional('string'),
       engine: required('string'),
       engine_session_ref: optional('string'),
       working_dir: required('string'),
@@ -231,23 +233,23 @@ const RULES: Record<string, TypeRule> = {
       silence_seconds: optional('integer', { min: 0 }),
     },
   },
-  'sessao.finalizada': {
-    entity: 'sessao',
+  'session.finished': {
+    entity: 'session',
     fields: {
       status: required('string', {
         values: [
-          'concluida',
-          'falhou',
-          'travada',
-          'tempo_esgotado',
-          'pausada_cota',
-          'retomada_falhou',
+          'completed',
+          'failed',
+          'stuck',
+          'timed_out',
+          'quota_paused',
+          'resume_failed',
         ],
       }),
       exit_code: optional('integer'),
-      uso: optional('usage'),
+      usage: optional('usage'),
       // Which of the two watchdogs stopped the session (t163). A field and not
-      // a seventh `status`: both land on `tempo_esgotado`, and the cause rides
+      // a seventh `status`: both land on `timed_out`, and the cause rides
       // in the payload — the same reasoning that kept quota states out of the
       // adapter's own status vocabulary.
       timeout_reason: optional('string', { values: ['wall_clock', 'silence'] }),
@@ -257,48 +259,48 @@ const RULES: Record<string, TypeRule> = {
       // to `null` below, already says. Open value set, so no `values` here: the
       // identifier is whatever the engine reported, and a closed enum would need
       // a release of this file for every model that ships.
-      modelos: optional('string-list', { minItems: 1 }),
+      models: optional('string-list', { minItems: 1 }),
     },
   },
-  'sessao.permissao_negada': {
-    entity: 'sessao',
+  'session.permission_denied': {
+    entity: 'session',
     fields: {
-      recurso: required('string', { values: ['filesystem', 'rede'] }),
-      ferramenta: required('string'),
-      motivo: required('string'),
+      resource: required('string', { values: ['filesystem', 'network'] }),
+      tool: required('string'),
+      reason: required('string'),
     },
   },
-  'pergunta.criada': {
-    entity: 'pergunta',
+  'input_request.created': {
+    entity: 'input_request',
     fields: {
-      trabalho_id: required('integer'),
-      sessao_id: optional('integer'),
+      job_id: required('integer'),
+      session_id: optional('integer'),
       // The node the owning job was standing on (t167). Optional, and stamped by
       // the repository from the job — the payload is where the fact is audited,
       // not where it is declared.
-      no_id: optional('string'),
-      tipo: required('string', { values: ['pergunta', 'aprovacao'] }),
-      pergunta: required('string'),
-      contexto: optional('string'),
-      opcoes: optional('string-list'),
-      recomendacao: optional('string'),
-      resposta_padrao: optional('string'),
-      auto_aprovavel: required('boolean'),
+      node_id: optional('string'),
+      kind: required('string', { values: ['question', 'approval'] }),
+      question: required('string'),
+      context: optional('string'),
+      options: optional('string-list'),
+      recommendation: optional('string'),
+      default_answer: optional('string'),
+      auto_approvable: required('boolean'),
     },
   },
-  'pergunta.respondida': {
-    entity: 'pergunta',
+  'input_request.answered': {
+    entity: 'input_request',
     fields: {
-      resposta: required('string'),
-      respondido_por: required('string'),
+      answer: required('string'),
+      answered_by: required('string'),
     },
   },
-  'pergunta.auto_resolvida': {
-    entity: 'pergunta',
+  'input_request.auto_resolved': {
+    entity: 'input_request',
     fields: {
-      resposta: required('string'),
-      baseada_em: required('string', {
-        values: ['recomendacao', 'resposta_padrao', 'precedente'],
+      answer: required('string'),
+      based_on: required('string', {
+        values: ['recommendation', 'default_answer', 'precedent'],
       }),
     },
   },
@@ -307,7 +309,7 @@ const RULES: Record<string, TypeRule> = {
 /** The event types the control plane knows how to record today. */
 export const KNOWN_TYPES: readonly string[] = Object.freeze(Object.keys(RULES));
 
-/** Fields of `uso`, all required when `uso` is not null. */
+/** Fields of `usage`, all required when `usage` is not null. */
 const USAGE_FIELDS = [
   'input_tokens',
   'output_tokens',
@@ -320,7 +322,7 @@ const isInteger = (value: unknown): value is number =>
 
 const isAbsent = (value: unknown): boolean => value === undefined || value === null;
 
-/** Validates `dados.uso` (a token totals object, or null). */
+/** Validates `data.usage` (a token totals object, or null). */
 function validateUsage(fieldPath: string, value: unknown, errors: string[]): void {
   if (!isObject(value)) {
     errors.push(`${fieldPath} has to be a token totals object or null`);
@@ -339,7 +341,7 @@ function validateUsage(fieldPath: string, value: unknown, errors: string[]): voi
   }
 }
 
-/** Validates a field of `dados` against its rule. */
+/** Validates a field of `data` against its rule. */
 function validateField(fieldPath: string, rule: FieldRule, value: unknown, errors: string[]): void {
   switch (rule.shape) {
     case 'string':
@@ -373,8 +375,8 @@ function validateField(fieldPath: string, rule: FieldRule, value: unknown, error
       }
       // The same non-empty rule the `'string'` case above applies. None of the
       // JSON schemas declares `minLength` — the rule is this file's own added
-      // contract — and applying it to a scalar `titulo` but not to an item of
-      // `campos_alterados` made the mirror disagree with itself (t157, FR5).
+      // contract — and applying it to a scalar `title` but not to an item of
+      // `changed_fields` made the mirror disagree with itself (t157, FR5).
       if ((value as string[]).some((item) => item.length === 0)) {
         errors.push(`${fieldPath} cannot contain an empty string`);
       }
@@ -406,7 +408,7 @@ function validateField(fieldPath: string, rule: FieldRule, value: unknown, error
 }
 
 /**
- * Validates `dados` against the type's rule and returns the normalized version.
+ * Validates `data` against the type's rule and returns the normalized version.
  *
  * Normalizing means: every field declared by the type appears in the recorded
  * payload, with an explicit `null` when the client did not send it. A log in
@@ -424,66 +426,66 @@ function validateData(
   for (const [name, fieldRule] of Object.entries(rule.fields)) {
     const value = data[name];
     if (isAbsent(value)) {
-      if (fieldRule.required) errors.push(`dados.${name} is required`);
+      if (fieldRule.required) errors.push(`data.${name} is required`);
       else normalized[name] = null;
       continue;
     }
-    validateField(`dados.${name}`, fieldRule, value, errors);
+    validateField(`data.${name}`, fieldRule, value, errors);
     normalized[name] = value;
   }
 
   for (const key of Object.keys(data)) {
     if (!(key in rule.fields) && !isAbsent(data[key])) {
-      errors.push(`dados.${key} does not exist in the contract of "${type}"`);
+      errors.push(`data.${key} does not exist in the contract of "${type}"`);
     }
   }
 
   return normalized;
 }
 
-/** Validates `entidade` against the envelope and against the event type. */
+/** Validates `entity` against the envelope and against the event type. */
 function validateEntity(value: unknown, expected: EntityType | null, errors: string[]): void {
   if (!isObject(value)) {
-    errors.push('entidade has to be an object {tipo, id}');
+    errors.push('entity has to be an object {type, id}');
     return;
   }
-  const type = value.tipo;
+  const type = value.type;
   if (typeof type !== 'string' || !ENTITY_TYPES.includes(type as EntityType)) {
-    errors.push(`entidade.tipo has to be one of: ${ENTITY_TYPES.join(', ')}`);
+    errors.push(`entity.type has to be one of: ${ENTITY_TYPES.join(', ')}`);
   } else if (expected !== null && type !== expected) {
-    errors.push(`entidade.tipo has to be "${expected}" for this event type`);
+    errors.push(`entity.type has to be "${expected}" for this event type`);
   }
 
-  // grafo_versao is the only one whose id is a snapshot hash (D15); the others
+  // graph_version is the only one whose id is a snapshot hash (D15); the others
   // are integers of their own tables.
   const id = value.id;
-  if (type === 'grafo_versao') {
+  if (type === 'graph_version') {
     if (typeof id !== 'string' || id.length === 0) {
-      errors.push('entidade.id of grafo_versao has to be the snapshot hash (a string)');
+      errors.push('entity.id of graph_version has to be the snapshot hash (a string)');
     }
   } else if (!isInteger(id) || id < 1) {
-    errors.push('entidade.id has to be an integer >= 1');
+    errors.push('entity.id has to be an integer >= 1');
   }
 
   for (const key of Object.keys(value)) {
-    if (key !== 'tipo' && key !== 'id') errors.push(`entidade.${key} does not exist in the envelope`);
+    if (key !== 'type' && key !== 'id') errors.push(`entity.${key} does not exist in the envelope`);
   }
 }
 
-/** Validates `ator` against the envelope. */
+/** Validates `actor` against the envelope. */
 function validateActor(value: unknown, errors: string[]): void {
   if (!isObject(value)) {
-    errors.push('ator has to be an object {tipo, ref}');
+    errors.push('actor has to be an object {type, ref}');
     return;
   }
-  if (typeof value.tipo !== 'string' || !ACTOR_TYPES.includes(value.tipo as ActorType)) {
-    errors.push(`ator.tipo has to be one of: ${ACTOR_TYPES.join(', ')}`);
+  if (typeof value.type !== 'string' || !ACTOR_TYPES.includes(value.type as ActorType)) {
+    errors.push(`actor.type has to be one of: ${ACTOR_TYPES.join(', ')}`);
   }
   if (typeof value.ref !== 'string' || value.ref.length === 0) {
-    errors.push('ator.ref has to be a non-empty string');
+    errors.push('actor.ref has to be a non-empty string');
   }
   for (const key of Object.keys(value)) {
-    if (key !== 'tipo' && key !== 'ref') errors.push(`ator.${key} does not exist in the envelope`);
+    if (key !== 'type' && key !== 'ref') errors.push(`actor.${key} does not exist in the envelope`);
   }
 }
 
@@ -511,7 +513,7 @@ export function validateEvent(input: unknown): ValidationResult {
     }
   }
 
-  const type = input.tipo;
+  const type = input.type;
   const rule = typeof type === 'string' ? RULES[type] : undefined;
   if (typeof type !== 'string' || rule === undefined) {
     errors.push(
@@ -519,27 +521,27 @@ export function validateEvent(input: unknown): ValidationResult {
     );
   }
 
-  if (!isInteger(input.projeto_id)) errors.push('projeto_id has to be an integer');
+  if (!isInteger(input.project_id)) errors.push('project_id has to be an integer');
 
-  if (!isAbsent(input.execucao_id) && !isInteger(input.execucao_id)) {
-    errors.push('execucao_id has to be an integer or null');
+  if (!isAbsent(input.execution_id) && !isInteger(input.execution_id)) {
+    errors.push('execution_id has to be an integer or null');
   }
 
-  validateEntity(input.entidade, rule?.entity ?? null, errors);
-  validateActor(input.ator, errors);
+  validateEntity(input.entity, rule?.entity ?? null, errors);
+  validateActor(input.actor, errors);
 
-  const occurredAt = input.ocorrido_em;
+  const occurredAt = input.occurred_at;
   if (typeof occurredAt !== 'string' || Number.isNaN(Date.parse(occurredAt))) {
-    errors.push('ocorrido_em has to be an ISO 8601 instant');
+    errors.push('occurred_at has to be an ISO 8601 instant');
   }
 
-  if (!isObject(input.dados)) {
-    errors.push('dados has to be an object');
+  if (!isObject(input.data)) {
+    errors.push('data has to be an object');
   }
 
   let data: Record<string, unknown> = {};
-  if (rule !== undefined && isObject(input.dados)) {
-    data = validateData(type as string, rule, input.dados, errors);
+  if (rule !== undefined && isObject(input.data)) {
+    data = validateData(type as string, rule, input.data, errors);
   }
 
   if (errors.length > 0) return { valid: false, errors };
@@ -547,13 +549,13 @@ export function validateEvent(input: unknown): ValidationResult {
   return {
     valid: true,
     event: {
-      tipo: type as string,
-      projeto_id: input.projeto_id as number,
-      execucao_id: isAbsent(input.execucao_id) ? null : (input.execucao_id as number),
-      entidade: input.entidade as unknown as Entity,
-      ator: input.ator as unknown as Actor,
-      ocorrido_em: occurredAt as string,
-      dados: data,
+      type: type as string,
+      project_id: input.project_id as number,
+      execution_id: isAbsent(input.execution_id) ? null : (input.execution_id as number),
+      entity: input.entity as unknown as Entity,
+      actor: input.actor as unknown as Actor,
+      occurred_at: occurredAt as string,
+      data,
     },
   };
 }
@@ -561,7 +563,7 @@ export function validateEvent(input: unknown): ValidationResult {
 /**
  * Validates ONLY the payload of a type, without the envelope around it.
  *
- * It exists because when an entity is created the envelope's `entidade.id` is
+ * It exists because when an entity is created the envelope's `entity.id` is
  * only born after the projection insert, and the 400 for "missing required
  * field" (FR3) has to happen BEFORE any write. Whoever creates calls this first
  * and `recordEvent` afterwards — which revalidates the whole envelope, id

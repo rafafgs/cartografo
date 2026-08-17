@@ -385,7 +385,7 @@ topógrafo, não lixo.
 `graph_version` e continua listada no histórico — append-only não tem exceção.
 
 `motivo` é **obrigatório**, espelhando `dados.motivo` do evento
-[`grafo_versao.revertida`](../../especificacoes/eventos/schemas/grafo_versao.revertida.schema.json):
+[`graph_version.reverted`](../../especificacoes/eventos/schemas/graph_version.reverted.schema.json):
 é a evidência que o topógrafo vai cruzar com a telemetria da versão abandonada.
 Reverter sem dizer por quê perde a metade útil do fato.
 
@@ -589,8 +589,8 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   nem entidade/evento de execução finalizada na v1
   ([`routes/executions.ts`](../../packages/core/src/routes/executions.ts)).
   Fechar o experimento é sempre chamada explícita de API (§5).
-- **Emissão de eventos** `grafo_versao.registrada/.aplicada/.revertida` — a
-  tabela `event` que eles pedem já veio com o `t102`, e `grafo_versao` já é um
+- **Emissão de eventos** `graph_version.registered/.applied/.reverted` — a
+  tabela `event` que eles pedem já veio com o `t102`, e `graph_version` já é um
   `entity_type` válido; o que falta é a emissão, que nenhuma ficha aberta
   declara. Enquanto isso, uma versão registrada não deixa rastro no log.
 - **Identidade de quem chama.** A `t124` fechou a autenticação — todas estas

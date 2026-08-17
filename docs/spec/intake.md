@@ -23,7 +23,7 @@ grafo, não move ponteiro, não muda nó nenhum.
 | Fase | Rota | O que grava | O que emite no log |
 |---|---|---|---|
 | Propor | `POST /v1/intake` | Uma linha em `intake_draft` | Nada |
-| Confirmar | `POST /v1/intake/:id/confirmations` | N `job` + M `job_dependency` | N `trabalho.criado` + M `trabalho.dependencia_declarada` |
+| Confirmar | `POST /v1/intake/:id/confirmations` | N `job` + M `job_dependency` | N `job.created` + M `job.dependency_declared` |
 
 O rascunho **não emite evento nenhum** — nem ao nascer, nem ao ser editado, nem
 ao ser descartado. É armazenamento de trabalho em curso, não fato de auditoria:
@@ -103,7 +103,7 @@ forma que um lote real tem.
    pertencem à que vale agora.
 2. **Cria um `job` por item**, todos no `no_inicial` da versão vigente,
    todos com o `graph_version_id` dela e com o `project_id`/`execution_id` do
-   rascunho. Cada criação grava `trabalho.criado`.
+   rascunho. Cada criação grava `job.created`.
 3. **Só então grava as dependências.** Uma aresta só pode ser registrada
    quando as duas pontas já têm id real — `ref` é local ao lote e morre aqui.
 
@@ -146,7 +146,7 @@ CREATE TABLE job_dependency (
 ```
 
 Cada aresta também vira um evento
-[`trabalho.dependencia_declarada`](../../especificacoes/eventos/schemas/trabalho.dependencia_declarada.schema.json),
+[`job.dependency_declared`](../../especificacoes/eventos/schemas/job.dependency_declared.schema.json),
 o 16º tipo do catálogo:
 
 ```json
@@ -158,7 +158,7 @@ aquele de quem ele depende. "Este espera por aquele" é fato de quem espera, e �
 na linha do tempo dele que alguém vai procurar o motivo de não ter andado —
 `GET /v1/jobs/:id/events` do dependente mostra a declaração, o do outro não.
 
-**Declarar não bloqueia.** Nenhum `trabalho.bloqueado` nasce daqui. Exigir a
+**Declarar não bloqueia.** Nenhum `job.blocked` nasce daqui. Exigir a
 ordem — bloquear automaticamente, ordenar despacho, contar WIP por dependência —
 é decisão de outra ficha, e uma bandeira que ninguém sabe baixar seria pior que
 bandeira nenhuma.
@@ -172,7 +172,7 @@ suportado nesta versão.
 ## 5. O trabalho ganhou conteúdo
 
 A migração acrescenta duas colunas a `job` (linhas 33-34), e o contrato do
-evento `trabalho.criado` ganhou os dois campos correspondentes, **opcionais**
+evento `job.created` ganhou os dois campos correspondentes, **opcionais**
 ([`event-validation.ts:143-153`](../../packages/core/src/db/event-validation.ts)):
 
 | Coluna | Tipo | Nota |
@@ -198,7 +198,7 @@ Um trabalho criado à mão por `POST /v1/jobs` continua nascendo só com título
 nesse caso os dois campos chegam ao log como `null` explícito — a regra de
 normalização que esta taxonomia aplica a todo campo opcional desde sempre.
 `PATCH /v1/jobs/:id` continua editando **só** `titulo`: o nó `refinar`
-reescrevendo corpo e critérios via `trabalho.emendado` é ficha própria.
+reescrevendo corpo e critérios via `job.amended` é ficha própria.
 
 ---
 
@@ -245,26 +245,28 @@ exata, `404`, e nada é gravado.
 [`packages/core/test/intake-routes.test.ts`](../../packages/core/test/intake-routes.test.ts):
 o fluxo completo roda contra a classe registrada a partir do bundle de fábrica
 1, e a lista de versões antes e depois é comparada inteira. Rodado também à mão
-contra o grafo de fábrica, sem edição nenhuma no documento:
+contra o grafo de fábrica, sem edição nenhuma no documento — o transcrito
+abaixo foi regravado numa corrida nova em 2026-08-17, contra o banco recriado
+que a D20 pede, e é por isso que ele fala inglês do começo ao fim:
 
 ```
 POST /v1/graphs -> 201
-POST /v1/intake -> 201 status: pendente
+POST /v1/intake -> 201 status: pending
 POST /v1/intake/:id/confirmations -> 201
 trabalhos criados: {"migracao":1,"dominio":2,"rotas":3}
 nós de entrada: refinar, refinar, refinar
-grafo_versao_id dos trabalhos: sha256:5e506c313917c6c4097a84055b842fff5d6e33fb6db429b1fcca2db774206ce5
+graph_version_id dos trabalhos: sha256:36023db054cb9499742b3d44f96142aba9f59faed5a60652064aec592330a37f
 
 === GET /v1/graphs/desenvolvimento-de-software/versions (ANTES e DEPOIS) ===
-{"versoes":[{"id":"sha256:5e506c313917c6c4097a84055b842fff5d6e33fb6db429b1fcca2db774206ce5",
-             "grafo_id":"desenvolvimento-de-software","versao_pai":null,
-             "origem":"manual","proposta_id":null,
-             "criado_em":"2026-08-14T22:05:57.672Z"}]}
+{"versions":[{"id":"sha256:36023db054cb9499742b3d44f96142aba9f59faed5a60652064aec592330a37f",
+              "graph_id":"desenvolvimento-de-software","parent_version":null,
+              "source":"manual","proposal_id":null,
+              "created_at":"2026-08-17T11:12:37.705Z"}]}
 
 mesma lista? true
 
-eventos do trabalho "rotas": trabalho.criado, trabalho.dependencia_declarada
-dados da dependência: {"depende_de_trabalho_id":2}
+eventos do trabalho "rotas": job.created, job.dependency_declared
+data da dependência: {"depends_on_job_id":2}
 ```
 
 Nenhuma rota desta camada chama `registerBaseGraph`, `insertVersion` ou
@@ -286,7 +288,7 @@ aplicada ao intake.
   ordem de despacho e WIP por dependência ficam de fora.
 - **Dependência entre lotes** e sobre trabalho já existente.
 - **Editar corpo/critérios de um trabalho já criado** — é o nó `refinar`, por
-  `trabalho.emendado`, em ficha própria.
+  `job.amended`, em ficha própria.
 - **Tela de revisão e confirmação.** A D11 põe observabilidade e inbox antes de
   tela de edição; aqui entrega-se só a API, no mesmo espírito do inbox de
   propostas.

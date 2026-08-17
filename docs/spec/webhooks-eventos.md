@@ -88,7 +88,7 @@ job.amended
 job.dependency_declared
 ```
 
-`lease.*` e `grafo_versao.*` estão declarados na taxonomia mas ainda não são
+`lease.*` e `graph_version.*` estão declarados na taxonomia mas ainda não são
 gravados por ninguém, então pedi-los é `400` — e não uma assinatura que nunca
 recebe nada, que é o pior dos dois erros.
 

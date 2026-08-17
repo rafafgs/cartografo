@@ -254,7 +254,7 @@ Cada item aqui é escopo declarado, não esquecimento:
   por execução, timeouts. Os tetos são hoje argumento de linha de comando, e a
   nota de aprendizado já nomeia "Políticas" como superfície própria.
 - **Custo em dinheiro.** A lente conta tokens e segundos; preço por token é
-  vocabulário de engine, e o schema de `sessao.finalizada` recusa campo de custo
+  vocabulário de engine, e o schema de `session.finished` recusa campo de custo
   de propósito. Converter é de quem tiver a tabela de preços.
 - **Cruzar com desfecho.** "Este nó é caro" e "este nó é caro **e** falha muito"
   são frases diferentes; a segunda é a lente de fluxo, e o cruzamento das duas é

@@ -27,7 +27,7 @@
 > exatamente a frase pedida. A sessão *trabalhou*. Junto com ela rodou
 > `scripts/spike-two-engine-traversal.mjs` (t141/FR9): um grafo, um trabalho,
 > dois `Controller.tick()`, `redigir` no `claude-code` e `conferir` no
-> `codex`, cada `sessao.aberta` registrando o seu próprio engine e o nó do
+> `codex`, cada `session.opened` registrando o seu próprio engine e o nó do
 > Codex lendo o arquivo que o nó do Claude escreveu.
 >
 > Duas coisas que a rodada credenciada mediu e que não estavam escritas em
@@ -375,7 +375,7 @@ engine permite* — a régua que `notas/2026-08-14-extensao-e-qualidade.md:43-44
 já fixou ("sandbox onde o engine permitir") — e **não** é isolamento de
 processo. Fechar a lacuna de verdade exige sandbox de SO por plataforma
 (`sandbox-exec`, namespace de rede, contêiner), que é mudança de mecanismo e
-ficha própria. Toda tentativa negada vira evento `sessao.permissao_negada` no
+ficha própria. Toda tentativa negada vira evento `session.permission_denied` no
 log: o que o gating não impede, a telemetria pelo menos registra.
 
 **Medido contra a CLI real** (`claude 2.1.233`, roteiro em
@@ -389,7 +389,7 @@ log: o que o gating não impede, a telemetria pelo menos registra.
 - entrada negada **por padrão** (`Bash(curl *)`) → o `Bash` continua
   disponível e a recusa acontece na chamada, com `tool_result` de erro
   (`"Permission to use Bash with command curl … has been denied."`). **É este
-  o caso que produz `sessao.permissao_negada`**, e é a razão de o rastreador
+  o caso que produz `session.permission_denied`**, e é a razão de o rastreador
   casar padrão contra o comando, e não só nome contra nome;
 - a lacuna, confirmada nos dois eixos: `node -e "fetch(…)"` trouxe HTTP 200
   com a rede "fechada", e `printf > arquivo` gravou no workdir com
@@ -446,7 +446,7 @@ com rede aberta para pedir, e por isso ela é recusada em vez de aproximada.
 **A lacuna residual, também aqui.** O sandbox é do SO, então `Bash` não é a
 porta dos fundos que é no outro engine — o buraco de `python -c` e afins está
 fechado por mecanismo, não por lista de nomes. O que **não** existe é
-telemetria: `sessao.permissao_negada` é alimentado por
+telemetria: `session.permission_denied` é alimentado por
 `parse-permission-denial.ts`, que casa nomes de ferramenta do `claude-code`
 contra quadros `tool_use`/`tool_result`. Uma negação de sandbox do Codex é
 sinal de forma completamente diferente (stderr e código de saída do processo,
@@ -975,7 +975,7 @@ caso C2 do kit, que a verifica pelo que o processo recebeu.
    diferentes). A resposta NÃO foi um status novo — ver o parágrafo logo
    abaixo, que rejeitou isso por conta própria — e sim uma causa opcional ao
    lado do status, que morre no log de eventos como
-   `sessao.finalizada.dados.timeout_reason`.
+   `session.finished.data.timeout_reason`.
 
 6. **`SessionSpec.model`, `listModels()`, `EngineModel` e `ModelCatalog`**
    (t166). O segundo crescimento aditivo depois do congelamento em v1, e ele

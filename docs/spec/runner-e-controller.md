@@ -102,7 +102,7 @@ interrompido no meio:
 | `heartbeat_perdido` | `heartbeat_at > granted_at` | Foi renovada ao menos uma vez e então calou. Runner morreu no meio do trabalho. |
 
 Os dois nomes são exatamente os de `dados.motivo` em
-[`lease.expirada.schema.json`](../../especificacoes/eventos/schemas/lease.expirada.schema.json):
+[`lease.expired.schema.json`](../../especificacoes/eventos/schemas/lease.expired.schema.json):
 quando alguém ligar a emissão de eventos, a projeção desta tabela e o evento
 falam a mesma língua, sem tradução — a tabela `event` que eles precisam já
 existe desde o `t102`.
@@ -173,7 +173,7 @@ exceção.
 Um `tick()` é uma passada completa do loop de despacho:
 
 ```
-GET /v1/trabalhos  → filtra bloqueado === false
+GET /v1/jobs → filtra bloqueado === false
         ↓
 para cada candidato, em ordem: POST /v1/leases
         ↓ (recusa por trabalho_ja_leased: tenta o próximo)
@@ -425,7 +425,7 @@ cabe à ficha que ligar os dois lados.
 A divisão de responsabilidade que isso produz é, aliás, a correta:
 
 - **elegibilidade** (o trabalho está bloqueado? em que nó está?) é decidida por
-  `GET /v1/trabalhos`, consultada pelo controller **antes** de pedir a lease;
+  `GET /v1/jobs`, consultada pelo controller **antes** de pedir a lease;
 - **exclusividade e capacidade** são decididas por `POST /v1/leases`.
 
 ---
@@ -434,23 +434,23 @@ A divisão de responsabilidade que isso produz é, aliás, a correta:
 
 Cada item aqui é escopo declarado de outra ticket, não esquecimento:
 
-- **Emissão dos eventos** [`lease.concedida`](../../especificacoes/eventos/schemas/lease.concedida.schema.json)
-  e [`lease.expirada`](../../especificacoes/eventos/schemas/lease.expirada.schema.json) —
+- **Emissão dos eventos** [`lease.granted`](../../especificacoes/eventos/schemas/lease.granted.schema.json)
+  e [`lease.expired`](../../especificacoes/eventos/schemas/lease.expired.schema.json) —
   a tabela `event` de que dependem já existe (`t102`, migração `0003`) e nada
   aqui escreve nela. As colunas já carregam tudo que os dois eventos pedem (`runner_id`, `job_id`, `expires_at`, `expiration_reason`);
   ligar a emissão é mapeamento direto. **Atenção de quem for ligar:** a
-  taxonomia do `t98` tem `lease.concedida` e `lease.expirada`, e nenhum evento
+  taxonomia do `t98` tem `lease.granted` e `lease.expired`, e nenhum evento
   para a liberação — o reducer de referência
   ([`reconstruir-estado.mjs`](../../especificacoes/eventos/reducers/reconstruir-estado.mjs))
   projeta `leases` só com `ativa`/`expirada`. A tabela tem três estados, então
-  ou a taxonomia ganha um `lease.liberada`, ou a projeção por eventos fica
+  ou a taxonomia ganha um `lease.released`, ou a projeção por eventos fica
   cega para o encerramento normal — que é o caso mais comum de todos. A
   decisão é de quem ligar a emissão; esta ficha não mexe na taxonomia.
 - **Abrir sessão de verdade** pelo `EngineAdapter` — `despachar` é callback
   injetado (`t106`/`t109`). **Construído pela `t106`:**
   [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch.ts)
-  é uma implementação desse callback — abre a sessão, grava `sessao.aberta` e
-  `sessao.finalizada`, e transforma um pedido de escalação em pergunta pela
+  é uma implementação desse callback — abre a sessão, grava `session.opened` e
+  `session.finished`, e transforma um pedido de escalação em pergunta pela
   API ([escalacao-humana.md](escalacao-humana.md)). O controller continua sem
   saber que engine existe: nada neste arquivo mudou para isso acontecer, que
   era o ponto da costura. **Fechado pela `t161`:** a instrução do nó vem do

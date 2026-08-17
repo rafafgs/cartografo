@@ -81,7 +81,7 @@ job.amended
 job.dependency_declared
 ```
 
-A taxonomia também declara `lease.*` e `grafo_versao.*`; eles ainda não são
+A taxonomia também declara `lease.*` e `graph_version.*`; eles ainda não são
 gravados por ninguém, então pedi-los aqui é `400` — e não uma conexão aberta
 que nunca entrega nada, que é o pior dos dois erros. Crescer é aditivo: quando
 o control plane passar a gravá-los, eles passam a ser aceitos sem mudança de

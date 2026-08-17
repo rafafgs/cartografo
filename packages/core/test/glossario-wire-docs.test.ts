@@ -145,7 +145,34 @@ function glossaryTerms(): Term[] {
     );
   }
 
-  return found;
+  return [...found, ...wildcards(found)];
+}
+
+/**
+ * The `familia.*` form, derived from the §2.1 rows that share a family.
+ *
+ * Two documents cite a whole family at once — `eventos-stream.md` and
+ * `webhooks-eventos.md` both say which prefixes the stream declares but does
+ * not yet write — and `grafo_versao.*` is as stale as any single row of it
+ * while matching none of them. So the left half of every §2.1 pair becomes a
+ * term of its own, in the one shape a document writes it in: followed by `.*`,
+ * and never bare, or the term `lease` would fire on `0004_runner_lease.sql`.
+ *
+ * A family whose prefix did not change (`lease.concedida` → `lease.granted`)
+ * yields nothing, by the same rule that drops `/runners`.
+ */
+function wildcards(rows: readonly Term[]): Term[] {
+  const families = new Map<string, Term>();
+
+  for (const row of rows) {
+    if (row.section !== '2.1') continue;
+    const term = row.term.slice(0, row.term.indexOf('.'));
+    const english = row.english.slice(0, row.english.indexOf('.'));
+    if (term === '' || term === english) continue;
+    families.set(term, { term: `${term}.*`, english: `${english}.*`, section: row.section });
+  }
+
+  return [...families.values()];
 }
 
 /** Replaces a span with same-length blanks, so line numbers stay honest. */
@@ -329,6 +356,8 @@ test('FR1 — the sweep bites on a Portuguese citation planted in a fixture docu
     '',
     'Responder é `PATCH /v1/perguntas/:id/resposta`, e o schema é',
     '[`lease.concedida`](../../especificacoes/eventos/schemas/lease.concedida.schema.json).',
+    '',
+    'A taxonomia também declara `grafo_versao.*`, que ninguém grava ainda.',
   ].join('\n');
 
   const hits = citationHits(fixture, terms);
@@ -336,7 +365,7 @@ test('FR1 — the sweep bites on a Portuguese citation planted in a fixture docu
 
   assert.deepEqual(
     [...lines].sort(),
-    ['11', '12', '3', '5', '8'],
+    ['11', '12', '14', '3', '5', '8'],
     `the planted citations were not all caught:\n${hits.join('\n')}`,
   );
 });
@@ -355,7 +384,9 @@ test('FR1 — the sweep does NOT bite on the English, nor on prose that only loo
     // Backticked names that merely contain a retired word: an entity type, a
     // migration file, a column, a directory. None of them is a §2.1/§5 row.
     'A entidade é `pergunta` e o ator é `usuario`; a tabela é `input_request`.',
-    'A migração é `0003_trabalho_sessao_evento_pergunta.sql`.',
+    'A migração é `0003_trabalho_sessao_evento_pergunta.sql`, e a lease é `0004_runner_lease.sql`.',
+    // A whole family cited at once, in the two spellings that did not change.
+    'A taxonomia declara `lease.*` e `graph_version.*`, que ninguém grava ainda.',
     'O bundle mora em `grafos-de-fabrica/desenvolvimento-de-software`.',
     'O corpo carrega `job_id` e `depends_on_job_id`, nunca `/trabalhos`… bem, veja abaixo.',
     // A longer flag whose stem is a retired one, and the retired one's English.

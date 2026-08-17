@@ -29,14 +29,14 @@ de um passo manual que alguém possa esquecer de dar.
 
 A fronteira é a de sempre: **só o servidor escreve** ([D1](../../DECISOES.md)).
 O runner lê o trabalho, abre a sessão, e o que ele faz com um pedido de
-escalação é `POST /v1/perguntas` — como qualquer outro cliente da API.
+escalação é `POST /v1/input-requests` — como qualquer outro cliente da API.
 
 ---
 
 ## 2. Perguntar bloqueia, na mesma transação
 
-`POST /v1/perguntas` grava a pergunta, o evento
-[`pergunta.criada`](../../especificacoes/eventos/schemas/pergunta.criada.schema.json)
+`POST /v1/input-requests` grava a pergunta, o evento
+[`input_request.created`](../../especificacoes/eventos/schemas/input_request.created.schema.json)
 **e** levanta a bandeira do trabalho dono, tudo dentro da mesma transação —
 `db.transaction` aninhado vira savepoint no `better-sqlite3`, então ou as três
 coisas acontecem ou nenhuma acontece.
@@ -54,15 +54,15 @@ cruzar duas tabelas.
 perguntou nem o humano que vai responder: quem levantou a bandeira foi o
 wiring. É o único uso da constante `ATOR_ESCALACAO`.
 
-**A rota não mudou de forma.** `POST /v1/perguntas` continua devolvendo só a
-pergunta; quem quer a bandeira lê `GET /v1/trabalhos/:id`. Devolver as duas
+**A rota não mudou de forma.** `POST /v1/input-requests` continua devolvendo
+só a pergunta; quem quer a bandeira lê `GET /v1/jobs/:id`. Devolver as duas
 coisas juntas economizaria uma requisição e custaria um contrato — a resposta
 de criação de pergunta passaria a falar de trabalho.
 
 ### Por que não deixar o runner bloquear
 
 Porque seriam dois donos para uma bandeira só. O runner teria de fazer
-`POST /v1/perguntas` e `POST /v1/trabalhos/:id/bloqueios` em sequência, e todo
+`POST /v1/input-requests` e `POST /v1/jobs/:id/blocks` em sequência, e todo
 processo morto entre as duas chamadas deixaria uma pergunta pendente com o
 trabalho solto — que é exatamente o estado que o ciclo existe para impedir. As
 duas rotas continuam existindo e continuam válidas para bloqueio manual; o que
@@ -72,15 +72,16 @@ não existe é um caminho em que perguntar e bloquear possam se separar.
 
 ## 3. Responder desbloqueia, com o ator de quem respondeu
 
-`PATCH /v1/perguntas/:id/resposta` e `PATCH /v1/perguntas/:id/auto_resolucao`
-gravam a resposta e baixam a bandeira na mesma transação. O evento
-[`trabalho.desbloqueado`](../../especificacoes/eventos/schemas/trabalho.desbloqueado.schema.json)
+`PATCH /v1/input-requests/:id/answer` e
+`PATCH /v1/input-requests/:id/auto-resolution` gravam a resposta e baixam a
+bandeira na mesma transação. O evento
+[`job.unblocked`](../../especificacoes/eventos/schemas/job.unblocked.schema.json)
 carrega o **mesmo ator** do evento de resposta:
 
 | Quem respondeu | Evento da resposta | Ator do desbloqueio |
 |---|---|---|
-| gente | `pergunta.respondida` | `usuario/<respondido_por>` |
-| portão automático | `pergunta.auto_resolvida` | `sistema/portao-auto-aprovacao` |
+| gente | `input_request.answered` | `usuario/<respondido_por>` |
+| portão automático | `input_request.auto_resolved` | `sistema/portao-auto-aprovacao` |
 
 Isto não é detalhe de log. A escada de segurança da evolução
 ([README](../../README.md), princípio 5) inteira depende de conseguir responder
@@ -166,11 +167,12 @@ demonstra: sessão 1 pergunta e não cria nada, sessão 2 cria o arquivo com o
 nome que a pessoa escolheu.
 
 **De onde sai cada metade:** a ORDEM das perguntas sai da linha do tempo do
-trabalho (`GET /v1/trabalhos/:id/eventos` — o log é a única ordenação total que
-existe), e a RESPOSTA sai da projeção (`GET /v1/perguntas?status=respondida`).
-Não é redundância: `pergunta.respondida` não carrega `trabalho_id` no payload,
-então a linha do tempo do trabalho estruturalmente não a enxerga
-([`eventos.ts`](../../packages/core/src/db/eventos.ts), `FiltroDeEventos`).
+trabalho (`GET /v1/jobs/:id/events` — o log é a única ordenação total que
+existe), e a RESPOSTA sai da projeção
+(`GET /v1/input-requests?status=answered`). Não é redundância:
+`input_request.answered` não carrega `job_id` no payload, então a linha do
+tempo do trabalho estruturalmente não a enxerga
+([`events.ts`](../../packages/core/src/db/events.ts), `EventFilter`).
 Quem for ler essa linha do tempo esperando ver respostas vai se surpreender —
 por isso está escrito aqui.
 
@@ -246,7 +248,7 @@ tipo "este nó para de chamar gente".
 `input_request` ganhou a coluna `node_id`, carimbada pelo servidor a partir do
 `current_node_id` do trabalho dono — nunca vinda do corpo do pedido, a mesma
 fronteira de confiança que `project_id` e `execution_id` já tinham. O evento
-`pergunta.criada` carrega o mesmo campo, e
+`input_request.created` carrega o mesmo campo, e
 `GET /v1/executions/:id/metrics-by-version` devolve `input_requests_by_node` ao lado
 das métricas por versão.
 
@@ -266,7 +268,7 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   A `t167` não a construiu: o que ela deixou pronto é o **fato** que esse portão
   vai precisar ler — a política do nó, no snapshot do grafo, e o `node_id` na
   própria pergunta.
-- **Atualizar `engine_session_ref` depois da abertura.** `sessao.aberta` é
+- **Atualizar `engine_session_ref` depois da abertura.** `session.opened` é
   gravado assim que a sessão sobe, e o ref que o engine revela no primeiro
   quadro chega depois disso — não existe endpoint de PATCH para preenchê-lo.
   Na prática o campo fica `null`, e `null` aqui significa "o engine ainda não

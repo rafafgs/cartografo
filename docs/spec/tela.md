@@ -146,7 +146,7 @@ Quatro regras fecham a definição:
    O campo vem de `GET /v1/jobs/:id` e responde a uma pergunta que a tela não
    teria como responder sozinha: o nó atual do trabalho está entre os
    `nos_finais` da versão de grafo dele (e ele não está bloqueado). É o único
-   sinal terminal que este sistema tem — não existe evento `trabalho.concluido`
+   sinal terminal que este sistema tem — não existe evento `job.completed`
    na taxonomia, e `nos_finais` mora no snapshot do grafo, longe de qualquer
    resposta que a tela leia. Sobre esse campo a reconstrução ainda exige **nada
    aberto e nada bloqueado**: uma sessão aberta ou uma pergunta pendente
@@ -155,7 +155,7 @@ Quatro regras fecham a definição:
 
    Até o `t152` a regra era só "nada aberto e sem bloqueio", porque campo
    terminal não havia. Ela dava por **concluído** todo trabalho recém-criado:
-   com um único `trabalho.criado` no log, nada está aberto porque nada começou.
+   com um único `job.created` no log, nada está aberto porque nada começou.
    Um trabalho parado entre duas sessões caía na mesma armadilha — justamente
    a espera que esta linha do tempo existe para tornar visível. Um trabalho
    bloqueado e parado, esse, continua acumulando fila, em aberto; é exatamente
@@ -168,8 +168,8 @@ Quatro regras fecham a definição:
 ### Por que três fontes, e não uma
 
 Porque `GET /v1/jobs/:id/events` **exclui de propósito**
-`sessao.finalizada`, `pergunta.respondida` e `pergunta.auto_resolvida`: os
-payloads desses eventos não carregam `trabalho_id` — o vínculo foi declarado na
+`session.finished`, `input_request.answered` e `input_request.auto_resolved`:
+os payloads desses eventos não carregam `job_id` — o vínculo foi declarado na
 abertura, e repeti-lo seria dado duplicado no log
 ([`packages/core/src/db/events.ts`](../../packages/core/src/db/events.ts)).
 "Quem quer o fim da sessão pergunta pela sessão", diz o comentário de lá. Esta
@@ -177,7 +177,7 @@ tela é o primeiro consumidor a fazer essa pergunta, e por isso é esta ficha qu
 abriu por onde fazê-la (§4).
 
 O cabeçalho da página vem de uma quarta leitura, `GET /v1/jobs/:id`, e não
-do log: `trabalho.emendado` grava só o **nome** do campo alterado, de modo que
+do log: `job.amended` grava só o **nome** do campo alterado, de modo que
 reconstruir o título a partir dos eventos daria o título antigo.
 
 ---
@@ -195,13 +195,13 @@ submit.
 Duas escolhas de fronteira:
 
 - **Resposta em branco é recusada pela tela** (400), antes da rede. O schema de
-  `pergunta.respondida` aceita string vazia; gravar um fato sem conteúdo
+  `input_request.answered` aceita string vazia; gravar um fato sem conteúdo
   poluiria a auditoria com uma decisão que não decide nada.
 - **`respondido_por` cai em `"tela"`** quando o campo vem vazio. A `t124`
   autenticou a API, mas a tela carrega UMA credencial de serviço e não pede
   nenhuma ao navegador: o token prova posse, não pessoa. Registrar honestamente a
   porta por onde a resposta entrou segue sendo tudo o que o sistema de fato sabe;
-  inventar um usuário seria pior, porque `pergunta.respondida` é evento de
+  inventar um usuário seria pior, porque `input_request.answered` é evento de
   auditoria.
 
 O campo de resposta tem `<label>` visível amarrado ao `<textarea>` por

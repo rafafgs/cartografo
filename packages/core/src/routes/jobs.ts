@@ -22,6 +22,7 @@ import { integerFromQuery } from '../repositories/common.ts';
 import { getVersion } from '../repositories/graphs.ts';
 import { listInputRequests } from '../repositories/input-request.ts';
 import {
+  GraphVersionNotReadyError,
   blockJob,
   getJob,
   createJob,
@@ -38,6 +39,7 @@ import {
 import { listSessions } from '../repositories/session.ts';
 import {
   withValidation,
+  refusal,
   routeId,
   notFound,
   ERROR_RESPONSE_SCHEMA,
@@ -45,18 +47,22 @@ import {
 } from './common.ts';
 
 /**
- * Contract of `POST /jobs` in the public document (t171, FR4).
+ * Contract of `POST /jobs` in the public document (t171, FR4; t283).
  *
- * The two statuses are the ones this handler already answers, and nothing here
- * changes either of them: the body schema is deliberately open so ajv refuses
- * nothing `createJob` accepts today, and `withValidation` stays the only judge
- * of a body — it is what turns a `ValidationError` into the `400` below.
+ * The body schema is deliberately open so ajv refuses nothing `createJob`
+ * accepts today, and `withValidation` stays the only judge of a BODY — it is
+ * what turns a `ValidationError` into the `400`. The `409` is not a body
+ * verdict at all: it is the state of the graph version the body names, which is
+ * why it is caught around `withValidation` rather than inside it.
  */
 const CREATE_JOB_SCHEMA = {
   body: OPEN_OBJECT_SCHEMA,
   response: {
     201: OPEN_OBJECT_SCHEMA,
     400: ERROR_RESPONSE_SCHEMA,
+    // t283: the body was fine and the version it names exists — what refuses is
+    // that version's contract state, which is a conflict and not a bad request.
+    409: ERROR_RESPONSE_SCHEMA,
   },
 } as const;
 
@@ -129,13 +135,25 @@ function nodeInputOf(db: Database, id: number): Record<string, unknown> | null {
  * @param db Open database.
  */
 export function registerJobs(app: FastifyInstance, db: Database): void {
-  app.post('/jobs', { schema: CREATE_JOB_SCHEMA }, async (request, reply) =>
-    withValidation(reply, () => {
-      const job = createJob(db, (request.body ?? {}) as Record<string, unknown>);
-      reply.code(201);
-      return toWireJob(job);
-    }),
-  );
+  app.post('/jobs', { schema: CREATE_JOB_SCHEMA }, async (request, reply) => {
+    try {
+      return await withValidation(reply, () => {
+        const job = createJob(db, (request.body ?? {}) as Record<string, unknown>);
+        reply.code(201);
+        return toWireJob(job);
+      });
+    } catch (error) {
+      // `withValidation` re-throws anything that is not a `ValidationError`, and
+      // correctly so — this one is not a verdict about the body (t283). The
+      // report rides along as sibling context, because "why is it not checked"
+      // is the actionable half of the refusal: it names the pins to register.
+      if (!(error instanceof GraphVersionNotReadyError)) throw error;
+      return refusal(reply, 409, error.code, error.message, {
+        graph_version_id: error.graphVersionId,
+        contracts: error.contracts,
+      });
+    }
+  });
 
   app.get('/jobs', async (request, reply) =>
     withValidation(reply, () => {

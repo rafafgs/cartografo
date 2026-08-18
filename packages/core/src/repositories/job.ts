@@ -27,12 +27,13 @@ import {
   type Event,
 } from '../db/event-validation.ts';
 import type { ProjectedJob } from '../domain/context.ts';
+import type { ContractProblem, ContractsState } from '../domain/graph.ts';
 import {
   isScalarMap,
   missingRequiredFields,
   type ScalarMap,
 } from '../domain/custom-fields.ts';
-import { getVersion } from './graphs.ts';
+import { getVersion, getVersionSummary } from './graphs.ts';
 import { enqueueHookDeliveries, type ClockOptions } from './hooks.ts';
 import {
   API_ACTOR,
@@ -657,6 +658,50 @@ export function announceFinishedExecution(
   });
 }
 
+/**
+ * The version this job would run against is not in a state that may run (t283).
+ *
+ * Not a `ValidationError`: the request is well formed and every field of it is
+ * legal. What refuses it is the STATE of a resource it references — the same
+ * reading behind `class_already_registered` and `graph_without_current_version`
+ * in `routes/graphs.ts`, and the reason the route answers `409` and not `400`.
+ *
+ * The two codes are one distinction and it matters to whoever has to fix the
+ * call: `graph_version_unchecked` says the check never ran, and the way out is
+ * registering the manifests the report names — after which the version moves on
+ * its own. `graph_version_contracts_failed` says it ran and refused, and the way
+ * out is a new version of the graph.
+ */
+export class GraphVersionNotReadyError extends Error {
+  /** Stable, machine-readable code — it is what the route publishes as `error`. */
+  readonly code: 'graph_version_unchecked' | 'graph_version_contracts_failed';
+  /** The version that refused the job. */
+  readonly graphVersionId: string;
+  /** Its stored state and report, as context for the refusal. */
+  readonly contracts: { state: ContractsState; problems: ContractProblem[] };
+
+  constructor(
+    graphVersionId: string,
+    contracts: { state: ContractsState; problems: ContractProblem[] },
+  ) {
+    super(
+      contracts.state === 'unchecked'
+        ? `graph version ${graphVersionId} was never contract-checked: its skill pins do not all ` +
+            'resolve in the registry, so no job may run against it (register the missing ' +
+            'manifests and the version is re-checked on its own)'
+        : `graph version ${graphVersionId} failed the contract check: a node requires input no ` +
+            'path into it supplies, so no job may run against it',
+    );
+    this.name = 'GraphVersionNotReadyError';
+    this.code =
+      contracts.state === 'unchecked'
+        ? 'graph_version_unchecked'
+        : 'graph_version_contracts_failed';
+    this.graphVersionId = graphVersionId;
+    this.contracts = contracts;
+  }
+}
+
 /** Body of `POST /v1/jobs`. */
 export interface CreateJobInput {
   title?: unknown;
@@ -696,10 +741,25 @@ export interface CreateJobInput {
  * none for `entry_node_id`, which is free text here for the same reason. The
  * gate lives where the graph is known — the transition route.
  *
+ * ## The one thing a named version is now checked for (t283)
+ *
+ * A `graph_version_id` that RESOLVES has to be `checked`. This is the single
+ * enforcement point of the ficha, and it is here rather than on the route
+ * because this function is the only writer of a job row: intake, the CLI and
+ * whatever comes next inherit the gate by calling it.
+ *
+ * What is unchanged is everything the paragraph above says. No
+ * `graph_version_id` at all, or one that resolves to nothing, is still the
+ * ordinary loose-text case — a job may cite a version this database never saw,
+ * and inventing a refusal for it would break the manual and imported flows for
+ * a fact the control plane cannot check anyway.
+ *
  * @param db Open handle.
  * @param input Request body.
  * @returns The created job.
  * @throws {ValidationError} When a required field is missing.
+ * @throws {GraphVersionNotReadyError} When the named version resolves and its
+ *   contracts are not `checked` (t283).
  */
 export function createJob(db: Database, input: CreateJobInput): Job {
   // Validate BEFORE opening the transaction: an invalid request must not even
@@ -722,6 +782,21 @@ export function createJob(db: Database, input: CreateJobInput): Job {
   // Already normalized by `requireValidData`: absent came back as an explicit
   // `null`, and anything outside the two values threw before this line.
   const tier = data.tier as Job['tier'];
+
+  // Before the transaction, like the validation above it: a job refused for the
+  // state of its version must not consume an id from the sequence either.
+  if (graphVersionId !== null) {
+    // The SUMMARY and not `getVersion`: what the gate reads is a status column,
+    // and the whole-version read would parse a graph document — tens of
+    // kilobytes for the factory bundles — on every job created.
+    const version = getVersionSummary(db, graphVersionId);
+    if (version !== undefined && version.contracts_state !== 'checked') {
+      throw new GraphVersionNotReadyError(graphVersionId, {
+        state: version.contracts_state,
+        problems: version.contracts_report,
+      });
+    }
+  }
 
   const create = db.transaction((): Job => {
     const timestamp = now();

@@ -195,6 +195,9 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     models: null,
     output: null,
     output_schema_error: null,
+    // Nothing was reported, so there was nothing to refuse: the verdict the
+    // runner reads is the vacuous `true`, present on every close (t268).
+    output_accepted: true,
   });
 
   const withoutUsageEvents = getEventsByEntity(ctx.db, 'session', withoutUsage.id);
@@ -208,6 +211,9 @@ test('AT9 — PATCH /v1/sessions/:id/finish closes the session; absent usage is 
     models: null,
     output: null,
     output_schema_error: null,
+    // Nothing was reported, so there was nothing to refuse: the verdict the
+    // runner reads is the vacuous `true`, present on every close (t268).
+    output_accepted: true,
   });
 });
 
@@ -250,6 +256,9 @@ test('t265 AT4 — PATCH /finish records the refusal kind and category, verbatim
     models: null,
     output: null,
     output_schema_error: null,
+    // Nothing was reported, so there was nothing to refuse: the verdict the
+    // runner reads is the vacuous `true`, present on every close (t268).
+    output_accepted: true,
   });
 
   // The kind is a closed set of one: a value nobody declared is a mistake by
@@ -901,6 +910,9 @@ test('t159 AT5 — the transcript stays OUT of the session.finished event', asyn
     models: null,
     output: null,
     output_schema_error: null,
+    // Nothing was reported, so there was nothing to refuse: the verdict the
+    // runner reads is the vacuous `true`, present on every close (t268).
+    output_accepted: true,
   });
   assert.ok(
     !JSON.stringify(events[1]).includes('transcript'),
@@ -1084,6 +1096,9 @@ test('t172 — models round-trips through the projection; absent reads null, nev
     models: MODELS,
     output: null,
     output_schema_error: null,
+    // Nothing was reported, so there was nothing to refuse: the verdict the
+    // runner reads is the vacuous `true`, present on every close (t268).
+    output_accepted: true,
   });
   assert.deepEqual(
     getEventsByEntity(ctx.db, 'session', silent.id)[1].data.models,
@@ -1310,6 +1325,21 @@ interface SessionWithOutput extends Session {
   output: Record<string, unknown> | null;
 }
 
+/**
+ * What `PATCH /v1/sessions/:id/finish` answers: the projection PLUS the verdict
+ * on the report it was just handed (t268).
+ *
+ * A type of its own and not two more optional keys on the one above, because the
+ * two surfaces are deliberately different: this response is the ONE place the
+ * verdict exists, and it exists there because the runner has to decide, right
+ * then, whether the job may move. `GET /v1/sessions*` still answers the enduring
+ * projection, which has never been able to say whether a report was refused.
+ */
+interface FinishedSession extends SessionWithOutput {
+  output_accepted: boolean;
+  output_schema_error?: string[];
+}
+
 /** Canonical JSON, key-sorted at every depth — the hash's own ordering. */
 function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
@@ -1444,7 +1474,7 @@ test('t253 AT1 — an output matching the node\'s skill schema is stored and rou
   });
   const session = await openNodeSession(ctx, job.id);
 
-  const finished = await request<SessionWithOutput>(
+  const finished = await request<FinishedSession>(
     ctx,
     'PATCH',
     `/v1/sessions/${session.id}/finish`,
@@ -1452,6 +1482,11 @@ test('t253 AT1 — an output matching the node\'s skill schema is stored and rou
   );
   assert.equal(finished.status, 200);
   assert.deepEqual(finished.body.output, { texto: 'a nota redigida' });
+  assert.equal(
+    finished.body.output_accepted,
+    true,
+    'the report matched, and the one response the runner reads says so (t268)',
+  );
 
   const [stored] = await readSessions(ctx, job.id);
   assert.deepEqual(stored.output, { texto: 'a nota redigida' }, 'the column round-trips');
@@ -1482,7 +1517,7 @@ test('t253 AT2 — an output that does NOT match still closes the session', asyn
   });
   const session = await openNodeSession(ctx, job.id);
 
-  const finished = await request<SessionWithOutput>(
+  const finished = await request<FinishedSession>(
     ctx,
     'PATCH',
     `/v1/sessions/${session.id}/finish`,
@@ -1525,15 +1560,67 @@ test('t253 AT2 — an output that does NOT match still closes the session', asyn
   );
 
   // Internal telemetry, not a published field: whoever reads a session gets the
-  // projection `toWireSession` builds, and that one has no such key.
+  // projection `toWireSession` builds, and that one has no such key — neither of
+  // them, and t268 kept it that way on every route but one.
   assert.equal(
     Object.hasOwn(stored as unknown as Record<string, unknown>, 'output_schema_error'),
     false,
     'output_schema_error is not part of the session on the wire',
   );
   assert.equal(
+    Object.hasOwn(stored as unknown as Record<string, unknown>, 'output_accepted'),
+    false,
+    'nor is the verdict: a session still cannot answer "was my report refused" after the fact',
+  );
+
+  // ...and the one exception, which is the whole of t268: the response to the
+  // very call that refused it answers WHETHER it was refused and WHY, because
+  // that is what the runner has to know before it decides to move the job.
+  assert.equal(finished.body.output_accepted, false);
+  assert.deepEqual(finished.body.output_schema_error, [
+    "output must have required property 'texto'",
+    'output must NOT have additional properties',
+  ]);
+});
+
+/**
+ * Nothing reported is not a refusal (t268, FR1).
+ *
+ * The third case of the verdict, and the one that decides the default: a node
+ * that pins a skill with an `output` schema and prints no report at all is
+ * ordinary — every session before t259 looked like this — so the check is
+ * skipped entirely and there is nothing to refuse. Reading that absence as
+ * `false` would stop the job of every node that does not report.
+ */
+test('t268 AT — a session that reported nothing at all is accepted, vacuously', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const versionId = await registerGraphPinningNoteSkill(ctx);
+  const job = await createJob(ctx, {
+    title: 'sem relato nenhum',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  const session = await openNodeSession(ctx, job.id);
+
+  const finished = await request<FinishedSession>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    { status: 'completed', exit_code: 0 },
+  );
+  assert.equal(finished.status, 200);
+  assert.equal(finished.body.output, null, 'nothing was reported, so nothing is stored');
+  assert.equal(
+    finished.body.output_accepted,
+    true,
+    'nothing was reported, so nothing was refused — and the job keeps moving',
+  );
+  assert.equal(
     Object.hasOwn(finished.body as unknown as Record<string, unknown>, 'output_schema_error'),
     false,
+    'there is no reason to carry: the key rides on the refusal and nowhere else',
   );
 });
 

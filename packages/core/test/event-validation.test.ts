@@ -617,3 +617,39 @@ test('t253 FR4 — output_schema_error is the list of reasons, and never empty',
     'output_schema_error',
   );
 });
+
+/**
+ * The verdict the runner reads to decide whether the job may move (t268, FR3).
+ *
+ * A boolean and not a second list beside `output_schema_error` above: what the
+ * dispatch has to know synchronously is only WHETHER the report was taken, and
+ * the reasons it was not are already carried, whole, by the field next door.
+ * Optional like every other one, so an event written before this ficha still
+ * validates — but `finishSession` never leaves it unset, the same discipline
+ * `output_schema_error` keeps on the path that raises it.
+ */
+test('t268 FR3 — output_accepted is a boolean, and false is a measurement', () => {
+  assert.equal(
+    requireValidData('session.finished', { status: 'completed', output_accepted: true })
+      .output_accepted,
+    true,
+  );
+  assert.equal(
+    requireValidData('session.finished', {
+      status: 'completed',
+      output: null,
+      output_accepted: false,
+      output_schema_error: ['output must have required property texto'],
+    }).output_accepted,
+    false,
+    'false is the refusal itself, and it may never be read as an absence',
+  );
+  assert.equal(
+    requireValidData('session.finished', { status: 'completed' }).output_accepted,
+    null,
+    'nothing was set: the absence normalizes to null like every other optional',
+  );
+  for (const value of ['sim', 1]) {
+    refuses('session.finished', { status: 'completed', output_accepted: value }, 'output_accepted');
+  }
+});

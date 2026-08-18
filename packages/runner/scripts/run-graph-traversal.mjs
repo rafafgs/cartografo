@@ -244,7 +244,7 @@ async function main() {
   // The control plane is somebody else's process. Reaching it before spending a
   // single session is the difference between "it is not running" and "the third
   // node died for an unrelated reason".
-  const { grafo_versao: version } = await api(
+  const { graph_version: version } = await api(
     url,
     token,
     'GET',
@@ -256,7 +256,7 @@ async function main() {
       die(`node "${node.id}" is not in version ${plan.grafo_versao_id}: ${[...known].join(', ')}`);
     }
   }
-  log(`version ${version.id} of graph "${version.grafo_id}" — ${known.size} node(s)`);
+  log(`version ${version.id} of graph "${version.graph_id}" — ${known.size} node(s)`);
 
   const claudeAdapter = new ClaudeCodeAdapter();
   const needsCodex = plan.nos.some((node) => node.engine === 'codex');
@@ -297,7 +297,7 @@ async function main() {
   if (released.length > 0) {
     die(
       `the control plane has ${released.length} released job(s) — ` +
-        `${released.map((job) => `#${job.id} on "${job.no_atual}"`).join(', ')}. ` +
+        `${released.map((job) => `#${job.id} on "${job.current_node_id}"`).join(', ')}. ` +
         'A tick would lease one of THEM instead of this crossing. Block them ' +
         '(POST /v1/jobs/:id/blocks) or finish them first',
     );
@@ -319,7 +319,7 @@ async function main() {
     },
     201,
   );
-  log(`job ${job.id} created on node "${job.no_atual}" (execution ${plan.execucao_id})`);
+  log(`job ${job.id} created on node "${job.current_node_id}" (execution ${plan.execucao_id})`);
 
   const engines = {
     [DEFAULT_ENGINE]: { adapter: claudeAdapter, decodeSessionText: decodeClaudeCodeSessionText },
@@ -352,40 +352,40 @@ async function main() {
   const walked = [];
   for (let attempt = 0; attempt < maxTicks; attempt += 1) {
     const current = await api(url, token, 'GET', `/v1/jobs/${job.id}`);
-    if (current.concluido) {
-      log(`the work arrived at "${current.no_atual}" and is no longer a candidate`);
+    if (current.completed) {
+      log(`the work arrived at "${current.current_node_id}" and is no longer a candidate`);
       break;
     }
-    if (current.bloqueado) {
+    if (current.blocked) {
       // A question is the one thing a crossing legitimately stops for, and
       // answering it is a person's job — not this driver's.
-      const { perguntas: questions } = await api(
+      const { input_requests: questions } = await api(
         url,
         token,
         'GET',
-        '/v1/input-requests?status=pendente',
+        '/v1/input-requests?status=pending',
       );
-      const pending = questions.filter((question) => question.trabalho_id === job.id);
+      const pending = questions.filter((question) => question.job_id === job.id);
       die(
         `the work is blocked on ${pending.length} pending question(s) and needs a person: ` +
-          `${pending.map((question) => `#${question.id} "${question.pergunta}"`).join(' | ')}`,
+          `${pending.map((question) => `#${question.id} "${question.question}"`).join(' | ')}`,
       );
     }
 
-    log(`session ${walked.length + 1}: real session on "${current.no_atual}"...`);
+    log(`session ${walked.length + 1}: real session on "${current.current_node_id}"...`);
     const started = Date.now();
     const dispatched = await controller.tick();
-    if (dispatched === null) die(`the tick on "${current.no_atual}" dispatched nothing`);
+    if (dispatched === null) die(`the tick on "${current.current_node_id}" dispatched nothing`);
     if (dispatched.jobId !== job.id) {
       // Belt to the braces of the released-jobs check above: a job released BY
       // somebody else mid-crossing would land here, and one wrong session is
       // worth stopping for — the round's telemetry is only worth anything if
       // every session in it belongs to the same crossing.
-      die(`the tick on "${current.no_atual}" leased job ${dispatched.jobId}, not ${job.id}`);
+      die(`the tick on "${current.current_node_id}" leased job ${dispatched.jobId}, not ${job.id}`);
     }
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
     log(`  dispatched job ${dispatched.jobId} in ${seconds}s`);
-    walked.push({ node: current.no_atual, seconds });
+    walked.push({ node: current.current_node_id, seconds });
   }
 
   const expected = plan.nos.map((node) => node.id);
@@ -405,20 +405,20 @@ async function main() {
   });
 
   // The evidence is read back from the control plane, never asserted from here.
-  const { eventos: events } = await api(
+  const { events } = await api(
     url,
     token,
     'GET',
     `/v1/executions/${plan.execucao_id}/events`,
   );
-  const { metricas: byVersion } = await api(
+  const { metrics: byVersion } = await api(
     url,
     token,
     'GET',
     `/v1/executions/${plan.execucao_id}/metrics-by-version`,
   );
 
-  const jsonl = join(root, 'eventos.jsonl');
+  const jsonl = join(root, 'events.jsonl');
   writeFileSync(jsonl, `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
 
   console.log('\n===== traversal =====');
@@ -431,9 +431,9 @@ async function main() {
   console.log(`workdir:        ${repo}`);
   console.log('=====================\n');
 
-  const orphan = byVersion.find((row) => row.grafo_versao_id === null);
+  const orphan = byVersion.find((row) => row.graph_version_id === null);
   if (orphan !== undefined) {
-    die(`${orphan.trabalhos} job(s) of this execution declared no version — the surveyor refuses that`);
+    die(`${orphan.jobs} job(s) of this execution declared no version — the surveyor refuses that`);
   }
   log('traversal OK — the whole round is joinable to a graph version');
 }

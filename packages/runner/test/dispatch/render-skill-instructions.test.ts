@@ -868,9 +868,10 @@ test('AT18 — the bets-assimetricas manifests resolve against the crossing fixt
   });
 
   // The seventh node is not in the fixture, and the reason is worth pinning:
-  // two of its four placeholders are fields the WIRING produces (which nodes
-  // ran, and when the crossing was recorded), and the t116 fixture models the
-  // contract chaining between nodes, not the runner around them.
+  // two of its four placeholders are fields the CONTROL PLANE produces (which
+  // nodes ran, and when the job arrived where it is standing — `input.traversal`
+  // since t270), and the t116 fixture models the contract chaining between
+  // nodes, not the projection around them.
   await parent.test('registro-monitoramento → registrar-travessia, against a literal input', async () => {
     const manifest = factoryManifest('registrar-travessia');
     const input: Record<string, unknown> = {
@@ -878,15 +879,17 @@ test('AT18 — the bets-assimetricas manifests resolve against the crossing fixt
         titulo: 'Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário',
         ativo: 'NVLR3',
       },
-      nos_executados: [
-        'triagem',
-        'coleta-fundamentos',
-        'analise-assimetria',
-        'red-team',
-        'dimensionamento-risco',
-        'decisao',
-      ],
-      data_de_registro: '2026-08-16',
+      traversal: {
+        nodes_visited: [
+          'triagem',
+          'coleta-fundamentos',
+          'analise-assimetria',
+          'red-team',
+          'dimensionamento-risco',
+          'decisao',
+        ],
+        entered_at: '2026-08-16T19:04:11.802Z',
+      },
     };
 
     const rendered = await renderSkillInstructions(
@@ -897,8 +900,12 @@ test('AT18 — the bets-assimetricas manifests resolve against the crossing fixt
 
     assert.ok(rendered !== null);
     assert.ok(!rendered.instructions.includes('{{input.'));
-    assert.ok(rendered.instructions.includes(JSON.stringify(input.nos_executados)));
-    assert.ok(rendered.instructions.includes('2026-08-16'));
+    const traversal = input.traversal as Record<string, unknown>;
+    assert.ok(rendered.instructions.includes(JSON.stringify(traversal.nodes_visited)));
+    assert.ok(
+      rendered.instructions.includes('2026-08-16T19:04:11.802Z'),
+      'the instant goes in whole; the manifest tells the session to slice the date off it',
+    );
 
     // And the claim that made it a separate case: strip the two wiring fields
     // and it is exactly those two that no thesis fixture could have supplied.
@@ -912,7 +919,7 @@ test('AT18 — the bets-assimetricas manifests resolve against the crossing fixt
         ),
       (error: unknown) => {
         assert.ok(error instanceof UnresolvedPlaceholderError, String(error));
-        assert.deepEqual(error.paths, ['nos_executados', 'data_de_registro']);
+        assert.deepEqual(error.paths, ['traversal.nodes_visited', 'traversal.entered_at']);
         return true;
       },
     );

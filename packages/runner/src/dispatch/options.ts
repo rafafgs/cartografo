@@ -227,6 +227,30 @@ export interface ClaudeCodeDispatchOptions {
    * plane in the way.
    */
   resolveInput?: (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>>;
+  /**
+   * What only THIS MACHINE knows, merged over the projection (t270).
+   *
+   * The second half of the same object, and the reason it is a second seam and
+   * not a widening of the first: `resolveInput` reads the control plane, and
+   * the control plane cannot answer either of the two questions this one does.
+   * `input.banco_de_testes.caminho` is a filesystem path — it names a directory
+   * on one machine, and a graph version carrying it would be wrong for every
+   * other runner — and `input.referencia.commit` is a live commit, stale the
+   * moment anything stores it (D1). Built by
+   * `createExecutorEnvironmentResolver` (`resolve-executor-environment.ts`) out
+   * of what the operator configured at boot.
+   *
+   * **The keys win on collision.** `dispatch.ts` merges
+   * `{...projected, ...executorEnv}`, so a projection that happened to carry
+   * the same key loses — it would be carrying a stale copy of local ground
+   * truth, which is the one thing this seam exists to be authoritative about.
+   *
+   * Absent contributes `{}` and changes nothing, which is the ordinary case: a
+   * bets runner has no bench, and neither does a deployment that has not set one
+   * up. Same signature as {@link resolveInput}, so whoever wires a dispatch
+   * writes both the same way.
+   */
+  executorEnvironment?: (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>>;
   /** Opaque additions to the engine's environment. */
   envOverrides?: Readonly<Record<string, string>>;
   /**

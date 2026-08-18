@@ -433,6 +433,14 @@ export interface JobContextSeed {
   grafo_versao_id: string | null;
   /** The round the job belongs to, which narrows the sessions that count. */
   execucao_id: number | null;
+  /**
+   * When the job was born (t270).
+   *
+   * Carried so that the route can stay total without a second read: a job that
+   * never transitioned entered its node the instant it was created, and
+   * {@link jobTraversal} says the same thing from the other side.
+   */
+  criado_em: string;
 }
 
 /**
@@ -464,6 +472,70 @@ export function jobContextSeed(db: Database, id: number): JobContextSeed | null 
     },
     grafo_versao_id: row.grafo_versao_id,
     execucao_id: row.execucao_id,
+    criado_em: row.criado_em,
+  };
+}
+
+/**
+ * The job's own walk through the graph, derived from the log (t270).
+ *
+ * `registrar-travessia` — the final node of `bets-assimetricas` — asks which
+ * nodes this crossing executed and when it arrived where it stands, and until
+ * this ficha nothing answered: `buildNodeInput` assembles the ticket, the
+ * class's config, the `produces` buckets and the answered escalations, and the
+ * traversal is none of those. It is a fact about `job.transitioned`, and the
+ * control plane is the only thing that has that log (D1) — which is why the
+ * second real bets crossing was unblocked by a person typing the two values
+ * into `fields` by hand (`notas/2026-08-17-segunda-execucao-bets.md`, gap 5).
+ *
+ * ## The one rule worth stating: the LAST transition is not a visit
+ *
+ * A transition records where the job WENT, so the `to_node_id` of the last one
+ * is the node the job is standing on right now — and a node about to run has
+ * not executed. Counting it would make `red_team_executado` answer `true` for a
+ * crossing that had merely arrived at `red-team` and reported nothing, which is
+ * the exact self-report the manifest's own check exists to refuse.
+ *
+ * So the walk is the entry node plus every intermediate arrival, and zero
+ * transitions is an empty walk: a job standing on the node it was born on has
+ * executed nothing at all.
+ *
+ * The read is `entity_type = 'job'` and `entity_id = String(id)` — the job's own
+ * events and not the session's, and the id bound as TEXT because that is what
+ * the column holds (one log for five entities, one of them keyed by a hash).
+ *
+ * @param db Open handle.
+ * @param id Job id.
+ * @returns The walk, or `null` if the job does not exist.
+ */
+export function jobTraversal(
+  db: Database,
+  id: number,
+): { nodes_visited: string[]; entered_at: string } | null {
+  const row = readRow(db, id);
+  if (row === undefined) return null;
+
+  const walked = db
+    .prepare(
+      `SELECT occurred_at, data FROM event
+        WHERE type = 'job.transitioned' AND entity_type = 'job' AND entity_id = ?
+        ORDER BY id`,
+    )
+    .all(String(id)) as Array<{ occurred_at: string; data: string }>;
+
+  if (walked.length === 0) {
+    return { nodes_visited: [], entered_at: row.criado_em };
+  }
+
+  // Every arrival except the last one, which is where the job is standing.
+  const arrivals = walked.slice(0, -1).map((event) => {
+    const data = JSON.parse(event.data) as { to_node_id?: unknown };
+    return typeof data.to_node_id === 'string' ? data.to_node_id : '';
+  });
+
+  return {
+    nodes_visited: [row.no_entrada_id, ...arrivals.filter((node) => node !== '')],
+    entered_at: walked[walked.length - 1].occurred_at,
   };
 }
 

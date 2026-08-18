@@ -2,12 +2,12 @@
  * Which pre-session failures are worth blocking a work over, and with what
  * reason (t252, FR1/FR2; t272, FR1).
  *
- * A dispatch does four reads before it acquires a worktree — the work, the graph
- * version, the engine route and the pinned skill — and four of them can throw an
- * error that will reproduce IDENTICALLY on every retry: a placeholder the input
- * does not carry, a skill nobody registered, a pin that stopped matching, an
- * engine with no route, and a `graph_version_id` the control plane no longer
- * has. Until this ficha every one of them travelled up through `tick()` into
+ * A dispatch does five reads before it acquires a worktree — the work, the graph
+ * version, the engine route, the executor environment and the pinned skill — and
+ * six of them can throw an error that will reproduce IDENTICALLY on every retry:
+ * a placeholder the input does not carry, a skill nobody registered, a pin that
+ * stopped matching, an engine with no route, a `graph_version_id` the control
+ * plane no longer has, and — since t270 — a test bench `git` cannot read. Until this ficha every one of them travelled up through `tick()` into
  * `cli/run.ts`, which logged one line and turned the loop again — and two
  * seconds later the same job was at the head of the same queue, being dispatched
  * into the same throw. Forever, with nothing a human could see, and with no
@@ -21,18 +21,21 @@
  * and for those the retry IS the right answer; blocking one would make a person
  * undo a hiccup by hand.
  *
- * So the set is CLOSED, matching exactly the reproductions the fichas were
- * opened over. Everything else classifies to `null`, including the two error
- * families' own siblings: a wider net here is a work blocked over something that
- * would have healed itself, which is the failure mode in the other direction.
+ * So the seven are a CLOSED set, each matching a reproduction somebody actually
+ * hit. Everything else classifies to `null`, including the two error families'
+ * own siblings: a wider net here is a work blocked over something that would
+ * have healed itself, which is the failure mode in the other direction. The set
+ * grew twice, with t270 and t272, and both times it grew the way it is meant to
+ * — a cause somebody reproduced arrived, its refusal reproduces on every retry,
+ * and a cause nobody classifies is a loop nobody sees.
  *
- * **The sixth arrived with t272, and it is the first one from AFTER the
+ * **The seventh arrived with t272, and it is the first one from AFTER the
  * worktree.** The t109 game run put a real job through `desenvolvimento-de-
  * software`: `testar-alpha` declares a domain-scoped `network`,
  * `resolvePermissions` cannot express that on this engine, and
  * `ClaudeCodeAdapter.startSession` refuses before the spawn and before
  * `POST /v1/sessions` — 38 leases in two minutes, not one session opened. The
- * refusal is deterministic in the same strong sense the five above are: the same
+ * refusal is deterministic in the same strong sense the six above are: the same
  * skill hash resolves to the same policy, and the same policy gets the same
  * refusal on every tick. What is NOT in the set is the rest of
  * {@link SessionStartError}, which is one class for four causes — the two spawn
@@ -74,6 +77,7 @@ import {
   UnresolvedPlaceholderError,
 } from './render-skill-instructions.ts';
 import { UnknownEngineError } from './resolve-engine.ts';
+import { ExecutorEnvironmentError } from './resolve-executor-environment.ts';
 
 /**
  * The part of a work this classification names.
@@ -175,6 +179,24 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
       'respondeu 404: a referência está pendurada. Nenhuma sessão foi aberta — sem o ' +
       'snapshot não há nó, nem contrato, nem aresta de saída, e a leitura responde o ' +
       'mesmo 404 em toda retentativa. Aponte o trabalho para uma versão registrada e desbloqueie.'
+    );
+  }
+
+  // The bench read, which t270 brought in with the read that produces it. A
+  // bench that `git` could not read is a
+  // configuration error of THIS runner — a path that is not a repository, a
+  // main branch that does not resolve, a checkout somebody moved — and it
+  // answers identically on every retry. It is not the control plane having a
+  // bad day, so it never heals itself, and leaving it unclassified would have
+  // reopened t252's loop for the one failure mode this ficha invented.
+  if (error instanceof ExecutorEnvironmentError) {
+    return (
+      `O runner não conseguiu ler o ambiente de execução deste nó: \`${error.command}\` ` +
+      `falhou (${error.stderr === '' ? 'sem saída' : error.stderr}). Nenhuma sessão foi ` +
+      'aberta — o caminho do banco de testes e o commit de referência são configuração ' +
+      'deste processo, e um banco que não responde responde igual em toda retentativa. ' +
+      'Corrija a configuração do banco (`--test-bench-path`, `--reference-repo`, ' +
+      '`--main-branch`) e desbloqueie.'
     );
   }
 

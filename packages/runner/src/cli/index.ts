@@ -50,6 +50,7 @@ import {
   type EngineName,
   type RunnerOptions,
 } from './run.ts';
+import type { ReferenceMode } from '../dispatch/resolve-executor-environment.ts';
 
 /** Environment variable that points at the control plane (the CLI's own). */
 export const URL_ENV = 'CARTOGRAFO_URL';
@@ -92,6 +93,21 @@ export const DEFAULT_LEASE_TTL_SECONDS = 60;
  */
 export const DEFAULT_SHUTDOWN_GRACE_SECONDS = 120;
 
+/**
+ * The two ways `input.referencia.commit` can be read (t270).
+ *
+ * The vocabulary is the skill manifest's, not this command's: it is the enum
+ * `implantar-release.json` declares for `referencia.modo`, and a third name
+ * here would be a third name the manifests do not know.
+ */
+export const REFERENCE_MODES = ['instalacao_em_uso', 'ponta_do_principal'] as const;
+
+/** How the reference is read when nobody says otherwise. */
+export const DEFAULT_REFERENCE_MODE: ReferenceMode = 'ponta_do_principal';
+
+/** Branch the live reference is read from, when nobody names one. */
+export const DEFAULT_MAIN_BRANCH = 'main';
+
 /** Name of the readiness event printed on stdout, once the runner has paired. */
 export const READY_EVENT = 'cartografo.runner.ready';
 
@@ -125,6 +141,21 @@ options:
                             under. A SIBLING of --working-dir, never inside it
                             — e.g. --working-dir ~/proj
                             --worktrees-root ~/proj-worktrees
+  --test-bench-path <path>  the integrated checkout the gate nodes OBSERVE,
+                            published to the session as
+                            \`input.banco_de_testes.caminho\` (default: the same
+                            as --working-dir). Read-only: nothing here advances
+                            or prepares it
+  --reference-mode <${REFERENCE_MODES.join('|')}>
+                            how \`input.referencia.commit\` is read (default
+                            ${DEFAULT_REFERENCE_MODE}): ponta_do_principal reads the
+                            live tip of --main-branch on every dispatch;
+                            instalacao_em_uso reads HEAD once and never again,
+                            because it is an assertion about THIS process
+  --reference-repo <path>   repository that reference is read from
+                            (default: --test-bench-path)
+  --main-branch <name>      branch ponta_do_principal reads
+                            (default ${DEFAULT_MAIN_BRANCH})
   --declared-runner-cap <n>
                             ceiling this runner DECLARES to the control plane
                             for its own runner id (runner_cap); the server
@@ -179,6 +210,10 @@ const VALUE_OPTIONS = [
   '--engine',
   '--working-dir',
   '--worktrees-root',
+  '--test-bench-path',
+  '--reference-mode',
+  '--reference-repo',
+  '--main-branch',
   '--declared-runner-cap',
   '--project-cap',
   '--interval-ms',
@@ -391,6 +426,23 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
   );
   const runnerId = given.get('--runner-id');
 
+  // The mode is the manifest's enum and not free text: a typo here would only
+  // show up as a `referencia.modo` no skill's `output` accepts, one dispatch
+  // and one session too late.
+  const referenceMode = given.get('--reference-mode') ?? DEFAULT_REFERENCE_MODE;
+  if (!(REFERENCE_MODES as readonly string[]).includes(referenceMode)) {
+    throw new UsageError(
+      `--reference-mode has to be one of ${REFERENCE_MODES.join(', ')} (got: "${referenceMode}")`,
+    );
+  }
+
+  // Resolved here, where every other path of this command is resolved: what
+  // reaches `git -C` is absolute, so a runner started from another directory
+  // reads the bench it was pointed at and not one relative to wherever it
+  // happened to be launched.
+  const testBenchPath = given.get('--test-bench-path');
+  const referenceRepo = given.get('--reference-repo');
+
   return {
     url: resolveControlPlaneUrl(given.get('--url'), env),
     token: resolveToken(given.get('--token'), env),
@@ -399,6 +451,10 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
     engine: engine as EngineName,
     repoRoot,
     worktreesRoot,
+    testBenchPath: testBenchPath === undefined ? repoRoot : path.resolve(testBenchPath),
+    referenceMode: referenceMode as ReferenceMode,
+    ...(referenceRepo === undefined ? {} : { referenceRepo: path.resolve(referenceRepo) }),
+    mainBranch: given.get('--main-branch') ?? DEFAULT_MAIN_BRANCH,
     runnerCap: positiveInteger(
       '--declared-runner-cap',
       given.get('--declared-runner-cap'),

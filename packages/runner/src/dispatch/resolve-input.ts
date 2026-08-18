@@ -35,7 +35,9 @@
  */
 
 import type { ControlPlaneCall } from './control-plane-client.ts';
-import type { Job } from './options.ts';
+import type { ClaudeCodeDispatchOptions, Job } from './options.ts';
+import { NO_EXECUTOR_ENVIRONMENT } from './resolve-executor-environment.ts';
+import type { ResolvedNode } from './resolve-node.ts';
 
 /** The envelope `GET /v1/jobs/:id/context` answers with. */
 interface ContextEnvelope {
@@ -54,4 +56,43 @@ export function createNodeInputResolver(
 ): (job: Job) => Promise<Record<string, unknown>> {
   return async (job: Job): Promise<Record<string, unknown>> =>
     (await call<ContextEnvelope>(`/v1/jobs/${job.id}/context`, 'GET')).input;
+}
+
+/**
+ * The node's input, from BOTH of the places it comes from (t270).
+ *
+ * The projection above answers everything the control plane has a log for. It
+ * cannot answer two of the values the software factory bundle's own manifests
+ * name — `input.banco_de_testes.caminho` is a filesystem path, and
+ * `input.referencia.commit` is a live commit — because a path is true of one
+ * machine and a commit is stale the moment anything stores it (D1). Those come
+ * from the runner, through
+ * {@link ClaudeCodeDispatchOptions.executorEnvironment}
+ * (`resolve-executor-environment.ts`), and this is where the two meet.
+ *
+ * **The executor's keys go in LAST, and win.** Not a tie-break by convenience:
+ * they are local ground truth about a filesystem and a `HEAD` that the
+ * projection does not have, so a projection carrying the same key would be
+ * carrying a stale copy of it.
+ *
+ * Composed HERE rather than inside `dispatch.ts` for the reason that file's own
+ * header gives: it is the orchestrator and nothing else, and "which sources a
+ * node's input is assembled from" is this module's subject, not the sequence's.
+ * What the dispatch sees is one function with the signature it already had.
+ *
+ * @param options The dispatch's configuration, for both seams and their defaults.
+ * @param call The dispatch's control-plane client, for the projection's default.
+ * @returns One function of the work and its node that answers the whole input.
+ */
+export function createMergedInputResolver(
+  options: ClaudeCodeDispatchOptions,
+  call: ControlPlaneCall,
+): (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>> {
+  const projection = options.resolveInput ?? createNodeInputResolver(call);
+  const executorEnvironment = options.executorEnvironment ?? NO_EXECUTOR_ENVIRONMENT;
+
+  return async (job, resolved) => ({
+    ...(await projection(job, resolved)),
+    ...(await executorEnvironment(job, resolved)),
+  });
 }

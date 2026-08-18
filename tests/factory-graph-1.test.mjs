@@ -685,3 +685,83 @@ test('t176 AT13 — the README no longer claims the contradiction is open', () =
     'the divergence was reconciled in favour of the manifest; the README has to say so',
   );
 });
+
+// --------------------------------------------------------------------------
+// t277 — a placeholder that names nothing
+// --------------------------------------------------------------------------
+
+/**
+ * The placeholder grammar of `especificacoes/formatos/manifesto-skill.md`,
+ * reimplemented here for the same reason the hash procedure above is: a test
+ * that imported the runner's own regex would go blind exactly when that regex
+ * is what is wrong.
+ */
+const PLACEHOLDER = /\{\{input\.([^{}]*)\}\}/g;
+const PLACEHOLDER_PATH = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$/;
+
+/** Every string in a manifest, with the JSON pointer that leads to it. */
+function stringsOf(value, pointer = '') {
+  if (typeof value === 'string') return [[pointer, value]];
+  if (Array.isArray(value)) return value.flatMap((item, i) => stringsOf(item, `${pointer}/${i}`));
+  if (value && typeof value === 'object') {
+    return Object.keys(value).flatMap((key) => stringsOf(value[key], `${pointer}/${key}`));
+  }
+  return [];
+}
+
+/**
+ * Walks a dotted placeholder path through a manifest's own `input` schema, and
+ * says whether the schema declares it. `additionalProperties` counts as a
+ * declaration: `artefato.gates_declarados` is a declared open map, not a hole.
+ */
+function declaredByInputSchema(schema, dotted) {
+  let current = schema;
+  for (const segment of dotted.split('.')) {
+    if (!current || current.type !== 'object') return false;
+    const property = current.properties?.[segment];
+    if (property) {
+      current = property;
+      continue;
+    }
+    const open = current.additionalProperties;
+    if (open && typeof open === 'object') {
+      current = open;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * The whole manifest is swept, not only `instructions` — and that is the point
+ * of the ticket. Only `instructions` is interpolated
+ * (`render-skill-instructions.ts`); `checks[].instruction` reaches the session
+ * as the literal JSON the renderer fences under "Os checks declarados pela
+ * skill". So a stale path there is worse than an unresolved one: it never
+ * refuses, it just tells the session to go look at an `input.aplicacao` the
+ * resolved input has not carried since t270.
+ */
+test('t277 AT1 — no manifest names an input path its own schema does not declare', () => {
+  const stale = [];
+  let swept = 0;
+
+  for (const file of Object.keys(SKILLS)) {
+    const manifest = readManifest(file);
+    for (const [pointer, text] of stringsOf(manifest)) {
+      for (const [token, dotted] of text.matchAll(PLACEHOLDER)) {
+        swept += 1;
+        const declared =
+          PLACEHOLDER_PATH.test(dotted) && declaredByInputSchema(manifest.input, dotted);
+        if (!declared) stale.push(`${file}${pointer}: ${token}`);
+      }
+    }
+  }
+
+  assert.ok(swept >= 20, `only ${swept} placeholders read across the bundle; the sweep is blind`);
+  assert.deepEqual(
+    stale,
+    [],
+    `these placeholders name paths the manifest's own input does not declare:\n${stale.join('\n')}`,
+  );
+});

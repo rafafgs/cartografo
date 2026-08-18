@@ -1403,9 +1403,130 @@ test('t253 AT4 — the route answers exactly what the pure module builds', async
       session_id: session.id,
     })),
     answered: [],
+    // The job never transitioned, so it is still standing on its entry node
+    // (t270): nothing executed, and the moment it got there is its creation.
+    traversal: { nodes_visited: [], entered_at: job.created_at },
   });
 
   assert.deepEqual(response.body.input, expected);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t270 Half A — the route projects the job's own walk at `input.traversal`.    */
+/*                                                                             */
+/* The walk is a fact about the LOG, and only the control plane owns the log    */
+/* (D1). Until this ficha nothing published it: `registrar-travessia`, the last */
+/* node of the bets bundle, names `{{input.nos_executados}}` and                */
+/* `{{input.data_de_registro}}`, both failed closed, and the second real bets   */
+/* crossing was unblocked by a person patching scalars into `fields` by hand.   */
+/*                                                                             */
+/* The derivation rule is the one thing worth a case each: the last transition  */
+/* names the node the job is standing on, and a node it is ABOUT to run has not */
+/* executed.                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Moves a job one node along, asserting the write took. */
+async function transitionTo(
+  ctx: TestContext,
+  jobId: number,
+  nodeId: string,
+): Promise<JobProjection> {
+  const response = await request<JobProjection>(ctx, 'POST', `/v1/jobs/${jobId}/transitions`, {
+    to_node_id: nodeId,
+  });
+  assert.equal(response.status, 200, `POST /transitions returned ${response.status}`);
+  return response.body;
+}
+
+/** The `input.traversal` object of a job, as the route projects it. */
+async function traversalOf(ctx: TestContext, jobId: number): Promise<Record<string, unknown>> {
+  const response = await request<{ input: { traversal: Record<string, unknown> } }>(
+    ctx,
+    'GET',
+    `/v1/jobs/${jobId}/context`,
+  );
+  assert.equal(response.status, 200);
+  return response.body.input.traversal;
+}
+
+test('t270 AT — a job that never transitioned has visited nothing yet', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const versionId = await registerGraphWithBuckets(ctx);
+  const job = await createJob(ctx, {
+    title: 'parada no nó de entrada',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  const traversal = await traversalOf(ctx, job.id);
+  assert.deepEqual(
+    traversal.nodes_visited,
+    [],
+    'the entry node is where the job IS standing, and it has not run yet',
+  );
+  assert.equal(
+    traversal.entered_at,
+    job.created_at,
+    'with no transition to read, the moment it arrived is the moment it was created',
+  );
+});
+
+test('t270 AT — the walk is the entry node plus every node it left behind', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const versionId = await registerGraphWithBuckets(ctx);
+  const job = await createJob(ctx, {
+    title: 'travessia de três nós',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  await transitionTo(ctx, job.id, 'revisar');
+  const arrived = await transitionTo(ctx, job.id, 'publicar');
+  assert.equal(arrived.current_node_id, 'publicar');
+
+  const traversal = await traversalOf(ctx, job.id);
+  assert.deepEqual(
+    traversal.nodes_visited,
+    ['redigir', 'revisar'],
+    'in walk order, and WITHOUT `publicar`: the node the job is about to run has not executed',
+  );
+
+  const events = await timeline(ctx, job.id);
+  const lastTransition = events.filter((event) => event.type === 'job.transitioned').at(-1);
+  assert.equal(
+    traversal.entered_at,
+    lastTransition?.occurred_at,
+    'and it arrived where it stands when the last transition was recorded',
+  );
+});
+
+test('t270 AT — two sessions on one node are two entries, in closing order', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const versionId = await registerGraphWithBuckets(ctx);
+  const job = await createJob(ctx, {
+    title: 'retrabalho no mesmo nó',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  const first = await runNode(ctx, job.id, 'redigir', 'completed', { branch: 'primeiro-corte' });
+  const second = await runNode(ctx, job.id, 'redigir', 'completed', { branch: 'segundo-corte' });
+  const gate = await runNode(ctx, job.id, 'revisar', 'completed', { outcome: 'pass' });
+  // Neither of these is a fact about the graph, and neither may show up: one
+  // failed, and the projection only ever sees completed sessions.
+  await runNode(ctx, job.id, 'redigir', 'failed', { branch: 'nao-conta' });
+
+  const traversal = await traversalOf(ctx, job.id);
+  assert.deepEqual(traversal.sessions_by_node, {
+    redigir: [first.id, second.id],
+    revisar: [gate.id],
+  });
 });
 
 /* -------------------------------------------------------------------------- */

@@ -175,7 +175,7 @@ test('AT7 — anything that is not one of the five classifies to null', async ()
 });
 
 /**
- * AT8/AT9 — the sixth cause, and the boundary right next to it (t272).
+ * AT8/AT9 — the seventh cause, and the boundary right next to it (t272).
  *
  * The t109 game run put a real job through `desenvolvimento-de-software` and hit
  * the loop this classifier was built to close, from a direction it did not
@@ -183,9 +183,9 @@ test('AT7 — anything that is not one of the five classifies to null', async ()
  * cannot express that on this engine, and `ClaudeCodeAdapter.startSession`
  * refuses BEFORE the spawn — 38 leases in two minutes, not one session opened.
  * A refusal for a policy the engine cannot enforce is as deterministic as the
- * five above it: the same skill hash resolves to the same refusal on every tick.
+ * six above it: the same skill hash resolves to the same refusal on every tick.
  *
- * AT9 is the other half and the reason this is a sixth CASE and not a sixth
+ * AT9 is the other half and the reason this is one CASE and not a whole
  * class: `SessionStartError` is one class for four causes, and the two spawn
  * shapes ("could not start", "could not open a session") carry nothing that
  * tells a missing binary from an `EMFILE`. Those keep classifying to `null` —
@@ -221,4 +221,38 @@ test('AT9 — a SessionStartError that is NOT a permission refusal classifies to
       `a spawn failure may heal itself, so it retries instead of blocking: ${message}`,
     );
   }
+});
+
+/* -------------------------------------------------------------------------- */
+/* t270 Half B — the sixth cause: a bench the runner cannot read.              */
+/*                                                                            */
+/* `resolveExecutorEnvironment` shells out to `git` for a path and a commit    */
+/* the operator configured at boot. A bad path, a `mainBranch` that does not   */
+/* resolve, a bench that is not a repository — each of those answers the same  */
+/* way on every retry, which is precisely the class this module exists to      */
+/* block instead of loop. Leaving it unclassified would reopen t252's bug for  */
+/* one new failure mode.                                                      */
+/* -------------------------------------------------------------------------- */
+
+test('t270 AT — a bench git could not read blocks, naming the command', async () => {
+  const { classifyPreSessionFailure } = await loadModule();
+  const { ExecutorEnvironmentError } = await import(
+    new URL('../../src/dispatch/resolve-executor-environment.ts', import.meta.url).href
+  );
+
+  const reason = classifyPreSessionFailure(
+    new ExecutorEnvironmentError(
+      'the reference of the test bench could not be read',
+      'git -C /srv/bancos/cartografo rev-parse main',
+      "fatal: not a git repository: '/srv/bancos/cartografo'",
+    ),
+    JOB,
+  );
+
+  namesAll(reason, ['git -C /srv/bancos/cartografo rev-parse main']);
+  assert.match(
+    reason ?? '',
+    /desbloqueie/,
+    'the reason ends where every other one does: fix the configuration and unblock',
+  );
 });

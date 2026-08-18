@@ -116,6 +116,34 @@ export interface AnsweredRequest {
   resposta: string;
 }
 
+/**
+ * The job's own walk, as the log records it (t270).
+ *
+ * Read from `job.transitioned` by `repositories/job.ts`'s `jobTraversal` and
+ * handed over here already derived, for the reason every other field of
+ * {@link ContextSources} is: this module holds no `Database` and no clock, and
+ * "which nodes has this job already executed?" is a question about the append-only
+ * log that only the sole writer can answer (D1).
+ *
+ * The keys are English, unlike `perguntas_respondidas` beside them, and that is
+ * not an inconsistency: `input.job` and `input.project` are core-owned
+ * projection vocabulary and are spelled the way D18 spells new format surface.
+ * The Portuguese keys of this object's neighbours are grandfathered from
+ * manifests that predate the rule.
+ */
+export interface ProjectedTraversal {
+  /**
+   * The nodes this crossing has already EXECUTED, in walk order.
+   *
+   * Never the node the job is standing on: a node it is about to run has not
+   * run, and `registrar-travessia`'s own metric — "did the red team happen?" —
+   * would answer yes for a job that had merely arrived at `red-team`.
+   */
+  nodes_visited: string[];
+  /** When the job arrived where it is standing; its creation, when it never moved. */
+  entered_at: string;
+}
+
 /** Everything the projection is built out of. */
 export interface ContextSources {
   job: ProjectedJob;
@@ -125,6 +153,8 @@ export interface ContextSources {
   outputs: ProjectedOutput[];
   /** The answered escalations of the job, in the order they were answered. */
   answered: AnsweredRequest[];
+  /** The job's own walk through the graph, off the log (t270). */
+  traversal: ProjectedTraversal;
 }
 
 /** The bucket a node's output goes into, or `null` for the top level. */
@@ -169,7 +199,19 @@ function byClosingTime(a: ProjectedOutput, b: ProjectedOutput): number {
  *    into a third that neither of them declared;
  * 4. the answered escalations at `input.perguntas_respondidas`, always a list —
  *    an empty one is a legal answer ("no decision recorded yet") and every
- *    manifest that reads the key says so.
+ *    manifest that reads the key says so;
+ * 5. the job's own walk at `input.traversal` (t270): what the log says, verbatim,
+ *    plus `sessions_by_node` derived from the very reports step 3 merged.
+ *
+ * ## Why `sessions_by_node` is built HERE and the other two are not (t270)
+ *
+ * `nodes_visited` and `entered_at` are facts about `job.transitioned`, a table
+ * this module cannot see. `sessions_by_node` is a fact about the completed
+ * reports it is ALREADY holding — the same list, grouped by node instead of
+ * merged by bucket — so deriving it anywhere else would mean reading the
+ * `session` table twice and letting the two answers drift. The order inside each
+ * node's array is `byClosingTime`, the same order the merge uses, because it
+ * answers the same question: which run of this node came last.
  *
  * `contexto_falha` is deliberately absent (FR8): deriving it means reading the
  * job's transition history as a loop-detection question, and it belongs to the
@@ -179,9 +221,23 @@ function byClosingTime(a: ProjectedOutput, b: ProjectedOutput): number {
  * @returns The `input` object, ready for `{{input.<path>}}` resolution.
  */
 export function buildNodeInput(sources: ContextSources): Record<string, unknown> {
-  const { job, snapshot, outputs, answered } = sources;
+  const { job, snapshot, outputs, answered, traversal } = sources;
 
   const input: Record<string, unknown> = { ...(job.fields ?? {}) };
+
+  // ONE sorted pass, read twice: the bucket merge below wants the reports in
+  // closing order, and so does each node's session list. Sorting once is not
+  // only cheaper — it is what makes "the same order" a fact instead of a
+  // coincidence between two comparators.
+  const byWalk = [...outputs].sort(byClosingTime);
+
+  const sessionsByNode: Record<string, number[]> = {};
+  for (const reported of byWalk) {
+    // A session with no node belongs to no node's list, the same reading
+    // `bucketOf` gives it — and never to a key spelled "null".
+    if (reported.node_id === null) continue;
+    (sessionsByNode[reported.node_id] ??= []).push(reported.session_id);
+  }
 
   input.job = {
     id: job.id,
@@ -192,7 +248,7 @@ export function buildNodeInput(sources: ContextSources): Record<string, unknown>
 
   input.project = isObject(snapshot?.project) ? { ...snapshot.project } : {};
 
-  for (const reported of [...outputs].sort(byClosingTime)) {
+  for (const reported of byWalk) {
     if (!isObject(reported.output)) continue;
 
     const bucket = bucketOf(snapshot, reported.node_id);
@@ -210,6 +266,12 @@ export function buildNodeInput(sources: ContextSources): Record<string, unknown>
     pergunta: request.pergunta,
     resposta: request.resposta,
   }));
+
+  input.traversal = {
+    nodes_visited: [...traversal.nodes_visited],
+    entered_at: traversal.entered_at,
+    sessions_by_node: sessionsByNode,
+  };
 
   return input;
 }

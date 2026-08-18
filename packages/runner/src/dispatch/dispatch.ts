@@ -76,11 +76,12 @@
  * side's own parse of the same block — two readings of one report, never
  * compared.
  *
- * **And a failure BEFORE the session is a block, not a throw** (t252, t272).
- * Six of the ways the window below can fail reproduce identically on every retry
- * — a dangling `graph_version_id`, an engine with no route, an unregistered
- * skill, a pin that stopped matching, a placeholder that does not resolve, and a
- * permission policy the adapter refuses to open a session under. Thrown, each of
+ * **And a failure BEFORE the session is a block, not a throw** (t252, t270,
+ * t272). Seven of the ways the window below can fail reproduce identically on
+ * every retry — a dangling `graph_version_id`, an engine with no route, an
+ * unregistered skill, a pin that stopped matching, a placeholder that does not
+ * resolve, a test bench `git` cannot read, and a permission policy the adapter
+ * refuses to open a session under. Thrown, each of
  * them was a job retried every two seconds forever, invisibly, with the rest of
  * the project's queue stuck behind it. So they stop the work with a reason a
  * person can read and resolve `{blocked: true}`.
@@ -146,7 +147,7 @@ import {
   postSessionQuestion,
   type Outcome,
 } from './report.ts';
-import { createNodeInputResolver } from './resolve-input.ts';
+import { createMergedInputResolver } from './resolve-input.ts';
 import { resolveEscalationPolicy } from './resolve-node.ts';
 import { resolveSessionPlan, type SessionPlan } from './resolve-session-plan.ts';
 import { buildSessionSpec } from './session-spec.ts';
@@ -197,7 +198,11 @@ export function createClaudeCodeDispatch(
     options.maxConsecutivePreSessionFailures,
   );
 
-  const resolveInput = options.resolveInput ?? createNodeInputResolver(call);
+  // BOTH halves of the node's input, composed once (t270): the control plane's
+  // projection and what only this machine knows. Which one wins a shared key —
+  // the executor's, because it is local ground truth — is `resolve-input.ts`'s
+  // to argue, and the dispatch only ever sees one function.
+  const resolveInput = createMergedInputResolver(options, call);
 
   return async (jobId: number): Promise<DispatchOutcome> => {
     const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');
@@ -215,7 +220,7 @@ export function createClaudeCodeDispatch(
     // The whole window before a worktree exists, under ONE catch (t252). What it
     // reads is `resolve-session-plan.ts`, which is a straight line of reads and
     // owns none of this decision; which of its failures blocks the work instead
-    // of throwing — and why exactly six — is the paragraph at the top of this
+    // of throwing — and why exactly seven — is the paragraph at the top of this
     // file, and where the line is drawn is `pre-session-failure.ts`.
     try {
       plan = await resolveSessionPlan(call, job, options.engines, resolveInput);

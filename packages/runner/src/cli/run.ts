@@ -61,6 +61,10 @@ import { ClienteControle } from '../controller/cliente-controle.ts';
 import { Controller } from '../controller/controller.ts';
 import { createClaudeCodeDispatch, type EngineRoute } from '../dispatch/dispatch.ts';
 import {
+  createExecutorEnvironmentResolver,
+  type ReferenceMode,
+} from '../dispatch/resolve-executor-environment.ts';
+import {
   decodeClaudeCodeSessionText,
   decodeCodexSessionText,
 } from '../dispatch/session-text.ts';
@@ -122,6 +126,35 @@ export interface RunnerOptions {
    * command line, and the CLI is where that is enforced.
    */
   worktreesRoot: string;
+  /**
+   * The checkout the sessions OBSERVE — `--test-bench-path` (t270).
+   *
+   * Not where they write: that is a worktree of {@link repoRoot}, minted per
+   * dispatch. This is the integrated checkout a gate node exercises, published
+   * to the session as `input.banco_de_testes.caminho`, and it is deliberately a
+   * different concept from both paths above — a point of observation, which the
+   * manifest tells the session it has no write permission in.
+   *
+   * Default: {@link repoRoot}, which is a real answer and not a placeholder —
+   * the ordinary single-machine deployment observes the same checkout it cuts
+   * sessions from. Keeping that bench TRUE (advancing the main line into it,
+   * provisioning it at all) is t273's, and nothing here writes to it.
+   */
+  testBenchPath?: string;
+  /**
+   * Which question `input.referencia.commit` answers — `--reference-mode`.
+   *
+   * `ponta_do_principal` (the default) reads the live tip of the main line on
+   * every dispatch; `instalacao_em_uso` reads `HEAD` once, at the first
+   * dispatch, and never again, because it is an assertion about THIS process.
+   * The two are the manifest's own vocabulary
+   * (`implantar-release.json`), not this file's invention.
+   */
+  referenceMode?: ReferenceMode;
+  /** Repository the reference is read from — `--reference-repo`. Default: the bench. */
+  referenceRepo?: string;
+  /** Branch `ponta_do_principal` reads — `--main-branch`. Default: `main`. */
+  mainBranch?: string;
   /**
    * The ceiling this runner declares for itself — `--declared-runner-cap`.
    *
@@ -369,6 +402,16 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
       worktrees: new GitWorktreeManager({
         repoRoot: options.repoRoot,
         worktreesRoot: options.worktreesRoot,
+      }),
+      // Built ONCE for the whole process, and that is what makes
+      // `instalacao_em_uso` mean anything: the single read it memoizes is
+      // memoized for the life of THIS runner, which is the process the mode is
+      // an assertion about (t270).
+      executorEnvironment: createExecutorEnvironmentResolver({
+        testBenchPath: options.testBenchPath ?? options.repoRoot,
+        referenceMode: options.referenceMode ?? 'ponta_do_principal',
+        ...(options.referenceRepo === undefined ? {} : { referenceRepo: options.referenceRepo }),
+        ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
       }),
     }),
   });

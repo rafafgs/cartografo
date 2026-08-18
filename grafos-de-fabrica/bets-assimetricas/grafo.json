@@ -488,8 +488,8 @@
       "description": "Nó final único das quatro formas de terminar: grava as métricas de processo da travessia e o que monitorar daqui para frente.",
       "skill_ref": {
         "id": "registrar-travessia",
-        "version": "1.0.0",
-        "hash": "sha256:9c00509c621a20f57ed3d5c1b87ae2760a2d9e3587d7f35630643aa4d020570b"
+        "version": "1.0.1",
+        "hash": "sha256:63e199a941ff15f7e215373bf16d73ecb08d964743600f2b227de1ee8a04c25a"
       },
       "contract": {
         "input_schema": {

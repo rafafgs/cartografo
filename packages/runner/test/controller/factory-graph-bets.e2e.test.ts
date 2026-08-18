@@ -469,6 +469,20 @@ test('t270 — triagem → registro-monitoramento closes the bets traversal on i
   const client = new ClienteControle({ urlBase: baseUrl, token });
   await client.registrarRunner('runner-t270-fabrica', 'o que fecha a travessia curta de bets');
 
+  /**
+   * Every call the dispatch made, so the claim "no operator touched this" is
+   * checked instead of merely intended.
+   *
+   * The two verbs that unstuck this crossing by hand are the two this records:
+   * `PATCH /v1/jobs/:id` (the `fields` amendment that carried `nos_executados`)
+   * and `POST /v1/jobs/:id/unblocks`.
+   */
+  const calls: string[] = [];
+  const doFetch: typeof fetch = async (target, init) => {
+    calls.push(`${init?.method ?? 'GET'} ${String(target).slice(baseUrl.length)}`);
+    return await fetch(target, init);
+  };
+
   const worktrees = directoryWorktrees(root);
   let currentLines = reports(DESCARTADO);
   let currentRecord = path.join(root, 'triagem.json');
@@ -485,6 +499,7 @@ test('t270 — triagem → registro-monitoramento closes the bets traversal on i
       createClaudeCodeDispatch({
         urlBase: baseUrl,
         token,
+        doFetch,
         engines: {
           'claude-code': {
             adapter: new ClaudeCodeAdapter({
@@ -522,9 +537,9 @@ test('t270 — triagem → registro-monitoramento closes the bets traversal on i
   currentRecord = path.join(root, 'registro-monitoramento.json');
   assert.ok(await controller.tick(), 'the final node was picked up too');
 
-  const registro = await jobNow();
-  assert.equal(registro.blocked, false, registro.block_reason ?? '');
-  assert.equal(registro.completed, true, 'the traversal is over: the report of the final node landed');
+  const closed = await jobNow();
+  assert.equal(closed.blocked, false, closed.block_reason ?? '');
+  assert.equal(closed.completed, true, 'the traversal is over: the report of the final node landed');
 
   const told = toldTo('registro-monitoramento');
   assert.ok(
@@ -547,5 +562,12 @@ test('t270 — triagem → registro-monitoramento closes the bets traversal on i
     typeof traversal.entered_at,
     'string',
     'the date the session registers is a slice of this instant, never a guess',
+  );
+
+  // --- 4. and nobody had to touch it by hand ------------------------------
+  assert.deepEqual(
+    calls.filter((call) => call.endsWith('/unblocks') || /^PATCH \/v1\/jobs\/\d+$/.test(call)),
+    [],
+    'the crossing that was unblocked by a `PATCH /jobs/1` needs neither verb now',
   );
 });

@@ -83,6 +83,56 @@ Três coisas que o campo decide:
   dele (D2, D15). Valor específico de um projeto mora na **variante** daquele
   projeto (D13); o que mora aqui é o que a classe declara para si.
 
+### `input.traversal`: a caminhada que o control plane projeta (`t270`)
+
+Nada aqui é campo do documento — é o **irmão** de `input.project` do outro lado
+da projeção. `project` é o que a classe declara e viaja congelado no snapshot;
+`traversal` é o que o log diz que aconteceu com **este** trabalho, montado a
+cada `GET /v1/jobs/:id/context`. Os dois chegam ao mesmo `input`, e a diferença
+entre eles é quem responde por cada chave.
+
+```json
+{
+  "traversal": {
+    "nodes_visited": ["triagem", "coleta-fundamentos", "analise-assimetria"],
+    "entered_at": "2026-08-17T22:41:03.117Z",
+    "sessions_by_node": { "triagem": [11], "coleta-fundamentos": [12, 14] }
+  }
+}
+```
+
+| Chave | Quem fornece | O que é |
+|---|---|---|
+| `nodes_visited` | control plane, de `job.transitioned` | Os nós que esta travessia **executou**, em ordem de caminhada. |
+| `entered_at` | control plane, de `job.transitioned` | Instante ISO-8601 em que o trabalho chegou ao nó onde está. |
+| `sessions_by_node` | control plane, das sessões concluídas | `session_id`s por nó, na ordem em que fecharam. |
+
+Três coisas que a projeção decide:
+
+- **O nó atual não está em `nodes_visited`.** A transição registra para onde o
+  trabalho **foi**, então o `to_node_id` da última é o nó em que ele está parado
+  — e um nó prestes a rodar não executou. Sem esse corte,
+  `red_team_executado` responderia `true` para uma travessia que só tinha
+  *chegado* ao `red-team` e não tinha relatado nada, que é exatamente o
+  autorrelato que o check daquela skill existe para recusar. Zero transições é
+  caminhada vazia: quem está no nó de entrada ainda não executou nada.
+- **Sem transição, `entered_at` é a criação do trabalho.** É a resposta honesta
+  para "quando você chegou aqui?" de quem nunca saiu de onde nasceu — e é o que
+  faz `{{input.traversal.entered_at}}` resolver desde o primeiro nó, em vez de
+  recusar o despacho de entrada.
+- **Só o control plane pode montar isso (D1).** É leitura do log append-only, e
+  um runner que a reconstruísse pelas rotas públicas seria um segundo autor do
+  mesmo fato. Antes da `t270` ninguém montava: `registrar-travessia` nomeava
+  `{{input.nos_executados}}` e `{{input.data_de_registro}}`, o despacho recusava
+  fechado, e a segunda travessia real de bets foi desbloqueada por uma pessoa
+  digitando os dois valores em `fields` na mão.
+
+As chaves de dentro são **inglês**, ao contrário de `perguntas_respondidas` ao
+lado: `input.job`, `input.project` e `input.traversal` são vocabulário de
+projeção do core, e vocabulário novo de formato nasce em inglês (D18). O que
+está em português ali do lado é herança dos manifestos que vieram antes da
+regra, não precedente.
+
 ### `max_consecutive_failures`: quantas vezes seguidas um nó pode falhar
 
 Até a `t265` não havia teto: um trabalho cujas sessões falhavam voltava para a

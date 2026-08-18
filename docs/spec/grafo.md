@@ -738,7 +738,7 @@ incident that motivated this rule is one level deep. A gap deeper than that
 survives the check.
 
 **The vocabulary of the report** (`ContractReport`, the `contracts` key of the
-`422`):
+`422` and of the `201`):
 
 | Name | What it says |
 |---|---|
@@ -760,6 +760,17 @@ work of its own. The two DB-less reference validators
 ([`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs) and
 [`scripts/validate-factory-bundle.mjs`](../../scripts/validate-factory-bundle.mjs))
 do not carry this check: it needs a skill lookup, and they have none by design.
+
+**The outcome is on the answer, whichever it is (`t284`).** `POST /v1/graphs`
+publishes `contracts` on the `201` too, and not only inside the `422`. Until
+`t284` the success said `{graph, graph_version}` and nothing more, so "every
+contract was checked and they hold" and "no contract was read at all" arrived at
+a client as the same body — and the second one is a graph nobody has judged yet.
+
+| `contracts` | When | What it carries |
+|---|---|---|
+| `{"status": "checked", "valid": …, "problems": […]}` | every pin resolved | the report above. `valid: false` is the `422`; on a `201` it is always `true` |
+| `{"status": "skipped", "reason": "skill_ref_unresolved", "problems": […]}` | at least one pin unresolved | the `skill_ref_unresolved` problems and nothing else — no `valid`, because a check that did not run neither passed nor failed, and no `unproduced_input`, because those were computed with an ancestor that produces nothing only for want of a manifest |
 
 ---
 

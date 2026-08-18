@@ -101,7 +101,7 @@
  * columns (`packages/core/migrations/0002_grafo_versao_proposta.sql`), and
  * `toProposal`/`toGraph` project them onto the wire with the same spelling.
  *
- * And three spans are exempted, in {@link EXEMPT_SPANS}, all for the same reason:
+ * And the spans of {@link EXEMPT_SPANS} are excused, all for the same reason:
  * the name belongs to this package, not to the wire. `result.proposta` in the
  * surveyor's command is the runner-internal result of `proposeFlowImprovement`,
  * whose keys (`gargalo`, `evidencia`, `metrica_esperada`, `proposta`) are that
@@ -112,6 +112,41 @@
  * `body` on the `api` surface for the intake item that really carries it, and
  * this file has no intake item — it has the decoded body of a failed call, under
  * a name of its own.
+ *
+ * ## The three commands nobody was sweeping either (t285)
+ *
+ * t266 put the manual PROOF on a list and left the three manual COMMANDS off it,
+ * and the same class of defect was already sitting in the first of them.
+ * `scripts/close-surveyor-outcome.mjs` is the only caller of the one write of
+ * the propose→gate→apply→measure→close cycle, and it read six names the wire
+ * retired — `.grafo_id`, `.resultado`, `.metrica_esperada`,
+ * `.versao_aplicada_id`, `.trabalhos`, and above all `status !== 'aplicada'`
+ * against a wire that answers `applied`, which killed every real run on the
+ * third statement with the message `only an applied proposal has an experiment
+ * to close; this one is "applied"`. Its own header had said why nothing caught
+ * it: the pure half is unit-tested and "what lives here is the network and the
+ * exit code" — and the network half had no test at all.
+ *
+ * So {@link MANUAL_PROOF_FILES} grows by the three: `close-surveyor-outcome.mjs`,
+ * `measure-executions.mjs` and `run-graph-traversal.mjs`. The re-audit the same
+ * ficha ran over the last two found one more, in the report of the traversal
+ * driver (`version.grafo_id`, printed as `undefined` on every crossing) — which
+ * is the whole argument for sweeping a file instead of re-reading it.
+ *
+ * {@link PROPOSAL_FIELDS} gains a fifth derive in the same pass: `resultado` →
+ * `result` is a `proposal` column of `0002_grafo_versao_proposta.sql` that §4.2
+ * already maps and that `toProposal` projects onto the wire unchanged, exactly
+ * like the four beside it. Nobody had derived it, which is why the two reads of
+ * `.resultado` above would have survived a naive extension of this sweep.
+ *
+ * The exemptions those three files need are the same kind as the ones above, and
+ * two vocabularies account for all of them. `.nome` in the close command is the
+ * metric object's OWN key, frozen hypothesis vocabulary D20 does not unfreeze
+ * (`glossario-wire.md:791`), and the whole point of that command is to read it.
+ * `.titulo` and `.execucao_id` in the traversal driver — and the two messages and
+ * the usage line that spell them — are the keys of the PLAN FILE that driver
+ * takes as input: an operator-authored document of its own, not a body of the
+ * wire, and renaming it is nobody's ticket.
  */
 
 import assert from 'node:assert/strict';
@@ -182,7 +217,8 @@ const DERIVED_FIELDS: ReadonlyArray<{ term: string; english: string }> = Object.
 ]);
 
 /**
- * The manual proofs of this package, which are clients like any other (t266).
+ * The manual proofs and commands of this package, clients like any other (t266,
+ * t285).
  *
  * `scripts/spike-surveyor-flow.mjs` is the half of the surveyor the suite cannot
  * run — it needs a real `claude`, an account and three minutes — and that is
@@ -192,18 +228,36 @@ const DERIVED_FIELDS: ReadonlyArray<{ term: string; english: string }> = Object.
  * with the same terms and the same positions as {@link CLIENT_FILES}; the only
  * difference is that the list is separate, because {@link PROPOSAL_FIELDS} is
  * vocabulary no command reads.
+ *
+ * The other three arrive with t285 and are the same argument one step further:
+ * `close-surveyor-outcome.mjs` and `measure-executions.mjs` talk to a control
+ * plane the suite does not boot, and `run-graph-traversal.mjs` dispatches real
+ * `claude`/`codex` sessions and must never become a CI test — so a static sweep
+ * is the only thing that reads them at all between one manual run and the next.
+ * See this file's header for the two vocabularies that made them need
+ * exemptions, and `test/surveyor/close-outcome.e2e.test.ts` for the half of
+ * `close-surveyor-outcome.mjs` a sweep cannot judge.
  */
-const MANUAL_PROOF_FILES = [path.join('scripts', 'spike-surveyor-flow.mjs')];
+const MANUAL_PROOF_FILES = [
+  path.join('scripts', 'spike-surveyor-flow.mjs'),
+  path.join('scripts', 'close-surveyor-outcome.mjs'),
+  path.join('scripts', 'measure-executions.mjs'),
+  path.join('scripts', 'run-graph-traversal.mjs'),
+];
 
 /**
- * Four more entity fields the `api` surface does not carry by name (t266).
+ * Five more entity fields the `api` surface does not carry by name (t266, t285).
  *
- * The same derivation {@link DERIVED_FIELDS} documents, over the four columns of
+ * The same derivation {@link DERIVED_FIELDS} documents, over the columns of
  * `0002_grafo_versao_proposta.sql` a proposal and a graph are read by:
- * `evidencia`, `metrica_esperada` and `versao_aplicada_id` are `proposta`'s,
- * `versao_corrente_id` is `grafo`'s, §4.2 already maps all four, and §1.1 is
- * what says the wire spells them the way the column does — which it does, in
- * `toProposal` and `toGraph` (`packages/core/src/repositories/`).
+ * `evidencia`, `metrica_esperada`, `versao_aplicada_id` and `resultado` are
+ * `proposta`'s, `versao_corrente_id` is `grafo`'s, §4.2 already maps all five,
+ * and §1.1 is what says the wire spells them the way the column does — which it
+ * does, in `toProposal` and `toGraph` (`packages/core/src/repositories/`).
+ *
+ * `resultado` is t285's, and it was a derive nobody had made rather than a new
+ * one: the close command read `proposal.resultado` off a body that answers
+ * `result`, so its already-closed guard never fired.
  *
  * Kept out of {@link DERIVED_FIELDS} on purpose: `evidencia` and
  * `metrica_esperada` are ALSO two keys of the runner-internal `SurveyorResult`,
@@ -216,6 +270,7 @@ const PROPOSAL_FIELDS: ReadonlyArray<Term> = Object.freeze([
   { term: 'metrica_esperada', english: 'expected_metric' },
   { term: 'versao_aplicada_id', english: 'applied_version_id' },
   { term: 'versao_corrente_id', english: 'current_version_id' },
+  { term: 'resultado', english: 'result' },
 ]);
 
 /**
@@ -310,6 +365,61 @@ const EXEMPT_SPANS: ReadonlyArray<{ file: string; span: string; reason: string }
       'in `test/controller/cliente-controle.test.ts` and `test/dispatch/dispatch.test.ts`). ' +
       'Renaming it is the same identifier debt the file’s own header flags, and ' +
       't254’s Out of Scope keeps it out',
+  },
+  {
+    file: path.join('scripts', 'close-surveyor-outcome.mjs'),
+    span: '.nome',
+    reason:
+      'the metric object’s OWN key, which is the frozen hypothesis vocabulary of ' +
+      '`domain/hypothesis.ts` — `{nome, direcao, de, para}`, `glossario-wire.md:791`, ' +
+      'a format D20 does not unfreeze. The WRAPPER is `expected_metric` and t285 ' +
+      'fixed that read; what is inside it does not move (t285, Out of Scope)',
+  },
+  {
+    file: path.join('scripts', 'close-surveyor-outcome.mjs'),
+    span: '.corpo',
+    reason:
+      'the same field of `ErroDoControlPlane` the exemption above excuses, being ' +
+      'READ this time: `error.corpo` is the decoded body of a failed call, under ' +
+      'this package’s own name for it (t285)',
+  },
+  {
+    file: path.join('scripts', 'measure-executions.mjs'),
+    span: '.corpo',
+    reason: 'the same read of `ErroDoControlPlane.corpo`, in the sibling command (t285)',
+  },
+  {
+    file: path.join('scripts', 'run-graph-traversal.mjs'),
+    span: '.titulo',
+    reason:
+      'a key of the PLAN FILE this driver takes as input — an operator-authored ' +
+      'document of its own (`{titulo, execucao_id, grafo_versao_id, nos}`), never a ' +
+      'body of the wire. What the driver SENDS is `title`, one line down, and that ' +
+      'read is swept (t285)',
+  },
+  {
+    file: path.join('scripts', 'run-graph-traversal.mjs'),
+    span: '.execucao_id',
+    reason:
+      'the same plan file’s key. It feeds `execution_id` on the wire and the route ' +
+      'segments that carry it, and both of those spellings are swept (t285)',
+  },
+  {
+    file: path.join('scripts', 'run-graph-traversal.mjs'),
+    span: 'plano.json    {titulo, execucao_id, grafo_versao_id, nos: [{id, task, engine?}]}',
+    reason:
+      'the usage line that DOCUMENTS the plan file’s keys. Spelling them in English ' +
+      'there would describe a format the driver does not accept (t285)',
+  },
+  {
+    file: path.join('scripts', 'run-graph-traversal.mjs'),
+    span: 'plan.titulo is required',
+    reason: 'a refusal that names the plan file’s key, for whoever wrote the plan (t285)',
+  },
+  {
+    file: path.join('scripts', 'run-graph-traversal.mjs'),
+    span: 'plan.execucao_id has to be an integer',
+    reason: 'the same refusal, about the same document (t285)',
   },
 ]);
 
@@ -803,6 +913,18 @@ test('t266 — the sweep bites on a destructured read of the old wire and lets t
     '    if (graphAfter.grafo.versao_corrente_id !== version.id) {',
     '    console.log(`operacoes:        ${JSON.stringify(proposal.operacoes, null, 2)}`);',
     '    console.log(`metrica_esperada: ${JSON.stringify(proposal.metrica_esperada)}`);',
+    // ...and the six of `close-surveyor-outcome.mjs`, which t285 found. The
+    // second one is the one that killed every real run, on the third statement:
+    // the wire answers `applied`, so the comparison was true for every proposal
+    // that HAD an experiment to close.
+    '  log(`proposal ${proposal.id} of graph "${proposal.grafo_id}" is "${proposal.status}"`);',
+    "  if (proposal.status !== 'aplicada') {",
+    '  if (proposal.resultado !== null && proposal.resultado !== undefined) {',
+    '  const metric = proposal.metrica_esperada;',
+    '  const appliedVersionId = proposal.versao_aplicada_id;',
+    '  if (underApplied === undefined || underApplied.trabalhos < 1) {',
+    '  console.log(`version:     ${written.versao_aplicada_id}`);',
+    '  console.log(`outcome:     ${JSON.stringify(written.resultado)}`);',
   ];
   for (const source of caught) {
     assert.ok(clientHitsIn(source, terms).length > 0, `the sweep missed an old wire name: ${source}`);
@@ -819,6 +941,15 @@ test('t266 — the sweep bites on a destructured read of the old wire and lets t
     '    if (graphAfter.graph.current_version_id !== version.id) {',
     '    console.log(`operations:       ${JSON.stringify(proposal.operations, null, 2)}`);',
     '    console.log(`expected_metric:  ${JSON.stringify(proposal.expected_metric)}`);',
+    // The same eight lines as t285 spells them now.
+    '  log(`proposal ${proposal.id} of graph "${proposal.graph_id}" is "${proposal.status}"`);',
+    "  if (proposal.status !== 'applied') {",
+    '  if (proposal.result !== null && proposal.result !== undefined) {',
+    '  const metric = proposal.expected_metric;',
+    '  const appliedVersionId = proposal.applied_version_id;',
+    '  if (underApplied === undefined || underApplied.jobs < 1) {',
+    '  console.log(`version:     ${written.applied_version_id}`);',
+    '  console.log(`outcome:     ${JSON.stringify(written.result)}`);',
     // A binding of this script's own is not a read of a body.
     '    const { root, repo } = createDisposableRepo();',
     // Portuguese CONTENT, which D18 keeps: the `grafo` inside `topógrafo` is a

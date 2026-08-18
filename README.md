@@ -63,6 +63,17 @@ banco (D1), e isso vale entre processos, não só dentro de um.
 > desenvolvimento, não migrá-lo — `rm -rf .cartografo/` e `npx cartografo` de
 > novo. Não existe migração de renomeação para rodar: as dezenove migrações
 > nascem em inglês, e um banco antigo não é atualizado por elas.
+>
+> **O que a t279 acrescenta é proteção para a próxima vez, não conserto para
+> esta.** Desde a `0023`, `schema_migrations` guarda o `checksum` do conteúdo de
+> cada migração aplicada, e toda partida confere: uma migração já aplicada que
+> foi editada no lugar — ou que sumiu do disco, porque alguém a renomeou — faz
+> `npx cartografo` parar na hora, dizendo o nome dela, em vez de subir limpo e
+> morrer depois no meio de uma requisição com um `no such column`. Isso não
+> alcança os bancos que a D20 já quebrou: as linhas deles foram gravadas antes de
+> existir checksum, então não há com o que comparar, e o runner só registra o que
+> encontra hoje (avisando no stderr). Para esses, a resposta continua sendo
+> exatamente a de cima — `rm -rf .cartografo/`.
 
 O passo 3 registra o grafo de fábrica 1 (D14) como linhagem base — conferindo
 antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a

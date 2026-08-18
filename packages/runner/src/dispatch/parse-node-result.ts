@@ -40,6 +40,15 @@
  * The three reading rules are `parse-fenced-json.ts`'s and are shared verbatim
  * with the escalation block: extent from the JSON, malformed ignored instead of
  * raised, last valid wins.
+ *
+ * One thing the whole payload does NOT survive: since t269 the control plane
+ * takes a valid `resultado` out of the object before holding it against the
+ * pinned skill's `output` and before storing it
+ * (`packages/core/src/repositories/session.ts`, `stripRouteLabel`) — the routing
+ * key is the graph's vocabulary and a skill that closes its schema would refuse
+ * every report carrying it. So whoever reads `session.output` later finds the
+ * skill's fields and no label; the route this parser fed to `advance()` is
+ * unaffected, because it never depended on what `/finish` answered.
  */
 
 import { parseFencedJson } from './parse-fenced-json.ts';

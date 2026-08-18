@@ -34,6 +34,7 @@ export { ESCALATION_PROTOCOL } from './escalation-protocol.ts';
 export { TAXONOMY_STATUS } from './report.ts';
 export {
   DEFAULT_INSTRUCTIONS,
+  DEFAULT_MAX_CONSECUTIVE_PRE_SESSION_FAILURES,
   DEFAULT_SILENCE_SECONDS,
   type ClaudeCodeDispatchOptions,
   type Job,
@@ -42,3 +43,13 @@ export { DEFAULT_ENGINE, UnknownEngineError, type EngineRoute } from './resolve-
 export { DispatchError, type DispatchOutcome } from './outcome.ts';
 export { resolveEscalationPolicy, DEFAULT_ESCALATION_POLICY } from './resolve-node.ts';
 export type { EscalationPolicy } from './resolve-node.ts';
+
+/**
+ * Everything the session said, with Claude Code's frames decoded back into text.
+ *
+ * @deprecated Moved to `./session-text.ts` as `decodeClaudeCodeSessionText`
+ * (t141, FR6) — one decoder per engine. Re-exported unchanged all the same, and
+ * from here since t272: a deprecated alias for a function another module owns is
+ * the exact thing this file was cut to hold.
+ */
+export { decodeClaudeCodeSessionText as sessionText } from './session-text.ts';

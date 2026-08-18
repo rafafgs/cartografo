@@ -53,6 +53,8 @@ import { diffGraphs } from '../domain/diff.ts';
 import {
   validateContracts,
   validateGraph,
+  type ContractProblem,
+  type ContractReport,
   type GraphDocument,
   type StructureReport,
 } from '../domain/graph.ts';
@@ -127,10 +129,13 @@ const GRAPH_DOCUMENT_DESCRIPTION =
  * `REFUSAL_SCHEMA` was `ERROR_RESPONSE_SCHEMA` minus `details`, which is one
  * shape too many for one wire contract.
  *
- * The `201` keeps naming its two properties, and both are open objects: a
+ * The `201` keeps naming its properties, and all of them are open objects: a
  * Fastify `response` schema serializes, so a declared type is a COERCION —
  * `lineage_type` echoes back whatever the body carried, and typing it would turn
- * a number into a string on the wire (FR6).
+ * a number into a string on the wire (FR6). `contracts` is the third gate's
+ * outcome (t284) and is named here for the same reason the other two are: a
+ * property a client is meant to read belongs in the public document, even when
+ * the schema says nothing about its shape.
  */
 const REGISTER_GRAPH_SCHEMA = {
   description: GRAPH_DOCUMENT_DESCRIPTION,
@@ -141,6 +146,7 @@ const REGISTER_GRAPH_SCHEMA = {
       properties: {
         graph: OPEN_OBJECT_SCHEMA,
         graph_version: OPEN_OBJECT_SCHEMA,
+        contracts: OPEN_OBJECT_SCHEMA,
       },
       required: ['graph', 'graph_version'],
       additionalProperties: true,
@@ -304,10 +310,13 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   // keys as unproduced would accuse a node of a defect whose evidence is only
   // that the registry has not been filled yet. So the check runs when it can be
   // performed — every pin resolved — and stands aside when it cannot.
-  const unresolved = contracts.problems.some(
-    (problem) => problem.code === 'skill_ref_unresolved',
-  );
-  if (!unresolved && !contracts.valid) {
+  //
+  // Standing aside is SAID and no longer silent (t284): `contractsOutcome` turns
+  // the report into what the answer publishes, on the refusal and on the success
+  // alike, so a client reads which of the two happened instead of inferring a
+  // clean pass from a missing key.
+  const outcome = contractsOutcome(contracts);
+  if (outcome.status === 'checked' && !contracts.valid) {
     reply.code(422);
     // The same envelope as the structure/soundness refusal, with the two of them
     // marked as what they are — they passed — so a reader of the 422 can tell
@@ -317,7 +326,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
       valid: false,
       structure: report.structure,
       soundness: report.soundness,
-      contracts,
+      contracts: outcome,
     };
   }
 
@@ -333,7 +342,63 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
 
   const { graph, version } = registerBaseGraph(db, document as GraphDocument);
   reply.code(201);
-  return { graph: toGraph(graph), graph_version: toGraphVersion(version) };
+  // The report rides on the SUCCESS too (t284). A skip that says nothing is
+  // indistinguishable from a clean pass on the wire, and the two mean opposite
+  // things to whoever reads the 201: one graph is known to hold together, the
+  // other has simply not been judged yet.
+  return {
+    graph: toGraph(graph),
+    graph_version: toGraphVersion(version),
+    contracts: outcome,
+  };
+}
+
+/**
+ * The third gate's outcome as `POST /graphs` publishes it (t284).
+ *
+ * Two shapes, because two things can happen and they are not degrees of one
+ * another. `checked` carries the report `validateContracts` produced, verdict
+ * included. `skipped` carries no verdict at all: the check did not run, and a
+ * `valid` here — either value — would be read as one, which is the whole defect
+ * this shape exists to close.
+ *
+ * `problems` is on both, and on the skipped one it is ONLY the unresolved pins:
+ * see {@link contractsOutcome} for why the rest of that report is dropped.
+ */
+type ContractsOutcome =
+  | ({ status: 'checked' } & ContractReport)
+  | {
+      status: 'skipped';
+      reason: 'skill_ref_unresolved';
+      problems: ContractProblem[];
+    };
+
+/**
+ * Says which of the two happened, and what a client is allowed to read from it.
+ *
+ * A pin the registry cannot resolve does not refuse the document — see the
+ * comment at the call site for why that is what this route IS — but until t284
+ * it did not say so either: the `201` was `{graph, graph_version}` whether every
+ * contract had been checked and passed or none of them had been read at all. Two
+ * opposite facts, one body.
+ *
+ * The skipped outcome publishes the unresolved pins and DROPS every
+ * `unproduced_input` computed in the same pass. Those findings were computed
+ * with an unresolved ancestor producing nothing, so a required key of a
+ * descendant looks unsupplied whether or not the missing manifest supplies it —
+ * publishing them would accuse a node of a defect whose only evidence is that
+ * the registry has not been filled yet. What survives is the fact that IS known:
+ * these pins resolve to nothing here.
+ *
+ * @param report What `validateContracts` answered over the registry.
+ * @returns The outcome, ready to serialize on the `201` or inside the `422`.
+ */
+function contractsOutcome(report: ContractReport): ContractsOutcome {
+  const unresolved = report.problems.filter(
+    (problem) => problem.code === 'skill_ref_unresolved',
+  );
+  if (unresolved.length === 0) return { status: 'checked', ...report };
+  return { status: 'skipped', reason: 'skill_ref_unresolved', problems: unresolved };
 }
 
 /**

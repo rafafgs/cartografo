@@ -422,9 +422,9 @@ async function main() {
   writeFileSync(jsonl, `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
 
   console.log('\n===== traversal =====');
-  console.log(`graph/version:  ${version.grafo_id} / ${version.id}`);
-  console.log(`execucao_id:    ${plan.execucao_id}`);
-  console.log(`trabalho:       ${job.id}`);
+  console.log(`graph/version:  ${version.graph_id} / ${version.id}`);
+  console.log(`execution_id:   ${plan.execucao_id}`);
+  console.log(`job:            ${job.id}`);
   console.log(`nodes walked:   ${walked.map((row) => `${row.node} (${row.seconds}s)`).join(' → ')}`);
   console.log(`events:         ${events.length} (full log: ${jsonl})`);
   console.log(`metrics-by-version: ${JSON.stringify(byVersion)}`);

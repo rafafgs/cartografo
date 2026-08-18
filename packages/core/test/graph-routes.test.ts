@@ -600,3 +600,116 @@ test('t278 — a document that already fails soundness never reaches the contrac
     'availability is computed over a topology that is already sound, and this one is not',
   );
 });
+
+/*
+ * t284 — the skipped contract check is visible on the 201.
+ *
+ * The t278 gate stands aside when a pin does not resolve in the registry, and
+ * until now it stood aside SILENTLY: the 201 body was `{graph, graph_version}`
+ * and nothing else, so a client could not tell a document whose contracts were
+ * checked and passed from one whose check never ran. The founder's answer to
+ * that round was "201 with the contract check reported as skipped
+ * (skill_ref_unresolved) when any pin is unresolved", and these cases are that
+ * answer: the outcome of the third gate rides on the 201, always, saying which
+ * of the two happened.
+ */
+
+/** The contract check's outcome as the 201 publishes it (t284). */
+interface ContractsOutcome {
+  status: string;
+  reason?: string;
+  valid?: boolean;
+  problems: Array<{
+    code: string;
+    node_id: string;
+    key?: string;
+    message: string;
+    produced_elsewhere_by?: string[];
+  }>;
+}
+
+/** The 201 of `POST /v1/graphs`, with the report t284 added to it. */
+interface RegisteredGraph {
+  graph: Graph;
+  graph_version: GraphVersion;
+  contracts: ContractsOutcome;
+}
+
+test('t284 — the 201 over unresolved pins reports the check as skipped', async (t) => {
+  const address = await startApp(t);
+
+  // Nothing is registered, so neither pin resolves: this is the exact document
+  // t278 already registers with a 201, and what is asserted here is the part of
+  // that 201 nobody could see.
+  const response = await post(address, '/v1/graphs', twoNodeDocument('pinos-nao-resolvidos', 'analise'));
+  const body = await jsonBody<RegisteredGraph>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
+
+  // The document was still registered — the report is added to the success,
+  // it does not replace it.
+  assert.equal(body.graph.id, 'pinos-nao-resolvidos');
+  assert.equal(body.graph_version.graph_id, 'pinos-nao-resolvidos');
+
+  assert.equal(body.contracts.status, 'skipped');
+  assert.equal(body.contracts.reason, 'skill_ref_unresolved');
+  assert.deepEqual(
+    body.contracts.problems.map((problem) => [problem.code, problem.node_id]),
+    [
+      ['skill_ref_unresolved', 'a'],
+      ['skill_ref_unresolved', 'b'],
+    ],
+  );
+  assert.ok(
+    body.contracts.problems[0].message.includes('a-skill'),
+    `the unresolved pin is named: ${body.contracts.problems[0].message}`,
+  );
+
+  // No verdict, on purpose: a check that did not run neither passed nor failed,
+  // and a `valid` here would be read as one of the two.
+  assert.equal(body.contracts.valid, undefined);
+});
+
+test('t284 — the skipped report carries the unresolved pins and nothing computed against them', async (t) => {
+  const address = await startApp(t);
+
+  // Only the SECOND node's skill is registered, and it requires a key its
+  // ancestor would have to produce. The ancestor's pin does not resolve, so
+  // availability at "b" is unknown — and the report says the pin is unresolved
+  // instead of accusing "b" of requiring something nothing supplies.
+  const produced = { type: 'object', required: ['tese_triada'], properties: { tese_triada: { type: 'object' } } };
+  assert.equal(
+    (await post(address, '/v1/skills', fixtureManifest('b-skill', { input: produced }))).status,
+    201,
+  );
+
+  const response = await post(address, '/v1/graphs', twoNodeDocument('ancestral-sem-registro'));
+  const body = await jsonBody<RegisteredGraph>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
+
+  assert.equal(body.contracts.status, 'skipped');
+  assert.deepEqual(
+    body.contracts.problems.map((problem) => [problem.code, problem.node_id]),
+    [['skill_ref_unresolved', 'a']],
+  );
+  assert.ok(
+    !body.contracts.problems.some((problem) => problem.code === 'unproduced_input'),
+    'an availability computed with an unresolved ancestor is not published as a finding',
+  );
+});
+
+test('t284 — the 201 of a document whose pins all resolve reports the check as run', async (t) => {
+  const address = await startApp(t);
+
+  const produced = { type: 'object', required: ['tese_triada'], properties: { tese_triada: { type: 'object' } } };
+  await post(address, '/v1/skills', fixtureManifest('a-skill', { output: produced }));
+  await post(address, '/v1/skills', fixtureManifest('b-skill', { input: produced }));
+
+  const response = await post(address, '/v1/graphs', twoNodeDocument('contratos-conferidos'));
+  const body = await jsonBody<RegisteredGraph>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
+
+  assert.equal(body.contracts.status, 'checked');
+  assert.equal(body.contracts.valid, true);
+  assert.deepEqual(body.contracts.problems, []);
+  assert.equal(body.contracts.reason, undefined);
+});

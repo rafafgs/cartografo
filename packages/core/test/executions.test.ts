@@ -23,6 +23,7 @@ import {
   createJob,
   requireArtifacts,
   request,
+  resolvePins,
   startControlPlane,
   type Event,
   type InputRequest,
@@ -494,7 +495,11 @@ type ExecutionDetail = ExecutionSummary;
  * @returns Id of the version born with the lineage — the one a job cites.
  */
 async function registerMinimalGraph(ctx: TestContext): Promise<string> {
-  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as unknown;
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  // A resolvable capability per node, or the version is `unchecked` and the
+  // travellers of these rounds could not be created at all (t283).
+  await resolvePins(ctx, document);
+
   const response = await request<{ graph_version: { id: string } }>(
     ctx,
     'POST',

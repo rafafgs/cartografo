@@ -40,6 +40,7 @@ import {
   createJob,
   requireArtifacts,
   request,
+  resolvePins,
   startControlPlane,
   type TestContext,
   type Event,
@@ -135,6 +136,10 @@ async function graphRoundTrip(
   ctx: TestContext,
 ): Promise<{ graph: Graph; baseVersion: string }> {
   const document = JSON.parse(readFileSync(MINIMAL_EXAMPLE, 'utf8')) as Record<string, unknown>;
+  // A resolvable pin per node, so the version is `checked` and the jobs below
+  // may cite it (t283).
+  await resolvePins(ctx, document);
+
   const registered = await request<{ graph: Graph; graph_version: GraphVersion }>(
     ctx,
     'POST',

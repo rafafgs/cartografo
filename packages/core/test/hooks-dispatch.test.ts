@@ -256,7 +256,14 @@ async function startDispatcher(
 
 /** Registers the graph, creates a job on it and returns the job. */
 function jobOn(db: Database, hooks: DeclaredHook[]): Job {
-  const versionId = registerBaseGraph(db, graphWith(hooks)).version.id;
+  // `checked`, because this suite is about hook delivery and not about the
+  // contract gate: an unchecked version would make `createJob` refuse before any
+  // hook could fire (t283). The repository is called directly here, so the
+  // outcome is stated instead of computed.
+  const versionId = registerBaseGraph(db, graphWith(hooks), {
+    state: 'checked',
+    problems: [],
+  }).version.id;
   return createJob(db, {
     title: 'a nota que dispara ganchos',
     entry_node_id: 'redigir',

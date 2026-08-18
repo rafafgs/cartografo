@@ -46,7 +46,7 @@ import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { bootCore } from '@cartografo/test-support';
+import { bootCore, resolvePins } from '@cartografo/test-support';
 
 import type * as ProposalModule from '../../src/surveyor/proposal.ts';
 
@@ -262,7 +262,13 @@ test('t254 — the spawned surveyor reports the graph and version it really prop
   const { url: baseUrl, token } = await bootCore(t);
   const plane: ControlPlane = { baseUrl, token };
 
-  const document: unknown = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
+  // A resolvable capability per node, or the version is stored `unchecked` and
+  // the travellers this scenario needs could not be created at all (t283).
+  const document = await resolvePins(
+    plane.baseUrl,
+    plane.token,
+    JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>,
+  );
   const { graph_version: version } = await api<{ graph_version: GraphVersion }>(
     plane,
     'POST',

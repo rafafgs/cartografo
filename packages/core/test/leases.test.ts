@@ -38,6 +38,7 @@ import type * as RunnersModule from '../src/repositories/runners.ts';
 import type * as ServerModule from '../src/server.ts';
 import type * as CredentialsModule from '../src/repositories/credentials.ts';
 import { authorizeGlobalFetch } from './authorized-fetch.ts';
+import { resolvePinsOver } from './support.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const MIGRATIONS_DIR = path.join(PACKAGE_ROOT, 'migrations');
@@ -991,7 +992,22 @@ async function postJson<T>(
 
 /** Registers the minimal example graph and returns the version a job cites. */
 async function registerMinimalGraph(address: string): Promise<string> {
-  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as unknown;
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  // A resolvable capability per node, or the version is `unchecked` and the
+  // travellers below could not be created at all (t283).
+  await resolvePinsOver(document, {
+    get: async (routePath) => ({ status: (await fetch(`${address}${routePath}`)).status }),
+    post: async (routePath, payload) => ({
+      status: (
+        await fetch(`${address}${routePath}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      ).status,
+    }),
+  });
+
   const body = await postJson<{ graph_version: { id: string } }>(
     address,
     '/v1/graphs',

@@ -26,6 +26,7 @@ import {
   createJob,
   requireArtifacts,
   request,
+  resolvePins,
   startControlPlane,
   type Event,
   type Job,
@@ -90,7 +91,13 @@ type JobProjection = Job & {
  * @returns Id of the version born with the lineage — the one a job cites.
  */
 async function registerMinimalGraph(ctx: TestContext): Promise<string> {
-  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as unknown;
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  // The pins have to resolve or the version is born `unchecked`, and since t283
+  // no job may cite one of those. The fixture's own ids carry a slash the
+  // registry can never accept, so standing a capability in for each of them is
+  // the only way this document can be run against at all — see `resolvePins`.
+  await resolvePins(ctx, document);
+
   const response = await request<{ graph_version: { id: string } }>(
     ctx,
     'POST',
@@ -118,6 +125,7 @@ async function registerGraphDemandingField(ctx: TestContext): Promise<string> {
     { name: 'premise_source', type: 'string', required_at: 'redigir' },
     { name: 'downside', type: 'number', required_at: null },
   ];
+  await resolvePins(ctx, document);
 
   const response = await request<{ graph_version: { id: string } }>(
     ctx,
@@ -228,6 +236,10 @@ async function registerGraphPinningReviewSkill(ctx: TestContext): Promise<string
   document.problem_class = 'nota-curta-com-revisao-registrada';
   const nodes = document.nodes as Array<Record<string, unknown>>;
   nodes[1].skill_ref = await registerReviewSkill(ctx);
+  // `revisar` now pins a manifest that IS registered, so `resolvePins` leaves it
+  // alone and only stands a capability in for `redigir` — which is what the
+  // version needs to be `checked` and therefore runnable (t283).
+  await resolvePins(ctx, document);
 
   const response = await request<{ graph_version: { id: string } }>(
     ctx,
@@ -1229,6 +1241,7 @@ async function registerGraphWithBuckets(ctx: TestContext): Promise<string> {
     description: 'A nota aprovada segue para publicação.',
   });
   document.final_nodes = ['publicar'];
+  await resolvePins(ctx, document);
 
   const response = await request<{ graph_version: { id: string } }>(
     ctx,
@@ -1566,6 +1579,7 @@ async function registerGraphWithFailureCap(ctx: TestContext, cap: number): Promi
   const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
   document.problem_class = `nota-curta-com-teto-${String(cap)}`;
   document.max_consecutive_failures = cap;
+  await resolvePins(ctx, document);
 
   const response = await request<{ graph_version: { id: string } }>(
     ctx,

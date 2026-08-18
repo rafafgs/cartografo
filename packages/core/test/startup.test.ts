@@ -188,11 +188,13 @@ test(
       // report. t279 added `0023_schema_migrations_checksum.sql`, which gives
       // the ledger a checksum per applied migration so an applied file edited in
       // place stops the startup by name instead of surfacing later as an
-      // unrelated `no such column` — and moved the count one last time.
+      // unrelated `no such column`. t283 moved it once more with
+      // `0024_graph_version_contracts_state.sql`, which is what stops a job from
+      // running against a version nobody ever contract-checked.
       assert.equal(
         first.readiness.migrationsApplied,
-        23,
-        'a brand-new database applies the twenty-three migrations the package ships',
+        24,
+        'a brand-new database applies the twenty-four migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

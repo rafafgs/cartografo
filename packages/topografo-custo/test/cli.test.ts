@@ -21,7 +21,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { bootCore, type TestHook } from '@cartografo/test-support';
+import { bootCore, resolvePins, type TestHook } from '@cartografo/test-support';
 
 import type * as CliModule from '../src/cli.ts';
 
@@ -63,7 +63,7 @@ async function loadCli(): Promise<typeof CliModule> {
  * @param t Test context, so both the process and the patch are undone at the end.
  * @returns The URL the control plane announced.
  */
-async function bootAuthorized(t: TestContext): Promise<string> {
+async function bootAuthorized(t: TestContext): Promise<{ baseUrl: string; token: string }> {
   const { url, token } = await bootCore(t);
 
   const previous = globalThis.fetch;
@@ -78,7 +78,7 @@ async function bootAuthorized(t: TestContext): Promise<string> {
     globalThis.fetch = previous;
   });
 
-  return url;
+  return { baseUrl: url, token };
 }
 
 /** A raw POST/PATCH against the control plane, with the answer already parsed. */
@@ -136,10 +136,16 @@ interface SpiedCall {
 
 test('AT9 — evaluate creates exactly one pending proposal from the cost lens', async (t) => {
   const { runCli } = await loadCli();
-  const baseUrl = await bootAuthorized(t);
+  const { baseUrl, token } = await bootAuthorized(t);
 
   // --- seeding: the graph as data, one job and two sessions of distinct nodes
-  const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
+  // A resolvable capability per node, or the version is stored `unchecked` and
+  // the job below could not be created at all (t283).
+  const document = await resolvePins(
+    baseUrl,
+    token,
+    JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>,
+  );
   const record = (await call(baseUrl, '/v1/graphs', 'POST', document)) as {
     graph_version: { id: string };
   };
@@ -212,9 +218,15 @@ test('AT9 — evaluate creates exactly one pending proposal from the cost lens',
 
 test('AT9 — evaluate touches only the four routes of the contract, and never /aplicar', async (t) => {
   const { runCli } = await loadCli();
-  const baseUrl = await bootAuthorized(t);
+  const { baseUrl, token } = await bootAuthorized(t);
 
-  const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
+  // A resolvable capability per node, or the version is stored `unchecked` and
+  // the job below could not be created at all (t283).
+  const document = await resolvePins(
+    baseUrl,
+    token,
+    JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>,
+  );
   const record = (await call(baseUrl, '/v1/graphs', 'POST', document)) as {
     graph_version: { id: string };
   };
@@ -257,10 +269,16 @@ test('AT9 — evaluate touches only the four routes of the contract, and never /
 
 test('t255 — a proposal from this lens closes its experiment instead of 422-ing', async (t) => {
   const { runCli } = await loadCli();
-  const baseUrl = await bootAuthorized(t);
+  const { baseUrl, token } = await bootAuthorized(t);
 
   // --- the same seeding as AT9: one expensive node under one version
-  const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
+  // A resolvable capability per node, or the version is stored `unchecked` and
+  // the job below could not be created at all (t283).
+  const document = await resolvePins(
+    baseUrl,
+    token,
+    JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>,
+  );
   const record = (await call(baseUrl, '/v1/graphs', 'POST', document)) as {
     graph_version: { id: string };
   };
@@ -465,10 +483,16 @@ async function stderrOf(action: () => Promise<number>): Promise<string> {
 
 test('t247 AT4 — evaluateExecution reports created: true, then false on the repeat', async (t) => {
   const { evaluateExecution } = await loadCli();
-  const baseUrl = await bootAuthorized(t);
+  const { baseUrl, token } = await bootAuthorized(t);
 
   // The same seeding as AT9: one node whose tokens pass the declared ceiling.
-  const document = JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>;
+  // A resolvable capability per node, or the version is stored `unchecked` and
+  // the job below could not be created at all (t283).
+  const document = await resolvePins(
+    baseUrl,
+    token,
+    JSON.parse(readFileSync(GRAPH_PATH, 'utf8')) as Record<string, unknown>,
+  );
   const record = (await call(baseUrl, '/v1/graphs', 'POST', document)) as {
     graph_version: { id: string };
   };

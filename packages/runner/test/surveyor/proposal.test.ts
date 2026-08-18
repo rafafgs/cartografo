@@ -45,7 +45,7 @@ import type {
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
 import type * as ProposalModule from '../../src/surveyor/proposal.ts';
 
-import { bootCore } from '@cartografo/test-support';
+import { bootCore, resolvePins } from '@cartografo/test-support';
 
 import { authorizeGlobalFetch } from '../authorized-fetch.ts';
 
@@ -139,10 +139,10 @@ async function loadProposal(): Promise<typeof ProposalModule> {
  * @param t Test context, so both the process and the patch are undone at the end.
  * @returns The URL the control plane announced.
  */
-async function bootControlPlane(t: TestHook): Promise<string> {
+async function bootControlPlane(t: TestHook): Promise<{ baseUrl: string; token: string }> {
   const { url, token } = await bootCore(t);
   authorizeGlobalFetch(t, { baseUrl: url, token });
-  return url;
+  return { baseUrl: url, token };
 }
 
 /** Talks JSON with the control plane, asserting the status on the way. */
@@ -242,9 +242,15 @@ async function seedBottleneck(baseUrl: string, versionId: string): Promise<void>
 
 async function buildScenario(t: TestHook): Promise<Scenario> {
   const { ClienteControle } = await loadClient();
-  const baseUrl = await bootControlPlane(t);
+  const { baseUrl, token } = await bootControlPlane(t);
 
-  const document: unknown = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
+  // A resolvable capability per node, or the version is stored `unchecked` and
+  // the travellers this scenario seeds could not be created at all (t283).
+  const document = await resolvePins(
+    baseUrl,
+    token,
+    JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>,
+  );
   const { graph_version: version } = await api<{ graph_version: GraphVersion }>(
     baseUrl,
     'POST',

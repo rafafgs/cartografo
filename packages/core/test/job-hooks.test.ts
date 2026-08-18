@@ -167,7 +167,10 @@ function openWorld(t: TestHook): Database {
  * @returns The version hash a job cites in `grafo_versao_id`.
  */
 function registerGraph(db: Database, document: GraphDocument): string {
-  return registerBaseGraph(db, document).version.id;
+  // `checked`, because this suite is about the hooks a node declares and not
+  // about the contract gate: an unchecked version would make `createJob` refuse
+  // before any of it happened (t283).
+  return registerBaseGraph(db, document, { state: 'checked', problems: [] }).version.id;
 }
 
 /** Creates a job standing on `redigir`, optionally tied to a graph version. */

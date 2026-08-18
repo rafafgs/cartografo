@@ -29,7 +29,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -116,24 +116,32 @@ const CASES: readonly FinalNodeCase[] = Object.freeze([
 ]);
 
 /**
- * Registers the bundle's graph and the manifest its final node pins.
+ * Registers the bundle's manifests and its graph.
  *
- * Only THAT manifest: `POST /v1/graphs` does not demand a registered skill for
- * every node, and registering the other six would say nothing about the
- * derivation while hiding which registration the assertion depends on.
+ * Until t283 only the FINAL node's manifest went in — `POST /v1/graphs` does not
+ * demand a registered skill for every node, and registering the rest said
+ * nothing about the derivation under test. It does now, indirectly: a version
+ * whose pins do not all resolve is stored `unchecked`, and no job may cite one
+ * of those, so the job below could not exist. Standing empty capabilities in for
+ * the others is not an option either — the bundle's real final-node manifest
+ * requires keys its real ancestors produce, and empty stand-ins would make the
+ * document fail the contract check outright. So the whole `skills/` directory
+ * goes in, which is what `cartografo import` does anyway.
  *
  * @param ctx Control plane running.
  * @param testCase Which bundle.
  * @returns Id of the version born with the lineage.
  */
 async function registerBundle(ctx: TestContext, testCase: FinalNodeCase): Promise<string> {
-  const skill = await request(
-    ctx,
-    'POST',
-    '/v1/skills',
-    bundleFile(testCase.bundle, 'skills', testCase.manifest),
-  );
-  assert.equal(skill.status, 201, `POST /v1/skills returned ${skill.status}`);
+  const skillsDir = path.join(BUNDLES, testCase.bundle, 'skills');
+  for (const file of readdirSync(skillsDir).sort()) {
+    if (!file.endsWith('.json')) continue;
+    const skill = await request(ctx, 'POST', '/v1/skills', bundleFile(testCase.bundle, 'skills', file));
+    assert.ok(
+      skill.status === 201 || skill.status === 200,
+      `POST /v1/skills (${file}) returned ${skill.status}`,
+    );
+  }
 
   const graph = await request<{ graph_version: { id: string } }>(
     ctx,

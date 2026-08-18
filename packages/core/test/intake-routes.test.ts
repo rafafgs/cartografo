@@ -37,6 +37,7 @@ import {
   countEvents,
   requireArtifacts,
   request,
+  resolvePins,
   startControlPlane,
   type Event,
   type Job,
@@ -135,6 +136,11 @@ function entryNode(): string {
 /** Registers factory bundle 1 as it is on disk and returns the current version. */
 async function registerFactoryGraph(ctx: TestContext): Promise<string> {
   const document = JSON.parse(readFileSync(FACTORY_GRAPH, 'utf8')) as Record<string, unknown>;
+  // The bundle's five manifests are not registered here (this suite is about the
+  // intake, not about `cartografo import`), so without this the version would be
+  // `unchecked` and the jobs the intake creates would be refused (t283).
+  await resolvePins(ctx, document);
+
   const response = await request<{ graph_version: { id: string } }>(
     ctx,
     'POST',

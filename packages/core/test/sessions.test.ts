@@ -23,6 +23,7 @@ import {
   loadEvents,
   requireArtifacts,
   request,
+  resolvePins,
   startControlPlane,
   type Event,
   type Job,
@@ -1427,6 +1428,11 @@ async function registerGraphPinningNoteSkill(ctx: TestContext): Promise<string> 
   const nodes = document.nodes as Array<Record<string, unknown>>;
   nodes[0].skill_ref = await registerNoteSkill(ctx);
 
+  // Since t283 a version whose pins do not all resolve is `unchecked`, and no
+  // job may cite one: the node this suite registered a manifest for is already
+  // covered, and `resolvePins` stands a capability in for the rest.
+  await resolvePins(ctx, document);
+
   const response = await request<{ graph_version: { id: string } }>(
     ctx,
     'POST',
@@ -1841,6 +1847,11 @@ async function registerGraphRoutingOnThesisSkill(ctx: TestContext): Promise<stri
     },
   ];
   document.final_nodes = ['revisar', 'arquivar'];
+
+  // Since t283 a version whose pins do not all resolve is `unchecked`, and no
+  // job may cite one: the node this suite registered a manifest for is already
+  // covered, and `resolvePins` stands a capability in for the rest.
+  await resolvePins(ctx, document);
 
   const response = await request<{ graph_version: { id: string } }>(
     ctx,

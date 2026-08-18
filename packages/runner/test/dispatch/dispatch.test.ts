@@ -31,6 +31,7 @@
  */
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -64,7 +65,7 @@ import type * as DispatchModule from "../../src/dispatch/dispatch.ts";
 import type * as SessionTextModule from "../../src/dispatch/session-text.ts";
 import type * as WorktreeModule from "../../src/dispatch/session-worktree.ts";
 
-import { bootCore } from "@cartografo/test-support";
+import { bootCore, resolvePins } from "@cartografo/test-support";
 
 import { authorizeGlobalFetch } from "../authorized-fetch.ts";
 
@@ -1176,6 +1177,12 @@ async function registerGraph(
   token: string,
   document: Record<string, unknown>,
 ): Promise<string> {
+  // Every pin has to resolve or the version is stored `unchecked`, and since
+  // t283 no job may cite one of those. A node whose real manifest this suite
+  // already registered is left alone by `resolvePins`; the rest get a stand-in,
+  // which is all the contract gate needs to have an answer.
+  await resolvePins(baseUrl, token, document);
+
   const registered = await api<{ graph_version: { id: string } }>(
     baseUrl,
     "POST",
@@ -1185,6 +1192,84 @@ async function registerGraph(
     token,
   );
   return registered.graph_version.id;
+}
+
+/** Sorts keys recursively — the canonicalization the version hash is defined over. */
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (typeof value === "object" && value !== null) {
+    const source = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) sorted[key] = canonicalValue(source[key]);
+    return sorted;
+  }
+  return value;
+}
+
+/**
+ * The id a document WILL get, computed here instead of asked for.
+ *
+ * Reimplemented rather than imported from `packages/core/src/domain/hash.ts`,
+ * the same call the factory-bundle tests make about the manifest hash: a test
+ * that asks the implementation what the right answer is proves only that the
+ * implementation agrees with itself. {@link jobBeforeVersion} asserts the two
+ * agree anyway, which is what keeps this copy honest.
+ */
+function snapshotHash(document: unknown): string {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(canonicalValue(document)), "utf8")
+    .digest("hex");
+  return `sha256:${digest}`;
+}
+
+/**
+ * Creates a job on a version the control plane would refuse work against, in
+ * the one order that is still legal (t283).
+ *
+ * Since t283 `POST /v1/jobs` answers `409` for a `graph_version_id` that
+ * RESOLVES to a version whose contracts were never checked — which is exactly
+ * what a graph pinning a skill nobody registered produces. The cases below need
+ * such a job anyway: what they prove is that the RUNNER blocks instead of
+ * opening a session, and that guard is the last line of defence for a job whose
+ * version arrived after it did (an import, a job created against another
+ * control plane's id).
+ *
+ * So the job is created while the version is still absent — the "loose text"
+ * case the control plane deliberately leaves ungated — and the graph is
+ * registered right after.
+ */
+async function jobBeforeVersion(
+  baseUrl: string,
+  token: string,
+  document: Record<string, unknown>,
+  body: Record<string, unknown>,
+): Promise<Work> {
+  const versionId = snapshotHash(document);
+
+  const job = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    { ...body, graph_version_id: versionId },
+    201,
+    token,
+  );
+
+  const registered = await api<{ graph_version: { id: string } }>(
+    baseUrl,
+    "POST",
+    "/v1/graphs",
+    document,
+    201,
+    token,
+  );
+  assert.equal(
+    registered.graph_version.id,
+    versionId,
+    "the hash computed here has to be the one the control plane wrote",
+  );
+
+  return job;
 }
 
 /** The two skill manifests this file registers, read from disk. */
@@ -2908,33 +2993,28 @@ test("t161 — the node's skill drives the session, and the session advances the
       const missing = "skill-que-ninguem-registrou";
       const document = traversalGraph("travessia-t252-sem-registro");
       const nodes = document.nodes as Array<Record<string, unknown>>;
-      const versionId = await registerGraph(baseUrl, token, {
-        ...document,
-        nodes: nodes.map((node) =>
-          node.id === "publicar"
-            ? {
-                ...node,
-                skill_ref: {
-                  ...(node.skill_ref as Record<string, unknown>),
-                  id: missing,
-                },
-              }
-            : node,
-        ),
-      });
-
-      const job = await api<Work>(
+      const job = await jobBeforeVersion(
         baseUrl,
-        "POST",
-        "/v1/jobs",
+        token,
+        {
+          ...document,
+          nodes: nodes.map((node) =>
+            node.id === "publicar"
+              ? {
+                  ...node,
+                  skill_ref: {
+                    ...(node.skill_ref as Record<string, unknown>),
+                    id: missing,
+                  },
+                }
+              : node,
+          ),
+        },
         {
           title: "ficha cujo nó fixa uma skill que ninguém registrou",
           entry_node_id: "publicar",
           execution_id: 2521,
-          graph_version_id: versionId,
         },
-        201,
-        token,
       );
 
       const { doFetch, calls } = spy();
@@ -3916,6 +3996,9 @@ async function registerLineage(
   token: string,
   document: Record<string, unknown>,
 ): Promise<{ graphId: string; versionId: string }> {
+  // Same reason as `registerGraph` above: an unchecked version carries no job.
+  await resolvePins(baseUrl, token, document);
+
   const registered = await api<{
     graph: { id: string };
     graph_version: { id: string };
@@ -4541,24 +4624,19 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         rmSync(workDir, { recursive: true, force: true });
       });
 
-      const versionId = await registerGraph(
+      // The other two nodes still pin the traversal fixture's own manifests,
+      // which this block does not register: the version is `unchecked`, so the
+      // job goes in before it exists (t283). What the case is about — the
+      // placeholders of the skill on `publicar` — is untouched by that.
+      const job = await jobBeforeVersion(
         baseUrl,
         token,
         placeholderGraph("travessia-t204-at19", manifest),
-      );
-
-      const job = await api<Work>(
-        baseUrl,
-        "POST",
-        "/v1/jobs",
         {
           title: "ficha num nó cuja skill tem placeholder",
           entry_node_id: "publicar",
           execution_id: 2041,
-          graph_version_id: versionId,
         },
-        201,
-        token,
       );
 
       const inputs: string[] = [];
@@ -4622,24 +4700,15 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         rmSync(workDir, { recursive: true, force: true });
       });
 
-      const versionId = await registerGraph(
+      const job = await jobBeforeVersion(
         baseUrl,
         token,
         placeholderGraph("travessia-t204-at20", manifest),
-      );
-
-      const job = await api<Work>(
-        baseUrl,
-        "POST",
-        "/v1/jobs",
         {
           title: "ficha cuja entrada ninguém monta",
           entry_node_id: "publicar",
           execution_id: 2042,
-          graph_version_id: versionId,
         },
-        201,
-        token,
       );
 
       const calls: { method: string; route: string }[] = [];

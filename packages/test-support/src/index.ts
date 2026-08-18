@@ -39,6 +39,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -253,4 +254,123 @@ export async function bootCore(
   );
 
   return { url: url as string, token: token as string };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Making a document's pins resolvable (t283)                                  */
+/* -------------------------------------------------------------------------- */
+
+/** Sorts keys recursively — the canonicalization the manifest hash is defined over. */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (typeof value === 'object' && value !== null) {
+    const source = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(source).sort()) sorted[key] = canonical(source[key]);
+    return sorted;
+  }
+  return value;
+}
+
+/**
+ * The pin: `sha256:` over the canonical JSON of the five content fields.
+ *
+ * Reimplemented here rather than imported from `packages/core/src/domain`, for
+ * the two reasons this package's header already gives — nothing here reaches
+ * into the core's source, and a test that asks the implementation what the right
+ * answer is proves only that the implementation agrees with itself.
+ */
+function manifestHash(manifest: Record<string, unknown>): string {
+  const subset = {
+    instructions: manifest.instructions,
+    input: manifest.input,
+    output: manifest.output,
+    checks: manifest.checks,
+    permissions: manifest.permissions,
+  };
+  return `sha256:${createHash('sha256').update(JSON.stringify(canonical(subset)), 'utf8').digest('hex')}`;
+}
+
+/**
+ * Registers a stand-in capability for every pin of a document that resolves to
+ * nothing, rewriting those pins in place.
+ *
+ * Since t283 a graph version whose pins do not all resolve is stored
+ * `unchecked`, and `POST /v1/jobs` refuses to create a job against one. Every
+ * suite that registers a graph AND then puts work on it therefore has to say
+ * which capability each node stands for — and the committed fixtures cannot say
+ * it themselves: they pin ids like `cartografo/redigir-nota`, and the registry's
+ * kebab-case `id` can never accept a slash.
+ *
+ * A pin that ALREADY resolves is left untouched: a suite that registered its own
+ * manifest has answered for that node on its own terms, and this stepping over
+ * it would swap a meaningful contract for an empty one. The ids invented here
+ * carry a `-fixture` suffix so they can never collide with one.
+ *
+ * The manifests are empty schemas on purpose. This exists so a version can be
+ * `checked`, not so it can be interesting.
+ *
+ * @param baseUrl Base URL of a running control plane.
+ * @param token Operator credential.
+ * @param document Graph document, mutated in place.
+ * @returns The same document, with every pin resolvable.
+ */
+export async function resolvePins(
+  baseUrl: string,
+  token: string,
+  document: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const headers = { authorization: `Bearer ${token}` };
+  const nodes = Array.isArray(document.nodes) ? document.nodes : [];
+
+  for (const raw of nodes) {
+    const node = raw as Record<string, unknown>;
+    const pin = node.skill_ref as { id?: unknown; version?: unknown } | undefined;
+    if (pin === undefined || typeof pin.id !== 'string') continue;
+    const version = typeof pin.version === 'string' ? pin.version : '1.0.0';
+
+    const known = await fetch(
+      `${baseUrl}/v1/skills/${encodeURIComponent(pin.id)}?version=${encodeURIComponent(version)}`,
+      { headers },
+    );
+    if (known.status === 200) continue;
+
+    const id = `${pin.id.split('/').pop() ?? pin.id}-fixture`;
+    const manifest: Record<string, unknown> = {
+      id,
+      version,
+      hash: '',
+      role: 'work',
+      description: `fixture capability standing in for the pin "${pin.id}"`,
+      input: { type: 'object' },
+      output: { type: 'object' },
+      preconditions: [],
+      checks: [
+        {
+          id: 'fixture-check',
+          type: 'deterministic',
+          description: 'The fixture declares a check, because every manifest owes one.',
+          command: 'true',
+        },
+      ],
+      permissions: { filesystem: { read: [], write: [] }, network: { allowed: false } },
+      instructions: `Fixture capability for "${pin.id}".`,
+      origin: { type: 'native' },
+    };
+    manifest.hash = manifestHash(manifest);
+
+    const registered = await fetch(`${baseUrl}/v1/skills`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify(manifest),
+    });
+    assert.ok(
+      registered.status === 201 || registered.status === 200,
+      `registering the fixture manifest "${id}" answered ${registered.status}`,
+    );
+
+    node.skill_ref = { id, version, hash: manifest.hash };
+  }
+
+  return document;
 }

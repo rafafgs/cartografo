@@ -36,6 +36,7 @@ import type * as ServerModule from '../src/server.ts';
 import type * as CredentialsModule from '../src/repositories/credentials.ts';
 import { manifestHash } from '../src/domain/manifest.ts';
 import { authorizeGlobalFetch } from './authorized-fetch.ts';
+import { resolvePinsOver } from './support.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
@@ -192,8 +193,42 @@ function requireNode(doc: GraphDocument, id: string): GraphNode {
   return node;
 }
 
-/** Registers the minimal base graph and returns the freshly created lineage. */
+/**
+ * Registers the minimal base graph and returns the freshly created lineage.
+ *
+ * The pins are made resolvable first (t283): most of this file walks a proposal
+ * all the way to a version that carries WORK, and a version whose contracts were
+ * never checked cannot carry any. The cases that are about the unchecked state
+ * itself call {@link registerUnresolvedBase} instead.
+ */
 async function registerBase(
+  address: string,
+): Promise<{ document: GraphDocument; graph: Graph; version: GraphVersion }> {
+  const document = minimalGraph();
+  await resolvePinsOver(document as unknown as Record<string, unknown>, apiOf(address));
+  // And the capability of the node the proposals below add, which is not in the
+  // document yet and therefore not something `resolvePinsOver` can see.
+  await post(address, '/v1/skills', ADDED_NODE_SKILL);
+
+  const response = await post(address, '/v1/graphs', document);
+  const body = await jsonBody<{ graph: Graph; graph_version: GraphVersion }>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
+  return { document, graph: body.graph, version: body.graph_version };
+}
+
+/** `resolvePinsOver`'s two calls, over this file's own global-fetch harness. */
+function apiOf(address: string): {
+  get: (routePath: string) => Promise<{ status: number }>;
+  post: (routePath: string, body: unknown) => Promise<{ status: number }>;
+} {
+  return {
+    get: async (routePath) => ({ status: (await fetch(`${address}${routePath}`)).status }),
+    post: async (routePath, body) => ({ status: (await post(address, routePath, body)).status }),
+  };
+}
+
+/** The same lineage with its pins left as the fixture wrote them: an `unchecked` version. */
+async function registerUnresolvedBase(
   address: string,
 ): Promise<{ document: GraphDocument; graph: Graph; version: GraphVersion }> {
   const document = minimalGraph();
@@ -257,6 +292,17 @@ async function getProposal(address: string, id: number): Promise<Proposal> {
   return body.proposal;
 }
 
+/**
+ * The capability the node every proposal adds stands for (t283).
+ *
+ * A registrable id, unlike the fixtures' own `cartografo/…` pins: most of this
+ * file applies a proposal and then puts WORK on the version it wrote, and a
+ * version with one unresolved pin is stored `unchecked` and carries no job.
+ * `registerBase` is what puts it in the registry — {@link registerUnresolvedBase}
+ * deliberately does not, which is what keeps the unchecked case above honest.
+ */
+const ADDED_NODE_SKILL = contractManifest('checar-fatos', {});
+
 /** A new node, complete enough to pass `node_with_contract`. */
 function newNode(): GraphNode {
   return {
@@ -265,9 +311,9 @@ function newNode(): GraphNode {
     node_type: 'trabalho',
     description: 'Confere cada afirmação da nota contra a fonte citada.',
     skill_ref: {
-      id: 'cartografo/checar-fatos',
-      version: '1.0.0',
-      hash: `sha256:${'0'.repeat(64)}`,
+      id: ADDED_NODE_SKILL.id as string,
+      version: ADDED_NODE_SKILL.version as string,
+      hash: ADDED_NODE_SKILL.hash as string,
     },
     contract: {
       input_schema: {
@@ -1811,7 +1857,7 @@ test('t283 — an applied proposal whose result still has an unresolved pin is s
   // The registry is empty, so the base's own two pins resolve to nothing, and
   // the node this proposal ADDS pins a third skill nobody registered either
   // (`unregisteredPin` exempts added nodes on purpose — see `routes/proposals.ts`).
-  const { graph, version } = await registerBase(address);
+  const { graph, version } = await registerUnresolvedBase(address);
   assert.equal(version.contracts.state, 'unchecked', 'the base itself was never checkable');
 
   const proposal = await createProposal(address, graph.id, version.id, passingOperations());

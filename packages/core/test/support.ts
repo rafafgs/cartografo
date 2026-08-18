@@ -291,6 +291,121 @@ export function countEvents(ctx: TestContext): number {
   return row.total;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Making a document's pins resolvable (t283)                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Registers a permissive manifest for every pin of a document that resolves to
+ * nothing, rewriting those pins in place.
+ *
+ * Why every suite that registers a graph AND creates a job against it needs
+ * this: `POST /v1/jobs` refuses a version whose contracts were never checked
+ * (t283), and a version is `unchecked` exactly while some pin of it resolves to
+ * nothing. The committed fixtures pin ids like `cartografo/redigir-nota`, which
+ * the registry's kebab-case `ID_PATTERN` can never accept — so the pin as
+ * written could not be registered even in principle, and the suites that used to
+ * post those documents raw now have to say which capability each node stands
+ * for.
+ *
+ * What it does NOT do is touch a pin that already resolves. A suite that
+ * registered its own manifest — a gate with a real `outcome` schema, a skill
+ * whose `output` a test asserts against — has already answered for that node,
+ * and this helper stepping over it would swap a meaningful contract for an empty
+ * one. The ids it invents carry a `-fixture` suffix for the same reason: they
+ * must never collide with a manifest a suite registers on its own terms.
+ *
+ * The manifests it writes are deliberately EMPTY schemas: this exists so a
+ * version can be `checked`, not so it can be interesting. A test that cares
+ * about what a skill declares registers its own before calling here.
+ *
+ * @param ctx Control plane running.
+ * @param document Graph document, mutated in place.
+ * @returns The same document, with every pin resolvable.
+ */
+export async function resolvePins(
+  ctx: TestContext,
+  document: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return resolvePinsOver(document, {
+    get: (routePath) => request(ctx, 'GET', routePath),
+    post: (routePath, body) => request(ctx, 'POST', routePath, body),
+  });
+}
+
+/**
+ * {@link resolvePins}, for the suites that speak to the API through their own
+ * harness instead of through `request()`.
+ *
+ * Three files start the control plane themselves and talk to it with a bare
+ * `fetch` over `authorizeGlobalFetch` (`graph-routes`, `proposal-routes`,
+ * `leases`). They need the same fixture capabilities, and a second copy of this
+ * function in each of them is exactly what `no-duplicate-helpers.test.ts`
+ * exists to prevent — so the HTTP calls come in as a parameter.
+ *
+ * @param document Graph document, mutated in place.
+ * @param api How to reach the control plane: a GET and a POST, both decoded.
+ * @returns The same document, with every pin resolvable.
+ */
+export async function resolvePinsOver(
+  document: Record<string, unknown>,
+  api: {
+    get: (routePath: string) => Promise<{ status: number }>;
+    post: (routePath: string, body: unknown) => Promise<{ status: number }>;
+  },
+): Promise<Record<string, unknown>> {
+  const { manifestHash } = (await import(
+    new URL('../src/domain/manifest.ts', import.meta.url).href
+  )) as { manifestHash: (manifest: unknown) => string };
+
+  const nodes = Array.isArray(document.nodes) ? document.nodes : [];
+  for (const raw of nodes) {
+    const node = raw as Record<string, unknown>;
+    const pin = node.skill_ref as { id?: unknown; version?: unknown } | undefined;
+    if (pin === undefined || typeof pin.id !== 'string') continue;
+    const version = typeof pin.version === 'string' ? pin.version : '1.0.0';
+
+    const known = await api.get(
+      `/v1/skills/${encodeURIComponent(pin.id)}?version=${encodeURIComponent(version)}`,
+    );
+    if (known.status === 200) continue;
+
+    const id = `${pin.id.split('/').pop() ?? pin.id}-fixture`;
+    const manifest: Record<string, unknown> = {
+      id,
+      version,
+      hash: '',
+      role: 'work',
+      description: `fixture capability standing in for the pin "${pin.id}"`,
+      input: { type: 'object' },
+      output: { type: 'object' },
+      preconditions: [],
+      checks: [
+        {
+          id: 'fixture-check',
+          type: 'deterministic',
+          description: 'The fixture declares a check, because every manifest owes one.',
+          command: 'true',
+        },
+      ],
+      permissions: { filesystem: { read: [], write: [] }, network: { allowed: false } },
+      instructions: `Fixture capability for "${pin.id}".`,
+      origin: { type: 'native' },
+    };
+    manifest.hash = manifestHash(manifest);
+
+    const registered = await api.post('/v1/skills', manifest);
+    assert.ok(
+      registered.status === 201 || registered.status === 200,
+      `registering the fixture manifest "${id}" answered ${registered.status}`,
+    );
+
+    node.skill_ref = { id, version, hash: manifest.hash };
+  }
+
+  return document;
+}
+
 /** Shortcut: creates a job and returns the projection. */
 export async function createJob(
   ctx: TestContext,

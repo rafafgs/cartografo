@@ -43,7 +43,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { bootCore } from '@cartografo/test-support';
+import { bootCore, resolvePins } from '@cartografo/test-support';
 
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 import { buildCommand } from '../../src/engine/command.ts';
@@ -142,7 +142,14 @@ function scratch(t: TestHook, label: string): string {
 
 /** Registers factory bundle 1 unedited, so the class exists exactly as shipped. */
 async function registerFactoryGraph(plane: ControlPlane): Promise<string> {
-  const document: unknown = JSON.parse(readFileSync(FACTORY_GRAPH, 'utf8'));
+  // The bundle's own manifests are not registered here (this suite is about the
+  // intake, not about `cartografo import`), so a stand-in per pin is what keeps
+  // the version `checked` and the jobs it confirms creatable (t283).
+  const document = await resolvePins(
+    plane.baseUrl,
+    plane.token,
+    JSON.parse(readFileSync(FACTORY_GRAPH, 'utf8')) as Record<string, unknown>,
+  );
   const { graph_version: version } = await api<{ graph_version: { id: string } }>(
     plane,
     'POST',

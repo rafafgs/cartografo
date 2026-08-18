@@ -39,7 +39,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { bootCore, type TestHook } from '@cartografo/test-support';
+import { bootCore, resolvePins, type TestHook } from '@cartografo/test-support';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
@@ -397,7 +397,13 @@ test('t247 AT7 — a finished round makes at most one proposal per lens, and a r
   const { url: baseUrl, token } = await bootCore(t);
   const plane: ControlPlane = { baseUrl, token };
 
-  const document: unknown = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
+  // A resolvable capability per node, or the version is stored `unchecked` and
+  // the round below could not be seeded at all (t283).
+  const document = await resolvePins(
+    plane.baseUrl,
+    plane.token,
+    JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>,
+  );
   const { graph_version: version } = await api<{ graph_version: GraphVersion }>(
     plane,
     'POST',

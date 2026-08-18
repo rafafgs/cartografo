@@ -539,6 +539,46 @@ function resolveOutputSchema(db: Database, row: SessionRow): unknown {
 }
 
 /**
+ * The reported object without the routing label, when it carries a usable one
+ * (t269, FR1/FR3).
+ *
+ * `resultado` is the GRAPH's vocabulary, not the skill's: it names the
+ * `condition` of the edge the session says its node took
+ * (`docs/spec/grafo.md`), and it rides inside the report only because the
+ * fenced-block protocol has exactly one block (t161, t259,
+ * `packages/runner/src/dispatch/parse-node-result.ts`). Holding it against the
+ * pinned skill's `output` confused two schemas: a skill that closes its own —
+ * `additionalProperties: false`, which `derrubar-tese@1.0.0` declares — refused
+ * every conforming report of a routing node, and since t268 a refusal blocks the
+ * node instead of passing silently. So the key never reaches the check, and
+ * never reaches the row or the log either.
+ *
+ * The reading of "usable" is `build()`'s in that same parser, verbatim: present,
+ * a string, non-empty after `.trim()`. Anything else is a session that did not
+ * understand the protocol, and it comes back untouched — a strict schema refuses
+ * it exactly as it did before this ficha, because laundering a key nobody can
+ * route on would store an object beside a decision no edge can carry.
+ *
+ * The label itself is read and dropped: the runner decided the route from its
+ * OWN parse of the block before `/finish` was called, the edge actually taken is
+ * already telemetered by `job.transitioned`, and one that matched no edge rides
+ * in the escalation's own question. A column for it would be the premature
+ * projection the rule of two consumers exists to refuse.
+ *
+ * @param reported The object the session reported, as it reported it.
+ * @returns The same object without `resultado`, or the object itself when there
+ *   is no usable label to take out.
+ */
+function stripRouteLabel(reported: Record<string, unknown>): Record<string, unknown> {
+  const label = reported.resultado;
+  if (typeof label !== 'string' || label.trim() === '') return reported;
+
+  const kept = { ...reported };
+  delete kept.resultado;
+  return kept;
+}
+
+/**
  * What closing a session answers: the session, plus the verdict on the report
  * it carried (t268).
  *
@@ -641,17 +681,26 @@ export function finishSession(
   // Nothing reported, nothing to check: an absent `output` skips the lookup
   // entirely, so the ordinary session pays no read for a feature it did not use.
   const reported = data.output as Record<string, unknown> | null;
-  const problems =
-    reported === null ? [] : validateAgainstJsonSchema(resolveOutputSchema(db, row), reported);
-  const output = problems.length === 0 ? reported : null;
+  const schema = reported === null ? null : resolveOutputSchema(db, row);
+  // The routing key comes out only when there IS a schema to hold the rest
+  // against (t269, FR2): with nothing to check the report against, there is also
+  // nothing to reserve a key from, and t253 AT3's doctrine stands — what was
+  // reported is stored exactly as it was reported, `resultado` included.
+  const judged = reported === null || schema === null ? reported : stripRouteLabel(reported);
+  const problems = judged === null ? [] : validateAgainstJsonSchema(schema, judged);
+  const output = problems.length === 0 ? judged : null;
   const accepted = problems.length === 0;
   // Written on every close, including the one where nothing was reported: the
   // event is where a reader reconstructs what happened, and an `output_accepted`
   // that appeared only on the refusal would make "was not checked" and "was not
   // refused" the same silence (t268).
   data.output_accepted = accepted;
+  // The log carries what was KEPT, and it is the same object the row keeps:
+  // `null` for a refused report, and — since t269 — the accepted one without the
+  // routing key, so nobody reading the event later finds in it a field the
+  // projection does not have.
+  data.output = output;
   if (!accepted) {
-    data.output = null;
     data.output_schema_error = problems;
   }
 

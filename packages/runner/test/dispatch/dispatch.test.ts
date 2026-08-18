@@ -2587,12 +2587,45 @@ const GATE_NOTA = "a etapa anterior deixou saida.md pronto";
 const gateInput = (): Promise<Record<string, unknown>> =>
   Promise.resolve({ producao: { nota: GATE_NOTA } });
 
-/** The lines a fake gate session prints when it chooses an edge by name. */
+/**
+ * `travessia-conferir`'s own `outcome` vocabulary, per routing label (t268).
+ *
+ * Two different words for one concept, and both are load-bearing here: the EDGE
+ * labels of the fixture graph are `aprovado`/`retrabalho` (plus `escala`, which
+ * no edge carries), while the registered manifest's `output` schema requires an
+ * `outcome` out of `pass`/`fail`/`escalate_human`. Closing that gap is t269's
+ * subject; keeping the two in step is this table's job.
+ */
+const GATE_OUTCOME: Readonly<Record<string, string>> = Object.freeze({
+  aprovado: "pass",
+  retrabalho: "fail",
+  escala: "escalate_human",
+});
+
+/**
+ * The lines a fake gate session prints when it chooses an edge by name.
+ *
+ * The block carries the routing label AND the two fields the pinned
+ * `travessia-conferir` manifest's `output` schema requires (t268). Until that
+ * ficha the schema refusal was silently swallowed, so `{resultado}` alone was
+ * enough; now a report the control plane refuses stops the job on its node, and
+ * every case below is about something else — label routing, an unroutable
+ * label, permissions, a `never` node — so all of them need a report that is
+ * ACCEPTED. Sending only the label would make four proofs assert the new block
+ * instead of what they were written for.
+ */
 function linesWithResult(result: string): string {
   return JSON.stringify([
     { stream: "stdout", text: "Conferi o artefato contra o que a etapa pedia." },
     { stream: "stdout", text: "```resultado" },
-    { stream: "stdout", text: JSON.stringify({ resultado: result }) },
+    {
+      stream: "stdout",
+      text: JSON.stringify({
+        resultado: result,
+        outcome: GATE_OUTCOME[result] ?? "escalate_human",
+        evidencia: "li saida.md inteiro antes de decidir",
+      }),
+    },
     { stream: "stdout", text: "```" },
   ]);
 }
@@ -5382,5 +5415,222 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
     await controller.tick(),
     null,
     "so the next tick finds nothing, instead of re-running the last node forever",
+  );
+});
+
+// --- t268: a report the control plane refused holds the job on its node ------
+
+/**
+ * The routing decision and the schema check finally read the same verdict
+ * (t268, AT1/AT2).
+ *
+ * `PATCH /finish` has held a reported `output` against the pinned skill's own
+ * `output` schema since t253 — storing `null` and the reasons when it refuses —
+ * and the runner threw that answer away: it re-parsed the session's raw text on
+ * its own account and routed the job from the label it found there. So a report
+ * core rejected still moved the work along an edge, and the next node read an
+ * `input` projection with nothing in it. That is gap 2 of
+ * `notas/2026-08-17-segunda-execucao-bets.md`.
+ *
+ * Both shapes of node are proved here, because the gate is BEFORE routing and
+ * not instead of it: a single-edge node has no decision to report and moves
+ * anyway, and a gate whose label names a real edge would move on a report the
+ * control plane just refused. Neither does now.
+ */
+test("t268 — a report the pinned skill's schema refused blocks instead of routing", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  await registerSkill(baseUrl, token, GATE_SKILL);
+
+  /** One call the dispatch made, as the spy in front of `fetch` saw it. */
+  interface Traced {
+    method: string;
+    route: string;
+    body: unknown;
+  }
+
+  /** A spy that records every call and delegates to the real control plane. */
+  function spyOn(): { doFetch: typeof fetch; calls: Traced[] } {
+    const calls: Traced[] = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        route: String(input).slice(baseUrl.length),
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return await fetch(input, init);
+    };
+    return { doFetch, calls };
+  }
+
+  /** A job standing on one node of the traversal fixture, in a class of its own. */
+  async function jobOn(
+    nodeId: string,
+    className: string,
+    executionId: number,
+  ): Promise<Work> {
+    const versionId = await registerGraph(baseUrl, token, traversalGraph(className));
+    return await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        title: `ficha cujo relato o schema da skill recusa (${nodeId})`,
+        entry_node_id: nodeId,
+        execution_id: executionId,
+        graph_version_id: versionId,
+      },
+      201,
+      token,
+    );
+  }
+
+  /** The transitions a dispatch posted, in order, as `to_node_id` values. */
+  function transitions(calls: Traced[]): string[] {
+    return calls
+      .filter((call) => call.method === "POST" && call.route.endsWith("/transitions"))
+      .map((call) => (call.body as { to_node_id: string }).to_node_id);
+  }
+
+  /** The blocks it posted for one job, as the reasons they carry. */
+  function blockReasons(calls: Traced[], jobId: number): string[] {
+    return calls
+      .filter((call) => call.method === "POST" && call.route === `/v1/jobs/${jobId}/blocks`)
+      .map((call) => String((call.body as { reason: unknown }).reason));
+  }
+
+  /** The sessions the job has, as the control plane projects them. */
+  async function sessionsOf(jobId: number): Promise<Array<{ id: number; output: unknown }>> {
+    const { sessions } = await api<{ sessions: Array<{ id: number; output: unknown }> }>(
+      baseUrl,
+      "GET",
+      `/v1/sessions?job_id=${jobId}`,
+      undefined,
+      200,
+      token,
+    );
+    return sessions;
+  }
+
+  await parent.test(
+    "t268 AT — a single-edge node whose report was refused does not transition",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t268-unica-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOn("implementar", "travessia-t268-unica", 2681);
+      const { doFetch, calls } = spyOn();
+
+      // `travessia-fazer` requires `{nota: string}`, and this session reports a
+      // routing label and nothing else — which is exactly what a node with one
+      // way out has no use for. The edge is unconditional, so the old dispatch
+      // took it without ever asking whether the report survived.
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        resolveInput: () => Promise.resolve({ pedido: "faça a etapa" }),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_LINES: JSON.stringify([
+            { stream: "stdout", text: "Fiz a etapa." },
+            { stream: "stdout", text: "```resultado" },
+            { stream: "stdout", text: JSON.stringify({ resultado: "sempre" }) },
+            { stream: "stdout", text: "```" },
+          ]),
+        },
+      })(job.id);
+
+      assert.deepEqual(
+        transitions(calls),
+        [],
+        "a report the control plane refused may not move the work",
+      );
+
+      const [session] = await sessionsOf(job.id);
+      assert.equal(session.output, null, "the control plane stored nothing, which is the premise");
+
+      const reasons = blockReasons(calls, job.id);
+      assert.equal(reasons.length, 1, "exactly one block, posted by the runner itself");
+      assert.ok(
+        reasons[0].includes(String(session.id)),
+        `the session is what a reader opens next: ${reasons[0]}`,
+      );
+      assert.ok(reasons[0].includes("nota"), `the schema problem has to be quoted: ${reasons[0]}`);
+      assert.ok(reasons[0].includes("implementar"), reasons[0]);
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "implementar", "the work stays on the node it failed");
+      assert.equal(after.blocked, true);
+    },
+  );
+
+  await parent.test(
+    "t268 AT — ...and neither does a gate whose label named a real edge",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t268-portao-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOn("conferir", "travessia-t268-portao", 2682);
+      const { doFetch, calls } = spyOn();
+
+      // `retrabalho` IS an edge of this gate, and `outcome: fail` is in the
+      // manifest's enum: everything the routing decision reads is in order, and
+      // `evidencia` — which the manifest also requires — is missing. So the
+      // schema gate runs BEFORE routing, and not only where routing had nothing
+      // to go on.
+      await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        resolveInput: gateInput,
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_LINES: JSON.stringify([
+            { stream: "stdout", text: "Conferi o artefato." },
+            { stream: "stdout", text: "```resultado" },
+            {
+              stream: "stdout",
+              text: JSON.stringify({ resultado: "retrabalho", outcome: "fail" }),
+            },
+            { stream: "stdout", text: "```" },
+          ]),
+        },
+      })(job.id);
+
+      assert.deepEqual(
+        transitions(calls),
+        [],
+        "the label matched an edge, and it still may not move on a refused report",
+      );
+
+      const [session] = await sessionsOf(job.id);
+      const reasons = blockReasons(calls, job.id);
+      assert.equal(reasons.length, 1);
+      assert.ok(reasons[0].includes(String(session.id)), reasons[0]);
+      assert.ok(
+        reasons[0].includes("evidencia"),
+        `the one missing field has to be quoted: ${reasons[0]}`,
+      );
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "conferir");
+      assert.equal(after.blocked, true);
+    },
   );
 });

@@ -168,20 +168,30 @@ const QUIET = JSON.stringify([
   { stream: 'stdout', text: '```' },
 ]);
 
-/** ...and the lines a fake gate prints when it chooses an edge by name. */
-function routing(result: string): string {
-  return JSON.stringify([
-    { stream: 'stdout', text: 'Conferi o artefato com evidência própria.' },
-    { stream: 'stdout', text: '```resultado' },
-    { stream: 'stdout', text: JSON.stringify({ resultado: result }) },
-    { stream: 'stdout', text: '```' },
-  ]);
-}
+/**
+ * `travessia-conferir`'s own `outcome` vocabulary, per routing label.
+ *
+ * Two words for one concept, and both are load-bearing: the EDGES of this graph
+ * are labelled `aprovado`/`retrabalho`, while the registered manifest's `output`
+ * schema requires an `outcome` out of `pass`/`fail`/`escalate_human`. Closing
+ * that gap is t269's subject; keeping the two in step is this table's job.
+ */
+const GATE_OUTCOME: Readonly<Record<string, string>> = Object.freeze({
+  aprovado: 'pass',
+  retrabalho: 'fail',
+});
 
 /**
  * ...and the lines a gate prints under the merged protocol of t259: ONE block,
  * carrying the routing label AND the object its `output_schema` declares, never
  * a routing key on its own and a second block beside it.
+ *
+ * It is the ONLY gate fixture of this file since t268. A second one printed the
+ * label alone — the pre-t259 shape — and it stopped being a shape any real
+ * session can produce: `PATCH /finish` holds the report against the manifest's
+ * `output` schema, and a report it refuses now stops the work on its node
+ * instead of routing. A fixture no control plane would accept proves nothing
+ * about a traversal that has to cross one.
  */
 function verdict(result: string): string {
   return JSON.stringify([
@@ -191,7 +201,7 @@ function verdict(result: string): string {
       stream: 'stdout',
       text: JSON.stringify({
         resultado: result,
-        outcome: 'pass',
+        outcome: GATE_OUTCOME[result] ?? 'escalate_human',
         evidencia: 'li saida.md do começo ao fim',
       }),
     },
@@ -339,7 +349,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   assert.equal(blocked.blocked, false, 'answering unblocked it');
   assert.equal(blocked.current_node_id, 'conferir', 'and it resumes where it stopped');
 
-  currentLines = routing('retrabalho');
+  currentLines = verdict('retrabalho');
   assert.ok(await controller.tick());
   assert.equal(
     (await nodeNow()).current_node_id,
@@ -352,7 +362,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   assert.ok(await controller.tick());
   assert.equal((await nodeNow()).current_node_id, 'conferir');
 
-  currentLines = routing('aprovado');
+  currentLines = verdict('aprovado');
   assert.ok(await controller.tick());
 
   const arrived = await nodeNow();

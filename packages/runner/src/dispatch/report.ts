@@ -80,16 +80,18 @@ const DENIAL_RESOURCE: Readonly<Record<'filesystem' | 'rede', string>> = Object.
 });
 
 /**
- * The four writes that stop a work, re-exported from the module that owns them
- * now (t265).
+ * The writes that stop a work, re-exported from the module that owns them now
+ * (t265, t268).
  *
- * They were declared here until this ficha, and moved together when the fourth
- * one pushed this file past the 600-line budget. Re-exporting rather than asking
- * each caller to follow the declaration is the rule both earlier splits ran
- * under: a refactor that renames nothing may not make anybody edit an import.
+ * Four of them were declared here until t265, and moved together when the fourth
+ * one pushed this file past the 600-line budget; the fifth was born next door.
+ * Re-exporting rather than asking each caller to follow the declaration is the
+ * rule both earlier splits ran under: a refactor that renames nothing may not
+ * make anybody edit an import.
  */
 export {
   blockForEngineRefusal,
+  blockForOutputSchemaRefusal,
   blockForPreSessionFailure,
   blockForUncommittedWork,
   blockWithNobodyToAsk,
@@ -394,6 +396,44 @@ export class PermissionDenialReporter {
 }
 
 /**
+ * What the runner reads back from `PATCH /finish` (t268).
+ *
+ * Two keys of a body that carries the whole session projection beside them, and
+ * only these two are named: the closure is a write, and what it answers about
+ * the SESSION the runner already knows. Both optional, because a control plane
+ * older than this ficha answers neither — and an absent answer is not a refusal.
+ */
+interface FinishResponse {
+  output_accepted?: boolean;
+  output_schema_error?: string[];
+}
+
+/**
+ * What closing a session tells the dispatch (t268).
+ *
+ * Two facts that fail independently, which is why they travel together and not
+ * as one value: the WRITE can be refused (and then there is no verdict to read),
+ * and the REPORT can be refused (and then the write went through perfectly). The
+ * first is all this function answered until t268; the second is what the
+ * orchestrator needs before it decides whether the work may move.
+ */
+export interface FinishVerdict {
+  /** `null` when the write went through, and whatever it threw otherwise. */
+  failure: unknown;
+  /**
+   * Whether the control plane took the reported `output`.
+   *
+   * Three-state on purpose: `true` accepted — including the vacuous case of a
+   * session that reported nothing —, `false` refused by the pinned skill's own
+   * `output` schema, and ABSENT for "there was no answer to read": the write
+   * failed, or the control plane predates the field. Only `false` stops a work.
+   */
+  outputAccepted?: boolean;
+  /** Every reason the schema gave, when it refused. */
+  outputSchemaError?: string[];
+}
+
+/**
  * Records the end of the session, in the taxonomy's vocabulary (t98, t159, t172).
  *
  * The failure is GIVEN BACK rather than thrown, exactly as the denials' is: a
@@ -417,7 +457,8 @@ export class PermissionDenialReporter {
  *   and then the KEY is omitted: a `null` there is what the control plane
  *   writes for a report the skill's schema REFUSED
  *   (`packages/core/src/repositories/session.ts`), which is a different fact.
- * @returns `null` when the write went through, and whatever it threw otherwise.
+ * @returns The closure's verdict: the write failure when there was one, and what
+ *   the control plane answered about the report when there was a response.
  */
 export async function finishSession(
   call: ControlPlaneCall,
@@ -425,9 +466,10 @@ export async function finishSession(
   outcome: Outcome,
   transcript: string,
   output?: Record<string, unknown>,
-): Promise<unknown> {
+): Promise<FinishVerdict> {
+  let answer: FinishResponse | undefined;
   try {
-    await call(`/v1/sessions/${sessionId}/finish`, 'PATCH', {
+    answer = await call<FinishResponse>(`/v1/sessions/${sessionId}/finish`, 'PATCH', {
       status: TAXONOMY_STATUS[outcome.status],
       exit_code: outcome.exitCode,
       // Both watchdogs land on `timed_out`; this is what tells them
@@ -462,9 +504,23 @@ export async function finishSession(
       ...(output === undefined ? {} : { output }),
     });
   } catch (error) {
-    return error;
+    // No response to read, so no verdict either — and that absence is the whole
+    // point of the two fields being optional: an unreachable control plane may
+    // not be read as a refused report, which would stop a work over a hiccup.
+    return { failure: error };
   }
-  return null;
+
+  return {
+    failure: null,
+    // Guarded rather than trusted: a control plane older than t268 answers the
+    // bare projection, and "nobody said" is not `false`. Only `false` stops a work.
+    ...(typeof answer?.output_accepted === 'boolean'
+      ? { outputAccepted: answer.output_accepted }
+      : {}),
+    ...(Array.isArray(answer?.output_schema_error)
+      ? { outputSchemaError: answer.output_schema_error }
+      : {}),
+  };
 }
 
 /**

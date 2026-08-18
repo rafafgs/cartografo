@@ -1,5 +1,5 @@
 /**
- * The four writes that STOP a work, on the runner's own account (t265).
+ * The five writes that STOP a work, on the runner's own account (t265, t268).
  *
  * They were four closures in `dispatch.ts` until t202, then four exports of
  * `report.ts` until this ficha, which added the fourth and pushed that module
@@ -7,9 +7,14 @@
  * The cut is where the module was already largest and most cohesive: every one
  * of these is the same `POST /v1/jobs/:id/blocks`, signed the same way, and what
  * differs between them is only WHICH fact stopped the work — which is exactly
- * why they are four functions and not one helper taking a string. No export was
- * renamed and no behaviour changed; `report.ts` re-exports all four, so no
+ * why they are five functions and not one helper taking a string. No export was
+ * renamed and no behaviour changed; `report.ts` re-exports all of them, so no
  * caller edits an import (the rule both earlier splits ran under).
+ *
+ * The fifth arrived with t268, and it is the first one whose fact comes from a
+ * READ: the other four are decided here, out of what the runner already has in
+ * hand, while a report refused by the pinned skill's `output` schema is the
+ * control plane's judgement, answered on the very closure that reported it.
  *
  * `POST /v1/jobs/:id/blocks` is an unconditional, reason-carrying block that has
  * existed since t102, and every write here uses it unchanged. What the dispatch
@@ -219,6 +224,75 @@ export async function blockForEngineRefusal(
     'Recusa é determinística — o mesmo prompt é recusado de novo a cada tentativa ' +
     '—, então o trabalho para aqui em vez de gastar mais sessões: reveja as ' +
     'instruções do nó e a skill que ele fixa antes de desbloquear.';
+
+  await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
+    reason,
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
+  });
+
+  return reason;
+}
+
+/**
+ * Stops the work because the control plane REFUSED the session's report
+ * (t268, FR5).
+ *
+ * The fifth block of this module, and the one that closes gap 2 of
+ * `notas/2026-08-17-segunda-execucao-bets.md`. `PATCH /finish` has held a
+ * reported `output` against the `output` schema of the skill the node pins since
+ * t253 — storing `null` and the reasons when it refuses, because losing the END
+ * of a session over a malformed self-report would be strictly worse than losing
+ * the report. What nobody did with that verdict was read it: the dispatch
+ * re-parsed the session's raw text on its own account and routed the work from
+ * the label it found there, so a report the control plane had just rejected
+ * still moved it along an edge — and the next node got an `input` projection
+ * with nothing in it.
+ *
+ * It blocks on the FIRST refusal, the same posture {@link blockForEngineRefusal}
+ * established and for a related reason: what was refused is the SHAPE of the
+ * report, and a second session told exactly what the first one was told is being
+ * asked for the same shape again. Retrying with the problems appended to the
+ * prompt is a real alternative and a different ficha's — it needs a retry count
+ * carried across dispatches and a second decision about how many attempts are
+ * enough, for a failure mode with no evidence yet that a second try behaves
+ * differently.
+ *
+ * The reason quotes EVERY problem and not only the first, exactly as
+ * `output_schema_error` itself carries all of them: whoever unblocks this work
+ * has to fix the report, and a list cut short is a second round of the same
+ * conversation.
+ *
+ * @param call The dispatch's control-plane client.
+ * @param job The work being dispatched.
+ * @param sessionId The session whose report was refused — what a reader opens
+ *   next, since the reasons live in ITS `session.finished` event.
+ * @param problems Every reason the schema gave, verbatim.
+ * @returns The reason that was posted, so the caller can hand it back as the
+ *   block's own — the runner may not tell the API one story and its caller
+ *   another.
+ */
+export async function blockForOutputSchemaRefusal(
+  call: ControlPlaneCall,
+  job: JobRef,
+  sessionId: number,
+  problems: readonly string[],
+): Promise<string> {
+  // Built with concatenation and not with a nested template literal, for the
+  // reason `blockForEngineRefusal` above already records: the D18 sweep's
+  // masking scanner reads one backtick at a time.
+  const listed =
+    problems.length === 0
+      ? 'O control plane não detalhou o motivo.'
+      : 'Problemas: ' + problems.map((problem) => '`' + problem + '`').join('; ') + '.';
+
+  const reason =
+    `A sessão ${String(sessionId)} do nó \`${job.current_node_id}\` terminou, mas o ` +
+    'control plane RECUSOU o relato dela: ele não casa com o schema `output` da ' +
+    'skill que o nó fixa, então nada foi gravado e o nó seguinte não teria o que ' +
+    `ler. ${listed} ` +
+    'O trabalho para aqui em vez de seguir por uma aresta escolhida a partir de um ' +
+    'relato que não existe: reveja o contrato do nó e a skill que ele fixa antes de ' +
+    'desbloquear.';
 
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
     reason,

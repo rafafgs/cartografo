@@ -539,6 +539,40 @@ function resolveOutputSchema(db: Database, row: SessionRow): unknown {
 }
 
 /**
+ * What closing a session answers: the session, plus the verdict on the report
+ * it carried (t268).
+ *
+ * The verdict exists because the runner asks a question this repository has
+ * been able to answer since t253 and never did: it validates a reported
+ * `output` against the pinned skill's schema, writes `null` and the reasons
+ * when it refuses — and then handed back a session that cannot say any of it,
+ * by design (`WireSession.output`'s own comment: WHY a report was refused is
+ * telemetry of the log, not part of the session). The runner, with no answer,
+ * routed the job from its OWN parse of the same block. So a report this file
+ * rejected still moved the work along an edge.
+ *
+ * A return value and not a column: what the caller needs is synchronous, at the
+ * one call that produced it. Nothing durable changes — the doctrine above holds
+ * for every OTHER route, and a session still cannot answer "was my report
+ * refused" after the fact.
+ */
+export interface FinishSessionResult {
+  /** The closed session, exactly as it always came back. */
+  session: Session;
+  /**
+   * Whether the reported `output` was taken.
+   *
+   * Set on EVERY close, and `true` in two different situations that are the
+   * same one for the caller: nothing was reported (so there was nothing to
+   * refuse) and the report matched the schema. `false` only when the pinned
+   * skill's own `output` schema refused what was reported.
+   */
+  output_accepted: boolean;
+  /** Why it was refused, when it was — the same list the event carries. */
+  output_schema_error?: string[];
+}
+
+/**
  * Closes the session and records `session.finished` (FR11).
  *
  * Closing is exactly-once: the `UPDATE` is guarded by `status = 'open'` and a
@@ -573,7 +607,8 @@ function resolveOutputSchema(db: Database, row: SessionRow): unknown {
  * @param db Open handle.
  * @param id Session id.
  * @param input Request body.
- * @returns The closed session, or `null` if it does not exist.
+ * @returns The closed session and the verdict on its report, or `null` if the
+ *   session does not exist.
  * @throws {ValidationError} When the status is outside the enum, `usage`,
  *   `models` or `output` does not match the envelope's own contract, or
  *   `transcript` is present and is not a string.
@@ -583,7 +618,7 @@ export function finishSession(
   db: Database,
   id: number,
   input: FinishSessionInput,
-): Session | null {
+): FinishSessionResult | null {
   const row = readRow(db, id);
   if (row === undefined) return null;
 
@@ -609,7 +644,13 @@ export function finishSession(
   const problems =
     reported === null ? [] : validateAgainstJsonSchema(resolveOutputSchema(db, row), reported);
   const output = problems.length === 0 ? reported : null;
-  if (problems.length > 0) {
+  const accepted = problems.length === 0;
+  // Written on every close, including the one where nothing was reported: the
+  // event is where a reader reconstructs what happened, and an `output_accepted`
+  // that appeared only on the refusal would make "was not checked" and "was not
+  // refused" the same silence (t268).
+  data.output_accepted = accepted;
+  if (!accepted) {
     data.output = null;
     data.output_schema_error = problems;
   }
@@ -704,7 +745,13 @@ export function finishSession(
     return toSession(readRow(db, id) as SessionRow);
   });
 
-  return close();
+  return {
+    session: close(),
+    output_accepted: accepted,
+    // Only on the refusal, exactly like the event's own field: the caller that
+    // has to quote the reasons is the one being told there are some.
+    ...(accepted ? {} : { output_schema_error: problems }),
+  };
 }
 
 /**

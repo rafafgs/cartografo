@@ -68,6 +68,23 @@ function recorder(): { sent: Sent[]; call: ControlPlaneCall } {
   return { sent, call };
 }
 
+/**
+ * A fake `call` that records every request and answers all of them the same.
+ *
+ * The third client of this file, and the first one whose ANSWER matters (t268):
+ * every write before this ficha was told-and-forgotten, so `recorder` handing
+ * back `undefined` was the whole truth. The closure now reads a verdict off the
+ * response it gets, and a body is the only way to pin what it does with one.
+ */
+function answering(answer: unknown): { sent: Sent[]; call: ControlPlaneCall } {
+  const sent: Sent[] = [];
+  const call = async <T>(route: string, method: string, body?: unknown): Promise<T> => {
+    sent.push({ route, method, body });
+    return answer as T;
+  };
+  return { sent, call };
+}
+
 /** A fake `call` that refuses the routes whose path contains `failOn`. */
 function refuser(failOn: string, error: Error): { sent: Sent[]; call: ControlPlaneCall } {
   const sent: Sent[] = [];
@@ -330,14 +347,14 @@ test('AT15 — `finishSession` sends the three absent fields as null, never omit
   const { finishSession, TAXONOMY_STATUS } = await loadReport();
   const { sent, call } = recorder();
 
-  const failure = await finishSession(
+  const verdict = await finishSession(
     call,
     31,
     { status: 'completed', exitCode: 0 },
     'linha um\nlinha dois',
   );
 
-  assert.equal(failure, null);
+  assert.equal(verdict.failure, null);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].route, '/v1/sessions/31/finish');
   assert.equal(sent[0].method, 'PATCH');
@@ -430,9 +447,9 @@ test('AT17 — a refused closure is given back, not thrown', async () => {
   const refusal = new Error('the control plane refused the closure');
   const { call } = refuser('finish', refusal);
 
-  const failure = await finishSession(call, 31, { status: 'failed', exitCode: 1 }, '');
+  const verdict = await finishSession(call, 31, { status: 'failed', exitCode: 1 }, '');
 
-  assert.equal(failure, refusal);
+  assert.equal(verdict.failure, refusal);
 });
 
 /* -- the ordinary question the session itself wrote ------------------------- */
@@ -559,4 +576,114 @@ test('AT19 — a question from a work standing on no node is signed `sessao`', a
   assert.equal(posted.options, null);
   assert.equal(posted.recommendation, null);
   assert.equal(posted.default_answer, null);
+});
+
+/* -- t268: the report the control plane refused ----------------------------- */
+
+/**
+ * The verdict that rides back on the closure, and the block that reads it
+ * (t268, FR4/FR5).
+ *
+ * `PATCH /finish` has validated a reported `output` against the pinned skill's
+ * own schema since t253, and stored `null` plus the reasons when it refused —
+ * but the answer went nowhere: the runner discarded everything but the write
+ * failure and then routed the job from its OWN parse of the same block. So a
+ * report core rejected still moved the work along an edge, which is gap 2 of
+ * `notas/2026-08-17-segunda-execucao-bets.md`.
+ *
+ * The verdict is read off the one response that carries it, and it is a
+ * three-state answer on purpose: `true` accepted, `false` refused, and
+ * `undefined` for "there was no response to read". Only `false` stops a job —
+ * an unreachable control plane is already the write failure beside it, and
+ * inventing a refusal out of it would stop work over a network hiccup.
+ */
+test('t268 AT — `finishSession` reads the accepted verdict off the /finish response', async () => {
+  const { finishSession } = await loadReport();
+  const { sent, call } = answering({ id: 31, status: 'completed', output_accepted: true });
+
+  const verdict = await finishSession(call, 31, { status: 'completed', exitCode: 0 }, 'bruto', {
+    nota: 'a etapa deixou saida.md pronto',
+  });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].route, '/v1/sessions/31/finish');
+  assert.equal(verdict.failure, null);
+  assert.equal(verdict.outputAccepted, true);
+  assert.equal(
+    verdict.outputSchemaError,
+    undefined,
+    'nothing was refused, so there is no reason to carry',
+  );
+});
+
+test('t268 AT — ...and the refusal, with every reason the control plane gave', async () => {
+  const { finishSession } = await loadReport();
+  const problems = [
+    "output must have required property 'nota'",
+    'output must NOT have additional properties',
+  ];
+  const { call } = answering({
+    id: 31,
+    status: 'completed',
+    output: null,
+    output_accepted: false,
+    output_schema_error: problems,
+  });
+
+  const verdict = await finishSession(call, 31, { status: 'completed', exitCode: 0 }, 'bruto', {
+    resultado: 'aprovado',
+  });
+
+  assert.equal(verdict.failure, null, 'a refused REPORT is not a refused write');
+  assert.equal(verdict.outputAccepted, false);
+  assert.deepEqual(
+    verdict.outputSchemaError,
+    problems,
+    'every reason, never only the first — the block quotes them all',
+  );
+});
+
+test('t268 AT — a closure the control plane refused answers no verdict at all', async () => {
+  const { finishSession } = await loadReport();
+  const refusal = new Error('the control plane refused the closure');
+  const { call } = refuser('finish', refusal);
+
+  const verdict = await finishSession(call, 31, { status: 'completed', exitCode: 0 }, '');
+
+  assert.equal(verdict.failure, refusal);
+  assert.equal(
+    verdict.outputAccepted,
+    undefined,
+    'there was no response to read, and undefined is not false: only false stops a job',
+  );
+  assert.equal(verdict.outputSchemaError, undefined);
+});
+
+test('t268 AT — `blockForOutputSchemaRefusal` names the node, the session and every problem', async () => {
+  const { blockForOutputSchemaRefusal } = await loadReport();
+  const { sent, call } = recorder();
+  const problems = [
+    "output must have required property 'nota'",
+    'output must NOT have additional properties',
+  ];
+
+  const reason = await blockForOutputSchemaRefusal(call, JOB, 41, problems);
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].route, '/v1/jobs/7/blocks');
+  assert.equal(sent[0].method, 'POST');
+
+  const posted = body(sent[0]);
+  assert.equal(
+    posted.reason,
+    reason,
+    'the runner may not tell the API one story and its caller another',
+  );
+  const text = String(posted.reason);
+  assert.ok(text.includes(JOB.current_node_id), `the node is missing from: ${text}`);
+  assert.ok(text.includes('41'), `the session is what a reader opens next: ${text}`);
+  for (const problem of problems) {
+    assert.ok(text.includes(problem), `missing "${problem}" from: ${text}`);
+  }
+  assert.deepEqual(posted.actor, { type: 'system', ref: 'runner' });
 });

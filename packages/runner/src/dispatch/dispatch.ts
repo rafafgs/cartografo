@@ -68,6 +68,14 @@
  * throws, and the CAP on those lives in the control plane, which is the only
  * side that can count across leases.
  *
+ * **And so is a report the CONTROL PLANE refused** (t268). The closure answers
+ * whether what the session reported survived the `output` schema of the skill
+ * its node pins; when it did not, nothing was stored, and this file stops the
+ * work on the node instead of routing from a result that exists nowhere. Until
+ * that ficha the verdict was thrown away and the advance was decided from this
+ * side's own parse of the same block — two readings of one report, never
+ * compared.
+ *
  * **And a failure BEFORE the session is a block, not a throw** (t252). Five of
  * the ways the window below can fail reproduce identically on every retry — a
  * dangling `graph_version_id`, an engine with no route, an unregistered skill,
@@ -115,6 +123,7 @@ import {
   PermissionDenialReporter,
   advance,
   blockForEngineRefusal,
+  blockForOutputSchemaRefusal,
   blockForPreSessionFailure,
   blockForUncommittedWork,
   blockWithNobodyToAsk,
@@ -139,36 +148,15 @@ import { buildSessionSpec } from './session-spec.ts';
 import { decodeClaudeCodeSessionText } from './session-text.ts';
 
 /**
- * The surface this module has always had, re-exported from the files that own
- * each piece now (t202, t223).
+ * The surface this module has always had, whole, from the file that lists it
+ * since t268 (`surface.ts`).
  *
- * Every name below was DECLARED here at some point and is imported from here by
- * `cli/run.ts`, by the spikes and by this package's tests. Re-exporting rather
- * than asking each caller to follow the declaration is the rule both splits ran
- * under: a refactor that renames nothing may not make anybody edit an import.
- * Each one now lives next to what it is about — the three refusals next to the
- * renderer that raises them, the taxonomy table next to the write that uses it,
- * the escalation paragraph and the policy next to the field they read, the
- * routing decisions next to `resolve-node.ts`'s answer, and 250 lines of
- * configuration out of the way of the sequence.
+ * A re-export of a list of re-exports, and the reasoning is that module's own:
+ * every name is still imported from HERE by `cli/run.ts`, by the spikes and by
+ * this package's tests, and a refactor that renames nothing may not make
+ * anybody edit an import.
  */
-export {
-  SkillNotRegisteredError,
-  SkillPinMismatchError,
-  UnresolvedPlaceholderError,
-} from './render-skill-instructions.ts';
-export { ESCALATION_PROTOCOL } from './escalation-protocol.ts';
-export { TAXONOMY_STATUS } from './report.ts';
-export {
-  DEFAULT_INSTRUCTIONS,
-  DEFAULT_SILENCE_SECONDS,
-  type ClaudeCodeDispatchOptions,
-  type Job,
-} from './options.ts';
-export { DEFAULT_ENGINE, UnknownEngineError, type EngineRoute } from './resolve-engine.ts';
-export { DispatchError, type DispatchOutcome } from './outcome.ts';
-export { resolveEscalationPolicy, DEFAULT_ESCALATION_POLICY } from './resolve-node.ts';
-export type { EscalationPolicy } from './resolve-node.ts';
+export * from './surface.ts';
 
 /** A session, as `POST /v1/sessions` gives it back. */
 interface Session {
@@ -472,7 +460,7 @@ export function createClaudeCodeDispatch(
       // — a question dropped here is a human who is never called, and the work
       // stays unblocked with nobody knowing what it needed. So `report.ts` hands
       // the failure back rather than throwing it, and it surfaces below.
-      const finishFailure = await finishSession(
+      const verdict = await finishSession(
         call,
         session.id,
         outcome,
@@ -503,28 +491,38 @@ export function createClaudeCodeDispatch(
         await postSessionQuestion(call, job, session.id, request);
       }
 
-      // The other reason a dispatch stops a work on its own account (t207-B).
-      // Only when nothing has stopped it already: an ordinary escalation is
-      // ALREADY a block, posted by the control plane in the same transaction as
-      // `pergunta.criada`, and a second one on top of it would be two owners for
-      // one flag — which is how a work ends up blocked with nothing pending.
-      if (dirtyDespiteCompleted && request === null) {
+      // The other two reasons a dispatch stops a work on its own account
+      // (t207-B, t268), and neither fires when something has stopped it
+      // already: an ordinary escalation is ALREADY a block, posted by the
+      // control plane in the same transaction as `pergunta.criada`, and a
+      // second one on top of it would be two owners for one flag — which is how
+      // a work ends up blocked with nothing pending. And exclusive between
+      // themselves, refusal first: a report the control plane refused is the more
+      // fundamental fact — there is no result to have committed anything about —
+      // and the same rule that forbids a second owner forbids posting both.
+      // `blocks.ts` argues each write, next to the write itself.
+      const refusedReport = outcome.status === 'completed' && verdict.outputAccepted === false;
+      if (request === null && refusedReport) {
+        await blockForOutputSchemaRefusal(call, job, session.id, verdict.outputSchemaError ?? []);
+      } else if (request === null && dirtyDespiteCompleted) {
         await blockForUncommittedWork(call, job, worktree.path);
       }
 
       // And here is where a traversal stops needing an operator (FR7-FR10).
       //
-      // Four conditions, and each one is a different way of not having earned
+      // Five conditions, and each one is a different way of not having earned
       // an advance. No resolved node: there is no graph to say where "next" even
       // is. A session that did not complete: recording progress for work that
       // died would make the log claim something that did not happen. A session
       // that asked: it is blocked behind a person now, and the next dispatch
       // re-enters this same node with the answer already in the prompt — moving
       // it on would answer its question by walking away from it
-      // (`docs/spec/escalacao-humana.md`). And, since t207-B, a session whose
-      // tree was retained: its output is uncommitted, so advancing would move the
+      // (`docs/spec/escalacao-humana.md`). Since t207-B, a session whose tree
+      // was retained: its output is uncommitted, so advancing would move the
       // work off a node whose result lives nowhere the next node can read it —
-      // and would clear the very state a human has to look at.
+      // and would clear the very state a human has to look at. And, since t268,
+      // a report the control plane REFUSED: it stored `null` in place of it, so
+      // an edge chosen from that report is chosen from a value nobody has.
       //
       // BEFORE the captured failures are rethrown, on purpose: a denial or a
       // closure the control plane refused is telemetry the runner owes, and
@@ -534,7 +532,8 @@ export function createClaudeCodeDispatch(
         resolved !== null &&
         outcome.status === 'completed' &&
         request === null &&
-        !dirtyDespiteCompleted
+        !dirtyDespiteCompleted &&
+        !refusedReport
       ) {
         await advance(call, job, resolved, session.id, output);
       }
@@ -546,7 +545,7 @@ export function createClaudeCodeDispatch(
       // the session, the closure after it, the cleanup last of all — which is
       // the precedent the denials' failure set when it was alone. Reporting more
       // than one at a time is a multi-error type nobody has needed yet.
-      const failure = denials.failure ?? finishFailure ?? releaseFailure;
+      const failure = denials.failure ?? verdict.failure ?? releaseFailure;
       if (failure !== null) throw failure;
 
       // The engine refused to answer, which is not a session that died — it is a

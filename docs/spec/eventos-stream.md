@@ -122,9 +122,38 @@ O objeto em `data` é byte a byte o mesmo envelope que
 [taxonomia](../../especificacoes/eventos/taxonomia.md), com o payload
 específico do tipo inteiro dentro de `data`.
 
-**Tipo desconhecido é para ser ignorado, não é erro.** Um cliente antigo lendo
-um log novo continua reconstruindo o que entende; é o que torna a taxonomia
-extensível de forma aditiva. Vale para quem lê este stream.
+**O payload de um tipo também cresce, e cresce aditivamente.** O envelope tem
+sempre os mesmos oito campos; o que vive dentro de `data` é por tipo, e ganhar
+campo novo ali nunca pediu mudança de contrato aqui — mesmo caminho que a §3
+descreve para o conjunto de tipos. `session.finished` é o mais mexido dos
+dezenove: recebeu `output` e `output_schema_error` na `t253`, `failure_kind` e
+`refusal_category` na `t265`, e `output_accepted` na `t268`.
+
+**`output_accepted` é o veredito sobre o relato estruturado da sessão** — se ele
+foi aceito na conferência contra o schema `output` da skill que o nó pina (D9).
+Dos três, é o único que aparece em **todo** fechamento a partir da `t268`:
+`true` quando o relato casou e também quando nada foi relatado, `false` só na
+recusa — e é só na recusa que `output` vem `null` e os motivos vêm inteiros em
+`output_schema_error`. Para quem lê este stream isso é o que torna a contagem
+possível: relato recusado é `output_accepted === false`, e não a ausência da
+lista de motivos, porque "não foi recusado" e "não foi conferido" seriam a mesma
+ausência. Ausente também não é `false`, e é por isso que o schema o declara
+opcional: o log gravado antes da `t268` não tem o campo, e continua válido.
+Quem decide se o trabalho anda a partir desse veredito é o runner, e ele o lê
+**de forma síncrona** na resposta do próprio `PATCH /finish`, não daqui
+([runner-e-controller.md](runner-e-controller.md), "Relato recusado pelo control
+plane segura o trabalho no nó", `t268`): este stream é observação, nunca caminho
+de decisão.
+
+O campo a campo de cada tipo continua sendo da
+[taxonomia](../../especificacoes/eventos/taxonomia.md), e não deste documento:
+repetir aqui a descrição dos payloads criaria uma segunda fonte da verdade só
+para ela divergir da primeira.
+
+**Tipo desconhecido é para ser ignorado, não é erro** — e campo desconhecido
+dentro de `data`, também. Um cliente antigo lendo um log novo continua
+reconstruindo o que entende; é o que torna a taxonomia extensível de forma
+aditiva, nas duas dimensões. Vale para quem lê este stream.
 
 ---
 

@@ -121,6 +121,11 @@
           ],
           "description": "O resultado ESTRUTURADO que a sessão relatou do nó (t253) — o que a projeção de input do nó seguinte lê. Sem required aninhado e sem propriedades declaradas de propósito: a forma de dentro é a que o schema output da skill pinada pelo nó declara (D9), e congelá-la aqui pediria um schema de evento por classe de problema. null quando nada estruturado foi relatado — mesma leitura de usage e models ao lado, ausência é ausência e nunca objeto vazio."
         },
+        "output_accepted": {
+          "type": "boolean",
+          "description": "Se o relato da sessão foi ACEITO (t268). Mesmo fato de output_schema_error acima, visto do lado de quem precisa agir: a lista diz por que um relato foi recusado e só existe quando houve recusa; este diz se ele foi aceito, e é gravado em todo fechamento — true quando nada foi relatado e quando o relato casou com o schema output da skill pinada, false só quando esse schema o recusou. Um booleano e não uma derivação da lista ao lado porque quem o lê é o runner, na resposta do próprio PATCH /finish, para decidir se o trabalho pode andar: ali 'sem motivos' e 'não conferido' seriam a mesma ausência, e a diferença entre as duas é um trabalho que segue por uma aresta escolhida a partir de um relato que não foi gravado.",
+          "examples": [true, false]
+        },
         "output_schema_error": {
           "type": "array",
           "minItems": 1,

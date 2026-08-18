@@ -77,8 +77,24 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
         return conflict(reply, `session ${id} is already "${current.status}"`);
       }
 
-      const session = finishSession(db, id, (request.body ?? {}) as Record<string, unknown>);
-      return session === null ? notFound(reply, 'session') : toWireSession(session);
+      const result = finishSession(db, id, (request.body ?? {}) as Record<string, unknown>);
+      if (result === null) return notFound(reply, 'session');
+
+      // The one response that says whether the report was TAKEN (t268), and the
+      // only one: `GET`/`POST /v1/sessions*` keep answering `toWireSession` and
+      // nothing else, so a session still cannot be asked after the fact whether
+      // its output was refused. What changed is that the runner, which has to
+      // decide right here whether the job may move, no longer has to guess by
+      // re-parsing the same block the control plane just judged.
+      return {
+        ...toWireSession(result.session),
+        output_accepted: result.output_accepted,
+        // ...and the reasons ride only on the refusal, like the event's own
+        // field: an accepted report has nothing to explain.
+        ...(result.output_schema_error === undefined
+          ? {}
+          : { output_schema_error: result.output_schema_error }),
+      };
     }),
   );
 

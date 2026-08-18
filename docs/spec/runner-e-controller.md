@@ -408,6 +408,65 @@ arrendável por mais uma sessão — que, sendo recusada também, bloqueia pela
 **própria** primeira ocorrência. O custo é uma sessão a mais, não o laço
 infinito.
 
+### Relato recusado pelo control plane segura o trabalho no nó (`t268`)
+
+A terceira forma de um despacho parar um trabalho por conta própria, e a
+primeira cujo fato **vem de uma leitura**: as outras duas o runner decide
+sozinho, com o que já tem na mão.
+
+Desde a `t253` o `PATCH /v1/sessions/:id/finish` confere o `output` relatado
+contra o schema `output` da skill que o nó pina — resolvendo `no_id` + o
+`graph_version_id` do trabalho até a linha `(id, version)` do registro — e,
+quando recusa, grava `null` na coluna e a lista de motivos em
+`output_schema_error` no evento. Fechar a sessão nunca é impedido por isso: o
+auto-relato de um nó de trabalho nunca foi evidência, e perder o **fim** da
+sessão por causa dele deixaria a sessão aberta para sempre.
+
+O que ninguém fazia era **ler esse veredito**. O runner descartava a resposta do
+`/finish` — só a falha de escrita sobrevivia — e decidia a rota reparseando, por
+conta própria, o mesmo bloco `` ```resultado `` que o control plane acabara de
+julgar. Duas leituras do mesmo relato, nunca comparadas: um relato recusado
+movia o trabalho pela aresta assim mesmo, e o nó seguinte recebia uma projeção
+de `input` sem nada dentro — o buraco 2 da
+[segunda travessia de bets](../../notas/2026-08-17-segunda-execucao-bets.md).
+
+**O veredito passou a viajar na resposta.** `PATCH /finish` responde a projeção
+da sessão mais `output_accepted` (sempre) e `output_schema_error` (só na
+recusa). Só essa resposta: `GET`/`POST /v1/sessions*` continuam devolvendo o que
+`toWireSession` monta, porque *por que* um relato foi recusado é telemetria do
+log e não parte da sessão — o que mudou é a única pergunta que alguém precisa
+responder **de forma síncrona**, no instante em que decide se o trabalho anda.
+Não há coluna nova e não há migração: o veredito é calculado onde a conferência
+já acontecia e entregue a quem precisa dele.
+
+**E o despacho obedece.** Com `output_accepted: false`, ele chama
+`blockForOutputSchemaRefusal` (`packages/runner/src/dispatch/blocks.ts`) e não
+chama `advance` — vale igual para nó de saída única e para portão, porque o que
+é barrado é a chamada inteira e não a escolha de aresta dentro dela. O motivo do
+bloqueio nomeia o nó, a sessão e **todos** os problemas do schema, pela mesma
+razão que `output_schema_error` carrega a lista inteira: quem desbloqueia tem de
+arrumar o relato, e uma lista cortada é uma segunda rodada da mesma conversa.
+
+**Para na primeira recusa**, como a recusa de engine acima. O que foi recusado é
+a **forma** do relato, e uma segunda sessão recebendo exatamente o mesmo prompt
+está sendo convidada a produzir a mesma forma de novo. Retentar com os problemas
+anexados ao prompt é alternativa real e é ficha de outro dono: pede contagem de
+tentativas atravessando despachos e uma segunda decisão sobre quantas bastam.
+
+**Um dono por bandeira, e uma ordem entre os dois bloqueios.** Nenhum dos dois
+dispara sobre um trabalho que uma pergunta já parou — escalação ordinária já é
+bloqueio, posto pelo control plane na mesma transação de `input_request.created`.
+E
+entre eles a recusa vem primeiro: relato recusado é o fato mais fundamental que
+árvore suja — não há resultado sobre o qual commitar coisa alguma —, e a mesma
+regra que proíbe um segundo dono proíbe postar os dois.
+
+O que fica em aberto, e está registrado como fora de escopo: o rótulo de rota
+(`resultado`) e o vocabulário do schema `output` da skill (`outcome`,
+`evidencia`) continuam sendo duas palavras para um conceito só — é a `t269`; e
+`announceFinishedExecution` (`t262`) segue anunciando uma rodada terminada só
+por `current_node_id` contra `final_nodes`, sem olhar o veredito.
+
 ### Toda chamada tem prazo (`t193`)
 
 O control plane fora do ar responde, e cada método do cliente já sabe o que

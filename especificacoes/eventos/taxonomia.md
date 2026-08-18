@@ -332,6 +332,24 @@ do engine e não atravessa para cá, porque `usage` é um total só. Uma sessão
 modelos entra inteira nos dois quando alguém agrega por modelo, e é isso que a
 lente de custo lê.
 
+**O relato estruturado do nó, e o veredito sobre ele** (`t253`, `t268`).
+`output` é o que a sessão relatou do nó — o objeto de que a projeção de `input`
+do nó seguinte é montada — e ele é conferido, no fechamento, contra o schema
+`output` da skill que o nó pina (D9). Quando essa conferência recusa, `output`
+vai a `null` e os motivos viajam inteiros em `output_schema_error`; o status
+terminal é gravado de qualquer jeito, porque perder o fim da sessão por causa de
+um auto-relato malformado seria estritamente pior — auto-relato de nó de
+trabalho nunca foi evidência.
+
+`output_accepted` é o mesmo fato visto do lado de quem age: a lista diz *por
+que* um relato foi recusado e só existe quando houve recusa; o booleano diz *se*
+ele foi aceito, e é gravado em **todo** fechamento — `true` quando nada foi
+relatado e quando o relato casou, `false` só na recusa. Ele existe porque quem
+lê é o runner, na resposta do próprio `PATCH /finish`, para decidir se o
+trabalho anda: até a `t268` esse veredito era descartado e a rota era escolhida
+a partir de um segundo parse do mesmo bloco, então um relato que o control plane
+recusara movia o trabalho pela aresta assim mesmo.
+
 #### `session.permission_denied` — [schema](schemas/session.permission_denied.schema.json)
 
 Emitido quando a sessão tenta usar uma ferramenta que a política de permissão

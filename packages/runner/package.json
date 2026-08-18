@@ -42,6 +42,7 @@
     "spike:two-engine": "node --import tsx scripts/spike-two-engine-traversal.mjs",
     "traverse": "node --import tsx scripts/run-graph-traversal.mjs",
     "close-outcome": "node --import tsx scripts/close-surveyor-outcome.mjs",
+    "measure-executions": "node --import tsx scripts/measure-executions.mjs",
     "intake": "node --import tsx src/intake/cli.mjs",
     "surveyor": "node --import tsx src/surveyor/cli.mjs",
     "synthesize": "node --import tsx src/synthesizer/cli.mjs",

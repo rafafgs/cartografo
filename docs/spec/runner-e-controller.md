@@ -241,11 +241,12 @@ já prova (§3). Rodar N sessões dentro de um processo foi recusado pelo founde
 na `t208`, e continua reversível por outra decisão se a necessidade aparecer
 concreta.
 
-### Falha antes da sessão bloqueia, não retenta para sempre (`t252`)
+### Falha antes da sessão bloqueia, não retenta para sempre (`t252`, `t270`, `t272`)
 
-Um despacho faz quatro leituras **antes** de pegar worktree e abrir sessão: o
-trabalho, a versão de grafo, a rota do engine e a skill fixada pelo nó. Cinco
-falhas dessa janela se reproduzem **idênticas** em toda retentativa:
+Um despacho faz cinco leituras **antes** de pegar worktree e abrir sessão: o
+trabalho, a versão de grafo, a rota do engine, o ambiente de executor e a skill
+fixada pelo nó. **Sete** falhas do caminho até a sessão se reproduzem
+**idênticas** em toda retentativa:
 
 | Causa | De onde vem |
 |---|---|
@@ -254,22 +255,40 @@ falhas dessa janela se reproduzem **idênticas** em toda retentativa:
 | skill fora do registro | `GET /v1/skills/:id?version=` responde 404 |
 | pin que parou de casar | hash registrado ≠ hash declarado pelo nó (D4) |
 | placeholder que não resolve | `{{input.<caminho>}}` sem valor na entrada do nó |
-| banco de testes ilegível | `git` recusou no caminho configurado (`t270`) |
+| banco de testes ilegível (`t270`) | `git` recusou no caminho configurado |
+| política de permissão que o engine não sabe aplicar (`t272`) | `startSession` estoura `SessionStartError` com o prefixo `permission policy unsupported: `, antes do spawn |
 
-(A sexta chegou com a `t270`, junto com a leitura que a produz — o ambiente de
-executor da seção logo abaixo.) Até a `t252` todas elas **estouravam**. O erro
-subia do despacho, subia do `tick()`, e o loop do `cartografo-runner run` fazia
-a única coisa que sabe fazer com um tick que falhou: escrevia uma linha no
-stderr e perguntava de novo no
-intervalo seguinte (`--interval-ms`, dois segundos por padrão). Como nada tinha
-marcado o trabalho, `GET /v1/jobs` devolvia o
+A sexta chegou com a `t270`, junto com a leitura que a produz — o ambiente de
+executor da seção logo abaixo.
+
+A sétima é a única que acontece **depois** do worktree, dentro do
+`startSession` — e é a que a corrida do `t109` colheu ao vivo: o nó
+`testar-alpha` declarava `rede` por domínio, o adapter `claude-code` não tem como
+expressar isso, e o despacho estourou **38 leases em dois minutos** sem abrir uma
+única sessão ([nota](../../notas/2026-08-17-t109-feature-do-jogo.md), buraco 2).
+Determinística no sentido forte: a mesma skill, no mesmo hash, pede a mesma
+política e recebe a mesma recusa em todo tick. O motivo do bloqueio cita a
+mensagem do adapter **literalmente**, porque o campo a corrigir é o que
+`engine/permission-policy.ts` nomeia.
+
+As outras três causas de `SessionStartError` **não** entram nessa lista: as duas
+formas de falha de spawn não carregam nada que distinga um binário que não existe
+de um `EMFILE` momentâneo, e a recusa de resume do codex é inalcançável hoje.
+Elas caem no teto da subseção abaixo, que é uma afirmação estritamente mais
+fraca — e mais segura.
+
+Até a `t252` as cinco primeiras **estouravam**; a sétima, até a `t272`. O erro
+subia do despacho, subia do `tick()`, e o loop do `cartografo-runner run` fazia a
+única coisa que sabe fazer com um tick que falhou: escrevia uma linha no stderr e
+perguntava de novo no intervalo seguinte (`--interval-ms`, dois segundos por
+padrão). Como nada tinha marcado o trabalho, `GET /v1/jobs` devolvia o
 **mesmo** trabalho na cabeça da fila, a lease era concedida de novo, e o
 despacho caía no mesmo erro — para sempre, sem linha em `pergunta`, sem
 `bloqueado`, sem nada na caixa de entrada. E, como o `tick()` termina na
 primeira lease da passada, nenhum outro trabalho do projeto era tentado
 enquanto esse estivesse na frente.
 
-Agora essas cinco **bloqueiam o trabalho** com um motivo que nomeia a causa —
+Agora essas sete **bloqueiam o trabalho** com um motivo que nomeia a causa —
 `POST /v1/jobs/:id/blocks`, ator `sistema/runner`, o mesmo mecanismo que os dois
 bloqueios que o despacho já fazia por conta própria. Nada de novo é inventado:
 como `GET /v1/jobs` filtra `bloqueado === false`, um trabalho bloqueado
@@ -279,16 +298,17 @@ que transforma "para sempre" em "uma vez". Quem desbloqueia é uma pessoa, pelo
 
 Três limites que fazem parte da decisão:
 
-**Só essas seis.** Qualquer outro erro da mesma janela — 500, 502, 503, timeout
+**Só essas sete.** Qualquer outro erro da mesma janela — 500, 502, 503, timeout
 de rede, o 404 da leitura do **próprio trabalho** — continua estourando, e
-continua sendo retentado no intervalo seguinte. Um control plane fora do ar
-passa sozinho; bloquear um trabalho por causa dele seria pedir a uma pessoa que
-desfaça um soluço na mão. É por isso que a classificação é um módulo puro e
-fechado (`packages/runner/src/dispatch/pre-session-failure.ts`): a fronteira é o
-conteúdo do arquivo, e uma causa nova é decisão de outra ficha — foi exatamente
-assim que a sexta entrou (`t270`): uma leitura pré-sessão nova apareceu, a recusa
-dela se reproduz em toda retentativa, e causa que ninguém classifica é laço que
-ninguém vê.
+continua sendo retentado no intervalo seguinte (com teto, desde a `t272`: ver a
+subseção abaixo). Um control plane fora do ar passa sozinho; bloquear um trabalho
+por causa dele na primeira vez seria pedir a uma pessoa que desfaça um soluço na
+mão. É por isso que a classificação é um módulo puro e fechado
+(`packages/runner/src/dispatch/pre-session-failure.ts`): a fronteira é o conteúdo
+do arquivo, e uma causa nova é decisão de outra ficha — foi exatamente assim que
+a sexta entrou (`t270`): uma leitura pré-sessão nova apareceu, a recusa dela se
+reproduz em toda retentativa, e causa que ninguém classifica é laço que ninguém
+vê.
 
 **O `tick()` segue na mesma passada.** Um bloqueio não é capacidade recusada nem
 trabalho feito: a lease já voltou pelo `finally` de sempre, e o candidato
@@ -296,10 +316,52 @@ seguinte é tentado imediatamente, sem esperar o próximo intervalo. Se todos os
 candidatos bloquearem, a passada devolve `null`, exatamente como a passada que
 não ganhou lease nenhuma.
 
-**Nada abre.** O bloqueio acontece antes de `worktrees.acquire`, então não há
-árvore para devolver, não há `POST /v1/sessions`, não há processo de engine e
-não há token gasto. Falha **depois** que a sessão subiu é outro assunto — o da
-seção seguinte, que a `t265` fechou.
+**Nada abre.** O bloqueio das seis primeiras acontece antes de
+`worktrees.acquire`, então não há árvore para devolver, não há
+`POST /v1/sessions`, não há processo de engine e não há token gasto. A sétima
+acontece com a árvore já na mão: ela é devolvida (retida, como em toda saída de
+erro) antes de o bloqueio ser postado, e mesmo assim nenhuma sessão existe para
+o control plane. Falha **depois** que a sessão subiu é outro assunto — o da seção
+seguinte, que a `t265` fechou.
+
+#### E o que ninguém sabe classificar tem teto (`t272`)
+
+O limite acima é honesto e, sozinho, insuficiente: tudo que o classificador
+responde `null` continuava retentando **para sempre**. Um 5xx teimoso, um
+`git worktree add` que falha porque o disco encheu, um `SessionStartError` de
+spawn — nenhum deles se prova permanente, e nenhum deles tinha fim.
+
+Agora as três janelas que podem falhar antes de existir sessão passam por uma
+decisão só (`packages/runner/src/dispatch/pre-session-retry.ts`): a leitura
+pré-worktree, o `worktrees.acquire` — que até esta ficha não estava sob `catch`
+nenhum — e o `SessionStartError` do `startSession`. A regra é a mesma nas três:
+
+1. classificou (as sete acima)? bloqueia na **primeira**, como sempre;
+2. não classificou e a sequência está **abaixo** do teto? estoura, e o tick
+   seguinte tenta de novo — comportamento idêntico ao de antes;
+3. não classificou e **alcançou** o teto? bloqueia com um motivo que nomeia o nó,
+   a contagem e a mensagem do erro, que é a única evidência que existe.
+
+O teto é `maxConsecutivePreSessionFailures` nas opções do despacho, **5** por
+padrão; valor que não seja inteiro positivo cai no padrão, mesma postura dos
+orçamentos de tempo. Uma sessão aberta (`POST /v1/sessions` respondido) zera a
+contagem do trabalho: chegar a uma sessão é o sinal de que ele destravou.
+
+**A contagem é do processo do runner, e isso é uma decisão com custo.** Ela vive
+num `Map` em memória, dentro do closure que `createClaudeCodeDispatch` devolve, e
+**não** é o mesmo fato que `consecutive_failures` do `job.blocked`: aquele conta
+**sessões** `failed` do par `(trabalho, nó)` e mora no control plane justamente
+porque atravessa leases e processos (`t265`, seção acima). Uma falha pré-sessão
+não cria linha em `sessao` nenhuma — não há o que aquela consulta veja —, e
+inventar uma faria a tabela mentir sobre o que rodou. Construir um contador
+paralelo no core custaria coluna, evento e rota novos para um fato que o
+incidente relatado não precisa: o laço medido aconteceu dentro de **um** processo
+de runner, em dois minutos.
+
+O que se abre mão está escrito, não varrido para baixo do tapete: a sequência
+**não sobrevive a um restart** do runner, e dois runners contam cada um a sua.
+Os dois erram para o mesmo lado — o trabalho retenta *mais* que o teto, nunca
+menos —, que é a direção segura de errar.
 
 ### O ambiente de executor: o que só a máquina sabe (`t270`)
 

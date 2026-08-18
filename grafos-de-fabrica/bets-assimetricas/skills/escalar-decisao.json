@@ -1,7 +1,7 @@
 {
   "id": "escalar-decisao",
-  "version": "1.0.0",
-  "hash": "sha256:3ae0cd3316560726c51296d1965f012694edcc8d9d1d8ef6ed7456d92f93c26e",
+  "version": "1.0.1",
+  "hash": "sha256:66fea7f172244bbc1414e19985d627d0edf999ac8083110a6fa8163083372d6d",
   "role": "gate",
   "description": "Portão de alocação de capital: monta o dossiê e escala ao fundador. Nunca decide sozinho — só emite resultado quando a resposta humana já está registrada, e transcrevendo-a literalmente.",
   "input": {
@@ -226,6 +226,15 @@
           "escalate_human"
         ],
         "description": "obrigatório em toda skill de papel portao. Neste grafo \"passou\" segue pela aresta \"aprovado\" e \"falhou\" pela aresta \"recusado\" — e nenhum dos dois existe sem decisao_humana registrada. \"escalar_humano\" existe porque o formato exige os três valores: a sessão que precisa do fundador PAUSA com input-request, e não emite saída nenhuma."
+      },
+      "resultado": {
+        "type": "string",
+        "minLength": 1,
+        "description": "o rótulo da aresta que este nó tomou — `aprovado` ou `recusado` neste grafo. Vocabulário do GRAFO e não da skill, que é por isso que aqui não há enum: a mesma skill pode viver sob dois grafos com rótulos diferentes. Declarado porque o protocolo de relato manda a sessão devolver UM bloco só, com o rótulo DENTRO do objeto do contrato (t161, t259), e com `additionalProperties: false` um `output` que não o declarasse seria recusado inteiro — apagando a decisão humana que o registro precisa ler (t276).",
+        "examples": [
+          "aprovado",
+          "recusado"
+        ]
       },
       "decisao_humana": {
         "type": "object",

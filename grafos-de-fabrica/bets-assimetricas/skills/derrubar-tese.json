@@ -1,7 +1,7 @@
 {
   "id": "derrubar-tese",
-  "version": "1.0.0",
-  "hash": "sha256:20de5f9f7348d33ac05cf7e495ad0bc596ce3c68034989a6af715ae2f5ac45cb",
+  "version": "1.0.1",
+  "hash": "sha256:34b50136adf7fe1bea8c3db98aff742a6e2d829cf4e0b691f7a3f1ebdd4f1e1d",
   "role": "gate",
   "description": "Red team: tenta derrubar a tese com contra-evidência pesquisada, registra cada objeção com gravidade, e mata a tese que não responde a uma objeção grave.",
   "input": {
@@ -218,6 +218,15 @@
           "escalate_human"
         ],
         "description": "obrigatório em toda skill de papel portao. Neste grafo \"passou\" segue pela aresta \"sobrevive\" e \"falhou\" pela aresta \"morta\". \"escalar_humano\" existe porque o formato exige os três valores — uma sessão que precisa do fundador PAUSA com input-request em vez de resolver aqui."
+      },
+      "resultado": {
+        "type": "string",
+        "minLength": 1,
+        "description": "o rótulo da aresta que este nó tomou — `sobrevive` ou `morta` neste grafo. Vocabulário do GRAFO e não da skill, que é por isso que aqui não há enum: a mesma skill pode viver sob dois grafos com rótulos diferentes. Declarado porque o protocolo de relato manda a sessão devolver UM bloco só, com o rótulo DENTRO do objeto do contrato (t161, t259), e com `additionalProperties: false` um `output` que não o declarasse seria recusado inteiro — apagando as objeções e a contra-evidência que o dimensionamento precisa ler (t276).",
+        "examples": [
+          "sobrevive",
+          "morta"
+        ]
       },
       "objecoes": {
         "type": "array",

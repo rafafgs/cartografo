@@ -67,6 +67,26 @@ export const DEFAULT_TIMEOUT_SECONDS = 3_600;
 export const DEFAULT_SILENCE_SECONDS = 300;
 
 /**
+ * How many consecutive pre-session failures a work gets before it stops (t272,
+ * FR4).
+ *
+ * Five, and the number is a compromise with only one hard side to it. A failure
+ * nobody can classify may well be a hiccup — a 5xx, an `EMFILE`, a `PATH` that
+ * was wrong for a minute — so blocking on the first one would make a person undo
+ * something that had already healed itself, which is exactly what
+ * `pre-session-failure.ts` refuses to do. What the t109 game run proved is only
+ * the other side: 38 attempts in two minutes with nothing recorded is not a
+ * retry policy, it is a loop. Five ticks at the default `--interval-ms` is about
+ * ten seconds of retrying before somebody is told — long enough for a restart,
+ * short enough that nobody pays for the eleventh attempt.
+ *
+ * It is a ceiling on a COUNT and not on a rate, which is what makes it safe to
+ * be wrong about: whatever the interval, the work stops after five, and a person
+ * unblocks it with `POST /v1/jobs/:id/unblocks` once the cause is gone.
+ */
+export const DEFAULT_MAX_CONSECUTIVE_PRE_SESSION_FAILURES = 5;
+
+/**
  * What `GET /v1/jobs/:id` gives back, in the part the dispatch reads.
  *
  * Exported since t204 for one reason: {@link ClaudeCodeDispatchOptions.resolveInput}
@@ -248,6 +268,23 @@ export interface ClaudeCodeDispatchOptions {
    * would make that whole mechanism decorative.
    */
   permissions?: SessionPermissions;
+  /**
+   * Consecutive pre-session failures tolerated per work before it is stopped
+   * (t272, FR4). Default: {@link DEFAULT_MAX_CONSECUTIVE_PRE_SESSION_FAILURES}.
+   *
+   * Resolved through `resolvePreSessionFailureCeiling`, the same posture
+   * `silenceSeconds` has: a value that is not a positive integer is "no
+   * override", never "no ceiling". A `0` read literally would block every work
+   * on its first hiccup and a `NaN` would never block anything — the two ways of
+   * having no policy at all.
+   *
+   * The streak it bounds is counted IN THIS PROCESS, in the closure
+   * `createClaudeCodeDispatch` returns, and it is deliberately not the same fact
+   * as `job.consecutive_failures`: that one counts failed SESSIONS across
+   * leases and processes (t265, `packages/core/src/repositories/job.ts`), and a
+   * failure before a session creates no row for it to see.
+   */
+  maxConsecutivePreSessionFailures?: number;
   /** `fetch` implementation. Default: the global one. Test seam only. */
   doFetch?: typeof fetch;
   /**

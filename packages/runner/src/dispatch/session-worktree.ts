@@ -305,3 +305,69 @@ export class GitWorktreeManager implements WorktreeManager {
     return { kept: false };
   }
 }
+
+/**
+ * Gives ONE session's tree back, exactly once, whatever path the dispatch
+ * leaves by (t160, t207-B; extracted from `dispatch.ts` in t272).
+ *
+ * It was three `let`s and a closure inside the orchestrator, and it moved here
+ * for the reason every earlier split of that file ran under: the ORDER the
+ * release happens in is the sequence and stays there, but the mechanism — once,
+ * remember what was answered, never throw — is about worktrees and belongs next
+ * to the manager it calls. Nothing was renamed and nothing changed: the two
+ * call sites still decide when to release and with which fate.
+ */
+export class WorktreeRelease {
+  readonly #manager: WorktreeManager;
+  readonly #worktree: SessionWorktree;
+  #released = false;
+  #keptByManager: boolean | null = null;
+  #failure: unknown = null;
+
+  constructor(manager: WorktreeManager, worktree: SessionWorktree) {
+    this.#manager = manager;
+    this.#worktree = worktree;
+  }
+
+  /**
+   * What the manager ANSWERED, when it answered at all (t207-B).
+   *
+   * `null` while no release has completed — including a release that threw.
+   * That distinction is the point: a `true` here is the manager saying "I looked
+   * and I kept it", which is what a completed session's work gets blocked over,
+   * and a release that blew up is a fault with an owner already
+   * ({@link failure}). Collapsing the two would block a work over a broken
+   * `git`.
+   */
+  get keptByManager(): boolean | null {
+    return this.#keptByManager;
+  }
+
+  /** What a release that blew up left behind, or `null`. */
+  get failure(): unknown {
+    return this.#failure;
+  }
+
+  /**
+   * Hands the tree back, if it has not been handed back already.
+   *
+   * Idempotent because the dispatch's paths overlap on purpose: the terminal
+   * path releases with the fate the outcome earned, and its catch releases
+   * whatever it finds still held — including what the terminal path already
+   * handed over on its way to throwing. The failure is captured and never thrown
+   * from here, exactly as the dispatch's denial and closure faults are: a
+   * cleanup that could not be done is a fault worth reporting, never a reason to
+   * replace the error already unwinding with a symptom of it.
+   *
+   * @param keep What to ASK for — a request the manager may refuse (t207-B).
+   */
+  async release(keep: boolean): Promise<void> {
+    if (this.#released) return;
+    this.#released = true;
+    try {
+      this.#keptByManager = (await this.#manager.release(this.#worktree, { keep })).kept;
+    } catch (error) {
+      this.#failure = error;
+    }
+  }
+}

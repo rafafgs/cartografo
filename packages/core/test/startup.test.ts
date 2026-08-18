@@ -185,11 +185,14 @@ test(
       // and moved it once more. That one was written as `0021` too and was
       // renumbered at merge, which is the whole reason this count is spelled
       // out: two tickets each adding a migration is the conflict git does not
-      // report.
+      // report. t279 added `0023_schema_migrations_checksum.sql`, which gives
+      // the ledger a checksum per applied migration so an applied file edited in
+      // place stops the startup by name instead of surfacing later as an
+      // unrelated `no such column` — and moved the count one last time.
       assert.equal(
         first.readiness.migrationsApplied,
-        22,
-        'a brand-new database applies the twenty-two migrations the package ships',
+        23,
+        'a brand-new database applies the twenty-three migrations the package ships',
       );
       assert.equal(typeof first.readiness.url, 'string');
       assert.equal(

@@ -36,6 +36,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import type { TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { bootCore } from '@cartografo/test-support';
@@ -570,4 +571,476 @@ test('t270 — triagem → registro-monitoramento closes the bets traversal on i
     [],
     'the crossing that was unblocked by a `PATCH /jobs/1` needs neither verb now',
   );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t276 — the LONG way across, through the two gates nothing had ever crossed. */
+/*                                                                            */
+/* `triagem` learned in t260 that the routing label rides INSIDE the one block */
+/* a session prints (t161, t259), and that a closed `output` which does not    */
+/* declare `resultado` therefore refuses the WHOLE report — `PATCH /finish`    */
+/* stores `null` and, since t268, the runner blocks the work on its node       */
+/* instead of routing it. `derrubar-tese` and `escalar-decisao` were left      */
+/* exactly as they were, and no test of this repository had ever opened either */
+/* node: the crossing above stops at `coleta-fundamentos`, and the one after   */
+/* it takes the `descartar` shortcut. Both gates were broken in the same way   */
+/* and nothing could see it.                                                   */
+/*                                                                            */
+/* So this is the whole graph, node by node: `aprofundar` → the red team the   */
+/* thesis survives → the sizing → the human gate, which pauses for a person    */
+/* and resumes with the answer → the final node. The two workaround verbs stay */
+/* out of it, the same way t270 keeps them out — answering the allocation      */
+/* question is the DESIGN of `decisao` (D14: the human gate is mandatory,      */
+/* always), not an operator unsticking a traversal by hand.                    */
+/* -------------------------------------------------------------------------- */
+
+/** The execution the long crossing's telemetry lands in. */
+const LONG_EXECUTION_ID = 2760;
+
+/** ...and the one the red team's kill lands in. */
+const KILL_EXECUTION_ID = 2761;
+
+/** What the fake `analise-assimetria` session hands back. */
+const MEASURED = {
+  assimetria: {
+    downside_max_pct: 18,
+    upside_alvo_pct: 95,
+    razao_assimetria: 5.3,
+    cenarios: [
+      {
+        nome: 'o pró-forma sai e o desconto de classificação some',
+        probabilidade: 0.6,
+        retorno_pct: 95,
+        premissas_chave: ['o contrato take-or-pay é honrado até 2032'],
+      },
+      {
+        nome: 'o embarcador renegocia o volume mínimo e o piso encolhe',
+        probabilidade: 0.4,
+        retorno_pct: -18,
+        premissas_chave: ['o contrato take-or-pay é honrado até 2032'],
+      },
+    ],
+  },
+  nota: 'Piso vem do caixa líquido pró-forma, não da narrativa de reprecificação.',
+};
+
+/** ...and the fake `red-team` session, when the thesis answers the objection. */
+const SURVIVED = {
+  // Same protocol as `triagem`: the label of the edge INSIDE the one block the
+  // session prints. `red-team` has two ways out, `sobrevive` and `morta`.
+  resultado: 'sobrevive',
+  outcome: 'pass',
+  objecoes: [
+    {
+      objecao:
+        'Com 71% da receita em um único embarcador, o take-or-pay vira risco de contraparte: se ele renegociar, o piso contratual não é piso.',
+      gravidade: 'alta',
+      resposta_da_tese:
+        'O contrato tem garantia bancária de 18 meses de receita — cláusula 11 do anexo contratual do formulário de referência 2026.',
+    },
+    {
+      objecao:
+        'A data do gatilho é escolha do agente: nada obriga a reprecificação a acontecer no release do 1T27.',
+      gravidade: 'baixa',
+      resposta_da_tese: null,
+    },
+  ],
+  contra_evidencia_pesquisada: [
+    {
+      afirmacao_atacada: 'o contrato take-or-pay é honrado até 2032',
+      fonte: 'arbitragem 0021xxx, noticiada em 2025-11-04',
+      achado:
+        'O mesmo embarcador arbitrou um take-or-pay com outro terminal em 2025 e obteve redução de 12% no volume mínimo.',
+    },
+  ],
+  nota: 'A objeção alta tem resposta documental; a baixa não move o piso.',
+};
+
+/** ...and the same session when the thesis has no answer to give. */
+const KILLED = {
+  resultado: 'morta',
+  outcome: 'fail',
+  objecoes: [
+    {
+      objecao:
+        'As duas vendas anteriores tiveram o caixa reinvestido fora do core em menos de três trimestres: o caixa líquido pode não chegar ao acionista.',
+      gravidade: 'alta',
+      resposta_da_tese: null,
+    },
+  ],
+  contra_evidencia_pesquisada: [
+    {
+      afirmacao_atacada: 'o caixa líquido permanece no balanço até o release do 1T27',
+      fonte: 'atas de assembleia de 2023 e 2024',
+      achado: 'O padrão histórico da controladora contradiz a premissa, duas vezes seguidas.',
+    },
+  ],
+  nota: 'Objeção alta sem resposta: a tese morre aqui, que é a morte mais barata do grafo.',
+};
+
+/** ...and the fake `dimensionamento-risco` session. */
+const SIZED = {
+  dimensionamento: {
+    tamanho_posicao_pct: 1.2,
+    perda_maxima_aceita_pct: 0.22,
+    gatilho_de_saida: 'saída integral se a renovação do contrato portuário não sair até o 3T27',
+    horizonte: '18 meses, até o release do 1T27',
+    correlacao_com_carteira: 'baixa: nenhuma outra posição em terminal portuário',
+  },
+  nota: 'Pediram 1,5%; a objeção alta sobrevivente puxou o tamanho para 1,2%.',
+};
+
+/** The allocation question the `decisao` session ends its first turn with. */
+const ALLOCATION_QUESTION = {
+  question:
+    'Alocar 1,2% do capital em NVLR3 a até R$ 18,00, com saída se o contrato portuário não for renovado até o 3T27?',
+  context:
+    'Piso no caixa líquido pró-forma de R$ 0,9 bi; assimetria de 5,3x; uma objeção alta respondida por garantia bancária de 18 meses e uma baixa sem resposta; uma premissa, com fonte primária.',
+  options: ['Aprovar como proposto', 'Recusar'],
+  recommendation: 'Aprove 1,2% do capital em NVLR3, com entrada limitada a R$ 18,00.',
+  default: 'Aprovar como proposto',
+};
+
+/** ...and what the founder answers, which is the only thing that authorizes an edge. */
+const FOUNDER_ANSWER =
+  'Aprovado: alocar 1,2% do capital, entrada limitada a R$ 18,00, e saída integral se a renovação do contrato portuário não sair até o 3T27.';
+
+/** The lines of a session that pauses for a person instead of deciding. */
+const ASKS = JSON.stringify([
+  { stream: 'stdout', text: 'Não há decisão registrada para esta tese, então eu pergunto:' },
+  { stream: 'stdout', text: '```input-request' },
+  { stream: 'stdout', text: JSON.stringify(ALLOCATION_QUESTION) },
+  { stream: 'stdout', text: '```' },
+]);
+
+/** ...and what the session that RESUMES reports — a transcription, never a judgement. */
+const transcribed = (questionId: string): Record<string, unknown> => ({
+  resultado: 'aprovado',
+  outcome: 'pass',
+  decisao_humana: { pergunta_id: questionId, resposta_literal: FOUNDER_ANSWER },
+  nota: 'O tamanho que vale é o da resposta (1,2%), e ele coincide com o proposto.',
+});
+
+/** One crossing of the real bundle, driven node by node with the fake engine. */
+interface Crossing {
+  /** The control plane this crossing booted, for the calls the TEST makes. */
+  baseUrl: string;
+  token: string;
+  /** Dispatches whatever node the job is standing on, with the lines it prints. */
+  run: (nodeId: string, lines: string) => Promise<void>;
+  /** The job as the control plane sees it right now. */
+  job: () => Promise<Work>;
+  /** Everything the fake session of one node was told, as it received it. */
+  toldTo: (nodeId: string) => string;
+  /** The `input` the projection publishes for where the job is standing. */
+  context: () => Promise<Record<string, unknown>>;
+  /** Every call the DISPATCH made — never the ones this test makes itself. */
+  calls: string[];
+}
+
+/**
+ * Boots a control plane, registers the real bundle and opens a thesis on it.
+ *
+ * The same wiring the two crossings above do inline, in one place because these
+ * two walk six and four nodes: what the file already proves is that the
+ * production defaults carry a bets job, and repeating fifty lines of setup twice
+ * more would bury the only thing that differs — what each session says.
+ */
+async function startCrossing(
+  t: TestContext,
+  executionId: number,
+  runnerId: string,
+): Promise<Crossing> {
+  const { url: baseUrl, token } = await bootCore(t);
+
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t276-fabrica-'));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  for (const file of MANIFESTS) {
+    await api(baseUrl, token, 'POST', '/v1/skills', bundleFile('skills', file), 201);
+  }
+
+  const { graph_version: version } = await api<{ graph_version: { id: string } }>(
+    baseUrl,
+    token,
+    'POST',
+    '/v1/graphs',
+    bundleFile('grafo.json'),
+    201,
+  );
+
+  const job = await api<Work>(
+    baseUrl,
+    token,
+    'POST',
+    '/v1/jobs',
+    {
+      title: TITLE,
+      body: BODY,
+      entry_node_id: 'triagem',
+      execution_id: executionId,
+      graph_version_id: version.id,
+      fields: {
+        asset: ASSET,
+        premise_source: PREMISE_SOURCE,
+        tamanho_pretendido: INTENDED_SIZE,
+      },
+    },
+    201,
+  );
+
+  const client = new ClienteControle({ urlBase: baseUrl, token });
+  await client.registrarRunner(runnerId, 'o que atravessa o bundle de bets inteiro');
+
+  const calls: string[] = [];
+  const doFetch: typeof fetch = async (target, init) => {
+    calls.push(`${init?.method ?? 'GET'} ${String(target).slice(baseUrl.length)}`);
+    return await fetch(target, init);
+  };
+
+  const worktrees = directoryWorktrees(root);
+  let currentLines = '[]';
+  let currentRecord = path.join(root, 'unused.json');
+  const controller = new Controller({
+    client,
+    runnerId,
+    projectId: 1,
+    runnerCap: 1,
+    projectCap: 4,
+    ttlSeconds: 30,
+    // No `resolveInput` and no executor environment: this bundle needs neither,
+    // and the production default is what the crossing proves.
+    dispatch: async (jobId) =>
+      createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: {
+          'claude-code': {
+            adapter: new ClaudeCodeAdapter({
+              commandBuilder: (spec) => ({
+                command: process.execPath,
+                args: [FAKE_ENGINE, ...buildCommand(spec).args],
+              }),
+              graceMs: 300,
+            }),
+            decodeSessionText: decodeClaudeCodeSessionText,
+          },
+        },
+        worktrees,
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: currentLines, FAKE_ENGINE_RECORD: currentRecord },
+      })(jobId),
+  });
+
+  return {
+    baseUrl,
+    token,
+    calls,
+    run: async (nodeId, lines) => {
+      currentLines = lines;
+      currentRecord = path.join(root, `${nodeId}.json`);
+      assert.ok(await controller.tick(), `"${nodeId}" was not picked up by the runner`);
+    },
+    job: async () => await api<Work>(baseUrl, token, 'GET', `/v1/jobs/${job.id}`),
+    toldTo: (nodeId) =>
+      (JSON.parse(readFileSync(path.join(root, `${nodeId}.json`), 'utf8')) as FakeRecord).argv.join(
+        '\n',
+      ),
+    context: async () => {
+      const { input } = await api<{ input: Record<string, unknown> }>(
+        baseUrl,
+        token,
+        'GET',
+        `/v1/jobs/${job.id}/context`,
+      );
+      return input;
+    },
+  };
+}
+
+test('t276 — the thesis crosses red-team and the human gate, all seven nodes', async (t) => {
+  const crossing = await startCrossing(t, LONG_EXECUTION_ID, 'runner-t276-long');
+  const { baseUrl, token } = crossing;
+
+  // --- 1. the three nodes the file already covers, in one breath ------------
+  await crossing.run('triagem', reports(TRIADO));
+  await crossing.run('coleta-fundamentos', reports(COLETADO));
+  await crossing.run('analise-assimetria', reports(MEASURED));
+  assert.equal((await crossing.job()).current_node_id, 'red-team');
+
+  // --- 2. the red team routes on its own, which no test had ever asked -----
+  await crossing.run('red-team', reports(SURVIVED));
+  const afterRedTeam = await crossing.job();
+  assert.equal(
+    afterRedTeam.blocked,
+    false,
+    `the red team's report was refused: ${afterRedTeam.block_reason ?? ''}`,
+  );
+  assert.equal(afterRedTeam.current_node_id, 'dimensionamento-risco');
+  assert.deepEqual(
+    (await crossing.context()).objecoes,
+    SURVIVED.objecoes,
+    'the objections survived the schema whole — a refused report would be `null` here',
+  );
+
+  const redTeam = crossing.toldTo('red-team');
+  assert.ok(redTeam.includes(TESE_TRIADA.hipotese), 'the red team is pointed at the real thesis');
+  assert.ok(!redTeam.includes('{{input.'), 'not one placeholder may survive into a prompt');
+
+  // --- 3. the sizing feeds the dossier the human gate reads ----------------
+  await crossing.run('dimensionamento-risco', reports(SIZED));
+  assert.equal((await crossing.job()).current_node_id, 'decisao');
+
+  // --- 4. `decisao` pauses for a person instead of deciding ----------------
+  await crossing.run('decisao', ASKS);
+  const asked = await crossing.job();
+  assert.equal(asked.current_node_id, 'decisao', 'a session that asked cannot also have routed');
+  assert.equal(asked.blocked, true, 'the mandatory human gate stops the traversal (D14)');
+
+  const firstTurn = crossing.toldTo('decisao');
+  assert.ok(
+    firstTurn.includes(String(SIZED.dimensionamento.tamanho_posicao_pct)),
+    'the proposed size reaches the gate from `{{input.dimensionamento.tamanho_posicao_pct}}`',
+  );
+  assert.ok(firstTurn.includes('[]'), 'and the question queue arrives empty, which is legal');
+  assert.ok(!firstTurn.includes('{{input.'));
+
+  const { input_requests: pending } = await api<{ input_requests: { id: number }[] }>(
+    baseUrl,
+    token,
+    'GET',
+    '/v1/input-requests?status=pending',
+  );
+  assert.equal(pending.length, 1, 'exactly one allocation question is waiting on the founder');
+
+  await api(baseUrl, token, 'PATCH', `/v1/input-requests/${pending[0].id}/answer`, {
+    answer: FOUNDER_ANSWER,
+    answered_by: 'rafael',
+  });
+  assert.equal((await crossing.job()).blocked, false, 'answering unblocked it');
+
+  // --- 5. ...and the answer is what authorizes the edge --------------------
+  const questionId = String(pending[0].id);
+  await crossing.run('decisao', reports(transcribed(questionId)));
+  const decided = await crossing.job();
+  assert.equal(
+    decided.blocked,
+    false,
+    `the decision's report was refused: ${decided.block_reason ?? ''}`,
+  );
+  assert.equal(decided.current_node_id, 'registro-monitoramento');
+
+  const secondTurn = crossing.toldTo('decisao');
+  assert.ok(
+    secondTurn.includes(FOUNDER_ANSWER),
+    'the resumed session reads the founder’s words through `{{input.perguntas_respondidas}}`',
+  );
+
+  const beforeTheFinalNode = await crossing.context();
+  assert.deepEqual(beforeTheFinalNode.decisao_humana, transcribed(questionId).decisao_humana);
+  assert.deepEqual(beforeTheFinalNode.dimensionamento, SIZED.dimensionamento);
+
+  // --- 6. the final node runs, and the traversal is over -------------------
+  const executed = [
+    'triagem',
+    'coleta-fundamentos',
+    'analise-assimetria',
+    'red-team',
+    'dimensionamento-risco',
+    'decisao',
+  ];
+  await crossing.run(
+    'registro-monitoramento',
+    reports({
+      metricas_processo: {
+        red_team_executado: true,
+        fracao_premissas_com_fonte: 1,
+        decisao_humana_id: questionId,
+        desfecho_final: 'monitorando',
+        objecoes_altas_sem_resposta: 0,
+        nos_executados: executed,
+      },
+      registro: {
+        tese_id: TESE_TRIADA.id,
+        resumo:
+          'Tese triada, pesquisada, medida, atacada pelo red team, dimensionada em 1,2% e aprovada pelo fundador.',
+        monitoramento: [
+          { gatilho: 'renovação do contrato portuário', prazo: '3T27' },
+          { gatilho: 'release pró-forma do 1T27', prazo: '1T27' },
+        ],
+      },
+      nota: 'Travessia longa fechada: os sete nós do grafo rodaram.',
+    }),
+  );
+
+  const closed = await crossing.job();
+  assert.equal(closed.blocked, false, closed.block_reason ?? '');
+  assert.equal(closed.completed, true, 'the traversal is over: the final node reported');
+
+  const finalPrompt = crossing.toldTo('registro-monitoramento');
+  assert.ok(
+    finalPrompt.includes(JSON.stringify(executed)),
+    '`{{input.traversal.nodes_visited}}` names the six nodes this crossing executed',
+  );
+  assert.ok(!finalPrompt.includes('{{input.'));
+
+  // --- 7. and the only human in it answered a question, by design ---------
+  assert.deepEqual(
+    crossing.calls.filter((call) => call.endsWith('/unblocks') || /^PATCH \/v1\/jobs\/\d+$/.test(call)),
+    [],
+    'no `PATCH /jobs/:id` and no unblock: the gate paused by design and resumed on an answer',
+  );
+});
+
+test('t276 — the red team kills the thesis, and the `morta` edge closes the traversal', async (t) => {
+  const crossing = await startCrossing(t, KILL_EXECUTION_ID, 'runner-t276-kill');
+
+  await crossing.run('triagem', reports(TRIADO));
+  await crossing.run('coleta-fundamentos', reports(COLETADO));
+  await crossing.run('analise-assimetria', reports(MEASURED));
+
+  await crossing.run('red-team', reports(KILLED));
+  const killed = await crossing.job();
+  assert.equal(
+    killed.blocked,
+    false,
+    `the kill report was refused: ${killed.block_reason ?? ''}`,
+  );
+  assert.equal(
+    killed.current_node_id,
+    'registro-monitoramento',
+    'an unanswered high objection takes the "morta" edge straight to the register',
+  );
+  assert.deepEqual(
+    (await crossing.context()).objecoes,
+    KILLED.objecoes,
+    'and the objections that killed it are what the register gets to read',
+  );
+
+  await crossing.run(
+    'registro-monitoramento',
+    reports({
+      metricas_processo: {
+        red_team_executado: true,
+        fracao_premissas_com_fonte: 1,
+        decisao_humana_id: null,
+        desfecho_final: 'arquivado',
+        objecoes_altas_sem_resposta: 1,
+        nos_executados: ['triagem', 'coleta-fundamentos', 'analise-assimetria', 'red-team'],
+      },
+      registro: {
+        tese_id: TESE_TRIADA.id,
+        resumo: 'A tese morreu no red team: o caixa líquido não tem histórico de chegar ao acionista.',
+        monitoramento: [],
+      },
+      nota: 'Travessia fechada sem chegar ao portão humano — desfecho arquivado.',
+    }),
+  );
+
+  const closed = await crossing.job();
+  assert.equal(closed.blocked, false, closed.block_reason ?? '');
+  assert.equal(closed.completed, true, 'the death path ends on the same final node as every other');
 });

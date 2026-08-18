@@ -73,6 +73,8 @@ interface Work {
   current_node_id: string;
   blocked: boolean;
   block_reason: string | null;
+  /** The traveller arrived: its node is a final node of the version (t152, t262). */
+  completed: boolean;
 }
 
 /** The sidecar the fake engine writes with everything the process received. */
@@ -367,4 +369,183 @@ test('t260 — triagem → coleta-fundamentos crosses the real bets bundle', asy
   assert.deepEqual(input.tese_triada, TESE_TRIADA);
   assert.equal(input.asset, ASSET, 'the class field sits beside `input.job`, not inside it');
   assert.deepEqual(input.project, PROJECT);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t270 Half A — the shortest crossing of this bundle, end to end.             */
+/*                                                                            */
+/* `triagem` has two ways out and `descartar` is the cheap one: it goes        */
+/* straight to `registro-monitoramento`, which is the only final node of the   */
+/* graph and the one node that reads the traversal itself. Before this ficha   */
+/* that node could not open a session at all — `registrar-travessia` named     */
+/* `{{input.nos_executados}}` and `{{input.data_de_registro}}`, nothing        */
+/* produced either, and `UnresolvedPlaceholderError` stopped the dispatch      */
+/* before a worktree existed. The second real bets crossing was unblocked by a */
+/* person patching both into the job's `fields` by hand                        */
+/* (`notas/2026-08-17-segunda-execucao-bets.md`, gap 5).                       */
+/*                                                                            */
+/* So the claim here is the repair AND the absence of the workaround: no       */
+/* `PATCH /v1/jobs/:id`, no `POST /v1/jobs/:id/unblocks`, anywhere in the      */
+/* body of this test.                                                         */
+/* -------------------------------------------------------------------------- */
+
+/** The execution the short crossing's telemetry lands in. */
+const DESCARTE_EXECUTION_ID = 2701;
+
+/** What the fake `triagem` session hands back when the idea does not pass. */
+const DESCARTADO = {
+  resultado: 'descartar',
+  outcome: 'fail',
+  tese_triada: { ...TESE_TRIADA, escopo_de_pesquisa: [] },
+  criterios_avaliados: [
+    {
+      criterio: 'o downside está limitado por caixa líquido ou ativo real, não por narrativa',
+      veredito: 'nao_atende',
+      evidencia: 'O piso alegado é uma projeção de múltiplo, não um ativo contratado.',
+    },
+  ],
+  justificativa: 'Sem piso observável, a ideia não merece uma rodada de pesquisa.',
+  nota: 'Descartada no primeiro filtro; a travessia ainda produz métrica.',
+};
+
+/** ...and what `registro-monitoramento` reports — `registrar-travessia`'s `output`. */
+const REGISTRADO = {
+  metricas_processo: {
+    red_team_executado: false,
+    fracao_premissas_com_fonte: 0,
+    decisao_humana_id: null,
+    desfecho_final: 'arquivado',
+    nos_executados: ['triagem'],
+  },
+  registro: {
+    tese_id: TESE_TRIADA.id,
+    resumo: 'A tese foi descartada na triagem por não ter piso observável.',
+    monitoramento: [],
+  },
+  nota: 'Travessia fechada pelo caminho mais curto do grafo.',
+};
+
+test('t270 — triagem → registro-monitoramento closes the bets traversal on its own', async (t) => {
+  const { url: baseUrl, token } = await bootCore(t);
+
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t270-fabrica-'));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  for (const file of MANIFESTS) {
+    await api(baseUrl, token, 'POST', '/v1/skills', bundleFile('skills', file), 201);
+  }
+
+  const { graph_version: version } = await api<{ graph_version: { id: string } }>(
+    baseUrl,
+    token,
+    'POST',
+    '/v1/graphs',
+    bundleFile('grafo.json'),
+    201,
+  );
+
+  const job = await api<Work>(
+    baseUrl,
+    token,
+    'POST',
+    '/v1/jobs',
+    {
+      title: TITLE,
+      body: BODY,
+      entry_node_id: 'triagem',
+      execution_id: DESCARTE_EXECUTION_ID,
+      graph_version_id: version.id,
+      fields: {
+        asset: ASSET,
+        premise_source: PREMISE_SOURCE,
+        tamanho_pretendido: INTENDED_SIZE,
+      },
+    },
+    201,
+  );
+
+  const client = new ClienteControle({ urlBase: baseUrl, token });
+  await client.registrarRunner('runner-t270-fabrica', 'o que fecha a travessia curta de bets');
+
+  const worktrees = directoryWorktrees(root);
+  let currentLines = reports(DESCARTADO);
+  let currentRecord = path.join(root, 'triagem.json');
+  const controller = new Controller({
+    client,
+    runnerId: 'runner-t270-fabrica',
+    projectId: 1,
+    runnerCap: 1,
+    projectCap: 4,
+    ttlSeconds: 30,
+    // No `resolveInput`, and no executor environment either: this bundle needs
+    // neither, and the production default is what the crossing proves.
+    dispatch: async (jobId) =>
+      createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: {
+          'claude-code': {
+            adapter: new ClaudeCodeAdapter({
+              commandBuilder: (spec) => ({
+                command: process.execPath,
+                args: [FAKE_ENGINE, ...buildCommand(spec).args],
+              }),
+              graceMs: 300,
+            }),
+            decodeSessionText: decodeClaudeCodeSessionText,
+          },
+        },
+        worktrees,
+        timeoutSeconds: 60,
+        envOverrides: { FAKE_ENGINE_LINES: currentLines, FAKE_ENGINE_RECORD: currentRecord },
+      })(jobId),
+  });
+
+  const jobNow = async (): Promise<Work> =>
+    await api<Work>(baseUrl, token, 'GET', `/v1/jobs/${job.id}`);
+
+  const toldTo = (nodeId: string): string =>
+    (JSON.parse(readFileSync(path.join(root, `${nodeId}.json`), 'utf8')) as FakeRecord).argv.join(
+      '\n',
+    );
+
+  // --- 1. the gate discards, and the job lands on the final node -----------
+  assert.ok(await controller.tick(), 'the entry node was picked up');
+  const afterTriagem = await jobNow();
+  assert.equal(afterTriagem.blocked, false, afterTriagem.block_reason ?? '');
+  assert.equal(afterTriagem.current_node_id, 'registro-monitoramento');
+
+  // --- 2. ...and the final node OPENS, which is the whole of the repair -----
+  currentLines = reports(REGISTRADO);
+  currentRecord = path.join(root, 'registro-monitoramento.json');
+  assert.ok(await controller.tick(), 'the final node was picked up too');
+
+  const registro = await jobNow();
+  assert.equal(registro.blocked, false, registro.block_reason ?? '');
+  assert.equal(registro.completed, true, 'the traversal is over: the report of the final node landed');
+
+  const told = toldTo('registro-monitoramento');
+  assert.ok(
+    told.includes(JSON.stringify(['triagem'])),
+    '`{{input.traversal.nodes_visited}}` resolves to the one node this crossing executed — ' +
+      'and NOT to `registro-monitoramento`, which is where the job is standing',
+  );
+  assert.ok(!told.includes('{{input.'), 'not one placeholder may survive into a prompt');
+
+  // --- 3. and the projection says the same thing over the API --------------
+  const { input } = await api<{ input: Record<string, unknown> }>(
+    baseUrl,
+    token,
+    'GET',
+    `/v1/jobs/${job.id}/context`,
+  );
+  const traversal = input.traversal as Record<string, unknown>;
+  assert.deepEqual(traversal.nodes_visited, ['triagem']);
+  assert.equal(
+    typeof traversal.entered_at,
+    'string',
+    'the date the session registers is a slice of this instant, never a guess',
+  );
 });

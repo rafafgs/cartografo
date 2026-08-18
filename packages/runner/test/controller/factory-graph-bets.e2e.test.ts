@@ -595,13 +595,13 @@ test('t270 — triagem → registro-monitoramento closes the bets traversal on i
 /* -------------------------------------------------------------------------- */
 
 /** The execution the long crossing's telemetry lands in. */
-const LONGA_EXECUTION_ID = 2760;
+const LONG_EXECUTION_ID = 2760;
 
 /** ...and the one the red team's kill lands in. */
-const MORTA_EXECUTION_ID = 2761;
+const KILL_EXECUTION_ID = 2761;
 
 /** What the fake `analise-assimetria` session hands back. */
-const ANALISADO = {
+const MEASURED = {
   assimetria: {
     downside_max_pct: 18,
     upside_alvo_pct: 95,
@@ -625,7 +625,7 @@ const ANALISADO = {
 };
 
 /** ...and the fake `red-team` session, when the thesis answers the objection. */
-const SOBREVIVEU = {
+const SURVIVED = {
   // Same protocol as `triagem`: the label of the edge INSIDE the one block the
   // session prints. `red-team` has two ways out, `sobrevive` and `morta`.
   resultado: 'sobrevive',
@@ -657,7 +657,7 @@ const SOBREVIVEU = {
 };
 
 /** ...and the same session when the thesis has no answer to give. */
-const MORREU = {
+const KILLED = {
   resultado: 'morta',
   outcome: 'fail',
   objecoes: [
@@ -679,7 +679,7 @@ const MORREU = {
 };
 
 /** ...and the fake `dimensionamento-risco` session. */
-const DIMENSIONADO = {
+const SIZED = {
   dimensionamento: {
     tamanho_posicao_pct: 1.2,
     perda_maxima_aceita_pct: 0.22,
@@ -691,7 +691,7 @@ const DIMENSIONADO = {
 };
 
 /** The allocation question the `decisao` session ends its first turn with. */
-const PERGUNTA_DE_ALOCACAO = {
+const ALLOCATION_QUESTION = {
   question:
     'Alocar 1,2% do capital em NVLR3 a até R$ 18,00, com saída se o contrato portuário não for renovado até o 3T27?',
   context:
@@ -702,29 +702,27 @@ const PERGUNTA_DE_ALOCACAO = {
 };
 
 /** ...and what the founder answers, which is the only thing that authorizes an edge. */
-const RESPOSTA_DO_FUNDADOR =
+const FOUNDER_ANSWER =
   'Aprovado: alocar 1,2% do capital, entrada limitada a R$ 18,00, e saída integral se a renovação do contrato portuário não sair até o 3T27.';
 
 /** The lines of a session that pauses for a person instead of deciding. */
-const ESCALA = JSON.stringify([
+const ASKS = JSON.stringify([
   { stream: 'stdout', text: 'Não há decisão registrada para esta tese, então eu pergunto:' },
   { stream: 'stdout', text: '```input-request' },
-  { stream: 'stdout', text: JSON.stringify(PERGUNTA_DE_ALOCACAO) },
+  { stream: 'stdout', text: JSON.stringify(ALLOCATION_QUESTION) },
   { stream: 'stdout', text: '```' },
 ]);
 
 /** ...and what the session that RESUMES reports — a transcription, never a judgement. */
-const decidido = (perguntaId: string): Record<string, unknown> => ({
+const transcribed = (questionId: string): Record<string, unknown> => ({
   resultado: 'aprovado',
   outcome: 'pass',
-  decisao_humana: { pergunta_id: perguntaId, resposta_literal: RESPOSTA_DO_FUNDADOR },
+  decisao_humana: { pergunta_id: questionId, resposta_literal: FOUNDER_ANSWER },
   nota: 'O tamanho que vale é o da resposta (1,2%), e ele coincide com o proposto.',
 });
 
 /** One crossing of the real bundle, driven node by node with the fake engine. */
 interface Crossing {
-  /** The job the crossing walks. */
-  id: number;
   /** The control plane this crossing booted, for the calls the TEST makes. */
   baseUrl: string;
   token: string;
@@ -838,7 +836,6 @@ async function startCrossing(
   });
 
   return {
-    id: job.id,
     baseUrl,
     token,
     calls,
@@ -865,17 +862,17 @@ async function startCrossing(
 }
 
 test('t276 — the thesis crosses red-team and the human gate, all seven nodes', async (t) => {
-  const crossing = await startCrossing(t, LONGA_EXECUTION_ID, 'runner-t276-longa');
+  const crossing = await startCrossing(t, LONG_EXECUTION_ID, 'runner-t276-long');
   const { baseUrl, token } = crossing;
 
   // --- 1. the three nodes the file already covers, in one breath ------------
   await crossing.run('triagem', reports(TRIADO));
   await crossing.run('coleta-fundamentos', reports(COLETADO));
-  await crossing.run('analise-assimetria', reports(ANALISADO));
+  await crossing.run('analise-assimetria', reports(MEASURED));
   assert.equal((await crossing.job()).current_node_id, 'red-team');
 
   // --- 2. the red team routes on its own, which no test had ever asked -----
-  await crossing.run('red-team', reports(SOBREVIVEU));
+  await crossing.run('red-team', reports(SURVIVED));
   const afterRedTeam = await crossing.job();
   assert.equal(
     afterRedTeam.blocked,
@@ -885,7 +882,7 @@ test('t276 — the thesis crosses red-team and the human gate, all seven nodes',
   assert.equal(afterRedTeam.current_node_id, 'dimensionamento-risco');
   assert.deepEqual(
     (await crossing.context()).objecoes,
-    SOBREVIVEU.objecoes,
+    SURVIVED.objecoes,
     'the objections survived the schema whole — a refused report would be `null` here',
   );
 
@@ -894,18 +891,18 @@ test('t276 — the thesis crosses red-team and the human gate, all seven nodes',
   assert.ok(!redTeam.includes('{{input.'), 'not one placeholder may survive into a prompt');
 
   // --- 3. the sizing feeds the dossier the human gate reads ----------------
-  await crossing.run('dimensionamento-risco', reports(DIMENSIONADO));
+  await crossing.run('dimensionamento-risco', reports(SIZED));
   assert.equal((await crossing.job()).current_node_id, 'decisao');
 
   // --- 4. `decisao` pauses for a person instead of deciding ----------------
-  await crossing.run('decisao', ESCALA);
+  await crossing.run('decisao', ASKS);
   const asked = await crossing.job();
   assert.equal(asked.current_node_id, 'decisao', 'a session that asked cannot also have routed');
   assert.equal(asked.blocked, true, 'the mandatory human gate stops the traversal (D14)');
 
   const firstTurn = crossing.toldTo('decisao');
   assert.ok(
-    firstTurn.includes(String(DIMENSIONADO.dimensionamento.tamanho_posicao_pct)),
+    firstTurn.includes(String(SIZED.dimensionamento.tamanho_posicao_pct)),
     'the proposed size reaches the gate from `{{input.dimensionamento.tamanho_posicao_pct}}`',
   );
   assert.ok(firstTurn.includes('[]'), 'and the question queue arrives empty, which is legal');
@@ -920,14 +917,14 @@ test('t276 — the thesis crosses red-team and the human gate, all seven nodes',
   assert.equal(pending.length, 1, 'exactly one allocation question is waiting on the founder');
 
   await api(baseUrl, token, 'PATCH', `/v1/input-requests/${pending[0].id}/answer`, {
-    answer: RESPOSTA_DO_FUNDADOR,
+    answer: FOUNDER_ANSWER,
     answered_by: 'rafael',
   });
   assert.equal((await crossing.job()).blocked, false, 'answering unblocked it');
 
   // --- 5. ...and the answer is what authorizes the edge --------------------
   const questionId = String(pending[0].id);
-  await crossing.run('decisao', reports(decidido(questionId)));
+  await crossing.run('decisao', reports(transcribed(questionId)));
   const decided = await crossing.job();
   assert.equal(
     decided.blocked,
@@ -938,16 +935,16 @@ test('t276 — the thesis crosses red-team and the human gate, all seven nodes',
 
   const secondTurn = crossing.toldTo('decisao');
   assert.ok(
-    secondTurn.includes(RESPOSTA_DO_FUNDADOR),
+    secondTurn.includes(FOUNDER_ANSWER),
     'the resumed session reads the founder’s words through `{{input.perguntas_respondidas}}`',
   );
 
-  const beforeRegistro = await crossing.context();
-  assert.deepEqual(beforeRegistro.decisao_humana, decidido(questionId).decisao_humana);
-  assert.deepEqual(beforeRegistro.dimensionamento, DIMENSIONADO.dimensionamento);
+  const beforeTheFinalNode = await crossing.context();
+  assert.deepEqual(beforeTheFinalNode.decisao_humana, transcribed(questionId).decisao_humana);
+  assert.deepEqual(beforeTheFinalNode.dimensionamento, SIZED.dimensionamento);
 
   // --- 6. the final node runs, and the traversal is over -------------------
-  const executados = [
+  const executed = [
     'triagem',
     'coleta-fundamentos',
     'analise-assimetria',
@@ -964,7 +961,7 @@ test('t276 — the thesis crosses red-team and the human gate, all seven nodes',
         decisao_humana_id: questionId,
         desfecho_final: 'monitorando',
         objecoes_altas_sem_resposta: 0,
-        nos_executados: executados,
+        nos_executados: executed,
       },
       registro: {
         tese_id: TESE_TRIADA.id,
@@ -983,12 +980,12 @@ test('t276 — the thesis crosses red-team and the human gate, all seven nodes',
   assert.equal(closed.blocked, false, closed.block_reason ?? '');
   assert.equal(closed.completed, true, 'the traversal is over: the final node reported');
 
-  const registro = crossing.toldTo('registro-monitoramento');
+  const finalPrompt = crossing.toldTo('registro-monitoramento');
   assert.ok(
-    registro.includes(JSON.stringify(executados)),
+    finalPrompt.includes(JSON.stringify(executed)),
     '`{{input.traversal.nodes_visited}}` names the six nodes this crossing executed',
   );
-  assert.ok(!registro.includes('{{input.'));
+  assert.ok(!finalPrompt.includes('{{input.'));
 
   // --- 7. and the only human in it answered a question, by design ---------
   assert.deepEqual(
@@ -999,13 +996,13 @@ test('t276 — the thesis crosses red-team and the human gate, all seven nodes',
 });
 
 test('t276 — the red team kills the thesis, and the `morta` edge closes the traversal', async (t) => {
-  const crossing = await startCrossing(t, MORTA_EXECUTION_ID, 'runner-t276-morta');
+  const crossing = await startCrossing(t, KILL_EXECUTION_ID, 'runner-t276-kill');
 
   await crossing.run('triagem', reports(TRIADO));
   await crossing.run('coleta-fundamentos', reports(COLETADO));
-  await crossing.run('analise-assimetria', reports(ANALISADO));
+  await crossing.run('analise-assimetria', reports(MEASURED));
 
-  await crossing.run('red-team', reports(MORREU));
+  await crossing.run('red-team', reports(KILLED));
   const killed = await crossing.job();
   assert.equal(
     killed.blocked,
@@ -1019,7 +1016,7 @@ test('t276 — the red team kills the thesis, and the `morta` edge closes the tr
   );
   assert.deepEqual(
     (await crossing.context()).objecoes,
-    MORREU.objecoes,
+    KILLED.objecoes,
     'and the objections that killed it are what the register gets to read',
   );
 

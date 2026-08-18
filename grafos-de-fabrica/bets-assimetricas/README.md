@@ -196,7 +196,7 @@ chama de semente do atlas compartilhável.
 
 ## Divergências registradas
 
-Seis lugares onde este bundle se afasta do bundle 1 ou do que o formato
+Sete lugares onde este bundle se afasta do bundle 1 ou do que o formato
 sugeriria. Ficam escritas porque divergência não registrada vira armadilha para
 quem vier depois.
 
@@ -265,9 +265,11 @@ quem vier depois.
    verdade em
    [`packages/runner/test/controller/factory-graph-bets.e2e.test.ts`](../../packages/runner/test/controller/factory-graph-bets.e2e.test.ts).
 
-   **O limite é explícito: só `triagem` → `coleta-fundamentos` atravessa vivo.**
-   Os outros cinco nós continuam provados por contrato (divergência 5), e dois
-   buracos ficam nomeados aqui em vez de esquecidos:
+   **O limite daquela ficha era explícito: só `triagem` → `coleta-fundamentos`
+   atravessava vivo** — os outros cinco nós seguiam provados por contrato
+   (divergência 5). A `t276` fechou esse limite e o grafo inteiro atravessa hoje
+   (divergência 7); dos dois buracos que ficaram nomeados aqui em vez de
+   esquecidos, o primeiro continua aberto:
 
    - **`dimensionar-risco` exige `capital` e nunca o interpola.** O `input` dele
      pede um objeto `capital` de topo que a projeção não tem como produzir — não
@@ -283,13 +285,36 @@ quem vier depois.
      manifestos fecha em `additionalProperties`, um schema que não declara
      `resultado` faz o control plane recusar o relato inteiro e gravar `null` —
      e aí o nó seguinte não acha a tese triada. `triar-tese` passou a declarar o
-     campo; `derrubar-tese` e `escalar-decisao` ainda não, e vão precisar no dia
-     em que atravessarem vivos. Junto vem a outra metade do mesmo desencontro,
-     não tocada aqui: a prosa de fecho dos três portões ainda ensina
-     `resultado: "passou"`/`"falhou"`, que era o vocabulário de antes do `t178`
-     e do `t161` — hoje o campo do schema é `outcome`
-     (`pass`/`fail`/`escalate_human`) e `resultado` é o rótulo da aresta. Os três
-     portões erram igual, então a reparação é uma só e vale fazer de uma vez.
+     campo aqui; `derrubar-tese` e `escalar-decisao`, na `t276` (divergência 7).
+7. **Os dois outros portões erravam igual, e ninguém tinha como ver**
+   (`t276`). `derrubar-tese` e `escalar-decisao` fechavam o `saida` em
+   `additionalProperties: false` sem declarar `resultado`, exatamente como
+   `triar-tese` antes da `t260` — então qualquer travessia viva por `red-team`
+   ou `decisao` teria o relato inteiro recusado (`output must NOT have
+   additional properties`), gravado `null`, e o nó seguinte projetaria `input`
+   de coisa nenhuma. Não era um risco teórico e sim um defeito nunca exercitado:
+   a travessia viva da `t260` para em `coleta-fundamentos` e a da `t270` pega o
+   atalho `descartar`, então nenhum teste deste repositório jamais tinha aberto
+   os dois nós. Os dois manifestos passaram a declarar o campo (versão `1.0.1`,
+   hash recomputado, pino do nó junto), e o grafo **inteiro** passou a atravessar
+   ao vivo em
+   [`packages/runner/test/controller/factory-graph-bets.e2e.test.ts`](../../packages/runner/test/controller/factory-graph-bets.e2e.test.ts):
+   `aprofundar` → red team que sobrevive → dimensionamento → portão humano que
+   pausa com `input-request`, é respondido pelo fundador e retoma → nó final;
+   mais o caminho `morta`, a morte mais barata do grafo. O único humano da
+   travessia responde a pergunta de alocação, que é o desenho da D14 e não um
+   operador destravando nada à mão.
+
+   **A outra metade do mesmo desencontro continua aberta, e não é desta ficha:**
+   a prosa de fecho dos **três** portões ainda ensina `resultado:
+   "passou"`/`"falhou"`, que era o vocabulário de antes do `t178` e do `t161` —
+   hoje o campo do schema é `outcome` (`pass`/`fail`/`escalate_human`) e
+   `resultado` é o rótulo da aresta (`sobrevive`/`morta`,
+   `aprovado`/`recusado`). Uma sessão de verdade que siga a prosa emite um
+   rótulo que não casa com aresta alguma e para o trabalho no nó. Os três erram
+   igual e `triar-tese` é o terceiro, então a reparação é uma só, atravessa o
+   `AT8` de [`tests/factory-graph-2.test.mjs`](../../tests/factory-graph-2.test.mjs)
+   (que casa a prosa proibitiva pela palavra `passou`) e vale fazer de uma vez.
 
 ## O formato de aresta não cresceu
 

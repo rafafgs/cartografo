@@ -170,3 +170,37 @@ test('AT7 — anything that is not one of the five classifies to null', async ()
     );
   }
 });
+
+/* -------------------------------------------------------------------------- */
+/* t270 Half B — the sixth cause: a bench the runner cannot read.              */
+/*                                                                            */
+/* `resolveExecutorEnvironment` shells out to `git` for a path and a commit    */
+/* the operator configured at boot. A bad path, a `mainBranch` that does not   */
+/* resolve, a bench that is not a repository — each of those answers the same  */
+/* way on every retry, which is precisely the class this module exists to      */
+/* block instead of loop. Leaving it unclassified would reopen t252's bug for  */
+/* one new failure mode.                                                      */
+/* -------------------------------------------------------------------------- */
+
+test('t270 AT — a bench git could not read blocks, naming the command', async () => {
+  const { classifyPreSessionFailure } = await loadModule();
+  const { ExecutorEnvironmentError } = await import(
+    new URL('../../src/dispatch/resolve-executor-environment.ts', import.meta.url).href
+  );
+
+  const reason = classifyPreSessionFailure(
+    new ExecutorEnvironmentError(
+      'the reference of the test bench could not be read',
+      'git -C /srv/bancos/cartografo rev-parse main',
+      "fatal: not a git repository: '/srv/bancos/cartografo'",
+    ),
+    JOB,
+  );
+
+  namesAll(reason, ['git -C /srv/bancos/cartografo rev-parse main']);
+  assert.match(
+    reason ?? '',
+    /desbloqueie/,
+    'the reason ends where every other one does: fix the configuration and unblock',
+  );
+});

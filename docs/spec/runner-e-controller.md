@@ -254,10 +254,13 @@ falhas dessa janela se reproduzem **idênticas** em toda retentativa:
 | skill fora do registro | `GET /v1/skills/:id?version=` responde 404 |
 | pin que parou de casar | hash registrado ≠ hash declarado pelo nó (D4) |
 | placeholder que não resolve | `{{input.<caminho>}}` sem valor na entrada do nó |
+| banco de testes ilegível | `git` recusou no caminho configurado (`t270`) |
 
-Até a `t252` todas elas **estouravam**. O erro subia do despacho, subia do
-`tick()`, e o loop do `cartografo-runner run` fazia a única coisa que sabe fazer
-com um tick que falhou: escrevia uma linha no stderr e perguntava de novo no
+(A sexta chegou com a `t270`, junto com a leitura que a produz — o ambiente de
+executor da seção logo abaixo.) Até a `t252` todas elas **estouravam**. O erro
+subia do despacho, subia do `tick()`, e o loop do `cartografo-runner run` fazia
+a única coisa que sabe fazer com um tick que falhou: escrevia uma linha no
+stderr e perguntava de novo no
 intervalo seguinte (`--interval-ms`, dois segundos por padrão). Como nada tinha
 marcado o trabalho, `GET /v1/jobs` devolvia o
 **mesmo** trabalho na cabeça da fila, a lease era concedida de novo, e o
@@ -276,13 +279,16 @@ que transforma "para sempre" em "uma vez". Quem desbloqueia é uma pessoa, pelo
 
 Três limites que fazem parte da decisão:
 
-**Só essas cinco.** Qualquer outro erro da mesma janela — 500, 502, 503, timeout
+**Só essas seis.** Qualquer outro erro da mesma janela — 500, 502, 503, timeout
 de rede, o 404 da leitura do **próprio trabalho** — continua estourando, e
 continua sendo retentado no intervalo seguinte. Um control plane fora do ar
 passa sozinho; bloquear um trabalho por causa dele seria pedir a uma pessoa que
 desfaça um soluço na mão. É por isso que a classificação é um módulo puro e
 fechado (`packages/runner/src/dispatch/pre-session-failure.ts`): a fronteira é o
-conteúdo do arquivo, e uma sexta causa é decisão de outra ficha.
+conteúdo do arquivo, e uma causa nova é decisão de outra ficha — foi exatamente
+assim que a sexta entrou (`t270`): uma leitura pré-sessão nova apareceu, a recusa
+dela se reproduz em toda retentativa, e causa que ninguém classifica é laço que
+ninguém vê.
 
 **O `tick()` segue na mesma passada.** Um bloqueio não é capacidade recusada nem
 trabalho feito: a lease já voltou pelo `finally` de sempre, e o candidato
@@ -294,6 +300,59 @@ não ganhou lease nenhuma.
 árvore para devolver, não há `POST /v1/sessions`, não há processo de engine e
 não há token gasto. Falha **depois** que a sessão subiu é outro assunto — o da
 seção seguinte, que a `t265` fechou.
+
+### O ambiente de executor: o que só a máquina sabe (`t270`)
+
+Um despacho monta a entrada do nó a partir de **duas** fontes, e a divisão entre
+elas é o assunto inteiro desta seção: quem responde por cada chave.
+
+| Chave | Quem fornece | Por quê |
+|---|---|---|
+| `input.job`, `input.project`, os baldes de `produces`, `input.perguntas_respondidas`, `input.traversal` | **control plane**, por `GET /v1/jobs/:id/context` | Tudo isso é projeção de tabelas que só o escritor único escreve (D1). |
+| `input.project.aplicacao`, `input.project.arquivos_de_registro` | **`project` do grafo** | Configuração **estática** da classe: versionada com o documento, proponível e reversível como qualquer outra parte dele ([grafo.md](grafo.md)). |
+| `input.banco_de_testes.*`, `input.referencia.*` | **runner**, por [`resolve-executor-environment.ts`](../../packages/runner/src/dispatch/resolve-executor-environment.ts) | Um caminho de sistema de arquivos e um commit vivo. Nenhum dos dois é dado de grafo, e nenhum dos dois sobrevive a ser armazenado. |
+
+A terceira linha é a que a `t270` abriu. `banco_de_testes.caminho` nomeia um
+diretório de **uma** máquina — gravado numa versão de grafo, estaria errado para
+todo runner menos um — e `referencia.commit` é ponteiro vivo, velho no instante
+em que qualquer coisa o guarda. Então os dois vêm do processo que está prestes a
+abrir a sessão, por uma costura ao lado da `resolveInput`
+(`ClaudeCodeDispatchOptions.executorEnvironment`), e são fundidos na entrada
+resolvida logo antes de o manifesto renderizar:
+
+```
+input = { ...projetado_pelo_control_plane, ...ambiente_do_executor }
+```
+
+**O executor ganha na colisão**, e isso não é desempate por conveniência: ele é
+verdade local sobre um sistema de arquivos e um `HEAD` que a projeção não tem, e
+uma projeção que carregasse a mesma chave estaria carregando cópia velha dela.
+Ausente contribui `{}` e não muda nada — que é o caso comum: um runner de bets
+não tem banco de testes, nem tem qualquer implantação que ainda não montou um.
+
+Os dois modos de `referencia.modo` são vocabulário do manifesto
+(`implantar-release.json`), não invenção do runner, e cada um é lido de um jeito:
+
+- **`instalacao_em_uso`** — `git rev-parse HEAD`, **uma vez**, memoizado pela
+  vida do processo. É afirmação sobre ESTE processo, e reler depois afirmaria
+  algo sobre um processo que já não existe. O `lido_em` é memoizado junto: o
+  campo diz quando a referência foi lida, e recarimbá-lo reclamaria um frescor
+  que o valor não tem.
+- **`ponta_do_principal`** (padrão) — `git rev-parse <--main-branch>`, **a cada
+  chamada**. É fato sobre o repositório, e ele anda a cada integração.
+
+Quatro flags configuram tudo isso, nenhuma obrigatória: `--test-bench-path`
+(padrão: o mesmo `--working-dir`), `--reference-mode` (padrão
+`ponta_do_principal`), `--reference-repo` (padrão: o banco) e `--main-branch`
+(padrão `main`).
+
+**Leitura, e só leitura.** Nada aqui escreve no banco de testes, avança branch
+nem prepara checkout: `git rev-parse` e mais nada. Manter o banco **verdadeiro**
+— avançar a linha principal para dentro dele, provisioná-lo — é a `t273`; esta
+camada assume um caminho e um commit que já existem e apenas os lê. Um `git` que
+recusa aqui bloqueia o trabalho com motivo (a sexta causa da tabela acima) em vez
+de resolver um valor plausível: uma sessão que verificasse contenção contra um
+commit que ninguém escolheu é pior que uma que não abriu.
 
 ### Falha depois que a sessão subiu também para (`t265`)
 

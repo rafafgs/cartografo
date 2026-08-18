@@ -267,8 +267,8 @@
       "description": "Exercita o comportamento entregue contra os critérios de aceite e roteia: aprovado segue para implantação, retrabalho volta para desenvolvimento.",
       "skill_ref": {
         "id": "testar-alpha",
-        "version": "1.0.1",
-        "hash": "sha256:9fd17e7d04a5fbb7a3c28e95c3a60078eab0c40b1834d04dff44679152b05319"
+        "version": "1.0.2",
+        "hash": "sha256:db755c5311baf6e67c0930a1976986444e072ad9fd6df01329bb45f5d0d26ab2"
       },
       "contract": {
         "input_schema": {
@@ -500,6 +500,11 @@
       "packages/core/migrations",
       "schema",
       "especificacoes"
-    ]
+    ],
+    "aplicacao": {
+      "rodando": false,
+      "endereco": "nenhum; ver motivo_ausencia",
+      "motivo_ausencia": "nenhuma orquestracao de subida de aplicacao existe neste v0; valide o que o checkout permitir"
+    }
   }
 }

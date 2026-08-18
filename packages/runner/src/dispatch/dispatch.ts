@@ -137,7 +137,7 @@ import {
   type RenderedSkill,
 } from './render-skill-instructions.ts';
 import { UnknownEngineError, resolveEngine, type EngineRoute } from './resolve-engine.ts';
-import { createNodeInputResolver } from './resolve-input.ts';
+import { createMergedInputResolver } from './resolve-input.ts';
 import {
   resolveEscalationPolicy,
   resolveNode,
@@ -189,7 +189,7 @@ export function createClaudeCodeDispatch(
   // forget the credential.
   const call = createDispatchControlPlaneClient(options);
 
-  const resolveInput = options.resolveInput ?? createNodeInputResolver(call);
+  const resolveInput = createMergedInputResolver(options, call);
 
   return async (jobId: number): Promise<DispatchOutcome> => {
     const job = await call<Job>(`/v1/jobs/${jobId}`, 'GET');

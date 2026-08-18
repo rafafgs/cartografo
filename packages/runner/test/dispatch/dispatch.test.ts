@@ -4984,6 +4984,135 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
   });
 });
 
+/**
+ * The executor environment, merged into the input right before it renders
+ * (t270 Half B).
+ *
+ * Two of the values `desenvolvimento-de-software` asks its nodes for are facts
+ * about the MACHINE and not about the graph — the path of the test bench and
+ * the commit the verification runs against — and the control plane's database
+ * is exactly the wrong place for either (D1). So the dispatch gains a second
+ * seam beside `resolveInput`, and this is the whole of what it decides: what
+ * reaches `renderSkillInstructions` is `{...projected, ...executorEnv}`.
+ *
+ * Executor keys win on collision, and that is not a tie-break by convenience:
+ * they are local ground truth about a filesystem and a `HEAD` that the
+ * projection cannot have, so a projection that carried the same key is
+ * carrying a stale copy of it.
+ *
+ * The channel under test is the ARGV, as everywhere else in this file: what the
+ * process received is what the session was told.
+ */
+test("t270 — the executor environment merges into the input, and wins on a collision", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  await registerSkill(baseUrl, token, GATE_SKILL);
+
+  /** What the control plane would project for the gate. */
+  const FROM_PROJECTION = "isto veio da projeção do control plane";
+  /** ...and what only the machine running the session can know. */
+  const FROM_EXECUTOR = "isto veio do banco de testes desta máquina";
+
+  /** A job standing on the gate, in a class of its own. */
+  async function jobOnGate(className: string, executionId: number): Promise<Work> {
+    const versionId = await registerGraph(baseUrl, token, traversalGraph(className));
+    return await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        title: "ficha cujo nó lê o que só a máquina do executor sabe",
+        entry_node_id: "conferir",
+        execution_id: executionId,
+        graph_version_id: versionId,
+      },
+      201,
+      token,
+    );
+  }
+
+  /**
+   * Dispatches the gate with both seams wired, and answers what the fake
+   * session was told.
+   */
+  async function toldTo(
+    t: { after: (fn: () => void) => void },
+    label: string,
+    executionId: number,
+    projected: Record<string, unknown>,
+    executorEnv: Record<string, unknown>,
+  ): Promise<string> {
+    const { createClaudeCodeDispatch } =
+      await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+    const workDir = mkdtempSync(path.join(tmpdir(), `cartografo-t270-${label}-`));
+    t.after(() => {
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    const job = await jobOnGate(`travessia-t270-${label}`, executionId);
+    const record = path.join(workDir, "conferir.json");
+
+    const outcome = await createClaudeCodeDispatch({
+      urlBase: baseUrl,
+      token,
+      engines: claudeOnly(fakeAdapter()),
+      worktrees: fakeWorktrees(workDir),
+      timeoutSeconds: 60,
+      resolveInput: () => Promise.resolve(projected),
+      executorEnvironment: () => Promise.resolve(executorEnv),
+      envOverrides: {
+        FAKE_ENGINE_RECORD: record,
+        FAKE_ENGINE_LINES: linesWithoutBlock(),
+      },
+    })(job.id);
+
+    assert.deepEqual(outcome, { blocked: false }, "every placeholder resolved");
+    return (JSON.parse(readFileSync(record, "utf8")) as FakeRecord).argv.join("\n");
+  }
+
+  await parent.test("t270 AT — an executor key is enough on its own", async (t) => {
+    // The projection carries nothing at all, which is what a bench-only value
+    // looks like: `banco_de_testes.caminho` has no projection source and never
+    // will (D1).
+    const argv = await toldTo(t, "so-executor", 2702, {}, {
+      producao: { nota: FROM_EXECUTOR },
+    });
+
+    assert.ok(argv.includes(FROM_EXECUTOR), "the executor's keys reach the renderer");
+    assert.ok(!argv.includes("{{input."), "and no token survives");
+  });
+
+  await parent.test("t270 AT — a projected key survives the merge untouched", async (t) => {
+    const argv = await toldTo(t, "so-projecao", 2703, {
+      producao: { nota: FROM_PROJECTION },
+    }, {
+      banco_de_testes: { caminho: "/srv/bancos/cartografo" },
+    });
+
+    assert.ok(
+      argv.includes(FROM_PROJECTION),
+      "an executor environment that says nothing about a key may not erase it",
+    );
+    assert.ok(!argv.includes("{{input."));
+  });
+
+  await parent.test("t270 AT — on a collision the executor wins", async (t) => {
+    const argv = await toldTo(t, "colisao", 2704, {
+      producao: { nota: FROM_PROJECTION },
+    }, {
+      producao: { nota: FROM_EXECUTOR },
+    });
+
+    assert.ok(argv.includes(FROM_EXECUTOR), "local ground truth is what the session is told");
+    assert.ok(
+      !argv.includes(FROM_PROJECTION),
+      "a projection that carried the same key was carrying a stale copy of it",
+    );
+  });
+});
+
 // --- t262: a final node that pins a skill is dispatched like any other -------
 
 /**

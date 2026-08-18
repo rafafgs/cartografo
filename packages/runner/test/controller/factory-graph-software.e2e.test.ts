@@ -17,19 +17,24 @@
  * node's prompt carries the value where the placeholder used to be — the
  * specification `refinar` wrote, then the branch `desenvolver` left behind.
  *
- * And it asserts the honest limit too. `testar` reads `{{input.aplicacao.*}}`
- * and `{{input.banco_de_testes.*}}` — a running staging app and a shared test
- * bench, neither of which has a projection source, a runner-side mechanism or
- * a design sketch anywhere in this repository. That node still blocks, and the
- * last case here pins that it blocks GRACEFULLY: a reason a person can read,
- * not a retry loop (t252).
+ * And since t270 it crosses ALL FIVE. `testar` used to read
+ * `{{input.aplicacao.*}}` and `{{input.banco_de_testes.*}}` with no source for
+ * either, and this file's last case pinned the honest limit: the node blocked
+ * gracefully and the bundle stopped there. The two halves of that gap turned
+ * out to be different kinds of fact, and they are answered from different
+ * places — `aplicacao` is static and moved into the graph's own `project`,
+ * while `banco_de_testes.caminho` and `referencia.commit` are facts about the
+ * MACHINE running the session and come from the runner's executor environment
+ * (`resolve-executor-environment.ts`), which the control plane's database
+ * could not hold without lying (D1).
  *
  * English per D18; route segments, node ids and the bundle's own keys stay in
  * Portuguese.
  */
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -40,6 +45,7 @@ import { bootCore } from '@cartografo/test-support';
 import { ClienteControle } from '../../src/controller/cliente-controle.ts';
 import { Controller } from '../../src/controller/controller.ts';
 import { createClaudeCodeDispatch } from '../../src/dispatch/dispatch.ts';
+import { createExecutorEnvironmentResolver } from '../../src/dispatch/resolve-executor-environment.ts';
 import { decodeClaudeCodeSessionText } from '../../src/dispatch/session-text.ts';
 import type { WorktreeManager } from '../../src/dispatch/session-worktree.ts';
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
@@ -68,6 +74,8 @@ interface Work {
   current_node_id: string;
   blocked: boolean;
   block_reason: string | null;
+  /** The traveller arrived: its node is a final node of the version (t152, t262). */
+  completed: boolean;
 }
 
 /** The sidecar the fake engine writes with everything the process received. */
@@ -173,6 +181,61 @@ const INTEGRADO = {
   nota: 'reconciliei sem conflito',
 };
 
+/**
+ * ...and the fake `testar` session — `testar-alpha`'s `output` plus the edge
+ * label.
+ *
+ * `resultado` rides inside the one block a session prints, which is how a gate
+ * with two ways out names the one it took (`parse-node-result.ts`). This
+ * bundle's `testar-alpha` does NOT declare `resultado` in its own `output`
+ * schema, so the control plane refuses the report and stores `null` for it —
+ * an inconsistency of the bundle that predates this ficha, is not what it is
+ * about, and costs nothing here: `implantar` reads the `artefato` bucket, which
+ * `desenvolver` and `integrar` filled.
+ */
+const TESTADO = {
+  resultado: 'aprovado',
+  outcome: 'pass',
+  vereditos: [
+    {
+      ref: 'AT1',
+      veredito: 'nao_exercitado',
+      evidencia: 'Não há aplicação de pé nesta rodada; o motivo veio em project.aplicacao.',
+    },
+  ],
+  nota: 'Validei o que o banco de testes permitiu.',
+};
+
+/** ...and the fake `implantar` session — `implantar-release`'s `output`. */
+const IMPLANTADO = (commit: string): Record<string, unknown> => ({
+  veredito: 'ainda_nao',
+  referencia_conferida: { commit, modo: 'ponta_do_principal' },
+  nota: 'O merge commit deste trabalho é fictício: a contenção responde "ainda não".',
+});
+
+/**
+ * A disposable git repository on `main`, standing in for the test bench.
+ *
+ * A real one, and not a path that merely exists: what
+ * `createExecutorEnvironmentResolver` answers with is `git rev-parse`'s own
+ * output, and a fake `git` would only prove this package's opinion of git.
+ */
+function benchRepository(root: string): { path: string; head: string } {
+  const repoRoot = path.join(root, 'banco-de-testes');
+  mkdirSync(repoRoot, { recursive: true });
+  const git = (...args: string[]): string =>
+    execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe', encoding: 'utf8' }).trim();
+
+  git('init', '--quiet', '--initial-branch', 'main');
+  git('config', 'user.email', 'fixture@cartografo.local');
+  git('config', 'user.name', 'Fixture t270');
+  writeFileSync(path.join(repoRoot, 'README.md'), '# checkout do integrado\n');
+  git('add', '.');
+  git('commit', '--quiet', '-m', 'integrado');
+
+  return { path: repoRoot, head: git('rev-parse', 'main') };
+}
+
 test('t259 AT6 — refinar → desenvolver → integrar crosses the real software bundle', async (t) => {
   const { url: baseUrl, token } = await bootCore(t);
 
@@ -212,6 +275,22 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
   const client = new ClienteControle({ urlBase: baseUrl, token });
   await client.registrarRunner('runner-t259-fabrica', 'o que atravessa o bundle de software');
 
+  const bench = benchRepository(root);
+
+  /**
+   * Every call the dispatch made, so "no operator touched this" is checked
+   * instead of merely intended.
+   *
+   * The two verbs t109's game run reached for by hand are the two recorded
+   * here: `PATCH /v1/jobs/:id` (the `fields` amendment) and
+   * `POST /v1/jobs/:id/unblocks`.
+   */
+  const calls: string[] = [];
+  const doFetch: typeof fetch = async (target, init) => {
+    calls.push(`${init?.method ?? 'GET'} ${String(target).slice(baseUrl.length)}`);
+    return await fetch(target, init);
+  };
+
   const worktrees = directoryWorktrees(root);
   let currentLines = reports(REFINADO);
   // One sidecar per node: the rendered instructions travel on the ARGV, not in
@@ -231,6 +310,15 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
       createClaudeCodeDispatch({
         urlBase: baseUrl,
         token,
+        doFetch,
+        // The seam this ficha opened: the path of the bench and the commit the
+        // verification runs against are facts about THIS machine, and the
+        // control plane could not hold either without lying (D1, t270).
+        executorEnvironment: createExecutorEnvironmentResolver({
+          testBenchPath: bench.path,
+          referenceMode: 'ponta_do_principal',
+          mainBranch: 'main',
+        }),
         engines: {
           'claude-code': {
             adapter: new ClaudeCodeAdapter({
@@ -328,16 +416,47 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
     '`desenvolver` and `integrar` declare the SAME bucket, so `merge_commit` lands beside `branch`',
   );
 
-  // --- 5. and `testar` blocks gracefully, which is the declared limit ------
-  currentLines = reports({ resultado: 'aprovado', outcome: 'aprovado', vereditos: [] });
+  // --- 5. `testar` opens, which used to be this bundle's declared limit ----
+  currentLines = reports(TESTADO);
   currentRecord = path.join(root, 'testar.json');
-  // `null`, and that IS the block: a dispatch that stopped the work resolves
-  // normally and `tick()` treats it as one candidate fewer (`controller.ts`).
-  assert.equal(await controller.tick(), null);
+  assert.ok(await controller.tick(), 'the gate that used to block was picked up');
+  const afterGate = await jobNow();
+  assert.equal(afterGate.blocked, false, afterGate.block_reason ?? '');
+  assert.equal(afterGate.current_node_id, 'implantar');
 
-  const stuck = await jobNow();
-  assert.equal(stuck.current_node_id, 'testar', 'it did not move');
-  assert.equal(stuck.blocked, true, 'and it stopped with a reason instead of retrying forever');
-  const reason = stuck.block_reason ?? '';
-  assert.ok(reason.includes('testar') && reason.includes('aplicacao'), reason);
+  const gate = bodyOf('testar');
+  const aplicacao = PROJECT.aplicacao as Record<string, unknown>;
+  assert.ok(
+    gate.includes(String(aplicacao.motivo_ausencia)),
+    'the app is STATIC and comes from the graph\'s own `project`, at `input.project.aplicacao`',
+  );
+  assert.ok(
+    gate.includes(bench.path),
+    'and the bench path is RUNTIME: it comes from the runner, and names this machine',
+  );
+  assert.ok(!gate.includes('{{input.'));
+
+  // --- 6. ...and `implantar` reads the commit the runner really looked up ---
+  currentLines = reports(IMPLANTADO(bench.head));
+  currentRecord = path.join(root, 'implantar.json');
+  assert.ok(await controller.tick(), 'the final node was picked up too');
+
+  const arrived = await jobNow();
+  assert.equal(arrived.blocked, false, arrived.block_reason ?? '');
+  assert.equal(arrived.completed, true, 'the traversal is over: the final node reported');
+
+  const implanta = bodyOf('implantar');
+  assert.ok(
+    implanta.includes(bench.head),
+    '`{{input.referencia.commit}}` is the real HEAD of the bench, read live off `main`',
+  );
+  assert.ok(implanta.includes('ponta_do_principal'), '...and the mode it was read under');
+  assert.ok(!implanta.includes('{{input.'));
+
+  // --- 7. and nobody had to touch it by hand -------------------------------
+  assert.deepEqual(
+    calls.filter((call) => call.endsWith('/unblocks') || /^PATCH \/v1\/jobs\/\d+$/.test(call)),
+    [],
+    'the two workarounds this ficha replaces are neither of them used here',
+  );
 });

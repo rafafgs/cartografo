@@ -26,6 +26,7 @@ import {
   getJob,
   createJob,
   jobContextSeed,
+  jobTraversal,
   unblockJob,
   amendJob,
   jobTimeline,
@@ -60,7 +61,7 @@ const CREATE_JOB_SCHEMA = {
 } as const;
 
 /**
- * The four reads behind `GET /jobs/:id/context` (t253, FR6).
+ * The five reads behind `GET /jobs/:id/context` (t253, FR6; t270).
  *
  * The MERGE is `domain/context.ts`, pure and unit-tested without a server; what
  * lives here is only which rows feed it, which is a routing decision:
@@ -74,7 +75,16 @@ const CREATE_JOB_SCHEMA = {
  *   incomplete session's report is not a fact about the graph, and only this
  *   round, because a previous execution's traversal is a different journey;
  * - the answered escalations of the job — the same set `buildSessionSpec`
- *   already fetches to render the prompt, now exposed structurally too.
+ *   already fetches to render the prompt, now exposed structurally too;
+ * - the job's own walk through the graph, off `job.transitioned` (t270). Fifth
+ *   since this ficha, and a read of its own rather than a widening of the seed:
+ *   it is a scan of the log, and the seed is a single row of a projection.
+ *
+ * A `null` walk means the job vanished between the seed and this read, which
+ * cannot happen inside one request — the seed already confirmed it exists. It
+ * degrades to "standing where it was born" rather than asserting, because a
+ * total function is cheaper to reason about than one more invariant nobody can
+ * see fail.
  *
  * @param db Open database.
  * @param id Job id.
@@ -108,6 +118,7 @@ function nodeInputOf(db: Database, id: number): Record<string, unknown> | null {
       pergunta: request.pergunta,
       resposta: request.resposta ?? '',
     })),
+    traversal: jobTraversal(db, id) ?? { nodes_visited: [], entered_at: seed.criado_em },
   });
 }
 

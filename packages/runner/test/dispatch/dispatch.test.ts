@@ -49,6 +49,7 @@ import { ClaudeCodeAdapter } from "../../src/engine/claude-code-adapter.ts";
 import { CodexAdapter } from "../../src/engine/codex-adapter.ts";
 import { buildCommand as buildCodexCommand } from "../../src/engine/codex-command.ts";
 import { buildCommand } from "../../src/engine/command.ts";
+import { DOMAIN_SCOPED_NETWORK_REASON } from "../../src/engine/permission-policy.ts";
 import type {
   EngineAdapter,
   SessionFinishDetail,
@@ -5502,6 +5503,441 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
       const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
       assert.equal(after.current_node_id, "conferir");
       assert.equal(after.blocked, true);
+    },
+  );
+});
+
+// --- t272: nothing before a session may retry forever ------------------------
+
+/**
+ * The t109 game run, reproduced (t272).
+ *
+ * `testar-alpha` declares `network: {allowed: true, domains: [...]}`, the
+ * `claude-code` adapter cannot express a domain-scoped allow, and
+ * `startSession` refuses BEFORE the spawn and before `POST /v1/sessions` — so no
+ * session row is ever created and t265's session-streak cap has nothing to
+ * count. What the note measured was the consequence: 38 `lease.granted` in about
+ * two minutes, zero `session.opened`, nothing in anybody's inbox
+ * (`notas/2026-08-17-t109-feature-do-jogo.md`, gap 2).
+ *
+ * A refusal for a policy the engine cannot enforce is deterministic in the
+ * strong sense t252 demands — same skill hash, same policy, same refusal on
+ * every tick — so it stops the work on the FIRST occurrence, quoting the
+ * adapter's own message: what a person has to fix is the field
+ * `permission-policy.ts` names, and a paraphrase here would be a second spelling
+ * of it.
+ */
+test("t272 — a permission policy the adapter cannot enforce blocks the work on the first dispatch", async (t) => {
+  const { createClaudeCodeDispatch } =
+    await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+  const { baseUrl, token } = await bootUnpatched(t);
+
+  const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t272-refusal-"));
+  t.after(() => {
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  const work = await api<Work>(
+    baseUrl,
+    "POST",
+    "/v1/jobs",
+    {
+      title: "ficha do jogo, no nó testar-alpha",
+      entry_node_id: "testar-alpha",
+      execution_id: 2721,
+    },
+    201,
+    token,
+  );
+
+  const calls: Array<{ method: string; route: string }> = [];
+  const doFetch: typeof fetch = async (input, init) => {
+    calls.push({
+      method: init?.method ?? "GET",
+      route: String(input).slice(baseUrl.length),
+    });
+    return fetch(input, init);
+  };
+
+  // A counting adapter over the real one, so "no session was opened" is measured
+  // at the interface too and not only inferred from the absence of a row.
+  const real = fakeAdapter();
+  let starts = 0;
+  const counting: EngineAdapter = {
+    engineName: real.engineName,
+    startSession: (spec, listener) => {
+      starts += 1;
+      return real.startSession(spec, listener);
+    },
+    getStatus: (id) => real.getStatus(id),
+    cancel: (id, status) => real.cancel(id, status),
+    capabilities: () => real.capabilities(),
+    verifyCli: () => real.verifyCli(),
+  };
+
+  const outcome = await createClaudeCodeDispatch({
+    urlBase: baseUrl,
+    token,
+    doFetch,
+    engines: {
+      "claude-code": {
+        adapter: counting,
+        decodeSessionText: decodeClaudeCodeSessionText,
+      },
+    },
+    worktrees: fakeWorktrees(workDir),
+    timeoutSeconds: 60,
+    // Exactly what `testar-alpha` declares, and what the adapter answers
+    // `refuse` to: an allowlist per domain would take an egress proxy this
+    // engine has not got (`engine/permission-policy.ts`).
+    permissions: {
+      filesystem: { write: ["**"] },
+      network: { allowed: true, domains: ["docs.anthropic.com"] },
+    },
+  })(work.id);
+
+  assert.equal(
+    outcome.blocked,
+    true,
+    "the very first dispatch has to stop the work — the 38th is the bug",
+  );
+  assert.ok(
+    (outcome.reason ?? "").includes("testar-alpha"),
+    `the reason has to name the node: ${String(outcome.reason)}`,
+  );
+  assert.ok(
+    (outcome.reason ?? "").includes(DOMAIN_SCOPED_NETWORK_REASON),
+    `...and quote the adapter's own message verbatim: ${String(outcome.reason)}`,
+  );
+
+  assert.equal(
+    starts,
+    1,
+    "the refusal comes from the adapter, so it was asked exactly once",
+  );
+  assert.deepEqual(
+    calls.filter(
+      (call) => call.method === "POST" && call.route === "/v1/sessions",
+    ),
+    [],
+    "a refused policy may not reach POST /v1/sessions: there is no session to record",
+  );
+
+  const sessions = await api<{ sessions: Session[] }>(
+    baseUrl,
+    "GET",
+    "/v1/sessions?execution_id=2721",
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(
+    sessions.sessions.length,
+    0,
+    "and no session row exists to be counted by t265",
+  );
+
+  const timeline = await api<{ events: Event[] }>(
+    baseUrl,
+    "GET",
+    `/v1/jobs/${work.id}/events`,
+    undefined,
+    200,
+    token,
+  );
+  assert.deepEqual(
+    timeline.events.map((event) => event.type),
+    ["job.created", "job.blocked"],
+    "one block and no session at all — the whole story of the loop, closed",
+  );
+
+  const stopped = await api<Work>(
+    baseUrl,
+    "GET",
+    `/v1/jobs/${work.id}`,
+    undefined,
+    200,
+    token,
+  );
+  assert.equal(
+    stopped.blocked,
+    true,
+    "and the work really stopped being a candidate",
+  );
+  assert.equal(stopped.block_reason, outcome.reason);
+});
+
+/**
+ * The other half: what CANNOT be classified is bounded, never blocked at once
+ * (t272, FR2/FR3).
+ *
+ * A 500 on the graph-version read is the textbook transient failure t252 refused
+ * to block on, and it still is: the first four dispatches reject and nothing is
+ * written. What is new is that the streak is COUNTED — in this process, per job,
+ * inside the closure `createClaudeCodeDispatch` returns — so "forever" has a
+ * floor even for a cause nobody can name.
+ *
+ * Both subtests dispatch through ONE instance, which is the whole scope under
+ * test: a counter that did not survive from one call to the next would make the
+ * ceiling unreachable, and one shared by two instances would be a global.
+ */
+test("t272 — a pre-session failure nobody can classify is retried, then bounded", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+  await registerSkill(baseUrl, token, GATE_SKILL);
+
+  /** The POSTs a dispatch made, in the two shapes these subtests read. */
+  interface Posted {
+    route: string;
+    body: unknown;
+  }
+
+  /**
+   * A `fetch` that answers the graph-version read with 500 while it is armed,
+   * and delegates everything else — including the job read itself, which happens
+   * OUTSIDE the window this ficha classifies.
+   *
+   * `arm` is what lets one instance's counter be observed across a recovery: the
+   * dispatch closure holds the streak, so proving the reset needs the SAME
+   * closure to fail again after it succeeded.
+   */
+  function flakyGraphVersion(failures: number): {
+    doFetch: typeof fetch;
+    arm: (count: number) => void;
+    blocks: () => Posted[];
+    sessions: () => Posted[];
+  } {
+    let remaining = failures;
+    const posted: Posted[] = [];
+    const doFetch: typeof fetch = async (input, init) => {
+      const route = String(input).slice(baseUrl.length);
+      const method = init?.method ?? "GET";
+      if (
+        method === "GET" &&
+        route.startsWith("/v1/graph-versions/") &&
+        remaining > 0
+      ) {
+        remaining -= 1;
+        return serverError();
+      }
+      if (method === "POST") {
+        posted.push({
+          route,
+          body:
+            typeof init?.body === "string"
+              ? JSON.parse(init.body)
+              : undefined,
+        });
+      }
+      return fetch(input, init);
+    };
+    return {
+      doFetch,
+      arm: (count) => {
+        remaining = count;
+      },
+      blocks: () => posted.filter((call) => call.route.endsWith("/blocks")),
+      sessions: () => posted.filter((call) => call.route === "/v1/sessions"),
+    };
+  }
+
+  await parent.test(
+    "AT — four rejections, a fifth dispatch that opens a session, and a streak that starts over",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t272-flaky-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t272-transitorio"),
+      );
+      const work = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          title: "ficha cuja leitura de versão de grafo teve um soluço",
+          entry_node_id: "publicar",
+          execution_id: 2722,
+          graph_version_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const flaky = flakyGraphVersion(4);
+      const dispatch = createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch: flaky.doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+        envOverrides: {
+          FAKE_ENGINE_LINES: linesWithReport("publiquei saida.md"),
+        },
+      });
+
+      for (const attempt of [1, 2, 3, 4]) {
+        await assert.rejects(
+          async () => dispatch(work.id),
+          (error: unknown) => {
+            assert.match(
+              String(error),
+              /500/,
+              `attempt ${String(attempt)} has to keep throwing the control plane's own error`,
+            );
+            return true;
+          },
+        );
+        assert.deepEqual(
+          flaky.blocks(),
+          [],
+          `nothing may be blocked on attempt ${String(attempt)}: a 5xx heals itself`,
+        );
+      }
+
+      // The fifth is the one that would have blocked, and instead it works: the
+      // control plane came back, and the streak is a streak of FAILURES.
+      const outcome = await dispatch(work.id);
+      assert.equal(
+        outcome.blocked,
+        false,
+        "a dispatch that ran is not a dispatch that stopped",
+      );
+      assert.equal(
+        flaky.sessions().length,
+        1,
+        "and it really opened a session, which is the point of not blocking",
+      );
+      assert.deepEqual(
+        flaky.blocks(),
+        [],
+        "with no block posted anywhere along the way",
+      );
+
+      // And a session is what CLEARS the streak: armed once more, the very next
+      // failure is the first of a new one, so it throws. Without the reset it
+      // would be the sixth of the old one and the work would stop here.
+      flaky.arm(1);
+      await assert.rejects(async () => dispatch(work.id));
+      assert.deepEqual(
+        flaky.blocks(),
+        [],
+        "a session opened in between, so the count started over instead of tipping the ceiling",
+      );
+    },
+  );
+
+  await parent.test(
+    "AT — a failure that never heals blocks at the ceiling, exactly once",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t272-teto-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const versionId = await registerGraph(
+        baseUrl,
+        token,
+        traversalGraph("travessia-t272-teto"),
+      );
+      const work = await api<Work>(
+        baseUrl,
+        "POST",
+        "/v1/jobs",
+        {
+          title: "ficha cuja leitura de versão de grafo nunca voltou",
+          entry_node_id: "publicar",
+          execution_id: 2723,
+          graph_version_id: versionId,
+        },
+        201,
+        token,
+      );
+
+      const flaky = flakyGraphVersion(Number.MAX_SAFE_INTEGER);
+      const dispatch = createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch: flaky.doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        timeoutSeconds: 60,
+      });
+
+      for (const attempt of [1, 2, 3, 4]) {
+        await assert.rejects(
+          async () => dispatch(work.id),
+          () => true,
+          `attempt ${String(attempt)} is still below the ceiling`,
+        );
+      }
+
+      const outcome = await dispatch(work.id);
+      assert.equal(
+        outcome.blocked,
+        true,
+        "the fifth consecutive failure is where forever stops",
+      );
+      assert.ok(
+        (outcome.reason ?? "").includes("5"),
+        `the reason has to say how many attempts it took: ${String(outcome.reason)}`,
+      );
+      assert.ok(
+        (outcome.reason ?? "").includes("500"),
+        `...and carry the last error's own message: ${String(outcome.reason)}`,
+      );
+      assert.ok(
+        (outcome.reason ?? "").includes("publicar"),
+        `...and name the node the work is standing on: ${String(outcome.reason)}`,
+      );
+
+      assert.equal(
+        flaky.blocks().length,
+        1,
+        "exactly one block, on the attempt that reached the ceiling",
+      );
+      assert.deepEqual(
+        flaky.sessions(),
+        [],
+        "and no session was ever opened, on any of the five",
+      );
+
+      const timeline = await api<{ events: Event[] }>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${work.id}/events`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(
+        timeline.events.filter((event) => event.type === "job.blocked").length,
+        1,
+        "one job.blocked, whatever the number of attempts that led to it",
+      );
+
+      const stopped = await api<Work>(
+        baseUrl,
+        "GET",
+        `/v1/jobs/${work.id}`,
+        undefined,
+        200,
+        token,
+      );
+      assert.equal(stopped.blocked, true);
+      assert.equal(stopped.block_reason, outcome.reason);
     },
   );
 });

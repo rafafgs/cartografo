@@ -28,6 +28,9 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { ErroDoControlPlane } from '../../src/controller/cliente-controle.ts';
+import { PERMISSION_REFUSAL_PREFIX } from '../../src/engine/claude-code-adapter.ts';
+import { DOMAIN_SCOPED_NETWORK_REASON } from '../../src/engine/permission-policy.ts';
+import { SessionStartError } from '../../src/engine/types.ts';
 import {
   SkillNotRegisteredError,
   SkillPinMismatchError,
@@ -167,6 +170,55 @@ test('AT7 — anything that is not one of the five classifies to null', async ()
       classifyPreSessionFailure(error, JOB),
       null,
       `an unrecognized error retries, it never blocks: ${String(error)}`,
+    );
+  }
+});
+
+/**
+ * AT8/AT9 — the sixth cause, and the boundary right next to it (t272).
+ *
+ * The t109 game run put a real job through `desenvolvimento-de-software` and hit
+ * the loop this classifier was built to close, from a direction it did not
+ * cover: `testar-alpha` declares a domain-scoped `network`, `resolvePermissions`
+ * cannot express that on this engine, and `ClaudeCodeAdapter.startSession`
+ * refuses BEFORE the spawn — 38 leases in two minutes, not one session opened.
+ * A refusal for a policy the engine cannot enforce is as deterministic as the
+ * five above it: the same skill hash resolves to the same refusal on every tick.
+ *
+ * AT9 is the other half and the reason this is a sixth CASE and not a sixth
+ * class: `SessionStartError` is one class for four causes, and the two spawn
+ * shapes ("could not start", "could not open a session") carry nothing that
+ * tells a missing binary from an `EMFILE`. Those keep classifying to `null` —
+ * they are the bounded counter's business (`pre-session-retry.ts`), which is a
+ * strictly weaker claim than "this will never work".
+ */
+
+test('AT8 — a permission policy the engine cannot enforce names the node and quotes the engine', async () => {
+  const { classifyPreSessionFailure } = await loadModule();
+
+  const reason = classifyPreSessionFailure(
+    new SessionStartError(`${PERMISSION_REFUSAL_PREFIX}${DOMAIN_SCOPED_NETWORK_REASON}`),
+    JOB,
+  );
+
+  // The adapter's own message, verbatim: what a person has to fix is the field
+  // `permission-policy.ts` names, and paraphrasing it here would be a second
+  // spelling of a rule that lives in exactly one place.
+  namesAll(reason, [JOB.current_node_id, DOMAIN_SCOPED_NETWORK_REASON]);
+});
+
+test('AT9 — a SessionStartError that is NOT a permission refusal classifies to null', async () => {
+  const { classifyPreSessionFailure } = await loadModule();
+
+  for (const message of [
+    'could not start "claude": spawn claude ENOENT',
+    'could not open a session: EMFILE',
+    'permission policy',
+  ]) {
+    assert.equal(
+      classifyPreSessionFailure(new SessionStartError(message), JOB),
+      null,
+      `a spawn failure may heal itself, so it retries instead of blocking: ${message}`,
     );
   }
 });

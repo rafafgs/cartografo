@@ -328,6 +328,17 @@ const RULES: Record<string, TypeRule> = {
       // malformed self-report would be strictly worse than losing the
       // self-report — which was never evidence to begin with.
       output_schema_error: optional('string-list', { minItems: 1 }),
+      // ...and the VERDICT itself, which is the same fact seen from the side
+      // that has to act on it (t268). The list above says why a report was
+      // refused and is present only when one was; this says whether it was
+      // taken at all, and it is written on every close — `true` when nothing
+      // was reported and when the report matched, `false` only when the pinned
+      // skill's own schema refused it. One boolean and not a derivation from
+      // the list beside it, because the runner reads this OFF THE RESPONSE to
+      // decide whether the job may move, and "no reasons" and "not checked" are
+      // the same absence there. Optional like everything else here: an event
+      // written before this ficha still validates, and normalizes to `null`.
+      output_accepted: optional('boolean'),
     },
   },
   'session.permission_denied': {

@@ -112,6 +112,17 @@ export const TABELA = {
     // cada tentativa (medido: quatro recusas seguidas no mesmo prompt, t198).
     // O tipo é fechado porque a palavra é nossa; a categoria é aberta porque é
     // a palavra do engine, exatamente como `models` ao lado.
+    //
+    // `output_accepted` entrou com o relato recusado que ainda assim movia o
+    // trabalho (t268). É o mesmo fato de `output_schema_error` visto do lado de
+    // quem age: a lista diz POR QUE um relato foi recusado e só existe quando
+    // houve recusa, e este diz SE ele foi aceito — gravado em todo fechamento,
+    // `true` inclusive quando nada foi relatado, `false` só quando o schema
+    // `output` da skill pinada recusou. Booleano e não derivação da lista
+    // porque quem lê é o runner, na resposta do próprio `PATCH /finish`, para
+    // decidir se o trabalho anda: ali "sem motivos" e "não conferido" seriam a
+    // mesma ausência, e a diferença entre as duas é um trabalho seguindo por
+    // uma aresta escolhida a partir de um relato que não foi gravado.
     opcionais: [
       'exit_code',
       'usage',
@@ -121,6 +132,7 @@ export const TABELA = {
       'models',
       'output',
       'output_schema_error',
+      'output_accepted',
     ],
   },
   // O 17º tipo entrou com o enforcement de permissão (t125): toda tentativa de

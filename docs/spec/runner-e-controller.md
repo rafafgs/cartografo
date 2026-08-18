@@ -641,7 +641,17 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   ensinado a devolver nada nele, agora fecha o turno com um bloco
   `resultado` ([`result-protocol.ts`](../../packages/runner/src/dispatch/result-protocol.ts))
   que o despacho manda no `/finish` como `output` — que é justamente o que a
-  projeção do nó seguinte lê. O que segue pendente pelo mesmo buraco é o **orçamento
+  projeção do nó seguinte lê. **Corrigido pela `t267`:** o que uma sessão recebe
+  hoje são quatro coisas, e cada uma com o seu rótulo — o corpo do manifesto já
+  interpolado, os **valores** que o `input` da skill nomeia (bloco
+  `### Valores de entrada`, cortado em 16 KB com marcador e ponteiro para
+  `GET /v1/jobs/:id/context`,
+  [`render-input-values.ts`](../../packages/runner/src/dispatch/render-input-values.ts)),
+  o `contrato` do nó rotulado como documentação, e o `output` da skill pinada
+  rotulado como o que o `/finish` confere (D9). Antes disso a sessão via só os
+  placeholders que o manifesto tinha lembrado de citar, e era apresentada ao
+  `saida_schema` do nó como se fosse o validador — que não é
+  ([grafo.md](grafo.md)). O que segue pendente pelo mesmo buraco é o **orçamento
   declarado pela skill**: a `t163` deu à sessão dois cães de guarda (relógio de
   parede e silêncio), com o manifesto declarando `orcamentos` e o runner
   resolvendo pelo menor dos dois

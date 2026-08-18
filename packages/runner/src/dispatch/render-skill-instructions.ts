@@ -58,7 +58,17 @@
  *    own projection of what the job and the nodes before it produced
  *    (`packages/core/src/domain/context.ts`). A path that projection does not
  *    carry still refuses loudly, which is what the rule is for.
- * 4. **The text and the permissions are built from what came back**, with the
+ * 4. **The session is shown the data it has and the schema it is judged by**
+ *    (t267). Two gaps, one defect: a session was told what it would be checked
+ *    against, and it was the wrong thing. The VALUES of `input` reached the model
+ *    only through the paths somebody remembered to write into the body, so a
+ *    projection could carry a field in full and the session still open without it
+ *    (`analise-assimetria`, second bets crossing). And what was rendered under
+ *    "what you have to produce" was the NODE's `contract.output_schema`, beside a
+ *    sentence claiming the output would be checked against it — while `/finish`
+ *    checks the SKILL's own `output` (`resolveOutputSchema`, in core), a
+ *    different schema by design (`docs/spec/grafo.md`).
+ * 5. **The text and the permissions are built from what came back**, with the
  *    paragraph that tells the session how to report its result
  *    (`result-protocol.ts`) whenever this node declares an `output_schema` —
  *    gate or not, since t259. A node that is never told how to report is a node
@@ -82,6 +92,7 @@ import {
   ESCALATION_PROTOCOL,
   NEVER_ESCALATION_PROTOCOL,
 } from './escalation-protocol.ts';
+import { renderInputValues } from './render-input-values.ts';
 import { resolveEscalationPolicy, type ResolvedNode } from './resolve-node.ts';
 import { hasOutputSchema, resultProtocol } from './result-protocol.ts';
 
@@ -430,8 +441,18 @@ function escalationProtocol(resolved: ResolvedNode): string {
  * time the text is composed it is no longer the manifest's: it is the manifest
  * with this node's input in it, and the interpolation that produced it either
  * succeeded completely or never got here.
+ *
+ * `input` rides along beside it since t267, for the half of the same object the
+ * body did NOT quote: the placeholders cover the paths somebody wrote down, and
+ * the block below the body covers what the skill declared
+ * (`render-input-values.ts`).
  */
-function render(resolved: ResolvedNode, skill: RegisteredSkill, body: string): string {
+function render(
+  resolved: ResolvedNode,
+  skill: RegisteredSkill,
+  body: string,
+  input: Record<string, unknown>,
+): string {
   const { node, edges } = resolved;
   const contract = node.contract ?? {};
 
@@ -449,19 +470,40 @@ function render(resolved: ResolvedNode, skill: RegisteredSkill, body: string): s
     '',
     '---',
     '',
+    // Right after the body, and before the contract: what the session is
+    // holding comes before what the graph says about it.
+    ...renderInputValues(skill.input, input),
+    '---',
+    '',
     `## O contrato do nó \`${node.id}\``,
     '',
-    'Este é o contrato que ESTE nó declara no grafo registrado, e é contra ele',
-    'que a sua saída vai ser conferida.',
+    'Este é o contrato que ESTE nó declara no grafo registrado, e ele é',
+    'documentação: descreve o que o nó recebe, a forma que ele espera produzir e',
+    'como o que sai daqui é verificado — e é dessa forma que sai o vocabulário',
+    'das arestas deste nó. Ele NÃO é o validador do seu relato: o schema que',
+    'decide se a sua saída é aceita está mais abaixo, em `### O que você tem que',
+    'produzir`.',
     '',
     ...fenced('### O que entra', contract.input_schema ?? {}),
-    ...fenced('### O que você tem que produzir', contract.output_schema ?? {}),
+    ...fenced('### A forma que este nó documenta', contract.output_schema ?? {}),
     ...fenced('### Como este nó é verificado', contract.checks ?? []),
     ...fenced('## Os checks declarados pela skill', skill.checks),
     ...fenced('## As permissões desta sessão', skill.permissions),
     'Elas já estão aplicadas: o que estiver fechado aí não vai funcionar, e',
     'contornar não é opção. Se a tarefa exige algo que a declaração não permite,',
     'isso é uma pergunta, não um obstáculo para driblar.',
+    '',
+    '---',
+    '',
+    '## O schema que fecha esta sessão',
+    '',
+    `Este é o \`output\` declarado pela skill \`${skill.id}\` v${skill.version}, e é`,
+    'contra ele — não contra o contrato do nó acima — que',
+    '`PATCH /v1/sessions/:id/finish` checa o bloco `resultado` que você emitir',
+    '(D9). Um relato que não casar com esta forma é recusado no fechamento da',
+    'sessão, e o nó seguinte não recebe nada.',
+    '',
+    ...fenced('### O que você tem que produzir', skill.output),
   ];
 
   // Whenever this node declares a shape, and no longer only when it decides
@@ -547,7 +589,7 @@ export async function renderSkillInstructions(
 
   return {
     skill,
-    instructions: render(resolved, skill, body),
+    instructions: render(resolved, skill, body, input),
     permissions: resolveSkillPermissions(skill.permissions),
   };
 }

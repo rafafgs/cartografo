@@ -78,6 +78,12 @@ interface Work {
   completed: boolean;
 }
 
+/** A session, in the two fields this crossing reads off `GET /v1/sessions`. */
+interface Reported {
+  node_id: string | null;
+  output: Record<string, unknown> | null;
+}
+
 /** The sidecar the fake engine writes with everything the process received. */
 interface FakeRecord {
   argv: string[];
@@ -181,20 +187,8 @@ const INTEGRADO = {
   nota: 'reconciliei sem conflito',
 };
 
-/**
- * ...and the fake `testar` session — `testar-alpha`'s `output` plus the edge
- * label.
- *
- * `resultado` rides inside the one block a session prints, which is how a gate
- * with two ways out names the one it took (`parse-node-result.ts`). This
- * bundle's `testar-alpha` does NOT declare `resultado` in its own `output`
- * schema, so the control plane refuses the report and stores `null` for it —
- * an inconsistency of the bundle that predates this ficha, is not what it is
- * about, and costs nothing here: `implantar` reads the `artefato` bucket, which
- * `desenvolver` and `integrar` filled.
- */
-const TESTADO = {
-  resultado: 'aprovado',
+/** ...and what the fake `testar` session REPORTS — `testar-alpha`'s `output`. */
+const TESTADO_REPORT = {
   outcome: 'pass',
   vereditos: [
     {
@@ -205,6 +199,21 @@ const TESTADO = {
   ],
   nota: 'Validei o que o banco de testes permitiu.',
 };
+
+/**
+ * ...and the block it prints: that report with the edge label inside it.
+ *
+ * `resultado` rides inside the one block a session prints, which is how a gate
+ * with two ways out names the one it took (`parse-node-result.ts`). It is the
+ * GRAPH's vocabulary — `aprovado` is the `condition` of the edge to
+ * `implantar` — and the control plane takes it out of the object before holding
+ * the rest against the pinned skill's `output`, which is why that schema does
+ * not declare it (t269, `docs/spec/grafo.md`). Since t275 the bundle says the
+ * same thing on both sides: the `testar` node declares the label in its own
+ * `output_schema`, and the manifest's instructions ask for `outcome` and
+ * `resultado` as the two different things they are.
+ */
+const TESTADO = { resultado: 'aprovado', ...TESTADO_REPORT };
 
 /** ...and the fake `implantar` session — `implantar-release`'s `output`. */
 const IMPLANTADO = (commit: string): Record<string, unknown> => ({
@@ -435,6 +444,18 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
     'and the bench path is RUNTIME: it comes from the runner, and names this machine',
   );
   assert.ok(!gate.includes('{{input.'));
+
+  const { sessions } = await api<{ sessions: Reported[] }>(
+    baseUrl,
+    token,
+    'GET',
+    `/v1/sessions?job_id=${String(job.id)}`,
+  );
+  assert.deepEqual(
+    sessions.find((session) => session.node_id === 'testar')?.output,
+    TESTADO_REPORT,
+    "the gate's report was taken whole, and only the routing key was taken out of it",
+  );
 
   // --- 6. ...and `implantar` reads the commit the runner really looked up ---
   currentLines = reports(IMPLANTADO(bench.head));

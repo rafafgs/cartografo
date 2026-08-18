@@ -12,12 +12,14 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -325,8 +327,8 @@ test('t235 AT — a fresh database speaks English in every name, CHECK and DEFAU
   const applied = migrate(db, REAL_MIGRATIONS_DIR);
   assert.equal(
     applied.length,
-    22,
-    'a fresh database applies the twenty-two migrations of the package and nothing else',
+    23,
+    'a fresh database applies the twenty-three migrations of the package and nothing else',
   );
 
   const objects = db
@@ -534,5 +536,257 @@ test('t165 AT7 — migration 0010 rebuilds proposal and round-trips the rows alr
     ).n,
     0,
     'the scaffolding tables do not survive the migration',
+  );
+});
+
+/**
+ * The checksum shape the ledger records, computed here instead of imported.
+ *
+ * `migrate.ts` has a `checksumOf` of its own, and importing it would make these
+ * tests agree with the implementation by construction — including on the day it
+ * starts hashing something else. So the expected value is built from the file
+ * bytes right here: `sha256:` plus the hex digest of the exact content
+ * `db.exec()` ran, which is what t279 FR2 pins.
+ */
+function sha256Of(content: string): string {
+  return `sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}`;
+}
+
+/**
+ * The shape of `0023_schema_migrations_checksum.sql`, in a synthetic directory.
+ *
+ * Copied rather than read off `packages/core/migrations/`: what these tests are
+ * about is the bootstrap ordering — the column that records checksums is itself
+ * added by a migration that runs inside the same `migrate()` call as the ones
+ * before it — and a three-file directory shows that with nothing else in the way.
+ */
+const CHECKSUM_COLUMN_SQL = 'ALTER TABLE schema_migrations ADD COLUMN checksum TEXT;';
+
+test('t279 AT6 — a database born from scratch records every checksum, and warns about none', async (t) => {
+  const { openDatabase } = await loadConnection();
+  const { migrate } = await loadMigrate();
+
+  const base = temporaryArea(t);
+  const dir = path.join(base, 'migrations');
+  mkdirSync(dir);
+  // `0001` and `0002` run BEFORE the column exists — `0002` is what creates it —
+  // and `0003` after. All three have to end up with a checksum anyway.
+  writeMigration(dir, '0001_init.sql', CONTROL_TABLE_SQL);
+  writeMigration(dir, '0002_checksum.sql', CHECKSUM_COLUMN_SQL);
+  writeMigration(dir, '0003_terceira.sql', 'CREATE TABLE terceira (id TEXT PRIMARY KEY);');
+
+  const warned: string[] = [];
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  t.after(() => db.close());
+
+  const expected = ['0001_init', '0002_checksum', '0003_terceira'];
+  assert.deepEqual(
+    migrate(db, dir, { onChecksumBackfilled: (id) => warned.push(id) }),
+    expected,
+    'the three migrations apply in one call',
+  );
+
+  assert.deepEqual(
+    db.prepare('SELECT id, checksum FROM schema_migrations ORDER BY id').all(),
+    expected.map((id) => ({
+      id,
+      checksum: sha256Of(readFileSync(path.join(dir, `${id}.sql`), 'utf8')),
+    })),
+    'every row carries the sha256 of its own file, the two that ran before the column included',
+  );
+
+  assert.deepEqual(
+    warned,
+    [],
+    'nothing had a chance to diverge inside one process: a fresh database warns about nothing',
+  );
+});
+
+test('t279 AT7 — an applied migration edited in place fails the next startup, naming it', async (t) => {
+  const { openDatabase } = await loadConnection();
+  const { migrate } = await loadMigrate();
+
+  const base = temporaryArea(t);
+  const dir = path.join(base, 'migrations');
+  mkdirSync(dir);
+  writeMigration(dir, '0001_init.sql', CONTROL_TABLE_SQL);
+  writeMigration(dir, '0002_checksum.sql', CHECKSUM_COLUMN_SQL);
+  const original = 'CREATE TABLE terceira (id TEXT PRIMARY KEY);';
+  writeMigration(dir, '0003_terceira.sql', original);
+
+  const dbPath = path.join(base, 'cartografo.db');
+  const first = openDatabase(dbPath);
+  migrate(first, dir);
+  first.close();
+
+  // The D20 move, in miniature: same file, same id, different content. Today
+  // this is a silent skip, and the divergence only surfaces later as an
+  // unrelated `no such column` in the middle of a request.
+  const edited = 'CREATE TABLE terceira (id TEXT PRIMARY KEY, extra TEXT);';
+  writeMigration(dir, '0003_terceira.sql', edited);
+
+  const second = openDatabase(dbPath);
+  t.after(() => second.close());
+
+  assert.throws(
+    () => migrate(second, dir),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /0003_terceira/, 'the message has to name the migration');
+      assert.ok(
+        error.message.includes(sha256Of(original)),
+        'and the checksum recorded when it ran',
+      );
+      assert.ok(
+        error.message.includes(sha256Of(edited)),
+        'and the checksum of the file as it is on disk today',
+      );
+      return true;
+    },
+  );
+});
+
+test('t279 AT8 — an applied migration missing on disk stops the startup before anything applies', async (t) => {
+  const { openDatabase } = await loadConnection();
+  const { migrate } = await loadMigrate();
+
+  const base = temporaryArea(t);
+  const dir = path.join(base, 'migrations');
+  mkdirSync(dir);
+  // No checksum column anywhere in this directory on purpose: the rename guard
+  // reads `schema_migrations.id` and nothing else, so it has to bite on a ledger
+  // that predates the column just as hard (FR3).
+  writeMigration(dir, '0001_init.sql', CONTROL_TABLE_SQL);
+  writeMigration(dir, '0002_segunda.sql', 'CREATE TABLE segunda (id TEXT PRIMARY KEY);');
+
+  const dbPath = path.join(base, 'cartografo.db');
+  const first = openDatabase(dbPath);
+  assert.deepEqual(migrate(first, dir), ['0001_init', '0002_segunda']);
+  const ledgerBefore = first.prepare('SELECT id, applied_at FROM schema_migrations ORDER BY id').all();
+  first.close();
+
+  // The cleanup pass D24 forbids: the id already recorded stops matching any
+  // file, and the renamed file looks like a migration that never ran.
+  renameSync(path.join(dir, '0001_init.sql'), path.join(dir, '0001_inicio.sql'));
+  writeMigration(dir, '0003_terceira.sql', 'CREATE TABLE terceira (id TEXT PRIMARY KEY);');
+
+  const second = openDatabase(dbPath);
+  t.after(() => second.close());
+
+  assert.throws(
+    () => migrate(second, dir),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /0001_init\b/, 'the message has to name the id that went missing');
+      assert.match(error.message, /missing on disk/i);
+      return true;
+    },
+  );
+
+  assert.deepEqual(
+    second.prepare('SELECT id, applied_at FROM schema_migrations ORDER BY id').all(),
+    ledgerBefore,
+    'the guard fires before the apply loop: not one row of the ledger moves',
+  );
+  assert.equal(
+    second
+      .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'terceira'")
+      .get(),
+    undefined,
+    'and the migration that really was pending stays unapplied',
+  );
+});
+
+/**
+ * A ledger written by an older process: the two-column `schema_migrations`,
+ * one migration already recorded, and the checksum column still pending.
+ *
+ * Shared by AT9 and AT10 because AT10's whole claim is about what happens on the
+ * call AFTER the back-fill, and it needs the same starting point to get there.
+ */
+async function agedLedger(t: {
+  after: (fn: () => void) => void;
+}): Promise<{ db: ConnectionModule.Database; dir: string }> {
+  const { openDatabase } = await loadConnection();
+
+  const base = temporaryArea(t);
+  const dir = path.join(base, 'migrations');
+  mkdirSync(dir);
+  writeMigration(dir, '0001_init.sql', CONTROL_TABLE_SQL);
+  writeMigration(dir, '0002_checksum.sql', CHECKSUM_COLUMN_SQL);
+
+  const db = openDatabase(path.join(base, 'cartografo.db'));
+  t.after(() => db.close());
+
+  // Built by hand, exactly as a database from before this ticket looks: the old
+  // two-column control table, and a row that never had a checksum to record.
+  db.exec(CONTROL_TABLE_SQL);
+  db.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)').run(
+    '0001_init',
+    '2026-08-01T00:00:00.000Z',
+  );
+
+  return { db, dir };
+}
+
+test('t279 AT9 — an old ledger has its checksums back-filled once, unverified and reported', async (t) => {
+  const { migrate } = await loadMigrate();
+  const { db, dir } = await agedLedger(t);
+
+  const warned: Array<[string, string]> = [];
+  assert.deepEqual(
+    migrate(db, dir, { onChecksumBackfilled: (id, file) => warned.push([id, file]) }),
+    ['0002_checksum'],
+    'only the column migration was pending',
+  );
+
+  assert.deepEqual(
+    db.prepare('SELECT id, checksum FROM schema_migrations ORDER BY id').all(),
+    [
+      { id: '0001_init', checksum: sha256Of(readFileSync(path.join(dir, '0001_init.sql'), 'utf8')) },
+      {
+        id: '0002_checksum',
+        checksum: sha256Of(readFileSync(path.join(dir, '0002_checksum.sql'), 'utf8')),
+      },
+    ],
+    'the row from the older process takes the checksum of the file as it is today',
+  );
+
+  assert.deepEqual(
+    warned,
+    [['0001_init', '0001_init.sql']],
+    'and says so exactly once: that value is a record, not a verification',
+  );
+});
+
+test('t279 AT10 — a checksum that matches is silent on every startup after the back-fill', async (t) => {
+  const { migrate } = await loadMigrate();
+  const { db, dir } = await agedLedger(t);
+
+  migrate(db, dir, { onChecksumBackfilled: () => undefined });
+
+  const warned: string[] = [];
+  const ledgerBefore = db
+    .prepare('SELECT id, checksum FROM schema_migrations ORDER BY id')
+    .all() as Array<{ id: string; checksum: string | null }>;
+
+  // The precondition this test is about, spelled out: without it the silence
+  // below would be the silence of a ledger that never recorded anything.
+  assert.deepEqual(
+    ledgerBefore.filter((row) => row.checksum === null),
+    [],
+    'the back-fill of the previous call has to have left every row with a checksum',
+  );
+
+  assert.deepEqual(
+    migrate(db, dir, { onChecksumBackfilled: (id) => warned.push(id) }),
+    [],
+    'nothing left to apply',
+  );
+  assert.deepEqual(warned, [], 'a recorded checksum that matches is not a repeat warning');
+  assert.deepEqual(
+    db.prepare('SELECT id, checksum FROM schema_migrations ORDER BY id').all(),
+    ledgerBefore,
+    'and the ledger is not rewritten either',
   );
 });

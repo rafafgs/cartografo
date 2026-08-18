@@ -727,3 +727,166 @@ test('t278 — every required input of every node has a producer on every path i
   assert.deepEqual(report.problems, []);
   assert.equal(report.valid, true);
 });
+
+// --------------------------------------------------------------------------
+// t277 — a placeholder that names nothing
+// --------------------------------------------------------------------------
+
+/**
+ * The placeholder grammar of `especificacoes/formatos/manifesto-skill.md`,
+ * reimplemented here for the same reason the hash procedure above is: a test
+ * that imported the runner's own regex would go blind exactly when that regex
+ * is what is wrong.
+ */
+const PLACEHOLDER = /\{\{input\.([^{}]*)\}\}/g;
+const PLACEHOLDER_PATH = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$/;
+
+/** Every string in a manifest, with the JSON pointer that leads to it. */
+function stringsOf(value, pointer = '') {
+  if (typeof value === 'string') return [[pointer, value]];
+  if (Array.isArray(value)) return value.flatMap((item, i) => stringsOf(item, `${pointer}/${i}`));
+  if (value && typeof value === 'object') {
+    return Object.keys(value).flatMap((key) => stringsOf(value[key], `${pointer}/${key}`));
+  }
+  return [];
+}
+
+/**
+ * Walks a dotted placeholder path through a manifest's own `input` schema, and
+ * says whether the schema declares it. `additionalProperties` counts as a
+ * declaration: `artefato.gates_declarados` is a declared open map, not a hole.
+ */
+function declaredByInputSchema(schema, dotted) {
+  let current = schema;
+  for (const segment of dotted.split('.')) {
+    if (!current || current.type !== 'object') return false;
+    const property = current.properties?.[segment];
+    if (property) {
+      current = property;
+      continue;
+    }
+    const open = current.additionalProperties;
+    if (open && typeof open === 'object') {
+      current = open;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * The whole manifest is swept, not only `instructions` — and that is the point
+ * of the ticket. Only `instructions` is interpolated
+ * (`render-skill-instructions.ts`); `checks[].instruction` reaches the session
+ * as the literal JSON the renderer fences under "Os checks declarados pela
+ * skill". So a stale path there is worse than an unresolved one: it never
+ * refuses, it just tells the session to go look at an `input.aplicacao` the
+ * resolved input has not carried since t270.
+ */
+test('t277 AT1 — no manifest names an input path its own schema does not declare', () => {
+  const stale = [];
+  let swept = 0;
+
+  for (const file of Object.keys(SKILLS)) {
+    const manifest = readManifest(file);
+    for (const [pointer, text] of stringsOf(manifest)) {
+      for (const [token, dotted] of text.matchAll(PLACEHOLDER)) {
+        swept += 1;
+        const declared =
+          PLACEHOLDER_PATH.test(dotted) && declaredByInputSchema(manifest.input, dotted);
+        if (!declared) stale.push(`${file}${pointer}: ${token}`);
+      }
+    }
+  }
+
+  assert.ok(swept >= 20, `only ${swept} placeholders read across the bundle; the sweep is blind`);
+  assert.deepEqual(
+    stale,
+    [],
+    `these placeholders name paths the manifest's own input does not declare:\n${stale.join('\n')}`,
+  );
+});
+
+// --------------------------------------------------------------------------
+// t275 — the gate reports a verdict AND names an edge, and they are two keys
+//
+// A node with two ways out closes its turn with ONE fenced block, so the label
+// of the edge it took rides inside the same object as its report
+// (`parse-node-result.ts`). That label is the reserved key `resultado`, its
+// vocabulary is the GRAPH's — the `condition` of an edge — and the control
+// plane takes it out of the object before holding the rest against the pinned
+// skill's `output` (`docs/spec/grafo.md`, t269). So the node's own
+// `saida_schema` is where it is declared, and the skill's `output` is where it
+// never is.
+//
+// What this bundle did was neither: nothing declared the label anywhere, and
+// `testar-alpha`'s instructions spent the reserved key on the gate VERDICT —
+// `resultado: "passou"`, which is not a value any edge of this graph carries.
+// A session that obeyed those instructions named an edge that does not exist
+// and left out the `outcome` the manifest requires: no route, and a report the
+// control plane refuses. The crossing on the bench never saw it because its
+// fake session was hand-written against the schemas instead of against the
+// prose.
+// --------------------------------------------------------------------------
+
+test('t275 AT1 — the testar node declares the routing key its two edges need, and the skill does not', () => {
+  const shape = nodeById('testar').contract.output_schema;
+  const conditions = EXPECTED_EDGES.filter((edge) => edge.from === 'testar').map(
+    (edge) => edge.condition,
+  );
+
+  const route = shape.properties.resultado;
+  assert.ok(route, 'a node with two outgoing edges has to declare `resultado` in its output_schema');
+  assert.equal(route.type, 'string');
+  assert.deepEqual(
+    route.enum,
+    conditions,
+    'the label vocabulary IS the set of conditions of the edges leaving this node',
+  );
+  assert.ok(
+    shape.required.includes('resultado'),
+    'a gate that names no edge routes nothing: the label is not optional here',
+  );
+
+  assert.equal(
+    readManifest('testar-alpha.json').output.properties.resultado,
+    undefined,
+    'and the skill never declares it: the key is taken out before the report is checked (t269)',
+  );
+});
+
+test('t275 AT2 — testar-alpha names the verdict key and the routing key, and never conflates them', () => {
+  const manifest = readManifest('testar-alpha.json');
+  const text = oneLine(manifest.instructions);
+
+  for (const spent of ['`resultado: "passou"`', '`resultado: "falhou"`', '`resultado: "escalar_humano"`']) {
+    assert.ok(
+      !text.includes(spent),
+      `the reserved routing key cannot carry the gate verdict: ${spent} names no edge of this graph`,
+    );
+  }
+
+  for (const [outcome, edge] of [
+    ['pass', 'aprovado'],
+    ['fail', 'retrabalho'],
+  ]) {
+    assert.ok(
+      text.includes(`\`outcome: "${outcome}"\``),
+      `the verdict travels in the key the manifest declares: outcome: "${outcome}"`,
+    );
+    assert.ok(
+      text.includes(`\`resultado: "${edge}"\``),
+      `and the edge in the key the protocol reserves: resultado: "${edge}"`,
+    );
+  }
+
+  assert.ok(
+    text.includes('`outcome: "escalate_human"`'),
+    'the third value the gate format demands is named where the format puts it',
+  );
+  assert.ok(
+    (manifest.output.properties.outcome.description ?? '').includes('resultado'),
+    'the verdict\'s own description has to point at the routing key instead of claiming to be one',
+  );
+});

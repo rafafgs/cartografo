@@ -1,0 +1,26 @@
+-- 0023_schema_migrations_checksum — checksum de conteúdo por migração aplicada
+-- (t279, notas/2026-08-18-plano-de-acao.md §2).
+--
+-- O livro-razão só sabia SE um id rodou, nunca O QUE rodou. A D20 reescreveu
+-- dezenove migrações NO LUGAR — mesmo arquivo, mesmo id, conteúdo traduzido —,
+-- e num banco que já as tinha gravadas o runner pula todas em silêncio: o
+-- servidor sobe limpo e morre depois, no meio de uma requisição, com um
+-- `no such column` de um nome que só existe no schema novo. Esta coluna é o que
+-- transforma esse silêncio em uma falha na partida, com nome e sobrenome.
+--
+-- Nullable de propósito: a linha de uma migração aplicada antes desta coluna
+-- existir não tem como saber retroativamente como era o arquivo quando rodou.
+-- O runner (src/db/migrate.ts) back-fila essas a partir do arquivo atual, uma
+-- vez, avisando — é um registro de melhor esforço, não verificado. Uma linha
+-- inserida a partir desta migração em diante sempre carrega um checksum real.
+--
+-- Um detalhe de auto-referência que o runner tem que tratar e esta migração
+-- não: num banco novo, a 0001 até a 0022 gravam suas linhas ANTES de a coluna
+-- existir, dentro da MESMA chamada de `migrate()`. Por isso o INSERT pergunta
+-- (`PRAGMA table_info`) se a coluna já existe nesta transação, e o que sobrar
+-- NULO é preenchido no passe seguinte, em silêncio — nada teve chance de
+-- divergir dentro de um processo só.
+--
+-- Nenhuma migração abre transação própria: quem transaciona é src/db/migrate.ts.
+
+ALTER TABLE schema_migrations ADD COLUMN checksum TEXT;  -- NULO = aplicada antes desta migração existir

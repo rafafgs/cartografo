@@ -757,6 +757,71 @@ test('t263 — the README documents the two new inputs of the triage', () => {
   }
 });
 
+/**
+ * The routing label a gate's report carries, and why the output has to declare
+ * it (t276).
+ *
+ * The report protocol is ONE fenced block (t161, t259): the label of the edge
+ * the node took rides INSIDE the object the node's `output` schema declares, and
+ * `PATCH /v1/sessions/:id/finish` holds that whole object against the schema of
+ * the skill the node pins (`packages/core/src/repositories/session.ts`). Every
+ * `output` of this bundle closes with `additionalProperties: false`, so a gate
+ * that does not declare `resultado` has its ENTIRE report refused — stored as
+ * `null`, with the next node's `input` projected from nothing.
+ *
+ * `triar-tese` learned this in t260, when the first live crossing hit it. The
+ * other two gates were left as they were and nothing exercised them, so the
+ * claim is made here for all three at once: every gate of this graph, against
+ * every edge that really leaves it.
+ */
+test('t276 — every gate declares `resultado`, the edge label its own report carries', async () => {
+  const { validateAgainstSchema } = await bundleValidator();
+  const doc = readJson(GRAPH_PATH);
+  const fixture = readJson(THESIS_FIXTURE_PATH);
+
+  const gates = doc.nodes.filter((node) => node.node_type === 'gate');
+  assert.deepEqual(
+    gates.map((node) => node.id),
+    ['triagem', 'red-team', 'decisao'],
+    'the three gates of D14, in document order',
+  );
+
+  for (const node of gates) {
+    const manifest = readManifestOfSkill(node.skill_ref.id);
+    const declared = manifest.output.properties.resultado;
+
+    assert.equal(
+      manifest.output.additionalProperties,
+      false,
+      `${node.skill_ref.id}: the output is closed — which is what makes an undeclared label a refusal`,
+    );
+    assert.ok(declared, `${node.skill_ref.id}: output has to declare "resultado"`);
+    assert.equal(declared.type, 'string', `${node.skill_ref.id}: the label is a plain string`);
+    assert.ok(
+      !('enum' in declared),
+      `${node.skill_ref.id}: no enum — the labels are the GRAPH's vocabulary, and the same skill can live under two graphs`,
+    );
+    assert.ok(
+      !manifest.output.required.includes('resultado'),
+      `${node.skill_ref.id}: the label is not required — it is the graph's word, and only a routing node emits one`,
+    );
+
+    // What a real session prints: the payload the fixture already proves valid
+    // (AT11), plus the label of each edge that leaves this node.
+    const conditions = doc.edges.filter((edge) => edge.from === node.id).map((edge) => edge.condition);
+    assert.equal(conditions.length, 2, `${node.id}: a gate of this graph has two ways out`);
+
+    const reported = fixture.travessia.find((step) => step.no === node.id).saida;
+    for (const condition of conditions) {
+      assert.deepEqual(
+        validateAgainstSchema({ ...reported, resultado: condition }, manifest.output),
+        [],
+        `${node.id}: a report carrying the "${condition}" label has to be accepted whole`,
+      );
+    }
+  }
+});
+
 test('AT12 — the validator CLI approves the bundle and rejects a tampered hash', () => {
   assert.ok(
     existsSync(BUNDLE_VALIDATOR_PATH),

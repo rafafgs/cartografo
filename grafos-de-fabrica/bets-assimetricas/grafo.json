@@ -252,8 +252,8 @@
       "description": "Papel dedicado a derrubar a tese com contra-evidência própria; a tese que não responde a uma objeção grave morre aqui.",
       "skill_ref": {
         "id": "derrubar-tese",
-        "version": "1.0.0",
-        "hash": "sha256:20de5f9f7348d33ac05cf7e495ad0bc596ce3c68034989a6af715ae2f5ac45cb"
+        "version": "1.0.1",
+        "hash": "sha256:34b50136adf7fe1bea8c3db98aff742a6e2d829cf4e0b691f7a3f1ebdd4f1e1d"
       },
       "contract": {
         "input_schema": {
@@ -405,8 +405,8 @@
       "description": "Portão humano obrigatório, sempre (D14): monta o dossiê e escala. Nenhuma sessão deste nó decide alocação de capital — só transcreve a decisão já registrada.",
       "skill_ref": {
         "id": "escalar-decisao",
-        "version": "1.0.0",
-        "hash": "sha256:3ae0cd3316560726c51296d1965f012694edcc8d9d1d8ef6ed7456d92f93c26e"
+        "version": "1.0.1",
+        "hash": "sha256:66fea7f172244bbc1414e19985d627d0edf999ac8083110a6fa8163083372d6d"
       },
       "contract": {
         "input_schema": {

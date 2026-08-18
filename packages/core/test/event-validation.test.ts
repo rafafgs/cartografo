@@ -238,7 +238,7 @@ function refusesEvent(input: Record<string, unknown>, field: string): void {
   );
 }
 
-test('t196 AT9 — the catalogue is the 19 type names of the taxonomy, in its order', () => {
+test('t196 AT9 — the catalogue is the 20 type names of the taxonomy, in its order', () => {
   assert.deepEqual(
     [...KNOWN_TYPES],
     [
@@ -260,6 +260,11 @@ test('t196 AT9 — the catalogue is the 19 type names of the taxonomy, in its or
       'graph_version.registered',
       'graph_version.applied',
       'graph_version.reverted',
+      // The twentieth type, and the fourth of this group (t283): a version's
+      // contract state moving, which only ever happens on the re-check a newly
+      // registered manifest triggers. It sits inside the graph_version run for
+      // the same reason as the three above it — the taxonomy groups by entity.
+      'graph_version.contracts_checked',
       // The sixth group, and the nineteenth type: the control plane declaring a
       // round over (D21, t245). It is last here because it is last in the
       // taxonomy's own catalogue, which is what this assertion mirrors.
@@ -492,6 +497,31 @@ test('t196 AT9 — the graph_version payloads demand what their schemas require'
     delete complete[missing];
     refuses('graph_version.reverted', complete, missing);
   }
+});
+
+test('t283 — graph_version.contracts_checked demands the state and the count, and nothing else', () => {
+  assert.deepEqual(
+    requireValidData('graph_version.contracts_checked', { state: 'checked', problem_count: 0 }),
+    { state: 'checked', problem_count: 0 },
+  );
+  assert.deepEqual(
+    requireValidData('graph_version.contracts_checked', { state: 'failed', problem_count: 3 }),
+    { state: 'failed', problem_count: 3 },
+  );
+
+  // Both are required: a re-check that does not say where the version landed,
+  // or over how many problems, records nothing the row does not already say.
+  refuses('graph_version.contracts_checked', { problem_count: 0 }, 'state');
+  refuses('graph_version.contracts_checked', { state: 'checked' }, 'problem_count');
+
+  // The vocabulary is ours, so the set closes — the same call `tier` makes.
+  refuses('graph_version.contracts_checked', { state: 'skipped', problem_count: 0 }, 'state');
+  refuses('graph_version.contracts_checked', { state: 'checked', problem_count: -1 }, 'problem_count');
+  refuses(
+    'graph_version.contracts_checked',
+    { state: 'checked', problem_count: 0, graph_id: 'nota-curta' },
+    'graph_id',
+  );
 });
 
 test('t196 AT9 — the lease payloads demand what their schemas require', () => {

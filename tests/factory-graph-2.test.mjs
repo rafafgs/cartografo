@@ -966,6 +966,22 @@ test('t278 — every required input of every node has a producer on every path i
   assert.equal(report.valid, true);
 });
 
+test('t283 — the bundle classifies as checked, so an import needs no re-check', async () => {
+  // `cartografo import` registers every manifest of `skills/` BEFORE sending the
+  // graph, so by the time `POST /v1/graphs` runs the check, every pin resolves
+  // and the version is born `checked` — no waiting, no re-check event, and a job
+  // may run against it the moment it exists. What that check answers over the
+  // registry is what this one answers over the same manifests on disk.
+  const { classifyContracts, validateContracts } = await contractValidator();
+  const report = validateContracts(readJson(GRAPH_PATH), bundleSkillLookup());
+
+  assert.equal(
+    classifyContracts(report),
+    'checked',
+    'an `unchecked` here would mean a bundle whose own manifests do not answer for its pins',
+  );
+});
+
 test('t278 — the optional keys of registrar-travessia are what makes the short paths legal', async () => {
   const { validateContracts } = await contractValidator();
   const manifest = readManifest('registrar-travessia.json');

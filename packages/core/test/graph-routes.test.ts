@@ -66,6 +66,11 @@ interface GraphVersion {
   source: string;
   proposal_id: number | null;
   created_at: string;
+  /** The stored contract-check state the version carries (t283). */
+  contracts: {
+    state: 'checked' | 'unchecked' | 'failed';
+    problems: Array<{ code: string; node_id: string; key?: string; message: string }>;
+  };
 }
 
 interface ValidationReport {
@@ -570,7 +575,13 @@ test('t278 — the same document with the output merged at the top level is regi
   await post(address, '/v1/skills', fixtureManifest('b-skill', { input: produced }));
 
   const response = await post(address, '/v1/graphs', twoNodeDocument('balde-de-topo'));
-  assert.equal(response.status, 201, JSON.stringify(await jsonBody(response)));
+  const body = await jsonBody<{ graph_version: GraphVersion }>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
+
+  // t283: the check ran over a registry that answered for every pin, and the
+  // verdict it reached is now written on the row rather than only on the reply.
+  assert.equal(body.graph_version.contracts.state, 'checked');
+  assert.deepEqual(body.graph_version.contracts.problems, []);
 });
 
 test('t278 — a graph whose skills are not registered yet is still registered', async (t) => {
@@ -582,8 +593,57 @@ test('t278 — a graph whose skills are not registered yet is still registered',
   // keeps `POST /v1/graphs` the raw-document route it is — the whole judgement
   // belongs to `cartografo import`, which registers the manifests first.
   const response = await post(address, '/v1/graphs', twoNodeDocument('sem-registro', 'analise'));
-  const body = await jsonBody<{ graph?: Graph }>(response);
+  const body = await jsonBody<{ graph?: Graph; graph_version: GraphVersion }>(response);
   assert.equal(response.status, 201, JSON.stringify(body));
+
+  // t283: standing aside is no longer the end of the story. The version is
+  // stored `unchecked`, which is what `POST /v1/jobs` refuses to run against,
+  // and the report names the pins that could not be resolved.
+  assert.equal(body.graph_version.contracts.state, 'unchecked');
+  assert.deepEqual(
+    body.graph_version.contracts.problems
+      .filter((problem) => problem.code === 'skill_ref_unresolved')
+      .map((problem) => problem.node_id),
+    ['a', 'b'],
+    'the stored report names the nodes whose pins resolve to nothing',
+  );
+
+  // And the read routes publish the same state, not only the 201.
+  const stored = await jsonBody<{ graph_version: GraphVersion }>(
+    await fetch(`${address}/v1/graph-versions/${encodeURIComponent(body.graph_version.id)}`),
+  );
+  assert.equal(stored.graph_version.contracts.state, 'unchecked');
+  assert.deepEqual(
+    stored.graph_version.contracts.problems,
+    body.graph_version.contracts.problems,
+    'the row is where the state lives; the 201 only quotes it',
+  );
+});
+
+test('t283 — a resolved document that fails the contracts gate is still a 422 that writes nothing', async (t) => {
+  const address = await startApp(t);
+
+  // The pre-t283 refusal, pinned against a regression from this ficha: storing
+  // the state must not turn the one case that already refused into a `failed`
+  // row. `failed` is only ever reached by a re-check.
+  const produced = { type: 'object', required: ['tese_triada'], properties: { tese_triada: { type: 'object' } } };
+  await post(address, '/v1/skills', fixtureManifest('a-skill', { output: produced }));
+  await post(address, '/v1/skills', fixtureManifest('b-skill', { input: produced }));
+
+  const response = await post(address, '/v1/graphs', twoNodeDocument('recusado-e-nao-gravado', 'analise'));
+  const body = await jsonBody<ValidationReport & { contracts: ContractsReport }>(response);
+  assert.equal(response.status, 422, JSON.stringify(body));
+  assert.equal(body.error, 'invalid_graph');
+  assert.equal(body.contracts.valid, false);
+
+  const graphs = await jsonBody<{ graphs: Graph[] }>(await fetch(`${address}/v1/graphs`));
+  assert.deepEqual(graphs.graphs, [], 'a document refused at the gate is not a lineage');
+
+  assert.equal(
+    (await fetch(`${address}/v1/graphs/recusado-e-nao-gravado/versions`)).status,
+    404,
+    'and it is not a version either: the lineage does not exist to have one',
+  );
 });
 
 test('t278 — a document that already fails soundness never reaches the contracts gate', async (t) => {

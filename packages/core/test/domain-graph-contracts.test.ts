@@ -28,6 +28,7 @@ import type { CustomFieldDefinition } from '../src/domain/custom-fields.ts';
 import {
   ALWAYS_AVAILABLE_INPUT_PATHS,
   EXECUTOR_PROVIDED_INPUT_PATHS,
+  classifyContracts,
   validateContracts,
   type ContractProblem,
   type SkillContractShape,
@@ -356,5 +357,102 @@ test("the always-available constant does not drift from the projection's own key
     [...ALWAYS_AVAILABLE_INPUT_PATHS].filter((path) => !path.includes('.')).sort(),
     Object.keys(projected).sort(),
     'a key `buildNodeInput` stops publishing is a key this check must stop promising',
+  );
+});
+
+/*
+ * t283 — the three-valued state a version carries.
+ *
+ * `validateContracts` answers a binary verdict about ONE call; a stored version
+ * needs a lifecycle position, because "the check ran and passed", "the check
+ * could not run" and "the check ran and refused" are three different facts and
+ * only the third one may never carry a job. `classifyContracts` is that
+ * translation, and it is pure: the same report always classifies the same way,
+ * whoever is asking.
+ */
+
+test('t283 — an unresolved pin classifies as unchecked, whatever else is in the report', () => {
+  // The ancestor is not registered, so `B`'s availability is computed with a
+  // node that produces nothing: the report carries BOTH the unresolved pin and
+  // an `unproduced_input` that only exists because of it.
+  const { doc, resolveSkill } = fixture({
+    nodes: [
+      { id: 'A', unregistered: true, output: objectSchema(['tese_triada']) },
+      { id: 'B', input: objectSchema(['tese_triada']) },
+    ],
+  });
+  const report = validateContracts(doc, resolveSkill);
+
+  assert.deepEqual(
+    report.problems.map((problem) => problem.code).sort(),
+    ['skill_ref_unresolved', 'unproduced_input'],
+    'this case only proves what it claims if both codes are present',
+  );
+  assert.equal(report.valid, false);
+  assert.equal(
+    classifyContracts(report),
+    'unchecked',
+    'an unresolved pin outranks everything computed against it',
+  );
+});
+
+test('t283 — a fully resolved report classifies as failed when it is invalid', () => {
+  const { doc, resolveSkill } = fixture({
+    nodes: [
+      { id: 'A', produces: 'analise', output: objectSchema(['tese_triada']) },
+      { id: 'B', input: objectSchema(['tese_triada']) },
+    ],
+  });
+  const report = validateContracts(doc, resolveSkill);
+
+  assert.deepEqual(
+    report.problems.map((problem) => problem.code),
+    ['unproduced_input'],
+  );
+  assert.equal(classifyContracts(report), 'failed');
+});
+
+test('t283 — a fully resolved report with no problem classifies as checked', () => {
+  const { doc, resolveSkill } = fixture({
+    nodes: [
+      { id: 'A', output: objectSchema(['tese_triada']) },
+      { id: 'B', input: objectSchema(['tese_triada']) },
+    ],
+  });
+  const report = validateContracts(doc, resolveSkill);
+
+  assert.deepEqual(report.problems, []);
+  assert.equal(report.valid, true);
+  assert.equal(classifyContracts(report), 'checked');
+});
+
+test('t283 — the classifier reads the report and nothing else', () => {
+  // Hand-built reports, not fixtures: the contract of `classifyContracts` is a
+  // function of the report alone, and a case that could only be produced by a
+  // document would not say so.
+  assert.equal(classifyContracts({ valid: true, problems: [] }), 'checked');
+  assert.equal(
+    classifyContracts({
+      valid: false,
+      problems: [
+        { code: 'skill_ref_unresolved', node_id: 'A', message: 'nothing resolves this pin' },
+      ],
+    }),
+    'unchecked',
+  );
+  assert.equal(
+    classifyContracts({
+      valid: false,
+      problems: [
+        {
+          code: 'unproduced_input',
+          node_id: 'B',
+          key: 'tese_triada',
+          message: 'nobody supplies it',
+          produced_elsewhere_by: [],
+        },
+      ],
+    }),
+    'failed',
   );
 });

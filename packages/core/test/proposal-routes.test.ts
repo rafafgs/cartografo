@@ -59,6 +59,11 @@ interface GraphVersion {
   source: string;
   proposal_id: number | null;
   created_at: string;
+  /** The contract-check state the version carries (t283). */
+  contracts: {
+    state: 'checked' | 'unchecked' | 'failed';
+    problems: Array<{ code: string; node_id: string; key?: string; message: string }>;
+  };
 }
 
 interface Proposal {
@@ -1745,4 +1750,130 @@ test('t246 AT-D5 — a proposal nobody repeated keeps evidence exactly as it was
 
   const [listed] = await listProposals(address);
   assert.deepEqual(listed.evidence, EVIDENCE, 'the listing tells the same story');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t283 — applying a proposal RECOMPUTES the contract state.                   */
+/*                                                                             */
+/* Unlike a fork, an applied proposal is a different document from its target: */
+/* that is what a proposal IS. A removed producer, a swapped pin or a new node */
+/* each move the answer, so the target's stored one says nothing about the     */
+/* result — the check runs again, and what comes out is stored honestly.       */
+/* Neither outcome adds a refusal here: the enforcement point of the ficha is  */
+/* `POST /v1/jobs`, and this route's refusals are the ones it already had.     */
+/* -------------------------------------------------------------------------- */
+
+/** A pin swap on any node of the fixture — `swapNodeField` above only knows `revisar`. */
+function movePinOf(nodeId: string, from: unknown, to: unknown): OperationsModule.Operation {
+  return {
+    type: 'change_node_field',
+    node_id: nodeId,
+    field: 'skill_ref',
+    from,
+    to,
+    inverse: { type: 'change_node_field', node_id: nodeId, field: 'skill_ref', from: to, to: from },
+  } as OperationsModule.Operation;
+}
+
+/** A registrable manifest with the two schemas the contract check reads. */
+function contractManifest(
+  id: string,
+  contract: { input?: Record<string, unknown>; output?: Record<string, unknown> },
+): Record<string, unknown> {
+  const manifest: Record<string, unknown> = {
+    id,
+    version: '1.0.0',
+    hash: '',
+    role: 'work',
+    description: `fixture skill "${id}" of the t283 apply cases`,
+    input: contract.input ?? { type: 'object' },
+    output: contract.output ?? { type: 'object' },
+    preconditions: [],
+    checks: [
+      {
+        id: 'fixture-check',
+        type: 'deterministic',
+        description: 'A nota existe e não está vazia.',
+        command: 'test -s nota.md',
+      },
+    ],
+    permissions: { filesystem: { read: [], write: [] }, network: { allowed: false } },
+    instructions: 'Fixture skill of the t283 apply cases.',
+    origin: { type: 'native' },
+  };
+  manifest.hash = manifestHash(manifest);
+  return manifest;
+}
+
+test('t283 — an applied proposal whose result still has an unresolved pin is stored unchecked', async (t) => {
+  const address = await startApp(t);
+
+  // The registry is empty, so the base's own two pins resolve to nothing, and
+  // the node this proposal ADDS pins a third skill nobody registered either
+  // (`unregisteredPin` exempts added nodes on purpose — see `routes/proposals.ts`).
+  const { graph, version } = await registerBase(address);
+  assert.equal(version.contracts.state, 'unchecked', 'the base itself was never checkable');
+
+  const proposal = await createProposal(address, graph.id, version.id, passingOperations());
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<ApplyResponse>(response);
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.ok(body.graph_version !== undefined);
+
+  assert.equal(
+    body.graph_version.contracts.state,
+    'unchecked',
+    'the result was recomputed and it is still waiting on manifests',
+  );
+  assert.deepEqual(
+    body.graph_version.contracts.problems
+      .filter((problem) => problem.code === 'skill_ref_unresolved')
+      .map((problem) => problem.node_id)
+      .sort(),
+    ['checar_fatos', 'redigir', 'revisar'],
+    'including the node the proposal itself added',
+  );
+});
+
+test('t283 — an applied proposal whose result is resolved and invalid is stored failed, and still applies', async (t) => {
+  const address = await startApp(t);
+  const { document, graph, version } = await registerBase(address);
+
+  // Two manifests that DO resolve, chosen so that the resulting document is
+  // fully checkable and wrong: the consumer requires a key the producer never
+  // places anywhere.
+  const producer = await registerSkill(address, contractManifest('produtor-de-nada', {}));
+  const consumer = await registerSkill(
+    address,
+    contractManifest('consumidor-exigente', {
+      input: { type: 'object', required: ['tese_triada'], properties: { tese_triada: { type: 'object' } } },
+    }),
+  );
+
+  const proposal = await createProposal(address, graph.id, version.id, [
+    movePinOf('redigir', requireNode(document, 'redigir').skill_ref, producer),
+    movePinOf('revisar', requireNode(document, 'revisar').skill_ref, consumer),
+  ]);
+  await approve(address, proposal.id);
+
+  const response = await post(address, `/v1/proposals/${proposal.id}/apply`, {});
+  const body = await jsonBody<ApplyResponse>(response);
+
+  // It APPLIES. Adding a pre-write refusal here is out of this ficha's scope:
+  // the version is stored with the honest state, and `POST /v1/jobs` is where
+  // that state bites.
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.proposal.status, 'applied');
+  assert.ok(body.graph_version !== undefined);
+
+  assert.equal(body.graph_version.contracts.state, 'failed');
+  assert.deepEqual(
+    body.graph_version.contracts.problems.map((problem) => [problem.code, problem.node_id, problem.key]),
+    [['unproduced_input', 'revisar', 'tese_triada']],
+  );
+
+  // The pointer moved, like any other applied proposal.
+  assert.equal((await getGraph(address, graph.id)).current_version_id, body.graph_version.id);
 });

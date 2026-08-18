@@ -56,6 +56,11 @@ interface GraphVersion {
   source: string;
   proposal_id: number | null;
   created_at: string;
+  /** The contract-check state the version carries (t283). */
+  contracts: {
+    state: 'checked' | 'unchecked' | 'failed';
+    problems: Array<{ code: string; node_id: string; message: string }>;
+  };
 }
 
 /** A version with the whole document. */
@@ -499,4 +504,45 @@ test('t180 — the fork guards refuse in English', async (t) => {
     (ofVariant.body as { message: string }).message,
     'only a base lineage can be forked; a variant of a variant is out (D13)',
   );
+});
+
+/*
+ * t283 — a fork copies its base's contract state; it never asks the registry.
+ *
+ * A variant is born as the base's snapshot with `lineage` swapped, and
+ * `validateContracts` reads `nodes`, `edges`, `custom_fields`, `project` and
+ * `initial_node` — never `lineage`. So the answer cannot differ, and the fork
+ * has no business computing one: what it does is copy.
+ */
+
+test('t283 — the fork of an unchecked base is unchecked, with the same problems', async (t) => {
+  const ctx = await start(t);
+
+  // The registry is EMPTY and stays empty for the whole test. The base's pins
+  // (`cartografo/redigir-nota`, `cartografo/revisar-nota`) resolve to nothing,
+  // so the base version is `unchecked` — and the fork below has to succeed
+  // anyway, which is the behavioural half of "it does not ask the registry".
+  const { graph, version } = await registerBase(ctx);
+  assert.equal(version.contracts.state, 'unchecked', 'the fixture has to give us an unchecked base');
+  assert.ok(version.contracts.problems.length > 0, 'and a report with the unresolved pins in it');
+
+  const response = await fork(ctx, graph.id, { id: VARIANT_ID });
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+
+  assert.equal(response.body.graph_version.contracts.state, 'unchecked');
+  assert.deepEqual(
+    response.body.graph_version.contracts.problems,
+    version.contracts.problems,
+    'copied byte for byte: a recomputation would be a second answer to the same question',
+  );
+
+  // And the row says the same thing the 201 did.
+  const stored = await readVersion(ctx, response.body.graph_version.id);
+  assert.equal(stored.contracts.state, 'unchecked');
+  assert.deepEqual(stored.contracts.problems, version.contracts.problems);
+
+  const registry = ctx.db.prepare('SELECT COUNT(*) AS total FROM skill').get() as {
+    total: number;
+  };
+  assert.equal(registry.total, 0, 'nothing was ever registered: the fork resolved no pin');
 });

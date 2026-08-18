@@ -29,9 +29,11 @@ import test from 'node:test';
 
 import {
   PACKAGE_ROOT,
+  loadEvents,
   request,
   requireArtifacts,
   startControlPlane,
+  type Event,
   type TestContext,
 } from './support.ts';
 
@@ -671,4 +673,203 @@ test('t215 AT — a lineage whose every version is retired still resolves, never
   assert.equal(latest.status, 200, 'deprecating everything must not make the lineage look unregistered');
   assert.equal(latest.body.version, V2, 'with nothing live, the highest version overall answers');
   assert.ok(typeof latest.body.deprecated_at === 'string');
+});
+
+/* -------------------------------------------------------------------------- */
+/* t283 — registering a manifest re-judges the versions that were waiting.     */
+/*                                                                             */
+/* `POST /v1/graphs` stores a document whose pins do not resolve as            */
+/* `unchecked`, and `POST /v1/jobs` refuses to run anything against it. That   */
+/* is only half a design unless something moves the version afterwards: this   */
+/* is that something, and it is the registry's own write that triggers it.     */
+/* -------------------------------------------------------------------------- */
+
+/** The one node the fixtures below pin, per skill id — a chain `a → b`. */
+function twoNodeGraph(className: string, pins: Array<{ id: string; version: string; hash: string }>) {
+  const node = (id: string, pin: { id: string; version: string; hash: string }) => ({
+    id,
+    role: 'fixture',
+    node_type: 'work',
+    skill_ref: pin,
+    contract: {
+      input_schema: { type: 'object' },
+      output_schema: { type: 'object' },
+      checks: [
+        {
+          type: 'agentic',
+          instruction: 'Confirme o que o nó produziu.',
+          required_evidence: true,
+          description: 'o documento declara o próprio check',
+        },
+      ],
+    },
+  });
+
+  return {
+    problem_class: className,
+    lineage: { type: 'base' },
+    metadata: { name: className },
+    nodes: [node('a', pins[0]), node('b', pins[1])],
+    edges: [{ from: 'a', to: 'b', condition: 'sempre' }],
+    initial_node: 'a',
+    final_nodes: ['b'],
+    custom_fields: [],
+  };
+}
+
+/** A native manifest carrying the two schemas the contract check reads. */
+function contractManifest(
+  id: string,
+  contract: { input?: Record<string, unknown>; output?: Record<string, unknown> },
+): Record<string, unknown> {
+  const manifest: Record<string, unknown> = {
+    id,
+    version: '1.0.0',
+    hash: '',
+    role: 'work',
+    description: `fixture skill "${id}" of the t283 re-check cases`,
+    input: contract.input ?? { type: 'object' },
+    output: contract.output ?? { type: 'object' },
+    preconditions: [],
+    checks: ONE_CHECK,
+    permissions: SAFE_PERMISSIONS,
+    instructions: `Fixture skill "${id}".`,
+    origin: { type: 'native' },
+  };
+  manifest.hash = contentHash(manifest);
+  return manifest;
+}
+
+/** A pin for a manifest that has not been registered (and may never be). */
+function pinOf(manifest: Record<string, unknown>): { id: string; version: string; hash: string } {
+  return {
+    id: manifest.id as string,
+    version: manifest.version as string,
+    hash: manifest.hash as string,
+  };
+}
+
+/** The version, as `GET /v1/graph-versions/:id` publishes it (t283). */
+interface StoredVersion {
+  id: string;
+  contracts: {
+    state: 'checked' | 'unchecked' | 'failed';
+    problems: Array<{ code: string; node_id: string; key?: string; message: string }>;
+  };
+}
+
+async function readVersion(ctx: TestContext, id: string): Promise<StoredVersion> {
+  const response = await request<{ graph_version: StoredVersion }>(
+    ctx,
+    'GET',
+    `/v1/graph-versions/${encodeURIComponent(id)}`,
+  );
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  return response.body.graph_version;
+}
+
+/** Every `graph_version.contracts_checked` in the log, oldest first. */
+async function recheckEvents(ctx: TestContext): Promise<Event[]> {
+  const { listEvents } = await loadEvents();
+  return listEvents(ctx.db).filter((event) => event.type === 'graph_version.contracts_checked');
+}
+
+test('t283 — registering the last missing manifest moves the version to checked, once', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const producer = contractManifest('produtor-t283', {});
+  const consumer = contractManifest('consumidor-t283', {});
+
+  // The graph goes in FIRST, with neither manifest registered: the ordinary
+  // case for this route, and the one that used to end there.
+  const registered = await request<{ graph_version: StoredVersion }>(ctx, 'POST', '/v1/graphs',
+    twoNodeGraph('classe-que-esperava', [pinOf(producer), pinOf(consumer)]));
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+  const versionId = registered.body.graph_version.id;
+  assert.equal(registered.body.graph_version.contracts.state, 'unchecked');
+
+  // The first manifest resolves one pin of two: the version cannot move yet,
+  // and the re-check has to say so rather than declaring a partial pass.
+  assert.equal((await post(ctx, producer)).status, 201);
+  assert.equal((await readVersion(ctx, versionId)).contracts.state, 'unchecked');
+  const afterFirst = await recheckEvents(ctx);
+  assert.equal(afterFirst.length, 1, 'the version was re-judged, and it stayed where it was');
+  assert.deepEqual(afterFirst[0].data, { state: 'unchecked', problem_count: 1 });
+  assert.deepEqual(afterFirst[0].entity, { type: 'graph_version', id: versionId });
+  assert.deepEqual(afterFirst[0].actor, { type: 'system', ref: 'control-plane' });
+
+  // The second one resolves the last pin, and now the whole document can be
+  // judged — which is what `checked` means.
+  assert.equal((await post(ctx, consumer)).status, 201);
+  const moved = await readVersion(ctx, versionId);
+  assert.equal(moved.contracts.state, 'checked');
+  assert.deepEqual(moved.contracts.problems, []);
+
+  const events = await recheckEvents(ctx);
+  assert.equal(events.length, 2, 'one event per manifest that re-judged this version');
+  assert.deepEqual(events[1].data, { state: 'checked', problem_count: 0 });
+});
+
+test('t283 — a re-check that resolves the last pin may land on failed', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  // The consumer requires a key the producer places nowhere. While the producer
+  // was unregistered that was unknowable — a missing manifest produces nothing,
+  // so every descendant looks starved for want of a registry entry. With both
+  // registered the finding is real, and the version earns `failed`.
+  const producer = contractManifest('produtor-vazio-t283', {});
+  const consumer = contractManifest('consumidor-exigente-t283', {
+    input: { type: 'object', required: ['tese_triada'], properties: { tese_triada: { type: 'object' } } },
+  });
+
+  const registered = await request<{ graph_version: StoredVersion }>(ctx, 'POST', '/v1/graphs',
+    twoNodeGraph('classe-que-nao-fecha', [pinOf(producer), pinOf(consumer)]));
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+  const versionId = registered.body.graph_version.id;
+
+  assert.equal((await post(ctx, consumer)).status, 201);
+  assert.equal((await post(ctx, producer)).status, 201);
+
+  const judged = await readVersion(ctx, versionId);
+  assert.equal(judged.contracts.state, 'failed');
+  assert.deepEqual(
+    judged.contracts.problems.map((problem) => [problem.code, problem.node_id, problem.key]),
+    [['unproduced_input', 'b', 'tese_triada']],
+  );
+
+  const events = await recheckEvents(ctx);
+  assert.equal(events[events.length - 1].data.state, 'failed');
+  assert.equal(events[events.length - 1].data.problem_count, 1);
+});
+
+test('t283 — a same-hash reimport re-checks nothing and records nothing', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const producer = contractManifest('produtor-idempotente-t283', {});
+  const consumer = contractManifest('consumidor-idempotente-t283', {});
+
+  const registered = await request<{ graph_version: StoredVersion }>(ctx, 'POST', '/v1/graphs',
+    twoNodeGraph('classe-reimportada', [pinOf(producer), pinOf(consumer)]));
+  assert.equal(registered.status, 201, JSON.stringify(registered.body));
+
+  assert.equal((await post(ctx, producer)).status, 201);
+  assert.equal((await post(ctx, consumer)).status, 201);
+  const before = await recheckEvents(ctx);
+  assert.equal(before.length, 2);
+
+  // The second `cartografo import` of a bundle: same content, same hash, 200
+  // and no row written. Nothing about the registry changed, so no version's
+  // answer could have changed either — and a re-check here would stack an
+  // identical event on every rerun.
+  const reimport = await post(ctx, producer);
+  assert.equal(reimport.status, 200, 'a same-hash reimport is not a write');
+
+  assert.deepEqual(
+    await recheckEvents(ctx),
+    before,
+    'no re-check, no event: the log does not grow on a rerun that changed nothing',
+  );
 });

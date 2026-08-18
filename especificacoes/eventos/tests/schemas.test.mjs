@@ -185,6 +185,17 @@ export const TABELA = {
     obrigatorios: ['graph_id', 'target_version', 'reason'],
     opcionais: [],
   },
+  // O 20º tipo entrou com o estado de contrato da versão (t283): registrar um
+  // manifesto re-julga toda versão que o fixava e não pôde ser conferida, e cada
+  // uma que se move grava este evento. Os dois campos são obrigatórios porque um
+  // re-check que não diz para qual estado foi, nem sobre quantos problemas, não
+  // conta nada que a linha já não conte melhor. `problem_count` é contagem e não
+  // o relatório: o relatório está na linha, a um GET de distância.
+  'graph_version.contracts_checked': {
+    entidade: 'graph_version',
+    obrigatorios: ['state', 'problem_count'],
+    opcionais: [],
+  },
   // O 19º tipo entrou com a D21 (t245): o control plane declara a execução
   // concluída, e é ele — só ele (D1) — quem afirma esse fato. Sem payload, pela
   // mesma razão de `job.unblocked`: `execution_id`, `entity.id` e `occurred_at`

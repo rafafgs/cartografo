@@ -910,6 +910,10 @@ test('t262 AT-5 — a final node with no skill_ref at all is concluído on arriv
     origem: 'manual',
     proposta_id: null,
     criado_em: new Date().toISOString(),
+    // `checked`, because this case is about a node with no pin and not about
+    // the contract gate: an `unchecked` version would be refused by `createJob`
+    // (t283) and the traversal below would never happen.
+    contracts: { state: 'checked', problems: [] },
   });
 
   const job = await createJob(ctx, {
@@ -1749,4 +1753,165 @@ test('t265 AT5 — a refused session is not counted by the cap: it blocks on its
 
   assert.equal((await readJob(ctx, job.id)).blocked, false);
   assert.deepEqual(await blocks(ctx, job.id), []);
+});
+
+/* -------------------------------------------------------------------------- */
+/* t283 — no job runs against a version whose contracts were never checked.    */
+/*                                                                             */
+/* Registering a graph and running work against it stopped being the same      */
+/* guarantee. `POST /v1/graphs` stays permissive — a document whose skills      */
+/* arrive later is the ordinary case for the editor and for a forked example — */
+/* and the promise that a contract is CHECKED and not merely declared (D9,     */
+/* README principle 3) is kept here, at the one door work comes through.       */
+/* -------------------------------------------------------------------------- */
+
+/** Registers the minimal graph with its pins left unresolved: an `unchecked` version. */
+async function registerUncheckedGraph(ctx: TestContext, className: string): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  document.problem_class = className;
+
+  const response = await request<{ graph_version: { id: string; contracts: { state: string } } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(response.status, 201, JSON.stringify(response.body));
+  assert.equal(
+    response.body.graph_version.contracts.state,
+    'unchecked',
+    'the committed fixture pins ids the registry can never carry, so nothing resolves',
+  );
+  return response.body.graph_version.id;
+}
+
+/** The refusal body of `POST /v1/jobs`, in the slice these cases read. */
+interface JobRefusal {
+  error: string;
+  message?: string;
+  graph_version_id?: string;
+  contracts?: { state: string; problems: Array<{ code: string; node_id: string }> };
+}
+
+test('t283 — a job named on an unchecked version is refused with 409, and nothing is written', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+  const versionId = await registerUncheckedGraph(ctx, 'nota-curta-sem-conferir');
+  const before = countEvents(ctx);
+
+  const response = await request<JobRefusal>(ctx, 'POST', '/v1/jobs', {
+    title: 'uma nota contra um grafo que ninguém conferiu',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  assert.equal(response.status, 409, JSON.stringify(response.body));
+  assert.equal(response.body.error, 'graph_version_unchecked');
+  assert.equal(response.body.graph_version_id, versionId);
+  assert.equal(response.body.contracts?.state, 'unchecked');
+  assert.deepEqual(
+    (response.body.contracts?.problems ?? [])
+      .filter((problem) => problem.code === 'skill_ref_unresolved')
+      .map((problem) => problem.node_id),
+    ['redigir', 'revisar'],
+    'the refusal names the pins to register — that is the actionable half of it',
+  );
+
+  assert.equal(countEvents(ctx), before, 'a refused job records no `job.created`');
+  const jobs = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs');
+  assert.deepEqual(jobs.body.jobs, [], 'and it is not a row either');
+});
+
+test('t283 — a job named on a failed version is refused with its own code', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+
+  // The lineage comes from the route so the `graph` row exists; the `failed`
+  // version is written through the repository, which is the only way to get one
+  // here — `POST /v1/graphs` answers 422 for a document that fails the gate, and
+  // `failed` is a state a version only ever reaches later.
+  const registered = await registerUncheckedGraph(ctx, 'nota-curta-reprovada');
+  const graphId = (
+    ctx.db.prepare('SELECT graph_id FROM graph_version WHERE id = ?').get(registered) as {
+      graph_id: string;
+    }
+  ).graph_id;
+
+  const snapshot = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as GraphDocument;
+  const versionId = `sha256:${'d'.repeat(64)}`;
+  insertVersion(ctx.db, {
+    id: versionId,
+    grafo_id: graphId,
+    versao_pai: null,
+    snapshot,
+    origem: 'manual',
+    proposta_id: null,
+    criado_em: new Date().toISOString(),
+    contracts: {
+      state: 'failed',
+      problems: [
+        {
+          code: 'unproduced_input',
+          node_id: 'revisar',
+          key: 'texto',
+          message: 'node "revisar" requires the input path "texto", which nothing supplies',
+          produced_elsewhere_by: [],
+        },
+      ],
+    },
+  });
+
+  const response = await request<JobRefusal>(ctx, 'POST', '/v1/jobs', {
+    title: 'uma nota contra um grafo reprovado',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  assert.equal(response.status, 409, JSON.stringify(response.body));
+  assert.equal(
+    response.body.error,
+    'graph_version_contracts_failed',
+    'a check that RAN and refused is a different fact from one that never ran, and the way out ' +
+      'of each is different: register the manifests, or write a new version',
+  );
+  assert.equal(response.body.contracts?.state, 'failed');
+  assert.deepEqual(
+    (response.body.contracts?.problems ?? []).map((problem) => problem.code),
+    ['unproduced_input'],
+  );
+});
+
+test('t283 — a checked version carries a job exactly as it always did', async (t) => {
+  requireArtifacts(...ARTIFACTS, GRAPH_ROUTES);
+  const ctx = await startControlPlane(t);
+
+  // `registerMinimalGraph` registers the pinned manifests first, so the version
+  // is born `checked` — which is the whole of what the gate asks for.
+  const versionId = await registerMinimalGraph(ctx);
+
+  const job = await createJob(ctx, {
+    title: 'a nota de sempre',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  assert.equal(job.graph_version_id, versionId);
+});
+
+test('t283 — a graph_version_id that resolves to nothing is still ungated', async (t) => {
+  requireArtifacts(...ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  // Unchanged behaviour, and deliberately so: a job may cite a version this
+  // database never saw (an import, a hand-written row, a runner pointing at
+  // another control plane), and the gate has nothing to read. Refusing here
+  // would be inventing a verdict out of an absence.
+  const job = await createJob(ctx, {
+    title: 'texto solto, como sempre foi',
+    entry_node_id: 'redigir',
+    graph_version_id: `sha256:${'a'.repeat(64)}`,
+  });
+  assert.equal(job.graph_version_id, `sha256:${'a'.repeat(64)}`);
+
+  const withNone = await createJob(ctx, { title: 'sem grafo nenhum', entry_node_id: 'redigir' });
+  assert.equal(withNone.graph_version_id, null);
 });

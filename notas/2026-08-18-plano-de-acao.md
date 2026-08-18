@@ -56,3 +56,30 @@ Nenhum ticket novo de tela, webhooks, intake, sintetizador, tiers, segundo engin
 ## Do Rafael (cliques)
 t214 fechar/apagar; t109 aceitar ou repetir; feature do jogo (rodada 1) subir ou não; portão do
 n=3 na tela; os dois "pode" de tickets já dados em 18/08 à tarde.
+
+## Addendum (2026-08-18, afternoon — written in English on purpose)
+
+Rafael's instruction after reviewing the language state of the repo: **English only, everywhere** —
+every file, folder, structure, configuration and anything else — and **nothing new is born in
+Portuguese**. This supersedes the D18 exemptions (DECISOES.md, notas/, docs/o-que-e, README).
+Measured before acting: 12 skill manifests fully in Portuguese (instructions, class keys, check
+ids), 68 tracked paths with Portuguese names outside notas/ (packages `tela`, `topografo`,
+`topografo-custo`; folders `grafos-de-fabrica`, `especificacoes`, `schema/exemplos`,
+`docs/formatos`; the 16 `docs/spec/*.md`), README and all specs in Portuguese, agent commit
+messages in Portuguese.
+
+Done immediately: the LANGUAGE convention added to `.flowpilot/profile.yml` (read by the
+board's agents at every session — it is the mechanism for "nothing new in Portuguese"); the
+plantão's own notes are English from now on.
+
+Tickets (after the n=3 round, one at a time, board empty): **t280** bundles → English,
+**t281** documents/specs/schemas/DECISOES/notas → English + ONE repo-wide sweep over every
+tracked file (content and paths) + commit-message check, **t282** folders/packages/bins/scripts
+→ English with the path allowlist reduced to the frozen migration names (t279).
+
+Proposed decision text for Rafael to record (D24): "English is the only language of the
+project: code, identifiers, commit messages, tickets, specs, docs, notes, decisions, bundles
+(instructions, keys, checks), file/folder/package/bin/script names, configuration. Portuguese
+survives only in the brand name `cartografo`, in verbatim quotations marked as such, and in the
+frozen migration file names. Supersedes the exemptions of D18. Enforced by a repo-wide sweep
+in the root test suite and by the LANGUAGE convention in the project profile."

@@ -30,6 +30,7 @@ import type * as HashModule from '../src/domain/hash.ts';
 import type * as MigrateModule from '../src/db/migrate.ts';
 import type * as ServerModule from '../src/server.ts';
 import type * as CredentialsModule from '../src/repositories/credentials.ts';
+import { manifestHash } from '../src/domain/manifest.ts';
 import { authorizeGlobalFetch } from './authorized-fetch.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
@@ -435,4 +436,154 @@ test('t194 — a hook secret never comes back out of the version routes', async 
       `the snapshot still names "${reference}", which is what the enqueue resolves`,
     );
   }
+});
+
+/*
+ * t278 — contract matching at import.
+ *
+ * `POST /v1/graphs` gained a third gate after structure and soundness: every
+ * required key of a node's PINNED SKILL has to have a producer on every path
+ * into that node, or no session can ever be opened there with a complete input.
+ * The registry is what resolves the pin, so these cases register the manifests
+ * first and then post the document — which is exactly the order
+ * `cartografo import` uses.
+ */
+
+/** A registrable manifest carrying the two schemas this gate reads (t278). */
+function fixtureManifest(
+  id: string,
+  contract: { input?: Record<string, unknown>; output?: Record<string, unknown> },
+): Record<string, unknown> {
+  const manifest: Record<string, unknown> = {
+    id,
+    version: '1.0.0',
+    hash: `sha256:${'0'.repeat(64)}`,
+    role: 'work',
+    description: `fixture skill "${id}" of the t278 contract cases`,
+    input: contract.input ?? { type: 'object' },
+    output: contract.output ?? { type: 'object' },
+    preconditions: [],
+    checks: [
+      {
+        id: 'fixture-check',
+        type: 'agentic',
+        description: 'every manifest declares at least one check',
+        instruction: 'Confirm the report answers the request, and attach what you read.',
+        required_evidence: true,
+      },
+    ],
+    permissions: { filesystem: { read: [], write: [] }, network: { allowed: false } },
+    instructions: 'Fixture skill of the t278 contract-matching cases.',
+    origin: { type: 'native' },
+  };
+  manifest.hash = manifestHash(manifest);
+  return manifest;
+}
+
+/** A two-node document, `A → B`, pinning `<id>-skill@1.0.0` at each node. */
+function twoNodeDocument(className: string, produces?: string): Record<string, unknown> {
+  const node = (id: string, bucket?: string): Record<string, unknown> => ({
+    id,
+    role: 'fixture',
+    node_type: 'work',
+    skill_ref: { id: `${id}-skill`, version: '1.0.0', hash: `sha256:${'0'.repeat(64)}` },
+    contract: {
+      input_schema: { type: 'object' },
+      output_schema: { type: 'object' },
+      checks: [
+        {
+          type: 'agentic',
+          instruction: 'Confirm what the node produced.',
+          required_evidence: true,
+          description: 'the document declares its own check',
+        },
+      ],
+      ...(bucket === undefined ? {} : { produces: bucket }),
+    },
+  });
+
+  return {
+    problem_class: className,
+    lineage: { type: 'base' },
+    metadata: { name: className },
+    nodes: [node('a', produces), node('b')],
+    edges: [{ from: 'a', to: 'b', condition: 'sempre' }],
+    initial_node: 'a',
+    final_nodes: ['b'],
+    custom_fields: [],
+  };
+}
+
+/** What the contract gate publishes inside the 422 (t278). */
+interface ContractsReport {
+  valid: boolean;
+  problems: Array<{
+    code: string;
+    node_id: string;
+    key?: string;
+    message: string;
+    produced_elsewhere_by?: string[];
+  }>;
+}
+
+test('t278 — a key produced only in a bucket the reader never opens is a 422', async (t) => {
+  const address = await startApp(t);
+
+  const produced = { type: 'object', required: ['tese_triada'], properties: { tese_triada: { type: 'object' } } };
+  assert.equal(
+    (await post(address, '/v1/skills', fixtureManifest('a-skill', { output: produced }))).status,
+    201,
+  );
+  assert.equal(
+    (await post(address, '/v1/skills', fixtureManifest('b-skill', { input: produced }))).status,
+    201,
+  );
+
+  const response = await post(address, '/v1/graphs', twoNodeDocument('bucket-fechado', 'analise'));
+  const body = await jsonBody<ValidationReport & { contracts: ContractsReport }>(response);
+  assert.equal(response.status, 422, JSON.stringify(body));
+  assert.equal(body.error, 'invalid_graph');
+  assert.equal(body.valid, false);
+
+  // Structure and soundness passed; the refusal is the new gate's, and the
+  // envelope says so instead of leaving the reader guessing which one broke.
+  assert.equal(body.structure.valid, true);
+  assert.equal(body.soundness.valid, true);
+  assert.equal(body.contracts.valid, false);
+  assert.deepEqual(
+    body.contracts.problems.map((problem) => [problem.code, problem.node_id, problem.key]),
+    [['unproduced_input', 'b', 'tese_triada']],
+  );
+  assert.deepEqual(body.contracts.problems[0].produced_elsewhere_by, ['a']);
+  assert.ok(body.contracts.problems[0].message.includes('analise'), 'the bucket is named');
+
+  // Nothing was written: a graph that fails the gate does not become a lineage.
+  const graphs = await jsonBody<{ graphs: Graph[] }>(await fetch(`${address}/v1/graphs`));
+  assert.deepEqual(graphs.graphs, []);
+});
+
+test('t278 — the same document with the output merged at the top level is registered', async (t) => {
+  const address = await startApp(t);
+
+  const produced = { type: 'object', required: ['tese_triada'], properties: { tese_triada: { type: 'object' } } };
+  await post(address, '/v1/skills', fixtureManifest('a-skill', { output: produced }));
+  await post(address, '/v1/skills', fixtureManifest('b-skill', { input: produced }));
+
+  const response = await post(address, '/v1/graphs', twoNodeDocument('balde-de-topo'));
+  assert.equal(response.status, 201, JSON.stringify(await jsonBody(response)));
+});
+
+test('t278 — a document that already fails soundness never reaches the contracts gate', async (t) => {
+  const address = await startApp(t);
+  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-invalido-unreachable-node.json'));
+
+  const response = await post(address, '/v1/graphs', document);
+  const body = await jsonBody<ValidationReport & { contracts?: ContractsReport }>(response);
+  assert.equal(response.status, 422);
+  assert.equal(body.soundness.valid, false);
+  assert.equal(
+    body.contracts,
+    undefined,
+    'availability is computed over a topology that is already sound, and this one is not',
+  );
 });

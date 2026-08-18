@@ -685,3 +685,45 @@ test('t176 AT13 — the README no longer claims the contradiction is open', () =
     'the divergence was reconciled in favour of the manifest; the README has to say so',
   );
 });
+
+/*
+ * t278 — contract matching, over the bundle's REAL manifests.
+ *
+ * The graph document's own `contract.input_schema` is documentation and has
+ * already drifted (`refinar` declares `ticket_id`/`pedido`; the pinned skill
+ * really requires `job`/`project`). What a session is held to is the manifest,
+ * so that is what this case walks — with the control plane's own function, not
+ * a reimplementation, because a second copy of a dataflow computation is a
+ * second answer waiting to disagree.
+ */
+const CORE_GRAPH_MODULE = path.join(ROOT, 'packages', 'core', 'src', 'domain', 'graph.ts');
+let contractValidatorModule = null;
+
+async function contractValidator() {
+  contractValidatorModule = await load(CORE_GRAPH_MODULE, contractValidatorModule);
+  return contractValidatorModule;
+}
+
+/** Resolves a node's pin against the manifests shipped in `skills/`. */
+function bundleSkillLookup(skillsDir) {
+  const byId = new Map(
+    readdirSync(skillsDir)
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => {
+        const manifest = readJson(path.join(skillsDir, name));
+        return [manifest.id, manifest];
+      }),
+  );
+  return (ref) => {
+    const manifest = byId.get(ref.id);
+    return manifest === undefined ? undefined : { input: manifest.input, output: manifest.output };
+  };
+}
+
+test('t278 — every required input of every node has a producer on every path into it', async () => {
+  const { validateContracts } = await contractValidator();
+  const report = validateContracts(readJson(GRAPH_PATH), bundleSkillLookup(SKILLS_DIR));
+
+  assert.deepEqual(report.problems, []);
+  assert.equal(report.valid, true);
+});

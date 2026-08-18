@@ -38,7 +38,7 @@ import test from 'node:test';
 import { runImport, verifyBundle, type BundleProblem } from '../src/cli/import.ts';
 import { UsageError } from '../src/cli/url.ts';
 import { manifestHash } from '../src/domain/manifest.ts';
-import { FACTORY_BUNDLE, temporaryArea, type TestHook } from './cli-support.ts';
+import { BETS_BUNDLE, FACTORY_BUNDLE, temporaryArea, type TestHook } from './cli-support.ts';
 import { capture, startFakeControlPlane, type FakeAnswer } from './cli-unit-support.ts';
 
 /** The graph document of factory bundle 1, read fresh. */
@@ -547,4 +547,51 @@ test('any other refusal of the graph is printed with what came with it', async (
   const withoutBody = await capture(() => runImport({ path: graphPath, url: silent.url }));
   assert.equal(withoutBody.code, 1);
   assert.match(withoutBody.stderr, /refused the graph \(HTTP 500\)/);
+});
+
+/* --------------------------------------------- t278: contract matching */
+
+/**
+ * The fourth check of the bundle: what a node's pinned skill REQUIRES has to
+ * have a producer on every path into it (t278).
+ *
+ * Resolved from the manifests in `skills/` and nowhere else — the whole point of
+ * checking a bundle offline is that a bundle author finds out before the
+ * registry, the network or a paid session is involved.
+ */
+test('an input nobody produces is a contract problem, read off the local manifests', (t) => {
+  const directory = bundleCopy(t, (area) => {
+    const manifest = manifestOf(area, 'desenvolver-ticket.json');
+    const input = manifest.input as Record<string, unknown>;
+    // `carteira` is not projected, not provided by the executor and produced by
+    // no ancestor of `desenvolver`: it is the shape of every gap the three real
+    // crossings hit.
+    input.required = [...(input.required as string[]), 'carteira'];
+    manifest.hash = manifestHash(manifest);
+    writeManifest(area, 'desenvolver-ticket.json', manifest);
+
+    const document = graphOf(area);
+    const nodes = document.nodes as Array<Record<string, unknown>>;
+    const node = nodes.find((candidate) => candidate.id === 'desenvolver');
+    (node as { skill_ref: Record<string, unknown> }).skill_ref.hash = manifest.hash as string;
+    writeGraph(area, document);
+  });
+
+  const problems = messagesOf(verifyBundle(directory, graphOf(directory)), 'contract');
+  assert.equal(problems.length, 1, problems.join('\n'));
+  assert.ok(problems[0].includes('unproduced_input'), problems[0]);
+  assert.ok(problems[0].includes('desenvolver'), problems[0]);
+  assert.ok(problems[0].includes('carteira'), problems[0]);
+});
+
+test('both factory bundles clear the contract check as they are in the repository', (t) => {
+  for (const bundle of [FACTORY_BUNDLE, BETS_BUNDLE]) {
+    const directory = path.join(temporaryArea(t, 'cartografo-t278-'), path.basename(bundle));
+    cpSync(bundle, directory, { recursive: true });
+    assert.deepEqual(
+      verifyBundle(directory, graphOf(directory)),
+      [],
+      `${path.basename(bundle)}: the bundle in the repository has no unproduced input`,
+    );
+  }
 });

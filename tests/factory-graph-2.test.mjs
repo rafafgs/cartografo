@@ -855,3 +855,81 @@ test('FR10 — the command the README documents under "Como validar" runs green'
     );
   }
 });
+
+/*
+ * t278 — contract matching, over the bundle's REAL manifests.
+ *
+ * This bundle is the one that named its own gap: `dimensionar-risco` used to
+ * require a bare top-level `capital` object nothing in the graph produced
+ * (README, "os dois buracos"), and closing it as a declaration under `project`
+ * is what makes this case green. The three short paths into
+ * `registro-monitoramento` are the other half of what is proved here: arriving
+ * from `triagem --descartar-->` or `red-team --morta-->` there is no
+ * `dimensionamento` and no `decisao_humana`, and that is legal precisely
+ * because `registrar-travessia` declares them as properties and demands
+ * neither.
+ */
+const CORE_GRAPH_MODULE = path.join(ROOT, 'packages', 'core', 'src', 'domain', 'graph.ts');
+let contractValidatorModule = null;
+
+async function contractValidator() {
+  contractValidatorModule = await load(CORE_GRAPH_MODULE, contractValidatorModule);
+  return contractValidatorModule;
+}
+
+/** Resolves a node's pin against the manifests shipped in `skills/`, with overrides. */
+function bundleSkillLookup(overrides = {}) {
+  const byId = new Map(
+    readdirSync(SKILLS_DIR)
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => {
+        const manifest = readJson(path.join(SKILLS_DIR, name));
+        return [manifest.id, overrides[manifest.id] ?? manifest];
+      }),
+  );
+  return (ref) => {
+    const manifest = byId.get(ref.id);
+    return manifest === undefined ? undefined : { input: manifest.input, output: manifest.output };
+  };
+}
+
+test('t278 — every required input of every node has a producer on every path into it', async () => {
+  const { validateContracts } = await contractValidator();
+  const report = validateContracts(readJson(GRAPH_PATH), bundleSkillLookup());
+
+  assert.deepEqual(report.problems, []);
+  assert.equal(report.valid, true);
+});
+
+test('t278 — the optional keys of registrar-travessia are what makes the short paths legal', async () => {
+  const { validateContracts } = await contractValidator();
+  const manifest = readManifest('registrar-travessia.json');
+
+  for (const key of ['premissas', 'objecoes', 'dimensionamento', 'decisao_humana']) {
+    assert.ok(
+      Object.hasOwn(manifest.input.properties, key),
+      `registrar-travessia declares "${key}" as a property`,
+    );
+    assert.ok(
+      !manifest.input.required.includes(key),
+      `"${key}" cannot be required: three different paths reach this node`,
+    );
+  }
+
+  // And the check really bites: demanding one of them turns the very same
+  // bundle red, naming the node that produces it on the long path only.
+  const demanded = {
+    ...manifest,
+    input: { ...manifest.input, required: [...manifest.input.required, 'dimensionamento'] },
+  };
+  const report = validateContracts(
+    readJson(GRAPH_PATH),
+    bundleSkillLookup({ 'registrar-travessia': demanded }),
+  );
+
+  assert.deepEqual(
+    report.problems.map((problem) => [problem.code, problem.node_id, problem.key]),
+    [['unproduced_input', 'registro-monitoramento', 'dimensionamento']],
+  );
+  assert.deepEqual(report.problems[0].produced_elsewhere_by, ['dimensionamento-risco']);
+});

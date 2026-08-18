@@ -165,6 +165,43 @@ test('AT3 — `blockForUncommittedWork` names the tree that was retained', async
   assert.deepEqual(body(sent[0]).actor, { type: 'system', ref: 'runner' });
 });
 
+/**
+ * The sixth block of `blocks.ts`, and the first one about a checkout nobody
+ * opened a session in (t273, AT2).
+ *
+ * It stops the work when the shared test bench could not be advanced onto the
+ * commit an accepted report named: the fast-forward was refused, the bench was
+ * on another branch, or the bench-install command exited non-zero. The reason is
+ * COMPOSED here, out of the detail the step handed over, exactly as
+ * `blockForUncommittedWork` composes its own — a helper taking a ready-made
+ * string would make "the bench is stale" indistinguishable from "the tree was
+ * dirty" at the call site.
+ */
+test('t273 AT2 — `blockForMainLineAdvanceFailure` names the job and the reason it was given', async () => {
+  const { blockForMainLineAdvanceFailure } = await loadReport();
+  const { sent, call } = recorder();
+
+  const returned = await blockForMainLineAdvanceFailure(
+    call,
+    JOB,
+    'the test bench is checked out on `experimento`, not on the main line `main`',
+  );
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].route, '/v1/jobs/7/blocks');
+  assert.equal(sent[0].method, 'POST');
+  assert.deepEqual(body(sent[0]).actor, { type: 'system', ref: 'runner' });
+
+  const reason = String(body(sent[0]).reason);
+  assert.ok(reason.includes('experimento'), `the detail it was given is quoted: ${reason}`);
+  assert.ok(reason.includes(JOB.current_node_id), `and the node it stopped on: ${reason}`);
+  assert.equal(
+    returned,
+    reason,
+    'the runner may not tell the API one story and its caller another',
+  );
+});
+
 /* -- the routing escalation, and its `never` twin --------------------------- */
 
 const TWO_EDGES: GraphEdge[] = [

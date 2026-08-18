@@ -28,6 +28,14 @@
  * (`resolve-executor-environment.ts`), which the control plane's database
  * could not hold without lying (D1).
  *
+ * And since t273 the crossing needs no operator BETWEEN the nodes either. The
+ * `integrar` session's `merge_commit` used to be a literal nobody could act on,
+ * and this file said so where it was faked: `implantar` was handed the bench's
+ * untouched head, because nothing advanced the bench. Now the executor
+ * fast-forwards the bench onto the reported commit — and prepares it — before
+ * the work is allowed off the node, so what the last two nodes observe is the
+ * integrated commit, and `implantar` closes the traversal with `publicado`.
+ *
  * English per D18; route segments, node ids and the bundle's own keys stay in
  * Portuguese.
  */
@@ -44,6 +52,7 @@ import { bootCore } from '@cartografo/test-support';
 
 import { ClienteControle } from '../../src/controller/cliente-controle.ts';
 import { Controller } from '../../src/controller/controller.ts';
+import { createMainLineAdvancer } from '../../src/dispatch/advance-main-line.ts';
 import { createClaudeCodeDispatch } from '../../src/dispatch/dispatch.ts';
 import { createExecutorEnvironmentResolver } from '../../src/dispatch/resolve-executor-environment.ts';
 import { decodeClaudeCodeSessionText } from '../../src/dispatch/session-text.ts';
@@ -178,14 +187,20 @@ const DESENVOLVIDO = {
   nota: 'implementei contra a especificação que chegou no prompt',
 };
 
-/** ...and the fake `integrar` session — `integrar-branch`'s `output`. */
-const MERGE_COMMIT = 'feedfacecafe123';
-const INTEGRADO = {
-  merge_commit: MERGE_COMMIT,
+/**
+ * ...and the fake `integrar` session — `integrar-branch`'s `output`.
+ *
+ * A REAL commit since t273, and no longer the literal `feedfacecafe123` this
+ * file carried with the comment "o merge commit deste trabalho é fictício": the
+ * executor now fast-forwards the bench onto whatever an accepted report names,
+ * and a commit no repository has is a commit no bench can be advanced to.
+ */
+const INTEGRADO = (mergeCommit: string): Record<string, unknown> => ({
+  merge_commit: mergeCommit,
   conflitos_resolvidos: [],
   gates: { testes: 'passou' },
   nota: 'reconciliei sem conflito',
-};
+});
 
 /** ...and what the fake `testar` session REPORTS — `testar-alpha`'s `output`. */
 const TESTADO_REPORT = {
@@ -215,35 +230,95 @@ const TESTADO_REPORT = {
  */
 const TESTADO = { resultado: 'aprovado', ...TESTADO_REPORT };
 
-/** ...and the fake `implantar` session — `implantar-release`'s `output`. */
+/**
+ * ...and the fake `implantar` session — `implantar-release`'s `output`.
+ *
+ * `publicado` since t273, and that word IS the ficha's own bar: the commit
+ * `integrar` reported is really in the bench's main line by the time this node
+ * opens, because the executor put it there between the two ticks. While nothing
+ * advanced the bench this fixture answered `ainda_nao` and was fed the bench's
+ * untouched head — the honest reading of a checkout nobody had moved.
+ */
 const IMPLANTADO = (commit: string): Record<string, unknown> => ({
-  veredito: 'ainda_nao',
+  veredito: 'publicado',
   referencia_conferida: { commit, modo: 'ponta_do_principal' },
-  nota: 'O merge commit deste trabalho é fictício: a contenção responde "ainda não".',
+  release: commit,
+  implantado_em: new Date().toISOString(),
+  nota: 'The merge commit is contained in the reference: the executor advanced the bench.',
 });
 
-/**
- * A disposable git repository on `main`, standing in for the test bench.
- *
- * A real one, and not a path that merely exists: what
- * `createExecutorEnvironmentResolver` answers with is `git rev-parse`'s own
- * output, and a fake `git` would only prove this package's opinion of git.
- */
-function benchRepository(root: string): { path: string; head: string } {
-  const repoRoot = path.join(root, 'banco-de-testes');
-  mkdirSync(repoRoot, { recursive: true });
-  const git = (...args: string[]): string =>
-    execFileSync('git', args, { cwd: repoRoot, stdio: 'pipe', encoding: 'utf8' }).trim();
-
-  git('init', '--quiet', '--initial-branch', 'main');
-  git('config', 'user.email', 'fixture@cartografo.local');
-  git('config', 'user.name', 'Fixture t270');
-  writeFileSync(path.join(repoRoot, 'README.md'), '# checkout do integrado\n');
-  git('add', '.');
-  git('commit', '--quiet', '-m', 'integrado');
-
-  return { path: repoRoot, head: git('rev-parse', 'main') };
+/** One git command in one checkout, run to completion, with its output trimmed. */
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync('git', args, { cwd, stdio: 'pipe', encoding: 'utf8' }).trim();
 }
+
+/** What the integrated commit brings with it, so the install step can read it. */
+const INTEGRATED_FILE = 'INTEGRADO.md';
+const INTEGRATED_TEXT = 'o que o integrar reconciliou\n';
+
+/**
+ * The disposable PAIR of repositories a real deployment has, both on `main`.
+ *
+ * Real ones, and not paths that merely exist: what
+ * `createExecutorEnvironmentResolver` answers with is `git rev-parse`'s own
+ * output, what t273 does to the bench is a real fast-forward, and a fake `git`
+ * would only prove this package's opinion of git.
+ *
+ * Two directories since t273, because that is what a runner is configured with
+ * — `--working-dir` and `--test-bench-path` — and because the commit an
+ * integration reports is born in the first one and has to REACH the second.
+ * `main` in the main repository is deliberately left behind on the base commit:
+ * `integrar-branch`'s own manifest says `merge_commit` "não é uma afirmação de
+ * que a linha principal já aponta para lá", and a fixture whose main had
+ * already moved would prove nothing about who advances it.
+ */
+function benchRepository(root: string): {
+  /** The bench the last two nodes observe, and what the executor advances. */
+  path: string;
+  /** The repository the work is cut from, where the merge commit was born. */
+  repoRoot: string;
+  /** Where the bench's `main` starts, before anything advances it. */
+  head: string;
+  /** The commit the fake `integrar` session reports, on a branch of `repoRoot`. */
+  integrated: string;
+} {
+  const repoRoot = path.join(root, 'principal');
+  mkdirSync(repoRoot, { recursive: true });
+
+  git(repoRoot, 'init', '--quiet', '--initial-branch', 'main');
+  git(repoRoot, 'config', 'user.email', 'fixture@cartografo.local');
+  git(repoRoot, 'config', 'user.name', 'Fixture t270');
+  writeFileSync(path.join(repoRoot, 'README.md'), '# checkout do integrado\n');
+  git(repoRoot, 'add', '.');
+  git(repoRoot, 'commit', '--quiet', '-m', 'integrado');
+  const head = git(repoRoot, 'rev-parse', 'main');
+
+  const benchPath = path.join(root, 'banco-de-testes');
+  git(root, 'clone', '--quiet', repoRoot, benchPath);
+
+  git(repoRoot, 'checkout', '--quiet', '-b', 'ticket-259');
+  writeFileSync(path.join(repoRoot, INTEGRATED_FILE), INTEGRATED_TEXT);
+  git(repoRoot, 'add', '.');
+  git(repoRoot, 'commit', '--quiet', '-m', 'o que o integrar reconciliou');
+  const integrated = git(repoRoot, 'rev-parse', 'HEAD');
+  git(repoRoot, 'checkout', '--quiet', 'main');
+
+  return { path: benchPath, repoRoot, head, integrated };
+}
+
+/**
+ * The command the executor runs in the bench once it has advanced it.
+ *
+ * NOT `project.comando_instalacao` verbatim, and the difference is the
+ * fixture's and not the product's: the bundle declares `npm ci`, which is the
+ * right answer for the repository this class describes and a guaranteed failure
+ * in a scratch clone with no lockfile in it. What this command proves is what
+ * the ficha claims — that something runs, in the bench, AFTER the fast-forward
+ * — and it proves it by reading a file that only exists once the merge landed.
+ * That the bundle really declares the key is asserted separately, off the real
+ * document.
+ */
+const BENCH_INSTALL_COMMAND = `cat ${INTEGRATED_FILE} > .banco-preparado`;
 
 test('t259 AT6 — refinar → desenvolver → integrar crosses the real software bundle', async (t) => {
   const { url: baseUrl, token } = await bootCore(t);
@@ -328,6 +403,17 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
           referenceMode: 'ponta_do_principal',
           mainBranch: 'main',
         }),
+        // ...and the half t273 added: the bench is not only READ on every
+        // dispatch, it is MOVED — onto the commit an accepted report named,
+        // before the work is allowed off the node that named it. Until this
+        // ficha the two nodes after `integrar` observed a checkout that had
+        // stayed exactly where it was.
+        advanceMainLine: createMainLineAdvancer({
+          testBenchPath: bench.path,
+          repoRoot: bench.repoRoot,
+          mainBranch: 'main',
+          installCommand: BENCH_INSTALL_COMMAND,
+        }),
         engines: {
           'claude-code': {
             adapter: new ClaudeCodeAdapter({
@@ -397,7 +483,7 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
   assert.ok(!dev.includes('{{input.'));
 
   // --- 3. ...and what `desenvolver` produced is what `integrar` reads -------
-  currentLines = reports(INTEGRADO);
+  currentLines = reports(INTEGRADO(bench.integrated));
   currentRecord = path.join(root, 'integrar.json');
   assert.ok(await controller.tick());
   const afterIntegra = await jobNow();
@@ -411,6 +497,23 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
   );
   assert.ok(!integra.includes('{{input.'));
 
+  // --- 3.1 ...and the bench moved, which is what nobody used to do (t273) ---
+  assert.equal(
+    git(bench.path, 'rev-parse', 'main'),
+    bench.integrated,
+    'the executor fast-forwarded the bench onto the reported merge commit, with no operator',
+  );
+  assert.equal(
+    readFileSync(path.join(bench.path, '.banco-preparado'), 'utf8'),
+    INTEGRATED_TEXT,
+    'and prepared it afterwards, on the ALREADY advanced tree',
+  );
+  assert.equal(
+    typeof PROJECT.comando_instalacao,
+    'string',
+    'the class declares the command that prepares its bench, beside `comando_testes`',
+  );
+
   // --- 4. the projection carries both buckets, side by side ----------------
   const { input } = await api<{ input: Record<string, unknown> }>(
     baseUrl,
@@ -421,7 +524,7 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
   assert.equal((input.ticket as Record<string, unknown>).especificacao, ESPECIFICACAO);
   assert.deepEqual(
     input.artefato,
-    { ...DESENVOLVIDO, ...INTEGRADO },
+    { ...DESENVOLVIDO, ...INTEGRADO(bench.integrated) },
     '`desenvolver` and `integrar` declare the SAME bucket, so `merge_commit` lands beside `branch`',
   );
 
@@ -458,7 +561,7 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
   );
 
   // --- 6. ...and `implantar` reads the commit the runner really looked up ---
-  currentLines = reports(IMPLANTADO(bench.head));
+  currentLines = reports(IMPLANTADO(bench.integrated));
   currentRecord = path.join(root, 'implantar.json');
   assert.ok(await controller.tick(), 'the final node was picked up too');
 
@@ -467,12 +570,25 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
   assert.equal(arrived.completed, true, 'the traversal is over: the final node reported');
 
   const implanta = bodyOf('implantar');
+  assert.notEqual(bench.integrated, bench.head, 'the bench really had somewhere to move');
   assert.ok(
-    implanta.includes(bench.head),
-    '`{{input.referencia.commit}}` is the real HEAD of the bench, read live off `main`',
+    implanta.includes(bench.integrated),
+    '`{{input.referencia.commit}}` is the real tip of the bench — the commit t273 advanced it to',
   );
   assert.ok(implanta.includes('ponta_do_principal'), '...and the mode it was read under');
   assert.ok(!implanta.includes('{{input.'));
+
+  const { sessions: closed } = await api<{ sessions: Reported[] }>(
+    baseUrl,
+    token,
+    'GET',
+    `/v1/sessions?job_id=${String(job.id)}`,
+  );
+  assert.equal(
+    closed.find((session) => session.node_id === 'implantar')?.output?.veredito,
+    'publicado',
+    "the five-node traversal closes CONTAINED, which is this ficha's own bar",
+  );
 
   // --- 7. and nobody had to touch it by hand -------------------------------
   assert.deepEqual(

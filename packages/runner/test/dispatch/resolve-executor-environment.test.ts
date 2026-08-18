@@ -97,15 +97,15 @@ function commit(repoRoot: string, message: string): string {
   return git(repoRoot, 'rev-parse', 'HEAD');
 }
 
-/** The job and the node, in the slice this resolver reads: neither. */
+/** The job and the node, in the slice this module reads: neither. */
 const JOB = Object.freeze({ id: 270, title: 'atravessar o bundle de software', current_node_id: 'testar', blocked: false, execution_id: null });
 const RESOLVED = Object.freeze({ node: { id: 'testar' }, edges: [] });
 
-/** Calls the resolver with the two arguments the dispatch would hand it. */
+/** Calls the built function with the two arguments the dispatch would hand it. */
 async function resolve(
-  resolver: (job: never, node: never) => Promise<Record<string, unknown>>,
+  readEnvironment: (job: never, node: never) => Promise<Record<string, unknown>>,
 ): Promise<Record<string, unknown>> {
-  return await resolver(JOB as never, RESOLVED as never);
+  return await readEnvironment(JOB as never, RESOLVED as never);
 }
 
 test('t270 AT — instalacao_em_uso reads the commit once and never again', async (t) => {
@@ -113,12 +113,12 @@ test('t270 AT — instalacao_em_uso reads the commit once and never again', asyn
   const repoRoot = fixture(t, 'em-uso');
 
   const started = git(repoRoot, 'rev-parse', 'HEAD');
-  const resolver = createExecutorEnvironmentResolver({
+  const readEnvironment = createExecutorEnvironmentResolver({
     testBenchPath: repoRoot,
     referenceMode: 'instalacao_em_uso',
   });
 
-  const first = await resolve(resolver);
+  const first = await resolve(readEnvironment);
   assert.deepEqual(
     (first.banco_de_testes as Record<string, unknown>).caminho,
     repoRoot,
@@ -129,13 +129,13 @@ test('t270 AT — instalacao_em_uso reads the commit once and never again', asyn
   assert.equal(reference.modo, 'instalacao_em_uso');
   assert.equal(typeof reference.lido_em, 'string', 'when it was read is part of the answer');
 
-  // The repository moves under the resolver, which is exactly the situation the
+  // The repository moves under it, which is exactly the situation the
   // mode exists for: an installation started from `started` is still running
   // that code, whatever the tip does afterwards.
   const moved = commit(repoRoot, 'segunda entrega');
   assert.notEqual(moved, started, 'the fixture has to actually move for this to prove anything');
 
-  const second = await resolve(resolver);
+  const second = await resolve(readEnvironment);
   assert.equal(
     (second.referencia as Record<string, unknown>).commit,
     started,
@@ -147,19 +147,19 @@ test('t270 AT — ponta_do_principal is read live, on every call', async (t) => 
   const { createExecutorEnvironmentResolver } = await loadModule();
   const repoRoot = fixture(t, 'ponta');
 
-  const resolver = createExecutorEnvironmentResolver({
+  const readEnvironment = createExecutorEnvironmentResolver({
     testBenchPath: repoRoot,
     referenceMode: 'ponta_do_principal',
     mainBranch: 'main',
   });
 
-  const first = await resolve(resolver);
+  const first = await resolve(readEnvironment);
   const before = (first.referencia as Record<string, unknown>).commit;
   assert.equal(before, git(repoRoot, 'rev-parse', 'main'));
 
   const advanced = commit(repoRoot, 'a linha principal andou');
 
-  const second = await resolve(resolver);
+  const second = await resolve(readEnvironment);
   assert.equal(
     (second.referencia as Record<string, unknown>).commit,
     advanced,
@@ -176,13 +176,13 @@ test('t270 AT — a path that is not a repository blocks, naming the command', a
     execFileSync('rm', ['-rf', base], { stdio: 'ignore' });
   });
 
-  const resolver = createExecutorEnvironmentResolver({
+  const readEnvironment = createExecutorEnvironmentResolver({
     testBenchPath: base,
     referenceMode: 'ponta_do_principal',
   });
 
   await assert.rejects(
-    async () => await resolve(resolver),
+    async () => await resolve(readEnvironment),
     (error: unknown) => {
       assert.ok(
         error instanceof ExecutorEnvironmentError,

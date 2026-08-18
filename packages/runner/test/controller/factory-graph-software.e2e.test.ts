@@ -216,9 +216,9 @@ const IMPLANTADO = (commit: string): Record<string, unknown> => ({
 /**
  * A disposable git repository on `main`, standing in for the test bench.
  *
- * A real one, and not a path that merely exists: what `createExecutorEnvironmentResolver`
- * answers with is `git rev-parse`'s own output, and a fake would only prove the
- * resolver's opinion of git.
+ * A real one, and not a path that merely exists: what
+ * `createExecutorEnvironmentResolver` answers with is `git rev-parse`'s own
+ * output, and a fake `git` would only prove this package's opinion of git.
  */
 function benchRepository(root: string): { path: string; head: string } {
   const repoRoot = path.join(root, 'banco-de-testes');
@@ -420,21 +420,21 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
   currentLines = reports(TESTADO);
   currentRecord = path.join(root, 'testar.json');
   assert.ok(await controller.tick(), 'the gate that used to block was picked up');
-  const afterTeste = await jobNow();
-  assert.equal(afterTeste.blocked, false, afterTeste.block_reason ?? '');
-  assert.equal(afterTeste.current_node_id, 'implantar');
+  const afterGate = await jobNow();
+  assert.equal(afterGate.blocked, false, afterGate.block_reason ?? '');
+  assert.equal(afterGate.current_node_id, 'implantar');
 
-  const teste = bodyOf('testar');
+  const gate = bodyOf('testar');
   const aplicacao = PROJECT.aplicacao as Record<string, unknown>;
   assert.ok(
-    teste.includes(String(aplicacao.motivo_ausencia)),
+    gate.includes(String(aplicacao.motivo_ausencia)),
     'the app is STATIC and comes from the graph\'s own `project`, at `input.project.aplicacao`',
   );
   assert.ok(
-    teste.includes(bench.path),
+    gate.includes(bench.path),
     'and the bench path is RUNTIME: it comes from the runner, and names this machine',
   );
-  assert.ok(!teste.includes('{{input.'));
+  assert.ok(!gate.includes('{{input.'));
 
   // --- 6. ...and `implantar` reads the commit the runner really looked up ---
   currentLines = reports(IMPLANTADO(bench.head));

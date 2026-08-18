@@ -1702,3 +1702,286 @@ test('t253 FR1 — an output that is not an object is refused before anything is
   const found = reread.body.sessions.find((entry) => entry.id === session.id);
   assert.equal(found?.status, 'open', 'a refused body leaves the session exactly as it was');
 });
+
+/* -------------------------------------------------------------------------- */
+/* t269 — `resultado` is the GRAPH's routing key, never the skill's output.     */
+/*                                                                             */
+/* The fenced-block protocol (t161, t259) puts the label the session routes by  */
+/* INSIDE the very object `/finish` holds against the pinned skill's `output`.  */
+/* A skill that closes its schema — `additionalProperties: false` and no        */
+/* `resultado` property, which is what `derrubar-tese@1.0.0` declares — refused  */
+/* every conforming report of the second real bets run, and since t268 a refusal */
+/* blocks the node. So the key is excluded from what is checked and from what is */
+/* stored, and only when it is a usable label.                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The `output` schema of `derrubar-tese@1.0.0`, in the shape the bundle declares:
+ * four required fields, closed, and NO `resultado`.
+ *
+ * `objecoes` and `contra_evidencia_pesquisada` are lists of strings here where
+ * the bundle nests objects inside them — the nesting is the bets graph's
+ * business and adds nothing to what this case pins, which is a CLOSED schema
+ * that never heard of the routing key.
+ */
+const THESIS_OUTPUT_SCHEMA = {
+  type: 'object',
+  required: ['outcome', 'objecoes', 'contra_evidencia_pesquisada', 'nota'],
+  additionalProperties: false,
+  properties: {
+    // Exactly the three values the registry demands of a gate — a DIFFERENT
+    // enum, for a different purpose, from the graph's `sobrevive`/`morta`.
+    outcome: { type: 'string', enum: ['pass', 'fail', 'escalate_human'] },
+    objecoes: { type: 'array', minItems: 1, items: { type: 'string' } },
+    contra_evidencia_pesquisada: { type: 'array', minItems: 1, items: { type: 'string' } },
+    nota: { type: 'string', minLength: 1 },
+  },
+};
+
+/** What a red team reports when the thesis did not survive it. */
+const THESIS_REPORT = {
+  outcome: 'fail',
+  objecoes: ['a série histórica não cobre o ano que decide a tese'],
+  contra_evidencia_pesquisada: ['relatório do setor de 2025: o número citado é de outra base'],
+  nota: 'a tese não sobreviveu ao red team',
+};
+
+/**
+ * Registers a gate skill whose `output` schema is closed around four fields.
+ *
+ * @param ctx Control plane running.
+ * @returns The pin the graph node has to carry.
+ */
+async function registerThesisSkill(
+  ctx: TestContext,
+): Promise<{ id: string; version: string; hash: string }> {
+  const manifest: Record<string, unknown> = {
+    id: 'derrubar-tese',
+    version: '1.0.0',
+    hash: `sha256:${'0'.repeat(64)}`,
+    role: 'gate',
+    description: 'Red team da tese: procura contra-evidência e decide se ela sobrevive.',
+    input: { type: 'object', properties: { tese: { type: 'string' } } },
+    output: THESIS_OUTPUT_SCHEMA,
+    preconditions: [],
+    // A gate enters the registry only with a check of its own: it verifies with
+    // its evidence, never with the self-report of whoever it judges.
+    checks: [
+      {
+        id: 'contra-evidencia-propria',
+        type: 'agentic',
+        instruction: 'Cada objeção cita evidência que você foi buscar, e não releitura da tese?',
+        required_evidence: ['a fonte de cada contra-evidência pesquisada'],
+        description: 'Julgamento com evidência própria.',
+      },
+    ],
+    permissions: { filesystem: { read: ['**'], write: [] }, network: { allowed: true } },
+    instructions: '# Derrubar tese\n\nAtaque {{input.tese}} com evidência própria.',
+    origin: { type: 'native' },
+  };
+  manifest.hash = contentHash(manifest);
+
+  const response = await request<{ id: string }>(ctx, 'POST', '/v1/skills', manifest);
+  assert.equal(response.status, 201, `POST /v1/skills returned ${response.status}`);
+  return { id: 'derrubar-tese', version: '1.0.0', hash: manifest.hash as string };
+}
+
+/**
+ * Registers a graph whose first node pins that skill and has TWO ways out.
+ *
+ * The node keeps the fixture's id so `openNodeSession` serves this family too;
+ * what changes is that it is now a decision — `sobrevive` and `morta` are real
+ * edges, so the `resultado` the session reports is a real routing label and not
+ * a key somebody left in the object by accident.
+ *
+ * The node's own `output_schema` declares that label, and the skill's `output`
+ * does not: that IS the separation `docs/spec/grafo.md` draws between the
+ * graph's routing vocabulary and the skill's output vocabulary.
+ *
+ * @param ctx Control plane running.
+ * @returns Id of the version born with the lineage.
+ */
+async function registerGraphRoutingOnThesisSkill(ctx: TestContext): Promise<string> {
+  const document = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>;
+  document.problem_class = 'tese-com-duas-saidas';
+  const nodes = document.nodes as Array<Record<string, unknown>>;
+
+  const deciding = nodes[0];
+  deciding.node_type = 'gate';
+  deciding.role = 'red-team';
+  deciding.skill_ref = await registerThesisSkill(ctx);
+  (deciding.contract as Record<string, unknown>).output_schema = {
+    type: 'object',
+    required: ['resultado'],
+    properties: {
+      resultado: { enum: ['sobrevive', 'morta'] },
+      nota: { type: 'string' },
+    },
+  };
+
+  // The second way out, cloned off the fixture's terminal node: a thesis the
+  // red team killed still has to land somewhere, or `terminates` fails.
+  const archive = JSON.parse(JSON.stringify(nodes[1])) as Record<string, unknown>;
+  archive.id = 'arquivar';
+  archive.description = 'Arquiva a tese morta e encerra a travessia.';
+  nodes.push(archive);
+
+  document.edges = [
+    {
+      from: 'redigir',
+      to: 'revisar',
+      condition: 'sobrevive',
+      description: 'A tese aguentou o red team.',
+    },
+    {
+      from: 'redigir',
+      to: 'arquivar',
+      condition: 'morta',
+      description: 'A tese não aguentou.',
+    },
+  ];
+  document.final_nodes = ['revisar', 'arquivar'];
+
+  const response = await request<{ graph_version: { id: string } }>(
+    ctx,
+    'POST',
+    '/v1/graphs',
+    document,
+  );
+  assert.equal(response.status, 201, `POST /v1/graphs returned ${response.status}`);
+  return response.body.graph_version.id;
+}
+
+test('t269 AT1 — a closed schema takes the report the routing label rides in', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const versionId = await registerGraphRoutingOnThesisSkill(ctx);
+  const job = await createJob(ctx, {
+    title: 'tese que morreu',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  const session = await openNodeSession(ctx, job.id);
+
+  const finished = await request<FinishedSession>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    {
+      status: 'completed',
+      exit_code: 0,
+      output: { ...THESIS_REPORT, resultado: 'morta' },
+    },
+  );
+
+  assert.equal(finished.status, 200);
+  assert.equal(
+    finished.body.output_accepted,
+    true,
+    'the report conforms; the routing key is not the skill\'s to refuse',
+  );
+  assert.equal(
+    Object.hasOwn(finished.body as unknown as Record<string, unknown>, 'output_schema_error'),
+    false,
+    'nothing was refused, so there is no reason to carry',
+  );
+  assert.deepEqual(
+    finished.body.output,
+    THESIS_REPORT,
+    'what is stored is the skill\'s four fields — the label was the graph\'s, and it stays there',
+  );
+
+  const [stored] = await readSessions(ctx, job.id);
+  assert.deepEqual(stored.output, THESIS_REPORT, 'and the column round-trips without it');
+  assert.equal(
+    Object.hasOwn(stored.output as Record<string, unknown>, 'resultado'),
+    false,
+    'no `resultado` survives into the projection',
+  );
+});
+
+test('t269 AT2 — the log does not carry the routing label either', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+  const { getEventsByEntity } = await loadEvents();
+
+  const versionId = await registerGraphRoutingOnThesisSkill(ctx);
+  const job = await createJob(ctx, {
+    title: 'tese que morreu, no log',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+  const session = await openNodeSession(ctx, job.id);
+
+  const finished = await request<FinishedSession>(
+    ctx,
+    'PATCH',
+    `/v1/sessions/${session.id}/finish`,
+    {
+      status: 'completed',
+      exit_code: 0,
+      output: { ...THESIS_REPORT, resultado: 'morta' },
+    },
+  );
+  assert.equal(finished.status, 200);
+  assert.equal(finished.body.output_accepted, true);
+
+  const events = getEventsByEntity(ctx.db, 'session', session.id);
+  assert.deepEqual(
+    events.map((event: Event) => event.type),
+    ['session.opened', 'session.finished'],
+  );
+  assert.deepEqual(
+    events[1].data.output,
+    THESIS_REPORT,
+    'the exclusion is what was PERSISTED, not a shape the response puts on afterwards',
+  );
+  assert.equal(
+    Object.hasOwn(events[1].data.output as Record<string, unknown>, 'resultado'),
+    false,
+  );
+});
+
+test('t269 AT3 — a `resultado` that is not a label is refused exactly as before', async (t) => {
+  requireArtifacts(...ARTIFACTS, T253_MIGRATION, ...T253_ARTIFACTS);
+  const ctx = await startControlPlane(t);
+
+  const versionId = await registerGraphRoutingOnThesisSkill(ctx);
+  const job = await createJob(ctx, {
+    title: 'tese com rota ilegível',
+    entry_node_id: 'redigir',
+    graph_version_id: versionId,
+  });
+
+  // A number and a string that is only whitespace: `parse-node-result.ts`'s own
+  // reading of "no usable label", and the two shapes a session that did not
+  // understand the protocol produces. Neither is laundered.
+  for (const resultado of [42, '   ']) {
+    const session = await openNodeSession(ctx, job.id);
+    const finished = await request<FinishedSession>(
+      ctx,
+      'PATCH',
+      `/v1/sessions/${session.id}/finish`,
+      {
+        status: 'completed',
+        exit_code: 0,
+        output: { ...THESIS_REPORT, resultado },
+      },
+    );
+
+    assert.equal(finished.status, 200, `resultado ${JSON.stringify(resultado)} closed the session`);
+    assert.equal(
+      finished.body.output_accepted,
+      false,
+      `resultado ${JSON.stringify(resultado)} is not a label, and the closed schema refuses it`,
+    );
+    // The only key the schema does not know is `resultado`: this list IS the
+    // refusal naming it, in the words ajv already used before this ficha
+    // (t253 AT2 pins them verbatim).
+    assert.deepEqual(finished.body.output_schema_error, [
+      'output must NOT have additional properties',
+    ]);
+    assert.equal(finished.body.output, null, 'and what was refused is not stored');
+  }
+});

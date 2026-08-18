@@ -414,7 +414,7 @@ contrato, compor grafo vira **casar contratos**.
 | Campo | Obrigatório | O que é |
 |---|---|---|
 | `entrada_schema` | sim | JSON Schema da projeção de estado que o nó recebe. Projeção, não janela comum (README princípio 4). |
-| `saida_schema` | sim | JSON Schema do que o nó devolve ao quadro. Documentação da forma esperada e origem do vocabulário de roteamento das arestas — **não** é o schema contra o qual o relato da sessão é conferido. Ver abaixo. |
+| `saida_schema` | sim | JSON Schema do que o nó devolve ao quadro. Documentação da forma esperada e origem do vocabulário de roteamento das arestas — **não** é o schema contra o qual o relato da sessão é conferido. É aqui que o `resultado` de um nó com duas ou mais saídas se declara; no `output` da skill ele nunca entra. Ver abaixo. |
 | `verificacoes` | sim | Lista com **pelo menos um** check. Como se confere o que o nó produziu. |
 | `produces` | não | Nome do **balde** em que a saída estruturada deste nó se acumula na projeção de input dos nós seguintes (`t253`). Ausente = merge no topo de `input`. Ver abaixo. |
 
@@ -424,8 +424,8 @@ Os dois são schemas diferentes de propósito, e confundi-los custou três relat
 recusados na segunda travessia real do grafo de bets. O `saida_schema` do nó é o
 que ESTE grafo espera daqui, e é dele que sai o vocabulário das arestas (a
 `condition` de uma aresta casa com o `outcome` que ele declara). O que
-`PATCH /v1/sessions/:id/finish` confere o bloco `resultado` contra é o `output`
-da **skill pinada** (D9) — resolvido por
+`PATCH /v1/sessions/:id/finish` confere o objeto do bloco cercado contra é o
+`output` da **skill pinada** (D9) — resolvido por
 [`resolveOutputSchema`](../../packages/core/src/repositories/session.ts), pelo
 caminho `job` → `graph_version` → nó → `skill_ref` → registro. Uma skill serve a
 mais de um grafo, e é por isso que a validação mora nela e não no nó.
@@ -435,11 +435,38 @@ uma sessão e dizer que é contra ele que a saída será conferida é falso. O r
 renderiza os dois hoje, cada um com o seu rótulo
 ([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
 
+**A chave `resultado` é reservada do protocolo e fica FORA dessa conferência
+(`t269`).** O bloco cercado é um só, então o rótulo de rota viaja dentro do mesmo
+objeto que o relato — mas ele é vocabulário deste grafo (a `condition` de uma
+aresta), nunca do `output` da skill. Quando o objeto relatado traz um
+`resultado` que é rótulo utilizável (string não vazia depois do `trim`, a mesma
+leitura de
+[`parse-node-result.ts`](../../packages/runner/src/dispatch/parse-node-result.ts)),
+o control plane o retira antes de conferir e não o guarda: `session.output` e o
+`data.output` do evento `session.finished` ficam com os campos da skill e mais
+nada. Consequências, nas duas pontas:
+
+- uma skill pode fechar o próprio `output` (`additionalProperties: false`) sem
+  declarar `resultado`, que é o caso de `derrubar-tese@1.0.0`, e ainda assim
+  aceitar o relato de um nó com duas saídas — antes da `t269` recusava todos, e
+  desde a `t268` uma recusa dessas **bloqueia** o nó;
+- declarar `resultado` como propriedade do `output` de uma skill não é legal: a
+  chave nunca chega a ser conferida nem guardada, então a declaração não
+  descreve nada. Quem precisa do rótulo lê a aresta percorrida em
+  `job.transitioned`, não a saída da sessão.
+
+Um `resultado` presente que **não** é rótulo (número, objeto, string só de
+espaço) não é retirado de nada: fica no objeto e um schema fechado o recusa como
+sempre recusou. Uma sessão que pôs lixo na chave de rota não entendeu o
+protocolo, e lavar a chave em silêncio guardaria um relato ao lado de uma decisão
+que aresta nenhuma carrega.
+
 #### `produces`: onde a saída deste nó aterrissa
 
 A saída estruturada de um nó — o que a sessão relata em
 `PATCH /v1/sessions/:id/finish` e o control plane guarda depois de conferir
-contra o `output` da skill pinada (D9) — precisa aterrissar em algum lugar do
+contra o `output` da skill pinada (D9), já sem a chave de rota `resultado`
+(`t269`) — precisa aterrissar em algum lugar do
 `input` do nó seguinte. `produces` é esse lugar, e ele é um **balde**, não uma
 caixa por sessão: dois nós que declaram o mesmo nome escrevem no mesmo objeto.
 

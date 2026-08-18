@@ -400,6 +400,30 @@ vocabulário de rota é o do **grafo**, nunca o `outcome` do `output` da skill �
 são dois enums diferentes, de propósito
 ([`docs/spec/grafo.md`](../../docs/spec/grafo.md)).
 
+**A chave de rota é reservada do protocolo (`t269`).** Ela viaja no mesmo objeto
+porque o bloco é um só, mas não pertence ao vocabulário desta skill: quando vem
+como rótulo utilizável — string não vazia depois do `trim` —,
+`PATCH /v1/sessions/:id/finish` a retira antes de conferir o relato contra o
+`output` da skill pinada, e também antes de guardar (`session.output` e o
+`data.output` do evento `session.finished` ficam sem ela). O nome dela é o do
+grafo e está escrito em [`docs/spec/grafo.md`](../../docs/spec/grafo.md); aqui
+ele não aparece entre crases de propósito, porque campo de manifesto com esse
+nome não existe — o do manifesto foi renomeado para `outcome` na `t178`. Duas
+consequências para quem escreve manifesto:
+
+- **fechar o `output` é seguro.** `additionalProperties: false` sem declarar a
+  chave de rota — o que `derrubar-tese@1.0.0` faz — aceita o relato de um nó que
+  roteia. Era exatamente esse o caso que a segunda travessia do grafo de bets
+  recusou em toda sessão, e recusa de relato **bloqueia** o nó desde a `t268`;
+- **declarar a chave de rota como propriedade do `output` não é legal.** Ela
+  nunca é conferida nem guardada, então declará-la descreve um campo que não
+  existe do lado da skill. Uma skill serve a mais de um grafo, e o rótulo de
+  rota é de um grafo só.
+
+Uma chave de rota presente que não é rótulo (número, objeto, string em branco)
+não é retirada: fica no objeto e um `output` fechado a recusa como sempre
+recusou.
+
 ## Regra de importação (D4)
 
 `SKILL.md` público quase nunca declara entrada, saída ou verificação. Sem um

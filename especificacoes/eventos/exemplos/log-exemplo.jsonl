@@ -29,3 +29,4 @@
 {"id":29,"type":"job.transitioned","project_id":1,"execution_id":7,"entity":{"type":"job","id":101},"actor":{"type":"system","ref":"controller"},"occurred_at":"2026-08-14T14:20:00Z","data":{"from_node_id":"desenvolvimento","to_node_id":"revisao"}}
 {"id":30,"type":"job.transitioned","project_id":1,"execution_id":7,"entity":{"type":"job","id":102},"actor":{"type":"system","ref":"controller"},"occurred_at":"2026-08-14T14:35:00Z","data":{"from_node_id":"desenvolvimento","to_node_id":"revisao"}}
 {"id":31,"type":"execution.finished","project_id":1,"execution_id":7,"entity":{"type":"execution","id":7},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-14T14:35:00Z","data":{}}
+{"id":32,"type":"graph_version.contracts_checked","project_id":1,"execution_id":null,"entity":{"type":"graph_version","id":"sha256:9c1fa4d2"},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-14T15:00:00Z","data":{"state":"checked","problem_count":0}}

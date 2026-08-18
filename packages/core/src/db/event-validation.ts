@@ -438,6 +438,23 @@ const RULES: Record<string, TypeRule> = {
       reason: required('string'),
     },
   },
+  // A version's contract state moved (t283). Emitted ONLY by the re-check that
+  // a newly registered manifest triggers — never at a version's birth, where
+  // `graph_version.registered`/`.applied` already say what happened at that
+  // instant, and a third event for the same moment would be the envelope's own
+  // facts written twice (the reasoning `execution.finished`'s empty payload
+  // records in `taxonomia.md`).
+  //
+  // The payload counts the problems instead of carrying them: the report is on
+  // the row and one GET away, and the same object in two places is two places
+  // to disagree — the call `job.blocked.consecutive_failures` already makes.
+  'graph_version.contracts_checked': {
+    entity: 'graph_version',
+    fields: {
+      state: required('string', { values: ['checked', 'unchecked', 'failed'] }),
+      problem_count: required('integer', { min: 0 }),
+    },
+  },
   // The round is over (D21, t245): every job of it arrived and no lease is
   // still holding one. Empty payload for the same reason `job.unblocked` has
   // one — the envelope's `execution_id`, `entity.id` and `occurred_at` already

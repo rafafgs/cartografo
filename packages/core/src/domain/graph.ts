@@ -744,6 +744,41 @@ export interface ContractReport {
   problems: ContractProblem[];
 }
 
+/**
+ * Where a stored version stands with respect to its contracts (t283).
+ *
+ * Three values, because a report answers a question a ROW cannot: `valid` is
+ * the verdict of one call over one registry, and a version needs a position in
+ * a lifecycle. `unchecked` is not a soft `failed` — it says the question was
+ * never answered, and it is the state a version leaves the moment the missing
+ * manifest is registered.
+ */
+export type ContractsState = 'checked' | 'unchecked' | 'failed';
+
+/**
+ * The report, read as the state the version carries.
+ *
+ * An unresolved pin outranks everything else in the report, and it has to: with
+ * one ancestor producing nothing, every `unproduced_input` computed downstream
+ * of it is an accusation whose only evidence is an unfilled registry (the same
+ * reasoning `routes/graphs.ts` writes for what it publishes). So a report with
+ * any `skill_ref_unresolved` is `unchecked` whatever else it carries, and only a
+ * report where every pin resolved is allowed to say `checked` or `failed`.
+ *
+ * Pure, and deliberately not folded into `validateContracts`: the check answers
+ * what it found, and this is the one sentence three write sites have to agree
+ * on about it.
+ *
+ * @param report What `validateContracts` answered.
+ * @returns The state a version born of this report carries.
+ */
+export function classifyContracts(report: ContractReport): ContractsState {
+  if (report.problems.some((problem) => problem.code === 'skill_ref_unresolved')) {
+    return 'unchecked';
+  }
+  return report.valid ? 'checked' : 'failed';
+}
+
 /** A node with its pin resolved, plus what it produces and what it demands. */
 interface NodeContract {
   id: string;

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "graph_version.contracts_checked.schema.json",
+  "title": "graph_version.contracts_checked",
+  "description": "The contract check ran again over a version that was waiting on a skill manifest, and the version moved to the state it reports (t283). Emitted only by the re-check a newly registered manifest triggers, never at a version's birth. entity.id is the snapshot hash. Actor: system / control-plane — the control plane asserts this about itself (D1). Cartografo extension, with no flowpilot equivalent.",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "graph_version.contracts_checked"
+    },
+    "entity": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "graph_version"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "state",
+        "problem_count"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "checked",
+            "unchecked",
+            "failed"
+          ],
+          "description": "Where the version stands now. checked: every pin resolved and the check passed. unchecked: some pin still resolves to nothing. failed: every pin resolved and the check refused. Only checked may carry a job."
+        },
+        "problem_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many problems the report carries. A count and not the report itself: the problems live on the version row, one GET away, and the same object in two places is two places to disagree."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

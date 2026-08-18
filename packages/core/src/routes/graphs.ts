@@ -51,6 +51,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Database } from '../db/connection.ts';
 import { diffGraphs } from '../domain/diff.ts';
 import {
+  classifyContracts,
   validateContracts,
   validateGraph,
   type ContractProblem,
@@ -315,8 +316,16 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
   // the report into what the answer publishes, on the refusal and on the success
   // alike, so a client reads which of the two happened instead of inferring a
   // clean pass from a missing key.
+  //
+  // And since t283 it is REMEMBERED as well as said: the classified state goes
+  // onto the row, `POST /v1/jobs` refuses to run anything against a version that
+  // is not `checked`, and registering the missing manifest re-runs the check and
+  // moves the version on its own. Permissive here, strict at execution — which
+  // is where the promise that a contract is checked and not merely declared has
+  // to hold (D9).
   const outcome = contractsOutcome(contracts);
-  if (outcome.status === 'checked' && !contracts.valid) {
+  const state = classifyContracts(contracts);
+  if (state === 'failed') {
     reply.code(422);
     // The same envelope as the structure/soundness refusal, with the two of them
     // marked as what they are — they passed — so a reader of the 422 can tell
@@ -340,7 +349,15 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
     );
   }
 
-  const { graph, version } = registerBaseGraph(db, document as GraphDocument);
+  // Stored, not merely reported (t283). `state` is `checked` or `unchecked`
+  // here — `failed` returned above — and it is what `POST /v1/jobs` reads
+  // before letting anything run against this version. A version is never
+  // WRITTEN `failed` from this route: that state is only ever reached later, by
+  // a re-check that finally had every manifest to judge with.
+  const { graph, version } = registerBaseGraph(db, document as GraphDocument, {
+    state,
+    problems: contracts.problems,
+  });
   reply.code(201);
   // The report rides on the SUCCESS too (t284). A skip that says nothing is
   // indistinguishable from a clean pass on the wire, and the two mean opposite
@@ -394,11 +411,16 @@ type ContractsOutcome =
  * @returns The outcome, ready to serialize on the `201` or inside the `422`.
  */
 function contractsOutcome(report: ContractReport): ContractsOutcome {
-  const unresolved = report.problems.filter(
-    (problem) => problem.code === 'skill_ref_unresolved',
-  );
-  if (unresolved.length === 0) return { status: 'checked', ...report };
-  return { status: 'skipped', reason: 'skill_ref_unresolved', problems: unresolved };
+  // The predicate is `classifyContracts` and no longer an inline filter (t283):
+  // this route, the fork and the proposal apply all have to agree on what "the
+  // check could not run" means, and three copies of one `some()` is how they
+  // would stop agreeing.
+  if (classifyContracts(report) !== 'unchecked') return { status: 'checked', ...report };
+  return {
+    status: 'skipped',
+    reason: 'skill_ref_unresolved',
+    problems: report.problems.filter((problem) => problem.code === 'skill_ref_unresolved'),
+  };
 }
 
 /**
@@ -525,6 +547,11 @@ async function fork(
     originProposalId,
     document,
     versionId,
+    // Copied off the row this route already fetched, with no registry call
+    // (t283): the forked document IS the base's snapshot with `lineage` swapped,
+    // and `validateContracts` never reads `lineage`. Recomputing here would ask
+    // the registry a question whose input did not change.
+    contracts: { state: source.contracts_state, problems: source.contracts_report },
   });
   reply.code(201);
   return { graph: toGraph(graph), graph_version: toGraphVersion(version) };

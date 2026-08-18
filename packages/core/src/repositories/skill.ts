@@ -37,9 +37,13 @@
  * was ported twice by halves: t135 brought the agentic conditional, t155 the rest
  * of the contract that its early return had been skipping.
  *
- * No telemetry event is emitted. `skill` is not a member of the taxonomy's
- * `entidade.tipo` enum (`especificacoes/eventos/schemas/envelope.schema.json`),
- * and extending a versioned product format is a change of its own. Meanwhile the
+ * No telemetry event is emitted ON THE SKILL. `skill` is not a member of the
+ * taxonomy's `entidade.tipo` enum
+ * (`especificacoes/eventos/schemas/envelope.schema.json`), and extending a
+ * versioned product format is a change of its own — that claim is unchanged.
+ * What t283 added is an event about a DIFFERENT entity: registering a manifest
+ * re-judges every `graph_version` that was waiting on it, and each one that
+ * moves records `graph_version.contracts_checked` about itself. Meanwhile the
  * import's audit trail is complete on the job/input-request side —
  * `trabalho.criado`, `pergunta.criada`, `pergunta.respondida`,
  * `trabalho.desbloqueado` already record who proposed what, from which repo and
@@ -89,6 +93,7 @@ import {
 } from '../domain/manifest.ts';
 import { isObject } from '../util/is-object.ts';
 import { now } from './common.ts';
+import { recheckContracts } from './graphs.ts';
 
 /** A registered skill, as the API returns it. */
 export interface Skill {
@@ -533,26 +538,45 @@ export function registerSkill(db: Database, manifest: unknown): Registration {
   }
 
   const timestamp = now();
-  db.prepare(
-    `INSERT INTO skill (
-       id, version, hash, role, description, input, output, preconditions,
-       checks, permissions, instructions, source, registered_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    version,
-    hash,
-    verified.role as string,
-    verified.description as string,
-    JSON.stringify(verified.input),
-    JSON.stringify(verified.output),
-    JSON.stringify(verified.preconditions),
-    JSON.stringify(verified.checks),
-    JSON.stringify(verified.permissions),
-    verified.instructions as string,
-    JSON.stringify(verified.origin),
-    timestamp,
-  );
+
+  // One transaction, where there used to be a bare INSERT (t283). The write is
+  // no longer alone: a manifest arriving is what un-blocks every graph version
+  // that pinned it and could not be checked, and the row, those versions and
+  // their events have to land together — a registry that recorded a skill while
+  // the re-check rolled back would leave versions `unchecked` with nothing left
+  // to trigger them.
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO skill (
+         id, version, hash, role, description, input, output, preconditions,
+         checks, permissions, instructions, source, registered_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      version,
+      hash,
+      verified.role as string,
+      verified.description as string,
+      JSON.stringify(verified.input),
+      JSON.stringify(verified.output),
+      JSON.stringify(verified.preconditions),
+      JSON.stringify(verified.checks),
+      JSON.stringify(verified.permissions),
+      verified.instructions as string,
+      JSON.stringify(verified.origin),
+      timestamp,
+    );
+
+    // Only on this branch, which is the one that WROTE something. A same-hash
+    // reimport returned above without reaching here: nothing about the registry
+    // changed, so no version's answer could have changed either, and re-checking
+    // would be a stack of `graph_version.contracts_checked` events saying the
+    // same thing on every rerun of `cartografo import`.
+    recheckContracts(db, { id, version }, (ref) => {
+      const skill = getSkill(db, ref.id, { version: ref.version });
+      return skill === null ? undefined : { input: skill.input, output: skill.output };
+    }, timestamp);
+  })();
 
   return { skill: getSkill(db, id, { version }) as Skill, created: true };
 }

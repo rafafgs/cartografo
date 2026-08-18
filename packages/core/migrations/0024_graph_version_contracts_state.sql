@@ -1,0 +1,52 @@
+-- 0024_graph_version_contracts_state — no job runs on a version nobody checked (t283).
+--
+-- The t278 gate answers, at `POST /graphs`, whether every required input of
+-- every node's pinned skill has a producer. When a pin does not resolve it
+-- stands aside — which is right for REGISTERING a document, because a graph
+-- whose skills arrive later is the ordinary case for that route, and wrong the
+-- moment something EXECUTES against that version. This column is where the
+-- difference between the two is written down.
+--
+-- Three values, and the middle one is the reason the column exists:
+--
+-- - `checked`   — every pin resolved and the check passed;
+-- - `unchecked` — at least one pin resolved to nothing, so the question was
+--                 never answered. It is not a soft `failed`: the version leaves
+--                 this state on its own the moment the missing manifest is
+--                 registered (`recheckContracts`, `repositories/graphs.ts`);
+-- - `failed`    — every pin resolved and the check refused.
+--
+-- Only `checked` may carry a job (`createJob`, `repositories/job.ts`).
+--
+-- **The DEFAULT is `unchecked`, and it is the honest backfill.** Every row
+-- written before this migration was stored by a route that either skipped the
+-- check or ran it against a registry nobody recorded, so what is known about
+-- them is exactly nothing — and `checked` would be a claim this migration cannot
+-- make. The consequence is deliberate: an existing database's graphs stop
+-- accepting new jobs until their skills are registered, which is the bug being
+-- closed rather than a side effect of closing it.
+--
+-- Same `ADD COLUMN` with an inline `CHECK` as `0017_trabalho_tier.sql`, and the
+-- set closes for the same reason it does there: this vocabulary is OURS, so a
+-- fourth value is not new data, it is a mistake by whoever wrote it.
+--
+-- `contracts_report` is `NOT NULL DEFAULT '[]'` rather than nullable: the report
+-- is a LIST of problems, and "no problems" is the empty list, not the absence of
+-- an answer. Which of the two happened is `contracts_state`'s job to say, and
+-- splitting that fact over two columns would let them disagree.
+--
+-- This is the one column of `graph_version` that changes after the row is
+-- written, and the exception is named in the header of
+-- `packages/core/src/repositories/graphs.ts`: it is a mutable STATUS on an
+-- otherwise append-only row, the same shape `skill.deprecated_at` already has.
+-- The snapshot, the parent and the hash that is the identity stay untouchable.
+--
+-- English top to bottom: the t279 frozen-names rule protects the pre-existing
+-- Portuguese migration files, and this one is new (2026-08-18 language mandate).
+--
+-- No migration opens a transaction of its own: src/db/migrate.ts is what transacts.
+
+ALTER TABLE graph_version ADD COLUMN contracts_state TEXT NOT NULL DEFAULT 'unchecked'
+  CHECK (contracts_state IN ('checked', 'unchecked', 'failed'));
+
+ALTER TABLE graph_version ADD COLUMN contracts_report TEXT NOT NULL DEFAULT '[]';  -- JSON: ContractProblem[]

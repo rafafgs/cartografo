@@ -47,7 +47,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
-import { validateGraph, type GraphDocument } from '../domain/graph.ts';
+import {
+  classifyContracts,
+  validateContracts,
+  validateGraph,
+  type GraphDocument,
+} from '../domain/graph.ts';
 import { hashSnapshot, proposalDedupeKey } from '../domain/hash.ts';
 import { isExpectedMetric, validateExpectedMetric, verdictFor } from '../domain/hypothesis.ts';
 import {
@@ -629,7 +634,28 @@ async function apply(
     return { ...noEffect, proposal: toProposal(rejectProposal(db, proposal.id, noEffect)) };
   }
 
-  const written = applyProposal(db, { proposal, versionId, document });
+  // The third gate's answer, recomputed over the document the operations
+  // produced (t283). Unlike a fork, an applied proposal is a DIFFERENT document
+  // from its target — that is the point of a proposal — so its target's stored
+  // answer says nothing about it: a removed producer, a new node with an
+  // unregistered pin and a swapped skill each move the verdict.
+  //
+  // It does not add a refusal. `unregisteredPin` above already refuses a pin the
+  // diff MOVED, and a resolved-but-invalid result is written honestly as
+  // `failed` instead of being turned away here: the enforcement point of this
+  // ficha is `createJob`, and a second refusal path on this route is behaviour
+  // nobody asked for.
+  const contracts = validateContracts(document, (ref) => {
+    const skill = getSkill(db, ref.id, { version: ref.version });
+    return skill === null ? undefined : { input: skill.input, output: skill.output };
+  });
+
+  const written = applyProposal(db, {
+    proposal,
+    versionId,
+    document,
+    contracts: { state: classifyContracts(contracts), problems: contracts.problems },
+  });
   const graphAfter = getGraph(db, proposal.grafo_id);
   return {
     proposal: toProposal(written.proposal),

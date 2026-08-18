@@ -41,9 +41,11 @@ acima.
 > `job.dependency_declared` (t122), e o enforcement de permissão de
 > skill acrescentou o 17º, `session.permission_denied` (t125), e os ganchos
 > declarados no grafo acrescentaram o 18º, `job.hook_failed` (t169), e o fim de
-> execução da D21 acrescentou o 19º, `execution.finished` (t245) —
+> execução da D21 acrescentou o 19º, `execution.finished` (t245), e o estado de
+> contrato da versão de grafo acrescentou o 20º,
+> `graph_version.contracts_checked` (t283) —
 > crescer é aditivo, e é isso que a regra de "tipo desconhecido é ignorado"
-> compra. Hoje: **19 tipos + o envelope = 20 arquivos**.
+> compra. Hoje: **20 tipos + o envelope = 21 arquivos**.
 
 ## Envelope
 
@@ -500,6 +502,34 @@ abandonada; `target_version` é para onde o ponteiro voltou.
 Rollback move ponteiro e **nada se apaga**: a versão abandonada continua no
 banco com a telemetria dela, que é exatamente o que o topógrafo vai cruzar
 depois.
+
+#### `graph_version.contracts_checked` — [schema](schemas/graph_version.contracts_checked.schema.json)
+
+*(This entry is in English per the 2026-08-18 language rule; the entries around
+it are the pre-existing Portuguese of this document.)*
+
+A version carries a contract-check state — `checked` / `unchecked` / `failed` —
+and this is the fact of it MOVING (`t283`). Actor: always `system` /
+`control-plane`; the control plane asserts it about itself (D1).
+
+```json
+{"state":"checked","problem_count":0}
+```
+
+**Only the re-check emits it, never a version's birth.** A version is born with
+a state already computed (`POST /graphs` runs the check against the registry, a
+fork copies its base's answer, applying a proposal recomputes), and that instant
+already records `graph_version.registered` + `graph_version.applied` — a third
+event for the same moment would repeat what the envelope already says, the same
+reasoning `execution.finished` writes for its empty payload. What has no other
+witness is the LATER move: registering a skill manifest re-judges every version
+that pinned it and could not be checked, and each version that moves records
+this.
+
+**`problem_count`, not the report.** The problems are on the version row and one
+`GET /v1/graph-versions/:id` away; carrying them here as well would put one
+object in two places with no way to keep them agreeing — the same call
+`job.blocked.consecutive_failures` makes.
 
 ### Execução
 

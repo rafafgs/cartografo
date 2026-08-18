@@ -40,6 +40,7 @@ import {
   movePointer,
   recordVersionBirth,
   type GraphVersionRow,
+  type StoredContracts,
 } from './graphs.ts';
 
 /**
@@ -433,14 +434,22 @@ export function rejectProposalByHuman(db: Database, id: number, reason: string):
  * Applies the proposal: new version + pointer + status, in one transaction (D15).
  *
  * @param db Open database.
- * @param data Approved proposal, already validated document and its hash.
+ * @param data Approved proposal, already validated document, its hash and what
+ *   the contract check answered about the document the operations produced
+ *   (t283) — recomputed by the route, because a proposal is a change and the
+ *   target's stored answer is about a different document.
  * @returns The proposal and the new version, as they were written.
  */
 export function applyProposal(
   db: Database,
-  data: { proposal: ProposalRow; versionId: string; document: GraphDocument },
+  data: {
+    proposal: ProposalRow;
+    versionId: string;
+    document: GraphDocument;
+    contracts: StoredContracts;
+  },
 ): { proposal: ProposalRow; version: GraphVersionRow } {
-  const { proposal, versionId, document } = data;
+  const { proposal, versionId, document, contracts } = data;
   const moment = now();
 
   db.transaction(() => {
@@ -452,6 +461,7 @@ export function applyProposal(
       origem: 'proposal',
       proposta_id: proposal.id,
       criado_em: moment,
+      contracts,
     });
 
     movePointer(db, proposal.grafo_id, versionId);

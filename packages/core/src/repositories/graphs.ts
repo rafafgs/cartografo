@@ -5,10 +5,16 @@
  * of the database is `src/db/` (D1), and `scripts/check-single-writer.mjs` is
  * the gate of that rule.
  *
- * Append-only by construction: there is no DELETE and no UPDATE of
- * `graph_version` in this module, and the only UPDATE of `graph` is the
- * pointer's. That is what holds up D15's "nothing is erased" — and what makes
- * reverting a pointer move rather than an undo.
+ * Append-only by construction: there is no DELETE of anything here, the only
+ * UPDATE of `graph` is the pointer's, and `graph_version` takes exactly ONE
+ * UPDATE — `recheckContracts` below, which moves `contracts_state` off
+ * `unchecked` when the manifest a pin was waiting for is registered (t283).
+ * That exception is a mutable STATUS on an otherwise frozen row, the same shape
+ * `skill.deprecated_at` already has (`repositories/skill.ts`), and it touches
+ * neither the snapshot, nor the parent, nor the hash that IS the version's
+ * identity. D15's "nothing is erased" is about content, and the content of a
+ * version is still written once — which is what makes reverting a pointer move
+ * rather than an undo.
  *
  * Since t196 every write here also writes to the LOG, in the same transaction:
  * `recordVersionBirth` below is the pair `graph_version.registered` +
@@ -29,7 +35,14 @@
 
 import type { Database } from '../db/connection.ts';
 import { recordEvent } from '../db/events.ts';
-import type { GraphDocument } from '../domain/graph.ts';
+import {
+  classifyContracts,
+  validateContracts,
+  type ContractProblem,
+  type ContractsState,
+  type GraphDocument,
+  type SkillLookup,
+} from '../domain/graph.ts';
 import { hashSnapshot, canonicalSerialize } from '../domain/hash.ts';
 import { API_ACTOR, DEFAULT_PROJECT, now } from './common.ts';
 
@@ -52,6 +65,15 @@ export interface GraphVersionRow {
   origem: string;
   proposta_id: number | null;
   criado_em: string;
+  /**
+   * Where this version stands with respect to its contracts (t283).
+   *
+   * Unaliased, unlike everything above it: the concept is new, so there is no
+   * Portuguese name to alias the column back onto (t229, FR4).
+   */
+  contracts_state: ContractsState;
+  /** The problems the check produced; `[]` when it found none, or ran clean. */
+  contracts_report: ContractProblem[];
 }
 
 /** A version with the whole document, already parsed. */
@@ -71,7 +93,26 @@ const GRAPH_COLUMNS = `id, class AS classe, lineage_type AS linhagem_tipo,
    base_class AS base_classe, origin_proposal_id AS origem_proposta_id,
    current_version_id AS versao_corrente_id, created_at AS criado_em`;
 const VERSION_COLUMNS = `id, graph_id AS grafo_id, parent_version AS versao_pai,
-   source AS origem, proposal_id AS proposta_id, created_at AS criado_em`;
+   source AS origem, proposal_id AS proposta_id, created_at AS criado_em,
+   contracts_state, contracts_report`;
+
+/** A version row as SQLite hands it over: the report is still TEXT. */
+type RawVersionRow = Omit<GraphVersionRow, 'contracts_report'> & { contracts_report: string };
+
+/**
+ * The one parse between `graph_version` and the rest of the package (t283).
+ *
+ * Every read of a version goes through here instead of casting the raw row,
+ * because `contracts_report` is a JSON column and a bare cast would hand a
+ * string to a caller whose type says list — the same trap `getVersion` already
+ * avoids for `snapshot`.
+ *
+ * @param raw Row as the driver returned it.
+ * @returns The row with the report parsed.
+ */
+function mapVersionRow(raw: RawVersionRow): GraphVersionRow {
+  return { ...raw, contracts_report: JSON.parse(raw.contracts_report) as ContractProblem[] };
+}
 
 /**
  * @param db Open database.
@@ -122,11 +163,13 @@ export function listClasses(db: Database): ClassRow[] {
  * @returns Versions in creation order.
  */
 export function listVersions(db: Database, graphId: string): GraphVersionRow[] {
-  return db
-    .prepare(
-      `SELECT ${VERSION_COLUMNS} FROM graph_version WHERE graph_id = ? ORDER BY created_at, id`,
-    )
-    .all(graphId) as GraphVersionRow[];
+  return (
+    db
+      .prepare(
+        `SELECT ${VERSION_COLUMNS} FROM graph_version WHERE graph_id = ? ORDER BY created_at, id`,
+      )
+      .all(graphId) as RawVersionRow[]
+  ).map(mapVersionRow);
 }
 
 /**
@@ -140,9 +183,9 @@ export function getVersion(
 ): GraphVersionRowWithSnapshot | undefined {
   const row = db
     .prepare(`SELECT ${VERSION_COLUMNS}, snapshot FROM graph_version WHERE id = ?`)
-    .get(id) as (GraphVersionRow & { snapshot: string }) | undefined;
+    .get(id) as (RawVersionRow & { snapshot: string }) | undefined;
   if (row === undefined) return undefined;
-  return { ...row, snapshot: JSON.parse(row.snapshot) as GraphDocument };
+  return { ...mapVersionRow(row), snapshot: JSON.parse(row.snapshot) as GraphDocument };
 }
 
 /**
@@ -153,9 +196,10 @@ export function getVersion(
  * @returns The version metadata, or `undefined`.
  */
 export function getVersionSummary(db: Database, id: string): GraphVersionRow | undefined {
-  return db.prepare(`SELECT ${VERSION_COLUMNS} FROM graph_version WHERE id = ?`).get(id) as
-    | GraphVersionRow
+  const row = db.prepare(`SELECT ${VERSION_COLUMNS} FROM graph_version WHERE id = ?`).get(id) as
+    | RawVersionRow
     | undefined;
+  return row === undefined ? undefined : mapVersionRow(row);
 }
 
 /**
@@ -170,10 +214,30 @@ export function getClassBase(db: Database, className: string): GraphRow | undefi
 }
 
 /**
+ * What a caller says about the contracts of the version it is writing (t283).
+ *
+ * Every version-birth site has to answer this, and the three answer it
+ * differently on purpose: `POST /graphs` runs the check against the registry,
+ * the fork COPIES its base's answer (the document is the same snapshot, so the
+ * check would reach the same verdict), and applying a proposal runs it again
+ * over the document the operations produced. A default here would have been the
+ * fourth answer, and the wrong one: two of the three paths would mint versions
+ * permanently `unchecked`, because the only re-check trigger is a manifest
+ * arriving, and a class whose skills are already registered never fires it.
+ */
+export interface StoredContracts {
+  /** Where the version stands; see {@link ContractsState}. */
+  state: ContractsState;
+  /** The problems behind that state; `[]` when there are none. */
+  problems: ContractProblem[];
+}
+
+/**
  * Writes a new version. INSERT only: a version is never rewritten.
  *
  * @param db Open database (inside a transaction, when the caller opens one).
- * @param data Lineage, parent, already validated snapshot and origin.
+ * @param data Lineage, parent, already validated snapshot, origin and the
+ *   contract-check outcome the caller reached (t283).
  */
 export function insertVersion(
   db: Database,
@@ -185,11 +249,13 @@ export function insertVersion(
     origem: 'manual' | 'synthesizer' | 'proposal';
     proposta_id: number | null;
     criado_em: string;
+    contracts: StoredContracts;
   },
 ): void {
   db.prepare(
-    `INSERT INTO graph_version (id, graph_id, parent_version, snapshot, source, proposal_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO graph_version (id, graph_id, parent_version, snapshot, source, proposal_id,
+                                created_at, contracts_state, contracts_report)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     data.id,
     data.grafo_id,
@@ -198,6 +264,8 @@ export function insertVersion(
     data.origem,
     data.proposta_id,
     data.criado_em,
+    data.contracts.state,
+    JSON.stringify(data.contracts.problems),
   );
 }
 
@@ -294,11 +362,15 @@ export function recordVersionBirth(db: Database, data: VersionBirth): void {
  *
  * @param db Open database.
  * @param document Already validated document (structure + soundness).
+ * @param contracts What the contract check answered about it (t283). Required,
+ *   with no default: see {@link StoredContracts} for why a default here would be
+ *   an answer nobody computed.
  * @returns The lineage and the version as they were written.
  */
 export function registerBaseGraph(
   db: Database,
   document: GraphDocument,
+  contracts: StoredContracts,
 ): { graph: GraphRow; version: GraphVersionRow } {
   const className = document.problem_class;
   const versionId = hashSnapshot(document);
@@ -318,6 +390,7 @@ export function registerBaseGraph(
       origem: 'manual',
       proposta_id: null,
       criado_em: createdAt,
+      contracts,
     });
 
     movePointer(db, className, versionId);
@@ -353,6 +426,16 @@ export interface VariantFork {
   document: GraphDocument;
   /** Hash of that document, already checked for collision by the caller. */
   versionId: string;
+  /**
+   * The base's own stored outcome, copied (t283).
+   *
+   * COPIED, never recomputed: `validateContracts` reads `nodes`, `edges`,
+   * `custom_fields`, `project` and `initial_node`, and a fork touches none of
+   * them — it swaps `lineage` and nothing else. Asking the registry again would
+   * be a second answer to a question whose input did not change, and it would
+   * make the fork fail to be honest exactly when the registry moved under it.
+   */
+  contracts: StoredContracts;
 }
 
 /**
@@ -375,7 +458,7 @@ export function forkVariant(
   db: Database,
   data: VariantFork,
 ): { graph: GraphRow; version: GraphVersionRow } {
-  const { base, id, originProposalId, document, versionId } = data;
+  const { base, id, originProposalId, document, versionId, contracts } = data;
   const createdAt = now();
 
   db.transaction(() => {
@@ -397,6 +480,7 @@ export function forkVariant(
       origem: source,
       proposta_id: originProposalId,
       criado_em: createdAt,
+      contracts,
     });
 
     movePointer(db, id, versionId);
@@ -421,6 +505,108 @@ export function forkVariant(
   }
 
   return { graph, version };
+}
+
+/**
+ * A version still waiting on a manifest, with the snapshot the re-check reads.
+ *
+ * Only `unchecked` rows are ever loaded: a `checked` version has nothing to
+ * gain from a new manifest (its pins already resolved), and a `failed` one was
+ * judged with every pin resolved, so a skill arriving does not change the
+ * verdict it earned. Both would be re-verdicts of a question already answered.
+ *
+ * @param db Open database.
+ * @returns Every unchecked version, oldest first.
+ */
+function unresolvedVersions(db: Database): { id: string; snapshot: GraphDocument }[] {
+  return (
+    db
+      .prepare(
+        `SELECT id, snapshot FROM graph_version
+          WHERE contracts_state = 'unchecked' ORDER BY created_at, id`,
+      )
+      .all() as { id: string; snapshot: string }[]
+  ).map((row) => ({ id: row.id, snapshot: JSON.parse(row.snapshot) as GraphDocument }));
+}
+
+/**
+ * Does any node of this snapshot pin exactly this `(id, version)`?
+ *
+ * A scan in JS over the parsed snapshot, not a query: the pin lives inside a
+ * JSON column, and folding JSON in JS instead of in SQL/JSON1 is what this
+ * package already does elsewhere. The set it scans is small by construction —
+ * only the unchecked versions — and the resolution key is `(id, version)`, the
+ * same one `POST /graphs` resolves with. NOT the hash: what the registry
+ * answers to is the pair, and a hash mismatch is a different refusal, owned by
+ * the routes that move a pin.
+ *
+ * @param snapshot The version's document.
+ * @param pin The manifest that was just registered.
+ * @returns Whether this version was waiting on it.
+ */
+function pins(snapshot: GraphDocument, pin: { id: string; version: string }): boolean {
+  const nodes = Array.isArray(snapshot.nodes) ? snapshot.nodes : [];
+  return nodes.some((node) => {
+    const ref = (node as { skill_ref?: { id?: unknown; version?: unknown } }).skill_ref;
+    return ref?.id === pin.id && ref.version === pin.version;
+  });
+}
+
+/**
+ * Re-judges every unchecked version that was waiting on a manifest (t283, FR5).
+ *
+ * This is the one UPDATE of `graph_version` in the repository, and the header of
+ * this file names it. Without it, design B would be half a promise: `POST
+ * /graphs` stores a document whose pins are unresolved, `createJob` refuses to
+ * run anything against it, and nothing would ever move it out of that state —
+ * the class would be registered and permanently undispatchable.
+ *
+ * The re-check re-runs the WHOLE check against the registry as it stands now,
+ * not just the pin that arrived: a version can wait on three manifests, and two
+ * of them may have landed while this one was being written. Which is also why
+ * the answer may be `failed` — resolving the last pin is what finally makes an
+ * `unproduced_input` visible, and that finding is now backed by a registry that
+ * answered for every node.
+ *
+ * Called from inside the caller's transaction, always
+ * (`repositories/skill.ts`): the row, the re-checked versions and their events
+ * land together or not at all.
+ *
+ * @param db Open database, inside a transaction.
+ * @param pin The `(id, version)` that was just registered.
+ * @param resolveSkill How a `skill_ref` becomes a contract, over the registry.
+ * @param moment Instant of the registration — the events carry it too.
+ */
+export function recheckContracts(
+  db: Database,
+  pin: { id: string; version: string },
+  resolveSkill: SkillLookup,
+  moment: string,
+): void {
+  for (const version of unresolvedVersions(db)) {
+    if (!pins(version.snapshot, pin)) continue;
+
+    const report = validateContracts(version.snapshot, resolveSkill);
+    const state = classifyContracts(report);
+
+    db.prepare(
+      'UPDATE graph_version SET contracts_state = ?, contracts_report = ? WHERE id = ?',
+    ).run(state, JSON.stringify(report.problems), version.id);
+
+    recordEvent(db, {
+      type: 'graph_version.contracts_checked',
+      project_id: DEFAULT_PROJECT,
+      execution_id: null,
+      entity: { type: 'graph_version', id: version.id },
+      actor: API_ACTOR,
+      occurred_at: moment,
+      // The count and not the report: the problems are on the row, one GET
+      // away, and re-embedding them here would put the same object in two
+      // places with no way to keep them agreeing. The same call
+      // `job.blocked.consecutive_failures` makes.
+      data: { state, problem_count: report.problems.length },
+    });
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -461,6 +647,15 @@ export interface GraphVersion {
   source: string;
   proposal_id: number | null;
   created_at: string;
+  /**
+   * Where the version stands with respect to its contracts (t283).
+   *
+   * Deliberately NOT the `{valid, problems}` of the `422`'s own `contracts`
+   * key: `valid` is the verdict of one call, `state` is a position in a
+   * lifecycle, and reading one as the other is exactly the confusion this
+   * ficha exists to end.
+   */
+  contracts: { state: ContractsState; problems: ContractProblem[] };
 }
 
 /** A version with the whole document. */
@@ -498,6 +693,7 @@ export function toGraphVersion(row: GraphVersionRow): GraphVersion {
     source: row.origem,
     proposal_id: row.proposta_id,
     created_at: row.criado_em,
+    contracts: { state: row.contracts_state, problems: row.contracts_report },
   };
 }
 

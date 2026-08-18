@@ -13,7 +13,7 @@
  *
  * What it does, all of it deterministic:
  *
- * 1. reads the proposal (`GET /v1/proposals/:id`) for the `metrica_esperada`
+ * 1. reads the proposal (`GET /v1/proposals/:id`) for the `expected_metric`
  *    the hypothesis declared;
  * 2. reads the given execution's log and the snapshot of the version the
  *    proposal applied;
@@ -70,27 +70,38 @@ const client = new ClienteControle({
 
 try {
   const proposal = await client.buscarProposta(proposalId);
-  log(`proposal ${proposal.id} of graph "${proposal.grafo_id}" is "${proposal.status}"`);
+  log(`proposal ${proposal.id} of graph "${proposal.graph_id}" is "${proposal.status}"`);
 
-  if (proposal.status !== 'aplicada') {
+  // `applied`, the word the wire really answers (`ProposalStatus`,
+  // `packages/core/src/repositories/proposals.ts`). It said `aplicada` until
+  // t285, which made this comparison true for every proposal that HAD an
+  // experiment to close — so the command died here, on its third statement,
+  // every single time, with the message just below reading `this one is
+  // "applied"`.
+  if (proposal.status !== 'applied') {
     die(`only an applied proposal has an experiment to close; this one is "${proposal.status}"`);
   }
-  if (proposal.resultado !== null && proposal.resultado !== undefined) {
-    die(`this hypothesis was already closed: ${JSON.stringify(proposal.resultado)}`);
+  if (proposal.result !== null && proposal.result !== undefined) {
+    die(`this hypothesis was already closed: ${JSON.stringify(proposal.result)}`);
   }
 
-  const metric = proposal.metrica_esperada;
+  // The WRAPPER key is English since t226; what is inside it is the frozen
+  // hypothesis vocabulary of `domain/hypothesis.ts` — `{nome, direcao, de,
+  // para}` — which D20 does not unfreeze (`docs/spec/glossario-wire.md:791`).
+  const metric = proposal.expected_metric;
   const name = typeof metric === 'object' && metric !== null ? metric.nome : undefined;
   if (typeof name !== 'string' || name === '') {
-    die(`proposal ${proposalId} declares no readable metrica_esperada.nome: ${JSON.stringify(metric)}`);
+    die(`proposal ${proposalId} declares no readable metric name: ${JSON.stringify(metric)}`);
   }
   log(`hypothesis: ${JSON.stringify(metric)}`);
 
   // The node ids come from the version the proposal APPLIED — the graph that
   // actually ran in this round. Reading them from the target version would
   // measure the round against the graph it replaced.
-  const appliedVersionId = proposal.versao_aplicada_id;
-  if (appliedVersionId === null) die(`proposal ${proposalId} has no versao_aplicada_id`);
+  const appliedVersionId = proposal.applied_version_id;
+  if (typeof appliedVersionId !== 'string') {
+    die(`proposal ${proposalId} has no applied_version_id`);
+  }
   const version = await client.buscarVersaoDeGrafo(appliedVersionId);
   const nodeIds = (version.snapshot.nodes ?? []).map((no) => no.id);
 
@@ -101,7 +112,7 @@ try {
   // failure names the problem instead of arriving as a 422 from the route.
   const byVersion = await client.metricasPorVersao(executionId);
   const underApplied = byVersion.find((row) => row.graph_version_id === appliedVersionId);
-  if (underApplied === undefined || underApplied.trabalhos < 1) {
+  if (underApplied === undefined || underApplied.jobs < 1) {
     die(
       `no job of execution ${executionId} ran under ${appliedVersionId} — ` +
         `this is not the round that follows the proposal (${JSON.stringify(byVersion)})`,
@@ -128,8 +139,8 @@ try {
 
   console.log('\n===== outcome =====');
   console.log(`proposal:    ${written.id} (${written.status})`);
-  console.log(`version:     ${written.versao_aplicada_id}`);
-  console.log(`outcome:     ${JSON.stringify(written.resultado)}`);
+  console.log(`version:     ${written.applied_version_id}`);
+  console.log(`outcome:     ${JSON.stringify(written.result)}`);
   console.log('===================\n');
   log('the hypothesis is closed — verdict computed by the control plane, from real numbers');
 } catch (error) {

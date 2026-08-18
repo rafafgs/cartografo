@@ -31,6 +31,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as InputValuesModule from '../../src/dispatch/render-input-values.ts';
 import type * as RenderModule from '../../src/dispatch/render-skill-instructions.ts';
 import type * as ResolveModule from '../../src/dispatch/resolve-node.ts';
 import { composeSingleArgument, type SessionSpec } from '../../src/engine/types.ts';
@@ -171,8 +172,11 @@ test('AT6 — the rendered text carries the manifest, the node contract and the 
   );
   assert.ok(text.includes(SKILL_ID) && text.includes(SKILL_HASH), 'the session is told what it is pinned to');
 
-  // 3. the node's OWN contract — which is where the routing vocabulary lives,
-  // not in the manifest's `output` (`docs/spec/grafo.md`).
+  // 3. the node's OWN contract — which is where the routing vocabulary lives
+  // (`docs/spec/grafo.md`). Until t267 this comment went on to say the
+  // manifest's `output` never reached the text, and that was the bug: the one
+  // schema `PATCH /v1/sessions/:id/finish` really checks a report against is the
+  // SKILL's, and it is rendered too now. See the t267 block at the bottom.
   assert.ok(text.includes('"aprovado"') && text.includes('"retrabalho"'));
   assert.ok(text.includes('test -s saida.md'), 'the node verifications are part of the contract');
 
@@ -952,5 +956,207 @@ test('t215 AT — the request renderSkillInstructions makes carries the version 
   assert.ok(
     routes.every((route) => route.includes('version=1.0.0')),
     `the dispatch asked the registry for something other than the pinned version: ${routes.join(', ')}`,
+  );
+});
+
+/* -------------------------------------------------------------------------- */
+/* t267 — the session sees the VALUES it has, and the schema it is judged by   */
+/*                                                                            */
+/* Both halves of the same defect: a session was told what it would be checked */
+/* against, and it was the wrong thing. The node's `contract.output_schema`    */
+/* was rendered under "é contra ele que a sua saída vai ser conferida", while  */
+/* `/finish` validates against the SKILL's `output`                            */
+/* (`packages/core/src/repositories/session.ts:resolveOutputSchema`) — two     */
+/* different schemas by design (`docs/spec/grafo.md`). And the input reached   */
+/* the model only through the placeholders a manifest author remembered to     */
+/* write, which is how `analise-assimetria` escalated on the second real bets  */
+/* crossing over fields the projection was in fact carrying.                   */
+/* -------------------------------------------------------------------------- */
+
+/** The sibling module, loaded the same way, so a missing artifact reds for the right reason. */
+async function loadInputValues(): Promise<typeof InputValuesModule> {
+  assert.ok(
+    existsSync(path.join(PACKAGE_ROOT, 'src/dispatch/render-input-values.ts')),
+    'artifact does not exist yet: packages/runner/src/dispatch/render-input-values.ts',
+  );
+  return (await import(
+    new URL('../../src/dispatch/render-input-values.ts', import.meta.url).href
+  )) as typeof InputValuesModule;
+}
+
+/** Renders the standard node against a manifest declaring `input`, with real values. */
+async function renderValues(
+  declared: Record<string, unknown>,
+  input: Record<string, unknown>,
+): Promise<string> {
+  const { renderSkillInstructions } = await loadModule();
+  const rendered = await renderSkillInstructions(
+    resolvedNode(SINGLE_EDGE),
+    (await makeReader(registeredSkill({ input: declared }))).read,
+    input,
+  );
+  assert.ok(rendered !== null);
+  return rendered.instructions;
+}
+
+/**
+ * The input-values block alone, from its heading to the node contract.
+ *
+ * The right-hand bound is FR4's placement claim run rather than read: the block
+ * goes right after the manifest body and before `## O contrato do nó`.
+ */
+function inputValuesBlock(text: string): string {
+  const start = text.indexOf('### Valores de entrada');
+  assert.ok(start >= 0, 'the rendered text carries no "### Valores de entrada" heading');
+  const rest = text.slice(start);
+  const end = rest.indexOf('\n## O contrato do nó');
+  assert.ok(end > 0, 'the input-values block has to sit before the node contract, and does not');
+  return rest.slice(0, end);
+}
+
+/** One `##` section of the text, up to the next one. */
+function section(text: string, heading: string): string {
+  const start = text.indexOf(heading);
+  assert.ok(start >= 0, `the rendered text carries no "${heading}" heading`);
+  const rest = text.slice(start + heading.length);
+  const end = rest.indexOf('\n## ');
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+test('AT19 — the values the skill declares reach the session, not only the schema', async () => {
+  const text = await renderValues(
+    { type: 'object', required: ['x'], properties: { x: { type: 'string' } } },
+    { x: 'valor-do-no-anterior' },
+  );
+
+  assert.ok(
+    inputValuesBlock(text).includes('valor-do-no-anterior'),
+    'the value itself has to be in the block, not merely the shape it satisfies',
+  );
+});
+
+test('AT20 — only the keys the skill declares are shown', async () => {
+  const block = inputValuesBlock(
+    await renderValues(
+      { type: 'object', required: ['x'], properties: { x: { type: 'string' } } },
+      { x: 'v', y: 'nao-declarado' },
+    ),
+  );
+
+  assert.ok(block.includes('"x"') && block.includes('"v"'));
+  assert.ok(
+    !block.includes('nao-declarado'),
+    'a key the manifest never declared is not this session\'s input: showing it invents a contract',
+  );
+});
+
+test('AT21 — a skill declaring no shape at all gets the whole resolved input', async () => {
+  const block = inputValuesBlock(
+    await renderValues({}, { tese_triada: { ativo: 'NVLR3' }, nota: 'sem schema nenhum' }),
+  );
+
+  assert.ok(block.includes('NVLR3'));
+  assert.ok(
+    block.includes('sem schema nenhum'),
+    'with nothing declared there is no key set to restrict to, so everything is shown',
+  );
+});
+
+test('AT22 — an oversized input is cut at the cap, and the cut says so', async () => {
+  const { INPUT_VALUES_CAP_BYTES } = await loadInputValues();
+
+  const declared = { type: 'object', properties: { x: { type: 'string' } } };
+  const big = { x: 'a'.repeat(20_000) };
+  const originalBytes = Buffer.byteLength(JSON.stringify(big, null, 2), 'utf8');
+  assert.equal(originalBytes, 20_013, 'the fixture has to be over the cap by a known amount');
+
+  const block = inputValuesBlock(await renderValues(declared, big));
+
+  assert.ok(
+    block.includes('16.384') && block.includes('20.013'),
+    `the marker names both the bytes shown and the bytes there were: ${block.slice(-400)}`,
+  );
+  assert.ok(
+    block.includes('GET /v1/jobs/:id/context'),
+    'and points at where the whole object still lives',
+  );
+  assert.ok(
+    !block.includes('a'.repeat(20_000)),
+    'the whole value must not be in the prompt: that is what the cap is for',
+  );
+  assert.ok(
+    Buffer.byteLength(block, 'utf8') < INPUT_VALUES_CAP_BYTES + 1_000,
+    'and the block as a whole stays near the cap, marker included',
+  );
+
+  const small = inputValuesBlock(await renderValues(declared, { x: 'cabe folgado' }));
+  assert.ok(
+    !small.includes('bytes'),
+    `a value under the cap carries no marker line at all: ${small}`,
+  );
+});
+
+test('AT23 — the skill\'s own `output` is rendered, as the thing /finish checks', async () => {
+  const { renderSkillInstructions } = await loadModule();
+
+  const output = {
+    type: 'object',
+    required: ['outcome', 'motivo'],
+    properties: { outcome: { enum: ['aprovado', 'retrabalho'] }, motivo: { type: 'string' } },
+    additionalProperties: false,
+  };
+
+  const rendered = await renderSkillInstructions(
+    resolvedNode(SINGLE_EDGE),
+    (await makeReader(registeredSkill({ output }))).read,
+    {},
+  );
+  assert.ok(rendered !== null);
+  const text = rendered.instructions;
+
+  assert.ok(
+    text.includes(JSON.stringify(output, null, 2)),
+    'the manifest\'s own schema, key order untouched, is what the session has to satisfy',
+  );
+
+  assert.ok(text.includes('### O que você tem que produzir'), 'under the heading that names it');
+
+  // FR6: after the permissions block, and before the report protocol that
+  // closes the text for a node with a shape to fill. And the prose has to say
+  // WHAT checks it, or the schema is one more document in a prompt full of them.
+  const permissions = text.indexOf('## As permissões desta sessão');
+  const heading = text.indexOf('### O que você tem que produzir');
+  assert.ok(heading > permissions, 'the validator section comes after the permissions block');
+  assert.ok(heading < text.indexOf('```resultado'), 'and before the block it describes how to fill');
+
+  const validator = text.slice(permissions);
+  assert.ok(validator.includes('finish'), `the section names the route that checks it: ${validator}`);
+  assert.ok(validator.includes('`resultado`'), 'and the block it checks');
+  assert.ok(validator.includes(SKILL_ID), 'and the skill it came from');
+});
+
+test('AT24 — the node contract still renders, and no longer claims to be the validator', async () => {
+  const text = await renderValues({ required: ['nota'] }, { nota: 'uma nota' });
+
+  // Still there: it is the schema the routing vocabulary is keyed against, and
+  // dropping it would cost the session the reason its edges are labelled the way
+  // they are.
+  assert.ok(
+    text.includes(JSON.stringify(resolvedNode([]).node.contract?.output_schema, null, 2)),
+    'the node\'s own output_schema is documentation worth showing, and it stays shown',
+  );
+
+  const contract = section(text, '## O contrato do nó');
+  assert.ok(
+    !contract.includes('é contra ele'),
+    `the node contract section may not claim to be what the report is checked against: ${contract}`,
+  );
+  assert.ok(
+    !/conferid/.test(contract),
+    `nothing in the node contract section may claim it verifies the report: ${contract}`,
+  );
+  assert.ok(
+    /document/.test(contract),
+    'and it says what it IS instead, so the session knows why it is being shown',
   );
 });

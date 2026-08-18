@@ -749,14 +749,10 @@ survives the check.
 **Where it runs, and where it does not.** `cartografo import` runs it offline
 over the bundle's own `skills/` (scope `contract`, alongside `graph`, `manifest`
 and `pin`), which is the check a bundle author wants before anything is sent.
-`POST /v1/graphs` runs it against the REGISTRY — and stands aside when a pin does
-not resolve there, because a document registered before its skills is the
-ordinary case for that route (the screen's editor, a fork, every example in
-`schema/exemplos/`), and availability computed with an unresolved ancestor would
-accuse a node of a defect whose only evidence is an unfilled registry. Applying a
-proposal (`routes/proposals.ts`) does not run it yet; a proposal can equally
-remove a producer a downstream node depends on, and covering that is additive
-work of its own. The two DB-less reference validators
+The three routes that write a graph version — `POST /v1/graphs`,
+`POST /v1/graphs/:id/fork` and `POST /v1/proposals/:id/apply` — each answer for
+the version they write, and the next subsection is how. The two DB-less
+reference validators
 ([`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs) and
 [`scripts/validate-factory-bundle.mjs`](../../scripts/validate-factory-bundle.mjs))
 do not carry this check: it needs a skill lookup, and they have none by design.
@@ -771,6 +767,76 @@ a client as the same body — and the second one is a graph nobody has judged ye
 |---|---|---|
 | `{"status": "checked", "valid": …, "problems": […]}` | every pin resolved | the report above. `valid: false` is the `422`; on a `201` it is always `true` |
 | `{"status": "skipped", "reason": "skill_ref_unresolved", "problems": […]}` | at least one pin unresolved | the `skill_ref_unresolved` problems and nothing else — no `valid`, because a check that did not run neither passed nor failed, and no `unproduced_input`, because those were computed with an ancestor that produces nothing only for want of a manifest |
+
+`skipped` is what happened to the CALL, and since `t283` it is no longer the end
+of the story: the same `201` carries `graph_version.contracts`, the state the
+version was stored with, and §6.2 is what becomes of it. The two keys are not
+the same shape and must not be read as one — `status`/`valid` is the verdict of
+this call, `state` is where the version stands.
+
+### 6.2 The state a version carries, and the one gate that reads it (`t283`)
+
+*(In English for the same reason §6.1 is.)*
+
+Registering a document and running work against it are two different promises,
+and until `t283` they were the same code path. `POST /v1/graphs` is permissive on
+purpose — a graph whose skills arrive afterwards is the ordinary case for the
+screen's editor, for a forked example and for every fixture in
+`schema/exemplos/` — so the check standing aside there is right. It stops being
+right the moment a job runs against that version, which is where D9's "contract
+is the common spine" has to hold. So the check's outcome is no longer only
+reported: it is **stored on the version**, and the gate moved to execution.
+
+`graph_version` carries `contracts_state` and `contracts_report`
+(`entidades-versionamento.md` §1), and every read of a version publishes them as
+`contracts: {state, problems}` — `GET /v1/graphs/:id/versions`,
+`GET /v1/graph-versions/:id` and the `201` of all three write routes.
+
+| `state` | What it means | How a version gets there |
+|---|---|---|
+| `checked` | every pin resolved and the check passed | the check ran, at birth or on a re-check |
+| `unchecked` | at least one pin resolved to nothing, so the question was never answered | birth over a registry that could not answer; it is left the moment the missing manifest is registered |
+| `failed` | every pin resolved and the check refused | a re-check, or applying a proposal whose result is resolved and invalid — never `POST /v1/graphs`, which answers `422` for that document instead of writing it |
+
+`unchecked` is **not** a soft `failed`. It is the absence of an answer, and the
+distinction is what tells a caller what to do: register the manifests the report
+names, and the version moves on its own; a `failed` one needs a new version of
+the graph.
+
+**The three write sites, and why they answer differently.** A default here would
+have been a fourth answer and the wrong one: two of the three paths would mint
+versions permanently `unchecked`, because the only re-check trigger is a manifest
+arriving, and a class whose skills are already registered never fires one.
+
+- **`POST /v1/graphs`** runs the check against the registry and stores what it
+  classified. `failed` still refuses with `422` and writes nothing.
+- **`POST /v1/graphs/:id/fork`** *copies* the base's stored answer. It does not
+  recompute and does not touch the registry: the variant is the base's snapshot
+  with `lineage` swapped, and this check reads `nodes`, `edges`, `custom_fields`,
+  `project` and `initial_node` — never `lineage`.
+- **`POST /v1/proposals/:id/apply`** *recomputes*, because the applied document
+  differs from its target — that is what a proposal is. It adds no refusal of its
+  own: a resolved-but-invalid result is stored `failed`, and the gate below is
+  where that bites.
+
+**The re-check.** Registering a manifest (`POST /v1/skills`, and only when a row
+is really written — a same-hash reimport changes nothing) re-runs the whole check
+over every `unchecked` version that pins it, against the registry as it stands
+now. Each version that is re-judged records
+[`graph_version.contracts_checked`](../../especificacoes/eventos/taxonomia.md).
+It re-runs the WHOLE check and not just the one pin, because a version can be
+waiting on three manifests, and it may land on `failed`: resolving the last pin
+is what finally makes an `unproduced_input` real evidence instead of an artefact
+of an empty registry.
+
+**The gate.** `POST /v1/jobs` refuses a `graph_version_id` that resolves to a
+version whose state is not `checked`, with `409` and
+`graph_version_unchecked` / `graph_version_contracts_failed`, carrying
+`graph_version_id` and `contracts`. It is enforced in `createJob`
+(`repositories/job.ts`), the single writer of a job row, so every future caller
+inherits it. A job with **no** `graph_version_id`, or one that resolves to
+nothing, is unchanged: the control plane has nothing to read, and refusing over
+an absence would break the manual and imported flows for a fact it cannot check.
 
 ---
 

@@ -49,14 +49,28 @@ CREATE TABLE graph (
 CREATE UNIQUE INDEX graph_class_base_unique ON graph (class) WHERE lineage_type = 'base';
 
 CREATE TABLE graph_version (
-  id             TEXT PRIMARY KEY,     -- sha256:<64 hex> do snapshot canônico (§2)
-  graph_id       TEXT NOT NULL REFERENCES graph(id),
-  parent_version TEXT REFERENCES graph_version(id),
-  snapshot       TEXT NOT NULL,        -- documento de grafo completo, canonicalizado
-  source         TEXT NOT NULL CHECK (source IN ('manual', 'synthesizer', 'proposal')),
-  proposal_id    INTEGER REFERENCES proposal(id),
-  created_at     TEXT NOT NULL
+  id               TEXT PRIMARY KEY,   -- sha256:<64 hex> do snapshot canônico (§2)
+  graph_id         TEXT NOT NULL REFERENCES graph(id),
+  parent_version   TEXT REFERENCES graph_version(id),
+  snapshot         TEXT NOT NULL,      -- documento de grafo completo, canonicalizado
+  source           TEXT NOT NULL CHECK (source IN ('manual', 'synthesizer', 'proposal')),
+  proposal_id      INTEGER REFERENCES proposal(id),
+  created_at       TEXT NOT NULL,
+  contracts_state  TEXT NOT NULL DEFAULT 'unchecked'
+                     CHECK (contracts_state IN ('checked', 'unchecked', 'failed')),
+  contracts_report TEXT NOT NULL DEFAULT '[]'   -- JSON: ContractProblem[] (t283)
 );
+
+**`contracts_state` is the one column of `graph_version` that changes after the
+row is written (`t283`).** *(This paragraph is in English per the 2026-08-18
+language rule.)* Everything else about a version is frozen — the snapshot, the
+parent and the hash that IS its identity — and this is a mutable STATUS on an
+otherwise append-only row, the same shape `skill.deprecated_at` already has.
+It records whether the contract check of `grafo.md` §6.1 ever got to run:
+`checked` (it ran and passed), `unchecked` (a skill pin resolved to nothing, so
+it never ran) or `failed` (it ran and refused). Registering the missing manifest
+re-runs the check and moves the row, recording
+`graph_version.contracts_checked`. Only `checked` may carry a job — see §6.
 
 CREATE TABLE proposal (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -556,6 +570,21 @@ Códigos de erro, por rota:
 | `metrica_esperada` sem a forma `{nome, direcao, de, para}` | `422` | `metrica_esperada_invalida` |
 | Nenhum trabalho da execução rodou sob `versao_aplicada_id` | `422` | `execucao_sem_evidencia` |
 | Recurso inexistente | `404` | `grafo_desconhecido` / `grafo_versao_desconhecida` / `proposta_desconhecida` |
+
+*(In English per the 2026-08-18 language rule.)* One refusal of this family does
+not live on any route of the table above, and belongs here anyway because it is
+the enforcement point of the version state this document's §1 declares. `POST
+/v1/jobs` answers `409` when the `graph_version_id` it is given RESOLVES and its
+`contracts_state` is not `checked`:
+
+| Situação | Código | `error` |
+|---|---|---|
+| The named version was never contract-checked (a skill pin resolves to nothing) | `409` | `graph_version_unchecked` |
+| The named version ran the check and failed it | `409` | `graph_version_contracts_failed` |
+
+Both carry `graph_version_id` and `contracts` (`{state, problems}`) as sibling
+context. A job with no `graph_version_id`, or with one that resolves to nothing,
+is not gated: there is no version to read a state off.
 
 O corpo de erro sempre traz `erro` — código estável, legível por máquina — e,
 quando há o que explicar, uma `mensagem` para gente. Em `grafo_invalido` vem

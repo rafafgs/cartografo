@@ -1,7 +1,7 @@
 {
   "id": "testar-alpha",
-  "version": "1.0.2",
-  "hash": "sha256:db755c5311baf6e67c0930a1976986444e072ad9fd6df01329bb45f5d0d26ab2",
+  "version": "1.0.3",
+  "hash": "sha256:536789d6720e2cc4464287d16937ff0c921c7f6f3912a12566072fe904fe76be",
   "role": "gate",
   "description": "Valida semanticamente cada critério de aceite contra a aplicação integrada rodando, com evidência própria, e roteia o trabalho: aprovado segue, reprovado volta para desenvolvimento.",
   "input": {
@@ -256,7 +256,7 @@
       "id": "caminhada-semantica",
       "type": "agentic",
       "description": "Caminhada critério a critério contra a aplicação rodando, mais a checagem de UX. É o ÚNICO check desta skill de propósito: rerodar aqui os comandos de qualidade que a integração já rodou contra esta mesma árvore é estação redundante — não prova nada novo e consome o orçamento da rodada.",
-      "instruction": "Caminhe critério a critério pela lista de critérios de aceite e emita um veredito para cada um, exercitando a aplicação integrada que está rodando em {{input.aplicacao.endereco}}.\n\nCada veredito cita evidência produzida por você, neste portão: a requisição que você mesmo disparou e a resposta que voltou, a saída do comando que você mesmo executou, a página que você mesmo renderizou. O que as sessões anteriores relataram (entrada.artefato.gates_declarados, a nota delas) entra como contexto para você saber onde olhar e não vale como prova de nada: portão que aceita autorrelato como evidência não é portão. Se a única coisa que sustenta um critério é a afirmação de quem o implementou, o veredito não é \"passou\".\n\nNos critérios que tocam interface, rode também a checagem de consistência de UX/design: a superfície segue o sistema de design do próprio projeto, se comporta em viewport pequena e grande, e é acessível (rótulos, alcance por teclado, contraste)?\n\nCritério que você não conseguiu exercitar recebe veredito \"nao_exercitado\", com a evidência do que impediu — nunca um \"passou\" silencioso. Critério que exige prova manual ou julgamento estético vai para o fundador: pause com um input-request levando toda a evidência que você juntou.",
+      "instruction": "Caminhe critério a critério pela lista de critérios de aceite e emita um veredito para cada um, exercitando a aplicação integrada que está rodando em {{input.project.aplicacao.endereco}}.\n\nCada veredito cita evidência produzida por você, neste portão: a requisição que você mesmo disparou e a resposta que voltou, a saída do comando que você mesmo executou, a página que você mesmo renderizou. O que as sessões anteriores relataram (entrada.artefato.gates_declarados, a nota delas) entra como contexto para você saber onde olhar e não vale como prova de nada: portão que aceita autorrelato como evidência não é portão. Se a única coisa que sustenta um critério é a afirmação de quem o implementou, o veredito não é \"passou\".\n\nNos critérios que tocam interface, rode também a checagem de consistência de UX/design: a superfície segue o sistema de design do próprio projeto, se comporta em viewport pequena e grande, e é acessível (rótulos, alcance por teclado, contraste)?\n\nCritério que você não conseguiu exercitar recebe veredito \"nao_exercitado\", com a evidência do que impediu — nunca um \"passou\" silencioso. Critério que exige prova manual ou julgamento estético vai para o fundador: pause com um input-request levando toda a evidência que você juntou.",
       "required_evidence": [
         "requisicao_disparada_pelo_portao_e_resposta_recebida",
         "saida_do_comando_executado_pelo_portao",

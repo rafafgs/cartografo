@@ -509,10 +509,12 @@
             "resposta_da_tese": null
           }
         ],
-        "capital": {
-          "total": 4200000,
-          "moeda": "BRL",
-          "exposicao_atual_pct": 62.5
+        "project": {
+          "capital": {
+            "total": 4200000,
+            "moeda": "BRL",
+            "exposicao_atual_pct": 62.5
+          }
         }
       },
       "saida": {

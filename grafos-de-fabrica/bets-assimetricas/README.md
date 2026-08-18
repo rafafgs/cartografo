@@ -266,17 +266,9 @@ quem vier depois.
    [`packages/runner/test/controller/factory-graph-bets.e2e.test.ts`](../../packages/runner/test/controller/factory-graph-bets.e2e.test.ts).
 
    **O limite é explícito: só `triagem` → `coleta-fundamentos` atravessa vivo.**
-   Os outros cinco nós continuam provados por contrato (divergência 5), e dois
-   buracos ficam nomeados aqui em vez de esquecidos:
+   Os outros cinco nós continuam provados por contrato (divergência 5), e um
+   buraco fica nomeado aqui em vez de esquecido:
 
-   - **`dimensionar-risco` exige `capital` e nunca o interpola.** O `input` dele
-     pede um objeto `capital` de topo que a projeção não tem como produzir — não
-     é campo de classe (campo de classe é escalar plano, `t168`) nem balde que
-     nó nenhum declara —, e a prosa fala em "capital total" sem nenhum
-     `{{input.…}}` que traga o número. Não bloqueia hoje: nada em tempo de
-     execução confere o `input` declarado de um nó contra a projeção real, e o
-     único portão fechado do caminho é o placeholder que o texto de fato contém.
-     É ficha própria, e maior que mudar um campo de lugar.
    - **`resultado` no `saida` do portão.** O protocolo de relato manda a sessão
      devolver UM bloco só, com o rótulo da aresta (`aprofundar`/`descartar`)
      DENTRO do objeto do contrato (`t161`, `t259`). Como o `saida` destes
@@ -290,6 +282,16 @@ quem vier depois.
      e do `t161` — hoje o campo do schema é `outcome`
      (`pass`/`fail`/`escalate_human`) e `resultado` é o rótulo da aresta. Os três
      portões erram igual, então a reparação é uma só e vale fazer de uma vez.
+
+   **Closed since `t278`: `dimensionar-risco` and its bare top-level `capital`.**
+   The manifest asked for an object nothing in the graph produced, and static
+   contract matching (`docs/spec/grafo.md` §6.1) now refuses exactly that at
+   import. It was closed as a DECLARATION, not by weakening the check: `capital`
+   moved under `input.project`, beside where `carteira` already lives, and the
+   `project` of `grafo.json` carries the snapshot that feeds it — the same
+   still-picture posture, and the same "keeping it current is editing the
+   document" caveat. The manifest went to `1.1.0` with a new content hash, and
+   the node's pin followed (D4, D22).
 
 ## O formato de aresta não cresceu
 

@@ -1150,9 +1150,11 @@ function twoEngineGraph(
     edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
     initial_node: "implementar",
     final_nodes: ["revisar"],
-    // Required and empty since t168: this class declares no field on its
-    // tickets, and the key is what says so out loud.
-    custom_fields: [],
+    // `pedido` is what `skill-travessia-fazer` requires at the top of `input`,
+    // and a class field is exactly how the projection publishes such a scalar
+    // (t168, t253). Declared since t278, which refuses at import a node whose
+    // pinned skill requires a key the class never declared.
+    custom_fields: [{ name: "pedido", type: "string", required_at: null }],
   };
 }
 
@@ -3899,7 +3901,11 @@ function modelGraph(
     edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
     initial_node: "implementar",
     final_nodes: ["revisar"],
-    custom_fields: [],
+    // `pedido` is what `skill-travessia-fazer` requires at the top of `input`,
+    // and a class field is exactly how the projection publishes such a scalar
+    // (t168, t253). Declared since t278, which refuses at import a node whose
+    // pinned skill requires a key the class never declared.
+    custom_fields: [{ name: "pedido", type: "string", required_at: null }],
   };
 }
 

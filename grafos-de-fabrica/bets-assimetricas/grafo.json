@@ -339,8 +339,8 @@
       "description": "Converte assimetria e objeções sobreviventes em tamanho de posição, perda máxima aceita e gatilho de saída observável.",
       "skill_ref": {
         "id": "dimensionar-risco",
-        "version": "1.0.0",
-        "hash": "sha256:24c5aaefdd870dc1abf4ae064f26ca2e4adea4ea69b9d579ecf70e1f57830ec4"
+        "version": "1.1.0",
+        "hash": "sha256:636446f4cd3e3fe75e4bf36126b0abd9f45b81c6ec840f286b4963c3c7623eae"
       },
       "contract": {
         "input_schema": {
@@ -349,7 +349,7 @@
             "tese_triada",
             "assimetria",
             "objecoes",
-            "capital"
+            "project"
           ],
           "properties": {
             "tese_triada": {
@@ -367,9 +367,9 @@
                 "type": "object"
               }
             },
-            "capital": {
+            "project": {
               "type": "object",
-              "description": "capital total, moeda e exposição atual da carteira"
+              "description": "configuração estática da classe; capital total, moeda e exposição atual da carteira"
             }
           }
         },
@@ -672,6 +672,10 @@
     "carteira": {
       "posicoes_abertas": 7,
       "exposicao_atual_pct": 62.5
+    },
+    "capital": {
+      "total": 5000000,
+      "moeda": "BRL"
     },
     "circulo_de_competencia": [
       "infraestrutura de transporte com contrato de longo prazo: portos, terminais e concessões",

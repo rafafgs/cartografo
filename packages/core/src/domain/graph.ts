@@ -633,3 +633,422 @@ function hasContract(node: PlainObject): boolean {
     contract.checks.length > 0
   );
 }
+
+/* -------------------------------------------------- contracts (t278) */
+
+/**
+ * What a node can count on because the CONTROL PLANE always projects it.
+ *
+ * The list is `domain/context.ts`'s `buildNodeInput` read as a promise instead
+ * of as code: `job` with the three fields the `job` table always has,
+ * `traversal` with the three the walk always carries, `perguntas_respondidas`
+ * (a list, empty when nothing was answered) and `project` (an object, `{}` when
+ * the class declares none). `job.type` is deliberately NOT here: the column does
+ * not exist, so the key simply does not appear, and promising it would hand a
+ * skill a guarantee the projection cannot keep.
+ *
+ * `test/domain-graph-contracts.test.ts` holds the top-level names of this list
+ * against `buildNodeInput`'s own output, so the two cannot drift in silence.
+ */
+export const ALWAYS_AVAILABLE_INPUT_PATHS = Object.freeze([
+  'job',
+  'job.id',
+  'job.title',
+  'job.body',
+  'traversal',
+  'traversal.nodes_visited',
+  'traversal.entered_at',
+  'traversal.sessions_by_node',
+  'perguntas_respondidas',
+  'project',
+]);
+
+/**
+ * What the RUNNER merges into every dispatch, from the machine it runs on.
+ *
+ * `packages/runner/src/dispatch/resolve-executor-environment.ts` returns exactly
+ * this shape, unconditionally, at every dispatch — a filesystem path and a live
+ * commit, neither of which can be graph data (`docs/spec/runner-e-controller.md`
+ * §"O ambiente de executor"). A runner with no bench configured contributes `{}`
+ * instead, and that is a deployment question rather than a document one: what is
+ * checked here is what the FORMAT promises a node, which is what the resolver
+ * publishes when there is a bench at all.
+ */
+export const EXECUTOR_PROVIDED_INPUT_PATHS = Object.freeze([
+  'banco_de_testes',
+  'banco_de_testes.caminho',
+  'banco_de_testes.comandos_de_dados',
+  'referencia',
+  'referencia.commit',
+  'referencia.modo',
+  'referencia.lido_em',
+]);
+
+/** The routing label rides inside the report and is never stored (t269). */
+const ROUTE_LABEL_KEY = 'resultado';
+
+/** The two schemas of a registered skill, in the part this check reads. */
+export interface SkillContractShape {
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+}
+
+/**
+ * Resolves a node's pin into the skill's own contract.
+ *
+ * Injected rather than looked up here, for the reason `domain/context.ts` holds
+ * no `Database` either: the caller knows where its skills live — the registry
+ * over `db` (`routes/graphs.ts`), the `skills/` of a bundle on disk
+ * (`cli/import.ts`), a fixture map (the tests) — and the rule itself is a
+ * question about the document.
+ *
+ * `undefined` means "this pin resolves to nothing", which is reported and never
+ * guessed at.
+ */
+export type SkillLookup = (ref: {
+  id: string;
+  version: string;
+  hash: string;
+}) => SkillContractShape | undefined;
+
+/** A required input key with no producer on every path into its node. */
+export interface UnproducedInputProblem {
+  code: 'unproduced_input';
+  node_id: string;
+  /** The dotted path, as the skill's `input` declares it. */
+  key: string;
+  message: string;
+  /**
+   * Nodes whose skill output would place this exact path somewhere.
+   *
+   * "Somewhere" is the point: a node listed here produces the key under a bucket
+   * this node does not read, or on a path that does not always reach it. Empty
+   * means the key exists nowhere in the document, which is a different mistake —
+   * usually a manifest asking for something the class never declared.
+   */
+  produced_elsewhere_by: string[];
+}
+
+/** A node whose pin the lookup could not resolve; nothing else is said about it. */
+export interface UnresolvedSkillProblem {
+  code: 'skill_ref_unresolved';
+  node_id: string;
+  message: string;
+}
+
+export type ContractProblem = UnproducedInputProblem | UnresolvedSkillProblem;
+
+/** The contract report — the `contracts` key of the 422 (t278). */
+export interface ContractReport {
+  valid: boolean;
+  problems: ContractProblem[];
+}
+
+/** A node with its pin resolved, plus what it produces and what it demands. */
+interface NodeContract {
+  id: string;
+  /** The bucket its output lands in; `null` for a merge at the top level. */
+  bucket: string | null;
+  /** Resolved contract, or `null` when the lookup answered nothing. */
+  skill: SkillContractShape | null;
+  /** Paths this node's output places where a descendant reads them. */
+  produced: Set<string>;
+  /** The same paths ignoring the bucket — who "would produce" the key at all. */
+  placed: Set<string>;
+  /** Paths this node's own input demands, in the order the schema declares them. */
+  required: string[];
+}
+
+/** The `required` list of a JSON Schema object, or an empty one. */
+function requiredOf(schema: unknown): string[] {
+  if (!isObject(schema)) return [];
+  const required = schema.required;
+  if (!Array.isArray(required)) return [];
+  return required.filter(isFilledText);
+}
+
+/** The `properties` map of a JSON Schema object, or an empty one. */
+function propertiesOf(schema: unknown): PlainObject {
+  if (!isObject(schema)) return {};
+  return isObject(schema.properties) ? schema.properties : {};
+}
+
+/**
+ * The required paths of one schema, one level of nesting deep.
+ *
+ * `["job", "job.id"]` for a schema requiring `job` whose own `job` property is
+ * an object requiring `id`. Deeper than that is out of this check by decision
+ * (see {@link validateContracts}).
+ */
+function requiredPaths(schema: unknown): string[] {
+  const properties = propertiesOf(schema);
+  const paths: string[] = [];
+
+  for (const name of requiredOf(schema)) {
+    paths.push(name);
+    const nested = properties[name];
+    if (!isObject(nested) || nested.type !== 'object') continue;
+    for (const sub of requiredOf(nested)) paths.push(`${name}.${sub}`);
+  }
+
+  return paths;
+}
+
+/**
+ * What one node's output guarantees, as paths in the next node's `input`.
+ *
+ * Only `required` output properties count: an optional one is a possibility, and
+ * a possibility is not something the node downstream can be held to. The bucket
+ * prefixes everything, and the bucket path itself is only guaranteed when
+ * something lands in it.
+ *
+ * @param output The pinned skill's `output` schema.
+ * @param bucket `contract.produces`, or `null` for the top level.
+ * @returns The dotted paths, bucket included.
+ */
+function producedPaths(output: unknown, bucket: string | null): Set<string> {
+  const paths = new Set<string>();
+  const prefix = bucket === null ? '' : `${bucket}.`;
+
+  for (const path of requiredPaths(output)) {
+    // The routing label is stripped before the report is stored (t269), so it
+    // reaches no bucket and no top level — it is graph vocabulary, not data.
+    if (path === ROUTE_LABEL_KEY || path.startsWith(`${ROUTE_LABEL_KEY}.`)) continue;
+    paths.add(`${prefix}${path}`);
+    if (bucket !== null) paths.add(bucket);
+  }
+
+  return paths;
+}
+
+/** The pin of a node, when it carries a whole one. */
+function pinOf(node: PlainObject): { id: string; version: string; hash: string } | null {
+  const ref = node.skill_ref;
+  if (!isObject(ref)) return null;
+  if (!isFilledText(ref.id) || !isFilledText(ref.version) || !isFilledText(ref.hash)) return null;
+  return { id: ref.id, version: ref.version, hash: ref.hash };
+}
+
+/** `contract.produces`, or `null` when the node merges at the top level. */
+function bucketOf(node: PlainObject): string | null {
+  const contract = node.contract;
+  const declared = isObject(contract) ? contract.produces : undefined;
+  return isFilledText(declared) ? declared : null;
+}
+
+/**
+ * Checks that every required input of every node has a producer (t278).
+ *
+ * Principle 3 promises contracts are checked at the gate; `validateStructure`
+ * and `validateSoundness` check the document's SHAPE and its topology, and
+ * neither of them asks the question a session actually depends on: when a job
+ * arrives here, will the data this node's skill declares as required be there?
+ * Three real crossings answered that at dispatch time, after paying for the
+ * sessions.
+ *
+ * ## What is checked is the PINNED SKILL, never the node's own contract
+ *
+ * `docs/spec/grafo.md` §2 already draws this line for output — the node's
+ * `output_schema` documents, the skill's `output` validates — and it holds for
+ * input too, where the two have already drifted: the software bundle's `refinar`
+ * declares `["ticket_id", "pedido"]` while the skill it pins really requires
+ * `["job", "project"]`. Only the skill's is enforced anywhere, so only the
+ * skill's is checked here.
+ *
+ * ## The rule
+ *
+ * A node can count on three disjoint sources: what the control plane always
+ * projects ({@link ALWAYS_AVAILABLE_INPUT_PATHS} plus `project.<key>` for the
+ * keys the document's own `project` declares, plus the class's `custom_fields`
+ * as top-level scalars), what the executor merges in at every dispatch
+ * ({@link EXECUTOR_PROVIDED_INPUT_PATHS}), and what its ANCESTORS produced.
+ *
+ * A node can be reached by more than one path (a rework edge, three edges into
+ * one final node), so "available here" has to mean available on EVERY path that
+ * reaches it — a key produced only after a loop is not there the first time
+ * through. That makes it the textbook forward, monotone-decreasing dataflow
+ * problem, the shape of "available expressions":
+ *
+ * ```
+ * avail(initial) = BASE
+ * avail(N)       = BASE ∪ ⋂ over every predecessor P of (avail(P) ∪ produced(P))
+ * ```
+ *
+ * — intersection over predecessors, not union — iterated to a fixed point. The
+ * set only shrinks, so it converges in at most `nodes.length` rounds.
+ *
+ * ## The declared limit: one level of nesting, on both sides
+ *
+ * A required `project` whose own schema requires `aplicacao` is checked as
+ * `project` and `project.aplicacao`, and there it stops: `project.aplicacao.rodando`
+ * is NOT checked, on either the producing or the consuming side. Two levels
+ * would mean walking arbitrary JSON Schema (`$ref`, `allOf`, `items`) to decide
+ * what a path even means, and the gap this ficha closes is one level deep in
+ * every incident that motivated it. A real gap deeper than that survives this
+ * check.
+ *
+ * Never throws on a malformed document, like its two siblings: it is only ever
+ * called with a document that already passed both of them, and what it hands
+ * back is the whole list of what is wrong.
+ *
+ * @param doc Graph document, already through structure and soundness.
+ * @param resolveSkill How a `skill_ref` becomes a contract; see {@link SkillLookup}.
+ * @returns Every problem found, with the joint verdict.
+ */
+export function validateContracts(doc: unknown, resolveSkill: SkillLookup): ContractReport {
+  const problems: ContractProblem[] = [];
+  const document = isObject(doc) ? doc : {};
+  const rawNodes = Array.isArray(document.nodes) ? document.nodes.filter(isObject) : [];
+
+  const contracts: NodeContract[] = [];
+  const seen = new Set<string>();
+  for (const node of rawNodes) {
+    if (!isFilledText(node.id) || seen.has(node.id)) continue;
+    seen.add(node.id);
+
+    const bucket = bucketOf(node);
+    const pin = pinOf(node);
+    const skill = pin === null ? undefined : resolveSkill(pin);
+
+    if (pin === null || skill === undefined) {
+      problems.push({
+        code: 'skill_ref_unresolved',
+        node_id: node.id,
+        message:
+          pin === null
+            ? `node "${node.id}" carries no whole pin, so no contract can be resolved for it`
+            : `node "${node.id}" pins the skill "${pin.id}" at version ${pin.version}, which does not resolve: its contract cannot be checked and it produces nothing for the nodes after it`,
+      });
+      contracts.push({
+        id: node.id,
+        bucket,
+        skill: null,
+        produced: new Set(),
+        placed: new Set(),
+        required: [],
+      });
+      continue;
+    }
+
+    contracts.push({
+      id: node.id,
+      bucket,
+      skill,
+      produced: producedPaths(skill.output, bucket),
+      placed: producedPaths(skill.output, null),
+      required: requiredPaths(skill.input),
+    });
+  }
+
+  const known = new Set(contracts.map((contract) => contract.id));
+  const predecessors = new Map<string, string[]>(contracts.map((contract) => [contract.id, []]));
+  const edges = Array.isArray(document.edges) ? document.edges.filter(isObject) : [];
+  for (const edge of edges) {
+    const from = edge.from;
+    const to = edge.to;
+    if (!isFilledText(from) || !isFilledText(to)) continue;
+    if (!known.has(from) || !known.has(to)) continue;
+    predecessors.get(to)?.push(from);
+  }
+
+  // BASE: everything a node has before any ancestor ran.
+  const base = new Set<string>([
+    ...ALWAYS_AVAILABLE_INPUT_PATHS,
+    ...EXECUTOR_PROVIDED_INPUT_PATHS,
+  ]);
+  // One level only, exactly as the consumer side reads it: the document's own
+  // `project` keys, and nothing inside them.
+  for (const key of Object.keys(isObject(document.project) ? document.project : {})) {
+    base.add(`project.${key}`);
+  }
+  // The class's fields are flat scalars spread at the TOP of `input`
+  // (`domain/context.ts`), and `required_at` says when a field is DEMANDED of a
+  // person, never when it exists.
+  const customFields = Array.isArray(document.custom_fields) ? document.custom_fields : [];
+  for (const field of customFields) {
+    if (isObject(field) && isFilledText(field.name)) base.add(field.name);
+  }
+
+  const initial = isFilledText(document.initial_node) ? document.initial_node : null;
+
+  // The fixed point, from the top: every non-initial node starts holding
+  // everything anybody could produce, and each round takes away what some
+  // predecessor cannot guarantee. Starting from BASE instead would only ever
+  // grow, and a cycle would converge on the wrong (too small) answer.
+  const universe = new Set(base);
+  for (const contract of contracts) {
+    for (const path of contract.produced) universe.add(path);
+  }
+
+  const available = new Map<string, Set<string>>();
+  for (const contract of contracts) {
+    available.set(contract.id, contract.id === initial ? new Set(base) : new Set(universe));
+  }
+
+  const producedOf = new Map(contracts.map((contract) => [contract.id, contract.produced]));
+  for (let round = 0; round <= contracts.length; round += 1) {
+    let moved = false;
+
+    for (const contract of contracts) {
+      if (contract.id === initial) continue;
+      const incoming = predecessors.get(contract.id) ?? [];
+      // A node with no predecessor and that is not the initial one is
+      // unreachable, which soundness already refused; it holds BASE and nothing
+      // more, which is the only honest answer.
+      const meet = new Set(base);
+      if (incoming.length > 0) {
+        const [first, ...rest] = incoming;
+        const seed = available.get(first) ?? new Set<string>();
+        for (const path of [...seed, ...(producedOf.get(first) ?? [])]) {
+          if (
+            rest.every((id) => {
+              const reaching = available.get(id) ?? new Set<string>();
+              return reaching.has(path) || producedOf.get(id)?.has(path) === true;
+            })
+          ) {
+            meet.add(path);
+          }
+        }
+      }
+
+      const current = available.get(contract.id) ?? new Set<string>();
+      if (meet.size !== current.size || [...current].some((path) => !meet.has(path))) {
+        available.set(contract.id, meet);
+        moved = true;
+      }
+    }
+
+    if (!moved) break;
+  }
+
+  for (const contract of contracts) {
+    if (contract.skill === null) continue;
+    const reaching = available.get(contract.id) ?? new Set<string>();
+
+    for (const key of contract.required) {
+      if (reaching.has(key)) continue;
+
+      const producers = contracts.filter(
+        (candidate) => candidate.placed.has(key) || candidate.produced.has(key),
+      );
+      const where = producers.map((producer) =>
+        producer.bucket === null
+          ? `"${producer.id}" places it at the top level`
+          : `"${producer.id}" places it under the bucket "${producer.bucket}"`,
+      );
+
+      problems.push({
+        code: 'unproduced_input',
+        node_id: contract.id,
+        key,
+        message:
+          producers.length === 0
+            ? `node "${contract.id}" requires the input path "${key}", which nothing supplies: it is not in the control plane's projection, not provided by the executor, not a key of the document's "project" or "custom_fields", and no node's skill output places it`
+            : `node "${contract.id}" requires the input path "${key}", which is not guaranteed on every path into it — ${where.join('; ')}`,
+        produced_elsewhere_by: producers.map((producer) => producer.id),
+      });
+    }
+  }
+
+  return { valid: problems.length === 0, problems };
+}

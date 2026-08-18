@@ -145,5 +145,12 @@
   ],
   "initial_node": "implementar",
   "final_nodes": ["publicar"],
-  "custom_fields": []
+  "custom_fields": [
+    {
+      "name": "pedido",
+      "type": "string",
+      "required_at": null,
+      "description": "O que a travessia foi pedida para fazer. Campo de classe porque é assim que `travessia-fazer` o lê: escalar plano no topo de `input`, ao lado de `input.job` (t168, t253) — e sem a declaração nenhum nó tem como recebê-lo (t278)."
+    }
+  ]
 }

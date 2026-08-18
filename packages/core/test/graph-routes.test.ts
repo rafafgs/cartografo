@@ -469,7 +469,7 @@ function fixtureManifest(
         type: 'agentic',
         description: 'every manifest declares at least one check',
         instruction: 'Confirm the report answers the request, and attach what you read.',
-        required_evidence: true,
+        required_evidence: ['what the session read'],
       },
     ],
     permissions: { filesystem: { read: [], write: [] }, network: { allowed: false } },
@@ -571,6 +571,19 @@ test('t278 — the same document with the output merged at the top level is regi
 
   const response = await post(address, '/v1/graphs', twoNodeDocument('balde-de-topo'));
   assert.equal(response.status, 201, JSON.stringify(await jsonBody(response)));
+});
+
+test('t278 — a graph whose skills are not registered yet is still registered', async (t) => {
+  const address = await startApp(t);
+
+  // The same document that comes back 422 once both manifests are in the
+  // registry: with an empty registry the gate stands aside instead of accusing
+  // a node whose ancestor simply has not been registered yet. This is what
+  // keeps `POST /v1/graphs` the raw-document route it is — the whole judgement
+  // belongs to `cartografo import`, which registers the manifests first.
+  const response = await post(address, '/v1/graphs', twoNodeDocument('sem-registro', 'analise'));
+  const body = await jsonBody<{ graph?: Graph }>(response);
+  assert.equal(response.status, 201, JSON.stringify(body));
 });
 
 test('t278 — a document that already fails soundness never reaches the contracts gate', async (t) => {

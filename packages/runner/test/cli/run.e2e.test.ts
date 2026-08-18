@@ -465,6 +465,10 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       { from: CODEX_NODE, to: 'arquivar', condition: 'sempre', description: 'Saída única.' },
     ],
     final_nodes: ['arquivar'],
+    // Same reason the pins are rewired above: with a REAL manifest underneath,
+    // the class has to declare the scalar that manifest requires at the top of
+    // `input`, or t278's contract gate refuses the document at registration.
+    custom_fields: [{ name: 'pedido', type: 'string', required_at: null }],
   };
   const { graph_version: version } = await api<{ graph_version: { id: string } }>(
     plane,

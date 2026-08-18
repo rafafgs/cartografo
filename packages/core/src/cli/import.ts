@@ -46,7 +46,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { validateGraph } from '../domain/graph.ts';
+import { validateContracts, validateGraph } from '../domain/graph.ts';
 import {
   HASH_PATTERN,
   ID_PATTERN,
@@ -60,7 +60,7 @@ import { UsageError, requestJson } from './url.ts';
 
 /** A problem found in the local check, already carrying the scope that produced it. */
 export interface BundleProblem {
-  scope: 'bundle' | 'graph' | 'manifest' | 'pin';
+  scope: 'bundle' | 'graph' | 'manifest' | 'pin' | 'contract';
   message: string;
 }
 
@@ -204,6 +204,35 @@ export function verifyBundle(directory: string, document: unknown): BundleProble
         scope: 'pin',
         message: `${label}: pinned hash ${String(ref.hash)}, manifest content ${recalculated}`,
       });
+    }
+  }
+
+  // 4. every required input of every node has a producer on every path into it
+  //    (t278). Resolved from the manifests already in memory: no network, no
+  //    database, no registry — which is the whole point of a bundle author
+  //    finding this out here instead of at the third paid session.
+  //
+  //    Only over a document that already validated, because that is the
+  //    contract `validateContracts` is written to: it computes availability over
+  //    a topology, and a topology with a dangling edge or an unreachable node is
+  //    one the caller has already been told about.
+  if (report.valid) {
+    const contracts = validateContracts(document, (ref) => {
+      // By id alone: a bundle carries one manifest per id, and whether the
+      // version and the hash MATCH the pin is step 3's question, already
+      // answered above. Resolving by `(id, version)` here would report a second
+      // problem for the same defect, and would say the contract is unknown when
+      // it is right there on disk.
+      const manifest = byId.get(ref.id);
+      if (manifest === undefined) return undefined;
+      return {
+        input: isObject(manifest.input) ? manifest.input : {},
+        output: isObject(manifest.output) ? manifest.output : {},
+      };
+    });
+
+    for (const problem of contracts.problems) {
+      problems.push({ scope: 'contract', message: `${problem.code}: ${problem.message}` });
     }
   }
 
@@ -381,6 +410,14 @@ export async function runImport(options: ImportOptions): Promise<number> {
     for (const violation of Array.isArray(soundness.violations) ? soundness.violations : []) {
       const item = isObject(violation) ? violation : {};
       process.stderr.write(`  soundness  ${String(item.rule)}: ${JSON.stringify(item.target)}\n`);
+    }
+    // The third gate (t278). It only ever comes with the other two empty — the
+    // route runs it after they pass — but it is printed the same way, because a
+    // reader of stderr should not have to know in which order the gates run.
+    const contracts = isObject(body.contracts) ? body.contracts : {};
+    for (const problem of Array.isArray(contracts.problems) ? contracts.problems : []) {
+      const item = isObject(problem) ? problem : {};
+      process.stderr.write(`  contracts  ${String(item.code)}: ${String(item.message)}\n`);
     }
     return 1;
   }

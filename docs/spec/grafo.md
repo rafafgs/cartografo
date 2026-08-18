@@ -679,6 +679,88 @@ node scripts/validar-grafo.mjs schema/exemplos/*.json
 Os testes são `node --test` (o repositório ainda não tem `package.json`, por
 escolha — zero dependências).
 
+### 6.1 Contract matching: every required input has a producer (`t278`)
+
+*(This subsection is in English per the 2026-08-18 language rule; the sections
+around it are the pre-existing Portuguese of this document.)*
+
+Structure and soundness judge the document's shape and its topology. Neither one
+asks the question a session actually depends on: **when a job arrives at this
+node, will the data its skill declares as required be there?** Three real
+crossings answered that at dispatch time, after the sessions were paid for
+(`notas/2026-08-17-segunda-execucao-bets.md` gap 5,
+`notas/2026-08-17-t109-feature-do-jogo.md` gap 4). `validateContracts`
+([`packages/core/src/domain/graph.ts`](../../packages/core/src/domain/graph.ts))
+is that question, answered statically, before any session opens.
+
+**It checks the PINNED SKILL's `input`/`output`, never the node's own
+`entrada_schema`/`saida_schema`.** The subsection [`saida_schema` documenta; quem
+valida é a skill](#saida_schema-documenta-quem-valida-é-a-skill-t267) already
+draws this line for output, and it holds for input too — where the two have
+already drifted: the software bundle's `refinar` node declares
+`required: ["ticket_id", "pedido"]`, while `refinar-ticket@1.0.0` really requires
+`["job", "project"]`. Only the skill's schema is enforced anywhere, so only the
+skill's schema is checked.
+
+**The three sources a node can count on**, and nothing else:
+
+| Source | Paths | Who supplies it |
+|---|---|---|
+| Control-plane projection | `job`, `job.id`, `job.title`, `job.body`, `traversal`, `traversal.nodes_visited`, `traversal.entered_at`, `traversal.sessions_by_node`, `perguntas_respondidas`, `project`, plus `project.<key>` for each key the document's own `project` declares, plus each `custom_fields[].name` as a top-level scalar | `domain/context.ts`'s `buildNodeInput` (`ALWAYS_AVAILABLE_INPUT_PATHS`) |
+| Executor environment | `banco_de_testes`, `banco_de_testes.caminho`, `banco_de_testes.comandos_de_dados`, `referencia`, `referencia.commit`, `referencia.modo`, `referencia.lido_em` | the runner, at every dispatch (`EXECUTOR_PROVIDED_INPUT_PATHS`) |
+| Ancestors' output | `<balde>.<name>` for every `name` in the ancestor's skill `output.required`, where `<balde>` is its `produces` (top level when it declares none) | whichever node ran before |
+
+`job.type` is **not** on the list: the column does not exist, the projection
+omits the key when it is absent, and a skill that requires it is refused even at
+the initial node. `resultado` is never counted as produced: it is the routing
+label, stripped before storage (`t269`).
+
+**A node is judged on every path into it, not on some path.** A node can have
+more than one incoming edge — a rework loop, three edges into one final node — so
+availability is a meet over predecessors:
+
+```
+avail(no_inicial) = BASE
+avail(N)          = BASE ∪ ⋂ over every predecessor P of (avail(P) ∪ produced(P))
+```
+
+Intersection, not union, iterated to a fixed point (the set only shrinks, so it
+converges in at most `nodes.length` rounds). A key produced only after a rework
+loop is not there the first time the node runs, and this is what says so. It is
+the same computation a compiler runs for "available expressions".
+
+**Declared limit: one level of nesting, on both sides.** A required `project`
+whose own schema requires `capital` is checked as `project` and `project.capital`
+— and stops there. `project.capital.total` is **not** checked, on either the
+producing or the consuming side. Two levels would mean walking arbitrary JSON
+Schema (`$ref`, `allOf`, `items`) to decide what a path even means, and every
+incident that motivated this rule is one level deep. A gap deeper than that
+survives the check.
+
+**The vocabulary of the report** (`ContractReport`, the `contracts` key of the
+`422`):
+
+| Name | What it says |
+|---|---|
+| `unproduced_input` | The node requires this key path and no path into it supplies one. Carries `node_id`, `key` and `produced_elsewhere_by`. |
+| `skill_ref_unresolved` | The pin resolved to nothing, so this node's contract could not be read. It is not availability-checked, and it contributes nothing to its descendants. |
+| `produced_elsewhere_by` | Node ids whose skill output would place this exact path *somewhere* — under a bucket the reader does not open, or on a path that does not always reach it. Empty means the key exists nowhere in the document. |
+
+**Where it runs, and where it does not.** `cartografo import` runs it offline
+over the bundle's own `skills/` (scope `contract`, alongside `graph`, `manifest`
+and `pin`), which is the check a bundle author wants before anything is sent.
+`POST /v1/graphs` runs it against the REGISTRY — and stands aside when a pin does
+not resolve there, because a document registered before its skills is the
+ordinary case for that route (the screen's editor, a fork, every example in
+`schema/exemplos/`), and availability computed with an unresolved ancestor would
+accuse a node of a defect whose only evidence is an unfilled registry. Applying a
+proposal (`routes/proposals.ts`) does not run it yet; a proposal can equally
+remove a producer a downstream node depends on, and covering that is additive
+work of its own. The two DB-less reference validators
+([`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs) and
+[`scripts/validate-factory-bundle.mjs`](../../scripts/validate-factory-bundle.mjs))
+do not carry this check: it needs a skill lookup, and they have none by design.
+
 ---
 
 ## 7. O documento como bundle exportável

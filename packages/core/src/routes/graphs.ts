@@ -50,7 +50,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { diffGraphs } from '../domain/diff.ts';
-import { validateGraph, type GraphDocument, type StructureReport } from '../domain/graph.ts';
+import {
+  validateContracts,
+  validateGraph,
+  type GraphDocument,
+  type StructureReport,
+} from '../domain/graph.ts';
 import { hashSnapshot } from '../domain/hash.ts';
 import type { Operation } from '../domain/operations.ts';
 import {
@@ -70,6 +75,7 @@ import {
   type GraphRow,
 } from '../repositories/graphs.ts';
 import { createProposal, getProposal, toProposal } from '../repositories/proposals.ts';
+import { getSkill } from '../repositories/skill.ts';
 import { isObject } from '../util/is-object.ts';
 import { ERROR_RESPONSE_SCHEMA, OPEN_OBJECT_SCHEMA, refusal } from './common.ts';
 
@@ -272,6 +278,47 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
       'this route registers only a base graph; a variant is born from POST /v1/graphs/:id/fork (D13)',
       { lineage_type: lineage.type ?? null },
     );
+  }
+
+  // The third gate (t278): every required input of every node's PINNED SKILL has
+  // to have a producer on every path into that node. It runs here — after the
+  // document is known to be a sound base graph, before anything is written —
+  // because it is the one check that needs the REGISTRY: the contract a session
+  // is held to is the skill's, resolved by `(id, version)` off the pin, the same
+  // read `repositories/session.ts` does when a report comes back.
+  const contracts = validateContracts(document, (ref) => {
+    const skill = getSkill(db, ref.id, { version: ref.version });
+    return skill === null ? undefined : { input: skill.input, output: skill.output };
+  });
+
+  // A pin this registry cannot resolve does not refuse the document, and the
+  // reason is what this route IS: `POST /v1/graphs` takes a raw document, and
+  // a graph whose skills are registered afterwards is the ordinary case — the
+  // screen's editor, a forked example, every fixture in `schema/exemplos`. The
+  // path that gets the whole judgement is `cartografo import`, which registers
+  // every manifest of the bundle BEFORE sending the graph (`cli/import.ts`), and
+  // which also runs this very check offline against the bundle's own `skills/`.
+  //
+  // It is skipped rather than downgraded: with one ancestor unresolved, the
+  // availability of everything downstream of it is unknown, and reporting those
+  // keys as unproduced would accuse a node of a defect whose evidence is only
+  // that the registry has not been filled yet. So the check runs when it can be
+  // performed — every pin resolved — and stands aside when it cannot.
+  const unresolved = contracts.problems.some(
+    (problem) => problem.code === 'skill_ref_unresolved',
+  );
+  if (!unresolved && !contracts.valid) {
+    reply.code(422);
+    // The same envelope as the structure/soundness refusal, with the two of them
+    // marked as what they are — they passed — so a reader of the 422 can tell
+    // which gate refused without diffing three reports.
+    return {
+      error: 'invalid_graph',
+      valid: false,
+      structure: report.structure,
+      soundness: report.soundness,
+      contracts,
+    };
   }
 
   if (getClassBase(db, className) !== undefined) {

@@ -408,13 +408,70 @@ Quatro flags configuram tudo isso, nenhuma obrigatória: `--test-bench-path`
 `ponta_do_principal`), `--reference-repo` (padrão: o banco) e `--main-branch`
 (padrão `main`).
 
-**Leitura, e só leitura.** Nada aqui escreve no banco de testes, avança branch
-nem prepara checkout: `git rev-parse` e mais nada. Manter o banco **verdadeiro**
-— avançar a linha principal para dentro dele, provisioná-lo — é a `t273`; esta
-camada assume um caminho e um commit que já existem e apenas os lê. Um `git` que
-recusa aqui bloqueia o trabalho com motivo (a sexta causa da tabela acima) em vez
-de resolver um valor plausível: uma sessão que verificasse contenção contra um
-commit que ninguém escolheu é pior que uma que não abriu.
+**Leitura, e só leitura — desta camada.** Nada em
+`resolve-executor-environment.ts` escreve no banco de testes, avança branch nem
+prepara checkout: `git rev-parse` e mais nada. Ela assume um caminho e um commit
+que já existem e apenas os lê. Um `git` que recusa aqui bloqueia o trabalho com
+motivo (a sexta causa da tabela acima) em vez de resolver um valor plausível: uma
+sessão que verificasse contenção contra um commit que ninguém escolheu é pior que
+uma que não abriu. Quem mantém esse banco **verdadeiro** — quem avança a linha
+principal para dentro dele e quem o prepara — é a `t273`, na seção logo abaixo:
+até ela, essa leitura observava um diretório que ninguém nunca movia.
+
+### Advancing the main line into the bench (`t273`)
+
+*(This subsection is in English per the 2026-08-18 language rule; the sections
+around it are the pre-existing Portuguese of this document.)*
+
+`integrar-branch`'s manifest has always promised this — "você nunca executa o
+merge final; ... é o executor quem avança a linha principal" — and until `t273`
+nobody kept the promise. The t109 game run is the evidence: the session reported
+`merge_commit ae41796` with every gate green, the bench's `main` stayed on the
+commit before it, and a person typed `git merge --ff-only ticket-1` by hand
+before `testar` could open
+([nota](../../notas/2026-08-17-t109-feature-do-jogo.md), gap 3).
+
+**What triggers it is the shape of the report, never a node id.** Any node whose
+ACCEPTED report carries a non-empty `merge_commit` advances the bench — the field
+is the contract (D9), so a second graph whose integration node declares the same
+output is covered with no runner change at all. The gate is the same one the
+transition already runs under: a resolved node, a session that completed, no
+question pending, no retained worktree, and a report the control plane took.
+
+**The bench moves before the work does**, and the two live in one function
+([`report.ts`](../../packages/runner/src/dispatch/report.ts)'s `advance`) so that
+the order is structural rather than remembered: there is no way to transition a
+job whose bench did not move. The step itself is
+[`advance-main-line.ts`](../../packages/runner/src/dispatch/advance-main-line.ts),
+and it is exactly three commands, in this order:
+
+| # | Command | When |
+|---|---|---|
+| 1 | `git -C <banco> rev-parse --abbrev-ref HEAD` | always — it has to be on the main branch, and a detached `HEAD` is refused by the same comparison |
+| 2 | `git -C <banco> fetch <--working-dir> <merge_commit>` | only when the bench is not the working directory itself: the commit lives in the object store of the repository the session's worktree was cut from |
+| 3 | `git -C <banco> merge --ff-only <merge_commit>` | always |
+
+Then, and only then, one optional shell command in the advanced bench —
+`--bench-install-command`. Absent it contributes nothing, the same posture
+`comandos_de_dados` already has; the class declares its own spelling of it in the
+graph's `project.comando_instalacao` (`npm ci` for this repository), and the flag
+is where an operator points the runner at it. It comes from the command line and
+never from a graph document: it runs with the runner's own privileges.
+
+**Fast-forward or nothing.** A bench on another branch, a history that diverged
+and an install command that exits non-zero all fail closed, and none of them is
+worked around: no rebase, no `--force`, no picking a side, and — a project-wide
+rule that applies doubly to a directory every integration touches — never a
+`git stash`. Reconciling two histories is `integrar`'s job, in a worktree of its
+own, with a session behind it.
+
+**A refusal stops the work; it does not throw.** Same reading `t252` and `t265`
+wrote down: a `git` that refuses here refuses identically on every retry, so a
+throw would buy the same answer every couple of seconds forever with nothing in
+anybody's inbox. The runner posts `POST /v1/jobs/:id/blocks` with the command and
+what it printed (`blockForMainLineAdvanceFailure`, the sixth block of
+[`blocks.ts`](../../packages/runner/src/dispatch/blocks.ts)), the job stays on
+its node, and the dispatch resolves `{blocked: true, reason}`.
 
 ### Falha depois que a sessão subiu também para (`t265`)
 

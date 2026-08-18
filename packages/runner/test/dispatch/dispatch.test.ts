@@ -6145,3 +6145,213 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
     },
   );
 });
+
+// --- t273: the bench moves before the work does ------------------------------
+
+/**
+ * An accepted report carrying `merge_commit` advances the shared bench first
+ * (t273, AT3).
+ *
+ * `integrar-branch`'s instructions promise that the executor — and not the
+ * session — advances the main line, and until this ficha nobody kept that
+ * promise: the t109 game run left the bench on the old commit and a person
+ * typed `git merge --ff-only ticket-1` by hand before `testar` could open
+ * (`notas/2026-08-17-t109-feature-do-jogo.md`, gap 3).
+ *
+ * The trigger is the SHAPE of the report and never a node or skill id (FR2), so
+ * these cases run against the same `travessia-fazer` fixture every other
+ * dispatch test uses: what makes one of them advance a bench is that its report
+ * carries the field, and nothing else.
+ *
+ * No git anywhere here. The advance itself is real in
+ * `test/dispatch/advance-main-line.test.ts`, against real repositories; what
+ * this layer owns is the SEQUENCE — that the bench is asked first, that a
+ * refusal stops the work on its node, and that a report without the field is
+ * routed exactly as it was before.
+ */
+test("t273 — the bench is advanced before the transition, and a bench that refuses stops the work", async (parent) => {
+  const { baseUrl, token } = await bootUnpatched(parent);
+
+  await registerSkill(baseUrl, token, WORK_SKILL);
+
+  /** A job standing on the single-edge node of the traversal fixture. */
+  async function jobOn(className: string, executionId: number): Promise<Work> {
+    const versionId = await registerGraph(baseUrl, token, traversalGraph(className));
+    return await api<Work>(
+      baseUrl,
+      "POST",
+      "/v1/jobs",
+      {
+        title: `work whose report carries a merge commit (${className})`,
+        entry_node_id: "implementar",
+        execution_id: executionId,
+        graph_version_id: versionId,
+      },
+      201,
+      token,
+    );
+  }
+
+  /** What the fake session prints: a report the pinned skill's schema accepts. */
+  function reportsWith(payload: Record<string, unknown>): Record<string, string> {
+    return {
+      FAKE_ENGINE_LINES: JSON.stringify([
+        { stream: "stdout", text: "Did the step." },
+        { stream: "stdout", text: "```resultado" },
+        { stream: "stdout", text: JSON.stringify(payload) },
+        { stream: "stdout", text: "```" },
+      ]),
+    };
+  }
+
+  /** The commit an integration would have reported. */
+  const MERGE_COMMIT = "0fedcba9876543210fedcba9876543210fedcba9";
+
+  await parent.test(
+    "t273 AT3 — the advance runs first, with the commit the report named",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t273-avanca-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOn("travessia-t273-avanca", 2731);
+
+      // One list for both facts, because the ORDER is the claim: a bench
+      // advanced after the transition would let `testar` open against a stale
+      // checkout, which is the whole gap this ficha closes.
+      const order: string[] = [];
+      const asked: string[] = [];
+      const doFetch: typeof fetch = async (input, init) => {
+        if (String(input).endsWith("/transitions") && init?.method === "POST") {
+          order.push("transition");
+        }
+        return await fetch(input, init);
+      };
+
+      const outcome = await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        resolveInput: () => Promise.resolve({ pedido: "do the step" }),
+        advanceMainLine: (mergeCommit) => {
+          order.push("bench");
+          asked.push(mergeCommit);
+          return Promise.resolve();
+        },
+        timeoutSeconds: 60,
+        envOverrides: reportsWith({ nota: "integrated it", merge_commit: MERGE_COMMIT }),
+      })(job.id);
+
+      assert.equal(outcome.blocked, false);
+      assert.deepEqual(asked, [MERGE_COMMIT], "the reported commit is what the bench is moved to");
+      assert.deepEqual(order, ["bench", "transition"], "the bench moves BEFORE the work does");
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "conferir", "and then the work moves as it always did");
+      assert.equal(after.blocked, false);
+    },
+  );
+
+  await parent.test(
+    "t273 AT3 — a bench that cannot be advanced blocks the work instead of moving it",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t273-recusa-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOn("travessia-t273-recusa", 2732);
+
+      const posted: string[] = [];
+      const transitions: string[] = [];
+      const doFetch: typeof fetch = async (input, init) => {
+        const route = String(input).slice(baseUrl.length);
+        if (init?.method === "POST" && route === `/v1/jobs/${job.id}/blocks`) {
+          posted.push(String(JSON.parse(String(init.body)).reason));
+        }
+        if (init?.method === "POST" && route.endsWith("/transitions")) {
+          transitions.push(route);
+        }
+        return await fetch(input, init);
+      };
+
+      const outcome = await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        doFetch,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        resolveInput: () => Promise.resolve({ pedido: "do the step" }),
+        advanceMainLine: () =>
+          Promise.reject(
+            new Error(
+              "the test bench could not be advanced: `git -C /srv/bench merge --ff-only " +
+                "0fedcba` failed — Not possible to fast-forward, aborting.",
+            ),
+          ),
+        timeoutSeconds: 60,
+        envOverrides: reportsWith({ nota: "integrated it", merge_commit: MERGE_COMMIT }),
+      })(job.id);
+
+      assert.deepEqual(transitions, [], "a bench that did not move may not move the work");
+      assert.equal(outcome.blocked, true, "the caller has to be told the work stopped");
+      assert.equal(posted.length, 1, "exactly one block, posted by the runner itself");
+      assert.equal(outcome.reason, posted[0], "and what it tells the caller is what it posted");
+      assert.ok(
+        posted[0].includes("fast-forward"),
+        `the reason carries what git printed: ${posted[0]}`,
+      );
+      assert.ok(posted[0].includes("implementar"), `and the node it stopped on: ${posted[0]}`);
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "implementar", "the work stays on the node it failed");
+      assert.equal(after.blocked, true);
+      assert.equal(after.block_reason, outcome.reason);
+    },
+  );
+
+  await parent.test(
+    "t273 AT3 — a report with no merge commit never asks the bench for anything",
+    async (t) => {
+      const { createClaudeCodeDispatch } =
+        await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
+
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t273-sem-merge-"));
+      t.after(() => {
+        rmSync(workDir, { recursive: true, force: true });
+      });
+
+      const job = await jobOn("travessia-t273-sem-merge", 2733);
+
+      const asked: string[] = [];
+      const outcome = await createClaudeCodeDispatch({
+        urlBase: baseUrl,
+        token,
+        engines: claudeOnly(fakeAdapter()),
+        worktrees: fakeWorktrees(workDir),
+        resolveInput: () => Promise.resolve({ pedido: "do the step" }),
+        advanceMainLine: (mergeCommit) => {
+          asked.push(mergeCommit);
+          return Promise.resolve();
+        },
+        timeoutSeconds: 60,
+        envOverrides: reportsWith({ nota: "did what the node asked" }),
+      })(job.id);
+
+      assert.equal(outcome.blocked, false);
+      assert.deepEqual(asked, [], "no routing change for a node that reports no merge commit");
+
+      const after = await api<Work>(baseUrl, "GET", `/v1/jobs/${job.id}`, undefined, 200, token);
+      assert.equal(after.current_node_id, "conferir", "and it advances exactly as it did before");
+    },
+  );
+});

@@ -21,6 +21,7 @@
  */
 
 import type { SessionPermissions } from '../engine/types.ts';
+import type { MainLineAdvancer } from './advance-main-line.ts';
 import { ESCALATION_PROTOCOL } from './escalation-protocol.ts';
 import type { EngineRoute } from './resolve-engine.ts';
 import type { ResolvedNode } from './resolve-node.ts';
@@ -251,6 +252,29 @@ export interface ClaudeCodeDispatchOptions {
    * writes both the same way.
    */
   executorEnvironment?: (job: Job, resolved: ResolvedNode) => Promise<Record<string, unknown>>;
+  /**
+   * What KEEPS that bench true, after an integration (t273).
+   *
+   * The write half of the seam above, and the reason the two are separate
+   * options rather than one: {@link executorEnvironment} runs on EVERY dispatch
+   * and only reads, while this one runs on the few reports that name a
+   * `merge_commit` and moves a branch. It fast-forwards the shared bench onto
+   * that commit — and prepares it, if the operator configured a command for
+   * that — before the work is allowed off the node that reported it.
+   *
+   * The trigger is the SHAPE of the report and never a node or skill id (D9):
+   * a second graph whose integration node declares the same output field is
+   * covered with no change here. What happens when it rejects is
+   * `advance-main-line.ts`'s and `blocks.ts`'s — the work stops on its node
+   * with a reason, because a `git` that refuses refuses identically on every
+   * retry.
+   *
+   * Absent changes nothing, which is the ordinary case: a bets runner has no
+   * bench to advance, and neither does a deployment that has not set one up.
+   * Built by `createMainLineAdvancer` out of what the operator configured at
+   * boot (`cli/run.ts`), the same way `createExecutorEnvironmentResolver` is.
+   */
+  advanceMainLine?: MainLineAdvancer;
   /** Opaque additions to the engine's environment. */
   envOverrides?: Readonly<Record<string, string>>;
   /**

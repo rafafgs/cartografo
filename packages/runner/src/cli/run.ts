@@ -59,6 +59,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { ClienteControle } from '../controller/cliente-controle.ts';
 import { Controller } from '../controller/controller.ts';
+import { createMainLineAdvancer } from '../dispatch/advance-main-line.ts';
 import { createClaudeCodeDispatch, type EngineRoute } from '../dispatch/dispatch.ts';
 import {
   createExecutorEnvironmentResolver,
@@ -137,10 +138,27 @@ export interface RunnerOptions {
    *
    * Default: {@link repoRoot}, which is a real answer and not a placeholder —
    * the ordinary single-machine deployment observes the same checkout it cuts
-   * sessions from. Keeping that bench TRUE (advancing the main line into it,
-   * provisioning it at all) is t273's, and nothing here writes to it.
+   * sessions from.
+   *
+   * Since t273 this process also KEEPS that bench true: an accepted report that
+   * names a `merge_commit` fast-forwards this checkout onto it — and runs
+   * {@link benchInstallCommand} in it — before the work is allowed off the node
+   * that reported it. Until then the reads of t270 observed a directory nobody
+   * ever moved, and an operator merged by hand between two nodes.
    */
   testBenchPath?: string;
+  /**
+   * One shell command that prepares the bench after it advances — t273.
+   *
+   * `--bench-install-command`, optional, and absent contributes nothing: the
+   * same posture every other bench knob has. What it is for is the step each
+   * session of the t109 run typed by hand for lack of it (`npm ci --offline`);
+   * the class declares its own spelling of it in the graph's
+   * `project.comando_instalacao`, and this flag is where an operator points the
+   * runner at it. It runs with this process's privileges, in the bench, which is
+   * why it comes from the command line and never from a graph document.
+   */
+  benchInstallCommand?: string;
   /**
    * Which question `input.referencia.commit` answers — `--reference-mode`.
    *
@@ -412,6 +430,18 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
         referenceMode: options.referenceMode ?? 'ponta_do_principal',
         ...(options.referenceRepo === undefined ? {} : { referenceRepo: options.referenceRepo }),
         ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
+      }),
+      // ...and the half that WRITES to that same bench (t273). Built once too,
+      // out of the same two paths: the bench to advance, and the repository the
+      // reported commit was born in — a worktree of `repoRoot` is where every
+      // session works, so its object store is the only one that has it.
+      advanceMainLine: createMainLineAdvancer({
+        testBenchPath: options.testBenchPath ?? options.repoRoot,
+        repoRoot: options.repoRoot,
+        ...(options.mainBranch === undefined ? {} : { mainBranch: options.mainBranch }),
+        ...(options.benchInstallCommand === undefined
+          ? {}
+          : { installCommand: options.benchInstallCommand }),
       }),
     }),
   });

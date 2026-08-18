@@ -1,5 +1,6 @@
 /**
- * The five writes that STOP a work, on the runner's own account (t265, t268).
+ * The six writes that STOP a work, on the runner's own account (t265, t268,
+ * t273).
  *
  * They were four closures in `dispatch.ts` until t202, then four exports of
  * `report.ts` until this ficha, which added the fourth and pushed that module
@@ -15,6 +16,10 @@
  * READ: the other four are decided here, out of what the runner already has in
  * hand, while a report refused by the pinned skill's `output` schema is the
  * control plane's judgement, answered on the very closure that reported it.
+ *
+ * The sixth arrived with t273, and its fact comes from neither: it is about a
+ * directory on this machine — the shared test bench the next nodes observe —
+ * that could not be advanced onto the commit an accepted report named.
  *
  * `POST /v1/jobs/:id/blocks` is an unconditional, reason-carrying block that has
  * existed since t102, and every write here uses it unchanged. What the dispatch
@@ -293,6 +298,58 @@ export async function blockForOutputSchemaRefusal(
     'O trabalho para aqui em vez de seguir por uma aresta escolhida a partir de um ' +
     'relato que não existe: reveja o contrato do nó e a skill que ele fixa antes de ' +
     'desbloquear.';
+
+  await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
+    reason,
+    actor: { type: 'system', ref: RUNNER_ACTOR_REF },
+  });
+
+  return reason;
+}
+
+/**
+ * Stops the work because the shared test bench could not be advanced (t273,
+ * FR5).
+ *
+ * The sixth block of this module, and the first one about a checkout NOBODY
+ * opened a session in. What it answers is the promise `integrar-branch` has
+ * always made — the executor advances the main line, not the session — and what
+ * it stops is the failure mode that promise hides when it is not kept: `testar`
+ * and `implantar` observe the bench, so a bench that stayed where it was makes
+ * the next two nodes measure the commit BEFORE this one and report on it as if
+ * it were the work (`notas/2026-08-17-t109-feature-do-jogo.md`, gap 3).
+ *
+ * A block and not a throw, for the reason t252 wrote down: a git that refuses
+ * here refuses identically on every retry — the branch is still wrong, the
+ * history is still diverged — so a throw would buy the same answer every couple
+ * of seconds forever with nothing in anybody's inbox.
+ *
+ * **This one is written in English**, unlike the four reasons above it. Those
+ * predate the 2026-08-18 language rule and stay as they are, in Portuguese;
+ * nothing new is born in Portuguese, this text included.
+ *
+ * @param call The dispatch's control-plane client.
+ * @param job The work being dispatched.
+ * @param detail What went wrong, as the step that tried it reported — the
+ *   command as it was issued and what it printed. It is the whole of what a
+ *   person acts on, so it is quoted and never summarized away.
+ * @returns The reason that was posted, so the caller can hand it back to the
+ *   controller as the block's own — the runner may not tell the API one story
+ *   and its caller another.
+ */
+export async function blockForMainLineAdvanceFailure(
+  call: ControlPlaneCall,
+  job: JobRef,
+  detail: string,
+): Promise<string> {
+  const reason =
+    `The session of node \`${job.current_node_id}\` reported an integration, but the shared ` +
+    `test bench could NOT be advanced onto the commit it named: ${detail}. ` +
+    'The work stays on this node instead of moving on, because the nodes after it observe ' +
+    'that bench: a gate that ran against a stale or half-prepared checkout would be measuring ' +
+    'the commit before this one and reporting on it as the work. Put the bench back on the ' +
+    'main line, reconcile whatever diverged in it, or fix what the install command needs — ' +
+    'and unblock.';
 
   await call(`/v1/jobs/${job.id}/blocks`, 'POST', {
     reason,

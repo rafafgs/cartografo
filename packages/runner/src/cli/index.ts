@@ -144,8 +144,15 @@ options:
   --test-bench-path <path>  the integrated checkout the gate nodes OBSERVE,
                             published to the session as
                             \`input.banco_de_testes.caminho\` (default: the same
-                            as --working-dir). Read-only: nothing here advances
-                            or prepares it
+                            as --working-dir). The runner fast-forwards it onto
+                            the merge commit an accepted report names, before
+                            letting that work move on
+  --bench-install-command <command>
+                            one shell command run in that bench right after it
+                            advances — the class declares its own spelling of it
+                            in the graph's \`project.comando_instalacao\`, e.g.
+                            \`npm ci\`. Optional: with none, advancing is all
+                            that happens. A non-zero exit stops the work
   --reference-mode <${REFERENCE_MODES.join('|')}>
                             how \`input.referencia.commit\` is read (default
                             ${DEFAULT_REFERENCE_MODE}): ponta_do_principal reads the
@@ -211,6 +218,7 @@ const VALUE_OPTIONS = [
   '--working-dir',
   '--worktrees-root',
   '--test-bench-path',
+  '--bench-install-command',
   '--reference-mode',
   '--reference-repo',
   '--main-branch',
@@ -442,6 +450,10 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
   // happened to be launched.
   const testBenchPath = given.get('--test-bench-path');
   const referenceRepo = given.get('--reference-repo');
+  // Not resolved and not split: it is a command line for a shell, run with the
+  // bench as its working directory, and anything this command did to it would
+  // be this file deciding what the operator meant (t273).
+  const benchInstallCommand = given.get('--bench-install-command');
 
   return {
     url: resolveControlPlaneUrl(given.get('--url'), env),
@@ -452,6 +464,7 @@ export function parseRunnerOptions(args: string[], env: NodeJS.ProcessEnv): Runn
     repoRoot,
     worktreesRoot,
     testBenchPath: testBenchPath === undefined ? repoRoot : path.resolve(testBenchPath),
+    ...(benchInstallCommand === undefined ? {} : { benchInstallCommand }),
     referenceMode: referenceMode as ReferenceMode,
     ...(referenceRepo === undefined ? {} : { referenceRepo: path.resolve(referenceRepo) }),
     mainBranch: given.get('--main-branch') ?? DEFAULT_MAIN_BRANCH,

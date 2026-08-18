@@ -498,6 +498,7 @@
     "repo": ".",
     "branch_principal": "main",
     "comando_testes": "npm test",
+    "comando_instalacao": "npm ci",
     "comandos_qualidade": [
       "npm test",
       "npm run lint",

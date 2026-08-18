@@ -364,9 +364,26 @@ contrato, compor grafo vira **casar contratos**.
 | Campo | Obrigatório | O que é |
 |---|---|---|
 | `entrada_schema` | sim | JSON Schema da projeção de estado que o nó recebe. Projeção, não janela comum (README princípio 4). |
-| `saida_schema` | sim | JSON Schema do que o nó devolve ao quadro. |
+| `saida_schema` | sim | JSON Schema do que o nó devolve ao quadro. Documentação da forma esperada e origem do vocabulário de roteamento das arestas — **não** é o schema contra o qual o relato da sessão é conferido. Ver abaixo. |
 | `verificacoes` | sim | Lista com **pelo menos um** check. Como se confere o que o nó produziu. |
 | `produces` | não | Nome do **balde** em que a saída estruturada deste nó se acumula na projeção de input dos nós seguintes (`t253`). Ausente = merge no topo de `input`. Ver abaixo. |
+
+#### `saida_schema` documenta; quem valida é a skill (`t267`)
+
+Os dois são schemas diferentes de propósito, e confundi-los custou três relatos
+recusados na segunda travessia real do grafo de bets. O `saida_schema` do nó é o
+que ESTE grafo espera daqui, e é dele que sai o vocabulário das arestas (a
+`condition` de uma aresta casa com o `outcome` que ele declara). O que
+`PATCH /v1/sessions/:id/finish` confere o bloco `resultado` contra é o `output`
+da **skill pinada** (D9) — resolvido por
+[`resolveOutputSchema`](../../packages/core/src/repositories/session.ts), pelo
+caminho `job` → `graph_version` → nó → `skill_ref` → registro. Uma skill serve a
+mais de um grafo, e é por isso que a validação mora nela e não no nó.
+
+Consequência prática para quem escreve prompt de nó: mostrar o `saida_schema` a
+uma sessão e dizer que é contra ele que a saída será conferida é falso. O runner
+renderiza os dois hoje, cada um com o seu rótulo
+([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
 
 #### `produces`: onde a saída deste nó aterrissa
 

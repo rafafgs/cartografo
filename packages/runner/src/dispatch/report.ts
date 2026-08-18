@@ -43,6 +43,7 @@
  */
 
 import type { SessionFinishDetail, SessionStatus } from '../engine/types.ts';
+import { advanceMainLineForReport, type MainLineAdvancer } from './advance-main-line.ts';
 import { blockWithNobodyToAsk, RUNNER_ACTOR_REF, type JobRef } from './blocks.ts';
 import type { ControlPlaneCall } from './control-plane-client.ts';
 import type { InputRequest } from './parse-input-request.ts';
@@ -81,16 +82,18 @@ const DENIAL_RESOURCE: Readonly<Record<'filesystem' | 'rede', string>> = Object.
 
 /**
  * The writes that stop a work, re-exported from the module that owns them now
- * (t265, t268).
+ * (t265, t268, t273).
  *
  * Four of them were declared here until t265, and moved together when the fourth
- * one pushed this file past the 600-line budget; the fifth was born next door.
+ * one pushed this file past the 600-line budget; the fifth and the sixth were
+ * born next door.
  * Re-exporting rather than asking each caller to follow the declaration is the
  * rule both earlier splits ran under: a refactor that renames nothing may not
  * make anybody edit an import.
  */
 export {
   blockForEngineRefusal,
+  blockForMainLineAdvanceFailure,
   blockForOutputSchemaRefusal,
   blockForPreSessionFailure,
   blockForUncommittedWork,
@@ -235,7 +238,7 @@ export async function escalateRouting(
 }
 
 /**
- * Advances the work to the next node, or asks (t161, FR8/FR9).
+ * Advances the BENCH and then the work, or asks (t161, FR8/FR9; t273, FR1).
  *
  * Only ever called for a session that ended `completed` AND asked nothing:
  * advancing a work that escalated would answer its own question by walking
@@ -243,11 +246,27 @@ export async function escalateRouting(
  * that never happened. That gate belongs to the orchestrator, which is the only
  * place that knows all four of its conditions.
  *
+ * **The shared test bench moves first, and it moves HERE** (t273). A report
+ * that named a `merge_commit` is an integration, and the nodes after it observe
+ * a checkout that has to carry that commit before they open — `testar` and
+ * `implantar` read it as `input.banco_de_testes.caminho`. Doing it inside this
+ * function rather than beside its call site is what makes the order structural:
+ * there is no way to move the work without having moved the bench first, and no
+ * second caller can get that sequence wrong. The step itself, and every reason
+ * it can refuse, is `advance-main-line.ts`.
+ *
  * @param call The dispatch's control-plane client.
  * @param job The work being dispatched.
  * @param resolved Its node and the edges leaving it.
  * @param sessionId The session that just finished, for the question's trail.
  * @param output Everything the session printed, decoded.
+ * @param advanceMainLine What moves the bench, when this runner has one.
+ *   Absent is ordinary — a bets runner has no bench — and then this behaves
+ *   exactly as it did before t273.
+ * @returns `null` when the work moved, or had nowhere to move to; the block's
+ *   own reason when the bench could not be advanced and the work was stopped on
+ *   the node instead. The transition itself still THROWS on failure, which is
+ *   the asymmetry this module has had since t161.
  */
 export async function advance(
   call: ControlPlaneCall,
@@ -255,14 +274,21 @@ export async function advance(
   resolved: ResolvedNode,
   sessionId: number,
   output: string,
-): Promise<void> {
+  advanceMainLine?: MainLineAdvancer,
+): Promise<string | null> {
+  // Before every branch below, the final node included: what triggers it is the
+  // SHAPE of the report and not the topology, so a node that reports an
+  // integration and happens to end the traversal advances the bench too.
+  const stale = await advanceMainLineForReport(call, job, output, advanceMainLine);
+  if (stale !== null) return stale;
+
   const { edges } = resolved;
 
   // Nothing to do: a node with no way out is a final node by the graph's own
   // `termina` rule, and there is nowhere to move the work to. What marks it
   // finished is `concluido`, derived by the control plane (t152) — and since
   // t262 that is not arrival: a final node with a skill needs its own report.
-  if (edges.length === 0) return;
+  if (edges.length === 0) return null;
 
   // Deterministic by construction: one way out is taken whatever the label
   // says. Every non-gate node of the reference graph labels it `sempre`, and
@@ -271,17 +297,18 @@ export async function advance(
   // escalate for the lack of an answer to it.
   if (edges.length === 1) {
     await transition(call, job, edges[0]);
-    return;
+    return null;
   }
 
   const observed = parseNodeResult(output)?.resultado ?? null;
   const chosen = edges.find((edge) => edge.condition === observed);
   if (chosen === undefined) {
     await escalateRouting(call, job, sessionId, edges, observed, resolveEscalationPolicy(resolved));
-    return;
+    return null;
   }
 
   await transition(call, job, chosen);
+  return null;
 }
 
 /**

@@ -510,15 +510,14 @@ export function createClaudeCodeDispatch(
       // closure the control plane refused is telemetry the runner owes, and
       // letting either of them strand a work that finished cleanly would trade
       // the recoverable problem for the unrecoverable one.
-      if (
+      const staleBench =
         resolved !== null &&
         outcome.status === 'completed' &&
         request === null &&
         !dirtyDespiteCompleted &&
         !refusedReport
-      ) {
-        await advance(call, job, resolved, session.id, output);
-      }
+          ? await advance(call, job, resolved, session.id, output, options.advanceMainLine)
+          : null;
 
       // A write that could not be made is not the session's fault, but it is a
       // fault: the control plane refused something the runner owes it, and a
@@ -529,6 +528,9 @@ export function createClaudeCodeDispatch(
       // than one at a time is a multi-error type nobody has needed yet.
       const failure = denials.failure ?? verdict.failure ?? tree.failure;
       if (failure !== null) throw failure;
+
+      // The bench refused to advance, so `advance` stopped the work there (t273).
+      if (staleBench !== null) return { blocked: true, reason: staleBench };
 
       // The engine refused to answer, which is not a session that died — it is a
       // session that was never going to happen (t265, FR7): throwing would put

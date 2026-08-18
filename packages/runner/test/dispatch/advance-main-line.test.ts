@@ -2,9 +2,9 @@
  * Acceptance tests for the step that keeps the shared test bench true (t273,
  * AT1).
  *
- * `integrar-branch`'s own manifest promises it — "você nunca executa o merge
- * final; o executor rerroda as verificações e é ele quem avança a linha
- * principal" — and until this ficha nobody kept it: the t109 game run reported
+ * `integrar-branch`'s own manifest promises it — the session never runs the
+ * final merge, and it is the EXECUTOR that re-verifies and moves the main line
+ * — and until this ficha nobody kept it: the t109 game run reported
  * `merge_commit ae41796`, the bench's `main` stayed where it was, and a person
  * typed `git merge --ff-only ticket-1` by hand before `testar` could open
  * (`notas/2026-08-17-t109-feature-do-jogo.md`, gap 3).
@@ -78,15 +78,15 @@ interface Scratch {
    * What an integration would have reported.
    *
    * On a BRANCH of `repoRoot`, with `main` there left deliberately behind: the
-   * manifest's own description says `merge_commit` "não é uma afirmação de que
-   * a linha principal já aponta para lá", and a fixture whose main had already
-   * moved would prove nothing about who advances it.
+   * manifest's own description says `merge_commit` is NOT a claim that the main
+   * line already points there, and a fixture whose main had already moved would
+   * prove nothing about who advances it.
    */
   integrated: string;
 }
 
 /** The file the integrated commit brings, read by AT4 to pin the ordering. */
-const INTEGRATED_FILE = 'INTEGRADO.md';
+const INTEGRATED_FILE = 'INTEGRATED.md';
 const INTEGRATED_TEXT = 'the work the ticket integrated\n';
 
 /** A main repository, a bench cloned off it, and one commit to advance to. */

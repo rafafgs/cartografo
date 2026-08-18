@@ -191,9 +191,9 @@ const DESENVOLVIDO = {
  * ...and the fake `integrar` session — `integrar-branch`'s `output`.
  *
  * A REAL commit since t273, and no longer the literal `feedfacecafe123` this
- * file carried with the comment "o merge commit deste trabalho é fictício": the
- * executor now fast-forwards the bench onto whatever an accepted report names,
- * and a commit no repository has is a commit no bench can be advanced to.
+ * file used to carry with a comment calling it fictional: the executor now
+ * fast-forwards the bench onto whatever an accepted report names, and a commit
+ * no repository has is a commit no bench can be advanced to.
  */
 const INTEGRADO = (mergeCommit: string): Record<string, unknown> => ({
   merge_commit: mergeCommit,
@@ -253,8 +253,8 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 /** What the integrated commit brings with it, so the install step can read it. */
-const INTEGRATED_FILE = 'INTEGRADO.md';
-const INTEGRATED_TEXT = 'o que o integrar reconciliou\n';
+const INTEGRATED_FILE = 'INTEGRATED.md';
+const INTEGRATED_TEXT = 'what the integration reconciled\n';
 
 /**
  * The disposable PAIR of repositories a real deployment has, both on `main`.
@@ -268,9 +268,9 @@ const INTEGRATED_TEXT = 'o que o integrar reconciliou\n';
  * — `--working-dir` and `--test-bench-path` — and because the commit an
  * integration reports is born in the first one and has to REACH the second.
  * `main` in the main repository is deliberately left behind on the base commit:
- * `integrar-branch`'s own manifest says `merge_commit` "não é uma afirmação de
- * que a linha principal já aponta para lá", and a fixture whose main had
- * already moved would prove nothing about who advances it.
+ * `integrar-branch`'s own manifest says `merge_commit` is NOT a claim that the
+ * main line already points there, and a fixture whose main had already moved
+ * would prove nothing about who advances it.
  */
 function benchRepository(root: string): {
   /** The bench the last two nodes observe, and what the executor advances. */
@@ -299,7 +299,7 @@ function benchRepository(root: string): {
   git(repoRoot, 'checkout', '--quiet', '-b', 'ticket-259');
   writeFileSync(path.join(repoRoot, INTEGRATED_FILE), INTEGRATED_TEXT);
   git(repoRoot, 'add', '.');
-  git(repoRoot, 'commit', '--quiet', '-m', 'o que o integrar reconciliou');
+  git(repoRoot, 'commit', '--quiet', '-m', 'what the integration reconciled');
   const integrated = git(repoRoot, 'rev-parse', 'HEAD');
   git(repoRoot, 'checkout', '--quiet', 'main');
 
@@ -318,7 +318,7 @@ function benchRepository(root: string): {
  * That the bundle really declares the key is asserted separately, off the real
  * document.
  */
-const BENCH_INSTALL_COMMAND = `cat ${INTEGRATED_FILE} > .banco-preparado`;
+const BENCH_INSTALL_COMMAND = `cat ${INTEGRATED_FILE} > .bench-prepared`;
 
 test('t259 AT6 — refinar → desenvolver → integrar crosses the real software bundle', async (t) => {
   const { url: baseUrl, token } = await bootCore(t);
@@ -504,7 +504,7 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
     'the executor fast-forwarded the bench onto the reported merge commit, with no operator',
   );
   assert.equal(
-    readFileSync(path.join(bench.path, '.banco-preparado'), 'utf8'),
+    readFileSync(path.join(bench.path, '.bench-prepared'), 'utf8'),
     INTEGRATED_TEXT,
     'and prepared it afterwards, on the ALREADY advanced tree',
   );

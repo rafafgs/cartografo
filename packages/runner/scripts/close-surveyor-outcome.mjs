@@ -86,8 +86,8 @@ try {
   }
 
   // The WRAPPER key is English since t226; what is inside it is the frozen
-  // hypothesis vocabulary of `domain/hypothesis.ts` — `{nome, direcao, de,
-  // para}` — which D20 does not unfreeze (`docs/spec/glossario-wire.md:791`).
+  // hypothesis vocabulary D20 does not unfreeze — `{nome, direcao, de, para}`,
+  // `domain/hypothesis.ts` and `docs/spec/glossario-wire.md:791`.
   const metric = proposal.expected_metric;
   const name = typeof metric === 'object' && metric !== null ? metric.nome : undefined;
   if (typeof name !== 'string' || name === '') {

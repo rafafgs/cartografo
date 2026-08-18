@@ -50,17 +50,24 @@
  * produce. The claude-code adapter can express "all writing or none" and "the
  * network open or closed", and nothing in between.
  *
- * At the time this ficha landed, `grafos-de-fabrica/desenvolvimento-de-software`
- * has exactly one manifest the adapter cannot honour: `testar-alpha` declares
+ * When this ficha landed, `grafos-de-fabrica/desenvolvimento-de-software` had
+ * exactly one manifest the adapter could not honour: `testar-alpha` declared
  * `network: {allowed: true, domains: [...]}`, a per-domain allowlist that would
- * take an egress proxy. So the preflight below stops the run BEFORE the first
- * session, naming the node, the skill and the reason — instead of letting five
- * minutes of real work die on the fourth node. Whoever wants the full crossing
- * has a product decision to take first, and it is one line: either that gate
- * declares `allowed: false` (it reads a checkout and runs commands; the
- * domains it lists are loopback), or the adapter grows an egress proxy. Both
- * change a manifest's hash, which is exactly the human gate D4 wants them to
- * pass through — so neither belongs in this script.
+ * take an egress proxy. It no longer does. The product decision this comment
+ * used to leave open was taken by t271 — after the first real crossing (t109)
+ * hit the refusal on the `testar` node — and it went the way the format already
+ * allowed: `testar-alpha@1.0.1` declares `allowed: true` with NO `domains`,
+ * which is unrestricted network and legal for a native skill, with the walk's
+ * one legitimate target moved into the instructions where nothing pretends to
+ * enforce it. The manifest's hash changed with it, which is exactly the human
+ * gate D4 wants such a change to pass through.
+ *
+ * The preflight below stays, and stays first: it is not about that one skill.
+ * Any manifest whose declaration this adapter cannot express stops the run
+ * BEFORE the first session, naming the node, the skill and the reason —
+ * instead of letting five minutes of real work die on the fourth node. The fix
+ * is always a manifest decision that goes through the human gate, never a flag
+ * in this script.
  *
  * Usage: npm run spike:traversal --workspace @cartografo/runner
  */

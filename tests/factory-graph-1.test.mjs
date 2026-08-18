@@ -297,17 +297,40 @@ test('AT8 — every instructions carries the escalation contract (input-request 
   }
 });
 
-test('AT9 — only testar-alpha opens the network, and only to loopback', () => {
+/**
+ * The declaration used to be `allowed: true` with a loopback allowlist, which
+ * reads as the tighter policy and is in fact the unrunnable one: no shipped
+ * adapter can scope the network by domain — that would take an egress proxy —
+ * so `startSession` refused the gate before opening anything, and the first
+ * real crossing of this bundle stopped on `testar` (t271, t109's hole 1).
+ *
+ * `allowed: true` with NO `domains` is what the manifest format itself calls
+ * unrestricted network and declares legal for a native skill
+ * (`especificacoes/formatos/manifesto-skill.md`). It is a wider grant on paper
+ * and a narrower one in practice, because it is the only one that ever gets
+ * enforced. Where the network may point is instructions now, not policy — which
+ * is why this test also refuses the old sentence.
+ */
+test('AT9 — testar-alpha opens the network, and it is open — not domain-scoped', () => {
   const gate = readManifest('testar-alpha.json');
   assert.equal(gate.permissions.network.allowed, true);
+
+  const { domains } = gate.permissions.network;
   assert.ok(
-    Array.isArray(gate.permissions.network.domains) && gate.permissions.network.domains.length > 0,
-    'testar-alpha has to restrict the network to a list of domains',
+    domains === undefined || domains.length === 0,
+    'a domain allowlist is a policy no shipped adapter can enforce, so declaring one is ' +
+      'declaring a session that never opens',
   );
 
   for (const file of Object.keys(SKILLS).filter((name) => name !== 'testar-alpha.json')) {
     assert.equal(readManifest(file).permissions.network.allowed, false, `${file}: network closed`);
   }
+
+  assert.ok(
+    !gate.instructions.replace(/\s+/g, ' ').includes('aberta só para o endereço de loopback'),
+    'the instructions cannot keep claiming a restriction the manifest no longer declares: a ' +
+      'model told its network is scoped will not report the calls it thinks it cannot make',
+  );
 });
 
 test('AT10 — the validator CLI approves the bundle and rejects a tampered hash', () => {

@@ -126,12 +126,21 @@ divergência não registrada vira armadilha para quem vier depois.
    reais pressionando. O porte deixa o nó agêntico com checks 100%
    determinísticos e instruções triviais; quando houver um segundo caso real,
    o tipo novo entra com dois consumidores para provar o formato.
-2. **Dois vocabulários para o resultado do portão.** O `saida_schema` do nó
-   `testar` (herdado do exemplo) usa `aprovado`/`retrabalho`/`escala`, que são
-   os rótulos das arestas; o manifesto usa o enum que o formato de portão
-   exige, `passou`/`falhou`/`escalar_humano`. O mapeamento é direto e está
-   escrito nas `instrucoes` de `testar-alpha`: `passou` → aresta `aprovado`,
-   `falhou` → aresta `retrabalho`.
+2. **Two vocabularies for the gate's outcome — and the edge label is neither
+   of them (`t275`).** The `testar` node's `output_schema` still declares
+   `outcome` with `aprovado`/`retrabalho`/`escala`, inherited from the master
+   example, while the manifest declares the enum the gate format demands,
+   `pass`/`fail`/`escalate_human`. That half stays open. What closed is the
+   routing: the edge is named by neither of those, but by the reserved key
+   `resultado` — the node declares it beside `outcome`, with the `condition` of
+   its own two edges, and the manifest's instructions map the verdict onto it,
+   `outcome: "pass"` with `resultado: "aprovado"` and `outcome: "fail"` with
+   `resultado: "retrabalho"`. Until `t275` those instructions spent `resultado`
+   on the verdict itself (`resultado: "passou"`), a value no edge of this graph
+   carries: a session that obeyed them routed nowhere AND reported without the
+   `outcome` the manifest requires. The skill's `output` does not declare
+   `resultado`, and must not — the control plane takes the key out of the report
+   before holding it against that schema (`docs/spec/grafo.md`, `t269`).
 3. **Metade do bundle atravessa vivo; a outra metade continua só provada por
    contrato** (`t259`). `refinar` → `desenvolver` → `integrar` roda ponta a
    ponta com um runner de verdade: cada nó recebe o que o anterior produziu, a
@@ -194,7 +203,7 @@ enquanto o manifesto, que é o que vale, seguia em frente. O nó `testar` declar
 `{ref, veredito, evidencia}`, obrigatório) e `bugs` com `severidade`,
 espelhando o `saida` de `testar-alpha.json`. O nó `refinar` passou a exigir
 `nota` e a declarar `tier_modelo` e `gotchas`, espelhando `refinar-ticket.json`.
-O `resultado` do nó e seu enum `aprovado`/`retrabalho`/`escala` continuam como
+O `outcome` do nó e seu enum `aprovado`/`retrabalho`/`escala` continuam como
 estão: é vocabulário de aresta, e traduzi-lo é a divergência 2, ainda aberta.
 Quem reconcilia é quem primeiro nota a diferença — foi isto.
 
@@ -219,7 +228,7 @@ escalação, e ao ser respondida a sessão retoma e só então resolve. Vale par
 cinco nós, e é por isso que continua não sendo aresta: escalação é entidade de
 primeira classe (`input_requests`), não um caso especial de roteamento, e
 declarar uma aresta "escala" saindo de cada nó duplicaria esse mecanismo dentro
-da topologia — cinco arestas que nenhuma sessão percorre. `escalar_humano`
+da topologia — cinco arestas que nenhuma sessão percorre. `escalate_human`
 existe no enum porque o formato de portão exige os três valores, mas neste
 grafo nenhuma sessão o emite: as únicas decisões em voo são saídas de portão
 sobre arestas já declaradas.

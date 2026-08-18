@@ -267,8 +267,8 @@
       "description": "Exercita o comportamento entregue contra os critérios de aceite e roteia: aprovado segue para implantação, retrabalho volta para desenvolvimento.",
       "skill_ref": {
         "id": "testar-alpha",
-        "version": "1.0.3",
-        "hash": "sha256:536789d6720e2cc4464287d16937ff0c921c7f6f3912a12566072fe904fe76be"
+        "version": "1.0.4",
+        "hash": "sha256:c23cc23679b9b9bc36cdd9ed30c925a8a7ef6a3bd976072cdff6ca12422c06df"
       },
       "contract": {
         "input_schema": {
@@ -298,10 +298,19 @@
         "output_schema": {
           "type": "object",
           "required": [
+            "resultado",
             "outcome",
             "vereditos"
           ],
           "properties": {
+            "resultado": {
+              "type": "string",
+              "enum": [
+                "aprovado",
+                "retrabalho"
+              ],
+              "description": "The edge this gate takes, and the reserved key of the report protocol: one fenced block carries the report and the label together, and this is the label (`packages/runner/src/dispatch/parse-node-result.ts`). The vocabulary is THIS graph's — the `condition` of an edge leaving `testar` — which is why it is declared here and never in the pinned skill's `output`: the control plane takes it out of the report before holding the rest against that schema (t269, `docs/spec/grafo.md`), and the same skill under another graph would carry other labels. Escalation is not among them: it pauses the node with an input-request instead of opening a third edge."
+            },
             "outcome": {
               "enum": [
                 "aprovado",

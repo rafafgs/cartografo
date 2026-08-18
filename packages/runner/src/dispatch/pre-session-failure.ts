@@ -1,6 +1,6 @@
 /**
  * Which pre-session failures are worth blocking a work over, and with what
- * reason (t252, FR1/FR2).
+ * reason (t252, FR1/FR2; t272, FR1).
  *
  * A dispatch does four reads before it acquires a worktree — the work, the graph
  * version, the engine route and the pinned skill — and four of them can throw an
@@ -21,10 +21,31 @@
  * and for those the retry IS the right answer; blocking one would make a person
  * undo a hiccup by hand.
  *
- * So the five are a CLOSED set, matching exactly the reproduction the ficha was
+ * So the set is CLOSED, matching exactly the reproductions the fichas were
  * opened over. Everything else classifies to `null`, including the two error
  * families' own siblings: a wider net here is a work blocked over something that
  * would have healed itself, which is the failure mode in the other direction.
+ *
+ * **The sixth arrived with t272, and it is the first one from AFTER the
+ * worktree.** The t109 game run put a real job through `desenvolvimento-de-
+ * software`: `testar-alpha` declares a domain-scoped `network`,
+ * `resolvePermissions` cannot express that on this engine, and
+ * `ClaudeCodeAdapter.startSession` refuses before the spawn and before
+ * `POST /v1/sessions` — 38 leases in two minutes, not one session opened. The
+ * refusal is deterministic in the same strong sense the five above are: the same
+ * skill hash resolves to the same policy, and the same policy gets the same
+ * refusal on every tick. What is NOT in the set is the rest of
+ * {@link SessionStartError}, which is one class for four causes — the two spawn
+ * shapes carry nothing that tells a binary that is genuinely missing from an
+ * `EMFILE`, so they keep classifying to `null` and get the weaker treatment
+ * `pre-session-retry.ts` gives them: bounded, not blocked.
+ *
+ * The prefix is imported from the `claude-code` adapter and matches BOTH
+ * adapters: `codex-permission-policy.ts` declares the identical literal
+ * independently, and deduplicating the two is another ficha's (t272, Out of
+ * Scope). If they ever drift, this classification silently stops recognizing
+ * codex's half — which is the reason the duplication is written down here as
+ * well as there.
  *
  * **Why an `ErroDoControlPlane` with `status === 404` can only be the graph
  * version.** The skill registry's 404 is translated into
@@ -45,6 +66,8 @@
  */
 
 import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
+import { PERMISSION_REFUSAL_PREFIX } from '../engine/claude-code-adapter.ts';
+import { SessionStartError } from '../engine/types.ts';
 import {
   SkillNotRegisteredError,
   SkillPinMismatchError,
@@ -83,8 +106,9 @@ function versionOf(job: PreSessionJob): string {
 }
 
 /**
- * Classifies an error thrown between the work being read and the worktree being
- * acquired.
+ * Classifies an error thrown anywhere before a session exists — the window
+ * between the work being read and the worktree being acquired, and, since t272,
+ * the refusal `startSession` raises before it spawns anything.
  *
  * @param error Whatever the window threw, unopened.
  * @param job The work being dispatched.
@@ -125,6 +149,21 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
       `runner (registrados: ${known}). Nenhuma sessão foi aberta: despachar em outro ` +
       'engine rodaria o trabalho num motor que ninguém escolheu, e ainda registraria esse ' +
       'motor como se o grafo o tivesse pedido. Configure a rota (ou corrija o grafo) e desbloqueie.'
+    );
+  }
+
+  // The PREFIX is what decides, and only it: the other three causes this one
+  // class carries — a spawn that failed, a session that did not come up, a
+  // codex resume nothing asks for yet — say nothing about whether a retry
+  // would behave differently.
+  if (error instanceof SessionStartError && error.message.startsWith(PERMISSION_REFUSAL_PREFIX)) {
+    return (
+      `O nó \`${job.current_node_id}\` fixa uma política de permissão que este engine não ` +
+      `sabe aplicar, e ele recusou antes de abrir: ${error.message}. Nenhuma sessão foi ` +
+      'aberta: um engine que não consegue expressar a política ou recusa ou roda valendo ' +
+      'menos do que foi declarado, e a segunda opção é a única que um sistema de permissão ' +
+      'nunca pode ter (D4). A mesma skill, no mesmo hash, é recusada de novo em toda ' +
+      'retentativa — corrija o que a mensagem aponta no manifesto e desbloqueie.'
     );
   }
 

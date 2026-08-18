@@ -20,7 +20,7 @@ não serve, espera.
 - t272 falha pré-sessão não reconhecida = laço de lease
 - t273 executor avança `main` e prepara o banco de testes após o integrar
 
-## 2. Dois consertos do review, pequenos e de alto retorno (tickets t275/t276)
+## 2. Dois consertos do review, pequenos e de alto retorno (tickets t278/t279)
 - **Check estático de casamento de contratos no import**: todo input obrigatório de um nó tem
   produtor — um ancestral (`contract.produces`), o `project`, a projeção do control plane
   (`job`, `traversal`, `perguntas_respondidas`) ou o executor — senão o import recusa com a

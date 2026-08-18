@@ -986,8 +986,17 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
   }
 
   const producedOf = new Map(contracts.map((contract) => [contract.id, contract.produced]));
-  for (let round = 0; round <= contracts.length; round += 1) {
-    let moved = false;
+
+  // Round-robin until nothing moves. It terminates on its own arithmetic: a
+  // node's set is only ever REPLACED by a subset of itself (it starts at the
+  // universe, and every meet is taken over sets that only shrink), so a round
+  // that moves anything strictly reduces a total that cannot go below zero. A
+  // round cap of `nodes.length` would look safer and be worse — a shrink can
+  // cascade around a cycle more than once per node, and stopping early would
+  // leave a set too LARGE, which is the direction that stays silent about a real
+  // gap instead of inventing one.
+  for (let moved = true; moved; ) {
+    moved = false;
 
     for (const contract of contracts) {
       if (contract.id === initial) continue;
@@ -1017,8 +1026,6 @@ export function validateContracts(doc: unknown, resolveSkill: SkillLookup): Cont
         moved = true;
       }
     }
-
-    if (!moved) break;
   }
 
   for (const contract of contracts) {

@@ -1,49 +1,50 @@
-# Especificação: intake — do pedido à quebra em tickets no grafo
+# Specification: intake — from the request to the breakdown into tickets on the graph
 
-**Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0006_intake.sql`](../../packages/core/migrations/0006_intake.sql)
-**Decisão de origem:** [D3](../../DECISIONS.md) — sintetizar topologia e quebrar
-trabalho são **dois atos**: o primeiro produz nós (uma vez por classe), o
-segundo produz tickets (a cada execução), e o caminho fica congelado durante a
-execução
+**API version:** `v1` · **Migration:** [`packages/core/migrations/0006_intake.sql`](../../packages/core/migrations/0006_intake.sql)
+**Founding decision:** [D3](../../DECISIONS.md) — synthesizing the topology and
+breaking down the work are **two acts**: the first produces nodes (once per
+class), the second produces tickets (once per execution), and the path stays
+frozen during the execution
 
-Até aqui trabalho entrava no grafo por `POST /v1/jobs`, com título e nó de
-entrada e mais nada: sem corpo, sem critério de aceite, sem relação entre
-tickets. Esta camada é o segundo ato da D3 — receber um pedido em linguagem
-natural já decomposto em itens, **propor** a quebra sobre o grafo registrado da
-classe, e só criar os `trabalho` depois de um humano confirmar.
+Until now work entered the graph through `POST /v1/jobs`, with a title, an entry
+node and nothing else: no body, no acceptance criterion, no relation between
+tickets. This layer is D3's second act — take a request in natural language,
+already decomposed into items, **propose** the breakdown over the class's
+registered graph, and only create the `trabalho` rows once a human has confirmed.
 
-A frase que resume o desenho: **o intake propõe, o humano confirma, e nada
-disso toca o grafo.** Confirmar um rascunho cria viajantes; não cria versão de
-grafo, não move ponteiro, não muda nó nenhum.
+The sentence that sums up the design: **intake proposes, the human confirms, and
+none of it touches the graph.** Confirming a draft creates travellers; it creates
+no graph version, moves no pointer, changes no node.
 
 ---
 
-## 1. Duas fases, e por que não uma
+## 1. Two phases, and why not one
 
-| Fase | Rota | O que grava | O que emite no log |
+| Phase | Route | What it writes | What it emits into the log |
 |---|---|---|---|
-| Propor | `POST /v1/intake` | Uma linha em `intake_draft` | Nada |
-| Confirmar | `POST /v1/intake/:id/confirmations` | N `job` + M `job_dependency` | N `job.created` + M `job.dependency_declared` |
+| Propose | `POST /v1/intake` | One row in `intake_draft` | Nothing |
+| Confirm | `POST /v1/intake/:id/confirmations` | N `job` + M `job_dependency` | N `job.created` + M `job.dependency_declared` |
 
-O rascunho **não emite evento nenhum** — nem ao nascer, nem ao ser editado, nem
-ao ser descartado. É armazenamento de trabalho em curso, não fato de auditoria:
-o log só ganha linha quando um viajante de fato nasce. É por isso que a projeção
-de `intake_rascunho` pode ser atualizada in loco sem ferir a regra append-only
-do log ([taxonomia](../../especificacoes/eventos/taxonomia.md)): nada nela é
-reconstruído a partir do log, porque nada dela foi registrado.
+The draft **emits no event at all** — not when it is born, not when it is edited,
+not when it is discarded. It is storage for work in progress, not an audit fact:
+the log only gains a row when a traveller actually comes into being. That is why
+the `intake_rascunho` projection can be updated in place without hurting the
+log's append-only rule
+([taxonomy](../../especificacoes/eventos/taxonomia.md)): nothing in it is
+reconstructed from the log, because nothing of it was ever recorded there.
 
-A confirmação é sub-recurso plural (`/confirmations`, `/discards`) e não um
-campo de status que alguém edita, pela mesma razão que o trabalho tem
-`/transitions` e `/blocks`: cada uma corresponde a um **fato** distinto.
+The confirmation is a plural subresource (`/confirmations`, `/discards`) and not
+a status field somebody edits, for the same reason the job has `/transitions` and
+`/blocks`: each one corresponds to a distinct **fact**.
 
-**O que está fora:** como o rascunho é PRODUZIDO a partir do pedido em
-linguagem natural. `items` chega já decomposto no corpo da requisição, venha de
-uma pessoa digitando, de uma sessão de agente rodada à parte ou de uma futura
-tela de chat. Esta camada não despacha sessão e não conhece engine.
+**What is outside:** how the draft is PRODUCED from the request in natural
+language. `items` arrives already decomposed in the request body, whether it
+comes from a person typing, from an agent session run separately, or from a
+future chat screen. This layer dispatches no session and knows no engine.
 
 ---
 
-## 2. O item, e o que o intake garante sobre ele
+## 2. The item, and what intake guarantees about it
 
 ```json
 {"ref": "migracao",
@@ -54,101 +55,100 @@ tela de chat. Esta camada não despacha sessão e não conhece engine.
  "depends_on": ["dominio"]}
 ```
 
-`ref` e `title` são obrigatórios; `body`, `acceptance_criteria`, `fields`,
-`tier` e `depends_on` são opcionais. `ref` é identidade **local ao lote**: ela
-existe para que um item cite outro, e morre na confirmação, quando cada `ref`
-vira um `job.id` real.
+`ref` and `title` are required; `body`, `acceptance_criteria`, `fields`, `tier`
+and `depends_on` are optional. `ref` is an identity **local to the batch**: it
+exists so that one item can cite another, and it dies at confirmation, when every
+`ref` becomes a real `job.id`.
 
-As chaves do item falam inglês desde o t255 ([glossário](glossario-wire.md)
-§1.1): elas viajam no corpo do `POST /v1/intake`, que é o que a D20 chama de
-"campos e parâmetros de query do JSON da API". Nada responde à grafia antiga —
-um item com `titulo` volta como `missing_required_field`, porque `title` é que
-é obrigatório.
+The item's keys have spoken English since t255
+([the glossary](glossario-wire.md) §1.1): they travel in the body of
+`POST /v1/intake`, which is what D20 calls "the fields and query parameters of
+the API's JSON". Nothing answers to the old spelling — an item with `titulo`
+comes back as `missing_required_field`, because `title` is the required one.
 
-Os critérios que o intake grava são **preliminares**. Quem os produz de verdade
-é o nó `refinar` do grafo de fábrica 1, cujo contrato recebe `{ticket_id,
-pedido}` e devolve `{especificacao, criterios_de_aceite, ...}`
+The criteria intake writes are **preliminary**. What really produces them is
+factory graph 1's `refinar` node, whose contract takes `{ticket_id, pedido}` and
+returns `{especificacao, criterios_de_aceite, ...}`
 ([`grafos-de-fabrica/desenvolvimento-de-software/grafo.json`](../../grafos-de-fabrica/desenvolvimento-de-software/grafo.json)).
-Exigir critério de aceite completo na entrada seria pedir ao intake o trabalho
-do grafo.
+Demanding a complete acceptance criterion on the way in would be asking intake to
+do the graph's work.
 
-A validação mora em
+The validation lives in
 [`packages/core/src/domain/intake.ts`](../../packages/core/src/domain/intake.ts),
-função pura sem `Database` — mesmo espírito de `domain/graph.ts` e
-`domain/operations.ts` — e devolve **a lista inteira de problemas**, nunca o
-primeiro (`validateItems`, linha 242):
+a pure function with no `Database` — the same spirit as `domain/graph.ts` and
+`domain/operations.ts` — and it returns **the whole list of problems**, never the
+first one (`validateItems`, line 242):
 
-| Código | Quando |
+| Code | When |
 |---|---|
-| `invalid_list` | `items` não é lista, ou é lista vazia |
-| `invalid_item` | um item não é objeto |
-| `missing_required_field` | falta `ref` ou `title` |
-| `invalid_field` | `body`, `acceptance_criteria`, `fields`, `tier` ou `depends_on` com forma errada |
-| `duplicate_ref` | dois itens do lote usam o mesmo `ref` |
-| `unknown_dependency` | `depends_on` cita `ref` que não é de nenhum item do lote |
-| `self_dependency` | o item cita o próprio `ref` |
-| `dependency_cycle` | as dependências fecham um ciclo |
+| `invalid_list` | `items` is not a list, or is an empty list |
+| `invalid_item` | an item is not an object |
+| `missing_required_field` | `ref` or `title` is missing |
+| `invalid_field` | `body`, `acceptance_criteria`, `fields`, `tier` or `depends_on` has the wrong shape |
+| `duplicate_ref` | two items of the batch use the same `ref` |
+| `unknown_dependency` | `depends_on` cites a `ref` belonging to no item of the batch |
+| `self_dependency` | the item cites its own `ref` |
+| `dependency_cycle` | the dependencies close a cycle |
 
-Cada problema é `{code, message, target}` — a mesma forma do relatório de grafo
-(§5.3 do glossário), e em inglês desde o t255 pela mesma razão que o item: esse
-relatório É o corpo do `400`.
+Every problem is `{code, message, target}` — the same shape as the graph report
+(§5.3 of the glossary), and in English since t255 for the same reason as the
+item: that report IS the body of the `400`.
 
-Os dois primeiros códigos de campo são os que a rota ao lado já respondia
-(`missing_required_field`, `invalid_field`): o t255 dobrou os dois do validador
-neles em vez de traduzi-los, para que um mesmo item não volte com duas grafias
-do mesmo problema.
+The first two field codes are the ones the route beside it already answered with
+(`missing_required_field`, `invalid_field`): t255 folded the validator's two into
+them rather than translating them, so that one item does not come back with two
+spellings of the same problem.
 
-O ciclo é procurado por busca em profundidade com três cores
-(`findCycles`, linha 209). Cinza = no caminho atual, preto = já fechado: bater
-num cinza é ciclo, bater num preto é apenas um nó alcançado duas vezes. Um
-diamante — `a` depende de `b` e de `c`, ambos dependendo de `d` — é uma quebra
-perfeitamente boa, e um caminhamento que confunde os dois rejeita justamente a
-forma que um lote real tem.
+The cycle is hunted by depth-first search with three colours (`findCycles`, line
+209). Grey = on the current path, black = already closed: hitting a grey one is a
+cycle, hitting a black one is only a node reached twice. A diamond — `a` depends
+on `b` and on `c`, both depending on `d` — is a perfectly good breakdown, and a
+traversal that confuses the two rejects precisely the shape a real batch has.
 
 ---
 
-## 3. Confirmar: uma transação, três escritas
+## 3. Confirming: one transaction, three writes
 
 [`repositories/intake.ts`](../../packages/core/src/repositories/intake.ts),
-`confirmDraft` (linha 258). A ordem dentro da transação não é decoração:
+`confirmDraft` (line 258). The order inside the transaction is not decoration:
 
-1. **Relê o ponteiro corrente da classe.** A rota resolve
-   `getClassBase` → `getVersion` no momento da confirmação, não no da proposta:
-   entre propor e aceitar a classe pode ter ganhado versão, e os viajantes
-   pertencem à que vale agora.
-2. **Cria um `job` por item**, todos no `no_inicial` da versão vigente,
-   todos com o `graph_version_id` dela e com o `project_id`/`execution_id` do
-   rascunho. Cada criação grava `job.created`.
-3. **Só então grava as dependências.** Uma aresta só pode ser registrada
-   quando as duas pontas já têm id real — `ref` é local ao lote e morre aqui.
+1. **It rereads the class's current pointer.** The route resolves
+   `getClassBase` → `getVersion` at confirmation time, not at proposal time:
+   between proposing and accepting, the class may have gained a version, and the
+   travellers belong to the one that holds now.
+2. **It creates one `job` per item**, all at the `no_inicial` of the version in
+   force, all with its `graph_version_id` and with the draft's
+   `project_id`/`execution_id`. Every creation writes `job.created`.
+3. **Only then does it write the dependencies.** An edge can only be recorded
+   once both ends have a real id — `ref` is local to the batch and dies here.
 
-Tudo isso é **uma transação SQLite**: todo trabalho, toda dependência e todo
-evento entram juntos ou nenhum entra. O `db.transaction` aninhado de `createJob`
-vira savepoint no `better-sqlite3`, a mesma composição que a escalação humana já
-usa.
+All of that is **one SQLite transaction**: every job, every dependency and every
+event go in together or none goes in. The nested `db.transaction` of `createJob`
+becomes a savepoint in `better-sqlite3`, the same composition human escalation
+already uses.
 
-O `UPDATE` final do rascunho é guardado por `AND status = 'pendente'` e a
-transação inteira cai se ele não afetar exatamente uma linha: confirmar duas
-vezes é um `409`, nunca dois lotes de trabalho.
+The draft's final `UPDATE` is guarded by `AND status = 'pendente'` and the whole
+transaction falls if it does not affect exactly one row: confirming twice is a
+`409`, never two batches of work.
 
-### O ator da confirmação
+### The confirmation's actor
 
-O portão é humano por desenho, e a `t124` autenticou a API — mas um token prova
-posse, não identidade: quem apresenta a credencial de operador pode ser qualquer
-pessoa da equipe, e o control plane não tem como dizer qual delas. Em vez
-de inventar um usuário, o log registra honestamente o componente que agiu —
-`INTAKE_ACTOR`, `sistema`/`intake` (linha 47) — e quem sabe quem está do outro
-lado manda `ator` no corpo da confirmação, como em qualquer outra escrita desta
+The gate is human by design, and `t124` authenticated the API — but a token
+proves possession, not identity: whoever presents the operator credential could
+be anybody on the team, and the control plane has no way of saying which. Rather
+than invent a user, the log honestly records the component that acted —
+`INTAKE_ACTOR`, `sistema`/`intake` (line 47) — and whoever knows who is on the
+other side sends `ator` in the confirmation's body, as in any other write of this
 API.
 
-> **Nota de escopo.** A ficha listava `ator?` também no corpo de
-> `POST /v1/intake`. Ele é aceito e ignorado ali: a criação do rascunho não
-> emite evento e a tabela não tem coluna de ator, então o único lugar onde um
-> ator declarado muda alguma coisa é a confirmação.
+> **A note on scope.** The ticket also listed `ator?` in the body of
+> `POST /v1/intake`. It is accepted and ignored there: creating the draft emits
+> no event and the table has no actor column, so the only place a declared actor
+> changes anything is the confirmation.
 
 ---
 
-## 4. Dependência declarada é registro, não bandeira
+## 4. A declared dependency is a record, not a flag
 
 ```sql
 CREATE TABLE job_dependency (
@@ -160,122 +160,124 @@ CREATE TABLE job_dependency (
 );
 ```
 
-Cada aresta também vira um evento
-[`job.dependency_declared`](../../especificacoes/eventos/schemas/job.dependency_declared.schema.json),
-o 16º tipo do catálogo:
+Every edge also becomes a
+[`job.dependency_declared`](../../especificacoes/eventos/schemas/job.dependency_declared.schema.json)
+event, the catalogue's 16th type:
 
 ```json
 {"depende_de_trabalho_id": 101}
 ```
 
-`entidade.id` é o trabalho **dependente**; `dados.depende_de_trabalho_id` é
-aquele de quem ele depende. "Este espera por aquele" é fato de quem espera, e é
-na linha do tempo dele que alguém vai procurar o motivo de não ter andado —
-`GET /v1/jobs/:id/events` do dependente mostra a declaração, o do outro não.
+`entidade.id` is the **dependent** job; `dados.depende_de_trabalho_id` is the one
+it depends on. "This one waits for that one" is a fact belonging to the one that
+waits, and it is on its timeline that somebody will look for the reason it has
+not moved — `GET /v1/jobs/:id/events` of the dependent shows the declaration, the
+other one's does not.
 
-**Declarar não bloqueia.** Nenhum `job.blocked` nasce daqui. Exigir a
-ordem — bloquear automaticamente, ordenar despacho, contar WIP por dependência —
-é decisão de outra ficha, e uma bandeira que ninguém sabe baixar seria pior que
-bandeira nenhuma.
+**Declaring does not block.** No `job.blocked` is born here. Enforcing the order
+— blocking automatically, ordering the dispatch, counting WIP per dependency — is
+another ticket's decision, and a flag nobody knows how to lower would be worse
+than no flag at all.
 
-Dependência **não atravessa lote**: `depends_on` só resolve `ref` de itens do
-mesmo rascunho. Declarar dependência sobre um `trabalho` que já existe não é
-suportado nesta versão.
+A dependency **does not cross batches**: `depends_on` only resolves a `ref` of
+items in the same draft. Declaring a dependency on a `trabalho` that already
+exists is not supported in this version.
 
 ---
 
-## 5. O trabalho ganhou conteúdo
+## 5. The job gained content
 
-A migração acrescenta duas colunas a `job` (linhas 33-34), e o contrato do
-evento `job.created` ganhou os dois campos correspondentes, **opcionais**
+The migration adds two columns to `job` (lines 33-34), and the `job.created`
+event's contract gained the two corresponding fields, **optional**
 ([`event-validation.ts:143-153`](../../packages/core/src/db/event-validation.ts)):
 
-| Coluna | Tipo | Nota |
+| Column | Type | Note |
 |---|---|---|
-| `corpo` | TEXT | `null` quando o trabalho nasceu só com título |
-| `criterios_de_aceite` | TEXT (JSON `string[]`) | `null` **não** é `[]` |
-| `tier` | TEXT (`trivial` \| `standard`) | t175. `null` **não** é `trivial` |
+| `corpo` | TEXT | `null` when the job was born with a title alone |
+| `criterios_de_aceite` | TEXT (JSON `string[]`) | `null` is **not** `[]` |
+| `tier` | TEXT (`trivial` \| `standard`) | t175. `null` is **not** `trivial` |
 
-`null ≠ []` é a distinção que importa para o nó que refina: "ninguém escreveu
-critério ainda" e "declarei que não há critério" são afirmações diferentes.
+`null ≠ []` is the distinction that matters to the node that refines: "nobody has
+written a criterion yet" and "I declare there is no criterion" are different
+statements.
 
-`null ≠ trivial` é a mesma disciplina com um preço maior: `tier` é a triagem de
-custo que a sessão de intake faz de graça (t175, ficha
-[`intake-generation.md`](intake-generation.md)), e é dela que o runner tira o modelo
-que vai rodar cada nó. Ler ausência como "trivial" rebaixaria para um modelo
-mais barato todo trabalho nascido antes desta coluna existir, sem que ninguém
-tivesse escolhido isso e sem nada falhar em lugar nenhum. O que o tier muda é
-quanto um nó CUSTA para rodar, nunca por qual aresta o trabalho sai: o grafo
-segue congelado durante a execução, e os atalhos de topologia do flowpilot
-seguem fora do porte ([`graph.md`](graph.md), seção do `work_tier`).
+`null ≠ trivial` is the same discipline with a bigger price: `tier` is the cost
+triage the intake session does for free (t175, the ticket
+[`intake-generation.md`](intake-generation.md)), and it is where the runner takes
+the model that will run each node from. Reading absence as "trivial" would demote
+to a cheaper model every job born before this column existed, without anybody
+having chosen it and without anything failing anywhere. What the tier changes is
+how much a node COSTS to run, never which edge the job leaves by: the graph is
+still frozen during the execution, and flowpilot's topology shortcuts are still
+outside the port ([`graph.md`](graph.md), the `work_tier` section).
 
-Um trabalho criado à mão por `POST /v1/jobs` continua nascendo só com título, e
-nesse caso os dois campos chegam ao log como `null` explícito — a regra de
-normalização que esta taxonomia aplica a todo campo opcional desde sempre.
-`PATCH /v1/jobs/:id` continua editando **só** `titulo`: o nó `refinar`
-reescrevendo corpo e critérios via `job.amended` é ficha própria.
+A job created by hand through `POST /v1/jobs` is still born with a title alone,
+and in that case both fields reach the log as an explicit `null` — the
+normalization rule this taxonomy has applied to every optional field from the
+start. `PATCH /v1/jobs/:id` still edits **only** `titulo`: the `refinar` node
+rewriting the body and the criteria through `job.amended` is a ticket of its own.
 
 ---
 
-## 6. A superfície HTTP
+## 6. The HTTP surface
 
-Registrada em [`routes/intake.ts`](../../packages/core/src/routes/intake.ts)
-(`registerIntake`, linha 72; uma linha em `server.ts:60`).
+Registered in [`routes/intake.ts`](../../packages/core/src/routes/intake.ts)
+(`registerIntake`, line 72; one line in `server.ts:60`).
 
-| Rota | Resposta | Erros |
+| Route | Response | Errors |
 |---|---|---|
-| `POST /v1/intake` | `201 {draft}` | `400 missing_required_field` (sem `class`/`request`) · `404 unknown_graph` · `400 invalid_items` |
-| `GET /v1/intake` | `200 {drafts}` | filtros `status`, `class`, `project_id` |
+| `POST /v1/intake` | `201 {draft}` | `400 missing_required_field` (no `class`/`request`) · `404 unknown_graph` · `400 invalid_items` |
+| `GET /v1/intake` | `200 {drafts}` | filters `status`, `class`, `project_id` |
 | `GET /v1/intake/:id` | `200 {draft}` | `404 unknown_draft` |
 | `PATCH /v1/intake/:id` | `200 {draft}` | `404` · `409 draft_not_pending` · `400 invalid_items` |
 | `POST /v1/intake/:id/discards` | `200 {draft}` | `404` · `409 draft_not_pending` |
 | `POST /v1/intake/:id/confirmations` | `201 {draft, jobs}` | `404` · `409 draft_not_pending` · `404 unknown_graph` · `400 validation_failed` |
 
-Os códigos, as chaves e os filtros acima falam inglês desde o t226
-([glossário](glossario-wire.md) §1.4), e esta tabela só soube disso na rodada
-alfa da t258: ela é da t122, e nem a migração da API nem a varredura de citações
-da t231 passaram por aqui — §1.4 é justamente a seção do glossário que aquela
-varredura não lê. Quem cobra a tabela agora é
+The codes, the keys and the filters above have spoken English since t226
+([the glossary](glossario-wire.md) §1.4), and this table only found that out in
+t258's alpha round: it belongs to t122, and neither the API's migration nor
+t231's citation sweep came through here — §1.4 is precisely the glossary section
+that sweep does not read. What holds the table to account now is
 [`spec-intake-http-codes.test.ts`](../../packages/core/test/spec-intake-http-codes.test.ts):
-cada par status+código é resolvido contra as chamadas de `refusal` da rota, cada
-corpo de sucesso contra as chaves que ela devolve, cada filtro contra os
-parâmetros de query que ela lê. Oráculo é a rota, nunca uma lista de palavras —
-uma tabela de status é promessa sobre o que o cliente recebe.
+every status+code pair is resolved against the route's `refusal` calls, every
+success body against the keys it returns, every filter against the query
+parameters it reads. The oracle is the route, never a word list — a table of
+statuses is a promise about what the client receives.
 
-Desde o t226 há **um** envelope de erro em toda a superfície `/v1` — `{error,
-message?}` com o contexto da rota como propriedade irmã
-([`routes/common.ts`](../../packages/core/src/routes/common.ts)) — e o intake não
-tem forma de erro própria nenhuma. O que a confirmação ainda tem de seu é ser a
-única rota desta camada que grava EVENTO, e é daí que vem o único código da
-tabela que a rota não escreve: um envelope de evento torto (um `actor` que não é
-`{type, ref}`, por exemplo) é recusado pelo mesmo `validateEvent` que serve toda
-a API e volta pelo `withValidation` daquele arquivo, com o mesmo corpo
-`{error: "validation_failed", details: [...]}` que `POST /v1/jobs` devolve. Quem
-precisa corrigir o próprio `actor` não deveria ter de aprender uma segunda forma
-de erro para descobrir isso — era um `500` até a rodada alfa t139. O rascunho
-recusado continua `pending` e confirmável; nenhum `trabalho`, nenhuma
-dependência e nenhuma linha de log sobrevivem à transação que caiu.
+Since t226 there has been **one** error envelope across the whole `/v1` surface —
+`{error, message?}` with the route's context as a sibling property
+([`routes/common.ts`](../../packages/core/src/routes/common.ts)) — and intake has
+no error shape of its own at all. What the confirmation still has of its own is
+being the only route of this layer that writes an EVENT, and that is where the
+table's one code the route does not write comes from: a crooked event envelope
+(an `actor` that is not `{type, ref}`, for instance) is refused by the same
+`validateEvent` that serves the whole API and comes back through that file's
+`withValidation`, with the same `{error: "validation_failed", details: [...]}`
+body `POST /v1/jobs` returns. Whoever needs to fix their own `actor` should not
+have to learn a second error shape to find that out — it was a `500` until
+t139's alpha round. The refused draft is still `pending` and still confirmable;
+no `trabalho`, no dependency and no log row survives the transaction that fell.
 
-`PATCH` **substitui** a lista de itens, nunca funde: um intake que fundisse não
-teria como remover um item de que alguém desistiu, e "me mande a quebra que você
-quer" é contrato mais simples que uma linguagem de patch sobre lista.
+`PATCH` **replaces** the list of items, never merges: an intake that merged would
+have no way of removing an item somebody gave up on, and "send me the breakdown
+you want" is a simpler contract than a patch language over a list.
 
-A classe precisa nomear uma linhagem já registrada — sugestão de classe por
-semelhança (D8) e variantes de grafo (D13) estão fora. Sem correspondência
-exata, `404`, e nada é gravado.
+The class has to name an already registered lineage — suggesting a class by
+resemblance (D8) and graph variants (D13) are out. Without an exact match, `404`,
+and nothing is written.
 
 ---
 
-## 7. A prova de que o grafo não se mexe
+## 7. The proof that the graph does not move
 
-É o critério de aceite original da ficha, e o teste que o guarda é
-`AT16` em
+It is the ticket's original acceptance criterion, and the test that guards it is
+`AT16` in
 [`packages/core/test/intake-routes.test.ts`](../../packages/core/test/intake-routes.test.ts):
-o fluxo completo roda contra a classe registrada a partir do bundle de fábrica
-1, e a lista de versões antes e depois é comparada inteira. Rodado também à mão
-contra o grafo de fábrica, sem edição nenhuma no documento — o transcrito
-abaixo foi regravado numa corrida nova em 2026-08-17, contra o banco recriado
-que a D20 pede, e é por isso que ele fala inglês do começo ao fim:
+the complete flow runs against the class registered from factory bundle 1, and
+the list of versions before and after is compared whole. Also run by hand against
+the factory graph, with no edit at all to the document — the transcript below was
+re-recorded in a fresh run on 2026-08-17, against the recreated database D20 asks
+for, and that is why it speaks English from beginning to end:
 
 ```
 POST /v1/graphs -> 201
@@ -297,29 +299,29 @@ eventos do trabalho "rotas": job.created, job.dependency_declared
 data da dependência: {"depends_on_job_id":2}
 ```
 
-Nenhuma rota desta camada chama `registerBaseGraph`, `insertVersion` ou
-`movePointer` — direta ou indiretamente. É a D3 ("o caminho fica congelado")
-aplicada ao intake.
+No route of this layer calls `registerBaseGraph`, `insertVersion` or
+`movePointer` — directly or indirectly. It is D3 ("the path stays frozen")
+applied to intake.
 
 ---
 
-## 8. O que esta camada ainda não faz
+## 8. What this layer does not do yet
 
-> **Gerar o rascunho** a partir do pedido em linguagem natural saiu desta lista
-> com a t144, e continua fora **desta camada**: quem decompõe é um comando do
-> runner que despacha uma sessão de agente e chega aqui por
-> `POST /v1/intake` como qualquer outro cliente — ver
-> [`intake-generation.md`](./intake-generation.md). Estas rotas seguem sem despachar
-> sessão e sem conhecer engine.
+> **Generating the draft** from the request in natural language left this list
+> with t144, and is still outside **this layer**: what decomposes is a runner
+> command that dispatches an agent session and arrives here through
+> `POST /v1/intake` like any other client — see
+> [`intake-generation.md`](./intake-generation.md). These routes still dispatch
+> no session and know no engine.
 
-- **Exigir a dependência declarada.** A aresta é registro; bloqueio automático,
-  ordem de despacho e WIP por dependência ficam de fora.
-- **Dependência entre lotes** e sobre trabalho já existente.
-- **Editar corpo/critérios de um trabalho já criado** — é o nó `refinar`, por
-  `job.amended`, em ficha própria.
-- **Tela de revisão e confirmação.** A D11 põe observabilidade e inbox antes de
-  tela de edição; aqui entrega-se só a API, no mesmo espírito do inbox de
-  propostas.
-- **Identidade por usuário** — a `t124` fechou a autenticação destas rotas, mas
-  não diz QUEM confirmou (ver "O ator da confirmação") — e **idempotência de
-  submissão**: reenviar o mesmo pedido duas vezes cria dois rascunhos.
+- **Enforcing the declared dependency.** The edge is a record; automatic
+  blocking, dispatch order and WIP per dependency are out.
+- **Dependencies across batches** and on an already existing job.
+- **Editing the body/criteria of an already created job** — that is the `refinar`
+  node, through `job.amended`, in a ticket of its own.
+- **A review and confirmation screen.** D11 puts observability and the inbox
+  before an editing screen; here only the API is delivered, in the same spirit as
+  the proposal inbox.
+- **Per-user identity** — `t124` closed the authentication of these routes, but
+  it does not say WHO confirmed (see "The confirmation's actor") — and
+  **submission idempotency**: sending the same request twice creates two drafts.

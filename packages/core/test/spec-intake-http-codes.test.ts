@@ -31,7 +31,7 @@
  *   wrong as a retired code, and only the pair is checkable.
  * - **`201 {draft, jobs}`** against the keys of the object literals the handlers
  *   return.
- * - **`filtros \`class\``** against the query parameters the collection handler
+ * - **`filters \`class\``** against the query parameters the collection handler
  *   reads.
  *
  * `validation_failed` is the one code of the table no handler of the file writes:
@@ -40,8 +40,9 @@
  * Nothing else in the table comes from outside the route.
  *
  * Only §6 is read. The problem codes of §2 are `domain/intake.ts`'s report and
- * carry no status, and the rest of the document is prose the D18 keeps in
- * Portuguese; a sweep that judged those would have to be turned off to be usable.
+ * carry no status, and the rest of the document is prose — English since D24,
+ * Portuguese before it; a sweep that judged those would have to be turned off to
+ * be usable.
  */
 
 import assert from 'node:assert/strict';
@@ -126,7 +127,7 @@ const CITED_REFUSAL = /^\d{3} [a-z_]+$/;
 const CITED_BODY = /^\d{3} \{([a-z_, ]+)\}$/;
 
 /** The cell that lists what the collection route filters by. */
-const CITED_FILTERS = /\|\s*filtros ([^|]*)\|/;
+const CITED_FILTERS = /\|\s*filters ([^|]*)\|/;
 
 /** Every `<status> <code>` §6 promises. */
 export function refusalCitations(section: string): Citation[] {
@@ -310,7 +311,7 @@ test('t258 — the gate bites on the pre-t226 table it was written for', () => {
     '| Rota | Resposta | Erros |',
     '|---|---|---|',
     '| `POST /v1/intake` | `201 {rascunho}` | `400 campo_obrigatorio_ausente` · `400 itens_invalidos` |',
-    '| `GET /v1/intake` | `200 {rascunhos}` | filtros `status`, `classe`, `projeto_id` |',
+    '| `GET /v1/intake` | `200 {rascunhos}` | filters `status`, `classe`, `projeto_id` |',
     '',
     '## 7. Seção seguinte',
     '',
@@ -344,7 +345,7 @@ test('t258 — the gate does NOT bite on the table the code really writes', () =
     '| Rota | Resposta | Erros |',
     '|---|---|---|',
     '| `POST /v1/intake` | `201 {draft}` | `400 missing_required_field` · `404 unknown_graph` |',
-    '| `GET /v1/intake` | `200 {drafts}` | filtros `status`, `class`, `project_id` |',
+    '| `GET /v1/intake` | `200 {drafts}` | filters `status`, `class`, `project_id` |',
     '| `GET /v1/intake/:id` | `200 {draft}` | `404 unknown_draft` |',
     '| `POST /v1/intake/:id/confirmations` | `201 {draft, jobs}` | `409 draft_not_pending` · `400 validation_failed` |',
     '',

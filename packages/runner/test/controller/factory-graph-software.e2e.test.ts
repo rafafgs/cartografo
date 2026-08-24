@@ -318,7 +318,7 @@ function benchRepository(root: string): {
 /**
  * The command the executor runs in the bench once it has advanced it.
  *
- * NOT `project.comando_instalacao` verbatim, and the difference is the
+ * NOT `project.install_command` verbatim, and the difference is the
  * fixture's and not the product's: the bundle declares `npm ci`, which is the
  * right answer for the repository this class describes and a guaranteed failure
  * in a scratch clone with no lockfile in it. What this command proves is what
@@ -455,7 +455,7 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
    *
    * `renderSkillInstructions` interpolates the MANIFEST body and then appends
    * the node's `contract` as fenced JSON, verbatim — and this bundle's contract
-   * carries `{{input.project.comando_testes}}` in its deterministic checks, on
+   * carries `{{input.project.test_command}}` in its deterministic checks, on
    * purpose: those are templates for whoever RUNS the check, and nothing in the
    * runner runs one yet (t176). So the "no placeholder survives" claim is made
    * where it is a claim: the text the manifest wrote.

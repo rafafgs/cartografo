@@ -806,7 +806,13 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     // Plain directories, for AT8's reason: an idle loop cuts no worktree.
     const { repoRoot, worktreesRoot } = workspace(t, 't162-at12');
 
-    const intervalMs = 2_000;
+    // Long on purpose (t292). What this case measures is the GAP between an
+    // implementation that notices the abort and one that waits the interval
+    // out, and that gap has to be much wider than the noise of the measurement
+    // itself. At 2_000ms it was not, and the assertion below went red about
+    // once in several full-suite runs; at 20_000ms an implementation that waits
+    // the interval out takes ~19.7s, four times the bound this case allows.
+    const intervalMs = 20_000;
     const aborter = new AbortController();
     const finished = runRunner({
       url: plane.baseUrl,
@@ -835,7 +841,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
 
     // Landed well inside the interval the loop is waiting out, which is where
     // the two possible implementations differ: one wakes up, the other waits
-    // the remaining ~1.7s out and only then notices.
+    // the remaining ~19.7s out and only then notices.
     await delay(300);
     const asked = Date.now();
     aborter.abort();
@@ -846,9 +852,26 @@ test('t162 — the packaged runner, against a real control plane', async (parent
       took < intervalMs,
       `an idle stop took ${took}ms, longer than the ${intervalMs}ms interval it was waiting out`,
     );
+    // The line with the teeth, and the reason the one above is not enough: the
+    // abort lands 300ms into the interval, so an implementation that waits the
+    // rest of it out returns in ~19.7s — under `intervalMs`, and therefore
+    // invisible to that assertion. This is the one that separates "noticed the
+    // abort" from "waited the interval out".
+    //
+    // The number is measured, not guessed (t292). `took` is not pure shutdown
+    // latency: the loop awaits whatever tick is in flight, and `runRunner`
+    // pairs, preflights and reports its models before it ever parks, so an
+    // abort that lands during that startup makes `took` the remainder of it.
+    // Across 16 runs of this suite on an 8-core machine — 10 sequential, 6 with
+    // two suites at once — that residue measured between 0ms and 753ms. 5_000ms
+    // is ~6x the worst of them and ~1/4 of the ~19.7s the defect would cost, so
+    // no scheduling hiccup reaches the bound and the defect cannot hide under
+    // it. The earlier bound was `intervalMs / 2` — 1_000ms against a 753ms
+    // worst case, which is how this became an intermittently red suite.
+    const promptlyMs = 5_000;
     assert.ok(
-      took < intervalMs / 2,
-      `an idle stop took ${took}ms: the shutdown is bounded by the interval, but it should not be waiting it out`,
+      took < promptlyMs,
+      `an idle stop took ${took}ms, past the ${promptlyMs}ms it is given: the shutdown is waiting the ${intervalMs}ms interval out instead of noticing the abort`,
     );
   });
 

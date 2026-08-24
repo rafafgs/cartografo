@@ -606,3 +606,42 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
     'the two workarounds this ficha replaces are neither of them used here',
   );
 });
+
+/**
+ * Every `project.<key>` this file spells is a key the bundle still has (t294).
+ *
+ * t280 rewrote the `project` block of `grafo.json` into English, and the three
+ * sweeps that keep D24 closed are all blind to what it left behind here.
+ * `no-portuguese-wire.test.ts` and `no-portuguese-identifiers.test.ts` MASK
+ * comments on purpose — prose about a name is documentation and not the name,
+ * and explaining a rename means writing both sides of it down — while
+ * `tests/no-portuguese-factory-bundles.test.mjs` reads `grafos-de-fabrica/**`
+ * and nothing else. A doc comment in THIS file naming a key the rename retired
+ * is invisible to all three, which is how one survived the translation and a
+ * second one survived beside it, four lines from an assertion that reads the
+ * live key correctly.
+ *
+ * So this case reads its own source, comments included, and checks the one
+ * thing that makes such a mention true: that the document still publishes the
+ * key. It is not a Portuguese sweep. A key renamed in any future direction, or
+ * dropped, goes red here the same way — the gate is `grafo.json`, not a word
+ * bank, and it costs nothing to keep because `PROJECT` is already read off the
+ * committed bundle for the crossing above.
+ *
+ * The retired spellings are deliberately not written down anywhere in this
+ * file, not even to explain the gate: the scan reads comments too, so naming
+ * one here would fail the very case that documents it.
+ */
+test('t294 — no `project.<key>` mention in this file outlives the key it names', () => {
+  const source = readFileSync(import.meta.filename, 'utf8');
+  const published = new Set(Object.keys(PROJECT));
+
+  const named = [...source.matchAll(/\bproject\.([a-z_]+)/gi)].map((match) => match[1]);
+
+  assert.ok(named.length > 0, 'the scan found the mentions it exists to check');
+  assert.deepEqual(
+    [...new Set(named)].filter((key) => !published.has(key)).sort(),
+    [],
+    'a `project.<key>` written here names a key the bundle no longer publishes',
+  );
+});

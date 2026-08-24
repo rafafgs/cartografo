@@ -360,3 +360,68 @@ test('t285 AT-b — a round under another version is refused, by name, before th
   assert.equal(proposal.result, null, 'a refused close leaves the hypothesis open');
   assert.equal(proposal.applied_version_id, appliedVersionId);
 });
+
+/** The refusal `POST /v1/jobs` answers for a version nobody contract-checked (t283). */
+interface JobRefusal {
+  error: string;
+  graph_version_id?: string;
+  contracts?: { state: string; problems: Array<{ code: string; node_id: string }> };
+}
+
+/** A registered version, read for the contract state the route stamped on it. */
+interface CheckedVersion extends GraphVersion {
+  contracts: { state: string };
+}
+
+test('t288 — the raw fixture is stored unchecked, and every job named on it is refused', async (t) => {
+  const { url: baseUrl, token } = await bootCore(t);
+  const plane: ControlPlane = { baseUrl, token };
+
+  // Deliberately WITHOUT `resolvePins`: this is exactly the shape
+  // `applyOneProposal` had until t288, and the two assertions below are the whole
+  // of what it cost — AT-a and AT-b red on `main` for six days, over a 409 raised
+  // three calls away from the line that caused it.
+  //
+  // The pins of `grafo-valido-minimo.json` are namespaced (`cartografo/…`) and
+  // the registry's `id` is kebab-case, so they can never resolve on their own:
+  // registering this document raw is not a mistake the fixture can outgrow, it
+  // is the fixture's permanent state. Which is why the guard lives HERE, in the
+  // file a future editor of that setup has open, and not in `test-support` or
+  // `packages/core` — dropping the call again trips this, by name, first.
+  const raw: unknown = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
+  const { graph_version: version } = await api<{ graph_version: CheckedVersion }>(
+    plane,
+    'POST',
+    '/v1/graphs',
+    raw,
+    201,
+  );
+  assert.equal(
+    version.contracts.state,
+    'unchecked',
+    'nothing the raw fixture pins resolves, so the contract check stands aside',
+  );
+
+  const refusal = await api<JobRefusal>(
+    plane,
+    'POST',
+    '/v1/jobs',
+    {
+      title: 'a round against a graph nobody checked',
+      entry_node_id: 'redigir',
+      execution_id: EXECUTION_ID,
+      graph_version_id: version.id,
+    },
+    409,
+  );
+
+  assert.equal(refusal.error, 'graph_version_unchecked');
+  assert.equal(refusal.graph_version_id, version.id, 'the refusal names the version it is about');
+  assert.deepEqual(
+    (refusal.contracts?.problems ?? [])
+      .filter((problem) => problem.code === 'skill_ref_unresolved')
+      .map((problem) => problem.node_id),
+    ['redigir', 'revisar'],
+    'and the pins to register — which is the sentence this test exists to hand the next reader',
+  );
+});

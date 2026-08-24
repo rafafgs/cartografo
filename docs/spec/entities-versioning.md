@@ -1,42 +1,42 @@
-# Especificação: entidades de versionamento e API
+# Specification: the versioning entities and the API
 
-**Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0002_grafo_versao_proposta.sql`](../../packages/core/migrations/0002_grafo_versao_proposta.sql)
-**Decisão de origem:** [D15](../../DECISIONS.md) — "versionamento de grafos: no banco, com as ideias do git"
+**API version:** `v1` · **Migration:** [`packages/core/migrations/0002_grafo_versao_proposta.sql`](../../packages/core/migrations/0002_grafo_versao_proposta.sql)
+**Founding decision:** [D15](../../DECISIONS.md) — "graph versioning: in the database, with git's ideas"
 
-O grafo é dado (D15), e [`docs/spec/graph.md`](graph.md) especifica o formato
-desse dado. Este documento especifica onde ele **mora** e como ele **anda**: as
-três tabelas que guardam linhagem, snapshot e hipótese; o procedimento que dá
-identidade a uma versão; o vocabulário de diff semântico; e a API que expõe
-tudo isso.
+The graph is data (D15), and [`docs/spec/graph.md`](graph.md) specifies the
+format of that data. This document specifies where it **lives** and how it
+**moves**: the three tables that keep the lineage, the snapshot and the
+hypothesis; the procedure that gives a version its identity; the semantic diff
+vocabulary; and the API that exposes all of it.
 
-A ideia toda cabe em uma frase: versionamos como o git pensa, sem git no
-núcleo. Uma versão é endereçada pelo hash do próprio conteúdo, aponta para o
-pai, e nunca é reescrita; o que muda é um ponteiro. Rollback move o ponteiro de
-volta e não apaga nada — é o que deixa o topógrafo (`t110`) cruzar depois
-"versão × telemetria" por join, inclusive nas versões que foram abandonadas.
+The whole idea fits in one sentence: we version the way git thinks, with no git
+in the core. A version is addressed by the hash of its own content, points at its
+parent, and is never rewritten; what moves is a pointer. A rollback moves the
+pointer back and deletes nothing — it is what lets the topografo (`t110`) cross
+"version × telemetry" with a join later, in the abandoned versions too.
 
 ---
 
-## 1. As três entidades
+## 1. The three entities
 
-| Entidade | O que é | Muda? |
+| Entity | What it is | Does it change? |
 |---|---|---|
-| `graph` | A **linhagem**: a classe, o tipo de linhagem (base ou variante) e o ponteiro para a versão que vale hoje. | Só o ponteiro. |
-| `graph_version` | Um **snapshot** imutável do documento inteiro, endereçado pelo hash do conteúdo, com ponteiro para o pai. | Nunca. |
-| `proposal` | Uma **hipótese**: versão-alvo, diff semântico com inversas, evidência que a motivou e métrica que ela espera mover. | Só o status e o resultado. |
+| `graph` | The **lineage**: the class, the lineage type (base or variant) and the pointer to the version that holds today. | Only the pointer. |
+| `graph_version` | An immutable **snapshot** of the whole document, addressed by the hash of its content, with a pointer to its parent. | Never. |
+| `proposal` | A **hypothesis**: the target version, the semantic diff with its inverses, the evidence that motivated it and the metric it expects to move. | Only the status and the result. |
 
-`class` é coluna de `graph`, não tabela própria: a D8 fixa a classe como
-identidade nomeada pelo usuário e **raiz de versionamento**, e a D13 descreve
-classe e variante como atributos do grafo, não como entidade com ciclo de vida
-próprio. Por isso a linhagem base de uma classe nasce com `id = class`. Se um
-dia existir classe navegável sem grafo (t118), extrair a tabela é aditivo.
+`class` is a column of `graph`, not a table of its own: D8 fixes the class as an
+identity named by the user and a **versioning root**, and D13 describes class and
+variant as attributes of the graph, not as an entity with a life cycle of its
+own. That is why a class's base lineage is born with `id = class`. If a navigable
+class with no graph ever exists (t118), extracting the table is additive.
 
 ```sql
 CREATE TABLE graph (
-  id                  TEXT PRIMARY KEY,          -- classe, para a linhagem base (D8)
+  id                  TEXT PRIMARY KEY,          -- the class, for the base lineage (D8)
   class               TEXT NOT NULL,
   lineage_type        TEXT NOT NULL CHECK (lineage_type IN ('base', 'variant')),
-  base_class          TEXT,                      -- só variante (D13)
+  base_class          TEXT,                      -- variant only (D13)
   origin_proposal_id  INTEGER REFERENCES proposal(id),
   current_version_id  TEXT REFERENCES graph_version(id),
   created_at          TEXT NOT NULL,
@@ -49,10 +49,10 @@ CREATE TABLE graph (
 CREATE UNIQUE INDEX graph_class_base_unique ON graph (class) WHERE lineage_type = 'base';
 
 CREATE TABLE graph_version (
-  id               TEXT PRIMARY KEY,   -- sha256:<64 hex> do snapshot canônico (§2)
+  id               TEXT PRIMARY KEY,   -- sha256:<64 hex> of the canonical snapshot (§2)
   graph_id         TEXT NOT NULL REFERENCES graph(id),
   parent_version   TEXT REFERENCES graph_version(id),
-  snapshot         TEXT NOT NULL,      -- documento de grafo completo, canonicalizado
+  snapshot         TEXT NOT NULL,      -- the complete graph document, canonicalized
   source           TEXT NOT NULL CHECK (source IN ('manual', 'synthesizer', 'proposal')),
   proposal_id      INTEGER REFERENCES proposal(id),
   created_at       TEXT NOT NULL,
@@ -60,17 +60,6 @@ CREATE TABLE graph_version (
                      CHECK (contracts_state IN ('checked', 'unchecked', 'failed')),
   contracts_report TEXT NOT NULL DEFAULT '[]'   -- JSON: ContractProblem[] (t283)
 );
-
-**`contracts_state` is the one column of `graph_version` that changes after the
-row is written (`t283`).** *(This paragraph is in English per the 2026-08-18
-language rule.)* Everything else about a version is frozen — the snapshot, the
-parent and the hash that IS its identity — and this is a mutable STATUS on an
-otherwise append-only row, the same shape `skill.deprecated_at` already has.
-It records whether the contract check of `graph.md` §6.1 ever got to run:
-`checked` (it ran and passed), `unchecked` (a skill pin resolved to nothing, so
-it never ran) or `failed` (it ran and refused). Registering the missing manifest
-re-runs the check and moves the row, recording
-`graph_version.contracts_checked`. Only `checked` may carry a job — see §6.
 
 CREATE TABLE proposal (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,90 +78,101 @@ CREATE TABLE proposal (
 );
 ```
 
-Notas de leitura:
+**`contracts_state` is the one column of `graph_version` that changes after the
+row is written (`t283`).** Everything else about a version is frozen — the
+snapshot, the parent and the hash that IS its identity — and this is a mutable
+STATUS on an otherwise append-only row, the same shape `skill.deprecated_at`
+already has. It records whether the contract check of `graph.md` §6.1 ever got to
+run: `checked` (it ran and passed), `unchecked` (a skill pin resolved to nothing,
+so it never ran) or `failed` (it ran and refused). Registering the missing
+manifest re-runs the check and moves the row, recording
+`graph_version.contracts_checked`. Only `checked` may carry a job — see §6.
 
-- **`current_version_id` é o único campo que responde "o que vale hoje".** Não
-  há flag `ativa` em `graph_version`: duas fontes para o mesmo fato divergem.
-- **`source` distingue quem produziu o snapshot** — `manual` (importado ou
-  escrito à mão), `synthesizer` (D10) ou `proposal` (topógrafo). Na PoC só
-  `manual` e `proposal` acontecem; o valor existe porque origem é fato do dado,
-  não da fase.
-- **Os nomes de coluna copiam literalmente os schemas de evento** já
-  especificados em
+Reading notes:
+
+- **`current_version_id` is the only field that answers "what holds today".**
+  There is no `ativa` flag on `graph_version`: two sources for the same fact
+  diverge.
+- **`source` tells apart who produced the snapshot** — `manual` (imported or
+  written by hand), `synthesizer` (D10) or `proposal` (the topografo). In the PoC
+  only `manual` and `proposal` happen; the value exists because origin is a fact
+  about the data, not about the phase.
+- **The column names copy the event schemas literally**, as already specified in
   [`especificacoes/eventos/schemas/`](../../especificacoes/eventos/schemas)
-  (`graph_id`, `parent_version`, `source`, `proposal_id`, `reason`). Foi o que
-  fez da emissão, ligada pela `t196`, mapeamento direto e não tradução: cada
-  caminho que escreve uma versão grava `graph_version.registered` e —
-  porque escrever e passar a valer acontecem na mesma transação nos três casos —
-  também `graph_version.applied`. Reverter grava um `graph_version.reverted`
-  sozinho, com `entity.id` na versão **abandonada**, porque nenhuma versão nova
-  é escrita.
-- **Nada se apaga.** Não existe `DELETE` nem `UPDATE` de `graph_version` em
-  nenhum caminho de código. O único `UPDATE` de `graph` é o do ponteiro.
+  (`graph_id`, `parent_version`, `source`, `proposal_id`, `reason`). That is what
+  made the emission `t196` switched on a direct mapping and not a translation:
+  every path that writes a version records `graph_version.registered` and —
+  because writing and coming into force happen in the same transaction in all
+  three cases — also `graph_version.applied`. Reverting records a
+  `graph_version.reverted` on its own, with `entity.id` on the **abandoned**
+  version, because no new version is written.
+- **Nothing is deleted.** There is no `DELETE` and no `UPDATE` of
+  `graph_version` on any code path. The only `UPDATE` of `graph` is the
+  pointer's.
 
 ---
 
-## 2. Identidade de uma versão: o hash do snapshot
+## 2. A version's identity: the snapshot's hash
 
-`graph_version.id` é `sha256:` seguido do sha256 da serialização JSON **canônica**
-(chaves ordenadas recursivamente, a parte da RFC 8785 que estes formatos usam)
-do documento de grafo **inteiro**.
+`graph_version.id` is `sha256:` followed by the sha256 of the **canonical** JSON
+serialization (keys sorted recursively, the part of RFC 8785 these formats use)
+of the **whole** graph document.
 
 ```
 id = "sha256:" + sha256( JSON.stringify( canonicalizar( documento ) ) )
 ```
 
-Duas consequências deliberadas:
+Two deliberate consequences:
 
-1. **Cobre o documento inteiro**, ao contrário do hash de manifesto de skill
+1. **It covers the whole document**, unlike the skill manifest's hash
    ([`manifesto-skill.md`](../../especificacoes/formatos/manifesto-skill.md)),
-   que cobre só `{instrucoes, entrada, saida, checks, permissoes}`. Lá metadado
-   de catálogo não pode invalidar o pino; aqui vale o oposto — o snapshot de uma
-   versão **é** o documento inteiro ([`graph.md` §7](graph.md)), e mudar a
-   descrição do grafo é uma versão nova.
-2. **Reordenar chave não é mudança.** A ordem das chaves e a formatação do JSON
-   não carregam significado no documento de grafo; dois arquivos que só diferem
-   nisso têm o mesmo hash e são a mesma versão.
+   which covers only `{instrucoes, entrada, saida, checks, permissoes}`. There,
+   catalogue metadata must not invalidate the pin; here the opposite holds — a
+   version's snapshot **is** the whole document ([`graph.md` §7](graph.md)), and
+   changing the graph's description is a new version.
+2. **Reordering a key is not a change.** The order of the keys and the JSON's
+   formatting carry no meaning in a graph document; two files that differ only in
+   that have the same hash and are the same version.
 
-Como o hash É a identidade, um resultado idêntico a uma versão que já existe na
-linhagem não é uma versão nova: é proposta sem efeito, e a aplicação a recusa
-(§5).
+Since the hash IS the identity, a result identical to a version that already
+exists in the lineage is not a new version: it is a proposal with no effect, and
+applying it is refused (§5).
 
-Implementação: [`packages/core/src/dominio/hash.ts`](../../packages/core/src/dominio/hash.ts)
-(mesma função `canonicalizar` de `scripts/validar-bundle-fabrica.mjs`).
+Implementation: [`packages/core/src/dominio/hash.ts`](../../packages/core/src/dominio/hash.ts)
+(the same `canonicalizar` function as `scripts/validar-bundle-fabrica.mjs`).
 
 ---
 
-## 3. Vocabulário de operações semânticas
+## 3. The semantic operation vocabulary
 
-Uma proposta carrega um **diff semântico**, não um diff de linha (D15): lista de
-operações tipadas, cada uma com a própria inversa. É o que torna a proposta
-julgável ("acrescenta um portão de red team antes de implantar") em vez de
-legível apenas como patch, e o que dá caminho de volta a qualquer mudança.
+A proposal carries a **semantic diff**, not a line diff (D15): a list of typed
+operations, each one with an inverse of its own. It is what makes a proposal
+judgeable ("it adds a red-team gate before deployment") rather than merely
+readable as a patch, and what gives any change a way back.
 
-O vocabulário viaja no fio em inglês desde a D20 (`glossario-wire.md` §3): o
-nome do tipo, as chaves da operação e o relatório de validação. Nada do que já
-estava gravado em `proposal.operations` foi migrado — os bancos de
-desenvolvimento são recriados, e uma operação ainda escrita em português é tipo
-desconhecido, não um dialeto antigo aceito em paralelo.
+The vocabulary has travelled the wire in English since D20 (`glossario-wire.md`
+§3): the type's name, the operation's keys and the validation report. Nothing
+already written in `proposal.operations` was migrated — the development databases
+are recreated, and an operation still written in Portuguese is an unknown type,
+not an old dialect accepted in parallel.
 
-| Tipo | Campos | Inversa |
+| Type | Fields | Inverse |
 |---|---|---|
-| `add_node` | `node` (documento do nó) | `remove_node` do mesmo `id` |
-| `remove_node` | `node_id` | `add_node` do mesmo nó |
-| `add_edge` | `edge` (`from`, `to`, `condition`) | `remove_edge` da mesma aresta |
-| `remove_edge` | `edge` (`from`, `to`, `condition?`) | `add_edge` da mesma aresta |
-| `change_node_field` | `node_id`, `field`, `from`, `to` | `change_node_field` com `from`/`to` trocados |
+| `add_node` | `node` (the node's document) | `remove_node` of the same `id` |
+| `remove_node` | `node_id` | `add_node` of the same node |
+| `add_edge` | `edge` (`from`, `to`, `condition`) | `remove_edge` of the same edge |
+| `remove_edge` | `edge` (`from`, `to`, `condition?`) | `add_edge` of the same edge |
+| `change_node_field` | `node_id`, `field`, `from`, `to` | `change_node_field` with `from`/`to` swapped |
 
-O par antes/depois da operação chama-se `from`/`to` pelo mesmo nome que a aresta
-do documento já usava para as pontas dela, e é de propósito: são dois formatos
-que se encontram dentro da mesma operação, e passam a dizer a mesma palavra para
-a mesma coisa.
+The operation's before/after pair is called `from`/`to` by the same name the
+document's edge already used for its ends, and it is on purpose: they are two
+formats that meet inside the same operation, and they now say the same word for
+the same thing.
 
-`change_node_field` troca `papel`, `descricao`, `skill_ref` ou `contrato`
-inteiro. `id` e `tipo_no` **não** são campos alteráveis: o id é a chave por onde
-arestas, telemetria e propostas se referem ao nó, e trocá-lo é operação
-semântica própria, não rename cosmético.
+`change_node_field` swaps `papel`, `descricao`, `skill_ref` or the whole
+`contrato`. `id` and `tipo_no` are **not** changeable fields: the id is the key
+edges, telemetry and old proposals refer to the node by, and swapping it is a
+semantic operation of its own, not a cosmetic rename.
 
 ```json
 {
@@ -185,399 +185,406 @@ semântica própria, não rename cosmético.
 }
 ```
 
-**`condition` no alvo de `remove_edge` é opcional, e é o que desempata aresta
-paralela.** Duas arestas entre o mesmo par de nós com condições diferentes são
-duas arestas (o schema sempre permitiu: são dois desfechos do mesmo passo), e um
-alvo com só as duas pontas não diz qual delas remover. Com `condition`, a
-operação remove exatamente aquela; sem, remove a primeira aresta entre aquelas
-duas pontas — que é o que a operação sempre significou. Pelo mesmo motivo, a
-inversa só é incompatível quando os DOIS lados declaram `condition` e elas
-divergem; um lado que não declara casa com o outro.
+**`condition` in `remove_edge`'s target is optional, and it is what breaks the
+tie on a parallel edge.** Two edges between the same pair of nodes with different
+conditions are two edges (the schema always allowed it: they are two outcomes of
+the same step), and a target with only the two ends does not say which of them to
+remove. With a `condition`, the operation removes exactly that one; without, it
+removes the first edge between those two ends — which is what the operation
+always meant. For the same reason, the inverse is only incompatible when BOTH
+sides declare a `condition` and they disagree; a side that declares none matches
+the other.
 
-Duas fronteiras:
+Two boundaries:
 
-- **Validar operação é estrutural.** `validarOperacao` confere chaves, tipos e a
-  compatibilidade da inversa (tipo pareado e **mesmo alvo** — inversa de outro
-  nó não é inversa), e responde `{valid, errors: [{code, message}]}`. Ela não
-  impede a operação de produzir um grafo quebrado: quem reprova isso é o portão
-  de soundness, depois de aplicar. Uma aresta com
-  `condition: ""` é operação bem formada **e** grafo não sound; os dois
-  julgamentos são de camadas diferentes, e é isso que faz o erro chegar ao
-  cliente com o nome da regra em vez de um 400 genérico.
-- **Aplicar recusa alvo inexistente.** Remover um nó que não está no snapshot
-  estoura em vez de virar no-op silencioso: a proposta está falando de outra
-  versão do grafo, e gravar "aplicou, nada mudou" seria uma versão mentindo
-  sobre o que aconteceu.
+- **Validating an operation is structural.** `validarOperacao` checks the keys,
+  the types and the inverse's compatibility (a paired type and the **same
+  target** — another node's inverse is not an inverse), and answers
+  `{valid, errors: [{code, message}]}`. It does not stop the operation from
+  producing a broken graph: what fails that is the soundness gate, after
+  applying. An edge with `condition: ""` is a well-formed operation **and** an
+  unsound graph; the two judgements belong to different layers, and it is that
+  which makes the error reach the client with the rule's name instead of a
+  generic 400.
+- **Applying refuses a target that does not exist.** Removing a node that is not
+  in the snapshot blows up rather than becoming a silent no-op: the proposal is
+  speaking about another version of the graph, and recording "applied, nothing
+  changed" would be a version lying about what happened.
 
-Cinco operações são o mínimo que prova o ciclo aplicar/soundness/reverter — não
-o vocabulário final do topógrafo. Crescer é aditivo, e a regra dos dois
-consumidores diz para esperar um segundo consumidor real (`t110`) antes de
-congelar.
+Five operations are the minimum that proves the apply/soundness/revert cycle —
+not the topografo's final vocabulary. Growing is additive, and the rule of two
+consumers says to wait for a second real consumer (`t110`) before freezing.
 
-Implementação: [`packages/core/src/dominio/operacoes.ts`](../../packages/core/src/dominio/operacoes.ts).
+Implementation: [`packages/core/src/dominio/operacoes.ts`](../../packages/core/src/dominio/operacoes.ts).
 
-### 3.1 O diff semântico entre dois documentos
+### 3.1 The semantic diff between two documents
 
-`applyOperations` é a metade de ida — documento mais operações dá documento
-novo. `diffGraphs(from, to)` é o par inverso: dois documentos completos dão a
-lista de operações que leva um ao outro, no mesmo vocabulário de cinco acima. É
-o motor que a promoção e a oferta (§6) precisavam para existir.
+`applyOperations` is the outbound half — a document plus operations gives a new
+document. `diffGraphs(from, to)` is its inverse pair: two complete documents give
+the list of operations that takes one to the other, in the same vocabulary of
+five above. It is the engine promotion and offering (§6) needed in order to
+exist.
 
-Três fronteiras, todas deliberadas:
+Three boundaries, all deliberate:
 
-- **Só `nos` e `arestas` entram no diff.** `classe`, `linhagem`, `metadata`,
-  `no_inicial` e `nos_finais` não têm operação que os expresse, e
-  `applyOperations` também nunca os toca. É por construção que uma proposta de
-  promoção/oferta preserva a identidade do **alvo**: base continua base,
-  variante continua variante.
-- **A comparação é canônica.** Nunca `===` nem `JSON.stringify` cru: ordem de
-  chave não significa nada em um documento de grafo (§2), então dois nós que
-  diferem só nela são o mesmo nó, e emitir operação aí seria inventar diff.
-- **Sem ponto de bifurcação, sem merge de três vias.** O motor enxerga os dois
-  snapshots que recebeu e nada mais.
+- **Only `nos` and `arestas` enter the diff.** `classe`, `linhagem`, `metadata`,
+  `no_inicial` and `nos_finais` have no operation that expresses them, and
+  `applyOperations` never touches them either. It is by construction that a
+  promotion/offer proposal preserves the **target's** identity: a base stays a
+  base, a variant stays a variant.
+- **The comparison is canonical.** Never `===` and never raw `JSON.stringify`:
+  key order means nothing in a graph document (§2), so two nodes that differ only
+  in it are the same node, and emitting an operation there would be inventing a
+  diff.
+- **No fork point, no three-way merge.** The engine sees the two snapshots it was
+  given and nothing else.
 
-Como cada diferença vira operação:
+How each difference becomes an operation:
 
-| Diferença | Operações |
+| Difference | Operations |
 |---|---|
-| Nó só em `from` | `remove_node` |
-| Nó só em `to` | `add_node` |
-| Mesmo `id`, muda só `papel`/`descricao`/`skill_ref`/`contrato` | um `change_node_field` por campo, na ordem fixa `papel`, `descricao`, `skill_ref`, `contrato` |
-| Mesmo `id`, muda `tipo_no` ou qualquer chave fora dessas quatro | `remove_node` + `add_node` (troca inteira) |
-| Aresta (`from`, `to`) só em um lado | `remove_edge` / `add_edge` |
-| Mesmas pontas, muda `condition` (ou qualquer chave) | `remove_edge` + `add_edge` |
+| A node only in `from` | `remove_node` |
+| A node only in `to` | `add_node` |
+| The same `id`, only `papel`/`descricao`/`skill_ref`/`contrato` changes | one `change_node_field` per field, in the fixed order `papel`, `descricao`, `skill_ref`, `contrato` |
+| The same `id`, `tipo_no` or any key outside those four changes | `remove_node` + `add_node` (a whole swap) |
+| An edge (`from`, `to`) on one side only | `remove_edge` / `add_edge` |
+| The same ends, `condition` (or any key) changes | `remove_edge` + `add_edge` |
 
-Um campo alterável presente de um lado e ausente do outro também cai na troca
-inteira: `change_node_field` grava a chave, nunca a apaga, e uma operação com
-`to: undefined` perde a chave ao ser serializada em `proposal.operations` e
-volta malformada.
+A changeable field present on one side and absent on the other also falls into
+the whole swap: `change_node_field` writes the key, it never erases it, and an
+operation with `to: undefined` loses the key when it is serialized into
+`proposal.operations` and comes back malformed.
 
-A ordem de emissão é fixa e faz parte do contrato: (a) remoções de nó em ordem
-de `from`, (b) adições de nó em ordem de `to`, (c) `change_node_field` em ordem
-de `to`, (d) remoções de aresta em ordem de `from`, (e) adições de aresta em
-ordem de `to`. Remoção antes de adição é o que deixa a troca (remover e re-somar
-o mesmo `id`) aplicar sem esbarrar em `duplicate_node`; ler cada lista na ordem
-dela é o que faz o ida-e-volta reproduzir `to`, porque canonicalizar ordena
-chaves, não posições de lista.
+The emission order is fixed and is part of the contract: (a) node removals in
+`from` order, (b) node additions in `to` order, (c) `change_node_field` in `to`
+order, (d) edge removals in `from` order, (e) edge additions in `to` order.
+Removal before addition is what lets the swap (removing and re-adding the same
+`id`) apply without hitting `duplicate_node`; reading each list in its own order
+is what makes the round trip reproduce `to`, because canonicalizing sorts keys,
+not list positions.
 
-Daí sai a propriedade que o motor promete: `applyOperations(from,
-diffGraphs(from, to))` não estoura e devolve `nos`/`arestas` canonicamente
-iguais aos de `to`, e toda operação emitida passa por `validarOperacao` sem
-retoque.
+Out of that comes the property the engine promises: `applyOperations(from,
+diffGraphs(from, to))` does not blow up and returns `nos`/`arestas` canonically
+equal to `to`'s, and every emitted operation passes `validarOperacao` untouched.
 
-Implementação: [`packages/core/src/domain/diff.ts`](../../packages/core/src/domain/diff.ts)
-— arquivo nascido depois da D18, então o caminho aqui já é o real, em inglês,
-diferente dos demais links deste documento.
+Implementation: [`packages/core/src/domain/diff.ts`](../../packages/core/src/domain/diff.ts)
+— a file born after D18, so the path here is already the real one, in English,
+unlike this document's other links.
 
 ---
 
-## 4. O portão de validação
+## 4. The validation gate
 
-Todo documento que entra no banco — registrado direto ou produzido por proposta
-— passa pelo mesmo par de checagens, que é o porte TypeScript do validador de
-referência do `t96` ([`graph.md` §6](graph.md)):
+Every document that enters the database — registered directly or produced by a
+proposal — goes through the same pair of checks, which is the TypeScript port of
+`t96`'s reference validator ([`graph.md` §6](graph.md)):
 
-- `validarEstrutura` — forma e integridade referencial (`{valido, erros}`);
-- `validarSoundness` — as quatro regras de workflow net, na ordem `alcançável`,
+- `validarEstrutura` — shape and referential integrity (`{valido, erros}`);
+- `validarSoundness` — the four workflow-net rules, in the order `alcançável`,
   `termina`, `aresta_com_condicao`, `no_com_contrato` (`{valido, violacoes}`).
 
-O relatório devolvido no `422` é exatamente o de
-[`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs) — mesmos códigos,
-mesmos alvos, mesma ordem. A paridade entre os dois validadores é travada por
-teste sobre todos os fixtures de `schema/exemplos/`
+The report returned in the `422` is exactly
+[`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs)'s — the same
+codes, the same targets, the same order. The parity between the two validators is
+locked down by a test over every fixture in `schema/exemplos/`
 ([`test/dominio-grafo.test.ts`](../../packages/core/test/dominio-grafo.test.ts)):
-o script vive fora da árvore publicável do pacote, então a duplicação é
-deliberada — e vigiada.
+the script lives outside the package's publishable tree, so the duplication is
+deliberate — and watched.
 
-Não há schema Fastify/ajv declarado contra
-[`schema/grafo.schema.json`](../../schema/grafo.schema.json): o schema é draft
-2020-12 e o ajv que vem no Fastify v5 está configurado para draft-07.
-Reconfigurar o compilador é possível e fica para quando alguém precisar da
-validação de forma completa na borda HTTP.
+There is no Fastify/ajv schema declared against
+[`schema/grafo.schema.json`](../../schema/grafo.schema.json): the schema is draft
+2020-12 and the ajv that ships with Fastify v5 is configured for draft-07.
+Reconfiguring the compiler is possible and waits for somebody to need complete
+shape validation at the HTTP edge.
 
-Implementação: [`packages/core/src/dominio/grafo.ts`](../../packages/core/src/dominio/grafo.ts).
+Implementation: [`packages/core/src/dominio/grafo.ts`](../../packages/core/src/dominio/grafo.ts).
 
 ---
 
-## 5. Os fluxos que mexem no ponteiro — e o que fecha a hipótese
+## 5. The flows that move the pointer — and the one that closes the hypothesis
 
-### Registrar uma linhagem nova
+### Registering a new lineage
 
-`POST /v1/grafos` recebe o documento cru e faz, em uma transação: valida →
-cria `graph` → cria `graph_version` (`parent_version: null`, `source: "manual"`) →
-aponta `current_version_id` para ela.
+`POST /v1/grafos` takes the raw document and does, in one transaction: validate →
+create `graph` → create `graph_version` (`parent_version: null`,
+`source: "manual"`) → point `current_version_id` at it.
 
-Registrar **não** move o ponteiro
-([`taxonomia.md`](../../especificacoes/eventos/taxonomia.md)) — exceto aqui, no
-bootstrap de uma linhagem nova, porque não existe "corrente" anterior a
-preservar e uma linhagem sem ponteiro seria um grafo que existe sem valer.
+Registering does **not** move the pointer
+([`taxonomia.md`](../../especificacoes/eventos/taxonomia.md)) — except here, in
+the bootstrap of a new lineage, because there is no earlier "current" to preserve
+and a lineage with no pointer would be a graph that exists without holding.
 
-### Bifurcar uma linhagem
+### Forking a lineage
 
-`POST /v1/grafos/:id/fork` cria a **variante** de um base (D13) e é o segundo —
-e último — bootstrap desta camada, com a mesma exceção de ponteiro do fluxo
-acima:
-
-```
-conferir que :id existe e é linhagem base
-        ↓
-montar o documento: snapshot CORRENTE do base, só trocando linhagem
-        ↓ (hash já existente em qualquer linhagem: 409, nada é escrito)
-gravar graph (lineage_type = variante, class e base_class = classe do base)
-        ↓
-gravar graph_version (parent_version = versão corrente do base)
-        ↓
-mover current_version_id da variante
-```
-
-Semântica de branch: bifurcar **não carrega diff nenhum**. Um `git branch` não
-muda conteúdo — cria ponteiro e parentesco, e a variante e o base andam
-separados depois, pelo fluxo de proposta comum, que não precisa de caso
-especial para variante.
-
-Duas consequências que o desenho assume de propósito:
-
-- **O parentesco atravessa a linhagem.** `parent_version` da primeira versão da
-  variante é a versão corrente do **base**. O schema permite: `parent_version` só
-  referencia `graph_version(id)`, sem exigir o mesmo `graph_id`. É esse ponteiro
-  que registra o ponto de bifurcação — a promoção e a oferta ainda **não** o
-  usam (o diff delas compara os dois snapshots correntes, §3.1), e é dele que
-  um merge de três vias vai sair quando existir (§7).
-- **O hash é global, não escopado por linhagem.** Duas bifurcações do mesmo base
-  com a mesma origem (ou ambas sem origem) produziriam o mesmo documento, e
-  `graph_version.graph_id` é coluna única — uma linha não pode pertencer a duas
-  linhagens ao mesmo tempo. A segunda é recusada com `409
-  bifurcacao_sem_efeito`, antes de qualquer escrita.
-
-O corpo pede `id` (a identidade da linhagem que nasce; a `classe` é herdada do
-base) e aceita `origem_proposta_id` opcional. Ele é conferido **só por
-existência**, em qualquer status: o topógrafo ainda não sabe propor um fork.
-Quando presente, a versão nasce com `origem: "proposta"`; ausente, com
-`origem: "manual"` — o mesmo tratamento que o bootstrap do base já dá a uma
-versão sem proposta por trás.
-
-O tipo do campo diverge de propósito entre banco e documento:
-`graph.origin_proposal_id` é `INTEGER REFERENCES proposal(id)`, e
-`linhagem.origem_proposta_id` é `string` no
-[`grafo.schema.json`](../../schema/grafo.schema.json) — pensado para acomodar
-id de fora, como o de um atlas importado. O inteiro fica no banco e vira
-`String(id)` no documento. Sem `origem_proposta_id`, a chave é **omitida** do
-documento, nunca `null`, como o `base` já faz com os dois campos que o schema
-lhe proíbe.
-
-### Aplicar uma proposta
-
-`POST /v1/propostas/:id/aplicar` é o fluxo da D15 inteiro. Ele só roda sobre
-proposta **`approved`**: o portão humano vem antes, e pular o portão é
-`409 proposta_nao_aprovada` (§ "Estados da proposta"). A ordem do que vem depois
-não é negociável:
+`POST /v1/grafos/:id/fork` creates a base's **variant** (D13) and is the second —
+and last — bootstrap of this layer, with the same pointer exception as the flow
+above:
 
 ```
-aplicar operações sobre uma CÓPIA do snapshot-alvo
+check that :id exists and is a base lineage
         ↓
-validar estrutura + soundness NO RESULTADO
-        ↓ (reprovado: status = rejected, relatório em result, 422)
-calcular o hash do documento resultante
+assemble the document: the base's CURRENT snapshot, swapping only the lineage
+        ↓ (a hash that already exists in any lineage: 409, nothing is written)
+write graph (lineage_type = variante, class and base_class = the base's class)
         ↓
-gravar graph_version (parent_version = target_version, source = proposal)
+write graph_version (parent_version = the base's current version)
         ↓
-mover graph.current_version_id
-        ↓
-status = applied, applied_version_id = hash
+move the variant's current_version_id
 ```
 
-O portão roda sobre o documento que **sairia**, não sobre o que entrou: é a
-composição das operações que quebra o grafo — cada uma isolada pode ser
-impecável. Reprovada, nada entra no banco além do status e do relatório: a
-versão nova nunca chega a existir.
+Branch semantics: forking **carries no diff at all**. A `git branch` does not
+change content — it creates a pointer and a parentage, and the variant and the
+base move apart afterwards, through the ordinary proposal flow, which needs no
+special case for a variant.
 
-Rejeição não apaga a proposta. Uma hipótese reprovada é evidência para o
-topógrafo, não lixo.
+Two consequences the design takes on purpose:
 
-### Reverter
+- **The parentage crosses the lineage.** The `parent_version` of the variant's
+  first version is the **base's** current version. The schema allows it:
+  `parent_version` only references `graph_version(id)`, without demanding the
+  same `graph_id`. It is that pointer that records the fork point — promotion and
+  offering do **not** use it yet (their diff compares the two current snapshots,
+  §3.1), and it is where a three-way merge will come from when one exists (§7).
+- **The hash is global, not scoped to a lineage.** Two forks of the same base
+  with the same origin (or both with no origin) would produce the same document,
+  and `graph_version.graph_id` is a single column — one row cannot belong to two
+  lineages at once. The second is refused with `409 bifurcacao_sem_efeito`,
+  before any write.
 
-`POST /v1/propostas/:id/reverter` move `current_version_id` de volta para
-`target_version` e grava `revert_reason`. A versão abandonada continua em
-`graph_version` e continua listada no histórico — append-only não tem exceção.
+The body asks for `id` (the identity of the lineage being born; the `classe` is
+inherited from the base) and accepts an optional `origem_proposta_id`. It is
+checked **for existence only**, in any status: the topografo does not know how to
+propose a fork yet. When present, the version is born with `origem: "proposta"`;
+absent, with `origem: "manual"` — the same treatment the base's bootstrap already
+gives a version with no proposal behind it.
 
-`motivo` é **obrigatório**, espelhando `data.reason` do evento
+The field's type diverges on purpose between the database and the document:
+`graph.origin_proposal_id` is `INTEGER REFERENCES proposal(id)`, and
+`linhagem.origem_proposta_id` is a `string` in
+[`grafo.schema.json`](../../schema/grafo.schema.json) — designed to accommodate
+an id from outside, like an imported atlas's. The integer stays in the database
+and becomes `String(id)` in the document. Without an `origem_proposta_id`, the
+key is **omitted** from the document, never `null`, the way `base` already does
+with the two fields the schema forbids it.
+
+### Applying a proposal
+
+`POST /v1/propostas/:id/aplicar` is D15's whole flow. It only runs over an
+**`approved`** proposal: the human gate comes first, and skipping the gate is a
+`409 proposta_nao_aprovada` (§ "The proposal's states"). The order of what comes
+next is not negotiable:
+
+```
+apply the operations over a COPY of the target snapshot
+        ↓
+validate structure + soundness ON THE RESULT
+        ↓ (failed: status = rejected, the report in result, 422)
+compute the hash of the resulting document
+        ↓
+write graph_version (parent_version = target_version, source = proposal)
+        ↓
+move graph.current_version_id
+        ↓
+status = applied, applied_version_id = the hash
+```
+
+The gate runs over the document that **would come out**, not over the one that
+went in: it is the composition of the operations that breaks the graph — each one
+in isolation can be impeccable. On a failure, nothing enters the database beyond
+the status and the report: the new version never comes into existence at all.
+
+A rejection does not delete the proposal. A failed hypothesis is evidence for the
+topografo, not rubbish.
+
+### Reverting
+
+`POST /v1/propostas/:id/reverter` moves `current_version_id` back to
+`target_version` and writes `revert_reason`. The abandoned version stays in
+`graph_version` and stays listed in the history — append-only has no exception.
+
+`motivo` is **mandatory**, mirroring the `data.reason` of the
 [`graph_version.reverted`](../../especificacoes/eventos/schemas/graph_version.reverted.schema.json)
-— que desde a `t196` é gravado de verdade, com `entity.id` na versão
-abandonada: é a evidência que o topógrafo vai cruzar com a telemetria dela.
-Reverter sem dizer por quê perde a metade útil do fato.
+event — which since `t196` is really written, with `entity.id` on the abandoned
+version: it is the evidence the topografo will cross with that version's
+telemetry. Reverting without saying why loses the useful half of the fact.
 
-### Fechar o experimento
+### Closing the experiment
 
-Proposta é hipótese, aprovação é experimento, a telemetria da rodada seguinte é
-o resultado ([`notas/2026-08-14-aprendizado.md`](../../notas/2026-08-14-aprendizado.md)).
-`POST /v1/propostas/:id/resultado` é onde esse ciclo fecha: recebe
-`{execucao_id, depois}` e grava o veredito da hipótese em `proposal.result`.
+A proposal is a hypothesis, an approval is an experiment, the next round's
+telemetry is the result
+([`notas/2026-08-14-aprendizado.md`](../../notas/2026-08-14-aprendizado.md)).
+`POST /v1/propostas/:id/resultado` is where that cycle closes: it takes
+`{execucao_id, depois}` and writes the hypothesis's verdict into
+`proposal.result`.
 
-Duas formas até então opacas ficam exigidas **aqui, e só aqui**:
+Two shapes that were opaque until then become required **here, and only here**:
 
 ```jsonc
-// proposal.expected_metric — o que a hipótese declarou que ia mover
+// proposal.expected_metric — what the hypothesis declared it would move
 { "nome": "retrabalho_por_travessia", "direcao": "cai", "de": 0.4, "para": 0.1 }
 
-// proposal.result — o veredito, escrito uma única vez
+// proposal.result — the verdict, written exactly once
 { "veredito": "piorou", "antes": 0.4, "depois": 0.9,
   "execucao_id": 7, "avaliado_em": "2026-08-14T18:20:31.004Z" }
 ```
 
-`POST /v1/propostas` **continua sem validar** `metrica_esperada`: mudar um
-endpoint já publicado é outra ticket, e uma proposta antiga com métrica
-incompleta simplesmente não tem veredito a calcular (`422`).
+`POST /v1/propostas` **still does not validate** `metrica_esperada`: changing an
+already published endpoint is another ticket, and an old proposal with an
+incomplete metric simply has no verdict to compute (`422`).
 
-A regra do veredito, sem faixa de tolerância — comparação numérica estrita:
+The verdict's rule, with no tolerance band — a strict numeric comparison:
 
-| Movimento de `depois` em relação a `de` | Veredito |
+| How `depois` moved relative to `de` | Verdict |
 |---|---|
-| Igual | `sem_efeito` |
-| Na direção declarada (`cai` → menor; `sobe` → maior) | `confirmada` |
-| Na direção oposta | `piorou` |
+| Equal | `sem_efeito` |
+| In the declared direction (`cai` → smaller; `sobe` → larger) | `confirmada` |
+| In the opposite direction | `piorou` |
 
-A linha de base é `de`, nunca `para`: `para` é a meta que a proposta esperava, e
-julgar contra ela transformaria "andou para o lado certo, menos do que se
-esperava" em fracasso.
+The baseline is `de`, never `para`: `para` is the target the proposal hoped for,
+and judging against it would turn "it moved the right way, by less than hoped"
+into a failure.
 
-Três garantias em volta do cálculo:
+Three guarantees around the arithmetic:
 
-- **`depois` é de quem chama.** Não existe motor de métricas nomeadas na v1;
-  quem calcula é o topógrafo (`t110`), que já precisou calcular a mesma métrica
-  para escrever `metrica_esperada` na criação da proposta.
-- **A execução seguinte é demonstrada, não alegada.** `execucao_id` é conferido
-  contra `metricasPorVersao` (entregue pelo `t102`, FR17): sem ao menos um `job` daquela
-  execução registrado sob `applied_version_id`, é `422 execucao_sem_evidencia`.
-  É o join que prova que a versão aplicada realmente rodou.
-- **Só a primeira chamada conta.** Com `result` já preenchido, a rota é
-  `409 proposta_ja_avaliada` e nada muda. Reavaliar seria reescrever o passado
-  de uma hipótese.
+- **`depois` belongs to the caller.** There is no named-metric engine in v1; who
+  computes it is the topografo (`t110`), which already had to compute the same
+  metric in order to write `metrica_esperada` when it created the proposal.
+- **The following execution is demonstrated, not claimed.** `execucao_id` is
+  checked against `metricasPorVersao` (delivered by `t102`, FR17): without at
+  least one `job` of that execution recorded under `applied_version_id`, it is a
+  `422 execucao_sem_evidencia`. It is the join that proves the applied version
+  really ran.
+- **Only the first call counts.** With `result` already filled in, the route is a
+  `409 proposta_ja_avaliada` and nothing changes. Re-evaluating would be
+  rewriting a hypothesis's past.
 
-Fechar o experimento **não muda o status**: uma proposta que piorou continua
-`applied`, e esta rota nunca chama a reversão. "Piorou" é dado, não ação — a
-escada de segurança da evolução (README, princípio 5) manda sugerir e passar
-por portão humano, não reverter sozinho. A fila dessas sugestões é uma leitura
-filtrada, `GET /v1/propostas?status=applied&veredito=piorou`, e nada além
-disso: notificação ativa, se um dia existir, é decisão de outra ticket.
+Closing the experiment does **not** change the status: a proposal that made
+things worse is still `applied`, and this route never calls the revert. "It got
+worse" is data, not an action — the evolution's safety ladder (README, principle
+5) orders suggesting and going through a human gate, not reverting on its own.
+The queue of those suggestions is a filtered read,
+`GET /v1/propostas?status=applied&veredito=piorou`, and nothing beyond that: an
+active notification, if one ever exists, is another ticket's decision.
 
-### Estados da proposta
+### The proposal's states
 
 ```
-             rejeitar (com motivo)
+              reject (with a reason)
    pending ───────────────────────────────▶ rejected
       │                                         ▲
-      │ aprovar                                 │ aplicar (portão reprova)
+      │ approve                                 │ apply (the gate fails it)
       ▼                                         │
    approved ─────────────────────────────────────┤
-      │             aplicar (portão aprova)      │
+      │              apply (the gate passes it)  │
       ▼                                          │
    applied ───────────────────────────────▶ reverted
-                reverter (com motivo)
+                revert (with a reason)
 ```
 
-`approved` é o portão humano do princípio 5, e desde a `t165` ele é obrigatório:
-aplicar exige `approved`, e uma proposta que pula o portão leva
-`409 proposta_nao_aprovada`. É a mesma escada que a tela desenha desde a `t111`
-([`screen-proposal-inbox.md` §3](screen-proposal-inbox.md)) — `pending` oferece
-Aprovar/Rejeitar, `approved` oferece Aplicar.
+`approved` is principle 5's human gate, and since `t165` it is mandatory:
+applying demands `approved`, and a proposal that skips the gate takes a
+`409 proposta_nao_aprovada`. It is the same ladder the screen has drawn since
+`t111` ([`screen-proposal-inbox.md` §3](screen-proposal-inbox.md)) — `pending`
+offers Approve/Reject, `approved` offers Apply.
 
-Aprovar não escreve nada além do status: aplicar é um segundo ato deliberado, e
-colapsar os dois em um clique seria desfazer a escada em nome de um clique a
-menos.
+Approving writes nothing beyond the status: applying is a deliberate second act,
+and collapsing the two into one click would undo the ladder in the name of one
+click fewer.
 
-Dois caminhos chegam a `rejected`, e as duas histórias moram em colunas
-diferentes de propósito:
+Two paths reach `rejected`, and the two stories live in different columns on
+purpose:
 
-| Quem rejeitou | De que estado | Onde fica o porquê |
+| Who rejected | From which state | Where the reason lives |
 |---|---|---|
-| Uma pessoa, pela inbox | `pending` | `rejection_reason` (texto livre, obrigatório) |
-| O portão de soundness, durante o `aplicar` | `approved` | `result` (o relatório inteiro do §4) |
+| A person, through the inbox | `pending` | `rejection_reason` (free text, mandatory) |
+| The soundness gate, during the `aplicar` | `approved` | `result` (§4's whole report) |
 
-Linha `rejected` anterior à `t165` tem `rejection_reason = NULL`, e isso é o
-correto: ela nunca foi rejeitada por gente. Não houve backfill.
+A `rejected` row older than `t165` has `rejection_reason = NULL`, and that is the
+correct thing: it was never rejected by a person. There was no backfill.
 
-O veredito é ortogonal a este diagrama: ele escreve `result` e deixa o estado
-onde estava. `result` acumula dois usos que nunca coexistem — o relatório que
-reprovou uma proposta `rejected`, ou o veredito da hipótese de uma proposta que
-chegou a ser `applied`. Uma proposta revertida **mantém** o veredito que
-justificou a reversão.
+The verdict is orthogonal to this diagram: it writes `result` and leaves the
+state where it was. `result` carries two uses that never coexist — the report
+that failed a `rejected` proposal, or the verdict on the hypothesis of a proposal
+that got as far as `applied`. A reverted proposal **keeps** the verdict that
+justified the reversal.
 
 ---
 
 ## 6. Endpoints
 
-Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`.
-Desde a `t196`, os quatro que escrevem versão ou movem ponteiro — `POST /graphs`,
-`POST /graphs/:id/fork`, `POST /proposals/:id/apply` e
-`POST /proposals/:id/revert` — **gravam o evento correspondente na mesma
-transação da linha**. Os dois que só abrem proposta pendente (`/promote` e
-`/offer`) não gravam nada, porque nada mudou de versão.
+All under `/v1` and, since `t124`, all demanding
+`Authorization: Bearer <token>`. Since `t196`, the four that write a version or
+move the pointer — `POST /graphs`, `POST /graphs/:id/fork`,
+`POST /proposals/:id/apply` and `POST /proposals/:id/revert` — **write the
+corresponding event in the same transaction as the row**. The two that only open
+a pending proposal (`/promote` and `/offer`) write nothing, because no version
+changed.
 
-Os caminhos abaixo estão na grafia em português deste documento; a superfície
-implementada foi renomeada para inglês pelo `t127` (D18), e é ela que vale:
+The paths below are in this document's Portuguese spelling; the implemented
+surface was renamed to English by `t127` (D18), and it is the one that holds:
 `/v1/graphs`, `/v1/graphs/:id/fork`, `/v1/graph-versions/:id`, `/v1/proposals`,
-`/v1/proposals/:id/apply` etc. Reescrever a tabela inteira é outra ticket.
+`/v1/proposals/:id/apply` and so on. Rewriting the whole table is another ticket.
 
-| Método | Rota | O que faz |
+| Method | Route | What it does |
 |---|---|---|
-| `POST` | `/v1/grafos` | Registra uma linhagem **base** nova a partir do documento completo (corpo cru, sem envelope). |
-| `POST` | `/v1/grafos/:id/fork` | Bifurca um base em uma **variante** (§5). Corpo: `{id, origem_proposta_id?}`. |
-| `POST` | `/v1/grafos/:id/promote` | `:id` é uma **variante**: abre proposta pendente **no base da classe** com `diffGraphs(base, variante)` (D13, §3.1). Corpo: `{evidencia, metrica_esperada}`. |
-| `POST` | `/v1/grafos/:id/offer` | `:id` é um **base**: abre proposta pendente **na variante nomeada** com `diffGraphs(variante, base)` (D13, §3.1). Corpo: `{variante_id, evidencia, metrica_esperada}`. |
-| `GET` | `/v1/classes` | Catálogo de classes registradas. |
-| `GET` | `/v1/grafos` | Todas as linhagens. |
-| `GET` | `/v1/grafos/:id` | Uma linhagem, com o ponteiro de versão corrente. |
-| `GET` | `/v1/grafos/:id/versoes` | A cadeia inteira de versões, inclusive as abandonadas por reversão. |
-| `GET` | `/v1/grafo-versoes/:id` | Uma versão, com o `snapshot` completo. |
-| `POST` | `/v1/propostas` | Cria uma proposta pendente. |
-| `GET` | `/v1/propostas` | Lista as propostas em ordem de `id`; filtros opcionais `status` e `veredito`. |
-| `GET` | `/v1/propostas/:id` | Uma proposta, com `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao` e `motivo_rejeicao`. |
-| `POST` | `/v1/propostas/:id/aprovar` | Portão humano: `pending` → `approved`. Sem corpo. |
-| `POST` | `/v1/propostas/:id/rejeitar` | Portão humano: `pending` → `rejected`; exige `motivo`, que vai para `motivo_rejeicao`. |
-| `POST` | `/v1/propostas/:id/aplicar` | Executa o fluxo do §5. Exige `approved`. |
-| `POST` | `/v1/propostas/:id/reverter` | Move o ponteiro de volta; exige `motivo`. |
-| `POST` | `/v1/propostas/:id/resultado` | Fecha o experimento: grava o veredito da hipótese. Não muda o status. |
+| `POST` | `/v1/grafos` | Registers a new **base** lineage from the complete document (a raw body, with no envelope). |
+| `POST` | `/v1/grafos/:id/fork` | Forks a base into a **variant** (§5). Body: `{id, origem_proposta_id?}`. |
+| `POST` | `/v1/grafos/:id/promote` | `:id` is a **variant**: opens a pending proposal **on the class's base** with `diffGraphs(base, variante)` (D13, §3.1). Body: `{evidencia, metrica_esperada}`. |
+| `POST` | `/v1/grafos/:id/offer` | `:id` is a **base**: opens a pending proposal **on the named variant** with `diffGraphs(variante, base)` (D13, §3.1). Body: `{variante_id, evidencia, metrica_esperada}`. |
+| `GET` | `/v1/classes` | The catalogue of registered classes. |
+| `GET` | `/v1/grafos` | Every lineage. |
+| `GET` | `/v1/grafos/:id` | One lineage, with its current-version pointer. |
+| `GET` | `/v1/grafos/:id/versoes` | The whole chain of versions, including the ones abandoned by a reversal. |
+| `GET` | `/v1/grafo-versoes/:id` | One version, with the complete `snapshot`. |
+| `POST` | `/v1/propostas` | Creates a pending proposal. |
+| `GET` | `/v1/propostas` | Lists the proposals in `id` order; optional `status` and `veredito` filters. |
+| `GET` | `/v1/propostas/:id` | One proposal, with `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao` and `motivo_rejeicao`. |
+| `POST` | `/v1/propostas/:id/aprovar` | The human gate: `pending` → `approved`. No body. |
+| `POST` | `/v1/propostas/:id/rejeitar` | The human gate: `pending` → `rejected`; demands `motivo`, which goes into `motivo_rejeicao`. |
+| `POST` | `/v1/propostas/:id/aplicar` | Runs §5's flow. Demands `approved`. |
+| `POST` | `/v1/propostas/:id/reverter` | Moves the pointer back; demands `motivo`. |
+| `POST` | `/v1/propostas/:id/resultado` | Closes the experiment: writes the hypothesis's verdict. Does not change the status. |
 
-Códigos de erro, por rota:
+Error codes, per route:
 
-| Situação | Código | `erro` |
+| Situation | Code | `erro` |
 |---|---|---|
-| Documento reprovado no portão | `422` | `grafo_invalido` (com `estrutura` e `soundness`) |
-| `linhagem.tipo` ≠ `base` em `POST /v1/grafos` | `400` | `linhagem_nao_base` |
-| Classe já tem grafo base | `409` | `classe_ja_registrada` |
-| Bifurcar o que não é linhagem `base` | `400` | `base_invalida` |
-| `id` da variante ausente ou vazio | `400` | `campo_obrigatorio_ausente` |
-| `id` da variante já é uma linhagem | `409` | `id_ja_registrado` |
-| `origem_proposta_id` não é inteiro positivo | `400` | `origem_proposta_id_invalido` |
-| `origem_proposta_id` sem proposta correspondente | `400` | `origem_proposta_desconhecida` |
-| Base sem `versao_corrente_id`, dos dois lados de um diff também (invariante defensivo) | `409` | `grafo_sem_versao_corrente` |
-| Bifurcação que produz um snapshot já existente | `409` | `bifurcacao_sem_efeito` |
-| Promover o que não é variante, ou oferecer a variante de outra classe | `400` | `variante_invalida` |
-| Oferecer a partir do que não é linhagem `base` | `400` | `base_invalida` |
-| `variante_id` ausente ou vazio na oferta | `400` | `campo_obrigatorio_ausente` |
-| Promoção/oferta cujos dois snapshots já concordam em `nos`/`arestas` | `422` | `diff_sem_efeito` |
-| `versao_alvo` inexistente ou de outro grafo | `400` | `versao_alvo_desconhecida` |
-| Operação de tipo desconhecido, sem inversa ou malformada | `400` | `operacoes_invalidas` |
-| Aprovar/rejeitar proposta que não está `pending` | `409` | `proposta_nao_pendente` |
-| Aplicar proposta que não passou pelo portão humano | `409` | `proposta_nao_aprovada` |
-| Reverter, ou fechar experimento de, proposta que não está `applied` | `409` | `proposta_nao_aplicada` |
-| A base mudou debaixo da proposta | `409` | `proposta_desatualizada` |
-| Operação não se aplica ao snapshot | `422` | `operacao_inaplicavel` |
-| Resultado idêntico a uma versão existente | `422` | `versao_sem_efeito` |
-| Reverter ou rejeitar sem motivo | `400` | `motivo_obrigatorio` |
-| `evidencia` ou `metrica_esperada` ausente; `execucao_id`/`depois` ausente ou não numérico | `400` | `campo_obrigatorio_ausente` |
-| Resultado já gravado por uma execução anterior | `409` | `proposta_ja_avaliada` |
-| `metrica_esperada` sem a forma `{nome, direcao, de, para}` | `422` | `metrica_esperada_invalida` |
-| Nenhum trabalho da execução rodou sob `versao_aplicada_id` | `422` | `execucao_sem_evidencia` |
-| Recurso inexistente | `404` | `grafo_desconhecido` / `grafo_versao_desconhecida` / `proposta_desconhecida` |
+| The document failed the gate | `422` | `grafo_invalido` (with `estrutura` and `soundness`) |
+| `linhagem.tipo` ≠ `base` in `POST /v1/grafos` | `400` | `linhagem_nao_base` |
+| The class already has a base graph | `409` | `classe_ja_registrada` |
+| Forking something that is not a `base` lineage | `400` | `base_invalida` |
+| The variant's `id` is absent or empty | `400` | `campo_obrigatorio_ausente` |
+| The variant's `id` is already a lineage | `409` | `id_ja_registrado` |
+| `origem_proposta_id` is not a positive integer | `400` | `origem_proposta_id_invalido` |
+| `origem_proposta_id` with no matching proposal | `400` | `origem_proposta_desconhecida` |
+| A base with no `versao_corrente_id`, and on either side of a diff too (a defensive invariant) | `409` | `grafo_sem_versao_corrente` |
+| A fork that produces an already existing snapshot | `409` | `bifurcacao_sem_efeito` |
+| Promoting something that is not a variant, or offering to another class's variant | `400` | `variante_invalida` |
+| Offering from something that is not a `base` lineage | `400` | `base_invalida` |
+| `variante_id` absent or empty in the offer | `400` | `campo_obrigatorio_ausente` |
+| A promotion/offer whose two snapshots already agree on `nos`/`arestas` | `422` | `diff_sem_efeito` |
+| `versao_alvo` does not exist or belongs to another graph | `400` | `versao_alvo_desconhecida` |
+| An operation of an unknown type, with no inverse or malformed | `400` | `operacoes_invalidas` |
+| Approving/rejecting a proposal that is not `pending` | `409` | `proposta_nao_pendente` |
+| Applying a proposal that did not go through the human gate | `409` | `proposta_nao_aprovada` |
+| Reverting, or closing the experiment of, a proposal that is not `applied` | `409` | `proposta_nao_aplicada` |
+| The base moved underneath the proposal | `409` | `proposta_desatualizada` |
+| The operation does not apply to the snapshot | `422` | `operacao_inaplicavel` |
+| A result identical to an existing version | `422` | `versao_sem_efeito` |
+| Reverting or rejecting with no reason | `400` | `motivo_obrigatorio` |
+| `evidencia` or `metrica_esperada` absent; `execucao_id`/`depois` absent or not numeric | `400` | `campo_obrigatorio_ausente` |
+| A result already written by an earlier execution | `409` | `proposta_ja_avaliada` |
+| `metrica_esperada` without the `{nome, direcao, de, para}` shape | `422` | `metrica_esperada_invalida` |
+| No job of the execution ran under `versao_aplicada_id` | `422` | `execucao_sem_evidencia` |
+| A resource that does not exist | `404` | `grafo_desconhecido` / `grafo_versao_desconhecida` / `proposta_desconhecida` |
 
-*(In English per the 2026-08-18 language rule.)* One refusal of this family does
-not live on any route of the table above, and belongs here anyway because it is
-the enforcement point of the version state this document's §1 declares. `POST
-/v1/jobs` answers `409` when the `graph_version_id` it is given RESOLVES and its
-`contracts_state` is not `checked`:
+One refusal of this family does not live on any route of the table above, and
+belongs here anyway because it is the enforcement point of the version state this
+document's §1 declares. `POST /v1/jobs` answers `409` when the
+`graph_version_id` it is given RESOLVES and its `contracts_state` is not
+`checked`:
 
-| Situação | Código | `error` |
+| Situation | Code | `error` |
 |---|---|---|
 | The named version was never contract-checked (a skill pin resolves to nothing) | `409` | `graph_version_unchecked` |
 | The named version ran the check and failed it | `409` | `graph_version_contracts_failed` |
@@ -586,45 +593,47 @@ Both carry `graph_version_id` and `contracts` (`{state, problems}`) as sibling
 context. A job with no `graph_version_id`, or with one that resolves to nothing,
 is not gated: there is no version to read a state off.
 
-O corpo de erro sempre traz `erro` — código estável, legível por máquina — e,
-quando há o que explicar, uma `mensagem` para gente. Em `grafo_invalido` vem
-junto o relatório inteiro do §4 (`estrutura` e `soundness`), que é o que permite
-apontar a regra e o alvo em vez de dizer só "inválido".
+The error body always carries `erro` — a stable, machine-readable code — and,
+when there is something to explain, a `mensagem` for people. In `grafo_invalido`
+it comes with §4's whole report (`estrutura` and `soundness`), which is what
+makes it possible to point at the rule and the target instead of only saying
+"invalid".
 
-Implementação: [`routes/grafos.ts`](../../packages/core/src/routes/grafos.ts),
+Implementation: [`routes/grafos.ts`](../../packages/core/src/routes/grafos.ts),
 [`routes/propostas.ts`](../../packages/core/src/routes/propostas.ts),
-[`dominio/hypothesis.ts`](../../packages/core/src/dominio/hypothesis.ts) (o
-veredito, puro) e [`repositorios/`](../../packages/core/src/repositorios). Só
-`src/db/` toca o driver do SQLite (D1); repositórios e rotas recebem o banco já
-aberto.
+[`dominio/hypothesis.ts`](../../packages/core/src/dominio/hypothesis.ts) (the
+verdict, pure) and [`repositorios/`](../../packages/core/src/repositorios). Only
+`src/db/` touches the SQLite driver (D1); repositories and routes are handed the
+database already open.
 
 ---
 
-## 7. O que esta camada ainda não faz
+## 7. What this layer does not do yet
 
-Cada item aqui é escopo declarado de outra ticket, não esquecimento:
+Every item here is another ticket's declared scope, not an oversight:
 
-- **Merge de três vias entre variante e base** (D13). Promover e oferecer já
-  existem (`/promote` e `/offer`, §6), mas em cima de um diff entre os **dois
-  snapshots correntes** e nada mais: o motor não conhece o ponto de bifurcação.
-  A consequência é assimétrica e vale dizer em voz alta — uma oferta
-  **sobrescreve** os nós e arestas em que a variante já tinha divergido, em vez
-  de sobrepor só o incremento próprio do base. Enquanto isso não mudar, oferecer
-  a uma variante que andou por conta própria é decisão de quem aprova a
-  proposta, não detalhe de implementação. Um diff ancorado no ancestral
-  (`base-na-bifurcação` → `base-corrente`) é trabalho futuro real.
-- **Executar a inversa** de uma operação — aqui só a forma é validada (`t118`).
-- **Registrar versão manual nova sobre linhagem existente**, fora do fluxo de
-  proposta.
-- **Reverter para versão arbitrária**, fora do par `target_version` /
-  `applied_version_id` de uma proposta.
-- **Aprovação/rejeição humana** como ação de API (`t111`).
-- **Cálculo automático de `depois`** a partir da telemetria, e disparo do
-  veredito "quando a execução termina": não existe motor de métricas nomeadas
-  nem entidade/evento de execução finalizada na v1
+- **A three-way merge between a variant and its base** (D13). Promoting and
+  offering already exist (`/promote` and `/offer`, §6), but on top of a diff
+  between the **two current snapshots** and nothing else: the engine does not
+  know the fork point. The consequence is asymmetric and worth saying out loud —
+  an offer **overwrites** the nodes and edges where the variant had already
+  diverged, instead of laying only the base's own increment on top. Until that
+  changes, offering to a variant that has moved on its own is a decision for
+  whoever approves the proposal, not an implementation detail. A diff anchored on
+  the ancestor (`base-at-the-fork` → `current-base`) is real future work.
+- **Running an operation's inverse** — here only its shape is validated (`t118`).
+- **Registering a new manual version over an existing lineage**, outside the
+  proposal flow.
+- **Reverting to an arbitrary version**, outside a proposal's
+  `target_version` / `applied_version_id` pair.
+- **Human approval/rejection** as an API action (`t111`).
+- **Computing `depois` automatically** from the telemetry, and firing the verdict
+  "when the execution ends": there is no named-metric engine and no
+  finished-execution entity or event in v1
   ([`routes/executions.ts`](../../packages/core/src/routes/executions.ts)).
-  Fechar o experimento é sempre chamada explícita de API (§5).
-- **Identidade de quem chama.** A `t124` fechou a autenticação — todas estas
-  rotas exigem credencial —, mas um token prova posse, não pessoa: o `actor` dos
-  eventos que a `t196` ligou é `{type: "system", ref: "control-plane"}`, o
-  componente que agiu, e nenhuma destas rotas aceita um `actor` no corpo.
+  Closing the experiment is always an explicit API call (§5).
+- **The identity of the caller.** `t124` closed the authentication — every one of
+  these routes demands a credential —, but a token proves possession, not a
+  person: the `actor` of the events `t196` switched on is
+  `{type: "system", ref: "control-plane"}`, the component that acted, and none of
+  these routes accepts an `actor` in the body.

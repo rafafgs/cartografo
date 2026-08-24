@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "execution.finished.schema.json",
   "title": "execution.finished",
-  "description": "A execução acabou: todo trabalho dela chegou a um nó final e nenhuma lease ativa segura mais nenhum deles. Fato que só o control plane afirma (D1, D21), e é dele que o observador sem privilégio parte para rodar as lentes. Sem payload: envelope.execution_id, entity.id e occurred_at já dizem qual rodada acabou e quando.",
+  "description": "The execution is over: every job of it reached a final node and no active lease holds any of them any more. A fact only the control plane asserts (D1, D21), and the one an unprivileged observer starts from to run the lenses. No payload: envelope.execution_id, entity.id and occurred_at already say which round ended and when.",
   "type": "object",
   "allOf": [
     {

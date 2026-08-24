@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "lease.granted.schema.json",
   "title": "lease.granted",
-  "description": "Um runner tomou posse de um trabalho por um prazo (D5). Extensão do cartografo: o flowpilot é de um runner só e não tem equivalente.",
+  "description": "A runner took possession of a job for a deadline (D5). A cartografo extension: flowpilot has a single runner and has no equivalent.",
   "type": "object",
   "allOf": [
     {
@@ -31,16 +31,16 @@
       "properties": {
         "job_id": {
           "type": "integer",
-          "description": "Trabalho despachado sob esta posse."
+          "description": "The job dispatched under this possession."
         },
         "runner_id": {
           "type": "string",
-          "description": "Runner que tomou a posse."
+          "description": "The runner that took the possession."
         },
         "expires_at": {
           "type": "string",
           "format": "date-time",
-          "description": "Quando a posse caduca se o heartbeat não a renovar."
+          "description": "When the possession lapses if the heartbeat does not renew it."
         }
       },
       "additionalProperties": false

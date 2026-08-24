@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "job.unblocked.schema.json",
   "title": "job.unblocked",
-  "description": "A bandeira de bloqueio caiu e o trabalho pode andar de novo. Paridade com EventKind.UNBLOCKED do flowpilot. Sem payload: o fato é a própria queda da bandeira.",
+  "description": "The blocking flag came down and the job can move again. Parity with flowpilot's EventKind.UNBLOCKED. No payload: the fact is the falling of the flag itself.",
   "type": "object",
   "allOf": [
     {

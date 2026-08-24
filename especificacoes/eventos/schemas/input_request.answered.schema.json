@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "input_request.answered.schema.json",
   "title": "input_request.answered",
-  "description": "Um humano respondeu. Paridade com EventKind.INPUT_ANSWERED + AnswerSource.USER do flowpilot; aqui a origem da resposta é o próprio tipo do evento, não uma coluna.",
+  "description": "A human answered. Parity with flowpilot's EventKind.INPUT_ANSWERED + AnswerSource.USER; here the source of the answer is the type of the event itself, not a column.",
   "type": "object",
   "allOf": [
     {
@@ -30,11 +30,11 @@
       "properties": {
         "answer": {
           "type": "string",
-          "description": "A resposta, como o humano a deu."
+          "description": "The answer, as the human gave it."
         },
         "answered_by": {
           "type": "string",
-          "description": "Quem respondeu. Redundante com ator.ref por desenho: a auditoria de \"o que foi perguntado, respondido, quando e por quem\" tem que sobreviver a uma leitura só do payload."
+          "description": "Who answered. Redundant with actor.ref by design: the audit of \"what was asked, answered, when and by whom\" has to survive a reading of the payload alone."
         }
       },
       "additionalProperties": false

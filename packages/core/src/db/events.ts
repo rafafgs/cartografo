@@ -188,7 +188,7 @@ export interface EventFilter {
    *
    * This is the cursor of the outbound stream, and it is the envelope's own
    * `id` because that is "the only total ordering there is"
-   * (`especificacoes/eventos/taxonomy.md:52`). Strictly greater, never greater
+   * (`especificacoes/eventos/taxonomy.md:54`). Strictly greater, never greater
    * or equal: what the consumer sends back is the last id it ALREADY has, so
    * delivering it again would be the duplicate the reconnect protocol exists to
    * avoid.

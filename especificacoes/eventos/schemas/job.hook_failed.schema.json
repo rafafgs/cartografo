@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "job.hook_failed.schema.json",
   "title": "job.hook_failed",
-  "description": "A entrega de um gancho declarado no grafo esgotou as seis tentativas e desistiu. É incidente, não desfecho: o trabalho não muda de nó, não é bloqueado e não sabe que isto aconteceu — gancho nunca participa da travessia. Existe porque um gancho não tem assinante registrado: ninguém está fazendo polling da fila dele, e sem este evento a reação declarada por quem escreveu o grafo falharia em silêncio. Sem paridade no flowpilot — nasce com os ganchos de transição (t169).",
+  "description": "The delivery of a hook declared in the graph exhausted its six attempts and gave up. It is an incident, not an outcome: the job does not change node, is not blocked and never learns this happened — a hook never takes part in the traversal. It exists because a hook has no registered subscriber: nobody is polling its queue, and without this event the reaction declared by whoever wrote the graph would fail silently. No parity in flowpilot — it is born with the transition hooks (t169).",
   "type": "object",
   "allOf": [
     {
@@ -32,19 +32,19 @@
       "properties": {
         "hook_id": {
           "type": "string",
-          "description": "Id do gancho dentro do documento de grafo, tal como quem escreveu o grafo o nomeou. É por ele que se acha a declaração que falhou."
+          "description": "The id of the hook inside the graph document, as whoever wrote the graph named it. It is what the failed declaration is found by."
         },
         "node_id": {
           "type": "string",
-          "description": "Nó cuja entrada ou bloqueio disparou o gancho. Sem ele, \"qual etapa tem reação quebrada?\" só se responde reconstruindo a travessia evento a evento."
+          "description": "The node whose entry or block fired the hook. Without it, \"which stage has a broken reaction?\" can only be answered by reconstructing the traversal event by event."
         },
         "url": {
           "type": "string",
-          "description": "Destino que não respondeu. Vai copiada da linha de entrega, e não relida do grafo: uma versão nova pode ter mudado o destino desde então, e o incidente é sobre o que foi tentado."
+          "description": "The destination that did not answer. Copied from the delivery row, and not re-read from the graph: a new version may have changed the destination since, and the incident is about what was attempted."
         },
         "last_error": {
           "type": "string",
-          "description": "O que a sexta e última tentativa devolveu — status HTTP, timeout ou a mensagem da exceção. É o que quem depura uma integração muda procura primeiro."
+          "description": "What the sixth and last attempt returned — an HTTP status, a timeout or the message of the exception. It is what somebody debugging a mute integration looks for first."
         }
       },
       "additionalProperties": false

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "graph_version.reverted.schema.json",
   "title": "graph_version.reverted",
-  "description": "O ponteiro voltou para uma versão anterior (D15). entity.id é o hash da versão abandonada; target_version é para onde o ponteiro foi. Rollback move ponteiro e nada se apaga. Extensão do cartografo, sem equivalente no flowpilot.",
+  "description": "The pointer went back to an earlier version (D15). entity.id is the hash of the abandoned version; target_version is where the pointer went. A rollback moves a pointer and nothing is erased. A cartografo extension, with no flowpilot equivalent.",
   "type": "object",
   "allOf": [
     {
@@ -31,15 +31,15 @@
       "properties": {
         "graph_id": {
           "type": "string",
-          "description": "Grafo cujo ponteiro voltou."
+          "description": "The graph whose pointer went back."
         },
         "target_version": {
           "type": "string",
-          "description": "Hash da versão que voltou a valer."
+          "description": "The hash of the version that came to hold again."
         },
         "reason": {
           "type": "string",
-          "description": "Por que voltou. É a evidência que o topógrafo vai cruzar com a telemetria da versão abandonada."
+          "description": "Why it went back. It is the evidence the topografo will cross-reference with the abandoned version's telemetry."
         }
       },
       "additionalProperties": false

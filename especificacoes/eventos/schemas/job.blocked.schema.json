@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "job.blocked.schema.json",
   "title": "job.blocked",
-  "description": "O trabalho parou de andar sem sair do nó — fato de bandeira, não de movimento. Paridade com EventKind.BLOCKED do flowpilot.",
+  "description": "The job stopped moving without leaving the node — a fact about a flag, not about movement. Parity with flowpilot's EventKind.BLOCKED.",
   "type": "object",
   "allOf": [
     {
@@ -29,7 +29,7 @@
       "properties": {
         "reason": {
           "type": "string",
-          "description": "Por que parou, em texto livre. Não substitui a pergunta: quando o bloqueio é espera por humano, o conteúdo do que foi perguntado vive em input_request.created."
+          "description": "Why it stopped, in free text. It does not replace the input request: when the block is a wait for a human, the content of what was asked lives in input_request.created."
         },
         "consecutive_failures": {
           "type": [
@@ -37,7 +37,7 @@
             "null"
           ],
           "minimum": 1,
-          "description": "Quantas sessões falhadas em sequência, no mesmo trabalho e no mesmo nó, levantaram a bandeira (t265). Presente SÓ no bloqueio que o teto disparou; ausente em todo outro motivo de parada — falha antes da sessão, trabalho não commitado, nó sem a quem perguntar, escalação comum —, porque nenhum deles tem sequência atrás de si e escrever um número ali inventaria uma contagem que ninguém mediu. Mínimo 1: bloquear com zero falhas não é teto, é defeito.",
+          "description": "How many failed sessions in a row, on the same job and the same node, raised the flag (t265). Present ONLY on the block the ceiling fired; absent from every other reason to stop — a failure before the session, an uncommitted job, a node with nobody to ask, an ordinary escalation — because none of them has a run behind it and writing a number there would invent a count nobody measured. Minimum 1: blocking with zero failures is not a ceiling, it is a defect.",
           "examples": [3]
         }
       },

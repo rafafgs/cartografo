@@ -18,7 +18,7 @@
  *   stopped reading can slow down its own connection and nothing else. The
  *   price is up to one poll interval of latency, which for telemetry is nothing.
  * - **The cursor IS the envelope's `id`** — "the only total ordering there is"
- *   (`especificacoes/eventos/taxonomy.md:52`). There is no `desde_id` query
+ *   (`especificacoes/eventos/taxonomy.md:54`). There is no `desde_id` query
  *   parameter alongside it: one resume mechanism, not two ways to do the same
  *   thing.
  *

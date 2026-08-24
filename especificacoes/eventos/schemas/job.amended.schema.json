@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "job.amended.schema.json",
   "title": "job.amended",
-  "description": "O conteúdo do trabalho foi editado. Paridade com EventKind.AMENDED do flowpilot, inclusive na disciplina: registro de auditoria, não histórico de versões.",
+  "description": "The content of the job was edited. Parity with flowpilot's EventKind.AMENDED, including in its discipline: an audit record, not a version history.",
   "type": "object",
   "allOf": [
     {
@@ -34,7 +34,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Só os NOMES dos campos que mudaram, nunca o conteúdo. Quem quer o texto novo lê o trabalho; o log diz o que foi mexido e por quem."
+          "description": "Only the NAMES of the fields that changed, never the content. Whoever wants the new text reads the job; the log says what was touched and by whom."
         }
       },
       "additionalProperties": false

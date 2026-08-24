@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "input_request.auto_resolved.schema.json",
   "title": "input_request.auto_resolved",
-  "description": "O portão de auto-aprovação respondeu em nome do humano. Paridade com AnswerSource.AUTO do flowpilot: a auditoria SEMPRE distingue aprovado-por-usuário de aprovado-pelo-sistema — aqui a distinção é o tipo do evento.",
+  "description": "The auto-approval gate answered on the human's behalf. Parity with flowpilot's AnswerSource.AUTO: the audit ALWAYS distinguishes approved-by-user from approved-by-system — here the distinction is the type of the event.",
   "type": "object",
   "allOf": [
     {
@@ -30,7 +30,7 @@
       "properties": {
         "answer": {
           "type": "string",
-          "description": "O que foi aplicado em nome do humano."
+          "description": "What was applied on the human's behalf."
         },
         "based_on": {
           "enum": [
@@ -38,7 +38,7 @@
             "default_answer",
             "precedent"
           ],
-          "description": "De onde a resposta saiu: da recomendação do próprio agente, da resposta padrão declarada na pergunta, ou de um precedente registrado no log."
+          "description": "Where the answer came from: the agent's own recommendation, the default answer declared in the request, or a precedent recorded in the log."
         }
       },
       "additionalProperties": false

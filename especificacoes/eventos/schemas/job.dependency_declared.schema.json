@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "job.dependency_declared.schema.json",
   "title": "job.dependency_declared",
-  "description": "Um trabalho declarou depender de outro, na confirmação do intake. Sem equivalente no flowpilot: lá a ordem entre tickets é convenção, aqui é fato do log. Declarar a aresta não bloqueia ninguém — exigir a ordem é decisão de outra ficha.",
+  "description": "A job declared that it depends on another, at the intake's confirmation. No flowpilot equivalent: there the order between tickets is a convention, here it is a fact of the log. Declaring the edge blocks nobody — enforcing the order is another ficha's decision.",
   "type": "object",
   "allOf": [
     {
@@ -29,7 +29,7 @@
       "properties": {
         "depends_on_job_id": {
           "type": "integer",
-          "description": "Trabalho do qual o sujeito do evento depende. O sujeito (entity.id) é sempre o DEPENDENTE: quem espera é quem carrega o fato na própria linha do tempo."
+          "description": "The job the subject of the event depends on. The subject (entity.id) is always the DEPENDENT one: the one that waits is the one that carries the fact on its own timeline."
         }
       },
       "additionalProperties": false

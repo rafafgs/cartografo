@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "session.opened.schema.json",
   "title": "session.opened",
-  "description": "O runner despachou uma sessão de CLI pelo EngineAdapter. Paridade com a criação de uma linha de agent_sessions no flowpilot.",
+  "description": "The runner dispatched a CLI session through the EngineAdapter. Parity with the creation of an agent_sessions row in flowpilot.",
   "type": "object",
   "allOf": [
     {
@@ -34,33 +34,33 @@
             "integer",
             "null"
           ],
-          "description": "Trabalho servido pela sessão. Ausente ou null quando a sessão não serve nenhum (sessão de descoberta, turno de conversa)."
+          "description": "The job the session serves. Absent or null when the session serves none (a discovery session, a turn of conversation)."
         },
         "node_id": {
           "type": [
             "string",
             "null"
           ],
-          "description": "Nó do grafo que a sessão trabalha. É o que permite contar tentativas por nó em vez de por trabalho."
+          "description": "The node of the graph the session works on. It is what allows counting attempts per node instead of per job."
         },
         "engine": {
           "type": "string",
-          "description": "Qual EngineAdapter despachou, ex. \"claude-code\". O campo é a fronteira de independência de LLM."
+          "description": "Which EngineAdapter dispatched, e.g. \"claude-code\". The field is the border of LLM independence."
         },
         "engine_session_ref": {
           "type": [
             "string",
             "null"
           ],
-          "description": "Id da sessão no vocabulário do próprio engine, capturado enquanto ela roda. É a chave que torna o retomar possível depois de uma pausa por cota."
+          "description": "The session's id in the engine's own vocabulary, captured while it runs. It is the key that makes resuming possible after a quota pause."
         },
         "working_dir": {
           "type": "string",
-          "description": "Diretório em que o processo foi iniciado."
+          "description": "The directory the process was started in."
         },
         "prompt": {
           "type": "string",
-          "description": "O que foi pedido à sessão. Entrada do engine, não título."
+          "description": "What was asked of the session. The engine's input, not a title."
         },
         "timeout_seconds": {
           "type": [
@@ -68,7 +68,7 @@
             "null"
           ],
           "minimum": 0,
-          "description": "Orçamento de relógio de parede com que a sessão foi aberta. null significa que a sessão não declara política própria."
+          "description": "The wall-clock budget the session was opened with. null means the session declares no policy of its own."
         },
         "silence_seconds": {
           "type": [
@@ -76,7 +76,7 @@
             "null"
           ],
           "minimum": 0,
-          "description": "Orçamento de inatividade com que a sessão foi aberta: segundos sem nenhuma saída antes de ela ser parada. Independente do relógio de parede, porque mede outra coisa — sessão pode ficar viva e produtiva por uma hora, e pode travar em dois minutos com o processo de pé. null significa que a sessão não declara política própria."
+          "description": "The idleness budget the session was opened with: seconds with no output at all before it is stopped. Independent of the wall clock, because it measures something else — a session can stay alive and productive for an hour, and can stall in two minutes with the process still standing. null means the session declares no policy of its own."
         }
       },
       "additionalProperties": false

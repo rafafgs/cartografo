@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "graph_version.applied.schema.json",
   "title": "graph_version.applied",
-  "description": "O ponteiro de versão corrente do grafo passou a apontar para esta versão (D15). entity.id é o hash da versão que passou a valer. Extensão do cartografo, sem equivalente no flowpilot.",
+  "description": "The graph's current-version pointer came to point at this version (D15). entity.id is the hash of the version that came to hold. A cartografo extension, with no flowpilot equivalent.",
   "type": "object",
   "allOf": [
     {
@@ -29,14 +29,14 @@
       "properties": {
         "graph_id": {
           "type": "string",
-          "description": "Grafo cujo ponteiro se moveu."
+          "description": "The graph whose pointer moved."
         },
         "proposal_id": {
           "type": [
             "integer",
             "null"
           ],
-          "description": "Proposta cuja aplicação moveu o ponteiro, quando houve uma."
+          "description": "The proposal whose application moved the pointer, when there was one."
         }
       },
       "additionalProperties": false

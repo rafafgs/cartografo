@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "job.created.schema.json",
   "title": "job.created",
-  "description": "Um trabalho (viajante) entrou no grafo. Paridade com EventKind.CREATED do flowpilot.",
+  "description": "A job (a traveller) entered the graph. Parity with flowpilot's EventKind.CREATED.",
   "type": "object",
   "allOf": [
     {
@@ -30,18 +30,18 @@
       "properties": {
         "title": {
           "type": "string",
-          "description": "Título do trabalho no momento da criação."
+          "description": "The title of the job at the moment of creation."
         },
         "entry_node_id": {
           "type": "string",
-          "description": "Nó do grafo em que o trabalho nasce. O cartografo não tem estados fixos: o nó de entrada é dado da versão de grafo vigente."
+          "description": "The node of the graph the job is born on. cartografo has no fixed states: the entry node is data of the graph version in force."
         },
         "body": {
           "type": [
             "string",
             "null"
           ],
-          "description": "Corpo do trabalho, quando ele nasce com conteúdo (intake). null quando ninguém escreveu nenhum."
+          "description": "The body of the job, when it is born with content (the intake). null when nobody wrote one."
         },
         "acceptance_criteria": {
           "type": [
@@ -51,7 +51,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Critérios de aceite PRELIMINARES, como o intake os propôs. Quem os produz de verdade é o nó que refina, a partir do pedido bruto. null e [] são coisas diferentes."
+          "description": "PRELIMINARY acceptance criteria, as the intake proposed them. What really produces them is the node that refines, out of the raw request. null and [] are different things."
         },
         "fields": {
           "type": [
@@ -65,7 +65,7 @@
               "boolean"
             ]
           },
-          "description": "Valores dos campos que a CLASSE declara no seu grafo (`custom_fields`, t168) — `premise_source`, `downside` e `upside` em bets assimétricas. Chaves livres de propósito: quem as declara é o documento de grafo da classe, não esta taxonomia. null quando o trabalho nasceu sem campo nenhum; null e {} são coisas diferentes."
+          "description": "Values of the fields the CLASS declares in its own graph (`custom_fields`, t168) — `premise_source`, `downside` and `upside` in asymmetric bets. Free keys on purpose: what declares them is the class's graph document, not this taxonomy. null when the job was born with no field at all; null and {} are different things."
         },
         "tier": {
           "type": [
@@ -77,7 +77,7 @@
             "standard",
             null
           ],
-          "description": "Triagem de custo do trabalho (t175): quanto ele custa para RODAR, nunca por qual aresta ele sai — o grafo segue congelado. Conjunto fechado porque o vocabulário é desta triagem, e não do engine: um terceiro valor é erro de quem escreveu. null quando ninguém triou, e null NÃO é `trivial` — ler ausência como barato rebaixaria o modelo de todo trabalho anterior a esta ficha sem que ninguém tivesse escolhido isso."
+          "description": "The job's cost triage (t175): how much it costs to RUN, never which edge it leaves by — the graph stays frozen. A closed set because the vocabulary is this triage's and not the engine's: a third value is a mistake by whoever wrote it. null when nobody triaged, and null is NOT `trivial` — reading an absence as cheap would downgrade the model of every job older than this ficha without anybody having chosen that."
         }
       },
       "additionalProperties": false

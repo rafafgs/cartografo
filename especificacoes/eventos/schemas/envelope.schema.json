@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "envelope.schema.json",
-  "title": "Envelope de evento de telemetria (cartografo v1)",
-  "description": "Campos presentes em todo evento do log. O log é append-only: a única operação sobre ele é inserir uma linha nova.",
+  "title": "Telemetry event envelope (cartografo v1)",
+  "description": "The fields present in every event of the log. The log is append-only: the only operation on it is inserting a new row.",
   "type": "object",
   "required": [
     "id",
@@ -18,26 +18,26 @@
     "id": {
       "type": "integer",
       "minimum": 1,
-      "description": "Monotônico, atribuído pelo servidor. É a ordem do log e a única ordenação total que existe (dois eventos podem compartilhar o mesmo ocorrido_em)."
+      "description": "Monotonic, assigned by the server. It is the order of the log and the only total ordering that exists (two events can share the same occurred_at)."
     },
     "type": {
       "type": "string",
-      "description": "Discriminador do evento, ex. \"job.created\". Cada valor tem um schema próprio que fixa este campo com const."
+      "description": "The event discriminator, e.g. \"job.created\". Every value has a schema of its own that pins this field with const."
     },
     "project_id": {
       "type": "integer",
-      "description": "Projeto dono do evento."
+      "description": "The project that owns the event."
     },
     "execution_id": {
       "type": [
         "integer",
         "null"
       ],
-      "description": "Execução à qual o evento pertence, ou null quando o evento acontece fora de uma rodada (ex. registro de versão de grafo)."
+      "description": "The execution the event belongs to, or null when the event happens outside a round (e.g. registering a graph version)."
     },
     "entity": {
       "type": "object",
-      "description": "O sujeito do evento — a chave de join da telemetria com o resto do banco.",
+      "description": "The subject of the event — the key that joins the telemetry to the rest of the database.",
       "required": [
         "type",
         "id"
@@ -58,14 +58,14 @@
             "integer",
             "string"
           ],
-          "description": "Id da própria entidade nomeada em entity.type. Inteiro para job/session/input_request/lease/execution — na execução é o próprio execution_id; string para graph_version, cujo id é o hash do snapshot (D15)."
+          "description": "The id of the entity named in entity.type itself. An integer for job/session/input_request/lease/execution — for an execution it is the execution_id itself; a string for graph_version, whose id is the hash of the snapshot (D15)."
         }
       },
       "additionalProperties": false
     },
     "actor": {
       "type": "object",
-      "description": "Quem causou o evento. Paridade com ActorType do flowpilot (user/agent/system).",
+      "description": "Who caused the event. Parity with flowpilot's ActorType (user/agent/system).",
       "required": [
         "type",
         "ref"
@@ -80,7 +80,7 @@
         },
         "ref": {
           "type": "string",
-          "description": "Identificação livre do ator: login do usuário, papel do agente, nome do componente do sistema."
+          "description": "A free identification of the actor: the user's login, the agent's role, the name of the system component."
         }
       },
       "additionalProperties": false
@@ -88,11 +88,11 @@
     "occurred_at": {
       "type": "string",
       "format": "date-time",
-      "description": "Quando o fato aconteceu, ISO 8601. É o único carimbo de tempo do log — uma coluna de modificação num log append-only seria mentira."
+      "description": "When the fact happened, ISO 8601. It is the only time stamp of the log — a modification column in an append-only log would be a lie."
     },
     "data": {
       "type": "object",
-      "description": "Payload específico do tipo, declarado pelo schema do tipo."
+      "description": "The type-specific payload, declared by the type's own schema."
     }
   },
   "additionalProperties": false

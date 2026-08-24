@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "session.finished.schema.json",
   "title": "session.finished",
-  "description": "A sessão chegou ao fim da vida. Paridade com o status terminal + os totais de uso de agent_sessions no flowpilot.",
+  "description": "The session reached the end of its life. Parity with flowpilot's terminal status + the usage totals of agent_sessions.",
   "type": "object",
   "allOf": [
     {
@@ -36,14 +36,14 @@
             "quota_paused",
             "resume_failed"
           ],
-          "description": "Como terminou. Os quatro além de completed/failed existem para que um desfecho saudável (quota_paused), um ref inválido (resume_failed) e uma parada nossa (timed_out) nunca sejam lidos como bug a investigar. As duas paradas nossas — relógio de parede e silêncio — desembocam ambas em timed_out, e quem as separa é timeout_reason; stuck não tem relação com silêncio, é o slot de quem não tem slot (pending/running/cancelled)."
+          "description": "How it ended. The four beyond completed/failed exist so that a healthy outcome (quota_paused), an invalid ref (resume_failed) and a stop of our own (timed_out) are never read as a bug to investigate. The two stops of our own — wall-clock and silence — both end up in timed_out, and what separates them is timeout_reason; stuck has no relation to silence, it is the slot for whoever has no slot (pending/running/cancelled)."
         },
         "exit_code": {
           "type": [
             "integer",
             "null"
           ],
-          "description": "Código de saída do processo do engine, quando houve processo com saída."
+          "description": "The exit code of the engine's process, when there was a process with an exit."
         },
         "timeout_reason": {
           "enum": [
@@ -51,14 +51,14 @@
             "silence",
             null
           ],
-          "description": "Qual cão de guarda parou a sessão, quando quem parou foi o adapter. wall_clock = estourou o relógio de parede; silence = ficou o orçamento inteiro sem produzir saída. null quando não se aplica, ou quando o adapter não reportou causa — nunca preenchido por palpite. Os valores são ingleses por serem vocabulário da interface do EngineAdapter, que é quem os produz."
+          "description": "Which watchdog stopped the session, when the one that stopped it was the adapter. wall_clock = it blew the wall clock; silence = it went the whole budget without producing output. null when it does not apply, or when the adapter reported no cause — never filled in by guesswork. The values are vocabulary of the EngineAdapter interface, which is what produces them."
         },
         "usage": {
           "type": [
             "object",
             "null"
           ],
-          "description": "Totais de tokens congelados no fim da vida. null quando o engine não reportou nada — nunca colapsar em zero. Sem campo de custo: custo é vocabulário de engine.",
+          "description": "Token totals frozen at the end of life. null when the engine reported nothing — never collapse into zero. No cost field: cost is engine vocabulary.",
           "required": [
             "input_tokens",
             "output_tokens",
@@ -90,7 +90,7 @@
             "engine_refusal",
             null
           ],
-          "description": "Que TIPO de falha foi esta, quando o status sozinho não diz (t265). Mesmo movimento de timeout_reason aplicado ao outro status ambíguo: um crash e um engine que RECUSOU responder desembocam ambos em failed, e só a recusa se reproduz idêntica em toda retentativa — medido na t198, o mesmo prompt foi recusado quatro vezes seguidas antes de a quinta sessão funcionar. Conjunto fechado porque a palavra é NOSSA: um segundo valor entra quando um segundo tipo de falha for medido, nunca porque um engine inventou um. null/ausente quando o adapter não reportou tipo nenhum — jamais deduzido do código de saída, que é justamente o que recusa e crash têm em comum.",
+          "description": "What KIND of failure this was, when the status alone does not say (t265). The same move as timeout_reason, applied to the other ambiguous status: a crash and an engine that REFUSED to answer both end up in failed, and only the refusal reproduces identically on every retry — measured in t198, the same prompt was refused four times in a row before the fifth session worked. A closed set because the word is OURS: a second value enters when a second kind of failure is measured, never because an engine invented one. null/absent when the adapter reported no kind at all — never deduced from the exit code, which is precisely what a refusal and a crash have in common.",
           "examples": ["engine_refusal", null]
         },
         "refusal_category": {
@@ -99,7 +99,7 @@
             "null"
           ],
           "minLength": 1,
-          "description": "Como o próprio engine classificou a recusa, quando classificou (t265). Palavra do ENGINE, verbatim e sem tradução — reasoning_extraction foi o que a bissecção da t198 leu do frame real. Conjunto de valores aberto de propósito, como o de models e ao contrário de failure_kind ao lado: a categoria é vocabulário de engine, e um enum fechado pediria mudança de schema a cada categoria nova. null quando o engine recusou e não disse mais nada, que é forma real do frame e não defeito.",
+          "description": "How the engine itself classified the refusal, when it classified it (t265). The ENGINE's word, verbatim and untranslated — reasoning_extraction is what t198's bisection read from the real frame. An open set of values on purpose, like models' and unlike failure_kind's beside it: the category is engine vocabulary, and a closed enum would demand a schema change for every new category. null when the engine refused and said nothing more, which is a real shape of the frame and not a defect.",
           "examples": ["reasoning_extraction"]
         },
         "models": {
@@ -107,7 +107,7 @@
             "array",
             "null"
           ],
-          "description": "Quais modelos rodaram a sessão, como o engine os nomeou. Lista porque uma sessão roda mais de um — medido contra a CLI real, um único turno devolveu dois — e colapsar em 'o' modelo atribuiria a conta inteira ao errado. null quando o engine não nomeou nenhum; lista vazia não é resposta, é o null que diz 'nada'. Conjunto de valores aberto de propósito: o identificador é do engine, e um enum fechado pediria mudança de schema a cada modelo novo.",
+          "description": "Which models ran the session, as the engine named them. A list because a session runs more than one — measured against the real CLI, a single turn returned two — and collapsing into 'the' model would attribute the whole bill to the wrong one. null when the engine named none; an empty list is not an answer, null is what says 'nothing'. An open set of values on purpose: the identifier is the engine's, and a closed enum would demand a schema change for every new model.",
           "minItems": 1,
           "items": {
             "type": "string",
@@ -119,11 +119,11 @@
             "object",
             "null"
           ],
-          "description": "O resultado ESTRUTURADO que a sessão relatou do nó (t253) — o que a projeção de input do nó seguinte lê. Sem required aninhado e sem propriedades declaradas de propósito: a forma de dentro é a que o schema output da skill pinada pelo nó declara (D9), e congelá-la aqui pediria um schema de evento por classe de problema. null quando nada estruturado foi relatado — mesma leitura de usage e models ao lado, ausência é ausência e nunca objeto vazio."
+          "description": "The STRUCTURED result the session reported from the node (t253) — what the next node's input projection reads. With no nested required and no declared properties, on purpose: the shape inside is the one the output schema of the skill pinned by the node declares (D9), and freezing it here would demand one event schema per problem class. null when nothing structured was reported — the same reading as usage and models beside it: an absence is an absence and never an empty object."
         },
         "output_accepted": {
           "type": "boolean",
-          "description": "Se o relato da sessão foi ACEITO (t268). Mesmo fato de output_schema_error acima, visto do lado de quem precisa agir: a lista diz por que um relato foi recusado e só existe quando houve recusa; este diz se ele foi aceito, e é gravado em todo fechamento — true quando nada foi relatado e quando o relato casou com o schema output da skill pinada, false só quando esse schema o recusou. Um booleano e não uma derivação da lista ao lado porque quem o lê é o runner, na resposta do próprio PATCH /finish, para decidir se o trabalho pode andar: ali 'sem motivos' e 'não conferido' seriam a mesma ausência, e a diferença entre as duas é um trabalho que segue por uma aresta escolhida a partir de um relato que não foi gravado.",
+          "description": "Whether the session's report was ACCEPTED (t268). The same fact as output_schema_error above, seen from the side of whoever has to act: the list says why a report was refused and exists only when there was a refusal; this one says whether it was accepted, and is recorded on every closing — true when nothing was reported and when the report matched the output schema of the pinned skill, false only when that schema refused it. A boolean and not a derivation of the list beside it because the one that reads it is the runner, in the response of PATCH /finish itself, to decide whether the job may move: there 'no reasons' and 'not checked' would be the same absence, and the difference between the two is a job that travels an edge chosen from a report that was never recorded.",
           "examples": [true, false]
         },
         "output_schema_error": {
@@ -133,7 +133,7 @@
             "type": "string",
             "minLength": 1
           },
-          "description": "Por que o output relatado não casou com o schema da skill (t253). Presente só quando houve divergência, e então output vai null: o status terminal da sessão é gravado de qualquer jeito, porque perder o fim da sessão por causa de um auto-relato malformado seria estritamente pior — auto-relato de nó de trabalho nunca foi evidência (portão verifica com evidência própria). Lista inteira, nunca só o primeiro motivo, pela mesma razão que a validação de envelope devolve todos."
+          "description": "Why the reported output did not match the skill's schema (t253). Present only when there was a divergence, and then output goes to null: the session's terminal status is recorded either way, because losing the end of the session over a malformed self-report would be strictly worse — a work node's self-report was never evidence (a gate verifies with evidence of its own). The whole list, never just the first reason, for the same reason the envelope validation returns them all."
         }
       },
       "additionalProperties": false

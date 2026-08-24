@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "session.permission_denied.schema.json",
   "title": "session.permission_denied",
-  "description": "A sessão tentou usar uma ferramenta que a política de permissão dela negava. É incidente, não desfecho: a sessão continua, e pode ser negada de novo. Sem paridade no flowpilot — nasce com o enforcement de permissão de skill (D4).",
+  "description": "The session tried to use a tool its permission policy denied. It is an incident, not an outcome: the session goes on, and may be denied again. No parity in flowpilot — it is born with skill permission enforcement (D4).",
   "type": "object",
   "allOf": [
     {
@@ -34,15 +34,15 @@
             "filesystem",
             "network"
           ],
-          "description": "Qual eixo da política respondeu pela negação. Os dois eixos são os que o manifesto de skill declara em permissoes."
+          "description": "Which axis of the policy answered for the denial. The two axes are the ones the skill manifest declares in permissions."
         },
         "tool": {
           "type": "string",
-          "description": "A entrada negada, no vocabulário que o adapter passou ao engine: um nome (WebFetch) ou um nome com padrão (Bash(curl *)). É vocabulário de engine dentro do log de propósito — sem ele a negação não é auditável."
+          "description": "The entry that was denied, in the vocabulary the adapter passed to the engine: a name (WebFetch) or a name with a pattern (Bash(curl *)). It is engine vocabulary inside the log on purpose — without it the denial is not auditable."
         },
         "reason": {
           "type": "string",
-          "description": "O que o engine respondeu, quando respondeu algo legível. A negação é reconhecida por correlação estrutural, nunca por este texto: a prosa muda de versão, o formato do frame não."
+          "description": "What the engine answered, when it answered anything legible. The denial is recognised by structural correlation, never by this text: prose changes with the version, the shape of the frame does not."
         }
       },
       "additionalProperties": false

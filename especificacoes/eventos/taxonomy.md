@@ -1,78 +1,75 @@
-# Taxonomia de eventos de telemetria — v1
+# Taxonomy of telemetry events — v1
 
-O formato do log de telemetria é **API pública**. É o que a tela de
-observabilidade lê, o que os topógrafos plugáveis consomem e o que uma
-integração de terceiro vai receber quando o stream de eventos existir. Por
-isso ele é um dos quatro formatos tratados como produto, com schema versionado
-e documento de especificação (`notas/2026-08-14-extension-and-quality.md`,
-princípio organizador e ponto de extensão 5).
+The format of the telemetry log is a **public API**. It is what the
+observability screen reads, what the pluggable topographers consume and what a
+third-party integration will receive once the event stream exists. That is why
+it is one of the four formats treated as a product, with a versioned schema and
+a specification document (`notas/2026-08-14-extension-and-quality.md`,
+organising principle and extension point 5).
 
-Esta é a especificação v1. Ela entrega **contrato, não código**: nenhuma
-tabela SQL, nenhum endpoint, nenhum servidor — a ordem do MVP (D6) põe control
-plane + EngineAdapter + grafo fixo antes de qualquer coisa aqui virar
-implementação.
+This is the v1 specification. It delivers **a contract, not code**: no SQL
+table, no endpoint, no server — the MVP's ordering (D6) puts control plane +
+EngineAdapter + fixed graph before anything here turns into an implementation.
 
-## Arquivos
+## Files
 
-| Arquivo | O que é |
+| File | What it is |
 |---|---|
-| `schemas/envelope.schema.json` | Os campos que existem em todo evento |
-| `schemas/<tipo>.schema.json` | Um por tipo de evento (19) |
-| `exemplos/example-log.jsonl` | Uma execução ponta a ponta, com os 19 tipos |
-| `exemplos/expected-final-state.json` | O estado que aquele log reconstrói |
-| `reducers/reconstruct-state.mjs` | A dobra do log até esse estado |
-| `tests/` | Runner nativo do Node, sem `package.json` e sem dependência |
+| `schemas/envelope.schema.json` | The fields that exist in every event |
+| `schemas/<type>.schema.json` | One per event type (19) |
+| `exemplos/example-log.jsonl` | One end-to-end execution, with all 19 types |
+| `exemplos/expected-final-state.json` | The state that log reconstructs |
+| `reducers/reconstruct-state.mjs` | The fold of the log down to that state |
+| `tests/` | Node's native runner, with no `package.json` and no dependency |
 
-Para rodar, da raiz do repo:
+To run them, from the root of the repository:
 
 ```sh
-node --test "especificacoes/eventos/tests/*.test.mjs"   # só esta ficha
-node --test                                             # tudo que houver
+node --test "especificacoes/eventos/tests/*.test.mjs"   # only this ficha
+node --test                                             # everything there is
 ```
 
-Passar o diretório (`node --test especificacoes/eventos/tests/`) **não**
-funciona no Node 25: a partir do 23 o argumento posicional é tratado como
-caminho de arquivo/glob, não como pasta a varrer. Use uma das duas formas
-acima.
+Passing the directory (`node --test especificacoes/eventos/tests/`) does **not**
+work on Node 25: from 23 onwards the positional argument is treated as a
+file/glob path, not as a folder to sweep. Use one of the two forms above.
 
-> **Contagem.** A v1 nasceu com **15 tipos + o envelope = 16 arquivos** em
-> `schemas/` (a ficha t98 falava em "16 tipos"; valeu a tabela normativa dela).
-> O intake de duas fases acrescentou o 16º tipo,
-> `job.dependency_declared` (t122), e o enforcement de permissão de
-> skill acrescentou o 17º, `session.permission_denied` (t125), e os ganchos
-> declarados no grafo acrescentaram o 18º, `job.hook_failed` (t169), e o fim de
-> execução da D21 acrescentou o 19º, `execution.finished` (t245), e o estado de
-> contrato da versão de grafo acrescentou o 20º,
-> `graph_version.contracts_checked` (t283) —
-> crescer é aditivo, e é isso que a regra de "tipo desconhecido é ignorado"
-> compra. Hoje: **20 tipos + o envelope = 21 arquivos**.
+> **The count.** v1 was born with **15 types + the envelope = 16 files** in
+> `schemas/` (ficha t98 spoke of "16 types"; its normative table is the one that
+> held). The two-phase intake added the 16th type,
+> `job.dependency_declared` (t122), and skill permission enforcement added the
+> 17th, `session.permission_denied` (t125), and the hooks declared in the graph
+> added the 18th, `job.hook_failed` (t169), and D21's end of execution added the
+> 19th, `execution.finished` (t245), and the graph version's contract state
+> added the 20th, `graph_version.contracts_checked` (t283) —
+> growing is additive, and that is what the "an unknown type is ignored" rule
+> buys. Today: **20 types + the envelope = 21 files**.
 
-## Envelope
+## The envelope
 
-Todo evento carrega os mesmos oito campos. O payload específico do tipo vive
-inteiro dentro de `data`, e em lugar nenhum além dele.
+Every event carries the same eight fields. The type-specific payload lives
+whole inside `data`, and nowhere else.
 
-| Campo | Tipo | O que é |
+| Field | Type | What it is |
 |---|---|---|
-| `id` | inteiro | Monotônico, atribuído pelo servidor. **É a ordem do log** e a única ordenação total que existe. |
-| `type` | string | Discriminador, ex. `"job.created"`. Cada valor tem um schema que o fixa com `const`. |
-| `project_id` | inteiro | Projeto dono do evento. |
-| `execution_id` | inteiro \| null | Execução à qual o evento pertence; `null` quando o fato acontece fora de uma rodada. |
-| `entity` | `{type, id}` | O sujeito do evento — a chave de join com o resto do banco. `type` ∈ `job`/`session`/`input_request`/`lease`/`graph_version`/`execution`. |
-| `actor` | `{type, ref}` | Quem causou. `type` ∈ `user`/`agent`/`system`; `ref` é string livre (login, papel do agente, nome do componente). |
-| `occurred_at` | string (date-time) | Quando o fato aconteceu, ISO 8601. |
-| `data` | objeto | Payload do tipo. |
+| `id` | integer | Monotonic, assigned by the server. **It is the order of the log** and the only total ordering that exists. |
+| `type` | string | The discriminator, e.g. `"job.created"`. Every value has a schema that pins it with `const`. |
+| `project_id` | integer | The project that owns the event. |
+| `execution_id` | integer \| null | The execution the event belongs to; `null` when the fact happens outside a round. |
+| `entity` | `{type, id}` | The subject of the event — the join key with the rest of the database. `type` ∈ `job`/`session`/`input_request`/`lease`/`graph_version`/`execution`. |
+| `actor` | `{type, ref}` | Who caused it. `type` ∈ `user`/`agent`/`system`; `ref` is a free string (a login, an agent's role, a component's name). |
+| `occurred_at` | string (date-time) | When the fact happened, ISO 8601. |
+| `data` | object | The type's payload. |
 
-`entity.id` é sempre o id da entidade nomeada em `entity.type`: em
-`session.finished` é o id da sessão, em `graph_version.applied` é o hash do
-snapshot (string — D15), em `execution.finished` é o próprio `execution_id`
-(inteiro), nunca o id do trabalho por trás.
+`entity.id` is always the id of the entity named in `entity.type`: in
+`session.finished` it is the session's id, in `graph_version.applied` it is the
+hash of the snapshot (a string — D15), in `execution.finished` it is the
+`execution_id` itself (an integer), never the id of the job behind it.
 
-Um evento inteiro, como ele sai do log:
+A whole event, as it comes out of the log:
 
 ```json
 {"id":5,"type":"session.finished","project_id":1,"execution_id":7,
- "entity":{"type":"sessao","id":5001},
+ "entity":{"type":"session","id":5001},
  "actor":{"type":"system","ref":"runner-a"},
  "occurred_at":"2026-08-14T09:41:22Z",
  "data":{"status":"completed","exit_code":0,
@@ -81,96 +78,97 @@ Um evento inteiro, como ele sai do log:
                  "cache_read_input_tokens":120344}}}
 ```
 
-**Por que um log só, e não o trio de tabelas do flowpilot.** D15 exige cruzar
-versão de grafo × telemetria por join, e D9 trata contrato/schema como espinha
-comum. Três formatos separados dariam três joins e três esquemas de
-versionamento para o mesmo ato de leitura. A entidade genérica
-(`entity.type` + `entity.id`) é o preço disso, e é um preço barato: quem
-quer só sessões filtra por `entity.type = 'session'`.
+**Why one log, and not flowpilot's trio of tables.** D15 requires crossing graph
+version × telemetry by join, and D9 treats contract/schema as a common spine.
+Three separate formats would give three joins and three versioning schemes for
+the same act of reading. The generic entity (`entity.type` + `entity.id`) is the
+price of that, and it is a cheap price: whoever wants sessions only filters by
+`entity.type = 'session'`.
 
-## Regra append-only
+## The append-only rule
 
-**A única operação sobre o log é inserir.** Não existe update de evento, não
-existe delete de evento, não existe correção de evento — um fato registrado
-errado é corrigido por outro fato, nunca por sobrescrita.
+**The only operation on the log is insert.** There is no update of an event,
+there is no delete of an event, there is no correction of an event — a fact
+recorded wrongly is corrected by another fact, never by overwriting.
 
-É paridade explícita com a regra 10 do flowpilot, onde a garantia é de código
-e não de convenção: `TicketEventRepository` expõe `create` e leituras, e mais
-nada, com um teste que varre `app/` atrás de update/delete em massa contra a
-tabela. Quando o control plane desta especificação existir, o repositório
-correspondente nasce com a mesma restrição.
+It is explicit parity with flowpilot's rule 10, where the guarantee is one of
+code and not of convention: `TicketEventRepository` exposes `create` and reads,
+and nothing else, with a test that sweeps `app/` for a mass update/delete
+against the table. When this specification's control plane exists, the
+corresponding repository is born with the same restriction.
 
-Três consequências que atravessam esta ficha inteira:
+Three consequences that run through this whole ficha:
 
-1. **Nenhum schema aqui descreve modificação.** Não há `evento.atualizado`,
-   não há campo de revisão, não há carimbo de alteração — `occurred_at` é o
-   único tempo do envelope, porque um campo de "modificado em" num log
-   append-only seria mentira.
-2. **Nada do que o flowpilot muta in loco vira coluna mutável aqui.** A linha
-   de `agent_sessions` que nasce `pending` e é atualizada até `completed`
-   virou dois eventos (`session.opened`, `session.finished`); a linha de
-   `input_requests` que é respondida in loco virou três tipos. Estado atual é
-   projeção (ver [Replay](#replay-a-prova)), nunca a fonte.
-3. **`MAX(id)` resume o log.** Como nada some, o maior id é um cursor completo
-   de "algo mudou" — a mesma propriedade que o flowpilot usa hoje.
+1. **No schema here describes a modification.** There is no `event.updated`,
+   there is no revision field, there is no change stamp — `occurred_at` is the
+   envelope's only time, because a "modified at" field in an append-only log
+   would be a lie.
+2. **Nothing flowpilot mutates in place becomes a mutable column here.** The
+   `agent_sessions` row that is born `pending` and is updated until `completed`
+   became two events (`session.opened`, `session.finished`); the
+   `input_requests` row that is answered in place became three types. Current
+   state is a projection (see [Replay](#replay-the-proof)), never the source.
+3. **`MAX(id)` summarises the log.** Since nothing disappears, the largest id is
+   a complete "something changed" cursor — the same property flowpilot uses
+   today.
 
-## Catálogo
+## The catalogue
 
-19 tipos, em 6 grupos. "Quem emite" é o `actor.type` esperado; os exemplos
-mostram o conteúdo de `data` e saíram do `example-log.jsonl`.
+19 types, in 6 groups. "Who emits" is the expected `actor.type`; the examples
+show the content of `data` and came out of `example-log.jsonl`.
 
-### Trabalho
+### Job
 
-O trabalho (viajante) atravessando o grafo. `entity.type` = `job`.
+The job (the traveller) crossing the graph. `entity.type` = `job`.
 
 #### `job.created` — [schema](schemas/job.created.schema.json)
 
-Emitido quando um trabalho entra no grafo, no fim do intake. Ator: `user`
-(criação manual) ou `agent` (quebra automática de trabalho).
+Emitted when a job enters the graph, at the end of the intake. Actor: `user`
+(manual creation) or `agent` (automatic breakdown of a job).
 
 ```json
-{"title":"Especificar a taxonomia de eventos de telemetria","entry_node_id":"intake",
- "body":"Um log só, com envelope comum e entidade generica.",
- "acceptance_criteria":["um schema por tipo","o reducer reproduz o estado final"]}
+{"title":"Specify the taxonomy of telemetry events","entry_node_id":"intake",
+ "body":"A single log, with a common envelope and a generic entity.",
+ "acceptance_criteria":["one schema per type","the reducer reproduces the final state"]}
 ```
 
-`body` e `acceptance_criteria` são **opcionais** e entraram com o intake de
-duas fases (t122): um trabalho pode nascer com conteúdo, e um criado à mão
-continua nascendo só com título — nesse caso os dois chegam ao log como `null`,
-como todo campo opcional desta taxonomia. Os critérios que o intake grava são
-**preliminares**: quem os produz de verdade é o nó que refina, a partir do
-pedido bruto, e ele reescreve o trabalho por `job.amended`.
+`body` and `acceptance_criteria` are **optional** and came in with the two-phase
+intake (t122): a job can be born with content, and one created by hand goes on
+being born with a title only — in which case both arrive at the log as `null`,
+like every optional field of this taxonomy. The criteria the intake records are
+**preliminary**: what really produces them is the node that refines, out of the
+raw request, and it rewrites the job through `job.amended`.
 
-`fields` é o terceiro opcional e entrou com os campos customizados por classe
-(t168): um mapa de valores escalares cujas CHAVES a classe declara no grafo
-dela (`custom_fields`), não esta taxonomia — `{"premise_source": "relatório
-trimestral", "downside": -12.5}` em bets assimétricas (D14). Um trabalho que
-nasce sem campo nenhum grava `null`, e `null` não é `{}`.
+`fields` is the third optional one and came in with the per-class custom fields
+(t168): a map of scalar values whose KEYS the class declares in its own graph
+(`custom_fields`), not this taxonomy — `{"premise_source": "quarterly report",
+"downside": -12.5}` in asymmetric bets (D14). A job born with no field at all
+records `null`, and `null` is not `{}`.
 
 #### `job.transitioned` — [schema](schemas/job.transitioned.schema.json)
 
-Emitido quando o trabalho anda de um nó para outro. Ator: `system` (o
-controller move; nó não escolhe caminho em runtime — princípio 2 do README).
-`from_node_id` é `null` na primeira transição.
+Emitted when the job moves from one node to another. Actor: `system` (the
+controller moves it; a node does not choose a path at runtime — principle 2 of
+the README). `from_node_id` is `null` on the first transition.
 
 ```json
-{"from_node_id":"refinamento","to_node_id":"desenvolvimento"}
+{"from_node_id":"refinement","to_node_id":"development"}
 ```
 
 #### `job.blocked` — [schema](schemas/job.blocked.schema.json)
 
-Emitido quando o trabalho para de andar **sem sair do nó**: fato de bandeira,
-não de movimento. Ator: `system` normalmente, `user` quando o bloqueio é
+Emitted when the job stops moving **without leaving the node**: a fact about a
+flag, not about movement. Actor: `system` normally, `user` when the block is
 manual.
 
 ```json
-{"reason":"aguardando resposta da pergunta 900"}
+{"reason":"awaiting the answer to input request 900"}
 ```
 
 #### `job.unblocked` — [schema](schemas/job.unblocked.schema.json)
 
-Emitido quando a bandeira cai. Ator: `system` ou `user`. Sem payload — o
-fato é a própria queda da bandeira.
+Emitted when the flag comes down. Actor: `system` or `user`. No payload — the
+fact is the falling of the flag itself.
 
 ```json
 {}
@@ -178,139 +176,141 @@ fato é a própria queda da bandeira.
 
 #### `job.amended` — [schema](schemas/job.amended.schema.json)
 
-Emitido quando o **conteúdo** do trabalho é editado. Ator: `agent` (o
-refinador enriquecendo a ficha) ou `user`.
+Emitted when the **content** of the job is edited. Actor: `agent` (the refiner
+enriching the ficha) or `user`.
 
 ```json
-{"changed_fields":["corpo","testes_de_aceite"]}
+{"changed_fields":["body","acceptance_criteria"]}
 ```
 
-Carrega os **nomes** dos campos e nunca o conteúdo. Isto é registro de
-auditoria, não histórico de versões — mesma disciplina do `AMENDED` do
-flowpilot. Quem quer o texto novo lê o trabalho.
+It carries the **names** of the fields and never the content. This is an audit
+record, not a version history — the same discipline as flowpilot's `AMENDED`.
+Whoever wants the new text reads the job.
 
 #### `job.dependency_declared` — [schema](schemas/job.dependency_declared.schema.json)
 
-Emitido na **confirmação do intake**, uma vez por aresta declarada entre dois
-trabalhos do mesmo lote (t122). Ator: `user` — é um portão humano, e quando
-quem confirma se identifica é o login dele que fica no `actor.ref`; a t124
-autenticou a API, mas um token prova posse e não pessoa, então o control plane
-segue gravando honestamente `system`/`intake` em vez de inventar um usuário.
+Emitted at the **intake's confirmation**, once per edge declared between two
+jobs of the same batch (t122). Actor: `user` — it is a human gate, and when
+whoever confirms identifies themselves it is their login that stays in
+`actor.ref`; t124 authenticated the API, but a token proves possession and not
+a person, so the control plane goes on honestly recording `system`/`intake`
+instead of inventing a user.
 
 ```json
 {"depends_on_job_id":101}
 ```
 
-`entity.id` é o trabalho **dependente** e `data.depends_on_job_id` é
-aquele de quem ele depende: "este espera por aquele" é fato de quem espera, e é
-na linha do tempo dele que alguém vai procurar o motivo de não ter andado.
+`entity.id` is the **dependent** job and `data.depends_on_job_id` is the one it
+depends on: "this one waits for that one" is a fact about the one that waits,
+and it is on its timeline that somebody will look for the reason it did not
+move.
 
-Declarar a dependência **não bloqueia** o trabalho dependente. A aresta é
-registro; exigir a ordem — bloquear automaticamente, ordenar despacho — é
-decisão de outra ficha, e uma bandeira que ninguém sabe baixar seria pior que
-bandeira nenhuma.
+Declaring the dependency does **not** block the dependent job. The edge is a
+record; enforcing the order — blocking automatically, ordering dispatch — is
+another ficha's decision, and a flag nobody knows how to lower would be worse
+than no flag at all.
 
 #### `job.hook_failed` — [schema](schemas/job.hook_failed.schema.json)
 
-Emitido quando a entrega de um **gancho declarado no grafo** (t169) esgota as
-seis tentativas e desiste. Ator: `system` (o control plane, que é quem tenta).
-`entity.id` é o trabalho cuja transição ou bloqueio disparou o gancho.
+Emitted when the delivery of a **hook declared in the graph** (t169) exhausts
+its six attempts and gives up. Actor: `system` (the control plane, which is what
+tries). `entity.id` is the job whose transition or block fired the hook.
 
 ```json
-{"hook_id":"avisar-plantao","node_id":"desenvolvimento",
- "url":"https://plantao.exemplo/cartografo","last_error":"HTTP 502"}
+{"hook_id":"notify-on-duty","node_id":"development",
+ "url":"https://on-duty.example/cartografo","last_error":"HTTP 502"}
 ```
 
-**É incidente, não desfecho** — mesma leitura de `session.permission_denied`. O
-trabalho não muda de nó, não é bloqueado e não fica sabendo: gancho não
-participa da travessia, e é justamente por isso que "falha de gancho nunca
-trava o viajante" é verdade por construção, e não por um `try/catch` que
-alguém precisa lembrar de manter.
+**It is an incident, not an outcome** — the same reading as
+`session.permission_denied`. The job does not change node, is not blocked and
+never finds out: a hook does not take part in the traversal, and that is
+precisely why "a hook failure never stalls the traveller" is true by
+construction rather than by a `try/catch` somebody has to remember to maintain.
 
-**Por que este tipo existe, se a `entrega_webhook` da t142 nunca precisou de
-um.** Uma assinatura de webhook tem dono: alguém a registrou pela API e pode
-consultar `last_error` na linha de entrega. Um gancho não tem — ele é uma
-linha do documento de grafo, e ninguém está fazendo polling da fila dele. Sem
-este evento, a reação que quem escreveu o grafo declarou falharia em silêncio
-para sempre. Como ele entra pelos transportes que já existem (stream da t123,
-webhooks da t142), o sinal chega a quem estiver ouvindo sem nenhum trabalho a
-mais — e cliente antigo o ignora, pela regra de "tipo desconhecido é ignorado".
+**Why this type exists, if t142's webhook delivery never needed one.** A
+webhook subscription has an owner: somebody registered it through the API and
+can consult `last_error` on the delivery row. A hook has none — it is a line of
+the graph document, and nobody is polling its queue. Without this event, the
+reaction whoever wrote the graph declared would fail silently forever. Since it
+enters through the transports that already exist (t123's stream, t142's
+webhooks), the signal reaches whoever is listening with no extra work at all —
+and an old client ignores it, by the "an unknown type is ignored" rule.
 
-**Só no esgotamento, nunca por tentativa.** Uma falha transitória — o consumidor
-reiniciando, um 502 de dois minutos — é retentada e some sozinha; gravar evento
-a cada uma encheria o log de ruído que se corrige. O sucesso, por simetria, é
-mudo: `status='entregue'` na linha de entrega e mais nada.
+**Only on exhaustion, never per attempt.** A transient failure — the consumer
+restarting, a 502 lasting two minutes — is retried and goes away on its own;
+recording an event for each one would fill the log with noise that corrects
+itself. Success, by symmetry, is mute: `status='delivered'` on the delivery row
+and nothing more.
 
-### Sessão
+### Session
 
-A execução de um agente por um EngineAdapter. `entity.type` = `session`.
+The execution of an agent by an EngineAdapter. `entity.type` = `session`.
 
 #### `session.opened` — [schema](schemas/session.opened.schema.json)
 
-Emitido quando o runner despacha a sessão. Ator: `system` (`ref` = o runner).
-`job_id`/`node_id` são opcionais: nem toda sessão serve um trabalho.
+Emitted when the runner dispatches the session. Actor: `system` (`ref` = the
+runner). `job_id`/`node_id` are optional: not every session serves a job.
 
 ```json
-{"job_id":101,"node_id":"refinamento","engine":"claude-code",
+{"job_id":101,"node_id":"refinement","engine":"claude-code",
  "engine_session_ref":"cc-9f2b41d0","working_dir":"/Users/rafael/cartografo-ticket-98",
- "prompt":"Refine o trabalho 101 contra as convencoes do projeto.","timeout_seconds":5400,
+ "prompt":"Refine job 101 against the project conventions.","timeout_seconds":5400,
  "silence_seconds":900}
 ```
 
-Os dois orçamentos são independentes e opcionais (t163): `timeout_seconds` é
-relógio de parede, `silence_seconds` é quanto tempo a sessão pode ficar sem
-produzir saída nenhuma. `null` em qualquer um deles é "não declara política
-própria", nunca "zero".
+The two budgets are independent and optional (t163): `timeout_seconds` is
+wall-clock, `silence_seconds` is how long the session may go without producing
+any output at all. `null` in either of them is "declares no policy of its own",
+never "zero".
 
-`engine_session_ref` é o id da sessão no vocabulário do próprio engine, e é o
-que torna o retomar possível depois de uma pausa por cota — por isso é
-registrado assim que se conhece, não no fim.
+`engine_session_ref` is the session's id in the engine's own vocabulary, and it
+is what makes resuming possible after a quota pause — which is why it is
+recorded as soon as it is known, not at the end.
 
 #### `session.finished` — [schema](schemas/session.finished.schema.json)
 
-Emitido no fim da vida da sessão. Ator: `system`. `status` ∈ `completed`,
-`failed`, `stuck`, `timed_out`, `quota_paused`, `resume_failed`.
+Emitted at the end of the session's life. Actor: `system`. `status` ∈
+`completed`, `failed`, `stuck`, `timed_out`, `quota_paused`, `resume_failed`.
 
 ```json
 {"status":"timed_out","exit_code":null,"usage":null,"timeout_reason":"silence"}
 ```
 
-Os quatro status além de completed/failed existem para que um desfecho
-saudável (`quota_paused` — sem combustível, retomável), um ref inválido
-(`resume_failed`) e uma parada nossa (`timed_out`) nunca sejam lidos
-como bug a investigar.
+The four statuses beyond completed/failed exist so that a healthy outcome
+(`quota_paused` — out of fuel, resumable), an invalid ref (`resume_failed`) and
+a stop of our own (`timed_out`) are never read as a bug to investigate.
 
-**As duas paradas nossas são uma só no `status`.** O runner tem dois cães de
-guarda independentes — relógio de parede e silêncio (t163) — e ambos
-desembocam em `timed_out`. Quem os separa é `data.timeout_reason`
-(`wall_clock` | `silence` | `null`), não um status a mais: crescer o
-vocabulário de status foi rejeitado uma vez, para estados de cota, e o
-raciocínio vale igual — "o motivo real vive no log de eventos, que é
-append-only e não perde nada" (`docs/formatos/engine-adapter.md`, *Rejeitado
-— `SessionStatus` mais rico*).
+**The two stops of our own are one single `status`.** The runner has two
+independent watchdogs — wall-clock and silence (t163) — and both end up in
+`timed_out`. What separates them is `data.timeout_reason` (`wall_clock` |
+`silence` | `null`), not one more status: growing the status vocabulary was
+rejected once, for quota states, and the reasoning holds identically — "the real
+reason lives in the event log, which is append-only and loses nothing"
+(`docs/formatos/engine-adapter.md`, *Rejected — a richer `SessionStatus`*).
 
-Correção de rota, registrada em vez de apagada: até a t163 esta seção
-descrevia `stuck` como "parada por silêncio", em porte 1:1 do `STALLED` do
-flowpilot. Esse porte nunca foi construído, e o único lugar que produz
-`stuck` hoje (`TAXONOMY_STATUS`, `packages/runner/src/dispatch/`) o usa
-como o slot de quem não tem slot — `pending`, `running` e `cancelled` não têm
-correspondente aqui. `stuck` não tem relação nenhuma com silêncio, e a
-frase que dizia o contrário era aspiração documentada como se fosse fato.
+A course correction, recorded instead of erased: until t163 this section
+described `stuck` as "stopped by silence", in a 1:1 port of flowpilot's
+`STALLED`. That port was never built, and the only place that produces `stuck`
+today (`TAXONOMY_STATUS`, `packages/runner/src/dispatch/`) uses it as the slot
+for whoever has no slot — `pending`, `running` and `cancelled` have no
+counterpart here. `stuck` has no relation at all to silence, and the sentence
+that said otherwise was an aspiration documented as though it were a fact.
 
-`usage` é `null` quando o engine não reportou nada — **nunca colapsar em zero**.
-Não há campo de custo: custo é vocabulário de engine, e o log é neutro.
+`usage` is `null` when the engine reported nothing — **never collapse into
+zero**. There is no cost field: cost is engine vocabulary, and the log is
+neutral.
 
-E até a t172 esse `null` era *sempre*: o adapter do Claude Code mandava `usage:
-null` cravado no código, porque contagem de uso estava em "Fora de escopo (v0)"
-do `docs/formatos/engine-adapter.md`. Toda sessão que este sistema já rodou
-registrou zero dado de custo, e o placeholder era indistinguível de uma ausência
-honesta — que é justamente por que ele durou tanto. O frame `result` terminal
-daquela CLI sempre trouxe a contagem; o que faltava era alguém lê-la.
+And until t172 that `null` was *always*: the Claude Code adapter sent `usage:
+null` hard-coded, because usage counting was in "Out of scope (v0)" in
+`docs/formatos/engine-adapter.md`. Every session this system ever ran recorded
+zero cost data, and the placeholder was indistinguishable from an honest absence
+— which is precisely why it lasted so long. That CLI's terminal `result` frame
+always carried the count; what was missing was somebody reading it.
 
-`models` (t172) é a identidade que nunca existiu em lugar nenhum desta
-taxonomia: `session.opened.engine` diz qual MOTOR rodou (`claude-code`, `codex`)
-e nada dizia qual modelo. "Custo por modelo" não tinha resposta porque o dado
-nunca foi coletado, não porque faltasse agregação.
+`models` (t172) is the identity that never existed anywhere in this taxonomy:
+`session.opened.engine` says which ENGINE ran (`claude-code`, `codex`) and
+nothing said which model. "Cost per model" had no answer because the datum was
+never collected, not because aggregation was missing.
 
 ```json
 {"status":"completed","exit_code":0,
@@ -320,131 +320,135 @@ nunca foi coletado, não porque faltasse agregação.
  "models":["claude-haiku-4-5-20251001","claude-sonnet-5"]}
 ```
 
-**É lista, e o exemplo acima é de uma execução real.** Um único turno da CLI
-devolveu dois modelos — o do turno principal e o de um auxiliar mais barato — e
-colapsar em "o" modelo atribuiria a conta inteira ao errado, que é o mesmo
-estrago que a regra do `usage` evita para tokens. `null` é "o engine não nomeou
-nenhum"; lista vazia não é resposta, e o schema a recusa (`minItems: 1`). O
-conjunto de valores é aberto: o identificador é o que o engine reportou, e um
-enum fechado pediria mudança de schema a cada modelo novo.
+**It is a list, and the example above is from a real execution.** A single turn
+of the CLI returned two models — the main turn's and that of a cheaper helper —
+and collapsing into "the" model would attribute the whole bill to the wrong one,
+which is the same damage the `usage` rule avoids for tokens. `null` is "the
+engine named none"; an empty list is not an answer, and the schema refuses it
+(`minItems: 1`). The set of values is open: the identifier is whatever the
+engine reported, and a closed enum would demand a schema change for every new
+model.
 
-**O que `models` não promete.** Ele diz quais modelos rodaram, nunca como as
-quatro contagens de `usage` se dividem entre eles — essa separação existe no frame
-do engine e não atravessa para cá, porque `usage` é um total só. Uma sessão de dois
-modelos entra inteira nos dois quando alguém agrega por modelo, e é isso que a
-lente de custo lê.
+**What `models` does not promise.** It says which models ran, never how the four
+counts of `usage` divide between them — that split exists in the engine's frame
+and does not cross over to here, because `usage` is a single total. A
+two-model session goes whole into both when somebody aggregates by model, and
+that is what the cost lens reads.
 
-**O relato estruturado do nó, e o veredito sobre ele** (`t253`, `t268`).
-`output` é o que a sessão relatou do nó — o objeto de que a projeção de `input`
-do nó seguinte é montada — e ele é conferido, no fechamento, contra o schema
-`output` da skill que o nó pina (D9). Quando essa conferência recusa, `output`
-vai a `null` e os motivos viajam inteiros em `output_schema_error`; o status
-terminal é gravado de qualquer jeito, porque perder o fim da sessão por causa de
-um auto-relato malformado seria estritamente pior — auto-relato de nó de
-trabalho nunca foi evidência.
+**The node's structured report, and the verdict on it** (`t253`, `t268`).
+`output` is what the session reported from the node — the object the next node's
+`input` projection is built from — and it is checked, at closing time, against
+the `output` schema of the skill the node pins (D9). When that check refuses,
+`output` goes to `null` and the reasons travel whole in `output_schema_error`;
+the terminal status is recorded either way, because losing the end of the
+session over a malformed self-report would be strictly worse — a work node's
+self-report was never evidence.
 
-`output_accepted` é o mesmo fato visto do lado de quem age: a lista diz *por
-que* um relato foi recusado e só existe quando houve recusa; o booleano diz *se*
-ele foi aceito, e é gravado em **todo** fechamento — `true` quando nada foi
-relatado e quando o relato casou, `false` só na recusa. Ele existe porque quem
-lê é o runner, na resposta do próprio `PATCH /finish`, para decidir se o
-trabalho anda: até a `t268` esse veredito era descartado e a rota era escolhida
-a partir de um segundo parse do mesmo bloco, então um relato que o control plane
-recusara movia o trabalho pela aresta assim mesmo.
+`output_accepted` is the same fact seen from the side of whoever acts: the list
+says *why* a report was refused and exists only when there was a refusal; the
+boolean says *whether* it was accepted, and is recorded on **every** closing —
+`true` when nothing was reported and when the report matched, `false` only on a
+refusal. It exists because the one who reads it is the runner, in the response
+of `PATCH /finish` itself, to decide whether the job moves: until `t268` that
+verdict was discarded and the route was chosen from a second parse of the same
+block, so a report the control plane had refused moved the job along the edge
+regardless.
 
 #### `session.permission_denied` — [schema](schemas/session.permission_denied.schema.json)
 
-Emitido quando a sessão tenta usar uma ferramenta que a política de permissão
-dela negava (t125). Ator: `system` (o runner, que é quem vê a recusa passar no
-stream do engine). `resource` ∈ `filesystem`, `rede` — os dois eixos que o
-manifesto de skill declara.
+Emitted when the session tries to use a tool its permission policy denied
+(t125). Actor: `system` (the runner, which is what sees the refusal go past in
+the engine's stream). `resource` ∈ `filesystem`, `network` — the two axes the
+skill manifest declares.
 
 ```json
-{"resource":"rede","tool":"WebFetch",
+{"resource":"network","tool":"WebFetch",
  "reason":"Claude requested permissions to use WebFetch, but you have not granted it."}
 ```
 
-**É incidente, não desfecho.** Não há `UPDATE` na linha da sessão e não há
-transição de status: a sessão continua, e pode ser negada de novo — o log é
-append-only e uma segunda negação é um segundo fato. Encerrar sessão por
-negação repetida seria política de escalada, e ninguém decidiu isso ainda.
+**It is an incident, not an outcome.** There is no `UPDATE` on the session's row
+and there is no status transition: the session goes on, and may be denied again
+— the log is append-only and a second denial is a second fact. Ending a session
+over a repeated denial would be an escalation policy, and nobody has decided
+that yet.
 
-`tool` carrega vocabulário de engine dentro do log de propósito
-(`WebFetch`, `Bash(curl *)`). É a exceção que a regra "o log é neutro" aceita
-pelo mesmo motivo que `session.opened` carrega `engine`: sem o nome exato que
-foi negado, a negação não é auditável.
+`tool` carries engine vocabulary inside the log on purpose (`WebFetch`,
+`Bash(curl *)`). It is the exception the "the log is neutral" rule accepts for
+the same reason `session.opened` carries `engine`: without the exact name that
+was denied, the denial is not auditable.
 
-**O que este evento não promete.** Ele registra o que o gating por nome de
-ferramenta pegou, não tudo que a sessão tentou. Medido contra a CLI real: uma
-ferramenta negada por nome nem chega a ser oferecida ao modelo, então nunca há
-tentativa e nunca há evento — quem aparece aqui é a negação de um *padrão*
-(`Bash(curl *)`), que é recusada na chamada. Ausência de evento significa "não
-tentou ou não foi oferecida", jamais "nada foi barrado". A lacuna residual está
-escrita em `docs/formatos/engine-adapter.md`, "Permissões da sessão".
+**What this event does not promise.** It records what the gating by tool name
+caught, not everything the session tried. Measured against the real CLI: a tool
+denied by name is never even offered to the model, so there is never an attempt
+and never an event — what shows up here is the denial of a *pattern*
+(`Bash(curl *)`), which is refused at the call. The absence of an event means
+"did not try, or was not offered", never "nothing was blocked". The residual gap
+is written down in `docs/formatos/engine-adapter.md`, "The session's
+permissions".
 
-### Pergunta
+### Input request
 
-Escalação para humano como entidade de primeira classe.
-`entity.type` = `input_request`.
+Human escalation as a first-class entity. `entity.type` = `input_request`.
 
 #### `input_request.created` — [schema](schemas/input_request.created.schema.json)
 
-Emitido quando um agente precisa de algo do humano para continuar. Ator:
-`agent`. `kind` ∈ `question` (preciso saber algo) / `approval` (um portão
-manual quer um OK sobre um artefato) — mesmo animal, mesma fila, mesmo loop.
+Emitted when an agent needs something from the human in order to continue.
+Actor: `agent`. `kind` ∈ `question` (I need to know something) / `approval` (a
+manual gate wants an OK on an artefact) — the same animal, the same queue, the
+same loop.
 
 ```json
-{"job_id":101,"session_id":5001,"node_id":"refinar","type":"pergunta",
- "question":"Unifico o trio de tabelas do flowpilot num log de eventos so, ou porto as tres separadas?",
- "context":"D15 exige cruzar versao de grafo com telemetria por join, o que fica mais barato com um log unico.",
- "options":["Unificar num log so","Portar as tres separadas"],
- "recommendation":"Unificar num log so, com envelope comum e entidade generica",
- "default_answer":"Unificar num log so, com envelope comum e entidade generica",
+{"job_id":101,"session_id":5001,"node_id":"refinement","kind":"question",
+ "question":"Do I unify flowpilot's trio of tables into a single event log, or port the three separately?",
+ "context":"D15 requires crossing graph version with telemetry by join, which is cheaper with a single log.",
+ "options":["Unify into a single log","Port the three separately"],
+ "recommendation":"Unify into a single log, with a common envelope and a generic entity",
+ "default_answer":"Unify into a single log, with a common envelope and a generic entity",
  "auto_approvable":true}
 ```
 
-`auto_approvable` é carregado explicitamente porque "sem opções e sem padrão"
-nunca foi bom proxy para inaprovável: uma pergunta cuja resposta só o humano
-pode dar precisa dizer isso, não torcer para que o formato dela sugira.
+`auto_approvable` is carried explicitly because "no options and no default" was
+never a good proxy for unapprovable: a question only the human can answer needs
+to say so, not hope that its shape suggests it.
 
-`node_id` é de qual **nó** a pergunta veio, carimbado pelo servidor a partir da
-posição do trabalho dono — nunca vindo do corpo do pedido. Sem ele, "quais
-etapas mais param para pedir gente?" só se responde reconstruindo a travessia
-evento a evento, e a política de escalação por nó
-([graph.md](../../docs/spec/graph.md), §2) seria uma política que ninguém
-consegue avaliar. Opcional: `null` é "não se sabe de qual nó veio" — trabalho
-sem posição, ou pergunta gravada antes de o campo existir.
+`node_id` is which **node** the question came from, stamped by the server from
+the position of the owning job — never coming from the request's body. Without
+it, "which stages stop to ask for a person most often?" can only be answered by
+reconstructing the traversal event by event, and the per-node escalation policy
+([graph.md](../../docs/spec/graph.md), §2) would be a policy nobody can
+evaluate. Optional: `null` is "it is not known which node it came from" — a job
+with no position, or a question recorded before the field existed.
 
 #### `input_request.answered` — [schema](schemas/input_request.answered.schema.json)
 
-Emitido quando um humano responde. Ator: `user`.
+Emitted when a human answers. Actor: `user`.
 
 ```json
-{"answer":"Unificar num log so, com envelope comum e entidade generica","answered_by":"rafael"}
+{"answer":"Unify into a single log, with a common envelope and a generic entity","answered_by":"rafael"}
 ```
 
 #### `input_request.auto_resolved` — [schema](schemas/input_request.auto_resolved.schema.json)
 
-Emitido quando o portão de auto-aprovação responde em nome do humano. Ator:
+Emitted when the auto-approval gate answers on the human's behalf. Actor:
 `system`. `based_on` ∈ `recommendation` / `default_answer` / `precedent`.
 
 ```json
-{"answer":"Porte os 12 nos como estao; reagrupar e decisao de outra ficha","based_on":"recomendacao"}
+{"answer":"Port the 12 nodes as they are; regrouping is another ficha's decision","based_on":"recommendation"}
 ```
 
-Dois tipos em vez de um evento com coluna `answer_source`: o `type` já é o
-discriminador de todo o resto do log, e a garantia que importa — a auditoria
-**sempre** distingue aprovado-por-usuário de aprovado-pelo-sistema — fica mais
-forte quando é a identidade do evento que a carrega, não um campo dentro dele.
+Two types instead of one event with an `answer_source` column: `type` is already
+the discriminator of all the rest of the log, and the guarantee that matters —
+the audit **always** distinguishes approved-by-user from approved-by-system —
+is stronger when it is the identity of the event that carries it, not a field
+inside it.
 
 ### Lease
 
-Posse de um trabalho por um runner, com prazo (D5). `entity.type` = `lease`.
+A runner's possession of a job, with a deadline (D5). `entity.type` = `lease`.
 
 #### `lease.granted` — [schema](schemas/lease.granted.schema.json)
 
-Emitido quando o controller despacha um trabalho para um runner. Ator:
-`system`.
+Emitted when the controller dispatches a job to a runner. Actor: `system`.
 
 ```json
 {"job_id":102,"runner_id":"runner-b","expires_at":"2026-08-14T11:30:05Z"}
@@ -452,38 +456,38 @@ Emitido quando o controller despacha um trabalho para um runner. Ator:
 
 #### `lease.expired` — [schema](schemas/lease.expired.schema.json)
 
-Emitido quando a posse caduca e o trabalho volta para a fila. Ator: `system`.
-`reason` ∈ `heartbeat_lost` (o runner parou de dar sinal antes do prazo) /
-`ttl_elapsed` (o prazo acabou sem renovação).
+Emitted when the possession lapses and the job goes back to the queue. Actor:
+`system`. `reason` ∈ `heartbeat_lost` (the runner stopped signalling before the
+deadline) / `ttl_elapsed` (the deadline passed with no renewal).
 
 ```json
 {"runner_id":"runner-b","reason":"heartbeat_lost"}
 ```
 
-### Versão de grafo
+### Graph version
 
-O grafo vive como dado versionado, com semântica git-like dentro do banco
-(D15). `entity.type` = `graph_version`, e `entity.id` é o **hash do
-snapshot** — string, não inteiro.
+The graph lives as versioned data, with git-like semantics inside the database
+(D15). `entity.type` = `graph_version`, and `entity.id` is the **hash of the
+snapshot** — a string, not an integer.
 
 #### `graph_version.registered` — [schema](schemas/graph_version.registered.schema.json)
 
-Emitido quando uma versão nova entra no banco. Ator: `user` (registro
-manual) ou `agent` (sintetizador, fora da PoC). `source` ∈ `synthesizer` /
-`manual` / `proposal`.
+Emitted when a new version enters the database. Actor: `user` (manual
+registration) or `agent` (the synthesizer, outside the PoC). `source` ∈
+`synthesizer` / `manual` / `proposal`.
 
 ```json
 {"graph_id":"software-dev","parent_version":"sha256:1a0b7e55","source":"manual"}
 ```
 
-**Registrar não move o ponteiro.** Uma versão pode existir no banco sem nunca
-ter valido; quem move é o evento seguinte.
+**Registering does not move the pointer.** A version can exist in the database
+without ever having held; what moves it is the next event.
 
 #### `graph_version.applied` — [schema](schemas/graph_version.applied.schema.json)
 
-Emitido quando o ponteiro de versão corrente passa a apontar para esta versão.
-Ator: `user` (portão humano) ou `system` (auto-aplicação de mutação de
-baixo risco, degrau final da escada de segurança — princípio 5 do README).
+Emitted when the current-version pointer comes to point at this version. Actor:
+`user` (a human gate) or `system` (auto-application of a low-risk mutation, the
+final rung of the safety ladder — principle 5 of the README).
 
 ```json
 {"graph_id":"software-dev"}
@@ -491,22 +495,19 @@ baixo risco, degrau final da escada de segurança — princípio 5 do README).
 
 #### `graph_version.reverted` — [schema](schemas/graph_version.reverted.schema.json)
 
-Emitido no rollback. Ator: `user` ou `system`. `entity.id` é a versão
-abandonada; `target_version` é para onde o ponteiro voltou.
+Emitted on a rollback. Actor: `user` or `system`. `entity.id` is the abandoned
+version; `target_version` is where the pointer went back to.
 
 ```json
 {"graph_id":"software-dev","target_version":"sha256:1a0b7e55",
- "reason":"o no de revisao novo dobrou o tempo de travessia sem mexer na taxa de aprovacao"}
+ "reason":"the new review node doubled the traversal time without moving the approval rate"}
 ```
 
-Rollback move ponteiro e **nada se apaga**: a versão abandonada continua no
-banco com a telemetria dela, que é exatamente o que o topógrafo vai cruzar
-depois.
+A rollback moves a pointer and **nothing is erased**: the abandoned version
+stays in the database with its telemetry, which is exactly what the topografo
+will cross-reference later.
 
 #### `graph_version.contracts_checked` — [schema](schemas/graph_version.contracts_checked.schema.json)
-
-*(This entry is in English per the 2026-08-18 language rule; the entries around
-it are the pre-existing Portuguese of this document.)*
 
 A version carries a contract-check state — `checked` / `unchecked` / `failed` —
 and this is the fact of it MOVING (`t283`). Actor: always `system` /
@@ -531,181 +532,185 @@ this.
 object in two places with no way to keep them agreeing — the same call
 `job.blocked.consecutive_failures` makes.
 
-### Execução
+### Execution
 
-A rodada inteira, como sujeito de um fato só (D21). `entity.type` =
-`execution`, e `entity.id` é o próprio `execution_id` — inteiro, como o de
-quase todo mundo aqui.
+The whole round, as the subject of a single fact (D21). `entity.type` =
+`execution`, and `entity.id` is the `execution_id` itself — an integer, like
+almost everybody else's here.
 
-Este grupo **corrige uma moldura anterior à decisão**. Até a D21 a taxonomia
-dizia que execução não era entidade de evento: `execution_id` era um agrupador
-opaco e ponto final, e é isso que ainda está escrito no cabeçalho da migração
-`0003` e no de `packages/core/src/routes/executions.ts`. Os dois são anteriores
-à D21, que registrou o contrário — "ao fim de cada execução, o control plane
-declara a execução concluída (fato que só ele afirma, D1)". A entidade nasce
-para carregar esse fato, e só ele: continua não havendo tabela `execution`, e o
-`finished_at` que a API publica é derivado deste evento em tempo de leitura,
-nunca uma coluna.
+This group **corrects a frame that predates the decision**. Until D21 the
+taxonomy said that an execution was not an event entity: `execution_id` was an
+opaque grouper and that was that, and that is what is still written in the
+header of migration `0003` and in that of
+`packages/core/src/routes/executions.ts`. Both predate D21, which recorded the
+opposite — "at the end of every execution, the control plane declares the
+execution finished (a fact only it asserts, D1)". The entity is born to carry
+that fact, and only it: there still is no `execution` table, and the
+`finished_at` the API publishes is derived from this event at read time, never a
+column.
 
 #### `execution.finished` — [schema](schemas/execution.finished.schema.json)
 
-Emitido quando **todo** trabalho da rodada chegou a um nó final do grafo dele e
-**nenhuma lease ativa** segura mais nenhum deles. Ator: sempre `system` /
-`control-plane` — quem afirma é o control plane sobre si mesmo (D1), nunca o
-ator que por acaso empurrou o trabalho que fechou a conta.
+Emitted when **every** job of the round has reached a final node of its graph
+and **no active lease** holds any of them any more. Actor: always `system` /
+`control-plane` — the one that asserts is the control plane about itself (D1),
+never the actor that happened to push the job that closed the account.
 
 ```json
 {}
 ```
 
-**Sem payload**, pela mesma razão de `job.unblocked`: `execution_id`,
-`entity.id` e `occurred_at` do envelope já dizem qual rodada acabou e quando, e
-repetir isso dentro de `data` seria dado duplicado no próprio evento.
+**No payload**, for the same reason as `job.unblocked`: the envelope's
+`execution_id`, `entity.id` and `occurred_at` already say which round ended and
+when, and repeating that inside `data` would be duplicated data within the event
+itself.
 
-**Uma vez, para sempre.** O fato é gravado na primeira vez que a condição vale,
-na MESMA transação da transição que a tornou verdadeira, e nunca de novo — um
-trabalho que sai do nó final e volta não produz um segundo evento. Zero trabalho
-nunca satisfaz a condição: uma rodada sem trabalho nenhum não é uma rodada
-concluída.
+**Once, forever.** The fact is recorded the first time the condition holds, in
+the SAME transaction as the transition that made it true, and never again — a
+job that leaves the final node and comes back does not produce a second event.
+Zero jobs never satisfies the condition: a round with no job at all is not a
+finished round.
 
-**O que ele ainda não vê.** A verificação roda no caminho do trabalho
-(`transitionJob` e `createJob`, em `packages/core/src/repositories/job.ts`) e em
-lugar nenhum mais. Uma liberação comum de lease não grava evento — a taxonomia
-não declara `lease.released`, gap conhecido desde a t196 — então a rodada cujo
-último trabalho chega COM a lease dele ainda ativa (que é o caso comum do runner
-real: ele solta a lease depois de reportar a transição) só será declarada
-concluída se algum trabalho dela voltar a se mexer depois. Fechar isso é a ficha
-que ligar `lease` e `job` pelos dois lados, como o cabeçalho da migração `0004`
-já prevê.
+**What it still does not see.** The check runs on the job's path
+(`transitionJob` and `createJob`, in `packages/core/src/repositories/job.ts`)
+and nowhere else. An ordinary lease release records no event — the taxonomy does
+not declare `lease.released`, a gap known since t196 — so the round whose last
+job arrives WITH its lease still active (which is the common case for the real
+runner: it releases the lease after reporting the transition) will only be
+declared finished if some job of it moves again afterwards. Closing that is the
+ficha that links `lease` and `job` from both sides, as the header of migration
+`0004` already foresees.
 
-## Paridade com o flowpilot
+## Parity with flowpilot
 
-Conferida linha a linha contra `~/flowpilot/app/models/ticket_event_model.py`,
-`agent_session_model.py` e `input_request_model.py`. O flowpilot é referência
-de comportamento, não dependência de código (D17).
+Checked line by line against `~/flowpilot/app/models/ticket_event_model.py`,
+`agent_session_model.py` and `input_request_model.py`. flowpilot is a reference
+of behaviour, not a code dependency (D17).
 
-Legenda: **=** equivalência direta · **≠** divergência de modelo justificada ·
-**+** extensão do cartografo sem equivalente lá.
+Legend: **=** direct equivalence · **≠** justified divergence of model · **+**
+an extension of cartografo with no counterpart there.
 
-### `ticket_events` → eventos de trabalho
+### `ticket_events` → job events
 
-| flowpilot | cartografo | | Nota |
+| flowpilot | cartografo | | Note |
 |---|---|---|---|
-| `EventKind.CREATED` | `job.created` | = | `entry_node_id` no lugar do estado inicial fixo. |
-| `EventKind.STATE_CHANGE` + `from_state`/`to_state` (`TicketState`) | `job.transitioned` + `from_node_id`/`to_node_id` | ≠ | O cartografo não tem estados fixos: o caminho é o grafo, congelado por versão (princípio 2, D2). Um enum de 12 estados no schema do evento amarraria o log a um grafo. |
-| `EventKind.BLOCKED` | `job.blocked` | = | `note` livre vira `reason` obrigatório. |
+| `EventKind.CREATED` | `job.created` | = | `entry_node_id` in place of the fixed initial state. |
+| `EventKind.STATE_CHANGE` + `from_state`/`to_state` (`TicketState`) | `job.transitioned` + `from_node_id`/`to_node_id` | ≠ | cartografo has no fixed states: the path is the graph, frozen per version (principle 2, D2). An enum of 12 states in the event's schema would tie the log to one graph. |
+| `EventKind.BLOCKED` | `job.blocked` | = | A free `note` becomes a required `reason`. |
 | `EventKind.UNBLOCKED` | `job.unblocked` | = | |
-| `EventKind.AMENDED` + `note` (nomes separados por vírgula) | `job.amended` + `changed_fields` | = | Mesma disciplina (só nomes), com o payload tipado como array em vez de string. |
-| — | `job.dependency_declared` | + | Lá a ordem entre tickets é convenção do humano que os cria; aqui o intake quebra um pedido em lote e a aresta entre dois trabalhos do lote é fato do log (t122). |
-| `EventKind.INPUT_REQUESTED` + linha de `input_requests` | `input_request.created` | ≠ | Lá são duas coisas: o evento de bandeira e a linha de conteúdo. Aqui um evento só, porque o log já é a fonte do conteúdo. |
-| `EventKind.INPUT_ANSWERED` + `answer_source='user'` | `input_request.answered` | ≠ | A origem da resposta virou o tipo do evento. |
-| `EventKind.INPUT_ANSWERED` + `answer_source='auto'` | `input_request.auto_resolved` | ≠ | Idem. |
-| `EventKind.SERVICE_CLASS` | — | | Fora de escopo: D16 não pede urgência de trabalho na PoC. Extensão aditiva se a onda 2 precisar. |
-| `ActorType.USER/AGENT/SYSTEM` | `actor.type` `user`/`agent`/`system` | = | Traduzido, não remodelado. |
+| `EventKind.AMENDED` + `note` (comma-separated names) | `job.amended` + `changed_fields` | = | The same discipline (names only), with the payload typed as an array instead of a string. |
+| — | `job.dependency_declared` | + | There the order between tickets is a convention of the human who creates them; here the intake breaks a request into a batch and the edge between two jobs of the batch is a fact of the log (t122). |
+| `EventKind.INPUT_REQUESTED` + a row in `input_requests` | `input_request.created` | ≠ | There they are two things: the flag event and the content row. Here a single event, because the log is already the source of the content. |
+| `EventKind.INPUT_ANSWERED` + `answer_source='user'` | `input_request.answered` | ≠ | The source of the answer became the type of the event. |
+| `EventKind.INPUT_ANSWERED` + `answer_source='auto'` | `input_request.auto_resolved` | ≠ | Likewise. |
+| `EventKind.SERVICE_CLASS` | — | | Out of scope: D16 does not ask for job urgency in the PoC. An additive extension if wave 2 needs it. |
+| `ActorType.USER/AGENT/SYSTEM` | `actor.type` `user`/`agent`/`system` | = | Translated, not remodelled. |
 | `actor_ref` | `actor.ref` | = | |
-| `occurred_at` | `occurred_at` | = | Único carimbo de tempo, pela mesma razão de lá. |
-| `id` (BigInt autoincrement) | `id` | = | Monotônico, do servidor, é a ordem do log. |
-| `ticket_id` (FK) | `entity` `{tipo:"trabalho", id}` | ≠ | Entidade genérica: o mesmo log carrega sessão, pergunta, lease e versão de grafo. |
-| `note` (texto livre) | `data` (objeto por tipo) | ≠ | Payload tipado com schema em vez de string interpretável. |
+| `occurred_at` | `occurred_at` | = | A single time stamp, for the same reason as there. |
+| `id` (BigInt autoincrement) | `id` | = | Monotonic, from the server, and the order of the log. |
+| `ticket_id` (FK) | `entity` `{type:"job", id}` | ≠ | A generic entity: the same log carries session, input request, lease and graph version. |
+| `note` (free text) | `data` (an object per type) | ≠ | A payload typed by schema instead of an interpretable string. |
 
-### `agent_sessions` → eventos de sessão
+### `agent_sessions` → session events
 
-A linha de `agent_sessions` nasce `pending` e é **atualizada** até um status
-terminal. Aqui ela é dois eventos e nenhuma atualização — é a divergência
-estrutural desta ficha.
+The `agent_sessions` row is born `pending` and is **updated** until a terminal
+status. Here it is two events and no update — it is this ficha's structural
+divergence.
 
-| flowpilot (coluna) | cartografo | | Nota |
+| flowpilot (column) | cartografo | | Note |
 |---|---|---|---|
-| criação da linha (`pending`) | `session.opened` | ≠ | Evento, não linha mutável. |
-| `status` terminal | `session.finished.status` | ≠ | 6 valores contra 9: `pending`/`running` não são desfechos (a abertura já é evento própria). |
+| creation of the row (`pending`) | `session.opened` | ≠ | An event, not a mutable row. |
+| terminal `status` | `session.finished.status` | ≠ | 6 values against 9: `pending`/`running` are not outcomes (the opening is already an event of its own). |
 | `SessionStatus.COMPLETED/FAILED` | `completed`/`failed` | = | |
-| `STALLED`/`TIMED_OUT` | `timed_out` + `data.timeout_reason` | ≠ | Dois status lá, um status e uma causa aqui (t163). `stuck` **não** é o porte de `STALLED`: é o slot de `pending`/`running`/`cancelled`, que não têm um. |
+| `STALLED`/`TIMED_OUT` | `timed_out` + `data.timeout_reason` | ≠ | Two statuses there, one status and a cause here (t163). `stuck` is **not** the port of `STALLED`: it is the slot for `pending`/`running`/`cancelled`, which have none. |
 | `PAUSED_QUOTA`/`RESUME_FAILED` | `quota_paused`/`resume_failed` | = | |
-| `CANCELLED` | — | | **Sem porte na v1** (não está na tabela da ficha). Se a PoC precisar cancelar sessão, é acréscimo aditivo ao enum. |
-| `engine`, `engine_session_ref` | idem em `session.opened` | = | A fronteira de independência de LLM. |
-| `working_dir`, `prompt`, `timeout_seconds` | idem | = | |
-| `last_output_at` (relógio de silêncio) | `session.opened.silence_seconds` + `session.finished.timeout_reason` | ≠ | Lá é um instante atualizado na linha e varrido por fora; aqui é o orçamento na abertura e a causa no fim, sem nada mutável no meio. |
-| `stage` (estado do fluxo) | `node_id` | ≠ | Nó do grafo, mesma razão de `job.transitioned`. |
-| `ticket_id` | `job_id` (opcional) | = | Opcional lá e aqui: nem toda sessão serve um trabalho. |
-| `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` | `usage.{...}` | = | Nomes idênticos, de propósito. `null` ≠ zero, também de propósito. |
+| `CANCELLED` | — | | **Not ported in v1** (it is not in the ficha's table). If the PoC needs to cancel a session, it is an additive addition to the enum. |
+| `engine`, `engine_session_ref` | the same in `session.opened` | = | The border of LLM independence. |
+| `working_dir`, `prompt`, `timeout_seconds` | the same | = | |
+| `last_output_at` (the silence clock) | `session.opened.silence_seconds` + `session.finished.timeout_reason` | ≠ | There it is an instant updated on the row and swept from outside; here it is the budget at the opening and the cause at the end, with nothing mutable in between. |
+| `stage` (the flow's state) | `node_id` | ≠ | A node of the graph, for the same reason as `job.transitioned`. |
+| `ticket_id` | `job_id` (optional) | = | Optional there and here: not every session serves a job. |
+| `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens` | `usage.{...}` | = | Identical names, on purpose. `null` ≠ zero, also on purpose. |
 | `exit_code` | `exit_code` | = | |
-| `log_path`, `worktree_path`, `branch`, `silence_seconds`, `quota_resets_at`, `last_output_at`, `processed_at` | — | | **Sem porte na v1**: são bookkeeping do controller e caminhos locais, não fatos de auditoria. Revisitar quando o control plane existir. |
+| `log_path`, `worktree_path`, `branch`, `silence_seconds`, `quota_resets_at`, `last_output_at`, `processed_at` | — | | **Not ported in v1**: they are the controller's bookkeeping and local paths, not audit facts. Revisit when the control plane exists. |
 
-### `input_requests` → eventos de pergunta
+### `input_requests` → input-request events
 
-| flowpilot (coluna) | cartografo | | Nota |
+| flowpilot (column) | cartografo | | Note |
 |---|---|---|---|
-| criação da linha | `input_request.created` | = | |
-| `kind` (`question`/`approval`) | `data.kind` (`question`/`approval`) | = | Mesma tese: pergunta e aprovação são o mesmo animal. |
-| `status` (`pending`/`answered`) | — (derivado) | ≠ | Existe como projeção do reducer, não como campo: o log diz o que houve, o estado diz onde parou. |
-| `answer_source` (`user`/`auto`) | — (o tipo do evento) | ≠ | `input_request.answered` vs `input_request.auto_resolved`. |
-| `question`, `context`, `options_json`, `recommendation`, `default_answer` | `question`, `context`, `options`, `recommendation`, `default_answer` | = | Traduzidos. |
-| `auto_approvable` | `auto_approvable` | = | Mesma razão de existir. |
+| creation of the row | `input_request.created` | = | |
+| `kind` (`question`/`approval`) | `data.kind` (`question`/`approval`) | = | The same thesis: a question and an approval are the same animal. |
+| `status` (`pending`/`answered`) | — (derived) | ≠ | It exists as a projection of the reducer, not as a field: the log says what happened, the state says where it stopped. |
+| `answer_source` (`user`/`auto`) | — (the type of the event) | ≠ | `input_request.answered` vs `input_request.auto_resolved`. |
+| `question`, `context`, `options_json`, `recommendation`, `default_answer` | `question`, `context`, `options`, `recommendation`, `default_answer` | = | Translated. |
+| `auto_approvable` | `auto_approvable` | = | The same reason to exist. |
 | `answer` | `answer` | = | |
-| `answered_by` (FK `users`) | `answered_by` (string) | ≠ | Não há entidade de usuário na PoC; string livre, como `actor.ref`. |
-| `session_id`, `ticket_id` | `session_id`, `job_id` | = | `session_id` opcional pela mesma razão de lá: a resposta sobrevive à sessão. |
-| `resumed_at` | — | | **Sem porte na v1**: marcador de idempotência do controller, não fato de auditoria. |
+| `answered_by` (FK `users`) | `answered_by` (a string) | ≠ | There is no user entity in the PoC; a free string, like `actor.ref`. |
+| `session_id`, `ticket_id` | `session_id`, `job_id` | = | `session_id` optional for the same reason as there: the answer outlives the session. |
+| `resumed_at` | — | | **Not ported in v1**: an idempotency marker of the controller, not an audit fact. |
 
-### Extensões do cartografo
+### cartografo's extensions
 
-| cartografo | | Por quê |
+| cartografo | | Why |
 |---|---|---|
-| `lease.granted`, `lease.expired` | + | D5: com N runners, trabalho de runner morto volta para a fila. O flowpilot é de um runner só e não tem o problema. |
-| `graph_version.registered`, `.aplicada`, `.revertida` | + | D15: no flowpilot o fluxo é código, então não há o que versionar em banco. Aqui o grafo é dado, e é a linha que o topógrafo cruza com a telemetria. |
-| `execution_id` no envelope | + | Não existe entidade "execução" no flowpilot. |
-| `execution.finished` + `entity.type = execution` | + | A D21 amenda o "não existe entidade execução" que esta ficha escreveu antes dela: a rodada não tem tabela, mas tem um fato — o control plane declarando o fim dela (D1) — e um fato precisa de sujeito. Lá o fim de uma rodada não existe como conceito: cada ticket termina por conta própria. |
-| `entity` genérica | + | Um log só para o trio de tabelas de lá. |
+| `lease.granted`, `lease.expired` | + | D5: with N runners, the work of a dead runner goes back to the queue. flowpilot has a single runner and does not have the problem. |
+| `graph_version.registered`, `.applied`, `.reverted` | + | D15: in flowpilot the flow is code, so there is nothing to version in a database. Here the graph is data, and it is the row the topografo cross-references with the telemetry. |
+| `execution_id` in the envelope | + | There is no "execution" entity in flowpilot. |
+| `execution.finished` + `entity.type = execution` | + | D21 amends the "there is no execution entity" this ficha wrote before it: the round has no table, but it has a fact — the control plane declaring its end (D1) — and a fact needs a subject. There the end of a round does not exist as a concept: every ticket finishes on its own account. |
+| a generic `entity` | + | A single log for the trio of tables over there. |
 
-## Replay: a prova
+## Replay: the proof
 
-O inegociável de qualidade é **reprodutibilidade por event sourcing**: grafo
-vN + inputs ⇒ execução replayável do log. A prova executável desta ficha é
-`reducers/reconstruct-state.mjs`, que dobra o log e devolve:
+The quality non-negotiable is **replayability by event sourcing**: graph vN +
+inputs ⇒ an execution replayable from the log. This ficha's executable proof is
+`reducers/reconstruct-state.mjs`, which folds the log and returns:
 
 ```
-{ trabalhos:  {[id]: {no_atual, bloqueado, historico_nos}},
-  sessoes:    {[id]: {status, exit_code}},
-  perguntas:  {[id]: {status, resposta, origem}},
-  leases:     {[id]: {status}},
-  grafo_versao_corrente: {[grafo_id]: versao_id},
-  execucoes:  {[execution_id]: {finalizada_em}} }
+{ jobs:           {[id]: {current_node_id, blocked, node_history}},
+  sessions:       {[id]: {status, exit_code}},
+  input_requests: {[id]: {status, answer, answer_source}},
+  leases:         {[id]: {status}},
+  current_graph_version: {[graph_id]: version_id},
+  executions:     {[execution_id]: {finished_at}} }
 ```
 
-`tests/replay.test.mjs` roda o reducer contra `exemplos/example-log.jsonl` e
-compara com `exemplos/expected-final-state.json`, calculado à mão a partir do
-mesmo log. Enquanto essa igualdade valer, o log é suficiente: nenhum estado
-final precisa de outra fonte.
+`tests/replay.test.mjs` runs the reducer against `exemplos/example-log.jsonl`
+and compares it with `exemplos/expected-final-state.json`, computed by hand from
+that same log. For as long as that equality holds, the log is sufficient: no
+final state needs another source.
 
-Quatro decisões do reducer que são, na prática, decisões do formato:
+Four decisions of the reducer that are, in practice, decisions of the format:
 
-- **A ordem é a do `id`**, não a da lista recebida. Quem lê de arquivo, de
-  resposta paginada ou de stream fora de ordem chega no mesmo estado.
-  `occurred_at` não serviria: dois eventos podem carregar o mesmo carimbo.
-- **Tipo desconhecido é ignorado**, não é erro. Um cliente antigo lendo um log
-  novo continua reconstruindo o que entende — é o que torna a taxonomia
-  extensível de forma aditiva.
-- **`origem` volta a ser campo** na projeção de pergunta (`user`/`auto`),
-  colapsando os dois tipos de evento de volta no `answer_source` do flowpilot.
-  No log a origem é identidade; em estado, quem lê quer comparar.
-- **`job.amended` não move nada.** É fato de conteúdo, não de fluxo —
-  por isso ele carrega só nomes de campos.
+- **The order is that of `id`**, not that of the list received. Whoever reads
+  from a file, from a paginated response or from an out-of-order stream arrives
+  at the same state. `occurred_at` would not serve: two events can carry the
+  same stamp.
+- **An unknown type is ignored**, it is not an error. An old client reading a
+  new log goes on reconstructing what it understands — it is what makes the
+  taxonomy extensible additively.
+- **`answer_source` goes back to being a field** in the input-request projection
+  (`user`/`auto`), collapsing the two event types back into flowpilot's
+  `answer_source`. In the log the source is an identity; in state, whoever reads
+  wants to compare.
+- **`job.amended` moves nothing.** It is a fact about content, not about flow —
+  which is why it carries only field names.
 
-## Fora do escopo da v1
+## Outside the scope of v1
 
-- **Eventos de proposta/topógrafo** (`proposta.*`) — o topógrafo está fora da
-  PoC (D6, D16). Ficha da onda 2.
-- **`service_class`** (urgência) — D16 não a pede na PoC.
-- **Transporte para fora** — saiu daqui, pelas duas metades, e nenhuma delas
-  mexeu neste envelope: `GET /v1/events/stream` entrega este mesmo objeto por
-  SSE, com filtro por `project_id`/`type` e reconexão pelo `id`
-  ([`docs/spec/events-stream.md`](../../docs/spec/events-stream.md), t123), e
-  os webhooks assinados o entregam por `POST`, com HMAC-SHA256 do corpo cru e
-  retentativa com backoff
-  ([`docs/spec/webhooks-events.md`](../../docs/spec/webhooks-events.md),
-  t142). Os dois são consumidores do mesmo `listEvents`, e nenhum deles escreve
-  no log.
-- **Tabela SQL e endpoints** que gravem isto de verdade — D6.
-- **Hash/versão do próprio schema de eventos** — isto é a v1; congela só
-  depois de dois consumidores reais (regra dos dois consumidores). Até lá,
-  mudanças aditivas são esperadas, e a v1 é um contrato entre esta ficha e as
-  fichas de construção que vêm depois, não uma promessa a terceiros.
+- **Proposal/topografo events** (`proposta.*`) — the topografo is outside the
+  PoC (D6, D16). A wave-2 ficha.
+- **`service_class`** (urgency) — D16 does not ask for it in the PoC.
+- **Transport to the outside** — it left here, in both halves, and neither of
+  them touched this envelope: `GET /v1/events/stream` delivers this same object
+  over SSE, with a filter by `project_id`/`type` and reconnection by `id`
+  ([`docs/spec/events-stream.md`](../../docs/spec/events-stream.md), t123), and
+  the signed webhooks deliver it by `POST`, with HMAC-SHA256 of the raw body and
+  retry with backoff
+  ([`docs/spec/webhooks-events.md`](../../docs/spec/webhooks-events.md), t142).
+  Both are consumers of the same `listEvents`, and neither of them writes to the
+  log.
+- **A SQL table and endpoints** that really record this — D6.
+- **A hash/version of the event schema itself** — this is v1; it freezes only
+  after two real consumers (the rule of two consumers). Until then, additive
+  changes are expected, and v1 is a contract between this ficha and the building
+  fichas that come after it, not a promise to third parties.

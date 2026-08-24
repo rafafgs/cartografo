@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "input_request.created.schema.json",
   "title": "input_request.created",
-  "description": "Um agente precisa de algo do humano antes de continuar. Paridade com input_requests + EventKind.INPUT_REQUESTED do flowpilot: pergunta e aprovação são o mesmo animal, o campo tipo é a única diferença.",
+  "description": "An agent needs something from the human before continuing. Parity with flowpilot's input_requests + EventKind.INPUT_REQUESTED: a question and an approval are the same animal, and the kind field is the only difference.",
   "type": "object",
   "allOf": [
     {
@@ -32,39 +32,39 @@
       "properties": {
         "job_id": {
           "type": "integer",
-          "description": "Trabalho que fica esperando a resposta."
+          "description": "The job left waiting for the answer."
         },
         "session_id": {
           "type": [
             "integer",
             "null"
           ],
-          "description": "Sessão que perguntou. Opcional porque o caminho da resposta sobrevive à sessão: ela emite o pedido e o processo termina."
+          "description": "The session that asked. Optional because the path of the answer outlives the session: it emits the request and the process ends."
         },
         "node_id": {
           "type": [
             "string",
             "null"
           ],
-          "description": "Nó em que o trabalho estava quando perguntou (t167). Carimbado pelo servidor a partir do trabalho dono, nunca vindo do corpo do pedido — a mesma fronteira de confiança de trabalho_id. NULO significa \"não se sabe de qual nó veio\": trabalho sem posição, ou pergunta gravada antes de o campo existir."
+          "description": "The node the job was on when it asked (t167). Stamped by the server from the owning job, never coming from the request body — the same trust boundary as job_id. NULL means \"it is not known which node it came from\": a job with no position, or a request recorded before the field existed."
         },
         "kind": {
           "enum": [
             "question",
             "approval"
           ],
-          "description": "pergunta: alguém precisa saber algo. aprovacao: um portão manual quer um OK sobre um artefato."
+          "description": "question: somebody needs to know something. approval: a manual gate wants an OK on an artefact."
         },
         "question": {
           "type": "string",
-          "description": "O que está sendo perguntado."
+          "description": "What is being asked."
         },
         "context": {
           "type": [
             "string",
             "null"
           ],
-          "description": "Evidência, alternativas pesadas, o que já foi tentado."
+          "description": "Evidence, the alternatives weighed, what has already been tried."
         },
         "options": {
           "type": [
@@ -74,25 +74,25 @@
           "items": {
             "type": "string"
           },
-          "description": "Rótulos curtos das decisões possíveis."
+          "description": "Short labels for the possible decisions."
         },
         "recommendation": {
           "type": [
             "string",
             "null"
           ],
-          "description": "O que o agente escolheria, no imperativo."
+          "description": "What the agent would choose, in the imperative."
         },
         "default_answer": {
           "type": [
             "string",
             "null"
           ],
-          "description": "O valor que a auto-aprovação aplica em nome do humano."
+          "description": "The value auto-approval applies on the human's behalf."
         },
         "auto_approvable": {
           "type": "boolean",
-          "description": "Se o portão de auto-aprovação PODE responder no lugar do humano. Carregado explicitamente: \"sem opções e sem padrão\" nunca foi um bom proxy para inaprovável."
+          "description": "Whether the auto-approval gate MAY answer in the human's place. Carried explicitly: \"no options and no default\" was never a good proxy for unapprovable."
         }
       },
       "additionalProperties": false

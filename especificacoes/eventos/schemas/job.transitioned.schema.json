@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "job.transitioned.schema.json",
   "title": "job.transitioned",
-  "description": "O trabalho andou de um nó para outro. Divergência justificada do EventKind.STATE_CHANGE do flowpilot: nós do grafo congelado por versão, não os 12 estados fixos de um TicketState.",
+  "description": "The job moved from one node to another. A justified divergence from flowpilot's EventKind.STATE_CHANGE: nodes of the graph frozen per version, not the 12 fixed states of a TicketState.",
   "type": "object",
   "allOf": [
     {
@@ -32,11 +32,11 @@
             "string",
             "null"
           ],
-          "description": "Nó de origem; null na primeira transição, quando o trabalho sai do nó de entrada pela primeira vez."
+          "description": "The origin node; null on the first transition, when the job leaves the entry node for the first time."
         },
         "to_node_id": {
           "type": "string",
-          "description": "Nó de destino, dentro da versão de grafo congelada para esta execução."
+          "description": "The destination node, within the graph version frozen for this execution."
         }
       },
       "additionalProperties": false

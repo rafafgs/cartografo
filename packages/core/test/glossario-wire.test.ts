@@ -93,6 +93,38 @@ const SURFACES = Object.freeze([
 const TABLE_MARKER = 'superficie';
 
 /**
+ * The header row every glossary table carries, verbatim, after D24 (t281, FR2).
+ *
+ * Three of these four cells are a literal somewhere: `surface` is
+ * {@link TABLE_MARKER} here, `today` is `HEADER_CELL` in
+ * `packages/test-support/src/glossary.ts`, and both were the Portuguese spelling
+ * until this ticket. Pinning the whole row is what makes an edit to the columns
+ * fail HERE, beside the parsers it silently empties, instead of in whichever
+ * package's sweep goes quiet first.
+ */
+const ENGLISH_HEADER_ROW = '| surface | today | becomes | defined in |';
+
+/**
+ * The column names D24 retired, none of which may head a table any more.
+ *
+ * The words themselves are not banned from the document: `hoje` and `vira` are
+ * still what the DATA cells of every row are written in — a map of retired names
+ * is written in retired names — and §4.2 maps a column literally called `vira`
+ * nowhere. What this list forbids is the one position that made them structural:
+ * a column header.
+ */
+const RETIRED_HEADER_CELLS = Object.freeze(['superfície', 'hoje', 'vira', 'onde está hoje']);
+
+/**
+ * The claim FR4 retires: this file staying Portuguese under D18's carve-out.
+ *
+ * Written as a pattern over both languages because the sentence could survive a
+ * translation — "and this file continues in Portuguese" is exactly as false in
+ * English as it is in Portuguese the moment D24 lands.
+ */
+const RETIRED_CARVE_OUT = /continuam? em portugu|(?:stay|continue|remain)s?\s+in\s+Portuguese/i;
+
+/**
  * The files whose line-numbered citations this gate resolves (FR24).
  *
  * Both arrived with t255 — §1.7's header constant and the three §1.4 rows that
@@ -271,6 +303,13 @@ function cellsOf(line: string): string[] {
 /** Is this the `|---|---|` line under a header? */
 function isSeparator(line: string): boolean {
   return /^\s*\|[\s|:-]+\|\s*$/.test(line);
+}
+
+/** Every line that heads a table: a row with the `|---|` separator under it. */
+function headerRows(lines: readonly string[]): string[] {
+  return lines.filter(
+    (line, index) => line.trim().startsWith('|') && isSeparator(lines[index + 1] ?? ''),
+  );
 }
 
 /**
@@ -624,5 +663,55 @@ test('the checks bite on a glossary broken on purpose', () => {
       .length,
     1,
     '"job" belongs to "trabalho" and to nothing else',
+  );
+});
+
+test('D24 — every glossary table is headed in English, and no retired column name is (FR2)', () => {
+  assert.equal(
+    TABLE_MARKER,
+    'surface',
+    'the marker this file recognizes a glossary table by is the translated first column',
+  );
+
+  const lines = readFileSync(GLOSSARY, 'utf8').split('\n');
+  const headers = headerRows(lines);
+  const ofGlossary = headers.filter((line) => normalize(cellsOf(line)[0] ?? '') === TABLE_MARKER);
+
+  assert.ok(
+    ofGlossary.length >= 15,
+    `only ${ofGlossary.length} glossary tables were recognized in ${GLOSSARY_LABEL}`,
+  );
+
+  for (const header of ofGlossary) {
+    assert.equal(
+      header.trim(),
+      ENGLISH_HEADER_ROW,
+      `${GLOSSARY_LABEL} still heads a glossary table with something other than the D24 row`,
+    );
+  }
+
+  const survivors = headers.flatMap((header) =>
+    cellsOf(header)
+      .map((cell) => clean(cell).toLowerCase())
+      .filter((cell) => RETIRED_HEADER_CELLS.includes(cell)),
+  );
+  assert.deepEqual(survivors, [], `a retired column name still heads a table of ${GLOSSARY_LABEL}`);
+});
+
+test('D24 — the closing section says this document is English now, and cites D24 (FR4)', () => {
+  const text = readFileSync(GLOSSARY, 'utf8');
+  const start = text.lastIndexOf('\n## ');
+  assert.ok(start > 0, `${GLOSSARY_LABEL} has no closing section`);
+  const closing = text.slice(start);
+
+  assert.ok(
+    !RETIRED_CARVE_OUT.test(closing),
+    `${GLOSSARY_LABEL} still closes by saying it continues in Portuguese`,
+  );
+  assert.match(closing, /\bD24\b/, `${GLOSSARY_LABEL}'s closing section cites no decision`);
+  assert.doesNotMatch(
+    closing,
+    /\bD18\b/,
+    `${GLOSSARY_LABEL} still closes on the D18 carve-out D24 superseded`,
   );
 });

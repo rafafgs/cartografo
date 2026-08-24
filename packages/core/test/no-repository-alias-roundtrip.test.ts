@@ -40,12 +40,23 @@
  *
  * ## Scope
  *
- * The alias rule is per-cluster, and it grows one cluster at a time. t286 owned
- * the job cluster — `job.ts`, `intake.ts`, `input-request.ts` and `session.ts` —
- * and t289 adds the second: `graphs.ts`, `skill.ts`, `proposals.ts`, `hooks.ts`
- * and `hook-secrets.ts`. What still keeps its aliases is ticket C's six files
- * (`webhooks.ts`, `runners.ts`, `leases.ts`, `engine-models.ts`,
- * `credentials.ts` and `db/events.ts`), and nothing else.
+ * The alias rule grew one cluster at a time and this file is where it stopped
+ * growing. t286 owned the job cluster — `job.ts`, `intake.ts`,
+ * `input-request.ts` and `session.ts`; t289 added the second — `graphs.ts`,
+ * `skill.ts`, `proposals.ts`, `hooks.ts` and `hook-secrets.ts`; and t290 adds
+ * the third and last — `leases.ts`, `runners.ts`, `credentials.ts`,
+ * `engine-models.ts`, `webhooks.ts` and `db/events.ts`. Nothing keeps its
+ * aliases any more: the three lists below name every file in the package that
+ * reads a renamed column, and the round trip D20 opened is closed.
+ *
+ * The count the three tickets were measured against: 181 column-renaming
+ * aliases when t286 started, 44 of them in this last cluster, 0 now. What a
+ * `grep -rEo '\bAS [a-z_]+'` over every package's source still answers with is
+ * 24 — the ten anonymous expressions named below, plus fourteen outside the
+ * clusters (`job.ts`'s and `input-request.ts`'s aggregates,
+ * `db/connection.ts`'s `SELECT 1 AS one`, `routes/events.ts`'s
+ * `MAX(id) AS last_id`, and one sentence in `packages/tela/src/router.ts` that
+ * happens to say the word "AS" in prose).
  *
  * The `toWire`/`fromWire` rule is already repo-wide, and not by accident — every
  * one of the 54 occurrences that existed before t286 lived in the job cluster
@@ -92,6 +103,25 @@ const GRAPH_CLUSTER = Object.freeze([
   'src/repositories/proposals.ts',
   'src/repositories/hooks.ts',
   'src/repositories/hook-secrets.ts',
+]);
+
+/**
+ * The third and last cluster, t290's, relative to `packages/core`.
+ *
+ * The one grouping that is not held together by an import or by a reader: it is
+ * the remainder. Four of the six are the runner fleet — a lease is granted to a
+ * runner, a runner is paired with a credential, and an engine catalogue is what
+ * a runner reports on the way in — and the other two are the log and the
+ * fan-out that reads it. They land in one ticket because this is the ticket that
+ * owns the repo-wide zero, and a zero cannot be reached in halves.
+ */
+const LEASE_CLUSTER = Object.freeze([
+  'src/repositories/leases.ts',
+  'src/repositories/runners.ts',
+  'src/repositories/credentials.ts',
+  'src/repositories/engine-models.ts',
+  'src/repositories/webhooks.ts',
+  'src/db/events.ts',
 ]);
 
 /**
@@ -153,6 +183,51 @@ const GRAPH_EXPRESSION_ALIASES = Object.freeze({
 });
 
 /**
+ * Every alias the third cluster is allowed to write: ten, in four of six files.
+ *
+ * The two empty entries are the sharper half of the list. `engine-models.ts`
+ * counts nothing and correlates nothing, and neither does `db/events.ts` — the
+ * log's only reads are a `WHERE` and an `ORDER BY` — so the next `AS` written in
+ * either is a rename whatever it is called.
+ *
+ * The other four name an expression that has no name of its own. Two of them
+ * did not survive the rewrite unchanged and are worth pointing at: the fleet
+ * query's `COUNT(CASE …)` and `MAX(l.heartbeat_at)` used to be called
+ * `leases_ativas` and `ultimo_heartbeat`, which made them look exactly like the
+ * translations around them. They are not translations — there is no column
+ * either one could be renaming — so they were spelled in English rather than
+ * deleted, and `RunnerHealth` publishes them under the names they now carry.
+ */
+const LEASE_EXPRESSION_ALIASES = Object.freeze({
+  'src/repositories/leases.ts': Object.freeze([
+    // grantLease's two cap counts (t103, FR9)
+    'total',
+    'total',
+  ]),
+  'src/repositories/runners.ts': Object.freeze([
+    // listRunnersWithHealth's fleet aggregates (t164, FR1)
+    'active_leases',
+    'last_heartbeat',
+    // ... and the window that picks each runner's latest expired lease
+    'recency',
+  ]),
+  'src/repositories/credentials.ts': Object.freeze([
+    // hasLiveCredential asks whether a row comes back, never what is in it
+    'one',
+  ]),
+  'src/repositories/engine-models.ts': Object.freeze([]),
+  'src/repositories/webhooks.ts': Object.freeze([
+    // createSubscription's anchor and fanoutCursor's resume point (t142, FR4)
+    'last_id',
+    'last_id',
+    // dueDeliveries joins two tables that both have an `id` (t142, FR5)
+    'delivery',
+    'subscription',
+  ]),
+  'src/db/events.ts': Object.freeze([]),
+});
+
+/**
  * Blanks every comment, keeping the file's shape.
  *
  * The same pass `no-portuguese-database.test.ts` runs and for the same reason:
@@ -208,7 +283,7 @@ function maskComments(source: string): string {
 interface Alias {
   line: number;
   name: string;
-  /** Whether the left-hand side is an expression rather than a column. */
+  /** Whether the left-hand side is something OTHER than a column reference. */
   expression: boolean;
 }
 
@@ -219,10 +294,22 @@ interface Alias {
  * which is also what keeps `CAST(x AS TEXT)` out of the result without a special
  * case, since a SQLite type name is uppercase in every query this package holds.
  *
- * The classification is the character that closes the left-hand side. A `)`
- * ends an aggregate or a subquery and a `}` ends a `${…}` substitution — both
- * are expressions with no name of their own. Anything else is the tail of a
- * column reference, which means the alias is renaming a column.
+ * The classification asks one question — is the thing on the left a COLUMN? —
+ * and there are four ways for the answer to be no, all four of them visible in
+ * the character or the word that closes the left-hand side:
+ *
+ * - `)` ends an aggregate or a subquery, and `}` ends a `${…}` substitution.
+ *   Both are expressions SQLite would otherwise name after their own source
+ *   text, so the alias is the only name they have.
+ * - A bare integer is the same case one character shorter: `SELECT 1 AS one`
+ *   asks whether a row comes back, and `1` is not a column being renamed.
+ * - `FROM x AS y` / `JOIN x AS y` renames a TABLE. That is a different object
+ *   with a different rule: two tables in one join can both have an `id`, and
+ *   shortening their names is how the projection stays readable. The round trip
+ *   this sweep deletes was never about them.
+ *
+ * Anything else is the tail of a column reference, which means the alias is
+ * renaming a column.
  *
  * @param source File contents, comments already masked.
  * @returns One entry per alias, in source order.
@@ -238,7 +325,11 @@ export function aliasesIn(source: string): Alias[] {
     found.push({
       line: source.slice(0, match.index).split('\n').length,
       name: match[1],
-      expression: closer === ')' || closer === '}',
+      expression:
+        closer === ')' ||
+        closer === '}' ||
+        /(?:^|[^\w.])\d+$/.test(before) ||
+        /\b(?:FROM|JOIN)\s+[A-Za-z_][A-Za-z0-9_]*$/i.test(before),
     });
     match = pattern.exec(source);
   }
@@ -306,6 +397,33 @@ test('AC1 — the aliases that survive the graph/skill/proposal/hook cluster are
   }
 });
 
+test('AC1 — no SELECT in the lease/runner/credential/engine/webhook/event cluster renames a column onto another spelling', () => {
+  const offenders = LEASE_CLUSTER.flatMap((relative) =>
+    aliasesIn(read(relative))
+      .filter((alias) => !alias.expression)
+      .map((alias) => `${relative}:${alias.line} — AS ${alias.name}`),
+  );
+
+  assert.deepEqual(
+    offenders,
+    [],
+    'a column is being read back under a second name; the projection is supposed to ' +
+      `carry the column's own name now (D20, t290 FR1-FR6):\n${offenders.join('\n')}`,
+  );
+});
+
+test('AC1 — the aliases that survive the lease/runner/credential/engine/webhook/event cluster are the listed anonymous-expression ones', () => {
+  for (const relative of LEASE_CLUSTER) {
+    const surviving = aliasesIn(read(relative)).map((alias) => alias.name);
+    assert.deepEqual(
+      surviving,
+      [...LEASE_EXPRESSION_ALIASES[relative as keyof typeof LEASE_EXPRESSION_ALIASES]],
+      `${relative} writes an alias this sweep does not know about; an aggregate, a ` +
+        'window or a join alias may be named, but the name goes on the list above first',
+    );
+  }
+});
+
 /** Whether the path exists and is a directory. */
 function existsDirectory(absolute: string): boolean {
   try {
@@ -367,6 +485,8 @@ test('AC1 — the sweep tells a renamed column from a named expression', () => {
     "db.prepare('SELECT current_node_id AS no_atual FROM job');",
     // A self-alias renames nothing, and is still an alias nobody needs.
     "db.prepare('SELECT j.graph_version_id AS graph_version_id FROM job j');",
+    // A column whose name merely ENDS in a digit is still a column.
+    "db.prepare('SELECT sha256 AS digest FROM credential');",
   ];
   for (const source of renames) {
     const [alias] = aliasesIn(source);
@@ -382,6 +502,11 @@ test('AC1 — the sweep tells a renamed column from a named expression', () => {
     "db.prepare('SELECT COUNT(*) AS jobs FROM job');",
     "db.prepare('SELECT COALESCE(SUM(t.blocked), 0) AS blocked_jobs FROM job t');",
     'db.prepare(`SELECT ${finishedAtOf("t.execution_id")} AS finished_at FROM job t`);',
+    // A literal answers "did a row come back", and names nothing of the table.
+    "db.prepare('SELECT 1 AS one FROM credential WHERE owner_type = ?');",
+    // A table alias renames a table; two joined tables can both have an `id`.
+    "db.prepare('SELECT d.id FROM webhook_delivery AS delivery');",
+    "db.prepare('JOIN webhook_subscription AS subscription ON subscription.id = d.id');",
   ];
   for (const source of expressions) {
     const [alias] = aliasesIn(source);

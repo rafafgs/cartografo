@@ -161,7 +161,7 @@ Quatro coisas que o campo decide:
   evidência aparecer.
 - **Recusa do engine não passa por aqui.** Um engine que recusa responder é
   determinístico e para na **primeira** ocorrência, do lado do runner
-  (`docs/spec/runner-e-controller.md`). O teto é para a falha comum, que pode
+  (`docs/spec/runner-and-controller.md`). O teto é para a falha comum, que pode
   muito bem ser um soluço.
 
 Quem conta é o control plane, dentro da transação que fecha a sessão: a
@@ -356,7 +356,7 @@ regras próprias sobre o que é versionado.
 
 Exemplo completo:
 [`grafo-valido-escalacao-nunca.json`](../../schema/exemplos/grafo-valido-escalacao-nunca.json).
-O ciclo inteiro está em [`escalacao-humana.md`](escalacao-humana.md).
+O ciclo inteiro está em [`human-escalation.md`](human-escalation.md).
 
 ### `escalation_recipient`: quem deveria ser chamado
 
@@ -788,7 +788,7 @@ is the common spine" has to hold. So the check's outcome is no longer only
 reported: it is **stored on the version**, and the gate moved to execution.
 
 `graph_version` carries `contracts_state` and `contracts_report`
-(`entidades-versionamento.md` §1), and every read of a version publishes them as
+(`entities-versioning.md` §1), and every read of a version publishes them as
 `contracts: {state, problems}` — `GET /v1/graphs/:id/versions`,
 `GET /v1/graph-versions/:id` and the `201` of all three write routes.
 

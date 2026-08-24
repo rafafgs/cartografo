@@ -848,7 +848,7 @@ async function list(db: Database, request: FastifyRequest): Promise<unknown> {
  * `GET /proposals/:id` — the detail read.
  *
  * The one the tela has assumed since t111
- * (`docs/spec/tela-inbox-propostas.md` §2) and that closing the gate finally
+ * (`docs/spec/screen-proposal-inbox.md` §2) and that closing the gate finally
  * needed: whoever is about to approve reads ONE proposal, and the script that
  * closes the experiment reads the `expected_metric` of ONE proposal (t165,
  * FR5/FR9). Same row the listing returns, `rejection_reason` included.

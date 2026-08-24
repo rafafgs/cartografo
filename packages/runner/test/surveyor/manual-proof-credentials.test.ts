@@ -33,7 +33,7 @@ import test from 'node:test';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const SPIKE_PATH = path.join(PACKAGE_ROOT, 'scripts', 'spike-surveyor-flow.mjs');
-const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'topografo-fluxo.md');
+const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'topografo-flow.md');
 
 /** Reads a file the sweep asserts about, failing with its path when absent. */
 function read(file: string): string {

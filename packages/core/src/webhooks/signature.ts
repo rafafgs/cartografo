@@ -1,7 +1,7 @@
 /**
  * The signature a webhook delivery carries (t142, FR5).
  *
- * One recipe, published in `docs/spec/webhooks-eventos.md` and implemented here:
+ * One recipe, published in `docs/spec/webhooks-events.md` and implemented here:
  * HMAC-SHA256 of the RAW body, keyed with the subscription's secret, in
  * lowercase hex, prefixed by the algorithm.
  *

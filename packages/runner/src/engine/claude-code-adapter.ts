@@ -309,7 +309,7 @@ export function extractModels(frame: Record<string, unknown>): string[] | null {
  *
  * Two keys, and they were not guessed: `stop_reason` and `stop_details.category`
  * are what the bisection of t198's four refused sessions read off the real
- * frames (`docs/spec/escalacao-humana.md:292-293`). Every one of them exited 1
+ * frames (`docs/spec/human-escalation.md:292-293`). Every one of them exited 1
  * with zero output tokens, which is precisely the shape of a crash — the exit
  * code cannot tell the two apart, and this is the only place that can.
  *

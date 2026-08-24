@@ -7,7 +7,7 @@
  * apply, MEASURE, close — and the one that had no code. `POST
  * /v1/proposals/:id/outcome` (t112) takes `depois` as a plain number and says
  * so on purpose: "there is no engine of named metrics in v1, whoever calculates
- * it is whoever calls" (`docs/spec/entidades-versionamento.md` §5). Until this
+ * it is whoever calls" (`docs/spec/entities-versioning.md` §5). Until this
  * script that caller was a person reading a ranking and typing a float, which
  * is the exact spot where a measured loop degrades into a remembered one.
  *

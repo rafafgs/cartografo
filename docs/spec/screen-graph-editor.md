@@ -2,8 +2,8 @@
 
 **Pacote:** [`packages/tela`](../../packages/tela) · **Porta:** `4318` ·
 **Página:** `/graph-editor.html`
-**Decisões de origem:** [D11](../../DECISOES.md) — "a tela é cliente comum da API
-pública, sem privilégio" · [D15](../../DECISOES.md) — "diff semântico, operação
+**Decisões de origem:** [D11](../../DECISIONS.md) — "a tela é cliente comum da API
+pública, sem privilégio" · [D15](../../DECISIONS.md) — "diff semântico, operação
 com inversa, versionamento append-only" · princípio 5 do
 [README](../../README.md) — "escada de segurança"
 
@@ -181,7 +181,7 @@ o `inbox.js` já segue.
 
 Todo campo editável carrega `data-campo` com o nome do campo, e todo cartão
 carrega `data-node` ou `data-edge` — marcadores de estrutura, no mesmo espírito
-dos `data-*` de [`tela.md`](tela.md) §6. O aceite `AC3` usa exatamente esses
+dos `data-*` de [`screen.md`](screen.md) §6. O aceite `AC3` usa exatamente esses
 marcadores para exigir que um nó existente **não ofereça controle nenhum** para
 `id`, `node_type` ou `engine`.
 

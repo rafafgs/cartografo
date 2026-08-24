@@ -146,7 +146,7 @@ export function reconstruirEstado(eventos) {
       // O terceiro estado da tabela, `released`, não aparece aqui: a taxonomia
       // não declara `lease.released`, então a projeção por eventos fica cega
       // para o encerramento normal. É gap conhecido e anotado na
-      // `docs/spec/runner-e-controller.md` §7, não esquecimento.
+      // `docs/spec/runner-and-controller.md` §7, não esquecimento.
       case 'lease.granted':
         estado.leases[id] = { status: 'active' };
         break;

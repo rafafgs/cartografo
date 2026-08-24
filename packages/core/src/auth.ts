@@ -56,7 +56,7 @@ const SCHEME = 'bearer';
  * The whole surface a `runner`-type credential may reach (t143, FR2).
  *
  * It is exactly what `ClienteControle` calls to dispatch
- * (`docs/spec/runner-e-controller.md` §5) minus `POST /v1/runners`: pairing is
+ * (`docs/spec/runner-and-controller.md` §5) minus `POST /v1/runners`: pairing is
  * the operator provisioning a machine, and a runner that could pair would be
  * able to mint itself a second identity — with a credential of its own — the
  * moment the first one is revoked.

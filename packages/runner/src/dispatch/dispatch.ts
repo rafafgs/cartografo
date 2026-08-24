@@ -499,7 +499,7 @@ export function createClaudeCodeDispatch(
       // that asked: it is blocked behind a person now, and the next dispatch
       // re-enters this same node with the answer already in the prompt — moving
       // it on would answer its question by walking away from it
-      // (`docs/spec/escalacao-humana.md`). Since t207-B, a session whose tree
+      // (`docs/spec/human-escalation.md`). Since t207-B, a session whose tree
       // was retained: its output is uncommitted, so advancing would move the
       // work off a node whose result lives nowhere the next node can read it —
       // and would clear the very state a human has to look at. And, since t268,

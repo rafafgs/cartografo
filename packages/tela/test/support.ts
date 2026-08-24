@@ -298,7 +298,7 @@ export interface Block {
  * Slices the HTML at the points where a `data-*` marker appears.
  *
  * Cutting by marker, not parsing: the screen's `data-*` attributes are a
- * contract declared in `docs/spec/tela.md` precisely so the tests can assert
+ * contract declared in `docs/spec/screen.md` precisely so the tests can assert
  * about STRUCTURE (what is inside which group, in what order) without freezing
  * the whole markup. Each block runs from its marker to the next marker of the
  * same name — enough for "this title is under this group".

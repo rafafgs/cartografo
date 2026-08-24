@@ -1,7 +1,7 @@
 /**
  * Acceptance tests of the watcher's stream consumer (t247, AT5).
  *
- * The protocol under test is `docs/spec/eventos-stream.md` §2–§7, and the fake
+ * The protocol under test is `docs/spec/events-stream.md` §2–§7, and the fake
  * on the other end is a REAL HTTP server rather than an injected `fetch`: what
  * this consumer has to get right — chunk boundaries that cut a message in half,
  * a socket that dies mid-body, the header a reconnection presents — only exists

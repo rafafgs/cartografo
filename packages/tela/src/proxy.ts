@@ -149,7 +149,7 @@ const URL_OPTION = '--url';
  * `resolveControlPlaneAddress`, which was the one `bin/tela.mjs` actually ran
  * and the one that ignored `CARTOGRAFO_PORT` — the well-tested resolver was not
  * the shipped resolver, and the shipped one contradicted
- * `docs/spec/tela-inbox-propostas.md`'s own precedence table. One function now,
+ * `docs/spec/screen-proposal-inbox.md`'s own precedence table. One function now,
  * reached by both entry points, so there is nowhere left for the two to drift.
  *
  * The message names the source of the bad value, because "CARTOGRAFO_URL

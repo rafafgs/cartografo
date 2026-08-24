@@ -157,7 +157,7 @@ test('t168 — an item whose fields is not a map of scalars is rejected', async 
  *
  * `tier` is the narrowest possible instance of a policy surface: it says what a
  * work item costs to RUN, never which edge it takes. The graph stays frozen
- * (README princípio 2), and `docs/spec/grafo.md:401-403`'s deliberate omission
+ * (README princípio 2), and `docs/spec/graph.md:401-403`'s deliberate omission
  * of flowpilot's topology shortcuts is not reopened by it.
  *
  * The rule that matters most here is the one the absent case pins: absence is

@@ -19,7 +19,7 @@ import type * as ClientModule from '../src/client.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'topografo-custo.md');
+const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'topografo-cost.md');
 
 let cache: typeof ClientModule | null = null;
 

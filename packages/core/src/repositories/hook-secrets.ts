@@ -152,7 +152,7 @@ export function setHookSecret(
  * kept in byte-for-byte parity with each other, so a structural check that
  * consulted a database would break that contract for one sibling and not the
  * other. It is the same timing `engine`, `model` and `escalation_policy` already
- * have (`docs/spec/grafo.md`): the document declares, the deployment resolves.
+ * have (`docs/spec/graph.md`): the document declares, the deployment resolves.
  *
  * @param db Open database.
  * @param name Name the document referenced.

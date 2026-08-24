@@ -78,7 +78,7 @@ const RETIRED_KEYS = Object.freeze({
  *
  * Wider than `RETIRED_KEYS` because the doc quotes more than the manifest's own
  * top level: the nested permission axes, and the node-contract and routing names
- * that live in the graph schema (`docs/spec/grafo.md`) but are cited here where
+ * that live in the graph schema (`docs/spec/graph.md`) but are cited here where
  * *Renderização e injeção* says what else the runner injects.
  *
  * The rename left free-text prose in Portuguese on purpose — what a backtick

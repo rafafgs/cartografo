@@ -6,7 +6,7 @@
 
 **Status: content, not format.** This ticket (`t105`) designs no new format: it
 applies the two already closed — the graph document
-([`docs/spec/grafo.md`](../../docs/spec/grafo.md), `t96`) and the skill manifest
+([`docs/spec/graph.md`](../../docs/spec/graph.md), `t96`) and the skill manifest
 ([`especificacoes/formatos/manifesto-skill.md`](../../especificacoes/formatos/manifesto-skill.md),
 `t97`) — to produce the first real content. It is direct input to the PoC (D16)
 and the seed of the factory library.
@@ -142,7 +142,7 @@ next.
    carries: a session that obeyed them routed nowhere AND reported without the
    `outcome` the manifest requires. The skill's `output` does not declare
    `resultado`, and must not — the control plane takes the key out of the report
-   before holding it against that schema (`docs/spec/grafo.md`, `t269`). The KEY
+   before holding it against that schema (`docs/spec/graph.md`, `t269`). The KEY
    itself stays spelled `resultado` after `t280`'s translation, and that is not
    an oversight: it is the result protocol's reserved word, read by
    `packages/runner/src/dispatch/parse-node-result.ts` and stripped by the

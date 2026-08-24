@@ -411,7 +411,7 @@ pode dar precisa dizer isso, não torcer para que o formato dela sugira.
 posição do trabalho dono — nunca vindo do corpo do pedido. Sem ele, "quais
 etapas mais param para pedir gente?" só se responde reconstruindo a travessia
 evento a evento, e a política de escalação por nó
-([grafo.md](../../docs/spec/grafo.md), §2) seria uma política que ninguém
+([graph.md](../../docs/spec/graph.md), §2) seria uma política que ninguém
 consegue avaliar. Opcional: `null` é "não se sabe de qual nó veio" — trabalho
 sem posição, ou pergunta gravada antes de o campo existir.
 
@@ -698,10 +698,10 @@ Quatro decisões do reducer que são, na prática, decisões do formato:
 - **Transporte para fora** — saiu daqui, pelas duas metades, e nenhuma delas
   mexeu neste envelope: `GET /v1/events/stream` entrega este mesmo objeto por
   SSE, com filtro por `project_id`/`type` e reconexão pelo `id`
-  ([`docs/spec/eventos-stream.md`](../../docs/spec/eventos-stream.md), t123), e
+  ([`docs/spec/events-stream.md`](../../docs/spec/events-stream.md), t123), e
   os webhooks assinados o entregam por `POST`, com HMAC-SHA256 do corpo cru e
   retentativa com backoff
-  ([`docs/spec/webhooks-eventos.md`](../../docs/spec/webhooks-eventos.md),
+  ([`docs/spec/webhooks-events.md`](../../docs/spec/webhooks-events.md),
   t142). Os dois são consumidores do mesmo `listEvents`, e nenhum deles escreve
   no log.
 - **Tabela SQL e endpoints** que gravem isto de verdade — D6.

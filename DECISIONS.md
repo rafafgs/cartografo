@@ -153,7 +153,7 @@ pacote, comentários, docstrings, nomes de teste, caminhos de rota da API e
 mensagens de commit daqui em diante. Motivo: D12 (Apache-2.0) e a preparação
 open source fazem do código a superfície pública do projeto, e a audiência é
 global. O vocabulário de protocolo já era inglês (status de sessão etc.) e
-permanece. Os documentos do repo (DECISOES.md, README, notas/) seguem em
+permanece. Os documentos do repo (DECISIONS.md, README, notas/) seguem em
 português até decisão própria na preparação open source. O código escrito
 antes desta decisão é regularizado por um ticket de refactor dedicado.
 Fica de fora, como decisão separada ainda não tomada: as CHAVES dos formatos
@@ -167,7 +167,7 @@ conteúdo dos bundles de fábrica e o restante da superfície do produto
 inglês; tickets e especificações produzidos no quadro, idem. Mudar chave de
 formato é mudança de especificação: o ticket dedicado emenda t96–t99 e
 regulariza os bundles. Permanecem em português: o nome-marca cartografo, os
-documentos internos do repo (DECISOES.md, notas/) e
+documentos internos do repo (DECISIONS.md, notas/) e
 docs/o-que-e-o-cartografo.md (a versão EN nasce na preparação open source,
 t121).
 

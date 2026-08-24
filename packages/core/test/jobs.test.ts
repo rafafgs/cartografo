@@ -148,7 +148,7 @@ async function registerGraphDemandingField(ctx: TestContext): Promise<string> {
 /* real crossing of the bets bundle found it on `registro-monitoramento`.       */
 /*                                                                             */
 /* The rule below keys on `skill_ref` PRESENCE and never on `node_type`:        */
-/* `docs/spec/grafo.md` §2 says a portão is "nó como qualquer outro", and this  */
+/* `docs/spec/graph.md` §2 says a portão is "nó como qualquer outro", and this  */
 /* fixture's own final node is a gate that pins a real skill.                   */
 /* -------------------------------------------------------------------------- */
 

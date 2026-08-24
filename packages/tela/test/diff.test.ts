@@ -5,7 +5,7 @@
  * point is that a human can judge it ("adds a red team gate before deploy").
  * Dumping the raw operation JSON on the page would throw that away, so the
  * renderer owes one readable line per operation, one per type, in the
- * vocabulary of `docs/spec/entidades-versionamento.md` §3.
+ * vocabulary of `docs/spec/entities-versioning.md` §3.
  *
  * The wording is pinned here, byte for byte, because it IS the spec: this is
  * the text a person reads before deciding to approve, and a silent change of

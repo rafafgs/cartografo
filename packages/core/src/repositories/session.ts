@@ -495,7 +495,7 @@ function resolveOutputSchema(db: Database, row: SessionRow): unknown {
  *
  * `resultado` is the GRAPH's vocabulary, not the skill's: it names the
  * `condition` of the edge the session says its node took
- * (`docs/spec/grafo.md`), and it rides inside the report only because the
+ * (`docs/spec/graph.md`), and it rides inside the report only because the
  * fenced-block protocol has exactly one block (t161, t259,
  * `packages/runner/src/dispatch/parse-node-result.ts`). Holding it against the
  * pinned skill's `output` confused two schemas: a skill that closes its own —

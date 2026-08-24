@@ -9,7 +9,7 @@
  * `notas/2026-08-17-t109-feature-do-jogo.md` gap 4).
  *
  * What is checked here is the PINNED SKILL's `input`/`output`, never the node's
- * own `contract.input_schema`/`output_schema` — `docs/spec/grafo.md` §2 already
+ * own `contract.input_schema`/`output_schema` — `docs/spec/graph.md` §2 already
  * draws that line for output, and the two have already drifted in the software
  * bundle (`refinar` declares `["ticket_id", "pedido"]`; the skill really
  * requires `["job", "project"]`).

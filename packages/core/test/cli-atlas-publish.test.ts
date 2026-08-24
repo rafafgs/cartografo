@@ -11,7 +11,7 @@
  *
  * That is what makes the atlas an atlas rather than a folder of copies: the id
  * is the canonical hash of the whole document
- * (`docs/spec/entidades-versionamento.md` §2), so a byte the publish step added,
+ * (`docs/spec/entities-versioning.md` §2), so a byte the publish step added,
  * dropped or reordered on the way out shows up here as a different hash, and a
  * skill whose content drifted shows up as a different pin (D4).
  *

@@ -17,7 +17,7 @@
  *   to numbers in the log" is true by construction and not by the agent's
  *   memory.
  * - **The session** does exactly one thing: turn a named bottleneck into
- *   `operations`, in the vocabulary of `docs/spec/entidades-versionamento.md`
+ *   `operations`, in the vocabulary of `docs/spec/entities-versioning.md`
  *   §3. It writes JSON to a file in its own working directory and is handed no
  *   URL, no token and no write access to anything else. The only `POST` in this
  *   ticket is ours.
@@ -74,7 +74,7 @@ import {
  * Where the session writes its answer.
  *
  * A file in the working directory, not stdout: the output of a real CLI is a
- * stream of frames with prose in between (`docs/spec/escalacao-humana.md` §4),
+ * stream of frames with prose in between (`docs/spec/human-escalation.md` §4),
  * and a contract that survives that is one the session can fulfil with a single
  * write. The file NAME stays as it is: it is data the session is told to write,
  * not a code identifier.
@@ -429,7 +429,7 @@ export function buildExpectedMetric(bottleneck: NodeMetric): ExpectedMetric {
  * It says what to write and where, and it says what NOT to do: the session has
  * no access to the control plane and no business editing the repository. The
  * five operation types are listed literally because the vocabulary is closed
- * (`docs/spec/entidades-versionamento.md` §3) and this ticket adds none.
+ * (`docs/spec/entities-versioning.md` §3) and this ticket adds none.
  *
  * The CONTENT stays in Portuguese: it stands in for the skill manifest the
  * graph will inject (t101/t105), and those are written in Portuguese.

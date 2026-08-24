@@ -254,7 +254,7 @@ test('t192 AT6 — a cross-site GET is forwarded: reading is not gated', async (
 
   // A `no-cors` response body is opaque to the page that asked for it, so there
   // is nothing to exfiltrate through the read side; gating it would be cost with
-  // no gain (`docs/spec/tela.md`, §1).
+  // no gain (`docs/spec/screen.md`, §1).
   const response = await fetch(`${screen.url}/v1/proposals`, {
     headers: { 'sec-fetch-site': 'cross-site' },
   });

@@ -48,7 +48,7 @@ const CLASS_TWO = 'bets-assimetricas';
 const FORMAT_DOC = path.join(ROOT, 'docs', 'formatos', 'atlas-bundle.md');
 const FORMAT_DOC_LINK = 'docs/formatos/atlas-bundle.md';
 const REFERRERS = [
-  path.join(ROOT, 'docs', 'spec', 'grafo.md'),
+  path.join(ROOT, 'docs', 'spec', 'graph.md'),
   path.join(BUNDLE_ONE, 'README.md'),
   path.join(BUNDLE_TWO, 'README.md'),
 ];

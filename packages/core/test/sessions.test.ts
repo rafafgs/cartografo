@@ -1804,7 +1804,7 @@ async function registerThesisSkill(
  * a key somebody left in the object by accident.
  *
  * The node's own `output_schema` declares that label, and the skill's `output`
- * does not: that IS the separation `docs/spec/grafo.md` draws between the
+ * does not: that IS the separation `docs/spec/graph.md` draws between the
  * graph's routing vocabulary and the skill's output vocabulary.
  *
  * @param ctx Control plane running.

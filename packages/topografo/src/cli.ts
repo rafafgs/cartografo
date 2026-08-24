@@ -18,7 +18,7 @@
  *   job — running this is a decision of its own, and it is the founder's
  *   (D21). What this command is, is the thing that decision would start.
  * - **it remembers nothing between runs.** Killed and started again, it picks
- *   the stream up at the present (`docs/spec/eventos-stream.md` §5) and misses
+ *   the stream up at the present (`docs/spec/events-stream.md` §5) and misses
  *   whatever fired while it was down. What it does NOT do is duplicate: two
  *   runs over the same round meet t246's deduplication at the control plane.
  *

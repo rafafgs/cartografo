@@ -1,7 +1,7 @@
 # Especificação: runner, lease e controller de despacho
 
 **Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0004_runner_lease.sql`](../../packages/core/migrations/0004_runner_lease.sql)
-**Decisão de origem:** [D5](../../DECISOES.md) — "trabalho despachado carrega lease; runner morto expira e o trabalho volta à fila. Registros idempotentes na API"
+**Decisão de origem:** [D5](../../DECISIONS.md) — "trabalho despachado carrega lease; runner morto expira e o trabalho volta à fila. Registros idempotentes na API"
 
 Um trabalho só pode ter um dono por vez, e o dono pode morrer sem avisar. Essas
 duas frases são o problema inteiro desta camada, e a lease é a resposta: um
@@ -11,7 +11,7 @@ por vencimento de prazo.
 
 O corolário importante é onde o estado mora. O teto de sessões simultâneas e o
 prazo das leases vivem no control plane, nunca no runner: só o servidor escreve
-no banco ([D1](../../DECISOES.md)), e é isso que faz "no máximo N sessões neste
+no banco ([D1](../../DECISIONS.md)), e é isso que faz "no máximo N sessões neste
 projeto" valer para o projeto — somando todos os runners — e não para cada
 processo isoladamente. O runner é cliente HTTP puro, exatamente como a tela
 (D11): ele declara os limites, e obedece à resposta.
@@ -62,7 +62,7 @@ projetos diferentes ao longo do tempo, e nada nos critérios de aceite pede o
 contrário.
 
 Nada é apagado, nem lease morta: ela vira `expirada` com o motivo gravado e
-continua na tabela. É o mesmo append-only da [D15](../../DECISOES.md) — e é o
+continua na tabela. É o mesmo append-only da [D15](../../DECISIONS.md) — e é o
 que permite cruzar "runner × leases perdidas" sem ter que reconstruir nada,
 agora que a telemetria do `t102` está no lugar (tabela `event`, migração
 `0003`) e que a `t196` ligou a emissão: a morte de cada lease está na tabela
@@ -371,7 +371,7 @@ elas é o assunto inteiro desta seção: quem responde por cada chave.
 | Chave | Quem fornece | Por quê |
 |---|---|---|
 | `input.job`, `input.project`, os baldes de `produces`, `input.perguntas_respondidas`, `input.traversal` | **control plane**, por `GET /v1/jobs/:id/context` | Tudo isso é projeção de tabelas que só o escritor único escreve (D1). |
-| `input.project.aplicacao`, `input.project.arquivos_de_registro` | **`project` do grafo** | Configuração **estática** da classe: versionada com o documento, proponível e reversível como qualquer outra parte dele ([grafo.md](grafo.md)). |
+| `input.project.aplicacao`, `input.project.arquivos_de_registro` | **`project` do grafo** | Configuração **estática** da classe: versionada com o documento, proponível e reversível como qualquer outra parte dele ([graph.md](graph.md)). |
 | `input.banco_de_testes.*`, `input.referencia.*` | **runner**, por [`resolve-executor-environment.ts`](../../packages/runner/src/dispatch/resolve-executor-environment.ts) | Um caminho de sistema de arquivos e um commit vivo. Nenhum dos dois é dado de grafo, e nenhum dos dois sobrevive a ser armazenado. |
 
 A terceira linha é a que a `t270` abriu. `banco_de_testes.caminho` nomeia um
@@ -510,7 +510,7 @@ no runner porque a sequência **atravessa leases e processos** — o runner que
 despacha a quarta tentativa pode nunca ter visto as três primeiras (D1).
 
 O teto é do documento de grafo: `max_consecutive_failures` na raiz, ausente
-significando **3** (`docs/spec/grafo.md` §1). Três detalhes que fazem parte da
+significando **3** (`docs/spec/graph.md` §1). Três detalhes que fazem parte da
 decisão:
 
 - **Uma sessão que funcionou zera a sequência.** A contagem é de cauda: falhou,
@@ -800,7 +800,7 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch.ts)
   é uma implementação desse callback — abre a sessão, grava `session.opened` e
   `session.finished`, e transforma um pedido de escalação em pergunta pela
-  API ([escalacao-humana.md](escalacao-humana.md)). O controller continua sem
+  API ([human-escalation.md](human-escalation.md)). O controller continua sem
   saber que engine existe: nada neste arquivo mudou para isso acontecer, que
   era o ponto da costura. **Fechado pela `t161`:** a instrução do nó vem do
   grafo registrado, não mais de um literal —
@@ -829,7 +829,7 @@ Cada item aqui é escopo declarado de outra ticket, não esquecimento:
   rotulado como o que o `/finish` confere (D9). Antes disso a sessão via só os
   placeholders que o manifesto tinha lembrado de citar, e era apresentada ao
   `saida_schema` do nó como se fosse o validador — que não é
-  ([grafo.md](grafo.md)). O que segue pendente pelo mesmo buraco é o **orçamento
+  ([graph.md](graph.md)). O que segue pendente pelo mesmo buraco é o **orçamento
   declarado pela skill**: a `t163` deu à sessão dois cães de guarda (relógio de
   parede e silêncio), com o manifesto declarando `orcamentos` e o runner
   resolvendo pelo menor dos dois

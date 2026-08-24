@@ -1,7 +1,7 @@
 # Especificação: sintetizador copiloto, da declaração ao rascunho
 
 **Versão da API:** `v1` · **Implementação:** [`packages/runner/src/synthesizer/`](../../packages/runner/src/synthesizer)
-**Decisão de origem:** [D10](../../DECISOES.md) — "sintetizador como copiloto no MVP: ele propõe, o humano edita, e a edição humana É o portão inteiro"
+**Decisão de origem:** [D10](../../DECISIONS.md) — "sintetizador como copiloto no MVP: ele propõe, o humano edita, e a edição humana É o portão inteiro"
 
 Toda a pilha até aqui executa grafos que alguém escreveu à mão. Esta camada é a
 primeira que **produz** um: recebe um problema em linguagem natural, consulta o
@@ -17,7 +17,7 @@ qualquer detalhe:
   rodado por uma pessoa depois de ela editar o arquivo. Não existe `POST
   /v1/graphs` nesta camada e o cliente dela nem tem o método — mesma disciplina
   que mantém `aplicar` fora do cliente do topógrafo.
-- **O sintetizador não nomeia classe.** [D8](../../DECISOES.md) põe isso na mão
+- **O sintetizador não nomeia classe.** [D8](../../DECISIONS.md) põe isso na mão
   do usuário: `--class` é obrigatória, e as classes parecidas que o comando
   calcula são *sugestão*, impressas e embutidas no prompt, sem poder nenhum
   sobre o nome.
@@ -100,7 +100,7 @@ imprime o caminho + resumo de uma linha  ──▶  fim. Nenhum POST.
 
 A ordem das duas primeiras etapas é decisão, não acaso: a recusa de classe já
 registrada vem **antes** do catálogo e antes de qualquer sessão. Estender uma
-linhagem existente é fluxo de proposta ([D13](../../DECISOES.md), t118), e
+linhagem existente é fluxo de proposta ([D13](../../DECISIONS.md), t118), e
 descobrir isso depois de gastar uma sessão é descobrir tarde. O código de erro
 ecoa o da API (`classe_ja_registrada`, [`routes/graphs.ts`](../../packages/core/src/routes/graphs.ts))
 para que as duas recusas sejam obviamente a mesma recusa.
@@ -117,7 +117,7 @@ piso de 3 caracteres por token, justamente para não deixar preposição pontuar
 O heurístico é o Jaccard de [t113](../../packages/core/src/domain/similarity.ts),
 **portado** para o runner em vez de importado. É a mesma troca que o core já fez
 quando `domain/graph.ts` portou `scripts/validar-grafo.mjs`: o runner é cliente
-comum da API ([D1](../../DECISOES.md)/[D11](../../DECISOES.md)), fala HTTP e nada
+comum da API ([D1](../../DECISIONS.md)/[D11](../../DECISIONS.md)), fala HTTP e nada
 mais, e uma dependência de compilação no `domain/` do control plane seria a
 primeira rachadura na parede que
 [`test/no-privileged-access.test.ts`](../../packages/runner/test/no-privileged-access.test.ts)
@@ -157,12 +157,12 @@ chegam concatenados pelo chamador.
 
 O catálogo carrega contrato de entrada, contrato de saída e checks porque é isso
 que faz compor deixar de ser adivinhação: com contrato, montar grafo é casar
-contratos ([README, princípio 3](../../README.md), [D9](../../DECISOES.md)).
+contratos ([README, princípio 3](../../README.md), [D9](../../DECISIONS.md)).
 
 O que **não** vai no prompt é tão deliberado quanto o que vai: `instrucoes`,
 `permissoes` e `origem` de cada skill ficam de fora. O texto de instrução de uma
 skill importada é conteúdo que ninguém neste repositório escreveu — é o vetor de
-prompt injection que a [D4](../../DECISOES.md) fecha pinando por hash, e
+prompt injection que a [D4](../../DECISIONS.md) fecha pinando por hash, e
 despejá-lo dentro do prompt de quem está compondo seria abrir pela janela a porta
 que a decisão fechou.
 

@@ -15,7 +15,7 @@
  *
  * The signature is recomputed with `node:crypto` directly and never by importing
  * `src/webhooks/signature.ts`: the recipe published in
- * `docs/spec/ganchos-de-transicao.md` is what a receiver implements, and
+ * `docs/spec/transition-hooks.md` is what a receiver implements, and
  * asserting against the implementation would prove only that it agrees with
  * itself.
  *

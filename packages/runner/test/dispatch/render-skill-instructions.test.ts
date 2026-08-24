@@ -173,7 +173,7 @@ test('AT6 — the rendered text carries the manifest, the node contract and the 
   assert.ok(text.includes(SKILL_ID) && text.includes(SKILL_HASH), 'the session is told what it is pinned to');
 
   // 3. the node's OWN contract — which is where the routing vocabulary lives
-  // (`docs/spec/grafo.md`). Until t267 this comment went on to say the
+  // (`docs/spec/graph.md`). Until t267 this comment went on to say the
   // manifest's `output` never reached the text, and that was the bug: the one
   // schema `PATCH /v1/sessions/:id/finish` really checks a report against is the
   // SKILL's, and it is rendered too now. See the t267 block at the bottom.
@@ -974,7 +974,7 @@ test('t215 AT — the request renderSkillInstructions makes carries the version 
 /* was rendered under "é contra ele que a sua saída vai ser conferida", while  */
 /* `/finish` validates against the SKILL's `output`                            */
 /* (`packages/core/src/repositories/session.ts:resolveOutputSchema`) — two     */
-/* different schemas by design (`docs/spec/grafo.md`). And the input reached   */
+/* different schemas by design (`docs/spec/graph.md`). And the input reached   */
 /* the model only through the placeholders a manifest author remembered to     */
 /* write, which is how `analise-assimetria` escalated on the second real bets  */
 /* crossing over fields the projection was in fact carrying.                   */

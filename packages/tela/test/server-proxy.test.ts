@@ -542,7 +542,7 @@ test('t199 AT — the shipped command honors CARTOGRAFO_PORT when CARTOGRAFO_URL
   assert.equal(
     run.readiness.controlPlane,
     `http://127.0.0.1:${controlPlanePort}`,
-    'the precedence docs/spec/tela-inbox-propostas.md promises is the one the bin applies',
+    'the precedence docs/spec/screen-proposal-inbox.md promises is the one the bin applies',
   );
 });
 

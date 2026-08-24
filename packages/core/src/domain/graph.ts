@@ -668,7 +668,7 @@ export const ALWAYS_AVAILABLE_INPUT_PATHS = Object.freeze([
  *
  * `packages/runner/src/dispatch/resolve-executor-environment.ts` returns exactly
  * this shape, unconditionally, at every dispatch — a filesystem path and a live
- * commit, neither of which can be graph data (`docs/spec/runner-e-controller.md`
+ * commit, neither of which can be graph data (`docs/spec/runner-and-controller.md`
  * §"O ambiente de executor"). A runner with no bench configured contributes `{}`
  * instead, and that is a deployment question rather than a document one: what is
  * checked here is what the FORMAT promises a node, which is what the resolver
@@ -883,7 +883,7 @@ function bucketOf(node: PlainObject): string | null {
  *
  * ## What is checked is the PINNED SKILL, never the node's own contract
  *
- * `docs/spec/grafo.md` §2 already draws this line for output — the node's
+ * `docs/spec/graph.md` §2 already draws this line for output — the node's
  * `output_schema` documents, the skill's `output` validates — and it holds for
  * input too, where the two have already drifted: the software bundle's `refinar`
  * declares `["ticket_id", "pedido"]` while the skill it pins really requires

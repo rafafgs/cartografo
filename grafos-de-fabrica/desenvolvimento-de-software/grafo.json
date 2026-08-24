@@ -309,7 +309,7 @@
                 "approved",
                 "rework"
               ],
-              "description": "The edge this gate takes, and the reserved key of the report protocol: one fenced block carries the report and the label together, and this is the label (`packages/runner/src/dispatch/parse-node-result.ts`). The KEY is the protocol's and is spelled the way the runner and the control plane reserve it; the VALUES are THIS graph's — the `condition` of an edge leaving `test` — which is why the label is declared here and never in the pinned skill's `output`: the control plane takes it out of the report before holding the rest against that schema (t269, `docs/spec/grafo.md`), and the same skill under another graph would carry other labels. Escalation is not among them: it pauses the node with an input-request instead of opening a third edge."
+              "description": "The edge this gate takes, and the reserved key of the report protocol: one fenced block carries the report and the label together, and this is the label (`packages/runner/src/dispatch/parse-node-result.ts`). The KEY is the protocol's and is spelled the way the runner and the control plane reserve it; the VALUES are THIS graph's — the `condition` of an edge leaving `test` — which is why the label is declared here and never in the pinned skill's `output`: the control plane takes it out of the report before holding the rest against that schema (t269, `docs/spec/graph.md`), and the same skill under another graph would carry other labels. Escalation is not among them: it pauses the node with an input-request instead of opening a third edge."
             },
             "outcome": {
               "enum": [
@@ -506,7 +506,7 @@
     ],
     "conventions": "Contract-first: every capability — skill, gate, node — declares its input and output in JSON Schema plus a list of typed verifications (D9). Single writer: only the control plane writes to the database, and the runner is a client of the public API like any other (D1, D11). Append-only persistence with git-like versioning inside the database; rollback moves a pointer and nothing is ever deleted (D2, D15). Everything is written in English — code, identifiers, format keys, and the content that reaches a person or a model alike (D18, as amended on 2026-08-18).",
     "ledger_files": [
-      "DECISOES.md",
+      "DECISIONS.md",
       "packages/core/migrations",
       "schema",
       "especificacoes"

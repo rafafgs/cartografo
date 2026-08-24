@@ -15,7 +15,7 @@ código, NÃO edita tickets e NÃO toma decisão de produto.
 
 **Mapa**: flowpilot em `~/flowpilot` (server :5000, UI :5173, banco
 `~/flowpilot/instance/flowpilot.db`). Repo do produto: `~/cartografo`
-(decisões em `DECISOES.md` D1–D19; atenção: D18 = idioma inglês com emenda,
+(decisões em `DECISIONS.md` D1–D19; atenção: D18 = idioma inglês com emenda,
 D19 = documentação viva). Controller do projeto 3 já está LIGADO; onboarding
 já está completo — não refaça nada de armação.
 
@@ -49,7 +49,7 @@ backlog→to_refine):**
 **Perguntas de agente (input_requests pendentes):**
 
 - Se a resposta estiver LITERALMENTE coberta por uma decisão em
-  `~/cartografo/DECISOES.md`, responda pela UI citando a decisão (ex.:
+  `~/cartografo/DECISIONS.md`, responda pela UI citando a decisão (ex.:
   "D15: versioning lives in the DB, not git"). Responda EM INGLÊS (D18).
 - Qualquer outra coisa (decisão nova, trade-off, escopo, dúvida sobre
   intenção): NÃO responda. Avise o Rafael com o id da pergunta e um resumo
@@ -115,7 +115,7 @@ Delegação ampla para decisões operacionais e de ritmo. NÃO cobre: (a)
 desbloquear t109 (regra 1 permanece — sempre avisar e esperar a ordem
 dele, mesmo de manhã), (b) forçar t121 adiante (ele pediu explicitamente
 para ficar como está), (c) decisão de produto genuinamente nova ou algo
-que mexeria em DECISOES.md (isso continua escalando — registrar para a
+que mexeria em DECISIONS.md (isso continua escalando — registrar para a
 manhã, não adivinhar).
 
 ## Addendum 2026-08-16 (Rafael): quadro novo t189–t216 e o portão do t216
@@ -133,10 +133,10 @@ avaliação técnica do repo. Regras que se somam às de cima:
   colocado em desenvolvimento por engano, deverá ficar bloqueado até eu
   aprovar."
 - **t213, t214, t215 e t216 têm decisão registrada** (D20, D21, D22 e D23
-  em `DECISOES.md`, gravadas em 2026-08-16 com autorização do Rafael).
+  em `DECISIONS.md`, gravadas em 2026-08-16 com autorização do Rafael).
   Agente que perguntar sobre o "porquê" desses tickets: responder citando a
   Dn. Isso NÃO muda o portão do t216 (bulleta acima) — a D23 diz o mesmo.
-- **Quem escreve em `DECISOES.md` (regra atualizada 2026-08-16):**
+- **Quem escreve em `DECISIONS.md` (regra atualizada 2026-08-16):**
   preferencialmente o Rafael; agente só com autorização explícita dele, caso
   a caso ou em lote, e a entrada diz quem autorizou. A monitoria continua sem
   escrever lá por conta própria: decisão nova → escalar, como sempre.

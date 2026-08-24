@@ -12,7 +12,7 @@
  * that closes the cycle, so AT11 switches sides: creating the input request
  * blocks the job IN THE SAME transaction, and answering unblocks it with the
  * actor of whoever answered. Whoever wants to know why the cycle lives here, and
- * not in the runner, reads `docs/spec/escalacao-humana.md`.
+ * not in the runner, reads `docs/spec/human-escalation.md`.
  *
  * t113 adds the precedent base (AT3–AT7): an answered question becomes something
  * one can look up, so whoever answers the next one sees what was decided last

@@ -353,7 +353,7 @@
         "url": {
           "type": "string",
           "pattern": "^https?://.+",
-          "description": "URL absoluta http: ou https: que recebe o POST. Mesma regra do POST /v1/webhooks (docs/spec/webhooks-eventos.md §2)."
+          "description": "URL absoluta http: ou https: que recebe o POST. Mesma regra do POST /v1/webhooks (docs/spec/webhooks-events.md §2)."
         },
         "secret_ref": {
           "type": "string",

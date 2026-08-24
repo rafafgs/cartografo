@@ -137,7 +137,7 @@ export interface ClaudeCodeDispatchOptions {
    * credential answers `403 credencial_fora_de_escopo` on all of them rather
    * than degrading into anything usable. Cutting a credential that reaches
    * exactly these routes is another ticket, the same one t146 deferred for the
-   * flow surveyor (`docs/spec/topografo-fluxo.md`).
+   * flow surveyor (`docs/spec/topografo-flow.md`).
    *
    * With no token no header goes out, and the API answers 401 — which is the
    * honest outcome: an empty header would look like a credential.

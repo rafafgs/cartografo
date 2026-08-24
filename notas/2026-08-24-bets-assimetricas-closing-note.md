@@ -265,7 +265,7 @@ ticket (t282) or for whoever eventually translates `schema/exemplos/`.
 
 There is no next bundle: these two are all the repository ships, and both are
 translated. What is left of D24 is t281 (`docs/`, `especificacoes/`,
-`DECISOES.md`, `notas/`) and t282 (folder, package, bin and script names), and
+`DECISIONS.md`, `notas/`) and t282 (folder, package, bin and script names), and
 neither of them inherits a factory-bundle carve-out — `SKIP_DIRS` is empty and a
 gate now holds it that way.
 

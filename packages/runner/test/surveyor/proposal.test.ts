@@ -348,7 +348,7 @@ class CountingAdapter implements EngineAdapter {
   }
 }
 
-/** A well-formed semantic diff, in the vocabulary of `entidades-versionamento` §3. */
+/** A well-formed semantic diff, in the vocabulary of `entities-versioning` §3. */
 const VALID_OPERATIONS = [
   {
     type: 'change_node_field',

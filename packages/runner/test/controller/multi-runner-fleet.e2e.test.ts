@@ -4,7 +4,7 @@
  * Everything this file asserts is already TRUE by construction — `grantLease`
  * decides in a single synchronous transaction, its project count carries no
  * `runner_id` filter, and reclaiming the expired ones is the first step of
- * every grant (`docs/spec/runner-e-controller.md` §3). What did not exist was
+ * every grant (`docs/spec/runner-and-controller.md` §3). What did not exist was
  * the proof: every lease-cap test in the repo calls the repository or the route
  * IN PROCESS, one caller at a time. "N runners work" was a property of the code
  * nobody had ever seen happen.

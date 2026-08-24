@@ -7,7 +7,7 @@
  * (`especificacoes/formatos/manifesto-skill.md`), which only covers
  * `{instructions, input, output, checks, permissions}` because there catalogue
  * metadata must not invalidate the pin. Here the opposite holds: the snapshot of
- * a version is the whole document (`docs/spec/grafo.md` §7), and changing the
+ * a version is the whole document (`docs/spec/graph.md` §7), and changing the
  * graph description IS a new version.
  *
  * Canonicalizing is the part of RFC 8785 these formats use: keys sorted

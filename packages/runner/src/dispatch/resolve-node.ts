@@ -26,7 +26,7 @@
  *
  * English per D18 — including the snapshot's own field names, since the
  * 2026-08-15 amendment brought the two data formats along with the code
- * (`DECISOES.md`, D18 amendment).
+ * (`DECISIONS.md`, D18 amendment).
  */
 
 /** The pin a node carries to a registry skill (D4). */
@@ -102,7 +102,7 @@ export interface GraphNode {
 export interface GraphEdge {
   from: string;
   to: string;
-  /** A label, never an expression (`docs/spec/grafo.md`). */
+  /** A label, never an expression (`docs/spec/graph.md`). */
   condition?: string;
   description?: string;
 }

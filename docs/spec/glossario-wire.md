@@ -338,7 +338,7 @@ closes the session. It becomes `open`, the same vocabulary as the
 ### 1.7 Signature header
 
 Not a JSON key: it is the name of the HTTP header every webhook and hook
-delivery carries, and the recipe published in `docs/spec/webhooks-eventos.md` §5
+delivery carries, and the recipe published in `docs/spec/webhooks-events.md` §5
 is about it. It fell outside the lists of every D20 child — none of them looked
 at a header — and that is how it survived until t255. A header name is
 case-insensitive: the specification writes `X-Cartografo-Signature`, the code
@@ -789,7 +789,7 @@ closes it, and the first real crossing is what found it
 Three things are NOT here, each for a reason of its own:
 
 - **`total_ms` and `lens` are already English.** Nothing to map.
-- **`fonte` stays.** [`topografo-fluxo.md` §4](topografo-fluxo.md) already
+- **`fonte` stays.** [`topografo-flow.md` §4](topografo-flow.md) already
   records that it is the provenance the module declares, distinct from the
   `lens` the server reads to deduplicate. Renaming it would be reverting a
   recorded decision, not leaving one unrecorded.

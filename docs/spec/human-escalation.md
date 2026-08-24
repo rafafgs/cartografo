@@ -2,7 +2,7 @@
 
 **Versão da API:** `v1` · **Migração:** nenhuma (reaproveita as tabelas do
 [`0003`](../../packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql))
-**Decisão de origem:** [D16](../../DECISOES.md) — a régua da PoC exige "perguntas
+**Decisão de origem:** [D16](../../DECISIONS.md) — a régua da PoC exige "perguntas
 humanas fluindo pela API" com "sessões despachadas pelo EngineAdapter"
 
 Escalação humana é entidade de primeira classe, não caso especial
@@ -27,7 +27,7 @@ de um passo manual que alguém possa esquecer de dar.
 | pergunta ↔ bandeira de bloqueio | `packages/core` (repositório da pergunta) | Os dois vivem no mesmo banco e no mesmo processo. Atomicidade sai de graça. |
 | bloco de escalação → pergunta | `packages/runner` (`src/dispatch/`) | Só o runner vê o output de uma sessão. O control plane nunca lê transcript. |
 
-A fronteira é a de sempre: **só o servidor escreve** ([D1](../../DECISOES.md)).
+A fronteira é a de sempre: **só o servidor escreve** ([D1](../../DECISIONS.md)).
 O runner lê o trabalho, abre a sessão, e o que ele faz com um pedido de
 escalação é `POST /v1/input-requests` — como qualquer outro cliente da API.
 
@@ -110,7 +110,7 @@ parada, e o control plane já sabe guardar o estado.
 
 O parser (`packages/runner/src/dispatch/parse-input-request.ts`) herda o
 contrato de comportamento do `controller_parser.py` do flowpilot
-([D17](../../DECISOES.md) — flowpilot é referência de comportamento, nunca
+([D17](../../DECISIONS.md) — flowpilot é referência de comportamento, nunca
 dependência):
 
 1. **A extensão do bloco sai do JSON, nunca de uma busca pela cerca de
@@ -146,7 +146,7 @@ fora do `EngineAdapter` v0
 ([engine-adapter.md](../formatos/engine-adapter.md), "Fora de escopo (v0)"), e
 a `t106` não o traz pela porta dos fundos: **retomada aqui é sempre um despacho
 novo**, feito pelo `tick()` seguinte do
-[controller](runner-e-controller.md), com uma sessão nova.
+[controller](runner-and-controller.md), com uma sessão nova.
 
 O que atravessa de uma sessão para a outra é o **prompt**. O despacho monta,
 para cada pergunta daquele trabalho que já foi respondida:
@@ -197,7 +197,7 @@ que a produziu morreu logo depois.
 Tudo acima descreve **um** comportamento: perguntar quando trava, e bloquear até
 alguém responder. Desde a `t167` esse comportamento é o *default*, e não a única
 opção — o nó declara a sua no grafo, em `escalation_policy`
-([grafo.md](grafo.md), §2):
+([graph.md](graph.md), §2):
 
 | Política | O que a sessão recebe no prompt | O que a fiação faz com um pedido de escalação |
 |---|---|---|
@@ -317,7 +317,7 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
 - **Entregar a escalação a `escalation_recipient`.** O nó pode nomear quem
   deveria ser chamado, e nada envia nada para esse nome: não existe sistema de
   notificação nem de papéis neste repositório para entregar a. O campo é dado do
-  grafo, e só ([grafo.md](grafo.md), §2).
+  grafo, e só ([graph.md](graph.md), §2).
 - **Tela da fila** (`t107`) e **identidade de quem responde**: a `t124`
   autenticou estas rotas, mas o token não diz qual pessoa está do outro lado, e
   `respondido_por` segue vindo do corpo.

@@ -6,7 +6,7 @@
  * touching the core. The taxonomy is the contract
  * (`especificacoes/eventos/taxonomia.md`); this route is the transport, and the
  * public spec a third party builds a client from is
- * `docs/spec/eventos-stream.md`.
+ * `docs/spec/events-stream.md`.
  *
  * Three decisions are worth knowing before reading the code:
  *

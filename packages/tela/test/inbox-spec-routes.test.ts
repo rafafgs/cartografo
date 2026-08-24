@@ -1,7 +1,7 @@
 /**
  * Acceptance tests for the route table of the inbox spec (t130).
  *
- * `docs/spec/tela-inbox-propostas.md` §2 is the contract whoever builds the
+ * `docs/spec/screen-proposal-inbox.md` §2 is the contract whoever builds the
  * core side of `t111` reads: it says which endpoints this screen calls. The
  * alpha round found it still naming the pre-D18 Portuguese paths
  * (`/v1/propostas/:id/aprovar`) after `t127` renamed the `/v1` surface to
@@ -27,7 +27,7 @@ import type * as ActionsModule from '../src/public/actions.js';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'tela-inbox-propostas.md');
+const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'screen-proposal-inbox.md');
 const INBOX_PATH = path.join(PACKAGE_ROOT, 'src', 'public', 'inbox.js');
 
 /** Heading of the section under test, matched by its number, not its wording. */

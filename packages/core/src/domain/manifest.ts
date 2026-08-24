@@ -13,7 +13,7 @@
  * client, D1/D11) and the control plane share it without sharing anything else.
  *
  * The field names are the skill-manifest format's own, and they are English
- * since the 2026-08-15 amendment to D18 (`DECISOES.md`, D18 amendment): the
+ * since the 2026-08-15 amendment to D18 (`DECISIONS.md`, D18 amendment): the
  * original decision carved data-format keys out of the rename, and that
  * amendment closed the gap. `packages/core/test/domain-manifest-fields.test.ts`
  * pins the list below against the schema's own `required`, so the port cannot

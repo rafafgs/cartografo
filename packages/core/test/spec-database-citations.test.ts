@@ -3,11 +3,11 @@
  *
  * The t229 pass moved these documents' DDL and their table/column citations to
  * the English of `glossario-wire.md` §4, and it walked past three spots. One
- * sentence of `entidades-versionamento.md` §5 still said the fork's column was
+ * sentence of `entities-versioning.md` §5 still said the fork's column was
  * `grafo.origem_proposta_id`, of a type quoted as `INTEGER REFERENCES proposta(id)`,
  * when the schema called all three something else (t236). Then the t237 round
  * found two whole DDL blocks: the `runner`/`lease` bodies of
- * `runner-e-controller.md` §1, whose table names were already English and whose
+ * `runner-and-controller.md` §1, whose table names were already English and whose
  * every column and two of whose three index names were not, and the
  * `trabalho_dependencia` body of `intake.md` §4. A reader comparing the
  * specification to the database found two schemas.
@@ -39,7 +39,7 @@
  *   — a cited one is either an index the migrations really build or one nothing
  *   builds.
  * - **`REFERENCES <name>(`** — the one that catches the prose, because §5 of
- *   `entidades-versionamento.md` quotes a column's SQL type inline rather than
+ *   `entities-versioning.md` quotes a column's SQL type inline rather than
  *   in a fenced block.
  * - **Inside the body of a `CREATE TABLE`** whose table resolves, a word that
  *   the migrations renamed away from on THAT table. It reads the column
@@ -54,16 +54,16 @@
  *   prefix has to be a table (today's spelling or one the migrations renamed
  *   away from) and the suffix a column of that table (likewise). That double
  *   condition is what tells `grafo.origem_proposta_id` — a stale citation — from
- *   `grafo.md`, `taxonomia.md`, `dados.motivo` and `linhagem.tipo`, which are a
+ *   `graph.md`, `taxonomia.md`, `dados.motivo` and `linhagem.tipo`, which are a
  *   file name, a file name, an event payload key and a key of the graph
  *   document, and none of which this gate touches.
  *
  * ## What is deliberately NOT swept
  *
  * **The bare, unqualified name.** `versao_alvo` in the error table of
- * `entidades-versionamento.md` names an API field and `origem_proposta_id` in
+ * `entities-versioning.md` names an API field and `origem_proposta_id` in
  * the fork's request body names a wire field, so deciding which of those is a
- * column takes reading the sentence. `escalacao-humana.md` §8 is the proof that
+ * column takes reading the sentence. `human-escalation.md` §8 is the proof that
  * this is caution and not squeamishness: it cites `auto_aprovavel`, a wire field
  * that stays, four lines before it cited `no_id`, a column that had to move
  * (t237) — indistinguishable to any rule that only looks at the word. That one
@@ -82,7 +82,7 @@
  * `docs/o-que-e-o-cartografo.md`. It started as four documents — the one t236
  * owned plus the three the t237 round found — and t231 took the growth path
  * this paragraph used to describe, which was to widen `SWEPT` once
- * `tela-editor-grafo.md`'s `grafo_versao.id` had a ticket of its own.
+ * `screen-graph-editor.md`'s `grafo_versao.id` had a ticket of its own.
  *
  * `glossario-wire.md` is the one document of that set left out, and it is the
  * exception that proves the rule: a map FROM the retired names TO the ones that
@@ -469,7 +469,7 @@ test('FR11 — the sweep bites on a citation the rename left behind', async () =
     "CREATE UNIQUE INDEX graph_class_base_unique ON grafo (class) WHERE lineage_type = 'base';",
     '  grafo_id    TEXT NOT NULL REFERENCES grafo(id),',
     // A body whose table name was already English and whose columns were not:
-    // the block of `runner-e-controller.md` §1 that t237 fixes.
+    // the block of `runner-and-controller.md` §1 that t237 fixes.
     'CREATE TABLE lease (\n  trabalho_id  INTEGER NOT NULL,\n  expira_em    TEXT NOT NULL\n);',
     // The same block's index, which the sequence builds under another name.
     'CREATE INDEX idx_lease_projeto_status ON lease (projeto_id, status);',
@@ -494,7 +494,7 @@ test('FR11 — the sweep does NOT bite on what the documents keep in Portuguese'
     '| `origem_proposta_id` não é inteiro positivo | `400` | `origem_proposta_id_invalido` |',
     '| Base sem `versao_corrente_id` (invariante defensivo) | `409` | `grafo_sem_versao_corrente` |',
     // A file name whose stem happens to be a renamed table.
-    'o formato está em [`grafo.md` §7](grafo.md) e a taxonomia em `taxonomia.md`.',
+    'o formato está em [`graph.md` §7](graph.md) e a taxonomia em `taxonomia.md`.',
     // An event type and an event payload key, neither of them a column.
     '`motivo` espelha `dados.motivo` do evento `grafo_versao.revertida`.',
     // An event whose two halves both resolve as schema and are still an event.

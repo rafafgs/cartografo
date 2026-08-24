@@ -528,7 +528,7 @@ export class ClienteControle {
    * por engano.
    *
    * O `depois` é de quem chama: não existe motor de métricas nomeadas na v1
-   * (`docs/spec/entidades-versionamento.md` §5). Quem calcula é o topógrafo, com
+   * (`docs/spec/entities-versioning.md` §5). Quem calcula é o topógrafo, com
    * `measureForExpectedMetric` sobre a telemetria da rodada seguinte.
    *
    * @param id Proposta aplicada.

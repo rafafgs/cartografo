@@ -231,7 +231,7 @@ test('AT2 — the four counterexamples fail with the expected rule, one each', a
     const report = validateSoundness(readExample(file));
     assert.equal(report.valid, false, `${file} has to keep failing`);
     // Each t96 counterexample violates exactly ONE rule — that is what makes
-    // each rule demonstrable in isolation (`docs/spec/grafo.md` §6).
+    // each rule demonstrable in isolation (`docs/spec/graph.md` §6).
     assert.deepEqual(report.violations, [violation], `wrong rule on ${file}`);
   }
 });

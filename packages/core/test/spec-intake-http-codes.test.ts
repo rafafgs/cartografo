@@ -17,7 +17,7 @@
  * glossary's §2.1, §5.1 and §5.2 — event names, screen routes, CLI flags — and
  * an API error code lives in §1.4, on rows nothing reads. Widening THAT gate is
  * not what this ticket does: §1.4 also fails documents it does not own
- * (`entidades-versionamento.md` §5's own error table, `intake-geracao.md`), and a
+ * (`entities-versioning.md` §5's own error table, `intake-generation.md`), and a
  * gate landed half-green is a gate somebody turns off.
  *
  * ## The oracle is the route, not the glossary

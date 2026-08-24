@@ -1,7 +1,7 @@
 # Especificação: topógrafo de fluxo, da telemetria à proposta
 
 **Versão da API:** `v1` · **Implementação:** [`packages/runner/src/surveyor/`](../../packages/runner/src/surveyor)
-**Decisão de origem:** [D16](../../DECISOES.md) — "superar o flowpilot é o marco seguinte (primeira proposta do topógrafo com evidência)"
+**Decisão de origem:** [D16](../../DECISIONS.md) — "superar o flowpilot é o marco seguinte (primeira proposta do topógrafo com evidência)"
 
 Um grafo que roda produz um rastro; um grafo que **melhora** precisa de alguém
 que leia esse rastro e diga onde dói, com número. Esta camada é o primeiro
@@ -86,7 +86,7 @@ sem sinal, e o desfecho correto é não propor nada (§5).
 
 Uma proposta é uma hipótese: `POST /v1/proposals` recusa com `400` qualquer uma
 que chegue sem `evidencia` e sem `metrica_esperada`
-([`entidades-versionamento.md` §6](entidades-versionamento.md)). O topógrafo
+([`entities-versioning.md` §6](entities-versioning.md)). O topógrafo
 monta as duas antes de qualquer agente entrar na história.
 
 ```json
@@ -154,7 +154,7 @@ A única coisa que um agente decide aqui é **quais operações** atacam o garga
 A `SessionSpec` que ele recebe é:
 
 - `instructions` — o contrato de saída: os cinco tipos de operação
-  ([§3 de `entidades-versionamento.md`](entidades-versionamento.md), nenhum tipo
+  ([§3 de `entities-versioning.md`](entities-versioning.md), nenhum tipo
   novo), a exigência da inversa, e o arquivo a escrever;
 - `prompt` — os nós e arestas da versão que rodou, mais a tabela de medição da
   execução com o gargalo apontado;
@@ -163,7 +163,7 @@ A `SessionSpec` que ele recebe é:
 
 A saída é o arquivo `proposta-topografo.json`, com a forma `{"operations": [...]}`
 e nada mais. Arquivo, e não stdout, porque a saída de uma CLI real é um fluxo de
-quadros com prosa no meio ([`escalacao-humana.md` §4](escalacao-humana.md)) —
+quadros com prosa no meio ([`human-escalation.md` §4](human-escalation.md)) —
 um contrato que sobrevive a isso é o que a sessão cumpre com uma escrita só.
 
 A sessão **não** recebe URL do control plane, credencial nem acesso de escrita a
@@ -210,7 +210,7 @@ Três garantias que o desenho compra, e que os testes de aceite cobram:
 A versão-alvo é a versão sob a qual a execução **rodou** — é sobre ela que a
 evidência fala. Se o grafo andou desde então, a proposta continua no livro e é o
 `aplicar` que recusa com `409 proposta_desatualizada`; refazer o diff sobre a
-base nova é trabalho de outra rodada ([t118](entidades-versionamento.md)).
+base nova é trabalho de outra rodada ([t118](entities-versioning.md)).
 
 ---
 
@@ -266,7 +266,7 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   terceiro filho da [D21]). `cartografo-topografo watch`
   ([`packages/topografo`](../../packages/topografo)) assina
   `GET /v1/events/stream?type=execution.finished`
-  ([eventos-stream.md](eventos-stream.md)) e roda as duas lentes — esta e a de
+  ([events-stream.md](events-stream.md)) e roda as duas lentes — esta e a de
   custo — sobre cada execução que o control plane declara terminada, sem
   ninguém digitar id nenhum. O que mudou é QUEM chama a lente; o resto da
   escada está intacto: o topógrafo continua não sendo nó do grafo nem passo do
@@ -279,7 +279,7 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   auto-resposta): hoje não existe artefato versionado a que uma proposta possa
   se dirigir — `schema/grafo.schema.json` não tem campo de política, e os tetos
   e TTL do runner são parâmetros por requisição
-  ([`runner-e-controller.md` §5](runner-e-controller.md)).
+  ([`runner-and-controller.md` §5](runner-and-controller.md)).
 - **Um segundo topógrafo** (custo, qualidade) e o congelamento do formato de
   proposta: a regra dos dois consumidores pede dois antes de congelar
   ([`extensao-e-qualidade.md`](../../notas/2026-08-14-extensao-e-qualidade.md)).
@@ -300,6 +300,6 @@ Cada item aqui é escopo declarado de outra ficha, não esquecimento:
   runner. Recortar uma credencial que alcance exatamente estas rotas é outra
   ficha.
 
-[D10]: ../../DECISOES.md
-[D11]: ../../DECISOES.md
-[D21]: ../../DECISOES.md
+[D10]: ../../DECISIONS.md
+[D11]: ../../DECISIONS.md
+[D21]: ../../DECISIONS.md

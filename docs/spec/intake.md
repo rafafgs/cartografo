@@ -1,7 +1,7 @@
 # Especificação: intake — do pedido à quebra em tickets no grafo
 
 **Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0006_intake.sql`](../../packages/core/migrations/0006_intake.sql)
-**Decisão de origem:** [D3](../../DECISOES.md) — sintetizar topologia e quebrar
+**Decisão de origem:** [D3](../../DECISIONS.md) — sintetizar topologia e quebrar
 trabalho são **dois atos**: o primeiro produz nós (uma vez por classe), o
 segundo produz tickets (a cada execução), e o caminho fica congelado durante a
 execução
@@ -201,13 +201,13 @@ critério ainda" e "declarei que não há critério" são afirmações diferente
 
 `null ≠ trivial` é a mesma disciplina com um preço maior: `tier` é a triagem de
 custo que a sessão de intake faz de graça (t175, ficha
-[`intake-geracao.md`](intake-geracao.md)), e é dela que o runner tira o modelo
+[`intake-generation.md`](intake-generation.md)), e é dela que o runner tira o modelo
 que vai rodar cada nó. Ler ausência como "trivial" rebaixaria para um modelo
 mais barato todo trabalho nascido antes desta coluna existir, sem que ninguém
 tivesse escolhido isso e sem nada falhar em lugar nenhum. O que o tier muda é
 quanto um nó CUSTA para rodar, nunca por qual aresta o trabalho sai: o grafo
 segue congelado durante a execução, e os atalhos de topologia do flowpilot
-seguem fora do porte ([`grafo.md`](grafo.md), seção do `work_tier`).
+seguem fora do porte ([`graph.md`](graph.md), seção do `work_tier`).
 
 Um trabalho criado à mão por `POST /v1/jobs` continua nascendo só com título, e
 nesse caso os dois campos chegam ao log como `null` explícito — a regra de
@@ -309,7 +309,7 @@ aplicada ao intake.
 > com a t144, e continua fora **desta camada**: quem decompõe é um comando do
 > runner que despacha uma sessão de agente e chega aqui por
 > `POST /v1/intake` como qualquer outro cliente — ver
-> [`intake-geracao.md`](./intake-geracao.md). Estas rotas seguem sem despachar
+> [`intake-generation.md`](./intake-generation.md). Estas rotas seguem sem despachar
 > sessão e sem conhecer engine.
 
 - **Exigir a dependência declarada.** A aresta é registro; bloqueio automático,

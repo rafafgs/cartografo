@@ -141,7 +141,7 @@ ausência. Ausente também não é `false`, e é por isso que o schema o declara
 opcional: o log gravado antes da `t268` não tem o campo, e continua válido.
 Quem decide se o trabalho anda a partir desse veredito é o runner, e ele o lê
 **de forma síncrona** na resposta do próprio `PATCH /finish`, não daqui
-([runner-e-controller.md](runner-e-controller.md), "Relato recusado pelo control
+([runner-and-controller.md](runner-and-controller.md), "Relato recusado pelo control
 plane segura o trabalho no nó", `t268`): este stream é observação, nunca caminho
 de decisão.
 
@@ -340,7 +340,7 @@ lá), limite de conexões simultâneas, e credencial só de leitura.
 
 Escopo de credencial passou a existir na `t143`, e não é este: a credencial de
 runner, emitida no pareamento, alcança uma lista literal de cinco rotas de
-despacho ([runner-e-controller.md](runner-e-controller.md) §5) — e esta rota não
+despacho ([runner-and-controller.md](runner-and-controller.md) §5) — e esta rota não
 está nela. Um runner apresentando o token dele aqui toma `403
 credencial_fora_de_escopo`. Quem abre o stream continua sendo a credencial de
 operador, a mesma que abre toda a `/v1`; um credenciamento de leitura, que
@@ -351,7 +351,7 @@ distinguisse "ler o log" de "escrever no control plane", segue sem existir.
 ## 10. O que ainda não existe
 
 O transporte *push* passou a existir: **webhooks assinados, com retentativa**
-([`docs/spec/webhooks-eventos.md`](webhooks-eventos.md), `t142`), para quem não
+([`docs/spec/webhooks-events.md`](webhooks-events.md), `t142`), para quem não
 quer manter uma conexão aberta. Com ele, o ponto de extensão nº 5 está fechado
 pelas duas metades — este documento é a de *pull*. A §1 daquele compara as duas
 e diz quando cada uma serve.

@@ -12,8 +12,8 @@ receptor inteiro — inclusive a verificação da assinatura — sem abrir uma l
 do código do control plane. O que trafega é o envelope da
 [taxonomia de eventos](../../especificacoes/eventos/taxonomia.md), sem tradução
 nenhuma no caminho, exatamente o mesmo objeto que o
-[stream SSE](eventos-stream.md) entrega no campo `data:` e que os
-[webhooks assinados](webhooks-eventos.md) entregam por POST.
+[stream SSE](events-stream.md) entrega no campo `data:` e que os
+[webhooks assinados](webhooks-events.md) entregam por POST.
 
 ---
 
@@ -24,7 +24,7 @@ entrar no nó `testar`, avise este endereço"; "quando ele travar em `revisar`,
 chame aquele". A declaração mora dentro do documento de grafo, ao lado dos nós
 e das arestas.
 
-| | Webhook ([`webhooks-eventos.md`](webhooks-eventos.md)) | Gancho (este documento) |
+| | Webhook ([`webhooks-events.md`](webhooks-events.md)) | Gancho (este documento) |
 |---|---|---|
 | Quem declara | um operador, por `POST /v1/webhooks` | quem escreve o grafo, dentro do documento |
 | Onde vive | linha em `webhook_subscription` | chave `hooks` do snapshot da versão |
@@ -105,7 +105,7 @@ uma que vazou seria propor uma versão nova cujo diff mostra a velha e a nova
 lado a lado, para sempre, no histórico que nunca se apaga.
 
 O `secret_ref` é da mesma família que `engine`, `model` e `escalation_policy`
-([`grafo.md`](grafo.md)): valor que o documento declara e o deployment resolve
+([`graph.md`](graph.md)): valor que o documento declara e o deployment resolve
 na hora de despachar, nunca o validador na importação — porque o validador não
 sabe o que ESTE deployment tem. Por isso um `secret_ref` que não resolve **não**
 é erro de validação: é zero entrega (§4).
@@ -250,7 +250,7 @@ const assinatura = `sha256=${createHmac('sha256', segredo).update(corpoCru, 'utf
 ```
 
 O receptor mínimo de zero dependência da
-[§8 de `webhooks-eventos.md`](webhooks-eventos.md) serve aqui sem uma linha de
+[§8 de `webhooks-events.md`](webhooks-events.md) serve aqui sem uma linha de
 diferença: troque a variável do segredo pela chave que você registrou para o
 `secret_ref` deste gancho.
 

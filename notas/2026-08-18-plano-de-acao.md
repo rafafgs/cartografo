@@ -61,7 +61,7 @@ n=3 na tela; os dois "pode" de tickets já dados em 18/08 à tarde.
 
 Rafael's instruction after reviewing the language state of the repo: **English only, everywhere** —
 every file, folder, structure, configuration and anything else — and **nothing new is born in
-Portuguese**. This supersedes the D18 exemptions (DECISOES.md, notas/, docs/o-que-e, README).
+Portuguese**. This supersedes the D18 exemptions (DECISIONS.md, notas/, docs/o-que-e, README).
 Measured before acting: 12 skill manifests fully in Portuguese (instructions, class keys, check
 ids), 68 tracked paths with Portuguese names outside notas/ (packages `tela`, `topografo`,
 `topografo-custo`; folders `grafos-de-fabrica`, `especificacoes`, `schema/exemplos`,

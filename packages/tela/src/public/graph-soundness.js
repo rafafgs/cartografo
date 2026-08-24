@@ -7,7 +7,7 @@
  * — it is the only moment where the system says, in the graph's own vocabulary,
  * why an edit cannot exist — and dumping its JSON on the screen would waste it
  * exactly the way a line diff wastes a semantic one (D15, and §4 of
- * `docs/spec/tela-inbox-propostas.md`).
+ * `docs/spec/screen-proposal-inbox.md`).
  *
  * So: one line per problem, each one naming the node or the edge it is about.
  * Structure errors already carry a written `message` and are shown as they

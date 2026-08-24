@@ -5,7 +5,7 @@
  * importing into ANOTHER, with an empty database, has to produce the same
  * `graph_version.id`. That only closes if the export returns the snapshot without
  * touching it — the id is the canonical hash of the document
- * (`docs/spec/entidades-versionamento.md` §2), so any field added, removed or
+ * (`docs/spec/entities-versioning.md` §2), so any field added, removed or
  * rewritten along the way shows up as a different hash. It is the proof that the
  * import/export pair preserves the data, and not merely that the two commands
  * run.

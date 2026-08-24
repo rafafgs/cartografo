@@ -42,7 +42,7 @@ versions with the header and status rows filtered out, not by inspection.
 
 ### What this means for the sibling tickets
 
-The reader-facing sibling (`README.md`, `DECISOES.md` → `DECISIONS.md`,
+The reader-facing sibling (`README.md`, `DECISIONS.md`,
 `docs/o-que-e-o-cartografo.md`, `docs/formatos/**`, the rest of `docs/spec/**`)
 is **20 files, 8,432 lines, of which 6,304 are prose** and only 629 are table.
 
@@ -78,7 +78,7 @@ the translation falsified.
 | `packages/runner/test/no-portuguese-wire.test.ts` | edited (comments only) | `superfície = …` twice, plus two `glossario-wire.md:791` citations (see below) |
 | `packages/tela/test/no-portuguese-wire.test.ts` | edited (comment only) | One `superfície = routes-cli-report` |
 | `packages/topografo/test/no-portuguese-wire.test.ts` | edited (comment only) | One `"hoje → vira"` |
-| `packages/topografo-custo/test/no-portuguese-wire.test.ts` | confirmed unaffected | Reads §5.2 and §5.5 by section number, never by column name, and quotes nothing of this document's prose. Its `"flags de CLI"` quote is of **D20** in `DECISOES.md`, which is still Portuguese and belongs to a sibling ticket |
+| `packages/topografo-custo/test/no-portuguese-wire.test.ts` | confirmed unaffected | Reads §5.2 and §5.5 by section number, never by column name, and quotes nothing of this document's prose. Its `"flags de CLI"` quote is of **D20** in `DECISIONS.md`, which is still Portuguese and belongs to a sibling ticket |
 | `packages/core/test/no-portuguese-database.test.ts`, `packages/core/test/migrate.test.ts` | confirmed unaffected | The two callers of `glossary-terms.ts`. Neither touches the document; both stayed green with zero change to their assertions, which is the regression AT |
 
 ### Two consumers the ticket did not list
@@ -122,7 +122,7 @@ Four, all recorded rather than quietly decided:
    de query do JSON da API"); §5.2 quotes D20 again ("flags de CLI"). All three
    were rendered in English rather than kept verbatim. The convention permits a
    verbatim Portuguese quotation, but leaving them would have put Portuguese
-   back into the prose the new sweep exists to keep out, and `DECISOES.md` is
+   back into the prose the new sweep exists to keep out, and `DECISIONS.md` is
    being translated by a sibling ticket anyway. **This is the one place a
    reviewer might reasonably want the opposite call.**
 4. **The D18 sentence that was left standing.** The paragraph about

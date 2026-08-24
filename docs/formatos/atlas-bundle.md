@@ -17,7 +17,7 @@
 
 ## Por que este documento existe
 
-[`docs/spec/grafo.md`](../spec/grafo.md) §7 termina exatamente onde este
+[`docs/spec/graph.md`](../spec/graph.md) §7 termina exatamente onde este
 começa: "um grafo, um arquivo, autocontido". O documento de grafo já é o bundle
 mínimo exportável — mas um grafo sozinho não roda, porque cada nó pina uma
 skill por versão e por hash (D4), e o pino só fecha se o manifesto viajar
@@ -59,7 +59,7 @@ Três regras, e nada além delas:
    versionamento; o diretório não acrescenta identidade nenhuma, só reflete a
    que já existe.
 2. **Cada subdiretório é um bundle**, na forma que
-   [`docs/spec/grafo.md`](../spec/grafo.md) e
+   [`docs/spec/graph.md`](../spec/graph.md) e
    [`especificacoes/formatos/manifesto-skill.md`](../../especificacoes/formatos/manifesto-skill.md)
    já definem: um `grafo.json` e um `skills/` com um manifesto por arquivo,
    cujo nome é o `id` da skill.
@@ -88,7 +88,7 @@ verificável sem confiar em quem publicou:
 
 | O quê | Onde mora | O que ele prova |
 |---|---|---|
-| `graph_version.id` | calculado no control plane, hash canônico do documento inteiro (`docs/spec/entidades-versionamento.md` §2) | que o mapa que entrou é byte a byte o mesmo que saiu — reimportar tem que reproduzir o mesmo id |
+| `graph_version.id` | calculado no control plane, hash canônico do documento inteiro (`docs/spec/entities-versioning.md` §2) | que o mapa que entrou é byte a byte o mesmo que saiu — reimportar tem que reproduzir o mesmo id |
 | `skill_ref.hash` de cada nó | dentro do `grafo.json`, pinando o conteúdo do manifesto (D4) | que o manifesto ao lado é o manifesto que o autor do grafo revisou |
 | `hash` de cada manifesto | dentro do próprio `skills/*.json` | que o manifesto não foi editado sem passar pelo pino |
 

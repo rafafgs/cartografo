@@ -848,7 +848,7 @@ test('t277 AT1 — no manifest names an input path its own schema does not decla
 // (`parse-node-result.ts`). That label is the reserved key `resultado`, its
 // vocabulary is the GRAPH's — the `condition` of an edge — and the control
 // plane takes it out of the object before holding the rest against the pinned
-// skill's `output` (`docs/spec/grafo.md`, t269). So the node's own
+// skill's `output` (`docs/spec/graph.md`, t269). So the node's own
 // `saida_schema` is where it is declared, and the skill's `output` is where it
 // never is.
 //

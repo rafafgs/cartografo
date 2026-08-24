@@ -10,7 +10,7 @@ auto-suficiente: dá para escrever um receptor inteiro — inclusive a verifica�
 da assinatura — sem abrir uma linha do código do control plane. O que trafega é
 o envelope da [taxonomia de eventos](../../especificacoes/eventos/taxonomia.md),
 sem tradução nenhuma no caminho, exatamente o mesmo objeto que o
-[stream SSE](eventos-stream.md) entrega no campo `data:`.
+[stream SSE](events-stream.md) entrega no campo `data:`.
 
 ---
 
@@ -20,7 +20,7 @@ Um webhook é o transporte ***push*** da telemetria: você registra uma URL, e o
 control plane faz `POST` nela a cada evento novo, com uma assinatura HMAC que
 prova que a entrega veio dele.
 
-| | Stream ([`eventos-stream.md`](eventos-stream.md)) | Webhook (este documento) |
+| | Stream ([`events-stream.md`](events-stream.md)) | Webhook (este documento) |
 |---|---|---|
 | Quem mantém a conexão | você, aberta o tempo todo | ninguém: cada entrega é um POST |
 | Quem retenta | você, com `Last-Event-ID` | o servidor, com backoff (§6) |

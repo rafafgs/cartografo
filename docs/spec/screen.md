@@ -2,9 +2,9 @@
 
 **Versão da API consumida:** `v1` · **Pacote:** [`packages/tela`](../../packages/tela)
 **Comando:** `npx cartografo-tela` · **Porta default:** `4318`
-**Decisão de origem:** [D11](../../DECISOES.md) — "observabilidade + inbox primeiro; a
+**Decisão de origem:** [D11](../../DECISIONS.md) — "observabilidade + inbox primeiro; a
 tela é cliente comum da API pública, sem privilégio" · Critério de PoC da
-[D16](../../DECISOES.md)
+[D16](../../DECISIONS.md)
 
 A tela responde três perguntas e mais nenhuma: **onde está cada trabalho**,
 **quem está esperando uma decisão minha**, e **para onde foi o tempo de um
@@ -57,7 +57,7 @@ entre elas, nesta ordem:
 
 | Caminho | Quem responde |
 |---|---|
-| `/v1/*` | Proxy **verbatim** para o control plane, para o inbox poder falar same-origin (§1 de [`tela-inbox-propostas.md`](tela-inbox-propostas.md)). |
+| `/v1/*` | Proxy **verbatim** para o control plane, para o inbox poder falar same-origin (§1 de [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
 | Arquivo de `src/public/` — `/`, `/inbox.js`, `/style.css`, … | O inbox de propostas: página estática e módulos ES nativos. |
 | Qualquer outro | As sete rotas desta especificação, renderizadas no servidor. |
 
@@ -209,7 +209,7 @@ O campo de resposta tem `<label>` visível amarrado ao `<textarea>` por
 caractere digitado e não é nome acessível confiável, e este é o único campo
 obrigatório da página. O id sai do id da pergunta, que já é a chave única do
 cartão. É a mesma regra que o inbox de propostas segue no campo de motivo
-([`tela-inbox-propostas.md`](tela-inbox-propostas.md) §3); pinada em
+([`screen-proposal-inbox.md`](screen-proposal-inbox.md) §3); pinada em
 [`packages/tela/test/questions-answer-field.test.ts`](../../packages/tela/test/questions-answer-field.test.ts),
 que resolve o nome como um leitor de tela resolveria.
 
@@ -218,7 +218,7 @@ resposta → desbloqueio → retomada da sessão é do `t106`, e mora no control
 plane: criar a pergunta bloqueia o trabalho na mesma transação, e responder
 desbloqueia com o ator de quem respondeu
 ([`packages/core/src/repositories/input-request.ts`](../../packages/core/src/repositories/input-request.ts),
-contrato em [`escalacao-humana.md`](escalacao-humana.md)). A tela escreve o
+contrato em [`human-escalation.md`](human-escalation.md)). A tela escreve o
 fato e mais nada; o ciclo acontece do outro lado do HTTP. Foi escrita antes do
 `t106` existir e não mudou uma linha quando ele chegou — que era exatamente a
 aposta.
@@ -323,7 +323,7 @@ Cada item é escopo declarado de outra ficha, não esquecimento:
   primeiro, edição depois — e a fatia de topologia chegou com a `t170`:
   `/graph-editor.html` acrescenta, remove e edita nó e aresta de um grafo-base,
   salvando pelas mesmas chamadas de proposta que qualquer cliente da API faria
-  ([`tela-editor-grafo.md`](tela-editor-grafo.md)). Ficam para fichas próprias as
+  ([`screen-graph-editor.md`](screen-graph-editor.md)). Ficam para fichas próprias as
   **políticas de execução por nó** (modelo, pausa, timeout, escalação) e a
   **edição do registro de skills**, cada uma esperando a superfície de backend
   que ainda não existe; e ficam de fora, por decisão e não por esquecimento, o
@@ -331,7 +331,7 @@ Cada item é escopo declarado de outra ficha, não esquecimento:
   linhagens variantes (D13, `t118`).
 - **Inbox de aprovação de propostas** (entidade `proposta`, distinta de
   `pergunta`) — é a outra metade do pacote, entregue pela `t111` e servida em
-  `/` ([`tela-inbox-propostas.md`](tela-inbox-propostas.md)).
+  `/` ([`screen-proposal-inbox.md`](screen-proposal-inbox.md)).
 - **Login no navegador** — a `t124` autenticou a API e deu à tela uma credencial
   de serviço (`CARTOGRAFO_TELA_TOKEN`, com `CARTOGRAFO_TOKEN` de reserva), que ela
   apresenta em toda chamada ao control plane. O navegador continua chegando à tela
@@ -352,7 +352,7 @@ Cada item é escopo declarado de outra ficha, não esquecimento:
 - **Saber se um runner ocioso está vivo.** `/runners` mostra o que o control
   plane de fato registra, e ele registra leases: `ultimo_heartbeat` e
   `ultima_expiracao` são derivados da tabela `lease`
-  ([`runner-e-controller.md`](runner-e-controller.md) §5). Um runner pareado
+  ([`runner-and-controller.md`](runner-and-controller.md) §5). Um runner pareado
   que nunca pegou trabalho aparece com os três campos vazios, igual a um que
   está fora do ar. Inventar aqui um sinal de vida que a API não tem seria
   exatamente o atalho que a D11 proíbe.

@@ -1,7 +1,7 @@
 /**
  * The watcher's ear: `GET /v1/events/stream?type=execution.finished` (t247, FR2).
  *
- * The protocol is the one `docs/spec/eventos-stream.md` publishes, and this is
+ * The protocol is the one `docs/spec/events-stream.md` publishes, and this is
  * the second Node-side implementation of it in the repository — the first being
  * the reference consumer that document writes out in its §8. What is ported
  * from there is the mechanic, not the shape: a generator, so that the caller's

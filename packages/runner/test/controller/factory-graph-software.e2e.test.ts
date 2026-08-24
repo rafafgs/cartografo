@@ -228,7 +228,7 @@ const TESTADO_REPORT = {
  * GRAPH's vocabulary — `approved` is the `condition` of the edge to `deploy` —
  * and the control plane takes it out of the object before holding the rest
  * against the pinned skill's `output`, which is why that schema does not
- * declare it (t269, `docs/spec/grafo.md`). Since t275 the bundle says the same
+ * declare it (t269, `docs/spec/graph.md`). Since t275 the bundle says the same
  * thing on both sides: the `test` node declares the label in its own
  * `output_schema`, and the manifest's instructions ask for `outcome` and
  * `resultado` as the two different things they are.

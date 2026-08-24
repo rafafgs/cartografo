@@ -1,9 +1,9 @@
 # Especificação: entidades de versionamento e API
 
 **Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0002_grafo_versao_proposta.sql`](../../packages/core/migrations/0002_grafo_versao_proposta.sql)
-**Decisão de origem:** [D15](../../DECISOES.md) — "versionamento de grafos: no banco, com as ideias do git"
+**Decisão de origem:** [D15](../../DECISIONS.md) — "versionamento de grafos: no banco, com as ideias do git"
 
-O grafo é dado (D15), e [`docs/spec/grafo.md`](grafo.md) especifica o formato
+O grafo é dado (D15), e [`docs/spec/graph.md`](graph.md) especifica o formato
 desse dado. Este documento especifica onde ele **mora** e como ele **anda**: as
 três tabelas que guardam linhagem, snapshot e hipótese; o procedimento que dá
 identidade a uma versão; o vocabulário de diff semântico; e a API que expõe
@@ -66,7 +66,7 @@ row is written (`t283`).** *(This paragraph is in English per the 2026-08-18
 language rule.)* Everything else about a version is frozen — the snapshot, the
 parent and the hash that IS its identity — and this is a mutable STATUS on an
 otherwise append-only row, the same shape `skill.deprecated_at` already has.
-It records whether the contract check of `grafo.md` §6.1 ever got to run:
+It records whether the contract check of `graph.md` §6.1 ever got to run:
 `checked` (it ran and passed), `unchecked` (a skill pin resolved to nothing, so
 it never ran) or `failed` (it ran and refused). Registering the missing manifest
 re-runs the check and moves the row, recording
@@ -128,7 +128,7 @@ Duas consequências deliberadas:
    ([`manifesto-skill.md`](../../especificacoes/formatos/manifesto-skill.md)),
    que cobre só `{instrucoes, entrada, saida, checks, permissoes}`. Lá metadado
    de catálogo não pode invalidar o pino; aqui vale o oposto — o snapshot de uma
-   versão **é** o documento inteiro ([`grafo.md` §7](grafo.md)), e mudar a
+   versão **é** o documento inteiro ([`graph.md` §7](graph.md)), e mudar a
    descrição do grafo é uma versão nova.
 2. **Reordenar chave não é mudança.** A ordem das chaves e a formatação do JSON
    não carregam significado no documento de grafo; dois arquivos que só diferem
@@ -275,7 +275,7 @@ diferente dos demais links deste documento.
 
 Todo documento que entra no banco — registrado direto ou produzido por proposta
 — passa pelo mesmo par de checagens, que é o porte TypeScript do validador de
-referência do `t96` ([`grafo.md` §6](grafo.md)):
+referência do `t96` ([`graph.md` §6](graph.md)):
 
 - `validarEstrutura` — forma e integridade referencial (`{valido, erros}`);
 - `validarSoundness` — as quatro regras de workflow net, na ordem `alcançável`,
@@ -478,7 +478,7 @@ disso: notificação ativa, se um dia existir, é decisão de outra ticket.
 `approved` é o portão humano do princípio 5, e desde a `t165` ele é obrigatório:
 aplicar exige `approved`, e uma proposta que pula o portão leva
 `409 proposta_nao_aprovada`. É a mesma escada que a tela desenha desde a `t111`
-([`tela-inbox-propostas.md` §3](tela-inbox-propostas.md)) — `pending` oferece
+([`screen-proposal-inbox.md` §3](screen-proposal-inbox.md)) — `pending` oferece
 Aprovar/Rejeitar, `approved` oferece Aplicar.
 
 Aprovar não escreve nada além do status: aplicar é um segundo ato deliberado, e

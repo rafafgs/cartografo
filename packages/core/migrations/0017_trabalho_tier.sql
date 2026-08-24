@@ -8,8 +8,8 @@
 -- dependência: esta só mexe em `job`.
 --
 -- O conceito não é novo no repositório, é DEFERIDO em dois lugares: o
--- `docs/spec/grafo.md:401-403` deixou o `work_tier` do flowpilot fora do grafo
--- portado, e o `docs/spec/topografo-custo.md` registrou que nem o documento de
+-- `docs/spec/graph.md:401-403` deixou o `work_tier` do flowpilot fora do grafo
+-- portado, e o `docs/spec/topografo-cost.md` registrou que nem o documento de
 -- grafo nem o manifesto de skill têm campo de custo ou de tier. Esta coluna é a
 -- fatia mais estreita possível dessa dívida, e a fronteira é o que a mantém
 -- estreita: `tier` muda quanto um nó CUSTA para rodar, nunca por qual aresta o

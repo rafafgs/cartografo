@@ -152,8 +152,8 @@ function glossaryTerms(): Term[] {
 /**
  * The `familia.*` form, derived from the §2.1 rows that share a family.
  *
- * Two documents cite a whole family at once — `eventos-stream.md` and
- * `webhooks-eventos.md` both say which prefixes the stream declares but does
+ * Two documents cite a whole family at once — `events-stream.md` and
+ * `webhooks-events.md` both say which prefixes the stream declares but does
  * not yet write — and `grafo_versao.*` is as stale as any single row of it
  * while matching none of them. So the left half of every §2.1 pair becomes a
  * term of its own, in the one shape a document writes it in: followed by `.*`,

@@ -5,7 +5,7 @@
 -- uma vez sobre o mesmo sinal — a de custo dizia isso em voz alta no próprio
 -- comentário (`packages/topografo-custo/src/cli.ts`): "não deduplica. Rodar duas
 -- vezes sobre a mesma telemetria cria propostas repetidas". A D21
--- (`DECISOES.md`) fecha essa lacuna no único lugar que consegue valer para todo
+-- (`DECISIONS.md`) fecha essa lacuna no único lugar que consegue valer para todo
 -- chamador de uma vez, que é o control plane.
 --
 -- - `dedupe_key` é o sha256 canonicalizado da tripla `[lens, target_version,

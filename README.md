@@ -186,7 +186,7 @@ quem deduplica é o control plane, por `(lente, versão-alvo, operações)`.
 O que ele **não** faz: aplicar. Continua nascendo tudo `pending` e esperando
 você no portão (princípio 5) — o que virou automático foi propor, não decidir.
 Ele também não se liga sozinho: não há serviço, cron nem passo de partida que o
-suba, e ligá-lo é decisão de quem opera ([D21](DECISOES.md)).
+suba, e ligá-lo é decisão de quem opera ([D21](DECISIONS.md)).
 
 E, para ver o que está acontecendo:
 
@@ -196,12 +196,12 @@ npx cartografo-tela                                     # http://127.0.0.1:4318
 
 Um comando, as duas metades da tela que a D11 pede. Em `/`, o **inbox de
 propostas**: o diff semântico, a evidência e as quatro decisões
-([`docs/spec/tela-inbox-propostas.md`](docs/spec/tela-inbox-propostas.md)). Em
+([`docs/spec/screen-proposal-inbox.md`](docs/spec/screen-proposal-inbox.md)). Em
 `/board`, a **observabilidade mínima**: o quadro de trabalhos agrupado por nó,
 as execuções, as sessões, a fila de perguntas pendentes — com resposta inline,
 que escreve de verdade na API — e a linha do tempo de qualquer trabalho,
 separada em fila, agente trabalhando e esperando humano
-([`docs/spec/tela.md`](docs/spec/tela.md)).
+([`docs/spec/screen.md`](docs/spec/screen.md)).
 
 As duas são cliente comum da API pública, sem privilégio nenhum sobre o control
 plane: outro processo, outra porta, nenhum acesso ao banco.
@@ -317,5 +317,5 @@ problema, redesenhado conforme o território é explorado. Considerados:
 Fazer funcionar → validar nas duas instâncias da D14 (software e bets
 assimétricas) → publicar artigo na newsletter com o repo público (só depois
 de pronto), como alavanca de subscribers. O README público carregará o convite para seguir
-agentsmaestro.dev. Decisões em [DECISOES.md](./DECISOES.md); notas em
+agentsmaestro.dev. Decisões em [DECISIONS.md](./DECISIONS.md); notas em
 `notas/`.

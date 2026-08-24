@@ -12,7 +12,7 @@
  * it lives inside the transactions that already existed: asking on behalf of the
  * job and the job carrying on anyway is the state nobody can explain afterwards.
  * Re-dispatching the session is on the other side of the boundary (the runner's
- * `Controller`, t103/t106) — see `docs/spec/escalacao-humana.md`.
+ * `Controller`, t103/t106) — see `docs/spec/human-escalation.md`.
  *
  * The TABLE and its columns are English since D20's fourth child (t229), the
  * stored VALUES since its fifth (t235) and the event-type strings since its

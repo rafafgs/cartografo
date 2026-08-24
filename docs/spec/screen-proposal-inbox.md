@@ -1,8 +1,8 @@
 # Especificação: inbox de propostas na tela
 
 **Pacote:** [`packages/tela`](../../packages/tela) · **Porta:** `4318`
-**Decisões de origem:** [D11](../../DECISOES.md) — "a tela é cliente comum da API
-pública" · [D1](../../DECISOES.md) — "só o server escreve no banco" ·
+**Decisões de origem:** [D11](../../DECISIONS.md) — "a tela é cliente comum da API
+pública" · [D1](../../DECISIONS.md) — "só o server escreve no banco" ·
 princípio 5 do [README](../../README.md) — "escada de segurança"
 
 A tela é a metade humana da escada de segurança. O topógrafo (`t110`) escreve
@@ -46,7 +46,7 @@ do control plane fora do ar:
 ```
 
 `502`, com o mesmo par `error` / `message` que toda resposta de erro do core usa
-(§6 de [`entidades-versionamento.md`](entidades-versionamento.md)) — a página tem
+(§6 de [`entities-versioning.md`](entities-versioning.md)) — a página tem
 um jeito só de mostrar falha, em vez de dois. A causa (`ECONNREFUSED`, stack
 trace) é descartada de propósito: para quem olha o inbox, o acionável é o
 endereço que não respondeu e o comando que sobe o servidor.
@@ -103,7 +103,7 @@ contra esta seção.
 | `GET` | `/v1/proposals/:id` | existe (`t165`) | Detalhe: `operacoes`, `evidencia`, `metrica_esperada`, `resultado`, `motivo_reversao`, `motivo_rejeicao`. |
 | `POST` | `/v1/proposals/:id/approve` | existe (`t165`) | `pendente` → `aprovada`. Sem corpo. |
 | `POST` | `/v1/proposals/:id/reject` | existe (`t165`) | `{motivo}` obrigatório → `rejeitada`, gravado em `motivo_rejeicao`. |
-| `POST` | `/v1/proposals/:id/apply` | existe | Executa o fluxo do §5 de `entidades-versionamento.md`. Exige `aprovada`. |
+| `POST` | `/v1/proposals/:id/apply` | existe | Executa o fluxo do §5 de `entities-versioning.md`. Exige `aprovada`. |
 | `POST` | `/v1/proposals/:id/revert` | existe | `{motivo}` obrigatório; move o ponteiro de volta. |
 
 Os caminhos são os da superfície `/v1` em inglês (D18, renomeada pelo `t127`);
@@ -181,7 +181,7 @@ D15 escolheu diff **semântico** em vez de diff de linha justamente para que uma
 proposta pudesse ser **julgada** ("acrescenta um portão de red team antes de
 implantar") em vez de apenas aprovada sem ser entendida. Despejar o JSON da
 operação na página jogaria isso fora. Uma linha legível por operação, no
-vocabulário do §3 de [`entidades-versionamento.md`](entidades-versionamento.md):
+vocabulário do §3 de [`entities-versioning.md`](entities-versioning.md):
 
 | Operação | Linha |
 |---|---|

@@ -15,7 +15,7 @@
  * `data-sessao`, `data-pergunta` and `data-segmento` exist so the acceptance
  * tests can assert about STRUCTURE — what is inside which group, in what order
  * — without freezing the whole markup. They are documented in
- * `docs/spec/tela.md`; changing one of them changes the contract, not the CSS.
+ * `docs/spec/screen.md`; changing one of them changes the contract, not the CSS.
  * They keep their Portuguese spelling for exactly that reason (t133,
  * exception 10), and so does every string that reaches the browser: the screen
  * is a Portuguese-language product surface (exception 9).
@@ -383,7 +383,7 @@ export async function executionsPage(client: ApiClient): Promise<Page> {
  *
  * A runner that never held a lease shows three placeholders, and that is the
  * honest answer: this screen has no liveness signal beyond the leases, so
- * "never seen" and "down" look the same here (declared in `docs/spec/tela.md`).
+ * "never seen" and "down" look the same here (declared in `docs/spec/screen.md`).
  *
  * @param client Client of the public API.
  * @returns The fleet page.

@@ -28,7 +28,7 @@
  * different vocabulary with different values (`pass`/`fail`/`escalate_human`,
  * enforced at registry entry). The graph spec is explicit that an edge's label
  * matches the outcome the source node's `output_schema` declares
- * (`docs/spec/grafo.md`), and that schema is the NODE's contract. One skill can
+ * (`docs/spec/graph.md`), and that schema is the NODE's contract. One skill can
  * sit under two graphs whose edges are labelled differently, and reading the
  * labels off the graph is what lets it.
  *

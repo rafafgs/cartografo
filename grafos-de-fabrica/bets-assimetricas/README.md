@@ -6,12 +6,12 @@
 
 **State: content, not format.** This ticket (`t116`) designs no new format: it
 applies the two already settled — the graph document
-([`docs/spec/grafo.md`](../../docs/spec/grafo.md), `t96`) and the skill manifest
+([`docs/spec/graph.md`](../../docs/spec/graph.md), `t96`) and the skill manifest
 ([`especificacoes/formatos/manifesto-skill.md`](../../especificacoes/formatos/manifesto-skill.md),
 `t97`) — to a problem class that is not software. It is the direct pair of
 [factory graph 1](../desenvolvimento-de-software/README.md) (`t105`), and the
 second consumer the rule of two consumers asked for
-(`docs/spec/grafo.md:172`) before the edge format could grow.
+(`docs/spec/graph.md:172`) before the edge format could grow.
 
 | File | What it is |
 |---|---|
@@ -226,7 +226,7 @@ trap for whoever comes next.
    bundle 1 (the `input-request` block), and a session that needs the founder
    pauses instead of routing: the work blocks, the question goes into the queue,
    and once answered the session resumes and only then settles
-   (`docs/spec/escalacao-humana.md`, §4 and §5). `escalate_human` exists in the
+   (`docs/spec/human-escalation.md`, §4 and §5). `escalate_human` exists in the
    enum because the gate format demands the three values, and no session of this
    graph emits it. What is new relative to bundle 1 is the `decide` node: there
    escalation is *available*, here it is *mandatory by design* at one specific
@@ -287,7 +287,7 @@ trap for whoever comes next.
 
    **Closed since `t278`: `size-risk` and its bare top-level `capital`.** The
    manifest asked for an object nothing in the graph produced, and static
-   contract matching (`docs/spec/grafo.md` §6.1) now refuses exactly that at
+   contract matching (`docs/spec/graph.md` §6.1) now refuses exactly that at
    import. It was closed as a DECLARATION, not by weakening the check: `capital`
    moved under `input.project`, beside where `portfolio` already lives, and the
    `project` of `grafo.json` carries the snapshot that feeds it — the same
@@ -331,7 +331,7 @@ trap for whoever comes next.
 
 ## The edge format did not grow
 
-`docs/spec/grafo.md:54` and `:172` mark this graph as the second consumer that
+`docs/spec/graph.md:54` and `:172` mark this graph as the second consumer that
 could press `condition` into becoming a boolean expression. It does not press:
 this graph's nine labels fit whole inside the current vocabulary — the outcome
 label of the source node, or `"always"`. No transition here needed an "and", an

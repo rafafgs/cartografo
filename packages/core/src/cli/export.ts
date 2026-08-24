@@ -5,12 +5,12 @@
  * what comes out is exactly the format `import` accepts back. That is not
  * formatting convenience — it is what makes the round trip meaningful. Since
  * `graph_version.id` is the canonical hash of the whole document
- * (`docs/spec/entidades-versionamento.md` §2), reimporting the exported file
+ * (`docs/spec/entities-versioning.md` §2), reimporting the exported file
  * into another control plane has to produce the SAME id; any field this command
  * added, removed or rewrote would show up as a different hash on the other side.
  *
  * Only the current version comes out. Navigating history (`--versao`) is the
- * same cut `docs/spec/entidades-versionamento.md` §7 already declares out of
+ * same cut `docs/spec/entities-versioning.md` §7 already declares out of
  * scope.
  */
 

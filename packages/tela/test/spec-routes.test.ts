@@ -1,5 +1,5 @@
 /**
- * Acceptance tests for the route surface `docs/spec/tela.md` describes (t183).
+ * Acceptance tests for the route surface `docs/spec/screen.md` describes (t183).
  *
  * The alpha round on `t164` found the spec counting its own routes twice and
  * disagreeing with itself: the §1 heading had been moved to `sete` when
@@ -28,7 +28,7 @@ import test from 'node:test';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'tela.md');
+const SPEC_PATH = path.join(REPO_ROOT, 'docs', 'spec', 'screen.md');
 const ROUTER_PATH = path.join(PACKAGE_ROOT, 'src', 'router.ts');
 
 /** Sections under test, matched by their number and never by their wording. */

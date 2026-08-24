@@ -34,7 +34,7 @@
  * What still leaves no trace is an ordinary release: the taxonomy has no
  * `lease.released` type, so `releaseLease` below writes a row and nothing else.
  * Growing the taxonomy is a decision of its own, recorded as a follow-up in
- * t196's Out of Scope and in `docs/spec/runner-e-controller.md` §7.
+ * t196's Out of Scope and in `docs/spec/runner-and-controller.md` §7.
  *
  * The COLUMNS are English since D20's fourth child (t229), the stored VALUES
  * since its fifth (t235), and the field names since t290 — there used to be a

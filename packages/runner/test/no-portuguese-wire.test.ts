@@ -26,7 +26,7 @@
  *
  * The scope of that derivation is DISPLAY, and the file list is what keeps it
  * there: the body of `POST /v1/proposals/:id/outcome` carries `execucao_id` as
- * the frozen hypothesis vocabulary (`docs/spec/entidades-versionamento.md` §5),
+ * the frozen hypothesis vocabulary (`docs/spec/entities-versioning.md` §5),
  * and it is deliberately not swept. The CLI's display name and the wire field it
  * feeds are two different things, and renaming the second one is nobody's ticket.
  *
@@ -281,7 +281,7 @@ const PROPOSAL_FIELDS: ReadonlyArray<GlossaryTerm> = Object.freeze([
  * reader filters on a surface tag, and `flow-lens`'s rows are readable only by
  * this package — pointing it at them would hand three other sweeps a
  * vocabulary none of them can see. `fonte` is deliberately absent: it is the
- * module's own provenance label, and `docs/spec/topografo-fluxo.md` §4 already
+ * module's own provenance label, and `docs/spec/topografo-flow.md` §4 already
  * records the decision to leave it where it is.
  */
 const FLOW_LENS_KEYS: ReadonlyArray<GlossaryTerm> = Object.freeze([
@@ -741,7 +741,7 @@ test('t230 — the surveyor commands print English positionals, without touching
   const client = sourceOf(path.join('src', 'controller', 'cliente-controle.ts'));
   assert.ok(
     client.includes('execucao_id'),
-    'the hypothesis body lost `execucao_id`; that field is frozen (entidades-versionamento.md §5)',
+    'the hypothesis body lost `execucao_id`; that field is frozen (entities-versioning.md §5)',
   );
 
   // ...and the flow lens, which shared that spelling by coincidence and nothing

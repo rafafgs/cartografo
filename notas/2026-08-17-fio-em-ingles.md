@@ -1,6 +1,6 @@
 # O fio também fala inglês, do banco ao papel (D20, t213)
 
-**Quando:** 16–17/08/2026 · **Decisão:** [D20](../DECISOES.md) ·
+**Quando:** 16–17/08/2026 · **Decisão:** [D20](../DECISIONS.md) ·
 **Guarda-chuva:** t213, dividido em sete filhos por superfície ·
 **Dado migrado:** nenhum, de propósito.
 
@@ -30,7 +30,7 @@ Esta nota fecha a série.
 
 ## O que ficou de fora, sabendo
 
-- **A prosa.** `DECISOES.md`, `notas/`, `docs/` e as mensagens de commit
+- **A prosa.** `DECISIONS.md`, `notas/`, `docs/` e as mensagens de commit
   continuam em português (D18). A D20 mudou o que VIAJA, não o que se lê.
 - **O `avaliar` do `topografo-custo`** e as opções `--tier-*` dele: a t230 os
   deixou de fora por decisão própria, e nenhuma ficha desta série os reabriu.
@@ -106,6 +106,6 @@ envelope do evento (§2.2) e as chaves de `data` (§2.4) não têm portão de
 citação em documento: são palavras portuguesas comuns (`nome`, `motivo`,
 `campo`, `origem`) cujo custo em falso positivo, na prosa, pagaria mal o que
 encontrasse. Existe drift ali — `intake.md` ainda diz que os erros daquela
-camada falam português, e o `topografo-custo.md` diz o mesmo das chaves do
+camada falam português, e o `topografo-cost.md` diz o mesmo das chaves do
 corpo dele. É trabalho de ficha própria, com o tipo de mascaramento que o
 `no-portuguese-wire.test.ts` construiu para código-fonte.

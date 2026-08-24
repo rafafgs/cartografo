@@ -53,7 +53,7 @@ de [`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts), do
 topógrafo de custo, do topógrafo de fluxo e do sintetizador. Sem credencial
 nenhuma o cliente não manda cabeçalho e toma `401` — cabeçalho vazio se pareceria
 com credencial. Isto está aqui desde o primeiro commit por causa da
-[t146](./topografo-fluxo.md): o topógrafo nasceu sem flag de token e ficou
+[t146](./topografo-flow.md): o topógrafo nasceu sem flag de token e ficou
 inteiramente inutilizável até ganhar uma.
 
 Os códigos de saída são o contrato, porque é isso que uma pessoa (ou um script)
@@ -114,8 +114,8 @@ e uma escrita no control plane", e eles decidiram diferente **de propósito**:
 
 | Ficha | O que a sessão produz | Quem grava | Por quê |
 |---|---|---|---|
-| Sintetizador ([t115](./sintetizador.md), [D10](../../DECISOES.md)) | Um arquivo de rascunho local | Uma pessoa, rodando `cartografo import` | Registrar grafo não tem desfazer no nível da API: **a importação É o portão**. |
-| Topógrafo ([t110](./topografo-fluxo.md)) | Operações de um diff semântico | O próprio comando, em `POST /v1/proposals` | Proposta nasce `pendente` e ninguém aplica: a escada de segurança é a **ausência** de um método `aplicar` no cliente. |
+| Sintetizador ([t115](./synthesizer.md), [D10](../../DECISIONS.md)) | Um arquivo de rascunho local | Uma pessoa, rodando `cartografo import` | Registrar grafo não tem desfazer no nível da API: **a importação É o portão**. |
+| Topógrafo ([t110](./topografo-flow.md)) | Operações de um diff semântico | O próprio comando, em `POST /v1/proposals` | Proposta nasce `pendente` e ninguém aplica: a escada de segurança é a **ausência** de um método `aplicar` no cliente. |
 
 O intake segue o topógrafo, e a razão é o desenho da própria t122: o rascunho
 nasce `pendente`, é livremente editável por `PATCH`, descartável por `/discards`,
@@ -154,7 +154,7 @@ A sessão escreve `intake-proposto.json` no diretório atual, com exatamente:
 ```
 
 Arquivo e não bloco ` ```cercado ``` ` em stdout, e isto é a cicatriz da
-[t148](./sintetizador.md): a saída de uma CLI real é um fluxo de quadros
+[t148](./synthesizer.md): a saída de uma CLI real é um fluxo de quadros
 `stream-json`, um por linha, então as aspas do bloco chegam como `\"` e as
 quebras como `\n` — e o varredor de cerca não casa com nenhuma das duas. Custou
 ao sintetizador uma rodada inteira de execuções reais com todos os testes de
@@ -244,5 +244,5 @@ Uma leitura e uma escrita. `/confirmations`, `/discards` e `PATCH` existem
 | `--projeto-id` / `--execucao-id` | A rota tem default para os dois (`DEFAULT_PROJECT`); o flag entra no dia em que alguém precisar. |
 | Entrar na travessia ou no laço de despacho do runner | Manual e de um tiro só, como `synthesize` e o topógrafo (README, princípio 5). |
 | Conversa multi-turno para refinar o lote | Uma sessão só: retomada está fora do `EngineAdapter` v0. Editar depois é `PATCH /v1/intake/:id`, que já existe. |
-| Sugerir a classe por semelhança | [D8](../../DECISOES.md) põe o nome na mão do usuário, e a classe aqui precisa já existir. |
+| Sugerir a classe por semelhança | [D8](../../DECISIONS.md) põe o nome na mão do usuário, e a classe aqui precisa já existir. |
 | Tela | Só CLI, como os outros comandos do runner. |

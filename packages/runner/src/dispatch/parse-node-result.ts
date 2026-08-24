@@ -5,7 +5,7 @@
  * A node with two or more outgoing edges is a decision, and the graph is
  * explicit about who takes it: an edge's `condition` is a label that matches the
  * outcome the source node's `output_schema` declares
- * (`docs/spec/grafo.md`). Until t161 nothing carried that outcome from the
+ * (`docs/spec/graph.md`). Until t161 nothing carried that outcome from the
  * session back to the runner — the operator read the output and posted the
  * transition by hand. This module is the protocol that replaced the operator:
  * one fenced block.

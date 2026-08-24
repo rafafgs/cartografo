@@ -291,7 +291,7 @@ function hasConformingFinish(db: Database, jobId: number, nodeId: string): boole
  * So a final node that PINS a skill is done when that skill reported — see
  * {@link hasConformingFinish}. A final node that pins nothing is done on
  * arrival, exactly as before. The rule is keyed on `skill_ref` and never on
- * `node_type`: `docs/spec/grafo.md` §2 says a portão is "nó como qualquer
+ * `node_type`: `docs/spec/graph.md` §2 says a portão is "nó como qualquer
  * outro", and the minimal example graph's own final node is a gate with a pin.
  *
  * The no-pin branch is defensive, not a supported document shape:

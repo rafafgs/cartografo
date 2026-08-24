@@ -367,7 +367,7 @@ sessão concluída no balde que o `contract.produces` daquele nó nomeia (ou no 
 quando ele não nomeia nenhum), e as perguntas já respondidas em
 `input.perguntas_respondidas`. Os dois campos novos do documento de grafo —
 `contract.produces` e `project` — estão em
-[`docs/spec/grafo.md`](../../docs/spec/grafo.md) e são aditivos: grafo escrito
+[`docs/spec/graph.md`](../../docs/spec/graph.md) e são aditivos: grafo escrito
 antes deles vale e despacha igual.
 
 **A outra metade da ficha foi ligada (`t259`).** O despacho continua expondo a
@@ -398,7 +398,7 @@ Num nó com duas ou mais saídas, a chave de rota vai DENTRO desse mesmo objeto,
 nomeando a `condition` da aresta escolhida, e não num segundo bloco ao lado. O
 vocabulário de rota é o do **grafo**, nunca o `outcome` do `output` da skill —
 são dois enums diferentes, de propósito
-([`docs/spec/grafo.md`](../../docs/spec/grafo.md)).
+([`docs/spec/graph.md`](../../docs/spec/graph.md)).
 
 **A chave de rota é reservada do protocolo (`t269`).** Ela viaja no mesmo objeto
 porque o bloco é um só, mas não pertence ao vocabulário desta skill: quando vem
@@ -406,7 +406,7 @@ como rótulo utilizável — string não vazia depois do `trim` —,
 `PATCH /v1/sessions/:id/finish` a retira antes de conferir o relato contra o
 `output` da skill pinada, e também antes de guardar (`session.output` e o
 `data.output` do evento `session.finished` ficam sem ela). O nome dela é o do
-grafo e está escrito em [`docs/spec/grafo.md`](../../docs/spec/grafo.md); aqui
+grafo e está escrito em [`docs/spec/graph.md`](../../docs/spec/graph.md); aqui
 ele não aparece entre crases de propósito, porque campo de manifesto com esse
 nome não existe — o do manifesto foi renomeado para `outcome` na `t178`. Duas
 consequências para quem escreve manifesto:

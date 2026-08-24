@@ -67,7 +67,7 @@
  *    "what you have to produce" was the NODE's `contract.output_schema`, beside a
  *    sentence claiming the output would be checked against it — while `/finish`
  *    checks the SKILL's own `output` (`resolveOutputSchema`, in core), a
- *    different schema by design (`docs/spec/grafo.md`).
+ *    different schema by design (`docs/spec/graph.md`).
  * 5. **The text and the permissions are built from what came back**, with the
  *    paragraph that tells the session how to report its result
  *    (`result-protocol.ts`) whenever this node declares an `output_schema` —
@@ -527,7 +527,7 @@ function render(
   // So the order below is a constraint, not a layout preference: whoever moves
   // this back up is turning every session on this renderer into a refusal, and
   // the test that pins it (`render-skill-instructions.test.ts`, t261) is what
-  // says so out loud. `docs/spec/escalacao-humana.md` §8 carries the finding.
+  // says so out loud. `docs/spec/human-escalation.md` §8 carries the finding.
   parts.push('', '---', '', escalationProtocol(resolved));
 
   return parts.join('\n');

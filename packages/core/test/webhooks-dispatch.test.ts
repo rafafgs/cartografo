@@ -23,7 +23,7 @@
  *
  * The signature is recomputed in the test with `node:crypto` directly, never by
  * importing `src/webhooks/signature.ts`: the recipe published in
- * `docs/spec/webhooks-eventos.md` is what a consumer implements, and asserting
+ * `docs/spec/webhooks-events.md` is what a consumer implements, and asserting
  * against the implementation would prove only that it agrees with itself.
  *
  * The JSON and column names stay in Portuguese: they mirror the migration and

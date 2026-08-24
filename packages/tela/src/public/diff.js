@@ -5,7 +5,7 @@
  * judged instead of merely read: "adds a red team gate before deploy" is a
  * decision someone can make; a JSON blob is a decision someone approves without
  * understanding. So this module owes one readable line per operation, in the
- * vocabulary of `docs/spec/entidades-versionamento.md` §3, and never the raw
+ * vocabulary of `docs/spec/entities-versioning.md` §3, and never the raw
  * operation object.
  *
  * Pure and side-effect free, for the same reason as `actions.js`: it runs in

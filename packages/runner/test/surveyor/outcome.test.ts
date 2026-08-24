@@ -3,7 +3,7 @@
  *
  * `measureForExpectedMetric` is the missing half of the learning loop. The
  * surveyor names the number it expects to move as `"<medida>:<node_id>"`
- * (`docs/spec/topografo-fluxo.md` §4, `proposal.ts:buildExpectedMetric`); the
+ * (`docs/spec/topografo-flow.md` §4, `proposal.ts:buildExpectedMetric`); the
  * outcome route wants the same number measured in the NEXT round
  * (`POST /v1/proposals/:id/outcome`, t112). Between the two there was nothing —
  * a human reading a ranking and typing a float. This function is that step, and
@@ -141,7 +141,7 @@ test('t165 AT10 — a malformed or unknown name measures null instead of crashin
  *
  * Display names only. The `execucao_id` this command sends inside the body of
  * `POST /v1/proposals/:id/outcome` is the frozen hypothesis vocabulary
- * (`docs/spec/entidades-versionamento.md` §5) and does not move — conflating
+ * (`docs/spec/entities-versioning.md` §5) and does not move — conflating
  * the two would rename a wire field that no D20 child owns.
  */
 test('t230 — the usage and the refusals of close-outcome name execution_id and proposal_id', async () => {

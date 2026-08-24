@@ -12,7 +12,7 @@
  * - **String and template literals.** This is where the wire vocabulary the
  *   core owns lives, and every string that reaches the browser DOM. The screen
  *   renders its pages in Portuguese on purpose, and the `data-*` markers it
- *   writes into that HTML are a declared contract (`docs/spec/tela.md`).
+ *   writes into that HTML are a declared contract (`docs/spec/screen.md`).
  * - **Regular-expression literals.** The screen's own route paths are matched
  *   by regex, not by string compare, in the router — so a regex literal is
  *   masked exactly like the string literal next to it. This is the one place

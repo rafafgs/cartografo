@@ -2,13 +2,13 @@
  * D20 gate: no Portuguese term of the API surface survives on the wire (t226, FR9).
  *
  * The glossary's own placeholder for this file (`docs/spec/glossario-wire.md`,
- * "O que este glossário não decide") says the wire gate arrives "when there is
- * already an English wire to check". t226 is the ticket that built it, scoped to
+ * "What this glossary does not decide") says the wire gate arrives "once there
+ * is an English wire to check". t226 is the ticket that built it, scoped to
  * exactly the surface it migrates (`api`), and each child since has widened it
  * to its own surface as that surface turned English.
  *
  * t230 (D20's fifth child) adds the second scan below: the graph validation
- * report, `superfície = routes-cli-report` in §5.3/5.4, over the three files of
+ * report, `surface = routes-cli-report` in §5.3/5.4, over the three files of
  * this package that write or read it. It is the same machinery pointed at
  * another set of rows — a surface is a filter over the glossary here, never a
  * second gate.
@@ -18,7 +18,7 @@
  * exactly the value on the wire, and exactly what this file scans instead.
  *
  * The vocabulary is not re-declared here. It is read out of the glossary's
- * `superfície = api` rows at run time, so a row added there is a term checked
+ * `surface = api` rows at run time, so a row added there is a term checked
  * here on the next run, and the two cannot drift.
  *
  * ## What is masked, and why each one is a boundary and not a loophole
@@ -605,7 +605,7 @@ test('t230 — the report sweep bites on every shape the old vocabulary took', (
 test('t230 — the report sweep does NOT bite on what §5 leaves alone', () => {
   const terms = reportTerms();
   const allowed = [
-    // `soundness` is a §5.3 row whose `hoje` equals its `vira`: it never moved.
+    // `soundness` is a §5.3 row whose `today` equals its `becomes`: it never moved.
     "return { valid: errors.length === 0, soundness: { valid: true, violations: [] } };",
     // The English report, whole.
     "note('invalid_field', '\"nodes\" has to be a list', 'nodes');",

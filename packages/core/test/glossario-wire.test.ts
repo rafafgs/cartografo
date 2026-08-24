@@ -19,7 +19,7 @@
  * Two conventions of the document this parser depends on, both stated in its own
  * header:
  *
- * - **A glossary table is one whose first column is `superfície`.** Any other
+ * - **A glossary table is one whose first column is `surface`.** Any other
  *   Markdown table in the file — a legend, an example — is prose and is skipped,
  *   so the document can grow explanatory tables without feeding this sweep.
  * - **A cell never contains a `|`,** because that is the column separator; a set
@@ -35,7 +35,7 @@
  *
  * ## The one non-structural check: a citation that names a line (t257, FR24)
  *
- * `onde está hoje` is the fourth cell, and when it names a LINE it is making a
+ * `defined in` is the fourth cell, and when it names a LINE it is making a
  * claim a test can settle: the row's name is written on that line of that file.
  * The t255 round copied two citations out of its own ticket text instead of
  * re-reading the tree it had just changed, and both landed next to the code they
@@ -89,8 +89,15 @@ const SURFACES = Object.freeze([
   'flow-lens',
 ]);
 
-/** First header cell of a glossary table, normalized. */
-const TABLE_MARKER = 'superficie';
+/**
+ * First header cell of a glossary table, normalized.
+ *
+ * `surface` since D24 translated the document's four column names (t281). This
+ * is the one literal that decides whether a table is read at all, so a mismatch
+ * here does not fail a check — it empties every check of this file at once,
+ * which is why the D24 test below asserts the marker before anything else.
+ */
+const TABLE_MARKER = 'surface';
 
 /**
  * The header row every glossary table carries, verbatim, after D24 (t281, FR2).
@@ -123,6 +130,9 @@ const RETIRED_HEADER_CELLS = Object.freeze(['superfície', 'hoje', 'vira', 'onde
  * English as it is in Portuguese the moment D24 lands.
  */
 const RETIRED_CARVE_OUT = /continuam? em portugu|(?:stay|continue|remain)s?\s+in\s+Portuguese/i;
+
+/** The one Portuguese word D24 leaves standing in prose, and the project's name. */
+const BRAND = '`cartografo`';
 
 /**
  * The files whose line-numbered citations this gate resolves (FR24).
@@ -610,7 +620,7 @@ test('FR24 — a citation that names a line points at the line the name is on', 
 test('FR24 — the citation check bites on a line number that drifted', () => {
   const rows = parseRows(
     [
-      '| superfície | hoje | vira | onde está hoje |',
+      ENGLISH_HEADER_ROW,
       '|---|---|---|---|',
       '| api | `assinatura` | `signature` | `a/b.ts:1` |',
       '| api | `cabecalho` | `header` | `a/b.ts:1` |',
@@ -635,7 +645,7 @@ test('FR24 — the citation check bites on a line number that drifted', () => {
 test('the checks bite on a glossary broken on purpose', () => {
   const broken = parseRows(
     [
-      '| superfície | hoje | vira | onde está hoje |',
+      ENGLISH_HEADER_ROW,
       '|---|---|---|---|',
       '| api | `trabalho` | `task` | `x.ts` |',
       '| api | `trabalho` | `chore` | `x.ts` |',
@@ -659,7 +669,7 @@ test('the checks bite on a glossary broken on purpose', () => {
   );
   assert.equal(misusedEnglish(broken).length, 0, 'no row here claims an already-English name');
   assert.equal(
-    misusedEnglish(parseRows('| superfície | a | b | c |\n|---|---|---|---|\n| api | `x` | `job` | `y` |'))
+    misusedEnglish(parseRows('| surface | a | b | c |\n|---|---|---|---|\n| api | `x` | `job` | `y` |'))
       .length,
     1,
     '"job" belongs to "trabalho" and to nothing else',
@@ -709,8 +719,21 @@ test('D24 — the closing section says this document is English now, and cites D
     `${GLOSSARY_LABEL} still closes by saying it continues in Portuguese`,
   );
   assert.match(closing, /\bD24\b/, `${GLOSSARY_LABEL}'s closing section cites no decision`);
+
+  // D18 is not banned from the section as a whole: the bullet about extending
+  // its identifier gates to the wire is still true, and FR9 says not to falsify
+  // a citation for looking stale. What is asked is of the ONE bullet that
+  // settles this document's language — the one that names the brand, which is
+  // the only Portuguese word D24 leaves standing in prose. That bullet is where
+  // the carve-out was restated, and it is the bullet that has to cite D24 now.
+  const brand = closing
+    .split('\n- ')
+    .slice(1)
+    .filter((bullet) => bullet.includes(BRAND));
+  assert.equal(brand.length, 1, `${GLOSSARY_LABEL} closes without settling its own language`);
+  assert.match(brand[0], /\bD24\b/, `the closing bullet on ${BRAND} cites no decision`);
   assert.doesNotMatch(
-    closing,
+    brand[0],
     /\bD18\b/,
     `${GLOSSARY_LABEL} still closes on the D18 carve-out D24 superseded`,
   );

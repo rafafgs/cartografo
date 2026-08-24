@@ -95,7 +95,7 @@ interface Term {
   section: string;
 }
 
-/** `### 2.1 Nomes de tipo` → `2.1`. */
+/** `### 2.1 Type names` → `2.1`. */
 const SECTION_HEADING = /^#{2,4}\s+(\d+(?:\.\d+)*)\s/;
 
 /** Two spellings of one name inside a single cell. */

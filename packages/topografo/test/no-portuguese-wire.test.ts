@@ -16,7 +16,7 @@
  *
  * The glossary gains no row for this ticket, and that is the finding rather
  * than an omission: `watch`, `--lens`, `--dry-run` and the five outcomes were
- * born English, so there is no "hoje → vira" pair to record. What this gate
+ * born English, so there is no "today → becomes" pair to record. What this gate
  * catches is a later change that reaches for the old vocabulary — which is
  * exactly what happened to `avaliar`, one row away from the gate that would
  * have caught it.

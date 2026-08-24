@@ -167,6 +167,12 @@ test('D24 — the sweep bites on prose and leaves the retired names alone', () =
 
   const offenders = offendersIn(fixture);
   assert.equal(offenders.length, 1, `unexpected offenders:\n${offenders.join('\n')}`);
-  assert.match(offenders[0], /^docs\/spec\/glossario-wire\.md:2: /);
-  assert.match(offenders[0], /cada linha vira uma coluna/);
+
+  // Asserted by prefix rather than by a pattern over the Portuguese sentence:
+  // a regular expression is an identifier position for the D18 sweep next door,
+  // and this fixture's whole point is to carry words that sweep refuses.
+  assert.ok(
+    offenders[0].startsWith(`${GLOSSARY_LABEL}:2: stopword `),
+    `the sweep pointed somewhere other than the untranslated line: ${offenders[0]}`,
+  );
 });

@@ -18,8 +18,8 @@
  *   indexes that inherit the column's name.
  * - **§1.6** (`api`), the enum VALUES. They are tagged `api` because the same
  *   value also travels on the wire, and the document's own intro says why it
- *   lists them once and not twice: "Todo valor de enumeração mora aqui, uma vez
- *   só, mesmo quando viaja também … no `CHECK` da migração". Reading them off
+ *   lists them once and not twice: "Every enum value lives here, once only,
+ *   even when it also travels … in the migration's `CHECK`". Reading them off
  *   that surface is what lets `status = 'pendente'` be a hit without the value
  *   being registered a second time under `database`.
  *
@@ -68,10 +68,10 @@ export interface Term {
   english: string;
 }
 
-/** `### 1.6 Valores de enum` → `1.6`. */
+/** `### 1.6 Enum values` → `1.6`. */
 const SECTION_HEADING = /^#{2,4}\s+(\d+(?:\.\d+)*)\s/;
 
-/** The term a `hoje` cell names, past the qualifier the glossary writes it with. */
+/** The term a `today` cell names, past the qualifier the glossary writes it with. */
 function termOf(spelling: string): string {
   const cell = spelling.trim();
   if (cell.includes('=')) return cell.slice(cell.lastIndexOf('=') + 1).trim();

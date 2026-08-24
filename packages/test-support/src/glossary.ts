@@ -21,7 +21,7 @@
  * They are not interchangeable, which is why the selector is a union and not a
  * string:
  *
- * - **by surface** — the `superfície` cell, the first column. A surface is
+ * - **by surface** — the `surface` cell, the first column. A surface is
  *   split across more than one table (`api` fills §1.1 through §1.7), so the
  *   column is the only thing that gathers it, and the section a row sits in is
  *   irrelevant to whoever asks this way.
@@ -31,19 +31,19 @@
  *   can only say which by naming the table.
  *
  * Section mode carries one extra guard: the table's own header row spells
- * `hoje` in the term column, and a section has no surface filter to drop it the
- * way the column comparison implicitly does. It stays scoped to that mode, as
- * it was in both topographers before this file existed — surface mode has never
- * needed it, and widening it here would be an unreviewed change to what four
- * gates sweep for.
+ * `today` in the term column, and a section has no surface filter to drop it
+ * the way the column comparison implicitly does. It stays scoped to that mode,
+ * as it was in both topographers before this file existed — surface mode has
+ * never needed it, and widening it here would be an unreviewed change to what
+ * four gates sweep for.
  *
  * ## How a cell becomes a term
  *
  * The richest of the five readings, which is a superset of the other four:
  *
  * - a cell holding **two spellings of one name** is split on ` / `, the
- *   convention the document states for itself ("Duas grafias do MESMO nome …
- *   vão na mesma linha, separadas por ` / `");
+ *   convention the document states for itself ("Two spellings of the SAME name
+ *   … go on one row, separated by ` / `");
  * - a spelling **qualified by key and value** (`pergunta.tipo=pergunta`) keeps
  *   what comes after the last `=`, because the value is what travels;
  * - a row whose replacement **equals** its term is dropped. Those exist to say
@@ -65,14 +65,20 @@ const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 /** The one mapping document every wire gate reads. */
 export const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
 
-/** `### 5.2 Linha de comando` → `5.2`. */
+/** `### 5.2 Command line` → `5.2`. */
 const SECTION_HEADING = /^#{2,4}\s+(\d+(?:\.\d+)*)\s/;
 
 /** Separator between two spellings of one name inside a single cell. */
 const SPELLING_SEPARATOR = ' / ';
 
-/** The header cell of the term column, which section mode meets as a row. */
-const HEADER_CELL = 'hoje';
+/**
+ * The header cell of the term column, which section mode meets as a row.
+ *
+ * `today` since D24 translated the document's prose and its four column names
+ * (t281); the `today`/`becomes` DATA cells stayed Portuguese, which is why this
+ * is the only literal of the document this file had to follow.
+ */
+const HEADER_CELL = 'today';
 
 /** A Portuguese term the glossary retires, and the English that replaces it. */
 export interface GlossaryTerm {
@@ -92,7 +98,7 @@ function termOf(spelling: string): string {
 /**
  * Every mapping row of one selection of the document, in the order it is written.
  *
- * @param selector The `superfície` tag, or the `5.2`-style number of one table.
+ * @param selector The `surface` tag, or the `5.2`-style number of one table.
  * @param minimum Fewest entries the selection must parse to; a parser that
  *   quietly stopped matching the table would otherwise read as a clean sweep.
  * @returns One entry per (term, English) pair; a cell with two spellings of one

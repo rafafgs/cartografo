@@ -6,7 +6,7 @@
  * package, each reading the rows of `docs/spec/glossario-wire.md` that belong to
  * it, instead of one file reaching across package boundaries.
  *
- * The rows that belong here are `superfície = routes-cli-report`, and they land
+ * The rows that belong here are `surface = routes-cli-report`, and they land
  * in two very different shapes, so this file has two sweeps:
  *
  * - **the route paths of §5.1**, which are looked for as raw text in every file

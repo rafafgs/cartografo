@@ -140,9 +140,9 @@ const EVENT_SURFACE = 'events';
  *   and since t235 it is the ONLY place it lives: that ticket rewrote
  *   `0001`–`0018` so the schema is born English and deleted the `0019` whose
  *   `ALTER … RENAME` statements this sweep used to read. A retired name is now a
- *   `hoje` cell whose `vira` cell really is a table, or really is a column of the
- *   table being read — which is the same question the `ALTER` answered, asked of
- *   the document that decided the rename in the first place.
+ *   `today` cell whose `becomes` cell really is a table, or really is a column
+ *   of the table being read — which is the same question the `ALTER` answered,
+ *   asked of the document that decided the rename in the first place.
  * - **The `ALTER TABLE … RENAME` still in the sequence.** `0010` rebuilds
  *   `proposal` through a `proposal_new`, and a spelling a migration really does
  *   move stays known here without anyone listing it.
@@ -227,14 +227,14 @@ const RENAME =
 /**
  * Every spelling the schema retired, read off the glossary and off the sequence.
  *
- * The glossary half asks the live schema which side of a row is real: a `vira`
- * cell that names a table registers the `hoje` cell as that table's old name, and
- * a `vira` cell that names a column of table T registers it as T's old name for
- * that column. Reading it per table is what keeps the three meanings of `tipo`
- * apart without this file re-deciding which is which — `evento.tipo` lands on
- * `event.type`, `pergunta.tipo` on `input_request.kind` and `credencial.tipo` on
- * `credential.owner_type`, because those are the tables that really have those
- * columns.
+ * The glossary half asks the live schema which side of a row is real: a
+ * `becomes` cell that names a table registers the `today` cell as that table's
+ * old name, and a `becomes` cell that names a column of table T registers it as
+ * T's old name for that column. Reading it per table is what keeps the three
+ * meanings of `tipo` apart without this file re-deciding which is which —
+ * `evento.tipo` lands on `event.type`, `pergunta.tipo` on `input_request.kind`
+ * and `credencial.tipo` on `credential.owner_type`, because those are the tables
+ * that really have those columns.
  *
  * The `ALTER` half is replayed in migration order, which is what makes a chain
  * resolve when one exists.

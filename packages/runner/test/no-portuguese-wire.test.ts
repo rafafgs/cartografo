@@ -5,7 +5,7 @@
  * Port of `packages/core/test/no-portuguese-wire.test.ts`, the same way
  * `no-portuguese-identifiers.test.ts` is a port of the core's: one gate per
  * package, each reading the rows of `docs/spec/glossario-wire.md` that belong to
- * it. The rows that belong here are `superfície = routes-cli-report` — the flag
+ * it. The rows that belong here are `surface = routes-cli-report` — the flag
  * half of §5.2, since the routes are the screen's and the report is the core's.
  *
  * The sweep is raw text over everything outside a comment, because a flag is
@@ -60,7 +60,7 @@
  * All three suites were green throughout — a client that reads a name the
  * server retired is invisible to a fake that answers the retired name.
  *
- * So the second gate reads the `superfície = api` rows — the fields the wire
+ * So the second gate reads the `surface = api` rows — the fields the wire
  * really carries — over the six files that talk to `/v1` by hand, and it sweeps
  * two positions only: PROPERTY READS (`.itens`) and STRING or TEMPLATE LITERALS
  * (`` `versao_alvo:` ``). Those are exactly the two ways a client touches a
@@ -142,7 +142,7 @@
  * The exemptions those three files need are the same kind as the ones above, and
  * two vocabularies account for all of them. `.nome` in the close command is the
  * metric object's OWN key, frozen hypothesis vocabulary D20 does not unfreeze
- * (`glossario-wire.md:791`), and the whole point of that command is to read it.
+ * (`glossario-wire.md:796`), and the whole point of that command is to read it.
  * `.titulo` and `.execucao_id` in the traversal driver — and the two messages and
  * the usage line that spell them — are the keys of the PLAN FILE that driver
  * takes as input: an operator-authored document of its own, not a body of the
@@ -371,7 +371,7 @@ const EXEMPT_SPANS: ReadonlyArray<{ file: string; span: string; reason: string }
     span: '.nome',
     reason:
       'the metric object’s OWN key, which is the frozen hypothesis vocabulary of ' +
-      '`domain/hypothesis.ts` — `{nome, direcao, de, para}`, `glossario-wire.md:791`, ' +
+      '`domain/hypothesis.ts` — `{nome, direcao, de, para}`, `glossario-wire.md:796`, ' +
       'a format D20 does not unfreeze. The WRAPPER is `expected_metric` and t285 ' +
       'fixed that read; what is inside it does not move (t285, Out of Scope)',
   },

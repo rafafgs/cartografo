@@ -1,128 +1,131 @@
-# Glossário do fio: português → inglês
+# The wire glossary: Portuguese → English
 
-Mapa único de tradução do **vocabulário que viaja no fio**: chaves de JSON da
-API, nomes de tipo e chaves de evento, operações de proposta, tabelas e colunas
-do banco, rotas da tela, flags de CLI e as chaves do relatório de validação.
+The single translation map of the **vocabulary that travels on the wire**: the
+API's JSON keys, event type names and envelope keys, proposal operations,
+database tables and columns, the screen's routes, CLI flags and the keys of the
+validation report.
 
-## O que este documento é (e o que não é)
+## What this document is (and what it is not)
 
-Este glossário nasceu **descritivo da INTENÇÃO** — quando o t213 o escreveu,
-nenhum dos nomes da coluna "vira" existia em lugar nenhum. Ele vai virando
-descritivo do CÓDIGO à medida que os filhos aterrissam, e é aqui que se lê
-quanto já virou.
+This glossary was born **descriptive of the INTENT** — when t213 wrote it, none
+of the names in the `becomes` column existed anywhere. It turns descriptive of
+the CODE as the children land, and this is where you read how much of it has
+turned already.
 
-Quem aplica são os seis tickets filhos do t213, na ordem da D20 (glossário →
-API/erros → eventos → operações → banco → rotas/flags/relatório → docs e
-portão). Cada um filtra a coluna `superfície` pelas linhas que lhe cabem e
-renomeia só aquilo. A razão de o glossário vir primeiro é simples: sem ele, os
-seis inventam cinco inglêses diferentes para o mesmo termo, e o repositório
-abre (D7) com dois vocabulários em vez de um.
+Who applies it are t213's six child tickets, in D20's own order (glossary →
+API/errors → events → operations → database → routes/flags/report → docs and
+gate). Each one filters the `surface` column down to the rows that are its own
+and renames only those. The reason the glossary comes first is simple: without
+it, the six invent five different Englishes for the same term, and the
+repository opens (D7) with two vocabularies instead of one.
 
-**Onde cada superfície está** (atualizado pelo filho que aterrissa):
+**Where each surface stands** (updated by the child that lands):
 
-| seção | etiqueta | estado | quem levou |
+| section | tag | state | landed by |
 |---|---|---|---|
-| §1.1 a §1.5 | `api` | convergida | t226 |
-| §1.6, valores de enum | `api` | convergida | t226 no fio, t227 no evento, t235 no banco |
-| §2 | `events` | convergida | t227 |
-| §3 | `proposal-ops` | convergida | t228 |
-| §4.1 e §4.2 | `database` | convergida | t229 (nomes), t235 (valores) |
-| §5.1 a §5.4 | `routes-cli-report` | convergida | t230 |
-| §1.1 e §1.4 (intake), §1.7, §5.2 (custo), §5.5 | `api`, `routes-cli-report`, `cost-lens` | convergida | t255 (as sobras) |
-| §5.6 | `flow-lens` | convergida | t264 |
-| todas, nas especificações | — | convergida | t231 (docs e portão) |
+| §1.1 to §1.5 | `api` | converged | t226 |
+| §1.6, enum values | `api` | converged | t226 on the wire, t227 on the event, t235 in the database |
+| §2 | `events` | converged | t227 |
+| §3 | `proposal-ops` | converged | t228 |
+| §4.1 and §4.2 | `database` | converged | t229 (names), t235 (values) |
+| §5.1 to §5.4 | `routes-cli-report` | converged | t230 |
+| §1.1 and §1.4 (intake), §1.7, §5.2 (cost), §5.5 | `api`, `routes-cli-report`, `cost-lens` | converged | t255 (the leftovers) |
+| §5.6 | `flow-lens` | converged | t264 |
+| all of them, in the specifications | — | converged | t231 (docs and gate) |
 
-A antepenúltima linha é do t255, que não é filho do t213: é a ficha que a revisão
-v2 abriu ao encontrar seis sobras que os portões não pegavam, todas por não
-estarem mapeadas aqui. Cinco delas viraram linha nova (item de intake, códigos do proxy
-da tela, cabeçalho de assinatura, linha de comando da lente de custo, candidata
-da lente de custo); a sexta era de forma, não de idioma, e está contada na
-`policy.ts` daquele pacote.
+The third row from the bottom is t255's, which is not a child of t213: it is the
+ticket the v2 review opened on finding six leftovers the gates did not catch,
+all of them because they were not mapped here. Five became a new row (the intake
+item, the screen proxy's codes, the signature header, the cost lens's command
+line, the cost lens's candidate); the sixth was about shape and not about
+language, and is accounted for in that package's `policy.ts`.
 
-A penúltima é do t264, pelo mesmo motivo e um ticket depois: o t227 tinha
-deixado o vocabulário da lente de FLUXO em português de propósito, e essa
-decisão valia enquanto nenhuma lente tivesse migrado. O t255 migrou a irmã
-(§5.5), e a partir dali "é JSON livre, ninguém governa" virou duas línguas na
-mesma coluna. A §5.6 é essa sobra, encontrada pela primeira travessia real
-(`notas/2026-08-17-primeira-execucao-bets.md`, buraco 7).
+The second from the bottom is t264's, for the same reason one ticket later: t227
+had left the FLOW lens's vocabulary in Portuguese on purpose, and that decision
+held for as long as no lens had migrated. t255 migrated the sibling (§5.5), and
+from there on "it is free JSON, nobody governs it" turned into two languages in
+one column. §5.6 is that leftover, found by the first real crossing
+(`notas/2026-08-17-primeira-execucao-bets.md`, hole 7).
 
-A última linha é a do filho que fecha a D20: o CÓDIGO de cada superfície já
-tinha portão próprio quando ela começou (um `no-portuguese-wire.test.ts` por
-pacote, mais os portões de evento, de operação e de banco), e o que faltava era
-o papel. O `packages/core/test/glossario-wire-docs.test.ts` lê a §2.1, a §5.1 e
-a §5.2 daqui em tempo de execução e recusa qualquer uma dessas grafias dentro
-de crase ou de bloco cercado nas especificações — a prosa em volta continua
-portuguesa, que é o que a D18 decidiu.
+The last row is the child that closes D20: every surface's CODE already had a
+gate of its own when it started (one `no-portuguese-wire.test.ts` per package,
+plus the event, operation and database gates), and what was missing was the
+paper. `packages/core/test/glossario-wire-docs.test.ts` reads §2.1, §5.1 and
+§5.2 of this file at run time and refuses any of those spellings inside a
+backtick span or a fenced block in the specifications — the prose around them
+stays Portuguese, which is what D18 decided.
 
-Quatro colunas de `job` e de `session` que a §4.2 não registra continuam em
-português (`corpo`, `criterios_de_aceite`, `transcricao_truncada`,
-`transcricao_tamanho_original`): fechar o buraco é acrescentar linha aqui, e é
-trabalho de ficha própria, não do filho do banco.
+Four columns of `job` and of `session` that §4.2 does not register are still in
+Portuguese (`corpo`, `criterios_de_aceite`, `transcricao_truncada`,
+`transcricao_tamanho_original`): closing the hole means adding rows here, and
+that is a ticket of its own, not the database child's.
 
-O banco fala inglês **desde a primeira migração**, e não a partir de uma
-migração de renomeação: a D20 recria os bancos de desenvolvimento, então o
-t235 reescreveu `0001`–`0018` no lugar em vez de empilhar uma dezenove-ésima
-que renomeasse o que ninguém tinha gravado ainda.
+The database speaks English **from the very first migration**, not from a
+renaming migration onward: D20 recreates the development databases, so t235
+rewrote `0001`–`0018` in place instead of stacking a nineteenth one that would
+rename what nobody had recorded yet.
 
-Complemento, não substituto, do portão da D18 já existente
-(`no-portuguese-identifiers.test.ts`): aquele cuida de IDENTIFICADORES de
-código, e mascara exatamente o que este documento mapeia — o valor no fio.
+Complement, not substitute, of D18's already existing gate
+(`no-portuguese-identifiers.test.ts`): that one looks after code IDENTIFIERS,
+and masks exactly what this document maps — the value on the wire.
 
-## Como ler as tabelas
+## How to read the tables
 
-- **`superfície`** é a etiqueta do ticket filho a que a linha pertence: `api`,
-  `events`, `proposal-ops`, `database`, `routes-cli-report`. A sexta,
-  `cost-lens`, chegou com o t255 e não é filho de ninguém: é o vocabulário que a
-  lente de custo põe no fio (§5.5), e existe separada porque o portão que a lê é
-  o daquele pacote e só ele. A sétima, `flow-lens`, é a mesma história para a
-  lente de fluxo (§5.6, t264) — e é etiqueta própria pela mesma razão, com uma a
-  mais: as duas lentes escrevem no MESMO `proposal.evidence`, e uma etiqueta só
-  para as duas esconderia que cada uma tem o seu conjunto de chaves.
-  Uma superfície pode aparecer em mais de uma tabela
-  (a `api` está dividida por grupo, para caber na cabeça de quem lê); o que vale
-  é a etiqueta da linha, não o título da seção.
-- **`hoje`** é o termo em português como ele está escrito no código agora.
-  **`vira`** é o nome em inglês que a renomeação vai usar. **`onde está hoje`**
-  é o arquivo que define o termo — o ponto de partida do ticket filho.
-- Quando a citação nomeia LINHA (`static.ts:75,88`), a linha é a do nome DAQUELA
-  linha da tabela, não a do bloco em volta: `erro` aponta o `error:` e `mensagem`
-  aponta o `message:` logo abaixo, mesmo quando os dois estão no mesmo corpo. A
-  vírgula separa linhas independentes; o hífen é um bloco, e basta uma linha dele
-  escrever o nome. O `glossario-wire.test.ts` resolve as citações dos arquivos
-  que ele lista (as que o t255 escreveu, e que nasceram erradas por serem
-  copiadas do texto da ficha em vez de relidas na árvore); as outras ~139 ainda
-  não têm portão e derivaram — quem seguir uma delas confere antes de confiar.
-- Duas grafias do MESMO nome (`criado_em` e `criada_em`, uma coluna escrita por
-  gênero) vão na mesma linha, separadas por ` / `: é um termo só, com uma
-  tradução só.
-- Uma célula nunca contém `|` — conjuntos de valores são separados por vírgula.
-- Termo que já está em inglês não vira linha (`id`, `status`, `url`, `hash`,
+- **`surface`** is the tag of the child ticket the row belongs to: `api`,
+  `events`, `proposal-ops`, `database`, `routes-cli-report`. The sixth,
+  `cost-lens`, arrived with t255 and is nobody's child: it is the vocabulary the
+  cost lens puts on the wire (§5.5), and it exists separately because the gate
+  that reads it is that package's and only that one. The seventh, `flow-lens`,
+  is the same story for the flow lens (§5.6, t264) — a tag of its own for the
+  same reason, with one more on top: the two lenses write into the SAME
+  `proposal.evidence`, and a single tag over both would hide that each has its
+  own set of keys. A surface may appear in more than one table (`api` is split
+  by group, to fit in the head of whoever reads it); what counts is the row's
+  tag, not the section's title.
+- **`today`** is the Portuguese term as it is written in the code right now.
+  **`becomes`** is the English name the rename will use. **`defined in`** is the
+  file that defines the term — the child ticket's starting point.
+- When a citation names a LINE (`static.ts:75,88`), the line is the one of THAT
+  table row's name, not of the block around it: `erro` points at `error:` and
+  `mensagem` points at the `message:` right below, even when the two sit in the
+  same body. A comma separates independent lines; a hyphen is a block, and one
+  line of it writing the name is enough. `glossario-wire.test.ts` resolves the
+  citations of the files it lists (the ones t255 wrote, which were born wrong
+  for having been copied out of the ticket's text instead of re-read in the
+  tree); the other ~139 have no gate yet and have drifted — whoever follows one
+  of them checks before trusting it.
+- Two spellings of the SAME name (`criado_em` and `criada_em`, one column
+  spelled by gender) go on one row, separated by ` / `: it is a single term,
+  with a single translation.
+- A cell never contains a `|` — sets of values are separated by commas.
+- A term already in English gets no row (`id`, `status`, `url`, `hash`,
   `prompt`, `engine`, `working_dir`, `exit_code`, `timeout_seconds`,
-  `runner_id`, `snapshot`, `checks`, `tier`, `soundness`). A exceção é o punhado
-  de linhas com `hoje` igual a `vira`, que existem para dizer *explicitamente*
-  que aquele nome não muda.
-- Onde o código já expõe um nome em inglês para o mesmo conceito, o glossário
-  reusa esse nome em vez de inventar um segundo. É o caso de `/v1/jobs`
-  (`packages/core/src/server.ts`), que faz `trabalho` virar `job` e não `task`;
-  de `node_type: work, gate` (`schema/grafo.schema.json`), que faz `papel: fazer,
-  portao` virar `role: work, gate`; e de `aresta: from, to`
-  (`packages/core/src/domain/operations.ts`), que faz `de`/`para` virarem
+  `runner_id`, `snapshot`, `checks`, `tier`, `soundness`). The exception is the
+  handful of rows whose `today` equals its `becomes`, which exist to say
+  *explicitly* that the name does not change.
+- Where the code already exposes an English name for the same concept, the
+  glossary reuses that name instead of inventing a second one. That is the case
+  of `/v1/jobs` (`packages/core/src/server.ts`), which makes `trabalho` become
+  `job` and not `task`; of `node_type: work, gate`
+  (`schema/grafo.schema.json`), which makes `papel: fazer, portao` become
+  `role: work, gate`; and of `aresta: from, to`
+  (`packages/core/src/domain/operations.ts`), which makes `de`/`para` become
   `from`/`to`.
 
 ---
 
 ## 1. API
 
-Rotas já são inglês (`/v1/jobs`, `/v1/input-requests`, `/v1/graph-versions`); o
-JSON dentro delas é que não é.
+The routes are already English (`/v1/jobs`, `/v1/input-requests`,
+`/v1/graph-versions`); it is the JSON inside them that is not.
 
-### 1.1 Campos de entidade
+### 1.1 Entity fields
 
-Os campos de entidade que a API devolve espelham 1:1 as colunas — a tabela
-completa é a **4.2**, e o ticket da API traduz por ela. Ficam aqui os que o
-inventário do t213 cita por nome.
+The entity fields the API returns mirror the columns 1:1 — the complete table is
+**4.2**, and the API ticket translates by it. What stays here are the ones
+t213's inventory cites by name.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | api | `projeto_id` | `project_id` | `packages/core/src/routes/leases.ts`, `packages/core/src/repositories/job.ts` |
 | api | `execucao_id` | `execution_id` | `packages/core/src/routes/executions.ts`, `packages/core/src/repositories/job.ts` |
@@ -136,25 +139,25 @@ inventário do t213 cita por nome.
 | api | `campos` | `fields` | `packages/core/src/domain/intake.ts` |
 | api | `depende_de` | `depends_on` | `packages/core/src/domain/intake.ts` |
 
-As quatro últimas são do item de intake (`DraftItem`), que viaja no corpo do
-`POST /v1/intake` e volta no `GET /v1/intake/:id`. Elas entraram com o t255, e
-não com o filho da API: o t226 e o t229 trataram o item como formato de terceiro
-("o glossário não mapeia nenhuma delas", dizia o comentário), quando o texto da
-D20 já dizia "campos e parâmetros de query do JSON da API". `ref` e `tier` não
-viram linha porque já estão em inglês.
+The last four are the intake item's (`DraftItem`), which travels in the body of
+`POST /v1/intake` and comes back in `GET /v1/intake/:id`. They arrived with
+t255, not with the API child: t226 and t229 treated the item as a third party's
+format ("the glossary maps none of them", said the comment), when D20's own text
+already said "the API JSON's fields and query parameters". `ref` and `tier` get
+no row because they are already English.
 
-### 1.2 Parâmetros de consulta
+### 1.2 Query parameters
 
-`status`, `projeto_id`, `execucao_id`, `trabalho_id` e `classe` também são
-parâmetros de consulta; viram o mesmo nome das linhas acima e da 1.6.
+`status`, `projeto_id`, `execucao_id`, `trabalho_id` and `classe` are query
+parameters too; they become the same names as the rows above and those of 1.6.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | api | `limite` | `limit` | `packages/core/src/routes/input-requests.ts:160` |
 
-### 1.3 Chaves de coleção e de envelope de resposta
+### 1.3 Collection and response-envelope keys
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | api | `trabalhos` | `jobs` | `packages/core/src/routes/jobs.ts` |
 | api | `sessoes` | `sessions` | `packages/core/src/routes/sessions.ts` |
@@ -178,27 +181,27 @@ parâmetros de consulta; viram o mesmo nome das linhas acima e da 1.6.
 | api | `trabalhos_criados` | `created_jobs` | `packages/core/src/routes/intake.ts` |
 | api | `operacoes` | `operations` | `packages/core/src/routes/proposals.ts` |
 
-### 1.4 Envelope de erro e códigos de `erro`
+### 1.4 Error envelope and `erro` codes
 
-Há dois envelopes hoje: `{erro, mensagem}` nas rotas de domínio
-(`routes/graphs.ts:72-87`) e `{error, details}` em `routes/common.ts`. A D20
-manda convergirem; qual das duas formas sobrevive (se `mensagem` vira `message`
-ou se dobra em `details`) é decisão do ticket filho da API — o que este
-glossário fixa é que `erro` é `error` e `mensagem` é `message`, nunca outra
-palavra.
+There are two envelopes today: `{erro, mensagem}` in the domain routes
+(`routes/graphs.ts:72-87`) and `{error, details}` in `routes/common.ts`. D20
+orders them to converge; which of the two shapes survives (whether `mensagem`
+becomes `message` or folds into `details`) is the API child ticket's decision —
+what this glossary settles is that `erro` is `error` and `mensagem` is
+`message`, never another word.
 
-A tela tem envelope próprio para as quatro respostas que ela INVENTA (o control
-plane fora do ar, a escrita de outra origem, o corpo grande demais e o arquivo
-estático que não existe). Ele é o mesmo envelope — a citação do `proxy.ts` e do
-`static.ts` nas duas primeiras linhas é isso —, e os quatro códigos que ele
-carrega entraram com o t255, quando a revisão v2 achou a tela ainda respondendo
-`{erro, mensagem}` quatro tickets depois de o núcleo ter convergido.
+The screen has an envelope of its own for the four answers it INVENTS (the
+control plane down, a write from another origin, a body too large, and a static
+file that does not exist). It is the same envelope — that is what the citation
+of `proxy.ts` and of `static.ts` on the first two rows is — and the four codes
+it carries arrived with t255, when the v2 review found the screen still
+answering `{erro, mensagem}` four tickets after the core had converged.
 
-`codigo`, `mensagem` e `alvo` também são as três chaves de cada problema do
-relatório de itens do intake (`domain/intake.ts`), que viaja dentro do `400` de
-`POST /v1/intake` — mesma forma do relatório de grafo da §5.3, e mesmo inglês.
+`codigo`, `mensagem` and `alvo` are also the three keys of every problem in the
+intake's item report (`domain/intake.ts`), which travels inside the `400` of
+`POST /v1/intake` — the same shape as §5.3's graph report, and the same English.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | api | `erro` | `error` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:75,88` |
 | api | `mensagem` | `message` | `packages/core/src/routes/graphs.ts:72-87`, `packages/tela/src/proxy.ts:225-352`, `packages/tela/src/static.ts:76,89` |
@@ -262,12 +265,12 @@ relatório de itens do intake (`domain/intake.ts`), que viaja dentro do `400` de
 | api | `versao_alvo_desconhecida` | `unknown_target_version` | `packages/core/src/routes/proposals.ts` |
 | api | `versao_sem_efeito` | `version_without_effect` | `packages/core/src/routes/graphs.ts` |
 
-### 1.5 Lease: campos do corpo e recusa
+### 1.5 Lease: body fields and refusal
 
-`teto_runner` e `teto_projeto` são campo do corpo E valor de `motivo` na
-recusa — mesmo termo, uma linha só, um nome só.
+`teto_runner` and `teto_projeto` are a body field AND a value of `motivo` in the
+refusal — the same term, one row only, one name only.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | api | `teto_runner` | `runner_cap` | `packages/core/src/routes/leases.ts:148`, `packages/core/src/repositories/leases.ts:243` |
 | api | `teto_projeto` | `project_cap` | `packages/core/src/routes/leases.ts:148`, `packages/core/src/repositories/leases.ts:248` |
@@ -276,26 +279,26 @@ recusa — mesmo termo, uma linha só, um nome só.
 | api | `trabalho_ja_leased` | `job_already_leased` | `packages/core/src/repositories/leases.ts:238` |
 | api | `motivo_bloqueio` | `block_reason` | `packages/core/src/repositories/job.ts:87` |
 
-### 1.6 Valores de enum
+### 1.6 Enum values
 
-Todo valor de enum mora aqui, uma vez só, mesmo quando viaja também no evento ou
-no `CHECK` da migração — é o mesmo vocabulário, e listá-lo duas vezes é como se
-começa a ter dois. O valor `proposta` de `grafo_versao.origem` usa a linha
-`proposta` da 1.3; `manual`, `auto`, `base`, `cli`, `catalog`, `filesystem`,
-`wall_clock` e `silence` já estão em inglês.
+Every enum value lives here, once only, even when it also travels on the event
+or in the migration's `CHECK` — it is the same vocabulary, and listing it twice
+is how you start having two. The `proposta` value of `grafo_versao.origem` uses
+1.3's `proposta` row; `manual`, `auto`, `base`, `cli`, `catalog`, `filesystem`,
+`wall_clock` and `silence` are already English.
 
-Um valor só é qualificado com a chave que o carrega quando a palavra solta já
-significa outra coisa: `pergunta.tipo=pergunta` é o TIPO de escalação (pergunta
-ou aprovação) e vira `question`, enquanto `pergunta` sozinho é a entidade e vira
-`input_request` (2.3, 4.1).
+A value is qualified with the key that carries it only when the bare word
+already means something else: `pergunta.tipo=pergunta` is the escalation KIND
+(question or approval) and becomes `question`, while `pergunta` on its own is
+the entity and becomes `input_request` (2.3, 4.1).
 
-`sessao.status = 'aberta'` entrou nesta tabela com o filho do banco (t235): ela
-é a única coluna de status sem `CHECK`, e por isso ninguém a tinha registrado
-aqui — o valor nasce na migração `0003` e é lido de volta pela rota que fecha a
-sessão. Vira `open`, o mesmo vocabulário do evento `session.opened` e o mesmo
-padrão de `ativa` → `active`.
+`sessao.status = 'aberta'` entered this table with the database child (t235): it
+is the only status column with no `CHECK`, which is why nobody had registered it
+here — the value is born in migration `0003` and is read back by the route that
+closes the session. It becomes `open`, the same vocabulary as the
+`session.opened` event and the same pattern as `ativa` → `active`.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | api | `pendente` | `pending` | `packages/core/migrations/0010_proposta_aprovada.sql`, `packages/core/migrations/0006_intake.sql` |
 | api | `aprovada` | `approved` | `packages/core/migrations/0010_proposta_aprovada.sql` |
@@ -332,31 +335,31 @@ padrão de `ativa` → `active`.
 | api | `resposta_padrao` | `default_answer` | `packages/core/src/db/event-validation.ts:290` |
 | api | `precedente` | `precedent` | `packages/core/src/db/event-validation.ts:290` |
 
-### 1.7 Cabeçalho de assinatura
+### 1.7 Signature header
 
-Não é chave de JSON: é o nome do cabeçalho HTTP que toda entrega de webhook e de
-gancho carrega, e a receita publicada em `docs/spec/webhooks-eventos.md` §5 é
-sobre ele. Ficou fora das listas de todos os filhos da D20 — nenhum deles olhou
-para cabeçalho — e por isso sobreviveu até o t255. Nome de cabeçalho não
-distingue maiúscula de minúscula: a especificação escreve
-`X-Cartografo-Signature`, o código escreve a mesma coisa em minúsculas.
+Not a JSON key: it is the name of the HTTP header every webhook and hook
+delivery carries, and the recipe published in `docs/spec/webhooks-eventos.md` §5
+is about it. It fell outside the lists of every D20 child — none of them looked
+at a header — and that is how it survived until t255. A header name is
+case-insensitive: the specification writes `X-Cartografo-Signature`, the code
+writes the same thing in lowercase.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | api | `x-cartografo-assinatura` | `x-cartografo-signature` | `packages/core/src/webhooks/signature.ts:41` |
 
 ---
 
-## 2. Eventos
+## 2. Events
 
-O log é append-only e replayável: renomear tipo de evento é reescrever o
-histórico, e a D20 resolve isso recriando os bancos de desenvolvimento (não há
-dado de produção). O ticket filho dos eventos renomeia junto os schemas de
-`especificacoes/eventos/schemas/` e a taxonomia.
+The log is append-only and replayable: renaming an event type is rewriting the
+history, and D20 settles that by recreating the development databases (there is
+no production data). The events child ticket renames the schemas of
+`especificacoes/eventos/schemas/` and the taxonomy along with it.
 
-### 2.1 Nomes de tipo
+### 2.1 Type names
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | events | `trabalho.criado` | `job.created` | `packages/core/src/db/event-validation.ts:160` |
 | events | `trabalho.transicao` | `job.transitioned` | `packages/core/src/db/event-validation.ts:180` |
@@ -377,12 +380,12 @@ dado de produção). O ticket filho dos eventos renomeia junto os schemas de
 | events | `grafo_versao.aplicada` | `graph_version.applied` | `especificacoes/eventos/schemas/grafo_versao.aplicada.schema.json` |
 | events | `grafo_versao.revertida` | `graph_version.reverted` | `especificacoes/eventos/schemas/grafo_versao.revertida.schema.json` |
 
-### 2.2 Chaves do envelope
+### 2.2 Envelope keys
 
-`entidade` carrega `tipo` e `id`; `ator` carrega `tipo` e `ref`. As duas
-sub-chaves `tipo` usam a linha `tipo` abaixo.
+`entidade` carries `tipo` and `id`; `ator` carries `tipo` and `ref`. Both `tipo`
+sub-keys use the `tipo` row below.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | events | `tipo` | `type` | `packages/core/src/db/event-validation.ts:57` |
 | events | `projeto_id` | `project_id` | `packages/core/src/db/event-validation.ts:58` |
@@ -392,9 +395,9 @@ sub-chaves `tipo` usam a linha `tipo` abaixo.
 | events | `ocorrido_em` | `occurred_at` | `packages/core/src/db/event-validation.ts:62` |
 | events | `dados` | `data` | `packages/core/src/db/event-validation.ts:63` |
 
-### 2.3 Tipos de entidade e de ator
+### 2.3 Entity and actor types
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | events | `trabalho` | `job` | `packages/core/src/db/event-validation.ts:33` |
 | events | `sessao` | `session` | `packages/core/src/db/event-validation.ts:33` |
@@ -405,14 +408,14 @@ sub-chaves `tipo` usam a linha `tipo` abaixo.
 | events | `agente` | `agent` | `packages/core/src/db/event-validation.ts:36` |
 | events | `sistema` | `system` | `packages/core/src/db/event-validation.ts:36` |
 
-### 2.4 Chaves de `dados`
+### 2.4 `dados` keys
 
-Prefixadas com `dados.` porque uma chave de payload e uma chave de envelope com
-o mesmo nome são coisas diferentes (`tipo` do envelope é o tipo do evento;
-`dados.tipo` de `pergunta.criada` é pergunta ou aprovação). Os VALORES desses
-campos estão na 1.6.
+Prefixed with `dados.` because a payload key and an envelope key with the same
+name are different things (the envelope's `tipo` is the event's type;
+`pergunta.criada`'s `dados.tipo` is question or approval). The VALUES of those
+fields are in 1.6.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | events | `dados.titulo` | `title` | `packages/core/src/db/event-validation.ts:163` |
 | events | `dados.no_entrada_id` | `entry_node_id` | `packages/core/src/db/event-validation.ts:164` |
@@ -452,18 +455,18 @@ campos estão na 1.6.
 
 ---
 
-## 3. Operações de proposta
+## 3. Proposal operations
 
-O que a operação CARREGA já é inglês desde a t178 (`no` é um nó do documento, e
-o documento tem `id`, `role`, `node_type`; `aresta` tem `from`, `to`,
-`condition`). O que continua em português é a operação em si: o nome do tipo,
-as chaves dela e o relatório de validação. `de`/`para` viram `from`/`to`
-justamente porque a aresta do documento já os chama assim — dois formatos que se
-encontram passam a falar a mesma língua.
+What the operation CARRIES has been English since t178 (`no` is a node of the
+document, and the document has `id`, `role`, `node_type`; `aresta` has `from`,
+`to`, `condition`). What is still Portuguese is the operation itself: its type
+name, its keys and the validation report. `de`/`para` become `from`/`to`
+precisely because the document's edge already calls them that — two formats that
+meet start speaking one language.
 
-### 3.1 Nomes de operação
+### 3.1 Operation names
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | proposal-ops | `adicionar_no` | `add_node` | `packages/core/src/domain/operations.ts:170` |
 | proposal-ops | `remover_no` | `remove_node` | `packages/core/src/domain/operations.ts:170` |
@@ -471,9 +474,9 @@ encontram passam a falar a mesma língua.
 | proposal-ops | `remover_aresta` | `remove_edge` | `packages/core/src/domain/operations.ts:170` |
 | proposal-ops | `alterar_campo_no` | `change_node_field` | `packages/core/src/domain/operations.ts:170` |
 
-### 3.2 Chaves da operação
+### 3.2 Operation keys
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | proposal-ops | `tipo` | `type` | `packages/core/src/domain/operations.ts:112` |
 | proposal-ops | `no` | `node` | `packages/core/src/domain/operations.ts:113` |
@@ -485,9 +488,9 @@ encontram passam a falar a mesma língua.
 | proposal-ops | `inversa` | `inverse` | `packages/core/src/domain/operations.ts:143` |
 | proposal-ops | `condicao` | `condition` | `packages/core/src/domain/operations.ts:530` |
 
-### 3.3 Relatório e códigos de validação de operação
+### 3.3 Operation validation report and codes
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | proposal-ops | `valido` | `valid` | `packages/core/src/domain/operations.ts:196` |
 | proposal-ops | `erros` | `errors` | `packages/core/src/domain/operations.ts:197` |
@@ -507,15 +510,15 @@ encontram passam a falar a mesma língua.
 
 ---
 
-## 4. Banco
+## 4. Database
 
-Nome de tabela e de coluna é a superfície mais cara de renomear e a mais barata
-de decidir: a D20 já resolveu que os bancos de desenvolvimento são recriados, e
-sem dado de produção a migração é uma migração normal.
+A table name and a column name are the most expensive surface to rename and the
+cheapest to decide: D20 already settled that the development databases are
+recreated, and with no production data the migration is an ordinary migration.
 
-### 4.1 Tabelas
+### 4.1 Tables
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | database | `grafo` | `graph` | `packages/core/migrations/0002_grafo_versao_proposta.sql` |
 | database | `grafo_versao` | `graph_version` | `packages/core/migrations/0002_grafo_versao_proposta.sql` |
@@ -536,16 +539,16 @@ sem dado de produção a migração é uma migração normal.
 | database | `entrega_gancho` | `hook_delivery` | `packages/core/migrations/0016_gancho.sql` |
 | database | `segredo_gancho` | `hook_secret` | `packages/core/migrations/0018_segredo_gancho.sql` |
 
-### 4.2 Colunas
+### 4.2 Columns
 
-Uma linha por nome distinto de coluna, não por par tabela-coluna: `projeto_id` é
-o mesmo nome nas seis tabelas em que aparece, e uma linha por tabela seria seis
-oportunidades de divergir. Quando o MESMO nome quer dizer coisas diferentes em
-tabelas diferentes, aí sim a linha é qualificada (`evento.tipo` é o tipo do
-evento; `pergunta.tipo` é pergunta ou aprovação; `credencial.tipo` é de quem é a
-credencial). Os índices herdam o nome da coluna.
+One row per distinct column name, not per table-column pair: `projeto_id` is the
+same name in the six tables it appears in, and one row per table would be six
+opportunities to diverge. When the SAME name means different things in different
+tables, then the row is qualified (`evento.tipo` is the event's type;
+`pergunta.tipo` is question or approval; `credencial.tipo` is whose the
+credential is). The indexes inherit the column's name.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | database | `criado_em` / `criada_em` | `created_at` | `packages/core/migrations/0002_grafo_versao_proposta.sql`, `packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql` |
 | database | `atualizado_em` | `updated_at` | `packages/core/migrations/0002_grafo_versao_proposta.sql` |
@@ -640,15 +643,16 @@ credencial). Os índices herdam o nome da coluna.
 
 ---
 
-## 5. Rotas da tela, flags de CLI e relatório
+## 5. Screen routes, CLI flags and report
 
-### 5.1 Rotas da tela
+### 5.1 Screen routes
 
-A tela é cliente da API como qualquer outro (D11), então a rota da tela usa o
-nome de entidade que a API já publica: `/perguntas` vira `/input-requests` e não
-`/questions`, porque a rota da API é `/v1/input-requests`.
+The screen is a client of the API like any other (D11), so the screen's route
+uses the entity name the API already publishes: `/perguntas` becomes
+`/input-requests` and not `/questions`, because the API's route is
+`/v1/input-requests`.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | routes-cli-report | `/quadro` | `/board` | `packages/tela/src/router.ts:350` |
 | routes-cli-report | `/execucoes` | `/executions` | `packages/tela/src/router.ts:351` |
@@ -658,21 +662,21 @@ nome de entidade que a API já publica: `/perguntas` vira `/input-requests` e n�
 | routes-cli-report | `/trabalhos/:id` | `/jobs/:id` | `packages/tela/src/router.ts:363` |
 | routes-cli-report | `/runners` | `/runners` | `packages/tela/src/router.ts:353` |
 
-### 5.2 Linha de comando: subcomandos e flags
+### 5.2 Command line: subcommands and flags
 
-O que uma pessoa DIGITA, e não só o que começa com `--`: um subcomando é tão
-digitado quanto uma flag, e `avaliar` ficou uma linha fora do portão que o teria
-pego porque a leitura do t230 filtrava por `--`.
+What a person TYPES, and not only what starts with `--`: a subcommand is as
+typed as a flag, and `avaliar` sat one row outside the gate that would have
+caught it, because t230's reading filtered by `--`.
 
-As seis linhas do `topografo-custo` entraram com o t255. Três delas
-(`--execucao`, `--teto-tokens`, `--teto-segundos`) o t230 já tinha renomeado no
-código, mas deixadas num array local do teste daquele pacote em vez de aqui, e
-as outras três ele declarou fora do próprio escopo. Nenhuma das duas coisas era
-decisão: a D20 diz "flags de CLI" sem exceção. A grafia vem das linhas já
-aplicadas para as mesmas palavras — `execucao_id` → `execution_id` (§1.1),
-`teto_runner` → `runner_cap` (§1.5) — e não foi inventada aqui.
+`topografo-custo`'s six rows arrived with t255. Three of them (`--execucao`,
+`--teto-tokens`, `--teto-segundos`) t230 had already renamed in the code, but
+left in a local array of that package's test instead of here, and the other
+three it declared outside its own scope. Neither of those was a decision: D20
+says "CLI flags" with no exception. The spelling comes from the rows already
+applied for the same words — `execucao_id` → `execution_id` (§1.1),
+`teto_runner` → `runner_cap` (§1.5) — and was not invented here.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | routes-cli-report | `--classe` | `--class` | `packages/runner/src/synthesizer/synthesize.ts:139`, `packages/runner/src/intake/command-line.ts:49` |
 | routes-cli-report | `--saida` | `--out` | `packages/runner/src/synthesizer/synthesize.ts:149` |
@@ -683,15 +687,15 @@ aplicadas para as mesmas palavras — `execucao_id` → `execution_id` (§1.1),
 | routes-cli-report | `--tier-fator` | `--tier-factor` | `packages/topografo-custo/src/cli.ts` |
 | routes-cli-report | `--tier-minimo-nos` | `--tier-min-nodes` | `packages/topografo-custo/src/cli.ts` |
 
-### 5.3 Chaves do relatório de validação de grafo
+### 5.3 Graph validation report keys
 
-O relatório tem duas implementações que precisam continuar idênticas — a do
-control plane (`packages/core/src/domain/graph.ts`) e a de referência
-(`scripts/validar-grafo.mjs`), comparadas linha a linha por
-`packages/core/test/domain-graph.test.ts`. O ticket filho renomeia as duas na
-mesma entrega, ou o teste de paridade cai.
+The report has two implementations that have to stay identical — the control
+plane's (`packages/core/src/domain/graph.ts`) and the reference one
+(`scripts/validar-grafo.mjs`), compared line by line by
+`packages/core/test/domain-graph.test.ts`. The child ticket renames both in the
+same delivery, or the parity test falls.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | routes-cli-report | `estrutura` | `structure` | `packages/core/src/domain/graph.ts:189` |
 | routes-cli-report | `soundness` | `soundness` | `packages/core/src/domain/graph.ts:190` |
@@ -703,15 +707,15 @@ mesma entrega, ou o teste de paridade cai.
 | routes-cli-report | `alvo` | `target` | `packages/core/src/domain/graph.ts:167` |
 | routes-cli-report | `regra` | `rule` | `packages/core/src/domain/graph.ts:172` |
 
-### 5.4 Regras de soundness e códigos de estrutura
+### 5.4 Soundness rules and structure codes
 
-`no_inalcancavel` não é o nome de uma regra no código — a regra chama-se
-`alcançável` e a violação é anotada com esse nome. O termo aparece como nome do
-exemplo que a exercita (`schema/exemplos/grafo-invalido-no-inalcancavel.json`) e
-está aqui porque o inventário do t213 o cita: o arquivo de exemplo é renomeado
-junto.
+`no_inalcancavel` is not the name of a rule in the code — the rule is called
+`alcançável` and the violation is annotated with that name. The term appears as
+the name of the example that exercises it
+(`schema/exemplos/grafo-invalido-no-inalcancavel.json`) and is here because
+t213's inventory cites it: the example file is renamed along with it.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | routes-cli-report | `alcançável` | `reachable` | `packages/core/src/domain/graph.ts:40` |
 | routes-cli-report | `termina` | `terminates` | `packages/core/src/domain/graph.ts:41` |
@@ -732,24 +736,25 @@ junto.
 | routes-cli-report | `id_gancho_duplicado` | `duplicate_hook_id` | `packages/core/src/domain/graph.ts` |
 | routes-cli-report | `gancho_no_inexistente` | `hook_unknown_node` | `packages/core/src/domain/graph.ts:437` |
 
-### 5.5 Candidata e evidência da lente de custo
+### 5.5 Cost lens candidate and evidence
 
-O que o `topografo-custo` PÕE no fio: as chaves do candidato e da evidência que
-viajam dentro do `POST /v1/proposals`. Etiqueta própria (`cost-lens`) porque não
-é rota de tela, não é flag e não é o relatório de grafo — é o vocabulário de uma
-lente, e o portão daquele pacote é o único que precisa lê-la.
+What `topografo-custo` PUTS on the wire: the keys of the candidate and of the
+evidence that travel inside `POST /v1/proposals`. A tag of its own (`cost-lens`)
+because it is not a screen route, not a flag and not the graph report — it is
+one lens's vocabulary, and that package's gate is the only one that needs to
+read it.
 
-Duas coisas NÃO estão aqui, e por motivos diferentes. `tokens_total` já é
-inglês. E o CONTEÚDO de `metrica_esperada` continua `{nome, direcao, de, para}`:
-é o formato de hipótese do `domain/hypothesis.ts`, congelado, e é justamente o
-que o t255 passou a emitir — a chave viaja em inglês, o que ela carrega não
-viaja de jeito nenhum.
+Two things are NOT here, and for different reasons. `tokens_total` is already
+English. And the CONTENT of `metrica_esperada` stays
+`{nome, direcao, de, para}`: it is `domain/hypothesis.ts`'s hypothesis format,
+frozen, and it is exactly what t255 started emitting — the key travels in
+English, what it carries does not travel at all.
 
-`IdentifiedCostRow` (`cost.ts`) também não está: é a camada de onde a `policy.ts`
-LÊ, nunca serializada, e mascarar leitura de camada de baixo é a mesma convenção
-do portão do núcleo.
+`IdentifiedCostRow` (`cost.ts`) is not here either: it is the layer `policy.ts`
+READS from, never serialized, and masking a read of a lower layer is the same
+convention as the core's gate.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | cost-lens | `lente` | `lens` | `packages/topografo-custo/src/policy.ts` |
 | cost-lens | `custo` | `cost` | `packages/topografo-custo/src/policy.ts` |
@@ -766,43 +771,43 @@ do portão do núcleo.
 | cost-lens | `evidencia` | `evidence` | `packages/topografo-custo/src/policy.ts` |
 | cost-lens | `metrica_esperada` | `expected_metric` | `packages/topografo-custo/src/policy.ts` |
 
-### 5.6 Evidência e medidas da lente de fluxo
+### 5.6 Flow lens evidence and measures
 
-O que o topógrafo de FLUXO põe no fio: as chaves de `evidence` e os nomes de
-medida que `expected_metric.nome` carrega, ambos dentro do `POST /v1/proposals`.
-Etiqueta própria (`flow-lens`) pelo mesmo motivo da §5.5 — é vocabulário de uma
-lente, lido pelo portão de um pacote só — e porque as duas lentes escrevem no
-mesmo campo com conjuntos de chaves diferentes.
+What the FLOW surveyor puts on the wire: the keys of `evidence` and the measure
+names `expected_metric.nome` carries, both inside `POST /v1/proposals`. A tag of
+its own (`flow-lens`) for §5.5's reason — it is one lens's vocabulary, read by
+one package's gate alone — and because the two lenses write into the same field
+with different key sets.
 
-O t227 deixou estas em português **de propósito**, e escreveu isso no cabeçalho
-do `metrics.ts`: eram JSON livre (D15), nenhuma linha de glossário as governava,
-e nenhuma lente irmã tinha migrado. O t255 migrou a irmã, e a partir dali a
-escolha deixou de ser "ainda não" e passou a ser "duas línguas na mesma coluna".
-O t264 é quem fecha, e a primeira travessia real é quem encontrou
-(`notas/2026-08-17-primeira-execucao-bets.md`, buraco 7).
+t227 left these in Portuguese **on purpose**, and wrote so in `metrics.ts`'s
+header: they were free JSON (D15), no glossary row governed them, and no sibling
+lens had migrated. t255 migrated the sibling, and from there on the choice
+stopped being "not yet" and became "two languages in one column". t264 is what
+closes it, and the first real crossing is what found it
+(`notas/2026-08-17-primeira-execucao-bets.md`, hole 7).
 
-Três coisas NÃO estão aqui, cada uma por seu motivo:
+Three things are NOT here, each for a reason of its own:
 
-- **`total_ms` e `lens` já são inglês.** Nada a mapear.
-- **`fonte` fica.** O [`topografo-fluxo.md` §4](topografo-fluxo.md) já registra
-  que ela é a procedência que o módulo declara, distinta do `lens` que o
-  servidor lê para deduplicar. Renomeá-la seria reverter uma decisão gravada,
-  não deixar uma por gravar.
-- **O CONTEÚDO de `metrica_esperada` continua `{nome, direcao, de, para}`** —
-  formato de hipótese congelado do `domain/hypothesis.ts`, exatamente como diz a
-  §5.5. O que a §5.6 muda é o VALOR de `nome`, que é `"<medida>:<node_id>"`: as
-  medidas abaixo são as grafias que ele passa a compor.
+- **`total_ms` and `lens` are already English.** Nothing to map.
+- **`fonte` stays.** [`topografo-fluxo.md` §4](topografo-fluxo.md) already
+  records that it is the provenance the module declares, distinct from the
+  `lens` the server reads to deduplicate. Renaming it would be reverting a
+  recorded decision, not leaving one unrecorded.
+- **The CONTENT of `metrica_esperada` stays `{nome, direcao, de, para}`** —
+  `domain/hypothesis.ts`'s frozen hypothesis format, exactly as §5.5 says. What
+  §5.6 changes is the VALUE of `nome`, which is `"<measure>:<node_id>"`: the
+  measures below are the spellings it goes on to compose.
 
-`gargalo`, `evidencia`, `metrica_esperada` e `proposta` como chaves do
-`SurveyorResult` também não estão: aquilo é o retorno interno do runner, lido
-pelo `cli.mjs` e pelo `packages/topografo`, nunca serializado — mesma convenção
-que deixa `IdentifiedCostRow` fora da §5.5.
+`gargalo`, `evidencia`, `metrica_esperada` and `proposta` as keys of
+`SurveyorResult` are not here either: that is the runner's internal return
+value, read by `cli.mjs` and by `packages/topografo`, never serialized — the
+same convention that leaves `IdentifiedCostRow` out of §5.5.
 
-`evidencia.eventos` aparece qualificada porque `eventos` já é `events` na §1.1,
-e aqui a lista não é de eventos: é de ids deles. Mesma regra que separa
-`evento.tipo` de `pergunta.tipo` na §4.2.
+`evidencia.eventos` appears qualified because `eventos` is already `events` in
+§1.1, and here the list is not of events: it is of their ids. The same rule that
+separates `evento.tipo` from `pergunta.tipo` in §4.2.
 
-| superfície | hoje | vira | onde está hoje |
+| surface | today | becomes | defined in |
 |---|---|---|---|
 | flow-lens | `no_id` | `node_id` | `packages/runner/src/surveyor/metrics.ts` |
 | flow-lens | `execucao_id` | `execution_id` | `packages/runner/src/surveyor/proposal.ts` |
@@ -816,14 +821,18 @@ e aqui a lista não é de eventos: é de ids deles. Mesma regra que separa
 
 ---
 
-## O que este glossário não decide
+## What this glossary does not decide
 
-- **Como migrar.** Recriar banco de desenvolvimento é decisão da D20; o passo a
-  passo (migração, ordem, o que fazer com bundle de fábrica já exportado) é do
-  ticket filho do banco.
-- **O formato final do envelope de erro.** Ver 1.4.
-- **Se o `no-portuguese-wire.test.ts` existe.** Estender os portões da D18 para
-  cobrir valor no fio é o último ticket filho (docs e portão), quando já houver
-  um fio em inglês para conferir.
-- **A marca e os documentos internos.** `cartografo` continua `cartografo`;
-  `DECISOES.md`, `notas/`, `docs/` e este arquivo continuam em português (D18).
+- **How to migrate.** Recreating a development database is D20's decision; the
+  step by step (migration, order, what to do with an already exported factory
+  bundle) belongs to the database child ticket.
+- **The error envelope's final shape.** See 1.4.
+- **Whether `no-portuguese-wire.test.ts` exists.** Extending D18's gates to
+  cover the value on the wire is the last child ticket (docs and gate), once
+  there is an English wire to check.
+- **The brand and the frozen data.** `cartografo` is still `cartografo`. This
+  document is written in English from D24 on, and the only Portuguese left in it
+  is that brand name, the `today`/`becomes` pairs of every table — a map of
+  retired names is written in retired names — and any path it cites that is
+  itself still Portuguese, waiting on its own renaming ticket (t282 for the
+  folders, D24's sibling tickets for the other documents).

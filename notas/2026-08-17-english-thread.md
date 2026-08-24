@@ -1,111 +1,110 @@
-# O fio também fala inglês, do banco ao papel (D20, t213)
+# The thread speaks English too, from the database to the page (D20, t213)
 
-**Quando:** 16–17/08/2026 · **Decisão:** [D20](../DECISIONS.md) ·
-**Guarda-chuva:** t213, dividido em sete filhos por superfície ·
-**Dado migrado:** nenhum, de propósito.
+**When:** 2026-08-16–17 · **Decision:** [D20](../DECISIONS.md) ·
+**Umbrella:** t213, split into seven children by surface ·
+**Data migrated:** none, on purpose.
 
-A D18 já tinha levado o CÓDIGO para o inglês. O que sobrou em português foi o
-que viaja: as chaves do JSON, os nomes de evento, as operações de proposta, as
-tabelas e colunas do banco, as rotas da tela, as flags de CLI e o relatório de
-validação. A D20 decidiu migrar isso também, **antes de o repositório abrir**
-(D7) — porque um projeto público com dois vocabulários ensina os dois — e antes
-das fichas que mexeriam nessas superfícies, para não fazer o trabalho duas
-vezes.
+D18 had already taken the CODE to English. What was left in Portuguese was what
+travels: the JSON's keys, the event names, the proposal operations, the
+database's tables and columns, the screen's routes, the CLI flags and the
+validation report. D20 decided to migrate that too, **before the repository
+opens** (D7) — because a public project with two vocabularies teaches both — and
+before the fichas that would touch those surfaces, so as not to do the work
+twice.
 
-Esta nota fecha a série.
+This note closes the series.
 
-## O que virou, e quem levou
+## What moved, and who took it
 
-| Superfície | O que mudou | Ficha |
+| Surface | What changed | Ficha |
 |---|---|---|
-| Glossário | O mapa único, `docs/spec/glossario-wire.md`: uma linha por termo, com o arquivo onde ele mora hoje | t213 |
-| API e erros | Campos e parâmetros de query do JSON, os dois envelopes de erro convergidos, códigos de recusa | t226 |
-| Eventos | Nomes de tipo, chaves de envelope, tipos de entidade e de ator, chaves de `data`, e os schemas de `especificacoes/eventos/schemas/` renomeados junto | t227 |
-| Operações de proposta | `add_node`, `remove_edge`, `change_node_field` e as chaves que elas carregam | t228 |
-| Banco (nomes) | Tabelas, colunas e índices | t229 |
-| Rotas, flags e relatório | Rotas da tela (`/board`, `/input-requests`…), `--class`/`--out`, e as chaves do relatório de validação nas DUAS implementações | t230 |
-| Banco (valores) | Os VALORES guardados nas colunas — `status`, `entity_type`, `role`… — e, junto, as dezoito migrações reescritas | t235 |
-| Especificações (banco) | As citações de esquema das especificações, conferidas contra um banco de verdade | t236, t237 |
-| Especificações (fio) e portão | As citações de evento, rota e flag; os links de schema quebrados; e o portão que impede a volta | t231 |
+| The glossary | The single map, `docs/spec/glossario-wire.md`: one row per term, with the file it lives in today | t213 |
+| The API and its errors | The JSON's fields and query parameters, the two error envelopes converged, the refusal codes | t226 |
+| Events | Type names, envelope keys, entity and actor types, `data` keys, and the schemas of `especificacoes/eventos/schemas/` renamed alongside | t227 |
+| Proposal operations | `add_node`, `remove_edge`, `change_node_field` and the keys they carry | t228 |
+| The database (names) | Tables, columns and indexes | t229 |
+| Routes, flags and the report | The screen's routes (`/board`, `/input-requests`…), `--class`/`--out`, and the validation report's keys in BOTH implementations | t230 |
+| The database (values) | The VALUES stored in the columns — `status`, `entity_type`, `role`… — and, alongside them, the eighteen migrations rewritten | t235 |
+| The specifications (database) | The specifications' schema citations, checked against a real database | t236, t237 |
+| The specifications (thread) and the gate | The event, route and flag citations; the broken schema links; and the gate that stops the drift back | t231 |
 
-## O que ficou de fora, sabendo
+## What was deliberately left out
 
-- **A prosa.** `DECISIONS.md`, `notas/`, `docs/` e as mensagens de commit
-  continuam em português (D18). A D20 mudou o que VIAJA, não o que se lê.
-- **O `avaliar` do `topografo-custo`** e as opções `--tier-*` dele: a t230 os
-  deixou de fora por decisão própria, e nenhuma ficha desta série os reabriu.
-- **`grafos-de-fabrica/` como nome de diretório** e `<classe>` como marcador de
-  caminho no `atlas-bundle.md`: a D20 nunca declarou nome de diretório do
-  repositório como superfície de fio.
-- **Quatro colunas de `job` e de `session`** que a §4.2 do glossário não
-  registra (`corpo`, `criterios_de_aceite`, `transcricao_truncada`,
-  `transcricao_tamanho_original`). Fechar o buraco é acrescentar linha lá, e é
-  trabalho de ficha própria.
+- **The prose.** `DECISIONS.md`, `notas/`, `docs/` and the commit messages stay
+  in Portuguese (D18). D20 changed what TRAVELS, not what is read.
+- **`topografo-custo`'s `avaliar`** and its `--tier-*` options: t230 left them
+  out by its own decision, and no ficha of this series reopened them.
+- **`grafos-de-fabrica/` as a directory name** and `<classe>` as a path marker in
+  `atlas-bundle.md`: D20 never declared a repository directory name to be a
+  thread surface.
+- **Four columns of `job` and of `session`** that §4.2 of the glossary does not
+  record (`corpo`, `criterios_de_aceite`, `transcricao_truncada`,
+  `transcricao_tamanho_original`). Closing the hole means adding rows there, and
+  it is the work of a ficha of its own.
 
-## Não existe migração de renomeação, e isso é a decisão
+## There is no rename migration, and that is the decision
 
-O log é append-only e uma proposta guardada é o registro do que alguém propôs:
-renomear um tipo de evento gravado seria reescrever histórico, e uma linha
-antiga não passaria pelo `CHECK` novo de qualquer forma. Como não há dado de
-produção, a D20 respondeu **recriando** o banco de desenvolvimento em vez de
-migrá-lo.
+The log is append-only and a stored proposal is the record of what somebody
+proposed: renaming a recorded event type would be rewriting history, and an old
+row would not pass the new `CHECK` anyway. Since there is no production data, D20
+answered by **recreating** the development database instead of migrating it.
 
-Por isso a t235 não empilhou uma décima-nona migração que renomeasse: ela
-reescreveu `0001`–`0018` no lugar, e o esquema **nasce em inglês**. Um banco
-anterior à t235 não é atualizado por elas — não há o que rodar. O passo de
-atualização é uma linha, e está no `README.md`:
+That is why t235 did not stack a nineteenth migration that renamed: it rewrote
+`0001`–`0018` in place, and the schema **is born in English**. A database older
+than t235 is not updated by them — there is nothing to run. The update step is
+one line, and it is in `README.md`:
 
 ```bash
 rm -rf .cartografo/
 npx cartografo
 ```
 
-## O portão que impede a volta
+## The gate that stops the drift back
 
-Cada superfície ganhou o seu, e nenhum deles declara vocabulário: todos leem o
-glossário em tempo de execução, de modo que uma linha acrescentada lá vira
-termo conferido na execução seguinte.
+Every surface got its own, and none of them declares a vocabulary: they all read
+the glossary at run time, so that a row added there becomes a checked term on the
+next run.
 
-- `packages/core/test/no-portuguese-wire.test.ts` (e as portas dele em
-  `runner`, `tela` e `topografo-custo`) — as rotas, as flags, o relatório e o
-  JSON de `/v1`.
-- `event-validation.test.ts` e `domain-operations.test.ts` — o catálogo de
-  eventos e os nomes de operação, que recusam também as grafias antigas.
-- `no-portuguese-database.test.ts` e `migrate.test.ts` — o esquema e as
-  consultas.
-- `spec-database-citations.test.ts` — as citações de esquema das
-  especificações, resolvidas contra um banco que as migrações realmente
-  constroem.
-- `glossario-wire-docs.test.ts` (t231) — as citações de evento, de rota e de
-  flag das especificações, e os links para `especificacoes/eventos/schemas/`.
+- `packages/core/test/no-portuguese-wire.test.ts` (and its ports in `runner`,
+  `tela` and `topografo-custo`) — the routes, the flags, the report and `/v1`'s
+  JSON.
+- `event-validation.test.ts` and `domain-operations.test.ts` — the event
+  catalogue and the operation names, which also refuse the old spellings.
+- `no-portuguese-database.test.ts` and `migrate.test.ts` — the schema and the
+  queries.
+- `spec-database-citations.test.ts` — the specifications' schema citations,
+  resolved against a database the migrations really build.
+- `glossario-wire-docs.test.ts` (t231) — the specifications' event, route and
+  flag citations, and the links to `especificacoes/eventos/schemas/`.
 
-O último é o único que lê Markdown, e a regra dele é estreita de propósito: só
-o que está **dentro de crase ou de bloco cercado** é lido. A prosa em volta é
-portuguesa por decisão, e um portão que não soubesse distinguir "a pergunta que
-bloqueia o trabalho" de uma citação teria de ser desligado para ser usável.
+The last one is the only one that reads Markdown, and its rule is narrow on
+purpose: only what is **inside a backtick or a fenced block** is read. The prose
+around it is Portuguese by decision, and a gate that could not tell "the question
+that blocks the job" from a citation would have had to be switched off to be
+usable.
 
-## O que a série ensinou
+## What the series taught
 
-**Glossário primeiro não foi burocracia.** Sem ele, seis fichas teriam
-inventado cinco inglêses para o mesmo termo — e o repositório abriria com dois
-vocabulários em vez de um. O glossário reusa o nome que o código já expunha
-sempre que existia um (`/v1/jobs` fez `trabalho` virar `job`, e não `task`),
-que é como uma tradução deixa de ser opinião.
+**Glossary first was not bureaucracy.** Without it, six fichas would have
+invented five Englishes for the same term — and the repository would have opened
+with two vocabularies instead of one. The glossary reuses the name the code
+already exposed whenever one existed (`/v1/jobs` is what made `trabalho` become
+`job`, and not `task`), which is how a translation stops being an opinion.
 
-**Um documento que descreve o próprio estado erra sozinho.** A linha da §5 do
-glossário disse `pendente` por um dia inteiro depois de a t230 aterrissar
-verde. Quem lê a tabela para saber "onde já virou" era desinformado por ela.
+**A document that describes its own state goes wrong by itself.** The row in §5
+of the glossary said `pendente` for a whole day after t230 landed green. Whoever
+read the table to find out "where has it already moved" was misinformed by it.
 
-**Portão de código não vê papel.** Cinco filhos deixaram o código impecável e
-as especificações citando `pergunta.criada` — com links para arquivos de schema
-que já não existiam. Um leitor só descobria clicando. Superfície sem portão
-apodrece, e documentação é superfície.
+**A code gate does not see paper.** Five children left the code impeccable and
+the specifications citing `pergunta.criada` — with links to schema files that no
+longer existed. A reader only found out by clicking. A surface with no gate rots,
+and documentation is a surface.
 
-**O que sobrou é o que ninguém varre.** As chaves do JSON da API (§1), o
-envelope do evento (§2.2) e as chaves de `data` (§2.4) não têm portão de
-citação em documento: são palavras portuguesas comuns (`nome`, `motivo`,
-`campo`, `origem`) cujo custo em falso positivo, na prosa, pagaria mal o que
-encontrasse. Existe drift ali — `intake.md` ainda diz que os erros daquela
-camada falam português, e o `topografo-cost.md` diz o mesmo das chaves do
-corpo dele. É trabalho de ficha própria, com o tipo de mascaramento que o
-`no-portuguese-wire.test.ts` construiu para código-fonte.
+**What was left is what nobody sweeps.** The API JSON's keys (§1), the event
+envelope (§2.2) and the `data` keys (§2.4) have no citation gate in a document:
+they are ordinary Portuguese words (`nome`, `motivo`, `campo`, `origem`) whose
+cost in false positives, in prose, would pay badly for what it found. There is
+drift there — `intake.md` still says that layer's errors speak Portuguese, and
+`topografo-cost.md` says the same of its body's keys. It is the work of a ficha
+of its own, with the kind of masking `no-portuguese-wire.test.ts` built for
+source code.

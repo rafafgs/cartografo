@@ -1,56 +1,58 @@
-# É graph engineering ou loop engineering? (2026-08-14)
+# Is this graph engineering or loop engineering? (2026-08-14)
 
-Objeção levantada pelo Rafael na iteração da ideia; é também a objeção número
-um esperada quando o projeto for público. Registrada aqui com a resposta.
+An objection Rafael raised while iterating on the idea; it is also the number-one
+objection to expect once the project is public. Recorded here with the answer.
 
-## A objeção
+## The objection
 
-O ciclo de evolução do cartografo (sintetizar → executar → avaliar → propor →
-aplicar → repetir) tem forma de loop. Isso não faz do projeto loop
-engineering com passos extras?
+cartografo's evolution cycle (synthesize → execute → evaluate → propose → apply →
+repeat) has the shape of a loop. Does that not make the project loop engineering
+with extra steps?
 
-## A resposta
+## The answer
 
-**A camada de execução é graph engineering sem ambiguidade**: topologia
-congelada, papéis distintos, portões condicionais, estado explícito, ciclos e
-saídas. Os loops que existem ali (re-despacho, re-teste) são ciclos do grafo,
-critério 4, não regressão.
+**The execution layer is graph engineering without ambiguity**: a frozen
+topology, distinct roles, conditional gates, explicit state, cycles and exits.
+The loops that exist there (re-dispatch, re-test) are cycles of the graph,
+criterion 4, not a regression.
 
-**O cheiro de loop vem da camada de evolução, e a diferença está no que o
-ciclo carrega.** No loop engineering, o loop carrega *tentativas*: itera em
-voo até uma condição de passagem, cada iteração é descartável, e quando uma
-passa as anteriores viram lixo; o que melhora é o artefato daquela rodada, e
-o processo seguinte começa do zero. No cartografo, o ciclo carrega *versões*:
-roda entre execuções (não dentro de uma), cada volta produz um grafo v(n+1)
-com diff contra v(n), justificado por telemetria real de v(n); nada se
-descarta, tudo é auditável e reversível; quem decide "melhor" é um humano num
-portão, não uma condição computada; e o que melhora é o processo das próximas
-execuções. Loop carrega tentativas; cartografo carrega versões.
+**The smell of a loop comes from the evolution layer, and the difference is in
+what the cycle carries.** In loop engineering, the loop carries *attempts*: it
+iterates in flight until a passing condition, every iteration is disposable, and
+when one passes the earlier ones become rubbish; what improves is the artifact of
+that round, and the next process starts from zero. In cartografo, the cycle
+carries *versions*: it runs between executions (not inside one), every turn
+produces a graph v(n+1) with a diff against v(n), justified by real telemetry
+from v(n); nothing is discarded, everything is auditable and reversible; the one
+who decides "better" is a human at a gate, not a computed condition; and what
+improves is the process of the next executions. A loop carries attempts;
+cartografo carries versions.
 
-**O argumento estrutural**: o meta-processo passa no teste dos quatro
-critérios. Papéis distintos (sintetizador, validador, topógrafo, humano);
-aresta condicional (o portão de validação pode reprovar o grafo sintetizado);
-estado explícito (grafos versionados no banco); ciclos e saídas (proposta
-rejeitada volta, aprovada aplica, rollback existe). O meta-processo é ele
-mesmo um grafo fixo pequeno cujos viajantes são grafos. O "loop" percebido é
-a aresta de ciclo desse meta-grafo. É grafo até o fundo; a recursão fecha.
+**The structural argument**: the meta-process passes the test of the four
+criteria. Distinct roles (synthesizer, validator, topografo, human); a
+conditional edge (the validation gate can reject the synthesized graph); explicit
+state (graphs versioned in the database); cycles and exits (a rejected proposal
+goes back, an approved one applies, a rollback exists). The meta-process is
+itself a small fixed graph whose travellers are graphs. The perceived "loop" is
+the cycle edge of that meta-graph. It is graphs all the way down; the recursion
+closes.
 
-**Nome teórico da distinção**: single-loop learning corrige a ação dentro das
-regras (portões durante a execução; é o que o loop engineering automatiza);
-double-loop learning revisa as próprias regras (o topógrafo propondo mudança
-de topologia). O cartografo é double-loop sobre o grafo — a retrospectiva de
-um time, automatizada, com o rigor de versionamento que retrospectiva humana
-não tem.
+**The theoretical name for the distinction**: single-loop learning corrects the
+action within the rules (gates during the execution; it is what loop engineering
+automates); double-loop learning revises the rules themselves (the topografo
+proposing a change of topology). cartografo is double-loop over the graph — a
+team's retrospective, automated, with the versioning rigour a human
+retrospective does not have.
 
-## Os dois modos de degeneração (e as decisões que os bloqueiam)
+## The two modes of degeneration (and the decisions that block them)
 
-1. **Regenerar a topologia por execução até dar certo** (padrão
-   AgentConductor: regenera o YAML até sucesso ou estourar budget) — trata o
-   grafo como rascunho de iteração. Bloqueado pelo princípio 2 e pela D2:
-   congelado durante, versionado entre.
-2. **Propostas auto-aplicadas otimizando métrica única** (compile loop estilo
-   DSPy) — reduz o grafo a vetor de parâmetros. Bloqueado pelo princípio 5:
-   o humano define "melhor" antes de qualquer auto-aplicação.
+1. **Regenerating the topology per execution until it works** (the AgentConductor
+   pattern: regenerate the YAML until success or until the budget blows) — it
+   treats the graph as a draft to iterate on. Blocked by principle 2 and by D2:
+   frozen during, versioned between.
+2. **Auto-applied proposals optimizing a single metric** (a DSPy-style compile
+   loop) — it reduces the graph to a vector of parameters. Blocked by principle
+   5: the human defines "better" before any auto-application.
 
-Se qualquer dessas duas barreiras cair, o projeto vira loop engineering de
-verdade — e perde tanto a governança quanto o diferencial.
+If either of those two barriers falls, the project really does become loop
+engineering — and loses both the governance and the differentiator.

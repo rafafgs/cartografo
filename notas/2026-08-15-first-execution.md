@@ -1,69 +1,71 @@
-# Primeira execução real — jogo da velha (2026-08-15, madrugada)
+# The first real execution — tic-tac-toe (2026-08-15, small hours)
 
-Registro do primeiro dogfood: o cartografo recém-construído (47 tickets em ~10h
-de onda no flowpilot) atravessou o grafo de fábrica 1 inteiro com sessões
-`claude` reais e produziu um jogo da velha jogável em `~/jogo-da-velha`
-(operador: o planner da onda, como procurador do founder; journal completo e
-filmagem em `github.com/rafafgs/cartografo-story`).
+A record of the first dogfood: the freshly built cartografo (47 tickets in ~10h
+of a flowpilot wave) crossed the whole of factory graph 1 with real `claude`
+sessions and produced a playable tic-tac-toe at `~/jogo-da-velha` (operator: the
+wave's planner, as the founder's proxy; the full journal and the recording are at
+`github.com/rafafgs/cartografo-story`).
 
-**Números**: 5 nós atravessados (refinar → desenvolver → integrar → testar →
-implantar), 7 sessões (2 retries, 1 re-despacho pós-resposta), 1 pergunta
-humana respondida via API, 6 commits no repo alvo, 12/12 critérios `passou`,
-~20 min de trabalho de sessão. Trabalho #1, execução #1, telemetria íntegra no
-`.cartografo/cartografo.db` (export em `cartografo-story/game-run/`).
+**Numbers**: 5 nodes crossed (refinar → desenvolver → integrar → testar →
+implantar), 7 sessions (2 retries, 1 re-dispatch after an answer), 1 human
+question answered through the API, 6 commits in the target repository, 12/12
+criteria `passou`, ~20 min of session work. Job #1, execution #1, telemetry
+intact in `.cartografo/cartografo.db` (exported to `cartografo-story/game-run/`).
 
-## O que funcionou de primeira
+## What worked first time
 
-1. **Partida em um comando + bootstrap token (t100/t124)** — `cartografo.ready`
-   com a credencial única; toda a rodada autenticada.
-2. **Import com pinos de hash (t108/t135/D4)** — grafo de fábrica registrado,
-   5 skills no registry, versão por hash canônico.
-3. **Lease/tick (t103, D5)** — 7 despachos, zero corrida, lease devolvida em
-   toda falha.
-4. **Escalação humana ponta a ponta (t106, D9)** — o tester emitiu o bloco
-   `input-request`, o trabalho bloqueou sozinho, `PATCH /answer` desbloqueou, e
-   o re-despacho com a pergunta+resposta no prompt mudou o comportamento da
-   sessão. Primeira rodada real, zero ajuste.
-5. **Retry-com-contexto** — a perna 2 do refinar encontrou o SPEC.md órfão da
-   perna 1 e concluiu, sem instrução especial.
-6. **O manifesto da skill como prompt bastou para o processo emergir** — o nó
-   desenvolver fez red→green→doc por conta do contrato (teste vermelho
-   commitado antes da implementação), sem que o enunciado pedisse TDD.
-7. **Tester com evidência própria (D9)** — caminhou os 12 critérios com harness
-   próprio em /tmp, escalou APENAS a prova que não podia produzir (segundo
-   navegador, TCC), com avaliação de risco anexa.
+1. **One-command startup + a bootstrap token (t100/t124)** — `cartografo.ready`
+   with the single credential; the whole round authenticated.
+2. **Import with hash pins (t108/t135/D4)** — the factory graph registered, 5
+   skills in the registry, a version by canonical hash.
+3. **Lease/tick (t103, D5)** — 7 dispatches, zero races, the lease returned on
+   every failure.
+4. **Human escalation end to end (t106, D9)** — the tester emitted the
+   `input-request` block, the job blocked on its own, `PATCH /answer` unblocked
+   it, and the re-dispatch with the question+answer in the prompt changed the
+   session's behaviour. First real round, zero adjustment.
+5. **Retry-with-context** — refinar's second leg found the orphaned SPEC.md from
+   the first leg and finished, with no special instruction.
+6. **The skill's manifest as a prompt was enough for the process to emerge** —
+   the desenvolver node did red→green→doc off the back of the contract (a failing
+   test committed before the implementation), without the brief asking for TDD.
+7. **A tester with evidence of its own (D9)** — it walked the 12 criteria with a
+   harness of its own in /tmp, and escalated ONLY the proof it could not produce
+   (a second browser, the TCC), with a risk assessment attached.
 
-## Lacunas e bugs encontrados (por ordem de dor)
+## Gaps and bugs found (in order of pain)
 
-1. **A travessia automática era o t109 (cancelado)** — o grafo vive como dado,
-   mas o dispatch v0 usa instrução fixa e não puxa a skill do `grafo_versao`
-   nem avança nó. A rodada foi hand-cranked pelo operador (um job por nó,
-   manifesto injetado manualmente, `POST /transitions` entre nós). É a lacuna
-   número um do produto.
-2. **Dispatch sem Authorization** — 401 contra o plane autenticado do t124;
-   achado 01:4x, ticket t147 no flowpilot, **consertado pelo próprio fluxo
-   durante a noite** (surfando pausa de quota). O workaround da rodada foi o
-   seam `doFetch`.
-3. **Transcript de sessão não persistido** — a perna 1 do refinar morreu com
-   exit 1 e trabalho quase pronto, e não há como diagnosticar: o prompt é
-   gravado, a saída não. O topógrafo vai precisar do log da sessão.
-4. **Porta default colide com a bancada de teste** — o 4317 estava ocupado pelo
-   control plane que a bancada do flowpilot mantém vivo. `CARTOGRAFO_PORT`
-   resolveu; um default randomizável (porta 0 no ready line) evitaria.
-5. **Runner-como-biblioteca exige `--import tsx` do consumidor** — *parameter
-   properties* quebram o strip-only do Node; um bin empacotado (como o do core)
-   resolveria.
-6. **Sem worktree por sessão** — a sessão trabalha no checkout compartilhado; o
-   próprio OPERADOR virou escritor concorrente (um `git checkout` de
-   verificação sob sessão viva — inócuo por sorte). A lei do flowpilot
-   (worktree-per-session, docs/process.md #1-3) vale aqui.
-7. Miudezas de contrato: ator aceita `usuario|agente|sistema` ("humano" = 422,
-   correto mas surpreende); `POST /v1/executions` não existe (execução é
-   projeção; o id no job é livre); evento `sessao.finalizada` não aparece na
-   projeção do trabalho (fica na entidade sessão).
+1. **The automatic traversal was t109 (cancelled)** — the graph lives as data,
+   but dispatch v0 uses a fixed instruction and pulls neither the skill from the
+   `grafo_versao` nor advances a node. The round was hand-cranked by the operator
+   (one job per node, the manifest injected by hand, `POST /transitions` between
+   nodes). It is the product's number-one gap.
+2. **Dispatch with no Authorization** — a 401 against t124's authenticated plane;
+   found at 01:4x, ticket t147 in flowpilot, **fixed by the flow itself during
+   the night** (surfing a quota pause). The round's workaround was the `doFetch`
+   seam.
+3. **A session's transcript is not persisted** — refinar's first leg died with
+   exit 1 and the job nearly done, and there is no way to diagnose it: the prompt
+   is recorded, the output is not. The topografo is going to need the session's
+   log.
+4. **The default port collides with the test bench** — 4317 was occupied by the
+   control plane flowpilot's bench keeps alive. `CARTOGRAFO_PORT` solved it; a
+   randomisable default (port 0 in the ready line) would have avoided it.
+5. **The runner-as-a-library demands `--import tsx` from the consumer** —
+   *parameter properties* break Node's strip-only mode; a packaged bin (like the
+   core's) would solve it.
+6. **No worktree per session** — the session works in the shared checkout; the
+   OPERATOR themselves became a concurrent writer (a verification `git checkout`
+   under a live session — harmless by luck). flowpilot's law
+   (worktree-per-session, docs/process.md #1-3) holds here.
+7. Small contract details: the actor accepts `usuario|agente|sistema` ("humano" =
+   422, correct but surprising); `POST /v1/executions` does not exist (an
+   execution is a projection; the id on the job is free); the
+   `sessao.finalizada` event does not appear in the job's projection (it stays on
+   the session entity).
 
-## O que a próxima rodada deveria ter
+## What the next round should have
 
-Skill-rendering + avanço de nó automático (o t109 de fato), transcript
-persistido, worktree por sessão, bin do runner. Com isso a mesma rodada roda
-sem operador — e o topógrafo tem o que ler.
+Skill rendering + automatic node advance (t109 for real), a persisted
+transcript, a worktree per session, the runner's bin. With those the same round
+runs with no operator — and the topografo has something to read.

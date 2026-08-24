@@ -1,60 +1,63 @@
-# O ciclo de aprendizado, fechado uma vez inteiro (t165)
+# The learning loop, closed once end to end (t165)
 
-**Quando:** 15/08/2026 · **Grafo:** `desenvolvimento-de-software` ·
-**Banco:** persistente, `.cartografo/cartografo.db` do checkout da ficha ·
-**Engine:** `claude` real (2.1.233), 11 sessões, nenhuma simulada.
+**When:** 2026-08-15 · **Graph:** `desenvolvimento-de-software` ·
+**Database:** persistent, the `.cartografo/cartografo.db` of the ficha's checkout ·
+**Engine:** the real `claude` (2.1.233), 11 sessions, none of them simulated.
 
-O princípio 5 do README — propor, passar por portão, aplicar, medir, fechar — é
-o produto. Até esta ficha ele nunca tinha dado uma volta completa: a `t110`
-propunha, a `t111` desenhava a inbox contra rotas que não existiam, a `t112`
-sabia fechar um experimento que ninguém tinha aberto. Esta nota registra a
-primeira volta inteira, com número em cada passo.
+Principle 5 of the README — propose, pass a gate, apply, measure, close — is the
+product. Until this ficha it had never gone round once completely: `t110`
+proposed, `t111` designed the inbox against routes that did not exist, `t112`
+knew how to close an experiment nobody had opened. This note records the first
+complete turn, with a number at every step.
 
-## A volta
+## The turn
 
-| Passo | O que rodou | Resultado |
+| Step | What ran | Result |
 |---|---|---|
-| Rodada 1 | `npm run traverse` sobre os 5 nós, execução **1651** | 5 sessões `concluida`, 15 eventos, `trabalho` com `grafo_versao_id` |
-| Proposta | `npm run surveyor -- 1651` | proposta **1**, `pendente`, gargalo `refinar`, evidência citando os eventos 2 e 3 |
-| Portão | tela: **Aprovar** | `pendente` → `aprovada` |
-| Aplicação | tela: **Aplicar** | versão `sha256:666feb7b…`, `versao_pai` = `sha256:5e506c31…`, ponteiro movido |
-| Rodada 2 | `npm run traverse` na versão nova, execução **1653** | 5 sessões `concluida`, 16 eventos |
-| Fecho | `npm run close-outcome -- 1 1653` | `{"veredito":"piorou","antes":29112,"depois":31273}` |
-| Reversão | tela: **Reverter** com motivo | ponteiro de volta, versão abandonada **ainda listada**, `resultado` intacto |
-| Rejeição | `surveyor -- 1653` → proposta **2** → tela: **Rejeitar** | `motivo_rejeicao` gravado, `resultado` continua `null` |
+| Round 1 | `npm run traverse` over the 5 nodes, execution **1651** | 5 `concluida` sessions, 15 events, a `trabalho` with a `grafo_versao_id` |
+| Proposal | `npm run surveyor -- 1651` | proposal **1**, `pendente`, the bottleneck at `refinar`, evidence citing events 2 and 3 |
+| Gate | the screen: **Approve** | `pendente` → `aprovada` |
+| Application | the screen: **Apply** | version `sha256:666feb7b…`, `versao_pai` = `sha256:5e506c31…`, the pointer moved |
+| Round 2 | `npm run traverse` on the new version, execution **1653** | 5 `concluida` sessions, 16 events |
+| Closing | `npm run close-outcome -- 1 1653` | `{"veredito":"piorou","antes":29112,"depois":31273}` |
+| Reversion | the screen: **Revert** with a reason | the pointer back, the abandoned version **still listed**, `resultado` intact |
+| Rejection | `surveyor -- 1653` → proposal **2** → the screen: **Reject** | `motivo_rejeicao` recorded, `resultado` still `null` |
 
-A tarefa das duas rodadas foi a mesma e real: especificar, implementar, testar e
-"implantar" um utilitário Node que conta datas por dia da semana. Os dois
-`parecer.md` saíram `aprovado`, com `node --test` verde de verdade.
+The task of both rounds was the same one, and a real one: specify, implement,
+test and "deploy" a Node utility that counts dates by day of the week. Both
+`parecer.md` came out `aprovado`, with a genuinely green `node --test`.
 
-## O que a volta ensinou, e que nenhum teste tinha como ensinar
+## What the turn taught, and no test could have taught
 
-**A hipótese piorou, e isso é o sistema funcionando.** O topógrafo apostou que
-encurtar a descrição do nó `refinar` derrubaria `tempo_agente_ms:refinar` de
-29112 para 23290. Mediu 31273 na rodada seguinte — subiu. O veredito saiu do
-control plane, de dois números que qualquer pessoa refaz a partir do log, e foi
-ele que justificou a reversão. Uma volta que confirmasse a hipótese na primeira
-tentativa teria provado menos: o valor do ciclo é medir, não acertar.
+**The hypothesis made things worse, and that is the system working.** The
+topografo bet that shortening the description of the `refinar` node would bring
+`tempo_agente_ms:refinar` down from 29112 to 23290. It measured 31273 on the
+following round — it went up. The verdict came out of the control plane, from
+two numbers anybody can redo from the log, and it is what justified the
+reversion. A turn that confirmed the hypothesis on the first attempt would have
+proved less: the value of the cycle is measuring, not being right.
 
-**Uma rodada só não é uma medição.** `de` e `depois` aqui são de UMA travessia
-cada. A variação natural entre duas sessões do mesmo nó é da ordem de segundos
-(31s contra 29s), e nada neste ciclo separa "a mudança piorou" de "a sessão
-demorou mais dessa vez". O veredito é honesto quanto ao que compara; quem for
-usá-lo para decidir precisa de mais de uma travessia por versão, e isso não
-existe.
+**One round is not a measurement.** `de` and `depois` here are from ONE traversal
+each. The natural variation between two sessions of the same node is on the order
+of seconds (31s against 29s), and nothing in this cycle separates "the change
+made it worse" from "the session took longer this time". The verdict is honest
+about what it compares; whoever is going to use it to decide needs more than one
+traversal per version, and that does not exist.
 
-**`Controller.tick()` pega o primeiro trabalho LIBERADO, não o seu.** Num banco
-descartável, como o das spikes, existe só um trabalho e a distinção some. Neste,
-a rodada 2 abriu cinco sessões reais no trabalho da rodada 1 — que continuava
-parado, desbloqueado, no último nó — e o log inteiro caiu na execução errada, no
-nó errado. Não há sinal de servidor para filtrar: `concluido` fica verdadeiro
-no instante em que o trabalho CHEGA num nó final, antes da sessão daquele nó
-rodar, então filtrar por ele pularia o último nó de toda travessia. Encerrar
-trabalho de vez é da `t109`. Por ora o driver se recusa a começar com trabalho
-liberado alheio na fila e bloqueia o próprio ao terminar.
+**`Controller.tick()` picks up the first RELEASED job, not yours.** In a
+disposable database, like the spikes', there is only one job and the distinction
+disappears. In this one, round 2 opened five real sessions on round 1's job —
+which was still sitting there, unblocked, on the last node — and the whole log
+landed on the wrong execution, at the wrong node. There is no server signal to
+filter on: `concluido` becomes true the instant the job ARRIVES at a final node,
+before that node's session runs, so filtering by it would skip the last node of
+every traversal. Ending a job for good is `t109`'s. For now the driver refuses to
+start with somebody else's released job in the queue and blocks its own on
+finishing.
 
-**Reconstruir tabela no SQLite com quem aponta para ela.** `PRAGMA
-defer_foreign_keys` — o remédio óbvio para o DELETE implícito do `DROP TABLE` —
-não resolve: o contador de violações adiadas sobe no drop e o `RENAME` não o
-abaixa. Um banco com uma única proposta aplicada não migrava. A `0010` guarda as
-referências filhas, zera antes do drop e restaura depois do rename.
+**Rebuilding a table in SQLite with something pointing at it.** `PRAGMA
+defer_foreign_keys` — the obvious remedy for the implicit DELETE of a
+`DROP TABLE` — does not solve it: the deferred-violation counter goes up on the
+drop and the `RENAME` does not bring it down. A database with a single applied
+proposal would not migrate. `0010` keeps the child references, zeroes them before
+the drop and restores them after the rename.

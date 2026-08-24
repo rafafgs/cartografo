@@ -1,358 +1,361 @@
-# Especificação: tela mínima de observabilidade
+# Specification: the minimal observability screen
 
-**Versão da API consumida:** `v1` · **Pacote:** [`packages/tela`](../../packages/tela)
-**Comando:** `npx cartografo-tela` · **Porta default:** `4318`
-**Decisão de origem:** [D11](../../DECISIONS.md) — "observabilidade + inbox primeiro; a
-tela é cliente comum da API pública, sem privilégio" · Critério de PoC da
-[D16](../../DECISIONS.md)
+**Version of the API consumed:** `v1` · **Package:** [`packages/tela`](../../packages/tela)
+**Command:** `npx cartografo-tela` · **Default port:** `4318`
+**Founding decision:** [D11](../../DECISIONS.md) — "observability and the inbox
+first; the screen is a client of the public API, with no privileges" · the PoC
+criterion of [D16](../../DECISIONS.md)
 
-A tela responde três perguntas e mais nenhuma: **onde está cada trabalho**,
-**quem está esperando uma decisão minha**, e **para onde foi o tempo de um
-trabalho**. Tudo o que ela mostra saiu de uma rota pública documentada; tudo o
-que ela escreve foi um `PATCH` na mesma API que qualquer outro cliente usa.
+The screen answers three questions and no others: **where each job is**, **who is
+waiting on a decision of mine**, and **where a job's time went**. Everything it
+shows came out of a documented public route; everything it writes was a `PATCH`
+against the same API any other client uses.
 
-O corolário, que é a D11 inteira: **a tela não tem privilégio nenhum**. Não abre
-o banco, não importa nada de `packages/core`, não declara driver de SQLite e não
-conhece o caminho do arquivo. Ela sobe em outra porta, em outro processo, e pode
-morrer sem o control plane notar. Se ela precisa de algo que a API não dá, o bug
-é da API — foi assim que esta camada nasceu com três rotas novas do lado do
-core, e não com três atalhos do lado dela (§4).
+The corollary, which is the whole of D11: **the screen has no privilege at all**.
+It does not open the database, imports nothing from `packages/core`, declares no
+SQLite driver and does not know the file's path. It comes up on another port, in
+another process, and it can die without the control plane noticing. If it needs
+something the API does not give, the bug is the API's — that is how this layer
+was born with three new routes on the core's side, and not with three shortcuts
+on its own (§4).
 
-A regra é verificada estaticamente por
-[`scripts/check-single-writer.mjs`](../../scripts/check-single-writer.mjs), que
-roda no `npm run lint`, e travada por
+The rule is checked statically by
+[`scripts/check-single-writer.mjs`](../../scripts/check-single-writer.mjs), which
+runs in `npm run lint`, and locked down by
 [`packages/tela/test/no-privileged-access.test.ts`](../../packages/tela/test/no-privileged-access.test.ts).
 
 ---
 
-## 1. As sete rotas
+## 1. The seven routes
 
-| Rota | O que mostra | O que lê da API |
+| Route | What it shows | What it reads from the API |
 |---|---|---|
-| `GET /board` | O quadro: todos os trabalhos, agrupados por `no_atual`, com o motivo do bloqueio quando há. | `GET /v1/jobs` |
-| `GET /executions` | Uma linha por execução, com trabalhos, bloqueados e perguntas pendentes. | `GET /v1/executions` |
-| `GET /executions/:id` | O recorte de uma rodada: quadro, sessões e perguntas pendentes na mesma página. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
-| `GET /input-requests` | A fila de escalação, cada pergunta inteira e com formulário inline. | `GET /v1/input-requests?status=pendente` |
-| `GET /runners` | A frota: um runner por linha, com leases ativas, último heartbeat e a última lease que ele perdeu para o TTL. | `GET /v1/runners` |
-| `POST /input-requests/:id/answer` | Nada: escreve e redireciona (303) para `/input-requests`. | `PATCH /v1/input-requests/:id/answer` |
-| `GET /jobs/:id` | A linha do tempo do trabalho, em três baldes, mais os totais. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
+| `GET /board` | The board: every job, grouped by `no_atual`, with the blocking reason where there is one. | `GET /v1/jobs` |
+| `GET /executions` | One line per execution, with jobs, blocked jobs and pending questions. | `GET /v1/executions` |
+| `GET /executions/:id` | One round's slice: the board, the sessions and the pending questions on the same page. | `GET /v1/jobs?execucao_id=`, `GET /v1/sessions?execucao_id=`, `GET /v1/input-requests?status=pendente&execucao_id=` |
+| `GET /input-requests` | The escalation queue, every question whole and with an inline form. | `GET /v1/input-requests?status=pendente` |
+| `GET /runners` | The fleet: one runner per line, with active leases, the last heartbeat and the last lease it lost to the TTL. | `GET /v1/runners` |
+| `POST /input-requests/:id/answer` | Nothing: it writes and redirects (303) to `/input-requests`. | `PATCH /v1/input-requests/:id/answer` |
+| `GET /jobs/:id` | The job's timeline, in three buckets, plus the totals. | `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `GET /v1/sessions?trabalho_id=`, `GET /v1/input-requests?trabalho_id=` |
 
-Cada view renderiza **no request**. Não há polling, websocket nem
-auto-refresh: recarregar a página é a atualização, e o estado da tela é sempre
-o estado que a API acabou de contar.
+Every view renders **on the request**. There is no polling, no websocket and no
+auto-refresh: reloading the page is the update, and the screen's state is always
+the state the API has just reported.
 
-**Execução não é entidade.** `execucao_id` é agrupador opaco (não existe tabela
-`execucao` na v1), então `/executions/99` sem nada dentro responde **200 com
-página vazia**, nunca 404 — mesma leitura que o control plane já faz em
-`GET /v1/executions/:id/metrics-by-version`. Trabalho, esse sim, é entidade:
-`/jobs/424242` responde **404**.
+**An execution is not an entity.** `execucao_id` is an opaque grouper (there is
+no `execucao` table in v1), so `/executions/99` with nothing inside answers
+**200 with an empty page**, never 404 — the same reading the control plane
+already does in `GET /v1/executions/:id/metrics-by-version`. A job, on the other
+hand, is an entity: `/jobs/424242` answers **404**.
 
-### O pacote tem duas metades, e uma porta só
+### The package has two halves, and one port
 
-A D11 pede duas coisas da tela: observabilidade e inbox. Elas chegaram em
-fichas diferentes — esta e a `t111` — e dividem o mesmo pacote, o mesmo
-processo e a mesma porta. Um handler só
-([`packages/tela/src/servidor.ts`](../../packages/tela/src/servidor.ts)) decide
-entre elas, nesta ordem:
+D11 asks two things of the screen: observability and the inbox. They arrived in
+different tickets — this one and `t111` — and they share the same package, the
+same process and the same port. A single handler
+([`packages/tela/src/servidor.ts`](../../packages/tela/src/servidor.ts)) decides
+between them, in this order:
 
-| Caminho | Quem responde |
+| Path | Who answers |
 |---|---|
-| `/v1/*` | Proxy **verbatim** para o control plane, para o inbox poder falar same-origin (§1 de [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
-| Arquivo de `src/public/` — `/`, `/inbox.js`, `/style.css`, … | O inbox de propostas: página estática e módulos ES nativos. |
-| Qualquer outro | As sete rotas desta especificação, renderizadas no servidor. |
+| `/v1/*` | A **verbatim** proxy to the control plane, so the inbox can speak same-origin (§1 of [`screen-proposal-inbox.md`](screen-proposal-inbox.md)). |
+| A file from `src/public/` — `/`, `/inbox.js`, `/style.css`, … | The proposal inbox: a static page and native ES modules. |
+| Anything else | The seven routes of this specification, rendered on the server. |
 
-A ordem é o contrato. O estático vem antes do render porque `resolveStaticFile`
-só devolve caminho para extensão conhecida, e é justamente o `null` dele que
-entrega `/executions` e `/jobs/7` às views em vez de 404-á-los como arquivo
-faltando.
+The order is the contract. The static half comes before the render because
+`resolveStaticFile` only returns a path for a known extension, and it is
+precisely its `null` that hands `/executions` and `/jobs/7` to the views instead
+of 404-ing them as a missing file.
 
-**Por que o quadro é `/board` e não `/`.** A raiz já era o `index.html` do
-inbox quando esta metade chegou, e trocar isso quebraria os testes de aceite da
-`t111` sem ganho funcional: as duas metades se alcançam pela navegação, que
-ambas as páginas trazem no topo. É layout, não fronteira — mudar de ideia custa
-uma linha em cada lado.
+**Why the board is `/board` and not `/`.** The root was already the inbox's
+`index.html` when this half arrived, and changing that would break `t111`'s
+acceptance tests with no functional gain: the two halves reach each other through
+the navigation both pages carry at the top. It is layout, not a boundary —
+changing our minds costs one line on each side.
 
-### O que o proxy recusa
+### What the proxy refuses
 
-Tudo o que o proxy encaminha sai daqui com a credencial do operador carimbada
-(`t124`), e as rotas de escrita do control plane se contentam com corpo vazio.
-Um `fetch(url, {method:'POST', mode:'no-cors'})` é requisição "simples" — não
-dispara preflight —, então, sem portão, **qualquer página aberta no mesmo
-navegador** aplicaria uma proposta na porta 4318 usando o token de quem abriu a
-tela. O portão fecha exatamente esse buraco (`t192`).
+Everything the proxy forwards leaves here with the operator's credential stamped
+on it (`t124`), and the control plane's write routes are happy with an empty
+body. A `fetch(url, {method:'POST', mode:'no-cors'})` is a "simple" request — it
+fires no preflight —, so, with no gate, **any page open in the same browser**
+would apply a proposal on port 4318 using the token of whoever opened the screen.
+The gate closes exactly that hole (`t192`).
 
-Ele lê **metadado de fetch**, e só: `Sec-Fetch-Site` e `Origin` são escritos
-pela pilha de rede do navegador e proibidos ao script da página — nem em
-`no-cors` uma página hostil consegue forjá-los. São recusadas as escritas
-(`/v1/*` com método diferente de `GET`/`HEAD`, e o `POST /input-requests/:id/answer`
-desta especificação) quando:
+It reads **fetch metadata**, and nothing else: `Sec-Fetch-Site` and `Origin` are
+written by the browser's network stack and forbidden to the page's script — not
+even in `no-cors` can a hostile page forge them. Writes are refused (`/v1/*` with
+a method other than `GET`/`HEAD`, and this specification's
+`POST /input-requests/:id/answer`) when:
 
-1. **`Sec-Fetch-Site` veio e não é `same-origin` nem `none`** — o próprio
-   navegador está dizendo que o pedido nasceu em outro lugar;
-2. **`Origin` veio e não é exatamente `http://<Host>` do pedido** — a checagem
-   Origin-vs-Host de sempre, sem configuração para manter em dia (a tela serve
-   HTTP puro; nada nesta pilha termina TLS);
-3. **nenhum dos dois veio, mas o `User-Agent` tem cara de navegador**
-   (`Mozilla/`, `Chrome/`, `Safari/`, `Firefox/`, `Edg/`) — navegador anterior ao
-   fetch metadata continua sendo navegador.
+1. **`Sec-Fetch-Site` came and is neither `same-origin` nor `none`** — the
+   browser itself is saying the request was born somewhere else;
+2. **`Origin` came and is not exactly the request's `http://<Host>`** — the usual
+   Origin-versus-Host check, with no configuration to keep up to date (the screen
+   serves plain HTTP; nothing in this stack terminates TLS);
+3. **neither of the two came, but the `User-Agent` looks like a browser**
+   (`Mozilla/`, `Chrome/`, `Safari/`, `Firefox/`, `Edg/`) — a browser older than
+   fetch metadata is still a browser.
 
-A recusa do proxy é `403` com o mesmo envelope `{error, message}` do `502`, e
-com `message` em inglês pelo mesmo motivo (`t180`: encanamento de API, não
-texto renderizado):
+The proxy's refusal is a `403` with the same `{error, message}` envelope as the
+`502`, and with `message` in English for the same reason (`t180`: API plumbing,
+not rendered text):
 
 ```json
 {"error": "origem_nao_confiavel", "message": "this proxy only forwards writes that started on the screen's own page — …"}
 ```
 
-A do formulário é a página de erro `403` normal da tela, em português como todas
-as outras: **"origem não confiável"**.
+The form's refusal is the screen's ordinary `403` error page, in Portuguese like
+all the others: `origem não confiável`.
 
-O que sobra — sem `Sec-Fetch-Site`, sem `Origin` e sem assinatura de navegador —
-é `curl`, um script ou o `fetch` do próprio Node, e passa **de propósito**: a
-fronteira para processo local é a porta de loopback da D11, não este portão. Um
-processo malicioso na mesma máquina forja qualquer cabeçalho, e fechar isso
-exigiria uma credencial que o navegador apresenta — decisão que ainda não foi
-tomada.
+What is left — no `Sec-Fetch-Site`, no `Origin` and no browser signature — is
+`curl`, a script or Node's own `fetch`, and it passes **on purpose**: the
+boundary for a local process is D11's loopback port, not this gate. A malicious
+process on the same machine forges any header, and closing that would demand a
+credential the browser presents — a decision that has not been taken.
 
-**`GET`/`HEAD` ficam de fora de propósito.** O corpo de uma resposta `no-cors` é
-opaco para a página que pediu, então não há por onde exfiltrar pelo lado da
-leitura: barrar leitura seria complexidade a mais sem risco a menos.
+**`GET`/`HEAD` are left out on purpose.** The body of a `no-cors` response is
+opaque to the page that asked for it, so there is no way to exfiltrate through
+the read side: barring reads would be more complexity with no less risk.
 
 ---
 
-## 2. A regra dos três baldes
+## 2. The rule of the three buckets
 
-A linha do tempo é o "tempo genérico" do `t81` do flowpilot
-([`notas/2026-08-14-aprendizado.md`](../../notas/2026-08-14-aprendizado.md)):
-o tempo total de um trabalho não diz nada; o que diz é como ele se reparte.
+The timeline is flowpilot's `t81` "generic time"
+([`notas/2026-08-14-aprendizado.md`](../../notas/2026-08-14-aprendizado.md)): a
+job's total time says nothing; what says something is how it splits.
 
-| Balde | Intervalo | Fonte |
+| Bucket | Interval | Source |
 |---|---|---|
-| `agente_trabalhando` | `[aberta_em, finalizada_em]` | uma sessão |
-| `esperando_humano` | `[criada_em, respondida_em]` | uma pergunta |
-| `fila` | o **complemento**: todo intervalo sem sessão aberta e sem pergunta pendente | as transições |
+| `agente_trabalhando` | `[aberta_em, finalizada_em]` | a session |
+| `esperando_humano` | `[criada_em, respondida_em]` | a question |
+| `fila` | the **complement**: every interval with no session open and no question pending | the transitions |
 
-Quatro regras fecham a definição:
+Four rules close the definition:
 
-1. **Uma transição corta a fila em dois**, mesmo sem nada acontecer no meio.
-   "Parado dois dias no refinamento e uma hora na implementação" e "parado dois
-   dias e uma hora" são diagnósticos diferentes, e o primeiro é o útil.
-   Bloqueio e desbloqueio **não** cortam: são bandeira, não movimento — o
-   trabalho não sai do nó, e a espera continua sendo a mesma espera.
-2. **O que não terminou fica aberto** (`fim: null`) e **não entra nos totais**.
-   Fechar um segmento com o relógio de quem abriu a página inventaria um fato
-   que o log não tem.
-3. **Trabalho concluído é o `concluido` do servidor**, mais o que só a tela sabe.
-   O campo vem de `GET /v1/jobs/:id` e responde a uma pergunta que a tela não
-   teria como responder sozinha: o nó atual do trabalho está entre os
-   `nos_finais` da versão de grafo dele (e ele não está bloqueado). É o único
-   sinal terminal que este sistema tem — não existe evento `job.completed`
-   na taxonomia, e `nos_finais` mora no snapshot do grafo, longe de qualquer
-   resposta que a tela leia. Sobre esse campo a reconstrução ainda exige **nada
-   aberto e nada bloqueado**: uma sessão aberta ou uma pergunta pendente
-   seguram o trabalho por mais terminal que seja o nó. É esse critério
-   composto — e só ele — que fecha o último segmento de fila.
+1. **A transition cuts the queue in two**, even with nothing happening in
+   between. "Two days stuck in refinement and one hour in implementation" and
+   "two days and one hour stuck" are different diagnoses, and the first is the
+   useful one. Blocking and unblocking do **not** cut: they are a flag, not
+   movement — the job does not leave the node, and the wait is still the same
+   wait.
+2. **What has not ended stays open** (`fim: null`) and does **not** enter the
+   totals. Closing a segment with the clock of whoever opened the page would
+   invent a fact the log does not have.
+3. **A finished job is the server's `concluido`**, plus what only the screen
+   knows. The field comes from `GET /v1/jobs/:id` and answers a question the
+   screen would have no way of answering on its own: the job's current node is
+   among the `nos_finais` of its graph version (and it is not blocked). It is the
+   only terminal signal this system has — there is no `job.completed` event in
+   the taxonomy, and `nos_finais` lives in the graph's snapshot, far from any
+   response the screen reads. On top of that field the reconstruction still
+   demands **nothing open and nothing blocked**: an open session or a pending
+   question hold the job however terminal the node is. It is that composite
+   criterion — and only it — that closes the last queue segment.
 
-   Até o `t152` a regra era só "nada aberto e sem bloqueio", porque campo
-   terminal não havia. Ela dava por **concluído** todo trabalho recém-criado:
-   com um único `job.created` no log, nada está aberto porque nada começou.
-   Um trabalho parado entre duas sessões caía na mesma armadilha — justamente
-   a espera que esta linha do tempo existe para tornar visível. Um trabalho
-   bloqueado e parado, esse, continua acumulando fila, em aberto; é exatamente
-   o tempo que ninguém quer ver crescendo sem explicação.
-4. **A reconstrução é uma função pura** e não olha o relógio
-   ([`timeline.ts`](../../packages/tela/src/timeline.ts)): as mesmas entradas —
-   as três respostas e o `concluido` da regra 3 — produzem a mesma linha do
-   tempo hoje e daqui a um mês. É o que a torna testável sem tempo real.
+   Until `t152` the rule was only "nothing open and no block", because there was
+   no terminal field. It called every freshly created job **finished**: with a
+   single `job.created` in the log, nothing is open because nothing began. A job
+   sitting between two sessions fell into the same trap — precisely the wait this
+   timeline exists to make visible. A blocked and stalled job, on the other hand,
+   goes on accumulating queue, open-ended; it is exactly the time nobody wants to
+   see growing without an explanation.
+4. **The reconstruction is a pure function** and does not look at the clock
+   ([`timeline.ts`](../../packages/tela/src/timeline.ts)): the same inputs — the
+   three responses and rule 3's `concluido` — produce the same timeline today and
+   a month from now. It is what makes it testable without real time.
 
-### Por que três fontes, e não uma
+### Why three sources, and not one
 
-Porque `GET /v1/jobs/:id/events` **exclui de propósito**
-`session.finished`, `input_request.answered` e `input_request.auto_resolved`:
-os payloads desses eventos não carregam `job_id` — o vínculo foi declarado na
-abertura, e repeti-lo seria dado duplicado no log
+Because `GET /v1/jobs/:id/events` **deliberately excludes** `session.finished`,
+`input_request.answered` and `input_request.auto_resolved`: those events'
+payloads do not carry `job_id` — the link was declared at the opening, and
+repeating it would be duplicated data in the log
 ([`packages/core/src/db/events.ts`](../../packages/core/src/db/events.ts)).
-"Quem quer o fim da sessão pergunta pela sessão", diz o comentário de lá. Esta
-tela é o primeiro consumidor a fazer essa pergunta, e por isso é esta ficha que
-abriu por onde fazê-la (§4).
+"Whoever wants the session's end asks the session", says the comment over there.
+This screen is the first consumer to ask that question, and that is why it is
+this ticket that opened where to ask it (§4).
 
-O cabeçalho da página vem de uma quarta leitura, `GET /v1/jobs/:id`, e não
-do log: `job.amended` grava só o **nome** do campo alterado, de modo que
-reconstruir o título a partir dos eventos daria o título antigo.
+The page's header comes from a fourth read, `GET /v1/jobs/:id`, and not from the
+log: `job.amended` records only the **name** of the changed field, so
+reconstructing the title from the events would give the old title.
 
 ---
 
-## 3. Responder é escrita de verdade
+## 3. Answering is a real write
 
-`POST /input-requests/:id/answer` chama `PATCH /v1/input-requests/:id/answer` no
-control plane real e devolve **303** para `/input-requests` — 303 e não 302 porque
-depois de um POST a volta é um GET, e é isso que impede o navegador de reenviar
-a resposta em um recarregamento. A pergunta some da fila porque a fila é relida
-da API, **não** porque o formulário a escondeu localmente. O teste de aceite
-cobra essa diferença com uma leitura independente no control plane depois do
-submit.
+`POST /input-requests/:id/answer` calls `PATCH /v1/input-requests/:id/answer` on
+the real control plane and returns **303** to `/input-requests` — 303 and not 302
+because after a POST the way back is a GET, and that is what stops the browser
+from resending the answer on a reload. The question disappears from the queue
+because the queue is reread from the API, **not** because the form hid it
+locally. The acceptance test demands that difference with an independent read
+against the control plane after the submit.
 
-Duas escolhas de fronteira:
+Two boundary choices:
 
-- **Resposta em branco é recusada pela tela** (400), antes da rede. O schema de
-  `input_request.answered` aceita string vazia; gravar um fato sem conteúdo
-  poluiria a auditoria com uma decisão que não decide nada.
-- **`respondido_por` cai em `"tela"`** quando o campo vem vazio. A `t124`
-  autenticou a API, mas a tela carrega UMA credencial de serviço e não pede
-  nenhuma ao navegador: o token prova posse, não pessoa. Registrar honestamente a
-  porta por onde a resposta entrou segue sendo tudo o que o sistema de fato sabe;
-  inventar um usuário seria pior, porque `input_request.answered` é evento de
-  auditoria.
+- **A blank answer is refused by the screen** (400), before the network. The
+  `input_request.answered` schema accepts an empty string; writing a fact with no
+  content would pollute the audit with a decision that decides nothing.
+- **`respondido_por` falls back to `"tela"`** when the field comes in empty.
+  `t124` authenticated the API, but the screen carries ONE service credential and
+  asks the browser for none: a token proves possession, not a person. Honestly
+  recording the door the answer came in through is still everything the system
+  actually knows; inventing a user would be worse, because
+  `input_request.answered` is an audit event.
 
-O campo de resposta tem `<label>` visível amarrado ao `<textarea>` por
-`for`/`id`, e não apenas placeholder — placeholder é dica, some no primeiro
-caractere digitado e não é nome acessível confiável, e este é o único campo
-obrigatório da página. O id sai do id da pergunta, que já é a chave única do
-cartão. É a mesma regra que o inbox de propostas segue no campo de motivo
-([`screen-proposal-inbox.md`](screen-proposal-inbox.md) §3); pinada em
+The answer field has a visible `<label>` tied to the `<textarea>` by `for`/`id`,
+and not only a placeholder — a placeholder is a hint, it disappears on the first
+character typed and it is not a reliable accessible name, and this is the page's
+only required field. The id comes from the question's id, which is already the
+card's unique key. It is the same rule the proposal inbox follows on its reason
+field ([`screen-proposal-inbox.md`](screen-proposal-inbox.md) §3); pinned in
 [`packages/tela/test/questions-answer-field.test.ts`](../../packages/tela/test/questions-answer-field.test.ts),
-que resolve o nome como um leitor de tela resolveria.
+which resolves the name the way a screen reader would.
 
-**Quem desbloqueia o trabalho não é a tela.** O wiring pergunta → bloqueio →
-resposta → desbloqueio → retomada da sessão é do `t106`, e mora no control
-plane: criar a pergunta bloqueia o trabalho na mesma transação, e responder
-desbloqueia com o ator de quem respondeu
+**The one that unblocks the job is not the screen.** The question → block →
+answer → unblock → session resume wiring is `t106`'s, and it lives in the control
+plane: creating the question blocks the job in the same transaction, and
+answering unblocks it with the actor of whoever answered
 ([`packages/core/src/repositories/input-request.ts`](../../packages/core/src/repositories/input-request.ts),
-contrato em [`human-escalation.md`](human-escalation.md)). A tela escreve o
-fato e mais nada; o ciclo acontece do outro lado do HTTP. Foi escrita antes do
-`t106` existir e não mudou uma linha quando ele chegou — que era exatamente a
-aposta.
+the contract in [`human-escalation.md`](human-escalation.md)). The screen writes
+the fact and nothing else; the cycle happens on the other side of the HTTP. It
+was written before `t106` existed and did not change a line when it arrived —
+which was exactly the bet.
 
 ---
 
-## 4. As três lacunas de API que esta camada fechou
+## 4. The three API gaps this layer closed
 
-D11 manda tratar "a tela precisa de algo que a API não dá" como bug da API. As
-três são aditivas e simétricas a filtros que já existiam:
+D11 orders "the screen needs something the API does not give" to be treated as a
+bug in the API. All three are additive and symmetric to filters that already
+existed:
 
-| Rota | O que faltava |
+| Route | What was missing |
 |---|---|
-| `GET /v1/executions` | Não havia como **descobrir** quais execuções existem: só existia `GET /v1/executions/:id/metrics-by-version`, que exige já saber o id. Devolve `{execucoes: [...]}` com `execucao_id`, `trabalhos`, `trabalhos_bloqueados` e `perguntas_pendentes`, em ordem crescente e com o grupo `null` por último (mesma convenção de `metricsByVersion`). |
-| `GET /v1/sessions?trabalho_id=` | Só havia filtro por execução; sem este, não dá para pedir "as sessões deste trabalho" — e sem elas não há fim de sessão na linha do tempo. |
-| `GET /v1/input-requests?trabalho_id=` | Simétrico ao anterior, pela mesma razão: o fim das esperas. |
+| `GET /v1/executions` | There was no way to **discover** which executions exist: only `GET /v1/executions/:id/metrics-by-version` existed, which demands already knowing the id. It returns `{execucoes: [...]}` with `execucao_id`, `trabalhos`, `trabalhos_bloqueados` and `perguntas_pendentes`, in ascending order and with the `null` group last (the same convention as `metricsByVersion`). |
+| `GET /v1/sessions?trabalho_id=` | There was only a filter by execution; without this one, "this job's sessions" cannot be asked for — and without them there is no session end on the timeline. |
+| `GET /v1/input-requests?trabalho_id=` | Symmetric to the previous one, for the same reason: the end of the waits. |
 
-Os filtros se somam em **AND** com os que já existiam, e um filtro inválido é
-**400**, nunca um filtro ignorado em silêncio.
+The filters add up as an **AND** with the ones that already existed, and an
+invalid filter is a **400**, never a filter ignored in silence.
 
 ---
 
-## 5. Configuração
+## 5. Configuration
 
-| Variável | Default | O que é |
+| Variable | Default | What it is |
 |---|---|---|
-| `CARTOGRAFO_TELA_PORT` | `4318` | Porta em que a tela escuta. |
-| `CARTOGRAFO_URL` (ou `--url`) | `http://127.0.0.1:4317` | Control plane que ela lê. |
-| `CARTOGRAFO_PORT` | `4317` | Porta do control plane no default acima. |
+| `CARTOGRAFO_TELA_PORT` | `4318` | The port the screen listens on. |
+| `CARTOGRAFO_URL` (or `--url`) | `http://127.0.0.1:4317` | The control plane it reads. |
+| `CARTOGRAFO_PORT` | `4317` | The control plane's port in the default above. |
 
-Precedência do endereço: `--url` > `CARTOGRAFO_URL` >
-`http://127.0.0.1:CARTOGRAFO_PORT` > default — a mesma da CLI do core
-([`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts)), para que
-subir o control plane em outra porta não exija configurar duas coisas em dois
-vocabulários. Quem resolve isso é
-[`resolveControlPlaneUrl`](../../packages/tela/src/proxy.ts), um só para o
-pacote inteiro desde a `t199`: até então havia um segundo resolvedor em
-`router.ts`, sem `CARTOGRAFO_PORT`, e era ele que o `bin/tela.mjs` alcançava. A
-tela escuta em **loopback**, como o control plane e pela mesma razão: não há
-autenticação nesta fase.
+The address's precedence: `--url` > `CARTOGRAFO_URL` >
+`http://127.0.0.1:CARTOGRAFO_PORT` > default — the core CLI's own
+([`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts)), so that
+bringing the control plane up on another port does not demand configuring two
+things in two vocabularies. What resolves it is
+[`resolveControlPlaneUrl`](../../packages/tela/src/proxy.ts), one for the whole
+package since `t199`: until then there was a second resolver in `router.ts`, with
+no `CARTOGRAFO_PORT`, and it was the one `bin/tela.mjs` reached. The screen
+listens on **loopback**, like the control plane and for the same reason: there is
+no authentication at this stage.
 
-Ao subir, imprime uma linha JSON de prontidão em stdout — mesmo contrato da
-partida do control plane:
+On start-up it prints a JSON readiness line on stdout — the same contract as the
+control plane's start:
 
 ```json
 {"event":"cartografo.tela.ready","url":"http://127.0.0.1:4318","controlPlane":"http://127.0.0.1:4317"}
 ```
 
-**Quando o control plane está fora do ar**, toda página responde **502** com o
-comando que resolve (`npx cartografo`), nunca um 200 com quadro vazio. Um 404 da
-API vira 404 na tela; qualquer outro erro do control plane vira 502 — quem
-falhou foi o servidor de trás, e o navegador precisa saber que não foi ele.
+**When the control plane is down**, every page answers **502** with the command
+that fixes it (`npx cartografo`), never a 200 with an empty board. A 404 from the
+API becomes a 404 on the screen; any other error from the control plane becomes a
+502 — the one that failed was the server behind, and the browser needs to know it
+was not this one.
 
 ---
 
-## 6. Sem framework, sem build
+## 6. No framework, no build
 
-Servidor `node:http` puro, HTML montado no request, **zero dependência de
-runtime**. O único JavaScript que vai ao navegador são as oito linhas que copiam
-uma opção clicada para o campo de resposta; sem elas, digitar a resposta
-continua funcionando.
+A plain `node:http` server, HTML assembled on the request, **zero runtime
+dependencies**. The only JavaScript that reaches the browser is the eight lines
+that copy a clicked option into the answer field; without them, typing the answer
+still works.
 
-É escolha de escala, não de gosto: a tela é um cliente HTTP de leitura com um
-formulário, e um pipeline de front-end custaria mais manutenção do que a coisa
-toda que ele serviria. É também reversível — a fronteira que a D11 congela é o
-contrato HTTP entre a tela e o core, não o que a tela usa por dentro.
+It is a choice of scale, not of taste: the screen is a reading HTTP client with
+one form, and a front-end pipeline would cost more maintenance than the whole
+thing it would serve. It is also reversible — the boundary D11 freezes is the
+HTTP contract between the screen and the core, not what the screen uses inside.
 
-### Os marcadores `data-*` são contrato
+### The `data-*` markers are contract
 
-Existem para que os testes de aceite afirmem sobre **estrutura** — o que está
-dentro de qual grupo, em que ordem — sem congelar a marcação inteira. Mudar um
-deles é mudar o contrato; mudar classe de CSS não é.
+They exist so that the acceptance tests can assert about **structure** — what is
+inside which group, in what order — without freezing the whole markup. Changing
+one of them is changing the contract; changing a CSS class is not.
 
-| Marcador | Onde | Valor |
+| Marker | Where | Value |
 |---|---|---|
-| `data-no-atual` | grupo do quadro | id do nó |
-| `data-trabalho` | cartão de trabalho | id do trabalho |
-| `data-execucao` | linha da lista de execuções | id, ou vazio no grupo `null` |
-| `data-campo` | célula de contagem ou de campo derivado | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes`, `nome`, `leases_ativas`, `ultimo_heartbeat`, `ultima_expiracao` |
-| `data-runner` | linha da tabela de runners | id do runner |
-| `data-sessao` | linha da tabela de sessões | id da sessão |
-| `data-transcricao` | link da célula de transcrição, na tabela de sessões | id da sessão (o `href` é `/v1/sessions/:id/transcript`) |
-| `data-pergunta` | cartão de pergunta | id da pergunta |
-| `data-segmento` | item da linha do tempo | `fila`, `agente_trabalhando`, `esperando_humano` (com `data-inicio` e `data-fim`; `data-fim` vazio = em aberto) |
+| `data-no-atual` | a board group | the node's id |
+| `data-trabalho` | a job card | the job's id |
+| `data-execucao` | a line of the execution list | the id, or empty in the `null` group |
+| `data-campo` | a count cell or a derived-field cell | `trabalhos`, `trabalhos_bloqueados`, `perguntas_pendentes`, `nome`, `leases_ativas`, `ultimo_heartbeat`, `ultima_expiracao` |
+| `data-runner` | a line of the runner table | the runner's id |
+| `data-sessao` | a line of the session table | the session's id |
+| `data-transcricao` | the link in the transcript cell, in the session table | the session's id (the `href` is `/v1/sessions/:id/transcript`) |
+| `data-pergunta` | a question card | the question's id |
+| `data-segmento` | a timeline item | `fila`, `agente_trabalhando`, `esperando_humano` (with `data-inicio` and `data-fim`; an empty `data-fim` = open) |
 
-A célula de transcrição é um link cru para a rota da API, e não uma vista
-renderizada: quem clica cai na resposta JSON do control plane, servida pelo
-proxy **verbatim** de `/v1/*` (§1). É de propósito — a tela não ganha rota nova
-nem privilégio nenhum (D11), e decodificar `stream-json` na tela é outra ficha.
+The transcript cell is a raw link to the API's route, and not a rendered view:
+whoever clicks lands on the control plane's JSON response, served by the
+**verbatim** `/v1/*` proxy (§1). That is on purpose — the screen gains no new
+route and no privilege at all (D11), and decoding `stream-json` on the screen is
+another ticket.
 
-Todo dado que entra em HTML passa por `escapar`. Título de trabalho, texto de
-pergunta e motivo de bloqueio vêm de fora, por uma API que ainda não autentica
-ninguém.
+Every piece of data that goes into HTML passes through `escapar`. A job's title,
+a question's text and a blocking reason come from outside, through an API that
+still authenticates nobody.
 
 ---
 
-## 7. O que esta tela ainda não faz
+## 7. What this screen does not do yet
 
-Cada item é escopo declarado de outra ficha, não esquecimento:
+Every item is another ticket's declared scope, not an oversight:
 
-- **Edição de grafo além da topologia.** A D11 fixou a ordem — observabilidade
-  primeiro, edição depois — e a fatia de topologia chegou com a `t170`:
-  `/graph-editor.html` acrescenta, remove e edita nó e aresta de um grafo-base,
-  salvando pelas mesmas chamadas de proposta que qualquer cliente da API faria
-  ([`screen-graph-editor.md`](screen-graph-editor.md)). Ficam para fichas próprias as
-  **políticas de execução por nó** (modelo, pausa, timeout, escalação) e a
-  **edição do registro de skills**, cada uma esperando a superfície de backend
-  que ainda não existe; e ficam de fora, por decisão e não por esquecimento, o
-  canvas arrastável (o documento de grafo não tem campo de coordenada) e as
-  linhagens variantes (D13, `t118`).
-- **Inbox de aprovação de propostas** (entidade `proposta`, distinta de
-  `pergunta`) — é a outra metade do pacote, entregue pela `t111` e servida em
+- **Graph editing beyond the topology.** D11 fixed the order — observability
+  first, editing afterwards — and the topology slice arrived with `t170`:
+  `/graph-editor.html` adds, removes and edits a base graph's nodes and edges,
+  saving through the same proposal calls any API client would make
+  ([`screen-graph-editor.md`](screen-graph-editor.md)). Left for tickets of their
+  own are the **per-node execution policies** (model, pause, timeout, escalation)
+  and **editing the skill registry**, each waiting on a backend surface that does
+  not exist yet; and left out, by decision and not by oversight, are the
+  draggable canvas (the graph document has no coordinate field) and the variant
+  lineages (D13, `t118`).
+- **The proposal approval inbox** (the `proposta` entity, distinct from
+  `pergunta`) — it is the package's other half, delivered by `t111` and served at
   `/` ([`screen-proposal-inbox.md`](screen-proposal-inbox.md)).
-- **Login no navegador** — a `t124` autenticou a API e deu à tela uma credencial
-  de serviço (`CARTOGRAFO_TELA_TOKEN`, com `CARTOGRAFO_TOKEN` de reserva), que ela
-  apresenta em toda chamada ao control plane. O navegador continua chegando à tela
-  sem credencial nenhuma, a tela segue em loopback e `respondido_por` cai em
-  `"tela"`: pela D11 a tela é cliente sem privilégio da API, não uma segunda
-  fronteira de identidade.
-- **Retomada de verdade da sessão ao responder** — do control plane, pela
-  `t106` (§3); a tela só escreve o fato.
-- **Rótulo de nó com `papel`/`descricao` do snapshot do grafo** — o quadro
-  mostra `no_atual` cru; buscar o grafo para rotular é aditivo.
-- **Paginação** — nenhuma rota da API pagina hoje, e não é esta ficha que
-  inventa o que a API não tem.
-- **Atualização ao vivo** (polling/websocket) — cada view renderiza no request.
-- **Tempo relativo** ("há 3 minutos") em `/runners` ou em qualquer outra data:
-  a tela mostra o instante cru que a API gravou. Rótulo relativo calculado na
-  renderização, numa página sem auto-refresh, começa a mentir no segundo
-  seguinte.
-- **Saber se um runner ocioso está vivo.** `/runners` mostra o que o control
-  plane de fato registra, e ele registra leases: `ultimo_heartbeat` e
-  `ultima_expiracao` são derivados da tabela `lease`
-  ([`runner-and-controller.md`](runner-and-controller.md) §5). Um runner pareado
-  que nunca pegou trabalho aparece com os três campos vazios, igual a um que
-  está fora do ar. Inventar aqui um sinal de vida que a API não tem seria
-  exatamente o atalho que a D11 proíbe.
+- **Logging in from the browser** — `t124` authenticated the API and gave the
+  screen a service credential (`CARTOGRAFO_TELA_TOKEN`, with `CARTOGRAFO_TOKEN`
+  as a fallback), which it presents on every call to the control plane. The
+  browser still reaches the screen with no credential at all, the screen is still
+  on loopback and `respondido_por` still falls back to `"tela"`: by D11 the
+  screen is an unprivileged client of the API, not a second identity boundary.
+- **A real session resume on answering** — that is the control plane's, through
+  `t106` (§3); the screen only writes the fact.
+- **A node label with the `papel`/`descricao` of the graph's snapshot** — the
+  board shows the raw `no_atual`; fetching the graph to label it is additive.
+- **Pagination** — no route of the API paginates today, and it is not this ticket
+  that invents what the API does not have.
+- **Live updates** (polling/websocket) — every view renders on the request.
+- **Relative time** ("3 minutes ago") on `/runners` or on any other date: the
+  screen shows the raw instant the API recorded. A relative label computed at
+  render time, on a page with no auto-refresh, starts lying the next second.
+- **Knowing whether an idle runner is alive.** `/runners` shows what the control
+  plane actually records, and what it records is leases: `ultimo_heartbeat` and
+  `ultima_expiracao` are derived from the `lease` table
+  ([`runner-and-controller.md`](runner-and-controller.md) §5). A paired runner
+  that never picked up work appears with all three fields empty, just like one
+  that is down. Inventing a liveness signal here that the API does not have would
+  be exactly the shortcut D11 forbids.

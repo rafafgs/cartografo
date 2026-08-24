@@ -40,20 +40,20 @@ const TABLE_ROW = /^\|\s*`(GET|POST|PUT|PATCH|DELETE)\s+([^`]+)`\s*\|/;
 
 /** The numerals this spec spells out, and what each one is worth. */
 const NUMERALS = new Map([
-  ['uma', 1],
-  ['duas', 2],
-  ['três', 3],
-  ['quatro', 4],
-  ['cinco', 5],
-  ['seis', 6],
-  ['sete', 7],
-  ['oito', 8],
-  ['nove', 9],
-  ['dez', 10],
+  ['one', 1],
+  ['two', 2],
+  ['three', 3],
+  ['four', 4],
+  ['five', 5],
+  ['six', 6],
+  ['seven', 7],
+  ['eight', 8],
+  ['nine', 9],
+  ['ten', 10],
 ]);
 
 /** A spelled-out count of routes, anywhere in the prose. */
-const SPELLED_COUNT = new RegExp(`\\b(${[...NUMERALS.keys()].join('|')}) rotas\\b`, 'gi');
+const SPELLED_COUNT = new RegExp(`\\b(${[...NUMERALS.keys()].join('|')}) routes\\b`, 'gi');
 
 /**
  * The one count in this document that is NOT about the screen's own surface:
@@ -64,7 +64,7 @@ const SPELLED_COUNT = new RegExp(`\\b(${[...NUMERALS.keys()].join('|')}) rotas\\
  * hide. Anything else that gets written later counts the screen's routes by
  * default — a new mention about something else fails until it is declared here.
  */
-const API_GAPS_COUNT = /\b([a-zçãêé]+) rotas novas do lado do core\b/i;
+const API_GAPS_COUNT = /\b([a-z]+) new routes on the core's side\b/i;
 
 function readSpec(): string {
   assert.ok(existsSync(SPEC_PATH), `spec does not exist: ${SPEC_PATH}`);

@@ -1,44 +1,45 @@
-# Especificação: webhooks assinados de eventos
+# Specification: signed event webhooks
 
-**Versão da API:** `v1` · **Migração:**
+**API version:** `v1` · **Migration:**
 [`0008_webhook`](../../packages/core/migrations/0008_webhook.sql)
-**Origem:** ponto de extensão nº 5 —
-["eventos para fora"](../../notas/2026-08-14-extensao-e-qualidade.md) · **Ficha:** t142
+**Origin:** extension point nº 5 —
+["events going out"](../../notas/2026-08-14-extensao-e-qualidade.md) · **Ticket:** t142
 
-Este documento é o contrato de quem consome, e ele é deliberadamente
-auto-suficiente: dá para escrever um receptor inteiro — inclusive a verificação
-da assinatura — sem abrir uma linha do código do control plane. O que trafega é
-o envelope da [taxonomia de eventos](../../especificacoes/eventos/taxonomia.md),
-sem tradução nenhuma no caminho, exatamente o mesmo objeto que o
-[stream SSE](events-stream.md) entrega no campo `data:`.
+This document is the contract for whoever consumes, and it is deliberately
+self-sufficient: a whole receiver — signature verification included — can be
+written without opening a line of the control plane's code. What travels is the
+envelope of the [event taxonomy](../../especificacoes/eventos/taxonomia.md), with
+no translation along the way, exactly the same object the
+[SSE stream](events-stream.md) delivers in its `data:` field.
 
 ---
 
-## 1. O que é, e quando usar em vez do stream
+## 1. What it is, and when to use it instead of the stream
 
-Um webhook é o transporte ***push*** da telemetria: você registra uma URL, e o
-control plane faz `POST` nela a cada evento novo, com uma assinatura HMAC que
-prova que a entrega veio dele.
+A webhook is telemetry's ***push*** transport: you register a URL, and the
+control plane `POST`s to it on every new event, with an HMAC signature that
+proves the delivery came from it.
 
-| | Stream ([`events-stream.md`](events-stream.md)) | Webhook (este documento) |
+| | Stream ([`events-stream.md`](events-stream.md)) | Webhook (this document) |
 |---|---|---|
-| Quem mantém a conexão | você, aberta o tempo todo | ninguém: cada entrega é um POST |
-| Quem retenta | você, com `Last-Event-ID` | o servidor, com backoff (§6) |
-| Se ninguém estiver ouvindo | o evento passa e não volta | a entrega fica na fila e é retentada |
-| Precisa de endereço público | não | sim |
-| Latência típica | ~300ms | ~1s |
+| Who keeps the connection | you, open all the time | nobody: every delivery is a POST |
+| Who retries | you, with `Last-Event-ID` | the server, with backoff (§6) |
+| If nobody is listening | the event goes by and does not come back | the delivery stays in the queue and is retried |
+| Needs a public address | no | yes |
+| Typical latency | ~300ms | ~1s |
 
-Regra prática: se o seu consumidor é um processo que você mantém rodando, o
-stream é mais simples. Se é uma função HTTP, um serviço de terceiro ou algo que
-não pode ficar com um socket aberto, é webhook.
+Rule of thumb: if your consumer is a process you keep running, the stream is
+simpler. If it is an HTTP function, a third-party service or anything that cannot
+hold a socket open, it is a webhook.
 
-**O que os webhooks não são:** não são histórico. Uma assinatura nasce apontando
-para o FIM do log e recebe só o que for gravado dali em diante (§4). Para ler
-uma rodada inteira depois do fato, existe `GET /v1/executions/:id/events`.
+**What webhooks are not:** they are not history. A subscription is born pointing
+at the END of the log and receives only what is written from then on (§4). To
+read a whole round after the fact, there is
+`GET /v1/executions/:id/events`.
 
 ---
 
-## 2. Registrar uma assinatura
+## 2. Registering a subscription
 
 ```
 POST /v1/webhooks
@@ -53,14 +54,14 @@ Authorization: Bearer <token>
  "project_id": 1}
 ```
 
-| Campo | Obrigatório | Regra |
+| Field | Required | Rule |
 |---|---|---|
-| `url` | sim | URL absoluta `http:` ou `https:`. Qualquer outra coisa é `400`. |
-| `segredo` | sim | String não vazia, **escolhida por você**. É a chave do HMAC (§5). |
-| `tipos` | não | Lista de tipos exatos da taxonomia. Ausente ou vazia = todo tipo. Tipo desconhecido é `400`. |
-| `projeto_id` | não | Inteiro; sem ele, o projeto padrão (`1`). |
+| `url` | yes | An absolute `http:` or `https:` URL. Anything else is `400`. |
+| `segredo` | yes | A non-empty string, **chosen by you**. It is the HMAC's key (§5). |
+| `tipos` | no | A list of exact taxonomy types. Absent or empty = every type. An unknown type is `400`. |
+| `projeto_id` | no | An integer; without it, the default project (`1`). |
 
-Resposta `201`:
+The `201` response:
 
 ```json
 {"id": 3,
@@ -72,12 +73,13 @@ Resposta `201`:
  "desativada_em": null}
 ```
 
-**O `segredo` não volta em resposta nenhuma**, nem aqui nem na listagem. Ele é
-seu: o servidor não gera segredo, não revela o que guardou e não tem rota para
-lê-lo de volta. Se você o perdeu, registre outra assinatura e desative esta.
+**The `segredo` comes back in no response**, neither here nor in the listing. It
+is yours: the server does not generate a secret, does not reveal what it stored
+and has no route to read it back. If you have lost it, register another
+subscription and deactivate this one.
 
-Os valores aceitos em `tipos` são os tipos que o control plane grava hoje — o
-mesmo catálogo do stream:
+The values accepted in `tipos` are the types the control plane writes today — the
+stream's own catalogue:
 
 ```
 job.created          session.opened       input_request.created
@@ -88,148 +90,149 @@ job.amended
 job.dependency_declared
 ```
 
-`lease.*` e `graph_version.*` estão declarados na taxonomia mas ainda não são
-gravados por ninguém, então pedi-los é `400` — e não uma assinatura que nunca
-recebe nada, que é o pior dos dois erros.
+`lease.*` and `graph_version.*` are declared in the taxonomy but are not written
+by anybody yet, so asking for them is a `400` — and not a subscription that never
+receives anything, which is the worse of the two errors.
 
 ---
 
-## 3. Listar e desativar
+## 3. Listing and deactivating
 
 ```
-GET /v1/webhooks               → {"webhooks": [ ...assinaturas... ]}
-GET /v1/webhooks?projeto_id=9  → só as daquele projeto
-DELETE /v1/webhooks/3          → a assinatura, agora com desativada_em
+GET /v1/webhooks               → {"webhooks": [ ...subscriptions... ]}
+GET /v1/webhooks?projeto_id=9  → only that project's
+DELETE /v1/webhooks/3          → the subscription, now with desativada_em
 ```
 
-`DELETE` **desativa**, não apaga: a linha continua existindo, com
-`desativada_em` preenchido, e continua aparecendo na listagem. É a mesma
-disciplina do resto do repositório — nada é deletado, e "quando deixou de
-valer" é pergunta de auditoria que um booleano apagaria.
+`DELETE` **deactivates**, it does not delete: the row goes on existing, with
+`desativada_em` filled in, and goes on appearing in the listing. It is the rest
+of the repository's discipline — nothing is deleted, and "when did it stop
+holding?" is an audit question a boolean would erase.
 
-Desativar faz três coisas, na mesma chamada:
+Deactivating does three things, in the same call:
 
-1. a assinatura para de receber fan-out de eventos novos;
-2. toda entrega dela que ainda estava `pendente` vira `esgotada` — ou seja, a
-   retentativa que estava em voo é cortada, e não fica nada preso na fila;
-3. chamar `DELETE` de novo devolve `200` com o **mesmo** `desativada_em`.
-   Desativar é um estado, não um evento a ser contado. `DELETE` num id
-   desconhecido é `404`.
-
----
-
-## 4. Onde a assinatura começa
-
-`evento_inicial_id` é o `id` do último evento do log no instante do registro.
-A partir daí, a assinatura recebe tudo que for gravado com `id` maior que esse —
-e **nada** do que já estava lá.
-
-É a mesma regra do stream sem `Last-Event-ID`, e existe pela mesma razão:
-registrar um webhook num control plane que já rodou por meses não pode
-significar tomar dez mil POSTs na cara.
-
-A retomada é automática e não tem nada para você configurar: o servidor guarda
-uma linha de entrega por (assinatura, evento), e é dela que ele deriva de onde
-continuar. Servidor reiniciado no meio de uma rajada retoma exatamente de onde
-parou, sem repetir o que já enfileirou.
+1. the subscription stops receiving the fan-out of new events;
+2. every delivery of it that was still `pendente` becomes `esgotada` — that is,
+   the retry in flight is cut, and nothing stays stuck in the queue;
+3. calling `DELETE` again returns `200` with the **same** `desativada_em`.
+   Deactivating is a state, not an event to be counted. `DELETE` on an unknown id
+   is a `404`.
 
 ---
 
-## 5. A entrega, e como verificar a assinatura
+## 4. Where the subscription starts
 
-Cada evento vira um POST:
+`evento_inicial_id` is the `id` of the log's last event at the moment of
+registration. From there on, the subscription receives everything written with a
+larger `id` — and **nothing** that was already there.
+
+It is the stream's rule without `Last-Event-ID`, and it exists for the same
+reason: registering a webhook against a control plane that has been running for
+months cannot mean taking ten thousand POSTs in the face.
+
+Resuming is automatic and there is nothing for you to configure: the server keeps
+one delivery row per (subscription, event), and that is what it derives where to
+carry on from. A server restarted in the middle of a burst resumes exactly where
+it stopped, without repeating what it has already queued.
+
+---
+
+## 5. The delivery, and how to verify the signature
+
+Every event becomes a POST:
 
 ```
 POST /cartografo HTTP/1.1
 Host: meu-servico.exemplo
 Content-Type: application/json
-X-Cartografo-Signature: sha256=8f4c...  (64 caracteres hex)
+X-Cartografo-Signature: sha256=8f4c...  (64 hex characters)
 
 {"id":129,"type":"job.created","project_id":1,"execution_id":2,"entity":{"type":"job","id":7},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-15T12:00:03.114Z","data":{"title":"exemplo do doc","entry_node_id":"entrada","body":null,"acceptance_criteria":null}}
 ```
 
-O corpo é o envelope inteiro, byte a byte o mesmo objeto que
-`GET /v1/executions/:id/events` devolve e que o `data:` do stream carrega.
+The body is the whole envelope, byte for byte the same object
+`GET /v1/executions/:id/events` returns and the stream's `data:` carries.
 
-A receita da assinatura, inteira:
+The signature recipe, in full:
 
-> `X-Cartografo-Signature` = `sha256=` + HMAC-SHA256 do **corpo cru**,
-> com o seu `segredo` como chave, em hex minúsculo.
+> `X-Cartografo-Signature` = `sha256=` + HMAC-SHA256 of the **raw body**, with
+> your `segredo` as the key, in lowercase hex.
 
-Três detalhes que decidem se a sua verificação funciona:
+Three details that decide whether your verification works:
 
-- **Assine os bytes que chegaram, não o objeto reparseado.** `JSON.parse`
-  seguido de `JSON.stringify` não devolve necessariamente os mesmos bytes, e um
-  byte diferente é um digest diferente. Leia o corpo cru primeiro, verifique,
-  e só então faça o parse.
-- **Compare em tempo constante** (`crypto.timingSafeEqual`), nunca com `===`.
-  Comparação que sai no primeiro byte diferente vaza, pelo tempo, quanto do
-  digest o atacante já acertou.
-- **Sem assinatura válida, não confie no corpo.** A URL do seu webhook é
-  pública; a assinatura é a única coisa que separa uma entrega do control plane
-  de qualquer um que descobriu o endereço.
+- **Sign the bytes that arrived, not the reparsed object.** `JSON.parse` followed
+  by `JSON.stringify` does not necessarily give back the same bytes, and a
+  different byte is a different digest. Read the raw body first, verify, and only
+  then parse.
+- **Compare in constant time** (`crypto.timingSafeEqual`), never with `===`. A
+  comparison that leaves on the first differing byte leaks, through timing, how
+  much of the digest the attacker has already got right.
+- **With no valid signature, do not trust the body.** Your webhook's URL is
+  public; the signature is the only thing separating a delivery from the control
+  plane from anybody who found the address.
 
-Vetor fechado, para conferir a sua implementação **antes** de ligá-la no real —
-se a sua conta não der exatamente isto, o problema é seu e não da entrega:
+A closed vector, to check your implementation **before** wiring it to the real
+thing — if your arithmetic does not give exactly this, the problem is yours and
+not the delivery's:
 
 | | |
 |---|---|
 | `segredo` | `segredo-de-exemplo` |
-| corpo cru | `{"id":1,"type":"job.created"}` |
-| assinatura | `sha256=4d62c8b3801c05f74e912c122b02b34cf183e64ec81d1bb7dc38bb8f329b1bb2` |
+| raw body | `{"id":1,"type":"job.created"}` |
+| signature | `sha256=4d62c8b3801c05f74e912c122b02b34cf183e64ec81d1bb7dc38bb8f329b1bb2` |
 
-Em Node, a receita inteira é uma linha — a mesma que o servidor executa:
+In Node, the whole recipe is one line — the same one the server runs:
 
 ```javascript
 import { createHmac } from 'node:crypto';
-const assinatura = `sha256=${createHmac('sha256', segredo).update(corpoCru, 'utf8').digest('hex')}`;
+const signature = `sha256=${createHmac('sha256', segredo).update(rawBody, 'utf8').digest('hex')}`;
 ```
 
-**Responda rápido.** Qualquer `2xx` encerra a entrega; o servidor não lê o corpo
-da sua resposta. Se o seu processamento é demorado, aceite (`200`), enfileire do
-seu lado e processe depois — segurar a conexão só faz você bater no timeout de
-10 segundos e receber a mesma entrega de novo.
+**Answer fast.** Any `2xx` closes the delivery; the server does not read your
+response's body. If your processing is slow, accept (`200`), queue on your side
+and process afterwards — holding the connection only makes you hit the 10-second
+timeout and receive the same delivery again.
 
 ---
 
-## 6. Retentativa e estados terminais
+## 6. Retries and terminal states
 
-| Tentativa | Quando |
+| Attempt | When |
 |---|---|
-| 1ª | assim que o evento é enfileirado (até ~1s depois do fato) |
-| 2ª | 10 segundos depois da falha |
-| 3ª | 1 minuto depois |
-| 4ª | 5 minutos depois |
-| 5ª | 30 minutos depois |
-| 6ª | 2 horas depois |
+| 1st | as soon as the event is queued (up to ~1s after the fact) |
+| 2nd | 10 seconds after the failure |
+| 3rd | 1 minute later |
+| 4th | 5 minutes later |
+| 5th | 30 minutes later |
+| 6th | 2 hours later |
 
-Seis tentativas no total: a primeira, mais um degrau por atraso da escala.
-Contam como falha o `timeout` de 10 segundos, o erro de rede e **qualquer**
-resposta que não seja `2xx` — inclusive `3xx`, que não é seguido.
+Six attempts in total: the first, plus one step per delay on the scale. What
+counts as a failure is the 10-second `timeout`, a network error and **any**
+response that is not `2xx` — including a `3xx`, which is not followed.
 
-Cada entrega termina em um de dois estados, e os dois são finais:
+Every delivery ends in one of two states, and both are final:
 
-| Estado | Significa |
+| State | Means |
 |---|---|
-| `entregue` | um `2xx` chegou. `entregue_em` registra quando. |
-| `esgotada` | as seis tentativas falharam, ou a assinatura foi desativada com esta entrega pendente. `last_error` guarda a última falha. |
+| `entregue` | a `2xx` arrived. `entregue_em` records when. |
+| `esgotada` | all six attempts failed, or the subscription was deactivated with this delivery pending. `last_error` keeps the last failure. |
 
-Uma entrega `esgotada` **não** é retentada, por mais tempo que passe, e não há
-rota para reenviar. A linha não é apagada, então "tentei seis vezes e desisti" é
-uma pergunta respondível — e o log continua sendo a fonte da verdade: o que você
-perdeu está inteiro em `GET /v1/executions/:id/events`, e o jeito de se
-recuperar de uma janela de indisponibilidade é ler o log por lá.
+An `esgotada` delivery is **not** retried, however much time passes, and there is
+no route to send it again. The row is not deleted, so "I tried six times and gave
+up" is an answerable question — and the log is still the source of truth: what
+you missed is whole in `GET /v1/executions/:id/events`, and the way to recover
+from a window of unavailability is to read the log there.
 
-Um assinante quebrado é problema só dele: as entregas de um lote saem juntas,
-cada uma com seu próprio timeout, e nenhuma falha atrasa a de outro assinante,
-segura o fan-out ou toca no caminho de escrita do control plane.
+A broken subscriber is nobody's problem but its own: a batch's deliveries go out
+together, each with its own timeout, and no failure delays another subscriber's,
+holds up the fan-out or touches the control plane's write path.
 
 ---
 
-## 7. Erros do registro
+## 7. Registration errors
 
-Antes de qualquer escrita, o corpo é validado. Erro é `400`,
-`application/json`, com a lista INTEIRA dos problemas — não só o primeiro:
+Before any write, the body is validated. An error is a `400`,
+`application/json`, with the WHOLE list of problems — not only the first:
 
 ```json
 {"error": "validation_failed",
@@ -238,66 +241,67 @@ Antes de qualquer escrita, o corpo é validado. Erro é `400`,
              "tipo \"nao_existe\" is not in the taxonomy (see KNOWN_TYPES)"]}
 ```
 
-Antes ainda da validação vem a credencial: sem `Authorization: Bearer <token>`
-válido, `401` com `credencial_ausente` ou `credencial_invalida`. É a mesma
-credencial que abre toda a `/v1` (`t124`) — não há escopo só-de-webhook.
+Before the validation comes the credential: without a valid
+`Authorization: Bearer <token>`, `401` with `credencial_ausente` or
+`credencial_invalida`. It is the same credential that opens the whole `/v1`
+(`t124`) — there is no webhook-only scope.
 
 ---
 
-## 8. Receptor mínimo, zero dependência
+## 8. A minimal receiver, zero dependencies
 
-Node ≥ 20, nada instalado. Ele lê o corpo cru, verifica a assinatura em tempo
-constante e só então confia no evento:
+Node ≥ 20, nothing installed. It reads the raw body, verifies the signature in
+constant time and only then trusts the event:
 
 ```javascript
-// receptor.mjs — CARTOGRAFO_WEBHOOK_SEGREDO=... node receptor.mjs
+// receiver.mjs — CARTOGRAFO_WEBHOOK_SEGREDO=... node receiver.mjs
 import { createServer } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const segredo = process.env.CARTOGRAFO_WEBHOOK_SEGREDO;
 
-/** Compara dois hex de mesmo algoritmo sem vazar, pelo tempo, onde diferem. */
-function confere(esperado, recebido) {
-  if (typeof recebido !== 'string') return false;
-  const a = Buffer.from(esperado, 'utf8');
-  const b = Buffer.from(recebido, 'utf8');
-  // timingSafeEqual exige tamanhos iguais; tamanho diferente já é recusa.
+/** Compares two hexes of the same algorithm without leaking where they differ. */
+function matches(expected, received) {
+  if (typeof received !== 'string') return false;
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(received, 'utf8');
+  // timingSafeEqual demands equal lengths; a different length is already a refusal.
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-createServer((requisicao, resposta) => {
-  if (requisicao.method !== 'POST') {
-    resposta.writeHead(405).end();
+createServer((request, response) => {
+  if (request.method !== 'POST') {
+    response.writeHead(405).end();
     return;
   }
 
-  // O corpo CRU, em pedaços, sem parsear nada ainda: é sobre estes bytes que a
-  // assinatura foi calculada.
-  const pedacos = [];
-  requisicao.on('data', (pedaco) => pedacos.push(pedaco));
-  requisicao.on('end', () => {
-    const corpoCru = Buffer.concat(pedacos).toString('utf8');
-    const esperado = `sha256=${createHmac('sha256', segredo).update(corpoCru, 'utf8').digest('hex')}`;
+  // The RAW body, in chunks, with nothing parsed yet: it is over these bytes
+  // that the signature was computed.
+  const chunks = [];
+  request.on('data', (chunk) => chunks.push(chunk));
+  request.on('end', () => {
+    const rawBody = Buffer.concat(chunks).toString('utf8');
+    const expected = `sha256=${createHmac('sha256', segredo).update(rawBody, 'utf8').digest('hex')}`;
 
-    // Node normaliza o nome do cabeçalho para minúsculas.
-    if (!confere(esperado, requisicao.headers['x-cartografo-signature'])) {
-      console.error('assinatura não confere — descartando');
-      resposta.writeHead(401).end();
+    // Node normalizes the header's name to lowercase.
+    if (!matches(expected, request.headers['x-cartografo-signature'])) {
+      console.error('signature does not match — discarding');
+      response.writeHead(401).end();
       return;
     }
 
-    // Só depois de conferir é que o corpo vira objeto.
-    const evento = JSON.parse(corpoCru);
-    console.log(`#${evento.id} ${evento.type} ${JSON.stringify(evento.data)}`);
+    // Only after checking does the body become an object.
+    const event = JSON.parse(rawBody);
+    console.log(`#${event.id} ${event.type} ${JSON.stringify(event.data)}`);
 
-    // Responda antes de processar: 2xx encerra a entrega, e o servidor não lê
-    // este corpo. Trabalho demorado vai para uma fila sua, não para cá.
-    resposta.writeHead(200).end();
+    // Answer before processing: a 2xx closes the delivery, and the server does
+    // not read this body. Slow work goes to a queue of yours, not in here.
+    response.writeHead(200).end();
   });
-}).listen(8099, () => console.error('ouvindo em http://127.0.0.1:8099'));
+}).listen(8099, () => console.error('listening on http://127.0.0.1:8099'));
 ```
 
-Registrando esse receptor (com um túnel, ou de dentro da mesma rede):
+Registering that receiver (with a tunnel, or from inside the same network):
 
 ```
 curl -sS -X POST http://127.0.0.1:4317/v1/webhooks \
@@ -306,7 +310,7 @@ curl -sS -X POST http://127.0.0.1:4317/v1/webhooks \
   -d '{"url":"http://127.0.0.1:8099/cartografo","segredo":"'"$CARTOGRAFO_WEBHOOK_SEGREDO"'"}'
 ```
 
-E uma rodada acontecendo do outro lado:
+And a round happening on the other side:
 
 ```
 #129 job.created {"title":"rodada de demonstração","entry_node_id":"entrada","body":null,"acceptance_criteria":null}
@@ -314,44 +318,45 @@ E uma rodada acontecendo do outro lado:
 #131 job.transitioned {"from_node_id":"refinar","to_node_id":"construir"}
 ```
 
-**Tipo desconhecido é para ser ignorado, não é erro.** Um receptor antigo
-recebendo um tipo novo continua tratando o que entende; é o que torna a
-taxonomia extensível de forma aditiva.
+**An unknown type is to be ignored, it is not an error.** An old receiver getting
+a new type carries on handling what it understands; it is what makes the taxonomy
+extensible additively.
 
 ---
 
-## 9. Garantias, e o que elas custam
+## 9. The guarantees, and what they cost
 
-| Garantia | Como |
+| Guarantee | How |
 |---|---|
-| Nenhuma entrega duplicada por reprocessamento | uma linha por (assinatura, evento), com `UNIQUE` no banco; refazer o fan-out não cria linha nova |
-| Nenhum evento pulado enquanto a assinatura vive | o cursor é derivado das entregas já gravadas, não de um contador em memória |
-| Autenticidade | HMAC-SHA256 do corpo cru, com o segredo que só você e o servidor conhecem |
-| Um assinante morto não afeta ninguém | as entregas do lote saem juntas, cada uma com timeout próprio; falha vira retentativa, nunca exceção que suba |
-| O caminho de escrita nunca espera por webhook | o tick lê o log e escreve só nas tabelas dele; `recordEvent` não sabe que ele existe |
+| No duplicate delivery from reprocessing | one row per (subscription, event), with a `UNIQUE` in the database; redoing the fan-out creates no new row |
+| No event skipped while the subscription lives | the cursor is derived from the deliveries already written, not from a counter in memory |
+| Authenticity | HMAC-SHA256 of the raw body, with the secret only you and the server know |
+| A dead subscriber affects nobody | a batch's deliveries go out together, each with its own timeout; a failure becomes a retry, never an exception that goes up |
+| The write path never waits on a webhook | the tick reads the log and writes only into its own tables; `recordEvent` does not know it exists |
 
-O que **não** existe nesta versão:
+What does **not** exist in this version:
 
-- **entrega exatamente-uma-vez.** Se o seu serviço responde `2xx` mas cai antes
-  de persistir, o control plane já considerou entregue. Trate o `id` do evento
-  como chave de idempotência do seu lado — ele é único e monotônico;
-- **reenvio manual** de uma entrega `esgotada`;
-- **proteção de SSRF** na URL assinada (loopback e faixas privadas não são
-  bloqueados): é a mesma fronteira de confiança de toda rota `/v1` — um token
-  válido já abre a API inteira;
-- **escopo de credencial**: o token que registra um webhook é o mesmo que abre
-  toda a `/v1`;
-- **limite de taxa por assinatura** e teto de requisições simultâneas para fora.
+- **exactly-once delivery.** If your service answers `2xx` but falls before
+  persisting, the control plane has already considered it delivered. Treat the
+  event's `id` as an idempotency key on your side — it is unique and monotonic;
+- **manually resending** an `esgotada` delivery;
+- **SSRF protection** on the signed URL (loopback and private ranges are not
+  blocked): it is the same trust boundary as every `/v1` route — a valid token
+  already opens the whole API;
+- **credential scope**: the token that registers a webhook is the one that opens
+  the whole `/v1`;
+- **a rate limit per subscription** and a cap on simultaneous outbound requests.
 
 ---
 
-## 10. O que ainda não existe
+## 10. What does not exist yet
 
-**Ciclo de vida do webhook na taxonomia** — "assinou", "entregou", "esgotou"
-ainda não são eventos do log: eles vivem nas colunas de `entrega_webhook` e nada
-mais. Enquanto o rastro daquelas colunas bastar, é assim que fica; virar tipo de
-evento é ficha própria, com schema e entrada na taxonomia.
+**The webhook's lifecycle in the taxonomy** — "subscribed", "delivered",
+"exhausted" are not log events yet: they live in the columns of
+`entrega_webhook` and nowhere else. While the trail of those columns is enough,
+that is how it stays; becoming an event type is a ticket of its own, with a
+schema and an entry in the taxonomy.
 
-**Segredo gerado pelo servidor**, com revelação única, do jeito que a `0007` faz
-com a credencial. Hoje o segredo é seu, o que evita construir um segundo fluxo
-de revelação antes de o primeiro ter rodado em produção.
+**A server-generated secret**, revealed once, the way `0007` does with the
+credential. Today the secret is yours, which avoids building a second reveal flow
+before the first has run in production.

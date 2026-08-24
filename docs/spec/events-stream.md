@@ -1,38 +1,38 @@
-# Especificação: stream de eventos para fora
+# Specification: the outbound event stream
 
-**Versão da API:** `v1` · **Migração:** nenhuma (lê a tabela `event` do
+**API version:** `v1` · **Migration:** none (it reads the `event` table of
 [`0003`](../../packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql))
-**Origem:** ponto de extensão nº 5 —
-["eventos para fora"](../../notas/2026-08-14-extensao-e-qualidade.md) · **Ficha:** t123
+**Origin:** extension point nº 5 —
+["events going out"](../../notas/2026-08-14-extensao-e-qualidade.md) · **Ticket:** t123
 
-Este documento é o contrato de quem consome. Ele é deliberadamente
-auto-suficiente: dá para escrever um cliente inteiro sem abrir uma linha do
-código do control plane. O formato do que trafega é o envelope da
-[taxonomia de eventos](../../especificacoes/eventos/taxonomia.md), sem
-tradução nenhuma no caminho.
-
----
-
-## 1. O que é
-
-`GET /v1/events/stream` é uma leitura **quase em tempo real** do log de
-telemetria por [SSE](https://html.spec.whatwg.org/multipage/server-sent-events.html)
-(`text/event-stream`): a conexão fica aberta e cada fato novo chega como uma
-mensagem, na ordem do `id`.
-
-Por que SSE e não WebSocket: o tráfego é de mão única (servidor → cliente) e o
-envelope já carrega o `id` monotônico que o protocolo de reconexão do SSE quer.
-WebSocket traria uma máquina bidirecional que ninguém aqui usa, e uma
-dependência nova no repositório.
-
-**O que este endpoint não é:** não é histórico. Ele começa no presente (§5) e
-serve o passado só quando você pede pelo cursor. Para ler uma rodada inteira
-depois do fato, existe `GET /v1/executions/:id/events`, que devolve a lista
-completa em JSON.
+This document is the contract for whoever consumes. It is deliberately
+self-sufficient: a whole client can be written without opening a line of the
+control plane's code. The format of what travels is the envelope of the
+[event taxonomy](../../especificacoes/eventos/taxonomia.md), with no translation
+along the way.
 
 ---
 
-## 2. A rota
+## 1. What it is
+
+`GET /v1/events/stream` is a **near real-time** read of the telemetry log over
+[SSE](https://html.spec.whatwg.org/multipage/server-sent-events.html)
+(`text/event-stream`): the connection stays open and every new fact arrives as a
+message, in `id` order.
+
+Why SSE and not WebSocket: the traffic is one-way (server → client) and the
+envelope already carries the monotonic `id` that SSE's reconnection protocol
+wants. WebSocket would bring a bidirectional machine nobody here uses, and a new
+dependency in the repository.
+
+**What this endpoint is not:** it is not history. It starts in the present (§5)
+and serves the past only when you ask for it by cursor. To read a whole round
+after the fact, there is `GET /v1/executions/:id/events`, which returns the
+complete list in JSON.
+
+---
+
+## 2. The route
 
 ```
 GET /v1/events/stream
@@ -41,36 +41,37 @@ Accept: text/event-stream
 
 | | |
 |---|---|
-| Resposta | `200` com `content-type: text/event-stream`, corpo aberto por tempo indeterminado |
-| Cabeçalhos | `cache-control: no-cache, no-transform`, `connection: keep-alive`, `x-accel-buffering: no` |
-| Autenticação | `Authorization: Bearer <token>` — obrigatória, como em toda rota da v1 desde a `t124` |
-| Limite de conexões | nenhum; também não há rate limit nem backpressure por cliente |
+| Response | `200` with `content-type: text/event-stream`, a body open indefinitely |
+| Headers | `cache-control: no-cache, no-transform`, `connection: keep-alive`, `x-accel-buffering: no` |
+| Authentication | `Authorization: Bearer <token>` — mandatory, as on every v1 route since `t124` |
+| Connection limit | none; there is no rate limit and no per-client backpressure either |
 
-O token é o mesmo que o control plane imprime na primeira partida (`bootstrapToken`
-na linha `cartografo.ready`) e que o CLI lê de `CARTOGRAFO_TOKEN`. Ele vai no
-cabeçalho da requisição que ABRE o stream; depois disso não há renegociação —
-uma credencial revogada só é notada na próxima conexão.
+The token is the one the control plane prints on its first start
+(`bootstrapToken` on the `cartografo.ready` line) and that the CLI reads from
+`CARTOGRAFO_TOKEN`. It goes in the header of the request that OPENS the stream;
+after that there is no renegotiation — a revoked credential is only noticed on
+the next connection.
 
-Um consumidor lento **não** segura o control plane: a conexão lê a tabela por
-conta própria, num relógio próprio, e não está ligada ao caminho de escrita. O
-pior que um cliente parado provoca é o próprio atraso.
+A slow consumer does **not** hold the control plane up: the connection reads the
+table on its own account, on a clock of its own, and is not wired to the write
+path. The worst a stalled client causes is its own delay.
 
 ---
 
-## 3. Filtros
+## 3. Filters
 
-Os dois são opcionais e **somam** (AND, nunca OU).
+Both are optional and they **add up** (AND, never OR).
 
-| Parâmetro | Formato | O que faz |
+| Parameter | Format | What it does |
 |---|---|---|
-| `projeto_id` | inteiro | Só eventos daquele projeto. Valor não-inteiro é `400`. |
-| `tipo` | lista separada por vírgula | Só os tipos citados, casando string exata. Tipo desconhecido é `400`. |
+| `projeto_id` | integer | Only that project's events. A non-integer value is a `400`. |
+| `tipo` | a comma-separated list | Only the types cited, matching the exact string. An unknown type is a `400`. |
 
 ```
 GET /v1/events/stream?projeto_id=1&tipo=job.transitioned,job.blocked
 ```
 
-Os valores aceitos em `tipo` são os tipos que o control plane grava hoje:
+The values accepted in `tipo` are the types the control plane writes today:
 
 ```
 job.created                session.opened               input_request.created
@@ -84,29 +85,29 @@ job.hook_failed                                         graph_version.reverted
 execution.finished
 ```
 
-São os dezenove da taxonomia, e o crescimento foi aditivo como prometido: o
-filtro nunca declarou lista própria — ele valida contra `KNOWN_TYPES`
-(`packages/core/src/db/event-validation.ts`) —, então ligar a emissão de
-`lease.*` e `graph_version.*` na `t196` os tornou pedíveis sem uma linha de
-mudança de contrato aqui, e `execution.finished` (D21, `t245`) entrou pelo mesmo
-caminho: quem quiser saber só do fim das rodadas assina
-`?type=execution.finished` e não recebe mais nada. Um tipo fora da taxonomia
-continua sendo `400`, e não uma conexão aberta que nunca entrega nada — que é o
-pior dos dois erros.
+They are the taxonomy's nineteen, and the growth was additive as promised: the
+filter never declared a list of its own — it validates against `KNOWN_TYPES`
+(`packages/core/src/db/event-validation.ts`) —, so switching on the emission of
+`lease.*` and `graph_version.*` in `t196` made them askable without a line of
+contract change here, and `execution.finished` (D21, `t245`) came in the same
+way: whoever wants to know only about the end of rounds subscribes with
+`?type=execution.finished` and receives nothing else. A type outside the taxonomy
+is still a `400`, and not an open connection that never delivers anything —
+which is the worse of the two errors.
 
 ---
 
-## 4. Formato da mensagem
+## 4. The message format
 
-Cada evento vira uma mensagem SSE com os três campos:
+Every event becomes an SSE message with all three fields:
 
-- `id` — o `id` do envelope. **É o cursor**, e é a única ordenação total que
-  existe ([taxonomia](../../especificacoes/eventos/taxonomia.md));
-- `event` — o `type` do evento, que é o que o `EventSource` do navegador usa
-  para despachar por `addEventListener`;
-- `data` — o envelope inteiro em JSON, numa única linha.
+- `id` — the envelope's `id`. **It is the cursor**, and it is the only total
+  order there is ([taxonomy](../../especificacoes/eventos/taxonomia.md));
+- `event` — the event's `type`, which is what the browser's `EventSource` uses to
+  dispatch through `addEventListener`;
+- `data` — the whole envelope in JSON, on a single line.
 
-Um trecho real do fio, capturado com `curl -sN`:
+A real excerpt from the wire, captured with `curl -sN`:
 
 ```
 id: 1
@@ -117,120 +118,121 @@ data: {"id":1,"type":"job.created","project_id":1,"execution_id":2,"entity":{"ty
 
 ```
 
-O objeto em `data` é byte a byte o mesmo envelope que
-`GET /v1/executions/:id/events` devolve — os oito campos da
-[taxonomia](../../especificacoes/eventos/taxonomia.md), com o payload
-específico do tipo inteiro dentro de `data`.
+The object in `data` is byte for byte the same envelope
+`GET /v1/executions/:id/events` returns — the
+[taxonomy](../../especificacoes/eventos/taxonomia.md)'s eight fields, with the
+type's whole specific payload inside `data`.
 
-**O payload de um tipo também cresce, e cresce aditivamente.** O envelope tem
-sempre os mesmos oito campos; o que vive dentro de `data` é por tipo, e ganhar
-campo novo ali nunca pediu mudança de contrato aqui — mesmo caminho que a §3
-descreve para o conjunto de tipos. `session.finished` é o mais mexido dos
-dezenove: recebeu `output` e `output_schema_error` na `t253`, `failure_kind` e
-`refusal_category` na `t265`, e `output_accepted` na `t268`.
+**A type's payload grows too, and it grows additively.** The envelope always has
+the same eight fields; what lives inside `data` is per type, and gaining a new
+field there never asked for a contract change here — the same path §3 describes
+for the set of types. `session.finished` is the most touched of the nineteen: it
+got `output` and `output_schema_error` in `t253`, `failure_kind` and
+`refusal_category` in `t265`, and `output_accepted` in `t268`.
 
-**`output_accepted` é o veredito sobre o relato estruturado da sessão** — se ele
-foi aceito na conferência contra o schema `output` da skill que o nó pina (D9).
-Dos três, é o único que aparece em **todo** fechamento a partir da `t268`:
-`true` quando o relato casou e também quando nada foi relatado, `false` só na
-recusa — e é só na recusa que `output` vem `null` e os motivos vêm inteiros em
-`output_schema_error`. Para quem lê este stream isso é o que torna a contagem
-possível: relato recusado é `output_accepted === false`, e não a ausência da
-lista de motivos, porque "não foi recusado" e "não foi conferido" seriam a mesma
-ausência. Ausente também não é `false`, e é por isso que o schema o declara
-opcional: o log gravado antes da `t268` não tem o campo, e continua válido.
-Quem decide se o trabalho anda a partir desse veredito é o runner, e ele o lê
-**de forma síncrona** na resposta do próprio `PATCH /finish`, não daqui
-([runner-and-controller.md](runner-and-controller.md), "Relato recusado pelo control
-plane segura o trabalho no nó", `t268`): este stream é observação, nunca caminho
-de decisão.
+**`output_accepted` is the verdict on the session's structured report** — whether
+it was accepted when checked against the `output` schema of the skill the node
+pins (D9). Of the three, it is the only one that appears in **every** closure
+from `t268` on: `true` when the report matched and also when nothing was
+reported, `false` only on a refusal — and it is only on a refusal that `output`
+comes back `null` and the reasons come whole in `output_schema_error`. For
+whoever reads this stream that is what makes counting possible: a refused report
+is `output_accepted === false`, and not the absence of the reasons list, because
+"it was not refused" and "it was not checked" would be the same absence. Absent
+is not `false` either, and that is why the schema declares it optional: the log
+written before `t268` does not have the field, and is still valid. The one that
+decides whether the job moves from that verdict is the runner, and it reads it
+**synchronously** in the answer of the `PATCH /finish` itself, not from here
+([runner-and-controller.md](runner-and-controller.md), "A report the control
+plane refused holds the job at the node", `t268`): this stream is observation,
+never a decision path.
 
-O campo a campo de cada tipo continua sendo da
-[taxonomia](../../especificacoes/eventos/taxonomia.md), e não deste documento:
-repetir aqui a descrição dos payloads criaria uma segunda fonte da verdade só
-para ela divergir da primeira.
+The field-by-field of each type is still the
+[taxonomy](../../especificacoes/eventos/taxonomia.md)'s, and not this document's:
+repeating the payload descriptions here would create a second source of truth
+purely so that it could diverge from the first.
 
-**Tipo desconhecido é para ser ignorado, não é erro** — e campo desconhecido
-dentro de `data`, também. Um cliente antigo lendo um log novo continua
-reconstruindo o que entende; é o que torna a taxonomia extensível de forma
-aditiva, nas duas dimensões. Vale para quem lê este stream.
+**An unknown type is to be ignored, it is not an error** — and so is an unknown
+field inside `data`. An old client reading a new log carries on reconstructing
+what it understands; it is what makes the taxonomy extensible additively, in both
+dimensions. It holds for whoever reads this stream.
 
 ---
 
-## 5. Reconexão: `Last-Event-ID`
+## 5. Reconnecting: `Last-Event-ID`
 
-O mecanismo de retomada é **um só**, o padrão do SSE. Não existe parâmetro
-`desde_id` na query: duas formas de fazer a mesma coisa é uma a mais.
+The resume mechanism is **one only**, SSE's standard. There is no `desde_id`
+parameter in the query: two ways of doing the same thing is one too many.
 
-| Situação | O que chega |
+| Situation | What arrives |
 |---|---|
-| Conexão **sem** `Last-Event-ID` | Só o que for gravado a partir do instante da conexão. Nada de histórico por acidente. |
-| Conexão **com** `Last-Event-ID: 42` | Tudo com `id > 42`, em ordem, e daí em diante ao vivo. |
+| A connection **without** `Last-Event-ID` | Only what is written from the moment of the connection on. No history by accident. |
+| A connection **with** `Last-Event-ID: 42` | Everything with `id > 42`, in order, and live from there on. |
 
-O navegador manda esse cabeçalho sozinho quando o `EventSource` reconecta.
-Qualquer outro cliente manda na mão — guarde o `id` da última mensagem que você
-**processou** (não a que você recebeu) e devolva esse valor no cabeçalho da
-reconexão. É o que fecha o buraco sem duplicar nada.
+The browser sends that header on its own when the `EventSource` reconnects. Any
+other client sends it by hand — keep the `id` of the last message you
+**processed** (not the one you received) and give that value back in the
+reconnection's header. It is what closes the gap without duplicating anything.
 
-`Last-Event-ID` que não seja um inteiro ≥ 0 é `400`.
+A `Last-Event-ID` that is not an integer ≥ 0 is a `400`.
 
-Uma retomada muito atrasada não vira uma rajada única: o servidor entrega o
-atraso em leituras de no máximo 500 eventos, encadeadas até alcançar o
-presente.
+A badly delayed resume does not become one single burst: the server delivers the
+backlog in reads of at most 500 events, chained until it catches up with the
+present.
 
 ---
 
 ## 6. Keep-alive
 
-A cada **15 segundos sem nenhum byte real**, a conexão recebe um comentário:
+Every **15 seconds with no real byte**, the connection receives a comment:
 
 ```
 : heartbeat
 ```
 
-É o que impede proxy e load balancer de derrubarem uma conexão ociosa. A conta
-é feita a partir do último byte escrito, então um stream movimentado
-simplesmente não gasta comentário nenhum.
+It is what stops a proxy or a load balancer from dropping an idle connection. The
+count runs from the last byte written, so a busy stream simply spends no comments
+at all.
 
-**Toda linha começando com `:` é comentário e deve ser ignorada pelo cliente.**
-Quem usa `EventSource` ganha isso de graça; quem lê o corpo na mão precisa
-filtrar (o exemplo da §8 filtra).
+**Every line starting with `:` is a comment and must be ignored by the client.**
+Whoever uses `EventSource` gets that for free; whoever reads the body by hand has
+to filter (the example in §8 filters).
 
 ---
 
-## 7. Erros
+## 7. Errors
 
-Antes de qualquer byte de SSE, os filtros são validados. Se algo estiver
-errado, a resposta é uma resposta HTTP comum — `400`, `application/json`, e a
-conexão **nunca** chega a virar `text/event-stream`:
+Before any byte of SSE, the filters are validated. If something is wrong, the
+answer is an ordinary HTTP response — `400`, `application/json`, and the
+connection **never** becomes `text/event-stream` at all:
 
 ```json
 {"error": "validation_failed",
  "details": ["tipo \"nao_existe\" is not in the taxonomy (see KNOWN_TYPES)"]}
 ```
 
-`details` traz a lista inteira dos problemas, não só o primeiro.
+`details` carries the whole list of problems, not only the first.
 
-Antes ainda dos filtros vem a credencial (§2). Sem ela, ou com uma que não
-resolve, a resposta é `401` — também `application/json`, também sem virar
-`text/event-stream`:
+Before the filters comes the credential (§2). Without it, or with one that does
+not resolve, the answer is a `401` — also `application/json`, also without
+becoming `text/event-stream`:
 
 ```json
 {"error": "missing_credential", "message": "esta rota exige `Authorization: Bearer <token>` — ..."}
 ```
 
-`missing_credential` é "não veio cabeçalho usável" e `invalid_credential` é
-"veio e não vale (desconhecida ou revogada)". Nenhum dos dois melhora com
-retentativa: é configuração, não indisponibilidade.
+`missing_credential` is "no usable header came" and `invalid_credential` is "one
+came and it does not hold (unknown or revoked)". Neither of the two improves with
+a retry: it is configuration, not unavailability.
 
-Depois que o stream abriu, não há corpo de erro possível: o que existe é a
-conexão cair. Trate queda como reconexão (§5), não como falha.
+Once the stream has opened, there is no possible error body: what there is is the
+connection dropping. Treat a drop as a reconnection (§5), not as a failure.
 
 ---
 
-## 8. Consumidor mínimo, zero dependência
+## 8. A minimal consumer, zero dependencies
 
-Node ≥ 20, nada instalado. Ele reconecta sozinho pelo cursor:
+Node ≥ 20, nothing installed. It reconnects on its own by the cursor:
 
 ```javascript
 // events-stream.mjs — CARTOGRAFO_TOKEN=... node events-stream.mjs [http://127.0.0.1:4317]
@@ -240,9 +242,10 @@ const query = new URLSearchParams({ tipo: 'job.created,job.transitioned' });
 
 let lastEventId = null;
 
-// Reconectar é trabalho do cliente: o servidor não guarda nada da conexão, e o
-// `Last-Event-ID` é o que faz a retomada não ter buraco nem repetição. A
-// credencial vai em toda tentativa: cada reconexão é uma requisição nova.
+// Reconnecting is the client's work: the server keeps nothing of the connection,
+// and `Last-Event-ID` is what makes the resume have neither a gap nor a
+// repetition. The credential goes on every attempt: each reconnection is a new
+// request.
 for (;;) {
   try {
     const response = await fetch(`${base}/v1/events/stream?${query}`, {
@@ -252,10 +255,10 @@ for (;;) {
       },
     });
 
-    // 400 é contrato errado (filtro inválido) e 401 é credencial: insistir não
-    // conserta nenhum dos dois.
+    // 400 is a wrong contract (an invalid filter) and 401 is the credential:
+    // insisting fixes neither of the two.
     if (!response.ok) {
-      console.error(`stream recusado (${response.status}):`, await response.text());
+      console.error(`stream refused (${response.status}):`, await response.text());
       break;
     }
 
@@ -270,7 +273,7 @@ for (;;) {
         const block = buffer.slice(0, cut);
         buffer = buffer.slice(cut + 2);
 
-        // Linha que começa com ':' é comentário — é o keep-alive. Ignore.
+        // A line starting with ':' is a comment — it is the keep-alive. Ignore it.
         const lines = block.split('\n').filter((line) => line !== '' && !line.startsWith(':'));
         if (lines.length === 0) continue;
 
@@ -286,17 +289,17 @@ for (;;) {
       }
     }
   } catch (failure) {
-    // Servidor fora do ar, socket cortado no meio: é queda, e queda é
-    // reconexão. Só o 400 acima é motivo para desistir.
-    console.error(`stream indisponível: ${failure.message}`);
+    // The server is down, the socket was cut mid-way: that is a drop, and a drop
+    // is a reconnection. Only the 400 above is a reason to give up.
+    console.error(`stream unavailable: ${failure.message}`);
   }
 
-  console.error(`reconectando a partir do id ${lastEventId}`);
+  console.error(`reconnecting from id ${lastEventId}`);
   await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 ```
 
-Rodando contra um control plane com uma rodada acontecendo:
+Running against a control plane with a round happening:
 
 ```
 #1 job.created {"title":"rodada de demonstração","entry_node_id":"entrada","body":null,"acceptance_criteria":null}
@@ -304,8 +307,8 @@ Rodando contra um control plane com uma rodada acontecendo:
 #3 job.transitioned {"from_node_id":"refinar","to_node_id":"construir"}
 ```
 
-No navegador o mesmo consumo cabe em cinco linhas, e a reconexão com
-`Last-Event-ID` é automática:
+In the browser the same consumption fits in five lines, and reconnecting with
+`Last-Event-ID` is automatic:
 
 ```javascript
 const stream = new EventSource('/v1/events/stream?tipo=job.transitioned');
@@ -315,49 +318,49 @@ stream.addEventListener('job.transitioned', (message) => {
 });
 ```
 
-Com uma ressalva desde a `t124`: `EventSource` não deixa mandar cabeçalho, e a
-rota exige um. Esse trecho só funciona atrás de uma origem que anexe a
-credencial pelo navegador — que é exatamente o papel da tela (D11: ela guarda um
-token de serviço e o repassa, o navegador não apresenta nenhum). O repasse
-`/v1/*` da tela ainda espera o corpo terminar antes de responder, e um corpo SSE
-não termina, então esse caminho está listado na §10.
+With one caveat since `t124`: `EventSource` does not allow a header to be sent,
+and the route demands one. That snippet only works behind an origin that attaches
+the credential for the browser — which is exactly the screen's role (D11: it
+keeps a service token and passes it along, the browser presents none). The
+screen's `/v1/*` forwarding still waits for the body to end before answering, and
+an SSE body does not end, so that path is listed in §10.
 
 ---
 
-## 9. Garantias, e o que elas custam
+## 9. The guarantees, and what they cost
 
-| Garantia | Como |
+| Guarantee | How |
 |---|---|
-| Sem buraco e sem repetição na reconexão | `id > cursor`, estritamente; o `id` é atribuído pelo servidor e é monotônico |
-| Ordem | sempre crescente por `id`, dentro e entre reconexões |
-| Latência | até ~300ms: a conexão faz *poll* da tabela nesse ritmo, e não é acoplada à escrita |
-| Rajada limitada | no máximo 500 eventos por leitura, encadeadas até alcançar o presente |
-| Um consumidor morto não afeta ninguém | a conexão morre com o socket; os relógios dela são desarmados junto |
+| No gap and no repetition on reconnection | `id > cursor`, strictly; the `id` is assigned by the server and is monotonic |
+| Order | always ascending by `id`, within and across reconnections |
+| Latency | up to ~300ms: the connection *polls* the table at that rhythm, and is not coupled to the write |
+| A bounded burst | at most 500 events per read, chained until it catches up with the present |
+| A dead consumer affects nobody | the connection dies with the socket; its clocks are disarmed with it |
 
-O que **não** existe nesta versão: entrega garantida (se ninguém estiver
-conectado, ninguém recebe — o log é que é a fonte da verdade, e ele continua
-lá), limite de conexões simultâneas, e credencial só de leitura.
+What does **not** exist in this version: guaranteed delivery (if nobody is
+connected, nobody receives — the log is what is the source of truth, and it is
+still there), a limit on simultaneous connections, and a read-only credential.
 
-Escopo de credencial passou a existir na `t143`, e não é este: a credencial de
-runner, emitida no pareamento, alcança uma lista literal de cinco rotas de
-despacho ([runner-and-controller.md](runner-and-controller.md) §5) — e esta rota não
-está nela. Um runner apresentando o token dele aqui toma `403
-credencial_fora_de_escopo`. Quem abre o stream continua sendo a credencial de
-operador, a mesma que abre toda a `/v1`; um credenciamento de leitura, que
-distinguisse "ler o log" de "escrever no control plane", segue sem existir.
+Credential scope came into existence in `t143`, and it is not this one: the
+runner credential, issued at pairing, reaches a literal list of five dispatch
+routes ([runner-and-controller.md](runner-and-controller.md) §5) — and this route
+is not among them. A runner presenting its token here takes a
+`403 credencial_fora_de_escopo`. Whoever opens the stream is still the operator
+credential, the same one that opens the whole `/v1`; a read credential, telling
+"read the log" apart from "write to the control plane", still does not exist.
 
 ---
 
-## 10. O que ainda não existe
+## 10. What does not exist yet
 
-O transporte *push* passou a existir: **webhooks assinados, com retentativa**
-([`docs/spec/webhooks-events.md`](webhooks-events.md), `t142`), para quem não
-quer manter uma conexão aberta. Com ele, o ponto de extensão nº 5 está fechado
-pelas duas metades — este documento é a de *pull*. A §1 daquele compara as duas
-e diz quando cada uma serve.
+The *push* transport has come into existence: **signed webhooks, with retries**
+([`docs/spec/webhooks-events.md`](webhooks-events.md), `t142`), for whoever does
+not want to keep a connection open. With it, extension point nº 5 is closed on
+both halves — this document is the *pull* one. Its §1 compares the two and says
+when each one serves.
 
-**O stream atravessando a tela** — o repasse `/v1/*` de `packages/tela` lê a
-resposta inteira antes de devolvê-la, o que serve para JSON e não serve para um
-corpo que nunca acaba. Enquanto isso não mudar, o `EventSource` da §8 não tem
-por onde entrar: consumir o stream é coisa de cliente fora do navegador, com o
-cabeçalho na mão.
+**The stream crossing the screen** — `packages/tela`'s `/v1/*` forwarding reads
+the whole response before handing it back, which serves for JSON and does not
+serve for a body that never ends. Until that changes, §8's `EventSource` has no
+way in: consuming the stream is a job for a client outside the browser, with the
+header set by hand.

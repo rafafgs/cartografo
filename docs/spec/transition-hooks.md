@@ -1,59 +1,60 @@
-# Especificação: ganchos de transição declarados no grafo
+# Specification: transition hooks declared in the graph
 
-**Versão da API:** `v1` · **Migrações:**
+**API version:** `v1` · **Migrations:**
 [`0016_gancho`](../../packages/core/migrations/0016_gancho.sql),
 [`0018_segredo_gancho`](../../packages/core/migrations/0018_segredo_gancho.sql)
-**Formato:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json) ·
-**Fichas:** t169, t194
+**Format:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json) ·
+**Tickets:** t169, t194
 
-Este documento é o contrato de quem escreve o grafo **e** de quem recebe a
-entrega, e ele é deliberadamente auto-suficiente: dá para escrever o gancho e o
-receptor inteiro — inclusive a verificação da assinatura — sem abrir uma linha
-do código do control plane. O que trafega é o envelope da
-[taxonomia de eventos](../../especificacoes/eventos/taxonomia.md), sem tradução
-nenhuma no caminho, exatamente o mesmo objeto que o
-[stream SSE](events-stream.md) entrega no campo `data:` e que os
-[webhooks assinados](webhooks-events.md) entregam por POST.
+This document is the contract for whoever writes the graph **and** for whoever
+receives the delivery, and it is deliberately self-sufficient: the hook and the
+whole receiver — signature verification included — can be written without opening
+a line of the control plane's code. What travels is the envelope of the
+[event taxonomy](../../especificacoes/eventos/taxonomia.md), with no translation
+along the way, exactly the same object the [SSE stream](events-stream.md)
+delivers in its `data:` field and the
+[signed webhooks](webhooks-events.md) deliver by POST.
 
 ---
 
-## 1. O que é, e quando usar em vez de um webhook
+## 1. What it is, and when to use it instead of a webhook
 
-Um gancho é uma reação que **o próprio grafo declara**: "quando um trabalho
-entrar no nó `testar`, avise este endereço"; "quando ele travar em `revisar`,
-chame aquele". A declaração mora dentro do documento de grafo, ao lado dos nós
-e das arestas.
+A hook is a reaction **the graph itself declares**: "when a job enters the
+`testar` node, tell this address"; "when it gets stuck at `revisar`, call that
+one". The declaration lives inside the graph document, beside the nodes and the
+edges.
 
-| | Webhook ([`webhooks-events.md`](webhooks-events.md)) | Gancho (este documento) |
+| | Webhook ([`webhooks-events.md`](webhooks-events.md)) | Hook (this document) |
 |---|---|---|
-| Quem declara | um operador, por `POST /v1/webhooks` | quem escreve o grafo, dentro do documento |
-| Onde vive | linha em `webhook_subscription` | chave `hooks` do snapshot da versão |
-| Escopo | todo evento do projeto (com filtro por tipo) | um nó, um gatilho |
-| Versionado com o grafo | não | **sim** — muda por proposta, com diff e volta |
-| Onde fica a chave do HMAC | `webhook_subscription.secret` | `hook_secret`, referenciada por nome (§2.1) |
-| Transporte | POST assinado, seis tentativas | o mesmo, byte a byte |
+| Who declares it | an operator, through `POST /v1/webhooks` | whoever writes the graph, inside the document |
+| Where it lives | a row in `webhook_subscription` | the `hooks` key of the version's snapshot |
+| Scope | every event of the project (with a filter by type) | one node, one trigger |
+| Versioned with the graph | no | **yes** — it changes by proposal, with a diff and a way back |
+| Where the HMAC key sits | `webhook_subscription.secret` | `hook_secret`, referenced by name (§2.1) |
+| Transport | a signed POST, six attempts | the same, byte for byte |
 
-Regra prática: se a reação é do PROCESSO — "toda vez que qualquer trabalho
-chegar nesta etapa" —, ela pertence ao mapa, e é gancho. Se é da sua
-integração — "quero todo o log deste projeto na minha ferramenta" —, é webhook.
+Rule of thumb: if the reaction belongs to the PROCESS — "every time any job
+reaches this step" —, it belongs to the map, and it is a hook. If it belongs to
+your integration — "I want this project's whole log in my tool" —, it is a
+webhook.
 
-**Por que isso importa.** Um webhook registrado é estado que só existe na
-máquina onde alguém rodou o `POST`: exportar o grafo não o leva junto, o
-topógrafo não consegue propô-lo, e reverter uma versão não o desfaz. Um gancho
-é dado do documento, então ele atravessa exportação, entra em proposta com
-evidência e volta atrás junto com a versão que o introduziu (D2, D15).
+**Why that matters.** A registered webhook is state that exists only on the
+machine where somebody ran the `POST`: exporting the graph does not take it
+along, the topografo cannot propose it, and reverting a version does not undo it.
+A hook is data in the document, so it survives an export, enters a proposal with
+evidence and is undone together with the version that introduced it (D2, D15).
 
-**O que um gancho não é:** não é aresta. Ele não muda o nó atual, não decide
-caminho, não bloqueia e não tem como fazer o trabalho parar. Falha de gancho é
-incidente (§6), nunca desfecho.
+**What a hook is not:** it is not an edge. It does not change the current node,
+does not decide a path, does not block and has no way of stopping the job. A
+hook's failure is an incident (§6), never an outcome.
 
 ---
 
-## 2. Declarar um gancho
+## 2. Declaring a hook
 
-`hooks` é uma lista opcional no topo do documento. Ausente = nenhuma reação, que
-é o caso de todo grafo escrito antes desta ficha — nenhum deles precisou ser
-tocado.
+`hooks` is an optional list at the top of the document. Absent = no reaction,
+which is the case for every graph written before this ticket — not one of them
+had to be touched.
 
 ```json
 {
@@ -78,39 +79,42 @@ tocado.
 }
 ```
 
-| Campo | Obrigatório | Regra |
+| Field | Required | Rule |
 |---|---|---|
-| `id` | sim | Único no documento. Mesma classe de caracteres do id de nó: `^[a-z0-9][a-z0-9_-]*$`. |
-| `trigger` | sim | `node_entered` ou `node_blocked`. Qualquer outro valor é recusado na validação. |
-| `node_id` | sim | Precisa ser o id de um nó que existe em `nodes`. |
-| `destination.type` | sim | Hoje só `webhook` (§7). |
-| `destination.url` | sim | URL absoluta `http:` ou `https:` — mesma regra do `POST /v1/webhooks`. |
-| `destination.secret_ref` | sim | **Nome** da chave do HMAC, nunca a chave (§2.1). Mesma classe de caracteres do id de nó. |
-| `description` | não | Para que serve a reação, em uma frase. |
+| `id` | yes | Unique in the document. The same character class as a node's id: `^[a-z0-9][a-z0-9_-]*$`. |
+| `trigger` | yes | `node_entered` or `node_blocked`. Any other value is refused at validation. |
+| `node_id` | yes | Has to be the id of a node that exists in `nodes`. |
+| `destination.type` | yes | Today only `webhook` (§7). |
+| `destination.url` | yes | An absolute `http:` or `https:` URL — the same rule as `POST /v1/webhooks`. |
+| `destination.secret_ref` | yes | The **name** of the HMAC key, never the key (§2.1). The same character class as a node's id. |
+| `description` | no | What the reaction is for, in one sentence. |
 
-O exemplo completo, com um gancho de cada gatilho, está em
-[`schema/exemplos/grafo-valido-com-ganchos.json`](../../schema/exemplos/grafo-valido-com-ganchos.json).
+The complete example, with one hook per trigger, is in
+`schema/exemplos/grafo-valido-com-ganchos.json` — cited and not linked, because
+the file's own name is still Portuguese and a link target is prose to a sweep
+that reads lines; renaming it belongs to the path ticket.
 
-### 2.1. O segredo não mora no documento
+### 2.1. The secret does not live in the document
 
-O documento **nomeia** a chave; quem a guarda é o deployment. Um grafo que ainda
-traga um campo `secret` é recusado na validação de forma — o `secret_ref`
-obrigatório falta, e a chave desconhecida bate no `additionalProperties: false`.
+The document **names** the key; the one that keeps it is the deployment. A graph
+that still carries a `secret` field is refused at shape validation — the required
+`secret_ref` is missing, and the unknown key hits `additionalProperties: false`.
 
-**Por quê.** O documento é endereçado por conteúdo (D15): ele entra inteiro no
-hash da versão, sai inteiro por `GET /v1/graph-versions/:id`, é escrito em disco
-pelo `cartografo export` e copiado byte a byte para o atlas que a D7 manda
-publicar. Chave escrita ali é chave de todo mundo que lê o mapa — e rotacionar
-uma que vazou seria propor uma versão nova cujo diff mostra a velha e a nova
-lado a lado, para sempre, no histórico que nunca se apaga.
+**Why.** The document is content-addressed (D15): it goes whole into the
+version's hash, comes out whole through `GET /v1/graph-versions/:id`, is written
+to disk by `cartografo export` and copied byte for byte into the atlas D7 orders
+published. A key written there is a key belonging to everybody who reads the map
+— and rotating one that leaked would mean proposing a new version whose diff
+shows the old one and the new one side by side, forever, in a history that is
+never erased.
 
-O `secret_ref` é da mesma família que `engine`, `model` e `escalation_policy`
-([`graph.md`](graph.md)): valor que o documento declara e o deployment resolve
-na hora de despachar, nunca o validador na importação — porque o validador não
-sabe o que ESTE deployment tem. Por isso um `secret_ref` que não resolve **não**
-é erro de validação: é zero entrega (§4).
+`secret_ref` belongs to the same family as `engine`, `model` and
+`escalation_policy` ([`graph.md`](graph.md)): a value the document declares and
+the deployment resolves at dispatch time, never the validator at import — because
+the validator does not know what THIS deployment has. That is why a `secret_ref`
+that does not resolve is **not** a validation error: it is zero deliveries (§4).
 
-Registrar a chave é um `PUT` autenticado, com o nome no caminho:
+Registering the key is an authenticated `PUT`, with the name in the path:
 
 ```
 PUT /v1/hook-secrets/gancho-revisao
@@ -119,244 +123,246 @@ Content-Type: application/json
 {"valor": "uma-string-longa-e-aleatoria-que-eu-escolhi"}
 ```
 
-| Rota | O que faz |
+| Route | What it does |
 |---|---|
-| `PUT /v1/hook-secrets/:nome` | Registra (`201`) ou **rotaciona** (`200`). Responde `{nome, criada_em}` — o `valor` nunca volta. |
-| `GET /v1/hook-secrets` | Lista `{segredos: [{nome, criada_em, revogada_em}]}`, do mais antigo para o mais novo, sem `valor` em lugar nenhum. |
-| `DELETE /v1/hook-secrets/:nome` | Revoga a chave viva daquele nome. Idempotente; `404` num nome que ninguém registrou. |
+| `PUT /v1/hook-secrets/:nome` | Registers (`201`) or **rotates** (`200`). Answers `{nome, criada_em}` — the `valor` never comes back. |
+| `GET /v1/hook-secrets` | Lists `{segredos: [{nome, criada_em, revogada_em}]}`, oldest to newest, with no `valor` anywhere. |
+| `DELETE /v1/hook-secrets/:nome` | Revokes the live key of that name. Idempotent; `404` on a name nobody registered. |
 
-As três exigem credencial de `usuario`: um runner leva `403
-credencial_fora_de_escopo`.
+All three demand a `usuario` credential: a runner takes a
+`403 credencial_fora_de_escopo`.
 
-**Rotacionar é registrar de novo.** O `PUT` revoga a linha viva e grava uma
-linha nova, na mesma transação — nada é sobrescrito e nada é apagado (D15/D2),
-então "quando esta chave parou de valer" continua respondível. A chave nova vale
-a partir da próxima entrega enfileirada; uma entrega já em voo termina com a que
-valia quando ela nasceu (§4). E o documento de grafo não muda uma vírgula: o
-nome continua o mesmo, então não há versão nova, não há proposta e não há diff.
+**Rotating is registering again.** The `PUT` revokes the live row and writes a
+new one, in the same transaction — nothing is overwritten and nothing is deleted
+(D15/D2), so "when did this key stop holding" is still answerable. The new key
+holds from the next queued delivery on; a delivery already in flight ends with
+the one that held when it was born (§4). And the graph document does not change a
+comma: the name is still the same, so there is no new version, no proposal and no
+diff.
 
-O `value` fica em texto claro no banco, e isso é deliberado: a assinatura é
-HMAC, então a chave precisa ser REUSADA a cada entrega — ela não pode virar
-digest como a credencial da `0007`. É exatamente a postura do
-`webhook_subscription.secret` (t142); o que esta ficha mudou foi ONDE a chave
-mora, não como ela é guardada.
+The `value` sits in clear text in the database, and that is deliberate: the
+signature is an HMAC, so the key has to be REUSED on every delivery — it cannot
+become a digest the way `0007`'s credential does. It is exactly
+`webhook_subscription.secret`'s posture (t142); what this ticket changed was
+WHERE the key lives, not how it is kept.
 
 ---
 
-## 3. O que dispara, exatamente
+## 3. What fires, exactly
 
-| Gatilho | Dispara em | Casa quando |
+| Trigger | Fires on | Matches when |
 |---|---|---|
-| `node_entered` | `job.transitioned` | `data.to_node_id` é igual ao `node_id` do gancho |
-| `node_blocked` | `job.blocked` | o `no_atual` do trabalho no instante do bloqueio é o `node_id` do gancho |
+| `node_entered` | `job.transitioned` | `data.to_node_id` equals the hook's `node_id` |
+| `node_blocked` | `job.blocked` | the job's `no_atual` at the moment of the block is the hook's `node_id` |
 
-Vários ganchos podem casar com o mesmo fato, e cada um vira uma entrega
-independente: uma que falha não atrasa nem cancela a outra (§6).
+Several hooks can match the same fact, and each one becomes an independent
+delivery: one that fails neither delays nor cancels the other (§6).
 
-**Um gancho no `initial_node` nunca dispara.** A colocação inicial do trabalho é
-um `job.created`, não uma `job.transitioned` — pela mesma razão que
-`from_node_id` é `null` na primeira transição. Não é uma limitação escondida: é o
-que "entrou no nó" significa quando a chegada é o nascimento. Se você precisa
-reagir à criação, o transporte para isso é o webhook do tipo `job.created`.
+**A hook on the `initial_node` never fires.** Placing the job at the start is a
+`job.created`, not a `job.transitioned` — for the same reason `from_node_id` is
+`null` on the first transition. It is not a hidden limitation: it is what
+"entered the node" means when the arrival is the birth. If you need to react to
+the creation, the transport for that is a `job.created` webhook.
 
-**Desbloquear não dispara nada.** `node_unblocked`, `node_exited` e condições
-customizadas estão fora de escopo desta ficha.
-
----
-
-## 4. Enfileirar é síncrono; entregar não é
-
-Isto é o coração da garantia "gancho nunca trava o viajante", e vale a pena ser
-explícito sobre as duas metades:
-
-1. **Enfileirar** acontece DENTRO da mesma transação SQLite que grava a projeção
-   do trabalho e o evento. Se a transição for revertida, as entregas dela somem
-   junto; não existe janela em que o trabalho andou sem a reação declarada estar
-   na fila.
-2. **Tentar entregar** acontece depois, num tick de fundo. `POST
-   /v1/jobs/:id/transitions` responde `200` sem esperar por chamada de rede
-   nenhuma — nem a primeira tentativa, nem o timeout de 10 segundos, nem as seis
-   retentativas.
-
-É a mesma disciplina da t142 ("o caminho de escrita nunca espera por webhook"), e
-ela é o que torna a garantia estrutural em vez de defensiva: não há `try/catch`
-protegendo a travessia porque não existe caminho de código do socket até ela.
-
-A `url` do documento e a chave **resolvida** a partir do `secret_ref` são
-copiadas para a linha de entrega no momento em que ela é enfileirada. Uma versão
-nova do grafo pode apontar o mesmo gancho para outro lugar, e um `PUT
-/v1/hook-secrets/:nome` pode rotacionar a chave — e uma entrega em voo termina
-contra o destino que valia quando ela nasceu, nunca contra o que valeria hoje.
-É o mesmo instante e a mesma razão para as duas: só a FONTE da chave mudou de
-lugar (t194), a semântica da coluna `secret` da linha de entrega é a de sempre.
-
-Se o trabalho não tem `graph_version_id`, se a versão citada não resolve, se o
-snapshot dela não tem `hooks`, ou se o `secret_ref` de um gancho não casa com
-nenhum segredo vivo, o resultado é o mesmo: zero entregas, zero erro. O último
-caso é o de quem importou um grafo sem registrar o que ele referencia, e por
-enquanto ele é silencioso de propósito — dar sinal disso (evento, portão, aviso
-na importação) é ficha separada.
+**Unblocking fires nothing.** `node_unblocked`, `node_exited` and custom
+conditions are outside this ticket's scope.
 
 ---
 
-## 5. A entrega, e como verificar a assinatura
+## 4. Queuing is synchronous; delivering is not
 
-Cada disparo vira um POST idêntico ao de um webhook registrado:
+This is the heart of the "a hook never stalls the traveller" guarantee, and it is
+worth being explicit about both halves:
+
+1. **Queuing** happens INSIDE the same SQLite transaction that writes the job's
+   projection and the event. If the transition is rolled back, its deliveries
+   disappear with it; there is no window in which the job moved without the
+   declared reaction being in the queue.
+2. **Attempting to deliver** happens afterwards, in a background tick.
+   `POST /v1/jobs/:id/transitions` answers `200` without waiting on any network
+   call — not the first attempt, not the 10-second timeout, not the six retries.
+
+It is t142's discipline ("the write path never waits on a webhook"), and it is
+what makes the guarantee structural rather than defensive: there is no
+`try/catch` protecting the traversal because there is no code path from the
+socket to it.
+
+The document's `url` and the key **resolved** from the `secret_ref` are copied
+into the delivery row at the moment it is queued. A new version of the graph can
+point the same hook somewhere else, and a `PUT /v1/hook-secrets/:nome` can rotate
+the key — and a delivery in flight ends against the destination that held when it
+was born, never against the one that would hold today. It is the same instant and
+the same reason for both: only the SOURCE of the key moved (t194), the semantics
+of the delivery row's `secret` column are what they always were.
+
+If the job has no `graph_version_id`, if the version cited does not resolve, if
+its snapshot has no `hooks`, or if a hook's `secret_ref` matches no live secret,
+the result is the same: zero deliveries, zero errors. The last case is that of
+somebody who imported a graph without registering what it references, and for now
+it is silent on purpose — giving a signal about it (an event, a gate, a warning
+at import) is a separate ticket.
+
+---
+
+## 5. The delivery, and how to verify the signature
+
+Every firing becomes a POST identical to a registered webhook's:
 
 ```
 POST /cartografo HTTP/1.1
 Host: meu-servico.exemplo
 Content-Type: application/json
-X-Cartografo-Signature: sha256=8f4c...  (64 caracteres hex)
+X-Cartografo-Signature: sha256=8f4c...  (64 hex characters)
 
 {"id":131,"type":"job.transitioned","project_id":1,"execution_id":2,"entity":{"type":"job","id":7},"actor":{"type":"system","ref":"control-plane"},"occurred_at":"2026-08-16T12:00:03.114Z","data":{"from_node_id":"redigir","to_node_id":"revisar"}}
 ```
 
-O corpo é o envelope inteiro do evento que disparou o gancho, byte a byte o
-mesmo objeto que `GET /v1/executions/:id/events` devolve e que o `data:` do
-stream carrega. Não há campo dizendo qual gancho produziu esta entrega: o
-receptor sabe qual é o dele porque cada gancho tem sua própria URL e seu próprio
-segredo.
+The body is the whole envelope of the event that fired the hook, byte for byte
+the same object `GET /v1/executions/:id/events` returns and the stream's `data:`
+carries. There is no field saying which hook produced this delivery: the receiver
+knows which one is its own because every hook has its own URL and its own secret.
 
-A receita da assinatura, inteira — a mesma da t142, com uma diferença de chave:
+The signature recipe, in full — t142's, with one difference in the key:
 
-> `X-Cartografo-Signature` = `sha256=` + HMAC-SHA256 do **corpo cru**,
-> com a chave que o `destination.secret_ref` DESTE GANCHO resolveu, em hex
-> minúsculo.
+> `X-Cartografo-Signature` = `sha256=` + HMAC-SHA256 of the **raw body**, with
+> the key THIS HOOK's `destination.secret_ref` resolved to, in lowercase hex.
 
-Do seu lado nada muda: a chave é a string que você mandou no `valor` do
-`PUT /v1/hook-secrets/:nome`. O documento de grafo carrega o nome dela, e o
-control plane resolve o nome no enfileiramento — você nunca lê a chave de volta
-por rota nenhuma, então guarde-a quando registrar.
+Nothing changes on your side: the key is the string you sent in the `valor` of
+`PUT /v1/hook-secrets/:nome`. The graph document carries its name, and the
+control plane resolves the name at queuing time — you never read the key back
+through any route, so keep it when you register it.
 
-Três detalhes que decidem se a sua verificação funciona:
+Three details that decide whether your verification works:
 
-- **Assine os bytes que chegaram, não o objeto reparseado.** `JSON.parse`
-  seguido de `JSON.stringify` não devolve necessariamente os mesmos bytes, e um
-  byte diferente é um digest diferente. Leia o corpo cru primeiro, verifique,
-  e só então faça o parse.
-- **Compare em tempo constante** (`crypto.timingSafeEqual`), nunca com `===`.
-- **Sem assinatura válida, não confie no corpo.** A URL está escrita num
-  documento de grafo que qualquer cliente da API lê; a assinatura é a única
-  coisa que separa uma entrega do control plane de quem descobriu o endereço.
-  Desde a t194 a chave que a produz não está mais nesse documento — quem lê o
-  mapa lê para onde a reação vai, e não com o que ela assina.
+- **Sign the bytes that arrived, not the reparsed object.** `JSON.parse` followed
+  by `JSON.stringify` does not necessarily give back the same bytes, and a
+  different byte is a different digest. Read the raw body first, verify, and only
+  then parse.
+- **Compare in constant time** (`crypto.timingSafeEqual`), never with `===`.
+- **With no valid signature, do not trust the body.** The URL is written in a
+  graph document any client of the API reads; the signature is the only thing
+  separating a delivery from the control plane from whoever found the address.
+  Since t194 the key that produces it is no longer in that document — whoever
+  reads the map reads where the reaction goes, not what it signs with.
 
-Em Node, a receita inteira é uma linha — a mesma que o servidor executa:
+In Node, the whole recipe is one line — the same one the server runs:
 
 ```javascript
 import { createHmac } from 'node:crypto';
-const assinatura = `sha256=${createHmac('sha256', segredo).update(corpoCru, 'utf8').digest('hex')}`;
+const signature = `sha256=${createHmac('sha256', segredo).update(rawBody, 'utf8').digest('hex')}`;
 ```
 
-O receptor mínimo de zero dependência da
-[§8 de `webhooks-events.md`](webhooks-events.md) serve aqui sem uma linha de
-diferença: troque a variável do segredo pela chave que você registrou para o
-`secret_ref` deste gancho.
+The zero-dependency minimal receiver of
+[§8 of `webhooks-events.md`](webhooks-events.md) serves here without a line of
+difference: swap the secret's variable for the key you registered for this hook's
+`secret_ref`.
 
-**Responda rápido.** Qualquer `2xx` encerra a entrega; o servidor não lê o corpo
-da sua resposta. Se o seu processamento é demorado, aceite (`200`), enfileire do
-seu lado e processe depois.
+**Answer fast.** Any `2xx` closes the delivery; the server does not read your
+response's body. If your processing is slow, accept (`200`), queue on your side
+and process afterwards.
 
 ---
 
-## 6. Retentativa, desistência e o evento de falha
+## 6. Retries, giving up, and the failure event
 
-A escala é a da t142, degrau por degrau — o mesmo `RETRY_BACKOFF_MS`, para que
-um receptor já escrito não precise de ajuste nenhum:
+The scale is t142's, step for step — the same `RETRY_BACKOFF_MS`, so that a
+receiver already written needs no adjustment at all:
 
-| Tentativa | Quando |
+| Attempt | When |
 |---|---|
-| 1ª | assim que o gancho é enfileirado (até ~1s depois do fato) |
-| 2ª | 10 segundos depois da falha |
-| 3ª | 1 minuto depois |
-| 4ª | 5 minutos depois |
-| 5ª | 30 minutos depois |
-| 6ª | 2 horas depois |
+| 1st | as soon as the hook is queued (up to ~1s after the fact) |
+| 2nd | 10 seconds after the failure |
+| 3rd | 1 minute later |
+| 4th | 5 minutes later |
+| 5th | 30 minutes later |
+| 6th | 2 hours later |
 
-Seis tentativas no total. Contam como falha o `timeout` de 10 segundos, o erro
-de rede e **qualquer** resposta que não seja `2xx` — inclusive `3xx`, que não é
-seguido.
+Six attempts in total. What counts as a failure is the 10-second `timeout`, a
+network error and **any** response that is not `2xx` — including a `3xx`, which
+is not followed.
 
-| Estado | Significa |
+| State | Means |
 |---|---|
-| `entregue` | um `2xx` chegou. `entregue_em` registra quando, e **nada é gravado no log**. |
-| `esgotada` | as seis tentativas falharam. `last_error` guarda a última, e o control plane grava UM `job.hook_failed`. |
+| `entregue` | a `2xx` arrived. `entregue_em` records when, and **nothing is written to the log**. |
+| `esgotada` | all six attempts failed. `last_error` keeps the last one, and the control plane writes ONE `job.hook_failed`. |
 
-**Sucesso é mudo, desistência é evento.** Um gancho não tem assinante
-registrado: ninguém está fazendo polling da fila dele, então uma reação que
-falha para sempre em silêncio é exatamente o que quem escreveu o grafo não
-consegue descobrir. O
+**Success is mute, giving up is an event.** A hook has no registered subscriber:
+nobody is polling its queue, so a reaction that fails forever in silence is
+exactly what whoever wrote the graph cannot find out about. The
 [`job.hook_failed`](../../especificacoes/eventos/schemas/job.hook_failed.schema.json)
-resolve isso pelos transportes que já existem — ele aparece no stream e nos
-webhooks registrados sem trabalho nenhum a mais:
+solves that through the transports that already exist — it shows up in the stream
+and in the registered webhooks with no extra work at all:
 
 ```json
 {"hook_id":"avisar-revisao","node_id":"revisar",
  "url":"https://meu-servico.exemplo/cartografo","last_error":"HTTP 502"}
 ```
 
-Ele é gravado **só no esgotamento**, nunca por tentativa: uma falha transitória
-é retentada e some sozinha, e um evento por tentativa encheria o log de ruído
-que se corrige. E ele é **incidente, não desfecho** — `entity.id` é o
-trabalho, mas nada na travessia dele muda por causa disso.
+It is written **only on exhaustion**, never per attempt: a transient failure is
+retried and disappears on its own, and one event per attempt would fill the log
+with noise that corrects itself. And it is an **incident, not an outcome** —
+`entity.id` is the job, but nothing in its traversal changes because of it.
 
-Uma entrega `esgotada` não é retentada, por mais tempo que passe, e não há rota
-para reenviar — mesma ausência da t142. A linha não é apagada: "tentei seis
-vezes e desisti" é fato de auditoria.
+An `esgotada` delivery is not retried, however much time passes, and there is no
+route to send it again — t142's own absence. The row is not deleted: "I tried six
+times and gave up" is an audit fact.
 
-Um gancho quebrado é problema só dele: as entregas de um lote saem juntas, cada
-uma com seu próprio timeout, e nenhuma falha atrasa a de outro gancho, segura o
-tick ou toca no caminho de escrita.
+A broken hook is nobody's problem but its own: a batch's deliveries go out
+together, each with its own timeout, and no failure delays another hook's, holds
+up the tick or touches the write path.
 
 ---
 
-## 7. Validação: o que é recusado, e onde
+## 7. Validation: what is refused, and where
 
-A validação de FORMA é do [`grafo.schema.json`](../../schema/grafo.schema.json)
-— campo obrigatório faltando, `trigger` fora do vocabulário, `destination.type`
-desconhecido, `url` que não é `http(s)` absoluta, `secret_ref` fora do charset
-`^[a-z0-9][a-z0-9_-]*$` (e um `secret` sobrando, que é como um documento do
-formato antigo é recusado).
+SHAPE validation belongs to
+[`grafo.schema.json`](../../schema/grafo.schema.json) — a missing required field,
+a `trigger` outside the vocabulary, an unknown `destination.type`, a `url` that
+is not an absolute `http(s)` one, a `secret_ref` outside the charset
+`^[a-z0-9][a-z0-9_-]*$` (and a leftover `secret`, which is how a document in the
+old format is refused).
 
-O que a validação **não** faz é resolver o `secret_ref` contra o banco. As duas
-passagens estruturais são puras e sem banco, mantidas em paridade byte a byte
-entre `scripts/validar-grafo.mjs` e o porte em `packages/core/src/domain/graph.ts`
-— uma checagem que consultasse o banco quebraria o contrato para uma das duas e
-não para a outra. Nome que não resolve é zero entrega (§4), nunca `422`.
+What validation does **not** do is resolve the `secret_ref` against the database.
+Both structural passes are pure and database-free, kept in byte-for-byte parity
+between `scripts/validar-grafo.mjs` and the port in
+`packages/core/src/domain/graph.ts` — a check that consulted the database would
+break the contract for one of the two and not for the other. A name that does not
+resolve is zero deliveries (§4), never a `422`.
 
-A validação REFERENCIAL é da passagem **estrutural** do validador de grafo
-(`scripts/validar-grafo.mjs` e o porte em
-`packages/core/src/domain/graph.ts`, mantidos em paridade byte a byte):
+REFERENTIAL validation belongs to the graph validator's **structural** pass
+(`scripts/validar-grafo.mjs` and the port in
+`packages/core/src/domain/graph.ts`, kept in byte-for-byte parity):
 
-| Código | Quando |
+| Code | When |
 |---|---|
-| `gancho_no_inexistente` | o `node_id` do gancho não é nó do documento |
-| `id_gancho_duplicado` | dois ganchos com o mesmo `id` |
-| `gancho_invalido` | a entrada de `hooks` não é objeto |
+| `gancho_no_inexistente` | the hook's `node_id` is not a node of the document |
+| `id_gancho_duplicado` | two hooks with the same `id` |
+| `gancho_invalido` | the entry in `hooks` is not an object |
 
-Um gancho pendurado **não** é violação de soundness. As quatro regras formais
-(alcançável, termina, aresta com condição, nó com contrato) são propriedades da
-rede de workflow, e uma reação que aponta para lugar nenhum não diz nada sobre
-a rede — é defeito de forma, e sai na lista de `estrutura.erros` do `422`.
+A dangling hook is **not** a soundness violation. The four formal rules
+(reachable, terminates, edge with a condition, node with a contract) are
+properties of the workflow net, and a reaction pointing nowhere says nothing
+about the net — it is a shape defect, and it comes out in the `estrutura.erros`
+list of the `422`.
 
 ---
 
-## 8. O que ainda não existe
+## 8. What does not exist yet
 
-- **Destino `local_command`.** Mandar o control plane executar um comando de
-  shell que chegou como DADO de grafo é outra ficha, com portão de
-  revisão/permissão próprio espelhando o da importação de skill (D4). O
-  `destination.type` é enum de um valor só justamente para que a segunda
-  variante seja aditiva. Note a assimetria com o resto do sistema: todo comando
-  que o cartografo roda hoje executa dentro do worktree de uma sessão, sob o
-  runner, e nunca na máquina do control plane.
-- **Outros gatilhos** (`node_exited`, `node_unblocked`, condição customizada).
-- **Sinal para um `secret_ref` que não resolve.** Hoje ele produz zero entregas
-  em silêncio (§4). Um evento, um portão ou um aviso na importação é ficha
-  separada, e vale a pena escrevê-la se isso morder alguém na prática.
-- **Reenvio manual** de uma entrega `esgotada`.
-- **Tela para ganchos.** Esta ficha é só control plane; o gancho se lê e se
-  edita no documento de grafo.
-- **Filtro por trabalho ou por execução.** Um gancho reage a um nó, para todo
-  trabalho que passar por ele.
+- **A `local_command` destination.** Having the control plane run a shell command
+  that arrived as graph DATA is another ticket, with a review/permission gate of
+  its own mirroring the one for skill import (D4). `destination.type` is an enum
+  of a single value precisely so that the second variant is additive. Note the
+  asymmetry with the rest of the system: every command the cartografo runs today
+  executes inside a session's worktree, under the runner, and never on the
+  control plane's machine.
+- **Other triggers** (`node_exited`, `node_unblocked`, a custom condition).
+- **A signal for a `secret_ref` that does not resolve.** Today it produces zero
+  deliveries in silence (§4). An event, a gate or a warning at import is a
+  separate ticket, and it is worth writing if this ever bites somebody in
+  practice.
+- **Manually resending** an `esgotada` delivery.
+- **A screen for hooks.** This ticket is control plane only; a hook is read and
+  edited in the graph document.
+- **A filter by job or by execution.** A hook reacts to a node, for every job
+  that goes through it.

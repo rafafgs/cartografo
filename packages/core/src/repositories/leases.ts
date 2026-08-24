@@ -36,10 +36,13 @@
  * Growing the taxonomy is a decision of its own, recorded as a follow-up in
  * t196's Out of Scope and in `docs/spec/runner-e-controller.md` §7.
  *
- * The COLUMNS are English since D20's fourth child (t229) and the stored VALUES
- * since its fifth (t235); {@link LeaseRow}'s field names are not, because
- * `routes/leases.ts` and `runners.ts` read them, so every `SELECT` aliases the
- * renamed column back onto the field (t229, FR4; t235, FR5).
+ * The COLUMNS are English since D20's fourth child (t229), the stored VALUES
+ * since its fifth (t235), and the field names since t290 — there used to be a
+ * `LeaseRow` spelled `trabalho_id`/`projeto_id`/`ttl_segundos`/…, a projection
+ * that aliased the schema back onto it, and a `toLease`/`toGrantResult` pair
+ * that renamed the same eight fields forward again for `routes/leases.ts`. One
+ * shape survived per concept: {@link Lease} is what a read returns AND what
+ * `/v1` publishes, and {@link GrantResult} answers with `reason` on both sides.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -65,42 +68,45 @@ export type ExpirationReason = 'heartbeat_lost' | 'ttl_elapsed';
  */
 export type RefusalReason = 'job_already_leased' | 'runner_cap' | 'project_cap';
 
-/** A lease, as it is in the database. */
-export interface LeaseRow {
+/** A lease: the row AND what `/v1` publishes, in one shape (t226 FR1, t290). */
+export interface Lease {
   id: number;
   runner_id: string;
-  trabalho_id: number;
-  projeto_id: number;
+  job_id: number;
+  project_id: number;
   status: LeaseStatus;
-  ttl_segundos: number;
-  concedida_em: string;
-  heartbeat_em: string;
-  expira_em: string;
-  liberada_em: string | null;
-  motivo_expiracao: ExpirationReason | null;
+  ttl_seconds: number;
+  granted_at: string;
+  heartbeat_at: string;
+  expires_at: string;
+  released_at: string | null;
+  expiration_reason: ExpirationReason | null;
 }
 
 /** What the runner declares when disputing a job. */
 export interface LeaseRequest {
   runner_id: string;
-  projeto_id: number;
-  trabalho_id: number;
+  project_id: number;
+  job_id: number;
   /** Cap of simultaneous active leases for that runner. */
-  teto_runner: number;
+  runner_cap: number;
   /** Cap of simultaneous active leases for that project, across runners. */
-  teto_projeto: number;
-  ttl_segundos: number;
+  project_cap: number;
+  ttl_seconds: number;
 }
 
 /**
  * Result of a request: either a lease came out, or the reason it did not.
  *
  * A refusal is not an error — it is "not now", and the runner tries the next
- * candidate.
+ * candidate, and it keeps its `200`: from a runner's point of view a full cap is
+ * the common case of a healthy pool. This shape IS the response body (t226 FR4,
+ * t290): the key was `motivo` here and `reason` on the wire until the pair of
+ * translators between them was deleted.
  */
 export type GrantResult =
-  | { lease: LeaseRow; motivo?: undefined }
-  | { lease: null; motivo: RefusalReason };
+  | { lease: Lease; reason?: undefined }
+  | { lease: null; reason: RefusalReason };
 
 /** Injectable clock; without it, the real clock. */
 export interface ClockOptions {
@@ -109,28 +115,29 @@ export interface ClockOptions {
 
 /** Listing filters (FR8). */
 export interface LeaseFilters {
-  projeto_id?: number;
+  project_id?: number;
   runner_id?: string;
   status?: LeaseStatus;
 }
 
-/** The row, read back into {@link LeaseRow}'s spelling (t229, FR4). */
-const COLUMNS = `id, runner_id, job_id AS trabalho_id, project_id AS projeto_id,
-                 status, ttl_seconds AS ttl_segundos, granted_at AS concedida_em,
-                 heartbeat_at AS heartbeat_em, expires_at AS expira_em,
-                 released_at AS liberada_em,
-                 expiration_reason AS motivo_expiracao`;
+/** The row, in the column's own words. */
+const COLUMNS = `id, runner_id, job_id, project_id,
+                 status, ttl_seconds, granted_at,
+                 heartbeat_at, expires_at,
+                 released_at,
+                 expiration_reason`;
 
 /* -------------------------------------------------------------------------- */
-/* The row → wire boundary (t226, FR1).                                        */
+/* What is left of the row → wire boundary (t226 FR1, t290).                   */
 /*                                                                             */
-/* Three enums cross here, and all three are `CHECK`-constrained in            */
+/* Three enums used to cross here, and all three are `CHECK`-constrained in    */
 /* `migrations/0004_runner_lease.sql`. There is nothing to translate any more: */
-/* D20's fourth child (t229) renamed the columns and its fifth (t235)          */
-/* rewrote the migrations so the CHECK itself spells `active`, `released`,     */
-/* `expired`, `heartbeat_lost` and `ttl_elapsed` — the wire's own words. What  */
-/* were two maps per enum is now one list per enum, and the list is there to   */
-/* VALIDATE a `?status=` a caller wrote, not to convert one.                   */
+/* D20's fourth child (t229) renamed the columns, its fifth (t235) rewrote the */
+/* migrations so the CHECK itself spells `active`, `released`, `expired`,      */
+/* `heartbeat_lost` and `ttl_elapsed` — the wire's own words — and t290 took   */
+/* the field names with them. What were two maps per enum, then one list per   */
+/* enum, is now one list that VALIDATES a `?status=` a caller wrote rather     */
+/* than converting one.                                                        */
 /* -------------------------------------------------------------------------- */
 
 /** The three statuses a `?status=` filter may name — the column's own three. */
@@ -150,56 +157,6 @@ export function leaseStatusColumn(value: string): LeaseStatus | undefined {
   return LEASE_STATUSES.find((status) => status === value);
 }
 
-/** A lease, as `/v1` publishes it. */
-export interface Lease {
-  id: number;
-  runner_id: string;
-  job_id: number;
-  project_id: number;
-  status: string;
-  ttl_seconds: number;
-  granted_at: string;
-  heartbeat_at: string;
-  expires_at: string;
-  released_at: string | null;
-  expiration_reason: string | null;
-}
-
-/** Row to wire: the one place the lease's column names meet the API's. */
-export function toLease(row: LeaseRow): Lease {
-  return {
-    id: row.id,
-    runner_id: row.runner_id,
-    job_id: row.trabalho_id,
-    project_id: row.projeto_id,
-    status: row.status,
-    ttl_seconds: row.ttl_segundos,
-    granted_at: row.concedida_em,
-    heartbeat_at: row.heartbeat_em,
-    expires_at: row.expira_em,
-    released_at: row.liberada_em,
-    expiration_reason: row.motivo_expiracao,
-  };
-}
-
-/**
- * The grant's answer, on the wire.
- *
- * The refusal keeps its `200`: from a runner's point of view a full cap is "not
- * now, try the next one" and is the common case of a healthy pool, not an
- * error — so `{lease: null, reason}` is a successful answer that happens to
- * carry no lease, and t226 renames the key without touching the status (FR4).
- */
-export type WireGrantResult =
-  | { lease: Lease; reason?: undefined }
-  | { lease: null; reason: string };
-
-/** Grant result to wire, refusal reason included. */
-export function toGrantResult(result: GrantResult): WireGrantResult {
-  if (result.lease === null) return { lease: null, reason: result.motivo };
-  return { lease: toLease(result.lease) };
-}
-
 /** An ISO 8601 instant shifted by seconds — the lease's deadline arithmetic. */
 function addSeconds(instant: string, seconds: number): string {
   return new Date(Date.parse(instant) + seconds * 1000).toISOString();
@@ -210,10 +167,8 @@ function addSeconds(instant: string, seconds: number): string {
  * @param id Lease id.
  * @returns The lease, or `undefined`.
  */
-export function getLease(db: Database, id: number): LeaseRow | undefined {
-  return db.prepare(`SELECT ${COLUMNS} FROM lease WHERE id = ?`).get(id) as
-    | LeaseRow
-    | undefined;
+export function getLease(db: Database, id: number): Lease | undefined {
+  return db.prepare(`SELECT ${COLUMNS} FROM lease WHERE id = ?`).get(id) as Lease | undefined;
 }
 
 /**
@@ -221,13 +176,13 @@ export function getLease(db: Database, id: number): LeaseRow | undefined {
  * @param filters Optional slice by project, runner and status.
  * @returns The matching leases, from the most recent to the oldest.
  */
-export function listLeases(db: Database, filters: LeaseFilters = {}): LeaseRow[] {
+export function listLeases(db: Database, filters: LeaseFilters = {}): Lease[] {
   const conditions: string[] = [];
   const values: Array<string | number> = [];
 
-  if (filters.projeto_id !== undefined) {
+  if (filters.project_id !== undefined) {
     conditions.push('project_id = ?');
-    values.push(filters.projeto_id);
+    values.push(filters.project_id);
   }
   if (filters.runner_id !== undefined) {
     conditions.push('runner_id = ?');
@@ -241,7 +196,7 @@ export function listLeases(db: Database, filters: LeaseFilters = {}): LeaseRow[]
   const where = conditions.length === 0 ? '' : ` WHERE ${conditions.join(' AND ')}`;
   return db
     .prepare(`SELECT ${COLUMNS} FROM lease${where} ORDER BY id`)
-    .all(...values) as LeaseRow[];
+    .all(...values) as Lease[];
 }
 
 /**
@@ -265,7 +220,7 @@ export function listLeases(db: Database, filters: LeaseFilters = {}): LeaseRow[]
  * @param moment Reference instant.
  * @returns The leases that died in this pass.
  */
-function expireOverdue(db: Database, moment: string): LeaseRow[] {
+function expireOverdue(db: Database, moment: string): Lease[] {
   const overdue = db
     .prepare("SELECT id FROM lease WHERE status = 'active' AND expires_at < ?")
     .all(moment) as Array<{ id: number }>;
@@ -289,12 +244,12 @@ function expireOverdue(db: Database, moment: string): LeaseRow[] {
       type: 'lease.expired',
       // The lease's own project, never a default: this row carries the column
       // (`migrations/0004_runner_lease.sql`), unlike `graph_version`.
-      project_id: lease.projeto_id,
+      project_id: lease.project_id,
       execution_id: null,
       entity: { type: 'lease', id: lease.id },
       actor: API_ACTOR,
       occurred_at: moment,
-      data: { runner_id: lease.runner_id, reason: lease.motivo_expiracao },
+      data: { runner_id: lease.runner_id, reason: lease.expiration_reason },
     });
 
     return lease;
@@ -314,7 +269,7 @@ function expireOverdue(db: Database, moment: string): LeaseRow[] {
  * @param options Injectable clock.
  * @returns The leases expired in this call.
  */
-export function claimExpired(db: Database, options: ClockOptions = {}): LeaseRow[] {
+export function claimExpired(db: Database, options: ClockOptions = {}): Lease[] {
   const clock = options.now ?? now;
   return db.transaction(() => expireOverdue(db, clock()))();
 }
@@ -325,7 +280,7 @@ export function claimExpired(db: Database, options: ClockOptions = {}): LeaseRow
  * The whole transaction runs without an `await`: reconciling expired ones,
  * checking the owner, counting both caps and writing are a single step. It is
  * what makes AT12 (N simultaneous requests against M jobs) end with at most
- * `teto_projeto` active leases — the count that decides is the same one the
+ * `project_cap` active leases — the count that decides is the same one the
  * write uses.
  *
  * `job_id` is an opaque integer: this function does not read the `job`
@@ -353,18 +308,18 @@ export function grantLease(
 
     const owner = db
       .prepare("SELECT id FROM lease WHERE job_id = ? AND status = 'active'")
-      .get(request.trabalho_id);
-    if (owner !== undefined) return { lease: null, motivo: 'job_already_leased' };
+      .get(request.job_id);
+    if (owner !== undefined) return { lease: null, reason: 'job_already_leased' };
 
     const ofRunner = db
       .prepare("SELECT COUNT(*) AS total FROM lease WHERE runner_id = ? AND status = 'active'")
       .get(request.runner_id) as { total: number };
-    if (ofRunner.total >= request.teto_runner) return { lease: null, motivo: 'runner_cap' };
+    if (ofRunner.total >= request.runner_cap) return { lease: null, reason: 'runner_cap' };
 
     const ofProject = db
       .prepare("SELECT COUNT(*) AS total FROM lease WHERE project_id = ? AND status = 'active'")
-      .get(request.projeto_id) as { total: number };
-    if (ofProject.total >= request.teto_projeto) return { lease: null, motivo: 'project_cap' };
+      .get(request.project_id) as { total: number };
+    if (ofProject.total >= request.project_cap) return { lease: null, reason: 'project_cap' };
 
     const effect = db
       .prepare(
@@ -374,14 +329,14 @@ export function grantLease(
       )
       .run(
         request.runner_id,
-        request.trabalho_id,
-        request.projeto_id,
-        request.ttl_segundos,
+        request.job_id,
+        request.project_id,
+        request.ttl_seconds,
         moment,
         // Born equal to `granted_at`: that is how a never-renewed lease is told
         // apart from one that lost its heartbeat, when the deadline passes.
         moment,
-        addSeconds(moment, request.ttl_segundos),
+        addSeconds(moment, request.ttl_seconds),
       );
 
     const lease = getLease(db, Number(effect.lastInsertRowid));
@@ -392,15 +347,15 @@ export function grantLease(
     // log that recorded it would be counting dispatches that never happened.
     recordEvent(db, {
       type: 'lease.granted',
-      project_id: lease.projeto_id,
+      project_id: lease.project_id,
       execution_id: null,
       entity: { type: 'lease', id: lease.id },
       actor: API_ACTOR,
       occurred_at: moment,
       data: {
-        job_id: lease.trabalho_id,
+        job_id: lease.job_id,
         runner_id: lease.runner_id,
-        expires_at: lease.expira_em,
+        expires_at: lease.expires_at,
       },
     });
 
@@ -422,9 +377,9 @@ export function grantLease(
  */
 export function renewLease(
   db: Database,
-  data: { id: number; ttl_segundos?: number },
+  data: { id: number; ttl_seconds?: number },
   options: ClockOptions = {},
-): LeaseRow {
+): Lease {
   const clock = options.now ?? now;
 
   db.transaction(() => {
@@ -432,7 +387,7 @@ export function renewLease(
     if (current === undefined) throw new Error(`lease ${data.id} vanished during the heartbeat`);
 
     const moment = clock();
-    const ttl = data.ttl_segundos ?? current.ttl_segundos;
+    const ttl = data.ttl_seconds ?? current.ttl_seconds;
     const effect = db
       .prepare(
         `UPDATE lease SET ttl_seconds = ?, heartbeat_at = ?, expires_at = ?
@@ -461,11 +416,7 @@ export function renewLease(
  * @param options Injectable clock.
  * @returns The released lease.
  */
-export function releaseLease(
-  db: Database,
-  id: number,
-  options: ClockOptions = {},
-): LeaseRow {
+export function releaseLease(db: Database, id: number, options: ClockOptions = {}): Lease {
   const clock = options.now ?? now;
 
   db.transaction(() => {

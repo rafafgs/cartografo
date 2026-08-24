@@ -11,10 +11,18 @@
  *
  * Like the other repositories, it receives the already-open database and never
  * touches the driver (D1). The COLUMNS are English since D20's fourth child
- * (t229) and `owner_type`'s two VALUES since its fifth (t235);
- * {@link CredentialRow}'s field names are not, because `src/auth.ts` reads them
- * and that file is outside both tickets' surface — so every `SELECT` aliases the
- * renamed column back onto the field (t229, FR4; t235, FR5).
+ * (t229), `owner_type`'s two VALUES since its fifth (t235), and
+ * {@link CredentialRow}'s field names since t290 — `src/auth.ts` was outside
+ * both of the earlier tickets' surface, so until then the projection aliased the
+ * renamed columns back onto the Portuguese fields that file read.
+ *
+ * One name did NOT collapse, and it is the same species t289 met twice: the
+ * column is `owner_type` (`migrations/0007_credential.sql`) and the field
+ * {@link CredentialRow} publishes is `type`, which are genuinely two different
+ * words for one thing rather than one word translated. Aliasing the column onto
+ * the field in the query would hide that behind exactly the mechanism this
+ * ticket deletes, so {@link verifyToken} maps it in TypeScript, in the one line
+ * that reads the row.
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -28,11 +36,11 @@ export type CredentialType = 'user' | 'runner';
 /** A credential, as the table holds it — the raw token is not part of it. */
 export interface CredentialRow {
   id: number;
-  tipo: CredentialType;
+  type: CredentialType;
   runner_id: string | null;
   hash: string;
-  criada_em: string;
-  revogada_em: string | null;
+  created_at: string;
+  revoked_at: string | null;
 }
 
 /** The one and only time the raw token is available. */
@@ -45,8 +53,17 @@ export interface IssuedCredential {
   token: string;
 }
 
-const COLUMNS =
-  'id, owner_type AS tipo, runner_id, hash, created_at AS criada_em, revoked_at AS revogada_em';
+/**
+ * The row this table hands back, in the column's own words.
+ *
+ * `owner_type` is the only field {@link CredentialRow} does not spell the same
+ * way; see the header for why that one is a difference and not a translation.
+ */
+interface CredentialColumns extends Omit<CredentialRow, 'type'> {
+  owner_type: CredentialType;
+}
+
+const COLUMNS = 'id, owner_type, runner_id, hash, created_at, revoked_at';
 
 /** Bytes of entropy per token. 32 is the size of the digest that hides it. */
 const TOKEN_BYTES = 32;
@@ -71,12 +88,12 @@ export function hashToken(rawToken: string): string {
  */
 export function issueCredential(
   db: Database,
-  data: { tipo: CredentialType; runnerId?: string | null },
+  data: { type: CredentialType; runnerId?: string | null },
 ): IssuedCredential {
   const token = randomBytes(TOKEN_BYTES).toString('hex');
   const result = db
     .prepare('INSERT INTO credential (owner_type, runner_id, hash, created_at) VALUES (?, ?, ?, ?)')
-    .run(data.tipo, data.runnerId ?? null, hashToken(token), now());
+    .run(data.type, data.runnerId ?? null, hashToken(token), now());
 
   return { id: Number(result.lastInsertRowid), token };
 }
@@ -100,9 +117,13 @@ export function verifyToken(db: Database, rawToken: string): CredentialRow | nul
 
   const found = db
     .prepare(`SELECT ${COLUMNS} FROM credential WHERE hash = ? AND revoked_at IS NULL`)
-    .get(hashToken(rawToken)) as CredentialRow | undefined;
+    .get(hashToken(rawToken)) as CredentialColumns | undefined;
+  if (found === undefined) return null;
 
-  return found ?? null;
+  // Destructured rather than spread over: `owner_type` must not ride out beside
+  // the `type` it becomes, or the row would publish a key nobody declared.
+  const { owner_type: type, ...rest } = found;
+  return { type, ...rest };
 }
 
 /**
@@ -142,12 +163,12 @@ export function revokeRunnerCredentials(db: Database, runnerId: string): number 
  * restart would mint one more.
  *
  * @param db Open database.
- * @param tipo Type to look for.
+ * @param type Type to look for.
  * @returns `true` when at least one non-revoked credential of that type exists.
  */
-export function hasLiveCredential(db: Database, tipo: CredentialType): boolean {
+export function hasLiveCredential(db: Database, type: CredentialType): boolean {
   const row = db
     .prepare('SELECT 1 AS one FROM credential WHERE owner_type = ? AND revoked_at IS NULL LIMIT 1')
-    .get(tipo) as { one: number } | undefined;
+    .get(type) as { one: number } | undefined;
   return row !== undefined;
 }

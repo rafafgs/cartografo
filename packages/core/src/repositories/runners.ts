@@ -14,47 +14,36 @@
  *
  * Like the other repositories, it receives the already-open database and never
  * touches the driver (D1). The COLUMNS are English since D20's fourth child
- * (t229) and the lease VALUES this file reads since its fifth (t235);
- * {@link RunnerRow}'s field names are not, because `routes/runners.ts` reads
- * them, so every `SELECT` aliases the renamed column back onto the field (t229,
- * FR4; t235, FR5).
+ * (t229), the lease VALUES this file reads since its fifth (t235), and the field
+ * names since t290 — there used to be a `RunnerRow` spelled `nome`/`registrado_em`
+ * beside {@link Runner}, a projection that aliased the schema back onto it, and a
+ * `toRunner` that renamed the same two fields forward again on the way to
+ * `routes/runners.ts`. One shape survived, and it is the one the column already
+ * described.
+ *
+ * The two aggregates in {@link listRunnersWithHealth} kept their aliases and
+ * were only re-spelled. `COUNT(CASE …)` and `MAX(l.heartbeat_at)` have no column
+ * to be renaming — the alias is the only name they have — so they are called
+ * `active_leases` and `last_heartbeat`, which is what {@link RunnerHealth}
+ * publishes them as.
  */
 
 import type { Database } from '../db/connection.ts';
 import { now } from './common.ts';
 import type { ExpirationReason } from './leases.ts';
 
-/** A paired runner, as the row spells it. */
-export interface RunnerRow {
-  id: string;
-  nome: string | null;
-  registrado_em: string;
-}
-
-/** A paired runner, as `/v1` publishes it (t226, FR1). */
+/** A paired runner: the row AND what `/v1` publishes, in one shape (t290). */
 export interface Runner {
   id: string;
   name: string | null;
   registered_at: string;
 }
 
-/** Row to wire: the one place the runner's column names meet the API's. */
-export function toRunner(row: RunnerRow): Runner {
-  return { id: row.id, name: row.nome, registered_at: row.registrado_em };
-}
-
-/** The last lease a runner lost to the deadline, as the row spells it (t164). */
-interface RunnerExpirationRow {
-  trabalho_id: number;
-  expira_em: string;
-  motivo_expiracao: ExpirationReason | null;
-}
-
-/** The same fact, as `/v1` publishes it (t226, FR1). */
+/** The last lease a runner lost to the deadline (t164) — row and wire alike. */
 export interface RunnerExpiration {
   job_id: number;
   expires_at: string;
-  expiration_reason: string | null;
+  expiration_reason: ExpirationReason | null;
 }
 
 /**
@@ -80,28 +69,26 @@ export interface RunnerHealth extends Runner {
   last_expiration: RunnerExpiration | null;
 }
 
-/** The row, read back into {@link RunnerRow}'s spelling (t229, FR4). */
-const COLUMNS = 'id, name AS nome, registered_at AS registrado_em';
+/** The row, in the column's own words. */
+const COLUMNS = 'id, name, registered_at';
 
 /**
  * @param db Open database.
  * @param id Id declared by the runner.
  * @returns The runner, or `undefined` if it never registered.
  */
-export function getRunner(db: Database, id: string): RunnerRow | undefined {
-  return db.prepare(`SELECT ${COLUMNS} FROM runner WHERE id = ?`).get(id) as
-    | RunnerRow
-    | undefined;
+export function getRunner(db: Database, id: string): Runner | undefined {
+  return db.prepare(`SELECT ${COLUMNS} FROM runner WHERE id = ?`).get(id) as Runner | undefined;
 }
 
 /**
  * @param db Open database.
  * @returns Every paired runner, in the order they registered.
  */
-export function listRunners(db: Database): RunnerRow[] {
+export function listRunners(db: Database): Runner[] {
   return db
     .prepare(`SELECT ${COLUMNS} FROM runner ORDER BY registered_at, id`)
-    .all() as RunnerRow[];
+    .all() as Runner[];
 }
 
 /**
@@ -121,20 +108,19 @@ export function listRunners(db: Database): RunnerRow[] {
 export function listRunnersWithHealth(db: Database): RunnerHealth[] {
   const fleet = db
     .prepare(
-      `SELECT r.id, r.name AS nome, r.registered_at AS registrado_em,
-              COUNT(CASE WHEN l.status = 'active' THEN 1 END) AS leases_ativas,
-              MAX(l.heartbeat_at) AS ultimo_heartbeat
+      `SELECT r.id, r.name, r.registered_at,
+              COUNT(CASE WHEN l.status = 'active' THEN 1 END) AS active_leases,
+              MAX(l.heartbeat_at) AS last_heartbeat
          FROM runner r
          LEFT JOIN lease l ON l.runner_id = r.id
         GROUP BY r.id, r.name, r.registered_at
         ORDER BY r.registered_at, r.id`,
     )
-    .all() as Array<RunnerRow & { leases_ativas: number; ultimo_heartbeat: string | null }>;
+    .all() as Array<Runner & { active_leases: number; last_heartbeat: string | null }>;
 
   const lost = db
     .prepare(
-      `SELECT runner_id, job_id AS trabalho_id, expires_at AS expira_em,
-              expiration_reason AS motivo_expiracao
+      `SELECT runner_id, job_id, expires_at, expiration_reason
          FROM (SELECT runner_id, job_id, expires_at, expiration_reason,
                       ROW_NUMBER() OVER (
                         PARTITION BY runner_id ORDER BY expires_at DESC, id DESC
@@ -143,23 +129,22 @@ export function listRunnersWithHealth(db: Database): RunnerHealth[] {
                 WHERE status = 'expired')
         WHERE recency = 1`,
     )
-    .all() as Array<RunnerExpirationRow & { runner_id: string }>;
+    .all() as Array<RunnerExpiration & { runner_id: string }>;
 
   const byRunner = new Map(
-    lost.map(({ runner_id: runnerId, ...expiration }) => [
-      runnerId,
-      {
-        job_id: expiration.trabalho_id,
-        expires_at: expiration.expira_em,
-        expiration_reason: expiration.motivo_expiracao,
-      },
-    ]),
+    lost.map(({ runner_id: runnerId, ...expiration }) => [runnerId, expiration]),
   );
 
+  // Field by field, and not `...runner`: now that the fleet row IS a `Runner`,
+  // a spread would also carry the two aggregate columns the query joins onto it
+  // — under the very names `RunnerHealth` declares, so nothing would complain
+  // and the object would simply be built twice.
   return fleet.map((runner) => ({
-    ...toRunner(runner),
-    active_leases: runner.leases_ativas,
-    last_heartbeat: runner.ultimo_heartbeat,
+    id: runner.id,
+    name: runner.name,
+    registered_at: runner.registered_at,
+    active_leases: runner.active_leases,
+    last_heartbeat: runner.last_heartbeat,
     last_expiration: byRunner.get(runner.id) ?? null,
   }));
 }
@@ -179,22 +164,22 @@ export function listRunnersWithHealth(db: Database): RunnerHealth[] {
  */
 export function registerRunner(
   db: Database,
-  data: { id: string; nome?: string | null },
-): { runner: RunnerRow; created: boolean } {
+  data: { id: string; name?: string | null },
+): { runner: Runner; created: boolean } {
   const created = db.transaction(() => {
     const existing = getRunner(db, data.id);
 
     if (existing === undefined) {
       db.prepare('INSERT INTO runner (id, name, registered_at) VALUES (?, ?, ?)').run(
         data.id,
-        data.nome ?? null,
+        data.name ?? null,
         now(),
       );
       return true;
     }
 
-    if (data.nome !== undefined && data.nome !== null) {
-      db.prepare('UPDATE runner SET name = ? WHERE id = ?').run(data.nome, data.id);
+    if (data.name !== undefined && data.name !== null) {
+      db.prepare('UPDATE runner SET name = ? WHERE id = ?').run(data.name, data.id);
     }
     return false;
   })();

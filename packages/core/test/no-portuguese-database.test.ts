@@ -15,23 +15,22 @@
  *
  * ## What is swept, and what is masked
  *
- * The sweep looks ONLY at SQL. Most files it walks legitimately hold two
- * vocabularies at once — below the SQL is the schema, which is English; above it
- * are the repository's own TypeScript field names, which t229 FR4 and t235 FR5
- * deliberately did NOT move, because `routes/*.ts` read them and the routes were
- * outside both tickets' surface. So a Portuguese word is a violation in a SQL
- * position and nowhere else, and the masks below are that line:
+ * The sweep looks ONLY at SQL. It was written when most files it walks held two
+ * vocabularies at once — below the SQL was the schema, which is English; above
+ * it were the repository's own TypeScript field names, which t229 FR4 and t235
+ * FR5 deliberately did NOT move, because `routes/*.ts` read them and the routes
+ * were outside both tickets' surface. So a Portuguese word is a violation in a
+ * SQL position and nowhere else, and the masks below are that line:
  *
- * Which files still hold two vocabularies is shrinking. t286 collapsed them into
- * one for `job.ts`, `intake.ts`, `input-request.ts` and `session.ts`, and t289
- * did the same for `graphs.ts`, `skill.ts`, `proposals.ts`, `hooks.ts` and
- * `hook-secrets.ts`: those nine spell every field the way the column does, and
- * their `SELECT`s carry no alias at all —
+ * No file holds two vocabularies any more. t286 collapsed them into one for
+ * `job.ts`, `intake.ts`, `input-request.ts` and `session.ts`; t289 did the same
+ * for `graphs.ts`, `skill.ts`, `proposals.ts`, `hooks.ts` and `hook-secrets.ts`;
+ * and t290 finished with `leases.ts`, `runners.ts`, `credentials.ts`,
+ * `engine-models.ts`, `webhooks.ts` and `db/events.ts`. Every repository spells
+ * each field the way its column does, and no `SELECT` renames one —
  * `test/no-repository-alias-roundtrip.test.ts` is the gate that keeps it so.
- * What still reads the old way is `webhooks.ts`, `runners.ts`, `leases.ts`,
- * `engine-models.ts`, `credentials.ts` and `db/events.ts`, which one follow-up
- * ticket owns. Everything below is written for those six; it stays exactly as
- * correct when the last of them lands and the two vocabularies become one.
+ * Nothing below changed for it: a sweep that tolerated a second vocabulary above
+ * the SQL is exactly as correct once there is only one.
  *
  * - **Comments.** Prose about `trabalho` is documentation, not a query.
  * - **Everything that is not a SQL string literal.** An interface field, a map
@@ -41,12 +40,13 @@
  *   {@link SQL_SHAPE}, so it is blanked whole.
  * - **`${…}` inside a template literal.** That is TypeScript spliced into SQL,
  *   not SQL; the constant it names is a literal of its own and is swept as one.
- * - **`AS <name>`.** The alias is the bridge the still-unconverted repositories
- *   are built on — a `SELECT title AS titulo` is precisely how a renamed column
- *   reaches an unrenamed TypeScript field without dragging `routes/`,
- *   `packages/runner` and `packages/tela` into one ticket. Masking it here is
- *   about the SQL position and says nothing about whether the alias should
- *   exist; that question belongs to the sweep named above.
+ * - **`AS <name>`.** The alias used to be the bridge the unconverted
+ *   repositories were built on — a `SELECT title AS titulo` is precisely how a
+ *   renamed column reached an unrenamed TypeScript field without dragging
+ *   `routes/`, `packages/runner` and `packages/tela` into one ticket. The mask
+ *   stays after t290 deleted the last of them, because it is about the SQL
+ *   position and says nothing about whether the alias should exist; that
+ *   question belongs to the sweep named above, which now answers it repo-wide.
  *
  * What is left after masking is a table, a column or a stored value this package
  * really does write into a query.

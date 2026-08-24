@@ -384,7 +384,7 @@ t,
   // The body is the taxonomy's envelope, byte for byte the same object the
   // stream and t142's webhooks serve — read here through a path the dispatcher
   // does not use.
-  const trigger = listEvents(ctx.db, { trabalho_id: job.id }).find(
+  const trigger = listEvents(ctx.db, { job_id: job.id }).find(
     (event) => event.type === 'job.transitioned',
   );
   assert.ok(trigger !== undefined, 'the transition has to be in the log');

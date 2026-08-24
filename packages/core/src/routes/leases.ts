@@ -74,10 +74,12 @@
  *
  * Since t226 every field and every status/reason value on this wire is English
  * (`docs/spec/glossario-wire.md` §1.5/§1.6), and since t235 so is the column
- * behind them: `repositories/leases.ts`'s `toLease`/`toGrantResult` rename KEYS
- * on the way out and nothing else, and the comparisons in this file keep reading
- * the ROW (`lease.status !== 'active'`) because the row and the wire now agree
- * on the word.
+ * behind them. What was still in between was `repositories/leases.ts`'s
+ * `toLease`/`toGrantResult`, which renamed KEYS on the way out and nothing else;
+ * t290 deleted both, so what this file returns is what the repository handed it.
+ * The comparisons here always read the ROW (`lease.status !== 'active'`) and did
+ * not have to move, because the row and the wire have agreed on the word since
+ * t235.
  */
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -92,11 +94,9 @@ import {
   releaseLease,
   listLeases,
   renewLease,
-  toGrantResult,
-  toLease,
   LEASE_STATUSES,
+  type Lease,
   type LeaseFilters,
-  type LeaseRow,
 } from '../repositories/leases.ts';
 import { now } from '../repositories/common.ts';
 import { announceFinishedExecution, getJob } from '../repositories/job.ts';
@@ -207,20 +207,22 @@ export function registerLeases(
     // malformed request, it is a runner asking for more than this control plane
     // hands out. It gets what there is, and the refusal that follows is the
     // ordinary `{lease: null, reason}` — same contract as any other full cap.
-    const result = grantLease(
+    const granted = grantLease(
       db,
       {
         runner_id: runnerId,
-        projeto_id: body.project_id as number,
-        trabalho_id: body.job_id as number,
-        teto_runner: Math.min(body.runner_cap as number, ceilings.runner),
-        teto_projeto: Math.min(body.project_cap as number, ceilings.projeto),
-        ttl_segundos: body.ttl_seconds,
+        project_id: body.project_id as number,
+        job_id: body.job_id as number,
+        runner_cap: Math.min(body.runner_cap as number, ceilings.runner),
+        project_cap: Math.min(body.project_cap as number, ceilings.projeto),
+        ttl_seconds: body.ttl_seconds,
       },
       options,
     );
 
-    const granted = toGrantResult(result);
+    // Returned as it comes: since t290 `GrantResult` IS the response body, so a
+    // refusal already carries `reason` and a grant already carries a `lease`
+    // spelled the way `/v1` publishes it.
     if (granted.lease === null) return granted;
 
     reply.code(201);
@@ -255,7 +257,7 @@ export function registerLeases(
       return refusal(reply, 400, 'invalid_body', undefined, { field: 'ttl_seconds' });
     }
 
-    return { lease: toLease(renewLease(db, { id: lease.id, ttl_segundos: ttl }, options)) };
+    return { lease: renewLease(db, { id: lease.id, ttl_seconds: ttl }, options) };
   });
 
   app.post<IdParam>('/leases/:id/releases', async (request, reply) => {
@@ -292,19 +294,19 @@ export function registerLeases(
     // COLUMN's nullability — a row that was never released — and not a state
     // `releaseLease` can return, since it writes `released_at` in the same
     // `UPDATE` that flips the status.
-    const job = getJob(db, released.trabalho_id);
+    const job = getJob(db, released.job_id);
     if (job !== null) {
       db.transaction(() => {
         announceFinishedExecution(
           db,
           job.execution_id,
           job.project_id,
-          released.liberada_em ?? (options.now ?? now)(),
+          released.released_at ?? (options.now ?? now)(),
         );
       })();
     }
 
-    return { lease: toLease(released) };
+    return { lease: released };
   });
 
   app.get<ListQuery>('/leases', async (request, reply) => {
@@ -316,7 +318,7 @@ export function registerLeases(
       if (!Number.isInteger(parsed)) {
         return refusal(reply, 400, 'invalid_filter', undefined, { field: 'project_id' });
       }
-      filters.projeto_id = parsed;
+      filters.project_id = parsed;
     }
 
     // A runner listing leases lists its OWN: an omitted filter is filled in
@@ -353,8 +355,7 @@ export function registerLeases(
     // believes is worse than a listing that costs one transaction more.
     claimExpired(db, options);
 
-    const leases = listLeases(db, filters);
-    return { leases: leases.map(toLease) };
+    return { leases: listLeases(db, filters) };
   });
 }
 
@@ -366,9 +367,12 @@ export function registerLeases(
  * @param what What only an active lease does, as the sentence continues.
  * @returns The refusal body.
  */
-function notActive(reply: FastifyReply, lease: LeaseRow, what: string): Record<string, unknown> {
-  const status = toLease(lease).status;
-  return refusal(reply, 409, 'lease_not_active', `only an active lease ${what}; this one is "${status}"`, {
-    status,
-  });
+function notActive(reply: FastifyReply, lease: Lease, what: string): Record<string, unknown> {
+  return refusal(
+    reply,
+    409,
+    'lease_not_active',
+    `only an active lease ${what}; this one is "${lease.status}"`,
+    { status: lease.status },
+  );
 }

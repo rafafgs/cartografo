@@ -22,7 +22,9 @@
  * `model_id`, `label` and `source`. The two VALUES of `source` were already
  * English and stay so — they are the `EngineAdapter`'s vocabulary, produced by
  * the adapter, on the same terms as `timeout_reason`'s `wall_clock`/`silence`.
- * The columns behind all of it are untouched (D20's fourth child).
+ * The columns behind all of it are untouched (D20's fourth child), and since
+ * t290 so is every field name between here and them: `ReportedModel` declares
+ * the three words the body already used.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -99,9 +101,9 @@ function readReport(body: unknown): { models: ReportedModel[] } | { refusal: Ref
     }
 
     models.push({
-      modelo_id: entry.model_id.trim(),
-      rotulo: typeof entry.label === 'string' ? entry.label : null,
-      origem: entry.source as ModelOrigin,
+      model_id: entry.model_id.trim(),
+      label: typeof entry.label === 'string' ? entry.label : null,
+      source: entry.source as ModelOrigin,
     });
   }
 

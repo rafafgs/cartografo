@@ -154,9 +154,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { type GlossaryTerm, glossaryTerms } from '@cartografo/test-support';
+
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
 
 /** The surface t230 migrates, as the glossary tags it. */
 const SURFACE = 'routes-cli-report';
@@ -265,7 +265,7 @@ const MANUAL_PROOF_FILES = [
  * `glossario-wire.md` §5.6 records as staying — so a sweep that carried them
  * over every client file would be demanding a rename the glossary refuses.
  */
-const PROPOSAL_FIELDS: ReadonlyArray<Term> = Object.freeze([
+const PROPOSAL_FIELDS: ReadonlyArray<GlossaryTerm> = Object.freeze([
   { term: 'evidencia', english: 'evidence' },
   { term: 'metrica_esperada', english: 'expected_metric' },
   { term: 'versao_aplicada_id', english: 'applied_version_id' },
@@ -277,14 +277,14 @@ const PROPOSAL_FIELDS: ReadonlyArray<Term> = Object.freeze([
  * The flow lens's Portuguese keys and the English each one became (t264, FR3).
  *
  * Read from the header of this file rather than from the glossary, the same way
- * {@link DISPLAYED_POSITIONALS} and {@link DERIVED_FIELDS} are: `surfaceTerms`
- * filters on a surface tag, and `flow-lens`'s rows are readable only by this
- * package — pointing the shared reader at them would hand three other sweeps a
+ * {@link DISPLAYED_POSITIONALS} and {@link DERIVED_FIELDS} are: the shared
+ * reader filters on a surface tag, and `flow-lens`'s rows are readable only by
+ * this package — pointing it at them would hand three other sweeps a
  * vocabulary none of them can see. `fonte` is deliberately absent: it is the
  * module's own provenance label, and `docs/spec/topografo-fluxo.md` §4 already
  * records the decision to leave it where it is.
  */
-const FLOW_LENS_KEYS: ReadonlyArray<Term> = Object.freeze([
+const FLOW_LENS_KEYS: ReadonlyArray<GlossaryTerm> = Object.freeze([
   { term: 'no_id', english: 'node_id' },
   { term: 'execucao_id', english: 'execution_id' },
   { term: 'grafo_versao_id', english: 'graph_version_id' },
@@ -307,7 +307,7 @@ const FLOW_LENS_KEYS: ReadonlyArray<Term> = Object.freeze([
  * @param terms The vocabulary to look for.
  * @returns One `line: what` per hit, sorted.
  */
-export function keyHits(source: string, terms: ReadonlyArray<Term>): string[] {
+export function keyHits(source: string, terms: ReadonlyArray<GlossaryTerm>): string[] {
   const hits: string[] = [];
 
   maskComments(source).split('\n').forEach((line, index) => {
@@ -423,43 +423,6 @@ const EXEMPT_SPANS: ReadonlyArray<{ file: string; span: string; reason: string }
   },
 ]);
 
-/** A term of the glossary, with the English it has to be written in. */
-interface Term {
-  term: string;
-  english: string;
-}
-
-/**
- * Every Portuguese term the glossary maps on one surface.
- *
- * @param surface The `superfície` label of the rows that belong to the caller.
- * @param minimum How many rows that surface has to still parse to, so a
- *   glossary this stops being able to read fails loudly instead of quietly
- *   sweeping for nothing.
- */
-function surfaceTerms(surface: string, minimum: number): Term[] {
-  assert.ok(existsSync(GLOSSARY), `${GLOSSARY} does not exist`);
-  const terms: Term[] = [];
-
-  for (const line of readFileSync(GLOSSARY, 'utf8').split('\n')) {
-    const cells = line.trim();
-    if (!cells.startsWith('|')) continue;
-    const parts = cells.slice(1).split('|').map((cell) => cell.replace(/`/g, '').trim());
-    if (parts[0] !== surface) continue;
-
-    const english = parts[2] ?? '';
-    const term = (parts[1] ?? '').trim();
-    if (term === '' || term === english) continue;
-    terms.push({ term, english });
-  }
-
-  assert.ok(
-    terms.length >= minimum,
-    `the glossary's "${surface}" surface parsed to only ${terms.length} terms`,
-  );
-  return terms;
-}
-
 /**
  * The §5.2 rows: the flags a person types at a command of this repository.
  *
@@ -470,15 +433,17 @@ function surfaceTerms(surface: string, minimum: number): Term[] {
  * The floor is a floor and not an equality for that reason: another package's
  * row landing in §5.2 must not turn this gate red.
  */
-function flagTerms(): Term[] {
-  const flags = surfaceTerms(SURFACE, 25).filter((entry) => entry.term.startsWith('--'));
+function flagTerms(): GlossaryTerm[] {
+  const flags = glossaryTerms({ surface: SURFACE }, 25).filter((entry) =>
+    entry.term.startsWith('--'),
+  );
   assert.ok(flags.length >= 2, `the glossary's §5.2 parsed to only ${flags.length} CLI flags`);
   return flags;
 }
 
 /** The §1 rows a client reads or prints, plus the three §4.2 derives (t254). */
-function apiTerms(): Term[] {
-  return [...surfaceTerms(API_SURFACE, 100), ...DERIVED_FIELDS];
+function apiTerms(): GlossaryTerm[] {
+  return [...glossaryTerms({ surface: API_SURFACE }, 100), ...DERIVED_FIELDS];
 }
 
 /** Blanks every comment, so prose about a name is not read as the name. */
@@ -504,7 +469,7 @@ function maskComments(source: string): string {
  * inside `topógrafo` into a wire field. A letter is a letter; the `u` flag is
  * what makes the class mean that.
  */
-export function cliHits(source: string, terms: ReadonlyArray<Term>): string[] {
+export function cliHits(source: string, terms: ReadonlyArray<GlossaryTerm>): string[] {
   const hits: string[] = [];
 
   maskComments(source).split('\n').forEach((line, index) => {
@@ -717,7 +682,7 @@ function readSpans(source: string): ClientSpan[] {
 }
 
 /** Every old spelling a client source reads or prints, as `line: what`. */
-function clientHitsIn(source: string, terms: ReadonlyArray<Term>): string[] {
+function clientHitsIn(source: string, terms: ReadonlyArray<GlossaryTerm>): string[] {
   return readSpans(source).flatMap((span) =>
     // `cliHits` numbers the lines of what it is given, and what it is given here
     // is one span — so the line it reports is replaced by the span's own.
@@ -726,7 +691,7 @@ function clientHitsIn(source: string, terms: ReadonlyArray<Term>): string[] {
 }
 
 /** ...and the same over one scanned file, minus the spans {@link EXEMPT_SPANS} excuses. */
-function clientHitsOf(relative: string, terms: ReadonlyArray<Term>): string[] {
+function clientHitsOf(relative: string, terms: ReadonlyArray<GlossaryTerm>): string[] {
   const excused = new Set(
     EXEMPT_SPANS.filter((entry) => entry.file === relative).map((entry) => entry.span),
   );

@@ -31,66 +31,23 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { type GlossaryTerm, glossaryTerms } from '@cartografo/test-support';
+
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
 
 /** Every file of this package that publishes the command line. */
 const SCANNED_FILES = [path.join('src', 'cli.ts'), path.join('bin', 'topografo.mjs')];
 
-/** A term of the glossary, with the English it has to be written in. */
-interface Term {
-  term: string;
-  english: string;
-}
-
-/** `### 5.2 Linha de comando` → `5.2`. */
-const SECTION_HEADING = /^#{2,4}\s+(\d+(?:\.\d+)*)\s/;
-
 /**
- * Every Portuguese term one section of the glossary maps.
+ * The §5.2 rows: what a person types at a command of this repository.
  *
- * By section and not by surface tag: §5 holds the screen's routes and the graph
- * report as well, and neither is anything this package can write. A row whose
- * replacement equals its term is dropped, as everywhere else — those exist to
- * say "this name does not change".
- *
- * @param section The `5.2`-style number of the table to read.
- * @param minimum Fewest rows it must parse to; a parser that quietly stopped
- *   matching the table would otherwise read as a clean sweep.
+ * By section and not by surface tag, which is why the shared reader is asked
+ * that way: §5 holds the screen's routes and the graph report as well, under
+ * the same `routes-cli-report` tag, and neither is anything this package can
+ * write.
  */
-function glossaryTerms(section: string, minimum: number): Term[] {
-  assert.ok(existsSync(GLOSSARY), `${GLOSSARY} does not exist`);
-  const terms: Term[] = [];
-  let current = '';
-
-  for (const line of readFileSync(GLOSSARY, 'utf8').split('\n')) {
-    const heading = SECTION_HEADING.exec(line);
-    if (heading !== null) {
-      current = heading[1];
-      continue;
-    }
-
-    const cells = line.trim();
-    if (!cells.startsWith('|') || current !== section) continue;
-    const parts = cells.slice(1).split('|').map((cell) => cell.replace(/`/g, '').trim());
-
-    const english = parts[2] ?? '';
-    const term = (parts[1] ?? '').trim();
-    if (term === '' || term === english || term === 'hoje') continue;
-    terms.push({ term, english });
-  }
-
-  assert.ok(
-    terms.length >= minimum,
-    `the glossary's §${section} parsed to only ${terms.length} rows`,
-  );
-  return terms;
-}
-
-/** The §5.2 rows: what a person types at a command of this repository. */
-function glossaryFlags(): Term[] {
-  return glossaryTerms('5.2', 5);
+function glossaryFlags(): GlossaryTerm[] {
+  return glossaryTerms({ section: '5.2' }, 5);
 }
 
 /** Blanks every comment, so prose about a name is not read as the name. */
@@ -109,7 +66,7 @@ function maskComments(source: string): string {
  * this repository's own brand — `topografo-custo` is a package name, not the
  * cost lens's key (D18).
  */
-export function cliHits(source: string, terms: ReadonlyArray<Term>): string[] {
+export function cliHits(source: string, terms: ReadonlyArray<GlossaryTerm>): string[] {
   const hits: string[] = [];
 
   maskComments(source).split('\n').forEach((line, index) => {

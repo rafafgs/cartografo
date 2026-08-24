@@ -36,9 +36,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { type GlossaryTerm, glossaryTerms } from '@cartografo/test-support';
+
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
 
 /** The surface t230 migrates, as the glossary tags it. */
 const SURFACE = 'routes-cli-report';
@@ -55,37 +55,16 @@ const ROUTE_FILES = [
 /** The one file here that reads the graph validation report. */
 const REPORT_FILE = path.join('src', 'public', 'graph-soundness.js');
 
-/** A term of the glossary, with the English it has to be written in. */
-interface Term {
-  term: string;
-  english: string;
-}
-
 /**
  * Every Portuguese term the glossary maps on this surface.
  *
- * Rows whose replacement equals the term itself are dropped: `/runners` and
- * `soundness` are there to say "this name does not change", and scanning for
- * them would fail a file for spelling a word correctly.
+ * Rows whose replacement equals the term itself are dropped by the shared
+ * parser: `/runners` and `soundness` are there to say "this name does not
+ * change", and scanning for them would fail a file for spelling a word
+ * correctly.
  */
-function surfaceTerms(): Term[] {
-  assert.ok(existsSync(GLOSSARY), `${GLOSSARY} does not exist`);
-  const terms: Term[] = [];
-
-  for (const line of readFileSync(GLOSSARY, 'utf8').split('\n')) {
-    const cells = line.trim();
-    if (!cells.startsWith('|')) continue;
-    const parts = cells.slice(1).split('|').map((cell) => cell.replace(/`/g, '').trim());
-    if (parts[0] !== SURFACE) continue;
-
-    const english = parts[2] ?? '';
-    const term = (parts[1] ?? '').trim();
-    if (term === '' || term === english) continue;
-    terms.push({ term, english });
-  }
-
-  assert.ok(terms.length >= 25, `the glossary's "${SURFACE}" surface parsed to only ${terms.length} terms`);
-  return terms;
+function surfaceTerms(): GlossaryTerm[] {
+  return glossaryTerms({ surface: SURFACE }, 25);
 }
 
 /**
@@ -98,11 +77,11 @@ function surfaceTerms(): Term[] {
  * searched for, deduplicated (`/execucoes` and `/execucoes/:id` cut to the same
  * head) and reported under the English the glossary gives.
  */
-function routeTerms(): Term[] {
+function routeTerms(): GlossaryTerm[] {
   const paths = surfaceTerms().filter((entry) => entry.term.startsWith('/'));
   assert.equal(paths.length, 6, 'the glossary maps six renamed screen paths (the seventh is unchanged)');
 
-  const heads = new Map<string, Term>();
+  const heads = new Map<string, GlossaryTerm>();
   for (const entry of paths) {
     const head = entry.term.split('/:')[0];
     if (!heads.has(head)) heads.set(head, { term: head, english: entry.english.split('/:')[0] });
@@ -117,7 +96,7 @@ function routeTerms(): Term[] {
 }
 
 /** The §5.3/5.4 rows: the report's keys, rule names and error codes. */
-function reportTerms(): Term[] {
+function reportTerms(): GlossaryTerm[] {
   return surfaceTerms().filter(
     (entry) => !entry.term.startsWith('/') && !entry.term.startsWith('--'),
   );
@@ -137,7 +116,7 @@ function reportTerms(): Term[] {
  *   file has no JavaScript comment in it, and stripping `//` there would eat
  *   everything after the first `http://` on the line.
  */
-export function pathHits(source: string, terms: readonly Term[], html = false): string[] {
+export function pathHits(source: string, terms: readonly GlossaryTerm[], html = false): string[] {
   const plain = (html ? maskHtmlComments(source) : maskComments(source)).replace(/\\\//g, '/');
   const hits: string[] = [];
 
@@ -173,7 +152,7 @@ function maskHtmlComments(source: string): string {
  * a key of the rule table, a whole string literal (a quoted rule name), and a
  * member read (`document.estrutura.erros`).
  */
-export function reportHits(source: string, terms: readonly Term[]): string[] {
+export function reportHits(source: string, terms: readonly GlossaryTerm[]): string[] {
   const masked = maskComments(source);
   const hits: string[] = [];
 

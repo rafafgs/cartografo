@@ -374,3 +374,9 @@ export async function resolvePins(
 
   return document;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Reading the wire glossary, in one place (t287)                              */
+/* -------------------------------------------------------------------------- */
+
+export * from './glossary.ts';

@@ -59,13 +59,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { type GlossaryTerm, glossaryTerms } from '@cartografo/test-support';
+
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
-const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const GLOSSARY = path.join(REPO_ROOT, 'docs', 'spec', 'glossario-wire.md');
 
 /** The surface t226 migrated, as the glossary tags it. */
 const SURFACE = 'api';
@@ -355,55 +355,17 @@ export function maskWireSource(source: string): string {
   );
 }
 
-/** A term of the glossary, with where it is written down. */
-interface Term {
-  term: string;
-  english: string;
-  line: number;
-}
-
 /**
- * Every Portuguese term the glossary maps on one surface.
+ * The `api` rows, which are what the first sweep below scans for.
  *
- * Rows whose replacement equals the term itself are dropped: they exist to say
- * "this name does not change" (`runner`, `/runners`, `soundness`), and scanning
- * for them would fail a file for spelling a word correctly. A qualified row
- * (`pergunta.tipo=pergunta`) contributes the VALUE, which is what travels.
- *
- * @param surface The `superfície` cell to filter on.
- * @param minimum Fewest rows the surface must parse to; a parser that quietly
- *   stopped matching the table would otherwise read as a clean sweep.
+ * Rows whose replacement equals the term itself are dropped by the shared
+ * parser: they exist to say "this name does not change" (`runner`, `/runners`,
+ * `soundness`), and scanning for them would fail a file for spelling a word
+ * correctly. A qualified row (`pergunta.tipo=pergunta`) contributes the VALUE,
+ * which is what travels.
  */
-function termsFor(surface: string, minimum: number): Term[] {
-  assert.ok(existsSync(GLOSSARY), `${GLOSSARY} does not exist`);
-  const terms: Term[] = [];
-
-  readFileSync(GLOSSARY, 'utf8')
-    .split('\n')
-    .forEach((line, index) => {
-      const cells = line.trim();
-      if (!cells.startsWith('|')) return;
-      const parts = cells.slice(1).split('|').map((cell) => cell.replace(/`/g, '').trim());
-      if (parts[0] !== surface) return;
-
-      const english = parts[2] ?? '';
-      for (const spelling of (parts[1] ?? '').split(' / ')) {
-        const term = spelling.includes('=') ? spelling.split('=').pop()!.trim() : spelling.trim();
-        if (term === '' || term === english) continue;
-        terms.push({ term, english, line: index + 1 });
-      }
-    });
-
-  assert.ok(
-    terms.length >= minimum,
-    `the glossary's "${surface}" surface parsed to only ${terms.length} terms`,
-  );
-  return terms;
-}
-
-/** The `api` rows, which are what the first sweep below scans for. */
-function apiTerms(): Term[] {
-  return termsFor(SURFACE, 51);
+function apiTerms(): GlossaryTerm[] {
+  return glossaryTerms({ surface: SURFACE }, 51);
 }
 
 /**
@@ -412,8 +374,10 @@ function apiTerms(): Term[] {
  * A screen route and a CLI flag are other packages' surfaces; leaving them in
  * would cost nothing but would also claim a coverage this file does not have.
  */
-function reportTerms(): Term[] {
-  return termsFor(REPORT_SURFACE, 25).filter((entry) => !entry.term.startsWith('/') && !entry.term.startsWith('--'));
+function reportTerms(): GlossaryTerm[] {
+  return glossaryTerms({ surface: REPORT_SURFACE }, 25).filter(
+    (entry) => !entry.term.startsWith('/') && !entry.term.startsWith('--'),
+  );
 }
 
 /**
@@ -428,7 +392,7 @@ function reportTerms(): Term[] {
  */
 function hitsFor(
   masked: string,
-  entry: Term,
+  entry: GlossaryTerm,
   members: boolean,
 ): Array<{ line: number; detail: string }> {
   const hits: Array<{ line: number; detail: string }> = [];
@@ -465,7 +429,7 @@ function hitsFor(
  */
 export function wireHits(
   source: string,
-  terms: readonly Term[],
+  terms: readonly GlossaryTerm[],
   fileName = '',
   members = false,
 ): string[] {

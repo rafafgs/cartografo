@@ -31,6 +31,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { FROZEN_IDENTIFIERS } from './frozen-portuguese-identifiers.mjs';
+
 const SCRIPTS_DIR = path.resolve(import.meta.dirname);
 
 /** Pre-rename tokens of the t127 glossary plus the scripts' own vocabulary. */
@@ -99,22 +101,6 @@ const FORBIDDEN = Object.freeze([
     ],
     camel: [],
   },
-]);
-
-/**
- * The reference validator's four exported names, frozen WHEREVER they appear.
- *
- * `packages/core/test/domain-graph.test.ts` imports the first two by name, and
- * `validate-factory-bundle.mjs` imports `validarGrafo` from the same module.
- * Masking the exact spellings — rather than the words `validar` and `grafo`
- * everywhere — keeps the exemption narrow: a NEW `validarAlgumaCoisa` in either
- * file is still flagged.
- */
-const FROZEN_IDENTIFIERS = Object.freeze([
-  'validarEstrutura',
-  'validarSoundness',
-  'validarGrafo',
-  'carregarGrafo',
 ]);
 
 /** Replaces a span with same-length blanks, so line numbers stay honest. */

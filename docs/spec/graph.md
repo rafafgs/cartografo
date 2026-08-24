@@ -1,26 +1,26 @@
-# Especificação: documento de grafo
+# Specification: the graph document
 
-**Versão do formato:** 1.0.0 · **Schema:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json)
+**Format version:** 1.0.0 · **Schema:** [`schema/grafo.schema.json`](../../schema/grafo.schema.json)
 (JSON Schema draft 2020-12, `$id: urn:cartografo:schema:grafo:1.0.0`)
-**Validador de referência:** [`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs)
+**Reference validator:** [`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs)
 
-O grafo é **dado, não código** (D15). Este documento especifica o formato desse
-dado: o que um grafo de trabalho declara, o que cada campo significa, e as
-quatro regras formais que separam um grafo executável de um desenho bonito.
+The graph is **data, not code** (D15). This document specifies the format of that
+data: what a work graph declares, what each field means, and the four formal
+rules that separate an executable graph from a pretty drawing.
 
-É o ponto de extensão nº 1 do projeto — dos quatro formatos tratados como
-produto (`notas/2026-08-14-extensao-e-qualidade.md`), este é o primeiro, e tudo
-o que vem depois o consome: o control plane guarda este documento inteiro na
-coluna `snapshot` de `graph_version`; os grafos de fábrica são escritos nele; o
-atlas o empacota.
+It is the project's extension point nº 1 — of the four formats treated as a
+product (`notas/2026-08-14-extensao-e-qualidade.md`), this is the first, and
+everything that comes afterwards consumes it: the control plane keeps this whole
+document in the `snapshot` column of `graph_version`; the factory graphs are
+written in it; the atlas packages it.
 
 ---
 
-## 1. O documento
+## 1. The document
 
-Um grafo é **um arquivo JSON**, com sete chaves de nível superior. Não há
-segundo arquivo, nem include, nem referência externa a resolver: o documento é
-autocontido de propósito (ver §7).
+A graph is **one JSON file**, with seven top-level keys. There is no second file,
+no include and no external reference to resolve: the document is self-contained
+on purpose (see §7).
 
 ```json
 {
@@ -34,26 +34,26 @@ autocontido de propósito (ver §7).
 }
 ```
 
-| Campo | Tipo | Obrigatório | O que é |
+| Field | Type | Required | What it is |
 |---|---|---|---|
-| `classe` | string | sim | Identidade da classe de problema, nomeada pelo usuário (D8). Raiz de versionamento do grafo e unidade de agregação da telemetria. |
-| `linhagem` | objeto | sim | Posição na linhagem da classe: base ou variante (D13). Ver §5. |
-| `metadata` | objeto | sim | Nome, descrição, versão do schema, data, origem. Gaveta deliberadamente aberta a chaves extras. |
-| `nos` | lista | sim | As etapas. Pelo menos uma. Ver §2. |
-| `arestas` | lista | sim | As transições. Ver §3. |
-| `no_inicial` | id de nó | sim | Onde toda travessia começa. Precisa existir em `nos`. |
-| `nos_finais` | lista de ids | sim | Onde a travessia termina. Pelo menos um; todos precisam existir em `nos`. |
-| `project` | objeto | não | Configuração **estática** da classe, publicada pela projeção de input em `input.project` (`t253`). Ausente significa `{}`. Ver abaixo. |
-| `max_consecutive_failures` | inteiro ≥ 1 | não | Quantas sessões falhadas **em sequência**, no mesmo trabalho e no mesmo nó, bloqueiam o trabalho (`t265`). Ausente significa **3**. Ver abaixo. |
+| `classe` | string | yes | The identity of the problem class, named by the user (D8). The graph's versioning root and the telemetry's aggregation unit. |
+| `linhagem` | object | yes | The position in the class's lineage: base or variant (D13). See §5. |
+| `metadata` | object | yes | Name, description, schema version, date, origin. A drawer deliberately open to extra keys. |
+| `nos` | list | yes | The steps. At least one. See §2. |
+| `arestas` | list | yes | The transitions. See §3. |
+| `no_inicial` | node id | yes | Where every traversal begins. It has to exist in `nos`. |
+| `nos_finais` | list of ids | yes | Where the traversal ends. At least one; all of them have to exist in `nos`. |
+| `project` | object | no | The class's **static** configuration, published by the input projection at `input.project` (`t253`). Absent means `{}`. See below. |
+| `max_consecutive_failures` | integer ≥ 1 | no | How many failed sessions **in a row**, on the same job and the same node, block the job (`t265`). Absent means **3**. See below. |
 
-### `project`: o que a classe declara para si
+### `project`: what the class declares for itself
 
-O que não vem de trabalho nenhum e não é produzido por nó nenhum: repositório,
-branch principal, comando de testes, convenções, documentos de registro. Até a
-`t253` esse material não tinha onde morar — as skills do grafo de fábrica de
-software já liam `{{input.projeto.*}}` e nada montava esse objeto. A `t259`
-fechou os dois lados: aqueles manifestos passaram a ler `{{input.project.*}}`,
-que é o nome que a projeção publica, e o bundle de software declara o objeto.
+What comes from no job and is produced by no node: the repository, the main
+branch, the test command, the conventions, the ledger documents. Until `t253`
+that material had nowhere to live — the software factory graph's skills already
+read `{{input.projeto.*}}` and nothing assembled that object. `t259` closed both
+sides: those manifests started reading `{{input.project.*}}`, which is the name
+the projection publishes, and the software bundle declares the object.
 
 ```json
 {
@@ -66,30 +66,30 @@ que é o nome que a projeção publica, e o bundle de software declara o objeto.
 }
 ```
 
-Três coisas que o campo decide:
+Three things the field decides:
 
-- **Ausência tem nome, e o nome é `{}`.** Uma classe que ainda não declara
-  configuração de projeto projeta um objeto vazio, e não uma chave faltando: um
-  placeholder resolve para algo honesto em vez de recusar o despacho. É o que
-  mantém válido e despachável todo grafo escrito antes deste campo — mesma
-  postura não-quebradora de `hooks` e do `engine` do nó.
-- **As chaves de dentro são da CLASSE.** O schema abre a gaveta
-  (`additionalProperties: true`) pela mesma razão que `custom_fields` existe:
-  `comando_testes` é vocabulário de desenvolvimento de software e não teria
-  sentido em bets assimétricas, e fechar o conjunto pediria uma edição de schema
-  por classe.
-- **Estático, e por isso versionado com o documento.** Muda o comando de testes,
-  muda o grafo, e a mudança é proponível e reversível como qualquer outra parte
-  dele (D2, D15). Valor específico de um projeto mora na **variante** daquele
-  projeto (D13); o que mora aqui é o que a classe declara para si.
+- **Absence has a name, and the name is `{}`.** A class that does not declare a
+  project configuration yet projects an empty object, and not a missing key: a
+  placeholder resolves to something honest instead of refusing the dispatch. It
+  is what keeps every graph written before this field valid and dispatchable —
+  the same non-breaking posture as `hooks` and the node's `engine`.
+- **The keys inside belong to the CLASS.** The schema opens the drawer
+  (`additionalProperties: true`) for the same reason `custom_fields` exists:
+  `comando_testes` is software-development vocabulary and would make no sense in
+  asymmetric bets, and closing the set would ask for a schema edit per class.
+- **Static, and therefore versioned with the document.** Change the test command
+  and you change the graph, and the change is proposable and reversible like any
+  other part of it (D2, D15). A value specific to one project lives in that
+  project's **variant** (D13); what lives here is what the class declares for
+  itself.
 
-### `input.traversal`: a caminhada que o control plane projeta (`t270`)
+### `input.traversal`: the walk the control plane projects (`t270`)
 
-Nada aqui é campo do documento — é o **irmão** de `input.project` do outro lado
-da projeção. `project` é o que a classe declara e viaja congelado no snapshot;
-`traversal` é o que o log diz que aconteceu com **este** trabalho, montado a
-cada `GET /v1/jobs/:id/context`. Os dois chegam ao mesmo `input`, e a diferença
-entre eles é quem responde por cada chave.
+Nothing here is a field of the document — it is `input.project`'s **sibling** on
+the other side of the projection. `project` is what the class declares and it
+travels frozen in the snapshot; `traversal` is what the log says happened to
+**this** job, assembled on every `GET /v1/jobs/:id/context`. Both reach the same
+`input`, and the difference between them is who answers for each key.
 
 ```json
 {
@@ -101,44 +101,45 @@ entre eles é quem responde por cada chave.
 }
 ```
 
-| Chave | Quem fornece | O que é |
+| Key | Who supplies it | What it is |
 |---|---|---|
-| `nodes_visited` | control plane, de `job.transitioned` | Os nós que esta travessia **executou**, em ordem de caminhada. |
-| `entered_at` | control plane, de `job.transitioned` | Instante ISO-8601 em que o trabalho chegou ao nó onde está. |
-| `sessions_by_node` | control plane, das sessões concluídas | `session_id`s por nó, na ordem em que fecharam. |
+| `nodes_visited` | the control plane, from `job.transitioned` | The nodes this traversal has **executed**, in walking order. |
+| `entered_at` | the control plane, from `job.transitioned` | The ISO-8601 instant the job reached the node it is on. |
+| `sessions_by_node` | the control plane, from the finished sessions | The `session_id`s per node, in the order they closed. |
 
-Três coisas que a projeção decide:
+Three things the projection decides:
 
-- **O nó atual não está em `nodes_visited`.** A transição registra para onde o
-  trabalho **foi**, então o `to_node_id` da última é o nó em que ele está parado
-  — e um nó prestes a rodar não executou. Sem esse corte,
-  `red_team_executado` responderia `true` para uma travessia que só tinha
-  *chegado* ao `red-team` e não tinha relatado nada, que é exatamente o
-  autorrelato que o check daquela skill existe para recusar. Zero transições é
-  caminhada vazia: quem está no nó de entrada ainda não executou nada.
-- **Sem transição, `entered_at` é a criação do trabalho.** É a resposta honesta
-  para "quando você chegou aqui?" de quem nunca saiu de onde nasceu — e é o que
-  faz `{{input.traversal.entered_at}}` resolver desde o primeiro nó, em vez de
-  recusar o despacho de entrada.
-- **Só o control plane pode montar isso (D1).** É leitura do log append-only, e
-  um runner que a reconstruísse pelas rotas públicas seria um segundo autor do
-  mesmo fato. Antes da `t270` ninguém montava: `registrar-travessia` nomeava
-  `{{input.nos_executados}}` e `{{input.data_de_registro}}`, o despacho recusava
-  fechado, e a segunda travessia real de bets foi desbloqueada por uma pessoa
-  digitando os dois valores em `fields` na mão.
+- **The current node is not in `nodes_visited`.** A transition records where the
+  job **went**, so the last one's `to_node_id` is the node it is standing on —
+  and a node about to run has not executed. Without that cut,
+  `red_team_executado` would answer `true` for a traversal that had only
+  *arrived* at `red-team` and had reported nothing, which is exactly the
+  self-report that skill's check exists to refuse. Zero transitions is an empty
+  walk: whoever is at the entry node has executed nothing yet.
+- **With no transition, `entered_at` is the job's creation.** It is the honest
+  answer to "when did you get here?" from somebody who never left where they were
+  born — and it is what makes `{{input.traversal.entered_at}}` resolve from the
+  first node on, instead of refusing the entry dispatch.
+- **Only the control plane can assemble this (D1).** It is a read of the
+  append-only log, and a runner that reconstructed it through the public routes
+  would be a second author of the same fact. Before `t270` nobody assembled it:
+  `registrar-travessia` named `{{input.nos_executados}}` and
+  `{{input.data_de_registro}}`, the dispatch refused closed, and the second real
+  bets crossing was unblocked by a person typing both values into `fields` by
+  hand.
 
-As chaves de dentro são **inglês**, ao contrário de `perguntas_respondidas` ao
-lado: `input.job`, `input.project` e `input.traversal` são vocabulário de
-projeção do core, e vocabulário novo de formato nasce em inglês (D18). O que
-está em português ali do lado é herança dos manifestos que vieram antes da
-regra, não precedente.
+The keys inside are **English**, unlike `perguntas_respondidas` beside them:
+`input.job`, `input.project` and `input.traversal` are the core's projection
+vocabulary, and new format vocabulary is born in English (D18). What is in
+Portuguese over there is inherited from the manifests that came before the rule,
+not a precedent.
 
-### `max_consecutive_failures`: quantas vezes seguidas um nó pode falhar
+### `max_consecutive_failures`: how many times in a row a node may fail
 
-Até a `t265` não havia teto: um trabalho cujas sessões falhavam voltava para a
-fila, ganhava lease de novo e abria a sessão seguinte, para sempre. Quem parava
-o laço era o operador olhando o log — foi o que aconteceu na primeira travessia
-real do grafo de bets (`t198`).
+Until `t265` there was no ceiling: a job whose sessions kept failing went back to
+the queue, got a lease again and opened the next session, forever. What stopped
+the loop was the operator watching the log — which is what happened in the first
+real crossing of the bets graph (`t198`).
 
 ```json
 {
@@ -146,43 +147,43 @@ real do grafo de bets (`t198`).
 }
 ```
 
-Quatro coisas que o campo decide:
+Four things the field decides:
 
-- **Ausência tem nome, e o nome é 3.** Resolvido na hora em que uma sessão
-  fecha, nunca na validação: um grafo escrito antes deste campo continua válido
-  e passa a ter teto sem ser tocado — mesma postura não-quebradora de `hooks`,
-  `project` e do `engine` do nó.
-- **A contagem é de cauda.** Ela anda da sessão mais recente para trás e para na
-  primeira que não falhou. Falhou, falhou, funcionou, falhou é **uma** falha
-  atrás de si; o sucesso zera a sequência.
-- **Vale por nó, mas se declara na raiz.** O par contado é `(trabalho, nó)` —
-  falhar duas vezes em `redigir` e uma em `revisar` não é sequência de três —,
-  e o número é do documento inteiro. Teto por nó é decisão de outra ficha, se a
-  evidência aparecer.
-- **Recusa do engine não passa por aqui.** Um engine que recusa responder é
-  determinístico e para na **primeira** ocorrência, do lado do runner
-  (`docs/spec/runner-and-controller.md`). O teto é para a falha comum, que pode
-  muito bem ser um soluço.
+- **Absence has a name, and the name is 3.** Resolved at the moment a session
+  closes, never at validation: a graph written before this field is still valid
+  and gains a ceiling without being touched — the same non-breaking posture as
+  `hooks`, `project` and the node's `engine`.
+- **The count is a tail count.** It walks from the most recent session backwards
+  and stops at the first that did not fail. Failed, failed, worked, failed is
+  **one** failure behind it; a success zeroes the sequence.
+- **It holds per node, but is declared at the root.** The counted pair is
+  `(job, node)` — failing twice at `redigir` and once at `revisar` is not a
+  sequence of three —, and the number belongs to the whole document. A ceiling
+  per node is another ticket's decision, if the evidence shows up.
+- **An engine's refusal does not come through here.** An engine that refuses to
+  answer is deterministic and stops on the **first** occurrence, on the runner's
+  side (`docs/spec/runner-and-controller.md`). The ceiling is for the ordinary
+  failure, which may very well be a hiccup.
 
-Quem conta é o control plane, dentro da transação que fecha a sessão: a
-sequência atravessa leases e processos de runner, e nenhum runner sozinho
-consegue vê-la (D1).
+The one that counts is the control plane, inside the transaction that closes the
+session: the sequence crosses leases and runner processes, and no runner on its
+own can see it (D1).
 
-**Ids de nó** são minúsculas, dígitos, hífen e underscore (`^[a-z0-9][a-z0-9_-]*$`),
-únicos dentro do documento. São a chave por onde arestas, telemetria e propostas
-de mutação se referem ao nó — trocar um id é uma operação semântica, não um
-rename cosmético.
+**Node ids** are lowercase letters, digits, a hyphen and an underscore
+(`^[a-z0-9][a-z0-9_-]*$`), unique within the document. They are the key edges,
+telemetry and mutation proposals refer to the node by — swapping an id is a
+semantic operation, not a cosmetic rename.
 
-Os nomes de campo estão **em português**, como o resto do repositório. Vale
-reavaliar para inglês quando o schema estiver perto de congelar (regra dos dois
-consumidores: depois do grafo de fábrica 2, `t116`), não antes.
+The field names are **in Portuguese**, like the rest of the repository. It is
+worth reconsidering English when the schema is close to freezing (the rule of two
+consumers: after factory graph 2, `t116`), not before.
 
 ---
 
-## 2. Nó
+## 2. Node
 
-Uma etapa do grafo. Tudo que executa no sistema é skill com contrato; o que muda
-é o papel — **fazer, conferir, rotear**.
+A step of the graph. Everything that executes in the system is a skill with a
+contract; what changes is the role — **doing, checking, routing**.
 
 ```json
 {
@@ -195,24 +196,24 @@ Uma etapa do grafo. Tudo que executa no sistema é skill com contrato; o que mud
 }
 ```
 
-| Campo | Obrigatório | O que é |
+| Field | Required | What it is |
 |---|---|---|
-| `id` | sim | Identificador único no documento. |
-| `papel` | sim | Quem faz o trabalho, na linguagem do domínio: `arquiteto`, `desenvolvedor`, `red-team`. |
-| `tipo_no` | sim | `trabalho` ou `portao`. |
-| `descricao` | não | O que o nó faz, em uma frase. |
-| `engine` | não | Qual engine executa este nó. Ausente = o engine default do runner. Ver abaixo. |
-| `model` | não | Qual modelo daquele engine executa este nó. Ausente = o default do próprio engine. Ver abaixo. |
-| `escalation_policy` | não | Quando este nó chama gente: `always`, `on_uncertainty`, `never`. Ausente = `on_uncertainty`. Ver abaixo. |
-| `escalation_recipient` | não | Quem deveria ser chamado quando este nó escala. Texto livre. Ver abaixo. |
-| `skill_ref` | sim | Ponteiro para a skill do registro, pinado. |
-| `contrato` | sim | Entrada, saída e verificações. |
+| `id` | yes | A unique identifier in the document. |
+| `papel` | yes | Who does the work, in the domain's language: `arquiteto`, `desenvolvedor`, `red-team`. |
+| `tipo_no` | yes | `trabalho` or `portao`. |
+| `descricao` | no | What the node does, in one sentence. |
+| `engine` | no | Which engine executes this node. Absent = the runner's default engine. See below. |
+| `model` | no | Which model of that engine executes this node. Absent = the engine's own default. See below. |
+| `escalation_policy` | no | When this node calls a person: `always`, `on_uncertainty`, `never`. Absent = `on_uncertainty`. See below. |
+| `escalation_recipient` | no | Who ought to be called when this node escalates. Free text. See below. |
+| `skill_ref` | yes | A pinned pointer to the registry's skill. |
+| `contrato` | yes | Input, output and verifications. |
 
-### `engine`: qual engine executa este nó
+### `engine`: which engine executes this node
 
-Um grafo pode misturar engines, e a escolha é **por nó** (t141). Um nó que
-declara `"engine": "codex"` roda no Codex; o nó seguinte, que não declara nada,
-roda no default.
+A graph can mix engines, and the choice is **per node** (t141). A node that
+declares `"engine": "codex"` runs on Codex; the next node, which declares
+nothing, runs on the default.
 
 ```json
 {
@@ -225,35 +226,36 @@ roda no default.
 }
 ```
 
-Três coisas que o campo decide, e que valem mais escritas do que inferidas:
+Three things the field decides, and that are worth writing down rather than
+inferring:
 
-- **Ausência tem nome.** Um nó sem `engine` roda no engine default do runner,
-  que é `claude-code` — a constante `DEFAULT_ENGINE` de
-  `packages/runner/src/dispatch/dispatch.ts`. É default nomeado e
-  não implícito: a telemetria da sessão registra o engine que rodou, e ninguém
-  precisa adivinhar qual foi. Por isso todo grafo escrito antes deste campo
-  continua válido e continua se comportando exatamente como antes.
-- **A resolução é no despacho, nunca na validação.** Quem lê `engine` é o
-  runner, na hora de despachar, olhando o nó em que o trabalho está *agora*
-  (`no_atual` contra `snapshot.nos`). O validador de grafo não sabe quais
-  engines existem naquela máquina, e não é trabalho dele saber.
-- **É texto livre, e a recusa é do runner.** Não há enum fechado no schema, pela
-  mesma razão que `papel` e `skill_ref.id` também são texto livre: um enum
-  obrigaria a editar o schema a cada adapter novo, e o formato é aditivo. Um nó
-  que pede um engine para o qual o runner não tem rota **falha o despacho** com
-  `UnknownEngineError`, antes de qualquer sessão abrir — nunca cai
-  silenciosamente em outro engine, o que faria a telemetria mentir sobre o que
-  de fato rodou.
+- **Absence has a name.** A node with no `engine` runs on the runner's default
+  engine, which is `claude-code` — the `DEFAULT_ENGINE` constant of
+  `packages/runner/src/dispatch/dispatch.ts`. It is a named default and not an
+  implicit one: the session's telemetry records the engine that ran, and nobody
+  has to guess which it was. That is why every graph written before this field is
+  still valid and still behaves exactly as before.
+- **The resolution is at dispatch, never at validation.** What reads `engine` is
+  the runner, at dispatch time, looking at the node the job is on *now*
+  (`no_atual` against `snapshot.nos`). The graph validator does not know which
+  engines exist on that machine, and it is not its job to know.
+- **It is free text, and the refusal is the runner's.** There is no closed enum
+  in the schema, for the same reason `papel` and `skill_ref.id` are free text
+  too: an enum would force a schema edit on every new adapter, and the format is
+  additive. A node that asks for an engine the runner has no route for **fails
+  the dispatch** with `UnknownEngineError`, before any session opens — it never
+  silently falls back to another engine, which would make the telemetry lie about
+  what really ran.
 
-Exemplo completo:
+The complete example:
 [`grafo-valido-dois-engines.json`](../../schema/exemplos/grafo-valido-dois-engines.json).
 
-### `model`: qual modelo daquele engine executa este nó
+### `model`: which model of that engine executes this node
 
-Escolher o engine é metade da decisão; a outra metade é **quanto** de modelo o
-nó precisa (t166). Um portão que confere um diff não pede o mesmo modelo que o
-nó que escreveu o diff, e `model` é onde essa diferença fica escrita — por nó,
-no grafo, e não numa flag de máquina.
+Choosing the engine is half the decision; the other half is **how much** model
+the node needs (t166). A gate that checks a diff does not ask for the same model
+as the node that wrote the diff, and `model` is where that difference is written
+down — per node, in the graph, and not in a machine's flag.
 
 ```json
 {
@@ -267,44 +269,45 @@ no grafo, e não numa flag de máquina.
 }
 ```
 
-Quatro coisas que o campo decide, e que valem mais escritas do que inferidas:
+Four things the field decides, and that are worth writing down rather than
+inferring:
 
-- **Ausência tem nome, e aqui o nome não é nosso.** Um nó sem `model` roda no
-  default **do próprio engine** — não existe `DEFAULT_MODEL` no runner, de
-  propósito. O runner não tem como saber a que modelos aquela instalação tem
-  acesso, e uma constante aqui poria em toda sessão uma escolha que nenhum
-  grafo fez. Na prática: nenhuma flag de modelo é montada, e o argv sai
-  idêntico ao de antes deste campo existir. Todo grafo escrito antes da t166
-  continua válido e continua se comportando exatamente como antes.
-- **É texto livre, e a recusa é do engine.** Não há enum fechado no schema,
-  pela mesma razão de `engine`: um enum obrigaria a editar o schema a cada
-  modelo novo. Um `model` desconhecido ou digitado errado é recusado pela
-  própria CLI na abertura da sessão — sessão que falha, e não erro novo de
-  validação. O catálogo que a API publica (`GET /v1/engines`) é **descoberta,
-  não validação**: serve para quem escreve grafo saber o que existe, e nada
-  compara o nó contra ele antes do despacho.
-- **Trocar o modelo é mudança de versão.** `model` é dado de grafo, então
-  mudá-lo é proposta: `change_node_field` com `field: "model"` passa pelo
-  mesmo caminho de sempre — aplicar, validar soundness, gravar `grafo_versao`
-  nova, mover o ponteiro (D15) — e vale para `engine` do mesmo jeito desde a
-  t166. Vem com inversa e com evidência, como qualquer outra proposta, e o que
-  rodou sob qual decisão fica no histórico.
-- **Vale na travessia seguinte, não na que está correndo.** O grafo é congelado
-  durante a execução: um trabalho continua na versão em que entrou, com o
-  modelo que ela declarava, e quem lê o modelo novo é o despacho que acontecer
-  sob a versão nova.
+- **Absence has a name, and here the name is not ours.** A node with no `model`
+  runs on the **engine's own** default — there is no `DEFAULT_MODEL` in the
+  runner, on purpose. The runner has no way of knowing which models that
+  installation has access to, and a constant here would put into every session a
+  choice no graph made. In practice: no model flag is assembled, and the argv
+  comes out identical to the one before this field existed. Every graph written
+  before t166 is still valid and still behaves exactly as before.
+- **It is free text, and the refusal is the engine's.** There is no closed enum
+  in the schema, for `engine`'s reason: an enum would force a schema edit on
+  every new model. An unknown or mistyped `model` is refused by the CLI itself
+  when the session opens — a session that fails, and not a new validation error.
+  The catalogue the API publishes (`GET /v1/engines`) is **discovery, not
+  validation**: it serves whoever writes a graph to know what exists, and nothing
+  compares the node against it before dispatch.
+- **Changing the model is a version change.** `model` is graph data, so changing
+  it is a proposal: `change_node_field` with `field: "model"` goes down the same
+  path as ever — apply, validate soundness, write a new `grafo_versao`, move the
+  pointer (D15) — and the same holds for `engine` since t166. It comes with an
+  inverse and with evidence, like any other proposal, and what ran under which
+  decision stays in the history.
+- **It holds on the next traversal, not on the one running.** The graph is frozen
+  during the execution: a job stays on the version it entered on, with the model
+  that version declared, and what reads the new model is whichever dispatch
+  happens under the new version.
 
-Exemplo completo:
+The complete example:
 [`grafo-valido-modelo.json`](../../schema/exemplos/grafo-valido-modelo.json).
 
-### `escalation_policy`: quando este nó chama gente
+### `escalation_policy`: when this node calls a person
 
-Até a `t167` a resposta era uma só para o grafo inteiro: todo nó perguntava
-quando travava, e todo pedido de decisão bloqueava o trabalho até alguém
-responder. Isso é o comportamento certo para um nó de arquitetura e o
-comportamento errado para um nó que roda de madrugada sem ninguém do outro lado.
-A política passa a ser **por nó**, e é dado do grafo — versionada, propostável e
-revertível como qualquer outro campo.
+Until `t167` the answer was one for the whole graph: every node asked when it got
+stuck, and every request for a decision blocked the job until somebody answered.
+That is the right behaviour for an architecture node and the wrong behaviour for
+a node that runs in the middle of the night with nobody on the other side. The
+policy becomes **per node**, and it is graph data — versioned, proposable and
+revertible like any other field.
 
 ```json
 {
@@ -318,157 +321,161 @@ revertível como qualquer outro campo.
 }
 ```
 
-Os três valores:
+The three values:
 
-| Valor | O que o nó faz |
+| Value | What the node does |
 |---|---|
-| `always` | Escala antes de fechar o nó, **mesmo achando que sabe** a resposta. Para a decisão que uma pessoa quer ver passar por ela. |
-| `on_uncertainty` | Escala quando trava. É o comportamento que todo nó sempre teve, e é o default. |
-| `never` | Não tem a quem perguntar. Travar aqui é falha do contrato do próprio nó — o runner **bloqueia o trabalho com motivo**, e nenhuma pergunta é criada. |
+| `always` | Escalates before closing the node, **even when it thinks it knows** the answer. For the decision a person wants to see pass through them. |
+| `on_uncertainty` | Escalates when it gets stuck. It is the behaviour every node always had, and it is the default. |
+| `never` | It has nobody to ask. Getting stuck here is a failure of the node's own contract — the runner **blocks the job with a reason**, and no question is created. |
 
-Quatro coisas que o campo decide, e que valem mais escritas do que inferidas:
+Four things the field decides, and that are worth writing down rather than
+inferring:
 
-- **Ausência tem nome, e o nome é `on_uncertainty`.** Um nó sem
-  `escalation_policy` se comporta exatamente como antes de o campo existir, e é
-  por isso que todo grafo já escrito continua válido e continua se comportando
-  igual. Mesma convenção do `engine` acima.
-- **A resolução é no despacho, nunca na validação** — `resolveEscalationPolicy`
-  em [`resolve-node.ts`](../../packages/runner/src/dispatch/resolve-node.ts),
-  olhando o nó em que o trabalho está *agora*. Um valor fora dos três (só
-  possível num snapshot que mudou de forma por baixo) resolve para o default:
-  não é palpite sobre qual dos três era para ser.
-- **Ao contrário do `engine`, aqui o enum é fechado.** `engine` é texto livre
-  porque um enum obrigaria a editar o schema a cada adapter novo; aqui os três
-  valores **são** o vocabulário, e um quarto valor não é capacidade nova, é erro
-  de quem escreveu — pego pelo schema, antes de qualquer runner ler.
-- **Só o `never` é determinístico.** `always` e `on_uncertainty` são instrução no
-  prompt, como todo o resto do texto de sessão: se a sessão estava mesmo
-  "incerta" não é conferível por máquina, e um portão que fingisse conferir isso
-  estaria conferindo nada. `never` é fiação: o runner troca
-  `POST /v1/input-requests` por `POST /v1/jobs/:id/blocks`, e essa troca não
-  depende de a sessão obedecer à instrução.
+- **Absence has a name, and the name is `on_uncertainty`.** A node with no
+  `escalation_policy` behaves exactly as before the field existed, and that is
+  why every graph already written is still valid and still behaves the same. The
+  same convention as `engine` above.
+- **The resolution is at dispatch, never at validation** —
+  `resolveEscalationPolicy` in
+  [`resolve-node.ts`](../../packages/runner/src/dispatch/resolve-node.ts),
+  looking at the node the job is on *now*. A value outside the three (only
+  possible in a snapshot that changed shape underneath) resolves to the default:
+  it is not a guess about which of the three it was meant to be.
+- **Unlike `engine`, the enum here is closed.** `engine` is free text because an
+  enum would force a schema edit on every new adapter; here the three values
+  **are** the vocabulary, and a fourth value is not a new capability, it is an
+  error by whoever wrote it — caught by the schema, before any runner reads it.
+- **Only `never` is deterministic.** `always` and `on_uncertainty` are an
+  instruction in the prompt, like all the rest of the session's text: whether the
+  session really was "uncertain" is not machine-checkable, and a gate that
+  pretended to check it would be checking nothing. `never` is wiring: the runner
+  swaps `POST /v1/input-requests` for `POST /v1/jobs/:id/blocks`, and that swap
+  does not depend on the session obeying the instruction.
 
-Trocar a política de um nó é uma proposta `change_node_field` como outra qualquer
-(`packages/core/src/domain/operations.ts`, `CHANGEABLE_FIELDS`): produz uma nova
-`grafo_versao`, revalida o documento inteiro e tem inversa. É de propósito que
-não exista caminho próprio para mudá-la — um segundo jeito de mudar um nó teria
-regras próprias sobre o que é versionado.
+Changing a node's policy is a `change_node_field` proposal like any other
+(`packages/core/src/domain/operations.ts`, `CHANGEABLE_FIELDS`): it produces a new
+`grafo_versao`, revalidates the whole document and has an inverse. It is on
+purpose that there is no path of its own to change it — a second way of changing
+a node would have rules of its own about what is versioned.
 
-Exemplo completo:
+The complete example:
 [`grafo-valido-escalacao-nunca.json`](../../schema/exemplos/grafo-valido-escalacao-nunca.json).
-O ciclo inteiro está em [`human-escalation.md`](human-escalation.md).
+The whole cycle is in [`human-escalation.md`](human-escalation.md).
 
-### `escalation_recipient`: quem deveria ser chamado
+### `escalation_recipient`: who ought to be called
 
-Texto livre, sem formato imposto — pelas mesmas razões que `resposta_padrao` e
-`respondido_por` também são: **não existe sistema de identidade nem de papéis
-neste repositório** para validar contra, e inventar um formato agora seria
-congelar um vocabulário antes do primeiro consumidor.
+Free text, with no imposed format — for the same reasons `resposta_padrao` and
+`respondido_por` also are: **there is no identity system and no system of roles
+in this repository** to validate against, and inventing a format now would freeze
+a vocabulary before the first consumer.
 
-O campo é guardado no grafo e devolvido pelo snapshot
-(`GET /v1/graph-versions/:id`). **Nada envia nada para ele**, e isso não é
-esquecimento: notificação e papéis são ficha futura, e o campo existe agora para
-que a política e o destinatário nasçam juntos em vez de o grafo ter de ser
-reescrito quando a entrega chegar. Ele nem sequer é lido pelo runner.
+The field is kept in the graph and returned by the snapshot
+(`GET /v1/graph-versions/:id`). **Nothing sends anything to it**, and that is not
+an oversight: notification and roles are a future ticket, and the field exists now
+so that the policy and the recipient are born together instead of the graph
+having to be rewritten when delivery arrives. It is not even read by the runner.
 
-### `tipo_no`: por que portão é nó
+### `tipo_no`: why a gate is a node
 
-**Portão não é entidade separada.** Um portão é um nó cujo papel é conferir e
-rotear, e ele carrega skill e contrato exatamente como qualquer outro nó
-(`notas/2026-08-14-aprendizado.md`). A distinção `trabalho` / `portao` existe
-para leitura e telemetria — "quanto tempo o trabalho passou em verificação?" —,
-não para dar ao portão um lugar privilegiado no formato.
+**A gate is not a separate entity.** A gate is a node whose role is to check and
+route, and it carries a skill and a contract exactly like any other node
+(`notas/2026-08-14-aprendizado.md`). The `trabalho` / `portao` distinction exists
+for reading and for telemetry — "how much time did the job spend in verification?"
+—, not to give a gate a privileged place in the format.
 
-Duas consequências que o formato herda dessa escolha:
+Two consequences the format inherits from that choice:
 
-- Portão é **determinístico sempre que possível** (rodar teste, validar schema,
-  build) e **agêntico só onde há julgamento**. Isso aparece no contrato, em
-  `verificacoes`, não em um campo próprio do nó.
-- Portão agêntico verifica com **evidência própria** — roda o resultado — nunca
-  com o relato de quem fez o trabalho. Daí `evidencia_obrigatoria` ser
-  `const: true` no schema: um check agêntico sem evidência anexada não é
-  verificação, é opinião.
+- A gate is **deterministic wherever possible** (run a test, validate a schema,
+  build) and **agentic only where there is judgement**. That shows up in the
+  contract, in `verificacoes`, not in a field of the node's own.
+- An agentic gate verifies with **its own evidence** — it runs the result — never
+  with the report of whoever did the work. Hence `evidencia_obrigatoria` being
+  `const: true` in the schema: an agentic check with no evidence attached is not
+  a verification, it is an opinion.
 
-### `skill_ref`: ponteiro pinado
+### `skill_ref`: a pinned pointer
 
 ```json
 { "id": "cartografo/testar-alpha", "versao": "1.0.0", "hash": "sha256:<64 hex>" }
 ```
 
-Ponteiro **opaco**: o formato interno do manifesto de skill é outro documento
-(`t97`); aqui só o pin importa. Os três campos são obrigatórios porque skill
-importada de repositório externo é vetor de prompt injection (D4) — o hash é o
-que impede a troca silenciosa do conteúdo de uma skill por baixo de um grafo já
-validado. `versao` é semver; `hash` é `sha256:` seguido de 64 hex.
+An **opaque** pointer: the skill manifest's internal format is another document
+(`t97`); here only the pin matters. All three fields are required because a skill
+imported from an external repository is a prompt-injection vector (D4) — the hash
+is what stops a skill's content being swapped in silence underneath an already
+validated graph. `versao` is semver; `hash` is `sha256:` followed by 64 hex
+characters.
 
-> Nos exemplos deste repositório os hashes são **placeholders reprodutíveis**:
-> `sha256` da string `placeholder:<id da skill>@<versao>`. Nenhuma skill real
-> existe ainda para ser pinada.
+> In this repository's examples the hashes are **reproducible placeholders**:
+> the `sha256` of the string `placeholder:<the skill's id>@<versao>`. No real
+> skill exists yet to be pinned.
 
-### `contrato`: a peça de sustentação
+### `contrato`: the load-bearing piece
 
-Entrada e saída em JSON Schema, verificação como lista de checks tipados (D9,
-README princípio 3). Sem contrato o sintetizador compõe por alucinação; com
-contrato, compor grafo vira **casar contratos**.
+Input and output in JSON Schema, verification as a list of typed checks (D9,
+README principle 3). With no contract the synthesizer composes by hallucination;
+with a contract, composing a graph becomes **matching contracts**.
 
-| Campo | Obrigatório | O que é |
+| Field | Required | What it is |
 |---|---|---|
-| `entrada_schema` | sim | JSON Schema da projeção de estado que o nó recebe. Projeção, não janela comum (README princípio 4). |
-| `saida_schema` | sim | JSON Schema do que o nó devolve ao quadro. Documentação da forma esperada e origem do vocabulário de roteamento das arestas — **não** é o schema contra o qual o relato da sessão é conferido. É aqui que o `resultado` de um nó com duas ou mais saídas se declara; no `output` da skill ele nunca entra. Ver abaixo. |
-| `verificacoes` | sim | Lista com **pelo menos um** check. Como se confere o que o nó produziu. |
-| `produces` | não | Nome do **balde** em que a saída estruturada deste nó se acumula na projeção de input dos nós seguintes (`t253`). Ausente = merge no topo de `input`. Ver abaixo. |
+| `entrada_schema` | yes | The JSON Schema of the state projection the node receives. A projection, not a common window (README principle 4). |
+| `saida_schema` | yes | The JSON Schema of what the node hands back to the board. Documentation of the expected shape and the source of the edges' routing vocabulary — it is **not** the schema the session's report is checked against. It is here that the `resultado` of a node with two or more exits is declared; it never enters the skill's `output`. See below. |
+| `verificacoes` | yes | A list with **at least one** check. How what the node produced is verified. |
+| `produces` | no | The name of the **bucket** this node's structured output accumulates in, in the input projection of the following nodes (`t253`). Absent = merged at the top of `input`. See below. |
 
-#### `saida_schema` documenta; quem valida é a skill (`t267`)
+#### `saida_schema` documents; the skill is what validates (`t267`)
 
-Os dois são schemas diferentes de propósito, e confundi-los custou três relatos
-recusados na segunda travessia real do grafo de bets. O `saida_schema` do nó é o
-que ESTE grafo espera daqui, e é dele que sai o vocabulário das arestas (a
-`condition` de uma aresta casa com o `outcome` que ele declara). O que
-`PATCH /v1/sessions/:id/finish` confere o objeto do bloco cercado contra é o
-`output` da **skill pinada** (D9) — resolvido por
-[`resolveOutputSchema`](../../packages/core/src/repositories/session.ts), pelo
-caminho `job` → `graph_version` → nó → `skill_ref` → registro. Uma skill serve a
-mais de um grafo, e é por isso que a validação mora nela e não no nó.
+The two are different schemas on purpose, and confusing them cost three refused
+reports in the second real crossing of the bets graph. The node's `saida_schema`
+is what THIS graph expects from here, and it is where the edges' vocabulary comes
+from (an edge's `condition` matches the `outcome` it declares). What
+`PATCH /v1/sessions/:id/finish` checks the fenced block's object against is the
+`output` of the **pinned skill** (D9) — resolved by
+[`resolveOutputSchema`](../../packages/core/src/repositories/session.ts), down the
+path `job` → `graph_version` → node → `skill_ref` → registry. One skill serves
+more than one graph, and that is why the validation lives in it and not in the
+node.
 
-Consequência prática para quem escreve prompt de nó: mostrar o `saida_schema` a
-uma sessão e dizer que é contra ele que a saída será conferida é falso. O runner
-renderiza os dois hoje, cada um com o seu rótulo
+The practical consequence for whoever writes a node's prompt: showing the
+`saida_schema` to a session and saying it is what the output will be checked
+against is false. The runner renders both today, each with its own label
 ([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
 
-**A chave `resultado` é reservada do protocolo e fica FORA dessa conferência
-(`t269`).** O bloco cercado é um só, então o rótulo de rota viaja dentro do mesmo
-objeto que o relato — mas ele é vocabulário deste grafo (a `condition` de uma
-aresta), nunca do `output` da skill. Quando o objeto relatado traz um
-`resultado` que é rótulo utilizável (string não vazia depois do `trim`, a mesma
-leitura de
+**The `resultado` key is reserved by the protocol and stays OUT of that check
+(`t269`).** The fenced block is a single one, so the routing label travels inside
+the same object as the report — but it is THIS graph's vocabulary (an edge's
+`condition`), never the skill's `output`. When the reported object carries a
+`resultado` that is a usable label (a non-empty string after `trim`, the same
+reading as
 [`parse-node-result.ts`](../../packages/runner/src/dispatch/parse-node-result.ts)),
-o control plane o retira antes de conferir e não o guarda: `session.output` e o
-`data.output` do evento `session.finished` ficam com os campos da skill e mais
-nada. Consequências, nas duas pontas:
+the control plane takes it out before checking and does not keep it:
+`session.output` and the `data.output` of the `session.finished` event are left
+with the skill's fields and nothing else. The consequences, at both ends:
 
-- uma skill pode fechar o próprio `output` (`additionalProperties: false`) sem
-  declarar `resultado`, que é o caso de `derrubar-tese@1.0.0`, e ainda assim
-  aceitar o relato de um nó com duas saídas — antes da `t269` recusava todos, e
-  desde a `t268` uma recusa dessas **bloqueia** o nó;
-- declarar `resultado` como propriedade do `output` de uma skill não é legal: a
-  chave nunca chega a ser conferida nem guardada, então a declaração não
-  descreve nada. Quem precisa do rótulo lê a aresta percorrida em
-  `job.transitioned`, não a saída da sessão.
+- a skill can close its own `output` (`additionalProperties: false`) without
+  declaring `resultado`, which is `derrubar-tese@1.0.0`'s case, and still accept
+  the report of a node with two exits — before `t269` it refused them all, and
+  since `t268` a refusal like that **blocks** the node;
+- declaring `resultado` as a property of a skill's `output` is not legal: the key
+  never gets checked and never gets stored, so the declaration describes nothing.
+  Whoever needs the label reads the edge that was taken in `job.transitioned`,
+  not the session's output.
 
-Um `resultado` presente que **não** é rótulo (número, objeto, string só de
-espaço) não é retirado de nada: fica no objeto e um schema fechado o recusa como
-sempre recusou. Uma sessão que pôs lixo na chave de rota não entendeu o
-protocolo, e lavar a chave em silêncio guardaria um relato ao lado de uma decisão
-que aresta nenhuma carrega.
+A `resultado` that is present and **not** a label (a number, an object, a string
+of only spaces) is taken out of nothing: it stays in the object and a closed
+schema refuses it as it always refused. A session that put rubbish in the routing
+key did not understand the protocol, and washing the key in silence would store a
+report beside a decision no edge carries.
 
-#### `produces`: onde a saída deste nó aterrissa
+#### `produces`: where this node's output lands
 
-A saída estruturada de um nó — o que a sessão relata em
-`PATCH /v1/sessions/:id/finish` e o control plane guarda depois de conferir
-contra o `output` da skill pinada (D9), já sem a chave de rota `resultado`
-(`t269`) — precisa aterrissar em algum lugar do
-`input` do nó seguinte. `produces` é esse lugar, e ele é um **balde**, não uma
-caixa por sessão: dois nós que declaram o mesmo nome escrevem no mesmo objeto.
+A node's structured output — what the session reports in
+`PATCH /v1/sessions/:id/finish` and the control plane keeps after checking it
+against the pinned skill's `output` (D9), already without the routing key
+`resultado` (`t269`) — has to land somewhere in the next node's `input`.
+`produces` is that somewhere, and it is a **bucket**, not a box per session: two
+nodes that declare the same name write into the same object.
 
 ```json
 { "id": "desenvolver", "contrato": { "produces": "artefato", "…": "…" } }
@@ -476,29 +483,30 @@ caixa por sessão: dois nós que declaram o mesmo nome escrevem no mesmo objeto.
 { "id": "integrar",    "contrato": { "produces": "artefato", "…": "…" } }
 ```
 
-Com essas três declarações, `desenvolver` grava `artefato.branch`, `integrar`
-grava `artefato.merge_commit` — e `implantar`, dois saltos adiante, lê os dois.
-O portão `testar` no meio **não** declara balde: ele não produz artefato próprio,
-merge no topo, e o `artefato` que já existia continua exatamente como estava.
-Fosse uma caixa por sessão, o `merge_commit` chegaria num objeto que não carrega
-mais o `branch`, e é esse encadeamento — não o passo isolado — que a travessia
-precisa.
+With those three declarations, `desenvolver` writes `artefato.branch`, `integrar`
+writes `artefato.merge_commit` — and `implantar`, two hops later, reads both. The
+`testar` gate in the middle declares **no** bucket: it produces no artifact of its
+own, it merges at the top, and the `artefato` that already existed stays exactly
+as it was. Were it a box per session, the `merge_commit` would arrive in an
+object that no longer carries the `branch`, and it is that chaining — not the
+isolated step — that the traversal needs.
 
-Duas consequências que valem escritas:
+Two consequences worth writing down:
 
-- **Ausência tem nome.** Um nó sem `produces` faz merge no topo de `input`, que
-  é o que os dois grafos de fábrica já faziam por o campo não existir. É por isso
-  que ele é opcional e não quebra grafo nenhum — `bets-assimetricas` continua
-  resolvendo nó a nó sem declarar um balde sequer.
-- **Em colisão de chave vence quem escreveu depois**, na ordem da travessia
-  (`finalizada_em` da sessão). A ordem é a que aconteceu, e não a que a consulta
-  devolveu.
+- **Absence has a name.** A node with no `produces` merges at the top of `input`,
+  which is what both factory graphs already did because the field did not exist.
+  That is why it is optional and breaks no graph — `bets-assimetricas` still
+  resolves node by node without declaring a single bucket.
+- **On a key collision the last writer wins**, in traversal order (the session's
+  `finalizada_em`). The order is the one that happened, not the one the query
+  returned.
 
-A montagem inteira é `GET /v1/jobs/:id/context`, no control plane
-(`packages/core/src/domain/context.ts`): quem escreve no banco é quem monta a
-projeção (D1), e o runner é cliente dela como de qualquer outra rota.
+The whole assembly is `GET /v1/jobs/:id/context`, in the control plane
+(`packages/core/src/domain/context.ts`): whoever writes to the database is
+whoever assembles the projection (D1), and the runner is a client of it as of any
+other route.
 
-Cada verificação é de um de dois tipos:
+Every verification is of one of two types:
 
 ```json
 { "tipo": "deterministico", "comando": "make check", "descricao": "…" }
@@ -510,98 +518,101 @@ Cada verificação é de um de dois tipos:
   "descricao": "…" }
 ```
 
-O limite honesto do framework está aqui: **densidade de verificação** (README
-princípio 6). Onde não dá para escrever a verificação de uma etapa, não há
-portão; sem portão, o grafo é decorativo.
+The framework's honest limit is here: **verification density** (README principle
+6). Where a step's verification cannot be written down, there is no gate; with no
+gate, the graph is decorative.
 
 ---
 
-## 3. Aresta
+## 3. Edge
 
-Uma transição rotulada entre dois nós.
+A labelled transition between two nodes.
 
 ```json
 { "de": "testar", "para": "desenvolver", "condicao": "retrabalho", "descricao": "…" }
 ```
 
-| Campo | Obrigatório | O que é |
+| Field | Required | What it is |
 |---|---|---|
-| `de` | sim | Id do nó de origem; precisa existir em `nos`. |
-| `para` | sim | Id do nó de destino; precisa existir em `nos`. |
-| `condicao` | sim | String não vazia. Ver abaixo. |
-| `descricao` | não | Quando esta transição acontece. |
+| `de` | yes | The id of the source node; it has to exist in `nos`. |
+| `para` | yes | The id of the destination node; it has to exist in `nos`. |
+| `condicao` | yes | A non-empty string. See below. |
+| `descricao` | no | When this transition happens. |
 
-**`condicao` é um rótulo, não uma expressão.** Duas formas:
+**`condicao` is a label, not an expression.** Two forms:
 
-- **Rótulo de resultado do nó de origem** (`"aprovado"`, `"retrabalho"`) quando a
-  origem tem múltiplas saídas — tipicamente um portão. O rótulo casa com o
-  `resultado` que o `saida_schema` do nó de origem declara.
-- **O literal `"sempre"`** quando a origem tem saída única.
+- **The source node's outcome label** (`"aprovado"`, `"retrabalho"`) when the
+  source has multiple exits — typically a gate. The label matches the `resultado`
+  the source node's `saida_schema` declares.
+- **The literal `"sempre"`** when the source has a single exit.
 
-Não há linguagem de expressão booleana, e isso é deliberado: desenhar uma antes
-de existirem dois grafos reais pressionando o formato é desenhar para um caso de
-uso que ainda não existe (regra dos dois consumidores). Quando o segundo grafo
-de fábrica (`t116`) pedir mais, o formato ganha mais — com evidência.
+There is no boolean expression language, and that is deliberate: designing one
+before two real graphs are pressing on the format is designing for a use case
+that does not exist yet (the rule of two consumers). When the second factory
+graph (`t116`) asks for more, the format gains more — with evidence.
 
-Ciclo é legítimo (o retrabalho `testar → desenvolver` é um), desde que a regra
-`terminates` (§6) continue valendo. O que **não** é legítimo é o nó escolher
-caminho livremente em runtime: as únicas decisões em voo são as dos portões,
-sobre arestas já declaradas (README princípio 2).
+A cycle is legitimate (the `testar → desenvolver` rework is one), as long as the
+`terminates` rule (§6) still holds. What is **not** legitimate is a node picking
+a path freely at run time: the only decisions in flight are the gates', over
+edges already declared (README principle 2).
 
 ---
 
-## 4. `no_inicial` e `nos_finais`
+## 4. `no_inicial` and `nos_finais`
 
-`no_inicial` é único: toda travessia começa no mesmo lugar. `nos_finais` é lista
-porque um grafo pode terminar de mais de um jeito (aprovado e arquivado são
-ambos fins legítimos). Um nó final não precisa ser folha topológica — precisa
-apenas ser um ponto onde a travessia pode parar.
+`no_inicial` is single: every traversal begins in the same place. `nos_finais` is
+a list because a graph can end in more than one way (approved and archived are
+both legitimate endings). A final node does not have to be a topological leaf —
+it only has to be a point where the traversal may stop.
 
-### Chegar ao nó final não é ter terminado (`t262`)
+### Reaching the final node is not having finished (`t262`)
 
-**Nó final é o nó de onde não se sai — não é o nó que não faz nada.** Um nó
-final é nó como qualquer outro (§2): tem `skill_ref`, tem contrato, e roda. O
-que ele não tem é aresta de saída.
+**A final node is the node you do not leave — it is not the node that does
+nothing.** A final node is a node like any other (§2): it has a `skill_ref`, it
+has a contract, and it runs. What it does not have is an outgoing edge.
 
-Daí a regra de conclusão, que o control plane deriva a cada leitura e nunca
-guarda:
+Hence the completion rule, which the control plane derives on every read and
+never stores:
 
-- **Nó final que pina uma skill** — o caso de todo grafo registrado, porque o
-  schema exige `skill_ref` em todo nó (§6, `node_with_contract`) — só encerra a
-  travessia quando a sessão daquele nó fecha com `status: "completed"` e um
-  `output` que o `output` da skill pinada aceita. Até lá o trabalho continua
-  candidato a despacho como qualquer outro. Chegar não conclui.
-- **Nó final sem `skill_ref` nenhum** encerra na chegada. É ramo defensivo, não
-  forma suportada de documento: nenhum grafo que passa por `POST /v1/graphs`
-  chega aqui. Existe para o snapshot malformado ou anterior ao campo degradar em
-  vez de estourar, mesma postura de `resolveNode` e `resolveOutputSchema`.
+- **A final node that pins a skill** — the case of every registered graph,
+  because the schema demands a `skill_ref` on every node (§6,
+  `node_with_contract`) — only closes the traversal when that node's session
+  finishes with `status: "completed"` and an `output` the pinned skill's `output`
+  accepts. Until then the job is still a dispatch candidate like any other.
+  Arriving does not conclude.
+- **A final node with no `skill_ref` at all** closes on arrival. It is a
+  defensive branch, not a supported document shape: no graph that goes through
+  `POST /v1/graphs` gets here. It exists so that a malformed snapshot, or one
+  older than the field, degrades instead of blowing up, the same posture as
+  `resolveNode` and `resolveOutputSchema`.
 
-A regra é da **presença do pino**, nunca do `tipo_no`: portão não é entidade
-separada (§2), e um portão final com skill roda exatamente como um nó de
-trabalho final com skill.
+The rule is about the **presence of the pin**, never about `tipo_no`: a gate is
+not a separate entity (§2), and a final gate with a skill runs exactly like a
+final work node with a skill.
 
-Por que isso está aqui e não só no código: o grafo de fábrica de bets termina em
-`registro-monitoramento`, que pina `registrar-travessia` — a etapa de registro e
-monitoramento da D14 —, e o de software termina em `implantar`, que pina
-`implantar-release`. Enquanto a conclusão vinha da chegada, essas duas etapas
-nunca ganhavam sessão, e a travessia terminava em silêncio: sem falha, sem
-evento, sem registro. Foi o buraco 2 da primeira execução real
+Why this is here and not only in the code: the bets factory graph ends at
+`registro-monitoramento`, which pins `registrar-travessia` — D14's recording and
+monitoring step —, and the software one ends at `implantar`, which pins
+`implantar-release`. While completion came from arrival, those two steps never
+got a session, and the traversal ended in silence: no failure, no event, no
+record. It was gap 2 of the first real execution
 (`notas/2026-08-17-primeira-execucao-bets.md`).
 
-Uma sessão que fecha `completed` com relatório recusado pelo schema **não**
-conclui e **não** bloqueia: o trabalho segue candidato. Teto de tentativas
-falhas seguidas é problema geral do core, não deste ponto do grafo.
+A session that finishes `completed` with a report the schema refused does **not**
+conclude and does **not** block: the job is still a candidate. A ceiling on
+consecutive failed attempts is a general problem of the core, not of this point
+of the graph.
 
 ---
 
-## 5. Classe e linhagem
+## 5. Class and lineage
 
-`classe` (D8) é nomeada pelo usuário na declaração do problema; o sintetizador
-apenas sugere uma classe existente quando reconhece semelhança. Ela é a raiz de
-versionamento do grafo e a unidade de agregação da telemetria — dois grafos da
-mesma classe são comparáveis; de classes diferentes, não.
+`classe` (D8) is named by the user in the problem declaration; the synthesizer
+only suggests an existing class when it recognizes a resemblance. It is the
+graph's versioning root and the telemetry's aggregation unit — two graphs of the
+same class are comparable; of different classes, not.
 
-`linhagem` (D13) posiciona este grafo dentro da classe:
+`linhagem` (D13) positions this graph inside the class:
 
 ```json
 { "tipo": "base" }
@@ -611,78 +622,76 @@ mesma classe são comparáveis; de classes diferentes, não.
   "origem_proposta_id": "prop-2026-08-31-004" }
 ```
 
-| Campo | Obrigatório | O que é |
+| Field | Required | What it is |
 |---|---|---|
-| `tipo` | sim | `base` (o grafo canônico da classe) ou `variante` (fork de um base). |
-| `base_classe` | quando `variante` | Classe do grafo-base do qual a variante saiu. |
-| `origem_proposta_id` | não | Proposta do topógrafo que originou o fork. |
+| `tipo` | yes | `base` (the class's canonical graph) or `variante` (a fork of a base). |
+| `base_classe` | when `variante` | The class of the base graph the variant came out of. |
+| `origem_proposta_id` | no | The topografo's proposal that originated the fork. |
 
-Um `base` não declara `base_classe` nem `origem_proposta_id` — o schema proíbe.
+A `base` declares neither `base_classe` nor `origem_proposta_id` — the schema
+forbids it.
 
-`origem_proposta_id` é opcional, mas quase sempre presente: **fork nunca nasce
-de decisão a priori**, e sim de proposta do topógrafo com evidência de
-divergência sistemática na telemetria (D13). A exceção prevista é a variante
-importada de um atlas externo, que não tem proposta local de origem. O
-aprendizado flui nos dois sentidos e sempre com portão: diff de variante que
-supera o base vira proposta de promoção; melhoria no base é oferecida às
-variantes, nunca forçada.
+`origem_proposta_id` is optional, but almost always present: **a fork is never
+born of an a-priori decision**, but of a topografo's proposal with evidence of
+systematic divergence in the telemetry (D13). The foreseen exception is the
+variant imported from an external atlas, which has no local proposal of origin.
+Learning flows both ways and always through a gate: a variant's diff that beats
+the base becomes a promotion proposal; an improvement in the base is offered to
+the variants, never forced on them.
 
 ---
 
 ## 6. Soundness
 
-Validação de **forma** é o JSON Schema. Validação de **soundness** é semântica e
-mora em [`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs), que
-exporta duas funções:
+**Shape** validation is the JSON Schema. **Soundness** validation is semantic and
+lives in [`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs), which
+exports two functions:
 
 ```js
 validarEstrutura(doc) // → { valid, errors: [{ code, message, target }] }
 validarSoundness(doc) // → { valid, violations: [{ rule, target }] }
 ```
 
-`validarEstrutura` cobre integridade de forma e de referência: chaves
-obrigatórias presentes, ids de nó únicos, toda aresta e todo id em
-`no_inicial`/`nos_finais` apontando para nó existente. `validarSoundness` roda
-as quatro regras abaixo, nesta ordem. Nenhuma das duas lança exceção em
-documento malformado: o sintetizador precisa do relatório inteiro, não do
-primeiro erro.
+`validarEstrutura` covers shape and referential integrity: the required keys
+present, node ids unique, every edge and every id in `no_inicial`/`nos_finais`
+pointing at a node that exists. `validarSoundness` runs the four rules below, in
+this order. Neither of them throws on a malformed document: the synthesizer needs
+the whole report, not the first error.
 
-As regras vêm de workflow nets (van der Aalst) e são um dos inegociáveis de
-qualidade do projeto. É delas que sai a frase de posicionamento: **"verificamos
-formalmente os grafos que a IA propõe"**.
+The rules come from workflow nets (van der Aalst) and are one of the project's
+quality non-negotiables. It is where the positioning sentence comes from: **"we
+formally verify the graphs the AI proposes"**.
 
-| Regra | O que exige | Alvo relatado | Contraexemplo |
+| Rule | What it demands | Reported target | Counterexample |
 |---|---|---|---|
-| `reachable` | Todo nó é atingível a partir de `no_inicial` seguindo `arestas`. | id do nó | [`grafo-invalido-unreachable-node.json`](../../schema/exemplos/grafo-invalido-unreachable-node.json) |
-| `terminates` | De todo nó existe caminho até algum nó em `nos_finais`. | id do nó | [`grafo-invalido-sem-terminacao.json`](../../schema/exemplos/grafo-invalido-sem-terminacao.json) |
-| `edge_with_condition` | Nenhuma aresta com `condicao` ausente ou vazia. | `{from, to}` | [`grafo-invalido-aresta-sem-condicao.json`](../../schema/exemplos/grafo-invalido-aresta-sem-condicao.json) |
-| `node_with_contract` | Nenhum nó sem `skill_ref` ou `contrato`, nem com `verificacoes` vazio. | id do nó | [`grafo-invalido-no-sem-contrato.json`](../../schema/exemplos/grafo-invalido-no-sem-contrato.json) |
+| `reachable` | Every node is reachable from `no_inicial` by following `arestas`. | the node's id | [`grafo-invalido-unreachable-node.json`](../../schema/exemplos/grafo-invalido-unreachable-node.json) |
+| `terminates` | From every node there is a path to some node in `nos_finais`. | the node's id | [`grafo-invalido-sem-terminacao.json`](../../schema/exemplos/grafo-invalido-sem-terminacao.json) |
+| `edge_with_condition` | No edge with a `condicao` that is absent or empty. | `{from, to}` | [`grafo-invalido-aresta-sem-condicao.json`](../../schema/exemplos/grafo-invalido-aresta-sem-condicao.json) |
+| `node_with_contract` | No node without a `skill_ref` or a `contrato`, nor with an empty `verificacoes`. | the node's id | [`grafo-invalido-no-sem-contrato.json`](../../schema/exemplos/grafo-invalido-no-sem-contrato.json) |
 
-Notas de leitura:
+Reading notes:
 
-- **`reachable` é topológica.** Ela segue arestas independentemente da
-  condição: uma aresta com rótulo vazio ainda liga dois nós. Quem reclama do
-  rótulo é `edge_with_condition`. As regras são independentes de propósito —
-  cada contraexemplo do repositório viola exatamente uma delas, o que torna cada
-  regra demonstrável isolada.
-- **`terminates` é calculada de trás para frente**, das arestas invertidas a partir
-  dos nós finais. Nó preso em ciclo sem saída simplesmente nunca é atingido — é
-  assim que um ciclo de retrabalho legítimo passa e um esquecimento de saída não.
-- **`node_with_contract` vale igual para portão**, que é nó como outro qualquer.
+- **`reachable` is topological.** It follows edges regardless of the condition:
+  an edge with an empty label still connects two nodes. What complains about the
+  label is `edge_with_condition`. The rules are independent on purpose — every
+  counterexample in the repository violates exactly one of them, which makes each
+  rule demonstrable in isolation.
+- **`terminates` is computed backwards**, from the edges reversed starting at the
+  final nodes. A node trapped in a cycle with no exit is simply never reached —
+  that is how a legitimate rework cycle passes and a forgotten exit does not.
+- **`node_with_contract` holds just the same for a gate**, which is a node like
+  any other.
 
-Rodando pela linha de comando (sai 1 se algum documento falhar):
+Running it from the command line (it exits 1 if any document fails):
 
 ```
 node scripts/validar-grafo.mjs schema/exemplos/*.json
 ```
 
-Os testes são `node --test` (o repositório ainda não tem `package.json`, por
-escolha — zero dependências).
+The tests are `node --test` (the repository still has no `package.json`, by
+choice — zero dependencies).
 
 ### 6.1 Contract matching: every required input has a producer (`t278`)
-
-*(This subsection is in English per the 2026-08-18 language rule; the sections
-around it are the pre-existing Portuguese of this document.)*
 
 Structure and soundness judge the document's shape and its topology. Neither one
 asks the question a session actually depends on: **when a job arrives at this
@@ -694,10 +703,10 @@ crossings answered that at dispatch time, after the sessions were paid for
 is that question, answered statically, before any session opens.
 
 **It checks the PINNED SKILL's `input`/`output`, never the node's own
-`entrada_schema`/`saida_schema`.** The subsection [`saida_schema` documenta; quem
-valida é a skill](#saida_schema-documenta-quem-valida-é-a-skill-t267) already
-draws this line for output, and it holds for input too — where the two have
-already drifted: the software bundle's `refinar` node declares
+`entrada_schema`/`saida_schema`.** The subsection [`saida_schema` documents; the
+skill is what validates](#saida_schema-documents-the-skill-is-what-validates-t267)
+already draws this line for output, and it holds for input too — where the two
+have already drifted: the software bundle's `refinar` node declares
 `required: ["ticket_id", "pedido"]`, while `refinar-ticket@1.0.0` really requires
 `["job", "project"]`. Only the skill's schema is enforced anywhere, so only the
 skill's schema is checked.
@@ -776,8 +785,6 @@ this call, `state` is where the version stands.
 
 ### 6.2 The state a version carries, and the one gate that reads it (`t283`)
 
-*(In English for the same reason §6.1 is.)*
-
 Registering a document and running work against it are two different promises,
 and until `t283` they were the same code path. `POST /v1/graphs` is permissive on
 purpose — a graph whose skills arrive afterwards is the ordinary case for the
@@ -840,59 +847,60 @@ an absence would break the manual and imported flows for a fact it cannot check.
 
 ---
 
-## 7. O documento como bundle exportável
+## 7. The document as an exportable bundle
 
-Versionamos como o git pensa, sem o git no núcleo (D15). O snapshot de uma
-versão de grafo é **este documento inteiro**, e é isso que a coluna `snapshot` de
-`graph_version` guarda quando o control plane existir (`t100`/`t101`). Como o
-documento é autocontido, ele **já é o bundle mínimo exportável**: uma versão
-qualquer sai como um arquivo, atravessa a borda (atlas, backup, espelho em repo
-do usuário, futura aprovação via PR) e volta sem precisar do banco de origem.
+We version the way git thinks, with no git in the core (D15). A graph version's
+snapshot is **this whole document**, and that is what `graph_version`'s
+`snapshot` column keeps once the control plane exists (`t100`/`t101`). Since the
+document is self-contained, it **is already the minimal exportable bundle**: any
+version comes out as one file, crosses the border (an atlas, a backup, a mirror
+in the user's repository, a future approval via PR) and comes back without
+needing the database it came from.
 
-O que o formato pressupõe do resto do sistema:
+What the format assumes of the rest of the system:
 
-- **Diff semântico, não diff de linha.** Uma proposta do topógrafo é uma lista de
-  operações tipadas sobre este documento (acrescentar nó, redirecionar aresta,
-  apertar verificação), cada uma com sua inversa. A ordem das chaves e a
-  formatação do JSON não carregam significado.
-- **Append-only.** Aplicar proposta é: aplicar ops → validar soundness no
-  resultado → gravar versão nova → mover ponteiro. Rollback move o ponteiro de
-  volta; nada se apaga.
+- **A semantic diff, not a line diff.** A topografo's proposal is a list of typed
+  operations over this document (add a node, redirect an edge, tighten a
+  verification), each one with its inverse. The order of the keys and the JSON's
+  formatting carry no meaning.
+- **Append-only.** Applying a proposal is: apply the ops → validate soundness on
+  the result → write a new version → move the pointer. A rollback moves the
+  pointer back; nothing is deleted.
 
-Empacotamento multi-grafo e multi-arquivo — layout do atlas, passo de
-publicação, verificação de integridade na travessia — está em
-[`docs/formatos/atlas-bundle.md`](../formatos/atlas-bundle.md), que trata um
-diretório por classe (`grafo.json` mais os manifestos que os nós pinam) e
-mantém a verificação nos dois hashes que já existem: o `id` da versão de grafo
-e o `skill_ref.hash` de cada nó. Aqui termina em: um grafo, um arquivo,
-autocontido.
+Multi-graph and multi-file packaging — the atlas's layout, the publication step,
+the integrity check across the crossing — is in
+[`docs/formatos/atlas-bundle.md`](../formatos/atlas-bundle.md), which treats one
+directory per class (`grafo.json` plus the manifests the nodes pin) and keeps the
+verification on the two hashes that already exist: the graph version's `id` and
+each node's `skill_ref.hash`. Here it ends at: one graph, one file,
+self-contained.
 
 ---
 
-## 8. Exemplos
+## 8. Examples
 
-Todos em [`schema/exemplos/`](../../schema/exemplos/), todos exercitados por
-`tests/schema-grafo.test.mjs`.
+All of them in [`schema/exemplos/`](../../schema/exemplos/), all of them
+exercised by `tests/schema-grafo.test.mjs`.
 
-| Arquivo | Para que serve |
+| File | What it is for |
 |---|---|
-| [`grafo-valido-minimo.json`](../../schema/exemplos/grafo-valido-minimo.json) | O menor documento sound: um nó de trabalho, um portão terminal, uma aresta `"sempre"`. Esqueleto para o primeiro grafo. |
-| [`grafo-valido-flowpilot.json`](../../schema/exemplos/grafo-valido-flowpilot.json) | **Exemplo-mestre.** Ver abaixo. |
-| [`grafo-valido-dois-engines.json`](../../schema/exemplos/grafo-valido-dois-engines.json) | Dois nós de trabalho numa aresta, um sem `engine` e outro com `"engine": "codex"`: o menor documento que distingue um default de uma rota (§2). |
-| `grafo-invalido-*.json` | Um contraexemplo por regra de soundness (§6). |
+| [`grafo-valido-minimo.json`](../../schema/exemplos/grafo-valido-minimo.json) | The smallest sound document: one work node, one terminal gate, one `"sempre"` edge. A skeleton for the first graph. |
+| [`grafo-valido-flowpilot.json`](../../schema/exemplos/grafo-valido-flowpilot.json) | **The master example.** See below. |
+| [`grafo-valido-dois-engines.json`](../../schema/exemplos/grafo-valido-dois-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
+| `grafo-invalido-*.json` | One counterexample per soundness rule (§6). |
 
-### O exemplo-mestre: o fluxo do flowpilot
+### The master example: flowpilot's flow
 
 [`grafo-valido-flowpilot.json`](../../schema/exemplos/grafo-valido-flowpilot.json)
-é o fluxo de entrega de software do flowpilot expresso neste formato, e é
-**insumo direto do grafo de fábrica 1 (`t105`)**: a ticket do grafo de fábrica
-parte deste arquivo em vez de partir de uma folha em branco. Por D17 o flowpilot
-é referência de comportamento **sem dependência de código** — o porte é
-reimplementação, e nada aqui lê nada de lá em tempo de execução.
+is flowpilot's software delivery flow expressed in this format, and it is
+**direct input to factory graph 1 (`t105`)**: the factory graph's ticket starts
+from this file instead of from a blank sheet. By D17 flowpilot is a behavioural
+reference **with no code dependency** — the port is a reimplementation, and
+nothing here reads anything from there at run time.
 
-Cinco nós, um por estado de atividade:
+Five nodes, one per activity state:
 
-| Nó | Papel | `tipo_no` | Estado no flowpilot |
+| Node | Role | `tipo_no` | State in flowpilot |
 |---|---|---|---|
 | `refinar` | arquiteto | trabalho | `refining` |
 | `desenvolver` | desenvolvedor | trabalho | `developing` |
@@ -900,7 +908,7 @@ Cinco nós, um por estado de atividade:
 | `testar` | tester | **portao** | `testing` |
 | `implantar` | deployer | trabalho | `deploying` |
 
-Cinco arestas, seguindo `ALLOWED_TRANSITIONS`:
+Five edges, following `ALLOWED_TRANSITIONS`:
 
 ```
 refinar ──sempre──▶ desenvolver ──sempre──▶ integrar ──sempre──▶ testar
@@ -910,20 +918,20 @@ refinar ──sempre──▶ desenvolver ──sempre──▶ integrar ──s
                                                     implantar ◀──aprovado
 ```
 
-Duas decisões de modelagem que o porte tomou:
+Two modelling decisions the port took:
 
-1. **Os estados de fila do flowpilot não viram nó.** `to_refine`, `to_develop`,
-   `to_integrate`, `to_test` e `to_deploy` são plumbing de escalonamento do
-   controller — onde o trabalho espera, não o que o trabalho faz. As arestas do
-   grafo são as transições de `ALLOWED_TRANSITIONS` com essas filas colapsadas.
-   Pelo mesmo critério, `backlog` e `done` ficam fora: `implantar` é o nó final,
-   e o `deploying → done` do flowpilot não tem nó de destino aqui.
-2. **`testar` é `portao`.** É o único nó com múltiplas saídas, e o que ele
-   produz é um veredito que roteia — `aprovado` segue para implantação,
-   `retrabalho` volta para desenvolvimento (o ciclo de teste alfa do flowpilot).
-   Os demais são `trabalho`: entregam artefato e têm saída única.
+1. **Flowpilot's queue states do not become nodes.** `to_refine`, `to_develop`,
+   `to_integrate`, `to_test` and `to_deploy` are the controller's scheduling
+   plumbing — where the work waits, not what the work does. The graph's edges are
+   the transitions of `ALLOWED_TRANSITIONS` with those queues collapsed. By the
+   same criterion, `backlog` and `done` stay out: `implantar` is the final node,
+   and flowpilot's `deploying → done` has no destination node here.
+2. **`testar` is a `portao`.** It is the only node with multiple exits, and what
+   it produces is a verdict that routes — `aprovado` carries on to deployment,
+   `retrabalho` goes back to development (flowpilot's alpha test cycle). The rest
+   are `trabalho`: they deliver an artifact and have a single exit.
 
-Ficaram deliberadamente de fora as três arestas de `TRIVIAL_EXTRA_TRANSITIONS`
-(os atalhos por `work_tier`): tier é política de escalonamento aplicada sobre a
-topologia, não topologia. Se o porte precisar delas, entram como decisão da
-`t105`, com registro.
+The three edges of `TRIVIAL_EXTRA_TRANSITIONS` (the `work_tier` shortcuts) were
+deliberately left out: a tier is a scheduling policy applied on top of the
+topology, not topology. If the port needs them, they come in as a `t105`
+decision, on the record.

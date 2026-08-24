@@ -89,9 +89,9 @@ of `grafo.json`, so the old pins are confirmed to have been honest too.
 for a Portuguese nuance an English rendering would flatten, and the translation
 used it nowhere: inline `(literally "…")` glosses in the bundle: **0**. The two
 places most likely to have needed one did not — `estação redundante` came across
-as "a redundant station" with the manufacturing metaphor intact, and `não lê o
-relatório de quem fez e assina embaixo` as "does not read the maker's report and
-countersign it". Nothing was guessed at and left unmarked either; this is a real
+as "a redundant station" with the manufacturing metaphor intact, and
+`não lê o relatório de quem fez e assina embaixo` as "does not read the maker's
+report and countersign it". Nothing was guessed at and left unmarked either; this is a real
 zero, not an unused convention.
 
 What resisted is a different thing entirely: fourteen identifiers that are

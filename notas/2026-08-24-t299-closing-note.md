@@ -108,7 +108,7 @@ Five, recorded rather than quietly decided.
    `esperando_humano`, `fila`) reads as prose in `screen.md` §2 and is not: those
    are the values of the `data-segmento` marker the acceptance tests assert on.
    Left as data, with the surrounding sentence in English.
-4. **"Ausência tem nome"**, which appears five times in `graph.md` as the
+4. **`Ausência tem nome`**, which appears five times in `graph.md` as the
    heading of an argument about defaults, came out as "Absence has a name". It is
    the one phrase in this set that carries more weight in Portuguese than the
    English keeps — the original is a small aphorism, the translation is a

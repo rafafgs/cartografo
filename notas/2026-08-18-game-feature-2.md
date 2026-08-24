@@ -1,7 +1,8 @@
 # Second real feature of the vibe-game through the software graph — facing direction (t109, round 2)
 
-Date: 2026-08-18, 13:03–13:18 UTC. Operator: the plantão (Claude), under Rafael's mandate of
-2026-08-18 ("implementar uma nova feature simples do jogo novamente conforme sugerido").
+Date: 2026-08-18, 13:03–13:18 UTC. Operator: the on-duty agent (Claude), under Rafael's
+mandate of 2026-08-18: implement a simple new game feature again, as suggested
+(literally "implementar uma nova feature simples do jogo novamente conforme sugerido").
 Written in English by rule. Round 1: `notas/2026-08-17-t109-game-feature.md`.
 
 The question of this round: **after the sprint, does the software graph traverse all five

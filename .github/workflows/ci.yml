@@ -1,34 +1,35 @@
-# Integração contínua: lint, tipos e a suíte inteira, a cada push e a cada PR.
+# Continuous integration: lint, types and the whole suite, on every push and every PR.
 #
-# Existe porque dois tickets mergearam verdes isolados e deixaram a `main`
-# vermelha sem ninguém saber: fora da máquina de quem desenvolve, nada rodava a
-# suíte. A matriz cobre as duas pontas que o repo declara — 24 é o pino do
-# `.nvmrc`, 22 é o LTS mais próximo acima do piso `>=20.11.0` de `engines`.
+# It exists because two tickets merged green in isolation and left `main` red
+# with nobody knowing: outside the machine of whoever was developing, nothing
+# ran the suite. The matrix covers the two ends the repository declares — 24 is
+# the pin in `.nvmrc`, 22 is the nearest LTS above the `>=20.11.0` floor of
+# `engines`.
 #
-# Duas coisas que a primeira rodada real (t217, execução
-# https://github.com/rafafgs/cartografo/actions/runs/31971354766) ensinou e que
-# mordem quem vier depois:
+# Two things the first real run (t217, execution
+# https://github.com/rafafgs/cartografo/actions/runs/31971354766) taught, and
+# that bite whoever comes next:
 #
-# 1. O push que CRIA um branch não dispara este workflow; os pushes seguintes
-#    disparam. Branch novo, então, precisa de um `gh workflow run ci.yml --ref
-#    <branch>` na mão para ter a primeira execução — é exatamente para isso que
-#    o `workflow_dispatch` abaixo está aqui.
-# 2. Os testes de frota e de despacho entre máquinas RODAM de verdade no
-#    `ubuntu-latest`, e passam — não são pulados. O runner tem IPv4 fora de
-#    loopback, então o `t.skip(...)` de
-#    `packages/runner/test/controller/multi-runner-fleet.e2e.test.ts` e de
-#    `packages/runner/test/controller/cross-machine-dispatch.e2e.test.ts` nunca
-#    acontece. A premissa contrária, escrita em t191 e repetida em t217, estava
-#    errada: a CI cobre os caminhos de rede, e um vermelho neles é real.
+# 1. The push that CREATES a branch does not trigger this workflow; the pushes
+#    after it do. A new branch, then, needs a `gh workflow run ci.yml --ref
+#    <branch>` by hand to get its first run — that is exactly what the
+#    `workflow_dispatch` below is here for.
+# 2. The fleet and cross-machine dispatch tests really DO run on
+#    `ubuntu-latest`, and they pass — they are not skipped. The runner has IPv4
+#    outside loopback, so the `t.skip(...)` of
+#    `packages/runner/test/controller/multi-runner-fleet.e2e.test.ts` and of
+#    `packages/runner/test/controller/cross-machine-dispatch.e2e.test.ts` never
+#    happens. The contrary premise, written in t191 and repeated in t217, was
+#    wrong: CI covers the network paths, and a red one there is real.
 name: CI
 
 on:
   push:
   pull_request:
-  # Gatilho manual. O primeiro push que registrou este workflow não criou
-  # execução nenhuma, e sem um gatilho sob controle a única forma de tentar de
-  # novo é esperar outro push cair certo. Útil de qualquer forma: força uma
-  # execução para diagnóstico sem sujar o histórico com commit vazio.
+  # A manual trigger. The first push that registered this workflow created no
+  # run at all, and without a trigger under our control the only way to try
+  # again is to wait for another push to land right. Useful anyway: it forces a
+  # run for diagnosis without dirtying the history with an empty commit.
   workflow_dispatch:
 
 jobs:
@@ -36,8 +37,8 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
-      # Uma versão vermelha não cancela a outra: saber se o problema é das duas
-      # ou só de uma é metade do diagnóstico.
+      # One red version does not cancel the other: knowing whether the problem
+      # belongs to both or to only one is half the diagnosis.
       fail-fast: false
       matrix:
         node-version: [22, 24]
@@ -48,38 +49,38 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          # Cacheia `~/.npm` com chave no `package-lock.json`, sem passo de
-          # `actions/cache` na mão.
+          # Caches `~/.npm` keyed on `package-lock.json`, with no hand-written
+          # `actions/cache` step.
           cache: npm
 
-      # `npm ci`, nunca `npm install`: instala o que o lockfile diz, e falha se
-      # ele divergir do `package.json` em vez de resolver a diferença em
-      # silêncio — foi um `node_modules` velho que derrubou 314 testes numa
-      # máquina sem ninguém entender por quê.
+      # `npm ci`, never `npm install`: it installs what the lockfile says, and
+      # fails if the lockfile has diverged from `package.json` instead of
+      # resolving the difference silently — it was a stale `node_modules` that
+      # brought down 314 tests on one machine with nobody understanding why.
       - run: npm ci
 
       - run: npm run lint
 
       - run: npm run typecheck
 
-      # Os dois grupos (workspaces e raiz) rodam sempre, um depois do outro:
-      # `scripts/run-all-tests.mjs` é quem garante que um vermelho não esconde
-      # o estado do outro.
+      # The two groups (workspaces and root) always run, one after the other:
+      # `scripts/run-all-tests.mjs` is what guarantees that one red does not
+      # hide the state of the other.
       - run: npm test
 
-      # Forma determinística de "nenhum teste escreve fora de `os.tmpdir()`":
-      # qualquer escrita dentro do checkout aparece aqui como arquivo novo ou
-      # modificado. O que é artefato legítimo já está no `.gitignore`.
-      # `always()` porque uma suíte vermelha é justamente quando uma escrita
-      # perdida é mais provável — um teste que quebra no meio é o que deixa
-      # arquivo para trás. Sem isto o passo é pulado exatamente no caso que ele
-      # existe para pegar, e o resultado fica invisível.
-      - name: Nenhuma escrita de teste dentro do checkout
+      # A deterministic form of "no test writes outside `os.tmpdir()`": any
+      # write inside the checkout shows up here as a new or modified file. What
+      # is a legitimate artifact is already in `.gitignore`.
+      # `always()` because a red suite is precisely when a stray write is most
+      # likely — a test that breaks halfway is what leaves a file behind.
+      # Without this the step is skipped in exactly the case it exists to catch,
+      # and the result stays invisible.
+      - name: No test writes inside the checkout
         if: always()
         run: |
           changed="$(git status --porcelain)"
           if [ -n "$changed" ]; then
-            echo "A suíte escreveu dentro do checkout:"
+            echo "The suite wrote inside the checkout:"
             echo "$changed"
             exit 1
           fi

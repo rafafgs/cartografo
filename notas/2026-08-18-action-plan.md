@@ -1,61 +1,65 @@
-# Plano de ação — 2026-08-18 (registrado pelo plantão a pedido do Rafael)
+# Action plan — 2026-08-18 (recorded by the on-duty agent at Rafael's request)
 
-Origem: as três notas de execução real (`2026-08-17-first-bets-run.md`,
-`2026-08-17-second-bets-run.md`, `2026-08-17-t109-game-feature.md`) e um review
-externo do repo lido em 18/08 (números conferidos: 143 apelidos `coluna AS campo_pt`, ledger de
-migração sem checksum, varredura anti-português duplicada por pacote, dois contratos por
-fronteira nó/skill). Decisão do Rafael em 18/08: "siga com o plano sugerido" e, à tarde,
-"registre esse plano de ação e crie os dois tickets".
+Origin: the three real-execution notes (`2026-08-17-first-bets-run.md`,
+`2026-08-17-second-bets-run.md`, `2026-08-17-t109-game-feature.md`) and an external review of
+the repository read on the 18th (numbers checked: 143 `coluna AS campo_pt` aliases, a
+migration ledger with no checksum, the anti-Portuguese sweep duplicated per package, two
+contracts per node/skill boundary). Rafael's decision on the 18th: "go ahead with the
+suggested plan" and, in the afternoon, "record this action plan and create the two tickets".
 
-Régua: **uma rodada de cada grafo tem de fechar sem operador.** Tudo abaixo serve a isso; o que
-não serve, espera.
+The ruler: **one round of each graph has to close with no operator.** Everything below serves
+that; whatever does not serve it waits.
 
-## 1. Sprint A+B (em curso, t267–t273) — o encanamento entre nós e o adapter
-- t267 prompt renderiza valores de entrada + schema da skill (done)
-- t268 relatório recusado segura o job, redespacho/bloqueio (done)
-- t269 etiqueta `resultado` × schema estrito
-- t270 metadados de travessia (`input.traversal`) + ambiente do executor (`banco_de_testes`,
-  `referencia`, `aplicacao` estático em `project`)
-- t271 `testar-alpha` × adapter claude-code (done)
-- t272 falha pré-sessão não reconhecida = laço de lease
-- t273 executor avança `main` e prepara o banco de testes após o integrar
+## 1. Sprint A+B (in progress, t267–t273) — the plumbing between nodes, and the adapter
+- t267 the prompt renders the input's values + the skill's schema (done)
+- t268 a refused report holds the job, re-dispatch/block (done)
+- t269 the `resultado` label × a strict schema
+- t270 traversal metadata (`input.traversal`) + the executor's environment
+  (`banco_de_testes`, `referencia`, `aplicacao` static in `project`)
+- t271 `testar-alpha` × the claude-code adapter (done)
+- t272 an unrecognised pre-session failure = a lease loop
+- t273 the executor advances `main` and prepares the test bench after the integration
 
-## 2. Dois consertos do review, pequenos e de alto retorno (tickets t278/t279)
-- **Check estático de casamento de contratos no import**: todo input obrigatório de um nó tem
-  produtor — um ancestral (`contract.produces`), o `project`, a projeção do control plane
-  (`job`, `traversal`, `perguntas_respondidas`) ou o executor — senão o import recusa com a
-  lista do que falta e quem deveria produzir. Depende da decisão "qual schema vale" (t267/t269).
-- **Checksum das migrações** no ledger (recusar subir quando o arquivo aplicado divergir) e o
-  registro, nas DECISOES (texto proposto no ticket; quem grava é o Rafael), de que os nomes de
-  arquivo de migração em português são chaves permanentes.
+## 2. Two fixes from the review, small and high-return (tickets t278/t279)
+- **A static contract-matching check at import**: every required input of a node has a
+  producer — an ancestor (`contract.produces`), the `project`, the control plane's projection
+  (`job`, `traversal`, `perguntas_respondidas`) or the executor — otherwise the import
+  refuses with the list of what is missing and who ought to produce it. It depends on the
+  "which schema holds" decision (t267/t269).
+- **A checksum for the migrations** in the ledger (refuse to come up when an applied file has
+  diverged) and the recording, in the decision ledger (the text proposed in the ticket;
+  Rafael is the one who records it), that the Portuguese migration file names are permanent
+  keys.
 
-## 3. Provar a régua — rodadas sem operador
-- **Rodada 3 de bets** com tese que sobreviva ao red team, bundle da `main`, até o portão
-  `decisao`; nota.
-- **Segunda feature do jogo** pelo grafo de software (a próxima do `docs/TICKETS.md`: direção
-  para onde o jogador olha — `facing`), com o executor conduzindo o repo (t270/t273), sem
-  variante de skill; nota. Se um nó travar por buraco que o sprint devia ter fechado: parar e
-  registrar, não carregar entrada à mão.
-- **n=3 do t239** no grafo de bets: 3 travessias A → proposta do topógrafo → **Rafael aplica na
-  tela** → 3 travessias B → `measure-executions`/`close-outcome`; nota. Julgar pela mecânica
-  fechar sem operador; os números com n=3 são ilustração.
-- Se fechar: o mapa funciona. Se não: parar com a resposta honesta.
+## 3. Proving the ruler — rounds with no operator
+- **Round 3 of bets** with a thesis that survives the red team, the bundle from `main`, up to
+  the `decisao` gate; a note.
+- **A second game feature** through the software graph (the next one in `docs/TICKETS.md`:
+  the direction the player is looking — `facing`), with the executor driving the repository
+  (t270/t273), with no skill variant; a note. If a node stalls on a hole the sprint should
+  have closed: stop and record it, do not load the input by hand.
+- **t239's n=3** on the bets graph: 3 A traversals → the topografo's proposal → **Rafael
+  applies it on the screen** → 3 B traversals → `measure-executions`/`close-outcome`; a note.
+  Judge by whether the mechanism closes with no operator; the numbers at n=3 are an
+  illustration.
+- If it closes: the map works. If not: stop with the honest answer.
 
-## 4. Congelar a plataforma enquanto isso (não cortar)
-Nenhum ticket novo de tela, webhooks, intake, sintetizador, tiers, segundo engine, OpenAPI
-(t240–t244) ou empacotamento (t216, t248–t251) até o passo 3 fechar. Código morto fica parado.
+## 4. Freeze the platform meanwhile (do not cut it)
+No new ticket for the screen, webhooks, intake, the synthesizer, tiers, a second engine,
+OpenAPI (t240–t244) or packaging (t216, t248–t251) until step 3 closes. Dead code stays where
+it is.
 
-## 5. Faxina — só depois do passo 3, e só se ele fechar
-- Os 143 apelidos `coluna AS campo_pt` + `toWire`: renomear os tipos internos para o nome inglês
-  da coluna e apagar a camada de ida-e-volta (um ticket, quadro vazio, sem migração).
-- As sete cópias da varredura anti-português → uma em `packages/test-support`, lista de
-  exceções única e atual.
-- O teste da raiz que falhou 1 em 7: caçar em loop, consertar o que for.
-- Depois disso, e só então: produto / empacotamento (t216).
+## 5. The clean-up — only after step 3, and only if it closes
+- The 143 `coluna AS campo_pt` aliases + `toWire`: rename the internal types to the column's
+  English name and delete the round-trip layer (one ticket, an empty board, no migration).
+- The seven copies of the anti-Portuguese sweep → one in `packages/test-support`, with a
+  single, current exception list.
+- The root test that failed 1 in 7: hunt it in a loop, fix whatever it is.
+- After that, and only then: product / packaging (t216).
 
-## Do Rafael (cliques)
-t214 fechar/apagar; t109 aceitar ou repetir; feature do jogo (rodada 1) subir ou não; portão do
-n=3 na tela; os dois "pode" de tickets já dados em 18/08 à tarde.
+## From Rafael (clicks)
+Close/delete t214; accept or repeat t109; ship the game feature (round 1) or not; the n=3 gate
+on the screen; the two ticket "go aheads" already given on the afternoon of the 18th.
 
 ## Addendum (2026-08-18, afternoon — written in English on purpose)
 
@@ -70,7 +74,7 @@ messages in Portuguese.
 
 Done immediately: the LANGUAGE convention added to `.flowpilot/profile.yml` (read by the
 board's agents at every session — it is the mechanism for "nothing new in Portuguese"); the
-plantão's own notes are English from now on.
+on-duty agent's own notes are English from now on.
 
 Tickets (after the n=3 round, one at a time, board empty): **t280** bundles → English,
 **t281** documents/specs/schemas/DECISOES/notas → English + ONE repo-wide sweep over every

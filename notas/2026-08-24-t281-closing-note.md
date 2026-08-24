@@ -110,16 +110,17 @@ Four, all recorded rather than quietly decided:
    `surface`/`today`/`becomes`/`defined in`. `surface` was chosen because it is
    already the word the whole codebase uses for these tags; the other three are
    literal. `defined in` is the one that is not a word-for-word rendering of
-   "onde está hoje" ("where it is today") — the cell's content is a file that
+   `onde está hoje` ("where it is today") — the cell's content is a file that
    DEFINES the term, the shorter phrase says so, and "where it is today" next to
    a column literally called `today` would have read as the same claim twice.
 2. **The status table's fourth column.** `quem levou` → `landed by`, matching the
    document's own "updated by the child that lands" one line above it. The
    ticket ids in the cells were kept as-is; only the connecting words moved
    (`t226 no fio` → `t226 on the wire`).
-3. **Two quotations of Portuguese sources.** §1.1 quotes a code comment ("o
-   glossário não mapeia nenhuma delas") and D20's own text ("campos e parâmetros
-   de query do JSON da API"); §5.2 quotes D20 again ("flags de CLI"). All three
+3. **Two quotations of Portuguese sources.** §1.1 quotes a code comment
+   (`o glossário não mapeia nenhuma delas`) and D20's own text
+   (`campos e parâmetros de query do JSON da API`); §5.2 quotes D20 again
+   (`flags de CLI`). All three
    were rendered in English rather than kept verbatim. The convention permits a
    verbatim Portuguese quotation, but leaving them would have put Portuguese
    back into the prose the new sweep exists to keep out, and `DECISIONS.md` is

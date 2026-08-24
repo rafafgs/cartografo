@@ -3,11 +3,11 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 /**
- * Flat config única da raiz, aplicada a todos os pacotes e aos scripts soltos.
+ * The root's single flat config, applied to every package and to the loose scripts.
  *
- * Só regras de base (`recommended`), sem checagem com informação de tipo: o
- * portão de tipos é `npm run typecheck` (`tsc --noEmit --strict`), e duplicá-lo
- * no lint só dobraria o tempo de execução com o mesmo resultado.
+ * Base rules only (`recommended`), with no type-aware checking: the type gate is
+ * `npm run typecheck` (`tsc --noEmit --strict`), and duplicating it in the lint
+ * would only double the running time for the same result.
  */
 export default [
   {
@@ -15,9 +15,9 @@ export default [
       '**/node_modules/**',
       '**/dist/**',
       '.cartografo/**',
-      // Fixtures escritos em disco por teste; nunca ficam versionados, mas o
-      // eslint roda no working tree e pegaria os que sobrarem de uma execução
-      // interrompida.
+      // Fixtures written to disk by a test; they are never versioned, but
+      // eslint runs over the working tree and would pick up whatever is left
+      // behind by an interrupted run.
       '**/.tmp-fixtures/**',
     ],
   },

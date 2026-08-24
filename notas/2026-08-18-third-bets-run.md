@@ -1,8 +1,9 @@
 # Third real run of the asymmetric-bets graph (round 3 — NFJ thesis)
 
-Date: 2026-08-18, 12:01–12:59 UTC. Operator: the plantão (Claude), under Rafael's mandate of
-2026-08-18 ("siga com o plano sugerido"; action plan in `notas/2026-08-18-action-plan.md`
-§3). Written in English by rule (Rafael, 2026-08-18: English everywhere). Previous rounds:
+Date: 2026-08-18, 12:01–12:59 UTC. Operator: the on-duty agent (Claude), under Rafael's
+mandate of 2026-08-18: go ahead with the suggested plan
+(literally "siga com o plano sugerido"); the action plan is in
+`notas/2026-08-18-action-plan.md` §3. Written in English by rule (Rafael, 2026-08-18: English everywhere). Previous rounds:
 `notas/2026-08-17-first-bets-run.md`, `notas/2026-08-17-second-bets-run.md`.
 
 The question of this round: **after the sprint (t267–t279, t283–t285), does a real traversal
@@ -95,7 +96,7 @@ without it any `premissas_chave` I write is an invented premise, which the check
 proceed with reconstructed premises labelled as such. The session had already drafted the
 whole analysis (ratio ~0.3) and refused to invent.
 
-Answer (plantão, 12:50:53Z, in English): **option 2** — proceed with premises reconstructed
+Answer (the on-duty agent, 12:50:53Z, in English): **option 2** — proceed with premises reconstructed
 from `fundamentos.resumo` and the received numbers, labelling every reconstructed premise in
 the note and inside each scenario, inventing no numbers; and the reason: the operator is
 deliberately not hand-carrying input in this round; the truncation is a real defect of the

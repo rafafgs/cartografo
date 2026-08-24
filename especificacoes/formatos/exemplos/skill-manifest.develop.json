@@ -1,39 +1,35 @@
 {
   "id": "develop",
   "version": "1.0.0",
-  "hash": "sha256:9cce83fe32ac7cd0accbfe52c6f59e2ff0c46bc2f89081843c7cd93a4fbc967e",
+  "hash": "sha256:5c43c000df06145617b3a3df9baac269473eef51ce7235bcbf6a2ebd29f1a108",
   "role": "work",
-  "description": "Implementa um ticket refinado num worktree isolado, com testes de aceite primeiro, e commita no branch do ticket.",
+  "description": "Implements a refined ticket in an isolated worktree, acceptance tests first, and commits on the ticket's branch.",
   "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
+      "job",
       "ticket",
-      "projeto",
+      "project",
       "workspace"
     ],
     "additionalProperties": false,
     "properties": {
-      "ticket": {
+      "job": {
         "type": "object",
         "required": [
           "id",
-          "titulo",
-          "corpo",
-          "tipo"
+          "title",
+          "type"
         ],
         "properties": {
           "id": {
             "type": "integer"
           },
-          "titulo": {
+          "title": {
             "type": "string"
           },
-          "corpo": {
-            "type": "string",
-            "description": "a especificação refinada; contém a seção de critérios de aceite"
-          },
-          "tipo": {
+          "type": {
             "type": "string",
             "enum": [
               "feature",
@@ -43,34 +39,46 @@
           }
         }
       },
-      "projeto": {
+      "ticket": {
+        "type": "object",
+        "required": [
+          "specification"
+        ],
+        "properties": {
+          "specification": {
+            "type": "string",
+            "description": "the refined specification; it carries the acceptance-criteria section"
+          }
+        }
+      },
+      "project": {
         "type": "object",
         "required": [
           "repo",
-          "comando_testes",
-          "comandos_qualidade",
-          "convencoes"
+          "test_command",
+          "quality_commands",
+          "conventions"
         ],
         "properties": {
           "repo": {
             "type": "string"
           },
-          "comando_testes": {
+          "test_command": {
             "type": "string",
-            "description": "linha de shell única; é o que o check determinístico interpola"
+            "description": "a single shell line; it is what the deterministic check interpolates"
           },
-          "comandos_qualidade": {
+          "quality_commands": {
             "type": "array",
             "items": {
               "type": "string"
             },
             "minItems": 1
           },
-          "convencoes": {
+          "conventions": {
             "type": "string",
-            "description": "convenções arquiteturais do projeto, em prosa"
+            "description": "the project's architectural conventions, in prose"
           },
-          "documentos_canonicos": {
+          "canonical_documents": {
             "type": "array",
             "items": {
               "type": "string"
@@ -81,13 +89,13 @@
       "workspace": {
         "type": "object",
         "required": [
-          "caminho",
+          "path",
           "branch"
         ],
         "properties": {
-          "caminho": {
+          "path": {
             "type": "string",
-            "description": "raiz do worktree isolado"
+            "description": "the root of the isolated worktree"
           },
           "branch": {
             "type": "string"
@@ -96,22 +104,22 @@
       },
       "contexto_falha": {
         "type": "string",
-        "description": "o que a tentativa anterior fez, numa retomada"
+        "description": "what the previous attempt did, on a resumption. The one Portuguese key of this example, and it is deliberate: it is the projection name the control plane and the software factory bundle both still spell this way."
       },
       "perguntas_respondidas": {
         "type": "array",
-        "description": "perguntas já respondidas neste ticket, para a sessão nova não reabrir o que foi decidido",
+        "description": "escalations already answered on this ticket, so the new session does not reopen what was decided. Portuguese for the same reason as contexto_falha above: it is the key GET /v1/jobs/:id/context really publishes.",
         "items": {
           "type": "object",
           "required": [
-            "pergunta",
-            "resposta"
+            "question",
+            "answer"
           ],
           "properties": {
-            "pergunta": {
+            "question": {
               "type": "string"
             },
-            "resposta": {
+            "answer": {
               "type": "string"
             }
           }
@@ -126,7 +134,7 @@
       "branch",
       "commits",
       "gates",
-      "nota"
+      "note"
     ],
     "additionalProperties": false,
     "properties": {
@@ -143,20 +151,20 @@
       },
       "gates": {
         "type": "object",
-        "description": "o que a sessão declara ter rodado; é autorrelato e entra no portão como contexto, nunca como evidência",
+        "description": "what the session declares it ran; it is self-reporting and reaches the gate as context, never as evidence",
         "additionalProperties": {
           "type": "string",
           "enum": [
-            "passou",
-            "falhou"
+            "passed",
+            "failed"
           ]
         }
       },
-      "nota": {
+      "note": {
         "type": "string",
         "minLength": 1
       },
-      "arquivos_tocados": {
+      "touched_files": {
         "type": "array",
         "items": {
           "type": "string"
@@ -171,23 +179,23 @@
     }
   },
   "preconditions": [
-    "ticket refinado: o corpo contém uma seção de critérios de aceite verificáveis",
-    "worktree isolado criado, com o branch do ticket já em check-out",
-    "nenhum outro trabalho ativo cuja superfície de arquivos declarada se sobreponha à deste ticket",
-    "perfil do projeto resolvido: comando de testes e comandos de qualidade conhecidos"
+    "refined ticket: the specification carries a section of verifiable acceptance criteria",
+    "isolated worktree created, with the ticket's branch already checked out",
+    "no other active work whose declared file surface overlaps this ticket's",
+    "project profile resolved: test command and quality commands known"
   ],
   "checks": [
     {
-      "id": "suite-verde",
+      "id": "green-suite",
       "type": "deterministic",
-      "description": "A suíte do projeto passa no worktree. Autocheck da sessão: quem prova de novo, com evidência própria, é o portão de verificação.",
-      "command": "{{input.projeto.comando_testes}}",
+      "description": "The project's suite passes in the worktree. A self-check of the session: what proves it again, with evidence of its own, is the verification gate.",
+      "command": "{{input.project.test_command}}",
       "timeout_s": 1800
     },
     {
-      "id": "arvore-limpa",
+      "id": "clean-tree",
       "type": "deterministic",
-      "description": "Nada ficou fora do commit. Trabalho verde e não commitado não é entrega.",
+      "description": "Nothing was left out of the commit. Work that is green and uncommitted is not a delivery.",
       "command": "git diff --quiet && git diff --cached --quiet",
       "timeout_s": 60
     }
@@ -214,7 +222,7 @@
     "timeout_s": 5400,
     "silence_s": 900
   },
-  "instructions": "# Implementar um ticket refinado\n\nSeu trabalho é implementar **um** ticket refinado, por inteiro, num checkout\nisolado, deixando o trabalho commitado no branch próprio dele e todos os\ncomandos de qualidade verdes.\n\n**Ticket:** {{input.ticket.titulo}} (#{{input.ticket.id}}, tipo {{input.ticket.tipo}})\n\n{{input.ticket.corpo}}\n\n## Onde você está\n\nVocê já está dentro de um checkout criado só para este ticket, com um branch\npróprio (`{{input.workspace.branch}}`) em `{{input.workspace.caminho}}`.\nEle é seu: nada mais roda nele, e nada que você faz aqui é visível para\nninguém até um estágio posterior integrar.\n\nPor causa disso, três coisas são absolutas:\n\n- **Nunca troque de branch e nunca comite no branch principal do projeto.**\n- **Nunca faça merge, rebase ou pull do branch principal**, e não empurre nada\n  para lugar nenhum. Integração é outro nó, com sessão própria.\n- **Nunca toque em outro checkout deste repositório**, mesmo que você o veja.\n\n## O portão de construção\n\n1. **Ler antes de escrever.** Leia os critérios de aceite do ticket, os\n   arquivos que ele cita, e as convenções do projeto\n   ({{input.projeto.convencoes}}). Spec que cita um caminho está mandando\n   abrir o caminho.\n2. **Escrever os testes de aceite PRIMEIRO**, todos, antes de existir\n   implementação.\n3. **Confirmar que falham, e pelo motivo certo** — implementação ausente, não\n   erro de import, typo ou fixture quebrado. Teste que falha pelo motivo\n   errado não é vermelho válido, e seguir em frente a partir de um é como uma\n   feature inteira nasce construída em cima de um engano.\n4. **Só então implementar**, contra a spec e as convenções do projeto. Siga a\n   seção de fora-de-escopo do ticket à risca: ela é decisão, não sugestão.\n5. **Nunca editar um teste para ele passar.** O teste é a spec. Se um teste\n   parece errado, diga isso no seu relato, ou pergunte — não mude escondido.\n6. **Rodar todos os comandos de qualidade do projeto**\n   ({{input.projeto.comandos_qualidade}}) até todos ficarem verdes. Rode o\n   conjunto inteiro no fim, não só a parte que você acha que tocou.\n7. **Commitar no seu branch**, com `feat(t<id>): ...` para feature ou\n   `fix(t<id>): ...` para bug. Um commit separado com os testes vermelhos\n   antes da implementação é a evidência mais clara de que você os escreveu\n   primeiro.\n\n## Quando travar de verdade\n\nSe **o mesmo portão falhar três vezes seguidas pelo mesmo motivo**, pare. Não\nfique tentando variações: falha idêntica repetida é sinal de que a spec, o\nambiente ou uma premissa está errada. Abra uma pergunta ao humano\n(`escalar_humano`) descrevendo o que falha, o que você tentou e o que faria\nem seguida — com sua recomendação e um default que o humano possa só aceitar.\n\n## O que relatar\n\nRelate o que você fez de fato, não o que pretendia fazer. Se tocou um arquivo\nque o ticket não previa, diga — o escalonamento foi montado sobre a lista de\narquivos declarada, e surpresa ali importa. O que você aprendeu de não óbvio\nvai em `gotchas`.\n\nOs `gates` que você reporta são **declaração sua**, não prova: quem prova é o\nportão de verificação, com evidência própria. Reporte honestamente o que\nrodou e o que não rodou.\n\n{{input.contexto_falha}}",
+  "instructions": "# Implement a refined ticket\n\nYour job is to implement **one** refined ticket, completely, in an isolated\ncheckout, leaving the work committed on its own branch and every quality\ncommand green.\n\n**Ticket:** {{input.job.title}} (#{{input.job.id}}, type {{input.job.type}})\n\n{{input.ticket.specification}}\n\n## Where you are\n\nYou are already inside a checkout created for this ticket alone, with a branch\nof its own (`{{input.workspace.branch}}`) at `{{input.workspace.path}}`. It is\nyours: nothing else runs in it, and nothing you do here is visible to anyone\nuntil a later stage integrates it.\n\nBecause of that, three things are absolute:\n\n- **Never switch branches, and never commit onto the project's main branch.**\n- **Never merge, rebase or pull the main branch**, and never push anything\n  anywhere. Integration is another node, with a session of its own.\n- **Never touch another checkout of this repository**, even if you can see one.\n\n## The build gate\n\n1. **Read before writing.** Read the ticket's acceptance criteria, the files it\n   names, and the project's conventions ({{input.project.conventions}}). A spec\n   that cites a path is telling you to open it.\n2. **Write the acceptance tests FIRST**, every one of them, before any\n   implementation exists.\n3. **Confirm they fail, and fail for the right reason** — missing\n   implementation, not an import error, a typo or a broken fixture. A test that\n   fails for the wrong reason is not a valid red, and moving on from one is how\n   an entire feature gets built on top of a mistake.\n4. **Only then implement**, against the spec and the project's conventions.\n   Follow the ticket's out-of-scope section exactly: it is a decision, not a\n   suggestion.\n5. **Never edit a test to make it pass.** The test is the spec. If a test looks\n   wrong, say so in your report, or ask — do not change it quietly.\n6. **Run every quality command of the project**\n   ({{input.project.quality_commands}}) until all of them are green. Run the\n   full set at the end, not only the part you think you touched.\n7. **Commit on your branch**, with `feat(t<id>): ...` for a feature or\n   `fix(t<id>): ...` for a bug. A separate commit with the failing tests before\n   the implementation is the clearest possible evidence that you wrote them\n   first.\n\n## When you are genuinely stuck\n\nIf **the same gate fails three times in a row for the same reason**, stop. Do\nnot keep trying variations: a repeated identical failure is a signal that the\nspec, the environment or an assumption is wrong. Open a question to the human\n(`escalate_human`) describing what fails, what you tried and what you would do\nnext — with your recommendation and a default the human can simply accept.\n\n## What to report\n\nReport what you actually did, not what you intended to do. If you touched a\nfile the ticket did not anticipate, say so — the scheduling was built on the\ndeclared list of files, and a surprise there matters. Anything non-obvious you\nlearned goes in `gotchas`.\n\nThe `gates` you report are **your own declaration**, not proof: what proves is\nthe verification gate, with evidence of its own. Report honestly what ran and\nwhat did not.\n\n{{input.contexto_falha}}",
   "origin": {
     "type": "native"
   }

@@ -1,49 +1,57 @@
 {
-  "id": "verificacao-de-develop",
+  "id": "verify-develop",
   "version": "1.0.0",
-  "hash": "sha256:42eb5236ff39590a576d64d9208183636f570695767e37581e4cdc47c0d01b55",
+  "hash": "sha256:55acceda6b10b39be65c361090812e1a2ef8c87f67dfa5eef0875b84482b6ecf",
   "role": "gate",
-  "description": "Confere o artefato produzido por develop: roda a suíte no integrado e caminha semanticamente pelos critérios de aceite, sempre com evidência própria.",
+  "description": "Checks the artifact produced by develop: runs the suite on the integrated branch and walks the acceptance criteria semantically, always with evidence of its own.",
   "input": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "required": [
+      "job",
       "ticket",
-      "artefato",
-      "aplicacao",
-      "projeto"
+      "artifact",
+      "application",
+      "project"
     ],
     "additionalProperties": false,
     "properties": {
-      "ticket": {
+      "job": {
         "type": "object",
         "required": [
           "id",
-          "titulo",
-          "criterios_aceite"
+          "title"
         ],
         "properties": {
           "id": {
             "type": "integer"
           },
-          "titulo": {
+          "title": {
             "type": "string"
-          },
-          "criterios_aceite": {
+          }
+        }
+      },
+      "ticket": {
+        "type": "object",
+        "required": [
+          "acceptance_criteria"
+        ],
+        "properties": {
+          "acceptance_criteria": {
             "type": "array",
             "minItems": 1,
             "items": {
               "type": "object",
               "required": [
                 "ref",
-                "texto"
+                "text"
               ],
               "properties": {
                 "ref": {
                   "type": "string",
-                  "description": "ex.: CA1"
+                  "description": "e.g. AC1"
                 },
-                "texto": {
+                "text": {
                   "type": "string"
                 }
               }
@@ -51,13 +59,13 @@
           }
         }
       },
-      "artefato": {
+      "artifact": {
         "type": "object",
         "required": [
           "branch",
           "commits"
         ],
-        "description": "o que a sessão de develop entregou; os campos declarados por ela são contexto, não evidência",
+        "description": "what the develop session delivered; the fields it declared are context, not evidence",
         "properties": {
           "branch": {
             "type": "string"
@@ -68,55 +76,55 @@
               "type": "string"
             }
           },
-          "gates_declarados": {
+          "declared_gates": {
             "type": "object",
-            "description": "AUTORRELATO da sessão que produziu o artefato. Serve para o portão saber onde olhar; nunca substitui a evidência que o portão colhe por conta própria.",
+            "description": "A SELF-REPORT by the session that produced the artifact. It serves to tell the gate where to look; it never replaces the evidence the gate gathers on its own.",
             "additionalProperties": {
               "type": "string"
             }
           },
-          "nota": {
+          "note": {
             "type": "string"
           }
         }
       },
-      "aplicacao": {
+      "application": {
         "type": "object",
         "required": [
-          "rodando"
+          "running"
         ],
         "properties": {
-          "rodando": {
+          "running": {
             "type": "boolean"
           },
-          "endereco": {
+          "address": {
             "type": "string",
-            "description": "endereço da aplicação integrada, quando rodando"
+            "description": "the address of the integrated application, when it is running"
           },
-          "motivo_ausencia": {
+          "absence_reason": {
             "type": "string",
-            "description": "por que não há aplicação de pé, quando rodando=false"
+            "description": "why there is no application standing, when running=false"
           }
         }
       },
-      "projeto": {
+      "project": {
         "type": "object",
         "required": [
           "repo",
-          "comando_testes"
+          "test_command"
         ],
         "properties": {
           "repo": {
             "type": "string"
           },
-          "comando_testes": {
+          "test_command": {
             "type": "string"
           }
         }
       },
       "contexto_falha": {
         "type": "string",
-        "description": "vereditos da rodada anterior, numa re-verificação"
+        "description": "the verdicts of the previous round, on a re-verification. The one Portuguese key of this example, and it is deliberate: it is the projection name the control plane and the software factory bundle both still spell this way."
       }
     }
   },
@@ -125,8 +133,8 @@
     "type": "object",
     "required": [
       "outcome",
-      "vereditos",
-      "nota"
+      "verdicts",
+      "note"
     ],
     "additionalProperties": false,
     "properties": {
@@ -137,34 +145,34 @@
           "fail",
           "escalate_human"
         ],
-        "description": "obrigatório em toda skill de papel portao; é o que o executor lê para escolher a aresta (princípio 2 do README)"
+        "description": "required in every skill whose role is gate; it is what the executor reads to choose the edge (principle 2 of the README)"
       },
-      "vereditos": {
+      "verdicts": {
         "type": "array",
         "minItems": 1,
         "items": {
           "type": "object",
           "required": [
             "ref",
-            "veredito",
-            "evidencia"
+            "verdict",
+            "evidence"
           ],
           "properties": {
             "ref": {
               "type": "string"
             },
-            "veredito": {
+            "verdict": {
               "type": "string",
               "enum": [
-                "passou",
-                "falhou",
-                "nao_exercitado"
+                "passed",
+                "failed",
+                "not_exercised"
               ]
             },
-            "evidencia": {
+            "evidence": {
               "type": "string",
               "minLength": 1,
-              "description": "o que ESTE portão observou por conta própria; autorrelato da sessão de develop não conta"
+              "description": "what THIS gate observed on its own; the develop session's self-report does not count"
             }
           }
         }
@@ -174,30 +182,30 @@
         "items": {
           "type": "object",
           "required": [
-            "severidade",
-            "titulo",
-            "criterio",
+            "severity",
+            "title",
+            "criterion",
             "repro"
           ],
           "properties": {
-            "severidade": {
+            "severity": {
               "type": "string",
               "enum": [
-                "simples",
-                "complexo"
+                "simple",
+                "complex"
               ]
             },
-            "titulo": {
+            "title": {
               "type": "string"
             },
-            "criterio": {
+            "criterion": {
               "type": "string"
             },
             "repro": {
               "type": "string",
-              "description": "passos, esperado vs. observado"
+              "description": "steps, expected vs. observed"
             },
-            "arquivos": {
+            "files": {
               "type": "array",
               "items": {
                 "type": "string"
@@ -206,7 +214,7 @@
           }
         }
       },
-      "nota": {
+      "note": {
         "type": "string",
         "minLength": 1
       },
@@ -219,28 +227,28 @@
     }
   },
   "preconditions": [
-    "artefato integrado no branch que o banco de testes acompanha",
-    "banco de testes atualizado até a ponta desse branch",
-    "critérios de aceite do ticket disponíveis em lista, com referência estável por critério",
-    "aplicação de pé no endereço informado, ou motivo registrado da ausência"
+    "artifact integrated on the branch the test bench follows",
+    "test bench updated to the tip of that branch",
+    "the ticket's acceptance criteria available as a list, with a stable reference per criterion",
+    "application standing at the address given, or a recorded reason for its absence"
   ],
   "checks": [
     {
-      "id": "suite-verde-no-integrado",
+      "id": "green-suite-on-the-integrated-branch",
       "type": "deterministic",
-      "description": "O portão roda a suíte ele mesmo, no artefato integrado. É a metade determinística da verificação e o ponto onde o autorrelato da sessão de develop deixa de importar.",
-      "command": "{{input.projeto.comando_testes}}",
+      "description": "The gate runs the suite itself, on the integrated artifact. It is the deterministic half of the verification and the point where the develop session's self-report stops mattering.",
+      "command": "{{input.project.test_command}}",
       "timeout_s": 1800
     },
     {
-      "id": "caminhada-semantica",
+      "id": "semantic-walk",
       "type": "agentic",
-      "description": "Caminhada critério a critério contra a aplicação rodando — a metade que exige julgamento e por isso não é determinística.",
-      "instruction": "Caminhe critério a critério pela lista de critérios de aceite do ticket e emita um veredito para cada um, exercitando a aplicação integrada que está rodando em {{input.aplicacao.endereco}}.\n\nCada veredito cita evidência produzida por você, neste portão: a requisição que você mesmo disparou e a resposta que voltou, a saída do comando que você mesmo executou, a página que você mesmo renderizou. O relato de quem produziu o artefato (o campo entrada.artefato.gates_declarados, a nota da sessão, a lista de commits) entra como contexto para você saber onde olhar e não vale como evidência de nada: portão que aceita autorrelato como prova não é portão. Se a única coisa que sustenta um critério é a afirmação de quem o implementou, o veredito não é \"passou\".\n\nCritério que você não conseguiu exercitar recebe veredito \"nao_exercitado\", com a evidência do que impediu — nunca um \"passou\" silencioso. Critério que exige julgamento estético ou prova manual vai para o humano: resultado \"escalar_humano\", com toda a evidência que você juntou anexada.",
+      "description": "A criterion-by-criterion walk against the running application — the half that demands judgement and is therefore not deterministic.",
+      "instruction": "Walk criterion by criterion through the ticket's list of acceptance criteria and issue a verdict for each one, exercising the integrated application running at {{input.application.address}}.\n\nEvery verdict cites evidence produced by you, at this gate: the request you fired yourself and the response that came back, the output of the command you ran yourself, the page you rendered yourself. The report of whoever produced the artifact (the input.artifact.declared_gates field, the session's note, the list of commits) enters as context so you know where to look, and counts as evidence of nothing: a gate that accepts a self-report as proof is not a gate. If the only thing holding a criterion up is the assertion of whoever implemented it, the verdict is not \"passed\".\n\nA criterion you could not exercise gets the verdict \"not_exercised\", with the evidence of what prevented it — never a silent \"passed\". A criterion that needs aesthetic judgement or manual proof goes to the human: outcome \"escalate_human\", with all the evidence you gathered attached.",
       "required_evidence": [
-        "requisicao_disparada_pelo_portao_e_resposta_recebida",
-        "saida_do_comando_executado_pelo_portao",
-        "referencia_ao_criterio_de_aceite_avaliado"
+        "request_fired_by_the_gate_and_response_received",
+        "output_of_the_command_run_by_the_gate",
+        "reference_to_the_acceptance_criterion_evaluated"
       ]
     }
   ],
@@ -261,7 +269,7 @@
       ]
     }
   },
-  "instructions": "# Verificar o que a sessão de develop entregou\n\nSeu trabalho é validar semanticamente **cada** critério de aceite do ticket\ncontra a aplicação integrada, e registrar um veredito por critério. O código\njá foi integrado; o que ninguém checou ainda é se a aplicação **faz** o que\ncada critério diz — e isso é a sua tarefa inteira.\n\n**Ticket:** {{input.ticket.titulo}} (#{{input.ticket.id}})\n**Artefato:** branch `{{input.artefato.branch}}`\n**Aplicação:** {{input.aplicacao.endereco}}\n\n## A regra que define este nó\n\nVocê verifica com **evidência própria**. O que a sessão que produziu o\nartefato declarou — os gates que ela diz ter rodado, a nota que ela escreveu —\nchega até você como contexto, para você saber onde olhar. Não é prova de nada,\ne nenhum veredito seu pode se apoiar nisso. Quem confere roda o resultado;\nquem confere não lê o relatório de quem fez e assina embaixo.\n\n## Onde você está\n\nVocê está num banco de testes compartilhado: um checkout do branch integrado,\npreparado pelo executor. Ele é ponto de observação, não área de trabalho.\n\n- **Nenhum commit, nenhum push, nenhuma troca de branch.** Deixe o checkout\n  exatamente como encontrou.\n- **Nunca toque em outro checkout deste repositório.**\n- Rascunho, dump, log e captura vão para `/tmp/cartografo/`.\n\n## Caminhando os critérios\n\n1. Todo critério recebe um veredito. Critério que você não conseguiu\n   exercitar recebe uma entrada honesta, nunca um pulo silencioso.\n2. **Exercite a aplicação de verdade** — requisição direta contra o endereço\n   dado, mais qualquer ferramenta disponível no checkout. Prepare os dados de\n   que precisar com os comandos do próprio projeto.\n3. **Julgue cada critério pela evidência observada** — uma resposta, uma\n   saída, uma página renderizada — não pelo que o código sugere que\n   aconteceria.\n4. Falhou? Reporte um bug com severidade (`simples` para conserto contido,\n   `complexo` para o resto), repro e arquivos suspeitos. A lista de arquivos\n   é o que permite agendar o conserto em paralelo com segurança.\n5. Critério que exige prova manual ou julgamento estético vai para o humano —\n   `resultado: \"escalar_humano\"`, com a evidência anexada.\n\n`resultado: \"passou\"` é reservado para passe completo: todo critério com\nveredito `passou`. Rodada que achou problema é `resultado: \"falhou\"` com a\nlista de bugs — isso é uma rodada de verificação bem-sucedida que encontrou\ntrabalho, não uma sessão que falhou.\n\n{{input.contexto_falha}}",
+  "instructions": "# Verify what the develop session delivered\n\nYour job is to validate, semantically, **every** acceptance criterion of the\nticket against the integrated application, and to record one verdict per\ncriterion. The code has already been integrated; what nobody has checked yet is\nwhether the application **does** what each criterion says — and that is your\nentire task.\n\n**Ticket:** {{input.job.title}} (#{{input.job.id}})\n**Artifact:** branch `{{input.artifact.branch}}`\n**Application:** {{input.application.address}}\n\n## The rule that defines this node\n\nYou verify with **evidence of your own**. What the session that produced the\nartifact declared — the gates it says it ran, the note it wrote — reaches you as\ncontext, so you know where to look. It is proof of nothing, and no verdict of\nyours may rest on it. Whoever checks runs the result; whoever checks does not\nread the maker's report and sign underneath it.\n\n## Where you are\n\nYou are on a shared test bench: a checkout of the integrated branch, prepared by\nthe executor. It is an observation point, not a work area.\n\n- **No commit, no push, no branch switching.** Leave the checkout exactly as you\n  found it.\n- **Never touch another checkout of this repository.**\n- Drafts, dumps, logs and captures go to `/tmp/cartografo/`.\n\n## Walking the criteria\n\n1. Every criterion gets a verdict. A criterion you could not exercise gets an\n   honest entry, never a silent skip.\n2. **Exercise the application for real** — a direct request against the address\n   given, plus any tool available in the checkout. Prepare whatever data you\n   need with the project's own commands.\n3. **Judge each criterion by the evidence observed** — a response, an output, a\n   rendered page — not by what the code suggests would happen.\n4. Failed? Report a bug with a severity (`simple` for a contained fix, `complex`\n   for the rest), a repro and the suspect files. The list of files is what makes\n   it safe to schedule the fix in parallel.\n5. A criterion that needs manual proof or aesthetic judgement goes to the human\n   — `resultado: \"escalate_human\"`, with the evidence attached.\n\n`resultado: \"passed\"` is reserved for a complete pass: every criterion with a\n`passed` verdict. A round that found a problem is `resultado: \"failed\"` with the\nlist of bugs — that is a successful verification round that found work, not a\nsession that failed.\n\n{{input.contexto_falha}}",
   "origin": {
     "type": "native"
   }

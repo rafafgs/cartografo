@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cartografo.dev/especificacoes/formatos/skill-manifest.schema.json",
-  "title": "Manifesto de skill — cartografo",
-  "description": "Contrato de entrada no registro de capacidades (D4, D9). Ver especificacoes/formatos/skill-manifest.md.",
+  "title": "Skill manifest — cartografo",
+  "description": "The contract for entering the capability registry (D4, D9). See especificacoes/formatos/skill-manifest.md.",
   "type": "object",
   "required": [
     "id",
@@ -23,52 +23,52 @@
     "id": {
       "type": "string",
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-      "description": "identificador estável da skill; único no registro"
+      "description": "the skill's stable identifier; unique in the registry"
     },
     "version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "semver da skill; muda a cada diff aprovado no portão humano"
+      "description": "the skill's semver; it moves with every diff approved at the human gate"
     },
     "hash": {
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$",
-      "description": "pin de conteúdo (D4): sha256 da serialização JSON canônica de {instructions, input, output, checks, permissions, budgets}"
+      "description": "the content pin (D4): sha256 of the canonical JSON serialization of {instructions, input, output, checks, permissions, budgets}"
     },
     "role": {
       "type": "string",
       "enum": ["work", "gate"],
-      "description": "work = produz artefato; gate = confere artefato de outro nó"
+      "description": "work = produces an artifact; gate = checks another node's artifact"
     },
     "description": {
       "type": "string",
       "minLength": 1,
-      "description": "uma linha; é o que o sintetizador lê ao consultar o registro de capacidades"
+      "description": "one line; it is what the synthesizer reads when it queries the capability registry"
     },
     "input": {
       "type": "object",
-      "description": "documento JSON Schema válido (validado à parte pelo meta-schema oficial)"
+      "description": "a valid JSON Schema document (validated separately against the official meta-schema)"
     },
     "output": {
       "type": "object",
-      "description": "documento JSON Schema válido; para role=gate deve incluir um campo outcome com enum [\"pass\",\"fail\",\"escalate_human\"]"
+      "description": "a valid JSON Schema document; for role=gate it has to include an outcome field with the enum [\"pass\",\"fail\",\"escalate_human\"]"
     },
     "preconditions": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
-      "description": "o que precisa ser verdade no estado antes de despachar; o executor checa antes de abrir sessão"
+      "description": "what has to be true of the state before dispatching; the executor checks it before opening a session"
     },
     "checks": {
       "type": "array",
       "items": { "$ref": "#/$defs/check" },
-      "description": "verificação tipada do que a skill produz (D9)"
+      "description": "the typed verification of what the skill produces (D9)"
     },
     "permissions": { "$ref": "#/$defs/permissions" },
     "budgets": { "$ref": "#/$defs/budgets" },
     "instructions": {
       "type": "string",
       "minLength": 1,
-      "description": "corpo em Markdown; pode conter {{input.<campo>}} resolvidos pelo runner antes da injeção"
+      "description": "the body in Markdown; it may carry {{input.<path>}} placeholders, resolved by the runner before injection"
     },
     "origin": { "$ref": "#/$defs/origin" }
   },
@@ -86,24 +86,24 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "estável dentro da skill; é a chave por onde a telemetria agrega o check"
+          "description": "stable within the skill; it is the key the telemetry aggregates the check by"
         },
         "description": { "type": "string" },
         "type": { "type": "string", "enum": ["deterministic", "agentic"] },
         "command": {
           "type": "string",
-          "description": "check determinístico: exit 0 = passou; qualquer outro = falhou"
+          "description": "a deterministic check: exit 0 = passed; anything else = failed"
         },
         "timeout_s": { "type": "integer", "minimum": 1 },
         "instruction": {
           "type": "string",
-          "description": "check agêntico: o julgamento pedido, incluindo a exigência de evidência própria"
+          "description": "an agentic check: the judgement asked for, including the demand for evidence of its own"
         },
         "required_evidence": {
           "type": "array",
           "items": { "type": "string" },
           "minItems": 1,
-          "description": "artefatos que o veredito precisa citar; sem eles o check não conclui"
+          "description": "the artifacts the verdict has to cite; without them the check does not conclude"
         }
       },
       "allOf": [
@@ -143,17 +143,17 @@
     "budgets": {
       "type": "object",
       "additionalProperties": false,
-      "description": "tetos de execução que a skill declara para si; cada eixo é opcional, e o que não é declarado herda o teto do servidor. Uma skill só encurta a própria coleira: declarar mais que o teto não a alonga",
+      "description": "the execution ceilings the skill declares for itself; every axis is optional, and what is not declared inherits the server's ceiling. A skill only shortens its own leash: declaring more than the ceiling does not lengthen it",
       "properties": {
         "timeout_s": {
           "type": "integer",
           "minimum": 1,
-          "description": "relógio de parede, em segundos; passando dele a sessão é morta"
+          "description": "wall clock, in seconds; past it the session is killed"
         },
         "silence_s": {
           "type": "integer",
           "minimum": 1,
-          "description": "segundos sem nenhuma saída antes de a sessão ser considerada travada; o relógio reinicia a cada saída"
+          "description": "seconds with no output at all before the session is considered stalled; the clock restarts on every output"
         }
       }
     },
@@ -168,11 +168,11 @@
         "imported_at": {
           "type": "string",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
-          "description": "data ISO 8601 (AAAA-MM-DD)"
+          "description": "an ISO 8601 date (YYYY-MM-DD)"
         },
         "reviewed_by": {
           "type": "string",
-          "description": "quem assinou o portão de importação (D4); pessoa, nunca agente"
+          "description": "who signed the import gate (D4); a person, never an agent"
         }
       },
       "allOf": [

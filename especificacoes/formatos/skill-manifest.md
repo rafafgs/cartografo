@@ -1,82 +1,85 @@
-# Manifesto de skill — especificação
+# Skill manifest — specification
 
-> Formato-produto do cartografo. O manifesto é o que faz uma capacidade —
-> skill de fazer ou de portão — entrar no registro. Sem manifesto válido, não
-> entra (D4).
+> A product format of cartografo. The manifest is what makes a capability — a
+> skill that does or a skill that gates — enter the registry. Without a valid
+> manifest, it does not enter (D4).
 
-**Estado: especificação normativa, com registro implementado.** O entregável
-desta doc continua sendo o contrato — schema formal, exemplos que validam e um
-fixture que é rejeitado —, e é ele que manda: quando implementação e schema
-divergem, quem está errada é a implementação. O que mudou é que já existe
-registro: a tabela `skill` e as rotas `POST /v1/skills`, `GET /v1/skills[/:id]` e
-`PATCH /v1/skills/:id/:version` persistem manifestos e os devolvem a quem
-consulta capacidades. Entram por dois
-caminhos, e a diferença é D4: skill **nativa** (in-repo, já revisada no merge)
-entra junto com o bundle, por `cartografo import <bundle>`; skill de **repo
-externo** entra pelo pipeline com portão humano `cartografo scan-skill` →
-`propose-skill` → `register-skill`. Em ambos os casos o registro reverifica
-tudo por conta própria — pin, forma, proveniência —, porque assinatura humana
-não é verificação. Desde a `t161` o registro também é **lido na hora de
-executar**: o runner busca a versão exata que o nó pina, recusa o despacho se o
-hash não bate com o do registro, e renderiza `instructions`, `checks` e `permissions`
-para dentro da sessão
+**State: a normative specification, with the registry implemented.** The
+deliverable of this document is still the contract — a formal schema, examples
+that validate and a fixture that is refused — and it is the contract that rules:
+when the implementation and the schema disagree, the one that is wrong is the
+implementation. What changed is that the registry now exists: the `skill` table
+and the routes `POST /v1/skills`, `GET /v1/skills[/:id]` and
+`PATCH /v1/skills/:id/:version` persist manifests and hand them back to whoever
+queries capabilities. They enter through two paths, and the difference is D4: a
+**native** skill (in-repo, already reviewed at the merge) enters together with
+the bundle, through `cartografo import <bundle>`; a skill from an **external
+repository** enters through the pipeline with a human gate,
+`cartografo scan-skill` → `propose-skill` → `register-skill`. In both cases the
+registry re-verifies everything on its own account — pin, shape, provenance —
+because a human signature is not a verification. Since `t161` the registry is
+also **read at execution time**: the runner fetches the exact version the node
+pins, refuses the dispatch if the hash does not match the registry's, and renders
+`instructions`, `checks` and `permissions` into the session
 ([`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)).
-Desde a `t204` ele também **interpola** `{{input.<caminho>}}` dentro de
-`instructions`, com falha fechada: caminho que não resolve aborta o despacho
-antes de abrir sessão nenhuma. O que ainda não existe é quem **monta** essa
-entrada — na ausência dela o despacho passa `{}`, e toda skill com placeholder
-recusa (ver *Renderização e injeção*). Desde a `t215` o registro é uma
-**linhagem**, não uma linha só: ver *Linhagem de versões* abaixo. Ainda não
-implementado: a interpolação em `checks[].command`; e ler `budgets` para dentro
-do despacho.
+Since `t204` it also **interpolates** `{{input.<path>}}` inside `instructions`,
+failing closed: a path that does not resolve aborts the dispatch before any
+session is opened. What still does not exist is whoever **builds** that input —
+in its absence the dispatch passes `{}`, and every skill with a placeholder
+refuses (see *Rendering and injection*). Since `t215` the registry is a
+**lineage**, not a single row: see *Version lineage* below. Still not
+implemented: interpolation in `checks[].command`; and reading `budgets` into the
+dispatch.
 
-| Arquivo | O que é |
+| File | What it is |
 |---|---|
-| [`skill-manifest.schema.json`](./skill-manifest.schema.json) | JSON Schema draft 2020-12; a definição normativa. |
-| [`exemplos/skill-manifest.develop.json`](./exemplos/skill-manifest.develop.json) | Exemplo completo, `role: "work"` — porte comportamental do `feature-dev`/`development.py` do flowpilot. |
-| [`exemplos/skill-manifest.verify-develop.json`](./exemplos/skill-manifest.verify-develop.json) | Exemplo completo, `role: "gate"` — porte comportamental do `testing.py` do flowpilot. |
-| [`exemplos/skill-manifest.invalid.fixture.json`](./exemplos/skill-manifest.invalid.fixture.json) | Fixture negativo, só de teste: prova que o schema rejeita manifesto malformado. |
+| [`skill-manifest.schema.json`](./skill-manifest.schema.json) | JSON Schema draft 2020-12; the normative definition. |
+| [`exemplos/skill-manifest.develop.json`](./exemplos/skill-manifest.develop.json) | A complete example, `role: "work"` — a behavioural port of flowpilot's `feature-dev`/`development.py`. |
+| [`exemplos/skill-manifest.verify-develop.json`](./exemplos/skill-manifest.verify-develop.json) | A complete example, `role: "gate"` — a behavioural port of flowpilot's `testing.py`. |
+| [`exemplos/skill-manifest.invalid.fixture.json`](./exemplos/skill-manifest.invalid.fixture.json) | A negative fixture, test material only: it proves the schema refuses a malformed manifest. |
 
-## Por que este formato existe
+## Why this format exists
 
-O contrato é a peça de sustentação (README, princípio 3): sem ele o
-sintetizador compõe grafo por alucinação; com ele, compor grafo vira casar
-contratos. D9 fixa a forma do contrato — entrada e saída em JSON Schema,
-verificação como lista de checks tipados, cada check sendo ou um comando
-determinístico ou uma instrução agêntica com evidência obrigatória. D4 fixa
-quem entra no registro: skill sem contrato não entra, e skill importada entra
-com pin por hash e revisão humana.
+The contract is the load-bearing piece (README, principle 3): without it the
+synthesizer composes a graph by hallucination; with it, composing a graph turns
+into matching contracts. D9 fixes the shape of the contract — input and output as
+JSON Schema, verification as a list of typed checks, each check being either a
+deterministic command or an agentic instruction with mandatory evidence. D4 fixes
+who enters the registry: a skill with no contract does not enter, and an imported
+skill enters pinned by hash and reviewed by a human.
 
-O manifesto é o objeto que carrega esse contrato. Ele é o que o banco guarda,
-o que o registro indexa, o que o sintetizador lê ao consultar capacidades e o
-que o runner renderiza para dentro de uma sessão.
+The manifest is the object that carries that contract. It is what the database
+stores, what the registry indexes, what the synthesizer reads when it queries
+capabilities and what the runner renders into a session.
 
-Duas coisas que o formato precisa carregar, e carrega em campo, não em prosa:
+Two things the format has to carry, and carries in a field rather than in prose:
 
-- **Papel muda; a forma do contrato não.** Tudo que executa é skill com
-  contrato; o que varia é o papel (fazer, conferir). Um portão é uma skill
-  como as outras — o que o distingue é `role: "gate"`, a obrigação de ter
-  pelo menos um check, e a saída com `outcome`.
-- **Portão verifica com evidência própria.** Nunca com o autorrelato de quem
-  produziu o artefato. Isso está codificado em três lugares do manifesto do
-  portão, não só no texto: `required_evidence` no check agêntico, o campo
-  de entrada `artefato.gates_declarados` marcado explicitamente como
-  autorrelato, e o check determinístico que roda a suíte de novo em vez de
-  ler o `gates` que a sessão de develop declarou.
+- **The role changes; the shape of the contract does not.** Everything that
+  executes is a skill with a contract; what varies is the role (doing,
+  checking). A gate is a skill like the others — what distinguishes it is
+  `role: "gate"`, the obligation to have at least one check, and an output with
+  `outcome`.
+- **A gate verifies with evidence of its own.** Never with the self-report of
+  whoever produced the artifact. That is coded into three places of the gate's
+  manifest, not only into its text: `required_evidence` on the agentic check, the
+  input field `artifact.declared_gates` marked explicitly as a self-report, and
+  the deterministic check that runs the suite again instead of reading the
+  `gates` the develop session declared.
 
-## Os campos
+## The fields
 
-### Identificação: `id`, `version`, `hash`
+### Identification: `id`, `version`, `hash`
 
-- **`id`** — identificador estável, `kebab-case` (`^[a-z0-9]+(-[a-z0-9]+)*$`),
-  único no registro. É a chave por onde um nó do grafo aponta para a skill.
-- **`version`** — semver. Muda a cada diff aprovado no portão humano; é a
-  cadeia de versão que responde "por que a skill é assim?" com log em vez de
-  arqueologia.
-- **`hash`** — o pin de conteúdo de D4, no formato `sha256:<64 hex>`.
+- **`id`** — a stable identifier, `kebab-case` (`^[a-z0-9]+(-[a-z0-9]+)*$`),
+  unique in the registry. It is the key a node of the graph points at the skill
+  by.
+- **`version`** — semver. It moves with every diff approved at the human gate; it
+  is the version chain that answers "why is the skill like this?" with a log
+  instead of archaeology.
+- **`hash`** — D4's content pin, in the form `sha256:<64 hex>`.
 
-O hash é calculado sobre a serialização JSON canônica (chaves ordenadas, sem
-espaço insignificante — RFC 8785) do subconjunto
+The hash is computed over the canonical JSON serialization (keys sorted, no
+insignificant whitespace — RFC 8785) of the subset
 `{instructions, input, output, checks, permissions, budgets}`:
 
 ```bash
@@ -92,372 +95,379 @@ console.log("sha256:"+c.createHash("sha256")
 ' especificacoes/formatos/exemplos/skill-manifest.develop.json
 ```
 
-(Os dois exemplos deste diretório carregam o hash de verdade: o comando acima
-reproduz o valor gravado em cada um, e
-[`skill-manifest.test.mjs`](./skill-manifest.test.mjs) confere isso a cada
-`npm test`, junto com os quatro comandos de validação da seção *Como validar*.)
+(The two examples of this directory carry the real hash: the command above
+reproduces the value recorded in each of them, and
+[`skill-manifest.test.mjs`](./skill-manifest.test.mjs) checks that on every
+`npm test`, along with the four validation commands of the *How to validate*
+section.)
 
-O que está **dentro** do hash é comportamento: o texto que vai ser injetado na
-sessão, o contrato de dados, o que a skill pode tocar e por quanto tempo ela
-pode rodar. O que está **fora** (`id`, `version`, `description`, `origin`) é
-metadado de catálogo. Renomear a skill ou corrigir a descrição não invalida o
-pin; mudar uma linha das instruções, afrouxar um check, abrir uma permissão ou
-esticar um orçamento muda o hash — que é exatamente a mudança que D4 quer
-travar. Um manifesto cujo hash não bate com o próprio conteúdo é manifesto
-adulterado: não roda.
+What is **inside** the hash is behaviour: the text that will be injected into the
+session, the data contract, what the skill may touch and for how long it may run.
+What is **outside** it (`id`, `version`, `description`, `origin`) is catalogue
+metadata. Renaming the skill or correcting the description does not invalidate
+the pin; changing a line of the instructions, loosening a check, opening a
+permission or stretching a budget moves the hash — which is exactly the change D4
+wants to hold. A manifest whose hash does not match its own content is a tampered
+manifest: it does not run.
 
-Crescer o subconjunto é barato de propósito: campo ausente serializa como
-nada (`JSON.stringify` derruba chave com valor `undefined`), então só um
-manifesto que passa a declarar o campo novo muda de hash. Foi assim que
-`budgets` entrou sem tocar no pin de nenhum manifesto já registrado.
+Growing the subset is cheap on purpose: an absent field serializes to nothing
+(`JSON.stringify` drops a key whose value is `undefined`), so only a manifest that
+starts declaring the new field changes hash. That is how `budgets` entered
+without touching the pin of any manifest already registered.
 
-### Linhagem de versões (D22)
+### Version lineage (D22)
 
-O registro guarda uma linha por `(id, version)`, não uma por `id`: as versões de
-uma skill **coexistem**, como as versões de um grafo (D15). `id` é a linhagem,
-`version` é o ponto dela, e é isso que deixa as instruções de uma skill
-melhorarem sem quebrar nenhum grafo pinado na versão que estava rodando.
+The registry keeps one row per `(id, version)`, not one per `id`: the versions of
+a skill **coexist**, like the versions of a graph (D15). `id` is the lineage,
+`version` is a point on it, and that is what lets a skill's instructions improve
+without breaking any graph pinned to the version that was running.
 
-Quatro regras, e nenhuma delas é sobre o formato — todas são sobre o registro,
-que é quem as impõe:
+Four rules, and none of them is about the format — all of them are about the
+registry, which is what enforces them:
 
-- **Reenviar a mesma `(id, version)` com o mesmo `hash` não escreve nada.**
-  `POST /v1/skills` responde `200` com a linha que já existe, carimbo de registro
-  inalterado. É o que faz reimportar um bundle ser barato em vez de ser erro — e
-  é deliberadamente não um UPDATE: o que está fora do hash (`description`,
-  `origin`) continua com o valor com que entrou.
-- **Reenviar a mesma `(id, version)` com `hash` diferente é `409`.** Uma versão
-  não pode nomear dois conteúdos: todo grafo pinado nela passaria a rodar texto
-  que ninguém aprovou, que é exatamente o que pinar por hash existe para impedir
-  (D4). O caminho é subir a `version`.
-- **Um nó nunca resolve "a mais recente".** O runner busca
-  `GET /v1/skills/:id?version=<a que o nó pina>`; quem responde a última versão
-  viva é a leitura sem query, e ela existe para quem está *escolhendo* o que
-  pinar. Mover o pino de um nó é proposta, como qualquer mudança no mapa (D15), e
-  é recusada na hora de aplicar se o registro não carrega aquele hash.
-- **Aposentar uma versão (`PATCH /v1/skills/:id/:version`) não a remove.** Ela
-  sai de "a mais recente" e de mais nada: continua resolvendo por `?version=` e
-  por `?hash=`, e continua despachando. Nada é apagado (D15), e uma linhagem cujas
-  versões foram todas aposentadas ainda responde — deprecar nunca pode parecer
-  "esta skill deixou de existir".
+- **Re-sending the same `(id, version)` with the same `hash` writes nothing.**
+  `POST /v1/skills` answers `200` with the row that already exists, its
+  registration stamp unchanged. It is what makes re-importing a bundle cheap
+  instead of an error — and it is deliberately not an UPDATE: what is outside the
+  hash (`description`, `origin`) keeps the value it entered with.
+- **Re-sending the same `(id, version)` with a different `hash` is `409`.** One
+  version cannot name two contents: every graph pinned to it would start running
+  text nobody approved, which is exactly what pinning by hash exists to prevent
+  (D4). The way forward is to raise the `version`.
+- **A node never resolves "the latest one".** The runner fetches
+  `GET /v1/skills/:id?version=<the one the node pins>`; what answers with the
+  last living version is the read with no query, and it exists for whoever is
+  *choosing* what to pin. Moving a node's pin is a proposal, like any change to
+  the map (D15), and it is refused at application time if the registry does not
+  carry that hash.
+- **Retiring a version (`PATCH /v1/skills/:id/:version`) does not remove it.** It
+  leaves "the latest one" and nothing else: it goes on resolving by `?version=`
+  and by `?hash=`, and it goes on dispatching. Nothing is erased (D15), and a
+  lineage whose versions have all been retired still answers — deprecating can
+  never look like "this skill stopped existing".
 
-Subir a `version` sem mudar o conteúdo é legal, e o registro não policia isso: o
-hash exclui `id` e `version` de propósito, então duas versões podem carregar o
-mesmo hash. É inútil, não é perigoso, e é questão de disciplina humana.
+Raising the `version` without changing the content is legal, and the registry does
+not police it: the hash excludes `id` and `version` on purpose, so two versions
+can carry the same hash. It is useless, it is not dangerous, and it is a matter of
+human discipline.
 
 ### `role`
 
-`work` (produz artefato) ou `gate` (confere artefato de outro nó).
+`work` (produces an artifact) or `gate` (checks another node's artifact).
 
-Não existe um terceiro papel "rotear": rotear é consequência do `outcome` de
-um portão, lido pelo executor para escolher a aresta, não uma capacidade à
-parte (D3, e o princípio 2 do README — as únicas decisões em voo são as dos
-portões).
+There is no third role of "routing": routing is a consequence of a gate's
+`outcome`, read by the executor to choose the edge, not a capability apart (D3,
+and principle 2 of the README — the only in-flight decisions are the gates').
 
-`role: "gate"` obriga `checks` a ter pelo menos um item, e isso o schema
-impõe. Portão sem check é portão decorativo — o limite honesto do princípio 6.
+`role: "gate"` obliges `checks` to have at least one item, and the schema
+enforces that. A gate with no check is a decorative gate — the honest limit of
+principle 6.
 
 ### `description`
 
-Uma linha. É o que o sintetizador lê ao consultar o registro de capacidades,
-então ela descreve o que a skill **faz**, não como.
+One line. It is what the synthesizer reads when it queries the capability
+registry, so it describes what the skill **does**, not how.
 
-### `input` e `output`
+### `input` and `output`
 
-Documentos JSON Schema, embutidos. O schema do manifesto valida que são
-objetos; a validação deles como JSON Schema é feita à parte, contra o
-meta-schema oficial, na entrada do registro (o schema do manifesto não
-carrega o meta-schema inteiro dentro de si).
+JSON Schema documents, embedded. The manifest's schema validates that they are
+objects; validating them as JSON Schema is done separately, against the official
+meta-schema, at the registry's door (the manifest's schema does not carry the
+whole meta-schema inside itself).
 
-`input` é o que o nó recebe: a projeção do estado que aquele nó precisa,
-nunca a janela de contexto inteira (princípio 4). `output` é o que a sessão
-tem de devolver para o trabalho ser considerado concluído.
+`input` is what the node receives: the projection of the state that node needs,
+never the whole context window (principle 4). `output` is what the session has to
+return for the job to be considered finished.
 
-**Regra do portão:** manifesto com `role: "gate"` declara em `output` um
-campo `outcome` com enum `["pass", "fail", "escalate_human"]` — os três
-resultados que o executor sabe interpretar. Essa regra é verificada na
-entrada do registro, junto com a validação de `input`/`output` como JSON
-Schema; o schema deste formato não a impõe estruturalmente (ver *Limites
-conhecidos*).
+**The gate's rule:** a manifest with `role: "gate"` declares in `output` an
+`outcome` field with the enum `["pass", "fail", "escalate_human"]` — the three
+results the executor knows how to interpret. That rule is verified at the
+registry's door, along with the validation of `input`/`output` as JSON Schema;
+this format's schema does not enforce it structurally (see *Known limits*).
 
 ### `preconditions`
 
-Lista de frases: o que precisa ser verdade no estado **antes** de despachar a
-sessão. O executor checa antes de abrir sessão; pré-condição não satisfeita
-não vira sessão que falha, vira trabalho que não é liberado.
+A list of sentences: what has to be true of the state **before** dispatching the
+session. The executor checks it before opening a session; an unsatisfied
+precondition does not become a session that fails, it becomes a job that is not
+released.
 
-São condições sobre o estado, não sobre o resultado — "worktree isolado
-criado" é pré-condição; "suíte verde" é check.
+They are conditions about the state, not about the result — "isolated worktree
+created" is a precondition; "green suite" is a check.
 
 ### `checks`
 
-A verificação tipada de D9. Cada check tem `id` (estável dentro da skill — é
-por ele que a telemetria agrega), `description` e `type`:
+D9's typed verification. Every check has an `id` (stable within the skill — it is
+what the telemetry aggregates by), a `description` and a `type`:
 
-- **`deterministic`** exige `command`: uma linha de shell. Exit 0 = passou,
-  qualquer outro = falhou. `timeout_s` opcional. É a forma preferida sempre
-  que possível — rodar teste, validar schema, buildar.
-- **`agentic`** exige `instruction` **e** `required_evidence` (array não
-  vazio). Existe só onde há julgamento que nenhum comando resolve
-  ("os critérios de aceite foram atendidos?").
+- **`deterministic`** demands `command`: one line of shell. Exit 0 = passed,
+  anything else = failed. `timeout_s` optional. It is the preferred form whenever
+  possible — running tests, validating a schema, building.
+- **`agentic`** demands `instruction` **and** `required_evidence` (a non-empty
+  array). It exists only where there is judgement no command resolves ("were the
+  acceptance criteria met?").
 
-`required_evidence` lista os artefatos que o veredito precisa citar. Não é
-decoração: é o que impede um check agêntico de concluir por leitura de código
-ou, pior, por leitura do relatório de quem produziu o artefato. Um check
-agêntico sem essa lista é a falha silenciosa que o fixture negativo deste
-diretório existe para pegar.
+`required_evidence` lists the artifacts the verdict has to cite. It is not
+decoration: it is what stops an agentic check from concluding by reading code or,
+worse, by reading the report of whoever produced the artifact. An agentic check
+with no such list is the silent failure this directory's negative fixture exists
+to catch.
 
-**Check em skill de `work` é autocheck.** Os checks de `develop` (suíte
-verde, árvore limpa) são o que a sessão roda antes de se declarar pronta —
-declaração, não prova. Quem prova é o portão, com evidência própria. Por isso
-o portão de verificação roda a suíte **de novo**, em vez de ler o campo
-`gates` que a sessão de develop preencheu.
+**A check on a `work` skill is a self-check.** `develop`'s checks (green suite,
+clean tree) are what the session runs before declaring itself ready — a
+declaration, not a proof. What proves is the gate, with evidence of its own. That
+is why the verification gate runs the suite **again**, instead of reading the
+`gates` field the develop session filled in.
 
 ### `permissions`
 
-`filesystem` (`read`, `write`) e `network` (`allowed`, `domains`
-opcional). Ambos obrigatórios: a ausência de declaração nunca é lida como
-"pode tudo".
+`filesystem` (`read`, `write`) and `network` (`allowed`, `domains` optional).
+Both required: the absence of a declaration is never read as "may do anything".
 
-- Padrões de caminho são globs. Glob **relativo** é resolvido a partir da raiz
-  do workspace da sessão; glob **absoluto** é literal (o portão do exemplo usa
-  `/tmp/cartografo/**` como área de rascunho justamente por não poder escrever
-  no checkout que julga).
-- Array vazio significa **nenhum acesso**, não "irrestrito".
-- `network.allowed: false` fecha a rede; `domains` nesse caso é ignorado.
-- `network.allowed: true` **sem** `domains` declara rede irrestrita. É legal
-  para skill nativa, e é rejeitado na importação (ver *Regra de importação*).
+- Path patterns are globs. A **relative** glob is resolved from the root of the
+  session's workspace; an **absolute** glob is literal (the example gate uses
+  `/tmp/cartografo/**` as a scratch area precisely because it cannot write in the
+  checkout it is judging).
+- An empty array means **no access**, not "unrestricted".
+- `network.allowed: false` closes the network; `domains` is ignored in that case.
+- `network.allowed: true` **without** `domains` declares an unrestricted network.
+  That is legal for a native skill, and it is refused at import (see *The import
+  rule*).
 
-**Declarar não é aplicar** — mas, desde a `t161`, declarar chega ao despacho.
-Esta especificação define a declaração; a t125 construiu o enforcement no
-adapter, e a t161 ligou os dois: o runner resolve `permissions` da skill
-registrada para dentro da sessão, e o que a skill declarou é o que a sessão
-recebe. Cada eixo continua valendo também como contrato revisável e como base
-do diff de permissão entre versões — uma skill que abre uma permissão nova muda
-de hash e reaparece no portão humano.
+**Declaring is not enforcing** — but, since `t161`, declaring reaches the
+dispatch. This specification defines the declaration; t125 built the enforcement
+in the adapter, and t161 connected the two: the runner resolves the registered
+skill's `permissions` into the session, and what the skill declared is what the
+session receives. Every axis also goes on holding as a reviewable contract and as
+the basis of the permission diff between versions — a skill that opens a new
+permission changes hash and comes back to the human gate.
 
-**O que o adapter não consegue expressar, ele recusa.** Um eixo que o engine
-não sabe aplicar não abre sessão nenhuma: o `claude-code` expressa "toda a
-escrita ou nenhuma" e "rede aberta ou fechada", e nada entre os dois, então
-`write` com glob no meio do caminho ou `network.allowed: true` **com**
-`domains` fazem `startSession` recusar antes de gastar qualquer coisa
-(`packages/runner/src/engine/permission-policy.ts`). É o comportamento certo —
-sessão que aplica menos do que foi declarado, em silêncio, é a única saída que
-um sistema de permissão não pode ter — e é uma restrição real sobre o que um
-manifesto pode declarar hoje e ainda rodar.
+**What the adapter cannot express, it refuses.** An axis the engine does not know
+how to enforce opens no session at all: `claude-code` expresses "all writing or
+none" and "network open or closed", and nothing in between, so `write` with a
+glob halfway or `network.allowed: true` **with** `domains` make `startSession`
+refuse before spending anything
+(`packages/runner/src/engine/permission-policy.ts`). It is the right behaviour —
+a session that silently enforces less than was declared is the one outcome a
+permission system cannot have — and it is a real restriction on what a manifest
+can declare today and still run.
 
 ### `budgets`
 
-Opcional, e cada eixo dentro dele também: `timeout_s` (relógio de
-parede) e `silence_s` (segundos sem nenhuma saída). Ambos inteiros, mínimo 1
-— um orçamento de zero não é orçamento, e o schema recusa.
+Optional, and every axis inside it too: `timeout_s` (wall clock) and `silence_s`
+(seconds with no output at all). Both integers, minimum 1 — a budget of zero is
+not a budget, and the schema refuses it.
 
-São dois cães de guarda **independentes**, porque medem coisas diferentes:
-uma sessão pode ficar viva e produtiva por uma hora, e outra pode travar em
-dois minutos com o processo de pé. O relógio de parede responde "isto já
-custou demais"; o de silêncio responde "isto parou de acontecer". O de
-silêncio reinicia a cada saída do processo, então uma sessão que fala não é
-morta por ele nunca.
+They are two **independent** watchdogs, because they measure different things: a
+session can stay alive and productive for an hour, and another can stall in two
+minutes with the process still standing. The wall clock answers "this has already
+cost too much"; the silence clock answers "this stopped happening". The silence
+one restarts on every output of the process, so a session that talks is never
+killed by it.
 
-**Declarar encurta, nunca alonga.** O que a skill não declara herda o teto do
-servidor; o que ela declara vale se for MENOR que esse teto, e é ignorado se
-for maior (`resolveBudget`, `packages/runner/src/engine/resolve-budget.ts`).
-Uma skill não afrouxa a própria rede de segurança — nem por engano nem de
-propósito —, e é por isso que `budgets` entra no hash junto com
-`permissions`: os dois são declaração de comportamento, e mudança de
-comportamento reaparece no portão humano.
+**Declaring shortens, never lengthens.** What the skill does not declare inherits
+the server's ceiling; what it does declare holds if it is SMALLER than that
+ceiling, and is ignored if it is larger (`resolveBudget`,
+`packages/runner/src/engine/resolve-budget.ts`). A skill does not loosen its own
+safety net — neither by accident nor on purpose — and that is why `budgets` goes
+into the hash alongside `permissions`: both are declarations of behaviour, and a
+change of behaviour comes back to the human gate.
 
-**Estado hoje, sem maquiagem:** nada lê `budgets` de uma skill registrada
-para dentro de um despacho. A razão deixou de ser "o pipeline de renderização
-não existe" — a `t161` o construiu, e `instructions`, `checks` e `permissions`
-já atravessam (ver *Renderização e injeção*) —, e passou a ser simplesmente que
-`budgets` ficou de fora daquela ficha. O que existe é o contrato aqui, o
-mecanismo do teto no runner, e o enforcement nos dois adapters (caso C9 do kit
-de conformidade). Até que alguém ligue o campo, toda sessão roda com os tetos
-do servidor.
+**The state today, without make-up:** nothing reads a registered skill's
+`budgets` into a dispatch. The reason stopped being "the rendering pipeline does
+not exist" — `t161` built it, and `instructions`, `checks` and `permissions`
+already cross over (see *Rendering and injection*) — and became simply that
+`budgets` was left out of that ficha. What exists is the contract here, the
+ceiling mechanism in the runner, and the enforcement in both adapters (case C9 of
+the conformance kit). Until somebody connects the field, every session runs with
+the server's ceilings.
 
 ### `instructions`
 
-O corpo em Markdown que vai ser injetado na sessão. Pode conter placeholders
-`{{input.<caminho>}}`, resolvidos pelo runner contra a `input` validada
-antes do despacho.
+The Markdown body that will be injected into the session. It may contain
+`{{input.<path>}}` placeholders, resolved by the runner against the validated
+`input` before the dispatch.
 
-O caminho é uma ou mais partes de `[a-zA-Z0-9_]+` separadas por `.`, andadas
-uma a uma dentro da `input`. Valor que é string entra **literal**, sem escape
-nenhum — o manifesto foi revisado no portão de importação (D4), e escapar aqui
-seria o runner reescrevendo texto revisado. Qualquer outro valor JSON (número,
-booleano, `null`, lista, objeto) entra como `JSON.stringify` compacto.
+The path is one or more parts of `[a-zA-Z0-9_]+` separated by `.`, walked one at
+a time inside the `input`. A value that is a string enters **literally**, with no
+escaping at all — the manifest was reviewed at the import gate (D4), and escaping
+here would be the runner rewriting reviewed text. Any other JSON value (a number,
+a boolean, `null`, a list, an object) enters as a compact `JSON.stringify`.
 
-**Falha fechada, e implementada desde a `t204`:** caminho que não resolve —
-chave ausente, ou caminho que atravessa algo que não é objeto — não vira texto
-na sessão. O despacho é recusado antes de abrir sessão
-(`UnresolvedPlaceholderError`, com todos os caminhos que faltaram de uma vez),
-na mesma janela em que hash divergente já recusava. Corpo sem nenhum
-`{{input.` renderiza byte a byte o que sempre renderizou.
+**Failing closed, and implemented since `t204`:** a path that does not resolve —
+a missing key, or a path that walks through something that is not an object —
+does not become text in the session. The dispatch is refused before a session is
+opened (`UnresolvedPlaceholderError`, with every missing path at once), in the
+same window where a divergent hash already refused. A body with no `{{input.` at
+all renders byte for byte what it always rendered.
 
-Por convenção, a mesma interpolação vale em `checks[].command` — é o que
-permite um check determinístico ser estável e mesmo assim rodar o comando de
-teste do projeto em questão (`{{input.projeto.comando_testes}}` nos dois
-exemplos). Essa metade **ainda não está implementada**, e não por esquecimento:
-nenhum código executa o `command` de um check hoje, então não há onde ligá-la.
-A regra vale igual para quando existir — comando que ainda contém `{{` nunca é
-executado.
+By convention, the same interpolation holds in `checks[].command` — it is what
+lets a deterministic check be stable and still run the test command of the
+project in question (`{{input.project.test_command}}` in both examples). That
+half is **not implemented yet**, and not by oversight: no code executes a check's
+`command` today, so there is nowhere to connect it. The rule holds identically for
+when there is — a command that still contains `{{` is never executed.
 
 ### `origin`
 
-Proveniência. `type: "native"` (escrita dentro do projeto) ou
-`type: "imported"`, e nesse caso o schema passa a exigir `repo`, `ref`,
-`imported_by`, `imported_at` e `reviewed_by` — a assinatura do portão de
-D4, em campo obrigatório, para que "foi revisada" não seja lembrança de
-ninguém.
+Provenance. `type: "native"` (written inside the project) or `type: "imported"`,
+and in that case the schema starts demanding `repo`, `ref`, `imported_by`,
+`imported_at` and `reviewed_by` — D4's gate signature, in a required field, so
+that "it was reviewed" is nobody's recollection.
 
-## Renderização e injeção
+## Rendering and injection
 
-O manifesto mora no banco. Ele não é um arquivo no repositório alvo, e o
-sistema não depende de `CLAUDE.md` nem de nenhum markdown residente lá:
+The manifest lives in the database. It is not a file in the target repository,
+and the system depends neither on `CLAUDE.md` nor on any resident markdown there:
 
-1. O executor libera o nó; o runner busca na API o manifesto da skill daquele
-   nó, na versão pinada pelo grafo (`id` + `version` + `hash`).
-2. O runner pede ao control plane a projeção de contexto daquele nó
-   (`GET /v1/jobs/:id/context`) e recebe a `input` pronta — estado explícito e
-   event log, nunca janela compartilhada (princípio 4). Quem monta é o control
-   plane, não o runner (D1: quem escreve no banco é quem tem as linhas à mão sem
-   uma segunda ida à rede). Validar a `input` montada contra o schema `input` do
-   manifesto — "entrada inválida não vira sessão" — é o pedaço que falta.
-3. O runner confere o `hash` contra o conteúdo recebido. Divergiu, não roda.
-4. O runner renderiza `instructions` interpolando `{{input.<caminho>}}`, e
-   resolve os `command` dos checks determinísticos do mesmo jeito.
-5. O runner entrega o texto renderizado ao EngineAdapter, que abre a sessão.
-   **Como** o texto chega ao CLI — flag, stdin, arquivo efêmero — é decisão de
-   cada adapter e está fora do escopo desta doc (é a interface de t99).
-6. A sessão devolve um resultado estruturado; o runner o manda para a API em
-   `PATCH /v1/sessions/:id/finish`, e é o **control plane** que o confere contra
-   o schema `output` da skill registrada antes de guardar. Só o server escreve
-   no banco (D1), e o mesmo argumento decide quem julga: é ele que tem a linha
-   do registro ao alcance, e é ele que não pode aceitar um evento que não
-   consegue justificar.
+1. The executor releases the node; the runner fetches from the API the manifest
+   of that node's skill, at the version the graph pins (`id` + `version` +
+   `hash`).
+2. The runner asks the control plane for that node's context projection
+   (`GET /v1/jobs/:id/context`) and receives the `input` ready — explicit state
+   and the event log, never a shared window (principle 4). What builds it is the
+   control plane, not the runner (D1: the one who writes to the database is the
+   one who has the rows at hand without a second trip to the network).
+   Validating the assembled `input` against the manifest's `input` schema —
+   "invalid input does not become a session" — is the piece that is missing.
+3. The runner checks the `hash` against the content received. Diverged, it does
+   not run.
+4. The runner renders `instructions`, interpolating `{{input.<path>}}`, and
+   resolves the `command` of the deterministic checks the same way.
+5. The runner hands the rendered text to the EngineAdapter, which opens the
+   session. **How** the text reaches the CLI — a flag, stdin, an ephemeral file —
+   is each adapter's decision and is outside the scope of this document (it is
+   t99's interface).
+6. The session returns a structured result; the runner sends it to the API at
+   `PATCH /v1/sessions/:id/finish`, and it is the **control plane** that checks it
+   against the registered skill's `output` schema before storing it. Only the
+   server writes to the database (D1), and the same argument decides who judges:
+   it is the one with the registry's row within reach, and it is the one that
+   cannot accept an event it is unable to justify.
 
-Consequência que vale explicitar: como o contrato vive no banco e é renderizado
-por engine, trocar de engine não perde skill nem aprendizado — o que foi
-aprendido está no manifesto versionado, não no contexto de uma sessão.
+A consequence worth spelling out: because the contract lives in the database and
+is rendered per engine, changing engine loses neither skill nor learning — what
+was learned is in the versioned manifest, not in the context of a session.
 
-**Quanto disso roda hoje (`t253`):** os passos 1, 3 e 5 estão implementados e
-cobertos por teste. O passo 4 interpola `instructions` de verdade, com falha
-fechada — placeholder que não resolve recusa o despacho antes de qualquer sessão
-—, e não resolve os `command` dos checks (ver `checks` e *Limites conhecidos*).
+**How much of that runs today (`t253`):** steps 1, 3 and 5 are implemented and
+covered by tests. Step 4 really interpolates `instructions`, failing closed — a
+placeholder that does not resolve refuses the dispatch before any session — and
+does not resolve the checks' `command` (see `checks` and *Known limits*).
 
-**O passo 6 passou a conferir de verdade (`t253`).** `PATCH /finish` aceita um
-campo `output`, resolve a skill que o nó da sessão pina — `no_id` + o
-`graph_version_id` do trabalho → o snapshot → o `skill_ref` → a linha
-`(id, version)` do registro — e valida o relato contra o `output` dela. Sessão
-sem trabalho, sem grafo, ou num nó que o snapshot não carrega guarda o relato
-como veio: não há contra o que conferir, e isso é ordinário, não defeito.
-Divergência **nunca** impede o fechamento: `status`, `exit_code`, `usage`,
-`models` e `transcript` são gravados como sempre, o `output` da linha vai a nulo
-e o evento `session.finished` leva `output_schema_error` no lugar do valor. O
-motivo é o desta própria doc — auto-relato de nó de trabalho nunca foi evidência,
-portão verifica com evidência própria —, e perder a sessão por causa dele
-deixaria a sessão `aberta` para sempre, sem rota nenhuma para fechá-la.
+**Step 6 started really checking (`t253`).** `PATCH /finish` accepts an `output`
+field, resolves the skill the session's node pins — the node id + the job's
+`graph_version_id` → the snapshot → the `skill_ref` → the `(id, version)` row of
+the registry — and validates the report against its `output`. A session with no
+job, with no graph, or on a node the snapshot does not carry stores the report as
+it came: there is nothing to check it against, and that is ordinary, not a
+defect. A divergence **never** prevents the closing: `status`, `exit_code`,
+`usage`, `models` and `transcript` are recorded as always, the row's `output` goes
+to null and the `session.finished` event carries `output_schema_error` in place of
+the value. The reason is this very document's — a work node's self-report was
+never evidence, a gate verifies with evidence of its own — and losing the session
+over it would leave the session open forever, with no route at all to close it.
 
-**O passo 2 passou a existir no control plane (`t253`).**
-`GET /v1/jobs/:id/context` monta a `input` do nó em que o trabalho está: a
-identidade do trabalho em `input.job` mais os `custom_fields` da classe no topo,
-o objeto `project` do grafo em `input.project`, a saída estruturada de cada
-sessão concluída no balde que o `contract.produces` daquele nó nomeia (ou no topo
-quando ele não nomeia nenhum), e as perguntas já respondidas em
-`input.perguntas_respondidas`. Os dois campos novos do documento de grafo —
-`contract.produces` e `project` — estão em
-[`docs/spec/graph.md`](../../docs/spec/graph.md) e são aditivos: grafo escrito
-antes deles vale e despacha igual.
+**Step 2 came to exist in the control plane (`t253`).**
+`GET /v1/jobs/:id/context` builds the `input` of the node the job is on: the
+job's identity at `input.job` plus the class's `custom_fields` at the top level,
+the graph's `project` object at `input.project`, the structured output of every
+finished session in the bucket that node's `contract.produces` names (or at the
+top level when it names none), and the escalations already answered at
+`input.perguntas_respondidas`. The two new fields of the graph document —
+`contract.produces` and `project` — are in
+[`docs/spec/graph.md`](../../docs/spec/graph.md) and are additive: a graph
+written before them holds and dispatches unchanged.
 
-**A outra metade da ficha foi ligada (`t259`).** O despacho continua expondo a
-costura (`resolveInput`, em
-[`dispatch.ts`](../../packages/runner/src/dispatch/dispatch.ts)), e o default de
-produção dela agora é essa rota
-([`resolve-input.ts`](../../packages/runner/src/dispatch/resolve-input.ts)): o
-que `GET /v1/jobs/:id/context` devolve na chave `input` é exatamente o objeto
-contra o qual `{{input.<caminho>}}` resolve. E o produtor do `output` que a
-projeção lê também passou a existir — toda sessão cujo nó declara
-`output_schema` é instruída a fechar o turno com o bloco cercado que a seção
-abaixo mostra, e o despacho manda o objeto no `/finish`. O bundle de fábrica de
-software declara `produces` e `project` e atravessa `refinar` → `desenvolver` →
-`integrar` vivo. Falta ainda `contexto_falha`, que só se preenche num ciclo de
-retrabalho e espera a ficha que exercitar `testar → desenvolver` ponta a ponta.
+**The other half of that ficha was connected (`t259`).** The dispatch still
+exposes the seam (`resolveInput`, in
+[`dispatch.ts`](../../packages/runner/src/dispatch/dispatch.ts)), and its
+production default is now that route
+([`resolve-input.ts`](../../packages/runner/src/dispatch/resolve-input.ts)): what
+`GET /v1/jobs/:id/context` returns under the `input` key is exactly the object
+`{{input.<path>}}` resolves against. And the producer of the `output` the
+projection reads came to exist too — every session whose node declares an output
+schema is instructed to close the turn with the fenced block the section below
+shows, and the dispatch sends the object on to `/finish`. The software factory
+bundle declares `produces` and `project` and crosses `refine` → `develop` →
+`integrate` alive. Still missing is `contexto_falha`, which is only filled in on a
+rework cycle and is waiting for the ficha that exercises `test → develop` end to
+end.
 
-Além dos cinco campos que a renderização cita, o runner injeta na sessão o
-**contrato do próprio nó** (`input_schema`, `output_schema`, `checks`, que vivem
-no grafo e não no manifesto) e — desde a `t259`, em todo nó que declara
-`output_schema`, portão ou não — o protocolo de relato: UM bloco cercado com o
-objeto que aquele schema pede, aberto assim:
+Besides the five fields the rendering cites, the runner injects into the session
+the **node's own contract** (the input schema, the output schema and the checks,
+which live in the graph and not in the manifest) and — since `t259`, on every
+node that declares an output schema, gate or not — the reporting protocol: ONE
+fenced block with the object that schema asks for, opened like this:
 
 ```resultado
-{...exatamente o que o output_schema deste nó declara}
+{...exactly what this node's output schema declares}
 ```
 
-Num nó com duas ou mais saídas, a chave de rota vai DENTRO desse mesmo objeto,
-nomeando a `condition` da aresta escolhida, e não num segundo bloco ao lado. O
-vocabulário de rota é o do **grafo**, nunca o `outcome` do `output` da skill —
-são dois enums diferentes, de propósito
+On a node with two or more exits, the routing key goes INSIDE that same object,
+naming the `condition` of the edge chosen, and not in a second block beside it.
+The routing vocabulary is the **graph's**, never the `outcome` of the skill's
+output — they are two different enums, on purpose
 ([`docs/spec/graph.md`](../../docs/spec/graph.md)).
 
-**A chave de rota é reservada do protocolo (`t269`).** Ela viaja no mesmo objeto
-porque o bloco é um só, mas não pertence ao vocabulário desta skill: quando vem
-como rótulo utilizável — string não vazia depois do `trim` —,
-`PATCH /v1/sessions/:id/finish` a retira antes de conferir o relato contra o
-`output` da skill pinada, e também antes de guardar (`session.output` e o
-`data.output` do evento `session.finished` ficam sem ela). O nome dela é o do
-grafo e está escrito em [`docs/spec/graph.md`](../../docs/spec/graph.md); aqui
-ele não aparece entre crases de propósito, porque campo de manifesto com esse
-nome não existe — o do manifesto foi renomeado para `outcome` na `t178`. Duas
-consequências para quem escreve manifesto:
+**The routing key is reserved by the protocol (`t269`).** It travels in the same
+object because the block is a single one, but it does not belong to this skill's
+vocabulary: when it arrives as a usable label — a non-empty string after `trim` —
+`PATCH /v1/sessions/:id/finish` takes it out before checking the report against
+the pinned skill's `output`, and also before storing (`session.output` and the
+`session.finished` event's `data.output` end up without it). Its name is the
+graph's and is written down in [`docs/spec/graph.md`](../../docs/spec/graph.md);
+here it does not appear between backticks on purpose, because there is no
+manifest field by that name — the manifest's was renamed to `outcome` in `t178`.
+Two consequences for whoever writes a manifest:
 
-- **fechar o `output` é seguro.** `additionalProperties: false` sem declarar a
-  chave de rota — o que `derrubar-tese@1.0.0` faz — aceita o relato de um nó que
-  roteia. Era exatamente esse o caso que a segunda travessia do grafo de bets
-  recusou em toda sessão, e recusa de relato **bloqueia** o nó desde a `t268`;
-- **declarar a chave de rota como propriedade do `output` não é legal.** Ela
-  nunca é conferida nem guardada, então declará-la descreve um campo que não
-  existe do lado da skill. Uma skill serve a mais de um grafo, e o rótulo de
-  rota é de um grafo só.
+- **closing the `output` is safe.** `additionalProperties: false` without
+  declaring the routing key — which is what `derrubar-tese@1.0.0` does — accepts
+  the report of a node that routes. That was exactly the case the second
+  traversal of the bets graph refused on every session, and a refused report
+  **blocks** the node since `t268`;
+- **declaring the routing key as a property of the `output` is not legal.** It is
+  never checked and never stored, so declaring it describes a field that does not
+  exist on the skill's side. A skill serves more than one graph, and a routing
+  label belongs to a single graph.
 
-Uma chave de rota presente que não é rótulo (número, objeto, string em branco)
-não é retirada: fica no objeto e um `output` fechado a recusa como sempre
-recusou.
+A routing key that is present but is not a label (a number, an object, a blank
+string) is not taken out: it stays in the object and a closed `output` refuses it
+exactly as it always refused.
 
-## Regra de importação (D4)
+## The import rule (D4)
 
-`SKILL.md` público quase nunca declara entrada, saída ou verificação. Sem um
-passo que **derive e registre** o contrato, o princípio 3 quebra em silêncio:
-a skill entra no grafo sem ninguém saber o que ela consome, o que ela produz
-nem como se confere o que ela fez.
+A public `SKILL.md` almost never declares input, output or verification. Without
+a step that **derives and records** the contract, principle 3 breaks silently:
+the skill enters the graph with nobody knowing what it consumes, what it produces
+or how what it did is checked.
 
-O caso de referência é concreto. O frontmatter de
-`~/flowpilot/.claude/skills/feature-dev/SKILL.md` declara três coisas —
-`name`, `description`, `user_invocable` — e nada mais: nem entrada, nem saída,
-nem checks, nem permissões. Onze dos doze campos obrigatórios do manifesto não
-existem na origem.
+The reference case is concrete. The frontmatter of
+`~/flowpilot/.claude/skills/feature-dev/SKILL.md` declares three things — `name`,
+`description`, `user_invocable` — and nothing else: no input, no output, no
+checks, no permissions. Eleven of the manifest's twelve required fields do not
+exist at the origin.
 
-A importação é, então, um pipeline de derivação assistida com portão humano.
-Campo a campo do `required` do schema:
+The import is, then, a pipeline of assisted derivation with a human gate. Field by
+field of the schema's `required`:
 
-| Campo | O que a origem costuma trazer | Como se preenche na importação |
+| Field | What the origin usually brings | How it is filled in at import |
 |---|---|---|
-| `id` | `name` do frontmatter | Normalizado para `kebab-case`; se colidir com id já registrado, recebe prefixo de origem. Decisão humana quando há colisão. |
-| `version` | nada (SKILL.md raramente versiona) | Atribuída no ato: `0.1.0` para importação nova. A referência real da origem vive em `origin.ref`, não aqui. |
-| `hash` | nada | Calculado no registro, sobre o manifesto **derivado** — nunca sobre o SKILL.md de origem. É o pin que D4 exige: qualquer edição posterior no texto importado muda o hash e volta ao portão. |
-| `role` | implícito no corpo | Inferido por leitura e **confirmado por humano**. `feature-dev` é `work`. Erro aqui é caro: uma skill de fazer registrada como portão vira um portão que não confere nada. |
-| `description` | `description` do frontmatter | Único campo que costuma servir quase direto; revisado para descrever o que a skill faz, não como. |
-| `input` | prosa ("Input: a refined ticket in `workflow/wip/`") | Derivada por leitura assistida e escrita como JSON Schema pelo revisor. Onde a prosa não diz, o revisor decide e registra — nunca se infere em silêncio. |
-| `output` | prosa ("Report: files created/modified, test counts, commit hash") | Idem. Para `role: "gate"`, o revisor **tem** de incluir `outcome` com os três valores do enum, senão o executor não sabe rotear. |
-| `preconditions` | seções de escopo ("Scope — when this skill applies") | Extraídas dessas seções e reescritas como condições sobre o estado, verificáveis antes do despacho. |
-| `checks` | quase nunca existe de forma tipada | O ponto mais crítico. Comandos citados no corpo (`make test`, `make lint`) viram checks determinísticos; o que restar de julgamento vira check agêntico **com** `required_evidence`. Se não der para escrever nenhum check, a skill não entra: princípio 6, sem verificação não há portão. |
-| `permissions` | nunca | **Nunca inferidas do texto.** Entram com o default seguro abaixo, e só são ampliadas por decisão humana registrada. |
-| `instructions` | o corpo do SKILL.md | O corpo, **revisado como vetor de injeção**: remover referência a arquivo residente no repo alvo (o manifesto não depende de `CLAUDE.md`), a documento externo que a origem controla, e qualquer instrução que peça credencial, exfiltração ou execução de conteúdo baixado. Caminhos e comandos específicos da origem viram placeholders `{{input.<campo>}}` ou saem. |
-| `origin` | a URL de onde veio | `type: "imported"` mais `repo`, `ref` (commit ou tag, não branch — branch se move), `imported_by`, `imported_at`, `reviewed_by`. O schema torna os cinco obrigatórios quando o tipo é `imported`. |
+| `id` | the frontmatter's `name` | Normalized to `kebab-case`; if it collides with an id already registered, it takes a prefix from the origin. A human decision when there is a collision. |
+| `version` | nothing (a SKILL.md rarely versions) | Assigned on the spot: `0.1.0` for a new import. The origin's real reference lives in `origin.ref`, not here. |
+| `hash` | nothing | Computed at the registry, over the **derived** manifest — never over the SKILL.md of origin. It is the pin D4 demands: any later edit to the imported text moves the hash and goes back to the gate. |
+| `role` | implicit in the body | Inferred by reading and **confirmed by a human**. `feature-dev` is `work`. A mistake here is expensive: a doing skill registered as a gate becomes a gate that checks nothing. |
+| `description` | the frontmatter's `description` | The one field that usually serves almost directly; reviewed to describe what the skill does, not how. |
+| `input` | prose ("Input: a refined ticket in `workflow/wip/`") | Derived by assisted reading and written as JSON Schema by the reviewer. Where the prose does not say, the reviewer decides and records it — nothing is ever inferred silently. |
+| `output` | prose ("Report: files created/modified, test counts, commit hash") | Likewise. For `role: "gate"`, the reviewer **has** to include `outcome` with the three values of the enum, or the executor does not know how to route. |
+| `preconditions` | scope sections ("Scope — when this skill applies") | Extracted from those sections and rewritten as conditions about the state, verifiable before the dispatch. |
+| `checks` | almost never exists in typed form | The most critical point. Commands cited in the body (`make test`, `make lint`) become deterministic checks; whatever judgement is left becomes an agentic check **with** `required_evidence`. If no check can be written at all, the skill does not enter: principle 6, without verification there is no gate. |
+| `permissions` | never | **Never inferred from the text.** They enter with the safe default below, and are only widened by a recorded human decision. |
+| `instructions` | the body of the SKILL.md | The body, **reviewed as an injection vector**: remove any reference to a file resident in the target repository (the manifest does not depend on `CLAUDE.md`), to an external document the origin controls, and any instruction that asks for a credential, an exfiltration or the execution of downloaded content. Paths and commands specific to the origin become `{{input.<field>}}` placeholders, or go. |
+| `origin` | the URL it came from | `type: "imported"` plus `repo`, `ref` (a commit or a tag, not a branch — a branch moves), `imported_by`, `imported_at`, `reviewed_by`. The schema makes all five required when the type is `imported`. |
 
-### Default seguro de permissões para `origin.type: "imported"`
+### The safe permission default for `origin.type: "imported"`
 
-Toda skill importada nasce com:
+Every imported skill is born with:
 
 ```json
 {
@@ -466,61 +476,62 @@ Toda skill importada nasce com:
 }
 ```
 
-Ler o workspace da sessão, não escrever nada, não falar com a rede. Ampliar
-qualquer um dos três é decisão humana explícita, registrada no portão de
-importação, e muda o hash — ou seja, reaparece na revisão da versão seguinte.
-Em particular, `network.allowed: true` **sem** lista de `domains` é rejeitado
-na importação: skill de terceiro com rede irrestrita e instruções que ninguém
-escreveu é a definição do vetor de supply chain que D4 existe para fechar.
+Read the session's workspace, write nothing, do not talk to the network. Widening
+any of the three is an explicit human decision, recorded at the import gate, and
+it moves the hash — which is to say, it comes back at the review of the next
+version. In particular, `network.allowed: true` **without** a list of `domains`
+is refused at import: a third-party skill with an unrestricted network and
+instructions nobody wrote is the definition of the supply-chain vector D4 exists
+to close.
 
-### O que o revisor humano assina
+### What the human reviewer signs
 
-Que o `role` está certo; que `input`/`output` descrevem o que a skill de
-fato consome e produz; que existe pelo menos um check e que o agêntico exige
-evidência própria; que as `permissions` são o mínimo necessário; e que as
-`instructions` revisadas não carregam instrução hostil. Assinado, o manifesto
-entra no registro pinado por hash. Sem assinatura, não entra.
+That the `role` is right; that `input`/`output` describe what the skill really
+consumes and produces; that there is at least one check and that the agentic one
+demands evidence of its own; that the `permissions` are the minimum necessary;
+and that the reviewed `instructions` carry no hostile instruction. Signed, the
+manifest enters the registry pinned by hash. Unsigned, it does not enter.
 
-## Como validar
+## How to validate
 
-Os artefatos desta especificação são verificáveis hoje, sem scaffold de
-projeto, com o `ajv-cli` via `npx`. Da raiz do repositório:
+The artifacts of this specification are verifiable today, with no project
+scaffolding, using `ajv-cli` through `npx`. From the root of the repository:
 
 ```bash
-# 1. o schema é um JSON Schema válido (draft 2020-12)
+# 1. the schema is a valid JSON Schema (draft 2020-12)
 npx --yes ajv-cli@5 compile -s especificacoes/formatos/skill-manifest.schema.json --spec=draft2020
 
-# 2. o exemplo de skill "fazer" valida contra o schema
+# 2. the "work" skill example validates against the schema
 npx --yes ajv-cli@5 validate -s especificacoes/formatos/skill-manifest.schema.json \
   -d especificacoes/formatos/exemplos/skill-manifest.develop.json --spec=draft2020
 
-# 3. o exemplo de skill "portão" valida contra o schema
+# 3. the "gate" skill example validates against the schema
 npx --yes ajv-cli@5 validate -s especificacoes/formatos/skill-manifest.schema.json \
   -d especificacoes/formatos/exemplos/skill-manifest.verify-develop.json --spec=draft2020
 
-# 4. o fixture negativo é REJEITADO (exit != 0 é o resultado esperado aqui)
+# 4. the negative fixture is REFUSED (a non-zero exit is the expected result here)
 npx --yes ajv-cli@5 validate -s especificacoes/formatos/skill-manifest.schema.json \
   -d especificacoes/formatos/exemplos/skill-manifest.invalid.fixture.json --spec=draft2020
 ```
 
-Os três primeiros saem com exit 0; o quarto sai com exit diferente de 0 — é o
-que prova que o schema não é permissivo demais.
+The first three exit 0; the fourth exits with something other than 0 — that is
+what proves the schema is not too permissive.
 
-Os quatro rodam automaticamente em `npm test`, por
-[`skill-manifest.test.mjs`](./skill-manifest.test.mjs), com `ajv` importado
-direto em vez de por `npx`: portão que precisa de rede é portão vermelho no
-avião. O arquivo confere também o que nenhum `ajv` conferiria — que o `hash`
-gravado em cada exemplo reproduz o próprio conteúdo, e que a receita de hash
-desta doc e o subconjunto pinado não se separaram.
+All four run automatically on `npm test`, through
+[`skill-manifest.test.mjs`](./skill-manifest.test.mjs), with `ajv` imported
+directly instead of through `npx`: a gate that needs the network is a gate that is
+red on a plane. The file also checks what no `ajv` would check — that the `hash`
+recorded in each example reproduces its own content, and that this document's
+hash recipe and the pinned subset have not drifted apart.
 
-### O fixture negativo
+### The negative fixture
 
-`exemplos/skill-manifest.invalid.fixture.json` **não** é um exemplo de
-manifesto: é material de teste. Ele é um manifesto de portão em tudo o mais
-válido, com **uma** violação proposital — o check `criterios-atendidos` tem
-`type: "agentic"` e não declara `required_evidence`. Violação única e
-isolada de propósito: o erro que o ajv emite aponta para a regra exata, em vez
-de se perder num monte de campo faltando.
+`exemplos/skill-manifest.invalid.fixture.json` is **not** an example of a
+manifest: it is test material. It is a gate manifest that is valid in everything
+else, with **one** deliberate violation — the `criteria-met` check has
+`type: "agentic"` and does not declare `required_evidence`. A single, isolated
+violation on purpose: the error ajv emits points at the exact rule, instead of
+getting lost in a pile of missing fields.
 
 ```
 instancePath: '/checks/0'
@@ -529,62 +540,66 @@ keyword:      'required'
 params:       { missingProperty: 'required_evidence' }
 ```
 
-É a regra que mais importa fechar: um check agêntico sem evidência obrigatória
-é exatamente o portão que conclui pelo autorrelato de quem fez o trabalho.
+It is the rule that matters most to close: an agentic check with no mandatory
+evidence is exactly the gate that concludes from the self-report of whoever did
+the work.
 
-## Limites conhecidos
+## Known limits
 
-O que o schema **não** garante, e por isso é verificado na entrada do registro
-ou fica para outra ticket:
+What the schema does **not** guarantee, and is therefore verified at the
+registry's door or left to another ticket:
 
-- **`input`/`output` são JSON Schema de verdade.** O schema só exige que
-  sejam objetos. Validar contra o meta-schema oficial é passo do registro.
-  Consequência prática desde a `t253`, quando o control plane passou a compilar
-  o `output` para conferir o relato da sessão: um `output` que é objeto mas não
-  é schema compilável é lido como "não há contra o que conferir", e o relato é
-  guardado como veio. A alternativa — recusar o relato — jogaria fora um
-  auto-relato legítimo por causa do manifesto de outra pessoa.
-- **A `input` montada conferida contra o schema `input`.** A projeção existe
-  desde a `t253` (`GET /v1/jobs/:id/context`), e "entrada inválida não vira
-  sessão" continua sendo o comportamento eventual: é o mesmo ajv apontado para o
-  outro lado do contrato, e entrou como ficha separada para não abrir duas
-  superfícies de validação de uma vez.
-- **`outcome` na saída de um portão.** A regra está documentada e os
-  exemplos a cumprem, mas não é imposta estruturalmente — impô-la exigiria o
-  schema do manifesto navegar dentro de um documento JSON Schema arbitrário.
-- **O `hash` corresponder ao conteúdo.** O schema valida o formato
-  (`sha256:` + 64 hex), não o valor. Recalcular e comparar é trabalho do
-  registro, na importação e a cada leitura do manifesto pelo runner.
-- **Permissão declarada ser permissão aplicada.** Enforcement é t125, e a
-  `t161` ligou a declaração ao despacho. O limite que sobra é outro, e é do
-  adapter: eixo que ele não sabe expressar recusa a sessão em vez de aplicá-la
-  pela metade (ver `permissions`).
-- **Interpolação em `checks[].command`.** A de `instructions` existe desde a
-  `t204` e falha fechada; a dos comandos de check não, porque nenhum código
-  executa `command` hoje — check é declarativo, lido por revisor humano e por um
-  mecanismo de portão que ainda não existe. O limite que sobra na de
-  `instructions` é o de quem a alimenta: a projeção de contexto por nó já existe
-  no control plane desde a `t253`, mas o despacho ainda não a busca, então passa
-  `{}` e a skill com placeholder recusa (ver *Renderização e injeção*).
-- **Sintaxe de placeholder validada na entrada do registro.** O registro não
-  confere `{{input.…}}` nenhum ao aceitar um manifesto; quem pega placeholder
-  quebrado é o despacho, que recusa. Uma checagem mais cedo seria melhor
-  diagnóstico, não mais segurança.
-- **Uma `version` nova mudar o conteúdo.** O registro recusa o contrário —
-  conteúdo diferente sob versão inalterada é `409` (ver *Linhagem de versões*) —
-  mas aceita uma versão nova cujo hash é igual ao de uma anterior. É legal e
-  inútil, e policiar isso é julgamento humano, não invariante de registro.
-- **Detalhe de ferramenta:** o campo `origin.imported_at` usa `pattern` de
-  data ISO em vez de `"format": "date"`. O ajv em modo estrito trata formato
-  desconhecido como erro de compilação quando nenhum plugin de formatos está
-  carregado, e o comando de validação desta doc não carrega nenhum — `pattern`
-  vale a mesma restrição sem depender de plugin.
+- **`input`/`output` being real JSON Schema.** The schema only demands that they
+  be objects. Validating against the official meta-schema is a step of the
+  registry. A practical consequence since `t253`, when the control plane started
+  compiling the `output` to check a session's report: an `output` that is an
+  object but not a compilable schema is read as "there is nothing to check
+  against", and the report is stored as it came. The alternative — refusing the
+  report — would throw away a legitimate self-report because of somebody else's
+  manifest.
+- **The assembled `input` checked against the `input` schema.** The projection has
+  existed since `t253` (`GET /v1/jobs/:id/context`), and "invalid input does not
+  become a session" is still the eventual behaviour: it is the same ajv pointed at
+  the other side of the contract, and it entered as a separate ficha so as not to
+  open two validation surfaces at once.
+- **`outcome` in a gate's output.** The rule is documented and the examples obey
+  it, but it is not enforced structurally — enforcing it would require the
+  manifest's schema to navigate inside an arbitrary JSON Schema document.
+- **The `hash` matching the content.** The schema validates the form (`sha256:` +
+  64 hex), not the value. Recomputing and comparing is the registry's job, at
+  import and on every reading of the manifest by the runner.
+- **A declared permission being an enforced permission.** Enforcement is t125, and
+  `t161` connected the declaration to the dispatch. The limit that remains is
+  another one, and it is the adapter's: an axis it cannot express refuses the
+  session instead of enforcing it halfway (see `permissions`).
+- **Interpolation in `checks[].command`.** The one in `instructions` has existed
+  since `t204` and fails closed; the one in the checks' commands does not, because
+  no code executes a `command` today — a check is declarative, read by a human
+  reviewer and by a gate mechanism that does not exist yet. The limit that remains
+  on the `instructions` one is whoever feeds it: the per-node context projection
+  already exists in the control plane since `t253`, but the dispatch does not
+  fetch it yet, so it passes `{}` and a skill with a placeholder refuses (see
+  *Rendering and injection*).
+- **Placeholder syntax validated at the registry's door.** The registry checks no
+  `{{input.…}}` at all when it accepts a manifest; what catches a broken
+  placeholder is the dispatch, which refuses. An earlier check would be better
+  diagnostics, not more safety.
+- **A new `version` changing the content.** The registry refuses the opposite —
+  different content under an unchanged version is `409` (see *Version lineage*) —
+  but accepts a new version whose hash equals an earlier one's. It is legal and
+  useless, and policing it is human judgement, not a registry invariant.
+- **A tooling detail:** the `origin.imported_at` field uses an ISO date `pattern`
+  instead of `"format": "date"`. ajv in strict mode treats an unknown format as a
+  compilation error when no formats plugin is loaded, and this document's
+  validation command loads none — a `pattern` holds the same restriction without
+  depending on a plugin.
 
-## Versionamento deste formato
+## Versioning of this format
 
-O manifesto é formato-produto: schema versionado e doc de especificação, como
-o schema do grafo, a taxonomia de eventos e a interface do EngineAdapter.
-Vale a regra dos dois consumidores — ele não congela antes de existirem dois
-consumidores reais (o control plane que persiste e um importador que deriva
-manifesto de fonte externa). Até lá, mudança de campo é mudança de doc mais
-mudança de schema, no mesmo commit, com os exemplos revalidados.
+The manifest is a product format: a versioned schema and a specification
+document, like the graph schema, the event taxonomy and the EngineAdapter
+interface. The rule of two consumers holds — it does not freeze before two real
+consumers exist (the control plane that persists, and an importer that derives a
+manifest from an external source). Until then, a change of field is a change of
+document plus a change of schema, in the same commit, with the examples
+revalidated.

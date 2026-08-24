@@ -32,7 +32,14 @@
  * - **`.json` / `.jsonl`** — read raw, the cut `no-portuguese-factory-bundles`
  *   established. JSON has no fence to hide behind, and its frozen snake_case
  *   keys carry neither a diacritic nor a stopword, so a raw read costs nothing
- *   and misses nothing.
+ *   and misses nothing. One exception, blanked first: a string value that is
+ *   ENTIRELY a URL or a hostname. `com` is a Portuguese function word and also
+ *   the commonest TLD there is, so `"github.com"` in a skill manifest's
+ *   `domains` list reads as Portuguese prose to a raw scan. t299 met the same
+ *   thing twice in markdown and answered it with a code span, which is an
+ *   escape hatch JSON does not have; a whole-string hostname is unambiguously
+ *   data, and only the whole string counts — a hostname inside a sentence is
+ *   still read.
  *
  * `.mjs` files under these trees are read by neither: identifier positions in
  * source are `tests/no-portuguese-identifiers.test.mjs`'s dimension, and a gate
@@ -131,6 +138,9 @@ const FENCE = /^\s*(`{3,})/;
 /** A backtick span, of any backtick run length, within one line. */
 const SPAN = /(`+)(.+?)\1/g;
 
+/** A JSON string whose whole content is a URL or a bare dotted hostname. */
+const HOSTNAME_VALUE = /"(?:https?:\/\/)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:\/[^"\s]*)?"/gi;
+
 /** The line with every backtick span blanked out; the backticks stay. */
 function withoutSpans(line) {
   let kept = line;
@@ -190,7 +200,11 @@ export function linesToScan(relativePath, contents) {
   const extension = path.extname(relativePath);
   if (extension === '.md') return proseOf(contents);
   if (extension === '.json' || extension === '.jsonl') {
-    return contents.split('\n').map((line) => line.replace(GLOSS, ''));
+    return contents
+      .split('\n')
+      .map((line) =>
+        line.replace(GLOSS, '').replace(HOSTNAME_VALUE, (match) => `"${blank(match.slice(2))}"`),
+      );
   }
 
   return null;
@@ -406,6 +420,18 @@ test('AT4 — the sweep bites on reintroduced Portuguese contents', () => {
     contentOffendersIn('notas/note.md', 'Rendered (literally "ausência tem nome") in §3.\n'),
     [],
     'the gloss is the one span where the original is supposed to survive',
+  );
+
+  assert.deepEqual(
+    contentOffendersIn('especificacoes/formatos/exemplos/m.json', '  "github.com"\n'),
+    [],
+    'a whole-string hostname is data; `com` is its TLD and not a word of a sentence',
+  );
+
+  assert.deepEqual(
+    contentOffendersIn('schema/exemplos/g.json', '  "description": "fale com github.com"\n'),
+    ['schema/exemplos/g.json:1: stopword "com" — "description": "fale com github.com"'],
+    'a hostname INSIDE a sentence spares nothing: only the whole string counts',
   );
 
   assert.deepEqual(

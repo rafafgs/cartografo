@@ -1,16 +1,16 @@
 {
-  "id": "portao-sem-evidencia",
+  "id": "gate-without-evidence",
   "version": "1.0.0",
-  "hash": "sha256:8bce86e1f223d44297c82b544f91bd48ab31fd768ac749d0a1a919b86c7a65bc",
+  "hash": "sha256:621439431f915c412bb3d251df396d475791172eae95ccd9952ca0ec6e40486c",
   "role": "gate",
-  "description": "FIXTURE NEGATIVO — não é um exemplo de manifesto válido. Existe para provar que o schema rejeita um check agêntico sem evidência obrigatória.",
+  "description": "NEGATIVE FIXTURE — this is not an example of a valid manifest. It exists to prove that the schema refuses an agentic check with no required evidence.",
   "input": {
     "type": "object",
     "required": [
-      "artefato"
+      "artifact"
     ],
     "properties": {
-      "artefato": {
+      "artifact": {
         "type": "string"
       }
     }
@@ -32,14 +32,14 @@
     }
   },
   "preconditions": [
-    "artefato produzido pelo nó anterior"
+    "artifact produced by the previous node"
   ],
   "checks": [
     {
-      "id": "criterios-atendidos",
+      "id": "criteria-met",
       "type": "agentic",
-      "description": "Confere se os critérios de aceite foram atendidos — e é exatamente aqui que o manifesto quebra: sem evidencia_obrigatoria, o portão poderia concluir com o autorrelato de quem produziu o artefato, que é o que D9 e a nota de aprendizado proíbem.",
-      "instruction": "Verifique se os critérios de aceite foram atendidos."
+      "description": "Checks whether the acceptance criteria were met — and this is exactly where the manifest breaks: with no required_evidence, the gate could conclude from the self-report of whoever produced the artifact, which is what D9 and the learning note forbid.",
+      "instruction": "Check whether the acceptance criteria were met."
     }
   ],
   "permissions": {
@@ -53,7 +53,7 @@
       "allowed": false
     }
   },
-  "instructions": "Confira o artefato do nó anterior e conclua.",
+  "instructions": "Check the artifact of the previous node and conclude.",
   "origin": {
     "type": "native"
   }

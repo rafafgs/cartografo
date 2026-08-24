@@ -2,7 +2,7 @@
  * Contract tests of the skill-manifest format (t163, AT1).
  *
  * Until this file existed, the four validation commands of
- * `skill-manifest.md` § "Como validar" were prose: a human had to remember to
+ * `skill-manifest.md` § "How to validate" were prose: a human had to remember to
  * run four `npx ajv-cli` lines by hand, and nothing in `npm test` would notice a
  * schema that stopped compiling or an example that stopped validating. This file
  * IS those four commands, plus the two claims the document makes that no ajv run
@@ -14,8 +14,8 @@
  *
  * `strict: false` mirrors what the document's own commands get: `ajv-cli@5`
  * without a formats plugin, over a schema that deliberately uses `pattern`
- * instead of `"format": "date"` for exactly that reason (see *Limites
- * conhecidos*). Nothing here depends on strict-mode diagnostics; what is being
+ * instead of `"format": "date"` for exactly that reason (see *Known
+ * limits*). Nothing here depends on strict-mode diagnostics; what is being
  * checked is acceptance and refusal.
  *
  * English identifiers per D18 — and, since the 2026-08-15 amendment (t178), the
@@ -79,11 +79,12 @@ const RETIRED_KEYS = Object.freeze({
  * Wider than `RETIRED_KEYS` because the doc quotes more than the manifest's own
  * top level: the nested permission axes, and the node-contract and routing names
  * that live in the graph schema (`docs/spec/graph.md`) but are cited here where
- * *Renderização e injeção* says what else the runner injects.
+ * *Rendering and injection* says what else the runner injects.
  *
- * The rename left free-text prose in Portuguese on purpose — what a backtick
+ * t184's rename left free-text prose in Portuguese on purpose — what a backtick
  * quotes is not prose, it is a name, and a name the schema no longer declares is
- * a spec describing a format nobody implements (t184).
+ * a spec describing a format nobody implements. The prose itself is English
+ * since t300; this scan never read it, and does not now.
  */
 const RETIRED_CITATIONS = Object.freeze({
   ...RETIRED_KEYS,
@@ -345,8 +346,11 @@ test('t184 — the citation scan bites, and spares what was never a format key',
   // `entrada` and a corrected `entrada` would hide a stale `entrada_schema`.
   assert.deepEqual(retiredNamesIn('entrada_schema'), ['entrada_schema']);
   assert.deepEqual(retiredNamesIn('input_schema'), []);
-  // The examples' own domain fields are not this format's keys: they stay put.
-  assert.deepEqual(retiredNamesIn('artefato.gates_declarados'), []);
-  assert.deepEqual(retiredNamesIn('{{input.projeto.comando_testes}}'), []);
+  // The examples' own domain fields are not this format's keys. t300 took them
+  // to English with the rest of `especificacoes/**`, and the point of these two
+  // cases is unchanged: whatever an example calls its fields, the scan reads
+  // only the names this FORMAT retired.
+  assert.deepEqual(retiredNamesIn('artifact.declared_gates'), []);
+  assert.deepEqual(retiredNamesIn('{{input.project.test_command}}'), []);
   assert.deepEqual(retiredNamesIn('packages/runner/src/engine/permission-policy.ts'), []);
 });

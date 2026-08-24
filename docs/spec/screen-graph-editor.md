@@ -1,226 +1,232 @@
-# Especificação: tela de configuração de grafo
+# Specification: the graph configuration screen
 
-**Pacote:** [`packages/tela`](../../packages/tela) · **Porta:** `4318` ·
-**Página:** `/graph-editor.html`
-**Decisões de origem:** [D11](../../DECISIONS.md) — "a tela é cliente comum da API
-pública, sem privilégio" · [D15](../../DECISIONS.md) — "diff semântico, operação
-com inversa, versionamento append-only" · princípio 5 do
-[README](../../README.md) — "escada de segurança"
+**Package:** [`packages/tela`](../../packages/tela) · **Port:** `4318` ·
+**Page:** `/graph-editor.html`
+**Founding decisions:** [D11](../../DECISIONS.md) — "the screen is a client of
+the public API, with no privileges" · [D15](../../DECISIONS.md) — "a semantic
+diff, an operation with its inverse, append-only versioning" · principle 5 of the
+[README](../../README.md) — "the safety ladder"
 
-A D11 fixou a ordem: observabilidade primeiro, inbox depois, edição de grafo por
-último. As duas primeiras chegaram (`t107`, `t111`); esta é a terceira. É a
-página onde uma pessoa mexe na topologia de um grafo — acrescenta um nó, tira uma
-aresta, corrige o contrato de um portão — sem escrever JSON na mão e sem que
-exista, em lugar nenhum, um segundo jeito de mudar um grafo.
+D11 fixed the order: observability first, the inbox next, graph editing last. The
+first two arrived (`t107`, `t111`); this is the third. It is the page where a
+person touches a graph's topology — adds a node, takes an edge away, corrects a
+gate's contract — without writing JSON by hand and without there being, anywhere,
+a second way to change a graph.
 
-Uma frase resume a fronteira, e é a mesma do inbox: **a tela não sabe nada que a
-API pública não conte, e não escreve nada que a API pública não escreva**. Salvar
-aqui são três chamadas que qualquer script faria — criar proposta, aprovar,
-aplicar — na ordem, parando na primeira que falhar. Nenhuma rota nova no
-`packages/core`, nenhuma escrita em lote, nenhum "só desta vez".
+One sentence sums up the boundary, and it is the inbox's: **the screen knows
+nothing the public API does not tell it, and writes nothing the public API does
+not write**. Saving here is three calls any script could make — create the
+proposal, approve it, apply it — in order, stopping at the first that fails. No
+new route in `packages/core`, no batch write, no "just this once".
 
 ---
 
-## 1. O que esta tela edita
+## 1. What this screen edits
 
-**Topologia de grafo-base**: os nós e as arestas da versão corrente de uma
-linhagem `base`. É a fatia que a `t170` entregou depois que o founder dividiu a
-ficha original em três.
+**Base-graph topology**: the nodes and edges of the current version of a `base`
+lineage. It is the slice `t170` delivered after the founder split the original
+ticket in three.
 
-| Editável | Como |
+| Editable | How |
 |---|---|
-| Acrescentar nó | Cartão novo, com `id`, `node_type`, `engine`, `role`, `descrição`, `skill_ref` e `contract` — tudo dentro de uma única operação `add_node`. |
-| Remover nó | Um botão por cartão. As arestas que tocavam o nó saem junto, e a tela **diz** quantas saíram. |
-| Editar nó existente | `role`, `descrição`, `skill_ref` (`id`/`version`/`hash`) e `contract` (JSON cru). Nada além disso — §3. |
-| Acrescentar / remover aresta | Um cartão por aresta, com `from`, `to`, `condition` e `descrição`. |
-| Editar aresta | Sai como **remoção seguida de acréscimo**: o vocabulário de operações identifica aresta pelas duas pontas e não tem operação de edição. |
+| Add a node | A new card, with `id`, `node_type`, `engine`, `role`, description, `skill_ref` and `contract` — all inside a single `add_node` operation. |
+| Remove a node | One button per card. The edges that touched the node go with it, and the screen **says** how many went. |
+| Edit an existing node | `role`, description, `skill_ref` (`id`/`version`/`hash`) and `contract` (raw JSON). Nothing beyond that — §3. |
+| Add / remove an edge | One card per edge, with `from`, `to`, `condition` and a description. |
+| Edit an edge | Comes out as a **removal followed by an addition**: the operation vocabulary identifies an edge by its two ends and has no edit operation. |
 
-O seletor lê `GET /v1/classes`, que lista **só linhagens base**. Variante (D13) é
-outra conversa: fork, promoção e oferta continuam sendo `t118`, e esta página não
-as oferece nem as edita.
+The selector reads `GET /v1/classes`, which lists **base lineages only**. A
+variant (D13) is another conversation: forking, promotion and offering are still
+`t118`, and this page neither offers nor edits them.
 
 ---
 
-## 2. Contrato assumido do control plane
+## 2. The control plane contract this screen assumes
 
-A tela **não cria rota nenhuma** no core. Ela consome seis endpoints, todos
-anteriores a esta ficha.
+The screen **creates no route at all** in the core. It consumes six endpoints,
+every one of them older than this ticket.
 
-| Método | Rota | O que a tela usa |
+| Method | Route | What the screen uses |
 |---|---|---|
-| `GET` | `/v1/classes` | O seletor de grafo-base: `classe` e `grafo_id` de cada linhagem base. |
-| `GET` | `/v1/graphs/:id` | `versao_corrente_id` — qual versão as edições vão sentar em cima. |
-| `GET` | `/v1/graph-versions/:id` | O `snapshot`: os nós e as arestas que a página desenha. |
+| `GET` | `/v1/classes` | The base-graph selector: `classe` and `grafo_id` of every base lineage. |
+| `GET` | `/v1/graphs/:id` | `versao_corrente_id` — which version the edits will sit on top of. |
+| `GET` | `/v1/graph-versions/:id` | The `snapshot`: the nodes and edges the page draws. |
 | `POST` | `/v1/proposals` | `{grafo_id, versao_alvo, operacoes, evidencia, metrica_esperada}` → `201 {proposta}`. |
-| `POST` | `/v1/proposals/:id/approve` | `pendente` → `aprovada`. Sem corpo. |
-| `POST` | `/v1/proposals/:id/apply` | Roda o portão sobre o documento que sairia e, passando, grava a versão nova. |
+| `POST` | `/v1/proposals/:id/approve` | `pendente` → `aprovada`. No body. |
+| `POST` | `/v1/proposals/:id/apply` | Runs the gate over the document that would come out and, on a pass, writes the new version. |
 
-Ids vão **percent-encoded** no caminho: `versao_corrente_id` é `sha256:` mais 64
-hex, e id que veio da API não é fragmento de caminho em que a página confie.
+Ids go **percent-encoded** in the path: `versao_corrente_id` is `sha256:` plus 64
+hex characters, and an id that came from the API is not a path fragment the page
+trusts.
 
-Pinado contra o cliente real em
+Pinned against the real client in
 [`packages/tela/test/graph-editor-acceptance.test.ts`](../../packages/tela/test/graph-editor-acceptance.test.ts),
-que grava a sequência de chamadas que a página fez e a compara com esta lista —
-uma sétima chamada reprova.
+which records the sequence of calls the page made and compares it with this list
+— a seventh call fails it.
 
-### Evidência e métrica de uma edição manual
+### Evidence and metric for a manual edit
 
-`POST /v1/proposals` exige `evidencia` e `metrica_esperada` porque proposta é
-**hipótese** (D15). Uma pessoa arrastando um nó não está fazendo hipótese
-nenhuma, então os dois campos são fixos e inertes:
+`POST /v1/proposals` demands `evidencia` and `metrica_esperada` because a
+proposal is a **hypothesis** (D15). A person dragging a node is making no
+hypothesis at all, so both fields are fixed and inert:
 
 ```json
 { "evidencia": { "fonte": "tela-configuracao", "observacao": "edição manual via tela de configuração do grafo" },
   "metrica_esperada": { "nome": "edição manual (sem métrica)", "direcao": "sobe", "de": 0, "para": 0 } }
 ```
 
-Inventar um número para satisfazer o campo seria pior que admitir a lacuna. A
-forma da métrica só é validada em `POST /v1/proposals/:id/outcome`
-([`hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts)), que nada neste
-fluxo chama.
+Inventing a number to satisfy the field would be worse than admitting the gap.
+The metric's shape is only validated in `POST /v1/proposals/:id/outcome`
+([`hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts)), which nothing
+in this flow calls.
 
 ---
 
-## 3. O que não dá para mudar em nó que já existe
+## 3. What cannot be changed on a node that already exists
 
-`id`, `node_type` e `engine` aparecem no cartão, **somente leitura**, com a frase
-`remova e recrie o nó para mudar isso` ao lado. Não é limitação de interface:
+`id`, `node_type` and `engine` appear on the card, **read-only**, with the phrase
+`remova e recrie o nó para mudar isso` beside them. It is not an interface
+limitation:
 
-- `id` e `node_type` são a identidade do nó. Aresta, telemetria e proposta antiga
-  apontam para um id, e o comentário do próprio
-  [`CHANGEABLE_FIELDS`](../../packages/core/src/domain/operations.ts) diz que
-  trocar um dos dois "é operação própria, não troca de campo".
-- `engine` — e junto dele `model`, `escalation_policy` e `escalation_recipient` —
-  é **política de execução**. O core aceita propor os quatro desde a `t166`/`t167`;
-  o que ainda não existe é o desenho de tela para eles, que é a ficha separada
-  "Per-node execution policies (schema + API)". Ficaram de fora por escopo, não
-  por falta de operação.
+- `id` and `node_type` are the node's identity. An edge, the telemetry and an old
+  proposal all point at an id, and the comment in
+  [`CHANGEABLE_FIELDS`](../../packages/core/src/domain/operations.ts) itself says
+  that swapping either of them "is an operation of its own, not a field change".
+- `engine` — and along with it `model`, `escalation_policy` and
+  `escalation_recipient` — is **execution policy**. The core has accepted
+  proposals for all four since `t166`/`t167`; what does not exist yet is the
+  screen design for them, which is the separate ticket "Per-node execution
+  policies (schema + API)". They were left out for scope, not for want of an
+  operation.
 
-Remover e recriar continua sendo o caminho, e é um caminho honesto: nasce como
-duas operações com inversa, passa pelo mesmo portão e vira versão nova como
-qualquer outra mudança.
+Removing and recreating is still the way, and it is an honest way: it is born as
+two operations with inverses, goes through the same gate and becomes a new
+version like any other change.
 
 ---
 
-## 4. Salvar são três chamadas, e aprovar vem encadeado
+## 4. Saving is three calls, and approval comes chained
 
 ```
 POST /v1/proposals  →  POST /v1/proposals/:id/approve  →  POST /v1/proposals/:id/apply
 ```
 
-Para na primeira que falhar, e **nada é retentado sozinho**.
+It stops at the first that fails, and **nothing is retried on its own**.
 
-O encadeamento do `approve` é o único ponto em que esta página sai do ritmo do
-inbox, e é deliberado: a pessoa que acabou de editar o grafo **é** a pessoa a
-quem o portão humano perguntaria, e um segundo clique no rascunho dela mesma
-seria cerimônia, não julgamento. Proposta de topógrafo continua parando em
-`pendente` e continua esperando alguém em `/` — a escada de segurança do
-princípio 5 é sobre mudança que **outro** propôs.
+Chaining the `approve` is the one point where this page steps out of the inbox's
+rhythm, and it is deliberate: the person who has just edited the graph **is** the
+person the human gate would ask, and a second click on their own draft would be
+ceremony, not judgement. A topografo's proposal still stops at `pendente` and
+still waits for somebody at `/` — principle 5's safety ladder is about a change
+**somebody else** proposed.
 
-O que a página produz é byte a byte o que um cliente scriptado produziria: o
-aceite `AC1` registra o mesmo grafo em **dois control planes** independentes,
-dirige a página em um e repete o corpo da requisição dela no outro, e exige que o
-`graph_version.id` — que é o hash do snapshot — seja o mesmo dos dois lados.
+What the page produces is byte for byte what a scripted client would produce:
+acceptance test `AC1` registers the same graph in **two independent control
+planes**, drives the page against one and replays its request body against the
+other, and demands that the `graph_version.id` — which is the hash of the
+snapshot — be the same on both sides.
 
 ---
 
-## 5. A recusa do portão, em prosa
+## 5. The gate's refusal, in prose
 
-`POST /v1/proposals/:id/apply` valida o documento que **sairia**, antes de
-escrever qualquer coisa, e responde `422` com o relatório inteiro quando reprova.
-É o momento mais útil da página — é o sistema dizendo, no vocabulário do grafo,
-por que aquela edição não pode existir — e despejar o JSON ali jogaria isso fora
-do mesmo jeito que diff de linha joga fora um diff semântico.
+`POST /v1/proposals/:id/apply` validates the document that **would come out**,
+before writing anything, and answers `422` with the whole report when it fails.
+It is the page's most useful moment — it is the system saying, in the graph's own
+vocabulary, why that edit cannot exist — and dumping the JSON there would throw
+that away exactly the way a line diff throws away a semantic diff.
 
-| Resposta | O que a página mostra |
+| Answer | What the page shows |
 |---|---|
-| `422 grafo_invalido` | Uma linha por entrada de `estrutura.erros` (a `mensagem` como veio, escrita pelo core) e uma por regra de `soundness.violacoes`, nomeando o nó ou a aresta do `alvo`. |
-| `422 operacao_inaplicavel` | `mensagem` como veio: ela já fala do snapshot ("nó X não existe"). |
-| `422 versao_sem_efeito` | `mensagem` como veio: o resultado é um snapshot que já existe na linhagem. |
-| `409 proposta_desatualizada` | `a base do grafo mudou enquanto você editava`, mais um botão **Recarregar**. Sem rebase silencioso: refazer o diff é decisão de quem editava. |
+| `422 grafo_invalido` | One line per entry of `estrutura.erros` (the `mensagem` as it came, written by the core) and one per rule in `soundness.violacoes`, naming the node or edge in `alvo`. |
+| `422 operacao_inaplicavel` | `mensagem` as it came: it already speaks of the snapshot ("node X does not exist"). |
+| `422 versao_sem_efeito` | `mensagem` as it came: the result is a snapshot that already exists in the lineage. |
+| `409 proposta_desatualizada` | `a base do grafo mudou enquanto você editava`, plus a **Reload** button. No silent rebase: redoing the diff is the decision of whoever was editing. |
 
-As quatro regras de soundness viram estas frases:
+The four soundness rules become these sentences:
 
-| Regra | Linha |
+| Rule | Line |
 |---|---|
 | `alcançável` | `o nó "X" não é alcançável a partir do nó inicial: falta uma aresta que chegue até ele` |
 | `termina` | `do nó "X" não há caminho até um nó final: quem cair nele não conclui a travessia` |
 | `aresta_com_condicao` | `a aresta A → B está sem condição: uma transição sem rótulo é um caminho que o executor não sabe quando tomar` |
 | `no_com_contrato` | `o nó "X" não declara skill_ref e contract completos: sem contrato não há como verificar o que ele produziu` |
 
-O mapeamento mora em
+The mapping lives in
 [`src/public/graph-soundness.js`](../../packages/tela/src/public/graph-soundness.js),
-função pura, testada em Node. E ele não pode divergir em silêncio: `graph-soundness.test.ts`
-roda os quatro contraexemplos de [`schema/exemplos/`](../../schema/exemplos) pelo
-validador de referência ([`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs))
-e exige que toda violação que sair de lá tenha frase própria aqui.
+a pure function, tested in Node. And it cannot diverge in silence:
+`graph-soundness.test.ts` runs the four counterexamples of
+[`schema/exemplos/`](../../schema/exemplos) through the reference validator
+([`scripts/validar-grafo.mjs`](../../scripts/validar-grafo.mjs)) and demands that
+every violation coming out of it has a sentence of its own here.
 
 ---
 
-## 6. Sem framework, sem build — e nada de `innerHTML`
+## 6. No framework, no build — and no `innerHTML`
 
-Módulos ES nativos, sem bundler e sem passo de build, como o resto desta metade
-do pacote. Três módulos, e a divisão é o que torna cada regra testável fora do
-navegador:
+Native ES modules, with no bundler and no build step, like the rest of this half
+of the package. Three modules, and the split is what makes every rule testable
+outside the browser:
 
-| Módulo | O que é |
+| Module | What it is |
 |---|---|
-| [`graph-operations.js`](../../packages/tela/src/public/graph-operations.js) | Função pura: `diffGraphs(carregado, editado)` → operações tipadas com inversa. |
-| [`graph-soundness.js`](../../packages/tela/src/public/graph-soundness.js) | Função pura: relatório do portão → uma linha por problema. |
-| [`graph-editor.js`](../../packages/tela/src/public/graph-editor.js) | O único que toca o DOM. Recebe `document` e `fetch` como argumento, que é o que permite dirigi-lo de Node. |
+| [`graph-operations.js`](../../packages/tela/src/public/graph-operations.js) | A pure function: `diffGraphs(loaded, edited)` → typed operations with inverses. |
+| [`graph-soundness.js`](../../packages/tela/src/public/graph-soundness.js) | A pure function: the gate's report → one line per problem. |
+| [`graph-editor.js`](../../packages/tela/src/public/graph-editor.js) | The only one that touches the DOM. It takes `document` and `fetch` as arguments, which is what makes it drivable from Node. |
 
-**A ordem das operações não é cosmética.** `applyOperations` roda a lista em
-ordem sobre um documento só e recusa operação que o snapshot não admite, então o
-diff sai na única ordem que sempre aplica: arestas removidas, nós removidos, nós
-acrescentados, campos alterados, arestas acrescentadas.
+**The order of the operations is not cosmetic.** `applyOperations` runs the list
+in order over a single document and refuses an operation the snapshot does not
+admit, so the diff comes out in the one order that always applies: edges removed,
+nodes removed, nodes added, fields changed, edges added.
 
-Tudo que é desenhado entra por `textContent`, **nunca** `innerHTML`: um id de nó,
-um `role` ou uma condição foram escritos por um agente dentro de um documento de
-grafo, e a D4 trata conteúdo de agente como vetor de injeção. É a mesma regra que
-o `inbox.js` já segue.
+Everything that is drawn goes in through `textContent`, **never** `innerHTML`: a
+node id, a `role` or a condition was written by an agent inside a graph document,
+and D4 treats agent content as an injection vector. It is the same rule
+`inbox.js` already follows.
 
-Todo campo editável carrega `data-campo` com o nome do campo, e todo cartão
-carrega `data-node` ou `data-edge` — marcadores de estrutura, no mesmo espírito
-dos `data-*` de [`screen.md`](screen.md) §6. O aceite `AC3` usa exatamente esses
-marcadores para exigir que um nó existente **não ofereça controle nenhum** para
-`id`, `node_type` ou `engine`.
+Every editable field carries `data-campo` with the field's name, and every card
+carries `data-node` or `data-edge` — structural markers, in the same spirit as
+the `data-*` of [`screen.md`](screen.md) §6. Acceptance test `AC3` uses exactly
+those markers to demand that an existing node **offer no control at all** for
+`id`, `node_type` or `engine`.
 
-O contrato viaja como **texto** e só é parseado no `Salvar`: JSON meio digitado é
-estado normal de um editor, não erro para gritar a cada tecla.
+The contract travels as **text** and is only parsed on `Save`: half-typed JSON is
+a normal state of an editor, not an error to shout about on every keystroke.
 
 ---
 
-## 7. O que esta tela ainda não faz
+## 7. What this screen does not do yet
 
-Cada item é escopo declarado de outra ficha, não esquecimento:
+Every item is another ticket's declared scope, not an oversight:
 
-- **Políticas de execução por nó** (modelo, pausa, timeout, escalação) — ficha
-  "Per-node execution policies (schema + API)". O core já aceita propor `engine`,
-  `model`, `escalation_policy` e `escalation_recipient`; falta o desenho de tela.
-- **Editar o registro de skills** — resolvido pela metade pela `t215`, e a metade
-  que sobra é nomeada aqui. O registro deixou de ser create-only: as versões de
-  uma skill coexistem (D22), e esta tela lê `GET /v1/skills?id=` de cada skill
-  pinada e oferece um seletor das versões registradas quando existe alguma além
-  da que o nó pina. Escolher uma escreve os três campos do `skill_ref`
-  (`id`, `version`, `hash`) — o pino vai como `change_node_field`, pela mesma
-  porta de sempre, e é recusado ao aplicar se o registro não carrega aquele hash.
-  O que **não** existe aqui é editar o CONTEÚDO de um manifesto, nem ver o diff
-  entre duas versões dele: continua sendo a ficha "Skill & contract editing
-  (API + diff UI)". Editar o `contract` do próprio nó, sim — é campo do documento
-  de grafo, como o `skill_ref`.
-- **Canvas arrastável.** O documento de grafo não tem campo de coordenada
-  ([`schema/grafo.schema.json`](../../schema/grafo.schema.json)); inventar um é
-  decisão própria, com dependência de renderização que este pacote não carrega.
-  O que existe aqui é lista estruturada e editável — visual no mesmo sentido em
-  que o inbox é.
-- **Trocar `id`, `node_type` ou `engine` de nó existente** — §3.
-- **Editar `initial_node`, `final_nodes`, `metadata` ou `custom_fields`** — não
-  há operação semântica para nenhum deles; crescer o vocabulário é aditivo e
-  espera a regra dos dois consumidores.
-- **Linhagens variantes** (D13) — este editor mira grafo-base.
-- **Concorrência além do `409 proposta_desatualizada`** — sem lock, sem
-  colaboração ao vivo, sem rebase automático.
-- **Atualização em tempo real** (polling, websocket) — a página anda por ação de
-  quem está nela, como o resto da tela.
-- **Login no navegador** — inalterado: a tela segue apresentando a credencial de
-  serviço da `t124`.
+- **Per-node execution policies** (model, pause, timeout, escalation) — the
+  ticket "Per-node execution policies (schema + API)". The core already accepts
+  proposals for `engine`, `model`, `escalation_policy` and
+  `escalation_recipient`; the screen design is what is missing.
+- **Editing the skill registry** — half-solved by `t215`, and the half that is
+  left is named here. The registry stopped being create-only: the versions of a
+  skill coexist (D22), and this screen reads `GET /v1/skills?id=` for every
+  pinned skill and offers a selector of the registered versions when there is any
+  besides the one the node pins. Choosing one writes the three fields of
+  `skill_ref` (`id`, `version`, `hash`) — the pin goes as `change_node_field`,
+  through the same door as ever, and is refused on apply if the registry does not
+  carry that hash. What does **not** exist here is editing the CONTENT of a
+  manifest, or seeing the diff between two of its versions: that is still the
+  ticket "Skill & contract editing (API + diff UI)". Editing the node's own
+  `contract`, yes — it is a field of the graph document, like `skill_ref`.
+- **A draggable canvas.** The graph document has no coordinate field
+  ([`schema/grafo.schema.json`](../../schema/grafo.schema.json)); inventing one is
+  a decision of its own, with a rendering dependency this package does not carry.
+  What exists here is a structured, editable list — visual in the same sense the
+  inbox is.
+- **Swapping the `id`, `node_type` or `engine` of an existing node** — §3.
+- **Editing `initial_node`, `final_nodes`, `metadata` or `custom_fields`** —
+  there is no semantic operation for any of them; growing the vocabulary is
+  additive and waits for the rule of two consumers.
+- **Variant lineages** (D13) — this editor aims at base graphs.
+- **Concurrency beyond `409 proposta_desatualizada`** — no lock, no live
+  collaboration, no automatic rebase.
+- **Real-time updates** (polling, websocket) — the page moves when whoever is on
+  it acts, like the rest of the screen.
+- **Logging in from the browser** — unchanged: the screen still presents the
+  `t124` service credential.

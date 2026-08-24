@@ -1,39 +1,40 @@
-# Atlas e bundle — especificação v0
+# Atlas and bundle — v0 specification
 
-> **Status:** v0 exercitada ponta a ponta contra os dois grafos de fábrica,
-> **não congelada**. A regra dos dois consumidores
-> (`notas/2026-08-14-extensao-e-qualidade.md:57-63`) exige dois consumidores
-> reais antes de travar um formato, e hoje existe **um** atlas: o espelho deste
-> próprio repositório. Enquanto o segundo não existir, o que está escrito aqui
-> é convenção com portão automatizado, não contrato congelado.
+> **Status:** v0 exercised end to end against both factory graphs, **not
+> frozen**. The rule of two consumers
+> (`notas/2026-08-14-extensao-e-qualidade.md:57-63`) demands two real consumers
+> before a format is locked, and today there is **one** atlas: the mirror of this
+> very repository. Until the second one exists, what is written here is a
+> convention with an automated gate, not a frozen contract.
 >
-> **Portões deste documento:**
+> **This document's gates:**
 > [`scripts/publish-atlas-bundle.test.mjs`](../../scripts/publish-atlas-bundle.test.mjs)
-> (o passo de publicação: recusa, cópia, idempotência, atlas multi-classe) e
+> (the publication step: refusal, copy, idempotency, a multi-class atlas) and
 > [`packages/core/test/cli-atlas-publish.test.ts`](../../packages/core/test/cli-atlas-publish.test.ts)
-> (a volta inteira: publicar → commitar → clonar → importar, com o mesmo
-> `graph_version.id` e o mesmo pino por skill). Julgamento arquitetural é portão
-> humano.
+> (the whole round trip: publish → commit → clone → import, with the same
+> `graph_version.id` and the same pin per skill). Architectural judgement is a
+> human gate.
 
-## Por que este documento existe
+## Why this document exists
 
-[`docs/spec/graph.md`](../spec/graph.md) §7 termina exatamente onde este
-começa: "um grafo, um arquivo, autocontido". O documento de grafo já é o bundle
-mínimo exportável — mas um grafo sozinho não roda, porque cada nó pina uma
-skill por versão e por hash (D4), e o pino só fecha se o manifesto viajar
-junto. O que falta especificar é o empacotamento de **vários grafos, cada um
-com seus manifestos**, atravessando a borda para um repositório que não é este.
+[`docs/spec/graph.md`](../spec/graph.md) §7 ends exactly where this one begins:
+"one graph, one file, self-contained". The graph document is already the minimal
+exportable bundle — but a graph on its own does not run, because every node pins
+a skill by version and by hash (D4), and the pin only closes if the manifest
+travels with it. What is left to specify is the packaging of **several graphs,
+each with its manifests**, crossing the border into a repository that is not this
+one.
 
-Esse empacotamento tem nome no projeto: a D14 chama a biblioteca de fábrica de
-"semente do atlas compartilhável", e a nota de extensão
-(`notas/2026-08-14-extensao-e-qualidade.md:50-56`) trata o atlas como o efeito
-de rede do produto — a comunidade contribui **mapas**, não só código. O atlas é
-a forma de arquivo desse compartilhamento.
+That packaging has a name in the project: D14 calls the factory library the "seed
+of the shareable atlas", and the extension note
+(`notas/2026-08-14-extensao-e-qualidade.md:50-56`) treats the atlas as the
+product's network effect — the community contributes **maps**, not only code. The
+atlas is the file form of that sharing.
 
-## O layout
+## The layout
 
-Um atlas é um diretório — na prática, um checkout git — com **um
-subdiretório por classe de problema**:
+An atlas is a directory — in practice, a git checkout — with **one subdirectory
+per problem class**:
 
 ```
 atlas/
@@ -52,169 +53,168 @@ atlas/
       ...
 ```
 
-Três regras, e nada além delas:
+Three rules, and nothing beyond them:
 
-1. **O nome do diretório é a `classe`** do documento de grafo, tal como está
-   escrita no arquivo. Classe é a identidade do mapa (D8) e a raiz de
-   versionamento; o diretório não acrescenta identidade nenhuma, só reflete a
-   que já existe.
-2. **Cada subdiretório é um bundle**, na forma que
-   [`docs/spec/graph.md`](../spec/graph.md) e
+1. **The directory's name is the `classe`** of the graph document, exactly as the
+   file spells it. The class is the map's identity (D8) and the versioning root;
+   the directory adds no identity at all, it only reflects the one that already
+   exists.
+2. **Every subdirectory is a bundle**, in the shape
+   [`docs/spec/graph.md`](../spec/graph.md) and
    [`especificacoes/formatos/manifesto-skill.md`](../../especificacoes/formatos/manifesto-skill.md)
-   já definem: um `grafo.json` e um `skills/` com um manifesto por arquivo,
-   cujo nome é o `id` da skill.
-3. **Não existe arquivo de índice, catálogo ou manifesto de atlas.** O
-   diretório é o índice. Um índice seria um segundo lugar onde a verdade mora,
-   e ele ficaria desatualizado exatamente quando importa — na contribuição de
-   terceiro, que é o caso de uso inteiro do atlas.
+   already define: one `grafo.json` and one `skills/` holding a manifest per
+   file, whose name is the skill's `id`.
+3. **There is no index file, catalogue or atlas manifest.** The directory is the
+   index. An index would be a second place where the truth lives, and it would go
+   out of date exactly when it matters — on a third party's contribution, which
+   is the atlas's whole use case.
 
-É por isso que `grafos-de-fabrica/<classe>/` neste repositório e
-`<atlas>/<classe>/` num checkout do atlas são **a mesma coisa**, e entradas
-intercambiáveis do mesmo comando:
+That is why `grafos-de-fabrica/<class>/` in this repository and
+`<atlas>/<class>/` in an atlas checkout are **the same thing**, and
+interchangeable inputs to the same command:
 
 ```sh
-cartografo import grafos-de-fabrica/desenvolvimento-de-software   # daqui
-cartografo import ../atlas/desenvolvimento-de-software            # do atlas
+cartografo import grafos-de-fabrica/desenvolvimento-de-software   # from here
+cartografo import ../atlas/desenvolvimento-de-software            # from the atlas
 ```
 
-Um atlas pode carregar arquivos que não são bundle — `README.md`, licença,
-workflow de CI. O importador nunca os lê; o publicador nunca os toca.
+An atlas may carry files that are not a bundle — `README.md`, a licence, a CI
+workflow. The importer never reads them; the publisher never touches them.
 
-## Integridade: dois hashes que já existem
+## Integrity: two hashes that already exist
 
-Este formato **não introduz hash novo**. A verificação ponta a ponta é feita
-com os dois mecanismos que o sistema já tem, e é justamente por isso que ela é
-verificável sem confiar em quem publicou:
+This format **introduces no new hash**. The end-to-end verification is done with
+the two mechanisms the system already has, and that is precisely why it is
+verifiable without trusting whoever published it:
 
-| O quê | Onde mora | O que ele prova |
+| What | Where it lives | What it proves |
 |---|---|---|
-| `graph_version.id` | calculado no control plane, hash canônico do documento inteiro (`docs/spec/entities-versioning.md` §2) | que o mapa que entrou é byte a byte o mesmo que saiu — reimportar tem que reproduzir o mesmo id |
-| `skill_ref.hash` de cada nó | dentro do `grafo.json`, pinando o conteúdo do manifesto (D4) | que o manifesto ao lado é o manifesto que o autor do grafo revisou |
-| `hash` de cada manifesto | dentro do próprio `skills/*.json` | que o manifesto não foi editado sem passar pelo pino |
+| `graph_version.id` | computed in the control plane, the canonical hash of the whole document (`docs/spec/entities-versioning.md` §2) | that the map that went in is byte for byte the one that came out — reimporting has to reproduce the same id |
+| `skill_ref.hash` of every node | inside `grafo.json`, pinning the manifest's content (D4) | that the manifest beside it is the manifest the graph's author reviewed |
+| `hash` of every manifest | inside `skills/*.json` itself | that the manifest was not edited without going past the pin |
 
-O procedimento do hash de manifesto é o da especificação do formato: `sha256`
-do JSON canônico de `{instrucoes, entrada, saida, checks, permissoes}`. Mexeu
-numa linha de `instrucoes`, afrouxou um check ou abriu uma permissão, o hash
-muda, o pino do nó para de fechar e o bundle para de validar — que é
-exatamente a mudança que a D4 quer trazer de volta ao portão humano.
+The manifest hash procedure is the format specification's: `sha256` of the
+canonical JSON of `{instrucoes, entrada, saida, checks, permissoes}`. Touch a
+line of `instrucoes`, loosen a check or open a permission, and the hash moves,
+the node's pin stops closing and the bundle stops validating — which is exactly
+the change D4 wants to bring back to the human gate.
 
-A checagem acontece em três lugares independentes, e as duas primeiras rodam
-**antes de qualquer rede**:
+The check happens in three independent places, and the first two run **before any
+network**:
 
 - [`scripts/validate-factory-bundle.mjs`](../../scripts/validate-factory-bundle.mjs)
-  — o validador de referência, sem servidor nenhum, no `npm test`. É ele que o
-  passo de publicação usa, e é o critério de aceite do bundle como artefato de
-  repositório;
-- `cartografo import` — refaz as três checagens localmente e aborta sem mandar
-  nada ao control plane se alguma falhar. A checagem de manifesto aqui cobre o
-  subconjunto de regras de schema de que o pino depende, não o schema inteiro:
-  `especificacoes/` está fora da árvore publicável do pacote, e conformidade
-  completa continua sendo trabalho do validador de referência;
-- o registro de skills do control plane — recalcula o hash por conta própria e
-  recusa manifesto adulterado, porque quem verifica não pode acreditar no
-  autorrelato de quem publicou.
+  — the reference validator, with no server at all, in `npm test`. It is the one
+  the publication step uses, and it is the acceptance criterion for the bundle as
+  a repository artifact;
+- `cartografo import` — redoes the three checks locally and aborts without
+  sending anything to the control plane if any of them fails. The manifest check
+  here covers the subset of schema rules the pin depends on, not the whole
+  schema: `especificacoes/` is outside the package's publishable tree, and full
+  conformance is still the reference validator's work;
+- the control plane's skill registry — recomputes the hash on its own account and
+  refuses a tampered manifest, because whoever verifies cannot believe the
+  self-report of whoever published.
 
-**A volta que fecha a prova.** Publicar os dois grafos de fábrica num
-repositório git, commitar, clonar num diretório limpo e importar o clone
-produz o **mesmo `graph_version.id`** e o **mesmo hash por skill** que importar
-`grafos-de-fabrica/<classe>/` direto daqui. É o que
+**The round trip that closes the proof.** Publishing both factory graphs into a
+git repository, committing, cloning into a clean directory and importing the
+clone produces the **same `graph_version.id`** and the **same hash per skill** as
+importing `grafos-de-fabrica/<class>/` straight from here. That is what
 [`packages/core/test/cli-atlas-publish.test.ts`](../../packages/core/test/cli-atlas-publish.test.ts)
-roda a cada `npm test`; se a travessia mudasse um byte, o hash mudaria junto e
-o teste ficaria vermelho.
+runs on every `npm test`; if the crossing moved one byte, the hash would move
+with it and the test would go red.
 
-## Publicar
+## Publishing
 
 ```sh
 node scripts/publish-atlas-bundle.mjs <bundle-dir> <atlas-dir>
 ```
 
-O que o comando faz, na ordem:
+What the command does, in order:
 
-1. **Valida o bundle inteiro** com o `validateBundle` do validador de
-   referência — o mesmo código do `npm test`, importado e não reimplementado.
-2. **Recusa inteiro.** Bundle que não valida sai com código não-zero e escreve
-   **zero arquivo** no atlas. Meio mapa publicado com um pino quebrado é pior
-   que mapa nenhum: quem importa não tem como saber que aquilo está pela
-   metade.
-3. **Copia** `grafo.json` e tudo que está sob `skills/` para
-   `<atlas-dir>/<classe>/`, criando o diretório se preciso.
-4. **Revalida a cópia** no destino. O que sai deste script é um bundle que
-   valida a partir do novo lugar, ou o script falha.
+1. **Validates the whole bundle** with the reference validator's `validateBundle`
+   — the same code `npm test` runs, imported and not reimplemented.
+2. **Refuses whole.** A bundle that does not validate exits non-zero and writes
+   **zero files** into the atlas. Half a map published with a broken pin is worse
+   than no map: whoever imports it has no way of knowing it is half there.
+3. **Copies** `grafo.json` and everything under `skills/` to
+   `<atlas-dir>/<class>/`, creating the directory if needed.
+4. **Revalidates the copy** at the destination. What comes out of this script is
+   a bundle that validates from its new place, or the script fails.
 
-Três propriedades que valem contrato:
+Three properties that count as contract:
 
-- **Idempotente.** Republicar bundle inalterado reescreve os mesmos bytes.
-- **Aditivo entre classes.** Publicar duas classes no mesmo atlas deixa os dois
-  subdiretórios intactos; nenhuma classe enxerga ou apaga a outra.
-- **Espelho dentro da classe.** Um `skills/*.json` que o bundle não carrega
-  mais é removido do destino, e o arquivo removido é nomeado na saída. Sem
-  isso, uma skill renomeada deixaria o manifesto velho no atlas para o próximo
-  `cartografo import` registrar — o único caso em que copiar por cima
-  silenciosamente cria conteúdo que ninguém escreveu. Nada fora de
-  `<atlas-dir>/<classe>/` é tocado.
+- **Idempotent.** Republishing an unchanged bundle rewrites the same bytes.
+- **Additive across classes.** Publishing two classes into the same atlas leaves
+  both subdirectories intact; neither class sees or deletes the other.
+- **A mirror inside the class.** A `skills/*.json` the bundle no longer carries
+  is removed from the destination, and the removed file is named in the output.
+  Without that, a renamed skill would leave the old manifest in the atlas for the
+  next `cartografo import` to register — the one case where copying over
+  silently creates content nobody wrote. Nothing outside `<atlas-dir>/<class>/`
+  is touched.
 
-**O comando não chama `git`.** Commitar e empurrar o checkout populado é
-trabalho de quem chamou — CI ou uma pessoa. Isso é a D15 aplicada ao pé da
-letra: git entra nas bordas, como formato de intercâmbio, e nunca vira
-dependência de nada aqui dentro. O script é operação de sistema de arquivos
-pura, sem rede e sem repositório.
+**The command does not call `git`.** Committing and pushing the populated
+checkout is the caller's work — CI or a person. That is D15 applied to the
+letter: git enters at the edges, as an interchange format, and never becomes a
+dependency of anything in here. The script is pure file-system work, with no
+network and no repository.
 
-Pela mesma razão publicar **não é** subcomando do `cartografo`: todo subcomando
-da CLI é cliente HTTP do control plane (D1, D11), e este passo não fala com API
-nenhuma. Ele fica em `scripts/`, ao lado dos outros validadores.
+For the same reason, publishing is **not** a subcommand of `cartografo`: every
+CLI subcommand is an HTTP client of the control plane (D1, D11), and this step
+talks to no API at all. It lives in `scripts/`, beside the other validators.
 
-## Importar
+## Importing
 
 ```sh
-cartografo import <atlas>/<classe>
+cartografo import <atlas>/<class>
 ```
 
-O importador lê `<classe>/grafo.json`, e — se existir um `skills/` irmão —
-verifica o bundle inteiro **antes** de qualquer requisição; depois registra os
-manifestos (`POST /v1/skills`, cada um revalidado pelo servidor) e só então
-manda o grafo (`POST /v1/graphs`). Manifesto que o registro recusa aborta a
-importação, e o grafo não sobe.
+The importer reads `<class>/grafo.json` and — if a sibling `skills/` exists —
+verifies the whole bundle **before** any request; then it registers the manifests
+(`POST /v1/skills`, each one revalidated by the server) and only then sends the
+graph (`POST /v1/graphs`). A manifest the registry refuses aborts the import, and
+the graph does not go up.
 
-## A fronteira D4 que este documento não atravessa
+## The D4 boundary this document does not cross
 
-O caminho acima registra os manifestos do bundle **automaticamente**, e isso é
-deliberado para o conteúdo que este repositório escreveu: bundle de fábrica é
-conteúdo in-repo, revisado em code review, e pedir a um humano que reaprove
-cinco manifestos que ele já aprovou no merge não compra segurança nenhuma —
-compra registro vazio e grafo cujos nós pinam capacidade que o sintetizador não
-encontra.
+The path above registers the bundle's manifests **automatically**, and that is
+deliberate for content this repository wrote: a factory bundle is in-repo
+content, reviewed in code review, and asking a human to re-approve five manifests
+they already approved at merge buys no safety at all — it buys an empty registry
+and a graph whose nodes pin a capability the synthesizer cannot find.
 
-**Isso não vale para bundle de terceiro.** A D4 existe contra exatamente esse
-caso: instrução de skill que ninguém aqui escreveu é vetor de prompt injection,
-e o portão dela é `cartografo scan-skill` → `propose-skill` → `register-skill`,
-com assinatura humana no meio. Um atlas comunitário é, por definição, conteúdo
-externo.
+**That does not hold for a third party's bundle.** D4 exists against exactly that
+case: a skill instruction nobody here wrote is a prompt-injection vector, and its
+gate is `cartografo scan-skill` → `propose-skill` → `register-skill`, with a
+human signature in the middle. A community atlas is, by definition, external
+content.
 
-O que está construído hoje, e o que não está:
+What is built today, and what is not:
 
-| Origem do bundle | Caminho | Estado |
+| Bundle origin | Path | State |
 |---|---|---|
-| Deste repositório (grafos de fábrica), espelhado num atlas próprio | `cartografo import` registra os manifestos direto | **construído** e coberto pelos testes acima |
-| De um contribuidor externo | tem que passar pelo portão de aprovação humana da D4 | **não construído** — lacuna nomeada, não silenciosa |
+| From this repository (the factory graphs), mirrored into an atlas of its own | `cartografo import` registers the manifests directly | **built** and covered by the tests above |
+| From an external contributor | has to go through D4's human approval gate | **not built** — a named gap, not a silent one |
 
-A ticket que fecha a segunda linha fica para quando existir um segundo
-contribuidor real de atlas — a mesma regra dos dois consumidores que mantém
-este documento em v0. Até lá, importar bundle de terceiro pelo caminho rápido é
-uso fora de especificação: a verificação de hash prova que o conteúdo **não
-mudou desde que foi publicado**, e não que ele é confiável.
+The ticket that closes the second row waits for a second real atlas contributor
+to exist — the same rule of two consumers that keeps this document at v0. Until
+then, importing a third party's bundle down the fast path is use outside the
+specification: the hash check proves the content **has not changed since it was
+published**, not that it is trustworthy.
 
-## Fora de escopo (v0)
+## Out of scope (v0)
 
-- **Assinatura criptográfica** de bundle ou do atlas. Os hashes acima provam
-  integridade na travessia; provar *autoria* é outro problema, e ele só começa
-  a valer a pena quando o atlas tiver contribuidor que não seja este repo.
-- **Índice, catálogo ou manifesto de atlas** — ver a regra 3 do layout.
-- **`cartografo export` em modo bundle completo** (`grafo.json` + `skills/`)
-  para grafos que só existem no banco (variantes, classes não-fábrica). Hoje
-  `export` escreve o documento de grafo, que é o bundle mínimo; os dois mapas
-  de fábrica já existem como arquivos.
-- **Repositório público de atlas.** A D7 mantém este repo privado até
-  funcionar; a prova da volta usa um repositório git local como dublê.
-- **Versão do formato dentro do arquivo.** O documento de grafo já carrega a
-  sua em `metadata.versao_schema`, e o atlas não tem arquivo próprio onde pôr
-  uma — nem vai ter, enquanto a regra 3 do layout valer.
+- **Cryptographic signing** of a bundle or of the atlas. The hashes above prove
+  integrity across the crossing; proving *authorship* is another problem, and it
+  only starts to be worth it once the atlas has a contributor that is not this
+  repository.
+- **An index, catalogue or atlas manifest** — see rule 3 of the layout.
+- **`cartografo export` in full-bundle mode** (`grafo.json` + `skills/`) for
+  graphs that exist only in the database (variants, non-factory classes). Today
+  `export` writes the graph document, which is the minimal bundle; both factory
+  maps already exist as files.
+- **A public atlas repository.** D7 keeps this repository private until it works;
+  the round-trip proof uses a local git repository as a stand-in.
+- **A format version inside the file.** The graph document already carries its
+  own in `metadata.versao_schema`, and the atlas has no file of its own to put
+  one in — nor will it, while rule 3 of the layout holds.

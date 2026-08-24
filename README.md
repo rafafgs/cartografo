@@ -1,321 +1,326 @@
 # cartografo
 
-> Um framework que desenha, executa e evolui grafos de trabalho por classe de
-> problema. Você declara o problema; o sistema desenha o mapa.
+> A framework that draws, executes and evolves work graphs per problem class.
+> You declare the problem; the system draws the map.
 
-**Estado: ideia registrada, pré-protótipo.** Origem: conversa de 2026-08-14
-sobre graph engineering, durante a produção do artigo O001 da newsletter
-(repo `substack-agentes`). Ideia do Rafael; refinada na discussão.
+**State: idea on the record, pre-prototype.** Origin: a conversation of
+2026-08-14 about graph engineering, during the production of article O001 of the
+newsletter (repository `substack-agentes`). Rafael's idea; refined in the
+discussion.
 
-## A ideia em um parágrafo
+## The idea in one paragraph
 
-A pessoa declara o problema que quer resolver. O sistema consulta um registro
-de capacidades (skills com contrato), sintetiza um grafo de etapas para
-aquela classe de problema, valida esse grafo num portão, e executa o trabalho
-com o caminho congelado: as únicas decisões em voo são as dos portões
-(passou, falhou, escala para humano). Depois da execução, um avaliador lê o
-log (onde formou fila, onde o humano foi puxado, onde o trabalho ciclou) e
-propõe mudanças no grafo para a próxima rodada. O sistema se melhora sozinho
-entre execuções, com o humano trabalhando nas exceções.
+A person declares the problem they want to solve. The system queries a registry
+of capabilities (skills with a contract), synthesizes a graph of steps for that
+problem class, validates that graph at a gate, and executes the work with the
+path frozen: the only decisions in flight are the gates' (passed, failed,
+escalate to a human). After the execution, an evaluator reads the log (where a
+queue formed, where the human was pulled in, where the work went round in
+circles) and proposes changes to the graph for the next round. The system
+improves itself between executions, with the human working on the exceptions.
 
-## Como rodar
+## How to run it
 
-Do checkout limpo ao primeiro grafo registrado, em três comandos:
+From a clean checkout to the first registered graph, in three commands:
 
 ```bash
 npm install                                                            # 1
-npx cartografo                                                         # 2 (deixe rodando)
-CARTOGRAFO_TOKEN=<o token do passo 2> \
-  npx cartografo import grafos-de-fabrica/desenvolvimento-de-software  # 3 (outro terminal)
+npx cartografo                                                         # 2 (leave it running)
+CARTOGRAFO_TOKEN=<the token from step 2> \
+  npx cartografo import grafos-de-fabrica/desenvolvimento-de-software  # 3 (another terminal)
 ```
 
-O passo 1 é `npm install` porque um checkout de trabalho é onde o lockfile
-muda. Já uma instalação **reproduzível** — o CI, ou qualquer máquina que precise
-do mesmo `node_modules` de novo — pede `npm ci`: ele instala exatamente o que o
-`package-lock.json` diz e **falha** quando lockfile e `package.json` discordam,
-em vez de acomodar a diferença em silêncio. Foi um `node_modules` velho, mais
-antigo que uma dependência recém-adicionada, que derrubou 314 testes e o
-`typecheck` num checkout sem ninguém entender por quê.
+Step 1 is `npm install` because a working checkout is where the lockfile moves.
+A **reproducible** install — CI, or any machine that needs the same
+`node_modules` again — asks for `npm ci`: it installs exactly what
+`package-lock.json` says and **fails** when the lockfile and `package.json`
+disagree, instead of silently accommodating the difference. It was an old
+`node_modules`, older than a freshly added dependency, that knocked out 314 tests
+and the `typecheck` in one checkout with nobody understanding why.
 
-O passo 2 é o control plane inteiro em um comando: cria `.cartografo/cartografo.db`,
-aplica as migrações pendentes, sobe o HTTP e imprime a linha `cartografo.ready`.
-Na PRIMEIRA partida contra um banco novo, essa linha traz também um
-`bootstrapToken`: é a credencial de operador, e é a única vez que ela aparece —
-o banco guarda só o hash dela. Toda rota `/v1/*` exige essa credencial; `/health`
-não exige nenhuma, porque é sonda de infraestrutura. Perdeu o token? Apague
-`.cartografo/` e suba de novo, que outro é emitido. Um segundo `npx cartografo`
-contra o mesmo banco sai com 1 e uma linha só, dizendo o pid do que já está
-rodando e o arquivo `<banco>.lock` que ele segura — só o servidor escreve no
-banco (D1), e isso vale entre processos, não só dentro de um.
+Step 2 is the whole control plane in one command: it creates
+`.cartografo/cartografo.db`, applies the pending migrations, brings up the HTTP
+server and prints the line `cartografo.ready`. On the FIRST start against a new
+database that line also carries a `bootstrapToken`: it is the operator
+credential, and it is the only time it ever appears — the database keeps only its
+hash. Every `/v1/*` route demands that credential; `/health` demands none,
+because it is an infrastructure probe. Lost the token? Delete `.cartografo/` and
+start again, and another one is issued. A second `npx cartografo` against the
+same database exits 1 with a single line, naming the pid of the one already
+running and the `<database>.lock` file it holds — only the server writes to the
+database (D1), and that holds between processes, not only inside one.
 
-> **Subindo de uma versão anterior à t235? Apague `.cartografo/`.** A D20 traduziu
-> para inglês o vocabulário do log de eventos (`job.created` no lugar de
-> `trabalho.criado`, `data.title` no lugar de `dados.titulo`), o das operações
-> de proposta (`add_node` no lugar de `adicionar_no`, `{type, node_id, field,
-> from, to, inverse}` no lugar de `{tipo, no_id, campo, de, para, inversa}`) e o
-> do próprio banco — os nomes de tabela e de coluna (`job`, `graph_version`,
-> `created_at`) e também os VALORES que eles guardam (`status = 'pending'` no
-> lugar de `'pendente'`, `entity_type = 'job'` no lugar de `'trabalho'`,
-> `role = 'work'` no lugar de `'fazer'`). Tudo isso é dado gravado que não se
-> reescreve — o log é append-only, uma proposta guardada é o registro do que
-> alguém propôs, e uma linha antiga não passa pelo `CHECK` novo. Como não existe
-> dado de produção, a resposta da própria decisão é **recriar** o banco de
-> desenvolvimento, não migrá-lo — `rm -rf .cartografo/` e `npx cartografo` de
-> novo. Não existe migração de renomeação para rodar: as dezenove migrações
-> nascem em inglês, e um banco antigo não é atualizado por elas.
+> **Coming up from a version older than t235? Delete `.cartografo/`.** D20 took
+> to English the vocabulary of the event log (`job.created` in place of
+> `trabalho.criado`, `data.title` in place of `dados.titulo`), that of the
+> proposal operations (`add_node` in place of `adicionar_no`,
+> `{type, node_id, field, from, to, inverse}` in place of
+> `{tipo, no_id, campo, de, para, inversa}`) and that of the database itself —
+> the table and column names (`job`, `graph_version`, `created_at`) and also the
+> VALUES they hold (`status = 'pending'` in place of `'pendente'`,
+> `entity_type = 'job'` in place of `'trabalho'`, `role = 'work'` in place of
+> `'fazer'`). All of that is recorded data, and recorded data is not rewritten —
+> the log is append-only, a stored proposal is the record of what somebody
+> proposed, and an old row does not pass the new `CHECK`. Since there is no
+> production data, the decision's own answer is to **recreate** the development
+> database rather than migrate it — `rm -rf .cartografo/` and `npx cartografo`
+> again. There is no rename migration to run: the nineteen migrations are born
+> in English, and an old database is not brought up to date by them.
 >
-> **O que a t279 acrescenta é proteção para a próxima vez, não conserto para
-> esta.** Desde a `0023`, `schema_migrations` guarda o `checksum` do conteúdo de
-> cada migração aplicada, e toda partida confere: uma migração já aplicada que
-> foi editada no lugar — ou que sumiu do disco, porque alguém a renomeou — faz
-> `npx cartografo` parar na hora, dizendo o nome dela, em vez de subir limpo e
-> morrer depois no meio de uma requisição com um `no such column`. Isso não
-> alcança os bancos que a D20 já quebrou: as linhas deles foram gravadas antes de
-> existir checksum, então não há com o que comparar, e o runner só registra o que
-> encontra hoje (avisando no stderr). Para esses, a resposta continua sendo
-> exatamente a de cima — `rm -rf .cartografo/`.
+> **What t279 adds is protection for the next time, not a repair for this one.**
+> Since `0023`, `schema_migrations` keeps the `checksum` of the content of every
+> applied migration, and every start checks it: a migration already applied that
+> was edited in place — or that vanished from disk, because somebody renamed it —
+> makes `npx cartografo` stop right there, naming it, instead of starting clean
+> and dying later in the middle of a request with a `no such column`. That does
+> not reach the databases D20 already broke: their rows were written before the
+> checksum existed, so there is nothing to compare against, and the runner only
+> records what it finds today (warning on stderr). For those, the answer is still
+> exactly the one above — `rm -rf .cartografo/`.
 
-O passo 3 registra o grafo de fábrica 1 (D14) como linhagem base — conferindo
-antes, localmente, os pinos de hash das skills do bundle (D4) — e imprime a
-`graph_version.id` que ficou gravada. Ao final, `GET /v1/classes` lista
-`desenvolvimento-de-software`.
+Step 3 registers factory graph 1 (D14) as a base lineage — checking the bundle's
+skill hash pins locally first (D4) — and prints the `graph_version.id` that was
+recorded. At the end, `GET /v1/classes` lists `desenvolvimento-de-software`.
 
-As skills do bundle vão para o registro antes do grafo, e o registro guarda uma
-versão por linha (D22): reimportar o mesmo bundle não reescreve nada, e
-reimportá-lo depois de subir a `version` de uma skill registra só aquela versão —
-a linha `skills  1 registered, 4 already in the registry` é o que o comando
-imprime. Editar o conteúdo de uma skill SEM subir a `version` é o caso que o
-`import` recusa, antes de mandar o grafo: uma versão não pode nomear dois
-conteúdos.
+The bundle's skills go into the registry before the graph, and the registry keeps
+one version per row (D22): reimporting the same bundle rewrites nothing, and
+reimporting it after bumping a skill's `version` registers only that version —
+the line `skills  1 registered, 4 already in the registry` is what the command
+prints. Editing a skill's content WITHOUT bumping the `version` is the case
+`import` refuses, before it sends the graph: one version cannot name two
+contents.
 
-E do grafo registrado ao trabalho andando, um quarto comando:
+And from the registered graph to work in motion, a fourth command:
 
 ```bash
-CARTOGRAFO_TOKEN=<o token do passo 2> \
+CARTOGRAFO_TOKEN=<the token from step 2> \
   npx cartografo-runner --project 1 \
-    --working-dir ~/proj --worktrees-root ~/proj-worktrees              # 4 (outro terminal)
+    --working-dir ~/proj --worktrees-root ~/proj-worktrees              # 4 (another terminal)
 ```
 
-O passo 4 sobe um runner: ele se pareia com o control plane, imprime a linha
-`cartografo.runner.ready` e, a partir daí, pede trabalho liberado, toma a lease
-e despacha uma sessão de agente para cada trabalho que pegar — um tick a cada
-`--interval-ms` (default 2000), até um SIGINT ou SIGTERM, que espera a sessão em
-voo terminar antes de sair. Um engine por processo
-(`--engine claude-code|codex`, default `claude-code`), e é o CLI desse engine,
-já instalado e autenticado na máquina, que roda de fato.
+Step 4 brings up a runner: it pairs with the control plane, prints the line
+`cartografo.runner.ready` and, from there, asks for released work, takes the
+lease and dispatches an agent session for every job it picks up — one tick every
+`--interval-ms` (default 2000), until a SIGINT or SIGTERM, which waits for the
+session in flight to finish before leaving. One engine per process
+(`--engine claude-code|codex`, default `claude-code`), and it is that engine's
+CLI, already installed and authenticated on the machine, that actually runs.
 
-Cada sessão trabalha num `git worktree` só dela, num branch `ticket-<id>`:
-`--working-dir` é o repositório de onde esse worktree é cortado (default: o
-diretório atual) e `--worktrees-root` é onde ele é criado. O segundo é
-**obrigatório e não tem default** — onde uma sessão pode escrever é decisão de
-quem opera, nunca palpite do código — e tem que ser **irmão** do primeiro, nunca
-um diretório dentro dele: worktree criado dentro do repositório de onde saiu
-aparece como conteúdo não rastreado no `git status` desse repositório. Sem a
-flag, ou com as duas se sobrepondo, o comando sai com 2 e uma linha, antes de
-falar com o control plane. `npx cartografo-runner --help` lista o resto.
+Every session works in a `git worktree` of its own, on a `ticket-<id>` branch:
+`--working-dir` is the repository that worktree is cut from (default: the current
+directory) and `--worktrees-root` is where it is created. The second is
+**mandatory and has no default** — where a session may write is the operator's
+decision, never the code's guess — and it has to be a **sibling** of the first,
+never a directory inside it: a worktree created inside the repository it came
+from shows up as untracked content in that repository's `git status`. Without the
+flag, or with the two overlapping, the command exits 2 with one line, before it
+talks to the control plane. `npx cartografo-runner --help` lists the rest.
 
-Sessão que termina limpa tem o worktree removido; sessão que falha, estoura o
-relógio ou é cancelada tem o dela **retido**, porque é o único lugar onde ainda
-existe o que ela fez — e desde a t207 uma sessão que termina bem mas deixa
-trabalho **não commitado** também retém a árvore e **bloqueia o trabalho** com
-o caminho dela no motivo, em vez de apagar em silêncio. Isso acumula
-diretórios e branches, e quem recolhe é o `prune`:
+A session that ends clean has its worktree removed; a session that fails, runs
+out of clock or is cancelled has its own **retained**, because it is the only
+place what it did still exists — and since t207 a session that ends well but
+leaves **uncommitted** work also retains the tree and **blocks the job** with its
+path in the reason, instead of deleting in silence. That piles up directories and
+branches, and what collects them is `prune`:
 
 ```bash
 npx cartografo-runner prune --working-dir ~/proj \
-  --worktrees-root ~/proj-worktrees --dry-run     # lista o que recolheria
+  --worktrees-root ~/proj-worktrees --dry-run     # lists what it would collect
 npx cartografo-runner prune --working-dir ~/proj \
-  --worktrees-root ~/proj-worktrees               # recolhe de verdade
+  --worktrees-root ~/proj-worktrees               # collects for real
 ```
 
-Ele varre duas fontes — os diretórios `ticket-<id>-<hex>` sob
-`--worktrees-root` que o `git worktree list` reconhece, e os branches
-`ticket-<id>` do repositório — e pergunta ao control plane, por trabalho, se
-ele está **concluído**. Só o que está concluído é recolhido: `bloqueado` não é
-estado terminal (um trabalho desbloqueado continua do mesmo nó, com uma árvore
-nova). O branch sai com `git branch -d`, **nunca `-D`** — concluído quer dizer
-que a travessia chegou a um nó final do grafo, o que não diz nada sobre os
-commits terem sido mergeados; branch não mergeado é recusado, reportado e não
-muda o código de saída. `--older-than <dias>` restringe a recolha ao que já
-está parado há esse tempo, e qualquer diretório que o comando não reconheça é
-reportado e nunca tocado. `npx cartografo-runner prune --help` lista o resto.
+It sweeps two sources — the `ticket-<id>-<hex>` directories under
+`--worktrees-root` that `git worktree list` recognizes, and the repository's
+`ticket-<id>` branches — and asks the control plane, job by job, whether it is
+**finished**. Only what is finished is collected: `bloqueado` is not a terminal
+state (an unblocked job carries on from the same node, with a fresh tree). The
+branch goes with `git branch -d`, **never `-D`** — finished means the traversal
+reached a final node of the graph, which says nothing about the commits having
+been merged; an unmerged branch is refused, reported, and does not change the
+exit code. `--older-than <days>` narrows the collection to what has been sitting
+still for that long, and any directory the command does not recognize is reported
+and never touched. `npx cartografo-runner prune --help` lists the rest.
 
-Os outros dois subcomandos do `cartografo`, para conferir e levar o grafo
-embora:
+The other two subcommands of `cartografo`, for checking and for taking the graph
+away:
 
 ```bash
-npx cartografo status                                   # servidor e projetos registrados
-npx cartografo status --json                            # o mesmo, para script
-npx cartografo export desenvolvimento-de-software       # grava ./desenvolvimento-de-software.grafo.json
+npx cartografo status                                   # server and registered projects
+npx cartografo status --json                            # the same, for a script
+npx cartografo export desenvolvimento-de-software       # writes ./desenvolvimento-de-software.grafo.json
 ```
 
-O arquivo que `export` grava é o mesmo documento que `import` aceita de volta:
-importá-lo em outro control plane produz a mesma `graph_version.id`, porque o id
-de uma versão é o hash canônico do documento. `npx cartografo --help` lista tudo.
+The file `export` writes is the same document `import` takes back: importing it
+into another control plane produces the same `graph_version.id`, because the id
+of a version is the canonical hash of the document. `npx cartografo --help` lists
+everything.
 
-Depois de uma rodada, para a lente de custo ler a telemetria dela:
+After a round, for the cost lens to read its telemetry:
 
 ```bash
-CARTOGRAFO_TOKEN=<o token do passo 2> \
+CARTOGRAFO_TOKEN=<the token from step 2> \
   npx topografo-custo evaluate --url http://127.0.0.1:4317 \
     --execution 7 --token-cap 200000
 ```
 
-O `topografo-custo` é um topógrafo: lê sessões e trabalhos daquela execução pela
-API pública, agrega custo por `(versão do grafo, nó)` e **deposita uma proposta
-pendente** por candidata — nunca aplica nenhuma, porque aplicar é decisão humana
-no portão (princípio 5). Sem `--token-cap` nem `--second-cap` a política de
-teto não roda: não há o que ultrapassar. `npx topografo-custo --help` lista o
-resto.
+`topografo-custo` is a topografo: it reads that execution's sessions and jobs
+through the public API, aggregates cost per `(graph version, node)` and
+**deposits a pending proposal** per candidate — it never applies any, because
+applying is a human decision at the gate (principle 5). Without `--token-cap` or
+`--second-cap` the cap policy does not run: there is nothing to exceed.
+`npx topografo-custo --help` lists the rest.
 
-E, para não ter de digitar o id de cada rodada, um observador que faz isso
-sozinho:
+And, so that nobody has to type the id of every round, an observer that does it
+on its own:
 
 ```bash
-npx cartografo-topografo watch --url http://127.0.0.1:4317 --token <o token do passo 2>
+npx cartografo-topografo watch --url http://127.0.0.1:4317 --token <the token from step 2>
 ```
 
-Ele assina o stream de eventos, espera o control plane declarar uma execução
-terminada e roda as **duas** lentes sobre ela — a de fluxo (uma sessão de agente
-de verdade, um diff semântico) e a de custo (agregação determinística) —,
-escrevendo uma linha JSON por desfecho: `posted`, `deduped`, `nothing` ou
-`error`. `--lens flow|cost` roda só uma delas; `--dry-run` diz o que rodaria e
-não gasta nada. Rodar duas vezes sobre a mesma execução não duplica proposta:
-quem deduplica é o control plane, por `(lente, versão-alvo, operações)`.
+It subscribes to the event stream, waits for the control plane to declare an
+execution finished and runs **both** lenses over it — the flow one (a real agent
+session, a semantic diff) and the cost one (a deterministic aggregation) —,
+writing one JSON line per outcome: `posted`, `deduped`, `nothing` or `error`.
+`--lens flow|cost` runs only one of them; `--dry-run` says what it would run and
+spends nothing. Running twice over the same execution does not duplicate a
+proposal: the one that deduplicates is the control plane, by `(lens, target
+version, operations)`.
 
-O que ele **não** faz: aplicar. Continua nascendo tudo `pending` e esperando
-você no portão (princípio 5) — o que virou automático foi propor, não decidir.
-Ele também não se liga sozinho: não há serviço, cron nem passo de partida que o
-suba, e ligá-lo é decisão de quem opera ([D21](DECISIONS.md)).
+What it does **not** do: apply. Everything is still born `pending` and still
+waits for you at the gate (principle 5) — what became automatic is proposing, not
+deciding. It also does not switch itself on: there is no service, cron or startup
+step that brings it up, and switching it on is the operator's decision
+([D21](DECISIONS.md)).
 
-E, para ver o que está acontecendo:
+And, to see what is going on:
 
 ```bash
 npx cartografo-tela                                     # http://127.0.0.1:4318
 ```
 
-Um comando, as duas metades da tela que a D11 pede. Em `/`, o **inbox de
-propostas**: o diff semântico, a evidência e as quatro decisões
-([`docs/spec/screen-proposal-inbox.md`](docs/spec/screen-proposal-inbox.md)). Em
-`/board`, a **observabilidade mínima**: o quadro de trabalhos agrupado por nó,
-as execuções, as sessões, a fila de perguntas pendentes — com resposta inline,
-que escreve de verdade na API — e a linha do tempo de qualquer trabalho,
-separada em fila, agente trabalhando e esperando humano
+One command, the two halves of the screen D11 asks for. At `/`, the **proposal
+inbox**: the semantic diff, the evidence and the four decisions
+([`docs/spec/screen-proposal-inbox.md`](docs/spec/screen-proposal-inbox.md)). At
+`/board`, the **minimal observability**: the job board grouped by node, the
+executions, the sessions, the queue of pending questions — with an inline answer
+that really writes through the API — and the timeline of any job, split into
+queueing, agent working and waiting on a human
 ([`docs/spec/screen.md`](docs/spec/screen.md)).
 
-As duas são cliente comum da API pública, sem privilégio nenhum sobre o control
-plane: outro processo, outra porta, nenhum acesso ao banco.
+Both are ordinary clients of the public API, with no privilege at all over the
+control plane: another process, another port, no access to the database.
 
-Configuração: `CARTOGRAFO_PORT`, `CARTOGRAFO_DB_PATH` e `CARTOGRAFO_HOST` na
-partida — o último decide o endereço de escuta, e o default segue sendo
-`127.0.0.1`, porque abrir a porta para a rede é decisão de quem opera, não do
-comando; `CARTOGRAFO_LOG_LEVEL` (default `info`, valores `trace`, `debug`,
-`info`, `warn`, `error`, `fatal`, `silent`) para o nível do log JSON do control
-plane — é por ele que saem as falhas de tick dos despachantes e os 500
-inesperados, cuja resposta ao cliente não diz mais do que `{error, message,
-request_id}`: o `request_id` é o `reqId` da linha de log correspondente, e é o
-que liga um relato de suporte ao que de fato quebrou; não há log por
-requisição, de propósito; `CARTOGRAFO_LEASE_CAP_RUNNER` e
-`CARTOGRAFO_LEASE_CAP_PROJECT`
-(default 50 cada) para o teto de leases simultâneas que o servidor impõe — o
-runner declara o teto que quer em `--declared-runner-cap` e vale o MENOR dos
-dois, porque quem decide concorrência é o control plane, não o pedido (D1); esse
-número declarado não muda o que um processo de runner faz, que é despachar **uma
-sessão por tick**, qualquer que seja o valor: mais vazão é mais processos de
-runner sob o mesmo projeto; `CARTOGRAFO_URL` (ou `--url`)
-para apontar os outros subcomandos — e a tela, e o runner — a um control plane
-que não esteja no default `http://127.0.0.1:4317`;
-`CARTOGRAFO_TOKEN` (ou `--token`) para a credencial que os subcomandos e o
-runner apresentam; `CARTOGRAFO_TELA_PORT` para mudar a porta da tela e
-`CARTOGRAFO_TELA_TOKEN` para dar à tela uma credencial própria — sem ela, a tela
-usa a do `CARTOGRAFO_TOKEN`. A tela apresenta essa credencial ao control plane em
-toda chamada e não pede nenhuma ao navegador: ela é cliente sem privilégio da API
-(D11), e é por isso que escuta em loopback.
+Configuration: `CARTOGRAFO_PORT`, `CARTOGRAFO_DB_PATH` and `CARTOGRAFO_HOST` at
+startup — the last one decides the listening address, and the default is still
+`127.0.0.1`, because opening the port to the network is the operator's decision,
+not the command's; `CARTOGRAFO_LOG_LEVEL` (default `info`, values `trace`,
+`debug`, `info`, `warn`, `error`, `fatal`, `silent`) for the level of the control
+plane's JSON log — it is through it that the dispatchers' tick failures and the
+unexpected 500s come out, whose answer to the client says no more than `{error,
+message, request_id}`: `request_id` is the `reqId` of the matching log line, and
+it is what ties a support report to what actually broke; there is no per-request
+log, on purpose; `CARTOGRAFO_LEASE_CAP_RUNNER` and `CARTOGRAFO_LEASE_CAP_PROJECT`
+(default 50 each) for the cap on simultaneous leases the server imposes — the
+runner declares the cap it wants in `--declared-runner-cap` and the SMALLER of
+the two wins, because the one that decides concurrency is the control plane, not
+the request (D1); that declared number does not change what one runner process
+does, which is to dispatch **one session per tick**, whatever the value: more
+throughput is more runner processes under the same project; `CARTOGRAFO_URL` (or
+`--url`) to point the other subcommands — and the screen, and the runner — at a
+control plane that is not at the default `http://127.0.0.1:4317`;
+`CARTOGRAFO_TOKEN` (or `--token`) for the credential the subcommands and the
+runner present; `CARTOGRAFO_TELA_PORT` to change the screen's port and
+`CARTOGRAFO_TELA_TOKEN` to give the screen a credential of its own — without it,
+the screen uses the one in `CARTOGRAFO_TOKEN`. The screen presents that
+credential to the control plane on every call and asks the browser for none: it
+is an unprivileged client of the API (D11), and that is why it listens on
+loopback.
 
-## O buraco que ele ocupa
+## The hole it fills
 
-Hoje existem dois modos de graph engineering: desenhar a topologia na mão,
-caso a caso (LangGraph e afins), ou fixar um grafo único por domínio
-(flowpilot, para entrega de software). Falta a camada do meio: um sistema que
-**gera e evolui** grafos por classe de problema, com a mesma governança que o
-grafo fixo oferece.
+Today there are two modes of graph engineering: drawing the topology by hand,
+case by case (LangGraph and the like), or fixing a single graph per domain
+(flowpilot, for software delivery). The middle layer is missing: a system that
+**generates and evolves** graphs per problem class, with the same governance the
+fixed graph offers.
 
-## Princípios (registrados da conversa de origem)
+## Principles (recorded from the founding conversation)
 
-1. **Meta-processo fixo, grafo-objeto dinâmico.** O gerador de topologia é um
-   agente, ou seja, um trabalhador que erra. Se o grafo que governa o
-   trabalho fosse produzido por um trabalhador não governado, a meta-camada
-   reintroduziria o problema que o grafo resolve. Por isso o pipeline
-   declarar → consultar capacidades → sintetizar → **validar o grafo** →
-   executar → avaliar → propor mutação é fixo; o que ele produz por classe de
-   problema é que varia. Analogia: compilador. A declaração do problema
-   compila para uma topologia; o compilador não muda a cada programa.
-2. **Dinâmico entre execuções, congelado durante.** Nó não escolhe caminho
-   livremente em runtime (isso seria um loop enfeitado, sem reprodutibilidade
-   nem auditoria). Sintetiza → congela → atravessa → aprende do log → muta a
-   versão seguinte. Grafo versionado, com diff entre rodadas.
-3. **O contrato é a peça de sustentação.** Cada capacidade declara entrada,
-   saída, pré-condições e como se verifica o que ela produz. Sem contrato, o
-   sintetizador compõe por alucinação; com contrato, compor grafo vira casar
-   contratos. (MCP já é meio caminho: ferramenta com schema.)
-4. **Contexto compartilhado = estado explícito, nunca janela comum.** O que
-   se compartilha é o quadro e o event log; cada nó recebe uma projeção do
-   estado. Janela de contexto comum recria a degradação de sessão longa.
-5. **Evolução com escada de segurança.** O avaliador primeiro só sugere; a
-   mudança passa por portão humano; com histórico acumulado, mutações de
-   baixo risco auto-aplicam com rollback. Humano nas exceções da execução e
-   no portão de mutação, no começo.
-6. **Limite honesto: densidade de verificação.** O framework se adapta a
-   qualquer problema onde dá para escrever o contrato de cada etapa. Onde não
-   há verificação intermediária possível, não há portão; sem portão, o grafo
-   é decorativo. O teto é densidade de verificação, não inteligência.
+1. **Fixed meta-process, dynamic object-graph.** The topology generator is an
+   agent, which is to say a worker that makes mistakes. If the graph that governs
+   the work were produced by an ungoverned worker, the meta-layer would
+   reintroduce the very problem the graph solves. That is why the pipeline
+   declare → query capabilities → synthesize → **validate the graph** → execute →
+   evaluate → propose mutation is fixed; what varies is what it produces per
+   problem class. The analogy: a compiler. The problem declaration compiles to a
+   topology; the compiler does not change with every program.
+2. **Dynamic between executions, frozen during them.** A node does not freely
+   pick a path at run time (that would be a loop with decorations, with neither
+   reproducibility nor an audit trail). Synthesize → freeze → traverse → learn
+   from the log → mutate the next version. A versioned graph, with a diff between
+   rounds.
+3. **The contract is the load-bearing piece.** Every capability declares its
+   input, its output, its preconditions and how what it produces is verified.
+   With no contract, the synthesizer composes by hallucination; with a contract,
+   composing a graph becomes matching contracts. (MCP is already halfway there: a
+   tool with a schema.)
+4. **Shared context = explicit state, never a common window.** What is shared is
+   the board and the event log; every node receives a projection of the state. A
+   common context window recreates the degradation of a long session.
+5. **Evolution with a safety ladder.** At first the evaluator only suggests; the
+   change goes through a human gate; with accumulated history, low-risk mutations
+   auto-apply with rollback. The human is on the execution's exceptions and at
+   the mutation gate, to begin with.
+6. **An honest limit: verification density.** The framework adapts to any problem
+   where the contract of each step can be written down. Where no intermediate
+   verification is possible, there is no gate; with no gate, the graph is
+   decorative. The ceiling is verification density, not intelligence.
 
-## Peças
+## Pieces
 
-- **Registro de capacidades** — skills com contrato (entrada, saída,
-  pré-condições, método de verificação).
-- **Sintetizador de topologia** — do problema declarado ao grafo proposto.
-- **Portão de validação de grafo** — o grafo é artefato com contrato; alguém
-  confere antes de rodar.
-- **Executor** — travessia com portões, filas, escalação para humano.
-- **Avaliador (topógrafo)** — process mining do log; propostas de mutação.
-- **Memória de processo** — grafos versionados por classe de problema.
+- **Capability registry** — skills with a contract (input, output,
+  preconditions, verification method).
+- **Topology synthesizer** — from the declared problem to the proposed graph.
+- **Graph validation gate** — the graph is an artifact with a contract; somebody
+  checks it before it runs.
+- **Executor** — traversal with gates, queues, escalation to a human.
+- **Evaluator (topografo)** — process mining over the log; mutation proposals.
+- **Process memory** — graphs versioned per problem class.
 
-## Linhagem e vizinhos
+## Lineage and neighbours
 
-ADAS (busca automática de designs agênticos), DSPy (otimização de pipelines a
-partir de métricas), process mining (van der Aalst), LangGraph (topologia
-autoral por caso de uso), flowpilot (grafo fixo por domínio — a primeira
-instância). O diferencial desta ideia: **grafo persistente por classe de
-problema que evolui entre rodadas** — a retrospectiva de um time virando
-código.
+ADAS (automated search of agentic designs), DSPy (pipeline optimization from
+metrics), process mining (van der Aalst), LangGraph (authored topology per use
+case), flowpilot (a fixed graph per domain — the first instance). What sets this
+idea apart: **a persistent graph per problem class that evolves between rounds** —
+a team's retrospective turning into code.
 
-## Condição de partida (a regra do teto)
+## Starting condition (the ceiling rule)
 
-Não construir a meta-camada a priori. A generalização se extrai de
-instâncias: começar com grafos fixos funcionando em domínios diferentes.
-Decidido (D14): duas instâncias — desenvolvimento de software (grafo do
-flowpilot portado) e bets assimétricas (tese de investimento) — entregues
-como grafos de fábrica, prontos para uso.
+Do not build the meta-layer a priori. Generalization is extracted from instances:
+start with fixed graphs working in different domains. Decided (D14): two
+instances — software development (the ported flowpilot graph) and asymmetric bets
+(an investment thesis) — delivered as factory graphs, ready to use.
 
-## Protótipo barato
+## Cheap prototype
 
-Os primitivos do Claude Code já são metade do framework: skills com descrição
-= registro de capacidades; workflow scripts = grafos congelados; logs de
-sessão = event log. O sintetizador seria um agente que escreve workflow
-scripts. Testável num fim de semana, antes de decidir se vira produto, artigo
-ou os dois.
+Claude Code's primitives are already half the framework: skills with a
+description = a capability registry; workflow scripts = frozen graphs; session
+logs = an event log. The synthesizer would be an agent that writes workflow
+scripts. Testable in a weekend, before deciding whether it becomes a product, an
+article or both.
 
-## Nome
+## The name
 
-`cartografo`: quem desenha um mapa por território — um grafo por classe de
-problema, redesenhado conforme o território é explorado. Considerados:
-`topografo` (ficou para o avaliador, que mede o terreno), `graphsmith` (EN).
+`cartografo`: the one who draws a map per territory — one graph per problem
+class, redrawn as the territory is explored. Also considered: `topografo` (kept
+for the evaluator, which measures the ground), `graphsmith` (EN).
 
-## Plano
+## The plan
 
-Fazer funcionar → validar nas duas instâncias da D14 (software e bets
-assimétricas) → publicar artigo na newsletter com o repo público (só depois
-de pronto), como alavanca de subscribers. O README público carregará o convite para seguir
-agentsmaestro.dev. Decisões em [DECISIONS.md](./DECISIONS.md); notas em
-`notas/`.
+Make it work → validate it on D14's two instances (software and asymmetric bets)
+→ publish an article in the newsletter with the repository public (only once it
+is ready), as a lever for subscribers. The public README will carry the
+invitation to follow agentsmaestro.dev. Decisions in
+[DECISIONS.md](./DECISIONS.md); notes in `notas/`.

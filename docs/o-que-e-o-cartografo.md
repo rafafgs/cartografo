@@ -1,196 +1,201 @@
-# O que é o cartografo (explicação simples)
+# What the cartografo is (the plain explanation)
 
-> **Documento vivo (D19).** Este arquivo explica o produto em linguagem
-> simples, sem jargão, para quem chegou agora. Toda entrega que mudar o
-> comportamento visível do produto atualiza este arquivo na mesma entrega.
-> O que já roda hoje está no "Como rodar" do `README.md`; o que ainda está
-> em construção no quadro atual está marcado aqui com *(em construção)*.
+> **Living document (D19).** This file explains the product in plain language,
+> with no jargon, for whoever has just arrived. Every delivery that changes the
+> product's visible behaviour updates this file in the same delivery.
+> What already runs today is in the "How to run it" of `README.md`; what is
+> still being built on the current board is marked here with *(under
+> construction)*.
 
-## Em uma frase
+## In one sentence
 
-Um servidor local e aberto onde você declara problemas, ganha mapas de
-processo com portões de verificação, agentes de IA executam o trabalho sob
-governança enquanto você atende exceções, e cada mapa melhora de versão em
-versão com base no próprio histórico.
+A local, open server where you declare problems, get process maps with
+verification gates, AI agents carry out the work under governance while you
+handle the exceptions, and every map improves from version to version on the
+strength of its own history.
 
-## O que você consegue fazer
+## What you can do with it
 
-**Instalar e subir em um comando.** `npx cartografo` cria o banco local e
-sobe o servidor; `npx cartografo-tela` abre a interface. Tudo na sua
-máquina; tudo que a tela mostra vem de uma API pública que qualquer
-ferramenta pode consumir.
+**Install it and bring it up in one command.** `npx cartografo` creates the
+local database and brings up the server; `npx cartografo-tela` opens the
+interface. Everything on your machine; everything the screen shows comes from a
+public API any tool can consume.
 
-**Começar com mapas prontos.** Grafos de fábrica vêm na caixa: o de
-desenvolvimento de software e o de teses de investimento. Importa com um
-comando e já tem processo governado.
+**Start from ready-made maps.** Factory graphs come in the box: the software
+development one and the investment thesis one. Import one with a single command
+and you already have a governed process.
 
-**Declarar um problema novo e ganhar um mapa** *(em construção: é comando de
-terminal, não fluxo na tela)*. Você descreve o problema; o sintetizador propõe
-um mapa usando as skills registradas; você edita; o sistema valida formalmente;
-o mapa entra registrado e versionado. O que falta é a embalagem, não a peça: o
-sintetizador é um copiloto que se chama pela mão (`npm run synthesize
---workspace @cartografo/runner`), escreve um rascunho num arquivo e para ali —
-quem lê, corrige e registra com `cartografo import` é você, pelo mesmo portão de
-validação formal por onde passa qualquer outro mapa. Não existe ainda "declarar
-na tela e receber o mapa" sem passar pelo terminal.
+**Declare a new problem and get a map** *(under construction: it is a terminal
+command, not a flow on the screen)*. You describe the problem; the synthesizer
+proposes a map using the registered skills; you edit it; the system validates it
+formally; the map goes in registered and versioned. What is missing is the
+packaging, not the piece: the synthesizer is a copilot you call by hand (`npm run
+synthesize --workspace @cartografo/runner`), which writes a draft into a file and
+stops there — the one who reads it, corrects it and registers it with
+`cartografo import` is you, through the same formal validation gate every other
+map goes through. What does not exist yet is "declare it on the screen and
+receive the map" without going through the terminal.
 
-**Editar o mapa você mesmo.** Não é só aprovar o que o avaliador propõe: na
-tela dá para acrescentar uma etapa, remover outra, mudar quem faz o quê e como
-aquilo se verifica, e ligar ou cortar os caminhos entre as etapas. O que você
-salva não vira mapa direto — vira uma proposta, que passa pela mesma
-verificação formal de sempre e só entra se o mapa resultante ainda se sustentar
-(toda etapa alcançável, toda travessia com fim, todo caminho rotulado, toda
-etapa com contrato). Quando não se sustenta, a tela diz qual etapa ou qual
-caminho quebrou qual regra, e nada é gravado. Trocar a identidade de uma etapa
-que já existe não dá: para isso, remova e recrie.
+**Edit the map yourself.** It is not only about approving what the evaluator
+proposes: on the screen you can add a step, remove another, change who does what
+and how that is verified, and connect or cut the paths between steps. What you
+save does not become a map straight away — it becomes a proposal, which goes
+through the same formal verification as ever and only lands if the resulting map
+still holds up (every step reachable, every traversal ending, every path
+labelled, every step with a contract). When it does not hold up, the screen says
+which step or which path broke which rule, and nothing is written. Changing the
+identity of a step that already exists is not possible: to do that, remove it and
+create it again.
 
-**O trabalho entra e atravessa sozinho.** Você faz um pedido; o intake
-propõe a quebra em tickets e você confirma. Os tickets
-atravessam o mapa: agentes de CLI executam cada etapa com instruções e
-contratos vindos do banco, portões verificam cada passagem com evidência, e
-decisão que não é de máquina chega na tela e espera você. **Cada etapa recebe o
-que as anteriores produziram** — a especificação que o refino escreveu chega
-para quem desenvolve, o branch que o desenvolvimento deixou chega para quem
-integra —, montado pelo control plane a partir do que cada sessão relatou, e
-nunca por um arquivo que alguém lembrou de passar adiante. Cada mapa decide quais
-campos os tickets dele carregam — uma tese de investimento pede o ativo, a fonte
-da premissa, downside e upside, que um ticket de software não teria onde
-guardar — e um campo declarado como obrigatório em certa etapa trava a saída
-dela até alguém preencher.
+**Work comes in and crosses on its own.** You make a request; intake proposes the
+breakdown into tickets and you confirm it. The tickets cross the map: CLI agents
+carry out each step with instructions and contracts coming from the database,
+gates verify every passage with evidence, and a decision that is not a machine's
+arrives on the screen and waits for you. **Every step receives what the previous
+ones produced** — the specification refinement wrote reaches whoever develops,
+the branch development left reaches whoever integrates —, assembled by the
+control plane out of what each session reported, and never by a file somebody
+remembered to pass along. Every map decides which fields its tickets carry — an
+investment thesis asks for the asset, the source of the assumption, the downside
+and the upside, which a software ticket would have nowhere to keep — and a field
+declared mandatory at a given step holds up the exit from that step until
+somebody fills it in.
 
-**Escolher o motor e o modelo etapa por etapa.** Cada etapa do mapa pode dizer
-em qual agente de CLI ela roda e com qual modelo — o nó que escreve usa o
-modelo grande, o portão que confere usa um menor e mais barato. Quem não diz
-nada roda no default, e trocar essa escolha é uma proposta como qualquer
-outra: vira versão nova do mapa, com evidência e com volta. Os modelos que cada
-motor oferece aparecem na API, com a informação de onde a lista veio.
+**Choose the engine and the model step by step.** Every step of the map can say
+which CLI agent it runs on and with which model — the node that writes uses the
+big model, the gate that checks uses a smaller and cheaper one. Whatever says
+nothing runs on the default, and changing that choice is a proposal like any
+other: it becomes a new version of the map, with evidence and with a way back.
+The models each engine offers show up in the API, along with where the list came
+from.
 
-**Trabalho pequeno roda em modelo barato, sem você escolher nada.** Na hora de
-propor a quebra, o intake também diz de cada ticket se ele é pequeno — rename,
-typo, mexida só em documentação — ou trabalho de verdade. A classificação sai
-de graça: é a mesma sessão que já estava lendo o pedido. Daí em diante o ticket
-pequeno atravessa o mapa inteiro num modelo mais barato, sem ninguém escolher
-modelo ticket a ticket, e uma rodada com tickets de tamanhos misturados sai mais
-barata do que uma que trata todos igual. Ticket que ninguém classificou roda
-como sempre rodou, e a etapa que fixou o próprio modelo continua mandando nele.
-A classificação muda quanto o ticket custa, nunca por onde ele passa: o caminho
-no mapa é o mesmo.
+**Small work runs on a cheap model, without you choosing anything.** When it
+proposes the breakdown, intake also says of every ticket whether it is small — a
+rename, a typo, a documentation-only change — or real work. The classification
+comes for free: it is the same session that was already reading the request. From
+there on the small ticket crosses the whole map on a cheaper model, with nobody
+choosing a model ticket by ticket, and a round with tickets of mixed sizes comes
+out cheaper than one that treats them all alike. A ticket nobody classified runs
+the way it always ran, and a step that fixed its own model still rules over it.
+The classification changes what a ticket costs, never where it goes: the path
+through the map is the same.
 
-**Decidir, etapa por etapa, quando você quer ser chamado.** Cada etapa do
-mapa diz o quanto insiste em falar com você: sempre (chama antes de fechar,
-mesmo achando que sabe), quando travar (o padrão), ou nunca — e aí travar
-não vira pergunta na sua fila, vira o trabalho parado com o motivo escrito,
-para etapas que rodam sem ninguém do outro lado. A etapa também pode nomear
-quem deveria ser chamado, para quando existirem papéis. Mudar isso é uma
-proposta como qualquer outra: nasce versão nova do mapa, e dá para voltar
-atrás. E o relatório da rodada mostra quantas perguntas cada etapa fez.
+**Decide, step by step, when you want to be called.** Every step of the map says
+how much it insists on talking to you: always (it calls before closing, even when
+it thinks it knows), when it gets stuck (the default), or never — and then
+getting stuck does not become a question in your queue, it becomes work halted
+with the reason written down, for steps that run with nobody on the other side.
+The step can also name who ought to be called, for when roles exist. Changing
+that is a proposal like any other: a new version of the map is born, and it can
+be undone. And the round's report shows how many questions each step asked.
 
-**Parar de insistir quando insistir não adianta.** Um trabalho cujas sessões
-falham não fica sendo tentado para sempre: falhou três vezes seguidas na mesma
-etapa, ele para, com o motivo escrito dizendo qual etapa e quantas vezes — e o
-número é do mapa, então uma classe que quer mais paciência (ou nenhuma) diz
-isso no próprio mapa. E quando o motivo é o agente **recusando** o pedido em
-vez de errar nele, o trabalho para na primeira: recusa é a mesma resposta toda
-vez, e tentar de novo só gasta sessão. Nos dois casos quem destrava é você,
-depois de olhar o que as sessões disseram.
+**Stop insisting when insisting does not help.** A job whose sessions fail is not
+retried forever: after three failures in a row at the same step it stops, with
+the reason written down naming the step and the number of attempts — and the
+number belongs to the map, so a class that wants more patience (or none) says so
+in the map itself. And when the reason is the agent **refusing** the request
+rather than getting it wrong, the job stops on the first attempt: a refusal is the
+same answer every time, and trying again only burns a session. In both cases the
+one who unblocks it is you, after looking at what the sessions said.
 
-**Fazer o mapa avisar sozinho quando algo acontece.** Uma etapa do mapa pode
-dizer "quando um ticket entrar aqui, avise este endereço" ou "quando ele travar
-aqui, chame aquele" — e o aviso sai assinado, com retentativa, para o serviço
-que você indicar. O aviso mora dentro do mapa, e não numa configuração à parte:
-ele viaja junto quando você exporta o mapa, muda por proposta como qualquer
-outra parte dele e volta atrás junto com a versão que o introduziu. A chave que
-assina o aviso é a única coisa que não mora ali: ela é registrada à parte, e o
-mapa guarda só o nome dela — mapa é coisa que se publica, e segredo escrito num
-mapa é segredo de quem lê o mapa. Se o destino não responder, o ticket não
-trava — ele segue o caminho dele, e a falha do aviso vira um registro que você
-consegue ver.
+**Make the map raise a flag on its own when something happens.** A step of the
+map can say "when a ticket arrives here, tell this address" or "when it gets
+stuck here, call that one" — and the notice goes out signed, with retries, to the
+service you name. The notice lives inside the map, and not in a configuration off
+to the side: it travels with the map when you export it, it changes by proposal
+like any other part of it, and it is undone together with the version that
+introduced it. The key that signs the notice is the one thing that does not live
+there: it is registered separately, and the map keeps only its name — a map is a
+thing you publish, and a secret written on a map is a secret belonging to whoever
+reads the map. If the destination does not answer, the ticket does not get stuck
+— it carries on down its path, and the failed notice becomes a record you can
+look at.
 
-**Desligar sem deixar rastro.** O que executa os trabalhos é um processo à
-parte, que você inicia e para quando quiser. Pedir para ele parar sempre
-termina: ele deixa de pegar trabalho novo, dá um tempo (dois minutos, por
-padrão) para o que já estava rodando terminar sozinho e, esgotado esse tempo —
-ou se você pedir de novo —, encerra a sessão em andamento. Nenhum agente que ele
-tenha iniciado continua rodando depois que ele sai, e o trabalho interrompido não
-fica preso: ele volta para a fila e alguém o pega de novo. A única exceção é
-matar o processo à força, no talho (`kill -9`), que não dá chance a ninguém de
-limpar nada — e mesmo aí o trabalho volta para a fila sozinho.
+**Switch it off without leaving a trace.** What carries out the jobs is a
+separate process, which you start and stop whenever you want. Asking it to stop
+always ends: it stops picking up new work, gives what was already running some
+time (two minutes, by default) to finish on its own and, once that time is spent
+— or if you ask again —, closes the session in progress. No agent it started
+carries on running after it leaves, and the interrupted work does not stay stuck:
+it goes back to the queue and somebody picks it up again. The one exception is
+killing the process by force, mid-cut (`kill -9`), which gives nobody a chance to
+clean anything up — and even then the work returns to the queue on its own.
 
-**Enxergar tudo.** O quadro mostra onde cada trabalho está; cada ticket tem
-linha do tempo (agente trabalhando, esperando você, fila); cada pergunta tem
-contexto para responder sem abrir o repo; o histórico permite reconstruir
-qualquer execução.
+**See everything.** The board shows where every job is; every ticket has a
+timeline (agent working, waiting on you, queueing); every question carries the
+context to answer it without opening the repository; the history makes it
+possible to reconstruct any execution.
 
-**Construir por cima, sem ler o código.** Tudo que a tela faz passa por uma API
-pública — e essa API se descreve sozinha: o servidor publica o documento
-`/openapi.json` e uma página navegável em `/docs`, gerados das rotas que ele
-realmente registra. Não é um documento escrito à mão que envelhece: rota nova
-aparece ali no mesmo instante em que passa a existir. Quem quiser integrar
-outra ferramenta aponta um cliente para o documento e já sabe o que existe. As
-chamadas do fluxo básico — registrar um mapa, criar um ticket, responder uma
-pergunta — já trazem o formato de entrada e saída escrito; as demais aparecem
-listadas e ganham contrato aos poucos. O documento e a página não pedem
-credencial, porque um esquema não é dado; tudo que é dado continua atrás do
-token.
+**Build on top, without reading the code.** Everything the screen does goes
+through a public API — and that API describes itself: the server publishes the
+`/openapi.json` document and a browsable page at `/docs`, both generated from the
+routes it really registers. It is not a hand-written document that ages: a new
+route shows up there the same instant it comes into being. Whoever wants to
+integrate another tool points a client at the document and already knows what
+exists. The calls of the basic flow — register a map, create a ticket, answer a
+question — already come with their input and output format written down; the rest
+appear listed and gain a contract little by little. The document and the page ask
+for no credential, because a schema is not data; everything that is data stays
+behind the token.
 
-**O mapa melhora, com a sua mão no portão.** Depois de uma rodada, um avaliador
-lê o histórico e deposita propostas na sua caixa de entrada, cada uma com o
-diff, a evidência e a métrica que espera mover. Você aprova, nasce a versão
-nova. São dois avaliadores: o de fluxo (onde a rodada gastou tempo) e o de custo
-(tokens e tempo por nó). Os dois se chamam pela mão — `npx topografo-custo
-evaluate …` —, e agora também sozinhos, se você deixar. Projetos que divergem
-ganham variante própria do mapa, e o que a variante aprende volta ao mapa-base
-como proposta, pelo mesmo portão.
+**The map improves, with your hand at the gate.** After a round, an evaluator
+reads the history and deposits proposals in your inbox, each one with the diff,
+the evidence and the metric it expects to move. You approve, and the new version
+is born. There are two evaluators: the flow one (where the round spent time) and
+the cost one (tokens and time per node). Both are called by hand — `npx
+topografo-custo evaluate …` —, and now on their own as well, if you let them.
+Projects that diverge get a variant of the map of their own, and what the variant
+learns goes back to the base map as a proposal, through the same gate.
 
-**O mapa observa sozinho.** `npx cartografo-topografo watch …` fica ouvindo o
-control plane e, cada vez que uma rodada termina, roda as duas lentes sobre ela
-sem ninguém digitar nada. Você continua ligando o observador — ele não sobe com
-o sistema —, mas depois disso a caixa de entrada enche sozinha. Rodar duas vezes
-sobre a mesma rodada não duplica proposta: quem deduplica é o control plane.
+**The map watches on its own.** `npx cartografo-topografo watch …` listens to the
+control plane and, every time a round ends, runs both lenses over it with nobody
+typing anything. You still switch the observer on — it does not come up with the
+system —, but after that the inbox fills up on its own. Running twice over the
+same round does not duplicate a proposal: the one that deduplicates is the
+control plane.
 
-**O mapa melhorar sozinho** *(em construção)*. Falta o degrau de cima da escada,
-e ele é o de decidir, não o de olhar: **aplicar** uma proposta sem você continua
-não existindo, medir automaticamente se a hipótese de uma proposta se confirmou
-na rodada seguinte também não (hoje quem fecha o experimento é uma chamada
-explícita, e ela exige evidência de execução), e transformar resposta repetida
-em auto-resposta tampouco — a API já sabe listar os precedentes de uma pergunta,
-mas ninguém os lê para responder por você. Enquanto isso, nenhuma mudança de
-mapa acontece sem uma aprovação sua, que é a ordem que a escada de segurança
-pede.
+**The map improving on its own** *(under construction)*. What is missing is the
+ladder's top step, and it is the one about deciding, not the one about looking:
+**applying** a proposal without you still does not exist, automatically measuring
+whether a proposal's hypothesis was confirmed in the following round does not
+either (today the one that closes the experiment is an explicit call, and it
+demands execution evidence), and turning a repeated answer into an automatic
+answer likewise — the API already knows how to list a question's precedents, but
+nobody reads them to answer for you. Meanwhile, no change to a map happens
+without an approval of yours, which is the order the safety ladder asks for.
 
-**Compartilhar o que aprendeu.** Qualquer mapa exporta como arquivo, com o
-contrato de cada etapa dentro e as skills fixadas por hash; importa em outro
-cartografo e produz exatamente a mesma versão, porque o id de uma versão é o
-hash canônico do documento. Uma ressalva que vale saber: as INSTRUÇÕES das
-skills não viajam nesse arquivo — ele carrega o pino (id, versão e hash) que
-identifica cada uma. Quem quiser levar as instruções junto leva a pasta do mapa,
-com `grafo.json` e `skills/` lado a lado, que é o formato que os mapas de
-fábrica usam e que o `import` também aceita.
+**Share what it learned.** Any map exports as a file, with every step's contract
+inside and the skills pinned by hash; it imports into another cartografo and
+produces exactly the same version, because the id of a version is the canonical
+hash of the document. One caveat worth knowing: the skills' INSTRUCTIONS do not
+travel in that file — it carries the pin (id, version and hash) that identifies
+each one. Whoever wants to take the instructions along takes the map's folder,
+with `grafo.json` and `skills/` side by side, which is the format the factory maps
+use and which `import` also accepts.
 
-Melhorar as instruções de uma etapa não é beco sem saída: as versões de uma
-skill coexistem no registro, então a versão nova entra ao lado da antiga em vez
-de sobrescrevê-la, e nenhum mapa que já estava rodando muda de comportamento
-porque alguém publicou algo melhor. Apontar uma etapa para a versão nova é uma
-proposta como qualquer outra mudança de mapa — com aprovação sua, e recusada de
-saída se aquela versão não existir no registro.
+Improving a step's instructions is not a dead end: the versions of a skill coexist
+in the registry, so the new version lands beside the old one instead of
+overwriting it, and no map already running changes behaviour because somebody
+published something better. Pointing a step at the new version is a proposal like
+any other change to a map — with your approval, and refused out of hand if that
+version does not exist in the registry.
 
-## O que ele deliberadamente não é
+## What it deliberately is not
 
-Não é SaaS nem multiusuário; a evolução nunca aplica nada sem aprovação
-humana; e ele só serve para trabalho onde dá para escrever o contrato de
-cada etapa. Onde não existe verificação possível, o mapa seria decorativo,
-e preferimos dizer isso na embalagem.
+It is not SaaS and not multi-user; the evolution never applies anything without
+human approval; and it only serves work where the contract of each step can be
+written down. Where no verification is possible the map would be decorative, and
+we would rather say so on the packaging.
 
-## Vocabulário mínimo
+## The minimal vocabulary
 
-- **Mapa (grafo)**: o desenho do processo de um tipo de problema; etapas
-  (nós), caminhos (arestas) e verificações (portões). Versionado como
-  commits.
-- **Ticket (viajante)**: uma unidade de trabalho atravessando o mapa.
-- **Skill**: as instruções e o contrato de uma etapa (o que entra, o que
-  sai, como se verifica).
-- **Portão**: a verificação entre etapas; determinístico quando dá
-  (comando), com julgamento quando precisa (agente com evidência).
-- **Proposta**: uma mudança sugerida no mapa, com evidência e métrica;
-  hipótese que você aprova ou rejeita.
-- **Topógrafo**: o avaliador que lê o histórico e escreve propostas.
+- **Map (graph)**: the drawing of the process for one kind of problem; steps
+  (nodes), paths (edges) and verifications (gates). Versioned like commits.
+- **Ticket (traveller)**: one unit of work crossing the map.
+- **Skill**: the instructions and the contract of a step (what goes in, what
+  comes out, how it is verified).
+- **Gate**: the verification between steps; deterministic where it can be (a
+  command), with judgement where it must be (an agent with evidence).
+- **Proposal**: a suggested change to the map, with evidence and a metric; a
+  hypothesis you approve or reject.
+- **Topografo**: the evaluator that reads the history and writes proposals.

@@ -1,0 +1,296 @@
+{
+  "id": "escalate-decision",
+  "version": "1.0.2",
+  "hash": "sha256:235ad5ca786027854fd98580352e0510ba408f0807b0c9f973d68638ba390a32",
+  "role": "gate",
+  "description": "The capital-allocation gate: assembles the dossier and escalates it to the founder. Never decides alone — it only emits an outcome when the human answer is already recorded, and it transcribes that answer literally.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "triaged_thesis",
+      "asymmetry",
+      "objections",
+      "sizing",
+      "perguntas_respondidas"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "triaged_thesis": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "asset",
+          "hypothesis",
+          "research_scope"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "asset": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "research_scope": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the fronts the fundamentals collection has to cover; empty when the triage discards"
+          }
+        }
+      },
+      "asymmetry": {
+        "type": "object",
+        "required": [
+          "downside_max_pct",
+          "upside_target_pct",
+          "asymmetry_ratio",
+          "scenarios"
+        ],
+        "properties": {
+          "downside_max_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "the thesis's maximum loss in a bad scenario, as a % of the amount invested"
+          },
+          "upside_target_pct": {
+            "type": "number",
+            "minimum": 0
+          },
+          "asymmetry_ratio": {
+            "type": "number",
+            "minimum": 0,
+            "description": "the target upside divided by the maximum downside; it is the number the whole class exists to maximize"
+          },
+          "scenarios": {
+            "type": "array",
+            "minItems": 2,
+            "description": "at least two: one in which the thesis dies and one in which it works",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "probability",
+                "return_pct",
+                "key_assumptions"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "probability": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "return_pct": {
+                  "type": "number"
+                },
+                "key_assumptions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "objections": {
+        "type": "array",
+        "minItems": 1,
+        "description": "a red team that found no objection did not run; an empty list is refused on purpose",
+        "items": {
+          "type": "object",
+          "required": [
+            "objection",
+            "severity",
+            "thesis_answer"
+          ],
+          "properties": {
+            "objection": {
+              "type": "string",
+              "minLength": 1
+            },
+            "severity": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            "thesis_answer": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "null when the thesis did not answer; a high objection with null kills the thesis"
+            }
+          }
+        }
+      },
+      "sizing": {
+        "type": "object",
+        "required": [
+          "position_size_pct",
+          "max_accepted_loss_pct",
+          "exit_trigger",
+          "horizon"
+        ],
+        "properties": {
+          "position_size_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "the structural ceiling on position size, as a % of total capital. Schema, not check: the limit the contract can impose, the contract imposes."
+          },
+          "max_accepted_loss_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "exit_trigger": {
+            "type": "string",
+            "minLength": 1
+          },
+          "horizon": {
+            "type": "string",
+            "minLength": 1
+          },
+          "portfolio_correlation": {
+            "type": "string"
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions the founder has already answered on this work, so the new session does not reopen what was decided. An empty list is legal: it means no decision is recorded yet. The key and the two names inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "outcome",
+      "human_decision",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "escalate_human"
+        ],
+        "description": "mandatory in every skill of role gate. In this graph \"passed\" follows the \"approved\" edge and \"failed\" the \"rejected\" edge — and neither of the two exists without a recorded human_decision. \"escalate_human\" exists because the format demands the three values: the session that needs the founder PAUSES with an input-request, and returns no output at all."
+      },
+      "resultado": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the label of the edge this node took — `approved` or `rejected` in this graph. The GRAPH's vocabulary and not the skill's, which is why there is no enum here: the same skill can live under two graphs with different labels. Declared because the report protocol tells the session to return ONE block only, with the label INSIDE the object of the contract (t161, t259), and with `additionalProperties: false` an `output` that did not declare it would be refused whole — erasing the human decision the record needs to read (t276). The key itself stays spelled the way the result protocol reserves it (`packages/runner/src/dispatch/parse-node-result.ts`); its VALUES are this graph's edge labels, and those are English.",
+        "examples": [
+          "approved",
+          "rejected"
+        ]
+      },
+      "human_decision": {
+        "type": "object",
+        "required": [
+          "question_id",
+          "literal_answer"
+        ],
+        "description": "the human answer that authorizes this outcome. Mandatory: it is what makes it structurally impossible for a session to decide a capital allocation on its own.",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the id of the allocation question in input.perguntas_respondidas"
+          },
+          "literal_answer": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the EXACT transcription of the recorded answer, character by character; to interpret is to tamper"
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "sizing complete, with a proposed size and an exit trigger",
+    "the red team's objections available, answered or not",
+    "the answered-question queue reachable, even if empty"
+  ],
+  "checks": [
+    {
+      "id": "outcome-transcribes-the-human-decision",
+      "type": "agentic",
+      "description": "This is the only node of the graph where escalating is mandatory by design, and not a resort for when the agent does not know. The defect this check exists to catch is the session that reads a human answer and interprets it generously in the thesis's favour.",
+      "instruction": "Check the outcome against the recorded answer, word by word.\n\n1. Is there, in `input.perguntas_respondidas`, an answer to THIS thesis's allocation question? If there is not and a `resultado` was emitted anyway, the check failed — no matter how conclusive the dossier looks.\n2. Is `output.human_decision.literal_answer` the exact transcription of the `resposta` field of the recorded question, with no summary, no style correction, no finished sentence?\n3. Does the `resultado` match what the answer says? An answer that approves under a condition different from the proposal (another size, another limit price, another term) is an approval of ITS OWN condition — and the note has to record the difference instead of applying the original proposal.\n4. Is the answer ambiguous between approving and refusing? Then there is no decision: the session should have escalated again, not chosen.",
+      "required_evidence": [
+        "allocation_question_id_located_in_perguntas_respondidas",
+        "literal_text_of_the_answer_recorded_copied_in_full",
+        "comparison_between_the_outcome_emitted_and_the_literal_text_of_the_answer"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Take the decision to the human\n\nYour job is to assemble the decision dossier and **hand it to the founder**. You\ndo not decide. No session of this node decides a capital allocation — it is the\nrule that defines this graph, and it has no exception for urgency, for\nobviousness or for a small size.\n\n**Thesis:** {{input.triaged_thesis.title}} ({{input.triaged_thesis.asset}})\n**Proposed size:** {{input.sizing.position_size_pct}}% of capital\n**Maximum accepted loss:** {{input.sizing.max_accepted_loss_pct}}%\n**Exit trigger:** {{input.sizing.exit_trigger}}\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the investor's\nrepository: the result comes back **through the output contract**, and what\nrecords it is the control plane. Reading, you read what the input gave you.\n\n## The rule, without exception\n\nLook at `input.perguntas_respondidas` **before anything else**:\n\n{{input.perguntas_respondidas}}\n\nNEVER produce a `resultado` when `input.perguntas_respondidas` does not contain the founder's answer to this thesis's allocation question — in that case the session ALWAYS ends the turn with an `input-request` block and stops there.\n\nThe two possible situations, and only these two:\n\n1. **There is no recorded answer for this thesis.** Assemble the dossier, ask\n   ONE allocation question in the `input-request` block and end the turn. You\n   return no `output` at all — not `escalate_human`, not anything. The crossing\n   stays blocked, the question goes into the queue, and when the answer arrives\n   a new session of this node resumes already knowing it. Escalating is not an\n   edge: it is a pause.\n2. **The answer is already recorded.** Only then do you produce `output`, and it\n   is a transcription, not a judgement.\n\n## How to write the allocation question\n\nThe founder decides with what you put in the block, and nothing else. The\nquestion has to be answerable with an \"approved\"/\"rejected\" plus conditions, and\nthe `context` carries the whole dossier:\n\n- the hypothesis in one sentence, and the dated trigger;\n- the maximum downside, the target upside and the asymmetry ratio;\n- **the red team's objections**, including the answered ones — in particular the\n  high-severity ones, with the answer the thesis gave;\n- the proposed size, the loss it implies as a % of total capital, the exit\n  trigger and the correlation with the portfolio;\n- the assumptions with no source, by name. The founder needs to know what he is\n  accepting without a document.\n\n`recommendation` is your recommendation in one imperative line, and it becomes\nthe founder's answer if he simply accepts — write it with that responsibility.\n\n## When the answer exists: transcribe, do not interpret\n\n`human_decision.literal_answer` is the text of the recorded answer, **copied\ncharacter by character**. Do not summarize, do not correct, do not complete.\n\nThe `resultado` comes out of what the answer says, and nothing beyond it:\napproval becomes `passed` (edge **approved**), refusal becomes `failed` (edge\n**rejected**). If the answer approves with a condition different from the\nproposal — another size, another limit price, another term —, the condition that\nholds is the one in the answer, and the `note` records the difference\nexplicitly. If the answer is ambiguous between approving and refusing, there is\nno decision: escalate again asking for the disambiguation, with the same block.\n\n## What this graph does not measure\n\nNothing here is judged by P&L. A financial outcome is slow long-term validation\nand never a round's metric (D14): in markets, a good outcome does not validate a\nbad process, and a bad outcome does not invalidate a good one. What is measured\nper crossing is process — did the red team run? do the assumptions carry a\nsource? was the decision human? — and that is what the final record writes\ndown.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nWhen — and only when — there is a recorded answer, return in the format the\noutput schema declares: `resultado`, `human_decision` and `note`. The contract\nrefuses a `resultado` without `human_decision`, and that is deliberate: this\nnode's rule is schema, not recommendation.",
+  "origin": {
+    "type": "native"
+  }
+}

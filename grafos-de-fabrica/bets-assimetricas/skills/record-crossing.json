@@ -1,0 +1,329 @@
+{
+  "id": "record-crossing",
+  "version": "1.0.2",
+  "hash": "sha256:e829755d676f9c55d0d3bb2beef68bb2201aab145a48c350dcc8b00de51ddbee",
+  "role": "work",
+  "description": "Closes the crossing — approved, rejected, killed by the red team or discarded at the triage — writing down the process metrics the topographer reads and the monitoring plan.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "triaged_thesis",
+      "traversal"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "triaged_thesis": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "asset",
+          "hypothesis",
+          "research_scope"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "asset": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "research_scope": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the fronts the fundamentals collection has to cover; empty when the triage discards"
+          }
+        }
+      },
+      "traversal": {
+        "type": "object",
+        "description": "this crossing's own walk, published by the control plane at `input.traversal` (t270): it is the one that holds the `job.transitioned` log, and no session can know where the work passed before it",
+        "required": [
+          "nodes_visited",
+          "entered_at"
+        ],
+        "properties": {
+          "nodes_visited": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "ids of the nodes this crossing actually executed, in walking order; it is what tells the four ways of arriving here apart. The node the work is standing on does NOT go in: a node about to run has not executed."
+          },
+          "entered_at": {
+            "type": "string",
+            "description": "the ISO-8601 instant at which the work arrived at this node; the first 10 characters are the date of the record"
+          }
+        }
+      },
+      "assumptions": {
+        "type": "array",
+        "minItems": 1,
+        "description": "every assumption the thesis needs to be true, with the source that supports it or a declared null",
+        "items": {
+          "type": "object",
+          "required": [
+            "assumption",
+            "source",
+            "confidence"
+          ],
+          "properties": {
+            "assumption": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "null is a legal and honest answer; an assumption with an invented source is the defect this field exists to prevent"
+            },
+            "confidence": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          }
+        }
+      },
+      "objections": {
+        "type": "array",
+        "minItems": 1,
+        "description": "a red team that found no objection did not run; an empty list is refused on purpose",
+        "items": {
+          "type": "object",
+          "required": [
+            "objection",
+            "severity",
+            "thesis_answer"
+          ],
+          "properties": {
+            "objection": {
+              "type": "string",
+              "minLength": 1
+            },
+            "severity": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            "thesis_answer": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "null when the thesis did not answer; a high objection with null kills the thesis"
+            }
+          }
+        }
+      },
+      "sizing": {
+        "type": "object",
+        "required": [
+          "position_size_pct",
+          "max_accepted_loss_pct",
+          "exit_trigger",
+          "horizon"
+        ],
+        "properties": {
+          "position_size_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "the structural ceiling on position size, as a % of total capital. Schema, not check: the limit the contract can impose, the contract imposes."
+          },
+          "max_accepted_loss_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "exit_trigger": {
+            "type": "string",
+            "minLength": 1
+          },
+          "horizon": {
+            "type": "string",
+            "minLength": 1
+          },
+          "portfolio_correlation": {
+            "type": "string"
+          }
+        }
+      },
+      "human_decision": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "the recorded decision, when the crossing reached the human gate; null on the other three paths",
+        "required": [
+          "question_id",
+          "literal_answer"
+        ],
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "literal_answer": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "process_metrics",
+      "record",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "process_metrics": {
+        "type": "object",
+        "description": "what the topographer learns about this class (D14). Process, never a financial outcome.",
+        "required": [
+          "red_team_ran",
+          "sourced_assumptions_fraction",
+          "human_decision_id",
+          "final_outcome"
+        ],
+        "properties": {
+          "red_team_ran": {
+            "type": "boolean",
+            "description": "derived from nodes_executed containing \"red-team\"; false when the triage discarded before it"
+          },
+          "sourced_assumptions_fraction": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "assumptions with a non-null source divided by the total assumptions collected; 0 when there was no collection"
+          },
+          "human_decision_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the id of the allocation question answered; null ONLY when the crossing never reached the decide node"
+          },
+          "final_outcome": {
+            "enum": [
+              "monitoring",
+              "archived"
+            ],
+            "description": "monitoring: an open position with a trigger to follow. archived: a thesis discarded, killed or rejected."
+          },
+          "unanswered_high_objections": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nodes_executed": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "record": {
+        "type": "object",
+        "required": [
+          "thesis_id",
+          "summary"
+        ],
+        "properties": {
+          "thesis_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the whole crossing in short prose: what was believed, what the red team found, what was decided and by whom"
+          },
+          "monitoring": {
+            "type": "array",
+            "description": "what to follow from here on; empty when the thesis was archived",
+            "items": {
+              "type": "object",
+              "required": [
+                "trigger",
+                "deadline"
+              ],
+              "properties": {
+                "trigger": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "deadline": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "a crossing closed by one of the four paths: discard at the triage, death at the red team, human rejection or human approval",
+    "the crossing's walk projected by the control plane at `input.traversal`"
+  ],
+  "checks": [
+    {
+      "id": "metric-matches-the-crossing",
+      "type": "agentic",
+      "description": "A process metric is only worth anything if it is derived from the real outputs of the nodes. Self-report — \"the red team ran\", \"the assumptions had sources\" — is exactly what it cannot be, because it is what the topographer is going to use to propose a mutation on the graph.",
+      "instruction": "Recompute each metric from the outputs of this crossing's nodes, and compare with what was recorded.\n\n1. Does `red_team_ran` match the presence of \"red-team\" in `input.traversal.nodes_visited`?\n2. Recompute `sourced_assumptions_fraction`: how many assumptions in `input.assumptions` have a non-null `source`, divided by the total. Does it match the recorded value, at the same precision?\n3. Is `human_decision_id` null only if the crossing did not pass through the `decide` node; and when it is not null, does it match the `question_id` of the decision received?\n4. `final_outcome: \"monitoring\"` is only legal when there was a human decision approving. A crossing discarded, killed or rejected is `archived`.\n5. Does the record's `summary` describe the crossing that actually happened, including the path by which it ended?\n\nNo financial-outcome metric goes in here. If the record brings P&L, a realized return or anything equivalent, the check failed.",
+      "required_evidence": [
+        "recomputation_of_the_sourced_assumptions_fraction_from_the_list_received",
+        "nodes_visited_confronted_with_the_recorded_metrics",
+        "closing_path_of_the_crossing_cited_from_the_output_of_the_last_node"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Record the crossing and what to monitor\n\nYour job is to close this thesis's crossing — no matter which of the four paths\nbrought it here — and to leave on record what the system learns from it.\n\n**Thesis:** {{input.triaged_thesis.title}} ({{input.triaged_thesis.asset}})\n**Nodes executed:** {{input.traversal.nodes_visited}}\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the investor's\nrepository: the result comes back **through the output contract**, and what\nrecords it is the control plane. Reading, you read what the input gave you.\n\n## The four ways of arriving here\n\nThis is the only final node of the graph, and it receives all four:\n\n1. **Discarded at the triage** — the idea did not get past the first filter.\n2. **Killed by the red team** — the thesis did not answer a serious objection.\n3. **Rejected by the founder** — the human decision said no.\n4. **Approved by the founder** — the only one that ends in an open position.\n\nThree of them end in `final_outcome: \"archived\"`, one in `\"monitoring\"`. All\nfour record metrics: that is what makes the process metric hold for **every**\ncrossing, and not only for the one that became a position.\n\n## The metrics are process metrics\n\n## What this graph does not measure\n\nNothing here is judged by P&L. A financial outcome is slow long-term validation\nand never a round's metric (D14): in markets, a good outcome does not validate a\nbad process, and a bad outcome does not invalidate a good one. What is measured\nper crossing is process — did the red team run? do the assumptions carry a\nsource? was the decision human? — and that is what the final record writes\ndown.\n\nDerive each of them from the real outputs of the previous nodes, never from\nmemory:\n\n- `red_team_ran` — is the `red-team` node in `traversal.nodes_visited`?\n- `sourced_assumptions_fraction` — assumptions with a non-null `source` ÷ total\n  assumptions collected. With no collection, it is 0.\n- `human_decision_id` — the `question_id` of the recorded decision, or `null` if\n  the crossing never reached the `decide` node. Null here means \"there was no\n  human decision\", and never \"I could not find it\".\n- `final_outcome` — `monitoring` only with human approval; otherwise,\n  `archived`.\n\nIf a value cannot be derived from the outputs you received, say so in the `note`\ninstead of estimating it. An estimated metric poisons the topographer's\nlearning, which is the only thing this node exists to feed.\n\n## What to monitor\n\nFor the approved crossing, `record.monitoring` carries what to follow: the exit\ntrigger the sizing fixed, the deadlines of the assumptions still awaiting\nconfirmation, and the date on which the next review has to happen. Each item\nwith an observable trigger and a deadline — the same yardstick as the sizing\nnode.\n\nFor the archived crossing, `monitoring` stays empty and the `summary` carries\nthe reason for archiving, with enough precision to recognize the same idea if it\ncomes back in six months.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReturn in the format the output schema declares: `process_metrics`, `record` and\n`note`. The record's date is the first 10 characters of\n`{{input.traversal.entered_at}}` (YYYY-MM-DD) — the session does not invent a\ndate: it slices a value the control plane handed it.",
+  "origin": {
+    "type": "native"
+  }
+}

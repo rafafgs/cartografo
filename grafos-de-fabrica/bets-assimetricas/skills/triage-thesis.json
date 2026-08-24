@@ -1,0 +1,274 @@
+{
+  "id": "triage-thesis",
+  "version": "1.0.1",
+  "hash": "sha256:3093ac78e5826e352ed222e8c82189dc2e1d6b7fe0dc598b73569360b9b8a729",
+  "role": "gate",
+  "description": "Filters the investment idea before any research effort: passes what has a floor, a dated trigger and a size that fits, discards the rest.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job",
+      "project",
+      "asset",
+      "premise_source",
+      "intended_size"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "object",
+        "description": "the work's own identity, published by the input projection at `input.job` (t253). This is where the thesis's title and hypothesis come from: a `tese` object is something the projection never assembled, and reading one was what kept this node from dispatching.",
+        "required": [
+          "id",
+          "title",
+          "body"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the thesis title, as whoever proposed it recorded it on the board"
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the hypothesis in free prose: what the market would be getting wrong and where the idea came from. `null` when the work was born with a title only — and then there is nothing to triage."
+          }
+        }
+      },
+      "project": {
+        "type": "object",
+        "description": "the class's STATIC configuration, published by the projection at `input.project` (t253). This is where the investor's criteria and the state of the portfolio live; a project variant overwrites the whole object (D13).",
+        "required": [
+          "triage_criteria",
+          "portfolio",
+          "circle_of_competence"
+        ],
+        "properties": {
+          "triage_criteria": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the investor's own criteria; the triage judges against these, never against criteria invented in the session"
+          },
+          "portfolio": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "the state of the portfolio, so the triage knows whether one more thesis fits. Required AND nullable, never absent: `null` is the portfolio with no open position, and that is how the data arrives when there is none. Absent it cannot be, because the placeholder engine fails closed on a key that does not exist, and the risk-ceiling paragraph really does interpolate `input.project.portfolio` (t263).",
+            "properties": {
+              "open_positions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "current_exposure_pct": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          },
+          "circle_of_competence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the investor's vocabulary: the sectors, structures and theses they declare they understand. The circle-of-competence criterion is judged only against this list — a circle the session invents is the model's, not the investor's."
+          }
+        }
+      },
+      "asset": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the thesis's asset: ticker, share, contract. A field this class declares in `custom_fields` and demands at `triage`, and therefore a flat scalar at the top of `input`, beside `input.job` — a class field is never a nested object (t168)."
+      },
+      "premise_source": {
+        "type": "string",
+        "minLength": 1,
+        "description": "where the thesis's central premise comes from: document, figure, date. A field of this class, also demanded at `triage`."
+      },
+      "intended_size": {
+        "type": "number",
+        "description": "the size whoever proposes the thesis is asking for, as a % of capital. A field this class declares in `custom_fields` and demands at `triage`, and therefore a flat scalar at the top of `input`, beside `input.job` — a class field is never a nested object (t168). Without it nobody judges whether the thesis fits the portfolio's risk ceiling, and the criterion comes out `undetermined` by design."
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions the founder has already answered on this work, so the new session does not reopen what was decided. An empty list is legal: it means no decision is recorded yet. The key and the two names inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "outcome",
+      "triaged_thesis",
+      "evaluated_criteria",
+      "rationale",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "escalate_human"
+        ],
+        "description": "mandatory in every skill of role gate. In this graph \"passed\" follows the \"advance\" edge and \"failed\" the \"discard\" edge. \"escalate_human\" exists because the format demands the three values — a session that needs the founder PAUSES with an input-request instead of settling it here."
+      },
+      "resultado": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the label of the edge this node took — `advance` or `discard` in this graph. The GRAPH's vocabulary and not the skill's, which is why there is no enum here: the same skill can live under two graphs with different labels. Declared because the report protocol tells the session to return ONE block only, with the label INSIDE the object of the contract (t161, t259), and with `additionalProperties: false` an `output` that did not declare it would be refused whole — erasing the triaged thesis the next node needs to read. The key itself stays spelled the way the result protocol reserves it (`packages/runner/src/dispatch/parse-node-result.ts`); its VALUES are this graph's edge labels, and those are English.",
+        "examples": [
+          "advance",
+          "discard"
+        ]
+      },
+      "triaged_thesis": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "asset",
+          "hypothesis",
+          "research_scope"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "asset": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "research_scope": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the fronts the fundamentals collection has to cover; empty when the triage discards"
+          }
+        }
+      },
+      "evaluated_criteria": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one per criterion received; a criterion not evaluated gets an honest entry, it is never skipped",
+        "items": {
+          "type": "object",
+          "required": [
+            "criterion",
+            "verdict",
+            "evidence"
+          ],
+          "properties": {
+            "criterion": {
+              "type": "string",
+              "minLength": 1
+            },
+            "verdict": {
+              "enum": [
+                "meets",
+                "does_not_meet",
+                "undetermined"
+              ]
+            },
+            "evidence": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "rationale": {
+        "type": "string",
+        "minLength": 1
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "work recorded with a non-empty `title` and `body`",
+    "class fields filled in: `asset` and `premise_source`, both demanded at this node",
+    "`project.triage_criteria` declared in the class graph, as a non-empty list",
+    "`project.portfolio` declared (may be `null`, when there is no open position)",
+    "`project.circle_of_competence` declared, as a non-empty list",
+    "`intended_size` filled in (a class field, demanded at `triage`)"
+  ],
+  "checks": [
+    {
+      "id": "triage-against-the-declared-criterion",
+      "type": "agentic",
+      "description": "The triage exists so that research is spent only on what deserves it. The defect it produces is the opposite of what it looks like: it is not discarding a good idea, it is approving an idea with no floor and burning the whole research round on it.",
+      "instruction": "Check, criterion by criterion, whether the recorded verdict holds up against what the input actually brings.\n\n1. Does every criterion received in `input.project.triage_criteria` appear in `evaluated_criteria`? A skipped criterion fails the check.\n2. Does every `meets` verdict cite concrete evidence — a document, a date, a figure — rather than a paraphrase of the hypothesis itself? Restating the thesis is not evidence for it.\n3. Does the `research_scope` of the triaged thesis address the gaps the `undetermined` verdicts opened?\n\nIf the outcome is `passed` and a criterion carries a `does_not_meet` verdict, the rationale has to say why that one is not disqualifying. Without that, the check failed.",
+      "required_evidence": [
+        "evaluated_criterion_with_the_input_excerpt_that_supports_it",
+        "list_of_the_criteria_with_an_undetermined_verdict_and_what_is_missing",
+        "rationale_of_the_outcome_confronted_with_the_verdicts"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Triage an idea before spending research on it\n\nYour job is to decide whether this idea deserves a round of fundamentals\nresearch — and nothing beyond that. You are not judging whether the thesis is\ngood; you are judging whether it has a chance of having a floor.\n\n**Thesis:** {{input.job.title}} ({{input.asset}})\n**Intended size:** {{input.intended_size}}% of capital\n\n{{input.job.body}}\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the investor's\nrepository: the result comes back **through the output contract**, and what\nrecords it is the control plane. Reading, you read what the input gave you.\n\n## How to triage\n\nJudge against the criteria the investor declared, and against those only:\n\n{{input.project.triage_criteria}}\n\nOne verdict per criterion, each with evidence from what you read in the input.\nA criterion you cannot judge gets `undetermined` with the gap named — never a\n`meets` of convenience.\n\nThe criterion that speaks of the circle of competence is judged only against\nthe vocabulary the investor declared:\n\n{{input.project.circle_of_competence}}\n\nThat list and no other. A circle the session invents is not the circle of\nwhoever invests, it is the model's — and a thesis outside the list gets\n`does_not_meet` with the sector named, not `undetermined`.\n\nThe criterion that speaks of the portfolio's risk ceiling is judged against the\nstate the investor declared:\n\n{{input.project.portfolio}}\n\nConfront the intended size there — {{input.intended_size}}% of capital — with\n`current_exposure_pct` and `open_positions`, and say whether it fits. `null` is\na portfolio with no open position: that is data, not a gap, and against an empty\nportfolio the size fits. `undetermined` here only holds up if something is\nmissing that the input genuinely did not bring — never because the size would\nbe decided at another node, because it is in this input.\n\nThe question that decides the triage is always the same: **is there a floor\nthat does not depend on the narrative working out?** Net cash, a real asset, a\ncontract. A thesis whose downside is \"the market catching on\" has no floor, it\nhas hope.\n\n## The research scope is your main product\n\nWhen the idea passes, the most valuable thing you deliver is not the `passed` —\nit is the `research_scope`: the fronts the collection has to cover for the\nthesis to stand up or fall over. A scope too broad turns the collection into\ninfinite reading; a scope too narrow lets through the risk that kills. Three to\nfive fronts, each one answerable by a document.\n\nWhen the idea is discarded, `research_scope` stays empty and the rationale says\nwhat was missing — the record of a discarded idea is what stops the same idea\nfrom coming back every month.\n\n## What this graph does not measure\n\nNothing here is judged by P&L. A financial outcome is slow long-term validation\nand never a round's metric (D14): in markets, a good outcome does not validate a\nbad process, and a bad outcome does not invalidate a good one. What is measured\nper crossing is process — did the red team run? do the assumptions carry a\nsource? was the decision human? — and that is what the final record writes\ndown.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReturn in the format the output schema declares: `resultado`, `triaged_thesis`,\n`evaluated_criteria`, `rationale`, `note`.\n\nNo thesis arrives here with an id ready-made — the `id` of `triaged_thesis` is\nyours to assemble, and this class's convention is `tese-` followed by the number\nof the work itself, the `#N` of the `Trabalho #N` heading at the top of this\nsession. Same work, same id, on every resumption: it is by that id that the\nnodes after this one speak of the same thesis.\n\n- `resultado: \"passed\"` — the idea deserves research. The executor follows the\n  **advance** edge, on to the fundamentals collection.\n- `resultado: \"failed\"` — the idea does not pass. The executor follows the\n  **discard** edge, straight to the record. That is a successful triage, not a\n  session that failed: discarding early is this node's product.\n- `resultado: \"escalate_human\"` exists because the gate format demands the three\n  values. Needing the founder means ending the turn with the `input-request`\n  block above: the session pauses, and resumes when the answer arrives.",
+  "origin": {
+    "type": "native"
+  }
+}

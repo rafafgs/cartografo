@@ -1,0 +1,261 @@
+{
+  "id": "size-risk",
+  "version": "1.1.1",
+  "hash": "sha256:b7104f7c5dca46cba02c4b943631f23394d6c61b566f4f815006ca94b2648ca2",
+  "role": "work",
+  "description": "Converts asymmetry and surviving objections into a position size, an accepted maximum loss and an exit trigger written before the entry.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "triaged_thesis",
+      "asymmetry",
+      "objections",
+      "project"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "triaged_thesis": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "asset",
+          "hypothesis",
+          "research_scope"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "asset": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "research_scope": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the fronts the fundamentals collection has to cover; empty when the triage discards"
+          }
+        }
+      },
+      "asymmetry": {
+        "type": "object",
+        "required": [
+          "downside_max_pct",
+          "upside_target_pct",
+          "asymmetry_ratio",
+          "scenarios"
+        ],
+        "properties": {
+          "downside_max_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "the thesis's maximum loss in a bad scenario, as a % of the amount invested"
+          },
+          "upside_target_pct": {
+            "type": "number",
+            "minimum": 0
+          },
+          "asymmetry_ratio": {
+            "type": "number",
+            "minimum": 0,
+            "description": "the target upside divided by the maximum downside; it is the number the whole class exists to maximize"
+          },
+          "scenarios": {
+            "type": "array",
+            "minItems": 2,
+            "description": "at least two: one in which the thesis dies and one in which it works",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "probability",
+                "return_pct",
+                "key_assumptions"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "probability": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "return_pct": {
+                  "type": "number"
+                },
+                "key_assumptions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "objections": {
+        "type": "array",
+        "minItems": 1,
+        "description": "a red team that found no objection did not run; an empty list is refused on purpose",
+        "items": {
+          "type": "object",
+          "required": [
+            "objection",
+            "severity",
+            "thesis_answer"
+          ],
+          "properties": {
+            "objection": {
+              "type": "string",
+              "minLength": 1
+            },
+            "severity": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            "thesis_answer": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "null when the thesis did not answer; a high objection with null kills the thesis"
+            }
+          }
+        }
+      },
+      "project": {
+        "type": "object",
+        "description": "the class's STATIC configuration, published by the input projection at `input.project` (t253). `capital` lives here because it is portfolio configuration, exactly like `portfolio`: no node produces it, and a project variant overwrites the whole object (D13).",
+        "required": [
+          "capital"
+        ],
+        "properties": {
+          "capital": {
+            "type": "object",
+            "required": [
+              "total",
+              "currency"
+            ],
+            "properties": {
+              "total": {
+                "type": "number",
+                "minimum": 0
+              },
+              "currency": {
+                "type": "string",
+                "minLength": 1
+              },
+              "current_exposure_pct": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "sizing",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "sizing": {
+        "type": "object",
+        "required": [
+          "position_size_pct",
+          "max_accepted_loss_pct",
+          "exit_trigger",
+          "horizon"
+        ],
+        "properties": {
+          "position_size_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "the structural ceiling on position size, as a % of total capital. Schema, not check: the limit the contract can impose, the contract imposes."
+          },
+          "max_accepted_loss_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "exit_trigger": {
+            "type": "string",
+            "minLength": 1
+          },
+          "horizon": {
+            "type": "string",
+            "minLength": 1
+          },
+          "portfolio_correlation": {
+            "type": "string"
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "a thesis that survived the red team, with its objection list recorded",
+    "asymmetry computed, with an explicit maximum downside",
+    "total capital and the portfolio's current exposure known"
+  ],
+  "checks": [
+    {
+      "id": "size-tied-to-the-downside",
+      "type": "agentic",
+      "description": "The size is where conviction turns into risk. The expensive mistake is sizing by the quality of the narrative instead of by the loss it implies, and it is the only mistake in this graph that cannot be undone afterwards.",
+      "instruction": "Redo the size arithmetic from the downside, without starting from the proposed number.\n\n1. `position_size_pct` × `asymmetry.downside_max_pct` gives what loss as a % of total capital? Does it fit what the note declares as an acceptable loss for one single thesis?\n2. Do the red team's surviving objections — in particular the `high` and `medium` ones — appear in the reasoning behind the size? An objection that survived and did not shrink the size was an objection ignored.\n3. Is `exit_trigger` observable by a third party, with a date or a named event, and not \"when the thesis stops making sense\"? A subjective trigger is a trigger that never fires.\n4. Was the correlation with what is already in the portfolio taken into account? Three correct theses pointing the same way are one thesis, at three times the size.",
+      "required_evidence": [
+        "redone_arithmetic_of_the_loss_as_a_percentage_of_total_capital",
+        "surviving_objection_and_the_effect_it_had_on_the_size",
+        "exit_trigger_judged_as_observable_by_a_third_party"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Size the risk\n\nYour job is to answer **how much**, and to write the exit before the entry. The\nthesis has already survived the red team; what is missing is the one number that\nturns an opinion into exposure.\n\n**Thesis:** {{input.triaged_thesis.title}} ({{input.triaged_thesis.asset}})\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the investor's\nrepository: the result comes back **through the output contract**, and what\nrecords it is the control plane. Reading, you read what the input gave you.\n\n## Size by the loss, not by the conviction\n\nStart from the question that matters: **if the bad scenario happens, how much of\nthe total capital disappears?** That is `position_size_pct` × `downside_max_pct`.\nThat number is what you are really deciding; the size is only the variable that\nproduces it.\n\nConviction does not enter the arithmetic. It has already entered twice — at the\ntriage and at the analysis — and here it enters only as bias.\n\nThis skill's contract imposes a **structural ceiling** on\n`sizing.position_size_pct`: no single thesis gets past it, and the schema\nrefuses the payload that tries. That is deliberate — the limit the contract can\nimpose, the contract imposes, instead of becoming a check somebody can argue\nagainst.\n\n## The surviving objections carry weight\n\nThe thesis passed the red team, but the objections did not disappear: they reach\nyou in `input.objections`. An objection of `high` severity that was answered is\nstill a known risk, and a known risk shrinks the size. If no objection moved\nyour number, you did not use the red team's work — you used its outcome.\n\n## Correlation\n\nA small size in three theses that depend on the same factor is a large size in\none factor. Look at the portfolio's current exposure before you settle the\nnumber, and record the correlation you saw.\n\n## The exit trigger is written now\n\n`exit_trigger` has to be observable by a third party: a date, an event, a\npublished figure. \"When the thesis stops making sense\" is not a trigger — it is\nthe promise to decide later, at the worst possible moment to decide.\n\n## What this graph does not measure\n\nNothing here is judged by P&L. A financial outcome is slow long-term validation\nand never a round's metric (D14): in markets, a good outcome does not validate a\nbad process, and a bad outcome does not invalidate a good one. What is measured\nper crossing is process — did the red team run? do the assumptions carry a\nsource? was the decision human? — and that is what the final record writes\ndown.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReturn in the format the output schema declares: `sizing` and `note`. You do\n**not** decide whether the position is opened — that is the next node, and it\nnever decides alone. You deliver the proposed size, the loss it implies and the\nexit condition.",
+  "origin": {
+    "type": "native"
+  }
+}

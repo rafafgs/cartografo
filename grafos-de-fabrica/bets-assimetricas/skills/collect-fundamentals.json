@@ -1,0 +1,225 @@
+{
+  "id": "collect-fundamentals",
+  "version": "1.0.1",
+  "hash": "sha256:1776cb3a2955cc84556d69902e3d18b34642d6ce8090d6c9f5af1a8ad5801e28",
+  "role": "work",
+  "description": "Gathers the thesis's fundamentals from primary documents and separates, one by one, the assumptions with a source from the assumptions without one.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "triaged_thesis"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "triaged_thesis": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "asset",
+          "hypothesis",
+          "research_scope"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "asset": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "research_scope": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the fronts the fundamentals collection has to cover; empty when the triage discards"
+          }
+        }
+      },
+      "preferred_sources": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "where the investor prefers you look first; it is not a closed list"
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions the founder has already answered on this work, so the new session does not reopen what was decided. An empty list is legal: it means no decision is recorded yet. The key and the two names inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pergunta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resposta": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "fundamentals",
+      "assumptions",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "fundamentals": {
+        "type": "object",
+        "required": [
+          "summary",
+          "figures"
+        ],
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "figures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "metric",
+                "value",
+                "period",
+                "source"
+              ],
+              "properties": {
+                "metric": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "period": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "a primary document; \"I reckon\" is not a source"
+                }
+              }
+            }
+          },
+          "known_risks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "assumptions": {
+        "type": "array",
+        "minItems": 1,
+        "description": "every assumption the thesis needs to be true, with the source that supports it or a declared null",
+        "items": {
+          "type": "object",
+          "required": [
+            "assumption",
+            "source",
+            "confidence"
+          ],
+          "properties": {
+            "assumption": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "null is a legal and honest answer; an assumption with an invented source is the defect this field exists to prevent"
+            },
+            "confidence": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          }
+        }
+      },
+      "gaps": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "what you looked for and did not find; a recorded gap is worth more than an invented figure"
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "a triaged thesis with a non-empty research scope",
+    "network access available for the scope's public sources"
+  ],
+  "checks": [
+    {
+      "id": "assumption-with-a-primary-source",
+      "type": "agentic",
+      "description": "The typical failure of this step is not finding too little: it is presenting as fact what is an assumption. Every figure has to come from a document, and every assumption has to say whether it has a source or not.",
+      "instruction": "Check the collection against the sources, not against its own summary.\n\n1. Open the source of each item of `fundamentals.figures` and confirm the value and the period. Attach the quoted excerpt. A figure whose source you could not open becomes a gap, it does not become a figure.\n2. For each item of `assumptions`, confirm that `source` points at a primary document that really does support the sentence — and that `source: null` was used where there is no document, instead of a generic facade source.\n3. Was every front of the thesis's `research_scope` either covered or recorded in `gaps`?\n\nAn assumption with a source that does not support the sentence is worse than an assumption with no source: it walks past the red team disguised as a fact.",
+      "required_evidence": [
+        "quoted_excerpt_of_the_primary_source_of_each_recorded_figure",
+        "quoted_excerpt_of_the_source_of_each_assumption_that_has_one",
+        "list_of_the_assumptions_with_a_null_source_and_of_the_scope_fronts_not_covered"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": true
+    }
+  },
+  "instructions": "# Collect the thesis's fundamentals\n\nYour job is to gather what is known — from documents, not from impressions —\nabout the thesis below, and to separate honestly what is fact from what is\nassumption.\n\n**Thesis:** {{input.triaged_thesis.title}} ({{input.triaged_thesis.asset}})\n\n{{input.triaged_thesis.hypothesis}}\n\n**Fronts to cover:** {{input.triaged_thesis.research_scope}}\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the investor's\nrepository: the result comes back **through the output contract**, and what\nrecords it is the control plane. Reading, you read what the input gave you.\n\n## Your network is open, and this is the only node of this graph where it is\n\nFundamentals research sweeps too many public sources to fit an allowlist: a\ndocument filed with a regulator, an earnings release, a conference-call\ntranscript, an annexed contract, market data, dated news. That is why this skill\ndeclares `network.allowed: true` with no domain list — it is legal for a native\nskill, and it is this bundle's declared exception.\n\nAn open network is not a licence for open credibility. Prefer, in this order:\nthe company's own document filed with a regulator; a contract; an official\ntranscript; market data from a named source; dated news from an identifiable\noutlet. A blog, a forum and a third party's summary come in as a lead for\nfinding the document, never as a source.\n\n## Fact, assumption and gap\n\nThree categories, and do not confuse them:\n\n- **A fact** goes in `fundamentals.figures`, with metric, value, period and the\n  source where you read it. Without the four, it is not a fact: it is a\n  recollection.\n- **An assumption** is what the thesis needs to be true and is not yet. It goes\n  in `assumptions`, with `source` when a document supports it and\n  `source: null` when none exists. **Null is the right answer** when there is no\n  document — the fraction of assumptions with a source is a process metric of\n  this graph, and a facade source corrupts it.\n- **A gap** is what you looked for and did not find. Recording it is worth more\n  than filling it in: the gap is what the red team attacks first, and it is what\n  tells the founder what he is accepting without knowing.\n\nIf you could not open the source of a figure, it does not become a figure. It\nbecomes a gap.\n\n## What this graph does not measure\n\nNothing here is judged by P&L. A financial outcome is slow long-term validation\nand never a round's metric (D14): in markets, a good outcome does not validate a\nbad process, and a bad outcome does not invalidate a good one. What is measured\nper crossing is process — did the red team run? do the assumptions carry a\nsource? was the decision human? — and that is what the final record writes\ndown.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReturn in the format the output schema declares: `fundamentals`, `assumptions`,\n`gaps` and `note`. Do not issue a verdict on the thesis — judging asymmetry is\nthe next node, and knocking the thesis down is the node after that. Here you\ngather and separate.",
+  "origin": {
+    "type": "native"
+  }
+}

@@ -1,0 +1,327 @@
+{
+  "id": "red-team-thesis",
+  "version": "1.0.2",
+  "hash": "sha256:ff37cb32a0290f709a3eb64a5c092dcf7ec9a3d68a20a98cbe44f015888642f7",
+  "role": "gate",
+  "description": "Red team: tries to knock the thesis down with researched counter-evidence, records every objection with a severity, and kills the thesis that does not answer a serious one.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "triaged_thesis",
+      "fundamentals",
+      "assumptions",
+      "asymmetry"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "triaged_thesis": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "asset",
+          "hypothesis",
+          "research_scope"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "asset": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "research_scope": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the fronts the fundamentals collection has to cover; empty when the triage discards"
+          }
+        }
+      },
+      "fundamentals": {
+        "type": "object",
+        "required": [
+          "summary",
+          "figures"
+        ],
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "figures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "metric",
+                "value",
+                "period",
+                "source"
+              ],
+              "properties": {
+                "metric": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "period": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "a primary document; \"I reckon\" is not a source"
+                }
+              }
+            }
+          },
+          "known_risks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "assumptions": {
+        "type": "array",
+        "minItems": 1,
+        "description": "every assumption the thesis needs to be true, with the source that supports it or a declared null",
+        "items": {
+          "type": "object",
+          "required": [
+            "assumption",
+            "source",
+            "confidence"
+          ],
+          "properties": {
+            "assumption": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "null is a legal and honest answer; an assumption with an invented source is the defect this field exists to prevent"
+            },
+            "confidence": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          }
+        }
+      },
+      "asymmetry": {
+        "type": "object",
+        "required": [
+          "downside_max_pct",
+          "upside_target_pct",
+          "asymmetry_ratio",
+          "scenarios"
+        ],
+        "properties": {
+          "downside_max_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "the thesis's maximum loss in a bad scenario, as a % of the amount invested"
+          },
+          "upside_target_pct": {
+            "type": "number",
+            "minimum": 0
+          },
+          "asymmetry_ratio": {
+            "type": "number",
+            "minimum": 0,
+            "description": "the target upside divided by the maximum downside; it is the number the whole class exists to maximize"
+          },
+          "scenarios": {
+            "type": "array",
+            "minItems": 2,
+            "description": "at least two: one in which the thesis dies and one in which it works",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "probability",
+                "return_pct",
+                "key_assumptions"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "probability": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "return_pct": {
+                  "type": "number"
+                },
+                "key_assumptions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "outcome",
+      "objections",
+      "researched_counter_evidence",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "escalate_human"
+        ],
+        "description": "mandatory in every skill of role gate. In this graph \"passed\" follows the \"survives\" edge and \"failed\" the \"dead\" edge. \"escalate_human\" exists because the format demands the three values — a session that needs the founder PAUSES with an input-request instead of settling it here."
+      },
+      "resultado": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the label of the edge this node took — `survives` or `dead` in this graph. The GRAPH's vocabulary and not the skill's, which is why there is no enum here: the same skill can live under two graphs with different labels. Declared because the report protocol tells the session to return ONE block only, with the label INSIDE the object of the contract (t161, t259), and with `additionalProperties: false` an `output` that did not declare it would be refused whole — erasing the objections and the counter-evidence the sizing needs to read (t276). The key itself stays spelled the way the result protocol reserves it (`packages/runner/src/dispatch/parse-node-result.ts`); its VALUES are this graph's edge labels, and those are English.",
+        "examples": [
+          "survives",
+          "dead"
+        ]
+      },
+      "objections": {
+        "type": "array",
+        "minItems": 1,
+        "description": "a red team that found no objection did not run; an empty list is refused on purpose",
+        "items": {
+          "type": "object",
+          "required": [
+            "objection",
+            "severity",
+            "thesis_answer"
+          ],
+          "properties": {
+            "objection": {
+              "type": "string",
+              "minLength": 1
+            },
+            "severity": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            "thesis_answer": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "null when the thesis did not answer; a high objection with null kills the thesis"
+            }
+          }
+        }
+      },
+      "researched_counter_evidence": {
+        "type": "array",
+        "minItems": 1,
+        "description": "what you went looking for AGAINST the thesis; rereading the analysis already made does not count",
+        "items": {
+          "type": "object",
+          "required": [
+            "claim_attacked",
+            "source",
+            "finding"
+          ],
+          "properties": {
+            "claim_attacked": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1
+            },
+            "finding": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "fundamentals and asymmetry analysis complete, available in the input",
+    "the list of assumptions with the marking of which ones have a source"
+  ],
+  "checks": [
+    {
+      "id": "counter-evidence-of-its-own",
+      "type": "agentic",
+      "description": "A gate verifies with evidence of its own. The failure mode of this node is subtle: reread the analysis, agree with it out loud and call that a red team. Counter-evidence is what you went looking for AGAINST the thesis, outside the material the thesis already carries.",
+      "instruction": "Check the red team's verdict against what it went looking for, not against what it concluded.\n\n1. Does each item of `researched_counter_evidence` cite a source external to the material received, with a date, and a finding that really does put the attacked claim under tension? An item that only reformulates `input.fundamentals` is not counter-evidence: it is a summary.\n2. Were the highest-leverage assumptions attacked — the ones that appear in the `key_assumptions` of the highest-return scenario, and the ones with `source: null`? A central assumption left unattacked is a coverage hole.\n3. Does every objection with `severity: \"high\"` have a `thesis_answer` grounded in a document, and not in a rhetorical counter-argument?\n4. Does the `resultado` match the objections: `passed` with a high objection left unanswered is an automatic failure of this check.",
+      "required_evidence": [
+        "researched_counter_evidence_with_a_dated_source_external_to_the_material_received",
+        "highest_leverage_assumption_and_the_attack_it_received",
+        "document_cited_in_each_thesis_answer_to_a_high_severity_objection"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Knock the thesis down\n\nYour role is the opposite of every node before you: they built the thesis, you\nexist to **kill it**. A thesis that survives you is worth something; a thesis\nyou did not try to kill is worth nothing, even if it happens to be right.\n\n**Thesis:** {{input.triaged_thesis.title}} ({{input.triaged_thesis.asset}})\n\n{{input.triaged_thesis.hypothesis}}\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the investor's\nrepository: the result comes back **through the output contract**, and what\nrecords it is the control plane. Reading, you read what the input gave you.\n\n## The rule that defines this node\n\nYou attack with **evidence of your own**. What the previous nodes produced —\nfundamentals, assumptions, asymmetry — reaches you as the target, not as proof.\nAgreeing with the analysis you received is not red-team work; it is the analysis\nyou received approving itself under another name.\n\nFor every claim you attack, record in `researched_counter_evidence` what you\nwent looking for against it, where it came from and what you found. An item that\nmerely restates the material you received does not count — and this node's check\nfails you for it.\n\n## Where to attack first\n\n1. **The assumptions with `source: null`.** They are the thesis asking for\n   faith.\n2. **The `key_assumptions` of the highest-return scenario.** That is where the\n   upside lives, so that is where fragility costs the most.\n3. **The downside floor.** If the floor depends on a contract, who is the\n   counterparty? If it depends on cash, who decides what to do with it?\n4. **The base rate.** How many times has this kind of repricing happened, and in\n   how long? The specific case almost always looks different from the base — and\n   almost never is.\n5. **The alternative explanation.** If the discount is obvious, why does it\n   exist? \"The market has not noticed\" is the least likely hypothesis, not the\n   most.\n\n## Severity and answer\n\nEvery objection enters the list with a `severity` (`high`, `medium`, `low`) and\nwith a `thesis_answer`: what, in the material you received or in what you found\nyourself, answers that objection — or `null` when nothing answers it.\n\n`severity: \"high\"` is the objection that, if true, **inverts the asymmetry**: it\ndestroys the floor, removes the trigger or kills the upside. It is not the most\nuncomfortable objection; it is the one that changes the decision.\n\nNEVER conclude `resultado: \"passed\"` (edge `survives`) while any objection of `severity: \"high\"` has a null `thesis_answer` — a high objection with no thesis_answer is a dead thesis, and the outcome is `failed` (edge `dead`).\n\nAn empty objection list is refused by the contract on purpose: a red team that\nfound nothing did not run.\n\n## What this graph does not measure\n\nNothing here is judged by P&L. A financial outcome is slow long-term validation\nand never a round's metric (D14): in markets, a good outcome does not validate a\nbad process, and a bad outcome does not invalidate a good one. What is measured\nper crossing is process — did the red team run? do the assumptions carry a\nsource? was the decision human? — and that is what the final record writes\ndown.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReturn in the format the output schema declares: `resultado`, `objections`,\n`researched_counter_evidence` and `note`.\n\n- `resultado: \"passed\"` — the thesis survived the attack. The executor follows\n  the **survives** edge, on to the risk sizing. Surviving is not being approved:\n  the objections travel on with it, and they are what pulls the position size\n  down at the next node.\n- `resultado: \"failed\"` — the thesis died here. The executor follows the **dead**\n  edge, straight to the record. Killing a thesis is a successful round of this\n  node, and the cheapest of them all.\n- `resultado: \"escalate_human\"` exists because the gate format demands the three\n  values. Needing the founder means ending the turn with the `input-request`\n  block above: the session pauses, and resumes when the answer arrives.",
+  "origin": {
+    "type": "native"
+  }
+}

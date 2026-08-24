@@ -4,22 +4,22 @@
     "type": "base"
   },
   "metadata": {
-    "name": "Bets assimétricas — tese de investimento",
-    "description": "Grafo de fábrica 2 (D14): triagem → coleta de fundamentos → análise de assimetria → red team → dimensionamento de risco → decisão (portão humano obrigatório, sempre) → registro e monitoramento. Um nó por passo da sequência de D14; um único nó final coleta as quatro formas de a travessia terminar, para que as métricas de processo valham por travessia e não só pela aprovada.",
+    "name": "Asymmetric bets — investment thesis",
+    "description": "Factory graph 2 (D14): triage -> collect fundamentals -> analyze asymmetry -> red team -> size risk -> decide (mandatory human gate, always) -> record and monitoring. One node per step of the D14 sequence; a single final node collects the four ways a crossing can end, so that the process metrics hold per crossing and not only for the approved one.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-14",
-    "source": "escrita manual a partir de D14 (t116); nenhuma síntese envolvida"
+    "source": "written by hand from D14 (t116); no synthesis involved"
   },
   "nodes": [
     {
-      "id": "triagem",
-      "role": "triador",
+      "id": "triage",
+      "role": "triager",
       "node_type": "gate",
-      "description": "Filtra a ideia contra os critérios do investidor antes de gastar pesquisa nela, e define o escopo do que pesquisar quando ela passa.",
+      "description": "Filters the idea against the investor's criteria before spending research on it, and defines the scope of what to research when it passes.",
       "skill_ref": {
-        "id": "triar-tese",
-        "version": "1.0.0",
-        "hash": "sha256:96b431c28c185be965cf10d4d4cf4932ce66ac6a3e2dac4b0201a14fe8b04bd4"
+        "id": "triage-thesis",
+        "version": "1.0.1",
+        "hash": "sha256:3093ac78e5826e352ed222e8c82189dc2e1d6b7fe0dc598b73569360b9b8a729"
       },
       "contract": {
         "input_schema": {
@@ -29,30 +29,30 @@
             "project",
             "asset",
             "premise_source",
-            "tamanho_pretendido"
+            "intended_size"
           ],
           "properties": {
             "job": {
               "type": "object",
-              "description": "a identidade do próprio trabalho — `id`, `title` e `body` —, que é onde a ideia bruta chega: título e hipótese em prosa livre"
+              "description": "the identity of the work itself — `id`, `title` and `body` —, which is where the raw idea arrives: title and hypothesis in free prose"
             },
             "project": {
               "type": "object",
-              "description": "a configuração estática da classe: os critérios de triagem do investidor, o círculo de competência que ele declara e o estado da carteira (`null` quando não há posição aberta)"
+              "description": "the static configuration of the class: the investor's triage criteria, the circle of competence they declare and the state of the portfolio (`null` when there is no open position)"
             },
             "asset": {
               "type": "string",
               "minLength": 1,
-              "description": "o ativo da tese; campo desta classe, exigido neste nó"
+              "description": "the thesis's asset; a field of this class, demanded at this node"
             },
             "premise_source": {
               "type": "string",
               "minLength": 1,
-              "description": "de onde vem a premissa central; campo desta classe, exigido neste nó"
+              "description": "where the central premise comes from; a field of this class, demanded at this node"
             },
-            "tamanho_pretendido": {
+            "intended_size": {
               "type": "number",
-              "description": "o tamanho pretendido para a posição, em % do capital; campo desta classe, exigido neste nó porque sem ele o critério do teto de risco não tem o que julgar"
+              "description": "the intended size for the position, as a % of capital; a field of this class, demanded at this node because without it the risk-ceiling criterion has nothing to judge"
             },
             "perguntas_respondidas": {
               "type": "array",
@@ -66,9 +66,9 @@
           "type": "object",
           "required": [
             "outcome",
-            "tese_triada",
-            "criterios_avaliados",
-            "justificativa"
+            "triaged_thesis",
+            "evaluated_criteria",
+            "rationale"
           ],
           "properties": {
             "outcome": {
@@ -77,24 +77,24 @@
                 "fail",
                 "escalate_human"
               ],
-              "description": "passou segue pela aresta \"aprofundar\"; falhou, pela aresta \"descartar\""
+              "description": "passed follows the \"advance\" edge; failed, the \"discard\" edge"
             },
-            "tese_triada": {
+            "triaged_thesis": {
               "type": "object",
-              "description": "a tese com o escopo de pesquisa definido"
+              "description": "the thesis with its research scope defined"
             },
-            "criterios_avaliados": {
+            "evaluated_criteria": {
               "type": "array",
               "items": {
                 "type": "object"
               },
               "minItems": 1
             },
-            "justificativa": {
+            "rationale": {
               "type": "string",
               "minLength": 1
             },
-            "nota": {
+            "note": {
               "type": "string"
             }
           }
@@ -102,35 +102,35 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "Todo critério declarado recebeu veredito com evidência da própria entrada, e um \"passou\" com critério não atendido está justificado? Anexe, por critério, o trecho que sustenta o veredito.",
+            "instruction": "Did every declared criterion get a verdict with evidence from the input itself, and is a \"passed\" with an unmet criterion justified? Attach, per criterion, the excerpt that supports the verdict.",
             "required_evidence": true,
-            "description": "Aprovar uma ideia sem piso queima a rodada inteira de pesquisa seguinte — é o defeito caro desta etapa, e nenhum comando o detecta."
+            "description": "Approving an idea with no floor burns the whole research round that follows — it is this step's expensive defect, and no command detects it."
           }
         ]
       }
     },
     {
-      "id": "coleta-fundamentos",
-      "role": "pesquisador",
+      "id": "collect-fundamentals",
+      "role": "researcher",
       "node_type": "work",
-      "description": "Reúne os fundamentos em documento primário e separa fato, premissa e lacuna — marcando explicitamente cada premissa sem fonte.",
+      "description": "Gathers the fundamentals from primary documents and separates fact, assumption and gap — explicitly marking every assumption with no source.",
       "skill_ref": {
-        "id": "coletar-fundamentos",
-        "version": "1.0.0",
-        "hash": "sha256:c5046a5e03e6778ee97e2e8e659559847a30c119d6f448f017505ab33cf2beb5"
+        "id": "collect-fundamentals",
+        "version": "1.0.1",
+        "hash": "sha256:1776cb3a2955cc84556d69902e3d18b34642d6ce8090d6c9f5af1a8ad5801e28"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
-            "tese_triada"
+            "triaged_thesis"
           ],
           "properties": {
-            "tese_triada": {
+            "triaged_thesis": {
               "type": "object",
-              "description": "a tese triada, com o escopo de pesquisa"
+              "description": "the triaged thesis, with its research scope"
             },
-            "fontes_preferidas": {
+            "preferred_sources": {
               "type": "array",
               "items": {
                 "type": "string"
@@ -147,29 +147,29 @@
         "output_schema": {
           "type": "object",
           "required": [
-            "fundamentos",
-            "premissas"
+            "fundamentals",
+            "assumptions"
           ],
           "properties": {
-            "fundamentos": {
+            "fundamentals": {
               "type": "object",
-              "description": "resumo, números com fonte e riscos conhecidos"
+              "description": "summary, sourced figures and known risks"
             },
-            "premissas": {
+            "assumptions": {
               "type": "array",
               "minItems": 1,
               "items": {
                 "type": "object"
               },
-              "description": "cada uma com fonte ou fonte nula declarada"
+              "description": "each one with a source or a declared null source"
             },
-            "lacunas": {
+            "gaps": {
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
-            "nota": {
+            "note": {
               "type": "string"
             }
           }
@@ -177,41 +177,41 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "Cada número registrado abre na fonte citada, e cada premissa com fonte é de fato sustentada por ela? Anexe o trecho citado de cada fonte e a lista das premissas com fonte nula.",
+            "instruction": "Does every recorded figure open at the cited source, and is every sourced assumption really supported by it? Attach the quoted excerpt of each source and the list of the assumptions with a null source.",
             "required_evidence": true,
-            "description": "Premissa com fonte que não a sustenta passa pelo red team disfarçada de fato — é o defeito mais caro da coleta."
+            "description": "An assumption whose source does not support it walks past the red team disguised as a fact — it is the collection's most expensive defect."
           }
         ]
       }
     },
     {
-      "id": "analise-assimetria",
-      "role": "analista",
+      "id": "analyze-asymmetry",
+      "role": "analyst",
       "node_type": "work",
-      "description": "Mede a forma da aposta: downside limitado com piso rastreável, upside alvo e os cenários que ligam um ao outro.",
+      "description": "Measures the shape of the bet: a limited downside with a traceable floor, a target upside and the scenarios that tie one to the other.",
       "skill_ref": {
-        "id": "analisar-assimetria",
-        "version": "1.0.0",
-        "hash": "sha256:1a09017b5be2156ee8343c9a6bae889e5987beeabaa8fd8e06d0d4305744217f"
+        "id": "analyze-asymmetry",
+        "version": "1.0.1",
+        "hash": "sha256:a89150efb476a0c627d6b43bb1b1e08b6b687a668a3c148d8948a96bfe86a8ab"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
-            "tese_triada",
-            "fundamentos",
-            "premissas"
+            "triaged_thesis",
+            "fundamentals",
+            "assumptions"
           ],
           "properties": {
-            "tese_triada": {
+            "triaged_thesis": {
               "type": "object",
-              "description": "a tese triada"
+              "description": "the triaged thesis"
             },
-            "fundamentos": {
+            "fundamentals": {
               "type": "object",
-              "description": "o que a coleta reuniu"
+              "description": "what the collection gathered"
             },
-            "premissas": {
+            "assumptions": {
               "type": "array",
               "minItems": 1,
               "items": {
@@ -223,14 +223,14 @@
         "output_schema": {
           "type": "object",
           "required": [
-            "assimetria"
+            "asymmetry"
           ],
           "properties": {
-            "assimetria": {
+            "asymmetry": {
               "type": "object",
-              "description": "downside_max_pct, upside_alvo_pct, razao_assimetria e pelo menos dois cenários"
+              "description": "downside_max_pct, upside_target_pct, asymmetry_ratio and at least two scenarios"
             },
-            "nota": {
+            "note": {
               "type": "string"
             }
           }
@@ -238,9 +238,9 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "O downside máximo sai de um piso que existe (caixa, ativo, contrato) e não de uma premissa otimista, e cada cenário se prende a premissas da lista recebida? Refaça a conta da razão de assimetria e anexe.",
+            "instruction": "Does the maximum downside come out of a floor that exists (cash, an asset, a contract) rather than out of an optimistic assumption, and does each scenario fasten itself to assumptions from the list received? Redo the asymmetry-ratio arithmetic and attach it.",
             "required_evidence": true,
-            "description": "Piso narrativo é o modo silencioso de inflar a assimetria: o número fica bonito e a aposta fica simétrica."
+            "description": "A narrative floor is the silent way of inflating the asymmetry: the number looks good and the bet turns symmetrical."
           }
         ]
       }
@@ -249,40 +249,40 @@
       "id": "red-team",
       "role": "red-team",
       "node_type": "gate",
-      "description": "Papel dedicado a derrubar a tese com contra-evidência própria; a tese que não responde a uma objeção grave morre aqui.",
+      "description": "A role dedicated to knocking the thesis down with counter-evidence of its own; a thesis that does not answer a serious objection dies here.",
       "skill_ref": {
-        "id": "derrubar-tese",
-        "version": "1.0.1",
-        "hash": "sha256:34b50136adf7fe1bea8c3db98aff742a6e2d829cf4e0b691f7a3f1ebdd4f1e1d"
+        "id": "red-team-thesis",
+        "version": "1.0.2",
+        "hash": "sha256:ff37cb32a0290f709a3eb64a5c092dcf7ec9a3d68a20a98cbe44f015888642f7"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
-            "tese_triada",
-            "fundamentos",
-            "premissas",
-            "assimetria"
+            "triaged_thesis",
+            "fundamentals",
+            "assumptions",
+            "asymmetry"
           ],
           "properties": {
-            "tese_triada": {
+            "triaged_thesis": {
               "type": "object",
-              "description": "a tese triada"
+              "description": "the triaged thesis"
             },
-            "fundamentos": {
+            "fundamentals": {
               "type": "object",
-              "description": "o que a coleta reuniu — alvo, não prova"
+              "description": "what the collection gathered — the target, not the proof"
             },
-            "premissas": {
+            "assumptions": {
               "type": "array",
               "minItems": 1,
               "items": {
                 "type": "object"
               }
             },
-            "assimetria": {
+            "asymmetry": {
               "type": "object",
-              "description": "a análise a ser atacada"
+              "description": "the analysis to be attacked"
             }
           }
         },
@@ -290,8 +290,8 @@
           "type": "object",
           "required": [
             "outcome",
-            "objecoes",
-            "contra_evidencia_pesquisada"
+            "objections",
+            "researched_counter_evidence"
           ],
           "properties": {
             "outcome": {
@@ -300,24 +300,24 @@
                 "fail",
                 "escalate_human"
               ],
-              "description": "passou segue pela aresta \"sobrevive\"; falhou, pela aresta \"morta\""
+              "description": "passed follows the \"survives\" edge; failed, the \"dead\" edge"
             },
-            "objecoes": {
+            "objections": {
               "type": "array",
               "minItems": 1,
               "items": {
                 "type": "object"
               },
-              "description": "cada uma com gravidade e a resposta da tese, ou nulo quando não houve resposta"
+              "description": "each one with a severity and the thesis's answer, or null when there was no answer"
             },
-            "contra_evidencia_pesquisada": {
+            "researched_counter_evidence": {
               "type": "array",
               "minItems": 1,
               "items": {
                 "type": "object"
               }
             },
-            "nota": {
+            "note": {
               "type": "string"
             }
           }
@@ -325,42 +325,42 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "A contra-evidência é externa ao material recebido e datada, as premissas de maior alavancagem foram atacadas, e nenhum \"passou\" convive com objeção de gravidade alta sem resposta? Anexe cada fonte de contra-evidência.",
+            "instruction": "Is the counter-evidence external to the material received and dated, were the highest-leverage assumptions attacked, and does no \"passed\" coexist with a high-severity objection left unanswered? Attach every counter-evidence source.",
             "required_evidence": true,
-            "description": "Portão verifica com evidência própria: reler a análise e concordar com ela não é red team."
+            "description": "A gate verifies with evidence of its own: rereading the analysis and agreeing with it is not a red team."
           }
         ]
       }
     },
     {
-      "id": "dimensionamento-risco",
-      "role": "gestor-de-risco",
+      "id": "size-risk",
+      "role": "risk-manager",
       "node_type": "work",
-      "description": "Converte assimetria e objeções sobreviventes em tamanho de posição, perda máxima aceita e gatilho de saída observável.",
+      "description": "Converts asymmetry and surviving objections into a position size, an accepted maximum loss and an observable exit trigger.",
       "skill_ref": {
-        "id": "dimensionar-risco",
-        "version": "1.1.0",
-        "hash": "sha256:636446f4cd3e3fe75e4bf36126b0abd9f45b81c6ec840f286b4963c3c7623eae"
+        "id": "size-risk",
+        "version": "1.1.1",
+        "hash": "sha256:b7104f7c5dca46cba02c4b943631f23394d6c61b566f4f815006ca94b2648ca2"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
-            "tese_triada",
-            "assimetria",
-            "objecoes",
+            "triaged_thesis",
+            "asymmetry",
+            "objections",
             "project"
           ],
           "properties": {
-            "tese_triada": {
+            "triaged_thesis": {
               "type": "object",
-              "description": "a tese triada"
+              "description": "the triaged thesis"
             },
-            "assimetria": {
+            "asymmetry": {
               "type": "object",
-              "description": "a análise que sobreviveu ao red team"
+              "description": "the analysis that survived the red team"
             },
-            "objecoes": {
+            "objections": {
               "type": "array",
               "minItems": 1,
               "items": {
@@ -369,21 +369,21 @@
             },
             "project": {
               "type": "object",
-              "description": "configuração estática da classe; capital total, moeda e exposição atual da carteira"
+              "description": "the static configuration of the class; total capital, currency and the portfolio's current exposure"
             }
           }
         },
         "output_schema": {
           "type": "object",
           "required": [
-            "dimensionamento"
+            "sizing"
           ],
           "properties": {
-            "dimensionamento": {
+            "sizing": {
               "type": "object",
-              "description": "tamanho_posicao_pct (com teto estrutural no schema da skill), perda máxima aceita, gatilho de saída e horizonte"
+              "description": "position_size_pct (with a structural ceiling in the skill's schema), the accepted maximum loss, the exit trigger and the horizon"
             },
-            "nota": {
+            "note": {
               "type": "string"
             }
           }
@@ -391,59 +391,59 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "A perda implicada pelo tamanho foi recalculada em % do capital total, as objeções sobreviventes encolheram o número, e o gatilho de saída é observável por terceiro? Anexe a conta refeita.",
+            "instruction": "Was the loss implied by the size recomputed as a % of total capital, did the surviving objections shrink the number, and is the exit trigger observable by a third party? Attach the redone arithmetic.",
             "required_evidence": true,
-            "description": "Dimensionar pela convicção em vez de pela perda é o único erro deste grafo que não dá para desfazer depois."
+            "description": "Sizing by conviction instead of by the loss is the one mistake in this graph that cannot be undone afterwards."
           }
         ]
       }
     },
     {
-      "id": "decisao",
-      "role": "decisor",
+      "id": "decide",
+      "role": "decision-maker",
       "node_type": "gate",
-      "description": "Portão humano obrigatório, sempre (D14): monta o dossiê e escala. Nenhuma sessão deste nó decide alocação de capital — só transcreve a decisão já registrada.",
+      "description": "The mandatory human gate, always (D14): assembles the dossier and escalates. No session of this node decides a capital allocation — it only transcribes the decision already recorded.",
       "skill_ref": {
-        "id": "escalar-decisao",
-        "version": "1.0.1",
-        "hash": "sha256:66fea7f172244bbc1414e19985d627d0edf999ac8083110a6fa8163083372d6d"
+        "id": "escalate-decision",
+        "version": "1.0.2",
+        "hash": "sha256:235ad5ca786027854fd98580352e0510ba408f0807b0c9f973d68638ba390a32"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
-            "tese_triada",
-            "assimetria",
-            "objecoes",
-            "dimensionamento",
+            "triaged_thesis",
+            "asymmetry",
+            "objections",
+            "sizing",
             "perguntas_respondidas"
           ],
           "properties": {
-            "tese_triada": {
+            "triaged_thesis": {
               "type": "object",
-              "description": "a tese triada"
+              "description": "the triaged thesis"
             },
-            "assimetria": {
+            "asymmetry": {
               "type": "object",
-              "description": "a análise que sobreviveu ao red team"
+              "description": "the analysis that survived the red team"
             },
-            "objecoes": {
+            "objections": {
               "type": "array",
               "minItems": 1,
               "items": {
                 "type": "object"
               }
             },
-            "dimensionamento": {
+            "sizing": {
               "type": "object",
-              "description": "o tamanho proposto e o gatilho de saída"
+              "description": "the proposed size and the exit trigger"
             },
             "perguntas_respondidas": {
               "type": "array",
               "items": {
                 "type": "object"
               },
-              "description": "a fila de escalação já respondida. Vazia é legal e é o caso comum: a sessão pausa com input-request em vez de decidir."
+              "description": "the escalation queue, already answered. Empty is legal and is the common case: the session pauses with an input-request instead of deciding."
             }
           }
         },
@@ -451,7 +451,7 @@
           "type": "object",
           "required": [
             "outcome",
-            "decisao_humana"
+            "human_decision"
           ],
           "properties": {
             "outcome": {
@@ -460,13 +460,13 @@
                 "fail",
                 "escalate_human"
               ],
-              "description": "passou segue pela aresta \"aprovado\"; falhou, pela aresta \"recusado\""
+              "description": "passed follows the \"approved\" edge; failed, the \"rejected\" edge"
             },
-            "decisao_humana": {
+            "human_decision": {
               "type": "object",
-              "description": "pergunta_id e a transcrição literal da resposta do fundador. Obrigatório: é o que torna estruturalmente impossível decidir alocação sem humano."
+              "description": "question_id and the literal transcription of the founder's answer. Mandatory: it is what makes it structurally impossible to decide an allocation without a human."
             },
-            "nota": {
+            "note": {
               "type": "string"
             }
           }
@@ -474,66 +474,66 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "Existe resposta registrada para a pergunta de alocação desta tese, o texto citado é transcrição literal dela, e o resultado corresponde ao que ela diz? Anexe o id da pergunta e o texto integral da resposta.",
+            "instruction": "Is there a recorded answer to this thesis's allocation question, is the quoted text a literal transcription of it, and does the outcome correspond to what it says? Attach the question id and the full text of the answer.",
             "required_evidence": true,
-            "description": "Escalar aqui é obrigatório por desenho, não recurso de exceção: o defeito a pegar é a sessão que interpreta a resposta humana a favor da tese."
+            "description": "Escalating here is mandatory by design, not an exceptional resort: the defect to catch is the session that interprets the human answer in the thesis's favour."
           }
         ]
       }
     },
     {
-      "id": "registro-monitoramento",
-      "role": "registrador",
+      "id": "record-monitoring",
+      "role": "recorder",
       "node_type": "work",
-      "description": "Nó final único das quatro formas de terminar: grava as métricas de processo da travessia e o que monitorar daqui para frente.",
+      "description": "The single final node of the four ways of ending: writes down the crossing's process metrics and what to monitor from here on.",
       "skill_ref": {
-        "id": "registrar-travessia",
-        "version": "1.0.1",
-        "hash": "sha256:63e199a941ff15f7e215373bf16d73ecb08d964743600f2b227de1ee8a04c25a"
+        "id": "record-crossing",
+        "version": "1.0.2",
+        "hash": "sha256:e829755d676f9c55d0d3bb2beef68bb2201aab145a48c350dcc8b00de51ddbee"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
-            "tese_triada",
-            "nos_executados"
+            "triaged_thesis",
+            "nodes_executed"
           ],
           "properties": {
-            "tese_triada": {
+            "triaged_thesis": {
               "type": "object",
-              "description": "a tese triada"
+              "description": "the triaged thesis"
             },
-            "nos_executados": {
+            "nodes_executed": {
               "type": "array",
               "minItems": 1,
               "items": {
                 "type": "string"
               }
             },
-            "premissas": {
+            "assumptions": {
               "type": "array",
               "items": {
                 "type": "object"
               }
             },
-            "objecoes": {
+            "objections": {
               "type": "array",
               "items": {
                 "type": "object"
               }
             },
-            "dimensionamento": {
+            "sizing": {
               "type": "object",
-              "description": "o tamanho decidido, quando houve"
+              "description": "the size decided, when there was one"
             },
-            "decisao_humana": {
+            "human_decision": {
               "type": [
                 "object",
                 "null"
               ],
-              "description": "nulo nas travessias que não chegaram ao portão humano"
+              "description": "null on the crossings that never reached the human gate"
             },
-            "data_de_registro": {
+            "record_date": {
               "type": "string"
             }
           }
@@ -541,19 +541,19 @@
         "output_schema": {
           "type": "object",
           "required": [
-            "metricas_processo",
-            "registro"
+            "process_metrics",
+            "record"
           ],
           "properties": {
-            "metricas_processo": {
+            "process_metrics": {
               "type": "object",
-              "description": "red_team_executado, fracao_premissas_com_fonte, decisao_humana_id e desfecho_final. Processo, nunca P&L (D14)."
+              "description": "red_team_ran, sourced_assumptions_fraction, human_decision_id and final_outcome. Process, never P&L (D14)."
             },
-            "registro": {
+            "record": {
               "type": "object",
-              "description": "o resumo da travessia e o plano de monitoramento"
+              "description": "the summary of the crossing and the monitoring plan"
             },
-            "nota": {
+            "note": {
               "type": "string"
             }
           }
@@ -561,9 +561,9 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "Cada métrica foi recalculada a partir das saídas reais dos nós desta travessia, e não do autorrelato? Anexe o recálculo da fração de premissas com fonte e o caminho de encerramento citado da saída do último nó.",
+            "instruction": "Was every metric recomputed from the real outputs of this crossing's nodes, and not from self-report? Attach the recomputation of the sourced-assumptions fraction and the closing path cited from the last node's output.",
             "required_evidence": true,
-            "description": "É esta métrica que o topógrafo usa para propor mutação no grafo; métrica estimada envenena o aprendizado da classe inteira."
+            "description": "It is this metric that the topographer uses to propose a mutation on the graph; an estimated metric poisons the learning of the whole class."
           }
         ]
       }
@@ -571,117 +571,117 @@
   ],
   "edges": [
     {
-      "from": "triagem",
-      "to": "coleta-fundamentos",
-      "condition": "aprofundar",
-      "description": "A ideia tem piso e gatilho: vale gastar uma rodada de pesquisa nela (resultado \"passou\")."
+      "from": "triage",
+      "to": "collect-fundamentals",
+      "condition": "advance",
+      "description": "The idea has a floor and a trigger: it is worth spending a research round on it (resultado \"passed\")."
     },
     {
-      "from": "triagem",
-      "to": "registro-monitoramento",
-      "condition": "descartar",
-      "description": "A ideia não passou do primeiro filtro; vai direto para o registro, e a travessia ainda produz métrica (resultado \"falhou\")."
+      "from": "triage",
+      "to": "record-monitoring",
+      "condition": "discard",
+      "description": "The idea did not get past the first filter; it goes straight to the record, and the crossing still produces a metric (resultado \"failed\")."
     },
     {
-      "from": "coleta-fundamentos",
-      "to": "analise-assimetria",
-      "condition": "sempre",
-      "description": "Saída única: coletado o material, ele é medido."
+      "from": "collect-fundamentals",
+      "to": "analyze-asymmetry",
+      "condition": "always",
+      "description": "A single way out: once the material is collected, it is measured."
     },
     {
-      "from": "analise-assimetria",
+      "from": "analyze-asymmetry",
       "to": "red-team",
-      "condition": "sempre",
-      "description": "Saída única: toda análise vai ao red team, inclusive — e principalmente — a que parece boa."
+      "condition": "always",
+      "description": "A single way out: every analysis goes to the red team, including — and especially — the one that looks good."
     },
     {
       "from": "red-team",
-      "to": "dimensionamento-risco",
-      "condition": "sobrevive",
-      "description": "A tese respondeu às objeções graves (resultado \"passou\"); as objeções seguem junto e encolhem o tamanho."
+      "to": "size-risk",
+      "condition": "survives",
+      "description": "The thesis answered the serious objections (resultado \"passed\"); the objections travel on with it and shrink the size."
     },
     {
       "from": "red-team",
-      "to": "registro-monitoramento",
-      "condition": "morta",
-      "description": "Objeção grave sem resposta mata a tese (resultado \"falhou\"): a morte mais barata do grafo."
+      "to": "record-monitoring",
+      "condition": "dead",
+      "description": "A serious objection with no answer kills the thesis (resultado \"failed\"): the cheapest death in the graph."
     },
     {
-      "from": "dimensionamento-risco",
-      "to": "decisao",
-      "condition": "sempre",
-      "description": "Saída única: dimensionado o risco, a decisão sobe para o humano."
+      "from": "size-risk",
+      "to": "decide",
+      "condition": "always",
+      "description": "A single way out: with the risk sized, the decision goes up to the human."
     },
     {
-      "from": "decisao",
-      "to": "registro-monitoramento",
-      "condition": "aprovado",
-      "description": "O fundador aprovou (resultado \"passou\"): posição aberta, desfecho \"monitorando\"."
+      "from": "decide",
+      "to": "record-monitoring",
+      "condition": "approved",
+      "description": "The founder approved (resultado \"passed\"): position opened, outcome \"monitoring\"."
     },
     {
-      "from": "decisao",
-      "to": "registro-monitoramento",
-      "condition": "recusado",
-      "description": "O fundador recusou (resultado \"falhou\"): tese arquivada com a decisão registrada."
+      "from": "decide",
+      "to": "record-monitoring",
+      "condition": "rejected",
+      "description": "The founder refused (resultado \"failed\"): thesis archived with the decision on record."
     }
   ],
-  "initial_node": "triagem",
+  "initial_node": "triage",
   "final_nodes": [
-    "registro-monitoramento"
+    "record-monitoring"
   ],
   "custom_fields": [
     {
       "name": "premise_source",
       "type": "string",
-      "required_at": "triagem",
-      "description": "De onde vem a premissa central da tese: documento, número, data. Exigido em `triagem` porque é o gate que decide se a ideia merece pesquisa, e uma tese sem fonte declarada não passa desse ponto."
+      "required_at": "triage",
+      "description": "Where the thesis's central premise comes from: document, figure, date. Demanded at `triage` because that is the gate that decides whether the idea deserves research, and a thesis with no declared source does not get past that point."
     },
     {
       "name": "asset",
       "type": "string",
-      "required_at": "triagem",
-      "description": "O ativo que a tese propõe: ticker, papel, contrato. Exigido em `triagem` pela mesma razão que `premise_source` — é o gate que decide se a ideia merece pesquisa, e uma tese sem ativo identificado não tem o que triar."
+      "required_at": "triage",
+      "description": "The asset the thesis proposes: ticker, share, contract. Demanded at `triage` for the same reason as `premise_source` — it is the gate that decides whether the idea deserves research, and a thesis with no identified asset has nothing to triage."
     },
     {
       "name": "downside",
       "type": "number",
       "required_at": null,
-      "description": "Quanto se perde se a tese estiver errada, na estimativa de quem propõe. Informativo: os números que valem são os de `analise-assimetria`, e este é o palpite que existe antes dela."
+      "description": "How much is lost if the thesis is wrong, as estimated by whoever proposes it. Informational: the figures that count are those of `analyze-asymmetry`, and this is the guess that exists before it."
     },
     {
       "name": "upside",
       "type": "number",
       "required_at": null,
-      "description": "Quanto se ganha se a tese estiver certa, na estimativa de quem propõe. Informativo pela mesma razão que `downside`."
+      "description": "How much is gained if the thesis is right, as estimated by whoever proposes it. Informational for the same reason as `downside`."
     },
     {
-      "name": "tamanho_pretendido",
+      "name": "intended_size",
       "type": "number",
-      "required_at": "triagem",
-      "description": "O tamanho que quem propõe a tese está pedindo, em % do capital. Exigido em `triagem` porque o critério do teto de risco da carteira se julga contra ele: sem o número, o critério sai `indeterminado` em toda travessia, e não por falta de dado no mundo — por falta de campo onde declará-lo (t263)."
+      "required_at": "triage",
+      "description": "The size whoever proposes the thesis is asking for, as a % of capital. Demanded at `triage` because the portfolio's risk-ceiling criterion is judged against it: without the number, the criterion comes out `undetermined` on every crossing, and not for want of data in the world — for want of a field to declare it in (t263)."
     }
   ],
   "project": {
-    "description": "Configuração de exemplo da classe base: são os critérios, o círculo de competência e a carteira do investidor de referência, e é o que faz `triagem` despachar sem ninguém montar entrada à mão. Uma variante de projeto sobrescreve este objeto inteiro com os critérios reais e o estado vivo da carteira de quem investe (D13) — não existe mecanismo de estado de carteira no control plane, então o que está aqui é um retrato parado, e mantê-lo em dia é edição de documento.",
-    "criterios_de_triagem": [
-      "o downside está limitado por caixa líquido ou ativo real, não por narrativa",
-      "existe um evento datado que força a reprecificação em até 12 meses",
-      "a tese cabe no círculo de competência declarado",
-      "o tamanho pretendido cabe no teto de risco da carteira"
+    "description": "The base class's example configuration: these are the criteria, the circle of competence and the portfolio of the reference investor, and it is what lets `triage` dispatch without anybody assembling an input by hand. A project variant overwrites this whole object with the real criteria and the live state of the portfolio of whoever invests (D13) — there is no portfolio-state mechanism in the control plane, so what is here is a still picture, and keeping it current is editing a document.",
+    "triage_criteria": [
+      "the downside is limited by net cash or a real asset, not by a narrative",
+      "there is a dated event that forces a repricing within 12 months",
+      "the thesis fits inside the declared circle of competence",
+      "the intended size fits inside the portfolio's risk ceiling"
     ],
-    "carteira": {
-      "posicoes_abertas": 7,
-      "exposicao_atual_pct": 62.5
+    "portfolio": {
+      "open_positions": 7,
+      "current_exposure_pct": 62.5
     },
     "capital": {
       "total": 5000000,
-      "moeda": "BRL"
+      "currency": "BRL"
     },
-    "circulo_de_competencia": [
-      "infraestrutura de transporte com contrato de longo prazo: portos, terminais e concessões",
-      "logística e transporte de carga",
-      "empresas com caixa líquido negociadas abaixo do valor dos ativos",
-      "eventos societários datados: cisão, venda de ativo, fechamento de capital"
+    "circle_of_competence": [
+      "transport infrastructure under long-term contract: ports, terminals and concessions",
+      "logistics and freight transport",
+      "companies with net cash trading below the value of their assets",
+      "dated corporate events: spin-off, asset sale, going private"
     ]
   }
 }

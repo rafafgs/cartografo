@@ -1,0 +1,246 @@
+{
+  "id": "analyze-asymmetry",
+  "version": "1.0.1",
+  "hash": "sha256:a89150efb476a0c627d6b43bb1b1e08b6b687a668a3c148d8948a96bfe86a8ab",
+  "role": "work",
+  "description": "Translates the fundamentals into an explicit asymmetry: the downside floor, the upside target and the scenarios that tie one to the other, each one fastened to the assumptions that support it.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "triaged_thesis",
+      "fundamentals",
+      "assumptions"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "triaged_thesis": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "asset",
+          "hypothesis",
+          "research_scope"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "asset": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1
+          },
+          "research_scope": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "the fronts the fundamentals collection has to cover; empty when the triage discards"
+          }
+        }
+      },
+      "fundamentals": {
+        "type": "object",
+        "required": [
+          "summary",
+          "figures"
+        ],
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "figures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "metric",
+                "value",
+                "period",
+                "source"
+              ],
+              "properties": {
+                "metric": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "period": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "a primary document; \"I reckon\" is not a source"
+                }
+              }
+            }
+          },
+          "known_risks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "assumptions": {
+        "type": "array",
+        "minItems": 1,
+        "description": "every assumption the thesis needs to be true, with the source that supports it or a declared null",
+        "items": {
+          "type": "object",
+          "required": [
+            "assumption",
+            "source",
+            "confidence"
+          ],
+          "properties": {
+            "assumption": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "null is a legal and honest answer; an assumption with an invented source is the defect this field exists to prevent"
+            },
+            "confidence": {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "asymmetry",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "asymmetry": {
+        "type": "object",
+        "required": [
+          "downside_max_pct",
+          "upside_target_pct",
+          "asymmetry_ratio",
+          "scenarios"
+        ],
+        "properties": {
+          "downside_max_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "the thesis's maximum loss in a bad scenario, as a % of the amount invested"
+          },
+          "upside_target_pct": {
+            "type": "number",
+            "minimum": 0
+          },
+          "asymmetry_ratio": {
+            "type": "number",
+            "minimum": 0,
+            "description": "the target upside divided by the maximum downside; it is the number the whole class exists to maximize"
+          },
+          "scenarios": {
+            "type": "array",
+            "minItems": 2,
+            "description": "at least two: one in which the thesis dies and one in which it works",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "probability",
+                "return_pct",
+                "key_assumptions"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "probability": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "return_pct": {
+                  "type": "number"
+                },
+                "key_assumptions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "preconditions": [
+    "fundamentals collected, with at least one figure from a primary source",
+    "the list of assumptions available, with the marking of which ones have a source"
+  ],
+  "checks": [
+    {
+      "id": "downside-floor-traced",
+      "type": "agentic",
+      "description": "An asymmetry is only an asymmetry if the downside is computed over something that exists. The expensive mistake here is the narrative floor: a small downside that depends on the thesis being right.",
+      "instruction": "Redo the downside arithmetic from the fundamentals, without looking at the session's note.\n\n1. What does `downside_max_pct` come out of? Point at the figure in `fundamentals.figures` and the assumption in `assumptions` that hold the floor up. If the floor depends on an assumption with `source: null`, that has to be said in the note — a floor with no source is a floor made of narrative.\n2. Does each scenario list `key_assumptions` that really exist in the list of assumptions received, with the same text? A scenario that invents a new assumption fails the check.\n3. Does `asymmetry_ratio` match `upside_target_pct / downside_max_pct` at the declared values?\n4. Is there at least one scenario in which the thesis dies, with a non-negligible probability? An analysis with no death scenario is a sales pitch.",
+      "required_evidence": [
+        "downside_calculation_with_the_fundamentals_figure_that_supports_it",
+        "key_assumption_of_each_scenario_located_in_the_list_of_assumptions_received",
+        "redone_arithmetic_of_the_asymmetry_ratio"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Analyze the asymmetry\n\nYour job is to turn the fundamentals collected into an explicit asymmetry:\n**how much is lost if the thesis is wrong, how much is gained if it is right,\nand which assumptions each of the two depends on.**\n\n**Thesis:** {{input.triaged_thesis.title}} ({{input.triaged_thesis.asset}})\n\n{{input.triaged_thesis.hypothesis}}\n\n## Where you are\n\nYou write no file at all. No node of this graph touches the investor's\nrepository: the result comes back **through the output contract**, and what\nrecords it is the control plane. Reading, you read what the input gave you.\n\nYour network is closed. Everything you need arrived in `input.fundamentals` and\n`input.assumptions` — if data is missing, that is a gap to record in the note,\nnot a reason to research here. Collection is the previous node.\n\n## Downside first, always\n\nStart from the floor, never from the target. The order matters: whoever starts\nfrom the upside anchors the whole analysis on it and \"discovers\" a downside to\nmatch.\n\nThe floor has to be **something that exists**: net cash, a real asset, a\ncontract, a guarantee. Write down where it comes from, with the figure from the\ncollection that supports it. If the floor depends on an assumption with no\nsource, say so in the note in so many words — that is the difference between a\nlimited downside and an imagined one.\n\n## Scenarios\n\nAt least two, and one of them is the scenario in which the **thesis dies**. Each\nscenario carries:\n\n- the probability you assign to it (and that is your estimate, not a fact);\n- the return it implies;\n- the `key_assumptions` it depends on — copied from the list of assumptions you\n  received, with the same text, so that the red team can attack exactly those.\n\nA scenario that does not fasten itself to any assumption from the collection is\nnot a scenario: it is an opinion with a number on it.\n\n## The asymmetry ratio\n\n`asymmetry_ratio` = `upside_target_pct` ÷ `downside_max_pct`. It is the number\nthis problem class exists to maximize, and it is also the number that is\neasiest to inflate without noticing — by shrinking the downside with an\noptimistic assumption instead of with a real floor. Check the arithmetic before\nyou return it.\n\n## What this graph does not measure\n\nNothing here is judged by P&L. A financial outcome is slow long-term validation\nand never a round's metric (D14): in markets, a good outcome does not validate a\nbad process, and a bad outcome does not invalidate a good one. What is measured\nper crossing is process — did the red team run? do the assumptions carry a\nsource? was the decision human? — and that is what the final record writes\ndown.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else. It is the text of a\n  one-click accept button, so whatever you put there becomes the founder's\n  answer, verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReturn in the format the output schema declares: `asymmetry` and `note`. Do not\nrecommend a position size (that is the sizing node) and do not conclude whether\nthe thesis should be bought (that is the human gate). Here you measure the shape\nof the bet.",
+  "origin": {
+    "type": "native"
+  }
+}

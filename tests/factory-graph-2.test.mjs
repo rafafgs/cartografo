@@ -401,14 +401,16 @@ test('AT8 — red-team-thesis forbids "passed" with a high objection the thesis 
     'thesis_answer is null when the thesis did not answer',
   );
 
-  // The instruction PROSE is untouched by t178 — the bundle-regeneration slice
-  // owns it, citations included — so the words matched here are still the ones
-  // the manifest says.
+  // The instruction PROSE moved to English with t293, word for word and with
+  // the divergence it carries intact: the prohibition still teaches
+  // `resultado: "passed"` — the vocabulary from before t178 and t161 — because a
+  // translation ticket changes the language and never the behaviour. What is
+  // matched here is that prose, in the spelling it has now.
   const prohibition = linesWith(manifest.instructions, [
     'passed',
     'survives',
     'severity',
-    'alta',
+    'high',
     'thesis_answer',
   ]).filter((line) => /NEVER|never/.test(line));
   assert.ok(
@@ -654,8 +656,8 @@ test('t168 — the bets graph declares the class custom fields, and the bundle s
   assert.deepEqual([...declarations.keys()].sort(), [
     'asset',
     'downside',
-    'premise_source',
     'intended_size',
+    'premise_source',
     'upside',
   ]);
 

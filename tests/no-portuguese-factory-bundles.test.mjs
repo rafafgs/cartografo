@@ -25,6 +25,12 @@
  *   that a paragraph left behind is certain to contain one, and rare enough as
  *   English tokens that a translated bundle never trips them.
  *
+ * Both expressions and the gloss cut live in `scripts/no-portuguese-prose.mjs`
+ * since t300, which would otherwise have made a third verbatim copy of them.
+ * The raw-line reading below stays here: it is this gate's own answer to a file
+ * shape that has no fence, and merging it with the markdown-aware one would be
+ * the mistake t287 recorded for the seventeen per-package sweeps.
+ *
  * A folded identifier (`banco_de_testes`, `perguntas_respondidas`) carries
  * neither, and that is deliberate: those are cross-package projection keys that
  * this ticket cannot rename on its own — all fourteen of them are listed, with
@@ -47,6 +53,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { DIACRITIC, GLOSS, STOPWORD } from '../scripts/no-portuguese-prose.mjs';
+
 const ROOT = path.resolve(import.meta.dirname, '..');
 const BUNDLES_DIR = path.join(ROOT, 'grafos-de-fabrica');
 
@@ -66,15 +74,6 @@ const BUNDLES_DIR = path.join(ROOT, 'grafos-de-fabrica');
  * finished before it lands.
  */
 export const SKIP_DIRS = Object.freeze([]);
-
-/** A Portuguese diacritic. No English word in this repository carries one. */
-const DIACRITIC = /[çãõáéíóúê]/i;
-
-/** Portuguese function words, common in its prose and absent from English. */
-const STOPWORD = /\b(não|você|para|com|uma|nesta|deste)\b/;
-
-/** The one span where the original is supposed to survive (FR2). */
-const GLOSS = /\(literally "[^"]*"\)/g;
 
 /**
  * Every file under a bundle directory, recursively, as repo-relative paths.

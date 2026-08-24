@@ -23,6 +23,10 @@
  *   paragraph left behind is certain to contain one, and rare enough as English
  *   tokens that a translated document never trips them.
  *
+ * Both expressions, the gloss cut and `blank()` came out of this file and into
+ * `scripts/no-portuguese-prose.mjs` when t300 needed a third copy of them. What
+ * stayed here is the part that is this gate's own: which lines to point them at.
+ *
  * ## What is read, and what is not
  *
  * Two cuts, both taken from the glossary-prose gate:
@@ -56,6 +60,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { DIACRITIC, GLOSS, STOPWORD, blank } from '../scripts/no-portuguese-prose.mjs';
+
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 /**
@@ -70,25 +76,11 @@ const ROOT = path.resolve(import.meta.dirname, '..');
  */
 export const NOT_SWEPT = 'glossario-wire.md';
 
-/** A Portuguese diacritic. No English word in this repository carries one. */
-const DIACRITIC = /[çãõáéíóúê]/i;
-
-/** Portuguese function words, common in its prose and absent from English. */
-const STOPWORD = /\b(não|você|para|com|uma|nesta|deste)\b/;
-
-/** The one span where the original is supposed to survive. */
-const GLOSS = /\(literally "[^"]*"\)/g;
-
 /** An opening or closing code fence, and the run of backticks that makes it. */
 const FENCE = /^\s*(`{3,})/;
 
 /** A backtick span, of any backtick run length, within one line. */
 const SPAN = /(`+)(.+?)\1/g;
-
-/** Replaces a span with same-length blanks, so a column number stays honest. */
-function blank(text) {
-  return text.replace(/[^\n]/g, ' ');
-}
 
 /** The line with every backtick span blanked out; the backticks stay. */
 function withoutSpans(line) {

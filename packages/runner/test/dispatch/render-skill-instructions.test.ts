@@ -788,12 +788,12 @@ interface CrossingStep {
 
 /** The six nodes the fixture models, each with the skill its graph node pins. */
 const BETS_NODES: ReadonlyArray<readonly [string, string]> = Object.freeze([
-  ['triagem', 'triar-tese'],
-  ['coleta-fundamentos', 'coletar-fundamentos'],
-  ['analise-assimetria', 'analisar-assimetria'],
-  ['red-team', 'derrubar-tese'],
-  ['dimensionamento-risco', 'dimensionar-risco'],
-  ['decisao', 'escalar-decisao'],
+  ['triage', 'triage-thesis'],
+  ['collect-fundamentals', 'collect-fundamentals'],
+  ['analyze-asymmetry', 'analyze-asymmetry'],
+  ['red-team', 'red-team-thesis'],
+  ['size-risk', 'size-risk'],
+  ['decide', 'escalate-decision'],
 ]);
 
 /** A committed factory manifest, read from the bundle it ships in. */
@@ -814,7 +814,7 @@ function factoryNode(nodeId: string, manifest: Record<string, unknown>): Resolve
     versionId: 'sha256:bets-assimetricas',
     node: {
       id: nodeId,
-      role: 'investidor',
+      role: 'investor',
       node_type: String(manifest.role) === 'gate' ? 'gate' : 'work',
       description: String(manifest.description),
       skill_ref: {
@@ -864,7 +864,7 @@ test('AT18 — the bets-assimetricas manifests resolve against the crossing fixt
 
   await parent.test('the six of them account for 26 of the bundle\'s 30 occurrences', () => {
     assert.equal(covered, 26);
-    assert.equal(placeholderCount(factoryManifest('registrar-travessia')), 4);
+    assert.equal(placeholderCount(factoryManifest('record-crossing')), 4);
   });
 
   // The seventh node is not in the fixture, and the reason is worth pinning:
@@ -872,28 +872,28 @@ test('AT18 — the bets-assimetricas manifests resolve against the crossing fixt
   // nodes ran, and when the job arrived where it is standing — `input.traversal`
   // since t270), and the t116 fixture models the contract chaining between
   // nodes, not the projection around them.
-  await parent.test('registro-monitoramento → registrar-travessia, against a literal input', async () => {
-    const manifest = factoryManifest('registrar-travessia');
+  await parent.test('record-monitoring → record-crossing, against a literal input', async () => {
+    const manifest = factoryManifest('record-crossing');
     const input: Record<string, unknown> = {
-      tese_triada: {
-        titulo: 'Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário',
-        ativo: 'NVLR3',
+      triaged_thesis: {
+        title: 'Navelar Logística (NVLR3) — reprecificação depois da venda do braço rodoviário',
+        asset: 'NVLR3',
       },
       traversal: {
         nodes_visited: [
-          'triagem',
-          'coleta-fundamentos',
-          'analise-assimetria',
+          'triage',
+          'collect-fundamentals',
+          'analyze-asymmetry',
           'red-team',
-          'dimensionamento-risco',
-          'decisao',
+          'size-risk',
+          'decide',
         ],
         entered_at: '2026-08-16T19:04:11.802Z',
       },
     };
 
     const rendered = await renderSkillInstructions(
-      factoryNode('registro-monitoramento', manifest),
+      factoryNode('record-monitoring', manifest),
       (await makeReader(manifest)).read,
       input,
     );
@@ -913,9 +913,9 @@ test('AT18 — the bets-assimetricas manifests resolve against the crossing fixt
     await assert.rejects(
       async () =>
         renderSkillInstructions(
-          factoryNode('registro-monitoramento', manifest),
+          factoryNode('record-monitoring', manifest),
           (await makeReader(manifest)).read,
-          { tese_triada: input.tese_triada },
+          { triaged_thesis: input.triaged_thesis },
         ),
       (error: unknown) => {
         assert.ok(error instanceof UnresolvedPlaceholderError, String(error));

@@ -4546,7 +4546,7 @@ const BETS_FIXTURE = path.join(
 const THESIS_TITLE = "Navelar Logística";
 
 /**
- * The `coleta-fundamentos` input the t116 fixture hand-authored.
+ * The `collect-fundamentals` input the t116 fixture hand-authored.
  *
  * Read from the committed fixture instead of typed here: what these two cases
  * prove is that a REAL manifest resolves against a REAL input, and an input
@@ -4557,9 +4557,9 @@ function fundamentalsInput(): Record<string, unknown> {
     travessia: { no: string; entrada: Record<string, unknown> }[];
   };
   const step = fixture.travessia.find(
-    (entry) => entry.no === "coleta-fundamentos",
+    (entry) => entry.no === "collect-fundamentals",
   );
-  assert.ok(step !== undefined, "the fixture has no coleta-fundamentos step");
+  assert.ok(step !== undefined, "the fixture has no collect-fundamentals step");
   return step.entrada;
 }
 
@@ -4607,7 +4607,7 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
   // ONE boot for the two subtests, the same economy the t141 block above
   // documents: a control plane per test is what made the conformance kit's C4
   // miss its settle window.
-  const manifest = factoryManifest("coletar-fundamentos");
+  const manifest = factoryManifest("collect-fundamentals");
   await api(baseUrl, "POST", "/v1/skills", manifest, 201, token);
 
   await parent.test(
@@ -5361,7 +5361,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
 
   // Both nodes of the fixture are real `work` nodes pinning the same registered
   // skill, and `revisar` is the graph's only final node — the exact shape both
-  // factory bundles have at `registro-monitoramento` and `implantar`.
+  // factory bundles have at `record-monitoring` and `deploy`.
   await registerSkill(baseUrl, token, WORK_SKILL);
   const versionId = await registerGraph(
     baseUrl,

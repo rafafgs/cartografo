@@ -3,8 +3,8 @@
  *
  * `jobs.test.ts` proves the rule against the minimal example graph, which is
  * where a rule belongs. This file proves it against the documents that actually
- * ship: `grafos-de-fabrica/bets-assimetricas` ends at `registro-monitoramento`
- * pinning `registrar-travessia`, and `grafos-de-fabrica/desenvolvimento-de-software`
+ * ship: `grafos-de-fabrica/bets-assimetricas` ends at `record-monitoring`
+ * pinning `record-crossing`, and `grafos-de-fabrica/desenvolvimento-de-software`
  * ends at `deploy` pinning `verify-release` — the identical shape, and the
  * one t198's first real crossing found broken
  * (`notas/2026-08-17-primeira-execucao-bets.md`, gap 2): the job was declared
@@ -17,15 +17,17 @@
  *
  * **Neither sub-test goes through the runner, on purpose.** Both of these
  * manifests interpolate a placeholder nothing produces yet
- * (`{{input.nos_executados}}` and `{{input.referencia.commit}}`/`.modo`), so a
+ * (`{{input.traversal.nodes_visited}}` and `{{input.referencia.commit}}`/`.modo`), so a
  * REAL dispatch of either final node fails closed with `UnresolvedPlaceholderError`
  * before a session exists. That gap is this ficha's own discovery and explicitly
  * not its scope — what is in scope is the derivation, and the derivation is
  * exercised the way the control plane sees it: `POST /v1/sessions` plus
  * `PATCH /v1/sessions/:id/finish`.
  *
- * English per D18; node ids, bundle keys and report payloads stay in Portuguese
- * because they are the bundles' own vocabulary.
+ * English per D18, and since t280/t293 the bundles' own vocabulary too: both
+ * report payloads below are spelled the way the manifests they are held against
+ * spell them. What is still Portuguese is the bets thesis prose inside the
+ * values, which is the language the example was written in.
  */
 
 import assert from 'node:assert/strict';
@@ -87,20 +89,20 @@ interface FinalNodeCase {
 const CASES: readonly FinalNodeCase[] = Object.freeze([
   {
     bundle: 'bets-assimetricas',
-    finalNode: 'registro-monitoramento',
-    manifest: 'registrar-travessia.json',
+    finalNode: 'record-monitoring',
+    manifest: 'record-crossing.json',
     report: {
-      metricas_processo: {
-        red_team_executado: false,
-        fracao_premissas_com_fonte: 0,
-        decisao_humana_id: null,
-        desfecho_final: 'arquivado',
+      process_metrics: {
+        red_team_ran: false,
+        sourced_assumptions_fraction: 0,
+        human_decision_id: null,
+        final_outcome: 'archived',
       },
-      registro: {
-        tese_id: 'tese-eqx-2026-08',
-        resumo: 'a triagem descartou a tese antes da coleta; nada foi alocado',
+      record: {
+        thesis_id: 'tese-eqx-2026-08',
+        summary: 'a triagem descartou a tese antes da coleta; nada foi alocado',
       },
-      nota: 'travessia registrada; nada a monitorar',
+      note: 'travessia registrada; nada a monitorar',
     },
   },
   {

@@ -59,12 +59,13 @@ const BUNDLES_DIR = path.join(ROOT, 'grafos-de-fabrica');
  * first, deliberately — the smaller bundle, where the glossary and the
  * hash-recompute procedure got established at lower risk.
  *
- * `bets-assimetricas` (7 skills, ~1,958 lines) is the founder's own follow-up
- * ticket, filed 2026-08-24 and not numbered when this file was written. Removing
- * the entry below is part of that ticket's Definition of Done: it inherits this
- * gate, and lifting the skip is how it proves it.
+ * **The list is empty, and that is the point.** `bets-assimetricas` was the one
+ * entry here, held for the second half of D24's series 1; t293 translated it and
+ * lifted the skip, so this gate now reads every bundle the repository ships. A
+ * new bundle that arrives half-translated does not get an entry — it gets
+ * finished before it lands.
  */
-export const SKIP_DIRS = Object.freeze(['bets-assimetricas']);
+export const SKIP_DIRS = Object.freeze([]);
 
 /** A Portuguese diacritic. No English word in this repository carries one. */
 const DIACRITIC = /[çãõáéíóúê]/i;
@@ -161,11 +162,19 @@ test('AT3 — every carve-out still names a bundle that exists', () => {
   }
 });
 
-test('AT3 — the gate really reads the bundle t280 translated', () => {
+test('AT3 — the gate really reads both bundles, neither of them skipped', () => {
   const inScope = bundlesInScope();
 
-  assert.ok(
-    inScope.includes('desenvolvimento-de-software'),
-    'the bundle this ticket translated cannot be skipped: it is what the gate exists to hold',
+  for (const bundle of ['desenvolvimento-de-software', 'bets-assimetricas']) {
+    assert.ok(
+      inScope.includes(bundle),
+      `"${bundle}" cannot be skipped: holding both translated bundles is what this gate exists for`,
+    );
+  }
+
+  assert.deepEqual(
+    [...SKIP_DIRS],
+    [],
+    'D24 series 1 is closed on both bundles: a carve-out here would reopen half of it',
   );
 });

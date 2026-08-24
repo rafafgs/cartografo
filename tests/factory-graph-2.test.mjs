@@ -7,14 +7,14 @@
  * did not have:
  *
  * - **AT11** — the crossing by contract: each node's output feeds the next
- *   node's input, and the `decisao` node produces no output at all without a
+ *   node's input, and the `decide` node produces no output at all without a
  *   recorded human answer. It is the proof, at contract level, of "a real thesis
  *   crosses all the way to the human decision" — not a live execution, which
  *   depends on t109 (see the bundle's README).
  * - **FR7** — the metrics recorded are process metrics, never a financial
  *   outcome (D14: "P&L is slow validation, never a round's metric").
  * - **FR10** (t145) — the bundle's README is executable documentation: every
- *   path it points at exists, and the command it publishes under `Como validar`
+ *   path it points at exists, and the command it publishes under `How to validate`
  *   runs green from the bundle directory. The two are separate tests because a
  *   dead link and a dead command are different failures to read.
  *
@@ -24,11 +24,15 @@
  * implementation it checks, a bug in the canonicalizer would go unnoticed on
  * both sides.
  *
- * The schema keys are English since t178: the 2026-08-15 D18 amendment lifted
- * the carve-out that used to keep the graph-document and skill-manifest keys in
- * Portuguese. What is still Portuguese below is data the amendment did not
- * reopen — the bundle's directory, the node ids, the domain roles and the edge
- * labels — and the reference validator's pinned exports (t133, exception 5).
+ * The schema keys are English since t178, and the CONTENT inside them since
+ * t293: node ids, edge labels, domain roles, skill ids and every property name
+ * of this bundle's own vocabulary moved with D24's series 1. What is still
+ * Portuguese below is what no bundle edit could have changed — the projection
+ * roots another package publishes (`perguntas_respondidas`, `pergunta`,
+ * `resposta`), the reserved routing key `resultado`, the `problem_class` and the
+ * directory (t282's), the crossing fixture's own frame keys and its Portuguese
+ * thesis prose — plus the reference validator's pinned exports (t133,
+ * exception 5).
  *
  * Run with: `node --test tests/`
  */
@@ -71,32 +75,32 @@ const THESIS_FIXTURE_PATH = path.join(
 
 /** D14's seven nodes: node -> { role, node_type, skill }. */
 const NODES = {
-  triagem: { role: 'triador', node_type: 'gate', skill: 'triar-tese' },
-  'coleta-fundamentos': { role: 'pesquisador', node_type: 'work', skill: 'coletar-fundamentos' },
-  'analise-assimetria': { role: 'analista', node_type: 'work', skill: 'analisar-assimetria' },
-  'red-team': { role: 'red-team', node_type: 'gate', skill: 'derrubar-tese' },
-  'dimensionamento-risco': {
-    role: 'gestor-de-risco',
+  triage: { role: 'triager', node_type: 'gate', skill: 'triage-thesis' },
+  'collect-fundamentals': { role: 'researcher', node_type: 'work', skill: 'collect-fundamentals' },
+  'analyze-asymmetry': { role: 'analyst', node_type: 'work', skill: 'analyze-asymmetry' },
+  'red-team': { role: 'red-team', node_type: 'gate', skill: 'red-team-thesis' },
+  'size-risk': {
+    role: 'risk-manager',
     node_type: 'work',
-    skill: 'dimensionar-risco',
+    skill: 'size-risk',
   },
-  decisao: { role: 'decisor', node_type: 'gate', skill: 'escalar-decisao' },
-  'registro-monitoramento': {
-    role: 'registrador',
+  decide: { role: 'decision-maker', node_type: 'gate', skill: 'escalate-decision' },
+  'record-monitoring': {
+    role: 'recorder',
     node_type: 'work',
-    skill: 'registrar-travessia',
+    skill: 'record-crossing',
   },
 };
 
 /** manifest file -> { id, role } (the manifest's role, not the node's). */
 const SKILLS = {
-  'triar-tese.json': { id: 'triar-tese', role: 'gate' },
-  'coletar-fundamentos.json': { id: 'coletar-fundamentos', role: 'work' },
-  'analisar-assimetria.json': { id: 'analisar-assimetria', role: 'work' },
-  'derrubar-tese.json': { id: 'derrubar-tese', role: 'gate' },
-  'dimensionar-risco.json': { id: 'dimensionar-risco', role: 'work' },
-  'escalar-decisao.json': { id: 'escalar-decisao', role: 'gate' },
-  'registrar-travessia.json': { id: 'registrar-travessia', role: 'work' },
+  'triage-thesis.json': { id: 'triage-thesis', role: 'gate' },
+  'collect-fundamentals.json': { id: 'collect-fundamentals', role: 'work' },
+  'analyze-asymmetry.json': { id: 'analyze-asymmetry', role: 'work' },
+  'red-team-thesis.json': { id: 'red-team-thesis', role: 'gate' },
+  'size-risk.json': { id: 'size-risk', role: 'work' },
+  'escalate-decision.json': { id: 'escalate-decision', role: 'gate' },
+  'record-crossing.json': { id: 'record-crossing', role: 'work' },
 };
 
 const FILE_BY_SKILL = Object.fromEntries(
@@ -104,30 +108,30 @@ const FILE_BY_SKILL = Object.fromEntries(
 );
 
 /** The three gate skills, by the mandatory enum of `output.outcome`. */
-const GATES = ['triar-tese.json', 'derrubar-tese.json', 'escalar-decisao.json'];
+const GATES = ['triage-thesis.json', 'red-team-thesis.json', 'escalate-decision.json'];
 const GATE_RESULTS = ['pass', 'fail', 'escalate_human'];
 
-/** FR2's nine edges. Two leave `decisao` towards the same final node. */
+/** FR2's nine edges. Two leave `decide` towards the same final node. */
 const EXPECTED_EDGES = [
-  { from: 'triagem', to: 'coleta-fundamentos', condition: 'aprofundar' },
-  { from: 'triagem', to: 'registro-monitoramento', condition: 'descartar' },
-  { from: 'coleta-fundamentos', to: 'analise-assimetria', condition: 'sempre' },
-  { from: 'analise-assimetria', to: 'red-team', condition: 'sempre' },
-  { from: 'red-team', to: 'dimensionamento-risco', condition: 'sobrevive' },
-  { from: 'red-team', to: 'registro-monitoramento', condition: 'morta' },
-  { from: 'dimensionamento-risco', to: 'decisao', condition: 'sempre' },
-  { from: 'decisao', to: 'registro-monitoramento', condition: 'aprovado' },
-  { from: 'decisao', to: 'registro-monitoramento', condition: 'recusado' },
+  { from: 'triage', to: 'collect-fundamentals', condition: 'advance' },
+  { from: 'triage', to: 'record-monitoring', condition: 'discard' },
+  { from: 'collect-fundamentals', to: 'analyze-asymmetry', condition: 'always' },
+  { from: 'analyze-asymmetry', to: 'red-team', condition: 'always' },
+  { from: 'red-team', to: 'size-risk', condition: 'survives' },
+  { from: 'red-team', to: 'record-monitoring', condition: 'dead' },
+  { from: 'size-risk', to: 'decide', condition: 'always' },
+  { from: 'decide', to: 'record-monitoring', condition: 'approved' },
+  { from: 'decide', to: 'record-monitoring', condition: 'rejected' },
 ];
 
-/** The crossing order AT11 proves, from `triagem` to `decisao`. */
+/** The crossing order AT11 proves, from `triage` to `decide`. */
 const CHAIN = [
-  'triagem',
-  'coleta-fundamentos',
-  'analise-assimetria',
+  'triage',
+  'collect-fundamentals',
+  'analyze-asymmetry',
   'red-team',
-  'dimensionamento-risco',
-  'decisao',
+  'size-risk',
+  'decide',
 ];
 
 /** Reads a JSON file from the repo, failing with its relative path if missing. */
@@ -240,14 +244,14 @@ test('AT2 — the 7 nodes and 9 edges match the FR1-FR2 tables exactly', () => {
     assert.equal(node.skill_ref.id, expected.skill, `expected skill_ref.id for node "${id}"`);
   }
 
-  // The key includes the condition: two edges out of `decisao` go to the same
+  // The key includes the condition: two edges out of `decide` go to the same
   // final node, and a from/to-only key would collapse both into one.
   const key = (edge) => `${edge.from}>${edge.to}>${edge.condition}`;
   assert.equal(doc.edges.length, EXPECTED_EDGES.length);
   assert.deepEqual(doc.edges.map(key).sort(), EXPECTED_EDGES.map(key).sort());
 
-  assert.equal(doc.initial_node, 'triagem');
-  assert.deepEqual(doc.final_nodes, ['registro-monitoramento']);
+  assert.equal(doc.initial_node, 'triage');
+  assert.deepEqual(doc.final_nodes, ['record-monitoring']);
   assert.equal(doc.problem_class, 'bets-assimetricas');
   assert.equal(doc.lineage.type, 'base');
 });
@@ -375,54 +379,54 @@ test('AT7 — no deterministic check; every manifest has an agentic check with e
 
   // The structural limit that does exist is imposed by JSON Schema, not by a
   // manufactured check (FR8).
-  const sizing = readManifest('dimensionar-risco.json');
-  const size = sizing.output.properties.dimensionamento.properties.tamanho_posicao_pct;
+  const sizing = readManifest('size-risk.json');
+  const size = sizing.output.properties.sizing.properties.position_size_pct;
   assert.equal(typeof size.maximum, 'number', 'the position ceiling is a schema maximum');
   assert.ok(size.maximum > 0);
 });
 
-test('AT8 — derrubar-tese forbids "passou" with a high objection the thesis never answered', () => {
-  const manifest = readManifest('derrubar-tese.json');
+test('AT8 — red-team-thesis forbids "passed" with a high objection the thesis never answered', () => {
+  const manifest = readManifest('red-team-thesis.json');
 
-  const objections = manifest.output.properties.objecoes;
-  assert.ok(manifest.output.required.includes('objecoes'), 'objecoes is required in the output');
+  const objections = manifest.output.properties.objections;
+  assert.ok(manifest.output.required.includes('objections'), 'objections is required in the output');
   assert.deepEqual(
     objections.items.required.sort(),
-    ['gravidade', 'objecao', 'resposta_da_tese'],
-    'every objection declares objecao, gravidade and resposta_da_tese',
+    ['objection', 'severity', 'thesis_answer'],
+    'every objection declares objection, severity and thesis_answer',
   );
   assert.deepEqual(
-    objections.items.properties.resposta_da_tese.type,
+    objections.items.properties.thesis_answer.type,
     ['string', 'null'],
-    'resposta_da_tese is null when the thesis did not answer',
+    'thesis_answer is null when the thesis did not answer',
   );
 
   // The instruction PROSE is untouched by t178 — the bundle-regeneration slice
   // owns it, citations included — so the words matched here are still the ones
   // the manifest says.
   const prohibition = linesWith(manifest.instructions, [
-    'passou',
-    'sobrevive',
-    'gravidade',
+    'passed',
+    'survives',
+    'severity',
     'alta',
-    'resposta_da_tese',
-  ]).filter((line) => /NUNCA|nunca|jamais/.test(line));
+    'thesis_answer',
+  ]).filter((line) => /NEVER|never/.test(line));
   assert.ok(
     prohibition.length >= 1,
-    'instructions has to explicitly forbid concluding "passou" (edge "sobrevive") while a high-severity objection has no resposta_da_tese',
+    'instructions has to explicitly forbid concluding "passed" (edge "survives") while a high-severity objection has no thesis_answer',
   );
 
   const counterEvidence = manifest.checks
     .filter((check) => check.type === 'agentic')
     .flatMap((check) => check.required_evidence);
   assert.ok(
-    counterEvidence.some((item) => /contra_evidencia|contra-evidencia/.test(item)),
+    counterEvidence.some((item) => /counter_evidence|counter-evidence/.test(item)),
     'the agentic check demands specific researched counter-evidence, not a reread of the analysis',
   );
 });
 
-test('AT9 — escalar-decisao never produces a result without a recorded human answer', () => {
-  const manifest = readManifest('escalar-decisao.json');
+test('AT9 — escalate-decision never produces a result without a recorded human answer', () => {
+  const manifest = readManifest('escalate-decision.json');
 
   assert.ok(
     manifest.input.required.includes('perguntas_respondidas'),
@@ -437,7 +441,7 @@ test('AT9 — escalar-decisao never produces a result without a recorded human a
   const prohibition = linesWith(manifest.instructions, [
     'perguntas_respondidas',
     'resultado',
-  ]).filter((line) => /NUNCA|nunca|jamais/.test(line));
+  ]).filter((line) => /NEVER|never/.test(line));
   assert.ok(
     prohibition.length >= 1,
     'instructions has to forbid producing a result without an allocation answer in perguntas_respondidas',
@@ -451,16 +455,16 @@ test('AT9 — escalar-decisao never produces a result without a recorded human a
     .filter((check) => check.type === 'agentic')
     .flatMap((check) => check.required_evidence);
   assert.ok(
-    evidence.some((item) => /id_da_pergunta/.test(item)),
+    evidence.some((item) => /allocation_question_id/.test(item)),
     "the mandatory evidence has to cite the allocation question's id",
   );
   assert.ok(
-    evidence.some((item) => /texto_literal_da_resposta/.test(item)),
+    evidence.some((item) => /literal_text_of_the_answer/.test(item)),
     'the mandatory evidence has to cite the literal text of the recorded answer',
   );
 });
 
-test('AT10 — every instructions carries the escalation block; only coletar-fundamentos opens the network', () => {
+test('AT10 — every instructions carries the escalation block; only collect-fundamentals opens the network', () => {
   for (const file of Object.keys(SKILLS)) {
     const manifest = readManifest(file);
     assert.ok(
@@ -474,15 +478,15 @@ test('AT10 — every instructions carries the escalation block; only coletar-fun
     );
   }
 
-  const research = readManifest('coletar-fundamentos.json');
-  assert.equal(research.permissions.network.allowed, true, 'coletar-fundamentos needs the network');
+  const research = readManifest('collect-fundamentals.json');
+  assert.equal(research.permissions.network.allowed, true, 'collect-fundamentals needs the network');
   assert.equal(
     research.permissions.network.domains,
     undefined,
     'unrestricted network: a fixed allowlist does not cover fundamentals research (native skill)',
   );
 
-  for (const file of Object.keys(SKILLS).filter((name) => name !== 'coletar-fundamentos.json')) {
+  for (const file of Object.keys(SKILLS).filter((name) => name !== 'collect-fundamentals.json')) {
     assert.equal(readManifest(file).permissions.network.allowed, false, `${file}: network closed`);
   }
 });
@@ -496,7 +500,7 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
   assert.deepEqual(
     steps.map((step) => step.no),
     CHAIN,
-    "the fixture's crossing follows triagem → … → decisao",
+    "the fixture's crossing follows triage → … → decide",
   );
 
   // 1. Every payload holds against BOTH of the node's contracts: the graph
@@ -552,11 +556,11 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
     doc.edges.find((edge) => edge.from === from && edge.condition === condition);
   const redTeam = steps.find((step) => step.no === 'red-team');
   assert.equal(redTeam.saida.outcome, 'pass', 'in the fixture the thesis survives the red team');
-  assert.ok(edgeFrom('red-team', 'sobrevive'), 'passing the red team follows the "sobrevive" edge');
+  assert.ok(edgeFrom('red-team', 'survives'), 'passing the red team follows the "survives" edge');
 
-  // 4. No edge out of `decisao` is followed without a human answer.
+  // 4. No edge out of `decide` is followed without a human answer.
   const decisionStep = steps.at(-1);
-  const decisionManifest = readManifestOfSkill('escalar-decisao');
+  const decisionManifest = readManifestOfSkill('escalate-decision');
   const question = fixture.pergunta_de_alocacao;
 
   const withoutAnswer = fixture.decisao_sem_resposta_humana;
@@ -568,11 +572,11 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
   assert.deepEqual(
     validateAgainstSchema(withoutAnswer.entrada, decisionManifest.input),
     [],
-    'entering `decisao` without a human answer is legal — the session pauses, it does not fail',
+    'entering `decide` without a human answer is legal — the session pauses, it does not fail',
   );
   const errors = validateAgainstSchema(withoutAnswer.saida_tentada, decisionManifest.output);
   assert.ok(
-    errors.length > 0 && errors.some((error) => /decisao_humana/.test(error.message)),
+    errors.length > 0 && errors.some((error) => /human_decision/.test(error.message)),
     `a result without the recorded human decision has to be refused by the contract: ${JSON.stringify(errors)}`,
   );
 
@@ -581,44 +585,44 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
     (answered) => answered.id === question.id,
   );
   assert.ok(recorded, 'the allocation answer arrives in entrada.perguntas_respondidas');
-  assert.equal(decisionStep.saida.decisao_humana.pergunta_id, question.id);
+  assert.equal(decisionStep.saida.human_decision.question_id, question.id);
   assert.equal(
-    decisionStep.saida.decisao_humana.resposta_literal,
+    decisionStep.saida.human_decision.literal_answer,
     recorded.resposta,
     'the result quotes the human answer literally, without interpreting it',
   );
   assert.ok(
-    edgeFrom('decisao', fixture.aresta_esperada),
-    `the "${fixture.aresta_esperada}" edge has to exist out of "decisao"`,
+    edgeFrom('decide', fixture.aresta_esperada),
+    `the "${fixture.aresta_esperada}" edge has to exist out of "decide"`,
   );
 });
 
-test('FR7 — registrar-travessia records process metrics, never a financial outcome', () => {
-  const manifest = readManifest('registrar-travessia.json');
-  const metrics = manifest.output.properties.metricas_processo;
+test('FR7 — record-crossing records process metrics, never a financial outcome', () => {
+  const manifest = readManifest('record-crossing.json');
+  const metrics = manifest.output.properties.process_metrics;
 
-  assert.ok(manifest.output.required.includes('metricas_processo'));
+  assert.ok(manifest.output.required.includes('process_metrics'));
   for (const field of [
-    'red_team_executado',
-    'fracao_premissas_com_fonte',
-    'decisao_humana_id',
-    'desfecho_final',
+    'red_team_ran',
+    'sourced_assumptions_fraction',
+    'human_decision_id',
+    'final_outcome',
   ]) {
-    assert.ok(metrics.required.includes(field), `metricas_processo has to require "${field}"`);
+    assert.ok(metrics.required.includes(field), `process_metrics has to require "${field}"`);
   }
-  assert.equal(metrics.properties.red_team_executado.type, 'boolean');
-  assert.equal(metrics.properties.fracao_premissas_com_fonte.minimum, 0);
-  assert.equal(metrics.properties.fracao_premissas_com_fonte.maximum, 1);
+  assert.equal(metrics.properties.red_team_ran.type, 'boolean');
+  assert.equal(metrics.properties.sourced_assumptions_fraction.minimum, 0);
+  assert.equal(metrics.properties.sourced_assumptions_fraction.maximum, 1);
   assert.deepEqual(
-    metrics.properties.decisao_humana_id.type,
+    metrics.properties.human_decision_id.type,
     ['string', 'null'],
-    'null only when the crossing never reached decisao',
+    'null only when the crossing never reached decide',
   );
-  assert.deepEqual(metrics.properties.desfecho_final.enum, ['monitorando', 'arquivado']);
+  assert.deepEqual(metrics.properties.final_outcome.enum, ['monitoring', 'archived']);
 
   // D14: "P&L is slow long-term validation, never a round's metric".
   const serialized = JSON.stringify(manifest.output);
-  for (const forbidden of ['p_l', 'pnl', 'lucro', 'retorno_realizado', 'resultado_financeiro']) {
+  for (const forbidden of ['p_l', 'pnl', 'profit', 'realized_return', 'financial_outcome']) {
     assert.ok(
       !serialized.includes(`"${forbidden}"`),
       `the output cannot carry a financial-outcome metric ("${forbidden}")`,
@@ -629,11 +633,11 @@ test('FR7 — registrar-travessia records process metrics, never a financial out
 /*
  * t168 — the fields D14 asks of a thesis that software has no place for.
  *
- * `premise_source` and `asset` (t260) are demanded at `triagem`, the one gate
+ * `premise_source` and `asset` (t260) are demanded at `triage`, the one gate
  * that decides whether the idea is worth research at all: a thesis with no
  * declared source has nothing to trust and one with no identified asset has
  * nothing to triage. `downside` and `upside` are the proponent's own numbers,
- * entered before `analise-assimetria` produces the real figures — so they are
+ * entered before `analyze-asymmetry` produces the real figures — so they are
  * declared without a node demanding them.
  */
 test('t168 — the bets graph declares the class custom fields, and the bundle still validates', async () => {
@@ -651,14 +655,14 @@ test('t168 — the bets graph declares the class custom fields, and the bundle s
     'asset',
     'downside',
     'premise_source',
-    'tamanho_pretendido',
+    'intended_size',
     'upside',
   ]);
 
   for (const key of ['premise_source', 'asset']) {
     const demanded = declarations.get(key);
     assert.equal(demanded.type, 'string', `${key}: type`);
-    assert.equal(demanded.required_at, 'triagem', `${key}: required_at`);
+    assert.equal(demanded.required_at, 'triage', `${key}: required_at`);
     assert.ok(
       doc.nodes.some((node) => node.id === demanded.required_at),
       'required_at has to name a node this document really has',
@@ -668,9 +672,9 @@ test('t168 — the bets graph declares the class custom fields, and the bundle s
   // t263: the intended position size is the class's own field too, and it is
   // demanded at the same gate — without it nobody, neither the triage nor the
   // investor, can tell whether the thesis fits the portfolio's risk ceiling.
-  const size = declarations.get('tamanho_pretendido');
-  assert.equal(size.type, 'number', 'tamanho_pretendido: type');
-  assert.equal(size.required_at, 'triagem', 'tamanho_pretendido: required_at');
+  const size = declarations.get('intended_size');
+  assert.equal(size.type, 'number', 'intended_size: type');
+  assert.equal(size.required_at, 'triage', 'intended_size: required_at');
   assert.ok(
     doc.nodes.some((node) => node.id === size.required_at),
     'required_at has to name a node this document really has',
@@ -687,57 +691,57 @@ test('t168 — the bets graph declares the class custom fields, and the bundle s
 });
 
 /*
- * t263 — two of the four triage criteria used to come out `indeterminado` for
+ * t263 — two of the four triage criteria used to come out `undetermined` for
  * data the graph already carried.
  *
- * `project.carteira` reached the graph's `project` object in t260, but the
- * manifest only ever interpolated `criterios_de_triagem`: the paragraph that
- * spoke of the risk ceiling named `input.project.carteira` between backticks,
+ * `project.portfolio` reached the graph's `project` object in t260, but the
+ * manifest only ever interpolated `triage_criteria`: the paragraph that
+ * spoke of the risk ceiling named `input.project.portfolio` between backticks,
  * and backticks are not double braces — the renderer only substitutes
  * `{{input.…}}` tokens, so the value never left the JSON. The investor's circle
  * of competence had no place at all, and the intended position size had no
  * field. What is asserted here is the pair that makes the criteria judgeable:
  * the shape in `input`, and the three literal tokens in `instructions`.
  *
- * `carteira` is required AND nullable rather than optional because the
+ * `portfolio` is required AND nullable rather than optional because the
  * placeholder engine fails closed on a missing key
  * (`packages/runner/src/dispatch/render-skill-instructions.ts`): a `project`
- * with no open position has to send `carteira: null` on purpose, never omit it.
+ * with no open position has to send `portfolio: null` on purpose, never omit it.
  */
-test('t263 — triar-tese interpola carteira, círculo de competência e tamanho pretendido', () => {
-  const manifest = readManifest('triar-tese.json');
+test('t263 — triage-thesis interpolates portfolio, circle of competence and intended size', () => {
+  const manifest = readManifest('triage-thesis.json');
   const project = manifest.input.properties.project;
 
-  for (const key of ['carteira', 'circulo_de_competencia']) {
+  for (const key of ['portfolio', 'circle_of_competence']) {
     assert.ok(project.required.includes(key), `project.required has to demand ${key}`);
   }
   assert.deepEqual(
-    project.properties.carteira.type,
+    project.properties.portfolio.type,
     ['object', 'null'],
-    'carteira is nullable, never absent: the placeholder engine fails closed on a missing key',
+    'portfolio is nullable, never absent: the placeholder engine fails closed on a missing key',
   );
-  assert.equal(project.properties.circulo_de_competencia.type, 'array');
+  assert.equal(project.properties.circle_of_competence.type, 'array');
   assert.equal(
-    project.properties.circulo_de_competencia.minItems,
+    project.properties.circle_of_competence.minItems,
     1,
     'an empty circle of competence is no circle at all',
   );
-  assert.equal(project.properties.circulo_de_competencia.items.type, 'string');
+  assert.equal(project.properties.circle_of_competence.items.type, 'string');
 
   assert.ok(
-    manifest.input.required.includes('tamanho_pretendido'),
+    manifest.input.required.includes('intended_size'),
     'the intended size is demanded at the top of the input, beside asset and premise_source',
   );
   assert.equal(
-    manifest.input.properties.tamanho_pretendido.type,
+    manifest.input.properties.intended_size.type,
     'number',
     'a class field is a flat scalar at the top, never a nested object (t168)',
   );
 
   for (const token of [
-    '{{input.project.carteira}}',
-    '{{input.project.circulo_de_competencia}}',
-    '{{input.tamanho_pretendido}}',
+    '{{input.project.portfolio}}',
+    '{{input.project.circle_of_competence}}',
+    '{{input.intended_size}}',
   ]) {
     assert.ok(
       manifest.instructions.includes(token),
@@ -749,7 +753,7 @@ test('t263 — triar-tese interpola carteira, círculo de competência e tamanho
 test('t263 — the README documents the two new inputs of the triage', () => {
   const text = readFileSync(README_PATH, 'utf8');
 
-  for (const key of ['circulo_de_competencia', 'tamanho_pretendido']) {
+  for (const key of ['circle_of_competence', 'intended_size']) {
     assert.ok(
       text.includes(key),
       `the README has to document ${key}: documentation cannot lag the schema`,
@@ -769,7 +773,7 @@ test('t263 — the README documents the two new inputs of the triage', () => {
  * that does not declare `resultado` has its ENTIRE report refused — stored as
  * `null`, with the next node's `input` projected from nothing.
  *
- * `triar-tese` learned this in t260, when the first live crossing hit it. The
+ * `triage-thesis` learned this in t260, when the first live crossing hit it. The
  * other two gates were left as they were and nothing exercised them, so the
  * claim is made here for all three at once: every gate of this graph, against
  * every edge that really leaves it.
@@ -782,7 +786,7 @@ test('t276 — every gate declares `resultado`, the edge label its own report ca
   const gates = doc.nodes.filter((node) => node.node_type === 'gate');
   assert.deepEqual(
     gates.map((node) => node.id),
-    ['triagem', 'red-team', 'decisao'],
+    ['triage', 'red-team', 'decide'],
     'the three gates of D14, in document order',
   );
 
@@ -833,7 +837,7 @@ test('AT12 — the validator CLI approves the bundle and rejects a tampered hash
 
   const copy = path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-bundle-')), 'bundle');
   cpSync(BUNDLE_DIR, copy, { recursive: true });
-  const target = path.join(copy, 'skills', 'derrubar-tese.json');
+  const target = path.join(copy, 'skills', 'red-team-thesis.json');
   const manifest = JSON.parse(readFileSync(target, 'utf8'));
   manifest.hash = `sha256:${'0'.repeat(64)}`;
   writeFileSync(target, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -902,13 +906,13 @@ test('FR10 — every path the README points at exists', () => {
   assert.deepEqual(dead, [], `the README points at files that do not exist:\n${dead.join('\n')}`);
 });
 
-test('FR10 — the command the README documents under "Como validar" runs green', () => {
+test('FR10 — the command the README documents under "How to validate" runs green', () => {
   const text = readFileSync(README_PATH, 'utf8');
-  const documented = fencedBlockUnder(text, '## Como validar')
+  const documented = fencedBlockUnder(text, '## How to validate')
     .map((line) => line.trim())
     .filter((line) => line.startsWith('node '));
 
-  assert.ok(documented.length > 0, 'the "Como validar" block no longer documents a node command');
+  assert.ok(documented.length > 0, 'the "How to validate" block no longer documents a node command');
 
   for (const command of documented) {
     const [, ...argv] = command.split(/\s+/);
@@ -924,14 +928,14 @@ test('FR10 — the command the README documents under "Como validar" runs green'
 /*
  * t278 — contract matching, over the bundle's REAL manifests.
  *
- * This bundle is the one that named its own gap: `dimensionar-risco` used to
+ * This bundle is the one that named its own gap: `size-risk` used to
  * require a bare top-level `capital` object nothing in the graph produced
  * (README, "os dois buracos"), and closing it as a declaration under `project`
  * is what makes this case green. The three short paths into
- * `registro-monitoramento` are the other half of what is proved here: arriving
- * from `triagem --descartar-->` or `red-team --morta-->` there is no
- * `dimensionamento` and no `decisao_humana`, and that is legal precisely
- * because `registrar-travessia` declares them as properties and demands
+ * `record-monitoring` are the other half of what is proved here: arriving
+ * from `triage --discard-->` or `red-team --dead-->` there is no
+ * `sizing` and no `human_decision`, and that is legal precisely
+ * because `record-crossing` declares them as properties and demands
  * neither.
  */
 const CORE_GRAPH_MODULE = path.join(ROOT, 'packages', 'core', 'src', 'domain', 'graph.ts');
@@ -982,14 +986,14 @@ test('t283 — the bundle classifies as checked, so an import needs no re-check'
   );
 });
 
-test('t278 — the optional keys of registrar-travessia are what makes the short paths legal', async () => {
+test('t278 — the optional keys of record-crossing are what makes the short paths legal', async () => {
   const { validateContracts } = await contractValidator();
-  const manifest = readManifest('registrar-travessia.json');
+  const manifest = readManifest('record-crossing.json');
 
-  for (const key of ['premissas', 'objecoes', 'dimensionamento', 'decisao_humana']) {
+  for (const key of ['assumptions', 'objections', 'sizing', 'human_decision']) {
     assert.ok(
       Object.hasOwn(manifest.input.properties, key),
-      `registrar-travessia declares "${key}" as a property`,
+      `record-crossing declares "${key}" as a property`,
     );
     assert.ok(
       !manifest.input.required.includes(key),
@@ -1001,11 +1005,11 @@ test('t278 — the optional keys of registrar-travessia are what makes the short
   // bundle red, naming the node that produces it on the long path only.
   const demanded = {
     ...manifest,
-    input: { ...manifest.input, required: [...manifest.input.required, 'dimensionamento'] },
+    input: { ...manifest.input, required: [...manifest.input.required, 'sizing'] },
   };
   const report = validateContracts(
     readJson(GRAPH_PATH),
-    bundleSkillLookup({ 'registrar-travessia': demanded }),
+    bundleSkillLookup({ 'record-crossing': demanded }),
   );
 
   // One problem for the key itself and one for each of its own required
@@ -1013,9 +1017,9 @@ test('t278 — the optional keys of registrar-travessia are what makes the short
   assert.ok(report.problems.length > 0);
   for (const problem of report.problems) {
     assert.equal(problem.code, 'unproduced_input');
-    assert.equal(problem.node_id, 'registro-monitoramento');
-    assert.ok(problem.key === 'dimensionamento' || problem.key.startsWith('dimensionamento.'));
-    assert.deepEqual(problem.produced_elsewhere_by, ['dimensionamento-risco']);
+    assert.equal(problem.node_id, 'record-monitoring');
+    assert.ok(problem.key === 'sizing' || problem.key.startsWith('sizing.'));
+    assert.deepEqual(problem.produced_elsewhere_by, ['size-risk']);
   }
-  assert.equal(report.problems[0].key, 'dimensionamento');
+  assert.equal(report.problems[0].key, 'sizing');
 });

@@ -40,13 +40,20 @@
  *
  * ## Scope
  *
- * The alias rule is per-cluster: this ticket owns `job.ts`, `intake.ts`,
- * `input-request.ts` and `session.ts`, and the other ten repositories keep their
- * aliases until the two follow-up tickets land. The `toWire`/`fromWire` rule is
- * already repo-wide, and not by accident — every one of the 54 occurrences that
- * existed before this ticket lived in these four files and the five route files
- * that consume them, so deleting the cluster's translation deletes the whole
- * category at once.
+ * The alias rule is per-cluster, and it grows one cluster at a time. t286 owned
+ * the job cluster — `job.ts`, `intake.ts`, `input-request.ts` and `session.ts` —
+ * and t289 adds the second: `graphs.ts`, `skill.ts`, `proposals.ts`, `hooks.ts`
+ * and `hook-secrets.ts`. What still keeps its aliases is ticket C's six files
+ * (`webhooks.ts`, `runners.ts`, `leases.ts`, `engine-models.ts`,
+ * `credentials.ts` and `db/events.ts`), and nothing else.
+ *
+ * The `toWire`/`fromWire` rule is already repo-wide, and not by accident — every
+ * one of the 54 occurrences that existed before t286 lived in the job cluster
+ * and the five route files that consume it, so deleting that cluster's
+ * translation deleted the whole category at once. The second cluster had none of
+ * its own to delete: its five translators were named `toGraph`, `toGraphVersion`,
+ * `toClass`, `toSkill`, `toProposal` and `toHookSecret` instead, same species
+ * under different names, and the sweep below is what says they are gone.
  */
 
 import assert from 'node:assert/strict';
@@ -58,17 +65,33 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 
 /**
- * The import-closed cluster this ticket owns, relative to `packages/core`.
+ * The import-closed cluster t286 owned, relative to `packages/core`.
  *
  * `job.ts` is the hub — `intake.ts`, `input-request.ts` and `session.ts` all
  * import it — which is why the four move together and why the other ten
  * repositories could not be split off one file at a time.
  */
-const CLUSTER = Object.freeze([
+const JOB_CLUSTER = Object.freeze([
   'src/repositories/job.ts',
   'src/repositories/intake.ts',
   'src/repositories/input-request.ts',
   'src/repositories/session.ts',
+]);
+
+/**
+ * The second cluster, t289's, relative to `packages/core`.
+ *
+ * Grouped by what reads them rather than by what they import: `routes/graphs.ts`
+ * and `routes/proposals.ts` each read three of the five, so the graph, the skill,
+ * the proposal and the two hook repositories reach `/v1` through the same two
+ * files and could not be renamed one at a time either.
+ */
+const GRAPH_CLUSTER = Object.freeze([
+  'src/repositories/graphs.ts',
+  'src/repositories/skill.ts',
+  'src/repositories/proposals.ts',
+  'src/repositories/hooks.ts',
+  'src/repositories/hook-secrets.ts',
 ]);
 
 /**
@@ -79,7 +102,7 @@ const CLUSTER = Object.freeze([
  * them renames a column, and all of them are English — which is the whole
  * exemption, stated as a list instead of as a habit.
  */
-const EXPRESSION_ALIASES = Object.freeze({
+const JOB_EXPRESSION_ALIASES = Object.freeze({
   'src/repositories/job.ts': Object.freeze([
     // metricsByVersion (FR17)
     'jobs',
@@ -100,6 +123,33 @@ const EXPRESSION_ALIASES = Object.freeze({
     'input_requests',
   ]),
   'src/repositories/session.ts': Object.freeze([]),
+});
+
+/**
+ * Every alias the second cluster is allowed to write: none, in all five files.
+ *
+ * Not an accident of how the rewrite went, and not a stricter rule than the job
+ * cluster's — it is the same rule reaching a different total. All 51 aliases
+ * these files carried before t289 renamed a column; not one of them named an
+ * aggregate or a subquery, because none of these five repositories counts, sums
+ * or correlates anything. So the list of legitimate survivors comes out empty,
+ * and an empty list is a sharper gate than a populated one: the next `AS` written
+ * here fails the run whatever it is called, and whoever writes it has to add the
+ * name below and say what expression it names.
+ *
+ * Two of those 51 could not simply lose their alias, and became a mapping in
+ * TypeScript instead — `graph.id` reaching the class catalogue as `graph_id`, and
+ * `skill.source` reaching the manifest as `origin`. Both are places where the
+ * COLUMN and the published field genuinely have different names, which an alias
+ * would have hidden behind a rename this sweep forbids; see the two repositories
+ * for why the wire could not move to meet them.
+ */
+const GRAPH_EXPRESSION_ALIASES = Object.freeze({
+  'src/repositories/graphs.ts': Object.freeze([]),
+  'src/repositories/skill.ts': Object.freeze([]),
+  'src/repositories/proposals.ts': Object.freeze([]),
+  'src/repositories/hooks.ts': Object.freeze([]),
+  'src/repositories/hook-secrets.ts': Object.freeze([]),
 });
 
 /**
@@ -202,7 +252,7 @@ function read(relative: string): string {
 }
 
 test('AC1 — no SELECT in the job cluster renames a column onto another spelling', () => {
-  const offenders = CLUSTER.flatMap((relative) =>
+  const offenders = JOB_CLUSTER.flatMap((relative) =>
     aliasesIn(read(relative))
       .filter((alias) => !alias.expression)
       .map((alias) => `${relative}:${alias.line} — AS ${alias.name}`),
@@ -216,14 +266,42 @@ test('AC1 — no SELECT in the job cluster renames a column onto another spellin
   );
 });
 
-test('AC1 — the aliases that survive are the listed anonymous-expression ones', () => {
-  for (const relative of CLUSTER) {
+test('AC1 — the aliases that survive the job cluster are the listed anonymous-expression ones', () => {
+  for (const relative of JOB_CLUSTER) {
     const surviving = aliasesIn(read(relative)).map((alias) => alias.name);
     assert.deepEqual(
       surviving,
-      [...EXPRESSION_ALIASES[relative as keyof typeof EXPRESSION_ALIASES]],
+      [...JOB_EXPRESSION_ALIASES[relative as keyof typeof JOB_EXPRESSION_ALIASES]],
       `${relative} writes an alias this sweep does not know about; an aggregate or a ` +
         'subquery may be named, but the name goes on the list above first',
+    );
+  }
+});
+
+test('AC1 — no SELECT in the graph/skill/proposal/hook cluster renames a column onto another spelling', () => {
+  const offenders = GRAPH_CLUSTER.flatMap((relative) =>
+    aliasesIn(read(relative))
+      .filter((alias) => !alias.expression)
+      .map((alias) => `${relative}:${alias.line} — AS ${alias.name}`),
+  );
+
+  assert.deepEqual(
+    offenders,
+    [],
+    'a column is being read back under a second name; the projection is supposed to ' +
+      `carry the column's own name now (D20, t289 FR1-FR7):\n${offenders.join('\n')}`,
+  );
+});
+
+test('AC1 — the aliases that survive the graph/skill/proposal/hook cluster are the listed anonymous-expression ones', () => {
+  for (const relative of GRAPH_CLUSTER) {
+    const surviving = aliasesIn(read(relative)).map((alias) => alias.name);
+    assert.deepEqual(
+      surviving,
+      [...GRAPH_EXPRESSION_ALIASES[relative as keyof typeof GRAPH_EXPRESSION_ALIASES]],
+      `${relative} writes an alias, and this cluster is allowed none: every column it ` +
+        'reads already carries the published name, so an alias here is either a rename ' +
+        'the sweep forbids or an expression whose name goes on the list above first',
     );
   }
 });

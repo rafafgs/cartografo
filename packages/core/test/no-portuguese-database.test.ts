@@ -15,13 +15,22 @@
  *
  * ## What is swept, and what is masked
  *
- * The sweep looks ONLY at SQL. Every file it walks legitimately holds two
+ * The sweep looks ONLY at SQL. Most files it walks legitimately hold two
  * vocabularies at once — below the SQL is the schema, which is English; above it
- * are the repository's own TypeScript field names, which D20 deliberately does
- * NOT move (t229 FR4, t235 FR5: `Job.titulo` stays, because `routes/*.ts` reads
- * it and the routes are outside both tickets' surface). So a Portuguese word is
- * a violation in a SQL position and nowhere else, and the masks below are that
- * line:
+ * are the repository's own TypeScript field names, which t229 FR4 and t235 FR5
+ * deliberately did NOT move, because `routes/*.ts` read them and the routes were
+ * outside both tickets' surface. So a Portuguese word is a violation in a SQL
+ * position and nowhere else, and the masks below are that line:
+ *
+ * Which files still hold two vocabularies is shrinking. t286 collapsed them into
+ * one for `job.ts`, `intake.ts`, `input-request.ts` and `session.ts`: those four
+ * spell every field the way the column does, and their `SELECT`s carry no alias
+ * at all — `test/no-repository-alias-roundtrip.test.ts` is the gate that keeps
+ * it so. What still reads the old way is `graphs.ts`, `skill.ts`, `webhooks.ts`,
+ * `proposals.ts`, `runners.ts`, `leases.ts`, `hooks.ts`, `hook-secrets.ts`,
+ * `engine-models.ts`, `credentials.ts` and `db/events.ts`, which two follow-up
+ * tickets own. Everything below is written for those eleven; it stays exactly as
+ * correct when the last of them lands and the two vocabularies become one.
  *
  * - **Comments.** Prose about `trabalho` is documentation, not a query.
  * - **Everything that is not a SQL string literal.** An interface field, a map
@@ -31,10 +40,12 @@
  *   {@link SQL_SHAPE}, so it is blanked whole.
  * - **`${…}` inside a template literal.** That is TypeScript spliced into SQL,
  *   not SQL; the constant it names is a literal of its own and is swept as one.
- * - **`AS <name>`.** The alias is the bridge FR5 is built on — a `SELECT title AS
- *   titulo` is precisely how a renamed column reaches an unrenamed TypeScript
- *   field without dragging `routes/`, `packages/runner` and `packages/tela` into
- *   this ticket.
+ * - **`AS <name>`.** The alias is the bridge the still-unconverted repositories
+ *   are built on — a `SELECT title AS titulo` is precisely how a renamed column
+ *   reaches an unrenamed TypeScript field without dragging `routes/`,
+ *   `packages/runner` and `packages/tela` into one ticket. Masking it here is
+ *   about the SQL position and says nothing about whether the alias should
+ *   exist; that question belongs to the sweep named above.
  *
  * What is left after masking is a table, a column or a stored value this package
  * really does write into a query.
@@ -283,9 +294,12 @@ test('FR10 — the sweep bites on Portuguese that really is in the SQL', () => {
 test('FR10 — the sweep does NOT bite on the boundaries D20 leaves in Portuguese', () => {
   const terms = databaseTerms();
   const allowed = [
-    // The alias FR5 is built on: a renamed column reaching an unrenamed field.
+    // The alias the unconverted repositories are built on: a renamed column
+    // reaching a field that still spells itself the old way. Synthetic, and
+    // deliberately so — what it pins is that a SQL alias is a masked position,
+    // which holds whether or not any real file still writes one.
     "db.prepare('SELECT title AS titulo, current_node_id AS no_atual FROM job');",
-    // The repository's own projection, which FR5 deliberately does not rename.
+    // A repository's own projection, in the same synthetic spelling.
     'export interface Job { titulo: string; no_atual: string; criado_em: string }',
     // A TypeScript object literal is not SQL, whatever it spells.
     "const LABELS = { job: 'trabalho', session: 'sessao' };",

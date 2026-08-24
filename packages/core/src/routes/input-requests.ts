@@ -2,15 +2,15 @@
  * Input-request routes (t102, FR13–FR16).
  *
  * The two ways of answering are SEPARATE routes on purpose (`/answer` and
- * `/auto-resolution`), and not one route with an `origem` field: the distinction
+ * `/auto-resolution`), and not one route with a `source` field: the distinction
  * between approved-by-a-person and approved-by-the-system is precisely the one
  * nobody should be able to erase by passing a different parameter.
  *
  * Same split as the job and session routes, spelled out in `routes/common.ts`:
- * a GET returns English since t226 (`repositories/input-request.ts`'s
- * `toWireInputRequest`), while `POST /input-requests` and the two answer routes
- * still accept `{resposta, respondido_por}` — those bodies reach `validateEvent`
- * and `pergunta.criada`/`pergunta.respondida` are D20's second child.
+ * a GET has returned English since t226 and the writes followed with t227,
+ * because those bodies reach `validateEvent` and the event vocabulary is D20's
+ * second child. Since t286 nothing translates on the way out either —
+ * `repositories/input-request.ts` hands back the object `/v1` publishes.
  */
 
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -25,8 +25,6 @@ import {
   inputRequestStatusColumn,
   listInputRequests,
   answerInputRequest,
-  toWireInputRequest,
-  toWirePrecedent,
 } from '../repositories/input-request.ts';
 import {
   withValidation,
@@ -82,7 +80,7 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
       );
       if (inputRequest === null) return notFound(reply, 'job');
       reply.code(201);
-      return toWireInputRequest(inputRequest);
+      return inputRequest;
     }),
   );
 
@@ -91,7 +89,7 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
    * and still be PENDING (t149).
    *
    * Answering twice is not a harmless repeat. The second write would overwrite
-   * `resposta`/`origem` — turning a decision taken by a person into one taken by
+   * `answer`/`source` — turning a decision taken by a person into one taken by
    * the system, which is exactly the distinction the two routes exist to keep —
    * append a contradictory second answer event, and unblock a job that may by
    * then be waiting on a DIFFERENT pending question, recreating the ask-forever
@@ -121,9 +119,7 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
         id,
         (request.body ?? {}) as Record<string, unknown>,
       );
-      return inputRequest === null
-        ? notFound(reply, 'input request')
-        : toWireInputRequest(inputRequest);
+      return inputRequest === null ? notFound(reply, 'input request') : inputRequest;
     }),
   );
 
@@ -138,9 +134,7 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
         id,
         (request.body ?? {}) as Record<string, unknown>,
       );
-      return inputRequest === null
-        ? notFound(reply, 'input request')
-        : toWireInputRequest(inputRequest);
+      return inputRequest === null ? notFound(reply, 'input request') : inputRequest;
     }),
   );
 
@@ -162,10 +156,10 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
       const jobId = integerFromQuery('job_id', query.job_id);
       const found = listInputRequests(db, {
         status,
-        execucao_id: executionId,
-        trabalho_id: jobId,
+        execution_id: executionId,
+        job_id: jobId,
       });
-      return { input_requests: found.map(toWireInputRequest) };
+      return { input_requests: found };
     }),
   );
 
@@ -177,12 +171,10 @@ export function registerInputRequests(app: FastifyInstance, db: Database): void 
     withValidation(reply, () => {
       const query = request.query as { limit?: string };
       const limit = integerFromQuery('limit', query.limit);
-      const precedents = getPrecedents(db, routeId(request.params), { limit });
+      const found = getPrecedents(db, routeId(request.params), { limit });
       // An empty list is a legitimate response: "nobody asked this before" is a
       // fact about the project, not a failure of the query.
-      return precedents === null
-        ? notFound(reply, 'input request')
-        : { precedents: precedents.map(toWirePrecedent) };
+      return found === null ? notFound(reply, 'input request') : { precedents: found };
     }),
   );
 }

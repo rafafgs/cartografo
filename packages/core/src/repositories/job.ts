@@ -10,12 +10,19 @@
  * The functions return `null` when the job does not exist; translating that into
  * a 404 is the route's job.
  *
- * The TABLE and its columns are English since D20's fourth child (t229), and the
- * values they store since its fifth (t235); the projection's field names are not,
- * because `routes/*.ts`, `intake.ts` and the dispatch path read them and those are
- * outside both tickets' surface — so every `SELECT` aliases the renamed column back
- * onto the field it already fed (t229, FR4; t235, FR5). The event-type strings went
- * English with the second child (t227).
+ * The TABLE and its columns are English since D20's fourth child (t229), the
+ * values they store since its fifth (t235), and the event-type strings since its
+ * second (t227). {@link Job} below is English too, and is the object `/v1`
+ * publishes: t286 deleted the alias-and-translate layer that used to sit between
+ * them, because it renamed nothing a client could see while hiding the column's
+ * real name from everything above it.
+ *
+ * Two columns did not come along, and could not: `corpo` and
+ * `criterios_de_aceite` have no row in `docs/spec/glossario-wire.md` §4.2, so
+ * renaming them is a migration and a glossary entry rather than a rename. They
+ * keep their spelling on {@link JobRow}, and {@link toJob} is the one place that
+ * translates — two fields in one direction, where the alias used to do fourteen
+ * in two.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -51,18 +58,25 @@ import {
 /** Job projection, as the API returns it. */
 export interface Job {
   id: number;
-  projeto_id: number;
-  execucao_id: number | null;
-  titulo: string;
-  /** Body of the job; `null` when it was born with a title and nothing else (t122). */
-  corpo: string | null;
+  project_id: number;
+  execution_id: number | null;
+  title: string;
+  /**
+   * Body of the job; `null` when it was born with a title and nothing else (t122).
+   *
+   * One of the two fields whose COLUMN is still Portuguese (`corpo`), so this
+   * name is built by {@link toJob} instead of read straight off the row.
+   */
+  body: string | null;
   /**
    * Preliminary acceptance criteria; `null` when none was declared (t122).
    *
    * `null` is not `[]`: the node that refines has to be able to tell "nobody
    * wrote any yet" from "it was declared that there are none".
+   *
+   * The other field with a Portuguese column behind it (`criterios_de_aceite`).
    */
-  criterios_de_aceite: string[] | null;
+  acceptance_criteria: string[] | null;
   /**
    * Values of the fields the CLASS declares in its graph (t168); `null` when the
    * job carries none.
@@ -71,7 +85,7 @@ export interface Job {
    * `custom_fields` of the job's graph version, and that is also what the
    * transition gate reads to decide whether the job may leave a node.
    */
-  campos: ScalarMap | null;
+  fields: ScalarMap | null;
   /**
    * What this work costs to RUN, as the intake triaged it (t175); `null` when
    * nobody classified it.
@@ -86,80 +100,86 @@ export interface Job {
    * them — a choice nobody made, with nothing failing to reveal it.
    */
   tier: 'trivial' | 'standard' | null;
-  no_entrada_id: string;
-  no_atual: string;
-  bloqueado: boolean;
-  motivo_bloqueio: string | null;
+  entry_node_id: string;
+  current_node_id: string;
+  blocked: boolean;
+  block_reason: string | null;
   /** Graph version the job runs under. Loose: `graph_version` belongs to t101 (D15). */
-  grafo_versao_id: string | null;
+  graph_version_id: string | null;
   /**
    * The job arrived: its current node is a final node of its graph version
    * (t152).
    *
    * Derived at read time, never stored — see `isAtFinalNode`. It is the only
-   * terminal signal this system has: the log has no `trabalho.concluido` event,
+   * terminal signal this system has: the log has no `job.completed` event,
    * and "nothing is open right now" is a state a job one event old already
    * satisfies.
    */
-  concluido: boolean;
-  criado_em: string;
-  atualizado_em: string;
+  completed: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 /** One row of the version × telemetry grouping (FR17). */
 export interface MetricByVersion {
-  grafo_versao_id: string | null;
-  trabalhos: number;
-  eventos: number;
+  graph_version_id: string | null;
+  jobs: number;
+  events: number;
 }
 
 /** One row of `GET /v1/executions` — the summary of a round (t107, FR1). */
 export interface ExecutionSummary {
-  execucao_id: number | null;
-  trabalhos: number;
-  trabalhos_bloqueados: number;
-  perguntas_pendentes: number;
+  execution_id: number | null;
+  jobs: number;
+  blocked_jobs: number;
+  pending_input_requests: number;
   /**
    * When the control plane declared this round over; `null` while it has not
    * (t245, D21).
    *
    * Derived at read time from the `execution.finished` event and never stored,
-   * the same posture as `Job.concluido` — a projection that cached it could go
+   * the same posture as `Job.completed` — a projection that cached it could go
    * on reporting an end the log does not carry.
    *
-   * English, unlike its three neighbours, and that is not an oversight: those
-   * mirror columns D20's fourth child renamed and deliberately left aliased
-   * (t229, FR4), while this field has no column behind it and no caller from
-   * before the glossary. It is born spelled the way the wire spells it, so
-   * there is nothing here to translate.
+   * It was already English while its three neighbours were not, because it has
+   * no column behind it and no caller from before the glossary; t286 brought the
+   * other three across, so the row is now one vocabulary throughout.
    */
   finished_at: string | null;
 }
 
 interface JobRow
-  extends Omit<Job, 'bloqueado' | 'criterios_de_aceite' | 'campos' | 'concluido'> {
-  bloqueado: number;
-  /** JSON in a TEXT column, like `session.usage` and `input_request.options`. */
+  extends Omit<Job, 'blocked' | 'body' | 'acceptance_criteria' | 'fields' | 'completed'> {
+  blocked: number;
+  /** The column `Job.body` is built from; see {@link COLUMNS}. */
+  corpo: string | null;
+  /**
+   * The column `Job.acceptance_criteria` is built from — JSON in a TEXT column,
+   * like `session.usage` and `input_request.options`.
+   */
   criterios_de_aceite: string | null;
   /** JSON in a TEXT column too, for the same reason (t168). */
-  campos: string | null;
+  fields: string | null;
 }
 
 /**
- * The row, read back into {@link Job}'s spelling (t229, FR4).
+ * The columns {@link JobRow} is made of — every one under its own name (t286).
  *
- * `corpo` and `criterios_de_aceite` carry no alias because they carry no new
- * name: `glossario-wire.md` §4.2 has no row for either, and inventing one is
- * exactly what the glossary exists to prevent. Closing that gap is the sixth
- * child's, or a ficha of its own.
+ * There is nothing left to alias: {@link Job} spells each field the way the
+ * column does, so the list IS the column list. The two names the glossary never
+ * mapped — `corpo` and `criterios_de_aceite` — are not aliased either;
+ * {@link toJob} builds `body` and `acceptance_criteria` off them explicitly,
+ * because an alias here would invent a schema name `glossario-wire.md` §4.2 does
+ * not carry, which is the one thing the glossary exists to prevent. Closing that
+ * gap belongs to a migration, not to this file.
  */
 const COLUMNS = `
-  id, project_id AS projeto_id, execution_id AS execucao_id, title AS titulo,
-  corpo, criterios_de_aceite, fields AS campos, tier,
-  entry_node_id AS no_entrada_id, current_node_id AS no_atual,
-  blocked AS bloqueado, block_reason AS motivo_bloqueio,
-  graph_version_id AS grafo_versao_id,
-  created_at AS criado_em, updated_at AS atualizado_em
+  id, project_id, execution_id, title,
+  corpo, criterios_de_aceite, fields, tier,
+  entry_node_id, current_node_id,
+  blocked, block_reason,
+  graph_version_id,
+  created_at, updated_at
 `;
 
 /**
@@ -185,7 +205,7 @@ const JOB_EVENTS = `
  * "When this round was declared over", in SQL (t245, FR6).
  *
  * A scalar subquery over the log and not a column: `finished_at` is derived on
- * read like `Job.concluido`, so nothing can go on reporting an end the log does
+ * read like `Job.completed`, so nothing can go on reporting an end the log does
  * not carry. `LIMIT 1` after `ORDER BY e.id` is belt and braces — the writer
  * guards against a second announcement — and it costs nothing to be honest
  * about which one would win if the guard ever failed: the FIRST, because the
@@ -248,7 +268,7 @@ function hasConformingFinish(db: Database, jobId: number, nodeId: string): boole
  *
  * Three things say no before the graph is even read. A blocked job is never
  * done, whatever node it is standing on — the flag stops the report of an end
- * the same way it stops everything else. A job with no `grafo_versao_id` has no
+ * the same way it stops everything else. A job with no `graph_version_id` has no
  * graph to ask, and so has no terminal state to arrive at. And a version id that
  * no longer resolves is treated as no graph at all: `job.graph_version_id`
  * is loose text, not a foreign key (a job created with `'v1'` in hand is an
@@ -263,7 +283,7 @@ function hasConformingFinish(db: Database, jobId: number, nodeId: string): boole
  * `implantar` of the software one are final nodes that pin a real `work` skill
  * — D14's own "registro e monitoramento" step — and a job declared done on
  * ARRIVAL never gets a session on them, because the controller's candidate list
- * drops a `concluido` job before the runner sees it
+ * drops a `completed` job before the runner sees it
  * (`packages/runner/src/controller/cliente-controle.ts`). t198's first real
  * crossing found exactly that, and found it as silence: no failure, no event,
  * just a skill that never ran.
@@ -294,117 +314,44 @@ function hasConformingFinish(db: Database, jobId: number, nodeId: string): boole
  *   node's own work already reported.
  */
 function isAtFinalNode(db: Database, row: JobRow): boolean {
-  if (asBoolean(row.bloqueado)) return false;
-  if (row.grafo_versao_id === null) return false;
+  if (asBoolean(row.blocked)) return false;
+  if (row.graph_version_id === null) return false;
 
-  const version = getVersion(db, row.grafo_versao_id);
+  const version = getVersion(db, row.graph_version_id);
   if (version === undefined) return false;
 
-  if (!version.snapshot.final_nodes.includes(row.no_atual)) return false;
+  if (!version.snapshot.final_nodes.includes(row.current_node_id)) return false;
 
-  const node = version.snapshot.nodes?.find((candidate) => candidate.id === row.no_atual);
+  const node = version.snapshot.nodes?.find((candidate) => candidate.id === row.current_node_id);
   const pin = node === undefined ? undefined : node.skill_ref;
   if (pin === undefined || pin === null) return true;
 
-  return hasConformingFinish(db, row.id, row.no_atual);
+  return hasConformingFinish(db, row.id, row.current_node_id);
 }
 
+/**
+ * The row as {@link Job} publishes it.
+ *
+ * The two residual columns are destructured OUT before the spread, and that is
+ * the whole care of this function: a bare `{...row}` would carry `corpo` and
+ * `criterios_de_aceite` onto the object beside the `body` and
+ * `acceptance_criteria` built from them, and an extra key on a projection fails
+ * nothing — it simply rides out to `/v1` under a name no client was ever told
+ * about. `test/no-leaked-row-keys.test.ts` is the gate that says so.
+ *
+ * @param db Open handle; `completed` is derived on read and needs the graph.
+ * @param row The job's row, as it is in the table.
+ * @returns The projection.
+ */
 function toJob(db: Database, row: JobRow): Job {
+  const { corpo: body, criterios_de_aceite: criteria, ...rest } = row;
   return {
-    ...row,
-    bloqueado: asBoolean(row.bloqueado),
-    criterios_de_aceite: jsonOrNull<string[]>(row.criterios_de_aceite),
-    campos: jsonOrNull<ScalarMap>(row.campos),
-    concluido: isAtFinalNode(db, row),
-  };
-}
-
-/* -------------------------------------------------------------------------- */
-/* The row → wire boundary (t226, FR1).                                        */
-/*                                                                             */
-/* `Job` above stays the INTERNAL projection, spelled like the columns: the     */
-/* dispatch path, `intake.ts` and the transition gate all read it. `WireJob` is */
-/* what a `/v1` GET returns.                                                   */
-/*                                                                             */
-/* Only the READ side crosses this boundary. `POST /v1/jobs` and the three      */
-/* sub-resources still take their Portuguese body, because it goes straight to  */
-/* `validateEvent` — the event surface is D20's second child, and `routes/      */
-/* common.ts` explains the asymmetry in full.                                  */
-/* -------------------------------------------------------------------------- */
-
-/** A job, as `/v1` publishes it. */
-export interface WireJob {
-  id: number;
-  project_id: number;
-  execution_id: number | null;
-  title: string;
-  body: string | null;
-  acceptance_criteria: string[] | null;
-  /** The class's own field values; the KEYS inside are the class's, not ours. */
-  fields: ScalarMap | null;
-  tier: 'trivial' | 'standard' | null;
-  entry_node_id: string;
-  current_node_id: string;
-  blocked: boolean;
-  block_reason: string | null;
-  graph_version_id: string | null;
-  completed: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-/** Projection to wire: the one place the job's column names meet the API's. */
-export function toWireJob(job: Job): WireJob {
-  return {
-    id: job.id,
-    project_id: job.projeto_id,
-    execution_id: job.execucao_id,
-    title: job.titulo,
-    body: job.corpo,
-    acceptance_criteria: job.criterios_de_aceite,
-    fields: job.campos,
-    tier: job.tier,
-    entry_node_id: job.no_entrada_id,
-    current_node_id: job.no_atual,
-    blocked: job.bloqueado,
-    block_reason: job.motivo_bloqueio,
-    graph_version_id: job.grafo_versao_id,
-    completed: job.concluido,
-    created_at: job.criado_em,
-    updated_at: job.atualizado_em,
-  };
-}
-
-/** One row of the version × telemetry grouping, as `/v1` publishes it. */
-export interface WireMetricByVersion {
-  graph_version_id: string | null;
-  jobs: number;
-  events: number;
-}
-
-/** Metric row to wire. */
-export function toWireMetricByVersion(row: MetricByVersion): WireMetricByVersion {
-  return { graph_version_id: row.grafo_versao_id, jobs: row.trabalhos, events: row.eventos };
-}
-
-/** One row of `GET /v1/executions`, as `/v1` publishes it. */
-export interface WireExecutionSummary {
-  execution_id: number | null;
-  jobs: number;
-  blocked_jobs: number;
-  pending_input_requests: number;
-  /** Instant of this round's `execution.finished`; `null` while it has none (t245). */
-  finished_at: string | null;
-}
-
-/** Execution summary to wire. */
-export function toWireExecutionSummary(row: ExecutionSummary): WireExecutionSummary {
-  return {
-    execution_id: row.execucao_id,
-    jobs: row.trabalhos,
-    blocked_jobs: row.trabalhos_bloqueados,
-    pending_input_requests: row.perguntas_pendentes,
-    finished_at: row.finished_at,
+    ...rest,
+    body,
+    acceptance_criteria: jsonOrNull<string[]>(criteria),
+    blocked: asBoolean(row.blocked),
+    fields: jsonOrNull<ScalarMap>(row.fields),
+    completed: isAtFinalNode(db, row),
   };
 }
 
@@ -431,9 +378,9 @@ export interface JobContextSeed {
   /** The ticket, as `input.job` publishes it plus the class's own fields. */
   job: ProjectedJob;
   /** The version whose snapshot carries `project` and the nodes' `produces`. */
-  grafo_versao_id: string | null;
+  graph_version_id: string | null;
   /** The round the job belongs to, which narrows the sessions that count. */
-  execucao_id: number | null;
+  execution_id: number | null;
   /**
    * When the job was born (t270).
    *
@@ -441,14 +388,14 @@ export interface JobContextSeed {
    * never transitioned entered its node the instant it was created, and
    * {@link jobTraversal} says the same thing from the other side.
    */
-  criado_em: string;
+  created_at: string;
 }
 
 /**
  * The job's own contribution to the projection, in one read (t253, FR7).
  *
  * A read of its own rather than `getJob` because the two answer different
- * questions. `getJob` builds the whole projection, `concluido` included, and
+ * questions. `getJob` builds the whole projection, `completed` included, and
  * that is a fact about where the traveller is standing — which a skill's `input`
  * has no business carrying. What the projection seeds with is the ticket: what
  * it is called, what was asked for, the values of the fields the class declared,
@@ -467,13 +414,13 @@ export function jobContextSeed(db: Database, id: number): JobContextSeed | null 
   return {
     job: {
       id: row.id,
-      title: row.titulo,
+      title: row.title,
       body: row.corpo,
-      fields: jsonOrNull<ScalarMap>(row.campos),
+      fields: jsonOrNull<ScalarMap>(row.fields),
     },
-    grafo_versao_id: row.grafo_versao_id,
-    execucao_id: row.execucao_id,
-    criado_em: row.criado_em,
+    graph_version_id: row.graph_version_id,
+    execution_id: row.execution_id,
+    created_at: row.created_at,
   };
 }
 
@@ -525,7 +472,7 @@ export function jobTraversal(
     .all(String(id)) as Array<{ occurred_at: string; data: string }>;
 
   if (walked.length === 0) {
-    return { nodes_visited: [], entered_at: row.criado_em };
+    return { nodes_visited: [], entered_at: row.created_at };
   }
 
   // Every arrival except the last one, which is where the job is standing.
@@ -535,7 +482,7 @@ export function jobTraversal(
   });
 
   return {
-    nodes_visited: [row.no_entrada_id, ...arrivals.filter((node) => node !== '')],
+    nodes_visited: [row.entry_node_id, ...arrivals.filter((node) => node !== '')],
     entered_at: walked[walked.length - 1].occurred_at,
   };
 }
@@ -544,7 +491,7 @@ export function jobTraversal(
  * The end of a round, recorded once and only by the control plane (t245, D21).
  *
  * "Finished" is three conditions and never two: the execution has AT LEAST ONE
- * job, every one of them arrived (`Job.concluido`, which is `isAtFinalNode` and
+ * job, every one of them arrived (`Job.completed`, which is `isAtFinalNode` and
  * therefore also refuses a blocked job), and no `lease` row with `status =
  * 'active'` still holds any of them. Zero jobs is not vacuously finished — an
  * execution nobody put work into is not a round that ended.
@@ -561,7 +508,7 @@ export function jobTraversal(
  * child) needs to know the assertion came from the only writer there is, not
  * from whoever happened to drive the last job.
  *
- * Exported since t262, for the third moment a job can become `concluido`: a
+ * Exported since t262, for the third moment a job can become `completed`: a
  * session finishing on a final node it will never transition away from, because
  * a final node has no outgoing edge. `finishSession` calls it from inside its
  * own transaction, exactly as the two callers below do — without that, every
@@ -592,7 +539,7 @@ export function jobTraversal(
  * ## A job blocked forever keeps its round open forever, by design
  *
  * `isAtFinalNode` answers `false` for a blocked job whatever node it is standing
- * on, so `jobs.every(job => job.concluido)` cannot pass while any job of the
+ * on, so `jobs.every(job => job.completed)` cannot pass while any job of the
  * round is blocked, and this function stays a no-op for as long as that lasts.
  * That is the intended reading: a round waiting on a human has not ended, and
  * announcing otherwise would put a fact in the append-only log that a later
@@ -618,9 +565,9 @@ export function announceFinishedExecution(
 ): void {
   if (executionId === null) return;
 
-  const jobs = listJobs(db, { execucao_id: executionId });
+  const jobs = listJobs(db, { execution_id: executionId });
   if (jobs.length === 0) return;
-  if (!jobs.every((job) => job.concluido)) return;
+  if (!jobs.every((job) => job.completed)) return;
 
   // One named parameter per id, never interpolation — the same rule
   // `db/events.ts` writes for its type filter.
@@ -888,8 +835,8 @@ function mutate(
     );
     const event = recordEvent(db, {
       type,
-      project_id: row.projeto_id,
-      execution_id: row.execucao_id,
+      project_id: row.project_id,
+      execution_id: row.execution_id,
       entity: { type: 'job', id },
       actor: finalActor,
       occurred_at: timestamp,
@@ -929,22 +876,22 @@ export interface TransitionInput {
  *   does not carry.
  */
 function requireFieldsOfNode(db: Database, row: JobRow): void {
-  if (row.grafo_versao_id === null) return;
+  if (row.graph_version_id === null) return;
 
-  const version = getVersion(db, row.grafo_versao_id);
+  const version = getVersion(db, row.graph_version_id);
   if (version === undefined) return;
 
   const missing = missingRequiredFields(
     version.snapshot.custom_fields,
-    row.no_atual,
-    jsonOrNull<ScalarMap>(row.campos),
+    row.current_node_id,
+    jsonOrNull<ScalarMap>(row.fields),
   );
   if (missing.length === 0) return;
 
   throw new ValidationError(
     missing.map(
       (name) =>
-        `fields.${name} is required to leave node "${row.no_atual}" (declared in custom_fields of the job's graph version)`,
+        `fields.${name} is required to leave node "${row.current_node_id}" (declared in custom_fields of the job's graph version)`,
     ),
   );
 }
@@ -955,7 +902,7 @@ function requireFieldsOfNode(db: Database, row: JobRow): void {
  * `from_node_id` is `null` on the FIRST transition — the job leaving the entry node
  * for the first time — and the current node from then on. What answers "first?"
  * is the log, not the projection: a job can come back to the entry node later,
- * and then `no_atual == no_entrada_id` no longer distinguishes anything.
+ * and then `current_node_id == entry_node_id` no longer distinguishes anything.
  *
  * This is also the only place a job's position in the graph changes, mirrored by
  * nothing — which is what makes it the one place a gate over the class's
@@ -1004,7 +951,7 @@ export function transitionJob(
       requireFieldsOfNode(db, row);
       return {
         data: {
-          from_node_id: alreadyWalked ? row.no_atual : null,
+          from_node_id: alreadyWalked ? row.current_node_id : null,
           to_node_id: input.to_node_id,
         },
         sql: 'current_node_id = ?',
@@ -1020,9 +967,9 @@ export function transitionJob(
           trigger: 'node_entered',
           no_id: data.to_node_id as string,
           trabalho_id: id,
-          projeto_id: row.projeto_id,
-          execucao_id: row.execucao_id,
-          grafo_versao_id: row.grafo_versao_id,
+          projeto_id: row.project_id,
+          execucao_id: row.execution_id,
+          grafo_versao_id: row.graph_version_id,
           evento_id: event.id,
         },
         options,
@@ -1032,7 +979,7 @@ export function transitionJob(
       // round on a final node (t245). It reads the projection the `UPDATE`
       // above already wrote, inside the same transaction, so a rolled-back
       // transition takes the declaration down with it.
-      announceFinishedExecution(db, row.execucao_id, row.projeto_id, event.occurred_at);
+      announceFinishedExecution(db, row.execution_id, row.project_id, event.occurred_at);
     },
   );
 }
@@ -1047,7 +994,7 @@ export interface BlockInput {
  * Raises the blocked flag and records `job.blocked` (FR6).
  *
  * Blocking is a flag fact, not a movement fact: the job does not leave the node.
- * That is exactly why a `node_blocked` hook matches on `no_atual` (t169): the
+ * That is exactly why a `node_blocked` hook matches on `current_node_id` (t169): the
  * node the job is standing on when the flag goes up is the node it blocked on.
  *
  * @param db Open handle.
@@ -1079,11 +1026,11 @@ export function blockJob(
         db,
         {
           trigger: 'node_blocked',
-          no_id: row.no_atual,
+          no_id: row.current_node_id,
           trabalho_id: id,
-          projeto_id: row.projeto_id,
-          execucao_id: row.execucao_id,
-          grafo_versao_id: row.grafo_versao_id,
+          projeto_id: row.project_id,
+          execucao_id: row.execution_id,
+          grafo_versao_id: row.graph_version_id,
           evento_id: event.id,
         },
         options,
@@ -1124,9 +1071,9 @@ export const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3;
  * @returns A positive integer.
  */
 function resolveFailureCeiling(db: Database, row: JobRow): number {
-  if (row.grafo_versao_id === null) return DEFAULT_MAX_CONSECUTIVE_FAILURES;
+  if (row.graph_version_id === null) return DEFAULT_MAX_CONSECUTIVE_FAILURES;
 
-  const version = getVersion(db, row.grafo_versao_id);
+  const version = getVersion(db, row.graph_version_id);
   if (version === undefined) return DEFAULT_MAX_CONSECUTIVE_FAILURES;
 
   const declared = version.snapshot.max_consecutive_failures;
@@ -1182,7 +1129,7 @@ export function blockOnRepeatedFailure(
 
   const row = readRow(db, jobId);
   if (row === undefined) return;
-  if (asBoolean(row.bloqueado)) return;
+  if (asBoolean(row.blocked)) return;
 
   const ceiling = resolveFailureCeiling(db, row);
 
@@ -1225,8 +1172,8 @@ export function blockOnRepeatedFailure(
   // what a session did.
   const event = recordEvent(db, {
     type: 'job.blocked',
-    project_id: row.projeto_id,
-    execution_id: row.execucao_id,
+    project_id: row.project_id,
+    execution_id: row.execution_id,
     entity: { type: 'job', id: jobId },
     actor: API_ACTOR,
     occurred_at: occurredAt,
@@ -1237,11 +1184,11 @@ export function blockOnRepeatedFailure(
   // on: a block is a flag fact, not a movement fact (t169).
   enqueueHookDeliveries(db, {
     trigger: 'node_blocked',
-    no_id: row.no_atual,
+    no_id: row.current_node_id,
     trabalho_id: jobId,
-    projeto_id: row.projeto_id,
-    execucao_id: row.execucao_id,
-    grafo_versao_id: row.grafo_versao_id,
+    projeto_id: row.project_id,
+    execucao_id: row.execution_id,
+    grafo_versao_id: row.graph_version_id,
     evento_id: event.id,
   });
 }
@@ -1355,14 +1302,14 @@ export function amendJob(db: Database, id: number, input: AmendInput): Job | nul
  */
 export function listJobs(
   db: Database,
-  filter: { execucao_id?: number } = {},
+  filter: { execution_id?: number } = {},
 ): Job[] {
   const rows = (
-    filter.execucao_id === undefined
+    filter.execution_id === undefined
       ? db.prepare(`SELECT ${COLUMNS} FROM job ORDER BY id`).all()
       : db
           .prepare(`SELECT ${COLUMNS} FROM job WHERE execution_id = ? ORDER BY id`)
-          .all(filter.execucao_id)
+          .all(filter.execution_id)
   ) as JobRow[];
   return rows.map((row) => toJob(db, row));
 }
@@ -1395,9 +1342,9 @@ export function jobTimeline(db: Database, id: number): Event[] | null {
 export function metricsByVersion(db: Database, executionId: number): MetricByVersion[] {
   const rows = db
     .prepare(
-      `SELECT t.graph_version_id          AS grafo_versao_id,
-              COUNT(*)                    AS trabalhos,
-              COALESCE(SUM((${JOB_EVENTS})), 0) AS eventos
+      `SELECT t.graph_version_id,
+              COUNT(*) AS jobs,
+              COALESCE(SUM((${JOB_EVENTS})), 0) AS events
          FROM job t
         WHERE t.execution_id = ?
         GROUP BY t.graph_version_id`,
@@ -1405,9 +1352,9 @@ export function metricsByVersion(db: Database, executionId: number): MetricByVer
     .all(executionId) as MetricByVersion[];
 
   return rows.sort((a, b) => {
-    if (a.grafo_versao_id === null) return 1;
-    if (b.grafo_versao_id === null) return -1;
-    return a.grafo_versao_id.localeCompare(b.grafo_versao_id);
+    if (a.graph_version_id === null) return 1;
+    if (b.graph_version_id === null) return -1;
+    return a.graph_version_id.localeCompare(b.graph_version_id);
   });
 }
 
@@ -1428,12 +1375,11 @@ export interface NodeTokenTotals {
 /**
  * What one node cost, under one graph version, in one execution (t264, FR7).
  *
- * English throughout, unlike {@link MetricByVersion} and {@link QuestionsByNode}
- * beside it, and for the reason {@link ExecutionSummary.finished_at} already
- * gives: those field names mirror COLUMNS that D20's fourth child renamed and
- * that every `SELECT` aliases back. Nothing here mirrors a column — every field
- * is a count or a sum this function computes — so there is no aliasing to
- * preserve and no `toWire` step to write.
+ * It was English before {@link MetricByVersion} and {@link QuestionsByNode}
+ * were, because nothing here mirrors a column — every field is a count or a sum
+ * this function computes, so there was never an alias to preserve nor a
+ * translation step to write. t286 brought the other two across; the three now
+ * read the same way.
  *
  * Two counters instead of one, twice over, and that is the discipline this
  * shape exists to carry (`packages/topografo-custo/src/cost.ts`, whose
@@ -1539,11 +1485,11 @@ export function nodeMetricsByVersion(
 ): Map<string | null, NodeMetrics[]> {
   const rows = db
     .prepare(
-      `SELECT j.graph_version_id AS graph_version_id,
-              s.node_id          AS node_id,
-              s.usage            AS usage,
-              s.opened_at        AS opened_at,
-              s.finished_at      AS finished_at
+      `SELECT j.graph_version_id,
+              s.node_id,
+              s.usage,
+              s.opened_at,
+              s.finished_at
          FROM session s
          JOIN job j ON j.id = s.job_id
         WHERE j.execution_id = ?
@@ -1613,7 +1559,7 @@ export function nodeMetricsByVersion(
  *
  * The three counts are the ones that answer "where to look first": size of the
  * round, how much of it is stuck, and how many people are being waited on.
- * `perguntas_pendentes` comes from a correlated subquery with `IS` (equality
+ * `pending_input_requests` comes from a correlated subquery with `IS` (equality
  * that sees `NULL`), so that the group without an execution counts its own
  * input requests instead of silently zeroing.
  *
@@ -1624,12 +1570,12 @@ export function nodeMetricsByVersion(
 export function listExecutions(db: Database): ExecutionSummary[] {
   const rows = db
     .prepare(
-      `SELECT t.execution_id           AS execucao_id,
-              COUNT(*)                 AS trabalhos,
-              COALESCE(SUM(t.blocked), 0) AS trabalhos_bloqueados,
+      `SELECT t.execution_id,
+              COUNT(*) AS jobs,
+              COALESCE(SUM(t.blocked), 0) AS blocked_jobs,
               (SELECT COUNT(*) FROM input_request p
                 WHERE p.status = 'pending' AND p.execution_id IS t.execution_id)
-                                       AS perguntas_pendentes,
+                                       AS pending_input_requests,
               ${finishedAtOf('t.execution_id')} AS finished_at
          FROM job t
         GROUP BY t.execution_id`,
@@ -1637,9 +1583,9 @@ export function listExecutions(db: Database): ExecutionSummary[] {
     .all() as ExecutionSummary[];
 
   return rows.sort((a, b) => {
-    if (a.execucao_id === null) return 1;
-    if (b.execucao_id === null) return -1;
-    return a.execucao_id - b.execucao_id;
+    if (a.execution_id === null) return 1;
+    if (b.execution_id === null) return -1;
+    return a.execution_id - b.execution_id;
   });
 }
 
@@ -1665,19 +1611,19 @@ export function listExecutions(db: Database): ExecutionSummary[] {
 export function getExecution(db: Database, id: number): ExecutionSummary {
   const row = db
     .prepare(
-      `SELECT COUNT(*)                 AS trabalhos,
-              COALESCE(SUM(t.blocked), 0) AS trabalhos_bloqueados,
+      `SELECT COUNT(*)                 AS jobs,
+              COALESCE(SUM(t.blocked), 0) AS blocked_jobs,
               (SELECT COUNT(*) FROM input_request p
                 WHERE p.status = 'pending' AND p.execution_id = @execution_id)
-                                       AS perguntas_pendentes,
+                                       AS pending_input_requests,
               ${finishedAtOf('@execution_entity_id')} AS finished_at
          FROM job t
         WHERE t.execution_id = @execution_id`,
     )
     .get({ execution_id: id, execution_entity_id: String(id) }) as Omit<
     ExecutionSummary,
-    'execucao_id'
+    'execution_id'
   >;
 
-  return { execucao_id: id, ...row };
+  return { execution_id: id, ...row };
 }

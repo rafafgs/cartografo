@@ -21,10 +21,12 @@
  *   every event land together or none does — the same discipline as `createJob`,
  *   nested here as a savepoint.
  *
- * The TABLE and its columns are English since D20's fourth child (t229); the
- * projection's field names are not, because `routes/intake.ts` reads them, so
- * every `SELECT` aliases the renamed column back onto the field (t229, FR4). The
- * event-type strings went English with the second child (t227).
+ * The TABLE and its columns are English since D20's fourth child (t229) and the
+ * event-type strings since its second (t227). {@link Draft} is English too, and
+ * is the object `/v1` publishes: t286 deleted the alias-and-translate layer
+ * between the two. Like the input request and unlike the job and the session,
+ * no column of this table was left behind by the glossary — every field here is
+ * the column, read under its own name.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -51,42 +53,42 @@ export const INTAKE_ACTOR: Actor = Object.freeze({ type: 'system', ref: 'intake'
 /** Draft projection, as the API returns it. */
 export interface Draft {
   id: number;
-  projeto_id: number;
-  execucao_id: number | null;
+  project_id: number;
+  execution_id: number | null;
   /** Class whose registered graph the breakdown runs over. */
-  classe: string;
+  class: string;
   /** The request in natural language, as it arrived. */
-  pedido: string;
-  itens: DraftItem[];
+  request: string;
+  /**
+   * The proposed breakdown, passed through byte for byte.
+   *
+   * The item's own keys (`ref`, `title`, `depends_on`, …) went English with t255,
+   * and the note that used to sit here — that no child of D20 renames them and
+   * the glossary maps none of them — is what t255 removed: they are fields of the
+   * JSON of `POST /v1/intake`, which is exactly what D20's text migrates. They
+   * are mapped in `glossario-wire.md` §1.1 and §1.4 now.
+   */
+  items: DraftItem[];
   status: DraftStatus;
   /** `ref` → real `job.id`; only after the confirmation. */
-  trabalhos_criados: Record<string, number> | null;
-  criado_em: string;
-  atualizado_em: string;
+  created_jobs: Record<string, number> | null;
+  created_at: string;
+  updated_at: string;
 }
 
-interface DraftRow extends Omit<Draft, 'itens' | 'trabalhos_criados'> {
-  itens: string;
-  trabalhos_criados: string | null;
+interface DraftRow extends Omit<Draft, 'items' | 'created_jobs'> {
+  /** JSON in a TEXT column, like every other list this package stores. */
+  items: string;
+  created_jobs: string | null;
 }
 
-/** The row, read back into {@link Draft}'s spelling (t229, FR4). */
+/** The columns {@link DraftRow} is made of, each under its own name (t286). */
 const COLUMNS = `
-  id, project_id AS projeto_id, execution_id AS execucao_id, class AS classe,
-  request AS pedido, items AS itens, status,
-  created_jobs AS trabalhos_criados, created_at AS criado_em,
-  updated_at AS atualizado_em
+  id, project_id, execution_id, class,
+  request, items, status,
+  created_jobs, created_at,
+  updated_at
 `;
-
-/* -------------------------------------------------------------------------- */
-/* The row → wire boundary (t226, FR1).                                        */
-/*                                                                             */
-/* `Draft` above stays the INTERNAL projection, in the column's own field       */
-/* names: the routes read `draft.classe` and `confirmDraft` reads `draft.itens`, */
-/* and FR1 is explicit that internal logic keeps reading the row. The VALUES it */
-/* carries are the wire's since t235, so `WireDraft` below renames keys and     */
-/* nothing else.                                                               */
-/* -------------------------------------------------------------------------- */
 
 /**
  * The three statuses a `?status=` filter may name (`glossario-wire.md` §1.6).
@@ -111,50 +113,11 @@ export function draftStatusColumn(value: string): DraftStatus | undefined {
   return DRAFT_STATUSES.find((status) => status === value);
 }
 
-/** A draft, as `/v1` publishes it. */
-export interface WireDraft {
-  id: number;
-  project_id: number;
-  execution_id: number | null;
-  class: string;
-  request: string;
-  /**
-   * The proposed breakdown, passed through byte for byte.
-   *
-   * The item's own keys (`ref`, `title`, `depends_on`, …) went English with t255,
-   * and the note that used to sit here — that no child of D20 renames them and
-   * the glossary maps none of them — is what t255 removed: they are fields of the
-   * JSON of `POST /v1/intake`, which is exactly what D20's text migrates. They
-   * are mapped in `glossario-wire.md` §1.1 and §1.4 now.
-   */
-  items: DraftItem[];
-  status: string;
-  created_jobs: Record<string, number> | null;
-  created_at: string;
-  updated_at: string;
-}
-
-/** Draft to wire: the one place the column names meet the API's. */
-export function toWireDraft(draft: Draft): WireDraft {
-  return {
-    id: draft.id,
-    project_id: draft.projeto_id,
-    execution_id: draft.execucao_id,
-    class: draft.classe,
-    request: draft.pedido,
-    items: draft.itens,
-    status: draft.status,
-    created_jobs: draft.trabalhos_criados,
-    created_at: draft.criado_em,
-    updated_at: draft.atualizado_em,
-  };
-}
-
 function toDraft(row: DraftRow): Draft {
   return {
     ...row,
-    itens: JSON.parse(row.itens) as DraftItem[],
-    trabalhos_criados: jsonOrNull<Record<string, number>>(row.trabalhos_criados),
+    items: JSON.parse(row.items) as DraftItem[],
+    created_jobs: jsonOrNull<Record<string, number>>(row.created_jobs),
   };
 }
 
@@ -178,11 +141,11 @@ export function getDraft(db: Database, id: number): Draft | null {
 
 /** What `createDraft` needs, already validated by the route. */
 export interface CreateDraftData {
-  projeto_id: number;
-  execucao_id: number | null;
-  classe: string;
-  pedido: string;
-  itens: DraftItem[];
+  project_id: number;
+  execution_id: number | null;
+  class: string;
+  request: string;
+  items: DraftItem[];
 }
 
 /**
@@ -206,11 +169,11 @@ export function createDraft(db: Database, data: CreateDraftData): Draft {
        ) VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, ?)`,
     )
     .run(
-      data.projeto_id,
-      data.execucao_id,
-      data.classe,
-      data.pedido,
-      JSON.stringify(data.itens),
+      data.project_id,
+      data.execution_id,
+      data.class,
+      data.request,
+      JSON.stringify(data.items),
       timestamp,
       timestamp,
     );
@@ -223,8 +186,8 @@ export function createDraft(db: Database, data: CreateDraftData): Draft {
 /** Slice of `GET /v1/intake`. */
 export interface DraftFilter {
   status?: string;
-  classe?: string;
-  projeto_id?: number;
+  class?: string;
+  project_id?: number;
 }
 
 /**
@@ -242,13 +205,13 @@ export function listDrafts(db: Database, filter: DraftFilter = {}): Draft[] {
     conditions.push('status = ?');
     values.push(filter.status);
   }
-  if (filter.classe !== undefined) {
+  if (filter.class !== undefined) {
     conditions.push('class = ?');
-    values.push(filter.classe);
+    values.push(filter.class);
   }
-  if (filter.projeto_id !== undefined) {
+  if (filter.project_id !== undefined) {
     conditions.push('project_id = ?');
-    values.push(filter.projeto_id);
+    values.push(filter.project_id);
   }
 
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;
@@ -270,13 +233,13 @@ export function listDrafts(db: Database, filter: DraftFilter = {}): Draft[] {
  * @param itens Already normalized items.
  * @returns The updated draft, or `null` when it stopped being pending.
  */
-export function amendDraft(db: Database, id: number, itens: DraftItem[]): Draft | null {
+export function amendDraft(db: Database, id: number, items: DraftItem[]): Draft | null {
   const effect = db
     .prepare(
       `UPDATE intake_draft SET items = ?, updated_at = ?
         WHERE id = ? AND status = 'pending'`,
     )
-    .run(JSON.stringify(itens), now(), id);
+    .run(JSON.stringify(items), now(), id);
 
   return effect.changes === 1 ? getDraft(db, id) : null;
 }
@@ -303,17 +266,17 @@ export function discardDraft(db: Database, id: number): Draft | null {
 export interface ConfirmDraftData {
   draft: Draft;
   /** Entry node of the version in force — read by the route from the pointer. */
-  no_inicial: string;
+  initial_node: string;
   /** Version in force, frozen into every job of the batch. */
-  grafo_versao_id: string;
+  graph_version_id: string;
   /** Who confirmed; the human gate's caller when it identifies itself. */
   actor: Actor;
 }
 
 /** What a confirmation produces: the closed draft and every job it created. */
 export interface Confirmation {
-  rascunho: Draft;
-  trabalhos: Job[];
+  draft: Draft;
+  jobs: Job[];
 }
 
 /**
@@ -340,7 +303,7 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
     const created: Record<string, number> = {};
     const jobs: Job[] = [];
 
-    for (const item of draft.itens) {
+    for (const item of draft.items) {
       const job = createJob(db, {
         title: item.title,
         body: item.body,
@@ -356,17 +319,17 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
         // values, and what the tier COSTS is the runner's question, one layer
         // out — nothing here translates it into a model.
         tier: item.tier,
-        entry_node_id: data.no_inicial,
-        project_id: draft.projeto_id,
-        execution_id: draft.execucao_id,
-        graph_version_id: data.grafo_versao_id,
+        entry_node_id: data.initial_node,
+        project_id: draft.project_id,
+        execution_id: draft.execution_id,
+        graph_version_id: data.graph_version_id,
         actor: data.actor,
       });
       created[item.ref] = job.id;
       jobs.push(job);
     }
 
-    for (const item of draft.itens) {
+    for (const item of draft.items) {
       for (const dependency of item.depends_on) {
         const dependent = created[item.ref];
         const dependedOn = created[dependency];
@@ -380,8 +343,8 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
         // timeline that somebody will look for the reason it has not moved.
         recordEvent(db, {
           type: 'job.dependency_declared',
-          project_id: draft.projeto_id,
-          execution_id: draft.execucao_id,
+          project_id: draft.project_id,
+          execution_id: draft.execution_id,
           entity: { type: 'job', id: dependent },
           actor: data.actor,
           occurred_at: timestamp,
@@ -404,7 +367,7 @@ export function confirmDraft(db: Database, data: ConfirmDraftData): Confirmation
       throw new Error(`draft ${draft.id} stopped being pending during the confirmation`);
     }
 
-    return { rascunho: toDraft(readRow(db, draft.id) as DraftRow), trabalhos: jobs };
+    return { draft: toDraft(readRow(db, draft.id) as DraftRow), jobs: jobs };
   });
 
   return confirm();

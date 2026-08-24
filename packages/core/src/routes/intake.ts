@@ -44,11 +44,9 @@ import {
   draftStatusColumn,
   getDraft,
   listDrafts,
-  toWireDraft,
   INTAKE_ACTOR,
   type Draft,
 } from '../repositories/intake.ts';
-import { toWireJob } from '../repositories/job.ts';
 import { isObject } from '../util/is-object.ts';
 import { refusal, withValidation } from './common.ts';
 
@@ -86,7 +84,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
 
   /** The 409 of anything that only holds while the draft is pending. */
   const notPending = (reply: FastifyReply, draft: Draft): Record<string, unknown> => {
-    const status = toWireDraft(draft).status;
+    const { status } = draft;
     return refusal(
       reply,
       409,
@@ -129,16 +127,16 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       return refusal(reply, 400, 'invalid_field', '"execution_id" has to be an integer');
     }
 
-    const draft = createDraft(db, {
-      projeto_id: (projectId as number | undefined | null) ?? DEFAULT_PROJECT,
-      execucao_id: (executionId as number | undefined | null) ?? null,
-      classe: body.class,
-      pedido: body.request,
-      itens: report.items,
+    const created = createDraft(db, {
+      project_id: (projectId as number | undefined | null) ?? DEFAULT_PROJECT,
+      execution_id: (executionId as number | undefined | null) ?? null,
+      class: body.class,
+      request: body.request,
+      items: report.items,
     });
 
     reply.code(201);
-    return { draft: toWireDraft(draft) };
+    return { draft: created };
   });
 
   app.get('/intake', async (request, reply) => {
@@ -154,18 +152,18 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
 
     const status =
       query.status === undefined ? undefined : (draftStatusColumn(query.status) ?? query.status);
-    const drafts = listDrafts(db, {
+    const found = listDrafts(db, {
       status,
-      classe: query.class,
-      projeto_id: projectId,
+      class: query.class,
+      project_id: projectId,
     });
-    return { drafts: drafts.map(toWireDraft) };
+    return { drafts: found };
   });
 
   app.get<IdParam>('/intake/:id', async (request, reply) => {
-    const draft = load(db, request.params.id);
-    if (draft === undefined) return unknownDraft(reply, request.params.id);
-    return { draft: toWireDraft(draft) };
+    const found = load(db, request.params.id);
+    if (found === undefined) return unknownDraft(reply, request.params.id);
+    return { draft: found };
   });
 
   app.patch<IdParam>('/intake/:id', async (request, reply) => {
@@ -181,7 +179,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
 
     const amended = amendDraft(db, draft.id, report.items);
     if (amended === null) return notPending(reply, getDraft(db, draft.id) ?? draft);
-    return { draft: toWireDraft(amended) };
+    return { draft: amended };
   });
 
   app.post<IdParam>('/intake/:id/discards', async (request, reply) => {
@@ -191,7 +189,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
 
     const discarded = discardDraft(db, draft.id);
     if (discarded === null) return notPending(reply, getDraft(db, draft.id) ?? draft);
-    return { draft: toWireDraft(discarded) };
+    return { draft: discarded };
   });
 
   // The only intake route that writes an EVENT, and therefore the only one whose
@@ -207,7 +205,7 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       // The pointer is read HERE, at confirmation time, and not when the draft was
       // opened: between proposing a breakdown and accepting it the class may have
       // gained a version, and the travellers belong to the one that holds now.
-      const graph = getClassBase(db, draft.classe);
+      const graph = getClassBase(db, draft.class);
       const version =
         graph?.versao_corrente_id === null || graph?.versao_corrente_id === undefined
           ? undefined
@@ -217,27 +215,27 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
           reply,
           404,
           'unknown_graph',
-          `class "${draft.classe}" has no graph version in force`,
-          { class: draft.classe },
+          `class "${draft.class}" has no graph version in force`,
+          { class: draft.class },
         );
       }
 
       // `actor` is the EVENT envelope's actor, checked by `validateEvent`
       // inside `confirmDraft` (t226, FR2; English since t227). What comes back
-      // is translated like every other read.
+      // is what `/v1` publishes, with nothing in between (t286).
       const body = isObject(request.body) ? request.body : {};
       const confirmation = confirmDraft(db, {
         draft,
-        no_inicial: version.snapshot.initial_node,
-        grafo_versao_id: version.id,
+        initial_node: version.snapshot.initial_node,
+        graph_version_id: version.id,
         actor: resolveActor(body.actor, INTAKE_ACTOR),
       });
 
       reply.code(201);
-      return {
-        draft: toWireDraft(confirmation.rascunho),
-        jobs: confirmation.trabalhos.map(toWireJob),
-      };
+      // Named key by key rather than returned whole: `Confirmation` is a return
+      // value and this is a response body, and a field added to the first should
+      // not reach `/v1` because nobody stopped it (t286).
+      return { draft: confirmation.draft, jobs: confirmation.jobs };
     }),
   );
 }

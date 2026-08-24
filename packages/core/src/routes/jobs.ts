@@ -8,10 +8,11 @@
  * left only for what really is content editing (FR7).
  *
  * This family is where D20's split showed most plainly, and `routes/common.ts`
- * still tells the story: what a GET RETURNS went English with t226
- * (`repositories/job.ts`'s `toWireJob`), and what the four writes ACCEPT
- * followed with t227, because those bodies go straight into `validateEvent`
- * and `job.created`'s contract belongs to D20's second child.
+ * still tells the story: what a GET RETURNS went English with t226 and what the
+ * four writes ACCEPT followed with t227, because those bodies go straight into
+ * `validateEvent` and `job.created`'s contract belongs to D20's second child.
+ * Since t286 nothing translates on the way out either — `repositories/job.ts`
+ * hands back the object `/v1` publishes, so these handlers return it as it is.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -32,7 +33,6 @@ import {
   amendJob,
   jobTimeline,
   listJobs,
-  toWireJob,
   transitionJob,
   type Job,
 } from '../repositories/job.ts';
@@ -101,11 +101,11 @@ function nodeInputOf(db: Database, id: number): Record<string, unknown> | null {
   if (seed === null) return null;
 
   const version =
-    seed.grafo_versao_id === null ? undefined : getVersion(db, seed.grafo_versao_id);
+    seed.graph_version_id === null ? undefined : getVersion(db, seed.graph_version_id);
 
   const sessions = listSessions(db, {
-    trabalho_id: id,
-    ...(seed.execucao_id === null ? {} : { execucao_id: seed.execucao_id }),
+    job_id: id,
+    ...(seed.execution_id === null ? {} : { execution_id: seed.execution_id }),
   });
 
   return buildNodeInput({
@@ -114,17 +114,20 @@ function nodeInputOf(db: Database, id: number): Record<string, unknown> | null {
     outputs: sessions
       .filter((session) => session.status === 'completed')
       .map((session) => ({
-        node_id: session.no_id,
-        output: session.saida,
-        finished_at: session.finalizada_em,
+        node_id: session.node_id,
+        output: session.output,
+        finished_at: session.finished_at,
         session_id: session.id,
       })),
-    answered: listInputRequests(db, { status: 'answered', trabalho_id: id }).map((request) => ({
+    // The two keys of the literal are `AnsweredRequest`'s own, and they are the
+    // skill manifest's frozen vocabulary (`domain/context.ts`) — a different
+    // spelling that merely LOOKS like the two fields t286 renamed on the right.
+    answered: listInputRequests(db, { status: 'answered', job_id: id }).map((request) => ({
       id: String(request.id),
-      pergunta: request.pergunta,
-      resposta: request.resposta ?? '',
+      pergunta: request.question,
+      resposta: request.answer ?? '',
     })),
-    traversal: jobTraversal(db, id) ?? { nodes_visited: [], entered_at: seed.criado_em },
+    traversal: jobTraversal(db, id) ?? { nodes_visited: [], entered_at: seed.created_at },
   });
 }
 
@@ -140,7 +143,7 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
       return await withValidation(reply, () => {
         const job = createJob(db, (request.body ?? {}) as Record<string, unknown>);
         reply.code(201);
-        return toWireJob(job);
+        return job;
       });
     } catch (error) {
       // `withValidation` re-throws anything that is not a `ValidationError`, and
@@ -161,15 +164,15 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
         'execution_id',
         (request.query as { execution_id?: string }).execution_id,
       );
-      const jobs = listJobs(db, { execucao_id: executionId });
-      return { jobs: jobs.map(toWireJob) };
+      const found = listJobs(db, { execution_id: executionId });
+      return { jobs: found };
     }),
   );
 
   app.get('/jobs/:id', async (request, reply) =>
     withValidation(reply, () => {
       const job = getJob(db, routeId(request.params));
-      return job === null ? notFound(reply, 'job') : toWireJob(job);
+      return job === null ? notFound(reply, 'job') : job;
     }),
   );
 
@@ -227,7 +230,7 @@ export function registerJobs(app: FastifyInstance, db: Database): void {
             routeId(request.params),
             (request.body ?? {}) as Record<string, unknown>,
           );
-          return updated === null ? notFound(reply, 'job') : toWireJob(updated);
+          return updated === null ? notFound(reply, 'job') : updated;
         },
         method === 'patch' ? 422 : 400,
       ),

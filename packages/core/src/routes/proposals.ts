@@ -801,9 +801,9 @@ async function outcome(
     appliedVersion === null
       ? undefined
       : metricsByVersion(db, executionId as number).find(
-          (row) => row.grafo_versao_id === appliedVersion,
+          (row) => row.graph_version_id === appliedVersion,
         );
-  if (evidence === undefined || evidence.trabalhos < 1) {
+  if (evidence === undefined || evidence.jobs < 1) {
     return refusal(
       reply,
       422,

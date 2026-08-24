@@ -42,7 +42,6 @@ import {
   createJob,
   transitionJob,
   type Job,
-  type WireJob,
 } from '../src/repositories/job.ts';
 import { registerJobs } from '../src/routes/jobs.ts';
 import { MIGRATIONS_DIR, PACKAGE_ROOT, requireArtifacts, type TestHook } from './support.ts';
@@ -164,7 +163,7 @@ function openWorld(t: TestHook): Database {
  *
  * @param db Open database.
  * @param document Already valid graph document.
- * @returns The version hash a job cites in `grafo_versao_id`.
+ * @returns The version hash a job cites in `graph_version_id`.
  */
 function registerGraph(db: Database, document: GraphDocument): string {
   // `checked`, because this suite is about the hooks a node declares and not
@@ -236,13 +235,13 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   const job = newJob(db, versionId);
 
   const moved = transitionJob(db, job.id, { to_node_id: 'revisar' });
-  assert.equal(moved?.no_atual, 'revisar', 'the traversal itself is untouched');
+  assert.equal(moved?.current_node_id, 'revisar', 'the traversal itself is untouched');
 
   const enqueued = only(hookDeliveries(db));
   assert.equal(enqueued.hook_id, ON_ENTER);
   assert.equal(enqueued.node_id, 'revisar');
   assert.equal(enqueued.job_id, job.id);
-  assert.equal(enqueued.project_id, job.projeto_id);
+  assert.equal(enqueued.project_id, job.project_id);
   assert.equal(enqueued.graph_version_id, versionId);
   assert.equal(enqueued.status, 'pending');
   assert.equal(enqueued.attempts, 0);
@@ -286,7 +285,7 @@ test('AT5 — blocking fires only the node_blocked hook of the node it blocked o
   // Blocked on `redigir`, which is exactly where the node_blocked hook points.
   const stuck = newJob(db, versionId);
   const blocked = blockJob(db, stuck.id, { reason: 'a redação parou esperando o tema' });
-  assert.equal(blocked?.bloqueado, true);
+  assert.equal(blocked?.blocked, true);
 
   const enqueued = only(hookDeliveries(db));
   assert.equal(enqueued.hook_id, ON_BLOCK);
@@ -313,12 +312,12 @@ test('AT6 — a job with no graph version enqueues nothing, and raises nothing',
   const db = openWorld(t);
 
   const job = newJob(db, null);
-  assert.equal(job.grafo_versao_id, null);
+  assert.equal(job.graph_version_id, null);
 
   const moved = transitionJob(db, job.id, { to_node_id: 'revisar' });
-  assert.equal(moved?.no_atual, 'revisar');
+  assert.equal(moved?.current_node_id, 'revisar');
   const blocked = blockJob(db, job.id, { reason: 'sem grafo, e mesmo assim travado' });
-  assert.equal(blocked?.bloqueado, true);
+  assert.equal(blocked?.blocked, true);
 
   assert.deepEqual(hookDeliveries(db), [], 'nothing to look hooks up in is not an error');
 });
@@ -377,7 +376,7 @@ test('AT7 — the write path answers 200 even when the hook destination rejects'
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ to_node_id: 'revisar' }),
   });
-  const body = (await response.json()) as WireJob;
+  const body = (await response.json()) as Job;
 
   assert.equal(response.status, 200, 'a hook failure is never the traveller\'s problem');
   assert.equal(body.id, job.id);

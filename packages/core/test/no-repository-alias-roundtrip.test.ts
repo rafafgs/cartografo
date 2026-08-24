@@ -20,7 +20,7 @@
  * so in its own Out of Scope section without noticing the contradiction: it
  * exempts `db/connection.ts`'s `SELECT 1 AS one` and `routes/events.ts`'s
  * `SELECT MAX(id) AS last_id` as "legitimate English aliases naming an
- * anonymous column". The four files here hold twelve of exactly that species —
+ * anonymous column". The four files here hold eleven of exactly that species —
  * `COUNT(*)`, `COALESCE(SUM(…), 0)`, a correlated `SELECT`, and the
  * `finished_at` subquery — and SQLite gives an unaliased expression a column
  * name made of its own source text. There is no way to drop those aliases; there
@@ -35,8 +35,8 @@
  * not go soft the day somebody adds a legitimate aggregate.
  *
  * The second test pins the residue by name, so the exemption cannot quietly
- * grow: those twelve aliases are listed here, in English, and a thirteenth
- * fails the run until somebody writes it down.
+ * grow: those eleven aliases are listed here, in English, and a twelfth fails
+ * the run until somebody writes it down.
  *
  * ## Scope
  *
@@ -74,7 +74,7 @@ const CLUSTER = Object.freeze([
 /**
  * Every alias these four files are still allowed to write, and what it names.
  *
- * All twelve name an anonymous SQL expression: an aggregate, a correlated
+ * All eleven name an anonymous SQL expression: an aggregate, a correlated
  * subquery, or the `finished_at` scalar subquery `finishedAtOf` builds. None of
  * them renames a column, and all of them are English — which is the whole
  * exemption, stated as a list instead of as a habit.
@@ -261,7 +261,10 @@ function packageSources(): string[] {
 
 test('AC2 — no source file in any package mentions toWire or fromWire', () => {
   const files = packageSources();
-  assert.ok(files.length > 50, `the sweep found only ${files.length} files; it is not walking src/`);
+  assert.ok(
+    files.length > 50,
+    `the sweep found only ${files.length} files; it is not walking src/`,
+  );
 
   const hits = files.flatMap((relative) => {
     const source = readFileSync(path.join(REPO_ROOT, relative), 'utf8');
@@ -290,7 +293,11 @@ test('AC1 — the sweep tells a renamed column from a named expression', () => {
   for (const source of renames) {
     const [alias] = aliasesIn(source);
     assert.ok(alias !== undefined, `the sweep saw no alias at all in: ${source}`);
-    assert.equal(alias.expression, false, `the sweep read a column rename as an expression: ${source}`);
+    assert.equal(
+      alias.expression,
+      false,
+      `the sweep read a column rename as an expression: ${source}`,
+    );
   }
 
   const expressions = [
@@ -301,7 +308,11 @@ test('AC1 — the sweep tells a renamed column from a named expression', () => {
   for (const source of expressions) {
     const [alias] = aliasesIn(source);
     assert.ok(alias !== undefined, `the sweep saw no alias at all in: ${source}`);
-    assert.equal(alias.expression, true, `the sweep read a named expression as a rename: ${source}`);
+    assert.equal(
+      alias.expression,
+      true,
+      `the sweep read a named expression as a rename: ${source}`,
+    );
   }
 
   // `CAST(… AS TEXT)` is not an alias, and the lowercase match is what says so.

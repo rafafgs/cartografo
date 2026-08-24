@@ -56,6 +56,21 @@ import {
   type TestContext,
 } from './support.ts';
 
+/**
+ * The job projection with the three fields this file asserts on.
+ *
+ * Local, like `JobWithTier` in `jobs.test.ts` and `JobWithContent` in
+ * `intake-routes.test.ts`: `support.ts`'s `Job` carries the columns every suite
+ * shares, and whoever needs another one declares it where the assertion is.
+ */
+interface JobWithContent extends Job {
+  body: string | null;
+  acceptance_criteria: string[] | null;
+  fields: Record<string, string | number | boolean> | null;
+  tier: 'trivial' | 'standard' | null;
+  completed: boolean;
+}
+
 const ARTIFACTS = [
   T102_ARTIFACTS.jobRepository,
   T102_ARTIFACTS.jobRoutes,
@@ -137,8 +152,8 @@ function shape(declared: readonly string[]): string[] {
 }
 
 /** A job born with everything the four residual columns can hold. */
-async function createFullJob(ctx: TestContext): Promise<Job> {
-  return await createJob(ctx, {
+async function createFullJob(ctx: TestContext): Promise<JobWithContent> {
+  return (await createJob(ctx, {
     title: 'a job with content',
     entry_node_id: 'refine',
     execution_id: 11,
@@ -146,16 +161,16 @@ async function createFullJob(ctx: TestContext): Promise<Job> {
     acceptance_criteria: ['the response names it `body`', 'and never `corpo`'],
     fields: { area: 'core' },
     tier: 'standard',
-  });
+  })) as JobWithContent;
 }
 
-test('t286 FR3 — a job never carries a residual column name, on the wire or off it', async (t) => {
+test('t286 FR3 — a job never carries a residual column name, wire or projection', async (t) => {
   requireArtifacts(...ARTIFACTS);
   const ctx = await startControlPlane(t);
 
   const created = await createFullJob(ctx);
 
-  const fetched = await request<Job>(ctx, 'GET', `/v1/jobs/${created.id}`);
+  const fetched = await request<JobWithContent>(ctx, 'GET', `/v1/jobs/${created.id}`);
   assert.equal(fetched.status, 200, JSON.stringify(fetched.body));
   assert.deepEqual(keysOf(fetched.body), shape(JOB_KEYS), 'GET /v1/jobs/:id changed shape');
   assert.deepEqual(keysOf(created), shape(JOB_KEYS), 'POST /v1/jobs changed shape');

@@ -11,11 +11,17 @@
  * anything, and collapsing the two destroys the only cost metric the PoC will
  * have.
  *
- * The TABLE and its columns are English since D20's fourth child (t229);
- * {@link Session}'s field names are not, because `routes/sessions.ts` and the
- * topographer's reader consume them, so every `SELECT` aliases the renamed
- * column back onto the field (t229, FR4). {@link WireSession} is what `/v1`
- * publishes and is English, event-type strings included, since t227.
+ * The TABLE and its columns are English since D20's fourth child (t229) and the
+ * event-type strings since its second (t227). {@link Session} is English too,
+ * and is the object `/v1` publishes: t286 deleted the alias-and-translate layer
+ * between the two, which renamed nothing a client could see.
+ *
+ * Two columns stayed behind, and had to: `transcricao_truncada` and
+ * `transcricao_tamanho_original` have no row in `docs/spec/glossario-wire.md`
+ * §4.2 — it registers `transcricao` and neither of its siblings — so moving them
+ * is a migration, not a rename. They keep their spelling on {@link SessionRow},
+ * and {@link toSession} builds `transcript_truncated` and
+ * `transcript_original_size` off them by hand.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -59,9 +65,9 @@ export const TRANSCRIPT_CAP_BYTES = 1_048_576;
 /** Session projection, as the API returns it. */
 export interface Session {
   id: number;
-  trabalho_id: number | null;
-  execucao_id: number | null;
-  no_id: string | null;
+  job_id: number | null;
+  execution_id: number | null;
+  node_id: string | null;
   engine: string;
   engine_session_ref: string | null;
   working_dir: string;
@@ -73,11 +79,22 @@ export interface Session {
    * second watchdog existed reads as, and never a budget of zero seconds.
    */
   silence_seconds: number | null;
+  /**
+   * The column's value, which is also the wire's word since t227.
+   *
+   * There is no map either way, and for the OPPOSITE reason there used to be
+   * one: the column takes whatever `session.finished`'s `data.status` carries,
+   * and since D20's second child that is `completed`, `failed`, `timed_out`, …
+   * — so `/finish` accepts the same word it answers, with nothing in between.
+   * The column has no `CHECK` (migration `0003`), which is why the value could
+   * simply change; the fourth child (t229) renamed identifiers only and moved no
+   * stored value.
+   */
   status: string;
   exit_code: number | null;
   /** Which watchdog stopped it, when one did (t163). `null` = not applicable. */
   timeout_reason: string | null;
-  uso: SessionUsage | null;
+  usage: SessionUsage | null;
   /**
    * Which models the engine reported having run this session (t172).
    *
@@ -87,10 +104,18 @@ export interface Session {
    * what every row from before this column existed reads as; `[]` is not a way
    * to say that and never gets stored.
    */
-  modelos: string[] | null;
-  transcricao: string | null;
-  transcricao_truncada: boolean;
-  transcricao_tamanho_original: number | null;
+  models: string[] | null;
+  transcript: string | null;
+  /**
+   * Whether the 1 MiB cap bit (t159, FR2).
+   *
+   * One of the two fields whose COLUMN is still Portuguese
+   * (`transcricao_truncada`), so the name is built by {@link toSession} rather
+   * than read straight off the row.
+   */
+  transcript_truncated: boolean;
+  /** Size in bytes before the cap; the other Portuguese-column field. */
+  transcript_original_size: number | null;
   /**
    * The node's structured result, as the session reported it at `/finish`
    * (t253).
@@ -98,155 +123,81 @@ export interface Session {
    * This is the half of the node input projection that WRITES: `domain/context.
    * ts` reads it back out of every completed session of a job and merges it into
    * the object the next node's `input` schema declares. `null` is "nothing
-   * structured was reported" — the same reading `uso` and `modelos` have — and
+   * structured was reported" — the same reading `usage` and `models` have — and
    * it is ALSO what a report that did not match the skill's `output` schema
    * leaves behind, with the reason recorded in the event instead of here.
-   */
-  saida: Record<string, unknown> | null;
-  aberta_em: string;
-  finalizada_em: string | null;
-}
-
-interface SessionRow extends Omit<Session, 'uso' | 'modelos' | 'saida' | 'transcricao_truncada'> {
-  uso: string | null;
-  modelos: string | null;
-  saida: string | null;
-  transcricao_truncada: number;
-}
-
-/**
- * The row, read back into {@link Session}'s spelling (t229, FR4).
- *
- * `transcricao_truncada` and `transcricao_tamanho_original` carry no alias
- * because they carry no new name: `glossario-wire.md` §4.2 registers
- * `transcricao` and neither of its two siblings, and inventing a spelling the
- * glossary does not hold is what the glossary exists to prevent.
- */
-const COLUMNS = `
-  id, job_id AS trabalho_id, execution_id AS execucao_id, node_id AS no_id,
-  engine, engine_session_ref, working_dir,
-  prompt, timeout_seconds, silence_seconds, status, exit_code, timeout_reason,
-  usage AS uso, models AS modelos, transcript AS transcricao,
-  transcricao_truncada, transcricao_tamanho_original, output AS saida,
-  opened_at AS aberta_em, finished_at AS finalizada_em
-`;
-
-function toSession(row: SessionRow): Session {
-  return {
-    ...row,
-    uso: jsonOrNull<SessionUsage>(row.uso),
-    // Same JSON-in-a-column convention `usage` above already uses, and the same
-    // reading of a NULL: nothing was reported. A row written before t172 lands
-    // here as `null` with no backfill and no special case.
-    modelos: jsonOrNull<string[]>(row.modelos),
-    // ...and the third one, for the same two reasons (t253).
-    saida: jsonOrNull<Record<string, unknown>>(row.saida),
-    transcricao_truncada: asBoolean(row.transcricao_truncada),
-  };
-}
-
-/* -------------------------------------------------------------------------- */
-/* The row → wire boundary (t226, FR1; closed by t227).                        */
-/*                                                                             */
-/* Both sides cross it now. The reads went English with the API child, and the */
-/* three writes — `POST /v1/sessions`, `PATCH /finish`,                        */
-/* `/permission-denials` — followed with the events child, because their       */
-/* bodies go straight into `validateEvent` and that vocabulary is D20's second */
-/* child (`routes/common.ts` tells the whole story).                           */
-/*                                                                             */
-/* `status` still has no map, and for the OPPOSITE reason it used to: the      */
-/* column takes whatever `session.finished`'s `data.status` carries, and since */
-/* t227 that is `completed`, `failed`, `timed_out`, … — so `/finish` accepts   */
-/* the same word it answers, with nothing in between. The column has no CHECK  */
-/* (migration `0003`), which is why the value could simply change. Renaming    */
-/* the COLUMNS was D20's FOURTH child (t229), and it renamed identifiers only: */
-/* it moved no stored value and retired no map.                                */
-/* -------------------------------------------------------------------------- */
-
-/** A session, as `/v1` publishes it. */
-export interface WireSession {
-  id: number;
-  job_id: number | null;
-  execution_id: number | null;
-  node_id: string | null;
-  engine: string;
-  engine_session_ref: string | null;
-  working_dir: string;
-  prompt: string;
-  timeout_seconds: number | null;
-  silence_seconds: number | null;
-  /** The column's value, which is the wire's word since t227 — see the note above. */
-  status: string;
-  exit_code: number | null;
-  timeout_reason: string | null;
-  usage: SessionUsage | null;
-  models: string[] | null;
-  transcript: string | null;
-  transcript_truncated: boolean;
-  transcript_original_size: number | null;
-  /**
-   * The node's structured result (t253); `null` when none was recorded.
    *
    * Published, unlike `output_schema_error`: this is the value the projection is
    * built out of, and a client that wants to know what a node produced has one
    * place to read it. WHY a report was refused is telemetry of the log, not part
-   * of the session — see `finishSession`.
+   * of the session — see {@link finishSession}.
    */
   output: Record<string, unknown> | null;
   opened_at: string;
   finished_at: string | null;
 }
 
+interface SessionRow
+  extends Omit<
+    Session,
+    'usage' | 'models' | 'output' | 'transcript_truncated' | 'transcript_original_size'
+  > {
+  usage: string | null;
+  models: string | null;
+  output: string | null;
+  /** The column `Session.transcript_truncated` is built from; see {@link COLUMNS}. */
+  transcricao_truncada: number;
+  /** The column `Session.transcript_original_size` is built from. */
+  transcricao_tamanho_original: number | null;
+}
+
 /**
- * The transcript payload, as `/v1` publishes it (t232).
+ * The columns {@link SessionRow} is made of — every one under its own name (t286).
  *
- * The same three names {@link WireSession} already publishes for the same three
- * facts, and deliberately not a shorter second spelling: `truncada` reads fine
- * next to `transcricao` in one body, but `truncated` next to `/finish`'s
- * `transcript_truncated` is one concept with two names, and a client that reads
- * the end of a session and then its output would parse both.
+ * Nothing is aliased any more, the two residual names least of all: an alias
+ * over `transcricao_truncada` would invent a schema spelling
+ * `glossario-wire.md` §4.2 does not carry, which is what the glossary exists to
+ * prevent. {@link toSession} builds the two English names instead.
  */
-export interface WireSessionTranscript {
-  transcript: string | null;
-  transcript_truncated: boolean;
-  transcript_original_size: number | null;
-}
+const COLUMNS = `
+  id, job_id, execution_id, node_id,
+  engine, engine_session_ref, working_dir,
+  prompt, timeout_seconds, silence_seconds, status, exit_code, timeout_reason,
+  usage, models, transcript,
+  transcricao_truncada, transcricao_tamanho_original, output,
+  opened_at, finished_at
+`;
 
-/** Transcript to wire. */
-export function toWireSessionTranscript(
-  transcript: SessionTranscript,
-): WireSessionTranscript {
+/**
+ * The row as {@link Session} publishes it.
+ *
+ * The two residual columns are destructured OUT before the spread, and that is
+ * the care this function exists for: a bare `{...row}` would carry
+ * `transcricao_truncada` and `transcricao_tamanho_original` out beside the
+ * English names built from them, and an extra key on a projection fails nothing
+ * — it just reaches `/v1` under a name no client was ever told about.
+ * `test/no-leaked-row-keys.test.ts` is the gate that says so.
+ *
+ * @param row The session's row, as it is in the table.
+ * @returns The projection.
+ */
+function toSession(row: SessionRow): Session {
+  const {
+    transcricao_truncada: truncated,
+    transcricao_tamanho_original: originalSize,
+    ...rest
+  } = row;
   return {
-    transcript: transcript.transcricao,
-    transcript_truncated: transcript.truncada,
-    transcript_original_size: transcript.tamanho_original,
-  };
-}
-
-/** Projection to wire: the one place the session's column names meet the API's. */
-export function toWireSession(session: Session): WireSession {
-  return {
-    id: session.id,
-    job_id: session.trabalho_id,
-    execution_id: session.execucao_id,
-    node_id: session.no_id,
-    engine: session.engine,
-    engine_session_ref: session.engine_session_ref,
-    working_dir: session.working_dir,
-    prompt: session.prompt,
-    timeout_seconds: session.timeout_seconds,
-    silence_seconds: session.silence_seconds,
-    status: session.status,
-    exit_code: session.exit_code,
-    timeout_reason: session.timeout_reason,
-    usage: session.uso,
-    models: session.modelos,
-    transcript: session.transcricao,
-    transcript_truncated: session.transcricao_truncada,
-    transcript_original_size: session.transcricao_tamanho_original,
-    output: session.saida,
-    opened_at: session.aberta_em,
-    finished_at: session.finalizada_em,
+    ...rest,
+    usage: jsonOrNull<SessionUsage>(row.usage),
+    // Same JSON-in-a-column convention `usage` above already uses, and the same
+    // reading of a NULL: nothing was reported. A row written before t172 lands
+    // here as `null` with no backfill and no special case.
+    models: jsonOrNull<string[]>(row.models),
+    // ...and the third one, for the same two reasons (t253).
+    output: jsonOrNull<Record<string, unknown>>(row.output),
+    transcript_truncated: asBoolean(truncated),
+    transcript_original_size: originalSize,
   };
 }
 
@@ -266,7 +217,7 @@ interface CappedTranscript {
  * Three states, and they are three different facts:
  *
  * - **absent/null** — nobody reported anything. Stores a real NULL, never an
- *   empty string, the same discipline `uso` has had in this file since t102;
+ *   empty string, the same discipline `usage` has had in this file since t102;
  * - **`''`** — the session ran and printed nothing. That is a measurement, and
  *   it is stored as given;
  * - **over the cap** — the TAIL survives, because the end of a stream is where
@@ -407,16 +358,16 @@ export function openSession(db: Database, input: OpenSessionInput): Session | nu
       ? undefined
       : (db
           .prepare(
-            'SELECT project_id AS projeto_id, execution_id AS execucao_id FROM job WHERE id = ?',
+            'SELECT project_id, execution_id FROM job WHERE id = ?',
           )
           .get(jobId) as
-          | { projeto_id: number; execucao_id: number | null }
+          | { project_id: number; execution_id: number | null }
           | undefined);
   if (jobId !== null && owner === undefined) return null;
 
   const projectId =
-    owner?.projeto_id ?? integerOrDefault('project_id', input.project_id, DEFAULT_PROJECT);
-  const executionId = owner?.execucao_id ?? integerOrNull('execution_id', input.execution_id);
+    owner?.project_id ?? integerOrDefault('project_id', input.project_id, DEFAULT_PROJECT);
+  const executionId = owner?.execution_id ?? integerOrNull('execution_id', input.execution_id);
   const actor = resolveActor(input.actor, RUNNER_ACTOR);
 
   const open = db.transaction((): Session => {
@@ -518,17 +469,17 @@ export interface FinishSessionInput {
  *   does not reach one.
  */
 function resolveOutputSchema(db: Database, row: SessionRow): unknown {
-  if (row.no_id === null || row.trabalho_id === null) return null;
+  if (row.node_id === null || row.job_id === null) return null;
 
   const owner = db
-    .prepare('SELECT graph_version_id AS grafo_versao_id FROM job WHERE id = ?')
-    .get(row.trabalho_id) as { grafo_versao_id: string | null } | undefined;
-  if (owner === undefined || owner.grafo_versao_id === null) return null;
+    .prepare('SELECT graph_version_id FROM job WHERE id = ?')
+    .get(row.job_id) as { graph_version_id: string | null } | undefined;
+  if (owner === undefined || owner.graph_version_id === null) return null;
 
-  const version = getVersion(db, owner.grafo_versao_id);
+  const version = getVersion(db, owner.graph_version_id);
   if (version === undefined) return null;
 
-  const node = version.snapshot.nodes?.find((candidate) => candidate.id === row.no_id);
+  const node = version.snapshot.nodes?.find((candidate) => candidate.id === row.node_id);
   const pin = node === undefined ? undefined : node.skill_ref;
   if (!isObject(pin) || typeof pin.id !== 'string' || typeof pin.version !== 'string') {
     return null;
@@ -586,7 +537,7 @@ function stripRouteLabel(reported: Record<string, unknown>): Record<string, unkn
  * been able to answer since t253 and never did: it validates a reported
  * `output` against the pinned skill's schema, writes `null` and the reasons
  * when it refuses — and then handed back a session that cannot say any of it,
- * by design (`WireSession.output`'s own comment: WHY a report was refused is
+ * by design ({@link Session.output}'s own comment: WHY a report was refused is
  * telemetry of the log, not part of the session). The runner, with no answer,
  * routed the job from its OWN parse of the same block. So a report this file
  * rejected still moved the work along an edge.
@@ -750,7 +701,7 @@ export function finishSession(
     recordEvent(db, {
       type: 'session.finished',
       project_id: projectId,
-      execution_id: row.execucao_id,
+      execution_id: row.execution_id,
       entity: { type: 'session', id },
       actor,
       occurred_at: timestamp,
@@ -773,7 +724,7 @@ export function finishSession(
     // runner releases AFTER reporting, so a round finished by a dispatched
     // session is typically announced only when something else moves. That gap
     // is inherited here as-is (FR7), not closed and not worked around.
-    announceFinishedExecution(db, row.execucao_id, projectId, timestamp);
+    announceFinishedExecution(db, row.execution_id, projectId, timestamp);
 
     // ...and the other thing a closure can trigger (t265, FR10): a job whose
     // sessions keep failing on the same node stops being re-leased. Here and not
@@ -787,8 +738,8 @@ export function finishSession(
     // runner is already blocking this one on its own account, and two owners for
     // one flag is how a job ends up blocked with nothing pending. And a session
     // with no job belongs to no streak at all.
-    if (data.status === 'failed' && data.failure_kind === null && row.trabalho_id !== null) {
-      blockOnRepeatedFailure(db, row.trabalho_id, row.no_id, timestamp);
+    if (data.status === 'failed' && data.failure_kind === null && row.job_id !== null) {
+      blockOnRepeatedFailure(db, row.job_id, row.node_id, timestamp);
     }
 
     return toSession(readRow(db, id) as SessionRow);
@@ -804,15 +755,19 @@ export function finishSession(
 }
 
 /**
- * What `GET /v1/sessions/:id/transcript` reads, in the column's own words.
+ * What `GET /v1/sessions/:id/transcript` answers with (t232).
  *
- * The names mirror {@link Session}'s, like every other projection in this file;
- * what LEAVES the process is `toWireSessionTranscript`'s output (t232).
+ * The same three names {@link Session} publishes for the same three facts, and
+ * deliberately not a shorter second spelling: `truncated` next to `/finish`'s
+ * `transcript_truncated` would be one concept with two names, and a client that
+ * reads the end of a session and then its transcript would parse both. Since
+ * t286 it is also the object that LEAVES the process — there is no translation
+ * step behind it any more.
  */
 export interface SessionTranscript {
-  transcricao: string | null;
-  truncada: boolean;
-  tamanho_original: number | null;
+  transcript: string | null;
+  transcript_truncated: boolean;
+  transcript_original_size: number | null;
 }
 
 /**
@@ -835,9 +790,9 @@ export function getSessionTranscript(db: Database, id: number): SessionTranscrip
   const row = readRow(db, id);
   if (row === undefined) return null;
   return {
-    transcricao: row.transcricao,
-    truncada: asBoolean(row.transcricao_truncada),
-    tamanho_original: row.transcricao_tamanho_original,
+    transcript: row.transcript,
+    transcript_truncated: asBoolean(row.transcricao_truncada),
+    transcript_original_size: row.transcricao_tamanho_original,
   };
 }
 
@@ -884,7 +839,7 @@ export function recordPermissionDenial(
   recordEvent(db, {
     type: 'session.permission_denied',
     project_id: sessionProject(db, id),
-    execution_id: row.execucao_id,
+    execution_id: row.execution_id,
     entity: { type: 'session', id },
     actor,
     occurred_at: now(),
@@ -912,18 +867,18 @@ export function recordPermissionDenial(
  */
 export function listSessions(
   db: Database,
-  filter: { execucao_id?: number; trabalho_id?: number } = {},
+  filter: { execution_id?: number; job_id?: number } = {},
 ): Session[] {
   const conditions: string[] = [];
   const values: unknown[] = [];
 
-  if (filter.execucao_id !== undefined) {
+  if (filter.execution_id !== undefined) {
     conditions.push('execution_id = ?');
-    values.push(filter.execucao_id);
+    values.push(filter.execution_id);
   }
-  if (filter.trabalho_id !== undefined) {
+  if (filter.job_id !== undefined) {
     conditions.push('job_id = ?');
-    values.push(filter.trabalho_id);
+    values.push(filter.job_id);
   }
 
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;

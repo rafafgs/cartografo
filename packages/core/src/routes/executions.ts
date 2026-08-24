@@ -15,22 +15,22 @@
  * derived from that event at read time (`repositories/job.ts`), never stored.
  *
  * The response field names are English since t226
- * (`docs/spec/glossario-wire.md` §1). The EVENTS inside `events` keep their own
- * envelope, which is the taxonomy's and therefore D20's second child.
+ * (`docs/spec/glossario-wire.md` §1), and since t286 they are also the names the
+ * two repositories hand back — nothing here translates on the way out. The
+ * EVENTS inside `events` keep their own envelope, which is the taxonomy's and
+ * therefore D20's second child.
  */
 
 import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { listEvents } from '../db/events.ts';
-import { questionsByNode, toWireQuestionsByNode } from '../repositories/input-request.ts';
+import { questionsByNode } from '../repositories/input-request.ts';
 import {
   getExecution,
   listExecutions,
   metricsByVersion,
   nodeMetricsByVersion,
-  toWireExecutionSummary,
-  toWireMetricByVersion,
 } from '../repositories/job.ts';
 import { withValidation, routeId } from './common.ts';
 
@@ -46,8 +46,8 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
   // the id.
   app.get('/executions', async (_request, reply) =>
     withValidation(reply, () => {
-      const executions = listExecutions(db);
-      return { executions: executions.map(toWireExecutionSummary) };
+      const found = listExecutions(db);
+      return { executions: found };
     }),
   );
 
@@ -64,9 +64,7 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
    * a round with zero jobs, and zero jobs is never finished.
    */
   app.get('/executions/:id', async (request, reply) =>
-    withValidation(reply, () =>
-      toWireExecutionSummary(getExecution(db, routeId(request.params))),
-    ),
+    withValidation(reply, () => getExecution(db, routeId(request.params))),
   );
 
   /**
@@ -98,10 +96,10 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
       return {
         execution_id: executionId,
         metrics: metrics.map((row) => ({
-          ...toWireMetricByVersion(row),
-          nodes: nodes.get(row.grafo_versao_id) ?? [],
+          ...row,
+          nodes: nodes.get(row.graph_version_id) ?? [],
         })),
-        input_requests_by_node: byNode.map(toWireQuestionsByNode),
+        input_requests_by_node: byNode,
       };
     }),
   );

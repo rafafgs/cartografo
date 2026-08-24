@@ -297,8 +297,8 @@ export function registerLeases(
       db.transaction(() => {
         announceFinishedExecution(
           db,
-          job.execucao_id,
-          job.projeto_id,
+          job.execution_id,
+          job.project_id,
           released.liberada_em ?? (options.now ?? now)(),
         );
       })();

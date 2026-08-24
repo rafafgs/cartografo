@@ -6,14 +6,15 @@
  * is the only writer of the database (D1). The runner never opens SQLite.
  *
  * Same split as the job routes, and `routes/common.ts` spells it out: what a GET
- * returns is English since t226 (`repositories/session.ts`'s `toWireSession`),
- * and what `POST /sessions`, `PATCH /finish` and `/permission-denials` accept is
- * still Portuguese, because those bodies reach `validateEvent`.
+ * returns is English since t226, and what `POST /sessions`, `PATCH /finish` and
+ * `/permission-denials` accept followed with t227, because those bodies reach
+ * `validateEvent`. Since t286 nothing translates on the way out either —
+ * `repositories/session.ts` hands back the object `/v1` publishes.
  *
- * `status` is the one FIELD VALUE that does not translate either, on both sides:
- * `concluida`/`falhou`/`tempo_esgotado` are `sessao.finalizada`'s payload
- * vocabulary, which the events child owns — the reasoning is written out over
- * `toWireSession`.
+ * `status` is the one FIELD VALUE with no map on either side, and the reasoning
+ * is written out over `Session.status`: the column takes whatever
+ * `session.finished`'s payload carries, so `/finish` answers the word it was
+ * given.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -27,8 +28,6 @@ import {
   getSessionTranscript,
   listSessions,
   recordPermissionDenial,
-  toWireSession,
-  toWireSessionTranscript,
 } from '../repositories/session.ts';
 import { withValidation, routeId, notFound, conflict } from './common.ts';
 
@@ -60,12 +59,12 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
       const session = openSession(db, (request.body ?? {}) as Record<string, unknown>);
       if (session === null) return notFound(reply, 'job');
       reply.code(201);
-      return toWireSession(session);
+      return session;
     }),
   );
 
   // A session ends ONCE (t149). The retry of a `/finish` that already went
-  // through would rewrite the terminal status and erase the `uso` reported the
+  // through would rewrite the terminal status and erase the `usage` reported the
   // first time — the only cost record the PoC keeps — so a session that is no
   // longer open is a 409, decided here, before the repository is called.
   app.patch('/sessions/:id/finish', { bodyLimit: FINISH_BODY_LIMIT_BYTES }, async (request, reply) =>
@@ -81,13 +80,13 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
       if (result === null) return notFound(reply, 'session');
 
       // The one response that says whether the report was TAKEN (t268), and the
-      // only one: `GET`/`POST /v1/sessions*` keep answering `toWireSession` and
+      // only one: `GET`/`POST /v1/sessions*` keep answering the bare session and
       // nothing else, so a session still cannot be asked after the fact whether
       // its output was refused. What changed is that the runner, which has to
       // decide right here whether the job may move, no longer has to guess by
       // re-parsing the same block the control plane just judged.
       return {
-        ...toWireSession(result.session),
+        ...result.session,
         output_accepted: result.output_accepted,
         // ...and the reasons ride only on the refusal, like the event's own
         // field: an accepted report has nothing to explain.
@@ -107,7 +106,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
         routeId(request.params),
         (request.body ?? {}) as Record<string, unknown>,
       );
-      return session === null ? notFound(reply, 'session') : toWireSession(session);
+      return session === null ? notFound(reply, 'session') : session;
     }),
   );
 
@@ -117,15 +116,15 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
   // 404. It is a GET like any other, which is what lets the screen link it
   // straight through the verbatim `/v1/*` proxy without a route of its own (D11).
   //
-  // A GET, so it crosses the row → wire boundary like the four routes above
-  // (t232). It is the one session payload NOT built by `toWireSession`, which is
-  // exactly how it came out of t226 still spelling `{transcricao, truncada,
-  // tamanho_original}` for the three facts `/finish` was already answering as
-  // `{transcript, transcript_truncated, transcript_original_size}`.
+  // It is the one session payload NOT shaped like the projection, and t226 left
+  // it spelling `{transcricao, truncada, tamanho_original}` for the three facts
+  // `/finish` was already answering as `{transcript, transcript_truncated,
+  // transcript_original_size}`. t286 closed that: `SessionTranscript` now IS
+  // those three names, so there is nothing between the read and the response.
   app.get('/sessions/:id/transcript', async (request, reply) =>
     withValidation(reply, () => {
       const transcript = getSessionTranscript(db, routeId(request.params));
-      return transcript === null ? notFound(reply, 'session') : toWireSessionTranscript(transcript);
+      return transcript === null ? notFound(reply, 'session') : transcript;
     }),
   );
 
@@ -134,8 +133,8 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
       const query = request.query as { execution_id?: string; job_id?: string };
       const executionId = integerFromQuery('execution_id', query.execution_id);
       const jobId = integerFromQuery('job_id', query.job_id);
-      const sessions = listSessions(db, { execucao_id: executionId, trabalho_id: jobId });
-      return { sessions: sessions.map(toWireSession) };
+      const found = listSessions(db, { execution_id: executionId, job_id: jobId });
+      return { sessions: found };
     }),
   );
 }

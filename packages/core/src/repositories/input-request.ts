@@ -14,11 +14,12 @@
  * Re-dispatching the session is on the other side of the boundary (the runner's
  * `Controller`, t103/t106) — see `docs/spec/escalacao-humana.md`.
  *
- * The TABLE and its columns are English since D20's fourth child (t229) and the
- * stored VALUES since its fifth (t235); the projection's field names are not,
- * because `routes/input-requests.ts` reads them, so every `SELECT` aliases the
- * renamed column back onto the field (t229, FR4; t235, FR5). The event-type
- * strings went English with the second child (t227).
+ * The TABLE and its columns are English since D20's fourth child (t229), the
+ * stored VALUES since its fifth (t235) and the event-type strings since its
+ * second (t227). {@link InputRequest} is English too, and is the object `/v1`
+ * publishes: t286 deleted the alias-and-translate layer between the two. Unlike
+ * the job and the session, this table has no column the glossary left behind —
+ * every field here is the column, read under its own name.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -41,9 +42,9 @@ import { blockJob, unblockJob } from './job.ts';
 /** Input-request projection, as the API returns it. */
 export interface InputRequest {
   id: number;
-  trabalho_id: number;
-  sessao_id: number | null;
-  execucao_id: number | null;
+  job_id: number;
+  session_id: number | null;
+  execution_id: number | null;
   /**
    * The node the owning job was standing on when it asked (t167).
    *
@@ -52,52 +53,52 @@ export interface InputRequest {
    * the job, never by the caller — a question that declared its own node would
    * be a question able to lie about where the work was.
    */
-  no_id: string | null;
-  tipo: string;
-  pergunta: string;
-  contexto: string | null;
-  opcoes: string[] | null;
-  recomendacao: string | null;
-  resposta_padrao: string | null;
-  auto_aprovavel: boolean;
+  node_id: string | null;
+  kind: string;
+  question: string;
+  context: string | null;
+  options: string[] | null;
+  recommendation: string | null;
+  default_answer: string | null;
+  auto_approvable: boolean;
   status: string;
-  resposta: string | null;
-  respondido_por: string | null;
-  origem: string | null;
-  criada_em: string;
-  respondida_em: string | null;
+  answer: string | null;
+  answered_by: string | null;
+  /**
+   * Where the decision came from: `user` or `auto`.
+   *
+   * Both the key and the value went English with t227 and t235
+   * (`glossario-wire.md` §4.2 and §1.6); the column's own `CHECK` now spells the
+   * same two words, so this field is the column, passed through.
+   */
+  source: string | null;
+  created_at: string;
+  answered_at: string | null;
 }
 
-interface InputRequestRow extends Omit<InputRequest, 'opcoes' | 'auto_aprovavel'> {
-  opcoes: string | null;
-  auto_aprovavel: number;
+interface InputRequestRow extends Omit<InputRequest, 'options' | 'auto_approvable'> {
+  /** JSON in a TEXT column, like `session.usage` and `job.criterios_de_aceite`. */
+  options: string | null;
+  auto_approvable: number;
 }
 
-/** The row, read back into {@link InputRequest}'s spelling (t229, FR4). */
+/** The columns {@link InputRequestRow} is made of, each under its own name (t286). */
 const COLUMNS = `
-  id, job_id AS trabalho_id, session_id AS sessao_id, execution_id AS execucao_id,
-  node_id AS no_id, kind AS tipo, question AS pergunta, context AS contexto,
-  options AS opcoes, recommendation AS recomendacao,
-  default_answer AS resposta_padrao, auto_approvable AS auto_aprovavel, status,
-  answer AS resposta, answered_by AS respondido_por, source AS origem,
-  created_at AS criada_em, answered_at AS respondida_em
+  id, job_id, session_id, execution_id,
+  node_id, kind, question, context,
+  options, recommendation,
+  default_answer, auto_approvable, status,
+  answer, answered_by, source,
+  created_at, answered_at
 `;
 
 function toInputRequest(row: InputRequestRow): InputRequest {
   return {
     ...row,
-    opcoes: jsonOrNull<string[]>(row.opcoes),
-    auto_aprovavel: asBoolean(row.auto_aprovavel),
+    options: jsonOrNull<string[]>(row.options),
+    auto_approvable: asBoolean(row.auto_approvable),
   };
 }
-
-/* -------------------------------------------------------------------------- */
-/* The row → wire boundary (t226, FR1).                                        */
-/*                                                                             */
-/* Both sides cross it since t227: `POST /v1/input-requests` and the two answer */
-/* routes take English bodies too, because those reach `validateEvent` and D20's*/
-/* second child renamed that vocabulary (`routes/common.ts` tells the story).   */
-/* -------------------------------------------------------------------------- */
 
 /**
  * The two statuses a `?status=` filter may name (`glossario-wire.md` §1.6).
@@ -124,59 +125,6 @@ export const INPUT_REQUEST_STATUSES: readonly string[] = Object.freeze(['pending
  */
 export function inputRequestStatusColumn(value: string): string | undefined {
   return INPUT_REQUEST_STATUSES.find((status) => status === value);
-}
-
-/** An input request, as `/v1` publishes it. */
-export interface WireInputRequest {
-  id: number;
-  job_id: number;
-  session_id: number | null;
-  execution_id: number | null;
-  node_id: string | null;
-  kind: string;
-  question: string;
-  context: string | null;
-  options: string[] | null;
-  recommendation: string | null;
-  default_answer: string | null;
-  auto_approvable: boolean;
-  status: string;
-  answer: string | null;
-  answered_by: string | null;
-  /**
-   * Where the decision came from: `user` or `auto`.
-   *
-   * Both the key and the value went English with t227 and t235
-   * (`glossario-wire.md` §4.2 and §1.6); the column's own `CHECK` now spells the
-   * same two words, so this field is the column, passed through.
-   */
-  source: string | null;
-  created_at: string;
-  answered_at: string | null;
-}
-
-/** Projection to wire: the one place the column names meet the API's. */
-export function toWireInputRequest(request: InputRequest): WireInputRequest {
-  return {
-    id: request.id,
-    job_id: request.trabalho_id,
-    session_id: request.sessao_id,
-    execution_id: request.execucao_id,
-    node_id: request.no_id,
-    kind: request.tipo,
-    question: request.pergunta,
-    context: request.contexto,
-    options: request.opcoes,
-    recommendation: request.recomendacao,
-    default_answer: request.resposta_padrao,
-    auto_approvable: request.auto_aprovavel,
-    status: request.status,
-    answer: request.resposta,
-    answered_by: request.respondido_por,
-    source: request.origem,
-    created_at: request.criada_em,
-    answered_at: request.respondida_em,
-  };
 }
 
 function readRow(db: Database, id: number): InputRequestRow | undefined {
@@ -251,12 +199,11 @@ export function createInputRequest(
   // from the owner's row, and nothing from the body (t167).
   const owner = db
     .prepare(
-      `SELECT project_id AS projeto_id, execution_id AS execucao_id,
-              current_node_id AS no_atual
+      `SELECT project_id, execution_id, current_node_id
          FROM job WHERE id = ?`,
     )
     .get(jobId) as
-    | { projeto_id: number; execucao_id: number | null; no_atual: string | null }
+    | { project_id: number; execution_id: number | null; current_node_id: string | null }
     | undefined;
   if (owner === undefined) return null;
 
@@ -264,7 +211,9 @@ export function createInputRequest(
   // so this only happens for a row that never got a real node — and the entry
   // node would be exactly the guess this stays away from.
   const nodeId =
-    typeof owner.no_atual === 'string' && owner.no_atual !== '' ? owner.no_atual : null;
+    typeof owner.current_node_id === 'string' && owner.current_node_id !== ''
+      ? owner.current_node_id
+      : null;
 
   const options = data.options as string[] | null;
   const actor = resolveActor(input.actor, API_ACTOR);
@@ -282,7 +231,7 @@ export function createInputRequest(
       .run(
         jobId,
         data.session_id as number | null,
-        owner.execucao_id,
+        owner.execution_id,
         nodeId,
         data.kind as string,
         data.question as string,
@@ -297,8 +246,8 @@ export function createInputRequest(
     const id = Number(result.lastInsertRowid);
     recordEvent(db, {
       type: 'input_request.created',
-      project_id: owner.projeto_id,
-      execution_id: owner.execucao_id,
+      project_id: owner.project_id,
+      execution_id: owner.execution_id,
       entity: { type: 'input_request', id },
       actor,
       occurred_at: timestamp,
@@ -359,8 +308,8 @@ function answer(
   const data = requireValidData(type, raw);
 
   const owner = db
-    .prepare('SELECT project_id AS projeto_id FROM job WHERE id = ?')
-    .get(row.trabalho_id) as { projeto_id: number } | undefined;
+    .prepare('SELECT project_id FROM job WHERE id = ?')
+    .get(row.job_id) as { project_id: number } | undefined;
 
   const close = db.transaction((): InputRequest => {
     const timestamp = now();
@@ -384,8 +333,8 @@ function answer(
 
     recordEvent(db, {
       type,
-      project_id: owner?.projeto_id ?? DEFAULT_PROJECT,
-      execution_id: row.execucao_id,
+      project_id: owner?.project_id ?? DEFAULT_PROJECT,
+      execution_id: row.execution_id,
       entity: { type: 'input_request', id },
       actor,
       occurred_at: timestamp,
@@ -401,7 +350,7 @@ function answer(
     // What makes that safe is the guard above: only an answer that actually
     // closed a PENDING input request ever gets here, so a retried answer can no
     // longer unblock a job that is meanwhile waiting on a different question.
-    unblockJob(db, row.trabalho_id, { actor });
+    unblockJob(db, row.job_id, { actor });
 
     return toInputRequest(readRow(db, id) as InputRequestRow);
   });
@@ -504,7 +453,7 @@ export function autoResolveInputRequest(
  */
 export function listInputRequests(
   db: Database,
-  filter: { status?: string; execucao_id?: number; trabalho_id?: number } = {},
+  filter: { status?: string; execution_id?: number; job_id?: number } = {},
 ): InputRequest[] {
   const conditions: string[] = [];
   const values: unknown[] = [];
@@ -513,13 +462,13 @@ export function listInputRequests(
     conditions.push('status = ?');
     values.push(filter.status);
   }
-  if (filter.execucao_id !== undefined) {
+  if (filter.execution_id !== undefined) {
     conditions.push('execution_id = ?');
-    values.push(filter.execucao_id);
+    values.push(filter.execution_id);
   }
-  if (filter.trabalho_id !== undefined) {
+  if (filter.job_id !== undefined) {
     conditions.push('job_id = ?');
-    values.push(filter.trabalho_id);
+    values.push(filter.job_id);
   }
 
   const where = conditions.length === 0 ? '' : `WHERE ${conditions.join(' AND ')}`;
@@ -532,19 +481,8 @@ export function listInputRequests(
 /** One row of the per-node question count of an execution (t167). */
 export interface QuestionsByNode {
   /** The node that asked; `null` groups the rows that never recorded one. */
-  no_id: string | null;
-  perguntas: number;
-}
-
-/** The same row, as `/v1` publishes it (t226, FR1). */
-export interface WireQuestionsByNode {
   node_id: string | null;
   input_requests: number;
-}
-
-/** Per-node count to wire. */
-export function toWireQuestionsByNode(row: QuestionsByNode): WireQuestionsByNode {
-  return { node_id: row.no_id, input_requests: row.perguntas };
 }
 
 /**
@@ -570,7 +508,7 @@ export function toWireQuestionsByNode(row: QuestionsByNode): WireQuestionsByNode
 export function questionsByNode(db: Database, executionId: number): QuestionsByNode[] {
   const rows = db
     .prepare(
-      `SELECT node_id AS no_id, COUNT(*) AS perguntas
+      `SELECT node_id, COUNT(*) AS input_requests
          FROM input_request
         WHERE execution_id = ?
         GROUP BY node_id`,
@@ -578,9 +516,9 @@ export function questionsByNode(db: Database, executionId: number): QuestionsByN
     .all(executionId) as QuestionsByNode[];
 
   return rows.sort((a, b) => {
-    if (a.no_id === null) return 1;
-    if (b.no_id === null) return -1;
-    return a.no_id.localeCompare(b.no_id);
+    if (a.node_id === null) return 1;
+    if (b.node_id === null) return -1;
+    return a.node_id.localeCompare(b.node_id);
   });
 }
 
@@ -593,26 +531,11 @@ export function questionsByNode(db: Database, executionId: number): QuestionsByN
  * answering right now needs to see: knowing that something similar was asked
  * before is not enough — one has to know what was decided, by whom and when.
  *
- * The field names below mirror {@link InputRequest}'s, which is what the
- * `SELECT` aliases the renamed columns back onto (t229, FR4); what leaves the
- * process is `toWirePrecedent`'s output (t226, FR1). `similaridade` is the one
- * computed field and follows its neighbours across that boundary too.
+ * The field names below are {@link InputRequest}'s, which are the columns'
+ * (t286); `similarity` is the one computed field, and is named after the
+ * function that computes it rather than after any column.
  */
 export interface Precedent {
-  id: number;
-  tipo: string;
-  pergunta: string;
-  resposta: string | null;
-  respondido_por: string | null;
-  origem: string | null;
-  criada_em: string;
-  respondida_em: string | null;
-  /** Score in `[0, 1]`, rounded to 2 decimals — see `domain/similarity.ts`. */
-  similaridade: number;
-}
-
-/** A precedent, as `/v1` publishes it (t226, FR1). */
-export interface WirePrecedent {
   id: number;
   kind: string;
   question: string;
@@ -621,25 +544,11 @@ export interface WirePrecedent {
   source: string | null;
   created_at: string;
   answered_at: string | null;
+  /** Score in `[0, 1]`, rounded to 2 decimals — see `domain/similarity.ts`. */
   similarity: number;
 }
 
-/** Precedent to wire. */
-export function toWirePrecedent(row: Precedent): WirePrecedent {
-  return {
-    id: row.id,
-    kind: row.tipo,
-    question: row.pergunta,
-    answer: row.resposta,
-    answered_by: row.respondido_por,
-    source: row.origem,
-    created_at: row.criada_em,
-    answered_at: row.respondida_em,
-    similarity: row.similaridade,
-  };
-}
-
-type PrecedentRow = Omit<Precedent, 'similaridade'>;
+type PrecedentRow = Omit<Precedent, 'similarity'>;
 
 /** How many precedents come back when the caller does not say. */
 const DEFAULT_PRECEDENT_LIMIT = 5;
@@ -648,9 +557,9 @@ const DEFAULT_PRECEDENT_LIMIT = 5;
 const MAXIMUM_PRECEDENT_LIMIT = 20;
 
 const PRECEDENT_COLUMNS = `
-  p.id, p.kind AS tipo, p.question AS pergunta, p.answer AS resposta,
-  p.answered_by AS respondido_por, p.source AS origem,
-  p.created_at AS criada_em, p.answered_at AS respondida_em
+  p.id, p.kind, p.question, p.answer,
+  p.answered_by, p.source,
+  p.created_at, p.answered_at
 `;
 
 /** Two decimals: the score is there to be READ and compared, not computed on. */
@@ -693,8 +602,8 @@ export function getPrecedents(
   // `createInputRequest`. A missing job is impossible through the FK, and even
   // then the honest answer is "no precedents", never a failure.
   const owner = db
-    .prepare('SELECT project_id AS projeto_id FROM job WHERE id = ?')
-    .get(target.trabalho_id) as { projeto_id: number } | undefined;
+    .prepare('SELECT project_id FROM job WHERE id = ?')
+    .get(target.job_id) as { project_id: number } | undefined;
   if (owner === undefined) return [];
 
   const limit = Math.min(
@@ -711,18 +620,18 @@ export function getPrecedents(
           AND p.id <> ?
           AND t.project_id = ?`,
     )
-    .all(id, owner.projeto_id) as PrecedentRow[];
+    .all(id, owner.project_id) as PrecedentRow[];
 
   // A tie on score goes to the MOST RECENT decision: when two old decisions look
   // equally like today's, the last one is the one that stands. The timestamps are
   // ISO 8601, so lexicographic order is chronological order.
   const mostRecent = (a: PrecedentRow, b: PrecedentRow): number =>
-    (b.respondida_em ?? '').localeCompare(a.respondida_em ?? '');
+    (b.answered_at ?? '').localeCompare(a.answered_at ?? '');
 
   return candidates
-    .map((row) => ({ row, score: similarity(target.pergunta, row.pergunta) }))
+    .map((row) => ({ row, score: similarity(target.question, row.question) }))
     .filter((pair) => pair.score > 0)
     .sort((a, b) => b.score - a.score || mostRecent(a.row, b.row))
     .slice(0, limit)
-    .map(({ row, score }) => ({ ...row, similaridade: roundScore(score) }));
+    .map(({ row, score }) => ({ ...row, similarity: roundScore(score) }));
 }

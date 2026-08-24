@@ -1320,7 +1320,7 @@ export function listJobs(
  */
 export function jobTimeline(db: Database, id: number): Event[] | null {
   if (readRow(db, id) === undefined) return null;
-  return listEvents(db, { trabalho_id: id });
+  return listEvents(db, { job_id: id });
 }
 
 /**

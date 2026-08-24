@@ -119,7 +119,7 @@ export function registerExecutions(app: FastifyInstance, db: Database): void {
   app.get('/executions/:id/events', async (request, reply) =>
     withValidation(reply, () => {
       const executionId = routeId(request.params);
-      return { execution_id: executionId, events: listEvents(db, { execucao_id: executionId }) };
+      return { execution_id: executionId, events: listEvents(db, { execution_id: executionId }) };
     }),
   );
 }

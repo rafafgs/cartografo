@@ -23,8 +23,8 @@
  *
  * Since t226 the request and response field names are English
  * (`docs/spec/glossario-wire.md` §1): the body declares `project_id`, `url`,
- * `secret` and `filter_types`, and `repositories/webhooks.ts`'s `toSubscription`
- * is where the columns — still `projeto_id`/`segredo`/`tipos_filtro` — meet it.
+ * `secret` and `filter_types`, and since t290 the columns, the repository's
+ * `NewSubscription` and those four words are all the same four words.
  *
  * `tipo` inside `filter_types` is NOT translated: those are taxonomy event-type
  * names (`trabalho.criado`), which are D20's second child.
@@ -127,10 +127,10 @@ function readSubscription(raw: unknown): NewSubscription {
   const problems: string[] = [];
 
   const declared: NewSubscription = {
-    projeto_id: readProject(body.project_id, problems),
+    project_id: readProject(body.project_id, problems),
     url: readUrl(body.url, problems),
-    segredo: readSecret(body.secret, problems),
-    tipos: readTypes(body.filter_types, problems),
+    secret: readSecret(body.secret, problems),
+    filter_types: readTypes(body.filter_types, problems),
   };
 
   if (problems.length > 0) throw new ValidationError(problems);
@@ -158,7 +158,7 @@ export function registerWebhooks(app: FastifyInstance, db: Database): void {
         'project_id',
         (request.query as { project_id?: string }).project_id,
       );
-      return { webhooks: listSubscriptions(db, { projeto_id: projectId }) };
+      return { webhooks: listSubscriptions(db, { project_id: projectId }) };
     }),
   );
 

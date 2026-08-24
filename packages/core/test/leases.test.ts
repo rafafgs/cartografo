@@ -146,7 +146,7 @@ async function start(t: TestHook): Promise<{
   const { issueCredential } = (await import(
     new URL('../src/repositories/credentials.ts', import.meta.url).href
   )) as typeof CredentialsModule;
-  const { token } = issueCredential(db, { tipo: 'user' });
+  const { token } = issueCredential(db, { type: 'user' });
 
   const app = createApp({ db });
   const address = await app.listen({ port: 0, host: '127.0.0.1' });
@@ -660,7 +660,7 @@ async function runnerToken(db: ConnectionModule.Database, runnerId: string): Pro
   const { issueCredential } = (await import(
     new URL('../src/repositories/credentials.ts', import.meta.url).href
   )) as typeof CredentialsModule;
-  return issueCredential(db, { tipo: 'runner', runnerId }).token;
+  return issueCredential(db, { type: 'runner', runnerId }).token;
 }
 
 /** A heartbeat or a release, with the credential handed in explicitly. */

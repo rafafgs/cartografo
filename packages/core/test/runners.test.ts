@@ -108,7 +108,7 @@ async function start(t: TestHook): Promise<{
   // Every `/v1` route demands a credential since t124; this suite is about
   // the routes, so the harness issues one and presents it on every call.
   const { issueCredential } = await loadCredentials();
-  const { token } = issueCredential(db, { tipo: 'user' });
+  const { token } = issueCredential(db, { type: 'user' });
 
   const app = createApp({ db });
   const address = await app.listen({ port: 0, host: '127.0.0.1' });
@@ -338,25 +338,25 @@ test('t164 AT — listRunnersWithHealth counts live leases and reads liveness of
   const { registerRunner, listRunnersWithHealth } = await loadRunners();
   const { grantLease, renewLease, releaseLease, claimExpired } = await loadLeases();
 
-  registerRunner(db, { id: 'runner-a', nome: 'o que trabalha' });
-  registerRunner(db, { id: 'runner-b', nome: null });
-  registerRunner(db, { id: 'runner-c', nome: 'o que nunca pegou trabalho' });
+  registerRunner(db, { id: 'runner-a', name: 'o que trabalha' });
+  registerRunner(db, { id: 'runner-b', name: null });
+  registerRunner(db, { id: 'runner-c', name: 'o que nunca pegou trabalho' });
 
   const ask = (
     runnerId: string,
     jobId: number,
     ttl: number,
     moment: string,
-  ): LeasesModule.LeaseRow => {
+  ): LeasesModule.Lease => {
     const { lease } = grantLease(
       db,
       {
         runner_id: runnerId,
-        projeto_id: PROJECT_ID,
-        trabalho_id: jobId,
-        teto_runner: NO_CAP,
-        teto_projeto: NO_CAP,
-        ttl_segundos: ttl,
+        project_id: PROJECT_ID,
+        job_id: jobId,
+        runner_cap: NO_CAP,
+        project_cap: NO_CAP,
+        ttl_seconds: ttl,
       },
       { now: () => moment },
     );

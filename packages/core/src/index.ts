@@ -267,7 +267,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Contr
   try {
     bootstrapToken = hasLiveCredential(db, 'user')
       ? null
-      : issueCredential(db, { tipo: 'user' }).token;
+      : issueCredential(db, { type: 'user' }).token;
   } catch (error) {
     await app.close();
     db.close();

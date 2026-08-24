@@ -32,6 +32,13 @@
  * straight, which is why a database written before those tickets cannot be read
  * after them — the README says so, and D20's answer is to recreate it, never to
  * migrate it.
+ *
+ * What was left after all that was a projection that aliased the nine renamed
+ * columns back onto a Portuguese-spelled {@link EventRow}, so that `toEvent`
+ * could rename them forward again on the way to the envelope. t290 deleted the
+ * middle step: the row below spells every field the way the column does, and the
+ * `SELECT` carries no alias. `toEvent` stayed, because what is left of it is the
+ * NESTING and the `JSON.parse` — a shape, not a spelling.
  */
 
 import type { Database } from './connection.ts';
@@ -42,32 +49,33 @@ import {
   type EntityType,
 } from './event-validation.ts';
 
-/** Raw table row, before becoming an envelope. */
+/**
+ * Raw table row, before becoming an envelope.
+ *
+ * Flat where the envelope is nested, and a `data` that is still the stored TEXT
+ * — those two differences are the whole reason this interface exists. The names
+ * are the column's own since t290; before it every field here was spelled in
+ * Portuguese and the projection below aliased the schema back onto it.
+ */
 interface EventRow {
   id: number;
-  tipo: string;
-  projeto_id: number;
-  execucao_id: number | null;
-  entidade_tipo: string;
-  entidade_id: string;
-  ator_tipo: string;
-  ator_ref: string;
-  ocorrido_em: string;
-  dados: string;
+  type: string;
+  project_id: number;
+  execution_id: number | null;
+  entity_type: string;
+  entity_id: string;
+  actor_type: string;
+  actor_ref: string;
+  occurred_at: string;
+  data: string;
 }
 
-/**
- * The row, read back into {@link EventRow}'s spelling.
- *
- * Every renamed column is aliased onto the field name this module's own row
- * interface already had (t229, FR4): the SCHEMA is English from D20's fourth
- * child on, and the layer above the alias did not have to move for it.
- */
+/** The row, in the order the envelope reads it. */
 const COLUMNS = `
-  id, type AS tipo, project_id AS projeto_id, execution_id AS execucao_id,
-  entity_type AS entidade_tipo, entity_id AS entidade_id,
-  actor_type AS ator_tipo, actor_ref AS ator_ref, occurred_at AS ocorrido_em,
-  data AS dados
+  id, type, project_id, execution_id,
+  entity_type, entity_id,
+  actor_type, actor_ref, occurred_at,
+  data
 `;
 
 /**
@@ -85,20 +93,28 @@ function entityId(type: string, raw: string): number | string {
   return type === 'graph_version' ? raw : Number(raw);
 }
 
-/** Translates the database row into the taxonomy's envelope. */
+/**
+ * Reshapes the flat row into the taxonomy's envelope.
+ *
+ * The one `toX` of this series that survived t290, because it is not a
+ * translation: it NESTS `entity_type`/`entity_id` and `actor_type`/`actor_ref`
+ * into the two objects the taxonomy publishes, and parses the `data` the column
+ * stores as text. Every field name it reads is now the same one it writes; what
+ * it still does is the shape.
+ */
 function toEvent(row: EventRow): Event {
   return {
     id: row.id,
-    type: row.tipo,
-    project_id: row.projeto_id,
-    execution_id: row.execucao_id,
+    type: row.type,
+    project_id: row.project_id,
+    execution_id: row.execution_id,
     entity: {
-      type: row.entidade_tipo as EntityType,
-      id: entityId(row.entidade_tipo, row.entidade_id),
+      type: row.entity_type as EntityType,
+      id: entityId(row.entity_type, row.entity_id),
     },
-    actor: { type: row.ator_tipo as Event['actor']['type'], ref: row.ator_ref },
-    occurred_at: row.ocorrido_em,
-    data: JSON.parse(row.dados) as Record<string, unknown>,
+    actor: { type: row.actor_type as Event['actor']['type'], ref: row.actor_ref },
+    occurred_at: row.occurred_at,
+    data: JSON.parse(row.data) as Record<string, unknown>,
   };
 }
 
@@ -151,7 +167,7 @@ export interface EventFilter {
    * repeating it would be duplicated data in the log). Whoever wants the end of
    * the session asks about the session.
    */
-  trabalho_id?: number;
+  job_id?: number;
 
   /**
    * The whole log of one execution (t110, FR2): every event whose `execution_id`
@@ -163,9 +179,9 @@ export interface EventFilter {
    * `json_extract` of the payload. It is what lets the surveyor cross
    * different nodes of a single execution without asking job by job.
    *
-   * Combined with `trabalho_id`, the two filters add up (AND, not OR).
+   * Combined with `job_id`, the two filters add up (AND, not OR).
    */
-  execucao_id?: number;
+  execution_id?: number;
 
   /**
    * Everything recorded AFTER this id (t123, FR4).
@@ -217,19 +233,19 @@ export function listEvents(db: Database, filter: EventFilter = {}): Event[] {
   const conditions: string[] = [];
   const parameters: Record<string, number | string> = {};
 
-  if (filter.trabalho_id !== undefined) {
+  if (filter.job_id !== undefined) {
     conditions.push(
       `((entity_type = 'job' AND entity_id = @id_texto)
         OR (entity_type IN ('session','input_request')
             AND json_extract(data, '$.job_id') = @id))`,
     );
-    parameters.id = filter.trabalho_id;
-    parameters.id_texto = String(filter.trabalho_id);
+    parameters.id = filter.job_id;
+    parameters.id_texto = String(filter.job_id);
   }
 
-  if (filter.execucao_id !== undefined) {
+  if (filter.execution_id !== undefined) {
     conditions.push('execution_id = @execution_id');
-    parameters.execution_id = filter.execucao_id;
+    parameters.execution_id = filter.execution_id;
   }
 
   if (filter.sinceId !== undefined) {

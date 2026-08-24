@@ -124,7 +124,7 @@ export function bearerToken(header: string | undefined): string | null {
  */
 export function credentialRunnerId(request: FastifyRequest): string | null {
   const credential = request.credential;
-  return credential !== undefined && credential.tipo === 'runner' ? credential.runner_id : null;
+  return credential !== undefined && credential.type === 'runner' ? credential.runner_id : null;
 }
 
 /**
@@ -172,7 +172,7 @@ export function registerAuth(app: FastifyInstance, db: Database): void {
     // `/v1/leases/:id/heartbeats` — and not the concrete path, which is what
     // makes the list above finite instead of one entry per lease id.
     const route = `${request.method.toUpperCase()} ${request.routeOptions.url ?? request.url}`;
-    if (credential.tipo === 'runner' && !RUNNER_SURFACE.has(route)) {
+    if (credential.type === 'runner' && !RUNNER_SURFACE.has(route)) {
       await reply.code(403).send(
         outOfScope(
           `a runner credential reaches only ${[...RUNNER_SURFACE].join(', ')} — "${route}" requires a user credential`,

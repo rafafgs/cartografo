@@ -23,20 +23,17 @@
  *
  * Since t226 the request and response field names are English
  * (`docs/spec/glossario-wire.md` §1): the pairing body declares `name`, and what
- * comes back is `toRunner`/`toRunnerHealth`'s output. The COLUMNS are still
- * `nome`/`registrado_em` — D20's fourth child renames those.
+ * comes back is the repository's own row. Since t290 there is nothing between
+ * the two — `registerRunner` returns a `Runner` spelled exactly the way the
+ * columns are, so this file hands it back untouched instead of through a
+ * `toRunner` that renamed two fields.
  */
 
 import type { FastifyInstance } from 'fastify';
 
 import type { Database } from '../db/connection.ts';
 import { issueCredential, revokeRunnerCredentials } from '../repositories/credentials.ts';
-import {
-  getRunner,
-  listRunnersWithHealth,
-  registerRunner,
-  toRunner,
-} from '../repositories/runners.ts';
+import { getRunner, listRunnersWithHealth, registerRunner } from '../repositories/runners.ts';
 import { isObject } from '../util/is-object.ts';
 import { refusal } from './common.ts';
 
@@ -69,15 +66,15 @@ export function registerRunners(app: FastifyInstance, db: Database): void {
       return refusal(reply, 400, 'invalid_name', 'name, when sent, has to be a string');
     }
 
-    const { runner, created } = registerRunner(db, { id, nome: name ?? null });
+    const { runner, created } = registerRunner(db, { id, name: name ?? null });
 
     // AFTER the runner row exists, and it has to be: `credencial.runner_id`
     // references `runner(id)`, so minting first would be a foreign-key error
     // dressed up as a 500.
-    const token = created ? issueCredential(db, { tipo: 'runner', runnerId: runner.id }).token : null;
+    const token = created ? issueCredential(db, { type: 'runner', runnerId: runner.id }).token : null;
 
     reply.code(created ? 201 : 200);
-    return { runner: toRunner(runner), token };
+    return { runner, token };
   });
 
   // The fleet, with the liveness the lease table already recorded (t164, FR1).

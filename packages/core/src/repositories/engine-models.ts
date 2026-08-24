@@ -17,10 +17,12 @@
  *
  * Like every other repository it receives the already-open database and never
  * touches the driver (D1). The COLUMNS are English since D20's fourth child
- * (t229); {@link EngineModelRow}'s field names are not, because
- * `routes/engine-models.ts` reads them, so every `SELECT` aliases the renamed
- * column back onto the field (t229, FR4). The two VALUES of `source` were
- * already English — they are the `EngineAdapter`'s own vocabulary.
+ * (t229) and the field names since t290 — there used to be an `EngineModelRow`
+ * spelled `modelo_id`/`rotulo`/`origem`/`atualizado_em`, a projection that
+ * aliased the schema back onto it, and a `toEngineModel` that renamed the same
+ * four fields forward again. All three are gone; {@link EngineModel} is what the
+ * reads return AND what `/v1` publishes. The two VALUES of `source` were already
+ * English — they are the `EngineAdapter`'s own vocabulary.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -32,24 +34,17 @@ export type ModelOrigin = 'cli' | 'catalog';
 /** The two values `source` accepts, as the migration's CHECK spells them. */
 export const MODEL_ORIGINS: readonly ModelOrigin[] = ['cli', 'catalog'];
 
-/** One model an engine offers, as a runner reported it — the row's spelling. */
-export interface EngineModelRow {
-  modelo_id: string;
-  rotulo: string | null;
-  origem: ModelOrigin;
-  atualizado_em: string;
-}
-
-/** One model an engine offers, as `/v1` publishes it (t226, FR1). */
+/** One model an engine offers: the row AND what `/v1` publishes (t290). */
 export interface EngineModel {
   model_id: string;
   label: string | null;
   /**
    * Where the entry came from: the CLI answered, or the adapter knew.
    *
-   * The KEY translates (`glossario-wire.md` §4.2); the two VALUES do not,
-   * because they already are English — they are the `EngineAdapter`'s own
-   * vocabulary, on the same terms as `timeout_reason`'s `wall_clock`/`silence`.
+   * Neither the key nor the two values translate any more — the column is
+   * `source` (`glossario-wire.md` §4.2) and the values already were the
+   * `EngineAdapter`'s own vocabulary, on the same terms as `timeout_reason`'s
+   * `wall_clock`/`silence`.
    */
   source: ModelOrigin;
   updated_at: string;
@@ -61,25 +56,14 @@ export interface EngineCatalog {
   models: EngineModel[];
 }
 
-/** Row to wire, for one reported model. */
-export function toEngineModel(row: EngineModelRow): EngineModel {
-  return {
-    model_id: row.modelo_id,
-    label: row.rotulo,
-    source: row.origem,
-    updated_at: row.atualizado_em,
-  };
-}
-
 /** One model of an incoming report, already shape-checked by the route. */
 export interface ReportedModel {
-  modelo_id: string;
-  rotulo?: string | null;
-  origem: ModelOrigin;
+  model_id: string;
+  label?: string | null;
+  source: ModelOrigin;
 }
 
-const COLUMNS =
-  'model_id AS modelo_id, label AS rotulo, source AS origem, updated_at AS atualizado_em';
+const COLUMNS = 'model_id, label, source, updated_at';
 
 /**
  * Replaces the stored catalog of one engine with what was just reported.
@@ -107,11 +91,11 @@ export function reportEngineModels(
       'INSERT INTO engine_model (engine, model_id, label, source, updated_at) VALUES (?, ?, ?, ?, ?)',
     );
     for (const model of models) {
-      insert.run(engine, model.modelo_id, model.rotulo ?? null, model.origem, timestamp);
+      insert.run(engine, model.model_id, model.label ?? null, model.source, timestamp);
     }
   })();
 
-  return { engine, models: listEngineModels(db, engine).map(toEngineModel) };
+  return { engine, models: listEngineModels(db, engine) };
 }
 
 /**
@@ -119,10 +103,10 @@ export function reportEngineModels(
  * @param engine Name the adapter gives itself.
  * @returns Every model reported for that engine, in identifier order.
  */
-export function listEngineModels(db: Database, engine: string): EngineModelRow[] {
+export function listEngineModels(db: Database, engine: string): EngineModel[] {
   return db
     .prepare(`SELECT ${COLUMNS} FROM engine_model WHERE engine = ? ORDER BY model_id`)
-    .all(engine) as EngineModelRow[];
+    .all(engine) as EngineModel[];
 }
 
 /**
@@ -142,14 +126,17 @@ export function listEngineModels(db: Database, engine: string): EngineModelRow[]
  */
 export function listEngineCatalogs(db: Database): EngineCatalog[] {
   const rows = db
-    .prepare(`SELECT engine AS motor, ${COLUMNS} FROM engine_model ORDER BY engine, model_id`)
-    .all() as Array<EngineModelRow & { motor: string }>;
+    .prepare(`SELECT engine, ${COLUMNS} FROM engine_model ORDER BY engine, model_id`)
+    .all() as Array<EngineModel & { engine: string }>;
 
+  // `engine` is destructured out rather than left in: it groups the rows, and a
+  // model that carried the name of its own engine would be publishing a field
+  // `EngineModel` does not declare.
   const byEngine = new Map<string, EngineCatalog>();
-  for (const { motor, ...model } of rows) {
-    const catalog = byEngine.get(motor) ?? { engine: motor, models: [] };
-    catalog.models.push(toEngineModel(model));
-    byEngine.set(motor, catalog);
+  for (const { engine, ...model } of rows) {
+    const catalog = byEngine.get(engine) ?? { engine, models: [] };
+    catalog.models.push(model);
+    byEngine.set(engine, catalog);
   }
   return [...byEngine.values()];
 }

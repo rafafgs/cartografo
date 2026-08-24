@@ -13,10 +13,13 @@
  *
  * The column names below are English since D20's fourth child renamed the schema
  * (t229): the table is `credential` and its dates are `created_at`/`revoked_at`.
- * What the REPOSITORY returns still spells `tipo`/`criada_em`, because its
- * `SELECT` aliases the renamed columns back into the field names `src/auth.ts`
- * reads (t229, FR4) — so a raw `SELECT *` here and a `CredentialRow` there
- * legitimately disagree.
+ * Since t290 so is what the REPOSITORY returns — `CredentialRow` spells `type`,
+ * `created_at` and `revoked_at`, the alias that used to translate them back is
+ * gone, and a raw `SELECT *` here and a `CredentialRow` there now agree word for
+ * word. The one place the two still differ is `owner_type`, which the column
+ * calls by its qualified name and the row publishes as `type`: that is the
+ * glossary's own mapping onto `owner_type`, not a round trip, and it is done by
+ * naming the field in the projection rather than by aliasing the column.
  */
 
 import assert from 'node:assert/strict';
@@ -114,7 +117,7 @@ test('t124 AT — issueCredential returns the raw token once and persists only i
   const db = await openMigrated(t);
   const { issueCredential } = await loadRepository();
 
-  const issued = issueCredential(db, { tipo: 'user' });
+  const issued = issueCredential(db, { type: 'user' });
 
   assert.equal(typeof issued.id, 'number');
   assert.match(issued.token, /^[0-9a-f]{64}$/, '32 random bytes, in hex (Refinement Log)');
@@ -139,7 +142,7 @@ test('t124 AT — issueCredential returns the raw token once and persists only i
     assert.notEqual(value, issued.token, `the raw token leaked into "${column}"`);
   }
 
-  const second = issueCredential(db, { tipo: 'user' });
+  const second = issueCredential(db, { type: 'user' });
   assert.notEqual(second.token, issued.token, 'every issuance is a fresh random token');
 });
 
@@ -147,12 +150,12 @@ test('t124 AT — verifyToken resolves a live credential and refuses everything 
   const db = await openMigrated(t);
   const { issueCredential, verifyToken } = await loadRepository();
 
-  const issued = issueCredential(db, { tipo: 'user' });
+  const issued = issueCredential(db, { type: 'user' });
 
   const found = verifyToken(db, issued.token);
   assert.ok(found !== null, 'a freshly issued token resolves');
   assert.equal(found.id, issued.id);
-  assert.equal(found.tipo, 'user');
+  assert.equal(found.type, 'user');
 
   assert.equal(verifyToken(db, 'f'.repeat(64)), null, 'a token never issued resolves to nothing');
   assert.equal(verifyToken(db, ''), null, 'the empty string is not a credential');
@@ -188,10 +191,10 @@ test('t143 AT — revokeRunnerCredentials revokes every live credential of one r
   // Two for the same runner, because the count has to be about the ROWS and not
   // about the runner: FR1 mints at most one, but a hand-issued second one is
   // exactly the case a sweep that stops at the first match would miss.
-  const first = issueCredential(db, { tipo: 'runner', runnerId: 'runner-a' });
-  const second = issueCredential(db, { tipo: 'runner', runnerId: 'runner-a' });
-  const other = issueCredential(db, { tipo: 'runner', runnerId: 'runner-b' });
-  const operator = issueCredential(db, { tipo: 'user' });
+  const first = issueCredential(db, { type: 'runner', runnerId: 'runner-a' });
+  const second = issueCredential(db, { type: 'runner', runnerId: 'runner-a' });
+  const other = issueCredential(db, { type: 'runner', runnerId: 'runner-b' });
+  const operator = issueCredential(db, { type: 'user' });
 
   assert.equal(revokeRunnerCredentials(db, 'runner-a'), 2, 'it returns what it revoked');
 

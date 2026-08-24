@@ -31,10 +31,16 @@
  * `now` is injectable (default: the real clock), like `repositories/leases.ts`:
  * "the backoff step has passed" has to be testable without a two-hour `sleep`.
  *
- * The COLUMNS are English since D20's fourth child (t229); {@link DeliveryTask}
- * and {@link NewSubscription} are not, because `src/webhooks/dispatcher.ts` and
- * `routes/webhooks.ts` read them — so every `SELECT` aliases the renamed column
- * back onto the field (t229, FR4).
+ * The COLUMNS are English since D20's fourth child (t229) and the field names
+ * since t290 — {@link DeliveryTask}, {@link NewSubscription} and the private
+ * subscription row used to be spelled `assinatura_id`/`segredo`/`tipos`/…,
+ * because `src/webhooks/dispatcher.ts` and `routes/webhooks.ts` read them, and
+ * every `SELECT` aliased the renamed column back onto the field.
+ *
+ * What survived that deletion is the one thing the mapper did besides renaming:
+ * {@link hydrate} still parses `filter_types` out of the TEXT the column stores.
+ * That is why a private row interface is still here at all — its `filter_types`
+ * is a `string`, and {@link Subscription}'s is a `string[]`.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -48,12 +54,11 @@ export interface ClockOptions {
 /**
  * A subscription as the API shows it — deliberately without the secret.
  *
- * This type IS the wire (t226, FR1): nothing inside the package reads it, so
- * there is no second, Portuguese projection beside it. The columns it comes
- * from are `project_id`/`filter_types`/`created_at` since t229, and
- * `toSubscription` is where the two meet — which is also where the leak t226
- * closed was: before it the mapper renamed one column and let five other names
- * straight through.
+ * This type IS the wire (t226, FR1), and since t290 the row's own words as well:
+ * the columns it comes from are `project_id`/`filter_types`/`created_at` since
+ * t229, and the only field {@link hydrate} still does anything to is the JSON
+ * one. Before t226 the mapper renamed one column and let five other names
+ * straight through, which is the leak that ticket closed.
  */
 export interface Subscription {
   id: number;
@@ -69,17 +74,17 @@ export interface Subscription {
 
 /** What the caller declares when registering a subscription. */
 export interface NewSubscription {
-  projeto_id: number;
+  project_id: number;
   url: string;
   /** Key of the HMAC. Supplied by the caller; the server never generates one. */
-  segredo: string;
+  secret: string;
   /** Types to filter by, already validated against the taxonomy, or `null`. */
-  tipos: string[] | null;
+  filter_types: string[] | null;
 }
 
 /** Listing filters (FR2). */
 export interface SubscriptionFilters {
-  projeto_id?: number;
+  project_id?: number;
   /** Only subscriptions that were not deactivated — what the fan-out asks for. */
   activeOnly?: boolean;
 }
@@ -87,13 +92,13 @@ export interface SubscriptionFilters {
 /** A delivery that is due, already carrying what an attempt needs (FR5). */
 export interface DeliveryTask {
   id: number;
-  assinatura_id: number;
-  evento_id: number;
+  subscription_id: number;
+  event_id: number;
   /** Attempts already made — the index into the backoff schedule. */
-  tentativas: number;
+  attempts: number;
   url: string;
   /** The HMAC key. It exists in memory for the length of one attempt. */
-  segredo: string;
+  secret: string;
 }
 
 /** What a failed attempt reports back. */
@@ -105,38 +110,31 @@ export interface FailedAttempt {
   backoff: readonly number[];
 }
 
-/** Raw subscription row, before becoming the public view. */
-interface SubscriptionRow {
-  id: number;
-  projeto_id: number;
-  url: string;
-  tipos_filtro: string | null;
-  evento_inicial_id: number;
-  criada_em: string;
-  desativada_em: string | null;
+/**
+ * Raw subscription row, before the JSON in it is parsed.
+ *
+ * Field for field {@link Subscription}, with one difference and only one:
+ * `filter_types` is the TEXT the column stores rather than the list it encodes.
+ */
+interface SubscriptionRow extends Omit<Subscription, 'filter_types'> {
+  filter_types: string | null;
 }
 
-/** Every column of the subscription EXCEPT the secret, in the row's spelling. */
-const SUBSCRIPTION_COLUMNS = `id, project_id AS projeto_id, url,
-                              filter_types AS tipos_filtro,
-                              initial_event_id AS evento_inicial_id,
-                              created_at AS criada_em,
-                              deactivated_at AS desativada_em`;
+/** Every column of the subscription EXCEPT the secret. */
+const SUBSCRIPTION_COLUMNS = `id, project_id, url, filter_types,
+                              initial_event_id, created_at, deactivated_at`;
 
 /** What `last_error` records when the subscription itself went away (FR3). */
 const DEACTIVATED = 'subscription deactivated';
 
-/** Translates the row into the view the API returns. */
-function toSubscription(row: SubscriptionRow): Subscription {
-  return {
-    id: row.id,
-    project_id: row.projeto_id,
-    url: row.url,
-    filter_types: jsonOrNull<string[]>(row.tipos_filtro),
-    initial_event_id: row.evento_inicial_id,
-    created_at: row.criada_em,
-    deactivated_at: row.desativada_em,
-  };
+/**
+ * Parses the row's one JSON column into the view the API returns.
+ *
+ * Not a translator, which is why it outlived the ones t290 deleted: every other
+ * field goes straight across, and `filter_types` changes TYPE rather than name.
+ */
+function hydrate(row: SubscriptionRow): Subscription {
+  return { ...row, filter_types: jsonOrNull<string[]>(row.filter_types) };
 }
 
 /** An ISO 8601 instant shifted by milliseconds — the backoff's arithmetic. */
@@ -175,10 +173,10 @@ export function createSubscription(
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(
-        data.projeto_id,
+        data.project_id,
         data.url,
-        data.segredo,
-        data.tipos === null ? null : JSON.stringify(data.tipos),
+        data.secret,
+        data.filter_types === null ? null : JSON.stringify(data.filter_types),
         last.last_id ?? 0,
         clock(),
       );
@@ -198,7 +196,7 @@ export function getSubscription(db: Database, id: number): Subscription | undefi
   const row = db
     .prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM webhook_subscription WHERE id = ?`)
     .get(id) as SubscriptionRow | undefined;
-  return row === undefined ? undefined : toSubscription(row);
+  return row === undefined ? undefined : hydrate(row);
 }
 
 /**
@@ -213,9 +211,9 @@ export function listSubscriptions(
   const conditions: string[] = [];
   const values: number[] = [];
 
-  if (filters.projeto_id !== undefined) {
+  if (filters.project_id !== undefined) {
     conditions.push('project_id = ?');
-    values.push(filters.projeto_id);
+    values.push(filters.project_id);
   }
   if (filters.activeOnly === true) conditions.push('deactivated_at IS NULL');
 
@@ -223,7 +221,7 @@ export function listSubscriptions(
   const rows = db
     .prepare(`SELECT ${SUBSCRIPTION_COLUMNS} FROM webhook_subscription${where} ORDER BY id`)
     .all(...values) as SubscriptionRow[];
-  return rows.map(toSubscription);
+  return rows.map(hydrate);
 }
 
 /**
@@ -337,11 +335,11 @@ export function dueDeliveries(db: Database, moment: string, limit: number): Deli
   return db
     .prepare(
       `SELECT delivery.id,
-              delivery.subscription_id AS assinatura_id,
-              delivery.event_id        AS evento_id,
-              delivery.attempts        AS tentativas,
+              delivery.subscription_id,
+              delivery.event_id,
+              delivery.attempts,
               subscription.url,
-              subscription.secret      AS segredo
+              subscription.secret
          FROM webhook_delivery AS delivery
          JOIN webhook_subscription AS subscription
            ON subscription.id = delivery.subscription_id
@@ -377,7 +375,7 @@ export function recordDeliverySuccess(db: Database, id: number, options: ClockOp
  *
  * The schedule is read as the list of RETRY delays, so a schedule of five steps
  * means six attempts in total: the first one, plus one per step. When the
- * attempt that just failed has no step left, the delivery is `esgotada` and
+ * attempt that just failed has no step left, the delivery is `exhausted` and
  * terminal — the row stays, because "tried six times and gave up" is the fact
  * whoever debugs a silent integration is looking for.
  *
@@ -394,13 +392,11 @@ export function recordDeliveryFailure(
 
   db.transaction(() => {
     const current = db
-      .prepare(
-        "SELECT attempts AS tentativas FROM webhook_delivery WHERE id = ? AND status = 'pending'",
-      )
-      .get(attempt.id) as { tentativas: number } | undefined;
+      .prepare("SELECT attempts FROM webhook_delivery WHERE id = ? AND status = 'pending'")
+      .get(attempt.id) as { attempts: number } | undefined;
     if (current === undefined) return;
 
-    const made = current.tentativas + 1;
+    const made = current.attempts + 1;
     const step = attempt.backoff[made - 1];
 
     if (step === undefined) {

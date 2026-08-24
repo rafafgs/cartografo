@@ -47,7 +47,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { bootCore } from '@cartografo/test-support';
+import { bootCore, resolvePins } from '@cartografo/test-support';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
@@ -162,7 +162,14 @@ interface AppliedFixture {
  * @returns The two versions and the applied proposal's id.
  */
 async function applyOneProposal(plane: ControlPlane): Promise<AppliedFixture> {
-  const document: unknown = JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8'));
+  // A resolvable capability per node, or the version is stored `unchecked` and
+  // `seedRound` below could not create a single job against it (t283). Same call,
+  // over this same fixture, as `proposal.e2e.test.ts`.
+  const document = await resolvePins(
+    plane.baseUrl,
+    plane.token,
+    JSON.parse(readFileSync(MINIMAL_GRAPH, 'utf8')) as Record<string, unknown>,
+  );
   const { graph_version: targetVersion } = await api<{ graph_version: GraphVersion }>(
     plane,
     'POST',

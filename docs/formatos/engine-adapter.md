@@ -1,144 +1,145 @@
-# EngineAdapter — especificação v1
+# EngineAdapter — v1 specification
 
-> **Status:** v1, **congelada**. A regra dos dois consumidores
-> (`notas/2026-08-14-extensao-e-qualidade.md:57-63`) exige dois adapters
-> *implementados* antes de travar o formato, e os dois existem:
-> `packages/runner/src/engine/claude-code-adapter.ts` (t104) e
-> `packages/runner/src/engine/codex-adapter.ts` (t119), cada um certificado
-> pelos casos do kit contra o fake engine — sete no congelamento, nove desde
-> que o cão de guarda de inatividade acrescentou o C9 (t163), dez desde que a
-> continuação de sessão acrescentou o C10 (t173), onze desde que o prompt
-> grande demais para o argv acrescentou o C11 (t203).
+> **Status:** v1, **frozen**. The rule of two consumers
+> (`notas/2026-08-14-extensao-e-qualidade.md:57-63`) demands two *implemented*
+> adapters before a format is locked, and both exist:
+> `packages/runner/src/engine/claude-code-adapter.ts` (t104) and
+> `packages/runner/src/engine/codex-adapter.ts` (t119), each certified by the
+> kit's cases against the fake engine — seven at the freeze, nine since the
+> inactivity watchdog added C9 (t163), ten since session continuation added C10
+> (t173), eleven since a prompt too big for the argv added C11 (t203).
 >
-> **Lacuna registrada no congelamento (t119):** a prova manual do adapter do
-> Codex contra a CLI real rodou até o 401 — a máquina não tem credencial
-> OpenAI (`codex doctor`: "no Codex credentials were found") — então a metade
-> credenciada dela, a que exige que a sessão *tenha trabalhado*, fica
-> pendente de uma rodada com `OPENAI_API_KEY`. O que a rodada sem credencial
-> já provou está no roteiro de `packages/runner/scripts/spike-real-session-codex.mjs`;
-> o congelamento se apoia na certificação C1–C7, que está verde.
+> **Gap recorded at the freeze (t119):** the manual proof of the Codex adapter
+> against the real CLI ran as far as the 401 — the machine has no OpenAI
+> credential (`codex doctor`: "no Codex credentials were found") — so its
+> credentialed half, the one that demands that the session *did work*, is
+> pending a run with `OPENAI_API_KEY`. What the uncredentialed run already
+> proved is in the script of
+> `packages/runner/scripts/spike-real-session-codex.mjs`; the freeze stands on
+> the C1–C7 certification, which is green.
 >
-> **Lacuna FECHADA (t141, 2026-08-15).** A credencial apareceu e
-> `spike-real-session-codex.mjs` rodou, sem uma linha de alteração no corpo,
-> contra `codex-cli 0.147.0` autenticado: sessão `completed` com exit 0 em
-> 11,8s, `onEngineRef` recebendo o `thread_id` do frame `thread.started`
-> (`01a00665-7730-…`), os dois eventos validando contra os schemas da
-> taxonomia e — a metade que faltava — `PROVA-T119.md` criado no workdir com
-> exatamente a frase pedida. A sessão *trabalhou*. Junto com ela rodou
-> `scripts/spike-two-engine-traversal.mjs` (t141/FR9): um grafo, um trabalho,
-> dois `Controller.tick()`, `redigir` no `claude-code` e `conferir` no
-> `codex`, cada `session.opened` registrando o seu próprio engine e o nó do
-> Codex lendo o arquivo que o nó do Claude escreveu.
+> **Gap CLOSED (t141, 2026-08-15).** The credential turned up and
+> `spike-real-session-codex.mjs` ran, without a line changed in its body,
+> against an authenticated `codex-cli 0.147.0`: a `completed` session with exit
+> 0 in 11.8s, `onEngineRef` receiving the `thread_id` of the `thread.started`
+> frame (`01a00665-7730-…`), both events validating against the taxonomy's
+> schemas and — the half that was missing — `PROVA-T119.md` created in the
+> workdir with exactly the sentence asked for. The session *worked*. Along with
+> it ran `scripts/spike-two-engine-traversal.mjs` (t141/FR9): one graph, one
+> job, two `Controller.tick()`s, `redigir` on `claude-code` and `conferir` on
+> `codex`, each `session.opened` recording its own engine and the Codex node
+> reading the file the Claude node wrote.
 >
-> Duas coisas que a rodada credenciada mediu e que não estavam escritas em
-> lugar nenhum — nenhuma delas muda a interface, as duas mudam o que um
-> operador precisa preparar:
+> Two things the credentialed run measured that were written down nowhere —
+> neither of them changes the interface, both change what an operator has to
+> prepare:
 >
-> - **Das três variáveis de credencial, só `CODEX_API_KEY` autentica de
->   verdade.** A t119 mediu o que o `codex doctor` REPORTA sobre cada uma
->   (`codex-adapter.ts`, `CODEX_CREDENTIAL_VARIABLES`); o que faltava era
->   rodar uma sessão com cada uma e ver qual delas de fato fecha o handshake.
->   `OPENAI_API_KEY` exportada e mais nada — que era o caminho que esta ficha
->   assumiu — faz todo turno morrer em
->   `401 Unauthorized ... wss://api.openai.com/v1/responses`, coerente com o
->   `auth mode none` que a t119 já tinha anotado para ela. Com a MESMA chave
->   exportada como `CODEX_API_KEY`, e um `CODEX_HOME` sem `auth.json` nenhum,
->   a sessão sobe e completa. As duas provas desta ficha rodaram assim: só
->   ambiente, sem `codex login`, sem credencial em arquivo algum.
-> - **`codex exec` roda em sandbox read-only por default.** A sessão responde
->   educadamente que o ambiente é somente leitura, sai com 0 e não produz
->   arquivo nenhum — o desfecho mais perigoso que existe para uma prova que
->   só olha o exit code. Escrever exige `sandbox_mode = "workspace-write"` no
->   `config.toml` do `CODEX_HOME`. `buildCommand` continua não passando flag
->   de sandbox, de propósito: mexer nisso reescreveria o argv de um adapter já
->   certificado em C1–C7.
+> - **Of the three credential variables, only `CODEX_API_KEY` really
+>   authenticates.** t119 measured what `codex doctor` REPORTS about each one
+>   (`codex-adapter.ts`, `CODEX_CREDENTIAL_VARIABLES`); what was missing was
+>   running a session with each and seeing which of them actually closes the
+>   handshake. `OPENAI_API_KEY` exported and nothing else — which was the path
+>   this ticket assumed — makes every turn die at
+>   `401 Unauthorized ... wss://api.openai.com/v1/responses`, consistent with the
+>   `auth mode none` t119 had already noted for it. With the SAME key exported as
+>   `CODEX_API_KEY`, and a `CODEX_HOME` with no `auth.json` at all, the session
+>   comes up and completes. Both proofs of this ticket ran that way: environment
+>   only, no `codex login`, no credential in any file.
+> - **`codex exec` runs in a read-only sandbox by default.** The session politely
+>   answers that the environment is read-only, exits 0 and produces no file at
+>   all — the most dangerous outcome there is for a proof that only looks at the
+>   exit code. Writing demands `sandbox_mode = "workspace-write"` in
+>   `CODEX_HOME`'s `config.toml`. `buildCommand` still passes no sandbox flag, on
+>   purpose: touching that would rewrite the argv of an adapter already certified
+>   on C1–C7.
 >
-> O que autoriza o congelamento não é a contagem, é o que a contagem serve
-> para medir: construir o segundo adapter **não exigiu mudança nenhuma** na
-> interface nem no kit. O `CodexAdapter` entrou pela interface como ela
-> estava e reusou `src/engine/conformance-kit.ts` e
-> `test/fixtures/fake-engine.mjs` sem cópia e sem edição — a hipótese que a
-> regra dos dois consumidores manda testar antes de travar, testada.
+> What authorizes the freeze is not the count, it is what the count is there to
+> measure: building the second adapter **demanded no change at all** to the
+> interface or to the kit. `CodexAdapter` came in through the interface as it
+> stood and reused `src/engine/conformance-kit.ts` and
+> `test/fixtures/fake-engine.mjs` with no copy and no edit — the hypothesis the
+> rule of two consumers orders tested before locking, tested.
 >
-> Congelada significa aditivo daqui para frente: campo novo entra opcional
-> (é para isso que `EngineCapabilities` já é toda opcional), e símbolo
-> publicado não muda de nome nem de forma sem uma decisão registrada. Os
-> crescimentos sob essa regra, em ordem, cada um opcional e sem tocar em
-> símbolo nenhum dos que já existiam:
+> Frozen means additive from here on: a new field comes in optional (that is what
+> `EngineCapabilities` being wholly optional is for), and a published symbol does
+> not change its name or its shape without a recorded decision. The growths under
+> that rule, in order, each one optional and touching none of the symbols that
+> already existed:
 >
-> - **`SessionSpec.permissions`** (t125) — política de permissão declarada,
->   com o adapter aplicando o que consegue e recusando o que não consegue.
-> - **`SessionSpec.silenceSeconds` e o terceiro argumento do `onFinished`**
->   (t163) — o segundo cão de guarda, e a causa ao lado do status.
-> - **`SessionSpec.model`, `listModels()`, `EngineModel` e `ModelCatalog`**
->   (t166) — o modelo pinado por nó, e o catálogo que cada adapter publica.
->   O primeiro crescimento que acrescentou um MÉTODO, e por isso opcional no
->   próprio membro (`listModels?()`), não só nos campos.
-> - **`SessionSpec.resumeFrom`** (t173) — continuar uma sessão anterior a
->   partir do `engineRef` que o `onEngineRef` já capturava. É o crescimento que
->   deu consumidor a uma capacidade declarada e nunca implementada: o
->   `claude-code` passou a declarar `hasResume`, o `codex` continua recusando
->   o campo na porta, e o C10 certifica os dois lados.
+> - **`SessionSpec.permissions`** (t125) — a declared permission policy, with the
+>   adapter applying what it can and refusing what it cannot.
+> - **`SessionSpec.silenceSeconds` and `onFinished`'s third argument** (t163) —
+>   the second watchdog, and the cause beside the status.
+> - **`SessionSpec.model`, `listModels()`, `EngineModel` and `ModelCatalog`**
+>   (t166) — the model pinned per node, and the catalogue each adapter publishes.
+>   The first growth that added a METHOD, and therefore optional in the member
+>   itself (`listModels?()`), not only in the fields.
+> - **`SessionSpec.resumeFrom`** (t173) — continuing an earlier session from the
+>   `engineRef` `onEngineRef` was already capturing. It is the growth that gave a
+>   consumer to a capability declared and never implemented: `claude-code`
+>   started declaring `hasResume`, `codex` still refuses the field at the door,
+>   and C10 certifies both sides.
 >
-> Onde a análise de viabilidade abaixo e "Fora de escopo (v0)" discordarem,
-> **a decisão de escopo é a que vale**: a tabela é levantamento exploratório
-> de uma CLI, não promessa de superfície. O caso vivo continua sendo
-> `hasResume`, agora só do lado do Codex — o `codex exec resume` existe, a
-> tabela sugere declará-lo, e aquele adapter continua não declarando, porque
-> ali resume é um **subcomando** que substitui o `exec` no argv, e não uma
-> flag que se acrescenta a ele: mecanismo diferente, ficha própria.
+> Where the feasibility analysis below and "Out of scope (v0)" disagree, **the
+> scope decision is the one that holds**: the table is an exploratory survey of a
+> CLI, not a promise of surface. The live case is still `hasResume`, now only on
+> the Codex side — `codex exec resume` exists, the table suggests declaring it,
+> and that adapter still does not declare it, because there resume is a
+> **subcommand** that replaces `exec` in the argv, and not a flag added to it: a
+> different mechanism, a ticket of its own.
 >
-> **Portão deste documento:** `scripts/check-engine-adapter-spec.sh`.
-> Ele verifica estrutura e sintaxe (headings, cobertura do kit, citação de
-> fonte, e que todo bloco `typescript` daqui compila sob `tsc --strict`).
-> Julgamento arquitetural é portão humano.
+> **This document's gate:** `scripts/check-engine-adapter-spec.sh`. It checks
+> structure and syntax (the headings, the kit's coverage, the source citation,
+> and that every `typescript` block in here compiles under `tsc --strict`).
+> Architectural judgement is a human gate.
 
-## Por que esta interface existe
+## Why this interface exists
 
-O `engine` do flowpilot é um campo; no cartografo ele é uma interface —
-"EngineAdapter (abrir sessão com prompt/workdir/skills/timeout), acompanhar
-output, colher exit. Claude Code é o primeiro adapter, não uma dependência"
-(`notas/2026-08-14-arquitetura-brain-dump.md:11-14`). É um dos quatro
-formatos tratados como produto (`:17` da nota de extensão), e o que sustenta
-sua qualidade quando um terceiro plugar uma CLI nova é o **kit de
-conformidade** desta especificação, não a boa vontade de quem implementa.
+Flowpilot's `engine` is a field; in the cartografo it is an interface —
+"EngineAdapter (open a session with prompt/workdir/skills/timeout), follow the
+output, harvest the exit. Claude Code is the first adapter, not a dependency"
+(`notas/2026-08-14-arquitetura-brain-dump.md:11-14`). It is one of the four
+formats treated as a product (`:17` of the extension note), and what holds up its
+quality when a third party plugs in a new CLI is this specification's
+**conformance kit**, not the goodwill of whoever implements it.
 
-Três fronteiras valem mais que qualquer detalhe abaixo:
+Three boundaries are worth more than any detail below:
 
-1. **Nenhum vocabulário de engine acima desta linha.** Nome de binário,
-   flag, variável de ambiente e formato de frame são assunto privado de cada
-   adapter. Quem está acima fala `SessionSpec`, `SessionStatus` e
-   `SessionListener`, e nada mais.
-2. **O listener é a única saída.** O adapter não escreve no banco (D1), não
-   chama a API e não persiste nada: ele reporta, e quem o chamou decide o que
-   fazer com isso. É o que mantém o runner stateless e o server como único
-   escritor.
-3. **Depender do mínimo, explorar o máximo.** O baseline é uma CLI que
-   recebe um prompt, roda comandos e devolve output. Toda capacidade além
-   disso é oferecida quando existe, nunca exigida.
+1. **No engine vocabulary above this line.** A binary's name, a flag, an
+   environment variable and a frame's format are each adapter's private business.
+   Whoever is above speaks `SessionSpec`, `SessionStatus` and `SessionListener`,
+   and nothing else.
+2. **The listener is the only way out.** The adapter does not write to the
+   database (D1), does not call the API and persists nothing: it reports, and
+   whoever called it decides what to do with that. It is what keeps the runner
+   stateless and the server the only writer.
+3. **Depend on the minimum, explore the maximum.** The baseline is a CLI that
+   takes a prompt, runs commands and returns output. Every capability beyond that
+   is offered where it exists, never demanded.
 
-## Interface TypeScript
+## The TypeScript interface
 
-Stack cravada pela D17 (TypeScript, subprocess de CLI). Tudo aqui é
-declaração de tipo — este repo é pré-código, e a implementação é ticket
-futuro na ordem da D6.
+The stack is fixed by D17 (TypeScript, a CLI subprocess). Everything here is a
+type declaration — this repository is pre-code, and the implementation is a
+future ticket in D6's order.
 
-### Status de sessão
+### Session status
 
-Union de string literal, não enum: o valor persiste em coluna de texto e
-atravessa JSON na API sem tradução, e adicionar membro não é migração.
+A union of string literals, not an enum: the value persists in a text column and
+crosses JSON in the API with no translation, and adding a member is not a
+migration.
 
 ```typescript
 /**
- * Ciclo de vida de uma sessão de agente, no vocabulário mínimo que toda CLI
- * headless consegue expressar.
+ * The life cycle of an agent session, in the minimal vocabulary every headless
+ * CLI can express.
  *
- * `timed_out` existe separado de `failed` porque a resposta operacional é
- * outra: fomos NÓS que matamos a sessão ao expirar o relógio, e a escada de
- * retry pode reagir a isso sem tratar como bug do trabalho. Status
- * específicos de um engine (quota esgotada, resume expirado) NÃO entram no
- * baseline — são extensão de quem os tem, e um consumidor que ramifica neles
- * já quebrou a fronteira 1.
+ * `timed_out` exists separately from `failed` because the operational answer is
+ * another one: it was WE who killed the session when the clock ran out, and the
+ * retry ladder can react to that without treating it as a bug in the work.
+ * Statuses specific to one engine (quota exhausted, expired resume) do NOT enter
+ * the baseline — they are an extension belonging to whoever has them, and a
+ * consumer that branches on them has already broken boundary 1.
  */
 export type SessionStatus =
   | "pending"
@@ -148,7 +149,7 @@ export type SessionStatus =
   | "cancelled"
   | "timed_out";
 
-/** Status a partir dos quais nada mais transiciona sem uma nova ação. */
+/** The statuses from which nothing transitions further without a new action. */
 export const TERMINAL_STATUSES: readonly SessionStatus[] = [
   "completed",
   "failed",
@@ -161,162 +162,165 @@ export function isTerminal(status: SessionStatus): boolean {
 }
 ```
 
-### O que se pede a um engine
+### What is asked of an engine
 
 ```typescript
-/** Tudo que um engine precisa para rodar uma unidade de trabalho. */
+/** Everything an engine needs in order to run one unit of work. */
 export interface SessionSpec {
-  /** Diretório onde a sessão roda (tipicamente um worktree git). */
+  /** The directory the session runs in (typically a git worktree). */
   readonly workingDir: string;
 
   /**
-   * As instruções do nó, vindas do banco. É o contrato do nó renderizado —
-   * "as instruções do nó saem do banco e são injetadas na sessão pelo
-   * runner" (`notas/2026-08-14-arquitetura-brain-dump.md:17-20`). Nunca sai
-   * de CLAUDE.md nem de arquivo md residente no repo alvo.
+   * The node's instructions, coming from the database. It is the node's
+   * contract rendered — "the node's instructions come out of the database and
+   * are injected into the session by the runner"
+   * (`notas/2026-08-14-arquitetura-brain-dump.md:17-20`). They never come out
+   * of CLAUDE.md or of a markdown file resident in the target repository.
    */
   readonly instructions: string;
 
-  /** O conteúdo específico desta tarefa/turno. Ver a regra normativa abaixo. */
+  /** The content specific to this task/turn. See the normative rule below. */
   readonly prompt: string;
 
-  /** Limite de relógio de parede; passando dele a sessão é morta. */
+  /** The wall-clock limit; past it the session is killed. */
   readonly timeoutSeconds: number;
 
   /**
-   * Segundos de SILÊNCIO tolerados antes de a sessão ser morta — um segundo
-   * cão de guarda, independente do relógio de parede, e que mede outra coisa:
-   * o relógio diz "isto já custou demais", a inatividade diz "isto parou de
-   * acontecer". Ele reinicia a cada saída do processo, então sessão que fala
-   * nunca é morta por ele.
+   * The seconds of SILENCE tolerated before the session is killed — a second
+   * watchdog, independent of the wall clock, and measuring something else: the
+   * clock says "this has already cost too much", inactivity says "this stopped
+   * happening". It restarts on every output from the process, so a session that
+   * talks is never killed by it.
    *
-   * Ausente ou `<= 0` significa nenhum cão de guarda de inatividade, que é a
-   * mesma postura que o relógio de parede já tem pela própria guarda `> 0`, e
-   * o comportamento de toda sessão aberta antes deste campo existir.
+   * Absent or `<= 0` means no inactivity watchdog, which is the same posture the
+   * wall clock already has through its own `> 0` guard, and the behaviour of
+   * every session opened before this field existed.
    */
   readonly silenceSeconds?: number;
 
   /**
-   * O `engineRef` de uma sessão anterior, para ser continuada em vez de
-   * começada do zero — a mesma string opaca que o `onEngineRef` reportou
-   * para ela.
+   * The `engineRef` of an earlier session, to be continued rather than started
+   * from scratch — the same opaque string `onEngineRef` reported for it.
    *
-   * Ausente (ou vazio) significa sessão nova em folha, que é o comportamento
-   * de toda sessão aberta antes deste campo existir. Presente significa que o
-   * chamador está pedindo o contexto daquela sessão de volta, e um adapter
-   * que não consegue fazer isso tem de RECUSAR antes de abrir — a mesma regra
-   * de honestidade de `permissions` abaixo. Perder este campo em silêncio é a
-   * única falha que ninguém rio abaixo consegue detectar: uma sessão que não
-   * continuou nada é idêntica, por fora, a uma que continuou.
+   * Absent (or empty) means a brand-new session, which is the behaviour of every
+   * session opened before this field existed. Present means the caller is asking
+   * for that session's context back, and an adapter that cannot do it has to
+   * REFUSE before opening — the same honesty rule as `permissions` below. Losing
+   * this field in silence is the one failure nobody downstream can detect: a
+   * session that continued nothing is identical, from outside, to one that
+   * continued.
    *
-   * O que continuar exige além do ref é assunto do engine, e nem sempre é só
-   * o ref. Medido no `claude-code` (t173, ver "Ajustes feitos na revisão",
-   * item 7): ali o ref basta, e o `workingDir` não participa.
+   * What continuing demands beyond the ref is the engine's business, and it is
+   * not always the ref alone. Measured on `claude-code` (t173, see "Adjustments
+   * made in review", item 7): there the ref is enough, and the `workingDir` does
+   * not take part.
    */
   readonly resumeFrom?: string;
 
   /**
-   * Qual modelo do engine roda esta sessão, quando o nó pinou um.
+   * Which model of the engine runs this session, when the node pinned one.
    *
-   * Ausente significa o default DO PRÓPRIO ENGINE: nenhuma flag de modelo é
-   * montada, e o argv sai idêntico ao de antes deste campo existir — a mesma
-   * disciplina de `silenceSeconds` e `permissions`. É o único default honesto:
-   * esta camada não tem como saber a que modelos uma instalação tem acesso, e
-   * inventar um aqui poria na telemetria uma escolha que ninguém fez.
+   * Absent means the ENGINE'S OWN default: no model flag is assembled, and the
+   * argv comes out identical to the one before this field existed — the same
+   * discipline as `silenceSeconds` and `permissions`. It is the only honest
+   * default: this layer has no way of knowing which models an installation has
+   * access to, and inventing one here would put into the telemetry a choice
+   * nobody made.
    *
-   * Id desconhecido ou digitado errado é recusado pelo próprio engine, na
-   * abertura da sessão, como `SessionStartError` ou sessão que falha. O
-   * catálogo de `listModels()` é descoberta, nunca portão.
+   * An unknown or mistyped id is refused by the engine itself, when the session
+   * opens, as a `SessionStartError` or a session that fails. `listModels()`'s
+   * catalogue is discovery, never a gate.
    */
   readonly model?: string;
 
   /**
-   * Quanto este trabalho CUSTA para rodar, como o intake o triou (t175).
+   * How much this work COSTS to run, as intake triaged it (t175).
    *
-   * Não é `model` com outro nome, e a diferença é de camada. `model` é o id que
-   * o GRAFO fixou para este nó: vocabulário de engine, atravessando a fronteira
-   * porque um documento de grafo o escreveu. `modelTier` é vocabulário DESTA
-   * interface — dois valores nossos — e é o adapter que responde, cada um em
-   * sua própria língua, quanto "trivial" custa nele. É o que permite ao runner
-   * pedir o barato sem nunca saber qual é o modelo barato de nenhuma CLI.
+   * It is not `model` under another name, and the difference is one of layer.
+   * `model` is the id the GRAPH fixed for this node: engine vocabulary, crossing
+   * the boundary because a graph document wrote it. `modelTier` is THIS
+   * interface's vocabulary — two values of ours — and it is the adapter that
+   * answers, each in its own language, how much "trivial" costs on it. It is
+   * what lets the runner ask for the cheap one without ever knowing which the
+   * cheap model of any CLI is.
    *
-   * **`model` ganha de `modelTier`.** Quando os dois chegam, o adapter monta
-   * UMA flag de modelo só, e o valor é o de `model`: um id de modelo é decisão
-   * que alguém registrou num documento de grafo, e uma heurística de triagem
-   * não sobrepõe decisão registrada. Montar as duas seria um argv com duas
-   * flags de modelo, que não é preferência — é comando quebrado.
+   * **`model` beats `modelTier`.** When both arrive, the adapter assembles ONE
+   * model flag, and the value is `model`'s: a model id is a decision somebody
+   * recorded in a graph document, and a triage heuristic does not override a
+   * recorded decision. Assembling both would be an argv with two model flags,
+   * which is not a preference — it is a broken command.
    *
-   * Ausente é "sem triagem", e é o comportamento de toda sessão aberta antes
-   * deste campo existir. `standard` também não monta flag nenhuma: ele afirma
-   * "o default do engine serve", que é uma frase diferente de "ninguém
-   * classificou" e produz o mesmo argv de propósito — o par fechado existe para
-   * a triagem poder dizer as duas coisas, não para o adapter agir sobre as
-   * duas.
+   * Absent is "no triage", and it is the behaviour of every session opened
+   * before this field existed. `standard` assembles no flag either: it states
+   * "the engine's default serves", which is a different sentence from "nobody
+   * classified this" and produces the same argv on purpose — the closed pair
+   * exists so that the triage can say both things, not so that the adapter acts
+   * on both.
    *
-   * O conjunto é fechado, ao contrário de `model`: um terceiro valor aqui não é
-   * dado novo que algum engine entenda, é erro de quem escreveu.
+   * The set is closed, unlike `model`'s: a third value here is not new data some
+   * engine understands, it is an error by whoever wrote it.
    */
   readonly modelTier?: 'trivial' | 'standard';
 
   /**
-   * Adições opacas ao ambiente do processo do engine. Deliberadamente sem
-   * tipo do ponto de vista desta camada: o que as chaves significam é
-   * assunto do engine.
+   * Opaque additions to the engine process's environment. Deliberately untyped
+   * from this layer's point of view: what the keys mean is the engine's
+   * business.
    */
   readonly envOverrides?: Readonly<Record<string, string>>;
 
   /**
-   * O que esta sessão pode tocar. Ausente = nenhuma restrição, que é o
-   * comportamento de toda sessão aberta antes deste campo existir.
+   * What this session may touch. Absent = no restriction, which is the
+   * behaviour of every session opened before this field existed.
    */
   readonly permissions?: SessionPermissions;
 }
 ```
 
-### Regra normativa: `instructions` e `prompt` nunca chegam concatenados
+### Normative rule: `instructions` and `prompt` never arrive concatenated
 
-**O chamador jamais concatena os dois campos.** Ele entrega os dois
-separados e cada adapter decide como injeta — "flag/stdin/arquivo efêmero do
-engine" (`notas/2026-08-14-arquitetura-brain-dump.md:17-18`).
+**The caller never concatenates the two fields.** It hands both over separately
+and each adapter decides how it injects them — "the engine's flag/stdin/ephemeral
+file" (`notas/2026-08-14-arquitetura-brain-dump.md:17-18`).
 
-Isso não é preciosismo de tipo: a revisão de viabilidade abaixo mediu a
-divergência. O Claude Code tem `--system-prompt` e `--append-system-prompt`
-nativos; o `codex exec` não tem nenhum flag de system prompt, e resolve
-instrução por `AGENTS.md` no workdir ou pela chave de configuração
-`base_instructions`. Um `SessionSpec` com um único campo `prompt` já teria
-tomado, no chamador e sem revisão, a decisão de que toda injeção é
-concatenação de string — e teria apagado a diferença justamente no engine que
-faz melhor.
+This is not type fussiness: the feasibility review below measured the divergence.
+Claude Code has native `--system-prompt` and `--append-system-prompt`; `codex
+exec` has no system prompt flag at all, and resolves an instruction through an
+`AGENTS.md` in the workdir or through the `base_instructions` configuration key.
+A `SessionSpec` with a single `prompt` field would already have taken, in the
+caller and with no review, the decision that all injection is string
+concatenation — and would have erased the difference precisely on the engine that
+does it better.
 
 ```typescript
 /**
- * Engine sem system prompt nativo: o adapter concatena internamente
- * (equivalente ao que o flowpilot faz hoje). O chamador nunca vê isso.
+ * An engine with no native system prompt: the adapter concatenates internally
+ * (equivalent to what flowpilot does today). The caller never sees it.
  */
 export function composeSingleArgument(spec: SessionSpec): string {
   return `${spec.instructions}\n\n---\n\n${spec.prompt}`;
 }
 
 /**
- * Engine com flag nativa: as instruções viram system prompt e o prompt vai
- * puro. Mesmo `SessionSpec`, injeção melhor — sem o chamador saber de nada.
+ * An engine with a native flag: the instructions become a system prompt and the
+ * prompt goes in clean. The same `SessionSpec`, a better injection — with the
+ * caller knowing nothing about it.
  */
 export function composeWithSystemPromptFlag(spec: SessionSpec): string[] {
   return ["--system-prompt", spec.instructions, spec.prompt];
 }
 ```
 
-Corolário para o kit: o caso de injeção de skill se verifica pelo que o
-**processo do engine efetivamente recebeu**, nunca pelo que foi montado no
-`SessionSpec` — checar o spec testaria o teste.
+A corollary for the kit: the skill injection case is verified by what the
+**engine's process actually received**, never by what was assembled in the
+`SessionSpec` — checking the spec would be testing the test.
 
-### Permissões da sessão
+### The session's permissions
 
-Este é o campo que a tensão 1 desta especificação registrou como faltante e
-deixou "para a ticket da D4" (t125). Ele é **aditivo e opcional**, pela mesma
-razão de compatibilidade das capacidades: um adapter de terceiro que constrói
-o `SessionSpec` literalmente não pode parar de compilar porque a política de
-permissão nasceu.
+This is the field tension 1 of this specification recorded as missing and left
+"for D4's ticket" (t125). It is **additive and optional**, for the capabilities'
+own compatibility reason: a third party's adapter that builds the `SessionSpec`
+literally cannot stop compiling because a permission policy came into being.
 
 ```typescript
 export interface SessionPermissions {
@@ -325,173 +329,176 @@ export interface SessionPermissions {
 }
 ```
 
-O vocabulário vem do manifesto de skill (`permissoes.filesystem.escrita`,
-`permissoes.rede`), com uma ausência deliberada: `permissoes.filesystem.leitura`
-**não** tem contrapartida aqui. Nenhum dos dois engines analisados restringe
-leitura abaixo do workspace sem quebrar skill comum, e declarar um campo que
-nenhum adapter aplica seria a capacidade morta que a rejeição de
-`hasNativeSystemPrompt` já recusou uma vez.
+The vocabulary comes from the skill manifest (`permissoes.filesystem.escrita`,
+`permissoes.rede`), with one deliberate absence:
+`permissoes.filesystem.leitura` has **no** counterpart here. Neither of the two
+analysed engines restricts reading below the workspace without breaking an
+ordinary skill, and declaring a field no adapter applies would be the dead
+capability the rejection of `hasNativeSystemPrompt` already refused once.
 
-**O que um adapter faz com isto é assunto dele — inclusive recusar.** Um engine
-que não consegue expressar a política pedida tem de dizer isso ANTES de abrir a
-sessão, com `SessionStartError`; abrir uma sessão que aplica em silêncio menos
-do que foi pedido é o desfecho que esta interface proíbe. Quem chama fica com
-três respostas possíveis, todas honestas: a sessão sobe com a política
-aplicada, a sessão sobe sem restrição (política ausente), ou a sessão não sobe.
+**What an adapter does with this is its own business — including refusing.** An
+engine that cannot express the requested policy has to say so BEFORE opening the
+session, with `SessionStartError`; opening a session that silently applies less
+than was asked for is the outcome this interface forbids. The caller is left with
+three possible answers, all of them honest: the session comes up with the policy
+applied, the session comes up with no restriction (the policy is absent), or the
+session does not come up.
 
-**Estado hoje, sem maquiagem:** os **dois** adapters lêem este campo, cada um
-com o mecanismo que o seu engine tem. Nem sempre foi assim: até a t195 o
-`CodexAdapter` **ignorava** o campo — nem aplicava, nem recusava — e nesse
-estado ele não cumpria a regra do parágrafo acima. Era tolerável só enquanto
-nada populava `permissions`, e isso deixou de valer na t161, quando
-`render-skill-instructions.ts` passou a derivar a política do manifesto da
-skill registrada e o dispatch a entregá-la ao engine que o nó resolveu —
-inclusive o `codex`. A ficha que fechou o buraco é a t195, e ela seguiu a
-resposta que este parágrafo já previa: **não** reusar o gating por nome de
-ferramenta do `claude-code`, e sim mapear os dois eixos sobre o
-`-s, --sandbox` nativo, que é garantia de outra natureza (ver a tensão 1).
+**The state today, with no make-up:** **both** adapters read this field, each
+with the mechanism its engine has. It was not always so: until t195 the
+`CodexAdapter` **ignored** the field — it neither applied nor refused — and in
+that state it did not honour the rule of the paragraph above. It was tolerable
+only while nothing populated `permissions`, and that stopped holding at t161,
+when `render-skill-instructions.ts` started deriving the policy from the
+registered skill's manifest and the dispatch started handing it to whichever
+engine the node resolved to — `codex` included. The ticket that closed the hole
+is t195, and it followed the answer this paragraph had already foreseen: **not**
+to reuse `claude-code`'s gating by tool name, but to map both axes onto the
+native `-s, --sandbox`, which is a guarantee of another nature (see tension 1).
 
-#### O que o adapter de referência garante
+#### What the reference adapter guarantees
 
-O `claude-code` não tem sandbox de SO (não há equivalente ao
-`-s, --sandbox` do `codex exec`); o que existe é **gating por nome de
-ferramenta** (`--disallowedTools`, com o padrão `"Bash(git *)"` documentado no
-próprio `claude --help`). Cada eixo, e o que acontece com ele:
+`claude-code` has no OS sandbox (there is no equivalent to `codex exec`'s
+`-s, --sandbox`); what exists is **gating by tool name** (`--disallowedTools`,
+with the `"Bash(git *)"` pattern documented in `claude --help` itself). Each
+axis, and what happens to it:
 
-| Política declarada | Desfecho | Como |
+| Declared policy | Outcome | How |
 |---|---|---|
-| `rede.permitido: true` sem `dominios` | passa direto | nada a aplicar |
-| `rede.permitido: true` com `dominios` | **recusa** | allowlist por domínio exigiria proxy de egress, que o engine não tem |
-| `rede.permitido: false` | aplica | nega `WebFetch`, `WebSearch` e os padrões `Bash(curl *)`, `Bash(wget *)`, `Bash(nc *)`, `Bash(netcat *)`, `Bash(ssh *)`, `Bash(scp *)`, `Bash(telnet *)` |
-| `escrita: []` | aplica | nega `Edit`, `Write`, `NotebookEdit` |
-| `escrita: ["**"]` | passa direto | o workspace inteiro é gravável |
-| `escrita` mais estreita | **recusa** | traduzir glob para regra fina de ferramenta é ficha futura |
+| `rede.permitido: true` with no `dominios` | passes straight through | nothing to apply |
+| `rede.permitido: true` with `dominios` | **refused** | an allowlist by domain would demand an egress proxy, which the engine does not have |
+| `rede.permitido: false` | applied | denies `WebFetch`, `WebSearch` and the patterns `Bash(curl *)`, `Bash(wget *)`, `Bash(nc *)`, `Bash(netcat *)`, `Bash(ssh *)`, `Bash(scp *)`, `Bash(telnet *)` |
+| `escrita: []` | applied | denies `Edit`, `Write`, `NotebookEdit` |
+| `escrita: ["**"]` | passes straight through | the whole workspace is writable |
+| a narrower `escrita` | **refused** | translating a glob into a fine-grained tool rule is a future ticket |
 
-**A lacuna residual, escrita porque existe.** `Bash` continua sendo um caminho
-de rede e de escrita que nenhuma lista de nomes fecha por completo: `python -c`,
-um script do próprio repo ou um utilitário que os padrões acima não nomeiam
-alcançam a rede com a política de rede "aplicada". Isto é *best-effort no que o
-engine permite* — a régua que `notas/2026-08-14-extensao-e-qualidade.md:43-44`
-já fixou ("sandbox onde o engine permitir") — e **não** é isolamento de
-processo. Fechar a lacuna de verdade exige sandbox de SO por plataforma
-(`sandbox-exec`, namespace de rede, contêiner), que é mudança de mecanismo e
-ficha própria. Toda tentativa negada vira evento `session.permission_denied` no
-log: o que o gating não impede, a telemetria pelo menos registra.
+**The residual gap, written down because it exists.** `Bash` is still a path to
+the network and to writing that no list of names closes completely: `python -c`,
+a script from the repository itself or a utility the patterns above do not name
+reach the network with the network policy "applied". This is *best-effort within
+what the engine allows* — the ruler
+`notas/2026-08-14-extensao-e-qualidade.md:43-44` already fixed ("a sandbox where
+the engine allows one") — and it is **not** process isolation. Really closing the
+gap demands an OS sandbox per platform (`sandbox-exec`, a network namespace, a
+container), which is a change of mechanism and a ticket of its own. Every denied
+attempt becomes a `session.permission_denied` event in the log: what the gating
+does not prevent, the telemetry at least records.
 
-**Medido contra a CLI real** (`claude 2.1.233`, roteiro em
-`packages/runner/scripts/spike-permission-enforcement.mjs`, rodado em
-2026-08-15):
+**Measured against the real CLI** (`claude 2.1.233`, script in
+`packages/runner/scripts/spike-permission-enforcement.mjs`, run on 2026-08-15):
 
-- entrada negada **por nome** (`WebFetch`, `Write`, `Edit`) → a ferramenta
-  simplesmente **não é oferecida** ao modelo. Ela não aparece em nenhum
-  `tool_use`, e por isso **não gera telemetria**: não há tentativa a registrar,
-  há uma ferramenta que nunca existiu naquela sessão;
-- entrada negada **por padrão** (`Bash(curl *)`) → o `Bash` continua
-  disponível e a recusa acontece na chamada, com `tool_result` de erro
-  (`"Permission to use Bash with command curl … has been denied."`). **É este
-  o caso que produz `session.permission_denied`**, e é a razão de o rastreador
-  casar padrão contra o comando, e não só nome contra nome;
-- a lacuna, confirmada nos dois eixos: `node -e "fetch(…)"` trouxe HTTP 200
-  com a rede "fechada", e `printf > arquivo` gravou no workdir com
-  `escrita: []`. Os dois passaram por `Bash`, que estava disponível — como
-  tem de estar, sob pena de a sessão não conseguir trabalhar.
+- an entry denied **by name** (`WebFetch`, `Write`, `Edit`) → the tool is simply
+  **not offered** to the model. It appears in no `tool_use`, and therefore
+  **generates no telemetry**: there is no attempt to record, there is a tool that
+  never existed in that session;
+- an entry denied **by pattern** (`Bash(curl *)`) → `Bash` stays available and
+  the refusal happens on the call, with an error `tool_result`
+  (`"Permission to use Bash with command curl … has been denied."`). **That is
+  the case that produces `session.permission_denied`**, and it is the reason the
+  tracker matches a pattern against the command, and not only a name against a
+  name;
+- the gap, confirmed on both axes: `node -e "fetch(…)"` brought back HTTP 200
+  with the network "closed", and `printf > file` wrote into the workdir with
+  `escrita: []`. Both went through `Bash`, which was available — as it has to be,
+  on pain of the session being unable to work.
 
-#### O que o adapter do Codex garante
+#### What the Codex adapter guarantees
 
-Aqui o mecanismo é outro, e mais forte: o `codex exec` tem
-`-s, --sandbox <read-only|workspace-write|danger-full-access>`, um sandbox de
-SO de verdade, e a rede dentro de `workspace-write` é a chave de configuração
-`sandbox_workspace_write.network_access`, passada por invocação com o
-`-c, --config` genérico da CLI. Não há gating por nome de ferramenta nenhum: os
-dois eixos viram **um** modo de sandbox, resolvido em
-`codex-permission-policy.ts` — módulo próprio, sem nada compartilhado com o
-`permission-policy.ts` do `claude-code`, pelo mesmo motivo que `command.ts` e
-`codex-command.ts` são dois.
+Here the mechanism is another, and a stronger one: `codex exec` has
+`-s, --sandbox <read-only|workspace-write|danger-full-access>`, a real OS
+sandbox, and the network inside `workspace-write` is the configuration key
+`sandbox_workspace_write.network_access`, passed per invocation with the CLI's
+generic `-c, --config`. There is no gating by tool name at all: the two axes
+become **one** sandbox mode, resolved in `codex-permission-policy.ts` — a module
+of its own, sharing nothing with `claude-code`'s `permission-policy.ts`, for the
+same reason `command.ts` and `codex-command.ts` are two.
 
-| Política declarada | Desfecho | Como |
+| Declared policy | Outcome | How |
 |---|---|---|
-| `escrita: []` + `rede.permitido: false` | aplica | `-s read-only` |
-| `escrita: ["**"]` + `rede.permitido: false` | aplica | `-s workspace-write -c sandbox_workspace_write.network_access=false` |
-| `escrita: ["**"]` + `rede.permitido: true` sem `dominios` | aplica | `-s workspace-write -c sandbox_workspace_write.network_access=true` |
-| `escrita: []` + `rede.permitido: true` | **recusa** | nenhum modo de sandbox combina escrita fechada com rede aberta (medido; ver a tabela abaixo) |
-| `escrita` mais estreita | **recusa** | os modos são concessões de workspace inteiro; um glob no meio não tem onde pousar |
-| `rede.permitido: true` com `dominios` | **recusa** | o sandbox abre a rede ou fecha a rede, inteira; allowlist por domínio exigiria proxy de egress |
+| `escrita: []` + `rede.permitido: false` | applied | `-s read-only` |
+| `escrita: ["**"]` + `rede.permitido: false` | applied | `-s workspace-write -c sandbox_workspace_write.network_access=false` |
+| `escrita: ["**"]` + `rede.permitido: true` with no `dominios` | applied | `-s workspace-write -c sandbox_workspace_write.network_access=true` |
+| `escrita: []` + `rede.permitido: true` | **refused** | no sandbox mode combines closed writing with an open network (measured; see the table below) |
+| a narrower `escrita` | **refused** | the modes are whole-workspace concessions; a glob in between has nowhere to land |
+| `rede.permitido: true` with `dominios` | **refused** | the sandbox opens the network or closes the network, whole; an allowlist by domain would demand an egress proxy |
 
-`permissions` ausente continua sem flag nenhuma no argv — a CLI resolve o
-default dela, que já é `read-only`. `danger-full-access` é **inalcançável** por
-construção: nenhuma combinação dos dois eixos o seleciona.
+An absent `permissions` still means no flag at all in the argv — the CLI resolves
+its own default, which is already `read-only`. `danger-full-access` is
+**unreachable** by construction: no combination of the two axes selects it.
 
-Uma recusa soma os motivos dos dois eixos em vez de parar no primeiro, pela
-mesma razão do adapter de referência: sessão recusada por um motivo, corrigida,
-e recusada de novo pelo outro é uma ida e volta que não ajuda ninguém. A
-combinação escrita-fechada-com-rede-aberta é a única que **não** é limitação de
-um eixo isolado, e por isso tem constante e mensagem próprias — culpar um dos
-dois campos mandaria o autor da skill corrigir o que não é o problema.
+A refusal sums the reasons of both axes rather than stopping at the first, for
+the reference adapter's own reason: a session refused for one reason, corrected,
+and refused again for the other is a round trip that helps nobody. The
+closed-writing-with-open-network combination is the only one that is **not** a
+limitation of a single axis, and that is why it has a constant and a message of
+its own — blaming one of the two fields would send the skill's author to fix what
+is not the problem.
 
-**Medido contra a CLI real** (`codex-cli 0.147.0`, rodado em 2026-08-16 com
-`codex sandbox`, que resolve a mesma configuração que o subcomando `exec`):
+**Measured against the real CLI** (`codex-cli 0.147.0`, run on 2026-08-16 with
+`codex sandbox`, which resolves the same configuration as the `exec`
+subcommand):
 
-| `sandbox_mode` | `network_access` | escrita | rede |
+| `sandbox_mode` | `network_access` | writing | network |
 |---|---|---|---|
-| `read-only` | `false` | bloqueada | bloqueada |
-| `read-only` | `true` | bloqueada | **bloqueada** |
-| `workspace-write` | `false` | permitida | bloqueada |
-| `workspace-write` | `true` | permitida | permitida |
+| `read-only` | `false` | blocked | blocked |
+| `read-only` | `true` | blocked | **blocked** |
+| `workspace-write` | `false` | allowed | blocked |
+| `workspace-write` | `true` | allowed | allowed |
 
-A segunda linha é a que decide o desenho: a chave **não tem efeito** sob
-`read-only`. Isto responde, com medição em vez de leitura de `--help`, a
-pergunta que a t195 deixou em aberto — não existe combinação de escrita fechada
-com rede aberta para pedir, e por isso ela é recusada em vez de aproximada.
+The second row is what decides the design: the key **has no effect** under
+`read-only`. This answers, with a measurement rather than a reading of `--help`,
+the question t195 left open — there is no combination of closed writing with an
+open network to ask for, and that is why it is refused instead of approximated.
 
-**A lacuna residual, também aqui.** O sandbox é do SO, então `Bash` não é a
-porta dos fundos que é no outro engine — o buraco de `python -c` e afins está
-fechado por mecanismo, não por lista de nomes. O que **não** existe é
-telemetria: `session.permission_denied` é alimentado por
-`parse-permission-denial.ts`, que casa nomes de ferramenta do `claude-code`
-contra quadros `tool_use`/`tool_result`. Uma negação de sandbox do Codex é
-sinal de forma completamente diferente (stderr e código de saída do processo,
-não quadro de tool call), e o rastreador como está registra **nada** para este
-engine. Isto está fora do escopo da t195 e é ficha própria.
+**The residual gap, here too.** The sandbox is the OS's, so `Bash` is not the
+back door it is on the other engine — the `python -c` hole and its relatives are
+closed by mechanism, not by a list of names. What does **not** exist is
+telemetry: `session.permission_denied` is fed by `parse-permission-denial.ts`,
+which matches `claude-code` tool names against `tool_use`/`tool_result` frames. A
+Codex sandbox denial is a signal of a completely different shape (stderr and the
+process's exit code, not a tool-call frame), and the tracker as it stands records
+**nothing** for this engine. That is outside t195's scope and is a ticket of its
+own.
 
-### Capacidades
+### Capabilities
 
 ```typescript
 /**
- * O que um engine faz além do baseline.
+ * What an engine does beyond the baseline.
  *
- * Todos os campos são OPCIONAIS por decisão de compatibilidade: num formato
- * publicado, acrescentar uma flag obrigatória quebra a compilação de todo
- * adapter de terceiro que constrói o objeto literalmente. Ausente é `false`
- * — a direção segura de errar.
+ * Every field is OPTIONAL by a compatibility decision: in a published format,
+ * adding a mandatory flag breaks the compilation of every third-party adapter
+ * that builds the object literally. Absent is `false` — the safe direction to
+ * err in.
  *
- * `hasResume` ganhou consumidor na t173 (`SessionSpec.resumeFrom`) e
- * `reportsUsage` na t172 (`SessionFinishDetail.usage`), pelo mesmo caminho: a
- * capacidade existia na CLI o tempo todo, e o que faltava era alguém lê-la. As
- * três têm consumidor agora, e a regra que governou as três continua valendo
- * para a quarta — declarar a quarta, a quinta e a sexta antes de alguém ler é
- * como o formato apodrece.
+ * `hasResume` gained a consumer in t173 (`SessionSpec.resumeFrom`) and
+ * `reportsUsage` in t172 (`SessionFinishDetail.usage`), down the same path: the
+ * capability had been in the CLI all along, and what was missing was somebody to
+ * read it. All three have a consumer now, and the rule that governed the three
+ * still holds for the fourth — declaring the fourth, the fifth and the sixth
+ * before anybody reads them is how a format rots.
  */
 export interface EngineCapabilities {
   /**
-   * Continua uma sessão anterior a partir de um `engineRef` — o que o
-   * `SessionSpec.resumeFrom` pede. Um adapter que não declara isto tem de
-   * recusar aquele campo, nunca ignorá-lo.
+   * Continues an earlier session from an `engineRef` — what
+   * `SessionSpec.resumeFrom` asks for. An adapter that does not declare this has
+   * to refuse that field, never ignore it.
    */
   readonly hasResume?: boolean;
-  /** Emite frames legíveis por máquina, não só texto. */
+  /** Emits machine-readable frames, not only text. */
   readonly hasStructuredOutput?: boolean;
-  /** O output carrega contabilidade de tokens agregável. */
+  /** The output carries aggregatable token accounting. */
   readonly reportsUsage?: boolean;
 }
 
-/** O baseline: uma CLI que só recebe prompt, roda comandos e devolve output. */
+/** The baseline: a CLI that only takes a prompt, runs commands and returns output. */
 export const BASELINE_CAPABILITIES: Required<EngineCapabilities> = {
   hasResume: false,
   hasStructuredOutput: false,
   reportsUsage: false,
 };
 
-/** Normaliza o que um adapter declarou contra o baseline. */
+/** Normalizes what an adapter declared against the baseline. */
 export function resolveCapabilities(
   declared: EngineCapabilities = {},
 ): Required<EngineCapabilities> {
@@ -503,27 +510,27 @@ export function resolveCapabilities(
 }
 ```
 
-### O listener
+### The listener
 
-Callback, nunca retorno síncrono: a sessão dura minutos ou horas, e o
-consumidor precisa do output enquanto ele acontece — é disso que a telemetria
-exigida pela D16 é feita.
+A callback, never a synchronous return: the session lasts minutes or hours, and
+the consumer needs the output while it happens — it is what the telemetry D16
+demands is made of.
 
 ```typescript
 /**
- * Os totais de token de uma sessão, congelados no fim da vida dela.
+ * A session's token totals, frozen at the end of its life.
  *
- * As quatro chaves são exatamente as que o `uso` da taxonomia de eventos já
- * exigia desde a t98 — este tipo é o lado do adapter da mesma contabilidade, e
- * a igualdade dos nomes é o que permite atravessar da interface até o log sem
- * tradução no meio. Não há campo de custo em dinheiro: custo é vocabulário de
- * engine, e a régua de preço é de quem tem a tabela.
+ * The four keys are exactly the ones the event taxonomy's `uso` has demanded
+ * since t98 — this type is the adapter's side of the same accounting, and the
+ * equality of the names is what lets it cross from the interface to the log with
+ * no translation in between. There is no field for cost in money: cost is engine
+ * vocabulary, and the price ruler belongs to whoever has the table.
  *
- * **Quatro, e só quatro.** Uma CLI real reporta bem mais que isso no frame
- * terminal (tier de serviço, detalhamento de cache, iterações), e o contrato
- * do log fecha `additionalProperties`. Quem implementa este tipo ESCOLHE as
- * quatro; um adapter que repassar o objeto do engine inteiro entrega ao
- * consumidor um payload que o control plane recusa.
+ * **Four, and only four.** A real CLI reports far more than that in the terminal
+ * frame (a service tier, a cache breakdown, iterations), and the log's contract
+ * closes `additionalProperties`. Whoever implements this type CHOOSES the four;
+ * an adapter that forwards the engine's whole object hands the consumer a
+ * payload the control plane refuses.
  */
 export interface SessionUsage {
   readonly input_tokens: number;
@@ -533,98 +540,100 @@ export interface SessionUsage {
 }
 
 /**
- * O que o adapter sabe sobre um desfecho terminal além do próprio status.
+ * What the adapter knows about a terminal outcome beyond the status itself.
  *
- * Nasceu por um fato só, e deliberadamente estreito: com dois cães de
- * guarda, um `timed_out` deixou de dizer qual deles mordeu. Crescer o
- * `SessionStatus` no lugar disso já foi rejeitado uma vez, para estados de
- * cota/limite, e o raciocínio vale igual — "o motivo real vive no log de
- * eventos, que é append-only e não perde nada" (ver *Rejeitado —
- * `SessionStatus` mais rico*). Um status, uma causa ao lado.
+ * It was born of a single fact, and deliberately narrow: with two watchdogs, a
+ * `timed_out` stopped saying which of them bit. Growing `SessionStatus` instead
+ * was rejected once already, for quota/limit states, and the reasoning holds
+ * just the same — "the real reason lives in the event log, which is append-only
+ * and loses nothing" (see *Rejected — a richer `SessionStatus`*). One status,
+ * one cause beside it.
  *
- * É também o ponto de crescimento aditivo desta interface congelada, e a t172
- * cobrou isso: os dois campos de contabilidade abaixo entraram aqui sem tocar
- * na forma de `EngineAdapter` nem na assinatura de `onFinished`.
+ * It is also this frozen interface's additive growth point, and t172 collected
+ * on it: the two accounting fields below came in here without touching
+ * `EngineAdapter`'s shape or `onFinished`'s signature.
  *
- * Opcional em todas as direções: o parâmetro, cada campo, e o que um consumidor
- * faz com eles. Adapter que não tem nada a acrescentar reporta dois
- * argumentos, como sempre reportou.
+ * Optional in every direction: the parameter, each field, and what a consumer
+ * does with them. An adapter with nothing to add reports two arguments, as it
+ * always reported.
  */
 export interface SessionFinishDetail {
   /**
-   * Qual cão de guarda parou a sessão, quando quem decidiu parar foi o
-   * PRÓPRIO adapter.
+   * Which watchdog stopped the session, when the one that decided to stop was
+   * the adapter ITSELF.
    *
-   * Ausente num `cancel()` conduzido de fora: quem cancelou conhece o motivo
-   * dele, e inventar um aqui poria na telemetria uma causa que ninguém mediu.
+   * Absent on a `cancel()` conducted from outside: whoever cancelled knows their
+   * own reason, and inventing one here would put into the telemetry a cause
+   * nobody measured.
    */
   readonly timeoutReason?: "wall_clock" | "silence";
 
   /**
-   * Os tokens que a sessão gastou, quando o engine os reportou (t172).
+   * The tokens the session spent, when the engine reported them (t172).
    *
-   * Ausente é "o engine não contou" — sessão que morreu antes do frame
-   * terminal, frame malformado, ou build da CLI que não traz a contagem. Um
-   * objeto de zeros no lugar da ausência é a única leitura proibida: zero é
-   * medição, ausência é silêncio, e juntar as duas destrói a métrica de custo
-   * inteira (mesma regra que o `uso` da taxonomia carrega desde a t98).
+   * Absent is "the engine did not count" — a session that died before the
+   * terminal frame, a malformed frame, or a build of the CLI that does not carry
+   * the count. An object of zeros in place of the absence is the one forbidden
+   * reading: zero is a measurement, absence is silence, and putting the two
+   * together destroys the whole cost metric (the same rule the taxonomy's `uso`
+   * has carried since t98).
    */
   readonly usage?: SessionUsage;
 
   /**
-   * Quais modelos rodaram a sessão, quando o engine os nomeou (t172).
+   * Which models ran the session, when the engine named them (t172).
    *
-   * Lista, e não um identificador só, porque uma sessão roda mais de um
-   * modelo: medido contra a CLI real, um único turno já devolveu dois — o do
-   * turno principal e o de um auxiliar mais barato. Colapsar em "o" modelo
-   * atribuiria a conta toda ao errado, que é o mesmo erro que a regra de cima
-   * proíbe para tokens.
+   * A list, and not a single identifier, because a session runs more than one
+   * model: measured against the real CLI, a single turn already returned two —
+   * the main turn's and a cheaper auxiliary's. Collapsing into "the" model would
+   * attribute the whole bill to the wrong one, which is the same error the rule
+   * above forbids for tokens.
    *
-   * Ausente segue a mesma disciplina de `usage`; lista vazia não é resposta.
+   * Absent follows `usage`'s discipline; an empty list is not an answer.
    */
   readonly models?: readonly string[];
 }
 
 /**
- * Por onde tudo que uma sessão produz sai do adapter.
+ * Where everything a session produces leaves the adapter through.
  *
- * Nada escapa por canal específico de engine: o que o chamador precisa chega
- * aqui, e é isso que permite anexar ao log de eventos e atualizar a linha da
- * sessão sem saber qual CLI rodou (D1 — o adapter reporta, o server escreve).
+ * Nothing escapes through an engine-specific channel: what the caller needs
+ * arrives here, and it is what makes it possible to append to the event log and
+ * update the session's row without knowing which CLI ran (D1 — the adapter
+ * reports, the server writes).
  */
 export interface SessionListener {
   /**
-   * Uma linha emitida pelo engine (stdout e stderr fundidos, na ordem de
-   * chegada), crua e sem parse. Cru é requisito: nem toda linha é frame
-   * estruturado — uma CLI escreve grito de morte em texto puro no meio do
-   * stream, e o log só é replayável (event sourcing) se guardar as duas.
+   * A line emitted by the engine (stdout and stderr merged, in arrival order),
+   * raw and unparsed. Raw is a requirement: not every line is a structured frame
+   * — a CLI writes its dying scream in plain text in the middle of the stream,
+   * and the log is only replayable (event sourcing) if it keeps both.
    */
   onOutput(line: string): void;
 
   /**
-   * O identificador que o próprio engine deu à sessão, assim que conhecido.
+   * The identifier the engine itself gave the session, as soon as it is known.
    *
-   * Opcional e string opaca: cada CLI chama isso de uma coisa e nenhuma
-   * garante o formato. Foi capturado para telemetria e auditoria antes de
-   * qualquer um poder usá-lo, "barato de adicionar antes de haver adapter
-   * publicado e caro de aparafusar depois" — e a t173 cobrou essa aposta: é
-   * este o valor que volta no `SessionSpec.resumeFrom` para continuar uma
-   * sessão.
+   * Optional and an opaque string: every CLI calls it something different and
+   * none guarantees the format. It was captured for telemetry and audit before
+   * anybody could use it, "cheap to add before there is a published adapter and
+   * expensive to bolt on afterwards" — and t173 collected on that bet: it is
+   * this value that comes back in `SessionSpec.resumeFrom` to continue a
+   * session.
    */
   onEngineRef?(engineRef: string): void;
 
   /**
-   * Chamado EXATAMENTE UMA VEZ, ao atingir status terminal.
+   * Called EXACTLY ONCE, on reaching a terminal status.
    *
-   * `exitCode` é `number | null`: em POSIX, processo morto por sinal não tem
-   * código de saída, e é precisamente o que acontece nos casos de timeout e
-   * cancelamento do kit. `null` é "não houve", não "zero".
+   * `exitCode` is `number | null`: in POSIX, a process killed by a signal has no
+   * exit code, and that is precisely what happens in the kit's timeout and
+   * cancellation cases. `null` is "there was none", not "zero".
    *
-   * `detail` só é preenchido quando o adapter tem algo que o status não
-   * carrega — qual dos dois cães de guarda parou a sessão, e desde a t172 os
-   * tokens e os modelos que ela consumiu. Consumidor escrito antes de ele
-   * existir continua funcionando: argumento a mais em callback de dois
-   * parâmetros é ignorado.
+   * `detail` is only filled in when the adapter has something the status does
+   * not carry — which of the two watchdogs stopped the session, and since t172
+   * the tokens and the models it consumed. A consumer written before it existed
+   * still works: an extra argument to a two-parameter callback is ignored.
    */
   onFinished(
     status: SessionStatus,
@@ -634,22 +643,22 @@ export interface SessionListener {
 }
 ```
 
-### O adapter
+### The adapter
 
 ```typescript
 /**
- * Um modelo que o engine oferece.
+ * A model the engine offers.
  *
- * `id` é o identificador que vai depois da flag de modelo do engine — a string
- * que o `model` de um nó precisa casar — e nada mais: não é nome de exibição,
- * nem apelido de família que a CLI por acaso resolve. `label` é o que uma
- * pessoa lê, quando o adapter tem um para dar.
+ * `id` is the identifier that goes after the engine's model flag — the string a
+ * node's `model` has to match — and nothing else: it is not a display name, nor
+ * a family nickname the CLI happens to resolve. `label` is what a person reads,
+ * when the adapter has one to give.
  *
- * `origin` é o campo que mantém o catálogo honesto. `cli` significa que o
- * binário foi perguntado e respondeu; `catalog` significa que o adapter está
- * recitando uma lista que ele carrega. Juntar os dois faria de "estes são os
- * modelos" uma afirmação que ninguém consegue pesar — o mesmo rebaixamento que
- * `CliProbe.authenticated` já levou, e pela mesma razão.
+ * `origin` is the field that keeps the catalogue honest. `cli` means the binary
+ * was asked and answered; `catalog` means the adapter is reciting a list it
+ * carries. Putting the two together would make "these are the models" a
+ * statement nobody can weigh — the same demotion `CliProbe.authenticated`
+ * already took, and for the same reason.
  */
 export interface EngineModel {
   readonly id: string;
@@ -658,93 +667,94 @@ export interface EngineModel {
 }
 
 /**
- * Tudo que um engine diz que consegue rodar, num instante.
+ * Everything an engine says it can run, at one instant.
  *
- * `resolvedAt` não é decoração: catálogo estático e resposta de CLI envelhecem
- * de forma diferente, e um consumidor sem carimbo não distingue relato fresco
- * de relato que um runner deixou para trás antes de morrer.
+ * `resolvedAt` is not decoration: a static catalogue and a CLI's answer age
+ * differently, and a consumer with no stamp cannot tell a fresh report from one
+ * a runner left behind before dying.
  */
 export interface ModelCatalog {
   readonly models: readonly EngineModel[];
   readonly resolvedAt: string;
 }
 
-/** Resultado do preflight da CLI, consumido pelo wizard de instalação. */
+/** The result of the CLI's preflight, consumed by the installation wizard. */
 export interface CliProbe {
-  /** O binário existe e responde. */
+  /** The binary exists and answers. */
   readonly available: boolean;
   readonly version: string | null;
   /**
-   * Melhor esforço, nunca garantia: há engine cuja falha de credencial só
-   * aparece no meio da primeira sessão (ver "Viabilidade"). `true` significa
-   * "não achei motivo para falhar", não "vai autenticar".
+   * Best effort, never a guarantee: there is an engine whose credential failure
+   * only shows up in the middle of the first session (see "Feasibility"). `true`
+   * means "I found no reason for it to fail", not "it will authenticate".
    */
   readonly authenticated: boolean;
 }
 
 export interface EngineAdapter {
-  /** Identificador estável, persistido na linha da sessão. */
+  /** A stable identifier, persisted on the session's row. */
   readonly engineName: string;
 
   /**
-   * Abre uma sessão e devolve o handle LOCAL DESTE ADAPTER para ela — que
-   * não é o `engineRef` do engine e não deve ser confundido com ele.
+   * Opens a session and returns THIS ADAPTER'S LOCAL handle for it — which is
+   * not the engine's `engineRef` and must not be confused with it.
    *
-   * Resolve assim que a sessão está de pé; o trabalho continua e é reportado
-   * pelo listener. Rejeita com `SessionStartError` se não subiu.
+   * It resolves as soon as the session is up; the work carries on and is
+   * reported by the listener. It rejects with `SessionStartError` if it did not
+   * come up.
    */
   startSession(spec: SessionSpec, listener: SessionListener): Promise<string>;
 
-  /** Status corrente. Lança `UnknownSessionError` para handle desconhecido. */
+  /** The current status. Throws `UnknownSessionError` for an unknown handle. */
   getStatus(sessionId: string): Promise<SessionStatus>;
 
   /**
-   * Para uma sessão em andamento; no-op se já terminou.
+   * Stops a session in flight; a no-op if it already ended.
    *
-   * `status` é o status terminal a reportar no `onFinished`, default
-   * `"cancelled"` (alguém apertou o botão). Um watchdog passa `"timed_out"`.
-   * Registrar o motivo AQUI é o que tira o watchdog da corrida com a thread
-   * de streaming do próprio adapter: a alternativa — cancelar e depois
-   * sobrescrever a linha que a thread acabou de escrever — perde a escrita
-   * que chegar por último.
+   * `status` is the terminal status to report in `onFinished`, default
+   * `"cancelled"` (somebody pressed the button). A watchdog passes
+   * `"timed_out"`. Recording the reason HERE is what takes the watchdog out of
+   * the race with the adapter's own streaming thread: the alternative —
+   * cancelling and then overwriting the row the thread has just written — loses
+   * whichever write arrives last.
    *
-   * Lança `UnknownSessionError` para handle desconhecido.
+   * Throws `UnknownSessionError` for an unknown handle.
    */
   cancel(sessionId: string, status?: SessionStatus): Promise<void>;
 
   /**
-   * Declara o que este engine faz além do baseline. Logicamente não
-   * obrigatório: um adapter que não tem nada a dizer devolve
-   * `BASELINE_CAPABILITIES`, e o default seguro é todas as flags falsas.
+   * Declares what this engine does beyond the baseline. Logically not
+   * mandatory: an adapter with nothing to say returns `BASELINE_CAPABILITIES`,
+   * and the safe default is every flag false.
    */
   capabilities(): EngineCapabilities;
 
-  /** Preflight sem gastar quota. */
+  /** A preflight that spends no quota. */
   verifyCli(): Promise<CliProbe>;
 
   /**
-   * Quais modelos este engine consegue rodar, até onde o adapter sabe.
+   * Which models this engine can run, as far as the adapter knows.
    *
-   * O MÉTODO é opcional, e não só os campos dele — essa é a afirmação de
-   * compatibilidade: um adapter de terceiro escrito antes disto existir
-   * continua compilando, que é o que "crescimento de formato publicado é
-   * aditivo" tem de significar depois do congelamento em v1. Quem consome
-   * checa o método antes de chamar e pula o adapter que não o tem.
+   * The METHOD is optional, and not only its fields — that is the compatibility
+   * statement: a third party's adapter written before this existed still
+   * compiles, which is what "growth of a published format is additive" has to
+   * mean after the v1 freeze. Whoever consumes it checks the method before
+   * calling and skips the adapter that does not have it.
    *
-   * Descoberta, nunca imposição: nada valida o `model` declarado num nó contra
-   * esta lista, e um engine de catálogo desatualizado continua recusando id
-   * ruim sozinho, que é onde a verdade de fato mora.
+   * Discovery, never enforcement: nothing validates the `model` declared on a
+   * node against this list, and an engine with an out-of-date catalogue still
+   * refuses a bad id on its own, which is where the truth actually lives.
    */
   listModels?(): Promise<ModelCatalog>;
 }
 ```
 
-### Erros
+### Errors
 
 ```typescript
 export class EngineError extends Error {}
 
-/** A sessão não pôde ser aberta (binário ausente, workdir inexistente, spawn). */
+/** The session could not be opened (a missing binary, a missing workdir, spawn). */
 export class SessionStartError extends EngineError {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
@@ -753,308 +763,305 @@ export class SessionStartError extends EngineError {
 }
 
 /**
- * O handle nunca existiu NESTE adapter.
+ * The handle never existed IN THIS ADAPTER.
  *
- * `getStatus` e `cancel` sobre handle desconhecido LANÇAM — nunca devolvem
- * um status inventado. Um `"failed"` de consolo aqui vira, lá em cima, uma
- * sessão viva marcada como morta, e a diferença entre "não sei" e "deu
- * errado" é exatamente o que a telemetria precisa preservar.
+ * `getStatus` and `cancel` over an unknown handle THROW — they never return an
+ * invented status. A consolation `"failed"` here becomes, further up, a live
+ * session marked as dead, and the difference between "I do not know" and "it
+ * went wrong" is exactly what the telemetry has to preserve.
  */
 export class UnknownSessionError extends EngineError {
   constructor(public readonly sessionId: string) {
-    super(`Handle de sessão desconhecido: ${sessionId}`);
+    super(`Unknown session handle: ${sessionId}`);
     this.name = "UnknownSessionError";
   }
 }
 ```
 
-### Invariantes que a interface não consegue expressar em tipo
+### Invariants the interface cannot express in a type
 
-Todas verificadas pelo kit abaixo:
+All of them checked by the kit below:
 
-1. `onFinished` é chamado exatamente uma vez, sempre, inclusive quando o
-   processo é morto a sinal — nunca zero vezes, nunca duas.
-2. Depois de `onFinished`, nenhum `onOutput` chega.
-3. `getStatus` só devolve status terminal depois que `onFinished` correu.
-4. Toda linha emitida pelo engine chega ao `onOutput`, na ordem original.
-5. Nenhum processo fica órfão: nem por timeout, nem por cancelamento, nem por
-   engine que ignora SIGTERM.
-6. **`stdin` do processo do engine é fechado, redirecionado para `/dev/null`,
-   ou escrito e então fechado pelo adapter.** O que a invariante proíbe é a
-   quarta forma: pipe aberto, nada escrito, ninguém fechando — o engine espera
-   EOF para sempre. Não é detalhe de implementação — ver "Ajustes feitos na
-   revisão", item 1, que continua valendo inteiro; o item 10 é que
-   acrescentou o terceiro mecanismo, quando o conteúdo grande passou a
-   precisar de um canal fora do argv.
-7. **O adapter nunca dá ao engine acesso a diretório além do
-   `spec.workingDir`.** No `claude-code` isso é `--add-dir`, que o adapter não
-   monta em nenhum caminho; em outro engine será outra flag. A invariante é a
-   mesma: um diretório extra devolve, numa flag só, o escopo de escrita que a
-   política acabou de fechar — e o `workingDir` é o único lugar que uma sessão
-   tem direito de tocar.
+1. `onFinished` is called exactly once, always, including when the process is
+   killed by a signal — never zero times, never twice.
+2. After `onFinished`, no `onOutput` arrives.
+3. `getStatus` only returns a terminal status after `onFinished` has run.
+4. Every line the engine emits reaches `onOutput`, in the original order.
+5. No process is left orphaned: not by a timeout, not by a cancellation, not by
+   an engine that ignores SIGTERM.
+6. **The engine process's `stdin` is closed, redirected to `/dev/null`, or
+   written and then closed by the adapter.** What the invariant forbids is the
+   fourth form: a pipe open, nothing written, nobody closing — the engine waits
+   for EOF forever. It is not an implementation detail — see "Adjustments made in
+   review", item 1, which still holds whole; item 10 is what added the third
+   mechanism, when large content started needing a channel outside the argv.
+7. **The adapter never gives the engine access to a directory beyond
+   `spec.workingDir`.** In `claude-code` that is `--add-dir`, which the adapter
+   assembles on no path at all; in another engine it will be another flag. The
+   invariant is the same: an extra directory hands back, in a single flag, the
+   write scope the policy has just closed — and the `workingDir` is the only
+   place a session has a right to touch.
 
-## Kit de conformidade
+## The conformance kit
 
-Esta é a suíte que um adapter de terceiro precisa passar para entrar
-(`notas/2026-08-14-extensao-e-qualidade.md:21-23`). Roda contra um **fake
-engine** — um script controlável, injetado pela costura de construção de
-comando do adapter — de modo que o CI nunca precise da CLI real instalada nem
-autenticada. Rodar contra a CLI de verdade é portão manual, separado.
+This is the suite a third party's adapter has to pass in order to come in
+(`notas/2026-08-14-extensao-e-qualidade.md:21-23`). It runs against a **fake
+engine** — a controllable script, injected through the adapter's
+command-building seam — so that CI never needs the real CLI installed or
+authenticated. Running against the real CLI is a manual gate, separately.
 
-Os seis primeiros casos são obrigatórios. C7 vem junto porque é a única
-verificação do contrato de erro e custa uma linha, C8 porque é a única que
-prova o contrato do `cancel()` sob concorrência — os chamadores de parada
-(relógio, cão de guarda de inatividade e `cancel()`) disputando a mesma
-sessão —, e C9 porque o segundo cão de guarda (t163) é a única coisa neste
-adapter que só se prova pelo tempo: que ele rearma a cada saída, e que morde
-quando a saída para.
+The first six cases are mandatory. C7 comes along because it is the only check of
+the error contract and costs one line, C8 because it is the only one that proves
+the `cancel()` contract under concurrency — the stopping callers (the clock, the
+inactivity watchdog and `cancel()`) competing for the same session —, and C9
+because the second watchdog (t163) is the only thing in this adapter that is only
+proved by time: that it rearms on every output, and that it bites when the output
+stops.
 
-C10 (t173) entra por outro motivo, e é o primeiro caso cujo desfecho esperado
-**depende do que o adapter declara**: `hasResume` parte os engines em dois, e
-os dois lados são conformes — continuar, ou recusar. O que não é conforme é a
-terceira resposta, aceitar `resumeFrom` e abrir uma sessão nova assim mesmo, e
-ela é justamente a que nenhum consumidor consegue detectar sozinho: uma sessão
-que não continuou nada é idêntica, por fora, a uma que continuou. É a mesma
-regra de honestidade que `permissions` já tornou normativa, aplicada ao campo
-onde a perda silenciosa custa mais.
+C10 (t173) comes in for another reason, and it is the first case whose expected
+outcome **depends on what the adapter declares**: `hasResume` splits the engines
+in two, and both sides are conformant — continuing, or refusing. What is not
+conformant is the third answer, accepting `resumeFrom` and opening a new session
+anyway, and that is precisely the one no consumer can detect on its own: a
+session that continued nothing is identical, from outside, to one that continued.
+It is the same honesty rule `permissions` already made normative, applied to the
+field where the silent loss costs most.
 
-C11 (t203) entra por um motivo que nenhum dos anteriores tinha: ele é o único
-caso cujo modo de falha está **fora** do adapter e **abaixo** dele. O teto é
-do sistema operacional, o `spawn` morre com `E2BIG` antes de existir processo,
-e não há sessão nem `onFinished` por onde o problema pudesse ser reportado —
-o adapter simplesmente para de funcionar num tamanho que ninguém declarou. É
-a outra metade do C2: aquele pergunta se o conteúdo chega, este pergunta se
-ele continua chegando quando há conteúdo demais para caber onde costuma ir.
+C11 (t203) comes in for a reason none of the earlier ones had: it is the only
+case whose failure mode is **outside** the adapter and **below** it. The ceiling
+is the operating system's, the `spawn` dies with `E2BIG` before a process exists,
+and there is no session and no `onFinished` for the problem to be reported
+through — the adapter simply stops working at a size nobody declared. It is C2's
+other half: that one asks whether the content arrives, this one asks whether it
+keeps arriving when there is too much content to fit where it usually goes.
 
-| Nome | Setup | Resultado esperado |
+| Name | Setup | Expected result |
 |---|---|---|
-| **C1 — Sessão básica** | Fake engine emite N linhas e sai com 0. | `getStatus` é `"running"` logo após o start; `onFinished("completed", 0)` uma vez; `getStatus` passa a `"completed"`. Nenhum `onOutput` depois do `onFinished`. |
-| **C2 — Injeção de skill** | `instructions` carrega um marcador único (ex.: `MARCADOR-a1b2c3`); `prompt` não o contém. O fake engine grava em arquivo TUDO que recebeu — argv, ambiente, stdin e arquivos criados no workdir. | O marcador aparece no que o **processo** recebeu, por qualquer um dos caminhos legítimos (argumento, flag de system prompt, stdin, arquivo efêmero). Asserção proibida: inspecionar o `SessionSpec` — isso testaria o teste, não o adapter. |
-| **C3 — Timeout** | Fake engine que nunca termina sozinho; `timeoutSeconds` curto. | `onFinished("timed_out", …)` dispara perto do prazo, uma vez; o processo não existe mais depois (nenhum órfão); o relógio não continua armado. |
-| **C4 — Morte de processo** | Fake engine que instala handler ignorando SIGTERM e segue vivo. | Depois do grace period o adapter escala para SIGKILL; `onFinished` ocorre mesmo assim e não fica pendurado. Cobre também o filho que sobrevive ao pai. |
-| **C5 — Cancelamento** | Sessão longa; chamar `cancel(handle, "timed_out")` no meio. | O status reportado ao `onFinished` é **o que foi passado**, `"timed_out"`, não um `"cancelled"` fixo. Repetir com `cancel(handle)` sem argumento deve dar `"cancelled"`. Chamar `cancel` numa sessão já terminal é no-op silencioso, não erro. |
-| **C6 — Colheita de eventos** | Fake engine emite uma sequência conhecida de linhas — incluindo uma que não é frame estruturado — e sai com código não-zero. | Todas as linhas chegam ao `onOutput`, **na ordem original e sem parse**; `onFinished` reporta `"failed"` com o exit code exato. A variante com saída 0 reporta `"completed"` com 0. |
-| **C7 — Handle desconhecido** | Handle nunca iniciado neste adapter. | `getStatus` e `cancel` rejeitam com `UnknownSessionError`. Nenhum dos dois inventa status. |
-| **C8 — Corrida de parada** | Fake engine que ignora SIGTERM e nunca termina sozinho; `timeoutSeconds` longo, para que o relógio interno nunca dispare por conta própria. Duas paradas seguidas, sem sleep entre elas, com status diferentes — a segunda cai dentro da janela de grace da primeira: `cancel(handle, "timed_out")` e depois `cancel(handle, "cancelled")`. | Vence a PRIMEIRA: `onFinished` e `getStatus` reportam `"timed_out"`, não importa se o processo morreu no SIGTERM ou no SIGKILL. A segunda parada é no-op completo — não sobrescreve o status, não sinaliza de novo, não rearma escalação nem rede de segurança (`onFinished` uma única vez). Repetido com os status trocados, o esperado vira `"cancelled"`: o que vence é a ordem, não o literal. |
-| **C9 — Inatividade** | Fake engine emite um batimento a cada `silenceSeconds / 2`, atravessando duas janelas inteiras, e depois cala para sempre sem sair; `timeoutSeconds` longo, para que o relógio de parede nunca dispare por conta própria. | `onFinished("timed_out", null, {timeoutReason: "silence"})` uma única vez, dentro de uma janela de `silenceSeconds` contada a partir do ÚLTIMO batimento — nunca a partir do início da sessão, que é o que um cão de guarda sem rearme faria. Todos os batimentos chegaram ao `onOutput` antes disso. Nenhum órfão. `cancel()` depois é no-op silencioso. |
-| **C10 — Continuação de sessão** | Uma sessão, e depois outra com `resumeFrom` valendo o `engineRef` que a primeira reportou, no MESMO `workingDir`. O caso lê `capabilities().hasResume` e cobra o desfecho correspondente — nunca crava qual adapter está rodando. | Declarando `hasResume`: o ref chega ao **processo** por algum caminho legítimo (a disciplina do C2 — inspecionar o `SessionSpec` testaria o teste), a sessão continuada completa, e o handle local é OUTRO, porque o ref é do engine e o handle é do adapter. Não declarando: `startSession` rejeita com `SessionStartError` **antes do spawn** — nenhum processo, nenhum sidecar, nenhum `onFinished`. |
-| **C11 — Prompt grande demais para o argv** | `instructions` + `prompt` somando ~300 KB, com um marcador curto e único dentro do `prompt`. O tamanho é escolhido para passar dos dois tetos reais de sistema operacional ao mesmo tempo: 128 KiB por argumento no Linux (`MAX_ARG_STRLEN`) e o bloco argv+envp inteiro no macOS (`ARG_MAX`). | A sessão chega a status terminal sem falha de spawn — o modo de falha aqui é o `spawn` morrer com `E2BIG` antes de existir sessão para reportar coisa alguma. O marcador chega ao **processo** por algum caminho legítimo (a mesma disciplina do C2, e os mesmos quatro caminhos), e o conteúdo **não** está no `argv`: um adapter que apenas coube no teto da máquina de CI passaria o caso e quebraria na máquina seguinte. Qual canal ele usa é decisão do adapter, e o caso não cobra nenhum. |
+| **C1 — basic session** | The fake engine emits N lines and exits 0. | `getStatus` is `"running"` right after the start; `onFinished("completed", 0)` once; `getStatus` moves to `"completed"`. No `onOutput` after the `onFinished`. |
+| **C2 — skill injection** | `instructions` carries a unique marker (e.g. `MARCADOR-a1b2c3`); `prompt` does not contain it. The fake engine writes to a file EVERYTHING it received — argv, environment, stdin and files created in the workdir. | The marker appears in what the **process** received, by any of the legitimate paths (an argument, a system prompt flag, stdin, an ephemeral file). Forbidden assertion: inspecting the `SessionSpec` — that would test the test, not the adapter. |
+| **C3 — timeout** | A fake engine that never ends on its own; a short `timeoutSeconds`. | `onFinished("timed_out", …)` fires close to the deadline, once; the process no longer exists afterwards (no orphan); the clock is not left armed. |
+| **C4 — process death** | A fake engine that installs a handler ignoring SIGTERM and stays alive. | After the grace period the adapter escalates to SIGKILL; `onFinished` happens all the same and is not left hanging. It also covers the child that outlives its parent. |
+| **C5 — cancellation** | A long session; calling `cancel(handle, "timed_out")` half way. | The status reported to `onFinished` is **the one that was passed**, `"timed_out"`, not a fixed `"cancelled"`. Repeating with `cancel(handle)` and no argument must give `"cancelled"`. Calling `cancel` on an already terminal session is a silent no-op, not an error. |
+| **C6 — event harvesting** | The fake engine emits a known sequence of lines — including one that is not a structured frame — and exits with a non-zero code. | Every line reaches `onOutput`, **in the original order and unparsed**; `onFinished` reports `"failed"` with the exact exit code. The variant exiting 0 reports `"completed"` with 0. |
+| **C7 — unknown handle** | A handle never started in this adapter. | `getStatus` and `cancel` reject with `UnknownSessionError`. Neither of the two invents a status. |
+| **C8 — stop race** | A fake engine that ignores SIGTERM and never ends on its own; a long `timeoutSeconds`, so that the internal clock never fires on its own account. Two stops in a row, with no sleep between them, with different statuses — the second falls inside the first's grace window: `cancel(handle, "timed_out")` and then `cancel(handle, "cancelled")`. | The FIRST wins: `onFinished` and `getStatus` report `"timed_out"`, no matter whether the process died on the SIGTERM or on the SIGKILL. The second stop is a complete no-op — it does not overwrite the status, does not signal again, does not rearm the escalation or the safety net (`onFinished` exactly once). Repeated with the statuses swapped, the expectation becomes `"cancelled"`: what wins is the order, not the literal. |
+| **C9 — inactivity** | The fake engine emits a beat every `silenceSeconds / 2`, crossing two whole windows, and then goes quiet forever without exiting; a long `timeoutSeconds`, so that the wall clock never fires on its own account. | `onFinished("timed_out", null, {timeoutReason: "silence"})` exactly once, inside a `silenceSeconds` window counted from the LAST beat — never from the start of the session, which is what a watchdog with no rearm would do. Every beat reached `onOutput` before that. No orphan. A `cancel()` afterwards is a silent no-op. |
+| **C10 — session continuation** | One session, and then another with `resumeFrom` holding the `engineRef` the first reported, in the SAME `workingDir`. The case reads `capabilities().hasResume` and demands the corresponding outcome — it never hard-codes which adapter is running. | Declaring `hasResume`: the ref reaches the **process** by some legitimate path (C2's discipline — inspecting the `SessionSpec` would test the test), the continued session completes, and the local handle is ANOTHER one, because the ref belongs to the engine and the handle to the adapter. Not declaring it: `startSession` rejects with `SessionStartError` **before the spawn** — no process, no sidecar, no `onFinished`. |
+| **C11 — a prompt too big for the argv** | `instructions` + `prompt` summing ~300 KB, with a short, unique marker inside the `prompt`. The size is chosen to pass both real operating-system ceilings at once: 128 KiB per argument on Linux (`MAX_ARG_STRLEN`) and the whole argv+envp block on macOS (`ARG_MAX`). | The session reaches a terminal status with no spawn failure — the failure mode here is the `spawn` dying with `E2BIG` before there is a session to report anything at all. The marker reaches the **process** by some legitimate path (C2's discipline, and the same four paths), and the content is **not** in the `argv`: an adapter that merely fitted inside the CI machine's ceiling would pass the case and break on the next machine. Which channel it uses is the adapter's decision, and the case demands none. |
 
-Notas de execução:
+Notes on running it:
 
-- **Sem CLI real no CI.** A costura é a construção do comando; trocar o
-  binário pelo fake engine é o que mantém a suíte determinística. Um adapter
-  que não expõe essa costura é um adapter que não dá para certificar — isso é
-  requisito do kit, não sugestão.
-- **C3 e C4 são os caros.** São os dois que só falham sob carga real e são a
-  razão de o kit existir: um adapter que vaza processo derruba a máquina do
-  runner depois da centésima sessão, não da primeira.
-- **Assíncrono, com deadline.** Todo caso espera status terminal com limite
-  próprio e falha com mensagem explícita ao estourar; nada de `sleep` fixo.
+- **No real CLI in CI.** The seam is the command building; swapping the binary
+  for the fake engine is what keeps the suite deterministic. An adapter that does
+  not expose that seam is an adapter that cannot be certified — that is a
+  requirement of the kit, not a suggestion.
+- **C3 and C4 are the expensive ones.** They are the two that only fail under
+  real load and are the reason the kit exists: an adapter that leaks a process
+  brings the runner's machine down after the hundredth session, not the first.
+- **Asynchronous, with a deadline.** Every case waits for a terminal status with
+  a limit of its own and fails with an explicit message when it runs out; no
+  fixed `sleep`.
 
-## Viabilidade: segunda CLI
+## Feasibility: a second CLI
 
-A regra dos dois consumidores exige um segundo engine real antes de congelar.
-Aqui ele é **analisado, não implementado** — implementar é ticket futuro.
+The rule of two consumers demands a second real engine before freezing. Here it
+is **analysed, not implemented** — implementing it is a future ticket.
 
-**Escolha: Codex CLI (OpenAI)**, pela semelhança estrutural com o
-`stream-json` do Claude Code. Evidência levantada nesta ticket, em
-2026-08-14, contra `codex-cli 0.147.0` executado via
-`npx --yes @openai/codex@latest` (a CLI não estava instalada na máquina), e
-contra `claude 2.1.232` já instalado. Fontes primárias:
+**The choice: Codex CLI (OpenAI)**, for its structural resemblance to Claude
+Code's `stream-json`. The evidence was gathered in this ticket, on 2026-08-14,
+against `codex-cli 0.147.0` executed through `npx --yes @openai/codex@latest`
+(the CLI was not installed on the machine), and against an already installed
+`claude 2.1.232`. The primary sources:
 
-- `codex --help` e `codex exec --help`, rodados aqui — saída transcrita nas
-  citações abaixo.
-- Uma execução real de `codex exec --json --skip-git-repo-check --ephemeral`
-  sem credencial, que rendeu a forma dos frames e o código de saída.
-- Strings do binário distribuído, para as chaves de instrução.
-- Repositório e docs oficiais: <https://github.com/openai/codex> e
-  <https://developers.openai.com/codex/>.
-- Alternativa avaliada e descartada por ora: Gemini CLI, modo headless por
-  `-p`/`--prompt` com `--output-format json|jsonl`
-  (<https://geminicli.com/docs/cli/headless/>). Serve, e a mecânica é a
-  mesma; Codex ficou por ter modo headless em subcomando dedicado
-  (`codex exec`), o que dá uma superfície de flags menor e mais estável para
-  um adapter.
+- `codex --help` and `codex exec --help`, run here — the output is transcribed in
+  the citations below.
+- A real execution of `codex exec --json --skip-git-repo-check --ephemeral` with
+  no credential, which yielded the shape of the frames and the exit code.
+- Strings from the distributed binary, for the instruction keys.
+- The official repository and docs: `https://github.com/openai/codex` and
+  `https://developers.openai.com/codex/`.
+- An alternative evaluated and set aside for now: Gemini CLI, headless mode
+  through `-p`/`--prompt` with `--output-format json|jsonl`
+  (`https://geminicli.com/docs/cli/headless/`). It serves, and the mechanics are
+  the same; Codex was chosen for having its headless mode in a dedicated
+  subcommand (`codex exec`), which gives an adapter a smaller and more stable
+  flag surface.
 
-### Mapeamento método a método
+### A method-by-method mapping
 
-| Elemento da interface | Mecânica no `codex exec` | Evidência |
+| Element of the interface | The mechanics in `codex exec` | Evidence |
 |---|---|---|
 | `engineName` | `"codex"`. | — |
-| `startSession` | `codex exec [OPTIONS] [PROMPT]` — "Run Codex non-interactively". Subprocess comum, sem daemon. | `codex --help`: `exec  Run Codex non-interactively [aliases: e]` |
-| `SessionSpec.workingDir` | `-C, --cd <DIR>` ("use the specified directory as its working root"). Precisa de `--skip-git-repo-check` quando o diretório não é repo git — pegadinha real para worktree de teste. | `codex exec --help` |
-| `SessionSpec.instructions` | **Sem flag de system prompt.** Três caminhos internos ao adapter: concatenar no prompt; escrever `AGENTS.md` efêmero no workdir; ou `-c base_instructions=<...>`. | `codex exec --help` não lista nenhum flag de system prompt; `grep -a` no binário distribuído acha `AGENTS.md` (70 ocorrências) e `base_instructions` (14). Contraste medido: `claude --help` lista `--system-prompt <prompt>` e `--append-system-prompt <prompt>`. |
-| `SessionSpec.prompt` | Argumento posicional **precedido de `--`**, e stdin quando o conteúdo não cabe no argv (t203). O `--` não é enfeite: `codex exec "-1 apples"` responde `error: unexpected argument '-1' found` e não abre. No caminho de stdin o posicional **some junto** — o `<stdin>` block só é anexado quando os dois canais carregam conteúdo, e omitir o posicional inteiro foi medido lendo o prompt limpo. Sem shell no meio nos dois casos: argv direto, zero superfície de injeção de quoting. | `codex exec --help`: "Initial instructions for the agent. If not provided as an argument (or if `-` is used), instructions are read from stdin. If stdin is piped and a prompt is also provided, stdin is appended as a `<stdin>` block"; erro do `-1` e sucesso do `--` medidos contra `codex-cli 0.147.0` na t203 |
-| `SessionSpec.timeoutSeconds` | **Não existe flag de timeout** — nem aqui nem no Claude Code. É relógio do adapter sobre o processo, exatamente como a interface presume. | ausência em `codex exec --help` |
-| `SessionSpec.envOverrides` | Ambiente do subprocess, mais `-c chave=valor` para configuração. | `codex exec --help` |
-| `SessionListener.onOutput` | `--json` ("Print events to stdout as JSONL"). Linhas de erro do runtime saem em texto puro **não-JSON** no mesmo fluxo — o que confirma o contrato de linha crua sem parse. | Execução real: entre os frames JSON vieram linhas `ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized` |
-| `SessionListener.onEngineRef` | Primeiro frame do stream: `{"type":"thread.started","thread_id":"01a000e7-…"}`. | Execução real |
-| `SessionListener.onFinished` (status) | Frame terminal `turn.completed` / `turn.failed`, com o mesmo padrão do `result` do Claude Code: classificar por frame estruturado, cair para exit code quando não houver frame. | Execução real produziu `{"type":"turn.failed","error":{"message":"unexpected status 401 …"}}` |
-| `SessionListener.onFinished` (exit code) | Sai **1** num turno falho — não mascara a falha atrás de um 0. | Execução real, medida sem pipe: `REAL_EXIT=1` |
-| `getStatus` | Estado local do adapter, como no Claude Code: a CLI não tem consulta de estado. | — |
-| `cancel` | Sinal ao processo: SIGTERM, SIGKILL após grace period. Sem subcomando de cancelamento. | ausência em `codex --help` |
-| `capabilities` | `hasStructuredOutput: true` (JSONL), `hasResume: true` (`codex exec resume [SESSION_ID]`). `reportsUsage` a confirmar contra corpus real. | `codex exec resume --help`: "Resume a previous session by id" |
-| `verifyCli` | `codex --version` → `codex-cli 0.147.0`; `codex doctor` ("Diagnose local Codex installation, config, auth, and runtime health") como sonda mais rica. Ver o item 3 dos ajustes. | `codex --help`, `codex --version` |
-| `SessionStartError` | Falha de spawn ou workdir inexistente — mesma classe de erro nos dois engines. | — |
-| `UnknownSessionError` | Puramente do adapter; nenhum engine participa. | — |
+| `startSession` | `codex exec [OPTIONS] [PROMPT]` — "Run Codex non-interactively". An ordinary subprocess, with no daemon. | `codex --help`: `exec  Run Codex non-interactively [aliases: e]` |
+| `SessionSpec.workingDir` | `-C, --cd <DIR>` ("use the specified directory as its working root"). It needs `--skip-git-repo-check` when the directory is not a git repository — a real trap for a test worktree. | `codex exec --help` |
+| `SessionSpec.instructions` | **No system prompt flag.** Three paths internal to the adapter: concatenating into the prompt; writing an ephemeral `AGENTS.md` in the workdir; or `-c base_instructions=<...>`. | `codex exec --help` lists no system prompt flag; `grep -a` on the distributed binary finds `AGENTS.md` (70 occurrences) and `base_instructions` (14). The measured contrast: `claude --help` lists `--system-prompt <prompt>` and `--append-system-prompt <prompt>`. |
+| `SessionSpec.prompt` | A positional argument **preceded by `--`**, and stdin when the content does not fit in the argv (t203). The `--` is not decoration: `codex exec "-1 apples"` answers `error: unexpected argument '-1' found` and does not open. On the stdin path the positional **disappears with it** — the `<stdin>` block is only appended when both channels carry content, and omitting the positional entirely was measured by reading the prompt clean. No shell in between in either case: a direct argv, with zero quoting-injection surface. | `codex exec --help`: "Initial instructions for the agent. If not provided as an argument (or if `-` is used), instructions are read from stdin. If stdin is piped and a prompt is also provided, stdin is appended as a `<stdin>` block"; the `-1` error and the `--` success measured against `codex-cli 0.147.0` in t203 |
+| `SessionSpec.timeoutSeconds` | **There is no timeout flag** — neither here nor in Claude Code. It is the adapter's clock over the process, exactly as the interface presumes. | its absence in `codex exec --help` |
+| `SessionSpec.envOverrides` | The subprocess's environment, plus `-c key=value` for configuration. | `codex exec --help` |
+| `SessionListener.onOutput` | `--json` ("Print events to stdout as JSONL"). Runtime error lines come out as plain **non-JSON** text in the same stream — which confirms the contract of a raw, unparsed line. | A real execution: among the JSON frames came lines like `ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized` |
+| `SessionListener.onEngineRef` | The stream's first frame: `{"type":"thread.started","thread_id":"01a000e7-…"}`. | A real execution |
+| `SessionListener.onFinished` (status) | A terminal `turn.completed` / `turn.failed` frame, with the same pattern as Claude Code's `result`: classify by the structured frame, fall back to the exit code when there is no frame. | A real execution produced `{"type":"turn.failed","error":{"message":"unexpected status 401 …"}}` |
+| `SessionListener.onFinished` (exit code) | It exits **1** on a failed turn — it does not mask the failure behind a 0. | A real execution, measured with no pipe: `REAL_EXIT=1` |
+| `getStatus` | The adapter's local state, as in Claude Code: the CLI has no state query. | — |
+| `cancel` | A signal to the process: SIGTERM, SIGKILL after a grace period. No cancellation subcommand. | its absence in `codex --help` |
+| `capabilities` | `hasStructuredOutput: true` (JSONL), `hasResume: true` (`codex exec resume [SESSION_ID]`). `reportsUsage` to be confirmed against a real corpus. | `codex exec resume --help`: "Resume a previous session by id" |
+| `verifyCli` | `codex --version` → `codex-cli 0.147.0`; `codex doctor` ("Diagnose local Codex installation, config, auth, and runtime health") as a richer probe. See item 3 of the adjustments. | `codex --help`, `codex --version` |
+| `SessionStartError` | A spawn failure or a missing workdir — the same class of error on both engines. | — |
+| `UnknownSessionError` | Purely the adapter's; no engine takes part. | — |
 
-### Conclusão
+### Conclusion
 
-A interface serve ao Codex CLI sem mudança estrutural: os dois engines são
-subprocess headless com stream de eventos JSONL, engine ref no primeiro
-frame, frame terminal e exit code. As divergências reais são **três**, e
-todas caem exatamente onde a fronteira do adapter foi desenhada para
-absorvê-las: como as instruções entram, como o frame terminal se chama, e o
-que a sonda de autenticação consegue prometer. Nenhuma delas vaza para cima.
+The interface serves Codex CLI with no structural change: both engines are
+headless subprocesses with a JSONL event stream, an engine ref in the first
+frame, a terminal frame and an exit code. The real divergences are **three**, and
+all of them fall exactly where the adapter's boundary was drawn to absorb them:
+how the instructions go in, what the terminal frame is called, and what the
+authentication probe can promise. None of them leaks upwards.
 
-O que a revisão *mudou* está na seção seguinte.
+What the review *changed* is in the next section.
 
-## Ajustes feitos na revisão
+## Adjustments made in review
 
-Dez mudanças e duas rejeições explícitas — quatro da revisão original, mais o
-que cresceu depois do congelamento em v1 (item 5, t163; item 6, t166; item 7,
-t173; item 8, t172; item 9, t175; item 10, t203). Nada aqui é decorativo: os
-itens 1, 3, 6, 7, 8 e 10 saíram de rodar as CLIs, não de ler documentação.
+Ten changes and two explicit rejections — four from the original review, plus
+what grew after the v1 freeze (item 5, t163; item 6, t166; item 7, t173; item 8,
+t172; item 9, t175; item 10, t203). Nothing here is decorative: items 1, 3, 6, 7,
+8 and 10 came out of running the CLIs, not out of reading documentation.
 
-1. **`stdin` fechado virou invariante normativa (novo).** Rodando
-   `codex exec` com stdin não-TTY, a CLI imprimiu
-   `Reading additional input from stdin...` antes de começar — e o
-   `codex exec --help` confirma: "If stdin is piped and a prompt is also
-   provided, stdin is appended as a `<stdin>` block". Um adapter que deixe um
-   pipe aberto e nunca escreva nele trava a sessão para sempre: o engine
-   espera EOF, o timeout até dispara, mas o custo é uma sessão inteira
-   perdida por um default de biblioteca. Antes desta revisão isso era detalhe
-   de implementação copiado do flowpilot; agora é invariante 6, e o caso C1
-   do kit o exercita de graça.
+1. **A closed `stdin` became a normative invariant (new).** Running `codex exec`
+   with a non-TTY stdin, the CLI printed
+   `Reading additional input from stdin...` before starting — and
+   `codex exec --help` confirms it: "If stdin is piped and a prompt is also
+   provided, stdin is appended as a `<stdin>` block". An adapter that leaves a
+   pipe open and never writes to it stalls the session forever: the engine waits
+   for EOF, the timeout does fire, but the cost is a whole session lost to a
+   library default. Before this review that was an implementation detail copied
+   from flowpilot; now it is invariant 6, and the kit's C1 exercises it for free.
 
-2. **`exitCode` ficou `number | null` em vez de `number`.** Processo morto a
-   sinal não tem código de saída em POSIX, e é o que acontece em C3 e C4 —
-   os dois casos que o kit obriga. Um `number` puro forçaria todo adapter a
-   inventar um `-1` ou `137`, e a telemetria perderia a diferença entre
-   "saiu com erro" e "não chegou a sair". Vale para os dois engines.
+2. **`exitCode` became `number | null` instead of `number`.** A process killed by
+   a signal has no exit code in POSIX, and that is what happens in C3 and C4 —
+   the two cases the kit demands. A plain `number` would force every adapter to
+   invent a `-1` or a `137`, and the telemetry would lose the difference between
+   "it exited with an error" and "it never got to exit". It holds for both
+   engines.
 
-3. **`CliProbe.authenticated` foi rebaixado a melhor esforço, por escrito.**
-   A execução sem credencial mostrou que o Codex **abre a sessão
-   normalmente** — `thread.started` e `turn.started` saem antes de qualquer
-   sinal de problema — e só falha ao tentar falar com a API, com o 401
-   chegando como frames `{"type":"error","message":"Reconnecting... 2/5 …"}`
-   no meio do stream. Ou seja: não existe sonda barata que garanta
-   autenticação para todo engine. O campo continua na interface (o wizard de
-   instalação precisa dele), mas o doc agora diz o que ele promete, e nenhum
-   consumidor pode tratá-lo como garantia.
+3. **`CliProbe.authenticated` was demoted to best effort, in writing.** The
+   execution with no credential showed that Codex **opens the session
+   normally** — `thread.started` and `turn.started` come out before any sign of
+   trouble — and only fails on trying to talk to the API, with the 401 arriving
+   as `{"type":"error","message":"Reconnecting... 2/5 …"}` frames in the middle
+   of the stream. Which is to say: there is no cheap probe that guarantees
+   authentication for every engine. The field stays in the interface (the
+   installation wizard needs it), but the document now says what it promises, and
+   no consumer may treat it as a guarantee.
 
-4. **Campos de `EngineCapabilities` viraram opcionais.** Motivo é de formato
-   publicado, não de gosto: acrescentar uma flag obrigatória a uma interface
-   que terceiros implementam quebra a compilação de todos eles de uma vez.
-   Opcional + `resolveCapabilities()` torna o crescimento aditivo, que é o
-   que "schema versionado" tem que significar na prática.
+4. **`EngineCapabilities`'s fields became optional.** The reason is one of
+   published format, not of taste: adding a mandatory flag to an interface third
+   parties implement breaks the compilation of all of them at once. Optional plus
+   `resolveCapabilities()` makes the growth additive, which is what "a versioned
+   schema" has to mean in practice.
 
-**Rejeitado — flag `hasNativeSystemPrompt`.** A divergência é real e medida
-(`claude --help` tem `--system-prompt`; `codex exec --help` não tem
-equivalente), e a tentação de expor isso como capacidade é grande. Mas
-nenhum consumidor acima do adapter faria coisa diferente sabendo: `instructions`
-chega separado justamente para que a escolha do mecanismo morra dentro do
-adapter. Declarar a flag seria uma afirmação sem consumidor — e é assim que
-um formato-produto começa a acumular campo morto. O que a divergência
-produziu foi a **regra normativa** da separação, que agora está escrita, e o
-caso C2 do kit, que a verifica pelo que o processo recebeu.
+**Rejected — a `hasNativeSystemPrompt` flag.** The divergence is real and
+measured (`claude --help` has `--system-prompt`; `codex exec --help` has no
+equivalent), and the temptation to expose that as a capability is strong. But no
+consumer above the adapter would do anything different knowing it: `instructions`
+arrives separately precisely so that the choice of mechanism dies inside the
+adapter. Declaring the flag would be a statement with no consumer — and that is
+how a format-as-product starts accumulating a dead field. What the divergence
+produced was the **normative rule** of the separation, which is now written down,
+and the kit's C2, which verifies it by what the process received.
 
-5. **`SessionSpec.silenceSeconds` e o terceiro argumento do `onFinished`**
-   (t163). O primeiro crescimento aditivo depois do congelamento em v1 que
-   toca o listener, e ele obedece à mesma regra que `SessionSpec.permissions`
-   obedeceu: campo opcional, parâmetro opcional, nenhum símbolo publicado
-   mudando de nome ou de forma. Um adapter de terceiro que ignora
-   `silenceSeconds` continua compilando e continua passando C1–C8; o que ele
-   não passa é C9, que é exatamente o que "esta capacidade é nova" tem de
-   significar num kit de certificação.
+5. **`SessionSpec.silenceSeconds` and `onFinished`'s third argument** (t163). The
+   first additive growth after the v1 freeze that touches the listener, and it
+   obeys the same rule `SessionSpec.permissions` obeyed: an optional field, an
+   optional parameter, no published symbol changing its name or its shape. A
+   third party's adapter that ignores `silenceSeconds` still compiles and still
+   passes C1–C8; what it does not pass is C9, which is exactly what "this
+   capability is new" has to mean in a certification kit.
 
-   O par vem junto por necessidade: com dois cães de guarda, `"timed_out"`
-   deixou de dizer qual mordeu, e essa é uma pergunta operacional real ("a
-   sessão custou demais" e "a sessão parou de acontecer" pedem reações
-   diferentes). A resposta NÃO foi um status novo — ver o parágrafo logo
-   abaixo, que rejeitou isso por conta própria — e sim uma causa opcional ao
-   lado do status, que morre no log de eventos como
+   The pair comes together out of necessity: with two watchdogs, `"timed_out"`
+   stopped saying which one bit, and that is a real operational question ("the
+   session cost too much" and "the session stopped happening" ask for different
+   reactions). The answer was NOT a new status — see the paragraph just below,
+   which rejected that on its own account — but an optional cause beside the
+   status, which lands in the event log as
    `session.finished.data.timeout_reason`.
 
-6. **`SessionSpec.model`, `listModels()`, `EngineModel` e `ModelCatalog`**
-   (t166). O segundo crescimento aditivo depois do congelamento em v1, e ele
-   obedece à mesma regra que `permissions` (t125) e `silenceSeconds` (t163)
-   obedeceram: campo opcional, nenhum símbolo publicado mudando de nome ou de
-   forma. A diferença é que desta vez o que cresceu foi um MÉTODO da interface,
-   e por isso `listModels?()` é opcional no próprio membro, não só nos campos —
-   um adapter de terceiro que nunca ouviu falar de catálogo continua compilando
-   e continua passando o kit inteiro. Nenhum caso cobra `listModels`: é
-   capacidade opcional, não linha de base que todo adapter tem de cumprir, e
-   teste unitário por adapter dá conta. (O C10 que o kit ganhou é do item
-   seguinte, de continuação de sessão, e não tem relação com catálogo.)
+6. **`SessionSpec.model`, `listModels()`, `EngineModel` and `ModelCatalog`**
+   (t166). The second additive growth after the v1 freeze, and it obeys the same
+   rule `permissions` (t125) and `silenceSeconds` (t163) obeyed: an optional
+   field, no published symbol changing its name or its shape. The difference is
+   that this time what grew was a METHOD of the interface, and that is why
+   `listModels?()` is optional in the member itself, not only in the fields — a
+   third party's adapter that never heard of a catalogue still compiles and still
+   passes the whole kit. No case demands `listModels`: it is an optional
+   capability, not a baseline every adapter has to meet, and a unit test per
+   adapter covers it. (The C10 the kit gained is the next item's, about session
+   continuation, and has nothing to do with catalogues.)
 
-   O par `model`/`listModels` vem junto porque um sem o outro é meia entrega:
-   pinar modelo por nó sem publicar quais existem obriga quem escreve grafo a
-   adivinhar identificador, e publicar catálogo sem poder pinar é um cardápio
-   sem pedido.
+   The `model`/`listModels` pair comes together because one without the other is
+   half a delivery: pinning a model per node without publishing which ones exist
+   forces whoever writes a graph to guess an identifier, and publishing a
+   catalogue with no way to pin is a menu with no order.
 
-   **A lacuna, escrita porque existe.** `claude --help` tem `--model <model>` e
-   `codex exec --help` tem `-m, --model <MODEL>` — os dois DEFINEM modelo, e
-   nenhum dos dois expõe subcomando ou flag que LISTE os disponíveis (rodado
-   contra os dois binários nesta ficha). O caminho `cli` de `listModels()` está
-   na interface para o engine futuro que tiver um; os dois adapters de hoje
-   resolvem sempre para o catálogo estático deles, sempre `origin: 'catalog'`.
-   É o mesmo tipo de honestidade escrita que `CliProbe.authenticated` já
-   carrega — "melhor esforço, nunca garantia" — e é para isso que `origin`
-   existe: sem ele, "estes são os modelos" seria afirmação que ninguém
-   consegue pesar.
+   **The gap, written down because it exists.** `claude --help` has
+   `--model <model>` and `codex exec --help` has `-m, --model <MODEL>` — both of
+   them SET a model, and neither exposes a subcommand or a flag that LISTS the
+   available ones (run against both binaries in this ticket). `listModels()`'s
+   `cli` path is in the interface for the future engine that has one; both of
+   today's adapters always resolve to their own static catalogue, always
+   `origin: 'catalog'`. It is the same kind of written honesty
+   `CliProbe.authenticated` already carries — "best effort, never a guarantee" —
+   and it is what `origin` exists for: without it, "these are the models" would be
+   a statement nobody can weigh.
 
-7. **`SessionSpec.resumeFrom`, e o que a CLI real respondeu sobre ele**
-   (t173, 2026-08-16). Mesmo crescimento aditivo dos três anteriores: campo
-   opcional, nenhum símbolo publicado mudando de nome ou de forma, e um caso
-   novo no kit (C10) para o que passou a existir. A diferença é que este campo
-   deu consumidor a uma capacidade que a interface declarava desde o
-   congelamento e nenhum adapter implementava — `hasResume` era exatamente o
-   tipo de flag que a nota acima manda não declarar antes de alguém ler, e a
-   partir daqui alguém lê.
+7. **`SessionSpec.resumeFrom`, and what the real CLI answered about it** (t173,
+   2026-08-16). The same additive growth as the three before it: an optional
+   field, no published symbol changing its name or its shape, and a new case in
+   the kit (C10) for what came into being. The difference is that this field gave
+   a consumer to a capability the interface had declared since the freeze and no
+   adapter implemented — `hasResume` was exactly the kind of flag the note above
+   orders not to declare before somebody reads it, and from here on somebody
+   reads it.
 
-   **Medido contra a CLI real** (`claude 2.1.233`, roteiro em
-   `packages/runner/scripts/spike-session-resume.mjs`, duas rodadas em
-   2026-08-16). O roteiro conta um marcador único à sessão A, captura o
-   `engineRef` dela, e pergunta o marcador de volta numa sessão B cujo prompt
-   nunca o menciona:
+   **Measured against the real CLI** (`claude 2.1.233`, script in
+   `packages/runner/scripts/spike-session-resume.mjs`, two runs on 2026-08-16).
+   The script tells a unique marker to session A, captures its `engineRef`, and
+   asks for the marker back in a session B whose prompt never mentions it:
 
-   - **resume carrega contexto de verdade.** A sessão B respondeu o marcador
-     que nunca lhe foi dito, medido no frame `result` — não numa linha de
-     transcript reproduzida, que seria eco e não memória;
-   - **e NÃO exige o mesmo `workingDir`** — o que **contradiz o que a ficha
-     assumiu**. A t173 partiu da leitura de
-     `packages/runner/src/dispatch/session-worktree.ts:16-26` (todo despacho
-     cria um worktree novo) supondo que o resume do Claude Code fosse chaveado
-     por diretório, e portanto inútil em produção até alguém reusar o
-     diretório. Não é: com o mesmo ref, de um diretório que aquela sessão
-     nunca viu, a sessão B recitou o marcador igual. As duas rodadas
-     concordaram. Quem for despachar resume tem uma dependência a menos do que
-     esta ficha imaginava;
-   - **a sessão continuada reporta o MESMO `engineRef`.** Não é um id novo com
-     ponteiro para o anterior: o `session_id` do stream de B é, literalmente, o
-     de A. Consequência para quem for modelar telemetria de sessão reciclada —
-     `engine_session_ref` **não** identifica uma execução, identifica a
-     conversa, e uma tabela que o tratar como chave única de sessão colide na
-     segunda continuação.
+   - **resume really carries context.** Session B answered the marker it was
+     never told, measured in the `result` frame — not in a reproduced transcript
+     line, which would be an echo and not memory;
+   - **and it does NOT demand the same `workingDir`** — which **contradicts what
+     the ticket assumed**. t173 started from a reading of
+     `packages/runner/src/dispatch/session-worktree.ts:16-26` (every dispatch
+     creates a new worktree) supposing that Claude Code's resume was keyed by
+     directory, and therefore useless in production until somebody reused the
+     directory. It is not: with the same ref, from a directory that session never
+     saw, session B recited the marker just the same. Both runs agreed. Whoever
+     dispatches a resume has one dependency fewer than this ticket imagined;
+   - **the continued session reports the SAME `engineRef`.** It is not a new id
+     with a pointer to the earlier one: B's stream `session_id` is, literally,
+     A's. A consequence for whoever models the telemetry of a recycled session —
+     `engine_session_ref` does **not** identify an execution, it identifies the
+     conversation, and a table that treats it as a session's unique key collides
+     on the second continuation.
 
-8. **`SessionFinishDetail.usage` e `SessionFinishDetail.models`, e o frame que
-   os mediu** (t172, 2026-08-16; evidência fixada aqui na t174). Mesmo
-   crescimento aditivo dos anteriores: dois campos opcionais num tipo que já
-   existia, nenhum símbolo publicado mudando de nome ou de forma, `EngineAdapter`
-   e a assinatura de `onFinished` intocados. E o segundo caso seguido de uma
-   capacidade declarada no congelamento ganhando finalmente um leitor —
-   `reportsUsage` estava na interface desde então e adapter nenhum a declarava,
-   pelo mesmo motivo que `hasResume`: a CLI sabia contar o tempo todo, o que
-   faltava era alguém ler.
+8. **`SessionFinishDetail.usage` and `SessionFinishDetail.models`, and the frame
+   that measured them** (t172, 2026-08-16; the evidence fixed here in t174). The
+   same additive growth as the earlier ones: two optional fields on a type that
+   already existed, no published symbol changing its name or its shape,
+   `EngineAdapter` and `onFinished`'s signature untouched. And the second case in
+   a row of a capability declared at the freeze finally gaining a reader —
+   `reportsUsage` had been in the interface ever since and no adapter declared
+   it, for `hasResume`'s reason: the CLI had known how to count all along, what
+   was missing was somebody to read it.
 
-   **Medido contra a CLI real** (`claude 2.1.233`, roteiro em
-   `packages/runner/scripts/spike-real-session.mjs`, rodado em 2026-08-16). O
-   `usage` do frame `result` terminal, verbatim — é este objeto que
-   `packages/runner/test/engine/conformance.claude-code.test.ts` usa como
-   fixture, e é por ele estar inteiro, e não recortado nas quatro chaves, que o
-   teste consegue distinguir um adapter que ESCOLHE de um que repassa:
+   **Measured against the real CLI** (`claude 2.1.233`, script in
+   `packages/runner/scripts/spike-real-session.mjs`, run on 2026-08-16). The
+   `usage` of the terminal `result` frame, verbatim — it is this object that
+   `packages/runner/test/engine/conformance.claude-code.test.ts` uses as a
+   fixture, and it is because it is whole, and not cut down to the four keys,
+   that the test can tell an adapter that CHOOSES from one that forwards:
 
    ```json
    {
@@ -1071,247 +1078,248 @@ caso C2 do kit, que a verifica pelo que o processo recebeu.
    }
    ```
 
-   Dez chaves onde o `uso` da taxonomia aceita quatro e fecha
-   `additionalProperties`. O adapter ESCOLHE as quatro, e o destino das outras
-   seis fica decidido aqui, por escrito, em vez de implícito no código:
+   Ten keys where the taxonomy's `uso` accepts four and closes
+   `additionalProperties`. The adapter CHOOSES the four, and the fate of the
+   other six is decided here, in writing, instead of implicitly in the code:
 
-   - **`cache_creation` NÃO é somado a `cache_creation_input_tokens`.** É o
-     mesmo número quebrado por TTL — 3022 = 3022 (1h) + 0 (5m). O campo plano
-     já é o total, e somar o detalhamento por cima contaria o cache duas vezes;
-   - **`output_tokens_details.thinking_tokens` também não**, pela mesma
-     aritmética: é subdivisão do `output_tokens`, já contida nele;
-   - **`service_tier`, `inference_geo`, `speed` e `server_tool_use` não são
-     contagem de token** de nenhuma das quatro naturezas, e não existe para
-     onde dobrá-las sem inventar. Ficam de fora, e ficam de fora nomeadas: quem
-     descobrir mapeamento honesto para alguma delas muda esta lista antes de
-     mudar o código.
+   - **`cache_creation` is NOT added to `cache_creation_input_tokens`.** It is
+     the same number broken down by TTL — 3022 = 3022 (1h) + 0 (5m). The flat
+     field is already the total, and adding the breakdown on top would count the
+     cache twice;
+   - **`output_tokens_details.thinking_tokens` is not either**, by the same
+     arithmetic: it is a subdivision of `output_tokens`, already contained in it;
+   - **`service_tier`, `inference_geo`, `speed` and `server_tool_use` are not a
+     token count** of any of the four natures, and there is nowhere to fold them
+     into without inventing. They stay out, and they stay out named: whoever
+     finds an honest mapping for one of them changes this list before changing
+     the code.
 
-   O mesmo frame trouxe `modelUsage` com DOIS modelos numa sessão de um turno
-   só — o do turno principal e o de um auxiliar mais barato. Os totais por
-   modelo **não fecham** com o `usage` de cima (`input_tokens` 2 no topo, contra
-   523 + 2 no detalhamento): o topo descreve o turno principal, o detalhamento
-   descreve todo modelo que rodou. Por isso `models` carrega IDENTIDADE e nunca
-   uma segunda contabilidade — somar ali produziria um total que discorda do
-   próprio frame que o originou.
+   The same frame brought `modelUsage` with TWO models in a session of a single
+   turn — the main turn's and a cheaper auxiliary's. The per-model totals **do
+   not add up** to the `usage` above (`input_tokens` 2 at the top, against
+   523 + 2 in the breakdown): the top describes the main turn, the breakdown
+   describes every model that ran. That is why `models` carries IDENTITY and
+   never a second accounting — summing there would produce a total that disagrees
+   with the very frame that produced it.
 
-   **Ausência continua ausência.** Frame sem `usage`, `usage` a que falte
-   qualquer uma das quatro contagens, ou sessão que morreu antes do frame
-   terminal não reportam campo nenhum. Zero é medição; completar o silêncio com
-   zeros é a única leitura proibida, e é a mesma regra que o `uso` da taxonomia
-   carrega desde a t98.
+   **Absence is still absence.** A frame with no `usage`, a `usage` missing any
+   one of the four counts, or a session that died before the terminal frame
+   report no field at all. Zero is a measurement; filling the silence with zeros
+   is the one forbidden reading, and it is the same rule the taxonomy's `uso` has
+   carried since t98.
 
-9. **`SessionSpec.modelTier`** (t175, 2026-08-16). Nono crescimento aditivo,
-   mesma forma dos anteriores: campo opcional, nenhum símbolo publicado mudando
-   de nome ou de forma, nenhum adapter obrigado a mexer. O que ele acrescenta é
-   um vocabulário, não um dado: `model` (item 6) atravessa a fronteira porque um
-   documento de grafo escreveu um id de engine; `modelTier` tem dois valores
-   NOSSOS, e é o adapter que responde quanto "trivial" custa nele. Sem isso, um
-   runner que quisesse rodar trabalho barato precisaria conhecer o nome do
-   modelo barato de cada CLI — que é exatamente a invariante 1 ("nenhum
-   vocabulário de engine acima desta linha") de cabeça para baixo.
+9. **`SessionSpec.modelTier`** (t175, 2026-08-16). The ninth additive growth, the
+   same shape as the earlier ones: an optional field, no published symbol
+   changing its name or its shape, no adapter obliged to move. What it adds is a
+   vocabulary, not a piece of data: `model` (item 6) crosses the boundary because
+   a graph document wrote an engine id; `modelTier` has two OF OUR values, and it
+   is the adapter that answers how much "trivial" costs on it. Without it, a
+   runner that wanted to run cheap work would have to know the name of every
+   CLI's cheap model — which is exactly invariant 1 ("no engine vocabulary above
+   this line") upside down.
 
-   Duas decisões que o campo obriga, e as duas estão no comentário dele:
+   Two decisions the field forces, and both are in its comment:
 
-   - **`model` ganha de `modelTier`.** Os dois chegam juntos quando um nó fixou
-     modelo e o trabalho foi triado; o adapter monta uma flag só, com o valor de
-     `model`. Não é preferência de estilo: duas flags de modelo no mesmo argv é
-     comando quebrado, e entre um id que alguém registrou num grafo e uma
-     heurística de triagem, quem cede é a heurística.
-   - **`standard` não monta flag**, e produz argv idêntico ao de `modelTier`
-     ausente. O par existe para a TRIAGEM poder dizer "olhei e é normal" em vez
-     de calar — distinção que vale na telemetria, e que os adapters
-     deliberadamente não usam.
+   - **`model` beats `modelTier`.** Both arrive together when a node fixed a
+     model and the work was triaged; the adapter assembles a single flag, with
+     `model`'s value. It is not a style preference: two model flags in the same
+     argv is a broken command, and between an id somebody recorded in a graph and
+     a triage heuristic, the one that gives way is the heuristic.
+   - **`standard` assembles no flag**, and produces an argv identical to an
+     absent `modelTier`. The pair exists so that the TRIAGE can say "I looked and
+     it is ordinary" instead of staying quiet — a distinction that counts in the
+     telemetry, and that the adapters deliberately do not use.
 
-   Os dois adapters divergem aqui, por escrito e de propósito. O `claude-code`
-   tem um default documentado (`claude-haiku-4-5`, sobrescrevível por
-   `CLAUDE_TRIVIAL_MODEL`); o `codex` **não tem default nenhum** e só monta a
-   flag se `CODEX_TRIVIAL_MODEL` estiver setada. Nada neste repositório
-   estabelece qual modelo da OpenAI é o barato, e um id chutado chegaria à CLI
-   como sessão que morre em modelo desconhecido. A lacuna está escrita e é
-   testada como lacuna (`test/engine/codex-command.test.ts`), em vez de
-   maquiada — mesma postura de `origin: 'catalog'` no item 6.
+   The two adapters diverge here, in writing and on purpose. `claude-code` has a
+   documented default (`claude-haiku-4-5`, overridable through
+   `CLAUDE_TRIVIAL_MODEL`); `codex` has **no default at all** and only assembles
+   the flag if `CODEX_TRIVIAL_MODEL` is set. Nothing in this repository
+   establishes which of OpenAI's models is the cheap one, and a guessed id would
+   reach the CLI as a session that dies on an unknown model. The gap is written
+   down and is tested as a gap (`test/engine/codex-command.test.ts`), rather than
+   made up — the same posture as `origin: 'catalog'` in item 6.
 
-10. **O conteúdo grande saiu do argv, e o prompt deixou de poder ser lido como
-    flag** (t203, 2026-08-16). O primeiro item desta lista que **não** mexe na
-    interface: nenhum símbolo novo, nenhum campo novo, nada em `types.ts`.
-    O que ele exercita é um caminho que a regra normativa já contemplava e que
-    nenhum adapter tinha tomado — cada adapter decide como injeta, pela flag do
-    engine, por stdin ou por arquivo efêmero — e é por isso que ele cabe
-    inteiro abaixo da fronteira 1, num documento congelado, sem decisão de
-    formato nenhuma.
+10. **The large content left the argv, and the prompt stopped being readable as a
+    flag** (t203, 2026-08-16). The first item of this list that does **not**
+    touch the interface: no new symbol, no new field, nothing in `types.ts`. What
+    it exercises is a path the normative rule already allowed for and that no
+    adapter had taken — each adapter decides how it injects, through the engine's
+    flag, through stdin or through an ephemeral file — and that is why it fits
+    entirely below boundary 1, in a frozen document, with no format decision at
+    all.
 
-    **Dois bugs, os dois reproduzidos contra as CLIs instaladas**
+    **Two bugs, both reproduced against the installed CLIs**
     (`claude 2.1.233`, `codex-cli 0.147.0`):
 
-    - **`E2BIG`.** Os dois adapters punham o conteúdo composto inteiro no
-      `argv`. O Linux limita um ÚNICO elemento a 128 KiB (`MAX_ARG_STRLEN`) e o
-      macOS limita o bloco argv+envp inteiro (`ARG_MAX`); `SessionSpec.prompt` é
-      "instruções da skill + trabalho + perguntas anteriores + transcript no
-      resume" e cresce sem teto numa sessão longa ou continuada. Passando disso
-      a sessão não falha, ela **não abre**: quem morre é o `spawn`, antes de
-      existir processo, saída ou sessão para reportar o quê;
-    - **prompt começando com `-` lido como flag.** `claude --print "-1 apples
-      remain"` responde `error: unknown option '-1 apples remain'`;
-      `codex exec "-1 apples"` responde `error: unexpected argument '-1'
-      found`. Instrução de nó é prosa que outra pessoa escreveu — uma lista com
-      travessão, um número negativo — e nada garante o que cai na primeira
-      coluna. As duas CLIs aceitam `--` antes do posicional, e foi medido que
-      ele não perturba nenhuma das flags anteriores (`--resume`, `--model`,
-      `-m`, `-s`, `-C`, `--disallowedTools`), que continuam todas ANTES dele.
+    - **`E2BIG`.** Both adapters put the whole composed content in the `argv`.
+      Linux limits a SINGLE element to 128 KiB (`MAX_ARG_STRLEN`) and macOS
+      limits the whole argv+envp block (`ARG_MAX`); `SessionSpec.prompt` is "the
+      skill's instructions + the work + earlier questions + the transcript on a
+      resume" and grows without a ceiling in a long or continued session. Past
+      that the session does not fail, it **does not open**: what dies is the
+      `spawn`, before there is a process, an output or a session to report
+      anything through;
+    - **a prompt starting with `-` read as a flag.** `claude --print "-1 apples
+      remain"` answers `error: unknown option '-1 apples remain'`;
+      `codex exec "-1 apples"` answers `error: unexpected argument '-1' found`. A
+      node's instruction is prose somebody else wrote — a list with a dash, a
+      negative number — and nothing guarantees what lands in the first column.
+      Both CLIs accept `--` before the positional, and it was measured that it
+      does not disturb any of the earlier flags (`--resume`, `--model`, `-m`,
+      `-s`, `-C`, `--disallowedTools`), which all still come BEFORE it.
 
-    **O desenho é por tamanho, e o caminho antigo fica intacto.** Abaixo de
-    64 KiB combinados — bytes UTF-8 de `instructions` + `prompt`, nunca
-    `.length`, porque o conteúdo deste projeto é português e caractere
-    acentuado são dois bytes para o kernel e uma unidade para o JavaScript — o
-    argv é exatamente o de antes, com o `--` a mais. Acima, o `claude-code`
-    escreve as instruções num arquivo efêmero 0600 no `workingDir`
-    (`--system-prompt-file`, que o `--help` principal não lista mas a descrição
-    do `--bare` cita como `--system-prompt[-file]`, e que foi medido
-    funcionando) e manda o prompt por stdin; o `codex` manda a composição
-    inteira por stdin e larga o posicional junto. Nos dois casos a composição
-    continua saindo das funções deste documento — `composeWithSystemPromptFlag`
-    e `composeSingleArgument` — e o que muda é o destino, nunca o formato.
+    **The design is by size, and the old path stays intact.** Below 64 KiB
+    combined — UTF-8 bytes of `instructions` + `prompt`, never `.length`, because
+    this project's content is Portuguese and an accented character is two bytes
+    to the kernel and one unit to JavaScript — the argv is exactly the one from
+    before, with the extra `--`. Above it, `claude-code` writes the instructions
+    into an ephemeral 0600 file in the `workingDir` (`--system-prompt-file`,
+    which the main `--help` does not list but the description of `--bare` cites
+    as `--system-prompt[-file]`, and which was measured working) and sends the
+    prompt through stdin; `codex` sends the whole composition through stdin and
+    drops the positional along with it. In both cases the composition still comes
+    out of this document's functions — `composeWithSystemPromptFlag` and
+    `composeSingleArgument` — and what changes is the destination, never the
+    format.
 
-    **A invariante 6 cresceu de dois mecanismos para três**, e a preocupação do
-    item 1 continua inteira: o que ela proíbe é o pipe aberto que ninguém
-    escreve e ninguém fecha. Escrever e fechar satisfaz a mesma preocupação por
-    outro caminho, e nos dois adapters a condição que abre o pipe é
-    literalmente a mesma que dispara a escrita, o que torna a terceira forma
-    impossível de acontecer por engano.
+    **Invariant 6 grew from two mechanisms to three**, and item 1's concern is
+    intact: what it forbids is the pipe nobody writes to and nobody closes.
+    Writing and closing satisfies the same concern by another path, and in both
+    adapters the condition that opens the pipe is literally the same one that
+    triggers the write, which makes the third form impossible to happen by
+    accident.
 
-    Nenhum dos dois adapters recusa sessão por tamanho, e isso é decisão
-    escrita: com os dois ganhando canal fora do argv, não existe tamanho que
-    justifique recusar. Um terceiro adapter que não tenha nem folga de argv nem
-    stdin nem arquivo recusa na porta, pela mesma regra de honestidade que
-    `resumeFrom` e `permissions` já seguem — mas ele não existe hoje, e
-    caminho de recusa sem consumidor é o mesmo campo morto que esta seção
-    rejeita em toda outra linha.
+    Neither adapter refuses a session by size, and that is a written decision:
+    with both of them gaining a channel outside the argv, there is no size that
+    justifies refusing. A third adapter with neither argv headroom nor stdin nor
+    a file refuses at the door, by the same honesty rule `resumeFrom` and
+    `permissions` already follow — but it does not exist today, and a refusal
+    path with no consumer is the same dead field this section rejects on every
+    other line.
 
-**Rejeitado — `SessionStatus` mais rico.** Codex e Claude Code têm ambos
-estados próprios de quota/limite (o `Reconnecting... n/5` acima é um deles).
-Tentador promover ao baseline; errado por ora. Um terceiro engine sem
-conceito de janela de quota teria que fingir, e a regra dos dois consumidores
-vale para o vocabulário de status tanto quanto para os métodos. Fica
-`failed`, e o motivo real vive no log de eventos, que é append-only e não
-perde nada.
+**Rejected — a richer `SessionStatus`.** Codex and Claude Code both have
+quota/limit states of their own (the `Reconnecting... n/5` above is one of them).
+Tempting to promote to the baseline; wrong for now. A third engine with no
+concept of a quota window would have to pretend, and the rule of two consumers
+holds for the status vocabulary as much as for the methods. It stays `failed`,
+and the real reason lives in the event log, which is append-only and loses
+nothing.
 
-A t163 aplicou este mesmo raciocínio a um caso que não era de engine nenhum,
-e sim nosso: o segundo cão de guarda. Um `stalled`/`travada` separado de
-`timed_out` era o porte óbvio do flowpilot e teria sido a decisão errada pela
-razão idêntica — o que muda entre as duas paradas não é o desfecho, é a
-causa, e causa é dado, não vocabulário. `SessionStatus` continua com seis
-membros.
+t163 applied that same reasoning to a case that was no engine's, but ours: the
+second watchdog. A `stalled`/`travada` separate from `timed_out` was the obvious
+port from flowpilot and would have been the wrong decision for the identical
+reason — what changes between the two stops is not the outcome, it is the cause,
+and a cause is data, not vocabulary. `SessionStatus` still has six members.
 
-## Fora de escopo (v0)
+## Out of scope (v0)
 
-Registrado para quem ler depois não presumir esquecimento:
+Recorded so that whoever reads later does not presume an oversight:
 
-- **Contagem de uso (`SessionUsage`) e projeção de transcript.** Existiam no
-  flowpilot; a régua da PoC (D16) pede sessões despachadas e telemetria
-  completa, e não mencionava nenhuma das duas.
+- **Usage counting (`SessionUsage`) and transcript projection.** They existed in
+  flowpilot; the PoC's ruler (D16) asks for dispatched sessions and complete
+  telemetry, and mentioned neither of the two.
 
-  **As duas saíram desta lista.** O transcript na t159; a contagem de uso na
-  t172, e também ela **só para o `claude-code`**: o frame `result` terminal
-  daquela CLI sempre trouxe `usage` e `modelUsage`, o adapter de referência
-  agora os lê, declara `reportsUsage` e os entrega pelo `SessionFinishDetail`.
-  O que fica fora é a contagem do **Codex** — o `reportsUsage` dele segue
-  "a confirmar contra corpus real" na tabela de mapeamento abaixo, mesmo depois
-  da spike credenciada da t141, e declarar a capacidade sem ter medido o frame
-  seria exatamente a afirmação sem lastro que este documento recusa em todo
-  lugar. Ficha própria, com o mesmo portão que a t172 usou aqui: rodar a CLI de
-  verdade e olhar o frame.
+  **Both left this list.** The transcript in t159; usage counting in t172, and it
+  too **only for `claude-code`**: that CLI's terminal `result` frame always
+  brought `usage` and `modelUsage`, the reference adapter now reads them,
+  declares `reportsUsage` and hands them over through `SessionFinishDetail`. What
+  stays out is **Codex**'s counting — its `reportsUsage` is still "to be
+  confirmed against a real corpus" in the mapping table above, even after t141's
+  credentialed spike, and declaring the capability without having measured the
+  frame would be exactly the unbacked statement this document refuses everywhere.
+  A ticket of its own, with the same gate t172 used here: run the real CLI and
+  look at the frame.
 
-  **Resume SAIU desta lista na t173, só para o `claude-code`** (registrado
-  aqui em vez de sumir sem rastro, como as duas entradas do congelamento
-  abaixo). O `onEngineRef` capturava desde sempre "a chave que o resume vai
-  precisar", e a t173 devolveu essa chave pelo `SessionSpec.resumeFrom`: o
-  adapter de referência declara `hasResume` e monta `--resume <ref>`. O que
-  continua fora, e continua não declarado, é o resume do **Codex**: o
-  `codex exec resume` existe, mas é subcomando e não flag — mecanismo de
-  outra natureza, ficha própria — e até lá aquele adapter recusa `resumeFrom`
-  na porta, que é a resposta honesta e o que o C10 cobra dele. Também
-  continuam fora as camadas ACIMA do adapter que a hipótese original queria:
-  telemetria N:M entre sessão e item de trabalho, política de reciclagem como
-  dado do grafo e reúso de worktree entre despachos. Nada no `dispatch` chama
-  `resumeFrom` ainda.
-- **Sandbox de sistema operacional.** Permissões de skill **saíram** desta
-  lista na t125 (ver "Permissões da sessão" e a tensão 1, agora resolvida); o
-  que continua fora é o isolamento de processo — `sandbox-exec`, namespace de
-  rede, contêiner. O que existe hoje é gating por nome de ferramenta, no que o
-  engine permitir, com a lacuna residual escrita.
-- **SDK vs subprocess.** Assumido subprocess de CLI, alinhado à D17 e ao
-  precedente do flowpilot.
+  **Resume LEFT this list in t173, only for `claude-code`** (recorded here rather
+  than disappearing without a trace, like the two entries of the freeze below).
+  `onEngineRef` had always captured "the key resume is going to need", and t173
+  gave that key back through `SessionSpec.resumeFrom`: the reference adapter
+  declares `hasResume` and assembles `--resume <ref>`. What stays out, and stays
+  undeclared, is **Codex**'s resume: `codex exec resume` exists, but it is a
+  subcommand and not a flag — a mechanism of another nature, a ticket of its own
+  — and until then that adapter refuses `resumeFrom` at the door, which is the
+  honest answer and what C10 demands of it. Also still out are the layers ABOVE
+  the adapter the original hypothesis wanted: N:M telemetry between a session and
+  a work item, a recycling policy as graph data and worktree reuse across
+  dispatches. Nothing in `dispatch` calls `resumeFrom` yet.
+- **An operating-system sandbox.** Skill permissions **left** this list in t125
+  (see "The session's permissions" and tension 1, now resolved); what stays out
+  is process isolation — `sandbox-exec`, a network namespace, a container. What
+  exists today is gating by tool name, within what the engine allows, with the
+  residual gap written down.
+- **SDK versus subprocess.** A CLI subprocess is assumed, in line with D17 and
+  with flowpilot's precedent.
 
-Duas entradas **saíram** desta lista no congelamento para v1 (t119), por terem
-deixado de ser verdade — registradas aqui em vez de sumirem sem rastro:
-"implementar qualquer adapter, nem Claude Code nem Codex" (o primeiro saiu na
-t104, o segundo nesta ficha) e "congelar a interface: dois adapters reais
-primeiro" (é o que este documento acabou de fazer).
+Two entries **left** this list at the freeze for v1 (t119), for having stopped
+being true — recorded here rather than disappearing without a trace:
+"implementing any adapter at all, neither Claude Code nor Codex" (the first left
+in t104, the second in this ticket) and "freezing the interface: two real
+adapters first" (which is what this document has just done).
 
-## Revisão contra as decisões registradas
+## A review against the recorded decisions
 
-- **D1 (só o server escreve)** — respeitada por construção: o listener é a
-  única saída do adapter, e quem persiste é quem chamou.
-- **D6 (ordem do MVP)** — esta ticket é a especificação que a construção do
-  primeiro adapter consome; nenhum sintetizador é tocado.
-- **D17 (stack e relação com o flowpilot)** — TypeScript, subprocess de CLI,
-  flowpilot como referência de comportamento. Nenhuma linha de código
-  portada; o que veio de lá foram as decisões e as cicatrizes.
-- **D9 (formato do contrato)** — tensão registrada, não decidida aqui, na
-  seção abaixo.
-- **D4 (portão de importação de skill)** — a tensão 1 abaixo saiu do papel na
-  t125: o campo existe, o adapter de referência aplica o que consegue e recusa
-  o que não consegue.
+- **D1 (only the server writes)** — respected by construction: the listener is
+  the adapter's only way out, and whoever persists is whoever called.
+- **D6 (the order of the MVP)** — this ticket is the specification the building
+  of the first adapter consumes; no synthesizer is touched.
+- **D17 (the stack and the relationship with flowpilot)** — TypeScript, a CLI
+  subprocess, flowpilot as a behavioural reference. Not a line of code ported;
+  what came from there were the decisions and the scars.
+- **D9 (the contract format)** — a tension recorded, not decided here, in the
+  section below.
+- **D4 (the skill import gate)** — tension 1 below came off the page in t125: the
+  field exists, the reference adapter applies what it can and refuses what it
+  cannot.
 
-### Tensões encontradas (para o portão humano, não decididas aqui)
+### Tensions found (for the human gate, not decided here)
 
-1. **D4 × ausência de política de permissão no `SessionSpec` — RESOLVIDA na
-   t125.** O campo é `permissions?: SessionPermissions` (ver "Permissões da
-   sessão"), e a pergunta que a tensão dizia não ser neutra — quem responde
-   pela política, o manifesto ou o adapter — foi respondida assim: **o
-   manifesto declara, o adapter aplica ou recusa**. O default do adapter deixa
-   de valer no instante em que a política chega; onde ela não chega, o
-   comportamento é o de antes. Resolver a segunda metade (buscar `permissoes`
-   do manifesto registrado a partir do `skill_ref` do nó e popular o campo) é
-   do pipeline de renderização de skill, que ainda não existe. O registro
-   original, que continua verdadeiro sobre as CLIs, fica abaixo.
+1. **D4 × the absence of a permission policy in `SessionSpec` — RESOLVED in
+   t125.** The field is `permissions?: SessionPermissions` (see "The session's
+   permissions"), and the question the tension said was not neutral — who answers
+   for the policy, the manifest or the adapter — was answered like this: **the
+   manifest declares, the adapter applies or refuses**. The adapter's default
+   stops holding the instant the policy arrives; where it does not arrive, the
+   behaviour is the one from before. Resolving the second half (fetching the
+   registered manifest's `permissoes` from the node's `skill_ref` and populating
+   the field) belongs to the skill rendering pipeline, which does not exist yet.
+   The original record, which is still true about the CLIs, stays below.
 
-   > *Como estava registrado, antes da t125:* as duas CLIs têm controle de
-   > permissão de primeira classe — `codex exec` traz
+   > *As it was recorded, before t125:* both CLIs have first-class permission
+   > control — `codex exec` brings
    > `-s, --sandbox <read-only|workspace-write|danger-full-access>`,
-   > `--approve-for-me` e `--dangerously-bypass-approvals-and-sandbox`; o
-   > `claude` traz `--permission-mode` com
-   > `acceptEdits|auto|bypassPermissions|manual|dontAsk|plan`. Cuidado com o
-   > `-a, --ask-for-approval`: ele é do `codex` **interativo** (nível superior)
-   > e não existe no subcomando `exec`, que morre com
-   > `error: unexpected argument '-a' found` — a aprovação não-interativa do
-   > exec são os dois flags acima. O `SessionSpec` v0 **não tem onde expressar
-   > isso**: hoje a política só pode vir de default codificado no adapter ou de
-   > `envOverrides`, que é opaco por definição e portanto inauditável. Quando a
-   > D4 sair do papel — permissões declaradas no manifesto da skill, com pin por
-   > hash — vai faltar exatamente este campo, e ele é aditivo mas não é neutro
-   > (define quem responde pela política: o manifesto ou o adapter). Fica para a
-   > ticket de D4.
+   > `--approve-for-me` and `--dangerously-bypass-approvals-and-sandbox`;
+   > `claude` brings `--permission-mode` with
+   > `acceptEdits|auto|bypassPermissions|manual|dontAsk|plan`. Careful with
+   > `-a, --ask-for-approval`: it belongs to the **interactive** `codex` (the top
+   > level) and does not exist in the `exec` subcommand, which dies with
+   > `error: unexpected argument '-a' found` — exec's non-interactive approval is
+   > the two flags above. The v0 `SessionSpec` **has nowhere to express this**:
+   > today the policy can only come from a default hard-coded in the adapter or
+   > from `envOverrides`, which is opaque by definition and therefore
+   > unauditable. When D4 comes off the page — permissions declared in the
+   > skill's manifest, pinned by hash — exactly this field will be missing, and
+   > it is additive but it is not neutral (it defines who answers for the policy:
+   > the manifest or the adapter). It waits for D4's ticket.
 
-   Aquele registro deixou um aviso, e a t195 o resolveu — sem contorná-lo. O
-   aviso era: o `-s/--sandbox` do `codex exec` é sandbox de verdade, de outra
-   natureza que o gating por nome de ferramenta do `claude-code`, e reusar a
-   lógica de gating ali seria traduzir uma garantia dura para uma fraca sem
-   ninguém pedir. A t161 trouxe o segundo consumidor real que a regra dos dois
-   consumidores mandava esperar (o manifesto da skill passou a popular
-   `permissions` para qualquer engine), e com ele a t195 deu ao Codex política
-   própria: um `codex-permission-policy.ts` que mapeia os dois eixos sobre os
-   modos de sandbox reais da CLI, sem compartilhar uma linha com o vocabulário
-   de ferramenta do outro engine. A garantia dura continua dura, e o que a
-   CLI não sabe combinar virou recusa explícita em vez de aproximação
-   silenciosa (ver "O que o adapter do Codex garante").
-2. **D9 × a forma deste contrato.** A D9 manda contrato ser JSON Schema de
-   entrada/saída mais checks tipados. Esta especificação é tipo TS mais uma
-   tabela de conformidade em prosa. A leitura adotada aqui é que a D9 governa
-   **capacidades** (skill, portão, nó) — as coisas que atravessam o grafo — e
-   não a interface de transporte de sessão, que é código e cuja verificação é
-   a suíte de conformidade. Se a leitura correta for a outra, o kit acima é o
-   candidato natural a virar lista de checks tipados, e o `SessionSpec` a
-   virar JSON Schema. Vale a mesma pergunta para as três especificações irmãs
-   (schema do grafo, manifesto de skill, taxonomia de eventos) — melhor
-   responder uma vez, para as quatro.
+   That record left a warning, and t195 resolved it — without working around it.
+   The warning was: `codex exec`'s `-s/--sandbox` is a real sandbox, of another
+   nature than `claude-code`'s gating by tool name, and reusing the gating logic
+   there would be translating a hard guarantee into a weak one with nobody asking
+   for it. t161 brought the second real consumer the rule of two consumers
+   ordered waiting for (the skill's manifest started populating `permissions` for
+   any engine), and with it t195 gave Codex a policy of its own: a
+   `codex-permission-policy.ts` that maps both axes onto the CLI's real sandbox
+   modes, without sharing a line with the other engine's tool vocabulary. The
+   hard guarantee stays hard, and what the CLI does not know how to combine
+   became an explicit refusal instead of a silent approximation (see "What the
+   Codex adapter guarantees").
+2. **D9 × the shape of this contract.** D9 orders a contract to be an
+   input/output JSON Schema plus typed checks. This specification is a TS type
+   plus a conformance table in prose. The reading adopted here is that D9 governs
+   **capabilities** (a skill, a gate, a node) — the things that cross the graph —
+   and not the session transport interface, which is code and whose verification
+   is the conformance suite. If the correct reading is the other one, the kit
+   above is the natural candidate to become a list of typed checks, and the
+   `SessionSpec` to become a JSON Schema. The same question holds for the three
+   sibling specifications (the graph schema, the skill manifest, the event
+   taxonomy) — better answered once, for all four.

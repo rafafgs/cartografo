@@ -8,9 +8,9 @@
 #
 # Every string this script compares against the document is left exactly as the
 # document spells it: the headings, the conformance-kit row patterns and the
-# codex flag citations are Portuguese because `docs/formatos/engine-adapter.md`
-# is, and that file is out of the D18 rename scope (t133, exception 7). Only
-# this script's own prose is English.
+# codex flag citations. They moved to English with the document itself (D24,
+# t299); before that they were Portuguese, and the patterns kept `.+` in place
+# of an accented character for the reason check [3] still records.
 #
 # Usage: scripts/check-engine-adapter-spec.sh
 # Exits 0 if every check passes, 1 on the first that fails.
@@ -46,10 +46,10 @@ fi
 # --- 2. exact headings -------------------------------------------------------
 printf '\n[2] required headings\n'
 for heading in \
-  '## Interface TypeScript' \
-  '## Kit de conformidade' \
-  '## Viabilidade: segunda CLI' \
-  '## Ajustes feitos na revisão'; do
+  '## The TypeScript interface' \
+  '## The conformance kit' \
+  '## Feasibility: a second CLI' \
+  '## Adjustments made in review'; do
   if grep -qxF "$heading" "$DOC"; then
     pass "heading '$heading'"
   else
@@ -61,9 +61,9 @@ done
 # The patterns use `.+` in place of the accented character to avoid depending on
 # multibyte case-folding in grep (it varies between GNU/BSD and by locale).
 printf '\n[3] conformance kit: 6 cases\n'
-kit_rows=$(section '## Kit de conformidade' | grep '^|' || true)
+kit_rows=$(section '## The conformance kit' | grep '^|' || true)
 if [ -z "$kit_rows" ]; then
-  fail 'the "Kit de conformidade" section has no markdown table'
+  fail 'the "conformance kit" section has no markdown table'
 else
   while IFS='|' read -r label pattern; do
     if printf '%s\n' "$kit_rows" | grep -qiE "$pattern"; then
@@ -72,18 +72,18 @@ else
       fail "no table row for '$label' (pattern: $pattern)"
     fi
   done <<'CASES'
-sessão básica|sess.+o b.+sica
-injeção de skill|inje.+o de skill
+basic session|basic session
+skill injection|skill injection
 timeout|timeout
-morte de processo|morte de processo
-cancelamento|cancelamento
-colheita de eventos|colheita de eventos
+process death|process death
+cancellation|cancellation
+event harvesting|event harvesting
 CASES
 fi
 
 # --- 4. the feasibility section cites a primary source -----------------------
 printf '\n[4] feasibility: second CLI\n'
-if section '## Viabilidade: segunda CLI' | grep -q 'http'; then
+if section '## Feasibility: a second CLI' | grep -q 'http'; then
   pass 'the section carries at least one URL as a source citation'
 else
   fail 'the section carries no URL (http) as a source citation'
@@ -153,7 +153,7 @@ for flag in '--approve-for-me' '--dangerously-bypass-approvals-and-sandbox'; do
 done
 
 # Every paragraph mentioning the flag has to attribute it to the interactive CLI.
-misattributed=$(awk 'BEGIN { RS = "" } /--ask-for-approval/ && !/interativ/' "$DOC")
+misattributed=$(awk 'BEGIN { RS = "" } /--ask-for-approval/ && !/interactive/' "$DOC")
 if [ -z "$misattributed" ]; then
   pass '--ask-for-approval always attributed to the interactive `codex`'
 else

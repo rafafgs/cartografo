@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 const DOC = fileURLToPath(new URL('../../../../docs/formatos/engine-adapter.md', import.meta.url));
 const TYPES = fileURLToPath(new URL('../../src/engine/types.ts', import.meta.url));
 
-const SECTION = '## Interface TypeScript';
+const SECTION = '## The TypeScript interface';
 
 /** Symbols that only exist at compile time — there is no checking them at runtime. */
 const ERASED_KINDS = new Set(['type', 'interface']);
@@ -218,10 +218,10 @@ test('t175 — the growth list of the document names the tier', () => {
   // `SessionSpec.model` (t166) and `resumeFrom` (t173) are all logged there, and
   // an addition that skips it is an undocumented change to a published format.
   const document = readFileSync(DOC, 'utf8');
-  const section = sectionBody(document, '## Ajustes feitos na revisão');
+  const section = sectionBody(document, '## Adjustments made in review');
 
   assert.ok(
     section.includes('modelTier'),
-    'docs/formatos/engine-adapter.md § "Ajustes feitos na revisão" does not mention modelTier',
+    'docs/formatos/engine-adapter.md § "Adjustments made in review" does not mention modelTier',
   );
 });

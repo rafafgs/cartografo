@@ -1,139 +1,148 @@
-# Primeira execução real do grafo de bets assimétricas (t198)
+# The first real execution of the asymmetric-bets graph (t198)
 
-Data: 2026-08-17, 20:15–21:05 UTC. Operador: plantão (Claude), com autorização do
-Rafael. Segunda instância da D14: o grafo `bets-assimetricas` atravessado por uma
-tese real, com sessão de agente de verdade — a primeira vez que este grafo roda
-fora do fake engine.
+Date: 2026-08-17, 20:15–21:05 UTC. Operator: the on-duty agent (Claude), with
+Rafael's authorization. The second instance of D14: the `bets-assimetricas` graph
+crossed by a real thesis, with a real agent session — the first time this graph
+has run outside the fake engine.
 
-## Procedência
+## Provenance
 
-- Commit da `main`: `80142cf` (t261 incluído). Control plane e runner subiram do
-  checkout `~/cartografo`; banco recriado (`rm -rf .cartografo/`).
-- Grafo importado: `bets-assimetricas`, versão
+- Commit on `main`: `80142cf` (t261 included). The control plane and the runner
+  came up from the `~/cartografo` checkout; the database recreated
+  (`rm -rf .cartografo/`).
+- Graph imported: `bets-assimetricas`, version
   `sha256:7e95e0015c19ed9bd41ddbbca5fcf278174aae21dee9e9cbaffcc3594f438584`
-  (7 skills registradas). Configuração de investidor = o `project` de exemplo do
-  próprio `grafo.json` (t260).
-- Trabalho: job **2**, execução **1**, nó de entrada `triagem`. (O job 1 foi criado
-  sem `execution_id` e bloqueado à mão para ficar fora da rodada.)
-- Tese: **Equinox Gold (EQX)** — "mineradoras precificam o ouro muito abaixo do
-  fluxo de caixa a US$ 4.400"; hipótese e origem no `body` (Era de Ouro, relatório
-  semanal de 2026-08-17, lido pelo Rafael); `fields.asset = EQX`,
-  `fields.premise_source` = múltiplos 13x/8x fwd, GDX vs SPY, prêmio da prata na
-  China. Entrada completa em `~/cartografo-bets-run/job.json`; candidatas
-  alternativas (urânio/CCJ, cobre/FCX, prata/SLV) em
-  `scratchpad/teses-metais.json` da sessão.
-- Engine: `claude-code` (`claude 2.1.233/2.1.234`, modelo `claude-fable-5`),
-  runner com `--working-dir ~/cartografo-bets-run/repo` (repo de rascunho) e
-  `--worktrees-root ~/cartografo-bets-run/worktrees`.
+  (7 skills registered). The investor configuration = the example `project` of
+  `grafo.json` itself (t260).
+- Job: job **2**, execution **1**, entry node `triagem`. (Job 1 was created with
+  no `execution_id` and blocked by hand to keep it out of the round.)
+- Thesis: **Equinox Gold (EQX)** — "miners price gold far below the cash flow at
+  US$ 4,400"; the hypothesis and its origin in the `body` (Era de Ouro, the
+  weekly report of 2026-08-17, read by Rafael); `fields.asset = EQX`,
+  `fields.premise_source` = the 13x/8x fwd multiples, GDX vs SPY, the silver
+  premium in China. The full input at `~/cartografo-bets-run/job.json`;
+  alternative candidates (uranium/CCJ, copper/FCX, silver/SLV) in the session's
+  `scratchpad/teses-metais.json`.
+- Engine: `claude-code` (`claude 2.1.233/2.1.234`, model `claude-fable-5`), the
+  runner with `--working-dir ~/cartografo-bets-run/repo` (a scratch repository)
+  and `--worktrees-root ~/cartografo-bets-run/worktrees`.
 
-## O que aconteceu, nó a nó
+## What happened, node by node
 
-| # | Sessão | Nó | Resultado | Saída (tokens) | Cache criado |
+| # | Session | Node | Result | Output (tokens) | Cache created |
 |---|---|---|---|---|---|
-| 1–4 | 1, 2, 3, 4 | `triagem` | **recusadas pelo modelo** antes de responder (`stop_reason: refusal`, categoria `reasoning_extraction`), exit 1 | 0 | 23.067 cada |
-| 5 | 5 | `triagem` | `completed` (exit 0) em ~72 s de sessão (84,5 s de tempo de agente medido pelo topógrafo) | 5.369 | 23.133 |
-| — | — | `registro-monitoramento` | nó final: o trabalho foi dado como concluído ao chegar nele; **a skill `registrar-travessia` não rodou** | — | — |
+| 1–4 | 1, 2, 3, 4 | `triagem` | **refused by the model** before answering (`stop_reason: refusal`, category `reasoning_extraction`), exit 1 | 0 | 23,067 each |
+| 5 | 5 | `triagem` | `completed` (exit 0) in ~72 s of session (84.5 s of agent time as the topografo measured it) | 5,369 | 23,133 |
+| — | — | `registro-monitoramento` | a final node: the job was taken as finished on arriving at it; **the `registrar-travessia` skill did not run** | — | — |
 
-Caminho: `triagem —descartar→ registro-monitoramento` (aresta de descarte). O
-portão humano (`decisao`) fica no ramo em que a tese sobrevive; nesta travessia
-ele não foi alcançado. Nenhum `input-request` foi aberto.
+The path: `triagem —descartar→ registro-monitoramento` (the discard edge). The
+human gate (`decisao`) sits on the branch where the thesis survives; on this
+traversal it was not reached. No `input-request` was opened.
 
-### O que a triagem decidiu
+### What the triage decided
 
-`resultado: descartar`, `outcome: fail`. Critério a critério, sobre o texto da
-entrada:
+`resultado: descartar`, `outcome: fail`. Criterion by criterion, over the text of
+the input:
 
-1. "downside limitado por caixa líquido ou ativo real, não por narrativa" →
-   **não atende**: a entrada só oferece reprecificação de múltiplo e um retorno do
-   GDX; nenhum dado de caixa, dívida, NAV, reservas ou custo de produção. (Mina é
-   ativo real; a tese pode ser reformulada com piso de balanço, mas a entrada não
-   o traz.)
-2. "evento datado que força a reprecificação em até 12 meses" → **não atende**:
-   "prata romper US$ 71" é nível de preço em outro metal, sem data; "ouro a
-   US$ 8.000 em dois anos" está fora da janela de 12 meses.
-3. "cabe no círculo de competência declarado" → **indeterminado** (não recebido).
-4. "cabe no teto de risco da carteira" → **indeterminado**: `project.carteira`
-   existe no grafo, mas a skill de triagem não tem placeholder para ela — não
-   chegou ao nó.
+1. "downside limited by net cash or a real asset, not by a narrative" → **does
+   not meet it**: the input offers only a multiple re-rating and a return from
+   GDX; no data on cash, debt, NAV, reserves or cost of production. (A mine is a
+   real asset; the thesis can be reformulated with a balance-sheet floor, but the
+   input does not bring one.)
+2. "a dated event that forces the re-rating within 12 months" → **does not meet
+   it**: "silver breaking US$ 71" is a price level in another metal, with no
+   date; "gold at US$ 8,000 in two years" is outside the 12-month window.
+3. "fits within the declared circle of competence" → **indeterminate** (not
+   received).
+4. "fits within the portfolio's risk ceiling" → **indeterminate**:
+   `project.carteira` exists in the graph, but the triage skill has no
+   placeholder for it — it never reached the node.
 
-A sessão devolveu quatro reformulações que reabririam a tese (piso pelo balanço da
-EQX; um evento corporativo com data; tamanho pretendido e carteira; círculo de
-competência) — exatamente o tipo de saída que o nó existe para produzir.
+The session returned four reformulations that would reopen the thesis (a floor
+from EQX's balance sheet; a corporate event with a date; the intended size and
+the portfolio; the circle of competence) — exactly the kind of output the node
+exists to produce.
 
-## Topógrafos sobre a execução 1
+## Topographers over execution 1
 
-- **Fluxo** (`npm run surveyor -- 1`): sessão real de análise; gargalo `triagem`
-  (84.554 ms de agente, 0 perguntas); **proposta 1** pendente: reescrever a
-  `description` do nó `triagem` para "portão rápido: confronta contra a lista fixa
-  de critérios e responde só aprofundar/descartar com uma frase de motivo por
-  critério; não pesquisa, não define escopo" — métrica esperada
-  `tempo_agente_ms:triagem` cai de 84.554 para 67.643. Aplicar é decisão humana.
-- **Custo** (`topografo-custo evaluate --execution 1 --token-cap 20000`):
-  **proposta 2** pendente: teto de tokens do nó `triagem` estourado (120.928
-  observados em 5 sessões contra 20.000 declarados) — inflado pelas 4 recusas.
+- **Flow** (`npm run surveyor -- 1`): a real analysis session; the bottleneck at
+  `triagem` (84,554 ms of agent time, 0 questions); **proposal 1** pending:
+  rewrite the `triagem` node's `description` to "a fast gate: it confronts the
+  input against the fixed list of criteria and answers only deepen/discard with
+  one sentence of reason per criterion; it does not research, it does not define
+  scope" — the expected metric `tempo_agente_ms:triagem` falls from 84,554 to
+  67,643. Applying is a human decision.
+- **Cost** (`topografo-custo evaluate --execution 1 --token-cap 20000`):
+  **proposal 2** pending: the `triagem` node's token ceiling blown (120,928
+  observed across 5 sessions against 20,000 declared) — inflated by the 4
+  refusals.
 
-## Custo da rodada
+## The round's cost
 
-Sessões do nó: 5 (4 recusadas + 1 boa) ≈ 115 k tokens de cache criado + 5,4 k de
-saída ≈ US$ 2,3. Sessão do topógrafo de fluxo ≈ US$ 1. Diagnóstico da recusa
-(bissecção com `claude -p`, 8 chamadas) ≈ US$ 4. Total ≈ **US$ 7–8** para uma
-tese reprovada na primeira etapa — o caminho barato do grafo, e o correto para
-esta tese.
+Node sessions: 5 (4 refused + 1 good) ≈ 115 k tokens of cache created + 5.4 k of
+output ≈ US$ 2.3. The flow topografo's session ≈ US$ 1. Diagnosing the refusal
+(a bisection with `claude -p`, 8 calls) ≈ US$ 4. Total ≈ **US$ 7–8** for a thesis
+rejected at the first stage — the graph's cheap path, and the right one for this
+thesis.
 
-## Buracos encontrados (cada um virou ticket, em backlog — liberar é decisão do Rafael)
+## Holes found (each one became a ticket, in the backlog — releasing them is Rafael's decision)
 
-1. **O preâmbulo genérico de escalação no topo do system prompt fazia o modelo
-   recusar a sessão** (5/5 determinístico; movido para o fim, passa) — t261,
-   já corrigido no meio da rodada (`80142cf`).
-2. **Nó final com skill de trabalho nunca roda**: `registro-monitoramento` tem
-   `registrar-travessia`, mas o trabalho é dado como concluído ao chegar no nó
-   final. Ou o registro é um nó que roda e só então conclui, ou a skill é
-   decorativa — hoje é o segundo, em silêncio. → **t262**
-3. **`execution.finished` não disparou** (t245): a execução 1 tem seu único job
-   concluído e `finished_at` continua `null` em `GET /executions`. → **t264**
-4. **Evento `job.transitioned` com `from_node_id: null`** na transição
-   `triagem → registro-monitoramento`. → **t264**
-5. **Recusa do engine tratada como falha genérica e retentada 4×** (~US$ 1,9 no
-   mesmo erro determinístico) — não entrou no t261: o adaptador não distingue `stop_reason: refusal` de
-   uma falha qualquer, e o core não tem teto de sessões falhas seguidas por job —
-   o executor re-alugaria o trabalho para sempre. → **t265**
-6. **`carteira` não chega à triagem**: t260 pôs `carteira` em `project`, mas a
-   skill `triar-tese` só lê `input.project.criterios_de_triagem` — dois critérios
-   saem "indeterminado" por falta de dado que o grafo tem. → **t263**
-7. **Evidência do topógrafo de fluxo ainda com chaves em português**
-   (`fonte`, `execucao_id`, `no_id`, `tempo_agente_ms`…) — resto do fio (D20). → **t264**
-8. `metrics-by-version` mostra só `jobs`/`events` por versão — sem tokens/tempo
-   por nó (a lente de custo tem que recomputar das sessões). → **t264**
+1. **The generic escalation preamble at the top of the system prompt made the
+   model refuse the session** (5/5 deterministic; moved to the end, it passes) —
+   t261, already fixed in the middle of the round (`80142cf`).
+2. **A final node with a work skill never runs**: `registro-monitoramento` has
+   `registrar-travessia`, but the job is taken as finished on arriving at the
+   final node. Either the record is a node that runs and only then finishes, or
+   the skill is decorative — today it is the second, silently. → **t262**
+3. **`execution.finished` did not fire** (t245): execution 1 has its only job
+   finished and `finished_at` is still `null` in `GET /executions`. → **t264**
+4. **A `job.transitioned` event with `from_node_id: null`** on the
+   `triagem → registro-monitoramento` transition. → **t264**
+5. **An engine refusal treated as a generic failure and retried 4×** (~US$ 1.9 on
+   the same deterministic error) — it did not go into t261: the adapter does not
+   tell `stop_reason: refusal` from any other failure, and the core has no
+   ceiling of consecutive failed sessions per job — the executor would re-lease
+   the work forever. → **t265**
+6. **`carteira` does not reach the triage**: t260 put `carteira` in `project`,
+   but the `triar-tese` skill only reads
+   `input.project.criterios_de_triagem` — two criteria come out
+   "indeterminate" for want of data the graph has. → **t263**
+7. **The flow topografo's evidence still has Portuguese keys** (`fonte`,
+   `execucao_id`, `no_id`, `tempo_agente_ms`…) — the rest of the thread (D20). →
+   **t264**
+8. `metrics-by-version` shows only `jobs`/`events` per version — no tokens/time
+   per node (the cost lens has to recompute them from the sessions). → **t264**
 
-### O que o t264 achou dos quatro que lhe couberam (2026-08-18)
+### What t264 found about the four that fell to it (2026-08-18)
 
-Os buracos 3, 7 e 8 eram os três defeitos que a lista dizia que eram, e foram
-fechados: a rodada passa a ser declarada terminada também quando o fato que
-fecha a condição é a devolução do lease (e não uma transição), a evidência da
-lente de fluxo migrou para o inglês da §5.6 do glossário, e cada linha de
-`metrics-by-version` ganhou `nodes` com sessões, tokens e tempo de agente por nó.
+Holes 3, 7 and 8 were the three defects the list said they were, and they were
+closed: a round is now also declared finished when the fact that closes the
+condition is the return of the lease (and not a transition), the flow lens's
+evidence moved to the English of §5.6 of the glossary, and every row of
+`metrics-by-version` gained a `nodes` field with sessions, tokens and agent time
+per node.
 
-O **buraco 4 não era defeito**, e é o único item desta lista que se fecha sem
-uma linha de código. `from_node_id: null` é o contrato documentado da PRIMEIRA
-transição de um trabalho — o `job.transitioned.schema.json` e a
-[`taxonomy.md`](../especificacoes/eventos/taxonomy.md) dizem isso, e o
-`jobs.test.ts` já fixava a forma. `null` significa "saiu do nó de entrada", e o
-nó de entrada do job 2 era `triagem`: quem escreveu a nota leu "o trabalho
-estava em triagem" como contradizendo o `null`, e as duas coisas são a mesma. O
-t264 investigou e não mexeu em nada por causa dele.
+**Hole 4 was not a defect**, and it is the only item on this list that closes
+without a line of code. `from_node_id: null` is the documented contract of a
+job's FIRST transition — `job.transitioned.schema.json` and
+[`taxonomy.md`](../especificacoes/eventos/taxonomy.md) say so, and `jobs.test.ts`
+already pinned the shape. `null` means "it left the entry node", and job 2's
+entry node was `triagem`: whoever wrote the note read "the job was in triagem" as
+contradicting the `null`, and the two are the same thing. t264 investigated and
+changed nothing because of it.
 
-## O que a rodada prova e o que não prova
+## What the round proves and what it does not
 
-Prova: o mapa recebe uma tese pelo trabalho, projeta a entrada do primeiro nó a
-partir de job + project + campos (t253/t259/t260), abre uma sessão real, o nó
-julga contra os critérios do investidor com evidência estruturada, devolve a
-saída no contrato, o executor segue a aresta correta e os dois topógrafos
-produzem propostas a partir da telemetria — o ciclo "rodar → medir → propor",
-inteiro, numa tese real. E a triagem reprovou pelos motivos certos: era um bom
-trade e não uma bet assimétrica pelos critérios do mapa.
+It proves: the map receives a thesis through the job, projects the first node's
+input out of job + project + fields (t253/t259/t260), opens a real session, the
+node judges against the investor's criteria with structured evidence, returns the
+output in the contract, the executor follows the correct edge and both
+topographers produce proposals out of the telemetry — the "run → measure →
+propose" cycle, whole, on a real thesis. And the triage rejected for the right
+reasons: it was a good trade and not an asymmetric bet by the map's criteria.
 
-Não prova: os seis nós depois da triagem (coleta com rede aberta, análise de
-assimetria, red team, dimensionamento, portão humano, registro) — a tese não
-chegou lá. Uma tese que passe na triagem (a do urânio/Cameco, ou a EQX
-reformulada com piso de balanço e evento datado, como a própria triagem sugeriu)
-é o próximo teste; e a rodada com n>1 continua sendo o t239.
+It does not prove: the six nodes after the triage (collection with an open
+network, asymmetry analysis, red team, sizing, the human gate, the record) — the
+thesis never got there. A thesis that passes the triage (the uranium/Cameco one,
+or EQX reformulated with a balance-sheet floor and a dated event, as the triage
+itself suggested) is the next test; and the round with n>1 is still t239.

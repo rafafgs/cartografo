@@ -20,14 +20,17 @@
  *   on the API has no read path for it.
  * - **Only an operator may reach these.** By omission, not by a check: the gate
  *   in `src/auth.ts` refuses any route outside `RUNNER_SURFACE` with
- *   `credencial_fora_de_escopo`, and this family is deliberately not on that
+ *   `out_of_scope_credential`, and this family is deliberately not on that
  *   list. A runner dispatches sessions; it has no business registering keys.
  *
  * Since t226 the request and response field names are English
  * (`docs/spec/glossario-wire.md` §1): the path segment is `:name`, the body
- * carries `value`, and what comes back is `{name, created_at, revoked_at}` out
- * of `repositories/hook-secrets.ts`'s `toHookSecret`. The COLUMNS are still
- * `nome`/`valor`/`criada_em` — renaming those is D20's fourth child.
+ * carries `value`, and what comes back is `{name, created_at, revoked_at}` —
+ * what `repositories/hook-secrets.ts` returns, handed back untouched (t289).
+ * There used to be a `toHookSecret` wrapper around every read there, translating
+ * a Portuguese-spelled row into those names; the COLUMNS have been English since
+ * D20's fourth child (t229), so the row spells them itself now and the wrapper
+ * had nothing left to rename.
  */
 
 import type { FastifyInstance } from 'fastify';

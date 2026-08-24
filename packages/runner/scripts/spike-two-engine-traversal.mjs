@@ -13,7 +13,7 @@
  * same graph. What it demonstrates, with nothing simulated:
  *
  * 1. A real control plane runs as a child process and is the only writer (D1).
- * 2. `schema/exemplos/grafo-valido-dois-engines.json` — the committed fixture,
+ * 2. `schema/exemplos/graph-valid-two-engines.json` — the committed fixture,
  *    read from disk, not an inline copy — is registered through
  *    `POST /v1/graphs`. Its first node declares no engine; its second declares
  *    `"engine": "codex"`.
@@ -95,7 +95,7 @@ const addFormats = formatsModule.default ?? formatsModule;
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
-const GRAPH_FIXTURE = join(REPO_ROOT, 'schema/exemplos/grafo-valido-dois-engines.json');
+const GRAPH_FIXTURE = join(REPO_ROOT, 'schema/exemplos/graph-valid-two-engines.json');
 const SCHEMAS_DIR = join(REPO_ROOT, 'especificacoes/eventos/schemas');
 const FIXTURES_DIR = join(REPO_ROOT, 'packages/runner/test/fixtures');
 

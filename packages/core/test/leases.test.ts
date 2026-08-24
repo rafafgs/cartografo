@@ -932,7 +932,7 @@ test('t180 — a lease of another runner is refused in English, quoting both ids
 /* `#dispatch`). So at the only instant anything re-checked, the job's own     */
 /* lease was still `active`, and nothing looked again when it cleared a moment */
 /* later. t198's first real crossing hit exactly that                          */
-/* (`notas/2026-08-17-primeira-execucao-bets.md`, gap 3).                      */
+/* (`notas/2026-08-17-first-bets-run.md`, gap 3).                      */
 /*                                                                            */
 /* This is the one place the four verbs above look a job up, and the route is  */
 /* where it happens: `repositories/leases.ts` stays job-blind, as its own      */
@@ -952,7 +952,7 @@ const MINIMAL_GRAPH = path.resolve(
   '..',
   'schema',
   'exemplos',
-  'grafo-valido-minimo.json',
+  'graph-valid-minimal.json',
 );
 
 /** A job, in the slice these two tests read. */

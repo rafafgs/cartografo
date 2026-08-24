@@ -74,7 +74,7 @@ function readExample(name: string): unknown {
 
 /** The minimal fixture, freshly parsed so every case mutates its own copy. */
 function minimalGraph(): Record<string, unknown> {
-  return readExample('grafo-valido-minimo.json') as Record<string, unknown>;
+  return readExample('graph-valid-minimal.json') as Record<string, unknown>;
 }
 
 /** Node list of a parsed fixture, typed loosely because the cases put junk in it. */
@@ -215,16 +215,16 @@ test('AT2 — the four counterexamples fail with the expected rule, one each', a
   const { validateSoundness, RULES } = await loadDomainGraph();
 
   const expected: Array<[string, { rule: string; target: unknown }]> = [
-    ['grafo-invalido-unreachable-node.json', { rule: RULES.REACHABLE, target: 'revisar_lote' }],
-    ['grafo-invalido-sem-terminacao.json', { rule: RULES.TERMINATES, target: 'reprocessar_item' }],
+    ['graph-invalid-unreachable-node.json', { rule: RULES.REACHABLE, target: 'revisar_lote' }],
+    ['graph-invalid-without-termination.json', { rule: RULES.TERMINATES, target: 'reprocessar_item' }],
     [
-      'grafo-invalido-aresta-sem-condicao.json',
+      'graph-invalid-edge-without-condition.json',
       {
         rule: RULES.EDGE_WITH_CONDITION,
         target: { from: 'coletar_fontes', to: 'resumir_fontes' },
       },
     ],
-    ['grafo-invalido-no-sem-contrato.json', { rule: RULES.NODE_WITH_CONTRACT, target: 'publicar_texto' }],
+    ['graph-invalid-node-without-contract.json', { rule: RULES.NODE_WITH_CONTRACT, target: 'publicar_texto' }],
   ];
 
   for (const [file, violation] of expected) {
@@ -294,7 +294,7 @@ test('t153 — a node whose id is invalid never enters the known ids', async () 
 test('AT2 — the two valid graphs keep passing both validations', async () => {
   const { validateGraph } = await loadDomainGraph();
 
-  for (const file of ['grafo-valido-minimo.json', 'grafo-valido-flowpilot.json']) {
+  for (const file of ['graph-valid-minimal.json', 'graph-valid-flowpilot.json']) {
     const report = validateGraph(readExample(file));
     assert.equal(report.valid, true, `${file} has to stay valid`);
     assert.deepEqual(report.structure.errors, []);
@@ -315,7 +315,7 @@ test('t169 — a hook pointing at a node that does not exist is a structure erro
   const ported = await loadDomainGraph();
   const reference = await loadReference();
 
-  const document = readExample('grafo-invalido-gancho-no-desconhecido.json');
+  const document = readExample('graph-invalid-hook-unknown-node.json');
   const report = ported.validateStructure(document);
 
   assert.deepEqual(
@@ -343,7 +343,7 @@ test('t169 — a duplicate hook id is a structure error, and the valid fixture h
   const ported = await loadDomainGraph();
   const reference = await loadReference();
 
-  const document = readExample('grafo-valido-com-ganchos.json') as Record<string, unknown>;
+  const document = readExample('graph-valid-with-hooks.json') as Record<string, unknown>;
   assert.deepEqual(
     ported.validateGraph(document),
     { valid: true, structure: { valid: true, errors: [] }, soundness: { valid: true, violations: [] } },
@@ -434,7 +434,7 @@ test('t256 — a hook with a bad trigger or a raw secret refuses the document', 
   const reference = await loadReference();
 
   for (const scenario of HOOK_CASES) {
-    const document = readExample('grafo-valido-com-ganchos.json') as Record<string, unknown>;
+    const document = readExample('graph-valid-with-hooks.json') as Record<string, unknown>;
     const hooks = document.hooks as Array<Record<string, unknown>>;
     assert.ok(hooks.length >= 1, 'the fixture has to declare at least one hook');
     const hookId = hooks[0].id;
@@ -476,7 +476,7 @@ test('t256 — a destination that is not an object is the same refusal', async (
   const ported = await loadDomainGraph();
   const reference = await loadReference();
 
-  const document = readExample('grafo-valido-com-ganchos.json') as Record<string, unknown>;
+  const document = readExample('graph-valid-with-hooks.json') as Record<string, unknown>;
   const hooks = document.hooks as Array<Record<string, unknown>>;
   hooks[0].destination = 'https://exemplo.invalid/ganchos/revisao';
 

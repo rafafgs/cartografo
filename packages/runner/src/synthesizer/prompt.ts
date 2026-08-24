@@ -74,7 +74,7 @@ export type VerificationExample = Readonly<Record<string, unknown>>;
  * the skill catalogue, printing each skill's `checks` — and a manifest's check
  * is NOT a graph document's check. They disagree on
  * `required_evidence`, which is a non-empty list of the artifacts the
- * verdict has to cite in `especificacoes/formatos/manifesto-skill.schema.json`
+ * verdict has to cite in `especificacoes/formatos/skill-manifest.schema.json`
  * and the literal `true` in `schema/grafo.schema.json`. Tell a session "every
  * node needs a check" with only manifest-shaped checks in front of it and it
  * copies one across, which trades the failure t138 reported for a different one

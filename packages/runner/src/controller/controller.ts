@@ -4,7 +4,7 @@
  * "Controller (inside the runner). Evaluates a directory (local mode) or asks
  * the API (distributed mode) to pick up released work. Maximum session control:
  * concurrency cap per runner and per project"
- * (`notas/2026-08-14-arquitetura-brain-dump.md`). This ticket implements the
+ * (`notas/2026-08-14-architecture-brain-dump.md`). This ticket implements the
  * API path; local mode was left out for having no contract written anywhere in
  * the repo.
  *

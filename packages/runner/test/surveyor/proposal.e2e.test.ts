@@ -55,7 +55,7 @@ const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const CLI_PATH = path.join(PACKAGE_ROOT, 'src', 'surveyor', 'cli.mjs');
 const PROPOSAL_MODULE = 'src/surveyor/proposal.ts';
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
-const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
+const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
 
 /** The run this command is pointed at. */
 const EXECUTION_ID = 2540;

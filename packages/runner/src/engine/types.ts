@@ -58,7 +58,7 @@ export interface SessionSpec {
    * The node's instructions, coming from the database. It is the node's
    * contract rendered — "the node's instructions come out of the database and
    * are injected into the session by the runner"
-   * (`notas/2026-08-14-arquitetura-brain-dump.md:17-20`). Never out of
+   * (`notas/2026-08-14-architecture-brain-dump.md:17-20`). Never out of
    * CLAUDE.md nor of a markdown file resident in the target repository.
    */
   readonly instructions: string;

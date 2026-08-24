@@ -2,7 +2,7 @@
 
 Date: 2026-08-18, 13:03–13:18 UTC. Operator: the plantão (Claude), under Rafael's mandate of
 2026-08-18 ("implementar uma nova feature simples do jogo novamente conforme sugerido").
-Written in English by rule. Round 1: `notas/2026-08-17-t109-feature-do-jogo.md`.
+Written in English by rule. Round 1: `notas/2026-08-17-t109-game-feature.md`.
 
 The question of this round: **after the sprint, does the software graph traverse all five
 nodes by agent, with the executor driving the repository, without the operator?** In round 1

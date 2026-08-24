@@ -16,7 +16,7 @@
  *
  * t113 adds the precedent base (AT3–AT7): an answered question becomes something
  * one can look up, so whoever answers the next one sees what was decided last
- * time (`notas/2026-08-14-aprendizado.md`). It is a READ surface and only that —
+ * time (`notas/2026-08-14-learning.md`). It is a READ surface and only that —
  * the auto-answer policy is a separate ticket, because the safety ladder
  * (principle 5) asks that the precedent exist and accumulate history BEFORE any
  * gate answers on its own.

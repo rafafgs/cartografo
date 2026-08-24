@@ -183,7 +183,7 @@ test('AT4 — the counterexamples, through the reference validator, cover exactl
   const { SOUNDNESS_RULES, renderReport } = await loadSoundness();
 
   const names = readdirSync(EXAMPLES_DIR)
-    .filter((name) => name.startsWith('grafo-invalido-') && name.endsWith('.json'))
+    .filter((name) => name.startsWith('graph-invalid-') && name.endsWith('.json'))
     .sort();
   assert.ok(
     names.length >= 4,

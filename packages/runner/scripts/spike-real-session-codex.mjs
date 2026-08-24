@@ -13,7 +13,7 @@
  * 1. `verifyCli()` finds the real CLI and reports the version.
  * 2. A session runs in a disposable git repository, with `instructions` coming
  *    from the same "fazer" skill manifest the first adapter's proof used
- *    (`especificacoes/formatos/exemplos/manifesto-skill.develop.json`) — the
+ *    (`especificacoes/formatos/exemplos/skill-manifest.develop.json`) — the
  *    closest stand-in for "skill coming from the database" available today.
  * 3. The session actually WORKED — the file the prompt asked for is in the
  *    workdir. Without that, "it exited with 0" proves nothing.
@@ -87,7 +87,7 @@ const addFormats = formatsModule.default ?? formatsModule;
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SCHEMAS_DIR = join(REPO_ROOT, 'especificacoes/eventos/schemas');
-const MANIFEST = join(REPO_ROOT, 'especificacoes/formatos/exemplos/manifesto-skill.develop.json');
+const MANIFEST = join(REPO_ROOT, 'especificacoes/formatos/exemplos/skill-manifest.develop.json');
 
 const REQUESTED_FILE = 'PROVA-T119.md';
 const PHRASE = 'sessao real do EngineAdapter do Codex';

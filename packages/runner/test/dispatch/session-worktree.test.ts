@@ -9,7 +9,7 @@
  * this ficha every dispatch produced the SAME string, and the first real
  * dogfood run paid for it: "the session works in the shared checkout; the
  * OPERATOR itself became a concurrent writer"
- * (`notas/2026-08-15-primeira-execucao.md`, gap #6).
+ * (`notas/2026-08-15-first-execution.md`, gap #6).
  *
  * Against a REAL git repository and a real `git worktree`, on purpose: what is
  * being asserted is what git does — a second checkout of a branch already

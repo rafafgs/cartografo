@@ -3,7 +3,7 @@
  * headless as a subprocess.
  *
  * "Claude Code is the first adapter, not a dependency"
- * (`notas/2026-08-14-arquitetura-brain-dump.md:11-14`). Everything specific to
+ * (`notas/2026-08-14-architecture-brain-dump.md:11-14`). Everything specific to
  * this CLI lives here and in `command.ts`; above this line there is only
  * `SessionSpec`, `SessionStatus` and `SessionListener`.
  *
@@ -544,7 +544,7 @@ export class ClaudeCodeAdapter implements EngineAdapter {
    * How many sessions this adapter still holds live — diagnostics only.
    *
    * NOT part of `EngineAdapter`, which is frozen by the rule of two consumers
-   * (`notas/2026-08-14-extensao-e-qualidade.md`): it is a seam of this class, in
+   * (`notas/2026-08-14-extension-and-quality.md`): it is a seam of this class, in
    * the same family as `commandBuilder` and `probeEnvironment`, and a third-party
    * adapter owes nobody an implementation of it. What it measures is the map of
    * sessions with a process on the other side; the terminal-status stubs are not

@@ -7,7 +7,7 @@
  * `node:child_process`.
  *
  * The hash procedure is reimplemented HERE, straight from the specification
- * (`especificacoes/formatos/manifesto-skill.md`, "Identificação" section),
+ * (`especificacoes/formatos/skill-manifest.md`, "Identificação" section),
  * rather than imported from the validator: if the test reused the
  * implementation it checks, a bug in the canonicalizer would go unnoticed on
  * both sides.
@@ -44,7 +44,7 @@ const MANIFEST_SCHEMA_PATH = path.join(
   ROOT,
   'especificacoes',
   'formatos',
-  'manifesto-skill.schema.json',
+  'skill-manifest.schema.json',
 );
 
 /** The bundle's five manifests: file -> { id, role, node }. */
@@ -101,7 +101,7 @@ function canonicalize(value) {
 
 /**
  * Canonical hash of the manifest, by the procedure in
- * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
+ * `especificacoes/formatos/skill-manifest.md`: sha256 of the canonical JSON of
  * `{instructions, input, output, checks, permissions}`.
  */
 function hashOfManifest(manifest) {
@@ -179,7 +179,7 @@ test('AT2 — ids, roles and edges match the topology pinned by t96', () => {
   assert.equal(doc.problem_class, 'desenvolvimento-de-software');
 });
 
-test('AT3 — the five manifests validate against manifesto-skill.schema.json', async () => {
+test('AT3 — the five manifests validate against skill-manifest.schema.json', async () => {
   const { validateManifest } = await bundleValidator();
   const schema = readJson(MANIFEST_SCHEMA_PATH);
   assert.equal(
@@ -202,7 +202,7 @@ test('AT3 — the five manifests validate against manifesto-skill.schema.json', 
   // what proves the green above does not come from a permissive validator.
   assert.ok(schema.$defs.check, 'the manifest schema has to declare $defs.check');
   const invalid = readJson(
-    path.join(ROOT, 'especificacoes', 'formatos', 'exemplos', 'manifesto-skill.invalido.fixture.json'),
+    path.join(ROOT, 'especificacoes', 'formatos', 'exemplos', 'skill-manifest.invalid.fixture.json'),
   );
   assert.equal(validateManifest(invalid).valid, false, "t97's negative fixture has to be rejected");
 });
@@ -279,7 +279,7 @@ test('AT7 — alpha-test does not rerun the quality gate; integrate and develop 
         check.type === 'deterministic' &&
         // `project` and not `projeto` since t259: the projection publishes the
         // class's static config at `input.project`
-        // (`especificacoes/formatos/manifesto-skill.md`), and the bundle's
+        // (`especificacoes/formatos/skill-manifest.md`), and the bundle's
         // templates were the last thing still spelling it the old way. The two
         // keys inside it are English since t280.
         /\{\{input\.project\.(test_command|quality_commands)\}\}/.test(check.command ?? ''),
@@ -311,7 +311,7 @@ test('AT8 — every instructions carries the escalation contract (input-request 
  *
  * `allowed: true` with NO `domains` is what the manifest format itself calls
  * unrestricted network and declares legal for a native skill
- * (`especificacoes/formatos/manifesto-skill.md`). It is a wider grant on paper
+ * (`especificacoes/formatos/skill-manifest.md`). It is a wider grant on paper
  * and a narrower one in practice, because it is the only one that ever gets
  * enforced. Where the network may point is instructions now, not policy — which
  * is why this test also refuses the old sentence.
@@ -765,7 +765,7 @@ test('t283 — the bundle classifies as checked, so an import needs no re-check'
 // --------------------------------------------------------------------------
 
 /**
- * The placeholder grammar of `especificacoes/formatos/manifesto-skill.md`,
+ * The placeholder grammar of `especificacoes/formatos/skill-manifest.md`,
  * reimplemented here for the same reason the hash procedure above is: a test
  * that imported the runner's own regex would go blind exactly when that regex
  * is what is wrong.

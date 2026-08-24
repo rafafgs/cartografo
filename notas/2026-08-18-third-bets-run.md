@@ -1,9 +1,9 @@
 # Third real run of the asymmetric-bets graph (round 3 — NFJ thesis)
 
 Date: 2026-08-18, 12:01–12:59 UTC. Operator: the plantão (Claude), under Rafael's mandate of
-2026-08-18 ("siga com o plano sugerido"; action plan in `notas/2026-08-18-plano-de-acao.md`
+2026-08-18 ("siga com o plano sugerido"; action plan in `notas/2026-08-18-action-plan.md`
 §3). Written in English by rule (Rafael, 2026-08-18: English everywhere). Previous rounds:
-`notas/2026-08-17-primeira-execucao-bets.md`, `notas/2026-08-17-segunda-execucao-bets.md`.
+`notas/2026-08-17-first-bets-run.md`, `notas/2026-08-17-second-bets-run.md`.
 
 The question of this round: **after the sprint (t267–t279, t283–t285), does a real traversal
 close without the operator hand-carrying data between nodes?** Rule of the round: no

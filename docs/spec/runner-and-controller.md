@@ -269,7 +269,7 @@ The seventh is the only one that happens **after** the worktree, inside
 `testar-alpha` node declared `rede` by domain, the `claude-code` adapter has no
 way of expressing that, and the dispatch blew through **38 leases in two
 minutes** without opening a single session
-([note](../../notas/2026-08-17-t109-feature-do-jogo.md), gap 2). Deterministic in
+([note](../../notas/2026-08-17-t109-game-feature.md), gap 2). Deterministic in
 the strong sense: the same skill, at the same hash, asks for the same policy and
 gets the same refusal on every tick. The blocking reason cites the adapter's
 message **literally**, because the field to fix is the one
@@ -434,7 +434,7 @@ until `t273` nobody kept the promise. The t109 game run is the evidence: the ses
 `merge_commit ae41796` with every gate green, the bench's `main` stayed on the
 commit before it, and a person typed `git merge --ff-only ticket-1` by hand
 before `testar` could open
-([note](../../notas/2026-08-17-t109-feature-do-jogo.md), gap 3).
+([note](../../notas/2026-08-17-t109-game-feature.md), gap 3).
 
 **What triggers it is the shape of the report, never a node id.** Any node whose
 ACCEPTED report carries a non-empty `merge_commit` advances the bench — the field
@@ -484,7 +484,7 @@ its node, and the dispatch resolves `{blocked: true, reason}`.
 refused sessions in a row** before the fifth worked: `stop_reason: "refusal"`,
 `stop_details.category: "reasoning_extraction"`, exit 1, zero output tokens and
 ~23k cache tokens burned on each one
-([note](../../notas/2026-08-17-primeira-execucao-bets.md)). Nothing in the system
+([note](../../notas/2026-08-17-first-bets-run.md)). Nothing in the system
 counted anything: the job went back to the queue, got a lease again and opened
 the next session. What stopped the loop was the operator watching the log.
 
@@ -552,7 +552,7 @@ its own account, the same `` ```resultado `` block the control plane had just
 judged. Two readings of the same report, never compared: a refused report moved
 the job down the edge all the same, and the next node received an `input`
 projection with nothing inside — gap 2 of the
-[second bets crossing](../../notas/2026-08-17-segunda-execucao-bets.md).
+[second bets crossing](../../notas/2026-08-17-second-bets-run.md).
 
 **The verdict started travelling in the answer.** `PATCH /finish` answers with
 the session's projection plus `output_accepted` (always) and
@@ -805,7 +805,7 @@ Every item here is another ticket's declared scope, not an oversight:
   `expiration_reason`), and it was a direct mapping. **What is left over is the
   bigger gap:** `t98`'s taxonomy does not declare `lease.released`, and the
   reference reducer
-  ([`reconstruir-estado.mjs`](../../especificacoes/eventos/reducers/reconstruir-estado.mjs))
+  ([`reconstruct-state.mjs`](../../especificacoes/eventos/reducers/reconstruct-state.mjs))
   projects `leases` with `active`/`expired` alone. The table has three states, so
   either the taxonomy gains a `lease.released`, or the event projection stays
   blind to the ordinary close — which is the most common case of all. Growing the

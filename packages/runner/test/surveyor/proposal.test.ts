@@ -51,7 +51,7 @@ import { authorizeGlobalFetch } from '../authorized-fetch.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
+const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
 const FAKE_ENGINE = fileURLToPath(new URL('../fixtures/fake-engine.mjs', import.meta.url));
 
 const PROPOSAL_MODULE = 'src/surveyor/proposal.ts';

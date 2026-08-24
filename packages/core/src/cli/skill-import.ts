@@ -91,7 +91,7 @@ interface DerivedCheck {
  */
 const COMMAND_HEADS = ['make', 'npm', 'npx', 'pytest', 'go test', 'node'];
 
-/** What only a human can write — never a guess (`manifesto-skill.md:244-245`). */
+/** What only a human can write — never a guess (`skill-manifest.md:244-245`). */
 const SCHEMA_PLACEHOLDER = { $comment: 'revisor humano escreve o JSON Schema aqui' };
 
 /** D4's safe default: read the workspace, write nothing, no network. */
@@ -106,8 +106,8 @@ const IMPORT_VERSION = '0.1.0';
 /** The node a skill import travels through, in the job that carries the gate. */
 const IMPORT_NODE = 'importar-skill';
 
-/** What the reviewer signs (`manifesto-skill.md`, "O que o revisor humano assina"). */
-const REVIEW_CHECKLIST = `What you sign off on by approving (manifesto-skill.md, "O que o revisor humano assina"):
+/** What the reviewer signs (`skill-manifest.md`, "O que o revisor humano assina"). */
+const REVIEW_CHECKLIST = `What you sign off on by approving (skill-manifest.md, "O que o revisor humano assina"):
 
   1. that \`role\` is right — a doing skill registered as a gate becomes a gate that checks nothing;
   2. that \`input\`/\`output\` describe what the skill really consumes and produces;

@@ -34,7 +34,7 @@
  * The honest consequence of that is that applying a proposal from this lens
  * changes no cost by itself: it informs whoever reads the node. Mechanical
  * enforcement waits for a real policy surface
- * (`notas/2026-08-14-aprendizado.md`, item `Políticas`), which is a ticket of
+ * (`notas/2026-08-14-learning.md`, item `Políticas`), which is a ticket of
  * its own.
  */
 

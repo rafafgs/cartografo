@@ -5,8 +5,8 @@
  * nothing checked the one thing a session actually needs: that the DATA a
  * node's pinned skill declares as required `input` will be there when a job
  * arrives. Three real crossings found it out at dispatch time, after paying for
- * the sessions (`notas/2026-08-17-segunda-execucao-bets.md` gap 5,
- * `notas/2026-08-17-t109-feature-do-jogo.md` gap 4).
+ * the sessions (`notas/2026-08-17-second-bets-run.md` gap 5,
+ * `notas/2026-08-17-t109-game-feature.md` gap 4).
  *
  * What is checked here is the PINNED SKILL's `input`/`output`, never the node's
  * own `contract.input_schema`/`output_schema` — `docs/spec/graph.md` §2 already

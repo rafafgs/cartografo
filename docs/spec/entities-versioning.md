@@ -125,7 +125,7 @@ id = "sha256:" + sha256( JSON.stringify( canonicalizar( documento ) ) )
 Two deliberate consequences:
 
 1. **It covers the whole document**, unlike the skill manifest's hash
-   ([`manifesto-skill.md`](../../especificacoes/formatos/manifesto-skill.md)),
+   ([`skill-manifest.md`](../../especificacoes/formatos/skill-manifest.md)),
    which covers only `{instrucoes, entrada, saida, checks, permissoes}`. There,
    catalogue metadata must not invalidate the pin; here the opposite holds — a
    version's snapshot **is** the whole document ([`graph.md` §7](graph.md)), and
@@ -310,7 +310,7 @@ create `graph` → create `graph_version` (`parent_version: null`,
 `source: "manual"`) → point `current_version_id` at it.
 
 Registering does **not** move the pointer
-([`taxonomia.md`](../../especificacoes/eventos/taxonomia.md)) — except here, in
+([`taxonomy.md`](../../especificacoes/eventos/taxonomy.md)) — except here, in
 the bootstrap of a new lineage, because there is no earlier "current" to preserve
 and a lineage with no pointer would be a graph that exists without holding.
 
@@ -412,7 +412,7 @@ telemetry. Reverting without saying why loses the useful half of the fact.
 
 A proposal is a hypothesis, an approval is an experiment, the next round's
 telemetry is the result
-([`notas/2026-08-14-aprendizado.md`](../../notas/2026-08-14-aprendizado.md)).
+([`notas/2026-08-14-learning.md`](../../notas/2026-08-14-learning.md)).
 `POST /v1/propostas/:id/resultado` is where that cycle closes: it takes
 `{execucao_id, depois}` and writes the hypothesis's verdict into
 `proposal.result`.

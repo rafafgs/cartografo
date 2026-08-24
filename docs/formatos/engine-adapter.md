@@ -1,7 +1,7 @@
 # EngineAdapter — v1 specification
 
 > **Status:** v1, **frozen**. The rule of two consumers
-> (`notas/2026-08-14-extensao-e-qualidade.md:57-63`) demands two *implemented*
+> (`notas/2026-08-14-extension-and-quality.md:57-63`) demands two *implemented*
 > adapters before a format is locked, and both exist:
 > `packages/runner/src/engine/claude-code-adapter.ts` (t104) and
 > `packages/runner/src/engine/codex-adapter.ts` (t119), each certified by the
@@ -98,7 +98,7 @@
 Flowpilot's `engine` is a field; in the cartografo it is an interface —
 "EngineAdapter (open a session with prompt/workdir/skills/timeout), follow the
 output, harvest the exit. Claude Code is the first adapter, not a dependency"
-(`notas/2026-08-14-arquitetura-brain-dump.md:11-14`). It is one of the four
+(`notas/2026-08-14-architecture-brain-dump.md:11-14`). It is one of the four
 formats treated as a product (`:17` of the extension note), and what holds up its
 quality when a third party plugs in a new CLI is this specification's
 **conformance kit**, not the goodwill of whoever implements it.
@@ -174,7 +174,7 @@ export interface SessionSpec {
    * The node's instructions, coming from the database. It is the node's
    * contract rendered — "the node's instructions come out of the database and
    * are injected into the session by the runner"
-   * (`notas/2026-08-14-arquitetura-brain-dump.md:17-20`). They never come out
+   * (`notas/2026-08-14-architecture-brain-dump.md:17-20`). They never come out
    * of CLAUDE.md or of a markdown file resident in the target repository.
    */
   readonly instructions: string;
@@ -281,7 +281,7 @@ export interface SessionSpec {
 
 **The caller never concatenates the two fields.** It hands both over separately
 and each adapter decides how it injects them — "the engine's flag/stdin/ephemeral
-file" (`notas/2026-08-14-arquitetura-brain-dump.md:17-18`).
+file" (`notas/2026-08-14-architecture-brain-dump.md:17-18`).
 
 This is not type fussiness: the feasibility review below measured the divergence.
 Claude Code has native `--system-prompt` and `--append-system-prompt`; `codex
@@ -377,7 +377,7 @@ the network and to writing that no list of names closes completely: `python -c`,
 a script from the repository itself or a utility the patterns above do not name
 reach the network with the network policy "applied". This is *best-effort within
 what the engine allows* — the ruler
-`notas/2026-08-14-extensao-e-qualidade.md:43-44` already fixed ("a sandbox where
+`notas/2026-08-14-extension-and-quality.md:43-44` already fixed ("a sandbox where
 the engine allows one") — and it is **not** process isolation. Really closing the
 gap demands an OS sandbox per platform (`sandbox-exec`, a network namespace, a
 container), which is a change of mechanism and a ticket of its own. Every denied
@@ -805,7 +805,7 @@ All of them checked by the kit below:
 ## The conformance kit
 
 This is the suite a third party's adapter has to pass in order to come in
-(`notas/2026-08-14-extensao-e-qualidade.md:21-23`). It runs against a **fake
+(`notas/2026-08-14-extension-and-quality.md:21-23`). It runs against a **fake
 engine** — a controllable script, injected through the adapter's
 command-building seam — so that CI never needs the real CLI installed or
 authenticated. Running against the real CLI is a manual gate, separately.

@@ -69,7 +69,7 @@ const MINIMAL_GRAPH = path.join(
   '..',
   'schema',
   'exemplos',
-  'grafo-valido-minimo.json',
+  'graph-valid-minimal.json',
 );
 
 /**

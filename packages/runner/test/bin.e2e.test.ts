@@ -2,7 +2,7 @@
  * Acceptance tests of the packaged command (t162, AT14–AT15).
  *
  * The claim under test is the one the first dogfood wrote down as gap #5
- * (`notas/2026-08-15-primeira-execucao.md:53-55`): the runner used to be a
+ * (`notas/2026-08-15-first-execution.md:53-55`): the runner used to be a
  * library whose consumer had to know to pass `--import tsx`, because parameter
  * properties in its TypeScript break Node's strip-only mode. So the environment
  * this file spawns the bin with is deliberately plain — `NODE_OPTIONS` is

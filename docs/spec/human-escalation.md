@@ -48,7 +48,7 @@ three things happen or none of them does.
 ```
 
 The reason cites the question's id (the example is the
-[taxonomy](../../especificacoes/eventos/taxonomia.md)'s own): whoever reads the
+[taxonomy](../../especificacoes/eventos/taxonomy.md)'s own): whoever reads the
 job finds out from the reason what has to happen for it to move again, without
 crossing two tables.
 

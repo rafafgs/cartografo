@@ -7,7 +7,7 @@
 **State: content, not format.** This ticket (`t116`) designs no new format: it
 applies the two already settled — the graph document
 ([`docs/spec/graph.md`](../../docs/spec/graph.md), `t96`) and the skill manifest
-([`especificacoes/formatos/manifesto-skill.md`](../../especificacoes/formatos/manifesto-skill.md),
+([`especificacoes/formatos/skill-manifest.md`](../../especificacoes/formatos/skill-manifest.md),
 `t97`) — to a problem class that is not software. It is the direct pair of
 [factory graph 1](../desenvolvimento-de-software/README.md) (`t105`), and the
 second consumer the rule of two consumers asked for
@@ -165,7 +165,7 @@ node ../../scripts/validate-factory-bundle.mjs .
 
 # cross-check of the manifest format, with a third-party validator
 npx --yes ajv-cli@5 validate \
-  -s ../../especificacoes/formatos/manifesto-skill.schema.json \
+  -s ../../especificacoes/formatos/skill-manifest.schema.json \
   -d './skills/*.json' --spec=draft2020
 ```
 

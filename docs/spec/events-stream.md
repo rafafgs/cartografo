@@ -3,12 +3,12 @@
 **API version:** `v1` · **Migration:** none (it reads the `event` table of
 [`0003`](../../packages/core/migrations/0003_trabalho_sessao_evento_pergunta.sql))
 **Origin:** extension point nº 5 —
-["events going out"](../../notas/2026-08-14-extensao-e-qualidade.md) · **Ticket:** t123
+["events going out"](../../notas/2026-08-14-extension-and-quality.md) · **Ticket:** t123
 
 This document is the contract for whoever consumes. It is deliberately
 self-sufficient: a whole client can be written without opening a line of the
 control plane's code. The format of what travels is the envelope of the
-[event taxonomy](../../especificacoes/eventos/taxonomia.md), with no translation
+[event taxonomy](../../especificacoes/eventos/taxonomy.md), with no translation
 along the way.
 
 ---
@@ -102,7 +102,7 @@ which is the worse of the two errors.
 Every event becomes an SSE message with all three fields:
 
 - `id` — the envelope's `id`. **It is the cursor**, and it is the only total
-  order there is ([taxonomy](../../especificacoes/eventos/taxonomia.md));
+  order there is ([taxonomy](../../especificacoes/eventos/taxonomy.md));
 - `event` — the event's `type`, which is what the browser's `EventSource` uses to
   dispatch through `addEventListener`;
 - `data` — the whole envelope in JSON, on a single line.
@@ -120,7 +120,7 @@ data: {"id":1,"type":"job.created","project_id":1,"execution_id":2,"entity":{"ty
 
 The object in `data` is byte for byte the same envelope
 `GET /v1/executions/:id/events` returns — the
-[taxonomy](../../especificacoes/eventos/taxonomia.md)'s eight fields, with the
+[taxonomy](../../especificacoes/eventos/taxonomy.md)'s eight fields, with the
 type's whole specific payload inside `data`.
 
 **A type's payload grows too, and it grows additively.** The envelope always has
@@ -148,7 +148,7 @@ plane refused holds the job at the node", `t268`): this stream is observation,
 never a decision path.
 
 The field-by-field of each type is still the
-[taxonomy](../../especificacoes/eventos/taxonomia.md)'s, and not this document's:
+[taxonomy](../../especificacoes/eventos/taxonomy.md)'s, and not this document's:
 repeating the payload descriptions here would create a second source of truth
 purely so that it could diverge from the first.
 

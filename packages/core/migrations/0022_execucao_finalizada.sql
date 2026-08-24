@@ -40,7 +40,7 @@
 -- `AUTOINCREMENT` é preservado e os ids são copiados explicitamente, o que
 -- importa mais aqui do que em qualquer outra migração deste repositório: o `id`
 -- do evento É a ordem do log e a única ordenação total que existe
--- (`especificacoes/eventos/taxonomia.md`), e um replay depois desta migração tem
+-- (`especificacoes/eventos/taxonomy.md`), e um replay depois desta migração tem
 -- que reconstruir exatamente o mesmo estado de antes dela. Copiar é append-only
 -- honesto: nenhuma linha conta uma história diferente no fim.
 --

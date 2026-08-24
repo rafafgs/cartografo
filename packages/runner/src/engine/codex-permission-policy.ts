@@ -48,7 +48,7 @@
  * What this buys and what it does not: this is a real OS sandbox, so it is a
  * harder guarantee than the first adapter's tool-name gating — but it is still
  * "sandbox where the engine allows"
- * (`notas/2026-08-14-extensao-e-qualidade.md:43-44`), bounded by what the
+ * (`notas/2026-08-14-extension-and-quality.md:43-44`), bounded by what the
  * CLI's own `-s`/`-c` surface offers, and not process isolation this runner
  * built itself.
  */
@@ -153,7 +153,7 @@ function readFilesystem(filesystem: SessionPermissions['filesystem']): Axis {
  *
  * A closed network IGNORES `dominios`, which is the manifest format's own rule
  * ("`rede.permitido: false` closes the network; `dominios` is ignored in that
- * case", `especificacoes/formatos/manifesto-skill.md`). Refusing there would
+ * case", `especificacoes/formatos/skill-manifest.md`). Refusing there would
  * turn the safest declaration into an error.
  */
 function readNetwork(network: SessionPermissions['network']): Axis {

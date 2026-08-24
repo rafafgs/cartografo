@@ -13,7 +13,7 @@
  * agrees with itself — and the hash is precisely the value D4 says nobody should
  * take on trust. The procedure is short enough to write twice:
  * `sha256` of the canonical JSON of `{instructions, input, output, checks, permissions}`
- * (`especificacoes/formatos/manifesto-skill.md`).
+ * (`especificacoes/formatos/skill-manifest.md`).
  *
  * The manifest field names are English since t178 (the 2026-08-15 D18
  * amendment). What is still Portuguese in the payloads below is free content —
@@ -52,7 +52,7 @@ const INVALID_FIXTURE = path.join(
   'especificacoes',
   'formatos',
   'exemplos',
-  'manifesto-skill.invalido.fixture.json',
+  'skill-manifest.invalid.fixture.json',
 );
 
 /** Artifacts of this ticket; every test names them before touching the API. */

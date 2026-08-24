@@ -13,22 +13,22 @@
  * difference is deliberate:
  *
  * - at least one check, **always**, when `origin.type` is `imported`
- *   (`manifesto-skill.md:247`: "se não der para escrever nenhum check, a skill
+ *   (`skill-manifest.md:247`: "se não der para escrever nenhum check, a skill
  *   não entra"). A native skill keeps the schema's own weaker rule — one check
  *   required only for a gate — because this ticket's product rule is about
  *   importing third-party content, not about every future registration path;
- * - no unrestricted network on import (`manifesto-skill.md:266-268`): a
+ * - no unrestricted network on import (`skill-manifest.md:266-268`): a
  *   third-party skill with open network and instructions nobody wrote is the
  *   supply-chain vector D4 exists to close. A native skill may declare it.
  *
  * The third rule, `outcome` in a gate's `output`, is structural and applies to
- * everyone: `manifesto-skill.md:322-331` documents it as enforced at registry
+ * everyone: `skill-manifest.md:322-331` documents it as enforced at registry
  * entry precisely because the schema cannot navigate inside an arbitrary JSON
  * Schema document.
  *
  * The fourth is the per-check contract, and it applies to everyone for a simpler
  * reason: it is the schema's own, and the schema does not ask where the manifest
- * came from. `manifesto-skill.schema.json:83` requires `id`, `type` and
+ * came from. `skill-manifest.schema.json:83` requires `id`, `type` and
  * `description` of every check; line 91 closes `type` to `deterministic` or
  * `agentic`; lines 108-111 require `command` of the first, lines 112-116
  * `instruction` + `required_evidence` of the second. This validator ports the
@@ -138,7 +138,7 @@ export interface Skill {
  * Every field is the column's own name, so {@link COLUMNS} needs no alias — with
  * one exception the schema itself imposes. The column behind `origin` is called
  * `source` (`migrations/0005_skill.sql`), and the manifest field it carries is
- * called `origin` (`manifesto-skill.schema.json`), so those two names are
+ * called `origin` (`skill-manifest.schema.json`), so those two names are
  * genuinely different words for one thing. {@link hydrate} is where they meet,
  * because aliasing the column onto `origin` in the query would hide a real
  * difference behind the same mechanism t289 exists to delete.
@@ -184,7 +184,7 @@ export class SkillRejected extends Error {
 /** The three values a gate has to be able to return, so the executor can route. */
 const GATE_OUTCOMES = ['pass', 'fail', 'escalate_human'];
 
-/** The two things a check can be (`manifesto-skill.schema.json:91`), and no third. */
+/** The two things a check can be (`skill-manifest.schema.json:91`), and no third. */
 const CHECK_TYPES = ['deterministic', 'agentic'];
 
 /*
@@ -313,7 +313,7 @@ function checkShape(manifest: Record<string, unknown>, problems: string[]): void
 /**
  * The whole per-check contract, the same for every check (t155, FR1-FR3).
  *
- * `manifesto-skill.schema.json:83` makes `id`, `type` and `description` required
+ * `skill-manifest.schema.json:83` makes `id`, `type` and `description` required
  * of EVERY check, and line 91 closes `type` to two values. Then each half of the
  * enum has its own conditional: `deterministic` requires `command`
  * (lines 108-111), `agentic` requires `instruction` and `required_evidence`

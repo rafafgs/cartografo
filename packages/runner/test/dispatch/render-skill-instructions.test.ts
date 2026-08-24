@@ -2,7 +2,7 @@
  * Acceptance tests for rendering a registered skill into a session (t161,
  * FR3–FR6).
  *
- * This is the half of the ficha that closes `manifesto-skill.md`'s own "not
+ * This is the half of the ficha that closes `skill-manifest.md`'s own "not
  * implemented yet: render `instructions` into a session". Three things have to be
  * true at once for it to be worth anything:
  *

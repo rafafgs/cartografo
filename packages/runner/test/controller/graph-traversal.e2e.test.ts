@@ -18,7 +18,7 @@
  * `POST /v1/jobs/:id/transitions` ZERO times. Every movement below is the
  * dispatch's. Before this ficha the first dogfood run had an operator making
  * exactly those calls by hand
- * (`notas/2026-08-15-primeira-execucao.md`, gap #1).
+ * (`notas/2026-08-15-first-execution.md`, gap #1).
  *
  * English per D18; route segments, payload keys and the fixture's node ids stay
  * in Portuguese.

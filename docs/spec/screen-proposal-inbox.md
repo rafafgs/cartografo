@@ -145,7 +145,7 @@ The list comes out in two sections: **Pending** (`pendente`, `aprovada` — what
 waiting on a human decision) and **History** (`aplicada`, `revertida`,
 `rejeitada`). A rejected proposal does not disappear: it is negative knowledge
 for the topografo
-([`notas/2026-08-14-aprendizado.md`](../../notas/2026-08-14-aprendizado.md)), and
+([`notas/2026-08-14-learning.md`](../../notas/2026-08-14-learning.md)), and
 its place is the history, read-only.
 
 Every proposal offers exactly the actions valid for the status it is in:

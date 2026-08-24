@@ -2,7 +2,7 @@
  * Acceptance tests of a job's timeline (t107, FR10).
  *
  * The concept is flowpilot's t81 "generic time", cited in the ticket's scope
- * and in `notas/2026-08-14-aprendizado.md`: splitting a job's time into QUEUE,
+ * and in `notas/2026-08-14-learning.md`: splitting a job's time into QUEUE,
  * AGENT WORKING and WAITING FOR A HUMAN. Without that split, "it took two days"
  * says nothing — and it is exactly what the surveyor will read when it comes to
  * propose a graph mutation.

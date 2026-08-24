@@ -443,7 +443,7 @@ const RULES: Record<string, TypeRule> = {
   // `graph_version.registered`/`.applied` already say what happened at that
   // instant, and a third event for the same moment would be the envelope's own
   // facts written twice (the reasoning `execution.finished`'s empty payload
-  // records in `taxonomia.md`).
+  // records in `taxonomy.md`).
   //
   // The payload counts the problems instead of carrying them: the report is on
   // the row and one GET away, and the same object in two places is two places

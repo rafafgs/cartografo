@@ -6,7 +6,7 @@
 --
 -- `event` é a fonte de verdade (t98): append-only, sem update e sem delete.
 -- As outras três tabelas são PROJEÇÃO — estado atual, sempre reconstruível a
--- partir do log por `especificacoes/eventos/reducers/reconstruir-estado.mjs`.
+-- partir do log por `especificacoes/eventos/reducers/reconstruct-state.mjs`.
 -- Quando as duas discordarem, quem está errado é a projeção.
 --
 -- Duas ausências de propósito:

@@ -9,7 +9,7 @@
  * piece of this feature with no I/O, no timer and no engine in it — which is why
  * it is also the one piece with unit tests of its own. Whoever eventually reads
  * a registered skill's `orcamentos` into a `SessionSpec`
- * (`especificacoes/formatos/manifesto-skill.md`, "Estado hoje") calls this and
+ * (`especificacoes/formatos/skill-manifest.md`, "Estado hoje") calls this and
  * nothing else: the ceiling rule is decided here, once.
  */
 

@@ -3,7 +3,7 @@
  *
  * A proposal is a hypothesis, approving it is the experiment, and the next
  * round's telemetry is the outcome — the project's own definition of learning
- * (`notas/2026-08-14-aprendizado.md`). This module is the judgement itself,
+ * (`notas/2026-08-14-learning.md`). This module is the judgement itself,
  * and nothing else: given what the proposal declared it would move and the
  * number measured afterwards, it says `confirmada`, `sem_efeito` or `piorou`.
  *

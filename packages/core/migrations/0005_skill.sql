@@ -7,7 +7,7 @@
 --
 -- "A skill with no contract does not enter the registry" (D9) vira aqui uma
 -- tabela cujas colunas SÃO os doze campos obrigatórios do manifesto
--- (`especificacoes/formatos/manifesto-skill.schema.json`), mais o carimbo de
+-- (`especificacoes/formatos/skill-manifest.schema.json`), mais o carimbo de
 -- quando a skill entrou. Nada de blob genérico: o que o sintetizador consulta é
 -- `description` e `role`, o que o runner pina é `id`+`version`+`hash`, e uma
 -- coluna por campo é o que deixa essas três leituras serem consulta e não

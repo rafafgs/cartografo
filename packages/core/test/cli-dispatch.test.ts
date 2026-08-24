@@ -93,7 +93,7 @@ const ORIGIN_PROPERTIES: readonly string[] = (() => {
     '..',
     'especificacoes',
     'formatos',
-    'manifesto-skill.schema.json',
+    'skill-manifest.schema.json',
   );
   const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as {
     $defs?: { origin?: { properties?: Record<string, unknown> } };

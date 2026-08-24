@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cartografo.dev/especificacoes/formatos/manifesto-skill.schema.json",
+  "$id": "https://cartografo.dev/especificacoes/formatos/skill-manifest.schema.json",
   "title": "Manifesto de skill — cartografo",
-  "description": "Contrato de entrada no registro de capacidades (D4, D9). Ver especificacoes/formatos/manifesto-skill.md.",
+  "description": "Contrato de entrada no registro de capacidades (D4, D9). Ver especificacoes/formatos/skill-manifest.md.",
   "type": "object",
   "required": [
     "id",

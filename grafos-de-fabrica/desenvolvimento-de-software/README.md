@@ -7,7 +7,7 @@
 **Status: content, not format.** This ticket (`t105`) designs no new format: it
 applies the two already closed — the graph document
 ([`docs/spec/graph.md`](../../docs/spec/graph.md), `t96`) and the skill manifest
-([`especificacoes/formatos/manifesto-skill.md`](../../especificacoes/formatos/manifesto-skill.md),
+([`especificacoes/formatos/skill-manifest.md`](../../especificacoes/formatos/skill-manifest.md),
 `t97`) — to produce the first real content. It is direct input to the PoC (D16)
 and the seed of the factory library.
 
@@ -37,7 +37,7 @@ There is no separate rejection edge: the only way back is the `test → develop`
 rework cycle.
 
 The `grafo.json` **starts from**
-[`schema/exemplos/grafo-valido-flowpilot.json`](../../schema/exemplos/grafo-valido-flowpilot.json)
+[`schema/exemplos/graph-valid-flowpilot.json`](../../schema/exemplos/graph-valid-flowpilot.json)
 — `t96`'s master example, read as a reference and **never modified**. Two places
 differ from it. Each node's `skill_ref`: in the example the hashes are
 reproducible placeholders (no real skill existed to pin) and the ids carry an
@@ -59,7 +59,7 @@ node ../../scripts/validate-factory-bundle.mjs .
 
 # cross-check of the manifest format, with a third-party validator
 npx --yes ajv-cli@5 validate \
-  -s ../../especificacoes/formatos/manifesto-skill.schema.json \
+  -s ../../especificacoes/formatos/skill-manifest.schema.json \
   -d './skills/*.json' --spec=draft2020
 ```
 

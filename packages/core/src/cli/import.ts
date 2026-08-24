@@ -36,7 +36,7 @@
  * outside the package's publishable tree (`files` in `package.json`), and the
  * core cannot depend at runtime on a file `npm pack` does not carry along. Full
  * conformance against
- * `especificacoes/formatos/manifesto-skill.schema.json` remains the job of the
+ * `especificacoes/formatos/skill-manifest.schema.json` remains the job of the
  * reference validator, which is what guards the bundle in the repository.
  *
  * The manifest field names are the skill-manifest format's, which the D18 rename

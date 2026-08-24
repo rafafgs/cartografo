@@ -14,7 +14,7 @@
  *
  * ## The names
  *
- * A sweep that reads only contents is blind to `notas/2026-08-14-mercado.md`.
+ * A sweep that reads only contents is blind to a note called `mercado`.
  * The name is prose too — it is what a directory listing says, what a citation
  * spells and what a link resolves — and until now nothing in this repository
  * checked one. Every path component under the swept trees goes through the same

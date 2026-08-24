@@ -9,7 +9,7 @@ data: what a work graph declares, what each field means, and the four formal
 rules that separate an executable graph from a pretty drawing.
 
 It is the project's extension point nº 1 — of the four formats treated as a
-product (`notas/2026-08-14-extensao-e-qualidade.md`), this is the first, and
+product (`notas/2026-08-14-extension-and-quality.md`), this is the first, and
 everything that comes afterwards consumes it: the control plane keeps this whole
 document in the `snapshot` column of `graph_version`; the factory graphs are
 written in it; the atlas packages it.
@@ -248,7 +248,7 @@ inferring:
   what really ran.
 
 The complete example:
-[`grafo-valido-dois-engines.json`](../../schema/exemplos/grafo-valido-dois-engines.json).
+[`graph-valid-two-engines.json`](../../schema/exemplos/graph-valid-two-engines.json).
 
 ### `model`: which model of that engine executes this node
 
@@ -298,7 +298,7 @@ inferring:
   happens under the new version.
 
 The complete example:
-[`grafo-valido-modelo.json`](../../schema/exemplos/grafo-valido-modelo.json).
+[`graph-valid-model.json`](../../schema/exemplos/graph-valid-model.json).
 
 ### `escalation_policy`: when this node calls a person
 
@@ -360,7 +360,7 @@ purpose that there is no path of its own to change it — a second way of changi
 a node would have rules of its own about what is versioned.
 
 The complete example:
-[`grafo-valido-escalacao-nunca.json`](../../schema/exemplos/grafo-valido-escalacao-nunca.json).
+[`graph-valid-escalation-never.json`](../../schema/exemplos/graph-valid-escalation-never.json).
 The whole cycle is in [`human-escalation.md`](human-escalation.md).
 
 ### `escalation_recipient`: who ought to be called
@@ -380,7 +380,7 @@ having to be rewritten when delivery arrives. It is not even read by the runner.
 
 **A gate is not a separate entity.** A gate is a node whose role is to check and
 route, and it carries a skill and a contract exactly like any other node
-(`notas/2026-08-14-aprendizado.md`). The `trabalho` / `portao` distinction exists
+(`notas/2026-08-14-learning.md`). The `trabalho` / `portao` distinction exists
 for reading and for telemetry — "how much time did the job spend in verification?"
 —, not to give a gate a privileged place in the format.
 
@@ -596,7 +596,7 @@ monitoring step —, and the software one ends at `implantar`, which pins
 `implantar-release`. While completion came from arrival, those two steps never
 got a session, and the traversal ended in silence: no failure, no event, no
 record. It was gap 2 of the first real execution
-(`notas/2026-08-17-primeira-execucao-bets.md`).
+(`notas/2026-08-17-first-bets-run.md`).
 
 A session that finishes `completed` with a report the schema refused does **not**
 conclude and does **not** block: the job is still a candidate. A ceiling on
@@ -664,10 +664,10 @@ formally verify the graphs the AI proposes"**.
 
 | Rule | What it demands | Reported target | Counterexample |
 |---|---|---|---|
-| `reachable` | Every node is reachable from `no_inicial` by following `arestas`. | the node's id | [`grafo-invalido-unreachable-node.json`](../../schema/exemplos/grafo-invalido-unreachable-node.json) |
-| `terminates` | From every node there is a path to some node in `nos_finais`. | the node's id | [`grafo-invalido-sem-terminacao.json`](../../schema/exemplos/grafo-invalido-sem-terminacao.json) |
-| `edge_with_condition` | No edge with a `condicao` that is absent or empty. | `{from, to}` | [`grafo-invalido-aresta-sem-condicao.json`](../../schema/exemplos/grafo-invalido-aresta-sem-condicao.json) |
-| `node_with_contract` | No node without a `skill_ref` or a `contrato`, nor with an empty `verificacoes`. | the node's id | [`grafo-invalido-no-sem-contrato.json`](../../schema/exemplos/grafo-invalido-no-sem-contrato.json) |
+| `reachable` | Every node is reachable from `no_inicial` by following `arestas`. | the node's id | [`graph-invalid-unreachable-node.json`](../../schema/exemplos/graph-invalid-unreachable-node.json) |
+| `terminates` | From every node there is a path to some node in `nos_finais`. | the node's id | [`graph-invalid-without-termination.json`](../../schema/exemplos/graph-invalid-without-termination.json) |
+| `edge_with_condition` | No edge with a `condicao` that is absent or empty. | `{from, to}` | [`graph-invalid-edge-without-condition.json`](../../schema/exemplos/graph-invalid-edge-without-condition.json) |
+| `node_with_contract` | No node without a `skill_ref` or a `contrato`, nor with an empty `verificacoes`. | the node's id | [`graph-invalid-node-without-contract.json`](../../schema/exemplos/graph-invalid-node-without-contract.json) |
 
 Reading notes:
 
@@ -697,8 +697,8 @@ Structure and soundness judge the document's shape and its topology. Neither one
 asks the question a session actually depends on: **when a job arrives at this
 node, will the data its skill declares as required be there?** Three real
 crossings answered that at dispatch time, after the sessions were paid for
-(`notas/2026-08-17-segunda-execucao-bets.md` gap 5,
-`notas/2026-08-17-t109-feature-do-jogo.md` gap 4). `validateContracts`
+(`notas/2026-08-17-second-bets-run.md` gap 5,
+`notas/2026-08-17-t109-game-feature.md` gap 4). `validateContracts`
 ([`packages/core/src/domain/graph.ts`](../../packages/core/src/domain/graph.ts))
 is that question, answered statically, before any session opens.
 
@@ -830,7 +830,7 @@ arriving, and a class whose skills are already registered never fires one.
 is really written — a same-hash reimport changes nothing) re-runs the whole check
 over every `unchecked` version that pins it, against the registry as it stands
 now. Each version that is re-judged records
-[`graph_version.contracts_checked`](../../especificacoes/eventos/taxonomia.md).
+[`graph_version.contracts_checked`](../../especificacoes/eventos/taxonomy.md).
 It re-runs the WHOLE check and not just the one pin, because a version can be
 waiting on three manifests, and it may land on `failed`: resolving the last pin
 is what finally makes an `unproduced_input` real evidence instead of an artefact
@@ -884,14 +884,14 @@ exercised by `tests/schema-grafo.test.mjs`.
 
 | File | What it is for |
 |---|---|
-| [`grafo-valido-minimo.json`](../../schema/exemplos/grafo-valido-minimo.json) | The smallest sound document: one work node, one terminal gate, one `"sempre"` edge. A skeleton for the first graph. |
-| [`grafo-valido-flowpilot.json`](../../schema/exemplos/grafo-valido-flowpilot.json) | **The master example.** See below. |
-| [`grafo-valido-dois-engines.json`](../../schema/exemplos/grafo-valido-dois-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
-| `grafo-invalido-*.json` | One counterexample per soundness rule (§6). |
+| [`graph-valid-minimal.json`](../../schema/exemplos/graph-valid-minimal.json) | The smallest sound document: one work node, one terminal gate, one `"sempre"` edge. A skeleton for the first graph. |
+| [`graph-valid-flowpilot.json`](../../schema/exemplos/graph-valid-flowpilot.json) | **The master example.** See below. |
+| [`graph-valid-two-engines.json`](../../schema/exemplos/graph-valid-two-engines.json) | Two work nodes on one edge, one with no `engine` and the other with `"engine": "codex"`: the smallest document that tells a default from a route (§2). |
+| `graph-invalid-*.json` | One counterexample per soundness rule (§6). |
 
 ### The master example: flowpilot's flow
 
-[`grafo-valido-flowpilot.json`](../../schema/exemplos/grafo-valido-flowpilot.json)
+[`graph-valid-flowpilot.json`](../../schema/exemplos/graph-valid-flowpilot.json)
 is flowpilot's software delivery flow expressed in this format, and it is
 **direct input to factory graph 1 (`t105`)**: the factory graph's ticket starts
 from this file instead of from a blank sheet. By D17 flowpilot is a behavioural

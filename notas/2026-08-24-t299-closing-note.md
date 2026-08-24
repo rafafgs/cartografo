@@ -166,7 +166,7 @@ external tooling rebuilds.
 
 - **A link TARGET is prose to a line-based sweep.** The new AT1 reads whole
   lines minus code spans, so a markdown link whose URL contains a Portuguese
-  function word trips it. `schema/exemplos/grafo-valido-com-ganchos.json` carries
+  function word trips it. `schema/exemplos/graph-valid-with-hooks.json` carries
   `-com-` in its own name: `transition-hooks.md` §2 now cites it in a code span
   instead of linking it, with the reason written beside it. That is the sweep
   telling the truth — there IS Portuguese in a reader-facing document, in a name
@@ -199,7 +199,7 @@ external tooling rebuilds.
   language and not facts. Both are worth a ticket:
   - `docs/formatos/atlas-bundle.md` §"Integrity" says the manifest hash covers
     `{instrucoes, entrada, saida, checks, permissoes}`.
-    `especificacoes/formatos/manifesto-skill.md:80` and `manifestHash()` both say
+    `especificacoes/formatos/skill-manifest.md:80` and `manifestHash()` both say
     `{instructions, input, output, checks, permissions, budgets}`.
   - `docs/spec/webhooks-events.md` §5 publishes a closed HMAC test vector
     (`sha256=4d62c8b3801c05f74e912c122b02b34cf183e64ec81d1bb7dc38bb8f329b1bb2`)

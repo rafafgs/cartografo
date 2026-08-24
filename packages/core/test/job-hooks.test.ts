@@ -229,7 +229,7 @@ test('AT4 — entering a node with a matching node_entered hook enqueues one del
   requireArtifacts(T169_ARTIFACTS.migration, T169_ARTIFACTS.repository);
   const db = openWorld(t);
 
-  const document = readExample('grafo-valido-com-ganchos.json');
+  const document = readExample('graph-valid-with-hooks.json');
   await registerDeclaredSecrets(db, document);
   const versionId = registerGraph(db, document);
   const job = newJob(db, versionId);
@@ -278,7 +278,7 @@ test('AT5 — blocking fires only the node_blocked hook of the node it blocked o
   requireArtifacts(T169_ARTIFACTS.migration, T169_ARTIFACTS.repository);
   const db = openWorld(t);
 
-  const document = readExample('grafo-valido-com-ganchos.json');
+  const document = readExample('graph-valid-with-hooks.json');
   await registerDeclaredSecrets(db, document);
   const versionId = registerGraph(db, document);
 
@@ -326,7 +326,7 @@ test('AT7 — a graph version with no hooks key enqueues nothing, and raises not
   requireArtifacts(T169_ARTIFACTS.migration, T169_ARTIFACTS.repository);
   const db = openWorld(t);
 
-  const document = readExample('grafo-valido-minimo.json');
+  const document = readExample('graph-valid-minimal.json');
   assert.ok(!Object.hasOwn(document, 'hooks'), 'the minimal fixture is the "absent" case');
 
   const job = newJob(db, registerGraph(db, document));
@@ -351,7 +351,7 @@ test('AT7 — the write path answers 200 even when the hook destination rejects'
   )) as HookDispatcherModule;
 
   const db = openWorld(t);
-  const document = readExample('grafo-valido-com-ganchos.json');
+  const document = readExample('graph-valid-with-hooks.json');
   await registerDeclaredSecrets(db, document);
   const versionId = registerGraph(db, document);
   const job = newJob(db, versionId);

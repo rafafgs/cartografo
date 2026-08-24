@@ -3,7 +3,7 @@
  *
  * The quality non-negotiable is replayability by event sourcing: the final state
  * has to come out of the LOG and of nothing else.
- * `reducers/reconstruir-estado.mjs` (t98) is the executable reference for that —
+ * `reducers/reconstruct-state.mjs` (t98) is the executable reference for that —
  * it was written before the control plane existed, precisely so it would be the
  * contract this ticket's projection tables would have to respect.
  *
@@ -13,19 +13,20 @@
  * the log does not tell, this is where it shows up.
  *
  * Since t196 it covers the reducer's five projections and not three: `leases`
- * and `grafo_versao_corrente` used to fold to `{}` no matter what the control
+ * and `current_graph_version` used to fold to `{}` no matter what the control
  * plane did, because nobody recorded `lease.*` or `graph_version.*` — an empty
  * comparison that passed and proved nothing. The flow below now also registers a
  * lineage, moves its pointer with a proposal and moves it back, and grants a
  * lease that dies of old age.
  *
- * t245 adds the sixth, `execucoes`, and the same care: a round that really ENDS
+ * t245 adds the sixth, `executions`, and the same care: a round that really ENDS
  * (every traveller on a final node of a version that resolves, no lease still
  * holding one) rides beside the round that stays open, so the fold has both a
- * `finalizada_em` to reproduce and an absence to respect.
+ * `finished_at` to reproduce and an absence to respect.
  *
- * The reducer's own state keys stay in Portuguese: it lives in `especificacoes/`,
- * outside this ticket's rename scope (t127, FR8).
+ * The reducer's own state keys are English since t300, which translated
+ * `especificacoes/**` under D24. They were Portuguese when t127 wrote this file
+ * and were left alone then, as outside that ticket's rename scope (t127, FR8).
  */
 
 import assert from 'node:assert/strict';
@@ -50,7 +51,7 @@ import {
 } from './support.ts';
 
 /** The reducer lives in the specification, outside the package — it is the reference, not core code. */
-const REDUCER = '../../../especificacoes/eventos/reducers/reconstruir-estado.mjs';
+const REDUCER = '../../../especificacoes/eventos/reducers/reconstruct-state.mjs';
 
 /** The graph document every flow in this file starts from. */
 const MINIMAL_EXAMPLE = path.join(
@@ -59,22 +60,22 @@ const MINIMAL_EXAMPLE = path.join(
   '..',
   'schema',
   'exemplos',
-  'grafo-valido-minimo.json',
+  'graph-valid-minimal.json',
 );
 
 interface ReconstructedState {
-  trabalhos: Record<string, { no_atual: string; bloqueado: boolean; historico_nos: string[] }>;
-  sessoes: Record<string, { status: string; exit_code: number | null }>;
-  perguntas: Record<
+  jobs: Record<string, { current_node_id: string; blocked: boolean; node_history: string[] }>;
+  sessions: Record<string, { status: string; exit_code: number | null }>;
+  input_requests: Record<
     string,
-    { status: string; resposta: string | null; origem: string | null }
+    { status: string; answer: string | null; answer_source: string | null }
   >;
   /** t196: the lifecycle of a lease, folded out of `lease.granted`/`lease.expired`. */
   leases: Record<string, { status: string }>;
   /** t196: which version holds per lineage, folded out of `graph_version.applied`/`.reverted`. */
-  grafo_versao_corrente: Record<string, string>;
+  current_graph_version: Record<string, string>;
   /** t245: which rounds are over, folded out of `execution.finished` (D21). */
-  execucoes: Record<string, { finalizada_em: string }>;
+  executions: Record<string, { finished_at: string }>;
 }
 
 /** A lineage and a version, as `/v1` publishes them — the fields this file reads. */
@@ -229,8 +230,8 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   requireArtifacts(...Object.values(T102_ARTIFACTS));
   const ctx = await startControlPlane(t);
   const { listEvents } = await loadEvents();
-  const { reconstruirEstado } = (await import(new URL(REDUCER, import.meta.url).href)) as {
-    reconstruirEstado: (events: Event[]) => ReconstructedState;
+  const { reconstructState } = (await import(new URL(REDUCER, import.meta.url).href)) as {
+    reconstructState: (events: Event[]) => ReconstructedState;
   };
 
   // --- the execution, end to end, through the API only ----------------------
@@ -362,11 +363,11 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
   // --- the state, rebuilt from the log alone --------------------------------
   const events = listEvents(ctx.db);
   assert.ok(events.length > 0, 'the log cannot be empty');
-  const state = reconstruirEstado(events);
+  const state = reconstructState(events);
 
   // --- the state, as the projection tables answer it ------------------------
   // Every job, and not only execution 7's, since t245: the fold knows nothing
-  // about rounds when it builds `trabalhos`, so slicing the projection by one
+  // about rounds when it builds `jobs`, so slicing the projection by one
   // execution while the log carries two would compare two different sets.
   const jobs = await request<{ jobs: Job[] }>(ctx, 'GET', '/v1/jobs');
   // Unsliced since t262, for the reason the jobs read above already gives: the
@@ -380,31 +381,32 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     `/v1/input-requests?execution_id=${EXECUTION}`,
   );
 
-  const projectedJobs: ReconstructedState['trabalhos'] = {};
+  const projectedJobs: ReconstructedState['jobs'] = {};
   for (const row of jobs.body.jobs) {
     projectedJobs[String(row.id)] = {
-      no_atual: row.current_node_id,
-      bloqueado: row.blocked,
-      historico_nos: await historyFromApi(ctx, row.id),
+      current_node_id: row.current_node_id,
+      blocked: row.blocked,
+      node_history: await historyFromApi(ctx, row.id),
     };
   }
 
-  const projectedSessions: ReconstructedState['sessoes'] = {};
+  const projectedSessions: ReconstructedState['sessions'] = {};
   for (const row of sessions.body.sessions) {
     projectedSessions[String(row.id)] = { status: row.status, exit_code: row.exit_code };
   }
 
   // No translation layer any more (t227): the reducer's derived `status` and
-  // `origem` are the same English words the API projection publishes, so the
-  // comparison below is about REPLAY again and not about spelling. The two keys
-  // that stay Portuguese — `perguntas` and `origem` — are the reducer's own
-  // output shape, which no glossary row governs.
-  const projectedInputRequests: ReconstructedState['perguntas'] = {};
+  // `answer_source` are the same English words the API projection publishes, so
+  // the comparison below is about REPLAY again and not about spelling. The last
+  // two Portuguese keys of that output shape — `perguntas` and `origem` — went
+  // with t300, which had no glossary row to consult and used the wire's own
+  // words for the fields they project.
+  const projectedInputRequests: ReconstructedState['input_requests'] = {};
   for (const row of inputRequests.body.input_requests) {
     projectedInputRequests[String(row.id)] = {
       status: row.status,
-      resposta: row.answer,
-      origem: row.source,
+      answer: row.answer,
+      answer_source: row.source,
     };
   }
 
@@ -420,7 +422,7 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
 
   const lineage = await request<{ graph: Graph }>(ctx, 'GET', `/v1/graphs/${graph.id}`);
   assert.equal(lineage.status, 200);
-  const projectedPointer: ReconstructedState['grafo_versao_corrente'] = {
+  const projectedPointer: ReconstructedState['current_graph_version'] = {
     [lineage.body.graph.id]: lineage.body.graph.current_version_id as string,
   };
 
@@ -439,23 +441,23 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     `/v1/executions/${EXECUTION}`,
   );
   assert.equal(open.status, 200);
-  const projectedExecutions: ReconstructedState['execucoes'] = {};
+  const projectedExecutions: ReconstructedState['executions'] = {};
   if (finished.body.finished_at !== null) {
-    projectedExecutions[String(FINISHED_EXECUTION)] = { finalizada_em: finished.body.finished_at };
+    projectedExecutions[String(FINISHED_EXECUTION)] = { finished_at: finished.body.finished_at };
   }
 
   // --- and the two have to be the same thing --------------------------------
-  assert.deepEqual(state.trabalhos, projectedJobs);
-  assert.deepEqual(state.sessoes, projectedSessions);
-  assert.deepEqual(state.perguntas, projectedInputRequests);
+  assert.deepEqual(state.jobs, projectedJobs);
+  assert.deepEqual(state.sessions, projectedSessions);
+  assert.deepEqual(state.input_requests, projectedInputRequests);
   assert.deepEqual(state.leases, projectedLeases);
-  assert.deepEqual(state.grafo_versao_corrente, projectedPointer);
-  assert.deepEqual(state.execucoes, projectedExecutions);
+  assert.deepEqual(state.current_graph_version, projectedPointer);
+  assert.deepEqual(state.executions, projectedExecutions);
 
   // Guards against an empty pass of the six deepEqual above.
-  assert.equal(Object.keys(state.trabalhos).length, 3);
+  assert.equal(Object.keys(state.jobs).length, 3);
   assert.ok(
-    typeof state.execucoes[String(FINISHED_EXECUTION)]?.finalizada_em === 'string',
+    typeof state.executions[String(FINISHED_EXECUTION)]?.finished_at === 'string',
     'the round that ended has to come out of the log with an instant on it',
   );
   assert.equal(
@@ -463,25 +465,25 @@ test('AT17 — the specification reducer reproduces the projection tables exactl
     null,
     'execution 7 has a blocked job, an unresolvable version and a live lease: it never ends',
   );
-  assert.equal(state.execucoes[String(EXECUTION)], undefined);
+  assert.equal(state.executions[String(EXECUTION)], undefined);
   // Three since t262: the two of execution 7, plus the one that closes the
   // final node of the round that ends.
-  assert.equal(Object.keys(state.sessoes).length, 3);
-  assert.equal(Object.keys(state.perguntas).length, 2);
+  assert.equal(Object.keys(state.sessions).length, 3);
+  assert.equal(Object.keys(state.input_requests).length, 2);
   assert.equal(Object.keys(state.leases).length, 2);
   assert.deepEqual(state.leases[String(expired)], { status: 'expired' });
   assert.deepEqual(state.leases[String(granted)], { status: 'active' });
   assert.equal(
-    state.grafo_versao_corrente[graph.id],
+    state.current_graph_version[graph.id],
     baseVersion,
     'the revert took the pointer back, and the log alone says so',
   );
-  assert.deepEqual(state.trabalhos[String(job.id)].historico_nos, [
+  assert.deepEqual(state.jobs[String(job.id)].node_history, [
     'entrada',
     'refinamento',
     'desenvolvimento',
   ]);
-  assert.equal(state.trabalhos[String(stopped.id)].bloqueado, true);
-  assert.equal(state.perguntas[String(auto.body.id)].origem, 'auto');
-  assert.equal(state.sessoes[String(otherSession.body.id)].status, 'open');
+  assert.equal(state.jobs[String(stopped.id)].blocked, true);
+  assert.equal(state.input_requests[String(auto.body.id)].answer_source, 'auto');
+  assert.equal(state.sessions[String(otherSession.body.id)].status, 'open');
 });

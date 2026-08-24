@@ -30,7 +30,7 @@ not when it is discarded. It is storage for work in progress, not an audit fact:
 the log only gains a row when a traveller actually comes into being. That is why
 the `intake_rascunho` projection can be updated in place without hurting the
 log's append-only rule
-([taxonomy](../../especificacoes/eventos/taxonomia.md)): nothing in it is
+([taxonomy](../../especificacoes/eventos/taxonomy.md)): nothing in it is
 reconstructed from the log, because nothing of it was ever recorded there.
 
 The confirmation is a plural subresource (`/confirmations`, `/discards`) and not

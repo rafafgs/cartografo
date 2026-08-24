@@ -19,7 +19,7 @@
  *   dead link and a dead command are different failures to read.
  *
  * The hash procedure is reimplemented HERE, straight from the specification
- * (`especificacoes/formatos/manifesto-skill.md`, "Identificação" section),
+ * (`especificacoes/formatos/skill-manifest.md`, "Identificação" section),
  * rather than imported from the validator: if the test reused the
  * implementation it checks, a bug in the canonicalizer would go unnoticed on
  * both sides.
@@ -64,7 +64,7 @@ const MANIFEST_SCHEMA_PATH = path.join(
   ROOT,
   'especificacoes',
   'formatos',
-  'manifesto-skill.schema.json',
+  'skill-manifest.schema.json',
 );
 const THESIS_FIXTURE_PATH = path.join(
   ROOT,
@@ -159,7 +159,7 @@ function canonicalize(value) {
 
 /**
  * Canonical hash of the manifest, by the procedure in
- * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
+ * `especificacoes/formatos/skill-manifest.md`: sha256 of the canonical JSON of
  * `{instructions, input, output, checks, permissions}`.
  */
 function hashOfManifest(manifest) {
@@ -256,7 +256,7 @@ test('AT2 — the 7 nodes and 9 edges match the FR1-FR2 tables exactly', () => {
   assert.equal(doc.lineage.type, 'base');
 });
 
-test('AT3 — the seven manifests validate against manifesto-skill.schema.json', async () => {
+test('AT3 — the seven manifests validate against skill-manifest.schema.json', async () => {
   const { validateManifest } = await bundleValidator();
   const schema = readJson(MANIFEST_SCHEMA_PATH);
   assert.equal(
@@ -279,7 +279,7 @@ test('AT3 — the seven manifests validate against manifesto-skill.schema.json',
   // what proves the green above does not come from a permissive validator.
   assert.ok(schema.$defs.check, 'the manifest schema has to declare $defs.check');
   const invalid = readJson(
-    path.join(ROOT, 'especificacoes', 'formatos', 'exemplos', 'manifesto-skill.invalido.fixture.json'),
+    path.join(ROOT, 'especificacoes', 'formatos', 'exemplos', 'skill-manifest.invalid.fixture.json'),
   );
   assert.equal(validateManifest(invalid).valid, false, "t97's negative fixture has to be rejected");
 });

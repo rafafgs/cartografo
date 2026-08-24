@@ -195,7 +195,7 @@ nothing about it. Two consequences became text:
   list. It holds just the same for a gate, which is a node like any other.
 - **A check from the catalogue is not a `verificacao`.** The two formats diverge
   on `evidencia_obrigatoria`: a list of artifacts in the
-  [skill manifest](../../especificacoes/formatos/manifesto-skill.md), the literal
+  [skill manifest](../../especificacoes/formatos/skill-manifest.md), the literal
   `true` in the graph document. Since the catalogue prints each skill's `checks`
   just above, the prompt shows both verification formats in full and says to
   rewrite, not to copy. `prompt.test.ts` validates those examples against the

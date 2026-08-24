@@ -1,5 +1,5 @@
 -- 0023_schema_migrations_checksum — checksum de conteúdo por migração aplicada
--- (t279, notas/2026-08-18-plano-de-acao.md §2).
+-- (t279, notas/2026-08-18-action-plan.md §2).
 --
 -- O livro-razão só sabia SE um id rodou, nunca O QUE rodou. A D20 reescreveu
 -- dezenove migrações NO LUGAR — mesmo arquivo, mesmo id, conteúdo traduzido —,

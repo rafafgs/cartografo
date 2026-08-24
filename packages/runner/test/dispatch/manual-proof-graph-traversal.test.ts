@@ -29,7 +29,7 @@ const SPIKE_PATH = path.join(PACKAGE_ROOT, 'scripts', 'spike-graph-traversal.mjs
  * The factory graph the proof crosses, and the directory its skills live in.
  *
  * `grafos-de-fabrica/desenvolvimento-de-software` and not
- * `schema/exemplos/grafo-valido-flowpilot.json`: the two are the same flowpilot
+ * `schema/exemplos/graph-valid-flowpilot.json`: the two are the same flowpilot
  * port, but only this one can actually be registered end to end — the schema
  * example's `skill_ref.id`s are namespaced (`cartografo/refinar-ticket`) and the
  * skill registry's ids are kebab-case with no slash

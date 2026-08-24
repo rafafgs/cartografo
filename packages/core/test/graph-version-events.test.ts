@@ -9,7 +9,7 @@
  *
  * What the four flows below pin is the PAIRING, which is the part a literal
  * reading of the taxonomy gets wrong. "Registering does not move the pointer"
- * (`especificacoes/eventos/taxonomia.md`) is a statement about the two facts
+ * (`especificacoes/eventos/taxonomy.md`) is a statement about the two facts
  * being different, not about them never happening together: `registerBaseGraph`,
  * `forkVariant` and `applyProposal` each write a version AND move the pointer in
  * one transaction, so each of them owes the log both events. Reverting owes it
@@ -33,7 +33,7 @@ import {
 } from './support.ts';
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
+const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
 
 /** A lineage, as `/v1` publishes it — only the fields these tests read. */
 interface Graph {

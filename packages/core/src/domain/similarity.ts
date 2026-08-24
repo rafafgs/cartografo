@@ -2,7 +2,7 @@
  * Textual similarity between input requests — the precedent base's heuristic
  * (t113).
  *
- * `notas/2026-08-14-aprendizado.md` puts the precedent base among the mechanisms
+ * `notas/2026-08-14-learning.md` puts the precedent base among the mechanisms
  * that make learning last: an answered question becomes something one can look
  * up. Looking it up needs ONE comparable number between two texts, and v1 picks
  * the most transparent one there is — the Jaccard index over the tokens of the

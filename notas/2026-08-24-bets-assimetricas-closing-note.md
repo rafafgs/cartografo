@@ -253,7 +253,7 @@ nor go stale.
 
 Functional Requirement 14 lists nine stale comments. Eight were fixed. The
 ninth, `packages/runner/scripts/spike-graph-traversal.mjs:99`, is **not stale**:
-it quotes `schema/exemplos/grafo-valido-flowpilot.json`, which really does still
+it quotes `schema/exemplos/graph-valid-flowpilot.json`, which really does still
 declare `cartografo/refinar-ticket`, `cartografo/desenvolver-ticket` and the
 other three namespaced Portuguese ids. That example is a document that validates
 against the graph schema and that nothing can register — which is exactly the

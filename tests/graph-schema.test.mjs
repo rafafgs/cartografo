@@ -131,8 +131,8 @@ test('AT1 — every fixture in schema/exemplos validates against the schema', as
   // here rather than skipped, so the fixtures stay refused for the reason they
   // were written for — and every other fixture stays shape-clean.
   const SHAPE_BREAKS = {
-    'grafo-invalido-aresta-sem-condicao.json': ['/edges/0/condition'],
-    'grafo-invalido-no-sem-contrato.json': ['/nodes/1'],
+    'graph-invalid-edge-without-condition.json': ['/edges/0/condition'],
+    'graph-invalid-node-without-contract.json': ['/nodes/1'],
   };
 
   for (const name of names) {
@@ -146,7 +146,7 @@ test('AT1 — every fixture in schema/exemplos validates against the schema', as
 
 test('AT2 — the minimal example passes validarEstrutura and validarSoundness', async () => {
   const { validarEstrutura, validarSoundness } = await loadValidator();
-  const doc = readExample('grafo-valido-minimo.json');
+  const doc = readExample('graph-valid-minimal.json');
 
   const structure = validarEstrutura(doc);
   assert.deepEqual(structure.errors, []);
@@ -197,7 +197,7 @@ const FLOWPILOT_ACTIVITY_TRANSITIONS = [
 
 test('AT3 — the flowpilot graph is sound and maps 1:1 onto the activity states', async () => {
   const { validarEstrutura, validarSoundness } = await loadValidator();
-  const doc = readExample('grafo-valido-flowpilot.json');
+  const doc = readExample('graph-valid-flowpilot.json');
 
   assert.deepEqual(validarEstrutura(doc).errors, []);
   assert.deepEqual(validarSoundness(doc).violations, []);
@@ -225,7 +225,7 @@ test('AT3 — the flowpilot graph is sound and maps 1:1 onto the activity states
 
 test('AT4 — an unreachable node produces exactly one "reachable" violation', async () => {
   const { validarSoundness } = await loadValidator();
-  const doc = readExample('grafo-invalido-unreachable-node.json');
+  const doc = readExample('graph-invalid-unreachable-node.json');
 
   const { valid, violations } = validarSoundness(doc);
   assert.equal(valid, false);
@@ -243,7 +243,7 @@ test('AT4 — an unreachable node produces exactly one "reachable" violation', a
 
 test('AT5 — a node stuck in a cycle with no way out produces a "terminates" violation', async () => {
   const { validarSoundness } = await loadValidator();
-  const doc = readExample('grafo-invalido-sem-terminacao.json');
+  const doc = readExample('graph-invalid-without-termination.json');
 
   const { valid, violations } = validarSoundness(doc);
   assert.equal(valid, false);
@@ -267,7 +267,7 @@ test('AT5 — a node stuck in a cycle with no way out produces a "terminates" vi
 
 test('AT6 — an edge with no condition produces an "edge_with_condition" violation', async () => {
   const { validarSoundness } = await loadValidator();
-  const doc = readExample('grafo-invalido-aresta-sem-condicao.json');
+  const doc = readExample('graph-invalid-edge-without-condition.json');
 
   const { valid, violations } = validarSoundness(doc);
   assert.equal(valid, false);
@@ -284,7 +284,7 @@ test('AT6 — an edge with no condition produces an "edge_with_condition" violat
 
 test('AT7 — a node with no contract produces a "node_with_contract" violation', async () => {
   const { validarSoundness } = await loadValidator();
-  const doc = readExample('grafo-invalido-no-sem-contrato.json');
+  const doc = readExample('graph-invalid-node-without-contract.json');
 
   const { valid, violations } = validarSoundness(doc);
   assert.equal(valid, false);
@@ -305,7 +305,7 @@ test('t167 — escalation_policy is an optional enum on the node, and recipient 
 
   // 1. Absence is the whole backward-compatibility story: a graph written before
   // the field existed declares nothing and stays valid, exactly as `engine` did.
-  const before = readExample('grafo-valido-minimo.json');
+  const before = readExample('graph-valid-minimal.json');
   assert.ok(
     before.nodes.every((node) => !Object.hasOwn(node, 'escalation_policy')),
     'the minimal fixture must keep declaring nothing: it is the "absent" case',
@@ -313,7 +313,7 @@ test('t167 — escalation_policy is an optional enum on the node, and recipient 
   assert.deepEqual(validateAgainstSchema(before, schema), []);
 
   // 2. The new fixture declares both fields on one node, and nothing else moved.
-  const document = readExample('grafo-valido-escalacao-nunca.json');
+  const document = readExample('graph-valid-escalation-never.json');
   assert.deepEqual(
     validateAgainstSchema(document, schema).map((error) => error.pointer),
     [],
@@ -340,7 +340,7 @@ test('t167 — escalation_policy is an optional enum on the node, and recipient 
 
 test('AT8 — validarEstrutura rejects a duplicate id and an edge pointing at a missing node', async () => {
   const { validarEstrutura } = await loadValidator();
-  const base = readExample('grafo-valido-minimo.json');
+  const base = readExample('graph-valid-minimal.json');
 
   const withDuplicateId = structuredClone(base);
   withDuplicateId.nodes.push(structuredClone(withDuplicateId.nodes[0]));
@@ -381,7 +381,7 @@ test('t166 AT — the model fixture is shape-clean, sound, and exercises both pr
   const { validateAgainstSchema } = await import(
     new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
   );
-  const doc = readExample('grafo-valido-modelo.json');
+  const doc = readExample('graph-valid-model.json');
 
   assert.deepEqual(
     validateAgainstSchema(doc, readJson(SCHEMA_PATH)).map((error) => error.pointer),
@@ -418,7 +418,7 @@ test('t169 AT — the hooks fixture is shape-clean, and both validators pass it'
   const { validateAgainstSchema } = await import(
     new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
   );
-  const doc = readExample('grafo-valido-com-ganchos.json');
+  const doc = readExample('graph-valid-with-hooks.json');
 
   assert.deepEqual(
     validateAgainstSchema(doc, readJson(SCHEMA_PATH)).map((error) => error.pointer),
@@ -443,7 +443,7 @@ test('t169 AT — the hooks fixture is shape-clean, and both validators pass it'
 
   // Absence is the backward-compatibility story: the minimal fixture declares
   // no hooks at all and stays valid, exactly as it did before this ticket.
-  const before = readExample('grafo-valido-minimo.json');
+  const before = readExample('graph-valid-minimal.json');
   assert.ok(!Object.hasOwn(before, 'hooks'), 'the minimal fixture is the "absent" case');
   assert.deepEqual(validateAgainstSchema(before, readJson(SCHEMA_PATH)), []);
 });
@@ -453,7 +453,7 @@ test('t169 AT — a hook with no url, or an unknown destination type, is a shape
     new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
   );
   const schema = readJson(SCHEMA_PATH);
-  const doc = readExample('grafo-valido-com-ganchos.json');
+  const doc = readExample('graph-valid-with-hooks.json');
 
   const withoutUrl = structuredClone(doc);
   delete withoutUrl.hooks[0].destination.url;
@@ -522,7 +522,7 @@ test('t168 AT — custom_fields is a required top-level list, and a non-list is 
   assert.ok(schema.required.includes('custom_fields'));
   assert.equal(schema.properties.custom_fields.type, 'array');
 
-  const notAList = readExample('grafo-valido-minimo.json');
+  const notAList = readExample('graph-valid-minimal.json');
   notAList.custom_fields = { premise_source: 'string' };
   assert.deepEqual(
     validateAgainstSchema(notAList, schema).map((problem) => problem.pointer),
@@ -530,7 +530,7 @@ test('t168 AT — custom_fields is a required top-level list, and a non-list is 
     'a custom_fields that is not a list has to be refused, and only that',
   );
 
-  const missing = readExample('grafo-valido-minimo.json');
+  const missing = readExample('graph-valid-minimal.json');
   delete missing.custom_fields;
   assert.ok(
     validateAgainstSchema(missing, schema).length > 0,
@@ -551,7 +551,7 @@ test('t168 AT — $defs.custom_field requires name/type/required_at and refuses 
 
   /** The minimal fixture carrying one declaration, ready to validate. */
   const declaring = (...fields) => {
-    const candidate = readExample('grafo-valido-minimo.json');
+    const candidate = readExample('graph-valid-minimal.json');
     candidate.custom_fields = fields;
     return candidate;
   };
@@ -629,7 +629,7 @@ test('t253 — contract.produces is an optional bucket name, sibling of the two 
   const { validateAgainstSchema } = await import(
     new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
   );
-  const document = readExample('grafo-valido-minimo.json');
+  const document = readExample('graph-valid-minimal.json');
   document.nodes[0].contract.produces = 'artefato';
   assert.deepEqual(validateAgainstSchema(document, schema), []);
 });
@@ -649,7 +649,7 @@ test('t253 — project is an optional top-level object, and both bundles still v
     new URL('../scripts/validate-factory-bundle.mjs', import.meta.url)
   );
 
-  const document = readExample('grafo-valido-minimo.json');
+  const document = readExample('graph-valid-minimal.json');
   document.project = { repo: 'git@github.com:rafaelgomes/cartografo.git' };
   assert.deepEqual(validateAgainstSchema(document, schema), []);
 
@@ -673,7 +673,7 @@ test('t253 — project is an optional top-level object, and both bundles still v
     );
   }
 
-  const withoutProject = readExample('grafo-valido-minimo.json');
+  const withoutProject = readExample('graph-valid-minimal.json');
   assert.equal(withoutProject.project, undefined, 'the minimal example declares no project');
   assert.deepEqual(
     validateAgainstSchema(withoutProject, schema),

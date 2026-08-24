@@ -41,7 +41,7 @@ import { resolvePinsOver } from './support.ts';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const MIGRATIONS_DIR = path.join(PACKAGE_ROOT, 'migrations');
-const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
+const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
 
 interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
@@ -534,7 +534,7 @@ const REJECTION_CASES: Array<{
 }> = [
   {
     at: 'AT14',
-    counterexample: 'grafo-invalido-unreachable-node.json',
+    counterexample: 'graph-invalid-unreachable-node.json',
     violations: [{ rule: 'reachable', target: 'checar_fatos' }],
     operations: () => {
       const node = newNode();
@@ -551,7 +551,7 @@ const REJECTION_CASES: Array<{
   },
   {
     at: 'AT15',
-    counterexample: 'grafo-invalido-sem-terminacao.json',
+    counterexample: 'graph-invalid-without-termination.json',
     violations: [{ rule: 'terminates', target: 'checar_fatos' }],
     operations: () => {
       const node = newNode();
@@ -568,7 +568,7 @@ const REJECTION_CASES: Array<{
   },
   {
     at: 'AT16',
-    counterexample: 'grafo-invalido-aresta-sem-condicao.json',
+    counterexample: 'graph-invalid-edge-without-condition.json',
     // The report's `target` names the edge's two ends the way the document and
     // the operation vocabulary already do — `from`/`to`, since t230.
     violations: [{ rule: 'edge_with_condition', target: { from: 'revisar', to: 'redigir' } }],
@@ -583,7 +583,7 @@ const REJECTION_CASES: Array<{
   },
   {
     at: 'AT17',
-    counterexample: 'grafo-invalido-no-sem-contrato.json',
+    counterexample: 'graph-invalid-node-without-contract.json',
     violations: [{ rule: 'node_with_contract', target: 'revisar' }],
     // An emptied contract: with no checks, the gate verifies nothing.
     operations: (document) => [

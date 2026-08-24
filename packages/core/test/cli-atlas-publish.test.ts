@@ -74,7 +74,7 @@ function canonical(value: unknown): unknown {
 
 /**
  * The pin, recomputed here straight from the specification
- * (`especificacoes/formatos/manifesto-skill.md`) instead of imported: a test
+ * (`especificacoes/formatos/skill-manifest.md`) instead of imported: a test
  * that reused the implementation it checks would agree with it even when both
  * are wrong.
  */

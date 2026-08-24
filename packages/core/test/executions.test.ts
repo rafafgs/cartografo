@@ -482,7 +482,7 @@ const MINIMAL_GRAPH = path.join(
   '..',
   'schema',
   'exemplos',
-  'grafo-valido-minimo.json',
+  'graph-valid-minimal.json',
 );
 
 /** One execution, as `GET /v1/executions/:id` publishes it (t245, FR7). */

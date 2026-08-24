@@ -210,7 +210,7 @@ test('AT6 — factory graph 1 goes in through the API unedited, hashing the whol
 
 test('AT7 — registering the same class twice returns 409 on the second', async (t) => {
   const address = await startApp(t);
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-valid-minimal.json'));
 
   assert.equal((await post(address, '/v1/graphs', document)).status, 201);
 
@@ -223,7 +223,7 @@ test('AT7 — registering the same class twice returns 409 on the second', async
 test('AT8 — registering a variant returns 400 (D13/t118 are out of this ticket)', async (t) => {
   const address = await startApp(t);
 
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-valid-minimal.json'));
   document.problem_class = 'nota-curta-do-projeto';
   document.lineage = { type: 'variante', base_class: 'nota-curta' };
 
@@ -234,7 +234,7 @@ test('AT8 — registering a variant returns 400 (D13/t118 are out of this ticket
 
 test('AT9 — a graph that breaks soundness returns 422 with the validator report', async (t) => {
   const address = await startApp(t);
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-invalido-unreachable-node.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-invalid-unreachable-node.json'));
 
   const response = await post(address, '/v1/graphs', document);
   assert.equal(response.status, 422);
@@ -255,7 +255,7 @@ test('AT9 — a graph that breaks soundness returns 422 with the validator repor
 
 test('t153 — a graph whose ids are not filled strings returns 422 and registers nothing', async (t) => {
   const address = await startApp(t);
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-valid-minimal.json'));
 
   // The whole document is the minimal example, except that every place naming a
   // node names the NUMBER 1. Nothing else is wrong with it: before t153 the
@@ -287,7 +287,7 @@ test('t153 — a graph whose ids are not filled strings returns 422 and register
 
 test('AT10 — the reads reflect the freshly registered graph and 404 on what does not exist', async (t) => {
   const address = await startApp(t);
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-valid-minimal.json'));
 
   const creation = await post(address, '/v1/graphs', document);
   assert.equal(creation.status, 201);
@@ -326,7 +326,7 @@ test('AT10 — the reads reflect the freshly registered graph and 404 on what do
 
 test('t127 — the old Portuguese graph paths no longer exist', async (t) => {
   const address = await startApp(t);
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-valid-minimal.json'));
 
   const creation = await post(address, '/v1/graphs', document);
   assert.equal(creation.status, 201);
@@ -344,7 +344,7 @@ test('t127 — the old Portuguese graph paths no longer exist', async (t) => {
 
 test('t180 — the register guards refuse in English, quoting the class', async (t) => {
   const address = await startApp(t);
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-valid-minimal.json'));
 
   const first = await post(address, '/v1/graphs', document);
   assert.equal(first.status, 201, JSON.stringify(await jsonBody(first)));
@@ -358,7 +358,7 @@ test('t180 — the register guards refuse in English, quoting the class', async 
     `class "${String(document.problem_class)}" already has a base graph; a new version over an existing lineage is the proposal flow`,
   );
 
-  const asVariant = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-minimo.json'));
+  const asVariant = readJson(path.join(EXAMPLES_DIR, 'graph-valid-minimal.json'));
   asVariant.problem_class = 'outra-classe';
   asVariant.lineage = { type: 'variante', base_class: String(document.problem_class) };
   const refused = await post(address, '/v1/graphs', asVariant);
@@ -386,7 +386,7 @@ test('t180 — the register guards refuse in English, quoting the class', async 
  */
 test('t194 — a hook secret never comes back out of the version routes', async (t) => {
   const address = await startApp(t);
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-valido-com-ganchos.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-valid-with-hooks.json'));
 
   const hooks = document.hooks as Array<{ destination: { secret_ref: string } }>;
   assert.ok(hooks.length > 0, 'the fixture has to declare hooks');
@@ -648,7 +648,7 @@ test('t283 — a resolved document that fails the contracts gate is still a 422 
 
 test('t278 — a document that already fails soundness never reaches the contracts gate', async (t) => {
   const address = await startApp(t);
-  const document = readJson(path.join(EXAMPLES_DIR, 'grafo-invalido-unreachable-node.json'));
+  const document = readJson(path.join(EXAMPLES_DIR, 'graph-invalid-unreachable-node.json'));
 
   const response = await post(address, '/v1/graphs', document);
   const body = await jsonBody<ValidationReport & { contracts?: ContractsReport }>(response);

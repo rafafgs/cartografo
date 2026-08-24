@@ -94,7 +94,7 @@ const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
  * The factory graph under proof, and the directory its manifests live in.
  *
  * `grafos-de-fabrica/desenvolvimento-de-software` and not
- * `schema/exemplos/grafo-valido-flowpilot.json`: the two are the same flowpilot
+ * `schema/exemplos/graph-valid-flowpilot.json`: the two are the same flowpilot
  * port, but only this one can be registered end to end. The schema example's
  * `skill_ref.id`s are namespaced (`cartografo/refinar-ticket`) and the registry's
  * ids are kebab-case with no slash (`packages/core/src/domain/manifest.ts`), so

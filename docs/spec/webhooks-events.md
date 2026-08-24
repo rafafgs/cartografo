@@ -3,12 +3,12 @@
 **API version:** `v1` · **Migration:**
 [`0008_webhook`](../../packages/core/migrations/0008_webhook.sql)
 **Origin:** extension point nº 5 —
-["events going out"](../../notas/2026-08-14-extensao-e-qualidade.md) · **Ticket:** t142
+["events going out"](../../notas/2026-08-14-extension-and-quality.md) · **Ticket:** t142
 
 This document is the contract for whoever consumes, and it is deliberately
 self-sufficient: a whole receiver — signature verification included — can be
 written without opening a line of the control plane's code. What travels is the
-envelope of the [event taxonomy](../../especificacoes/eventos/taxonomia.md), with
+envelope of the [event taxonomy](../../especificacoes/eventos/taxonomy.md), with
 no translation along the way, exactly the same object the
 [SSE stream](events-stream.md) delivers in its `data:` field.
 

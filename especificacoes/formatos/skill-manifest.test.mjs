@@ -2,7 +2,7 @@
  * Contract tests of the skill-manifest format (t163, AT1).
  *
  * Until this file existed, the four validation commands of
- * `manifesto-skill.md` § "Como validar" were prose: a human had to remember to
+ * `skill-manifest.md` § "Como validar" were prose: a human had to remember to
  * run four `npx ajv-cli` lines by hand, and nothing in `npm test` would notice a
  * schema that stopped compiling or an example that stopped validating. This file
  * IS those four commands, plus the two claims the document makes that no ajv run
@@ -34,15 +34,15 @@ import { fileURLToPath } from 'node:url';
 
 import { Ajv2020 } from 'ajv/dist/2020.js';
 
-const SCHEMA_PATH = fileURLToPath(new URL('./manifesto-skill.schema.json', import.meta.url));
-const DOC_PATH = fileURLToPath(new URL('./manifesto-skill.md', import.meta.url));
+const SCHEMA_PATH = fileURLToPath(new URL('./skill-manifest.schema.json', import.meta.url));
+const DOC_PATH = fileURLToPath(new URL('./skill-manifest.md', import.meta.url));
 const EXAMPLES_DIR = new URL('./exemplos/', import.meta.url);
 
 /** The two examples the document lists as complete manifests. */
-const EXAMPLES = ['manifesto-skill.develop.json', 'manifesto-skill.verificacao-develop.json'];
+const EXAMPLES = ['skill-manifest.develop.json', 'skill-manifest.verify-develop.json'];
 
 /** The negative fixture: material of test, never an example (see the doc). */
-const NEGATIVE = 'manifesto-skill.invalido.fixture.json';
+const NEGATIVE = 'skill-manifest.invalid.fixture.json';
 
 /**
  * The subset the pin covers, in the document's own order.
@@ -187,7 +187,7 @@ test("each example's committed hash reproduces its own content", () => {
 test("the document's hash recipe names exactly the pinned subset", () => {
   const doc = readFileSync(DOC_PATH, 'utf8');
   const recipe = /const sub=\{([\s\S]*?)\};/.exec(doc);
-  assert.ok(recipe, 'the bash recipe of the hash was not found in manifesto-skill.md');
+  assert.ok(recipe, 'the bash recipe of the hash was not found in skill-manifest.md');
   const named = [...recipe[1].matchAll(/(\w+)\s*:\s*m\./g)].map((match) => match[1]);
   assert.deepEqual(
     [...named].sort(),
@@ -324,7 +324,7 @@ test('t184 — the document quotes no name the rename retired', () => {
 
   const stale = inlineCodeSpans(doc).flatMap(({ line, text }) =>
     retiredNamesIn(text).map(
-      (old) => `manifesto-skill.md:${line} — \`${text}\`: "${old}" is now "${RETIRED_CITATIONS[old]}"`,
+      (old) => `skill-manifest.md:${line} — \`${text}\`: "${old}" is now "${RETIRED_CITATIONS[old]}"`,
     ),
   );
 

@@ -153,7 +153,7 @@ function removeFile(lockFile: string): void {
  * error and no ceremony: nobody is holding anything, and demanding a manual
  * cleanup after a `kill -9` would trade a real failure mode for a fake one — the
  * cost falls on the one-command start, which is a recorded quality
- * non-negotiable (`notas/2026-08-14-extensao-e-qualidade.md`).
+ * non-negotiable (`notas/2026-08-14-extension-and-quality.md`).
  *
  * @param databaseFilePath Path of the database file to be guarded.
  * @returns The lock, with what gives it back.

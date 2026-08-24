@@ -2,7 +2,7 @@
  * The registered skill, rendered into the session that runs the node (t161,
  * FR3–FR6).
  *
- * This is the line `especificacoes/formatos/manifesto-skill.md` had been
+ * This is the line `especificacoes/formatos/skill-manifest.md` had been
  * carrying since t117: "not implemented yet: rendering `instructions` into a
  * session, which is the runner's job". Until now a dispatch opened every session
  * with the same fixed literal, whatever node it was on — which meant the whole
@@ -50,7 +50,7 @@
  *    resolve throws {@link UnresolvedPlaceholderError}, in the same window as
  *    the two refusals above and for the same reason: it is the format's own
  *    rule — `falha fechada`, in the format's own words
- *    (`especificacoes/formatos/manifesto-skill.md`) — and a wrong prompt is
+ *    (`especificacoes/formatos/skill-manifest.md`) — and a wrong prompt is
  *    worse than no prompt.
  *
  *    What supplies that input is NOT here: since t259 the dispatch's
@@ -214,7 +214,7 @@ export class SkillPinMismatchError extends Error {
  * `{{input.triaged_thesis.title}}` instead. A session opened on that text is a
  * session working on the wrong thing while every log line says it went fine —
  * the exact failure mode the format's `falha fechada` rule was decided against
- * (`especificacoes/formatos/manifesto-skill.md`).
+ * (`especificacoes/formatos/skill-manifest.md`).
  *
  * Every unresolved path travels on the ONE error, deduplicated and in the order
  * the body mentions them: whoever fixes this is fixing an input assembly, and

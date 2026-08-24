@@ -5,7 +5,7 @@
  * guarantee has to be one of CODE, not of convention — parity with flowpilot's
  * `TicketEventRepository`, which exposes `create` and reads and nothing else,
  * with a test that sweeps the source for update/delete against the table
- * (`especificacoes/eventos/taxonomia.md:88-92`).
+ * (`especificacoes/eventos/taxonomy.md:88-92`).
  *
  * Two rules here:
  *

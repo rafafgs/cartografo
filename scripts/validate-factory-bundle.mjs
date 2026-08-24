@@ -8,7 +8,7 @@
  * 1. **The graph is valid and sound** — delegated to `scripts/validar-grafo.mjs`
  *    (t96), which is where the four workflow-net rules live.
  * 2. **Each manifest validates against the format's schema** — t97's schema,
- *    `especificacoes/formatos/manifesto-skill.schema.json`.
+ *    `especificacoes/formatos/skill-manifest.schema.json`.
  * 3. **Each pin closes** — for every graph node there is a manifest with the
  *    same `id` and the same `version`, and the recomputed hash of the content
  *    matches what the node's `skill_ref` pins (D4). It is this third check that
@@ -53,7 +53,7 @@ export const MANIFEST_SCHEMA_PATH = path.join(
   ROOT,
   'especificacoes',
   'formatos',
-  'manifesto-skill.schema.json',
+  'skill-manifest.schema.json',
 );
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -271,7 +271,7 @@ function canonicalize(value) {
 
 /**
  * Content hash of the manifest, by the procedure in
- * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
+ * `especificacoes/formatos/skill-manifest.md`: sha256 of the canonical JSON of
  * `{instructions, input, output, checks, permissions, budgets}`.
  *
  * What is left out (`id`, `version`, `description`, `origin`) is catalogue

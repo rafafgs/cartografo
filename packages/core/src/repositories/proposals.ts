@@ -1,7 +1,7 @@
 /**
  * Access to the `proposal` table (t101, FR7/FR8/FR9).
  *
- * A proposal is a HYPOTHESIS (`notas/2026-08-14-aprendizado.md`): target
+ * A proposal is a HYPOTHESIS (`notas/2026-08-14-learning.md`): target
  * artifact and version, semantic diff, the evidence that motivated it and the
  * metric it expects to move. The JSON columns (`operations`, `evidence`,
  * `expected_metric`, `result`) go in and come out parsed by this module —

@@ -6,7 +6,7 @@
  * `packages/tela/bin/tela.mjs`: the executable is `.mjs` (and not `.ts`) so it
  * depends on no Node flag at all — it registers the tsx loader in process and
  * only then imports `src/cli/index.ts`. That is the whole of gap #5 of the
- * first dogfood (`notas/2026-08-15-primeira-execucao.md:53-55`): parameter
+ * first dogfood (`notas/2026-08-15-first-execution.md:53-55`): parameter
  * properties in this package's TypeScript break Node's strip-only mode, so
  * every consumer used to have to know to pass `--import tsx`. Whoever runs
  * `npx cartografo-runner` now knows nothing about tsx.

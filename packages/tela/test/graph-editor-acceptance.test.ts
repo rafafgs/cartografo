@@ -36,7 +36,7 @@ const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const PUBLIC_DIR = path.join(PACKAGE_ROOT, 'src', 'public');
 const HTML_PATH = path.join(PUBLIC_DIR, 'graph-editor.html');
 const SCRIPT_PATH = path.join(PUBLIC_DIR, 'graph-editor.js');
-const BASE_GRAPH_PATH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
+const BASE_GRAPH_PATH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
 
 /** Fields the page may change on a node that already exists (t170, FR2). */
 const EDITABLE_FIELDS = [
@@ -550,7 +550,7 @@ function canonicalManifest(value: unknown): unknown {
  *
  * `packages/tela` declares no dependency on `packages/core` — that is the whole
  * point of D11 — so the procedure of
- * `especificacoes/formatos/manifesto-skill.md` is written out, the same way
+ * `especificacoes/formatos/skill-manifest.md` is written out, the same way
  * `packages/core/test/skill-routes.test.ts` writes it out.
  */
 function manifestPin(manifest: Record<string, unknown>): string {

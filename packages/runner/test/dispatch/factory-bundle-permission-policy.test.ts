@@ -3,7 +3,7 @@
  * a policy a shipped adapter can actually open a session under.
  *
  * The first real crossing of `desenvolvimento-de-software` against a live
- * repository (t109, `notas/2026-08-17-t109-feature-do-jogo.md`) died on the
+ * repository (t109, `notas/2026-08-17-t109-game-feature.md`) died on the
  * `test` node without spending a single token: `alpha-test` declared
  * `network: {allowed: true, domains: [...]}`, and a per-domain allowlist is a
  * policy neither shipped adapter can express, so `startSession` refused it up

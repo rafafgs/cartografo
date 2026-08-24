@@ -45,7 +45,7 @@ const MINIMAL_GRAPH = path.join(
   '..',
   'schema',
   'exemplos',
-  'grafo-valido-minimo.json',
+  'graph-valid-minimal.json',
 );
 
 /** What `POST /v1/graphs` answers, in the slice this flow needs. */

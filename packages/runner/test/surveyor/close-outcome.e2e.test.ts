@@ -52,7 +52,7 @@ import { bootCore, resolvePins } from '@cartografo/test-support';
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const SCRIPT_PATH = path.join(PACKAGE_ROOT, 'scripts', 'close-surveyor-outcome.mjs');
-const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
+const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
 
 /** The round the hypothesis is closed against. */
 const EXECUTION_ID = 2850;
@@ -69,7 +69,7 @@ const GAP_MS = 25;
 /**
  * The node the hypothesis names, and the measure it names on it.
  *
- * `revisar` is the gate of `grafo-valido-minimo.json`, which is where the seed
+ * `revisar` is the gate of `graph-valid-minimal.json`, which is where the seed
  * below puts the session — so `measureForExpectedMetric` resolves this name to a
  * real interval rather than to the `0` of a node that never ran.
  */
@@ -382,7 +382,7 @@ test('t288 — the raw fixture is stored unchecked, and every job named on it is
   // of what it cost — AT-a and AT-b red on `main` for six days, over a 409 raised
   // three calls away from the line that caused it.
   //
-  // The pins of `grafo-valido-minimo.json` are namespaced (`cartografo/…`) and
+  // The pins of `graph-valid-minimal.json` are namespaced (`cartografo/…`) and
   // the registry's `id` is kebab-case, so they can never resolve on their own:
   // registering this document raw is not a mistake the fixture can outgrow, it
   // is the fixture's permanent state. Which is why the guard lives HERE, in the

@@ -10,7 +10,7 @@ This document is the contract for whoever writes the graph **and** for whoever
 receives the delivery, and it is deliberately self-sufficient: the hook and the
 whole receiver — signature verification included — can be written without opening
 a line of the control plane's code. What travels is the envelope of the
-[event taxonomy](../../especificacoes/eventos/taxonomia.md), with no translation
+[event taxonomy](../../especificacoes/eventos/taxonomy.md), with no translation
 along the way, exactly the same object the [SSE stream](events-stream.md)
 delivers in its `data:` field and the
 [signed webhooks](webhooks-events.md) deliver by POST.
@@ -90,7 +90,7 @@ had to be touched.
 | `description` | no | What the reaction is for, in one sentence. |
 
 The complete example, with one hook per trigger, is in
-`schema/exemplos/grafo-valido-com-ganchos.json` — cited and not linked, because
+`schema/exemplos/graph-valid-with-hooks.json` — cited and not linked, because
 the file's own name is still Portuguese and a link target is prose to a sweep
 that reads lines; renaming it belongs to the path ticket.
 

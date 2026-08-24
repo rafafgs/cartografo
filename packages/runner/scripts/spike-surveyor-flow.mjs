@@ -63,7 +63,7 @@ import { proposeFlowImprovement } from '../src/surveyor/proposal.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BIN_PATH = join(REPO_ROOT, 'packages/core/bin/cartografo.mjs');
-const MINIMAL_GRAPH = join(REPO_ROOT, 'schema/exemplos/grafo-valido-minimo.json');
+const MINIMAL_GRAPH = join(REPO_ROOT, 'schema/exemplos/graph-valid-minimal.json');
 const FIXTURES_DIR = join(REPO_ROOT, 'packages/runner/test/fixtures');
 
 /** The manifest each node of the minimal graph runs, by node id (t161). */

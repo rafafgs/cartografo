@@ -1,7 +1,7 @@
 # Specification: the cost topografo (the token and time lens)
 
 **Package:** [`packages/topografo-custo`](../../packages/topografo-custo) · **Version of the API consumed:** `v1`
-**Founding rule:** ["two topografos (flow and cost) before the proposal format is frozen"](../../notas/2026-08-14-extensao-e-qualidade.md)
+**Founding rule:** ["two topografos (flow and cost) before the proposal format is frozen"](../../notas/2026-08-14-extension-and-quality.md)
 
 A topografo reads telemetry and writes a hypothesis. This one reads **cost**: how
 many tokens and how much session time each node consumed, in each graph version,
@@ -115,7 +115,7 @@ This is the lens's hard point, and it is a consequence, not a preference.
 Neither the graph document
 ([`grafo.schema.json`](../../schema/grafo.schema.json), whose node is
 `additionalProperties: false`) nor the
-[skill manifest](../../especificacoes/formatos/manifesto-skill.schema.json) has a
+[skill manifest](../../especificacoes/formatos/skill-manifest.schema.json) has a
 cost, budget or model-tier field today. A cost policy **has nowhere to land** in
 those formats. And opening either of them is outside this ticket by acceptance
 criterion: what is being proved is that a second topografo fits inside the
@@ -199,7 +199,7 @@ decision is the past.
 **The honest consequence:** applying a proposal from this lens reduces no cost by
 itself — it informs whoever reads the node. Mechanical enforcement of a ceiling
 or a tier waits for a real policy surface, which the
-[learning note](../../notas/2026-08-14-aprendizado.md) already names as a surface
+[learning note](../../notas/2026-08-14-learning.md) already names as a surface
 of its own. This is not an irreversible regression: when the field exists, the
 same aggregation and the same policies start emitting the structural operation,
 and only the operation changes.

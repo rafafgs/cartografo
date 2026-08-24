@@ -32,10 +32,10 @@ do despacho.
 
 | Arquivo | O que é |
 |---|---|
-| [`manifesto-skill.schema.json`](./manifesto-skill.schema.json) | JSON Schema draft 2020-12; a definição normativa. |
-| [`exemplos/manifesto-skill.develop.json`](./exemplos/manifesto-skill.develop.json) | Exemplo completo, `role: "work"` — porte comportamental do `feature-dev`/`development.py` do flowpilot. |
-| [`exemplos/manifesto-skill.verificacao-develop.json`](./exemplos/manifesto-skill.verificacao-develop.json) | Exemplo completo, `role: "gate"` — porte comportamental do `testing.py` do flowpilot. |
-| [`exemplos/manifesto-skill.invalido.fixture.json`](./exemplos/manifesto-skill.invalido.fixture.json) | Fixture negativo, só de teste: prova que o schema rejeita manifesto malformado. |
+| [`skill-manifest.schema.json`](./skill-manifest.schema.json) | JSON Schema draft 2020-12; a definição normativa. |
+| [`exemplos/skill-manifest.develop.json`](./exemplos/skill-manifest.develop.json) | Exemplo completo, `role: "work"` — porte comportamental do `feature-dev`/`development.py` do flowpilot. |
+| [`exemplos/skill-manifest.verify-develop.json`](./exemplos/skill-manifest.verify-develop.json) | Exemplo completo, `role: "gate"` — porte comportamental do `testing.py` do flowpilot. |
+| [`exemplos/skill-manifest.invalid.fixture.json`](./exemplos/skill-manifest.invalid.fixture.json) | Fixture negativo, só de teste: prova que o schema rejeita manifesto malformado. |
 
 ## Por que este formato existe
 
@@ -89,12 +89,12 @@ const sub={instructions:m.instructions,input:m.input,output:m.output,
            checks:m.checks,permissions:m.permissions,budgets:m.budgets};
 console.log("sha256:"+c.createHash("sha256")
   .update(JSON.stringify(canon(sub)),"utf8").digest("hex"));
-' especificacoes/formatos/exemplos/manifesto-skill.develop.json
+' especificacoes/formatos/exemplos/skill-manifest.develop.json
 ```
 
 (Os dois exemplos deste diretório carregam o hash de verdade: o comando acima
 reproduz o valor gravado em cada um, e
-[`manifesto-skill.test.mjs`](./manifesto-skill.test.mjs) confere isso a cada
+[`skill-manifest.test.mjs`](./skill-manifest.test.mjs) confere isso a cada
 `npm test`, junto com os quatro comandos de validação da seção *Como validar*.)
 
 O que está **dentro** do hash é comportamento: o texto que vai ser injetado na
@@ -488,26 +488,26 @@ projeto, com o `ajv-cli` via `npx`. Da raiz do repositório:
 
 ```bash
 # 1. o schema é um JSON Schema válido (draft 2020-12)
-npx --yes ajv-cli@5 compile -s especificacoes/formatos/manifesto-skill.schema.json --spec=draft2020
+npx --yes ajv-cli@5 compile -s especificacoes/formatos/skill-manifest.schema.json --spec=draft2020
 
 # 2. o exemplo de skill "fazer" valida contra o schema
-npx --yes ajv-cli@5 validate -s especificacoes/formatos/manifesto-skill.schema.json \
-  -d especificacoes/formatos/exemplos/manifesto-skill.develop.json --spec=draft2020
+npx --yes ajv-cli@5 validate -s especificacoes/formatos/skill-manifest.schema.json \
+  -d especificacoes/formatos/exemplos/skill-manifest.develop.json --spec=draft2020
 
 # 3. o exemplo de skill "portão" valida contra o schema
-npx --yes ajv-cli@5 validate -s especificacoes/formatos/manifesto-skill.schema.json \
-  -d especificacoes/formatos/exemplos/manifesto-skill.verificacao-develop.json --spec=draft2020
+npx --yes ajv-cli@5 validate -s especificacoes/formatos/skill-manifest.schema.json \
+  -d especificacoes/formatos/exemplos/skill-manifest.verify-develop.json --spec=draft2020
 
 # 4. o fixture negativo é REJEITADO (exit != 0 é o resultado esperado aqui)
-npx --yes ajv-cli@5 validate -s especificacoes/formatos/manifesto-skill.schema.json \
-  -d especificacoes/formatos/exemplos/manifesto-skill.invalido.fixture.json --spec=draft2020
+npx --yes ajv-cli@5 validate -s especificacoes/formatos/skill-manifest.schema.json \
+  -d especificacoes/formatos/exemplos/skill-manifest.invalid.fixture.json --spec=draft2020
 ```
 
 Os três primeiros saem com exit 0; o quarto sai com exit diferente de 0 — é o
 que prova que o schema não é permissivo demais.
 
 Os quatro rodam automaticamente em `npm test`, por
-[`manifesto-skill.test.mjs`](./manifesto-skill.test.mjs), com `ajv` importado
+[`skill-manifest.test.mjs`](./skill-manifest.test.mjs), com `ajv` importado
 direto em vez de por `npx`: portão que precisa de rede é portão vermelho no
 avião. O arquivo confere também o que nenhum `ajv` conferiria — que o `hash`
 gravado em cada exemplo reproduz o próprio conteúdo, e que a receita de hash
@@ -515,7 +515,7 @@ desta doc e o subconjunto pinado não se separaram.
 
 ### O fixture negativo
 
-`exemplos/manifesto-skill.invalido.fixture.json` **não** é um exemplo de
+`exemplos/skill-manifest.invalid.fixture.json` **não** é um exemplo de
 manifesto: é material de teste. Ele é um manifesto de portão em tudo o mais
 válido, com **uma** violação proposital — o check `criterios-atendidos` tem
 `type: "agentic"` e não declara `required_evidence`. Violação única e

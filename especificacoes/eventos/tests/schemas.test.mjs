@@ -309,7 +309,7 @@ for (const [tipo, spec] of Object.entries(TABELA)) {
 }
 
 test('t175 — job.created.data.tier fecha o conjunto em trivial, standard e null', () => {
-  // Estrutural, como o resto deste diretório (`exemplos.test.mjs` escreve a
+  // Estrutural, como o resto deste diretório (`examples.test.mjs` escreve a
   // razão): sem ajv, o que se confere é a DECLARAÇÃO — e um enum declarado é
   // exatamente o que separa "aceita os dois valores e o nulo" de "aceita
   // qualquer string". A tabela em `src/db/event-validation.ts` é a duplicata
@@ -338,13 +338,13 @@ test('nenhum schema descreve update ou delete de evento (append-only)', () => {
   }
 });
 
-test('taxonomia.md referencia todos os schemas', () => {
+test('taxonomy.md referencia todos os schemas', () => {
   // Item mecânico da definição de pronto. O resto do documento é prosa e é
   // conferido por revisão humana no portão de aceite (exceção ao TDD da
   // ficha); "existe schema sem entrada no catálogo" não é prosa.
-  const doc = readFileSync(fileURLToPath(new URL('../taxonomia.md', import.meta.url)), 'utf8');
+  const doc = readFileSync(fileURLToPath(new URL('../taxonomy.md', import.meta.url)), 'utf8');
   const ausentes = arquivosDeSchema().filter((nome) => !doc.includes(nome));
-  assert.deepEqual(ausentes, [], `schemas sem referência em taxonomia.md: ${ausentes.join(', ')}`);
+  assert.deepEqual(ausentes, [], `schemas sem referência em taxonomy.md: ${ausentes.join(', ')}`);
 });
 
 test('nenhum tipo de evento fora do escopo da PoC', () => {

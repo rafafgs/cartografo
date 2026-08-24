@@ -17,7 +17,7 @@
  *
  * - **Order is `id`, never `occurred_at`.** Two events can carry the same
  *   timestamp; only the server-assigned id is a total ordering. Same rule as
- *   `especificacoes/eventos/reducers/reconstruir-estado.mjs`.
+ *   `especificacoes/eventos/reducers/reconstruct-state.mjs`.
  * - **The node a work sat on is reconstructed from the log**, by folding
  *   `job.created` and `job.transitioned` — the projection only knows
  *   where the work is NOW, and "where was it when it blocked?" is a question

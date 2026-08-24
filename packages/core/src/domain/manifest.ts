@@ -62,7 +62,7 @@ export const MANIFEST_ROLES = ['work', 'gate'];
 
 /**
  * Content hash of a skill manifest, by the procedure of
- * `especificacoes/formatos/manifesto-skill.md`: sha256 of the canonical JSON of
+ * `especificacoes/formatos/skill-manifest.md`: sha256 of the canonical JSON of
  * `{instructions, input, output, checks, permissions, budgets}`.
  *
  * It covers only that subset — and not the whole manifest, as the graph version
@@ -125,7 +125,7 @@ export function manifestHash(manifest: Record<string, unknown>): string {
  * `input`/`output` of all twelve registered manifests).
  *
  * `strict: false` is not laziness: a registered manifest's `output` is a
- * document a third party wrote, `manifesto-skill.md`'s *Limites conhecidos*
+ * document a third party wrote, `skill-manifest.md`'s *Limites conhecidos*
  * says out loud that the registry only checks it is an OBJECT, and ajv's strict
  * mode turns an unknown keyword or an unknown `format` into a COMPILATION
  * error. Refusing to compile is not a verdict about the reported value — it

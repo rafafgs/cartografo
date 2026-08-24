@@ -1,7 +1,7 @@
 /**
  * Node input projection — the merge algorithm, with no database (t253, FR7).
  *
- * This is the step `especificacoes/formatos/manifesto-skill.md` calls "step 2"
+ * This is the step `especificacoes/formatos/skill-manifest.md` calls "step 2"
  * and describes as the one that does not exist: assembling the object a node's
  * `{{input.*}}` placeholders resolve against. It is tested here, pure, for the
  * same reason `domain/graph.ts` and `domain/custom-fields.ts` are: the merge is

@@ -5506,7 +5506,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
  * its own account and routed the job from the label it found there. So a report
  * core rejected still moved the work along an edge, and the next node read an
  * `input` projection with nothing in it. That is gap 2 of
- * `notas/2026-08-17-segunda-execucao-bets.md`.
+ * `notas/2026-08-17-second-bets-run.md`.
  *
  * Both shapes of node are proved here, because the gate is BEFORE routing and
  * not instead of it: a single-edge node has no decision to report and moves
@@ -5722,7 +5722,7 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
  * session row is ever created and t265's session-streak cap has nothing to
  * count. What the note measured was the consequence: 38 `lease.granted` in about
  * two minutes, zero `session.opened`, nothing in anybody's inbox
- * (`notas/2026-08-17-t109-feature-do-jogo.md`, gap 2).
+ * (`notas/2026-08-17-t109-game-feature.md`, gap 2).
  *
  * A refusal for a policy the engine cannot enforce is deterministic in the
  * strong sense t252 demands — same skill hash, same policy, same refusal on
@@ -6156,7 +6156,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
  * session — advances the main line, and until this ficha nobody kept that
  * promise: the t109 game run left the bench on the old commit and a person
  * typed `git merge --ff-only ticket-1` by hand before `testar` could open
- * (`notas/2026-08-17-t109-feature-do-jogo.md`, gap 3).
+ * (`notas/2026-08-17-t109-game-feature.md`, gap 3).
  *
  * The trigger is the SHAPE of the report and never a node or skill id (FR2), so
  * these cases run against the same `travessia-fazer` fixture every other

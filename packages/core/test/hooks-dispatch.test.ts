@@ -54,7 +54,7 @@ const T194_ARTIFACTS = Object.freeze({
 });
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
+const MINIMAL_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
 
 /** Header the delivery carries; HTTP header names are case-insensitive. */
 const SIGNATURE_HEADER = 'x-cartografo-signature';

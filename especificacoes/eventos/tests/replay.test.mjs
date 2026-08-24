@@ -1,63 +1,63 @@
-// Prova de replay (t98, teste de aceite 3).
+// Replay proof (t98, acceptance test 3).
 //
-// O inegociável de qualidade é "reprodutibilidade por event sourcing": o
-// estado final de uma execução tem que sair do log e de mais nada. Este teste
-// dobra o log de exemplo com o reducer e compara com um estado esperado
-// calculado à mão a partir do mesmo log.
+// The quality non-negotiable is "replayability by event sourcing": the final
+// state of an execution has to come out of the log and out of nothing else.
+// This test folds the example log with the reducer and compares it against an
+// expected state computed by hand from that same log.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const LOG = fileURLToPath(new URL('../exemplos/log-exemplo.jsonl', import.meta.url));
-const ESPERADO = fileURLToPath(new URL('../exemplos/estado-final-esperado.json', import.meta.url));
-const REDUCER = '../reducers/reconstruir-estado.mjs';
+const LOG = fileURLToPath(new URL('../exemplos/example-log.jsonl', import.meta.url));
+const EXPECTED = fileURLToPath(new URL('../exemplos/expected-final-state.json', import.meta.url));
+const REDUCER = '../reducers/reconstruct-state.mjs';
 
-function lerLog() {
+function readLog() {
   return readFileSync(LOG, 'utf8')
     .split('\n')
-    .map((linha) => linha.trim())
-    .filter((linha) => linha.length > 0)
-    .map((linha) => JSON.parse(linha));
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line));
 }
 
-test('reconstruirEstado reproduz o estado final esperado', async () => {
-  const { reconstruirEstado } = await import(REDUCER);
-  const eventos = lerLog();
-  const esperado = JSON.parse(readFileSync(ESPERADO, 'utf8'));
+test('reconstructState reproduces the expected final state', async () => {
+  const { reconstructState } = await import(REDUCER);
+  const events = readLog();
+  const expected = JSON.parse(readFileSync(EXPECTED, 'utf8'));
 
-  assert.deepStrictEqual(reconstruirEstado(eventos), esperado);
+  assert.deepStrictEqual(reconstructState(events), expected);
 });
 
-test('reconstruirEstado é determinístico e não depende da ordem de leitura', async () => {
-  const { reconstruirEstado } = await import(REDUCER);
-  const eventos = lerLog();
+test('reconstructState is deterministic and does not depend on the reading order', async () => {
+  const { reconstructState } = await import(REDUCER);
+  const events = readLog();
 
-  assert.deepStrictEqual(reconstruirEstado(eventos), reconstruirEstado([...eventos].reverse()));
+  assert.deepStrictEqual(reconstructState(events), reconstructState([...events].reverse()));
 });
 
-test('reconstruirEstado não muta a lista de eventos que recebe', async () => {
-  const { reconstruirEstado } = await import(REDUCER);
-  const eventos = lerLog();
-  const antes = JSON.stringify(eventos);
+test('reconstructState does not mutate the list of events it receives', async () => {
+  const { reconstructState } = await import(REDUCER);
+  const events = readLog();
+  const before = JSON.stringify(events);
 
-  reconstruirEstado(eventos);
+  reconstructState(events);
 
-  assert.equal(JSON.stringify(eventos), antes);
+  assert.equal(JSON.stringify(events), before);
 });
 
-test('um log vazio reconstrói um estado vazio', async () => {
-  const { reconstruirEstado } = await import(REDUCER);
+test('an empty log reconstructs an empty state', async () => {
+  const { reconstructState } = await import(REDUCER);
 
-  assert.deepStrictEqual(reconstruirEstado([]), {
-    trabalhos: {},
-    sessoes: {},
-    perguntas: {},
+  assert.deepStrictEqual(reconstructState([]), {
+    jobs: {},
+    sessions: {},
+    input_requests: {},
     leases: {},
-    grafo_versao_corrente: {},
-    // A sexta projeção entrou com a D21 (t245). Vazia é a forma completa: uma
-    // rodada que ninguém declarou concluída é chave ausente, nunca `null`.
-    execucoes: {},
+    current_graph_version: {},
+    // The sixth projection came in with D21 (t245). Empty is the complete
+    // shape: a round nobody declared finished is a missing key, never `null`.
+    executions: {},
   });
 });

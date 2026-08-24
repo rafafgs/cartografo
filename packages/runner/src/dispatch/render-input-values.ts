@@ -8,7 +8,7 @@
  * without it, because the body never named it. The second real crossing of the
  * bets graph is where that stopped being theoretical — `analise-assimetria`
  * escalated asking for two fields the control plane had already assembled
- * (`notas/2026-08-17-segunda-execucao-bets.md`).
+ * (`notas/2026-08-17-second-bets-run.md`).
  *
  * So the block below is not a convenience: it is the difference between a
  * session that can act on what it has and one that can only act on what a

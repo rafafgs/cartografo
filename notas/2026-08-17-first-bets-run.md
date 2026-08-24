@@ -116,7 +116,7 @@ lente de fluxo migrou para o inglês da §5.6 do glossário, e cada linha de
 O **buraco 4 não era defeito**, e é o único item desta lista que se fecha sem
 uma linha de código. `from_node_id: null` é o contrato documentado da PRIMEIRA
 transição de um trabalho — o `job.transitioned.schema.json` e a
-[`taxonomia.md`](../especificacoes/eventos/taxonomia.md) dizem isso, e o
+[`taxonomy.md`](../especificacoes/eventos/taxonomy.md) dizem isso, e o
 `jobs.test.ts` já fixava a forma. `null` significa "saiu do nó de entrada", e o
 nó de entrada do job 2 era `triagem`: quem escreveu a nota leu "o trabalho
 estava em triagem" como contradizendo o `null`, e as duas coisas são a mesma. O

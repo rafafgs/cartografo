@@ -1,7 +1,7 @@
 # Plano de ação — 2026-08-18 (registrado pelo plantão a pedido do Rafael)
 
-Origem: as três notas de execução real (`2026-08-17-primeira-execucao-bets.md`,
-`2026-08-17-segunda-execucao-bets.md`, `2026-08-17-t109-feature-do-jogo.md`) e um review
+Origem: as três notas de execução real (`2026-08-17-first-bets-run.md`,
+`2026-08-17-second-bets-run.md`, `2026-08-17-t109-game-feature.md`) e um review
 externo do repo lido em 18/08 (números conferidos: 143 apelidos `coluna AS campo_pt`, ledger de
 migração sem checksum, varredura anti-português duplicada por pacote, dois contratos por
 fronteira nó/skill). Decisão do Rafael em 18/08: "siga com o plano sugerido" e, à tarde,

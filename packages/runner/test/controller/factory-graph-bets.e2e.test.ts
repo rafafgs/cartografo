@@ -386,7 +386,7 @@ test('t260 — triage → collect-fundamentals crosses the real bets bundle', as
 /* produced either, and `UnresolvedPlaceholderError` stopped the dispatch      */
 /* before a worktree existed. The second real bets crossing was unblocked by a */
 /* person patching both into the job's `fields` by hand                        */
-/* (`notas/2026-08-17-segunda-execucao-bets.md`, gap 5).                       */
+/* (`notas/2026-08-17-second-bets-run.md`, gap 5).                       */
 /*                                                                            */
 /* So the claim here is the repair AND the absence of the workaround: no       */
 /* `PATCH /v1/jobs/:id`, no `POST /v1/jobs/:id/unblocks`, anywhere in the      */

@@ -4,7 +4,7 @@ O formato do log de telemetria é **API pública**. É o que a tela de
 observabilidade lê, o que os topógrafos plugáveis consomem e o que uma
 integração de terceiro vai receber quando o stream de eventos existir. Por
 isso ele é um dos quatro formatos tratados como produto, com schema versionado
-e documento de especificação (`notas/2026-08-14-extensao-e-qualidade.md`,
+e documento de especificação (`notas/2026-08-14-extension-and-quality.md`,
 princípio organizador e ponto de extensão 5).
 
 Esta é a especificação v1. Ela entrega **contrato, não código**: nenhuma
@@ -18,9 +18,9 @@ implementação.
 |---|---|
 | `schemas/envelope.schema.json` | Os campos que existem em todo evento |
 | `schemas/<tipo>.schema.json` | Um por tipo de evento (19) |
-| `exemplos/log-exemplo.jsonl` | Uma execução ponta a ponta, com os 19 tipos |
-| `exemplos/estado-final-esperado.json` | O estado que aquele log reconstrói |
-| `reducers/reconstruir-estado.mjs` | A dobra do log até esse estado |
+| `exemplos/example-log.jsonl` | Uma execução ponta a ponta, com os 19 tipos |
+| `exemplos/expected-final-state.json` | O estado que aquele log reconstrói |
+| `reducers/reconstruct-state.mjs` | A dobra do log até esse estado |
 | `tests/` | Runner nativo do Node, sem `package.json` e sem dependência |
 
 Para rodar, da raiz do repo:
@@ -117,7 +117,7 @@ Três consequências que atravessam esta ficha inteira:
 ## Catálogo
 
 19 tipos, em 6 grupos. "Quem emite" é o `actor.type` esperado; os exemplos
-mostram o conteúdo de `data` e saíram do `log-exemplo.jsonl`.
+mostram o conteúdo de `data` e saíram do `example-log.jsonl`.
 
 ### Trabalho
 
@@ -660,7 +660,7 @@ estrutural desta ficha.
 
 O inegociável de qualidade é **reprodutibilidade por event sourcing**: grafo
 vN + inputs ⇒ execução replayável do log. A prova executável desta ficha é
-`reducers/reconstruir-estado.mjs`, que dobra o log e devolve:
+`reducers/reconstruct-state.mjs`, que dobra o log e devolve:
 
 ```
 { trabalhos:  {[id]: {no_atual, bloqueado, historico_nos}},
@@ -671,8 +671,8 @@ vN + inputs ⇒ execução replayável do log. A prova executável desta ficha �
   execucoes:  {[execution_id]: {finalizada_em}} }
 ```
 
-`tests/replay.test.mjs` roda o reducer contra `exemplos/log-exemplo.jsonl` e
-compara com `exemplos/estado-final-esperado.json`, calculado à mão a partir do
+`tests/replay.test.mjs` roda o reducer contra `exemplos/example-log.jsonl` e
+compara com `exemplos/expected-final-state.json`, calculado à mão a partir do
 mesmo log. Enquanto essa igualdade valer, o log é suficiente: nenhum estado
 final precisa de outra fonte.
 

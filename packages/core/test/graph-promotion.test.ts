@@ -33,7 +33,7 @@ import {
 } from './support.ts';
 
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'grafo-valido-minimo.json');
+const MINIMAL_EXAMPLE = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-minimal.json');
 
 /** Id of the variant every test here forks. */
 const VARIANT_ID = 'nota-curta-do-projeto';

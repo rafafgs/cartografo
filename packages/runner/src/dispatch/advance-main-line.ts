@@ -7,7 +7,7 @@
  * game run is the whole evidence: the session reported `merge_commit ae41796`
  * with every gate green, the bench's `main` stayed on the commit before it, and
  * a person typed `git merge --ff-only ticket-1` by hand before `testar` could
- * open at all (`notas/2026-08-17-t109-feature-do-jogo.md`, gap 3).
+ * open at all (`notas/2026-08-17-t109-game-feature.md`, gap 3).
  *
  * t270 built the READ half and said so in its own header: it resolves
  * `banco_de_testes.caminho` and `referencia.commit` off a bench it assumes

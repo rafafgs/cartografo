@@ -54,7 +54,7 @@
  *   prefix has to be a table (today's spelling or one the migrations renamed
  *   away from) and the suffix a column of that table (likewise). That double
  *   condition is what tells `grafo.origem_proposta_id` — a stale citation — from
- *   `graph.md`, `taxonomia.md`, `dados.motivo` and `linhagem.tipo`, which are a
+ *   `graph.md`, `taxonomy.md`, `dados.motivo` and `linhagem.tipo`, which are a
  *   file name, a file name, an event payload key and a key of the graph
  *   document, and none of which this gate touches.
  *
@@ -494,7 +494,7 @@ test('FR11 — the sweep does NOT bite on what the documents keep in Portuguese'
     '| `origem_proposta_id` não é inteiro positivo | `400` | `origem_proposta_id_invalido` |',
     '| Base sem `versao_corrente_id` (invariante defensivo) | `409` | `grafo_sem_versao_corrente` |',
     // A file name whose stem happens to be a renamed table.
-    'o formato está em [`graph.md` §7](graph.md) e a taxonomia em `taxonomia.md`.',
+    'o formato está em [`graph.md` §7](graph.md) e a taxonomia em `taxonomy.md`.',
     // An event type and an event payload key, neither of them a column.
     '`motivo` espelha `dados.motivo` do evento `grafo_versao.revertida`.',
     // An event whose two halves both resolve as schema and are still an event.

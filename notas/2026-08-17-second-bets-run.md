@@ -4,7 +4,7 @@ Data: 2026-08-18, 00:09–00:46 UTC (noite de 17/08 no fuso do Rafael). Operador
 (Claude), com autorização do Rafael. Segunda travessia real do grafo `bets-assimetricas`,
 com uma tese que passa na triagem — a primeira vez que os nós depois da triagem (coleta com
 rede, análise de assimetria, red team, registro) abrem sessão de verdade. Nota da rodada 1:
-`notas/2026-08-17-primeira-execucao-bets.md`.
+`notas/2026-08-17-first-bets-run.md`.
 
 ## Procedência
 

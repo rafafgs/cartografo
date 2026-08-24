@@ -2,7 +2,7 @@
  * The `input` a node's skill reads, assembled from what the board already knows
  * (t253, FR6/FR7).
  *
- * This is step 2 of `especificacoes/formatos/manifesto-skill.md`'s renderization
+ * This is step 2 of `especificacoes/formatos/skill-manifest.md`'s renderization
  * pipeline — the one that until now did not exist. `render-skill-instructions.ts`
  * has interpolated `{{input.<path>}}` and failed closed on an unresolved
  * placeholder since t204; what it was never handed was a correctly shaped

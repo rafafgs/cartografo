@@ -7,7 +7,7 @@
  * (`packages/core/src/domain/hypothesis.ts`). That is the official verdict and
  * this command does not touch it. What it adds is the thing the only closed
  * cycle on record said it was missing
- * (`notas/2026-08-15-ciclo-de-aprendizado-fechado.md`): "uma rodada só não é
+ * (`notas/2026-08-15-closed-learning-loop.md`): "uma rodada só não é
  * uma medição […] nada neste ciclo separa 'a mudança piorou' de 'a sessão
  * demorou mais dessa vez'". Three crossings of the version before and three of
  * the version after answer that, and only together.

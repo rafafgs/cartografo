@@ -378,11 +378,11 @@ test('AT8 — the specification\'s negative fixture is refused, naming the field
   assert.match(message, /required_evidence/, 'the message has to name the missing field');
   assert.match(
     message,
-    /criterios-atendidos/,
+    /criteria-met/,
     'the message has to name the check that broke the rule',
   );
 
-  const read = await request<Skill>(ctx, 'GET', '/v1/skills/portao-sem-evidencia');
+  const read = await request<Skill>(ctx, 'GET', '/v1/skills/gate-without-evidence');
   assert.equal(read.status, 404, 'a refused manifest cannot leave a row behind');
 });
 
@@ -393,7 +393,7 @@ test('AT9 — the same manifest with required_evidence declared registers (t135)
   const fixture = JSON.parse(readFileSync(INVALID_FIXTURE, 'utf8')) as Record<string, unknown>;
   const checks = (fixture.checks as Record<string, unknown>[]).map((check) =>
     check.type === 'agentic'
-      ? { ...check, required_evidence: ['trecho_citado_do_criterio_de_aceite'] }
+      ? { ...check, required_evidence: ['quoted_passage_of_the_acceptance_criterion'] }
       : check,
   );
   const repaired: Record<string, unknown> = { ...fixture, checks };
@@ -406,7 +406,7 @@ test('AT9 — the same manifest with required_evidence declared registers (t135)
     `the rule cannot over-reject: ${created.status} ${JSON.stringify(created.body)}`,
   );
 
-  const read = await request<Skill>(ctx, 'GET', '/v1/skills/portao-sem-evidencia');
+  const read = await request<Skill>(ctx, 'GET', '/v1/skills/gate-without-evidence');
   assert.equal(read.status, 200);
   assert.deepEqual(read.body.checks, checks);
 });

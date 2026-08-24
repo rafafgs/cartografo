@@ -34,7 +34,7 @@ const INVALID_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-invalid-
 
 /** The fixture that declares hooks, and the class it registers as (t194). */
 const HOOKS_GRAPH = path.join(REPO_ROOT, 'schema', 'exemplos', 'graph-valid-with-hooks.json');
-const HOOKS_CLASS = 'nota-curta-com-ganchos';
+const HOOKS_CLASS = 'short-note-with-hooks';
 
 /**
  * The five manifests of the factory bundle, in the order `GET /v1/skills`

@@ -1,14 +1,14 @@
 {
-  "problem_class": "publicacao-de-texto",
+  "problem_class": "text-publication",
   "lineage": {
     "type": "base"
   },
   "metadata": {
-    "name": "Contraexemplo — nó sem contrato",
-    "description": "Viola SÓ a regra \"node_with_contract\": a topologia é sound e as arestas têm condição, mas o nó publicar_texto não declara contrato. Sem contrato não há como verificar o que o nó produziu — é o nó que o sintetizador compôs por alucinação (README, princípio 3). A regra vale igual para portão, que é nó como outro qualquer.",
+    "name": "Counterexample — a node with no contract",
+    "description": "Violates ONLY the \"node_with_contract\" rule: the topology is sound and the edges have a condition, but the publicar_texto node declares no contract. With no contract there is no way to verify what the node produced — it is the node the synthesizer composed by hallucination (README, principle 3). The rule holds identically for a gate, which is a node like any other.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-14",
-    "source": "contraexemplo da especificação"
+    "source": "the specification's counterexample"
   },
   "nodes": [
     {
@@ -32,7 +32,7 @@
       "id": "publicar_texto",
       "role": "publicador",
       "node_type": "work",
-      "description": "Nó sem contrato: não declara entrada, saída nem verificação.",
+      "description": "A node with no contract: it declares neither input, output nor verification.",
       "skill_ref": {
         "id": "cartografo/publicar-texto",
         "version": "1.0.0",

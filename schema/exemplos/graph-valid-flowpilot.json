@@ -4,18 +4,18 @@
     "type": "base"
   },
   "metadata": {
-    "name": "Entrega de software — fluxo do flowpilot portado",
-    "description": "Grafo de fábrica 1 (D14): o fluxo do flowpilot expresso neste formato. Um nó por estado de atividade; os estados de fila do flowpilot (to_refine, to_develop, to_integrate, to_test, to_deploy) não viram nó — são plumbing de escalonamento do controller, não topologia do trabalho. As arestas seguem ALLOWED_TRANSITIONS colapsando essas filas, incluindo o ciclo de retrabalho testar → desenvolver.",
+    "name": "Software delivery — flowpilot's flow, ported",
+    "description": "Factory graph 1 (D14): flowpilot's flow expressed in this format. One node per activity state; flowpilot's queue states (to_refine, to_develop, to_integrate, to_test, to_deploy) do not become nodes — they are the controller's scheduling plumbing, not the topology of the work. The edges follow ALLOWED_TRANSITIONS with those queues collapsed, including the testar → desenvolver rework cycle.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-14",
-    "source": "porte manual do flowpilot (D17: referência de comportamento, sem dependência de código)"
+    "source": "a manual port of flowpilot (D17: a reference of behaviour, with no code dependency)"
   },
   "nodes": [
     {
       "id": "refinar",
       "role": "arquiteto",
       "node_type": "work",
-      "description": "Transforma o pedido em especificação: requisitos funcionais, arquivos tocados, critérios de aceite e escopo negativo.",
+      "description": "Turns the request into a specification: functional requirements, touched files, acceptance criteria and negative scope.",
       "skill_ref": {
         "id": "cartografo/refinar-ticket",
         "version": "1.0.0",
@@ -48,9 +48,9 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "Cada critério de aceite é verificável por um teste concreto, e a lista de arquivos tocados existe no repositório? Anexe o caminho conferido de cada arquivo citado.",
+            "instruction": "Is every acceptance criterion verifiable by a concrete test, and does the list of touched files exist in the repository? Attach the checked path of every file cited.",
             "required_evidence": true,
-            "description": "Critério de aceite não verificável é o defeito mais caro do refino: contamina todas as etapas seguintes."
+            "description": "An unverifiable acceptance criterion is refinement's most expensive defect: it contaminates every stage that follows."
           }
         ]
       }
@@ -59,7 +59,7 @@
       "id": "desenvolver",
       "role": "desenvolvedor",
       "node_type": "work",
-      "description": "Implementa a especificação em checkout isolado, com os testes de aceite escritos antes da implementação.",
+      "description": "Implements the specification in an isolated checkout, with the acceptance tests written before the implementation.",
       "skill_ref": {
         "id": "cartografo/desenvolver-ticket",
         "version": "1.0.0",
@@ -88,13 +88,13 @@
           {
             "type": "deterministic",
             "command": "make check",
-            "description": "Suíte, lint e typecheck verdes no branch da ticket."
+            "description": "Suite, lint and typecheck green on the ticket's branch."
           },
           {
             "type": "agentic",
-            "instruction": "Os testes de aceite foram commitados antes da implementação e cobrem os critérios da especificação? Anexe os hashes dos dois commits e o diff do commit de testes.",
+            "instruction": "Were the acceptance tests committed before the implementation, and do they cover the specification's criteria? Attach the hashes of both commits and the diff of the test commit.",
             "required_evidence": true,
-            "description": "Verifica a ordem do TDD pelo histórico, não pelo relato de quem desenvolveu."
+            "description": "Verifies the TDD order from the history, not from the developer's report."
           }
         ]
       }
@@ -103,7 +103,7 @@
       "id": "integrar",
       "role": "integrador",
       "node_type": "work",
-      "description": "Traz o branch para a linha principal e reverifica a suíte contra a árvore já integrada.",
+      "description": "Brings the branch onto the main line and re-verifies the suite against the already-integrated tree.",
       "skill_ref": {
         "id": "cartografo/integrar-branch",
         "version": "1.0.0",
@@ -130,7 +130,7 @@
           {
             "type": "deterministic",
             "command": "make check",
-            "description": "A suíte passa na árvore mesclada, não só no branch isolado."
+            "description": "The suite passes on the merged tree, not only on the isolated branch."
           }
         ]
       }
@@ -139,7 +139,7 @@
       "id": "testar",
       "role": "tester",
       "node_type": "gate",
-      "description": "Exercita o comportamento entregue contra os critérios de aceite e roteia: aprovado segue para implantação, retrabalho volta para desenvolvimento.",
+      "description": "Exercises the delivered behaviour against the acceptance criteria and routes: approved goes on to deployment, rework goes back to development.",
       "skill_ref": {
         "id": "cartografo/testar-alpha",
         "version": "1.0.0",
@@ -168,13 +168,13 @@
           {
             "type": "deterministic",
             "command": "make check",
-            "description": "Reverificação determinística antes de qualquer julgamento."
+            "description": "A deterministic re-verification before any judgement."
           },
           {
             "type": "agentic",
-            "instruction": "Rode o comportamento entregue e confira cada critério de aceite na aplicação real. Anexe a saída de cada execução; relato do desenvolvedor não conta como evidência.",
+            "instruction": "Run the delivered behaviour and check every acceptance criterion against the real application. Attach the output of every run; the developer's report does not count as evidence.",
             "required_evidence": true,
-            "description": "Portão agêntico verifica com evidência própria (nota de aprendizado, 2026-08-14)."
+            "description": "An agentic gate verifies with evidence of its own (the learning note, 2026-08-14)."
           }
         ]
       }
@@ -183,7 +183,7 @@
       "id": "implantar",
       "role": "deployer",
       "node_type": "work",
-      "description": "Publica o que foi aprovado e encerra a travessia.",
+      "description": "Publishes what was approved and closes the traversal.",
       "skill_ref": {
         "id": "cartografo/implantar-release",
         "version": "1.0.0",
@@ -210,7 +210,7 @@
           {
             "type": "deterministic",
             "command": "make smoke",
-            "description": "Smoke test contra o ambiente publicado."
+            "description": "A smoke test against the published environment."
           }
         ]
       }
@@ -245,7 +245,7 @@
       "from": "testar",
       "to": "desenvolver",
       "condition": "retrabalho",
-      "description": "flowpilot: testing -> to_develop, o ciclo de retrabalho do teste alfa."
+      "description": "flowpilot: testing -> to_develop, the alpha test's rework cycle."
     }
   ],
   "initial_node": "refinar",

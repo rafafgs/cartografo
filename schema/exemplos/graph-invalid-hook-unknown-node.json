@@ -1,21 +1,21 @@
 {
-  "problem_class": "nota-curta-gancho-pendurado",
+  "problem_class": "short-note-dangling-hook",
   "lineage": {
     "type": "base"
   },
   "metadata": {
-    "name": "Nota curta — gancho apontando para nó inexistente",
-    "description": "Contraexemplo da t169: a rede de workflow é sound e a forma passa no JSON Schema, mas um gancho aponta para um nó que o documento não tem. É defeito de integridade referencial, e por isso ele sai na passagem ESTRUTURAL do validador, não entre as quatro regras de soundness.",
+    "name": "Short note — a hook pointing at a node that does not exist",
+    "description": "t169's counterexample: the workflow net is sound and the shape passes the JSON Schema, but a hook points at a node the document does not have. It is a referential-integrity defect, and that is why it comes out of the validator's STRUCTURAL pass, not from among the four soundness rules.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-16",
-    "source": "porte manual (exemplo da especificação)"
+    "source": "a manual port (the specification's example)"
   },
   "nodes": [
     {
       "id": "redigir",
       "role": "redator",
       "node_type": "work",
-      "description": "Escreve a nota a partir do tema declarado.",
+      "description": "Writes the note from the declared topic.",
       "skill_ref": {
         "id": "cartografo/redigir-nota",
         "version": "1.0.0",
@@ -50,7 +50,7 @@
           {
             "type": "deterministic",
             "command": "test -s nota.md",
-            "description": "A nota existe e não está vazia."
+            "description": "The note exists and is not empty."
           }
         ]
       }
@@ -59,7 +59,7 @@
       "id": "revisar",
       "role": "revisor",
       "node_type": "gate",
-      "description": "Confere a nota contra o tema declarado e encerra a travessia.",
+      "description": "Checks the note against the declared topic and closes the traversal.",
       "skill_ref": {
         "id": "cartografo/revisar-nota",
         "version": "1.0.0",
@@ -104,9 +104,9 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "A nota responde ao tema declarado sem afirmação sem fonte? Cite o trecho que sustenta o veredito.",
+            "instruction": "Does the note answer the declared topic with no unsourced assertion? Cite the passage that supports the verdict.",
             "required_evidence": true,
-            "description": "Julgamento de aderência ao tema, com evidência própria."
+            "description": "A judgement of adherence to the topic, with evidence of its own."
           }
         ]
       }
@@ -117,7 +117,7 @@
       "from": "redigir",
       "to": "revisar",
       "condition": "sempre",
-      "description": "Saída única: a nota redigida sempre segue para revisão."
+      "description": "A single exit: the drafted note always goes on to review."
     }
   ],
   "initial_node": "redigir",
@@ -135,7 +135,7 @@
         "url": "https://exemplo.invalid/ganchos/revisao",
         "secret_ref": "gancho-revisao"
       },
-      "description": "Aponta para um nó que não existe: é isso que o validador estrutural recusa."
+      "description": "It points at a node that does not exist: that is what the structural validator refuses."
     }
   ]
 }

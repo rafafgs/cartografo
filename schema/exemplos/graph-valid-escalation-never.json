@@ -1,21 +1,21 @@
 {
-  "problem_class": "prova-escalacao-por-no",
+  "problem_class": "per-node-escalation-proof",
   "lineage": {
     "type": "base"
   },
   "metadata": {
-    "name": "Escalação por nó: um que pergunta, um que não tem a quem perguntar",
-    "description": "Dois nós de trabalho numa aresta: o primeiro não declara política de escalação e cai no default (on_uncertainty, o comportamento de sempre), o segundo declara \"never\" e nomeia um destinatário. O menor documento que consegue distinguir um default de uma política declarada (t167).",
+    "name": "Per-node escalation: one that asks, one with nobody to ask",
+    "description": "Two work nodes on one edge: the first declares no escalation policy and falls into the default (on_uncertainty, the behaviour it always had), the second declares \"never\" and names a recipient. The smallest document that can tell a default from a declared policy (t167).",
     "schema_version": "1.0.0",
     "created_at": "2026-08-16",
-    "source": "porte manual (prova de escalação por nó da t167)"
+    "source": "a manual port (t167's per-node escalation proof)"
   },
   "nodes": [
     {
       "id": "redigir",
       "role": "redator",
       "node_type": "work",
-      "description": "Escreve o texto. Não declara política de escalação: pergunta quando trava, como todo nó sempre perguntou.",
+      "description": "Writes the text. Declares no escalation policy: it asks when it stalls, as every node always asked.",
       "skill_ref": {
         "id": "cartografo/redigir-nota",
         "version": "1.0.0",
@@ -40,7 +40,7 @@
           {
             "type": "deterministic",
             "command": "test -s nota.md",
-            "description": "A nota existe e não está vazia."
+            "description": "The note exists and is not empty."
           }
         ]
       }
@@ -51,7 +51,7 @@
       "node_type": "work",
       "escalation_policy": "never",
       "escalation_recipient": "editor-de-plantao",
-      "description": "Publica o que foi redigido. Declara \"never\": não existe gente esperando esta etapa, então travar aqui é falha do contrato do nó, nunca pergunta pendente.",
+      "description": "Publishes what was drafted. Declares \"never\": there is nobody waiting on this stage, so stalling here is a failure of the node's contract, never a pending question.",
       "skill_ref": {
         "id": "cartografo/publicar-nota",
         "version": "1.0.0",
@@ -76,7 +76,7 @@
           {
             "type": "deterministic",
             "command": "test -s publicacao.md",
-            "description": "O registro da publicação existe e não está vazio."
+            "description": "The record of the publication exists and is not empty."
           }
         ]
       }
@@ -87,7 +87,7 @@
       "from": "redigir",
       "to": "publicar",
       "condition": "sempre",
-      "description": "Saída única: o texto redigido sempre segue para publicação."
+      "description": "A single exit: the drafted text always goes on to publication."
     }
   ],
   "initial_node": "redigir",

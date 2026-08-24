@@ -1,21 +1,21 @@
 {
-  "problem_class": "nota-curta-com-ganchos",
+  "problem_class": "short-note-with-hooks",
   "lineage": {
     "type": "base"
   },
   "metadata": {
-    "name": "Nota curta — com ganchos de transição",
-    "description": "O grafo mínimo com as duas reações que o formato conhece: avisar quando o trabalho entra na revisão, e avisar quando ele trava na redação. O gancho é dado do documento, então ele nasce versionado com o grafo e muda por proposta como qualquer outra parte dele.",
+    "name": "Short note — with transition hooks",
+    "description": "The minimal graph with the two reactions the format knows: notify when the job enters review, and notify when it stalls in drafting. A hook is data of the document, so it is born versioned with the graph and changes by proposal like any other part of it.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-16",
-    "source": "porte manual (exemplo da especificação)"
+    "source": "a manual port (the specification's example)"
   },
   "nodes": [
     {
       "id": "redigir",
       "role": "redator",
       "node_type": "work",
-      "description": "Escreve a nota a partir do tema declarado.",
+      "description": "Writes the note from the declared topic.",
       "skill_ref": {
         "id": "cartografo/redigir-nota",
         "version": "1.0.0",
@@ -40,7 +40,7 @@
           {
             "type": "deterministic",
             "command": "test -s nota.md",
-            "description": "A nota existe e não está vazia."
+            "description": "The note exists and is not empty."
           }
         ]
       }
@@ -49,7 +49,7 @@
       "id": "revisar",
       "role": "revisor",
       "node_type": "gate",
-      "description": "Confere a nota contra o tema declarado e encerra a travessia.",
+      "description": "Checks the note against the declared topic and closes the traversal.",
       "skill_ref": {
         "id": "cartografo/revisar-nota",
         "version": "1.0.0",
@@ -75,9 +75,9 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "A nota responde ao tema declarado sem afirmação sem fonte? Cite o trecho que sustenta o veredito.",
+            "instruction": "Does the note answer the declared topic with no unsourced assertion? Cite the passage that supports the verdict.",
             "required_evidence": true,
-            "description": "Julgamento de aderência ao tema, com evidência própria."
+            "description": "A judgement of adherence to the topic, with evidence of its own."
           }
         ]
       }
@@ -88,7 +88,7 @@
       "from": "redigir",
       "to": "revisar",
       "condition": "sempre",
-      "description": "Saída única: a nota redigida sempre segue para revisão."
+      "description": "A single exit: the drafted note always goes on to review."
     }
   ],
   "initial_node": "redigir",
@@ -104,7 +104,7 @@
         "url": "https://exemplo.invalid/ganchos/revisao",
         "secret_ref": "gancho-revisao"
       },
-      "description": "Avisa o revisor de plantão quando uma nota chega para revisão."
+      "description": "Notifies the on-duty reviewer when a note arrives for review."
     },
     {
       "id": "avisar-bloqueio",
@@ -115,7 +115,7 @@
         "url": "https://exemplo.invalid/ganchos/bloqueio",
         "secret_ref": "gancho-bloqueio"
       },
-      "description": "Avisa quando a redação trava, que é onde este grafo costuma parar."
+      "description": "Notifies when drafting stalls, which is where this graph usually stops."
     }
   ]
 }

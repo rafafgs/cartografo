@@ -1,21 +1,21 @@
 {
-  "problem_class": "prova-selecao-de-modelo",
+  "problem_class": "model-selection-proof",
   "lineage": {
     "type": "base"
   },
   "metadata": {
-    "name": "Modelo por nó numa travessia",
-    "description": "Dois nós numa aresta: o de trabalho não diz nada sobre modelo e cai no default do próprio engine, e o portão declara engine \"codex\" e um modelo menor. O menor documento que mostra o caso de uso da t166 — pedir um modelo mais barato no portão sem mexer no nó que produz.",
+    "name": "A model per node in one traversal",
+    "description": "Two nodes on one edge: the work one says nothing about a model and falls into the engine's own default, and the gate declares engine \"codex\" and a smaller model. The smallest document that shows t166's use case — asking for a cheaper model at the gate without touching the node that produces.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-16",
-    "source": "porte manual (prova de seleção de modelo por nó da t166)"
+    "source": "a manual port (t166's per-node model-selection proof)"
   },
   "nodes": [
     {
       "id": "redigir",
       "role": "redator",
       "node_type": "work",
-      "description": "Escreve o texto. Não declara modelo: quem escolhe é o engine, com o default dele.",
+      "description": "Writes the text. Declares no model: the one that chooses is the engine, with its own default.",
       "skill_ref": {
         "id": "cartografo/redigir-nota",
         "version": "1.0.0",
@@ -40,7 +40,7 @@
           {
             "type": "deterministic",
             "command": "test -s nota.md",
-            "description": "A nota existe e não está vazia."
+            "description": "The note exists and is not empty."
           }
         ]
       }
@@ -51,7 +51,7 @@
       "node_type": "gate",
       "engine": "codex",
       "model": "gpt-5.6-luna",
-      "description": "Confere o texto. Declara engine e modelo: conferência é trabalho barato, e não precisa do modelo grande que redigiu.",
+      "description": "Checks the text. Declares an engine and a model: checking is cheap work, and does not need the large model that drafted.",
       "skill_ref": {
         "id": "cartografo/revisar-nota",
         "version": "1.0.0",
@@ -76,7 +76,7 @@
           {
             "type": "deterministic",
             "command": "test -s parecer.md",
-            "description": "O parecer existe e não está vazio."
+            "description": "The opinion exists and is not empty."
           }
         ]
       }
@@ -87,7 +87,7 @@
       "from": "redigir",
       "to": "conferir",
       "condition": "sempre",
-      "description": "Saída única: o texto redigido sempre segue para conferência."
+      "description": "A single exit: the drafted text always goes on to checking."
     }
   ],
   "initial_node": "redigir",

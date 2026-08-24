@@ -1,21 +1,21 @@
 {
-  "problem_class": "prova-dois-engines",
+  "problem_class": "two-engines-proof",
   "lineage": {
     "type": "base"
   },
   "metadata": {
-    "name": "Dois engines numa travessia",
-    "description": "Dois nós de trabalho numa aresta: o primeiro não diz nada sobre engine e cai no default do runner, o segundo declara engine \"codex\". O menor documento que consegue distinguir um default de uma rota (t141).",
+    "name": "Two engines in one traversal",
+    "description": "Two work nodes on one edge: the first says nothing about an engine and falls into the runner's default, the second declares engine \"codex\". The smallest document that can tell a default from a route (t141).",
     "schema_version": "1.0.0",
     "created_at": "2026-08-15",
-    "source": "porte manual (prova de roteamento por nó da t141)"
+    "source": "a manual port (t141's per-node routing proof)"
   },
   "nodes": [
     {
       "id": "redigir",
       "role": "redator",
       "node_type": "work",
-      "description": "Escreve o texto. Não declara engine: quem roda é o engine default do runner.",
+      "description": "Writes the text. Declares no engine: the one that runs is the runner's default engine.",
       "skill_ref": {
         "id": "cartografo/redigir-nota",
         "version": "1.0.0",
@@ -40,7 +40,7 @@
           {
             "type": "deterministic",
             "command": "test -s nota.md",
-            "description": "A nota existe e não está vazia."
+            "description": "The note exists and is not empty."
           }
         ]
       }
@@ -50,7 +50,7 @@
       "role": "revisor",
       "node_type": "work",
       "engine": "codex",
-      "description": "Confere o texto. Declara engine: este nó roda no codex, não no default.",
+      "description": "Checks the text. Declares an engine: this node runs on codex, not on the default.",
       "skill_ref": {
         "id": "cartografo/revisar-nota",
         "version": "1.0.0",
@@ -75,7 +75,7 @@
           {
             "type": "deterministic",
             "command": "test -s parecer.md",
-            "description": "O parecer existe e não está vazio."
+            "description": "The opinion exists and is not empty."
           }
         ]
       }
@@ -86,7 +86,7 @@
       "from": "redigir",
       "to": "conferir",
       "condition": "sempre",
-      "description": "Saída única: o texto redigido sempre segue para conferência."
+      "description": "A single exit: the drafted text always goes on to checking."
     }
   ],
   "initial_node": "redigir",

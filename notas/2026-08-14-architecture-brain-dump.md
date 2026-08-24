@@ -1,89 +1,92 @@
-# Arquitetura — brain dump (2026-08-14)
+# Architecture — brain dump (2026-08-14)
 
-Brain dump do Rafael, organizado na conversa. Nada aqui é decisão fechada,
-exceto onde confirma princípio já registrado no README.
+Rafael's brain dump, organised in conversation. Nothing here is a closed
+decision, except where it confirms a principle already recorded in the README.
 
-## Herdado do flowpilot
+## Inherited from flowpilot
 
-- **Telemetria como cidadã de primeira classe.** O trio de tabelas do
-  flowpilot (`ticket_events` append-only, `agent_sessions`, `input_requests`
-  com `answer_source` user/auto) provou valor; levar o formato.
-- **Independência de LLM via abstração do CLI.** O campo `engine` vira
-  interface: EngineAdapter (abrir sessão com prompt/workdir/skills/timeout,
-  acompanhar output, colher exit). Claude Code é o primeiro adapter, não uma
-  dependência.
-- **Escalação para humano como entidade** (input_requests), não como caso
-  especial.
-- **Injeção de skill por sessão.** As instruções do nó saem do banco e são
-  injetadas na sessão pelo runner (flag/stdin/arquivo efêmero do engine).
-  Nenhuma dependência de CLAUDE.md nem de arquivos md residentes no repo
-  alvo; o contrato vive no banco e é renderizado por engine.
+- **Telemetry as a first-class citizen.** flowpilot's trio of tables
+  (`ticket_events` append-only, `agent_sessions`, `input_requests` with a
+  user/auto `answer_source`) proved its worth; take the format.
+- **LLM independence through an abstraction of the CLI.** The `engine` field
+  becomes an interface: EngineAdapter (open a session with
+  prompt/workdir/skills/timeout, follow the output, collect the exit). Claude
+  Code is the first adapter, not a dependency.
+- **Human escalation as an entity** (input_requests), not as a special case.
+- **Per-session skill injection.** The node's instructions come out of the
+  database and are injected into the session by the runner (the engine's
+  flag/stdin/ephemeral file). No dependency on CLAUDE.md and none on resident md
+  files in the target repository; the contract lives in the database and is
+  rendered per engine.
 
-## Topologia
+## Topology
 
-- **Control plane (server Node).** Roda em qualquer máquina; primeira
-  execução instala o banco embarcado (SQLite). Guarda telemetria, estrutura
-  dos grafos, projetos e demais entidades. Expõe API para estados atuais,
-  grafos registrados, execuções, sessões — tudo que uma tela de configuração
-  e observabilidade precisa. **Só o server escreve no banco** (single
-  writer); todo mundo mais fala API.
-- **Runner (mesmo processo ou separado).** Quem dispara workflows e abre
-  sessões de CLI, registrando tudo no server remoto em que está registrado.
-  Deploy em qualquer lugar que tenha acesso ao CLI do engine; runner é
-  stateless, cliente da API.
-- **Controller (dentro do runner).** Avalia um diretório (modo local) ou
-  consulta a API (modo distribuído) para pegar trabalhos liberados.
-  Controle máximo de sessões: teto de concorrência por runner e por projeto.
-  WIP limit não é preocupação agora.
+- **Control plane (a Node server).** Runs on any machine; the first execution
+  installs the embedded database (SQLite). It keeps the telemetry, the structure
+  of the graphs, the projects and the remaining entities. It exposes an API for
+  current states, registered graphs, executions, sessions — everything a
+  configuration and observability screen needs. **Only the server writes to the
+  database** (single writer); everybody else speaks to the API.
+- **Runner (the same process or a separate one).** The one that fires workflows
+  and opens CLI sessions, recording everything on the remote server it is
+  registered with. Deployable anywhere with access to the engine's CLI; the
+  runner is stateless, a client of the API.
+- **Controller (inside the runner).** It evaluates a directory (local mode) or
+  queries the API (distributed mode) to pick up released work. Maximum control of
+  sessions: a concurrency ceiling per runner and per project. A WIP limit is not
+  a concern right now.
 
-## Entidades mínimas do banco
+## The database's minimal entities
 
-projeto → grafo (versionado) → nós (com skill/contrato) e arestas (com
-condição) → execução → ticket/trabalho → sessão → evento → input_request →
-proposta de melhoria (aponta para versão do grafo, tem diff e status:
-proposta / aprovada / aplicada / revertida).
+project → graph (versioned) → nodes (with a skill/contract) and edges (with a
+condition) → execution → ticket/job → session → event → input_request →
+improvement proposal (points at a graph version, has a diff and a status:
+proposed / approved / applied / reverted).
 
-## Fluxos
+## Flows
 
-1. **Registrar grafo:** usuário descreve o problema; um agente estrutura o
-   grafo e o registra no banco como grafo dentro de um projeto (passa pelo
-   portão de validação do README, princípio 1).
-2. **Skills:** usuário pode escanear repos conhecidos de skills e buscar as
-   melhores para a tarefa; skill importada ganha contrato antes de entrar no
-   registro (ver tensões).
-3. **Intake e quebra:** mecanismo de quebra de trabalho e definição do
-   caminho no grafo. Distinguir dois atos: sintetizar topologia (design da
-   classe de problema) e quebrar trabalho em viajantes (por execução). A
-   quebra produz tickets, não nós — caminho congelado durante a execução
-   (princípio 2).
-4. **Execução:** controller libera, runner despacha sessões com skill
-   injetada, telemetria flui para o server.
-5. **Otimização:** toda execução termina com um passo de avaliação que
-   propõe melhorias; a proposta fica registrada e só aplica quando um
-   usuário quiser (princípio 5, escada de segurança — confirmado no dump).
+1. **Registering a graph:** the user describes the problem; an agent structures
+   the graph and registers it in the database as a graph inside a project (it
+   passes through the README's validation gate, principle 1).
+2. **Skills:** the user can scan known skill repositories and look for the best
+   ones for the task; an imported skill gets a contract before entering the
+   registry (see the tensions).
+3. **Intake and breakdown:** the mechanism for breaking work down and defining
+   the path through the graph. Distinguish two acts: synthesizing a topology (the
+   design of a problem class) and breaking work into travellers (per execution).
+   The breakdown produces tickets, not nodes — the path is frozen during the
+   execution (principle 2).
+4. **Execution:** the controller releases, the runner dispatches sessions with
+   the skill injected, telemetry flows to the server.
+5. **Optimization:** every execution ends with an evaluation step that proposes
+   improvements; the proposal stays recorded and only applies when a user wants
+   it to (principle 5, the safety ladder — confirmed in the dump).
 
-## Decisões implícitas no dump (a confirmar)
+## Decisions implicit in the dump (to be confirmed)
 
-- Server é dono do banco; runner nunca toca SQLite direto.
-- Grafo versionado desde o dia 1 (a entidade proposta-de-melhoria exige).
-- Skill do nó vem do banco, renderizada por engine (não do repo alvo).
-- Runner registrado no server (pareamento explícito), não descoberta mágica.
+- The server owns the database; the runner never touches SQLite directly.
+- The graph is versioned from day 1 (the improvement-proposal entity demands it).
+- A node's skill comes from the database, rendered per engine (not from the
+  target repository).
+- The runner is registered with the server (explicit pairing), not magical
+  discovery.
 
-## Tensões e abertos
+## Tensions and open questions
 
-- **Supply chain de skills.** Escanear repos públicos e injetar em sessão é
-  vetor de ataque (prompt injection empacotada). Registro precisa de pin de
-  versão/hash e portão de revisão na importação: skill é artefato com
-  contrato, validado antes de usar — mesma filosofia do grafo.
-- **Contrato de skill importada.** SKILL.md público raramente declara
-  entrada/saída/verificação; a importação precisa de um passo que derive e
-  registre o contrato, senão o princípio 3 quebra silenciosamente.
-- **Runner distribuído.** Com N runners, precisa de lease com heartbeat
-  (trabalho de runner morto volta para a fila) e idempotência nos registros.
-- **SQLite no control plane.** Aguenta single-writer de boa; se um dia o
-  server escalar horizontalmente, o banco embarcado vira a primeira coisa a
-  trocar. Aceitável: é exatamente o tipo de decisão que o log de execuções
-  vai justificar trocar, ou não.
-- **MVP na ordem certa (condição de partida do README).** Control plane +
-  um EngineAdapter + UM grafo fixo portado do flowpilot, antes do
-  sintetizador. O sintetizador é a última peça, não a primeira.
+- **The supply chain of skills.** Scanning public repositories and injecting into
+  a session is an attack vector (prompt injection, packaged). The registry needs
+  a version/hash pin and a review gate at import: a skill is an artifact with a
+  contract, validated before use — the same philosophy as the graph.
+- **The contract of an imported skill.** A public SKILL.md rarely declares
+  input/output/verification; the import needs a step that derives and records the
+  contract, or principle 3 breaks silently.
+- **A distributed runner.** With N runners, it needs a lease with a heartbeat
+  (the work of a dead runner goes back to the queue) and idempotency in the
+  records.
+- **SQLite in the control plane.** It handles a single writer fine; if the server
+  ever scales horizontally, the embedded database becomes the first thing to
+  swap. Acceptable: it is exactly the kind of decision the execution log will
+  justify swapping, or not.
+- **The MVP in the right order (the README's starting condition).** Control plane
+  + one EngineAdapter + ONE fixed graph ported from flowpilot, before the
+  synthesizer. The synthesizer is the last piece, not the first.

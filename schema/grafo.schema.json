@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:cartografo:schema:grafo:1.0.0",
-  "title": "Documento de grafo (cartografo)",
-  "description": "Formato do documento de grafo: nós com role/skill/contract, arestas com condição, metadados de classe (D8) e linhagem (D13). Este documento é o snapshot completo de uma versão de grafo — o mesmo conteúdo que grafo_versao.snapshot guarda no banco (D15) e que sai como bundle mínimo exportável. Validação estrutural aqui é de FORMA; as quatro regras de soundness (alcançável, termina, aresta_com_condicao, no_com_contrato) são semânticas e vivem em scripts/validar-grafo.mjs.",
+  "title": "Graph document (cartografo)",
+  "description": "The format of the graph document: nodes with role/skill/contract, edges with a condition, class metadata (D8) and lineage (D13). This document is the complete snapshot of a graph version — the same content graph_version.snapshot stores in the database (D15) and that comes out as the minimal exportable bundle. Structural validation here is about SHAPE; the four soundness rules (reachable, terminates, edge_with_condition, node_with_contract) are semantic and live in scripts/validar-grafo.mjs.",
   "type": "object",
   "required": [
     "problem_class",
@@ -19,7 +19,7 @@
     "problem_class": {
       "type": "string",
       "minLength": 1,
-      "description": "Identidade da classe de problema, nomeada pelo usuário (D8). Raiz de versionamento do grafo e unidade de agregação da telemetria.",
+      "description": "The identity of the problem class, named by the user (D8). The root of the graph's versioning and the unit the telemetry aggregates by.",
       "examples": ["desenvolvimento-de-software", "bets-assimetricas"]
     },
     "lineage": {
@@ -31,72 +31,72 @@
     "nodes": {
       "type": "array",
       "minItems": 1,
-      "description": "Etapas do grafo. Portão é nó (node_type: gate), não entidade separada.",
+      "description": "The graph's stages. A gate is a node (node_type: gate), not a separate entity.",
       "items": { "$ref": "#/$defs/node" }
     },
     "edges": {
       "type": "array",
-      "description": "Transições entre nós, cada uma rotulada por uma condição.",
+      "description": "Transitions between nodes, each one labelled by a condition.",
       "items": { "$ref": "#/$defs/edge" }
     },
     "initial_node": {
       "$ref": "#/$defs/node_id",
-      "description": "Id do nó por onde toda travessia começa. Precisa existir em nodes."
+      "description": "The id of the node every traversal starts from. It has to exist in nodes."
     },
     "final_nodes": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "description": "Ids dos nós que encerram a travessia. Todo id precisa existir em nodes.",
+      "description": "The ids of the nodes that close the traversal. Every id has to exist in nodes.",
       "items": { "$ref": "#/$defs/node_id" }
     },
     "custom_fields": {
       "type": "array",
-      "description": "Campos que ESTA classe de problema declara no trabalho que atravessa o mapa (t168). É aqui que a definição mora, e não no schema do trabalho: `downside`, `upside` e `premise_source` são vocabulário de bets assimétricas (D14) e não teriam sentido em desenvolvimento de software. Obrigatório e possivelmente vazio: uma classe que não pede campo nenhum escreve `[]`, e é isso que mantém verdadeira a invariante de que required e properties são o mesmo conjunto — a única chave opcional de topo é `hooks`, e ela é opcional porque nasceu depois (t169).",
+      "description": "The fields THIS problem class declares on the job that crosses the map (t168). The definition lives here and not in the job's schema: `downside`, `upside` and `premise_source` are the vocabulary of asymmetric bets (D14) and would make no sense in software development. Required and possibly empty: a class that asks for no field writes `[]`, and that is what keeps true the invariant that required and properties are the same set — the only optional top-level key is `hooks`, and it is optional because it was born later (t169).",
       "items": { "$ref": "#/$defs/custom_field" }
     },
     "hooks": {
       "type": "array",
-      "description": "Reações que o próprio grafo declara: entrar num nó ou bloquear nele dispara uma entrega assinada (t169). Opcional — ausente significa nenhuma reação, e é por isso que todo grafo escrito antes deste campo continua válido sem tocar em nada, mesma postura não-quebradora do campo engine no nó. Ficam AQUI, e não numa assinatura registrada por fora pela API, para que a reação seja versionada e proponível como qualquer outra parte do grafo (D2, D15).",
+      "description": "Reactions the graph itself declares: entering a node or blocking on it fires a signed delivery (t169). Optional — absent means no reaction, and that is why every graph written before this field goes on being valid without touching anything, the same non-breaking posture as the node's engine field. They live HERE, and not in a subscription registered from outside through the API, so that the reaction is versioned and proposable like any other part of the graph (D2, D15).",
       "items": { "$ref": "#/$defs/hook" }
     },
     "max_consecutive_failures": {
       "type": "integer",
       "minimum": 1,
-      "description": "Quantas sessões falhadas EM SEQUÊNCIA, no mesmo trabalho e no mesmo nó, bloqueiam o trabalho (t265). Opcional — ausente significa o default de 3, resolvido na hora do despacho e nunca na validação, mesma postura não-quebradora de `hooks` e `project`: todo grafo escrito antes deste campo continua válido e continua despachando exatamente como antes. Contagem é de CAUDA: uma sessão que funcionou zera a sequência. Recusa do engine não passa por aqui — ela é determinística e para na primeira ocorrência, do lado do runner. Raiz do documento e não por nó: um teto diferente por nó é decisão de outra ficha, se a evidência aparecer.",
+      "description": "How many failed sessions IN A ROW, on the same job and the same node, block the job (t265). Optional — absent means the default of 3, resolved at dispatch time and never at validation, the same non-breaking posture as `hooks` and `project`: every graph written before this field goes on being valid and goes on dispatching exactly as before. The count is a TAIL count: one session that worked zeroes the run. An engine refusal does not go through here — it is deterministic and stops on the first occurrence, on the runner's side. At the document's root and not per node: a different ceiling per node is another ficha's decision, if the evidence turns up.",
       "examples": [3, 1]
     },
     "project": {
       "type": "object",
       "additionalProperties": true,
-      "description": "Configuração ESTÁTICA da classe, publicada pela projeção de input em `input.project` (t253). É o que não vem de trabalho nenhum e não é produzido por nó nenhum: repositório, branch principal, comando de testes, convenções, documentos de registro. Opcional — ausente significa `{}`, e a projeção devolve o objeto vazio em vez de recusar, para que um grafo escrito antes deste campo continue válido e continue despachando exatamente como antes (mesma postura não-quebradora de `hooks` e do `engine` do nó). Gaveta deliberadamente aberta: as chaves de dentro são da CLASSE, como as de `custom_fields`, e fechá-las aqui pediria uma edição de schema por classe. Valor de projeto específico mora na variante do projeto (D13); o que mora aqui é o que a classe declara para si."
+      "description": "The class's STATIC configuration, published by the input projection at `input.project` (t253). It is what comes from no job and is produced by no node: repository, main branch, test command, conventions, ledger documents. Optional — absent means `{}`, and the projection returns the empty object instead of refusing, so that a graph written before this field goes on being valid and goes on dispatching exactly as before (the same non-breaking posture as `hooks` and the node's `engine`). A deliberately open drawer: the keys inside are the CLASS's, like those of `custom_fields`, and closing them here would demand a schema edit per class. A project-specific value lives in the project's variant (D13); what lives here is what the class declares for itself."
     }
   },
   "$defs": {
     "custom_field": {
       "type": "object",
-      "description": "Um campo do trabalho, declarado pela classe: nome, tipo e o nó que exige que ele esteja preenchido.",
+      "description": "A field of the job, declared by the class: a name, a type and the node that demands it be filled in.",
       "required": ["name", "type", "required_at"],
       "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "Nome do campo no trabalho, snake_case. É a chave dentro de `trabalho.campos`.",
+          "description": "The name of the field on the job, snake_case. It is the key inside `trabalho.campos`.",
           "examples": ["premise_source", "downside", "upside"]
         },
         "type": {
           "enum": ["string", "number", "boolean"],
-          "description": "Tipo declarado do valor. Em v1 é metadado: o valor guardado NÃO é conferido contra ele — mesma postura que o manifesto de skill já toma com `budgets`, declarado antes de ser cobrado. Três escalares e nada mais porque campo de ficha é o que uma pessoa digita, não estrutura aninhada."
+          "description": "The declared type of the value. In v1 it is metadata: the stored value is NOT checked against it — the same posture the skill manifest already takes with `budgets`, declared before it is enforced. Three scalars and nothing else, because a ficha field is what a person types, not a nested structure."
         },
         "required_at": {
           "oneOf": [{ "$ref": "#/$defs/node_id" }, { "type": "null" }],
-          "description": "Id do nó que exige o campo preenchido: o trabalho não sai desse nó enquanto ele estiver vazio (portão determinístico, D9). `null` quando o campo é informativo — declarado na ficha, cobrado por nó nenhum. É NULO e não ausente porque a chave segue obrigatória: a mesma disciplina da chave de topo, e é ela que impede que 'esqueci de decidir' se confunda com 'decidi que não trava'.",
+          "description": "The id of the node that demands the field be filled in: the job does not leave that node while it is empty (a deterministic gate, D9). `null` when the field is informative — declared on the ficha, enforced by no node. It is NULL and not absent because the key stays required: the same discipline as the top-level key, and it is what stops 'I forgot to decide' from being confused with 'I decided it does not block'.",
           "examples": ["triagem", null]
         },
         "description": {
           "type": "string",
-          "description": "O que este campo quer dizer, em uma frase — o que a pessoa lê antes de preencher."
+          "description": "What this field means, in one sentence — what the person reads before filling it in."
         }
       }
     },
@@ -104,27 +104,27 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^[a-z0-9][a-z0-9_-]*$",
-      "description": "Identificador de nó, único no documento. Minúsculas, dígitos, hífen e underscore."
+      "description": "A node identifier, unique in the document. Lowercase, digits, hyphen and underscore."
     },
     "lineage": {
       "type": "object",
-      "description": "Posição do grafo na linhagem da classe (D13): cada classe tem um grafo-base e um projeto pode ter uma variante, que é fork do base. O fork nasce de proposta do topógrafo com evidência, nunca de decisão a priori.",
+      "description": "The graph's position in the class's lineage (D13): every class has a base graph and a project may have a variant, which is a fork of the base. The fork is born from a topografo proposal with evidence, never from an a priori decision.",
       "required": ["type"],
       "additionalProperties": false,
       "properties": {
         "type": {
           "enum": ["base", "variante"],
-          "description": "base: o grafo canônico da classe. variante: fork de um base, com diff e linhagem registrados."
+          "description": "base: the class's canonical graph. variante: a fork of a base, with its diff and lineage recorded."
         },
         "base_class": {
           "type": "string",
           "minLength": 1,
-          "description": "Classe do grafo-base do qual esta variante saiu. Obrigatório quando type = variante."
+          "description": "The class of the base graph this variant came out of. Required when type = variante."
         },
         "source_proposal_id": {
           "type": "string",
           "minLength": 1,
-          "description": "Id da proposta do topógrafo que originou o fork (D13). Opcional: uma variante importada de um atlas externo pode não ter proposta local de origem."
+          "description": "The id of the topografo proposal that originated the fork (D13). Optional: a variant imported from an external atlas may have no local proposal of origin."
         }
       },
       "allOf": [
@@ -142,38 +142,38 @@
     },
     "metadata": {
       "type": "object",
-      "description": "Gaveta de metadados do documento. Deliberadamente aberta a chaves extras (additionalProperties: true) enquanto o formato não congela — regra dos dois consumidores.",
+      "description": "The document's metadata drawer. Deliberately open to extra keys (additionalProperties: true) while the format has not frozen — the rule of two consumers.",
       "required": ["name", "schema_version"],
       "additionalProperties": true,
       "properties": {
         "name": {
           "type": "string",
           "minLength": 1,
-          "description": "Nome legível do grafo."
+          "description": "A readable name for the graph."
         },
         "description": {
           "type": "string",
-          "description": "O que este mapa cobre, em uma ou duas frases."
+          "description": "What this map covers, in one or two sentences."
         },
         "schema_version": {
           "type": "string",
           "pattern": "^\\d+\\.\\d+\\.\\d+$",
-          "description": "Versão do schema do documento contra a qual este grafo foi escrito (semver; casa com a versão em $id)."
+          "description": "The version of the document's schema this graph was written against (semver; it matches the version in $id)."
         },
         "created_at": {
           "type": "string",
           "format": "date",
-          "description": "Data de criação do documento (AAAA-MM-DD)."
+          "description": "The document's creation date (YYYY-MM-DD)."
         },
         "source": {
           "type": "string",
-          "description": "De onde este grafo veio: sintetizador, porte manual, importação de atlas."
+          "description": "Where this graph came from: the synthesizer, a manual port, an atlas import."
         }
       }
     },
     "node": {
       "type": "object",
-      "description": "Uma etapa do grafo. Tudo que executa é skill com contrato; o que muda é o papel (fazer, conferir, rotear).",
+      "description": "One stage of the graph. Everything that executes is a skill with a contract; what changes is the role (doing, checking, routing).",
       "required": ["id", "role", "node_type", "skill_ref", "contract"],
       "additionalProperties": false,
       "properties": {
@@ -181,37 +181,37 @@
         "role": {
           "type": "string",
           "minLength": 1,
-          "description": "Quem faz o trabalho, na linguagem do domínio (arquiteto, desenvolvedor, tester).",
+          "description": "Who does the work, in the domain's own language (architect, developer, tester).",
           "examples": ["arquiteto", "desenvolvedor", "red-team"]
         },
         "description": {
           "type": "string",
-          "description": "O que este nó faz, em uma frase."
+          "description": "What this node does, in one sentence."
         },
         "node_type": {
           "enum": ["work", "gate"],
-          "description": "work: produz artefato. gate: confere e roteia — pass/fail/escalate_human, sempre com evidência. Portão é nó como outro qualquer, e determinístico sempre que possível."
+          "description": "work: produces an artifact. gate: checks and routes — pass/fail/escalate_human, always with evidence. A gate is a node like any other, and deterministic whenever possible."
         },
         "engine": {
           "type": "string",
           "minLength": 1,
-          "description": "Qual engine executa este nó (t141). Opcional: ausente significa o engine default do runner (claude-code), resolvido na hora do despacho e nunca na validação — é por isso que todo grafo escrito antes deste campo continua válido sem tocar em nada. Texto livre de propósito, como role e skill_ref.id: quem recusa um engine desconhecido é o runner, com UnknownEngineError, e não um enum fechado que precisaria de edição de schema a cada adapter novo.",
+          "description": "Which engine executes this node (t141). Optional: absent means the runner's default engine (claude-code), resolved at dispatch time and never at validation — which is why every graph written before this field goes on being valid without touching anything. Free text on purpose, like role and skill_ref.id: what refuses an unknown engine is the runner, with UnknownEngineError, and not a closed enum that would need a schema edit for every new adapter.",
           "examples": ["claude-code", "codex"]
         },
         "model": {
           "type": "string",
           "minLength": 1,
-          "description": "Qual modelo do engine executa este nó (t166). Opcional: ausente significa o default do próprio engine — nenhuma flag de modelo é montada, e o argv sai idêntico ao de antes deste campo existir. Texto livre de propósito, pela mesma razão que engine: um enum fechado obrigaria a editar o schema a cada modelo novo, e quem recusa um id desconhecido é a CLI do engine, na abertura da sessão. O catálogo que a API publica é descoberta, não validação.",
+          "description": "Which model of the engine executes this node (t166). Optional: absent means the engine's own default — no model flag is assembled, and the argv comes out identical to what it was before this field existed. Free text on purpose, for the same reason as engine: a closed enum would force a schema edit for every new model, and what refuses an unknown id is the engine's CLI, at the opening of the session. The catalogue the API publishes is discovery, not validation.",
           "examples": ["claude-haiku-4-5", "gpt-5.6-luna"]
         },
         "escalation_policy": {
           "enum": ["always", "on_uncertainty", "never"],
-          "description": "Quando este nó chama gente (t167). always: escala antes de fechar o nó, mesmo achando que sabe a resposta. on_uncertainty: escala quando trava — o comportamento que todo nó sempre teve. never: não existe a quem perguntar aqui; travar é falha do contrato do nó, e o runner bloqueia o trabalho com motivo em vez de abrir pergunta. Opcional: ausente significa on_uncertainty, resolvido na hora do despacho e nunca na validação, exatamente como engine. Enum fechado, ao contrário de engine, porque aqui os três valores SÃO o vocabulário: um quarto valor não é adapter novo, é erro de quem escreveu.",
+          "description": "When this node calls for a person (t167). always: it escalates before closing the node, even when it thinks it knows the answer. on_uncertainty: it escalates when it stalls — the behaviour every node always had. never: there is nobody to ask here; stalling is a failure of the node's contract, and the runner blocks the job with a reason instead of opening a request. Optional: absent means on_uncertainty, resolved at dispatch time and never at validation, exactly like engine. A closed enum, unlike engine, because here the three values ARE the vocabulary: a fourth value is not a new adapter, it is a mistake by whoever wrote it.",
           "examples": ["never"]
         },
         "escalation_recipient": {
           "type": "string",
-          "description": "Quem deveria ser chamado quando este nó escala (t167). Texto livre e sem formato imposto, como resposta_padrao e respondido_por: não existe sistema de identidade nem de papéis neste repositório para validar contra. Guardado no grafo e devolvido pelo snapshot; nada envia nada para ele ainda — entregar é ficha futura, quando papéis existirem.",
+          "description": "Who should be called when this node escalates (t167). Free text with no imposed format, like resposta_padrao and respondido_por: there is no identity system and no role system in this repository to validate against. Stored in the graph and returned by the snapshot; nothing sends anything to it yet — delivering is a future ficha, once roles exist.",
           "examples": ["editor-de-plantao", "arquiteto"]
         },
         "skill_ref": { "$ref": "#/$defs/skill_ref" },
@@ -220,51 +220,51 @@
     },
     "skill_ref": {
       "type": "object",
-      "description": "Ponteiro opaco para uma skill do registro, pinado por versão e hash (D4). O formato interno do manifesto de skill é outro documento (t97) — aqui só o pin importa.",
+      "description": "An opaque pointer to a skill of the registry, pinned by version and hash (D4). The internal format of the skill manifest is another document (t97) — here only the pin matters.",
       "required": ["id", "version", "hash"],
       "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string",
           "minLength": 1,
-          "description": "Identificador da skill no registro."
+          "description": "The identifier of the skill in the registry."
         },
         "version": {
           "type": "string",
           "pattern": "^\\d+\\.\\d+\\.\\d+$",
-          "description": "Versão semver da skill."
+          "description": "The skill's semver version."
         },
         "hash": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$",
-          "description": "Pin por hash do conteúdo da skill (D4): skill importada é vetor de prompt injection; o hash é o que impede troca silenciosa por baixo de um grafo já validado."
+          "description": "A pin by hash of the skill's content (D4): an imported skill is a prompt-injection vector; the hash is what prevents a silent swap underneath a graph that is already validated."
         }
       }
     },
     "contract": {
       "type": "object",
-      "description": "A peça de sustentação (README princípio 3, D9): entrada e saída em JSON Schema, verificação como lista de checks tipados. Sem contrato o sintetizador compõe por alucinação; com contrato, compor grafo vira casar contratos.",
+      "description": "The load-bearing piece (README principle 3, D9): input and output as JSON Schema, verification as a list of typed checks. Without a contract the synthesizer composes by hallucination; with a contract, composing a graph turns into matching contracts.",
       "required": ["input_schema", "output_schema", "checks"],
       "additionalProperties": false,
       "properties": {
         "input_schema": {
           "type": "object",
-          "description": "JSON Schema da projeção de estado que o nó recebe (README princípio 4: estado explícito, nunca janela comum)."
+          "description": "The JSON Schema of the state projection the node receives (README principle 4: explicit state, never a shared window)."
         },
         "output_schema": {
           "type": "object",
-          "description": "JSON Schema do que o nó devolve ao quadro."
+          "description": "The JSON Schema of what the node returns to the board."
         },
         "produces": {
           "type": "string",
           "minLength": 1,
-          "description": "Nome do BALDE em que a saída estruturada deste nó se acumula na projeção de input do nó seguinte (t253). Ausente significa merge no topo de `input`, que é o que os dois grafos de fábrica já faziam por não existir o campo — e é por isso que ele é opcional e não quebra grafo nenhum. Balde e não caixa por sessão: dois nós que declaram o MESMO nome escrevem no mesmo objeto, e é assim que o `merge_commit` de `integrar` aterrissa ao lado do `branch` de `desenvolver` e sobrevive ao portão `testar`, que não produz artefato próprio. Em colisão de chave vence quem escreveu depois, na ordem da travessia.",
+          "description": "The name of the BUCKET this node's structured output accumulates in, inside the next node's input projection (t253). Absent means a merge at the top of `input`, which is what both factory graphs already did because the field did not exist — and that is why it is optional and breaks no graph. A bucket and not a box per session: two nodes that declare the SAME name write into the same object, and that is how `integrate`'s `merge_commit` lands beside `develop`'s `branch` and survives the `test` gate, which produces no artifact of its own. On a key collision the one that wrote later wins, in the order of the traversal.",
           "examples": ["artefato", "ticket"]
         },
         "checks": {
           "type": "array",
           "minItems": 1,
-          "description": "Como se confere o que este nó produziu. Pelo menos uma; determinística sempre que possível.",
+          "description": "How what this node produced is checked. At least one; deterministic whenever possible.",
           "items": { "$ref": "#/$defs/check" }
         }
       }
@@ -277,7 +277,7 @@
     },
     "deterministic_check": {
       "type": "object",
-      "description": "Comando que passa ou falha sozinho: rodar teste, validar schema, build.",
+      "description": "A command that passes or fails on its own: running tests, validating a schema, building.",
       "required": ["type", "command"],
       "additionalProperties": false,
       "properties": {
@@ -285,17 +285,17 @@
         "command": {
           "type": "string",
           "minLength": 1,
-          "description": "Comando executável, tal como roda no repositório de trabalho."
+          "description": "An executable command, exactly as it runs in the working repository."
         },
         "description": {
           "type": "string",
-          "description": "O que este check prova."
+          "description": "What this check proves."
         }
       }
     },
     "agentic_check": {
       "type": "object",
-      "description": "Check que exige julgamento. Verifica com evidência própria — nunca com o relato de quem fez o trabalho.",
+      "description": "A check that demands judgement. It verifies with evidence of its own — never with the report of whoever did the work.",
       "required": ["type", "instruction", "required_evidence"],
       "additionalProperties": false,
       "properties": {
@@ -303,69 +303,69 @@
         "instruction": {
           "type": "string",
           "minLength": 1,
-          "description": "O que o verificador precisa julgar, na forma de pergunta respondível."
+          "description": "What the verifier has to judge, in the form of an answerable question."
         },
         "required_evidence": {
           "const": true,
-          "description": "Sempre true (D9): check agêntico sem evidência anexada não é verificação, é opinião."
+          "description": "Always true (D9): an agentic check with no evidence attached is not a verification, it is an opinion."
         },
         "description": {
           "type": "string",
-          "description": "O que este check prova."
+          "description": "What this check proves."
         }
       }
     },
     "hook": {
       "type": "object",
-      "description": "Uma reação declarada pelo grafo. O gancho NÃO participa da travessia: ele não é aresta, não muda o nó atual e não tem como fazer o trabalho parar — falha de gancho é incidente, nunca desfecho. A validação referencial (node_id existe, id único no documento) é estrutural e vive em scripts/validar-grafo.mjs e packages/core/src/domain/graph.ts, não nas quatro regras de soundness: gancho pendurado é defeito de forma, não propriedade da rede de workflow.",
+      "description": "A reaction declared by the graph. A hook does NOT take part in the traversal: it is not an edge, it does not change the current node and it has no way of making the job stop — a hook failure is an incident, never an outcome. The referential validation (node_id exists, id unique in the document) is structural and lives in scripts/validar-grafo.mjs and packages/core/src/domain/graph.ts, not in the four soundness rules: a dangling hook is a defect of shape, not a property of the workflow net.",
       "required": ["id", "trigger", "node_id", "destination"],
       "additionalProperties": false,
       "properties": {
         "id": {
           "$ref": "#/$defs/node_id",
-          "description": "Identificador do gancho, único no documento. Mesma classe de caracteres do id de nó de propósito: são os dois nomes que alguém escreve à mão dentro deste arquivo, e uma regra só é uma regra a menos para lembrar."
+          "description": "The hook's identifier, unique in the document. The same character class as a node id, on purpose: they are the two names somebody writes by hand inside this file, and one rule is one rule less to remember."
         },
         "trigger": {
           "enum": ["node_entered", "node_blocked"],
-          "description": "O que dispara. node_entered: uma trabalho.transicao cujo para_no_id é este nó. node_blocked: uma trabalho.bloqueado com o trabalho parado neste nó. Enum fechado, como escalation_policy: um terceiro valor não é adapter novo, é erro de quem escreveu. Nada dispara na chegada ao initial_node — a colocação inicial é trabalho.criado, e não uma transição."
+          "description": "What fires it. node_entered: a job.transitioned whose to_node_id is this node. node_blocked: a job.blocked with the job stopped on this node. A closed enum, like escalation_policy: a third value is not a new adapter, it is a mistake by whoever wrote it. Nothing fires on arrival at the initial_node — the initial placement is job.created, and not a transition."
         },
         "node_id": {
           "$ref": "#/$defs/node_id",
-          "description": "Nó cuja entrada ou bloqueio dispara o gancho. Precisa existir em nodes."
+          "description": "The node whose entry or block fires the hook. It has to exist in nodes."
         },
         "destination": { "$ref": "#/$defs/hook_destination" },
         "description": {
           "type": "string",
-          "description": "Para que serve esta reação, em uma frase."
+          "description": "What this reaction is for, in one sentence."
         }
       }
     },
     "hook_destination": {
       "type": "object",
-      "description": "Para onde a reação vai. Hoje só webhook: mandar o control plane executar um comando de shell que chegou como DADO de grafo é outra ficha, com portão de revisão/permissão próprio espelhando o da importação de skill (D4).",
+      "description": "Where the reaction goes. Today only webhook: making the control plane execute a shell command that arrived as graph DATA is another ficha, with a review/permission gate of its own mirroring the skill import gate (D4).",
       "required": ["type", "url", "secret_ref"],
       "additionalProperties": false,
       "properties": {
         "type": {
           "enum": ["webhook"],
-          "description": "Enum de um valor só hoje, para que uma segunda variante (local_command) seja aditiva amanhã, sem quebrar grafo nenhum."
+          "description": "An enum of a single value today, so that a second variant (local_command) is additive tomorrow, breaking no graph."
         },
         "url": {
           "type": "string",
           "pattern": "^https?://.+",
-          "description": "URL absoluta http: ou https: que recebe o POST. Mesma regra do POST /v1/webhooks (docs/spec/webhooks-events.md §2)."
+          "description": "An absolute http: or https: URL that receives the POST. The same rule as POST /v1/webhooks (docs/spec/webhooks-events.md §2)."
         },
         "secret_ref": {
           "type": "string",
           "minLength": 1,
           "pattern": "^[a-z0-9][a-z0-9_-]*$",
-          "description": "NOME da chave do HMAC, nunca a chave. O valor mora em segredo_gancho, no banco do deployment, registrado por PUT /v1/hook-secrets/:nome e resolvido pelo control plane no enfileiramento — o mesmo instante em que a url é copiada. O documento é endereçado por conteúdo, servido inteiro pela API, escrito em disco pelo export e publicado no atlas: chave escrita aqui é chave de todo mundo que lê o mapa. Por isso esta forma não é só declarada aqui: desde t256 ela é COBRADA na escrita por scripts/validar-grafo.mjs e packages/core/src/domain/graph.ts, que recusam o documento com hook_raw_secret quando o destination traz um secret cru e com invalid_hook_destination quando não traz secret_ref nenhum — o mesmo lugar onde a validação referencial do gancho já vivia. Mesma classe de caracteres de um id de nó, porque o nome também atravessa um caminho de URL."
+          "description": "The NAME of the HMAC key, never the key. The value lives in segredo_gancho, in the deployment's database, registered by PUT /v1/hook-secrets/:name and resolved by the control plane at enqueue time — the same instant the url is copied. The document is content-addressed, served whole by the API, written to disk by the export and published in the atlas: a key written here is everybody's key who reads the map. That is why this shape is not merely declared here: since t256 it is ENFORCED on write by scripts/validar-grafo.mjs and packages/core/src/domain/graph.ts, which refuse the document with hook_raw_secret when the destination carries a raw secret and with invalid_hook_destination when it carries no secret_ref at all — the same place the hook's referential validation already lived. The same character class as a node id, because the name also crosses a URL path."
         }
       }
     },
     "edge": {
       "type": "object",
-      "description": "Transição de um nó para outro, rotulada pelo resultado do nó de origem.",
+      "description": "A transition from one node to another, labelled by the origin node's result.",
       "required": ["from", "to", "condition"],
       "additionalProperties": false,
       "properties": {
@@ -374,12 +374,12 @@
         "condition": {
           "type": "string",
           "minLength": 1,
-          "description": "Rótulo do resultado do nó de origem (\"aprovado\", \"retrabalho\") quando a origem tem múltiplas saídas, ou o literal \"sempre\" quando tem saída única. String simples de propósito: sem linguagem de expressão antes de existirem dois grafos reais pressionando o formato.",
+          "description": "The label of the origin node's result (\"aprovado\", \"retrabalho\") when the origin has multiple exits, or the literal \"sempre\" when it has a single exit. A plain string on purpose: no expression language before two real graphs are pressing on the format.",
           "examples": ["sempre", "aprovado", "retrabalho"]
         },
         "description": {
           "type": "string",
-          "description": "Quando esta transição acontece, em uma frase."
+          "description": "When this transition happens, in one sentence."
         }
       }
     }

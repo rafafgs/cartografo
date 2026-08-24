@@ -1,14 +1,14 @@
 {
-  "problem_class": "resumo-de-fontes",
+  "problem_class": "source-summary",
   "lineage": {
     "type": "base"
   },
   "metadata": {
-    "name": "Contraexemplo — aresta sem condição",
-    "description": "Viola SÓ a regra \"edge_with_condition\": a topologia é sound, mas a única aresta tem condicao vazia. Uma transição sem rótulo é um caminho que o executor não sabe quando tomar — e o que a regra impede é justamente o nó escolhendo caminho livremente em runtime (princípio 2 do README). Este contraexemplo também é inválido contra o JSON Schema (condicao tem minLength 1): a regra existe em separado porque o sintetizador monta grafo em memória, antes de qualquer serialização.",
+    "name": "Counterexample — an edge with no condition",
+    "description": "Violates ONLY the \"edge_with_condition\" rule: the topology is sound, but the single edge has an empty condicao. A transition with no label is a path the executor does not know when to take — and what the rule prevents is precisely a node choosing its path freely at runtime (principle 2 of the README). This counterexample is also invalid against the JSON Schema (condicao has minLength 1): the rule exists separately because the synthesizer assembles a graph in memory, before any serialization.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-14",
-    "source": "contraexemplo da especificação"
+    "source": "the specification's counterexample"
   },
   "nodes": [
     {
@@ -43,7 +43,7 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "Toda afirmação do resumo tem fonte na lista coletada? Cite fonte por afirmação.",
+            "instruction": "Does every assertion in the summary have a source in the collected list? Cite a source per assertion.",
             "required_evidence": true
           }
         ]

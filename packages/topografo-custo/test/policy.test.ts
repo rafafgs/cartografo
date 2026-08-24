@@ -279,8 +279,8 @@ test('t234 — no `descricao` names the node field anywhere in the spec', () => 
   const hits = spec
     .split('\n')
     .map((text, index) => ({ line: index + 1, text }))
-    // Unaccented on purpose: the prose word "descrição" is Portuguese the
-    // reader reads, not a field name, and it is not what this sweep is about.
+    // Unaccented on purpose: this sweep is about the FIELD name, and the
+    // English word "description" the prose reads is not what it is about.
     .filter(({ text }) => /\bdescricao\b/.test(text));
 
   assert.deepEqual(

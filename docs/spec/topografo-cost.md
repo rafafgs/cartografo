@@ -1,133 +1,139 @@
-# Especificação: topógrafo de custo (lente de tokens e tempo)
+# Specification: the cost topografo (the token and time lens)
 
-**Pacote:** [`packages/topografo-custo`](../../packages/topografo-custo) · **Versão da API consumida:** `v1`
-**Regra de origem:** ["dois topógrafos (fluxo e custo) antes de congelar o formato de proposta"](../../notas/2026-08-14-extensao-e-qualidade.md)
+**Package:** [`packages/topografo-custo`](../../packages/topografo-custo) · **Version of the API consumed:** `v1`
+**Founding rule:** ["two topografos (flow and cost) before the proposal format is frozen"](../../notas/2026-08-14-extensao-e-qualidade.md)
 
-Um topógrafo lê telemetria e escreve hipótese. Este lê **custo**: quantos tokens
-e quanto tempo de sessão cada nó consumiu, em cada versão de grafo, numa
-execução — e propõe onde mexer quando algum nó sai da curva.
+A topografo reads telemetry and writes a hypothesis. This one reads **cost**: how
+many tokens and how much session time each node consumed, in each graph version,
+in one execution — and proposes where to act when a node falls off the curve.
 
-O que este documento especifica não é principalmente a heurística; é a
-**fronteira**. A lente de custo existe para responder, com código rodando, a uma
-pergunta que a arquitetura vinha afirmando sem prova: *topógrafo é ponto de
-extensão de verdade, ou só um nome para o primeiro analisador que escrevemos?*
-A resposta desta ficha é mecânica — o pacote inteiro é cliente comum da API
-pública, não declara driver de SQLite, não importa nada de `packages/core` e
-não abre nenhum schema compartilhado. Se precisasse de qualquer uma dessas
-coisas, "ponto de extensão" seria afirmação sem lastro.
+What this document specifies is not primarily the heuristic; it is the
+**boundary**. The cost lens exists to answer, with running code, a question the
+architecture had been asserting without proof: *is a topografo a real extension
+point, or only a name for the first analyser we wrote?* This ticket's answer is
+mechanical — the whole package is an ordinary client of the public API, declares
+no SQLite driver, imports nothing from `packages/core` and opens no shared
+schema. If it needed any one of those things, "extension point" would be an
+assertion with nothing behind it.
 
 ---
 
-## 1. A unidade de observação: `(versão de grafo, nó)`
+## 1. The unit of observation: `(graph version, node)`
 
-`GET /v1/executions/:id/metrics-by-version` já cruza versão × telemetria
-([`job.ts`](../../packages/core/src/repositories/job.ts)), mas conta
-trabalhos e eventos por `grafo_versao_id` e para aí. Isso responde "a v2 andou
-mais que a v1"; não responde "**qual nó** ficou caro na v2" — e uma política de
-custo sem alvo não tem operação a propor.
+`GET /v1/executions/:id/metrics-by-version` already crosses version × telemetry
+([`job.ts`](../../packages/core/src/repositories/job.ts)), but it counts jobs and
+events per `grafo_versao_id` and stops there. That answers "v2 moved more than
+v1"; it does not answer "**which node** got expensive in v2" — and a cost policy
+with no target has no operation to propose.
 
-A lente desce um nível e agrega por par:
+The lens goes one level down and aggregates per pair:
 
-| Campo | O que é |
+| Field | What it is |
 |---|---|
-| `grafo_versao_id`, `no_id` | o par observado |
-| `tokens_total` | soma das quatro subchaves de `session.usage` |
-| `sessoes_com_uso` / `sessoes_sem_uso` | quantas sessões reportaram uso, e quantas não |
-| `tempo_total_segundos` | soma de `finalizada_em - aberta_em` |
-| `sessoes_com_tempo` / `sessoes_sem_tempo` | idem, para os carimbos de tempo |
+| `grafo_versao_id`, `no_id` | the observed pair |
+| `tokens_total` | the sum of the four subkeys of `session.usage` |
+| `sessoes_com_uso` / `sessoes_sem_uso` | how many sessions reported usage, and how many did not |
+| `tempo_total_segundos` | the sum of `finalizada_em - aberta_em` |
+| `sessoes_com_tempo` / `sessoes_sem_tempo` | the same, for the time stamps |
 
-**Nenhuma coluna nova foi precisa.** `session.usage` e os dois carimbos já
-existem e já saem em `GET /v1/sessions` junto com `no_id` e `trabalho_id`; o
-`grafo_versao_id` de cada sessão se resolve pelo `job.graph_version_id`, que
-já vem em `GET /v1/jobs`. A junção é feita no cliente, com dois GETs.
+**No new column was needed.** `session.usage` and both stamps already exist and
+already come out of `GET /v1/sessions` alongside `no_id` and `trabalho_id`; each
+session's `grafo_versao_id` resolves through `job.graph_version_id`, which
+already comes in `GET /v1/jobs`. The join is done on the client, with two GETs.
 
-### Ausência nunca é zero
+### Absence is never zero
 
-A regra atravessa a agregação inteira, e é herdada do core
-([`session.ts`](../../packages/core/src/repositories/session.ts)): sessão com
-`uso: null` **não** entra como zero tokens, e sessão ainda aberta **não** entra
-como duração zero. Zero é uma medição; `null` é o engine não ter reportado nada,
-e colapsar as duas coisas destrói justamente a métrica que esta lente existe
-para ler.
+The rule runs through the whole aggregation, and it is inherited from the core
+([`session.ts`](../../packages/core/src/repositories/session.ts)): a session with
+`uso: null` does **not** enter as zero tokens, and a session still open does
+**not** enter as zero duration. Zero is a measurement; `null` is the engine
+having reported nothing, and collapsing the two destroys precisely the metric
+this lens exists to read.
 
-Os contadores `sessoes_sem_uso` e `sessoes_sem_tempo` são o preço honesto disso:
-eles dizem quanto do total dá para acreditar, e vão junto na evidência de toda
-proposta.
+The `sessoes_sem_uso` and `sessoes_sem_tempo` counters are the honest price of
+that: they say how much of the total can be believed, and they travel in the
+evidence of every proposal.
 
-### Nada some
+### Nothing disappears
 
-Sessão sem trabalho (descoberta, turno de conversa) ou trabalho sem versão
-declarada produzem par com `null` em alguma ponta. Essas linhas não são
-descartadas: ficam num grupo à parte, ordenado por último — mesma escolha de
-`metricasPorVersao`. Um relatório que esconde o que não sabe classificar mente
-sobre o total.
+A session with no job (discovery, a conversation turn) or a job with no declared
+version produces a pair with `null` at one end. Those rows are not discarded:
+they sit in a group of their own, ordered last — the same choice as
+`metricasPorVersao`. A report that hides what it cannot classify lies about the
+total.
 
-Só as linhas **identificadas** (versão e nó preenchidos) chegam às políticas:
-sem os dois campos não há nó a apontar nem snapshot em que ler a descrição.
+Only the **identified** rows (version and node filled in) reach the policies:
+without both fields there is no node to point at and no snapshot to read the
+description from.
 
 ---
 
-## 2. As duas políticas
+## 2. The two policies
 
-| Política | Pergunta | Precisa de |
+| Policy | Question | Needs |
 |---|---|---|
-| `ceiling` | este nó passou de N tokens (ou de N segundos)? | um teto declarado |
-| `tier` | este nó custa muito mais que os vizinhos da mesma versão? | base amostral |
+| `ceiling` | did this node go past N tokens (or N seconds)? | a declared ceiling |
+| `tier` | does this node cost far more than its neighbours in the same version? | a sample base |
 
-**`ceiling` é absoluta e cala quando não sabe.** Sem `--token-cap` nem
-`--second-cap`, a política não roda: não há o que exceder, e inventar um
-número default seria a lente decidindo por conta própria o que é caro. "Excede"
-é estritamente maior. Uma linha que estoura os dois tetos continua sendo **uma**
-candidata — o alvo é o nó, não o limite; `tokens` leva o rótulo por ser a
-métrica primária, e o número de tempo vai na evidência de qualquer jeito.
+**`ceiling` is absolute and stays quiet when it does not know.** Without
+`--token-cap` or `--second-cap` the policy does not run: there is nothing to
+exceed, and inventing a default number would be the lens deciding on its own
+account what is expensive. "Exceeds" is strictly greater. A row that blows
+through both ceilings is still **one** candidate — the target is the node, not
+the limit; `tokens` takes the label because it is the primary metric, and the
+time number travels in the evidence either way.
 
-**`tier` é relativa e exige base.** Um nó é candidato quando seu `tokens_total`
-é ≥ `tierFactor` vezes a **mediana** da própria versão, e só quando a versão tem
-ao menos `tierMinNodes` nós com dado de uso. Três escolhas com motivo:
+**`tier` is relative and demands a base.** A node is a candidate when its
+`tokens_total` is ≥ `tierFactor` times the **median** of its own version, and
+only when that version has at least `tierMinNodes` nodes with usage data. Three
+choices, each with a reason:
 
-- **mediana, não média** — a métrica serve para achar outlier, e média é
-  puxada exatamente pelo outlier que se está procurando;
-- **dentro da versão** — comparar nós de versões diferentes misturaria mudança
-  de topologia com mudança de custo, e a lente não teria como dizer qual das
-  duas explicou o número;
-- **mínimo de nós medidos** — com dois nós, chamar um deles de outlier é ruído.
-  Nó sem nenhuma sessão com `uso` não conta para o mínimo nem entra na mediana:
-  não é um nó barato, é um nó não medido.
+- **the median, not the mean** — the metric serves to find an outlier, and the
+  mean is pulled by exactly the outlier being looked for;
+- **within the version** — comparing nodes across versions would mix a topology
+  change with a cost change, and the lens would have no way of saying which of
+  the two explained the number;
+- **a minimum of measured nodes** — with two nodes, calling one of them an
+  outlier is noise. A node with no session carrying `uso` counts neither toward
+  the minimum nor into the median: it is not a cheap node, it is an unmeasured
+  one.
 
-Mediana zero desliga a política: com metade dos nós medidos em zero tokens,
-qualquer valor positivo passaria em qualquer fator, e todo nó viraria outlier.
+A median of zero switches the policy off: with half the measured nodes at zero
+tokens, any positive value would pass any factor, and every node would become an
+outlier.
 
-Os defaults (`tierFactor = 3`, `tierMinNodes = 3`) são calibração, não
-arquitetura, e estão expostos como opção de linha de comando para poderem ser
-recalibrados sem tocar no desenho.
+The defaults (`tierFactor = 3`, `tierMinNodes = 3`) are calibration, not
+architecture, and they are exposed as command-line options so they can be
+recalibrated without touching the design.
 
 ---
 
-## 3. Por que toda proposta desta lente é advisória
+## 3. Why every proposal from this lens is advisory
 
-Este é o ponto duro da lente, e ele é uma consequência, não uma preferência.
+This is the lens's hard point, and it is a consequence, not a preference.
 
-Nem o documento de grafo ([`grafo.schema.json`](../../schema/grafo.schema.json),
-cujo nó é `additionalProperties: false`) nem o
-[manifesto de skill](../../especificacoes/formatos/manifesto-skill.schema.json)
-têm hoje campo de custo, de orçamento ou de tier de modelo. Uma política de
-custo **não tem onde pousar** nesses formatos. E abrir qualquer um dos dois
-está fora desta ficha por critério de aceite: o que se está provando é que um
-segundo topógrafo cabe na API existente sem alterar formato compartilhado —
-alterar um schema para caber seria refutar a própria tese.
+Neither the graph document
+([`grafo.schema.json`](../../schema/grafo.schema.json), whose node is
+`additionalProperties: false`) nor the
+[skill manifest](../../especificacoes/formatos/manifesto-skill.schema.json) has a
+cost, budget or model-tier field today. A cost policy **has nowhere to land** in
+those formats. And opening either of them is outside this ticket by acceptance
+criterion: what is being proved is that a second topografo fits inside the
+existing API without altering a shared format — altering a schema to make it fit
+would refute the very thesis.
 
-Sobra a única mutação que o vocabulário de operações atual permite sobre um nó
-sem inventar campo: `change_node_field` sobre `description`. Então toda candidata
-carrega exatamente uma operação, que **anexa** uma recomendação legível à
-descrição atual do nó:
+What is left is the only mutation the current operation vocabulary allows on a
+node without inventing a field: `change_node_field` over `description`. So every
+candidate carries exactly one operation, which **appends** a readable
+recommendation to the node's current description:
 
 ```json
 {
   "type": "change_node_field",
   "node_id": "implementar",
   "field": "description",
-  "from": "<descrição atual>",
-  "to": "<descrição atual>\n\n[cost-surveyor] token ceiling exceeded: …",
+  "from": "<current description>",
+  "to": "<current description>\n\n[cost-surveyor] token ceiling exceeded: …",
   "inverse": {
     "type": "change_node_field",
     "node_id": "implementar",
@@ -138,8 +144,8 @@ descrição atual do nó:
 }
 ```
 
-Os números de verdade vão em `evidence` e `expected_metric`, que são JSON livre
-por design (D15):
+The real numbers travel in `evidence` and `expected_metric`, which are free JSON
+by design (D15):
 
 ```json
 {
@@ -163,44 +169,44 @@ por design (D15):
 }
 ```
 
-As chaves da candidata falam inglês desde o t255
-([glossário](glossario-wire.md) §5.5); o CONTEÚDO de `expected_metric` continua
-`{nome, direcao, de, para}` porque é o formato de hipótese congelado do
-[`domain/hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts) — e é
-exatamente por isso que ele está aqui. Até o t255 esta lente inventava uma
-métrica própria — uma frase, um alvo e o botão que produziu o alvo —, que
-parecia uma hipótese e não era: o `POST /v1/proposals/:id/outcome` recusava com
-`422 invalid_expected_metric`, e nenhuma proposta desta lente conseguia fechar o
-próprio experimento.
+The candidate's keys have spoken English since t255
+([the glossary](glossario-wire.md) §5.5); the CONTENT of `expected_metric` is
+still `{nome, direcao, de, para}` because that is the frozen hypothesis format of
+[`domain/hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts) — and that
+is exactly why it is here. Until t255 this lens invented a metric of its own — a
+sentence, a target and the knob that produced the target —, which looked like a
+hypothesis and was not: `POST /v1/proposals/:id/outcome` refused it with
+`422 invalid_expected_metric`, and no proposal from this lens could close its own
+experiment.
 
-`de` é o número medido; `para` é onde ele deveria chegar (o teto, ou o limiar
-`fator × mediana`). `direcao` é sempre `cai`: toda candidata desta lente é um
-corte de custo.
+`de` is the measured number; `para` is where it ought to land (the ceiling, or
+the `factor × median` threshold). `direcao` is always `cai`: every candidate from
+this lens is a cost cut.
 
-O `"lens": "cost"` do exemplo acima deixou de ser só uma etiqueta com a `t246`:
-ele é o discriminador de deduplicação do control plane (D21). O
-`POST /v1/proposals` chaveia cada proposta por `(lens, target_version,
-operations)` — chave calculada pelo servidor, nunca aceita no corpo e nunca
-devolvida na resposta — e um sinal repetido que casa com uma proposta ainda
-`pending` responde `200` com aquela mesma proposta, somando a nova evidência à
-lista dela, em vez de `201` com um clone. Rodar `evaluate` duas vezes sobre a
-mesma telemetria, portanto, não empilha mais candidatas repetidas. Duas lentes
-que proponham o mesmo diff continuam sendo duas propostas, de propósito: o
-raciocínio por trás de cada uma é evidência diferente mesmo quando o diff
-coincide. E a unicidade vale só dentro de `pending` — repor o sinal depois de
-uma rejeição abre proposta nova, porque a decisão anterior é passado.
+The `"lens": "cost"` of the example above stopped being just a label with `t246`:
+it is the control plane's deduplication discriminator (D21). `POST /v1/proposals`
+keys every proposal by `(lens, target_version, operations)` — a key computed by
+the server, never accepted in the body and never returned in the response — and a
+repeated signal that matches a proposal still `pending` answers `200` with that
+same proposal, adding the new evidence to its list, instead of `201` with a
+clone. Running `evaluate` twice over the same telemetry therefore no longer piles
+up repeated candidates. Two lenses proposing the same diff are still two
+proposals, on purpose: the reasoning behind each one is different evidence even
+when the diff coincides. And the uniqueness holds only within `pending` —
+replaying the signal after a rejection opens a new proposal, because the earlier
+decision is the past.
 
-**A consequência honesta:** aplicar uma proposta desta lente não reduz custo
-nenhum sozinha — ela informa quem lê o nó. Enforcement mecânico de teto ou de
-tier espera uma superfície de política de verdade, que a
-[nota de aprendizado](../../notas/2026-08-14-aprendizado.md) já nomeia como
-superfície própria. Isso não é regressão irreversível: quando o campo existir,
-a mesma agregação e as mesmas políticas passam a emitir a operação estrutural,
-e só a operação muda.
+**The honest consequence:** applying a proposal from this lens reduces no cost by
+itself — it informs whoever reads the node. Mechanical enforcement of a ceiling
+or a tier waits for a real policy surface, which the
+[learning note](../../notas/2026-08-14-aprendizado.md) already names as a surface
+of its own. This is not an irreversible regression: when the field exists, the
+same aggregation and the same policies start emitting the structural operation,
+and only the operation changes.
 
 ---
 
-## 4. O comando
+## 4. The command
 
 ```
 topografo-custo evaluate --url <url> --execution <id>
@@ -208,78 +214,81 @@ topografo-custo evaluate --url <url> --execution <id>
                          [--tier-factor N] [--tier-min-nodes N]
 ```
 
-O caminho inteiro, em ordem:
+The whole path, in order:
 
-1. `GET /v1/sessions?execution_id=` e `GET /v1/jobs?execution_id=` (em
-   paralelo);
-2. monta o mapa `trabalho_id -> grafo_versao_id`;
-3. agrega por `(versão, nó)` e descarta as linhas não identificadas;
-4. `GET /v1/graph-versions/:id` **uma vez por versão distinta** — é de onde sai a
-   `description` atual, que vira o `de` da operação e o `para` da inversa;
-5. avalia as duas políticas;
-6. `POST /v1/proposals` por candidata, e imprime uma linha por proposta criada.
+1. `GET /v1/sessions?execution_id=` and `GET /v1/jobs?execution_id=` (in
+   parallel);
+2. builds the `trabalho_id -> grafo_versao_id` map;
+3. aggregates per `(version, node)` and drops the unidentified rows;
+4. `GET /v1/graph-versions/:id` **once per distinct version** — it is where the
+   current `description` comes from, which becomes the operation's `from` and the
+   inverse's `to`;
+5. evaluates both policies;
+6. `POST /v1/proposals` per candidate, and prints one line per created proposal.
 
-Códigos de saída seguem a convenção da CLI `cartografo`
-([`cli/index.ts`](../../packages/core/src/cli/index.ts)): `0` fez o que
-prometeu (inclusive quando não havia candidata), `1` resultado negativo
-(servidor fora, API recusou), `2` linha de comando errada.
+The exit codes follow the convention of the `cartografo` CLI
+([`cli/index.ts`](../../packages/core/src/cli/index.ts)): `0` it did what it
+promised (including when there was no candidate), `1` a negative result (the
+server is down, the API refused), `2` the command line is wrong.
 
 ---
 
-## 5. Fronteira: quatro rotas, e nenhuma a mais
+## 5. The boundary: four routes, and not one more
 
-| Rota | Verbo | Para quê |
+| Route | Verb | What for |
 |---|---|---|
-| `/v1/sessions` | GET | tokens e tempo por `no_id` |
-| `/v1/jobs` | GET | o mapa `trabalho_id -> grafo_versao_id` |
-| `/v1/graph-versions/:id` | GET | a `description` atual do nó |
-| `/v1/proposals` | POST | a candidata, como proposta pendente |
+| `/v1/sessions` | GET | tokens and time per `no_id` |
+| `/v1/jobs` | GET | the `trabalho_id -> grafo_versao_id` map |
+| `/v1/graph-versions/:id` | GET | the node's current `description` |
+| `/v1/proposals` | POST | the candidate, as a pending proposal |
 
-Os caminhos são inglês (D18); as **chaves** do corpo (`sessoes`, `trabalhos`,
-`grafo_versao`, `proposta`) seguem em português, porque são formato e a D18 as
-tira explicitamente do escopo do inglês.
+The paths are English (D18); the **keys** of the body (`sessoes`, `trabalhos`,
+`grafo_versao`, `proposta`) are still Portuguese, because they are format and
+D18 explicitly takes them out of English's scope.
 
-A ausência mais importante da tabela é `POST /v1/proposals/:id/apply`. O
-topógrafo **cria** e para: aplicar, aprovar ou reverter é decisão humana no
-portão (README, princípio 5), e o inbox é ficha própria (`t111`). Isso está
-travado por teste — a lista de rotas tocadas por uma execução real do comando é
-asserção de aceite, não convenção de revisão.
+The table's most important absence is `POST /v1/proposals/:id/apply`. The
+topografo **creates** and stops: applying, approving or reverting is a human
+decision at the gate (README, principle 5), and the inbox is a ticket of its own
+(`t111`). That is locked down by a test — the list of routes a real run of the
+command touches is an acceptance assertion, not a review convention.
 
-Do mesmo teste sai a outra metade da fronteira, verificada pelo portão genérico
-[`check-single-writer.mjs`](../../scripts/check-single-writer.mjs) que já roda no
-lint: o pacote não declara driver de SQLite, não alcança `packages/core/src/db`
-e não depende do pacote do core nem do runner. Mesma fronteira da tela (D11) e
-do runner (D1) — o topógrafo não é privilegiado por ser "de dentro".
+The other half of the boundary comes out of the same test, checked by the generic
+gate [`check-single-writer.mjs`](../../scripts/check-single-writer.mjs) that
+already runs in the lint: the package declares no SQLite driver, does not reach
+`packages/core/src/db` and depends on neither the core package nor the runner.
+The same boundary as the screen's (D11) and the runner's (D1) — a topografo is
+not privileged for being "one of ours".
 
-Os tipos que o pacote consome da API são **redeclarados localmente**, no
-subconjunto que ele usa, em vez de importados do core — mesma escolha de
+The types the package consumes from the API are **redeclared locally**, in the
+subset it uses, rather than imported from the core — the same choice as
 [`cliente-controle.ts`](../../packages/runner/src/controller/cliente-controle.ts).
-É o que faz a lente sobreviver a campo novo no core sem mudar uma linha, e o
-que impede a dependência de voltar pela porta dos tipos.
+It is what lets the lens survive a new field in the core without changing a line,
+and what keeps the dependency from coming back through the types' door.
 
 ---
 
-## 6. O que esta lente ainda não faz
+## 6. What this lens does not do yet
 
-Cada item aqui é escopo declarado, não esquecimento:
+Every item here is declared scope, not an oversight:
 
-- **Deduplicar propostas entre execuções repetidas do comando.** Rodar duas
-  vezes sobre a mesma telemetria cria propostas repetidas. Quando esta ficha foi
-  escrita, checar duplicidade exigiria uma rota de listagem que não existia, e
-  criá-la seria mudança no core — exatamente o que a ficha existe para não
-  precisar fazer. `GET /v1/proposals` existe hoje
-  ([`proposals.ts`](../../packages/core/src/routes/proposals.ts)), então o
-  bloqueio caiu; a checagem continua não implementada, e continua fora de
-  escopo **desta** ficha, que é sobre caber na API e não sobre idempotência.
-  É ficha de quem a quiser, e a rota já está lá.
-- **Campo de custo/tier real** no documento de grafo ou no manifesto de skill
-  (§3).
-- **Superfície de política formal** — tabela `politica` versionada, orçamento
-  por execução, timeouts. Os tetos são hoje argumento de linha de comando, e a
-  nota de aprendizado já nomeia "Políticas" como superfície própria.
-- **Custo em dinheiro.** A lente conta tokens e segundos; preço por token é
-  vocabulário de engine, e o schema de `session.finished` recusa campo de custo
-  de propósito. Converter é de quem tiver a tabela de preços.
-- **Cruzar com desfecho.** "Este nó é caro" e "este nó é caro **e** falha muito"
-  são frases diferentes; a segunda é a lente de fluxo, e o cruzamento das duas é
-  ficha de quem tiver as duas rodando lado a lado.
+- **Deduplicating proposals across repeated runs of the command.** Running twice
+  over the same telemetry creates repeated proposals. When this ticket was
+  written, checking for duplicates would have demanded a listing route that did
+  not exist, and creating it would have been a change in the core — exactly what
+  the ticket exists in order not to need. `GET /v1/proposals` exists today
+  ([`proposals.ts`](../../packages/core/src/routes/proposals.ts)), so the blocker
+  is gone; the check is still not implemented, and it is still outside **this**
+  ticket's scope, which is about fitting inside the API and not about
+  idempotency. It is a ticket for whoever wants it, and the route is already
+  there.
+- **A real cost/tier field** in the graph document or in the skill manifest (§3).
+- **A formal policy surface** — a versioned `politica` table, a budget per
+  execution, timeouts. The ceilings are command-line arguments today, and the
+  learning note already names "Policies" as a surface of its own.
+- **Cost in money.** The lens counts tokens and seconds; price per token is
+  engine vocabulary, and the `session.finished` schema refuses a cost field on
+  purpose. Converting is for whoever has the price table.
+- **Crossing with the outcome.** "This node is expensive" and "this node is
+  expensive **and** fails a lot" are different sentences; the second is the flow
+  lens, and crossing the two is a ticket for whoever has both running side by
+  side.

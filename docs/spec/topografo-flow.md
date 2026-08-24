@@ -1,93 +1,96 @@
-# Especificação: topógrafo de fluxo, da telemetria à proposta
+# Specification: the flow topografo, from telemetry to a proposal
 
-**Versão da API:** `v1` · **Implementação:** [`packages/runner/src/surveyor/`](../../packages/runner/src/surveyor)
-**Decisão de origem:** [D16](../../DECISIONS.md) — "superar o flowpilot é o marco seguinte (primeira proposta do topógrafo com evidência)"
+**API version:** `v1` · **Implementation:** [`packages/runner/src/surveyor/`](../../packages/runner/src/surveyor)
+**Founding decision:** [D16](../../DECISIONS.md) — "beating flowpilot is the next milestone (the topografo's first proposal with evidence)"
 
-Um grafo que roda produz um rastro; um grafo que **melhora** precisa de alguém
-que leia esse rastro e diga onde dói, com número. Esta camada é o primeiro
-desses leitores: ela lê o log de UMA execução já terminada, mede quanto cada nó
-custou, escolhe o pior e transforma isso em uma proposta de mudança no grafo —
-que entra no livro `pendente` e não é aplicada por ninguém.
+A graph that runs produces a trail; a graph that **improves** needs somebody to
+read that trail and say where it hurts, with a number. This layer is the first of
+those readers: it reads the log of ONE finished execution, measures how much each
+node cost, picks the worst and turns that into a proposal to change the graph —
+which enters the ledger `pendente` and is applied by nobody.
 
-Duas fronteiras organizam o documento inteiro, e é melhor lê-las antes de
-qualquer detalhe:
+Two boundaries organize the whole document, and they are better read before any
+detail:
 
-- **O topógrafo é cliente comum da API.** Ele mora em `packages/runner`, não no
-  control plane. Não abre o banco, não importa `packages/core/src/db` e não tem
-  privilégio nenhum que a tela não tenha — a mesma postura da [D11], estendida
-  aos analisadores por [`notas/2026-08-14-extensao-e-qualidade.md`](../../notas/2026-08-14-extensao-e-qualidade.md):
-  "analisadores lendo a mesma telemetria e emitindo propostas no mesmo formato".
-- **O agente decide UMA coisa.** Os números, a evidência e a hipótese saem do
-  nosso código, deterministicamente, a partir do log. A sessão de agente escolhe
-  só as `operations` — o diff semântico — e devolve isso num arquivo. É o que faz
-  "evidência rastreável a números do log" ser garantia estrutural em vez de
-  promessa sobre a memória do modelo.
+- **The topografo is an ordinary client of the API.** It lives in
+  `packages/runner`, not in the control plane. It does not open the database, it
+  does not import `packages/core/src/db` and it has no privilege the screen does
+  not have — the same posture as [D11], extended to the analysers by
+  [`notas/2026-08-14-extensao-e-qualidade.md`](../../notas/2026-08-14-extensao-e-qualidade.md):
+  "analysers reading the same telemetry and emitting proposals in the same
+  format".
+- **The agent decides ONE thing.** The numbers, the evidence and the hypothesis
+  come out of our code, deterministically, from the log. The agent session picks
+  only the `operations` — the semantic diff — and hands that back in a file. It
+  is what makes "evidence traceable to numbers in the log" a structural guarantee
+  rather than a promise about the model's memory.
 
 ---
 
-## 1. As duas metades
+## 1. The two halves
 
-| Metade | Onde | O que faz | Determinística? |
+| Half | Where | What it does | Deterministic? |
 |---|---|---|---|
-| Lente de fluxo | [`metrics.ts`](../../packages/runner/src/surveyor/metrics.ts) | Dobra o log da execução em quatro números por nó e nomeia o gargalo. | Sim: função pura, sem HTTP, sem relógio. |
-| Orquestrador | [`proposal.ts`](../../packages/runner/src/surveyor/proposal.ts) | Monta evidência e hipótese, despacha **uma** sessão para escolher as operações, valida e grava a proposta. | A parte que importa, sim — só a escolha das operações é agêntica. |
+| Flow lens | [`metrics.ts`](../../packages/runner/src/surveyor/metrics.ts) | Folds the execution's log into four numbers per node and names the bottleneck. | Yes: a pure function, no HTTP, no clock. |
+| Orchestrator | [`proposal.ts`](../../packages/runner/src/surveyor/proposal.ts) | Assembles the evidence and the hypothesis, dispatches **one** session to pick the operations, validates and writes the proposal. | The part that matters, yes — only picking the operations is agentic. |
 
-A entrada da primeira metade é `GET /v1/executions/:id/events` (§6) mais os ids
-dos nós da versão de grafo sob a qual a execução correu. A saída da segunda é
-uma linha em `proposta`, sempre com status `pendente`.
+The first half's input is `GET /v1/executions/:id/events` (§6) plus the node ids
+of the graph version the execution ran under. The second half's output is one row
+in `proposta`, always with status `pendente`.
 
 ---
 
-## 2. As quatro medidas, e a quem cada uma é cobrada
+## 2. The four measures, and who each one is billed to
 
-| Medida | De que par de eventos sai | Atribuída a |
+| Measure | Which pair of events it comes from | Attributed to |
 |---|---|---|
-| `agent_ms` | `session.opened` → `session.finished` | O nó em `session.opened.data.node_id`. |
-| `blocked_ms` | `job.blocked` → `job.unblocked` | O nó em que o trabalho **estava no momento do bloqueio**. |
-| `queue_ms` | `job.transitioned` → o próximo `session.opened` do mesmo trabalho **no mesmo nó** | O nó de destino da transição. É latência de despacho. |
-| `input_requests` | `input_request.created` | O nó da sessão que perguntou (`data.session_id` → `session.opened.data.node_id`). |
+| `agent_ms` | `session.opened` → `session.finished` | The node in `session.opened.data.node_id`. |
+| `blocked_ms` | `job.blocked` → `job.unblocked` | The node the job **was on at the moment it blocked**. |
+| `queue_ms` | `job.transitioned` → the next `session.opened` of the same job **at the same node** | The transition's destination node. It is dispatch latency. |
+| `input_requests` | `input_request.created` | The node of the session that asked (`data.session_id` → `session.opened.data.node_id`). |
 
-Três regras atravessam a dobra, e cada uma delas é uma decisão:
+Three rules run through the fold, and each one is a decision:
 
-- **A ordem é o `id`, nunca `occurred_at`.** Dois eventos podem carregar o mesmo
-  carimbo; só o id atribuído pelo servidor é ordenação total. Mesma regra do
-  redutor de referência
+- **The order is the `id`, never `occurred_at`.** Two events can carry the same
+  stamp; only the id the server assigns is a total order. The same rule as the
+  reference reducer
   ([`reconstruir-estado.mjs`](../../especificacoes/eventos/reducers/reconstruir-estado.mjs)).
-- **O nó em que o trabalho estava é reconstruído do log**, dobrando
-  `job.created` e `job.transitioned`. A projeção só sabe onde o trabalho
-  está *agora*, e "onde ele estava quando bloqueou?" é pergunta sobre o passado.
-- **O que não dá para atribuir não é contado.** Pergunta sem sessão
-  (`session_id: null` é válido na taxonomia), sessão em nó que o grafo não tem
-  mais, intervalo que corre para trás: tudo descartado. Número inventado para
-  não deixar buraco é pior que o buraco.
+- **The node the job was on is reconstructed from the log**, by folding
+  `job.created` and `job.transitioned`. The projection only knows where the job
+  is *now*, and "where was it when it blocked?" is a question about the past.
+- **What cannot be attributed is not counted.** A question with no session
+  (`session_id: null` is valid in the taxonomy), a session at a node the graph no
+  longer has, an interval that runs backwards: all discarded. A number invented
+  so as not to leave a hole is worse than the hole.
 
-O `job.created` **não** abre fila: fila é a espera entre chegar num nó por
-transição e a sessão daquele nó abrir. Uma segunda transição sem sessão no meio
-descarta a fila pendente — o trabalho saiu do nó sem ninguém trabalhar nele, e
-não há a quem cobrar aquele tempo.
-
----
-
-## 3. O ranking e o gargalo
-
-`total_ms` é a soma das três medidas de tempo (`input_requests` **não** entra na
-soma: elas são sinal de outra natureza, e misturá-las exigiria um câmbio
-arbitrário entre segundo e pergunta). O ranking ordena por `total_ms`
-decrescente, com empate desfeito pelo id do nó em ordem crescente — duas
-execuções com os mesmos números precisam nomear o mesmo gargalo.
-
-O `gargalo` é o primeiro do ranking, **desde que custe mais que zero**. Quando
-toda a execução soma zero, `gargalo` é `null`, e isso não é erro: é uma rodada
-sem sinal, e o desfecho correto é não propor nada (§5).
+`job.created` does **not** open a queue: a queue is the wait between arriving at
+a node by transition and that node's session opening. A second transition with no
+session in between discards the pending queue — the job left the node with nobody
+working on it, and there is nobody to bill that time to.
 
 ---
 
-## 4. A evidência e a hipótese
+## 3. The ranking and the bottleneck
 
-Uma proposta é uma hipótese: `POST /v1/proposals` recusa com `400` qualquer uma
-que chegue sem `evidencia` e sem `metrica_esperada`
-([`entities-versioning.md` §6](entities-versioning.md)). O topógrafo
-monta as duas antes de qualquer agente entrar na história.
+`total_ms` is the sum of the three time measures (`input_requests` does **not**
+enter the sum: they are a signal of another nature, and mixing them would demand
+an arbitrary exchange rate between a second and a question). The ranking orders
+by `total_ms` descending, with ties broken by the node id ascending — two
+executions with the same numbers have to name the same bottleneck.
+
+The `gargalo` is the first of the ranking, **provided it costs more than zero**.
+When the whole execution sums to zero, `gargalo` is `null`, and that is not an
+error: it is a round with no signal, and the right outcome is to propose nothing
+(§5).
+
+---
+
+## 4. The evidence and the hypothesis
+
+A proposal is a hypothesis: `POST /v1/proposals` refuses with `400` any that
+arrives without `evidencia` and without `metrica_esperada`
+([`entities-versioning.md` §6](entities-versioning.md)). The topografo assembles
+both before any agent enters the story.
 
 ```json
 {
@@ -102,203 +105,208 @@ monta as duas antes de qualquer agente entrar na história.
   "total_ms": 25516,
   "input_requests": 0,
   "event_ids": [2, 3, 4, 5],
-  "by_node": [ … o ranking inteiro … ]
+  "by_node": [ … the whole ranking … ]
 }
 ```
 
-`event_ids` é o campo que dá nome ao contrato: são os ids **reais** dos eventos
-de que cada número saiu, e é por eles que qualquer pessoa reconstrói a conta sem
-confiar em ninguém. Uma evidência que resume sem citar id é um parecer, não uma
-evidência. `by_node` viaja junto para que "por que ESTE nó?" seja respondível sem
-rodar nada de novo.
+`event_ids` is the field that gives the contract its name: they are the **real**
+ids of the events every number came from, and it is through them that anybody
+reconstructs the arithmetic without trusting anyone. Evidence that summarizes
+without citing an id is an opinion, not evidence. `by_node` travels with it so
+that "why THIS node?" is answerable without running anything again.
 
-As chaves acima estão em inglês desde a `t264`
-([`glossario-wire.md` §5.6](glossario-wire.md)): até ali a lente de fluxo era a
-única que ainda escrevia português dentro de `evidence`, e a de custo já tinha
-migrado na `t255`. Uma hipótese aberta ANTES daquela ficha nomeia
-`tempo_agente_ms:<no>`, e o `measureForExpectedMetric` responde `null` para ela
-— recusar é o comportamento correto: fechar com um zero leria como "o gargalo
-sumiu", que é o melhor veredito possível, quando o que houve foi ninguém medir
-nada.
+The keys above have been English since `t264`
+([`glossario-wire.md` §5.6](glossario-wire.md)): until then the flow lens was the
+only one still writing Portuguese inside `evidence`, and the cost lens had
+already migrated in `t255`. A hypothesis opened BEFORE that ticket names
+`tempo_agente_ms:<no>`, and `measureForExpectedMetric` answers `null` for it —
+refusing is the correct behaviour: closing it with a zero would read as "the
+bottleneck is gone", which is the best possible verdict, when what happened was
+that nobody measured anything.
 
-`lens` é o campo que o control plane lê, e não o topógrafo: desde a `t246`
-(D21), o `POST /v1/proposals` deduplica por `(lens, target_version, operations)`
-— a chave é calculada pelo servidor, nunca aceita no corpo e nunca devolvida na
-resposta. Rodar esta lente duas vezes sobre a mesma execução **não** cria duas
-propostas: a segunda chamada responde `200` com a proposta que já existia e a
-evidência dela vira uma lista, com a nova ocorrência no fim. `fonte` continua
-onde sempre esteve e não foi substituída — ela é a procedência que este módulo
-declara, `lens` é o discriminador do servidor, e as duas lentes precisam do
-mesmo nome de campo (`cost` na de custo, desde a `t255`) para caírem na mesma
-dimensão. A unicidade vale só enquanto a proposta está `pending`: depois de
-rejeitada ou aplicada, o mesmo sinal abre uma proposta nova.
+`lens` is the field the control plane reads, and not the topografo: since `t246`
+(D21), `POST /v1/proposals` deduplicates by
+`(lens, target_version, operations)` — the key is computed by the server, never
+accepted in the body and never returned in the response. Running this lens twice
+over the same execution does **not** create two proposals: the second call
+answers `200` with the proposal that already existed and its evidence becomes a
+list, with the new occurrence at the end. `fonte` is still where it always was
+and was not replaced — it is the provenance this module declares, `lens` is the
+server's discriminator, and both lenses need the same field name (`cost` in the
+cost one, since `t255`) in order to fall into the same dimension. The uniqueness
+holds only while the proposal is `pending`: once rejected or applied, the same
+signal opens a new proposal.
 
-A hipótese aponta o **componente dominante** do gargalo, não o total: "o nó
-custa 25s" não é acionável, "o nó passa 20s com agente aberto" é.
+The hypothesis points at the bottleneck's **dominant component**, not at the
+total: "the node costs 25s" is not actionable, "the node spends 20s with an agent
+open" is.
 
 ```json
 { "nome": "agent_ms:redigir", "direcao": "cai", "de": 20507, "para": 16406 }
 ```
 
-`para` é 20% abaixo de `de` — ambição declarada, não limiar. Quem julga a
-hipótese na rodada seguinte (`t112`) compara o número medido com **`de`**, nunca
-com `para` ([`hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts)):
-"andou na direção declarada, menos do que se esperava" é hipótese confirmada, e
-não fracasso.
+`para` is 20% below `de` — declared ambition, not a threshold. Whoever judges the
+hypothesis in the following round (`t112`) compares the measured number with
+**`de`**, never with `para`
+([`hypothesis.ts`](../../packages/core/src/domain/hypothesis.ts)): "it moved in
+the declared direction, by less than hoped" is a confirmed hypothesis, not a
+failure.
 
 ---
 
-## 5. A sessão: uma tarefa, um arquivo, nenhum privilégio
+## 5. The session: one task, one file, no privilege
 
-A única coisa que um agente decide aqui é **quais operações** atacam o gargalo.
-A `SessionSpec` que ele recebe é:
+The only thing an agent decides here is **which operations** attack the
+bottleneck. The `SessionSpec` it receives is:
 
-- `instructions` — o contrato de saída: os cinco tipos de operação
-  ([§3 de `entities-versioning.md`](entities-versioning.md), nenhum tipo
-  novo), a exigência da inversa, e o arquivo a escrever;
-- `prompt` — os nós e arestas da versão que rodou, mais a tabela de medição da
-  execução com o gargalo apontado;
-- `workingDir` — um diretório de rascunho, que é o único lugar que a sessão
-  toca.
+- `instructions` — the output contract: the five operation types
+  ([§3 of `entities-versioning.md`](entities-versioning.md), no new type), the
+  requirement of the inverse, and the file to write;
+- `prompt` — the nodes and edges of the version that ran, plus the execution's
+  measurement table with the bottleneck pointed out;
+- `workingDir` — a draft directory, which is the only place the session touches.
 
-A saída é o arquivo `proposta-topografo.json`, com a forma `{"operations": [...]}`
-e nada mais. Arquivo, e não stdout, porque a saída de uma CLI real é um fluxo de
-quadros com prosa no meio ([`human-escalation.md` §4](human-escalation.md)) —
-um contrato que sobrevive a isso é o que a sessão cumpre com uma escrita só.
+The output is the file `proposta-topografo.json`, with the shape
+`{"operations": [...]}` and nothing else. A file, and not stdout, because the
+output of a real CLI is a stream of frames with prose in between
+([`human-escalation.md` §4](human-escalation.md)) — a contract that survives that
+is one the session fulfils with a single write.
 
-A sessão **não** recebe URL do control plane, credencial nem acesso de escrita a
-mais nada. O único `POST` desta camada é o do orquestrador.
+The session receives **no** control plane URL, no credential and no write access
+to anything else. The only `POST` in this layer is the orchestrator's.
 
 ---
 
-## 6. A ordem de uma rodada
+## 6. The order of a round
 
 ```
-resolver versão da execução      (GET /v1/executions/:id/metrics-by-version)
+resolve the execution's version   (GET /v1/executions/:id/metrics-by-version)
         │
-        ├─ nenhuma versão declarada ──▶ erro, nada gravado
+        ├─ no version declared ──▶ error, nothing written
         ▼
-ler o snapshot da versão          (GET /v1/graph-versions/:id)
-ler o log inteiro da execução     (GET /v1/executions/:id/events)
+read the version's snapshot       (GET /v1/graph-versions/:id)
+read the execution's whole log    (GET /v1/executions/:id/events)
         ▼
-calcularMetricasDeFluxo(eventos, nós do snapshot)
+calcularMetricasDeFluxo(events, the snapshot's nodes)
         │
-        ├─ gargalo == null ──▶ sai 0, SEM abrir sessão e SEM propor nada
+        ├─ gargalo == null ──▶ exit 0, WITHOUT opening a session and WITHOUT proposing anything
         ▼
-montar evidência + métrica esperada   (nosso código, determinístico)
+assemble the evidence + the expected metric   (our code, deterministic)
         ▼
-uma sessão de EngineAdapter escolhe as operações
+one EngineAdapter session picks the operations
         │
-        ├─ falhou / estourou o relógio / arquivo ausente / `operations` vazias
-        │  ou malformadas ──▶ erro, ZERO chamadas a POST /v1/proposals
+        ├─ failed / ran out of clock / file absent / `operations` empty
+        │  or malformed ──▶ error, ZERO calls to POST /v1/proposals
         ▼
-POST /v1/proposals  (exatamente uma vez)  ──▶  proposta `pendente`
+POST /v1/proposals  (exactly once)  ──▶  a `pendente` proposal
 ```
 
-Três garantias que o desenho compra, e que os testes de aceite cobram:
+Three guarantees the design buys, and that the acceptance tests demand:
 
-1. **Zero escrita numa rodada ruim.** As operações são validadas do lado do
-   cliente, com as mesmas regras estruturais do servidor, ANTES do `POST`. O
-   servidor continua sendo a autoridade — ele valida de novo — mas descobrir um
-   diff malformado não custa uma linha no banco.
-2. **Exatamente uma proposta por rodada.** Não há laço, não há retry silencioso.
-3. **Nada é aplicado.** Não existe chamada a `POST /v1/proposals/:id/apply`
-   nesta camada, e o cliente do runner nem sequer tem o método: aplicar é
-   decisão humana (README, princípio 5), e um cliente que não tem o botão não o
-   aperta por engano.
+1. **Zero writes on a bad round.** The operations are validated on the client
+   side, with the server's own structural rules, BEFORE the `POST`. The server is
+   still the authority — it validates again — but finding a malformed diff does
+   not cost a row in the database.
+2. **Exactly one proposal per round.** There is no loop and no silent retry.
+3. **Nothing is applied.** There is no call to `POST /v1/proposals/:id/apply` in
+   this layer, and the runner's client does not even have the method: applying is
+   a human decision (README, principle 5), and a client that does not have the
+   button does not press it by mistake.
 
-A versão-alvo é a versão sob a qual a execução **rodou** — é sobre ela que a
-evidência fala. Se o grafo andou desde então, a proposta continua no livro e é o
-`aplicar` que recusa com `409 proposta_desatualizada`; refazer o diff sobre a
-base nova é trabalho de outra rodada ([t118](entities-versioning.md)).
+The target version is the version the execution **ran** under — it is the one the
+evidence speaks about. If the graph has moved since then, the proposal stays in
+the ledger and it is `aplicar` that refuses with `409 proposta_desatualizada`;
+redoing the diff over the new base is another round's work
+([t118](entities-versioning.md)).
 
 ---
 
-## 7. Endpoints e comando
+## 7. Endpoints and command
 
-| Método | Rota | Papel nesta camada |
+| Method | Route | Role in this layer |
 |---|---|---|
-| `GET` | `/v1/executions/:id/events` | **Novo (t110).** O log inteiro da execução, em ordem de `id`. Execução sem evento nenhum responde `200` com lista vazia — execução é agrupador opaco, nunca entidade, então não há `404`. |
-| `GET` | `/v1/executions/:id/metrics-by-version` | Sob que versão a rodada correu (o log não carrega `graph_version_id`). |
-| `GET` | `/v1/graph-versions/:id` | O snapshot: os nós que a medição reporta e as arestas que vão no prompt. |
-| `POST` | `/v1/proposals` | A única escrita. Devolve `201` com a proposta `pendente`. |
+| `GET` | `/v1/executions/:id/events` | **New (t110).** The execution's whole log, in `id` order. An execution with no event at all answers `200` with an empty list — an execution is an opaque grouper, never an entity, so there is no `404`. |
+| `GET` | `/v1/executions/:id/metrics-by-version` | Which version the round ran under (the log does not carry `graph_version_id`). |
+| `GET` | `/v1/graph-versions/:id` | The snapshot: the nodes the measurement reports and the edges that go into the prompt. |
+| `POST` | `/v1/proposals` | The only write. Returns `201` with the `pendente` proposal. |
 
-Do lado do runner, tudo isso passa por `ClienteControle`
+On the runner's side, all of that goes through `ClienteControle`
 ([`cliente-controle.ts`](../../packages/runner/src/controller/cliente-controle.ts)),
-que continua sendo a única porta HTTP do processo.
+which is still the process's only HTTP door.
 
-O comando é manual, e é assim de propósito (§8):
+The command is manual, and it is that way on purpose (§8):
 
 ```
 npm run surveyor --workspace @cartografo/runner -- <execution_id> [url] [dir] [--token <token>]
 ```
 
-A credencial não é opcional na prática: desde a `t124` nenhuma rota de `/v1`
-responde anônima, e as quatro que este comando usa recusam com `401`. Ela vem
-de `--token` ou de `CARTOGRAFO_TOKEN` — mesma precedência da CLI `cartografo`
-([`cli/url.ts`](../../packages/core/src/cli/url.ts)) e do topógrafo de custo —,
-e é o token impresso na linha de prontidão da primeira partida do control
-plane. Sem ela o comando não degrada: ele é negado, e diz numa linha o que
-fazer a respeito.
+The credential is not optional in practice: since `t124` no `/v1` route answers
+anonymously, and the four this command uses refuse with `401`. It comes from
+`--token` or from `CARTOGRAFO_TOKEN` — the same precedence as the `cartografo`
+CLI ([`cli/url.ts`](../../packages/core/src/cli/url.ts)) and the cost topografo —,
+and it is the token printed on the readiness line of the control plane's first
+start. Without it the command does not degrade: it is denied, and it says in one
+line what to do about it.
 
-Códigos de saída: `0` quando gravou a proposta (o id vai para stdout) **ou**
-quando não havia o que propor; `1` quando a sessão falhou, não devolveu
-`operations` utilizáveis ou teve a credencial recusada — e nesse caso nada foi
-gravado.
+Exit codes: `0` when it wrote the proposal (the id goes to stdout) **or** when
+there was nothing to propose; `1` when the session failed, did not return usable
+`operations` or had its credential refused — and in that case nothing was
+written.
 
-A prova manual contra a CLI real é
+The manual proof against the real CLI is
 [`scripts/spike-surveyor-flow.mjs`](../../packages/runner/scripts/spike-surveyor-flow.mjs)
-(`npm run spike:surveyor`): ela sobe um control plane de verdade, faz um
-trabalho atravessar dois nós com duas sessões `claude` reais, bloqueia e
-desbloqueia o trabalho, e só então roda o topógrafo. Não é teste de CI e não
-deve virar um — a suíte roda contra o fake engine justamente para não depender
-de binário instalado. Ela não pede nada do ambiente: como sobe o próprio
-control plane contra um banco novo, o token que apresenta em toda chamada é o
-que aquela partida imprimiu.
+(`npm run spike:surveyor`): it brings up a real control plane, makes a job cross
+two nodes with two real `claude` sessions, blocks and unblocks the job, and only
+then runs the topografo. It is not a CI test and must not become one — the suite
+runs against the fake engine precisely so as not to depend on an installed
+binary. It asks nothing of the environment: since it brings up its own control
+plane against a fresh database, the token it presents on every call is the one
+that start printed.
 
 ---
 
-## 8. O que esta camada ainda não faz
+## 8. What this layer does not do yet
 
-Cada item aqui é escopo declarado de outra ficha, não esquecimento:
+Every item here is another ticket's declared scope, not an oversight:
 
-- **Disparo automático — existe, e continua sendo alguém que o liga** (`t247`,
-  terceiro filho da [D21]). `cartografo-topografo watch`
-  ([`packages/topografo`](../../packages/topografo)) assina
+- **Automatic firing — it exists, and it is still somebody who switches it on**
+  (`t247`, [D21]'s third child). `cartografo-topografo watch`
+  ([`packages/topografo`](../../packages/topografo)) subscribes to
   `GET /v1/events/stream?type=execution.finished`
-  ([events-stream.md](events-stream.md)) e roda as duas lentes — esta e a de
-  custo — sobre cada execução que o control plane declara terminada, sem
-  ninguém digitar id nenhum. O que mudou é QUEM chama a lente; o resto da
-  escada está intacto: o topógrafo continua não sendo nó do grafo nem passo do
-  laço de despacho do controller, e continua só *sugerindo* — aplicar segue
-  sendo decisão humana no portão (princípio 5 do README, postura de "copiloto
-  no MVP" da [D10]). O que o `watch` não faz é subir sozinho: nenhum script de
-  partida, serviço ou job de CI o invoca, e ligá-lo em produção é decisão de
-  quem opera, como a [D21] pediu.
-- **A superfície aprendível "políticas"** (timeouts, concorrência,
-  auto-resposta): hoje não existe artefato versionado a que uma proposta possa
-  se dirigir — `schema/grafo.schema.json` não tem campo de política, e os tetos
-  e TTL do runner são parâmetros por requisição
+  ([events-stream.md](events-stream.md)) and runs both lenses — this one and the
+  cost one — over every execution the control plane declares finished, with
+  nobody typing any id. What changed is WHO calls the lens; the rest of the
+  ladder is intact: the topografo is still not a node of the graph and not a step
+  of the controller's dispatch loop, and it still only *suggests* — applying is
+  still a human decision at the gate (principle 5 of the README, [D10]'s "a
+  copilot in the MVP" posture). What `watch` does not do is bring itself up: no
+  startup script, service or CI job invokes it, and switching it on in production
+  is the operator's decision, as [D21] asked.
+- **The learnable "policies" surface** (timeouts, concurrency, auto-answering):
+  today there is no versioned artifact a proposal could address —
+  `schema/grafo.schema.json` has no policy field, and the runner's caps and TTLs
+  are per-request parameters
   ([`runner-and-controller.md` §5](runner-and-controller.md)).
-- **Um segundo topógrafo** (custo, qualidade) e o congelamento do formato de
-  proposta: a regra dos dois consumidores pede dois antes de congelar
+- **A second topografo** (cost, quality) and freezing the proposal format: the
+  rule of two consumers asks for two before freezing
   ([`extensao-e-qualidade.md`](../../notas/2026-08-14-extensao-e-qualidade.md)).
-- **`resultado` da hipótese** (`confirmada`/`sem_efeito`/`piorou`): é `t112`, e
-  já existe — só não é esta camada que o chama.
-- **Aprovação ou rejeição humana** como ação (`t111`), e **variantes** a partir
-  de proposta (`t118`).
-- **Eventos `proposta.*`**: a taxonomia adiou esses tipos para ficha própria da
-  onda 2 ([`taxonomia.md`](../../especificacoes/eventos/taxonomia.md)), então
-  uma rodada do topógrafo não emite telemetria sobre si mesma.
-- **Concorrência** entre dois topógrafos na mesma execução: a v1 assume invocação
-  manual única.
-- **Escopo de credencial** na rota nova e no comando. A `t124` autenticou todas
-  as rotas de `/v1`, esta inclusive, e o comando apresenta o token
-  (`CARTOGRAFO_TOKEN` ou `--token`, §7 — foi a `t146` que fechou essa metade);
-  o que ele apresenta é credencial de operador, porque as quatro rotas do
-  topógrafo estão fora da superfície que a `t143` abriu para credencial de
-  runner. Recortar uma credencial que alcance exatamente estas rotas é outra
-  ficha.
+- **The hypothesis's `resultado`** (`confirmada`/`sem_efeito`/`piorou`): that is
+  `t112`, and it exists already — it is only that this layer is not the one that
+  calls it.
+- **Human approval or rejection** as an action (`t111`), and **variants** born of
+  a proposal (`t118`).
+- **`proposta.*` events**: the taxonomy deferred those types to a ticket of its
+  own in wave 2
+  ([`taxonomia.md`](../../especificacoes/eventos/taxonomia.md)), so a topografo
+  round emits no telemetry about itself.
+- **Concurrency** between two topografos on the same execution: v1 assumes a
+  single manual invocation.
+- **Credential scope** on the new route and in the command. `t124` authenticated
+  every `/v1` route, this one included, and the command presents the token
+  (`CARTOGRAFO_TOKEN` or `--token`, §7 — it was `t146` that closed that half);
+  what it presents is an operator credential, because the topografo's four routes
+  are outside the surface `t143` opened to a runner credential. Cutting a
+  credential that reaches exactly these routes is another ticket.
 
 [D10]: ../../DECISIONS.md
 [D11]: ../../DECISIONS.md

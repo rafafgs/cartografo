@@ -1,248 +1,255 @@
-# Especificação: geração do rascunho de intake, do pedido à quebra proposta
+# Specification: generating the intake draft, from the request to the proposed breakdown
 
-**Versão da API:** `v1` · **Implementação:** [`packages/runner/src/intake/`](../../packages/runner/src/intake)
-**Camada consumida:** [`docs/spec/intake.md`](./intake.md) (t122) — esta ficha não
-acrescenta rota, coluna nem migração; ela é o primeiro cliente que **produz**
+**API version:** `v1` · **Implementation:** [`packages/runner/src/intake/`](../../packages/runner/src/intake)
+**Layer consumed:** [`docs/spec/intake.md`](./intake.md) (t122) — this ticket adds
+no route, no column and no migration; it is the first client that **produces**
 `items`
 
-A [t122](./intake.md) entregou o intake em duas fases: `POST /v1/intake` propõe
-um rascunho a partir de uma lista de `items` já decomposta, e
-`POST /v1/intake/:id/confirmations` é o portão humano que transforma o rascunho
-em `trabalho`. O §8 daquela especificação nomeava exatamente o que faltava —
-*gerar o rascunho a partir do pedido em linguagem natural* — e dizia que quem
-escreve `items` era decisão de ficha futura. Esta é a ficha futura.
+[t122](./intake.md) delivered intake in two phases: `POST /v1/intake` proposes a
+draft from an already decomposed list of `items`, and
+`POST /v1/intake/:id/confirmations` is the human gate that turns the draft into
+`trabalho`. §8 of that specification named exactly what was missing — *generating
+the draft from the request in natural language* — and said that whoever writes
+`items` was a future ticket's decision. This is the future ticket.
 
-Uma frase resume o desenho: **a sessão decompõe, o comando grava o rascunho, e o
-humano continua sendo quem confirma.** Nada aqui cria ticket.
+One sentence sums up the design: **the session decomposes, the command writes the
+draft, and the human is still the one who confirms.** Nothing here creates a
+ticket.
 
 ---
 
-## 1. As quatro partes
+## 1. The four parts
 
-| Parte | Onde | O que faz | Determinística? |
+| Part | Where | What it does | Deterministic? |
 |---|---|---|---|
-| Prompt | [`prompt.ts`](../../packages/runner/src/intake/prompt.ts) | Monta o contrato inteiro da sessão: papel, regras duras, formato do item. | Sim: função pura. |
-| Orquestrador | [`generate.ts`](../../packages/runner/src/intake/generate.ts) | Recusa classe desconhecida, despacha **uma** sessão, lê o arquivo, grava o rascunho. | Tudo menos a sessão. |
-| Linha de comando | [`command-line.ts`](../../packages/runner/src/intake/command-line.ts) | argv, ambiente, credencial, as duas portas e a mensagem de recusa. | Sim. |
-| Entrypoint | [`cli.mjs`](../../packages/runner/src/intake/cli.mjs) | Engine, diretório de rascunho, stdout e código de saída. | — |
+| Prompt | [`prompt.ts`](../../packages/runner/src/intake/prompt.ts) | Assembles the session's whole contract: the role, the hard rules, the item's format. | Yes: a pure function. |
+| Orchestrator | [`generate.ts`](../../packages/runner/src/intake/generate.ts) | Refuses an unknown class, dispatches **one** session, reads the file, writes the draft. | Everything but the session. |
+| Command line | [`command-line.ts`](../../packages/runner/src/intake/command-line.ts) | argv, the environment, the credential, the two ports and the refusal message. | Yes. |
+| Entrypoint | [`cli.mjs`](../../packages/runner/src/intake/cli.mjs) | The engine, the draft directory, stdout and the exit code. | — |
 
-A divisão é a mesma do topógrafo (t146) e do sintetizador, pela razão que
-`synthesize.ts` registra: **o que um teste alcança sem subir um processo é o que
-continua coberto.** Por isso a leitura do argv não mora no `.mjs`.
+The split is the topografo's (t146) and the synthesizer's, for the reason
+`synthesize.ts` records: **what a test reaches without starting a process is what
+stays covered.** That is why reading argv does not live in the `.mjs`.
 
 ---
 
-## 2. O comando
+## 2. The command
 
 ```
 npm run intake --workspace @cartografo/runner -- \
-  "<pedido>" --class <nome> \
-  [--url <url>] [--dir <caminho>] [--token <token>]
+  "<request>" --class <name> \
+  [--url <url>] [--dir <path>] [--token <token>]
 ```
 
-| Argumento | Obrigatório | Default | Papel |
+| Argument | Required | Default | Role |
 |---|---|---|---|
-| `<pedido>` | sim (posicional) | — | O pedido em linguagem natural, como a pessoa o descreve. |
-| `--class` | **sim** | — | A classe **já registrada** cujo grafo os tickets vão atravessar. |
-| `--url` | não | `http://127.0.0.1:4317` | Control plane. |
-| `--dir` | não | um diretório temporário | Onde a sessão roda e escreve a resposta. |
-| `--token` | não | `CARTOGRAFO_TOKEN` do ambiente | Credencial do control plane. |
+| `<request>` | yes (positional) | — | The request in natural language, as the person describes it. |
+| `--class` | **yes** | — | The **already registered** class whose graph the tickets will cross. |
+| `--url` | no | `http://127.0.0.1:4317` | The control plane. |
+| `--dir` | no | a temporary directory | Where the session runs and writes its answer. |
+| `--token` | no | `CARTOGRAFO_TOKEN` from the environment | The control plane credential. |
 
-A precedência da credencial é `--token` > `CARTOGRAFO_TOKEN` > nenhuma, a mesma
-de [`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts), do
-topógrafo de custo, do topógrafo de fluxo e do sintetizador. Sem credencial
-nenhuma o cliente não manda cabeçalho e toma `401` — cabeçalho vazio se pareceria
-com credencial. Isto está aqui desde o primeiro commit por causa da
-[t146](./topografo-flow.md): o topógrafo nasceu sem flag de token e ficou
-inteiramente inutilizável até ganhar uma.
+The credential's precedence is `--token` > `CARTOGRAFO_TOKEN` > none, the same as
+[`packages/core/src/cli/url.ts`](../../packages/core/src/cli/url.ts), the cost
+topografo, the flow topografo and the synthesizer. With no credential at all the
+client sends no header and takes a `401` — an empty header would look like a
+credential. This has been here since the first commit because of
+[t146](./topografo-flow.md): the topografo was born with no token flag and was
+entirely unusable until it got one.
 
-Os códigos de saída são o contrato, porque é isso que uma pessoa (ou um script)
-lê:
+The exit codes are the contract, because that is what a person (or a script)
+reads:
 
-- **`0`** — um rascunho foi proposto. O id é a primeira linha do stdout;
-- **`1`** — rodou e não deu: classe não registrada, sessão morta, arquivo
-  inutilizável, ou o control plane recusou a escrita. **Nada foi gravado**;
-- **`2`** — o comando foi digitado errado. Nada rodou.
+- **`0`** — a draft was proposed. The id is the first line of stdout;
+- **`1`** — it ran and did not work out: the class is not registered, the session
+  died, the file is unusable, or the control plane refused the write. **Nothing
+  was written**;
+- **`2`** — the command was typed wrong. Nothing ran.
 
-`1` e `2` são separados de propósito, como no sintetizador: quem não distingue "a
-sua linha de comando está errada" de "a sessão falhou" não consegue decidir se
-faz sentido tentar de novo.
+`1` and `2` are separate on purpose, as in the synthesizer: whoever cannot tell
+"your command line is wrong" from "the session failed" cannot decide whether
+trying again makes sense.
 
 ---
 
-## 3. A ordem de uma rodada
+## 3. The order of a round
 
 ```
 GET /v1/classes
         │
-        ├─ a classe de --class NÃO está registrada ──▶ sai 1, SEM abrir sessão
+        ├─ the class in --class is NOT registered ──▶ exit 1, WITHOUT opening a session
         ▼
-UMA sessão de EngineAdapter, com o prompt do §5
+ONE EngineAdapter session, with §5's prompt
         │
         ├─ status != completed
-        ├─ intake-proposto.json ausente, ou não é JSON
-        ├─ sem `items`, ou `items` vazio
-        │  ──▶ sai 1, NENHUM POST /v1/intake
+        ├─ intake-proposto.json absent, or not JSON
+        ├─ no `items`, or `items` empty
+        │  ──▶ exit 1, NO POST /v1/intake
         ▼
 POST /v1/intake  {class, request, items}
         │
-        ├─ 404 unknown_graph · 400 invalid_items ──▶ sai 1
+        ├─ 404 unknown_graph · 400 invalid_items ──▶ exit 1
         ▼
-201 {rascunho} — status `pendente`, nenhum evento, nenhum ticket
+201 {rascunho} — status `pendente`, no event, no ticket
         ▼
-imprime o id  ──▶  fim. Confirmar é do humano.
+prints the id  ──▶  done. Confirming is the human's.
 ```
 
-A primeira etapa é decisão, não acaso: a recusa de classe desconhecida vem
-**antes** de qualquer sessão, espelhando a ordem que o sintetizador aplica à sua
-própria pré-checagem. Descobrir um erro de digitação em `--class` depois de
-gastar uma sessão inteira é descobrir tarde. O código de erro ecoa o da API
+The first step is a decision, not an accident: refusing an unknown class comes
+**before** any session, mirroring the order the synthesizer applies to its own
+pre-check. Finding a typo in `--class` after spending a whole session is finding
+it late. The error code echoes the API's
 (`grafo_desconhecido`, [`routes/intake.ts`](../../packages/core/src/routes/intake.ts))
-para que as duas recusas sejam obviamente a mesma recusa.
+so that the two refusals are obviously the same refusal.
 
-A sonda do engine (`verifyCli`) roda **preguiçosamente**, na primeira sessão, e
-não na entrada do comando. Sondar antes tornaria a recusa de classe dependente de
-ter a CLI instalada, o que trocaria uma mensagem exata por outra genérica em
-exatamente o caso mais comum.
+The engine's probe (`verifyCli`) runs **lazily**, on the first session, and not at
+the command's entrance. Probing first would make the class refusal depend on
+having the CLI installed, which would trade an exact message for a generic one in
+exactly the most common case.
 
 ---
 
-## 4. Por que este comando grava, e o sintetizador não
+## 4. Why this command writes, and the synthesizer does not
 
-O repositório já tinha dois precedentes de "uma sessão de agente entre um pedido
-e uma escrita no control plane", e eles decidiram diferente **de propósito**:
+The repository already had two precedents for "an agent session between a request
+and a write to the control plane", and they decided differently **on purpose**:
 
-| Ficha | O que a sessão produz | Quem grava | Por quê |
+| Ticket | What the session produces | Who writes | Why |
 |---|---|---|---|
-| Sintetizador ([t115](./synthesizer.md), [D10](../../DECISIONS.md)) | Um arquivo de rascunho local | Uma pessoa, rodando `cartografo import` | Registrar grafo não tem desfazer no nível da API: **a importação É o portão**. |
-| Topógrafo ([t110](./topografo-flow.md)) | Operações de um diff semântico | O próprio comando, em `POST /v1/proposals` | Proposta nasce `pendente` e ninguém aplica: a escada de segurança é a **ausência** de um método `aplicar` no cliente. |
+| Synthesizer ([t115](./synthesizer.md), [D10](../../DECISIONS.md)) | A local draft file | A person, running `cartografo import` | Registering a graph has no undo at the API level: **the import IS the gate**. |
+| Topografo ([t110](./topografo-flow.md)) | The operations of a semantic diff | The command itself, in `POST /v1/proposals` | A proposal is born `pendente` and nobody applies it: the safety ladder is the **absence** of an `apply` method in the client. |
 
-O intake segue o topógrafo, e a razão é o desenho da própria t122: o rascunho
-nasce `pendente`, é livremente editável por `PATCH`, descartável por `/discards`,
-**não emite evento nenhum**, e só vira trabalho em `/confirmations`
-([§1](./intake.md)). O portão humano já está lá. Parar num arquivo para alguém
-submeter à mão não acrescentaria um segundo portão — duplicaria o primeiro.
+Intake follows the topografo, and the reason is t122's own design: the draft is
+born `pendente`, is freely editable by `PATCH`, discardable by `/discards`,
+**emits no event at all**, and only becomes work at `/confirmations`
+([§1](./intake.md)). The human gate is already there. Stopping at a file for
+somebody to submit by hand would not add a second gate — it would duplicate the
+first.
 
-A consequência disso no cliente HTTP é literal: ele ganhou `criarIntake` e mais
-nada. Não existe `confirmarIntake`, `emendarIntake` nem `descartarIntake` em
+The consequence in the HTTP client is literal: it gained `criarIntake` and
+nothing else. There is no `confirmarIntake`, `emendarIntake` or `descartarIntake`
+in
 [`cliente-controle.ts`](../../packages/runner/src/controller/cliente-controle.ts),
-pela mesma razão que `aplicar` nunca entrou: **um cliente que não tem o método não
-toma a decisão por engano.**
+for the same reason `aplicar` never went in: **a client that does not have the
+method does not take the decision by mistake.**
 
 ---
 
-## 5. A sessão: um turno, um arquivo, nenhum privilégio
+## 5. The session: one turn, one file, no privilege
 
-A `SessionSpec` segue a regra normativa do
-[EngineAdapter](../formatos/engine-adapter.md): `instructions` e `prompt` nunca
-chegam concatenados pelo chamador.
+The `SessionSpec` follows the normative rule of the
+[EngineAdapter](../formatos/engine-adapter.md): `instructions` and `prompt` never
+arrive concatenated by the caller.
 
-- **`instructions`** — o papel e as regras duras do item, listadas no §6.
-- **`prompt`** — o pedido **verbatim**, a classe alvo, e o contrato de saída
-  repetido. O pedido não é resumido no caminho de entrada: `pedido` é gravado ao
-  lado do lote, e quem refina depois lê o original, não uma paráfrase.
-- **`workingDir`** — um diretório temporário. A sessão não recebe URL do control
-  plane, nem credencial, nem acesso de escrita a mais nada. O único `POST` desta
-  ficha é o do orquestrador.
+- **`instructions`** — the role and the item's hard rules, listed in §6.
+- **`prompt`** — the request **verbatim**, the target class, and the output
+  contract repeated. The request is not summarized on the way in: `pedido` is
+  written down beside the batch, and whoever refines later reads the original,
+  not a paraphrase.
+- **`workingDir`** — a temporary directory. The session receives no control plane
+  URL, no credential and no write access to anything else. The only `POST` in
+  this ticket is the orchestrator's.
 
-### O contrato de saída é um arquivo, não um bloco cercado
+### The output contract is a file, not a fenced block
 
-A sessão escreve `intake-proposto.json` no diretório atual, com exatamente:
+The session writes `intake-proposto.json` in the current directory, with exactly:
 
 ```json
 {"items": [ ... ]}
 ```
 
-Arquivo e não bloco ` ```cercado ``` ` em stdout, e isto é a cicatriz da
-[t148](./synthesizer.md): a saída de uma CLI real é um fluxo de quadros
-`stream-json`, um por linha, então as aspas do bloco chegam como `\"` e as
-quebras como `\n` — e o varredor de cerca não casa com nenhuma das duas. Custou
-ao sintetizador uma rodada inteira de execuções reais com todos os testes de
-engine falso verdes. Nada aqui precisa observar a saída enquanto ela flui, então
-o contrato que sobrevive é o que a sessão cumpre com **uma escrita**.
+A file and not a ` ```fenced``` ` block on stdout, and this is the scar of
+[t148](./synthesizer.md): the output of a real CLI is a stream of `stream-json`
+frames, one per line, so the block's quotes arrive as `\"` and its breaks as `\n`
+— and the fence scanner matches neither. It cost the synthesizer a whole round of
+real executions with every fake-engine test green. Nothing here needs to watch
+the output as it flows, so the contract that survives is the one the session
+fulfils with **one write**.
 
-É a mesma escolha de `proposta-topografo.json`
-([`surveyor/proposal.ts`](../../packages/runner/src/surveyor/proposal.ts)), pela
-mesma razão.
+It is the same choice as `proposta-topografo.json`
+([`surveyor/proposal.ts`](../../packages/runner/src/surveyor/proposal.ts)), for
+the same reason.
 
 ---
 
-## 6. O que o prompt ensina, e por que ele precisa ensinar tudo
+## 6. What the prompt teaches, and why it has to teach everything
 
-`workingDir` é um diretório temporário vazio: a sessão **não consegue abrir**
-[`domain/intake.ts`](../../packages/core/src/domain/intake.ts). Toda regra que
-`validateItems` aplica e que o prompt não diz é uma regra que a sessão não tem
-como seguir — e a conta chega como um `invalid_items` que ninguém pediu. É a
-mesma lição da t138, um andar acima.
+`workingDir` is an empty temporary directory: the session **cannot open**
+[`domain/intake.ts`](../../packages/core/src/domain/intake.ts). Every rule
+`validateItems` applies and the prompt does not state is a rule the session has
+no way of following — and the bill arrives as an `invalid_items` nobody asked
+for. It is t138's lesson, one floor up.
 
-Então o prompt diz, por extenso:
+So the prompt says, in full:
 
-| Regra | Código que reprova |
+| Rule | The code that fails it |
 |---|---|
-| `ref` e `title` são obrigatórios | `missing_required_field` |
-| `ref` é identidade **local ao lote**, nunca um id real | — (morre na confirmação) |
-| dois itens nunca usam o mesmo `ref` | `duplicate_ref` |
-| `depends_on` cita só `ref` deste lote | `unknown_dependency` |
-| nenhum item depende de si mesmo | `self_dependency` |
-| as dependências não fecham ciclo (diamante pode) | `dependency_cycle` |
-| `acceptance_criteria` só quando houver critério de verdade | — |
-| `tier` só `"trivial"` ou `"standard"`, e omitir é permitido | `invalid_field` |
+| `ref` and `title` are required | `missing_required_field` |
+| `ref` is an identity **local to the batch**, never a real id | — (it dies at confirmation) |
+| two items never use the same `ref` | `duplicate_ref` |
+| `depends_on` cites only a `ref` of this batch | `unknown_dependency` |
+| no item depends on itself | `self_dependency` |
+| the dependencies close no cycle (a diamond is fine) | `dependency_cycle` |
+| `acceptance_criteria` only when there really is a criterion | — |
+| `tier` only `"trivial"` or `"standard"`, and omitting it is allowed | `invalid_field` |
 
-A penúltima é a que mais engana e por isso é dita com ênfase: **`null` não é `[]`**
-([`domain/intake.ts:34-43`](../../packages/core/src/domain/intake.ts)). "Ninguém
-escreveu critério ainda" e "declarei que não há critério" são afirmações
-diferentes, e o nó que refina é justamente quem precisa distinguir as duas. Uma
-lista vazia passa na validação e mente para o resto do grafo — o pior tipo de
-erro, porque não aparece.
+The second to last is the one that misleads most and is therefore said with
+emphasis: **`null` is not `[]`**
+([`domain/intake.ts:34-43`](../../packages/core/src/domain/intake.ts)). "Nobody
+has written a criterion yet" and "I declare there is no criterion" are different
+statements, and the node that refines is precisely the one that needs to tell
+them apart. An empty list passes validation and lies to the rest of the graph —
+the worst kind of error, because it does not show.
 
-A última entrou com a t175 e é a razão de a triagem ser **de graça**: esta
-sessão já está lendo o pedido e propondo a quebra, então pedir a ela que também
-classifique cada item não custa sessão nova, chamada nova, nem modelo novo. O
-prompt ensina os dois valores e onde fica a linha — `trivial` para rename,
-typo, mudança só de documentação, ajuste de configuração sem decisão de design
-dentro; `standard` para todo o resto, e `standard` na dúvida. Omitir continua
-válido e significa "ninguém classificou", que **não** é `trivial`: quem omite
-deixa a decisão em aberto, quem escreve `trivial` afirma que o item é pequeno, e
-é essa afirmação que faz o runner rodar aquele nó num modelo mais barato.
+The last one arrived with t175 and is the reason the triage is **free**: this
+session is already reading the request and proposing the breakdown, so asking it
+to classify each item as well costs no new session, no new call and no new model.
+The prompt teaches both values and where the line sits — `trivial` for a rename,
+a typo, a documentation-only change, a configuration tweak with no design
+decision inside; `standard` for everything else, and `standard` when in doubt.
+Omitting it is still valid and means "nobody classified this", which is **not**
+`trivial`: whoever omits leaves the decision open, whoever writes `trivial`
+asserts the item is small, and it is that assertion that makes the runner run
+that node on a cheaper model.
 
 ---
 
-## 7. O que este comando NÃO valida
+## 7. What this command does NOT validate
 
-`generate.ts` não espelha `validateItems`. É uma diferença deliberada em relação
-ao topógrafo, que espelha `validateOperation` do lado do runner:
+`generate.ts` does not mirror `validateItems`. It is a deliberate difference from
+the topografo, which does mirror `validateOperation` on the runner's side:
 
-- uma `POST /v1/proposals` ruim é cara de ter feito — por isso o topógrafo checa
-  a forma antes de gastar a escrita;
-- uma `POST /v1/intake` ruim é **barata e reversível**: o rascunho é descartado,
-  nenhum ticket nasceu, nenhum evento foi emitido. E o server já devolve o
-  relatório inteiro (`invalid_items` com todos os problemas, nunca o primeiro).
+- a bad `POST /v1/proposals` is expensive to have made — which is why the
+  topografo checks the shape before spending the write;
+- a bad `POST /v1/intake` is **cheap and reversible**: the draft is discarded, no
+  ticket was born, no event was emitted. And the server already returns the whole
+  report (`invalid_items` with every problem, never just the first).
 
-Duplicar aquele julgamento aqui seria uma segunda cópia que pode divergir da
-primeira, e a pessoa ficaria com dois veredictos para reconciliar.
+Duplicating that judgement here would be a second copy that can diverge from the
+first, and the person would be left with two verdicts to reconcile.
 
 ---
 
 ## 8. Endpoints
 
-| Método | Rota | Papel nesta camada |
+| Method | Route | Role in this layer |
 |---|---|---|
-| `GET` | `/v1/classes` | A classe está registrada? Se não está, o comando recusa antes de qualquer sessão. |
-| `POST` | `/v1/intake` | A única escrita. Devolve `201 {rascunho}`, sempre `pendente`. |
+| `GET` | `/v1/classes` | Is the class registered? If it is not, the command refuses before any session. |
+| `POST` | `/v1/intake` | The only write. Returns `201 {rascunho}`, always `pendente`. |
 
-Uma leitura e uma escrita. `/confirmations`, `/discards` e `PATCH` existem
-([§6 da t122](./intake.md)) e **não** são chamados daqui.
+One read and one write. `/confirmations`, `/discards` and `PATCH` exist
+([§6 of t122](./intake.md)) and are **not** called from here.
 
 ---
 
-## 9. Fora de escopo, e por quê
+## 9. Out of scope, and why
 
-| Não faz | Por quê |
+| Does not do | Why |
 |---|---|
-| Confirmar, emendar ou descartar o rascunho | É o portão humano da t122, intacto. O cliente nem tem os métodos. |
-| Revalidar `items` do lado do runner | §7. |
-| `--projeto-id` / `--execucao-id` | A rota tem default para os dois (`DEFAULT_PROJECT`); o flag entra no dia em que alguém precisar. |
-| Entrar na travessia ou no laço de despacho do runner | Manual e de um tiro só, como `synthesize` e o topógrafo (README, princípio 5). |
-| Conversa multi-turno para refinar o lote | Uma sessão só: retomada está fora do `EngineAdapter` v0. Editar depois é `PATCH /v1/intake/:id`, que já existe. |
-| Sugerir a classe por semelhança | [D8](../../DECISIONS.md) põe o nome na mão do usuário, e a classe aqui precisa já existir. |
-| Tela | Só CLI, como os outros comandos do runner. |
+| Confirm, amend or discard the draft | That is t122's human gate, intact. The client does not even have the methods. |
+| Revalidate `items` on the runner's side | §7. |
+| `--projeto-id` / `--execucao-id` | The route has a default for both (`DEFAULT_PROJECT`); the flag arrives the day somebody needs it. |
+| Join the traversal or the runner's dispatch loop | Manual and one-shot, like `synthesize` and the topografo (README, principle 5). |
+| A multi-turn conversation to refine the batch | One session only: resuming is outside `EngineAdapter` v0. Editing afterwards is `PATCH /v1/intake/:id`, which already exists. |
+| Suggest the class by resemblance | [D8](../../DECISIONS.md) puts the name in the user's hands, and the class here has to exist already. |
+| A screen | CLI only, like the runner's other commands. |

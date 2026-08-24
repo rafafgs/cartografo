@@ -24,8 +24,8 @@
  * `GET /skills/:id` with no query answers the newest LIVE version, and it is for
  * whoever is choosing what to pin. `?version=` answers an exact row and `?hash=`
  * answers the row of that lineage carrying that pin — those two are the ones a
- * dispatch uses, because D22 is explicit that a node "nunca resolve 'a mais
- * recente'". `GET /skills` lists every version of every lineage, flat, one entry
+ * dispatch uses, because D22 is explicit that a node "never resolves 'the latest
+ * one'". `GET /skills` lists every version of every lineage, flat, one entry
  * per `(id, version)`; `?id=` narrows it to one lineage.
  *
  * `PATCH /skills/:id/:version` retires a version. It takes no body, because

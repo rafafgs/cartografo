@@ -420,8 +420,8 @@ test('t180 — the cycle and missing-field problems are reported in English', as
 /*                                                                            */
 /* Until this ticket, `repositories/intake.ts:122-126` and `routes/intake.ts`  */
 /* claimed the item's own keys were a format the glossary maps nowhere. D20's  */
-/* text says otherwise — "campos e parâmetros de query do JSON da API" — and   */
-/* these keys travel in the body of `POST /v1/intake` and back out of          */
+/* text says otherwise — "the fields and query parameters of the API's JSON" — */
+/* and these keys travel in the body of `POST /v1/intake` and back out of      */
 /* `GET /v1/intake/:id`. So they are the wire, and they are English.           */
 /* -------------------------------------------------------------------------- */
 

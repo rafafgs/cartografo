@@ -28,8 +28,8 @@
  * glossary carried no row for them; and `avaliar`, `--tier-fator` and
  * `--tier-minimo-nos` had test cases declaring they stay Portuguese on purpose.
  * Both were t230 narrowing its own delivery, not a decision: D20's text names
- * "flags de CLI" without an exception, and the founder restated the end state on
- * 2026-08-17. So the six live in §5.2 now, the local array is gone, and this
+ * "the CLI flags" without an exception, and the founder restated the end state
+ * on 2026-08-17. So the six live in §5.2 now, the local array is gone, and this
  * gate has exactly one source of truth again.
  */
 

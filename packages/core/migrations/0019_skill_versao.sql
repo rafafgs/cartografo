@@ -12,9 +12,9 @@
 -- graph/graph_version) ficam para quando existirem dois consumidores, pela regra
 -- dos dois consumidores." Os dois consumidores apareceram — melhorar as
 -- instruções de uma skill de fábrica e reimportar um bundle já registrado — e a
--- D22 registrou a decisão: "skill tem id estável e versões (semver + hash de
--- conteúdo)... o nó continua pinado por hash (D4) e nunca resolve 'a mais
--- recente'".
+-- D22 registrou a decisão: "a skill has a stable id and versions (semver plus
+-- a content hash)... a node stays pinned by hash (D4) and never resolves 'the
+-- latest one'".
 --
 -- ## O que muda, e o que deliberadamente não muda
 --

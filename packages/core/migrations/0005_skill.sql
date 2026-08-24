@@ -5,8 +5,8 @@
 -- obrigatório, não cosmético — mesmo precedente já registrado no cabeçalho da
 -- 0003.
 --
--- "Sem contrato, não entra no registro" (D9) vira aqui uma tabela cujas colunas
--- SÃO os doze campos obrigatórios do manifesto
+-- "A skill with no contract does not enter the registry" (D9) vira aqui uma
+-- tabela cujas colunas SÃO os doze campos obrigatórios do manifesto
 -- (`especificacoes/formatos/manifesto-skill.schema.json`), mais o carimbo de
 -- quando a skill entrou. Nada de blob genérico: o que o sintetizador consulta é
 -- `description` e `role`, o que o runner pina é `id`+`version`+`hash`, e uma

@@ -114,8 +114,8 @@ const OUTSIDE_V1 = ['health.ts'];
  * `POST /v1/intake` and `ItemProblem[]` IS the body of that route's 400, so the
  * route file the sweep already walks contains barely a word of the vocabulary it
  * publishes. Until t255 those keys were declared an exemption in three comments;
- * D20's own text — "campos e parâmetros de query do JSON da API" — never granted
- * one, and the exemption is gone along with the Portuguese.
+ * D20's own text — "the fields and query parameters of the API's JSON" — never
+ * granted one, and the exemption is gone along with the Portuguese.
  */
 const WIRE_DOMAIN = [path.join('src', 'domain', 'intake.ts')];
 

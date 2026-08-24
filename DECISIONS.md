@@ -1,244 +1,245 @@
-# DECISOES — cartografo
+# DECISIONS — cartografo
 
-Registro incremental; fonte da verdade das decisões do projeto. Cada decisão
-tem data e pode ser revertida por outra decisão registrada.
+Incremental record; the source of truth for the project's decisions. Every
+decision carries a date and can be reversed by another recorded decision.
 
-**Quem registra (regra desde 2026-08-16):** preferencialmente o Rafael. Outra
-pessoa ou agente só registra com autorização explícita dele — caso a caso ("pode
-gravar a D20") ou em lote ("grave essas quatro"). Sem essa autorização, agente
-não escreve aqui: entrega o texto da decisão como proposta (no ticket ou na
-conversa) e escala. Toda entrada registrada por terceiro diz quem autorizou.
+**Who records (rule since 2026-08-16):** preferably Rafael. Anybody else, agent
+or person, records only with his explicit authorization — case by case ("you may
+write down D20") or in batches ("write these four down"). Without that
+authorization an agent does not write here: it delivers the text of the decision
+as a proposal (in the ticket or in the conversation) and escalates. Every entry
+recorded by somebody else says who authorized it.
 
-## D1 (2026-08-14) — Só o server escreve no banco
+## D1 (2026-08-14) — Only the server writes to the database
 
-O control plane é dono do SQLite; runner é cliente stateless da API e nunca
-toca o banco direto. É o que mantém o banco embarcado viável (single writer)
-e o runner deployável em qualquer lugar.
+The control plane owns the SQLite; the runner is a stateless client of the API
+and never touches the database directly. That is what keeps the embedded
+database viable (single writer) and the runner deployable anywhere.
 
-## D2 (2026-08-14) — Grafo versionado desde o dia 1
+## D2 (2026-08-14) — The graph is versioned from day 1
 
-A entidade "proposta de melhoria" aponta para uma versão de grafo e carrega
-um diff. Sem versionamento desde o início, a evolução entre rodadas não tem
-onde se apoiar; não é aparafusável depois.
+The "improvement proposal" entity points at a graph version and carries a diff.
+Without versioning from the start, the evolution between rounds has nothing to
+stand on; it cannot be bolted on later.
 
-## D3 (2026-08-14) — Sintetizar topologia e quebrar trabalho são nós separados
+## D3 (2026-08-14) — Synthesizing the topology and breaking down the work are separate nodes
 
-Dois atos distintos no meta-processo: sintetizar a topologia (uma vez por
-classe de problema, no design) e quebrar o trabalho em viajantes (a cada
-execução, no intake). A quebra produz tickets, não nós; o caminho fica
-congelado durante a execução (princípio 2 do README).
+Two distinct acts in the meta-process: synthesizing the topology (once per
+problem class, at design time) and breaking the work into travellers (once per
+execution, at intake). The breakdown produces tickets, not nodes; the path stays
+frozen during the execution (principle 2 of the README).
 
-## D4 (2026-08-14) — Importação de skill passa por portão
+## D4 (2026-08-14) — Skill import goes through a gate
 
-Skill de repo externo é vetor de prompt injection. Registro com pin por
-versão/hash, revisão na importação, e um passo que deriva e registra o
-contrato (entrada, saída, verificação) quando o SKILL.md de origem não
-declara. Skill sem contrato não entra no registro.
+A skill from an external repository is a prompt-injection vector. It is
+registered pinned by version and hash, reviewed at import time, and passes a step
+that derives and records the contract (input, output, verification) when the
+source `SKILL.md` does not declare one. A skill with no contract does not enter
+the registry.
 
-## D5 (2026-08-14) — Runner distribuído usa lease com heartbeat
+## D5 (2026-08-14) — A distributed runner uses a lease with a heartbeat
 
-Trabalho despachado carrega lease; runner morto expira e o trabalho volta à
-fila. Registros idempotentes na API.
+Dispatched work carries a lease; a dead runner's lease expires and the work goes
+back to the queue. Writes to the API are idempotent.
 
-## D6 (2026-08-14) — Ordem do MVP
+## D6 (2026-08-14) — The order of the MVP
 
-Control plane + um EngineAdapter + um grafo fixo portado do flowpilot,
-rodando ponta a ponta com telemetria, antes de qualquer sintetizador. O
-sintetizador é a última peça, não a primeira.
+Control plane plus one EngineAdapter plus one fixed graph ported from flowpilot,
+running end to end with telemetry, before any synthesizer. The synthesizer is the
+last piece, not the first.
 
-## D7 (2026-08-14) — Estratégia de publicação
+## D7 (2026-08-14) — Publication strategy
 
-Repo privado até funcionar. Validar em 2–3 domínios diferentes (condição de
-partida do README). Depois de pronto: repo vira público junto com artigo na
-newsletter, como alavanca de crescimento de subscribers; o README público
-carrega convite para seguir e acompanhar agentsmaestro.dev.
+Private repository until it works. Validate it in 2–3 different domains (the
+README's starting condition). Once it is ready: the repository goes public
+together with an article in the newsletter, as a lever for growing subscribers;
+the public README carries an invitation to follow along at agentsmaestro.dev.
 
-## D8 (2026-08-14) — Classe de problema é nomeada pelo usuário (MVP)
+## D8 (2026-08-14) — The problem class is named by the user (MVP)
 
-Quem nomeia a classe é o usuário, na declaração do problema; o sintetizador
-apenas sugere classe existente quando reconhecer semelhança ("isso parece a
-classe tal, quer usar o mapa dela?"). Identidade da classe = raiz de
-versionamento do grafo e unidade de agregação da telemetria.
+The one who names the class is the user, in the problem declaration; the
+synthesizer only suggests an existing class when it recognizes a resemblance
+("this looks like such-and-such a class, want to use its map?"). The class
+identity is the versioning root of the graph and the aggregation unit of the
+telemetry.
 
-## D9 (2026-08-14) — Formato do contrato
+## D9 (2026-08-14) — The contract format
 
-Entrada e saída em JSON Schema; verificação como lista de checks tipados,
-cada check sendo ou um comando determinístico (rodar teste, validar schema)
-ou uma instrução agêntica com evidência obrigatória. O contrato é a espinha
-comum de skill, portão e validação formal do grafo.
+Input and output as JSON Schema; verification as a list of typed checks, each
+check being either a deterministic command (run a test, validate a schema) or an
+agentic instruction with mandatory evidence. The contract is the common spine of
+a skill, a gate and the formal validation of the graph.
 
-## D10 (2026-08-14) — Sintetizador é copiloto no MVP
+## D10 (2026-08-14) — The synthesizer is a copilot in the MVP
 
-Propõe o grafo, o usuário edita e é o portão de validação inteiro.
-Automatizar por partes depois, começando pelos checks formais de soundness.
+It proposes the graph, the user edits it, and that edit is the whole validation
+gate. Automating it piece by piece comes later, starting with the formal
+soundness checks.
 
-## D11 (2026-08-14) — Tela: observabilidade + inbox de propostas primeiro
+## D11 (2026-08-14) — Screen: observability and the proposal inbox first
 
-Configuração via arquivos e CLI no começo; tela de edição depois. Condição
-do Rafael: arquitetada para estender e alterar fácil — garantida por
-API-first (a tela é cliente da API pública, sem privilégios, em pacote
-separado do core headless).
+Configuration through files and the CLI at the beginning; an editing screen
+later. Rafael's condition: architected to be easy to extend and to change —
+guaranteed by being API-first (the screen is a client of the public API, with no
+privileges, in a package separate from the headless core).
 
-## D12 (2026-08-14) — Licença Apache-2.0
+## D12 (2026-08-14) — Apache-2.0 licence
 
-Proteção explícita de patente, padrão de infraestrutura aberta. Nome público
-("cartografo" ou outro) validado contra colisões e domínio antes do anúncio.
+Explicit patent protection, the standard for open infrastructure. The public name
+("cartografo" or another) is validated against collisions and domains before the
+announcement.
 
-## D13 (2026-08-14) — Linhagem de grafos: base da classe + variantes por projeto
+## D13 (2026-08-14) — Graph lineage: a class base plus per-project variants
 
-Cada classe de problema tem um grafo-base; um projeto pode ter uma variante,
-que é fork do base com diff e linhagem registrados (semântica de branch). O
-aprendizado flui nos dois sentidos, sempre com portão: diff de variante que
-supera o base vira proposta de promoção para o base; melhoria no base é
-oferecida às variantes, nunca forçada. O próprio fork nasce de proposta do
-topógrafo com evidência de divergência sistemática na telemetria, não de
-decisão a priori.
+Every problem class has a base graph; a project may have a variant, which is a
+fork of the base with its diff and lineage recorded (branch semantics). Learning
+flows both ways, always through a gate: a variant diff that beats the base
+becomes a promotion proposal for the base; an improvement in the base is offered
+to the variants, never forced on them. The fork itself is born of a proposal from
+the topografo carrying evidence of systematic divergence in the telemetry, not of
+an a-priori decision.
 
-## D14 (2026-08-14) — Duas instâncias de validação, com grafos de fábrica
+## D14 (2026-08-14) — Two validation instances, with factory graphs
 
-Duas instâncias, e está bom (amenda o "2–3 domínios" de D7 e do README):
+Two instances, and that is enough (this amends the "2–3 domains" of D7 and of the
+README):
 
-1. **Desenvolvimento de software** — o grafo do flowpilot portado.
-2. **Bets assimétricas (tese de investimento)** — triagem → coleta de
-   fundamentos → análise de assimetria (downside limitado, upside grande) →
-   red team (papel dedicado a derrubar a tese) → dimensionamento de risco →
-   decisão (portão humano obrigatório, sempre) → registro e monitoramento.
-   O topógrafo aprende sobre métricas de processo (red team rodou? premissas
-   com fonte? erro de estimativa caindo?); P&L é validação lenta de longo
-   prazo, nunca métrica de rodada — em mercado, resultado não valida
-   processo.
+1. **Software development** — the flowpilot graph, ported.
+2. **Asymmetric bets (investment thesis)** — triage → gathering fundamentals →
+   asymmetry analysis (limited downside, large upside) → red team (a role
+   dedicated to knocking the thesis down) → risk sizing → decision (a mandatory
+   human gate, always) → recording and monitoring. The topografo learns about
+   process metrics (did the red team run? are the assumptions sourced? is the
+   estimation error falling?); P&L is slow, long-term validation, never a metric
+   of a round — in markets, an outcome does not validate a process.
 
-Requisito de produto derivado: o sistema entrega **grafos pré-determinados
-prontos para uso** (biblioteca de fábrica com esses dois mapas; é a semente
-do atlas compartilhável).
+Derived product requirement: the system ships **ready-to-use predetermined
+graphs** (a factory library holding those two maps; it is the seed of the
+shareable atlas).
 
-## D15 (2026-08-14) — Versionamento de grafos: no banco, com as ideias do git
+## D15 (2026-08-14) — Graph versioning: in the database, with git's ideas
 
-Versionamos como o git pensa, sem o git instalado no núcleo. Entidades:
-grafo (linhagem: classe, variante, ponteiro para versão corrente),
-grafo_versao (id = hash do snapshot, parent, snapshot JSON completo, origem)
-e proposta (versão-alvo, operações semânticas tipadas + inversas, evidência,
-métrica esperada, status, resultado). Aplicar proposta = aplicar ops →
-validar soundness no resultado → gravar versão nova → mover ponteiro;
-rollback = mover ponteiro de volta; nada se apaga (append-only). Motivos:
-topógrafo cruza versão×telemetria por join; propostas exigem diff semântico
-(não diff de linha); fonte de verdade única (D1). Git entra nas bordas:
-qualquer versão exporta como bundle em arquivos (atlas, backup, espelho em
-repo do usuário; futura superfície de aprovação via PR, sem dependência do
-core).
+We version the way git thinks, without git installed in the core. Entities: graph
+(the lineage: class, variant, pointer to the current version), graph_version (id
+= hash of the snapshot, parent, the full JSON snapshot, origin) and proposal
+(target version, typed semantic operations plus their inverses, evidence,
+expected metric, status, outcome). Applying a proposal = apply the ops → validate
+soundness on the result → write a new version → move the pointer; rollback = move
+the pointer back; nothing is ever deleted (append-only). The reasons: the
+topografo crosses version×telemetry with a join; proposals demand a semantic diff
+(not a line diff); a single source of truth (D1). Git enters at the edges: any
+version exports as a bundle of files (atlas, backup, a mirror in the user's own
+repository; a future approval surface via PR, with no dependency in the core).
 
-## D16 (2026-08-14) — Critério de aceite e fronteira da PoC
+## D16 (2026-08-14) — Acceptance criterion and boundary of the PoC
 
-A PoC está aceita quando um projeto de software real atravessa o grafo
-portado de ponta a ponta com: grafo vivendo como dado no banco (não como
-código), sessões despachadas pelo EngineAdapter do Claude Code, perguntas
-humanas fluindo pela API, telemetria completa consultável e tela mínima de
-observabilidade. Sintetizador e topógrafo ficam explicitamente fora da PoC
-(marcos seguintes, ordem da D6). A PoC prova paridade com o flowpilot sobre
-a arquitetura nova; superar o flowpilot é o marco seguinte (primeira
-proposta do topógrafo com evidência).
+The PoC is accepted when a real software project crosses the ported graph end to
+end with: the graph living as data in the database (not as code), sessions
+dispatched by the Claude Code EngineAdapter, human questions flowing through the
+API, complete queryable telemetry and a minimal observability screen. The
+synthesizer and the topografo are explicitly outside the PoC (later milestones,
+in D6's order). The PoC proves parity with flowpilot on the new architecture;
+beating flowpilot is the next milestone (the topografo's first proposal with
+evidence).
 
-## D17 (2026-08-14) — Relação com o flowpilot e stack
+## D17 (2026-08-14) — Relationship with flowpilot, and the stack
 
-O porte é reimplementação: o flowpilot (Python) é referência de
-comportamento e fonte do grafo de fábrica 1, sem dependência de código;
-migração/substituição do flowpilot é decisão futura, fora de escopo. Stack
-cravado: TypeScript, API REST/JSON, SQLite (D1), tela como pacote separado
-(D11).
+The port is a reimplementation: flowpilot (Python) is a behavioural reference and
+the source of factory graph 1, with no code dependency; migrating away from or
+replacing flowpilot is a future decision, out of scope. The stack is settled:
+TypeScript, a REST/JSON API, SQLite (D1), the screen as a separate package (D11).
 
-## D18 (2026-08-14) — Idioma do código: inglês
+## D18 (2026-08-14) — The language of the code: English
 
-Todo código do produto é em inglês: identificadores, nomes de arquivo e de
-pacote, comentários, docstrings, nomes de teste, caminhos de rota da API e
-mensagens de commit daqui em diante. Motivo: D12 (Apache-2.0) e a preparação
-open source fazem do código a superfície pública do projeto, e a audiência é
-global. O vocabulário de protocolo já era inglês (status de sessão etc.) e
-permanece. Os documentos do repo (DECISIONS.md, README, notas/) seguem em
-português até decisão própria na preparação open source. O código escrito
-antes desta decisão é regularizado por um ticket de refactor dedicado.
-Fica de fora, como decisão separada ainda não tomada: as CHAVES dos formatos
-de dados em português (manifesto de skill, bundle de grafo) — mudar chave de
-formato é mudar especificação (t96–t99), não estilo de código.
+All of the product's code is in English: identifiers, file and package names,
+comments, docstrings, test names, API route paths and commit messages from here
+on. The reason: D12 (Apache-2.0) and the open-source preparation make the code
+the project's public surface, and the audience is global. The protocol vocabulary
+was already English (session status and so on) and stays that way. The
+repository's documents (DECISIONS.md, README, notas/) stay in Portuguese until a
+decision of their own during the open-source preparation. Code written before
+this decision is regularized by a dedicated refactor ticket.
+Left out, as a separate decision not yet taken: the KEYS of the data formats,
+which are in Portuguese (skill manifest, graph bundle) — changing a format key is
+changing a specification (t96–t99), not a matter of code style.
 
-**Emenda (2026-08-15, Rafael):** a decisão separada foi tomada. As chaves dos
-formatos de dados, os manifestos de skill (instruções, nomes de arquivo), o
-conteúdo dos bundles de fábrica e o restante da superfície do produto
-(subcomandos de CLI, nomes de entidade na API) também convergem para o
-inglês; tickets e especificações produzidos no quadro, idem. Mudar chave de
-formato é mudança de especificação: o ticket dedicado emenda t96–t99 e
-regulariza os bundles. Permanecem em português: o nome-marca cartografo, os
-documentos internos do repo (DECISIONS.md, notas/) e
-docs/o-que-e-o-cartografo.md (a versão EN nasce na preparação open source,
-t121).
+**Amendment (2026-08-15, Rafael):** the separate decision has been taken. The
+keys of the data formats, the skill manifests (instructions, file names), the
+content of the factory bundles and the rest of the product surface (CLI
+subcommands, entity names in the API) also converge on English; tickets and
+specifications produced on the board, likewise. Changing a format key is a change
+of specification: the dedicated ticket amends t96–t99 and regularizes the
+bundles. These stay in Portuguese: the brand name cartografo, the repository's
+internal documents (DECISIONS.md, notas/) and docs/o-que-e-o-cartografo.md (the
+EN version is born during the open-source preparation, t121).
 
-## D19 (2026-08-15) — Documentação funcional viva
+## D19 (2026-08-15) — Living functional documentation
 
-`docs/o-que-e-o-cartografo.md` explica o produto em linguagem simples e é
-documento vivo: toda entrega que mudar comportamento visível do produto
-atualiza o arquivo na mesma entrega (vale como critério de aceite implícito
-desses tickets). Marcações *(em construção)* saem conforme as features
-chegam.
+`docs/o-que-e-o-cartografo.md` explains the product in plain language and is a
+living document: every delivery that changes visible product behaviour updates
+the file in the same delivery (it counts as an implicit acceptance criterion of
+those tickets). The *(under construction)* markers come off as the features
+arrive.
 
-## D20 (2026-08-16) — O fio também fala inglês
+## D20 (2026-08-16) — The wire speaks English too
 
-A D18 e sua emenda levaram para o inglês o código, as chaves dos formatos
-congelados (schema de grafo, manifesto de skill), os subcomandos de CLI e os
-nomes de entidade nos caminhos da API. Ficou em português, congelado como
-formato de fio, o resto do vocabulário público: campos e parâmetros de query
-do JSON da API (`classe`, `grafo_id`, `versao_corrente_id`, `execucao_id`…),
-valores de enumeração (`pendente`, `teto_runner`…), os dois envelopes de erro
-(`{erro, mensagem}` e `{error, details}`), nomes e envelope dos eventos
-(`trabalho.transicao`, `pergunta.criada`…), operações de proposta
-(`adicionar_no`…), tabelas e colunas do banco, rotas da tela (`/quadro`,
-`/perguntas`…), flags de CLI (`--classe`, `--teto-*`) e o relatório de
-validação (`estrutura.erros`, `soundness.violacoes`).
+D18 and its amendment took the code, the keys of the frozen formats (graph
+schema, skill manifest), the CLI subcommands and the entity names in the API
+paths to English. What stayed in Portuguese, frozen as a wire format, is the rest
+of the public vocabulary: the fields and query parameters of the API's JSON
+(`classe`, `grafo_id`, `versao_corrente_id`, `execucao_id`…), the enumeration
+values (`pendente`, `teto_runner`…), the two error envelopes (`{erro, mensagem}`
+and `{error, details}`), the event names and envelope (`trabalho.transicao`,
+`pergunta.criada`…), the proposal operations (`adicionar_no`…), the database
+tables and columns, the screen routes (`/quadro`, `/perguntas`…), the CLI flags
+(`--classe`, `--teto-*`) and the validation report (`estrutura.erros`,
+`soundness.violacoes`).
 
-Decisão: tudo isso migra para inglês, com glossário registrado
-(`docs/spec/glossario-wire.md`), **antes de o repositório abrir (D7)** e antes
-dos tickets que mexem nessas superfícies (t196, t197, t200), para não fazer
-duas vezes. Bancos de desenvolvimento existentes são **recriados** (não há dado
-de produção; migração de dados só se surgir dado que valha guardar).
-Documentação, notas e este arquivo continuam em português. Ticket guarda-chuva:
-t213 (dividido por superfície, na ordem: glossário → API/erros → eventos →
-operações → banco → rotas/flags/relatório → docs e gate).
-Registrado pelo agente com autorização do Rafael (2026-08-16).
+Decision: all of it migrates to English, with a glossary on the record
+(`docs/spec/glossario-wire.md`), **before the repository opens (D7)** and before
+the tickets that touch those surfaces (t196, t197, t200), so that the work is not
+done twice. Existing development databases are **recreated** (there is no
+production data; a data migration only if data worth keeping shows up).
+Documentation, notes and this file stay in Portuguese. Umbrella ticket: t213
+(split by surface, in this order: glossary → API/errors → events → operations →
+database → routes/flags/report → docs and gate).
+Recorded by the agent with Rafael's authorization (2026-08-16).
 
-## D21 (2026-08-16) — Primeiro degrau da escada: o topógrafo roda sozinho, aplicar continua humano
+## D21 (2026-08-16) — The ladder's first step: the topografo runs on its own, applying stays human
 
-Ao fim de cada execução, o control plane declara a execução concluída (fato
-que só ele afirma, D1) e um observador sem privilégio (D11) roda as lentes de
-fluxo e de custo, depositando propostas na inbox — deduplicadas: sinal
-repetido reforça a proposta pendente (soma evidência) em vez de cloná-la.
-Aprovar e aplicar continuam decisão humana. Auto-aplicar mudanças de baixo
-risco com rollback (princípio 5 do README) só entra depois de ~10 rodadas
-reais de histórico, por decisão própria. Isto amenda o "disparo é decisão
-própria" da spec do topógrafo de fluxo e vem depois de t198 (segunda
-instância da D14 e rodada com n>1), para o gatilho ser calibrado com dado
-real. Ticket: t214. Registrado pelo agente com autorização do Rafael
-(2026-08-16).
+At the end of every execution the control plane declares the execution finished
+(a fact only it asserts, D1) and an unprivileged observer (D11) runs the flow and
+cost lenses, depositing proposals in the inbox — deduplicated: a repeated signal
+reinforces the pending proposal (it adds evidence) instead of cloning it.
+Approving and applying stay a human decision. Auto-applying low-risk changes with
+rollback (principle 5 of the README) only arrives after ~10 real rounds of
+history, by a decision of its own. This amends the "firing is a decision of its
+own" in the flow topografo's spec and comes after t198 (the second instance of
+D14, and a round with n>1), so that the trigger is calibrated against real data.
+Ticket: t214. Recorded by the agent with Rafael's authorization (2026-08-16).
 
-## D22 (2026-08-16) — Skill é linhagem, como o grafo
+## D22 (2026-08-16) — A skill is a lineage, like the graph
 
-Uma skill tem id estável e versões (semver + hash de conteúdo); versão nunca
-muda de conteúdo — conteúdo novo é versão nova. O nó continua pinado por hash
-(D4) e nunca resolve "a mais recente"; mover o pino de um nó para outra versão
-é proposta como qualquer mudança no mapa (D15), recusada se o hash não existir
-no registro. Reimportar um bundle registra o que é novo e é idempotente no que
-já existe; conteúdo diferente sob a mesma versão é recusado antes de qualquer
-escrita. Aposentar uma versão a esconde de "mais recente", nunca quebra um
-grafo pinado nela. Ticket: t215. Registrado pelo agente com autorização do
-Rafael (2026-08-16).
+A skill has a stable id and versions (semver plus a content hash); a version
+never changes content — new content is a new version. A node stays pinned by hash
+(D4) and never resolves "the latest one"; moving a node's pin to another version
+is a proposal like any other change to the map (D15), refused if the hash does
+not exist in the registry. Reimporting a bundle registers what is new and is
+idempotent about what already exists; different content under the same version is
+refused before any write. Retiring a version hides it from "the latest", and
+never breaks a graph pinned to it. Ticket: t215. Recorded by the agent with
+Rafael's authorization (2026-08-16).
 
-## D23 (2026-08-16) — Um pacote, três comandos, e um contêiner para o control plane
+## D23 (2026-08-16) — One package, three commands, and a container for the control plane
 
-O cartografo é publicado no npm como um único pacote `cartografo` com os
-comandos `cartografo`, `cartografo-tela` e `cartografo-runner` (e o topógrafo
-de custo quando ganhar bin); as fronteiras D1/D11 são de processo, não de
-pacote. Control plane e tela têm imagem Docker oficial; o runner roda na
-máquina onde estão o CLI do engine autenticado e o repositório alvo — não vai
-em contêiner. Nome validado e reservado no npm antes do anúncio (D12; em
-2026-08-16 `cartografo` estava livre). **A liberação deste trabalho para
-desenvolvimento e a publicação em si são decisão explícita do Rafael, caso a
-caso**: o ticket t216 fica bloqueado até ele mesmo desbloquear, e se entrar em
-voo por engano volta a ser bloqueado. Registrado pelo agente com autorização do
-Rafael (2026-08-16).
+The cartografo is published on npm as a single package `cartografo` carrying the
+commands `cartografo`, `cartografo-tela` and `cartografo-runner` (and the cost
+topografo once it gets a bin); the D1/D11 boundaries are boundaries of process,
+not of package. The control plane and the screen have an official Docker image;
+the runner runs on the machine where the authenticated engine CLI and the target
+repository are — it does not go in a container. The name is validated and
+reserved on npm before the announcement (D12; on 2026-08-16 `cartografo` was
+free). **Releasing this work for development, and the publication itself, are
+Rafael's explicit decision, case by case**: ticket t216 stays blocked until he
+himself unblocks it, and if it takes off by mistake it goes back to blocked.
+Recorded by the agent with Rafael's authorization (2026-08-16).

@@ -25,8 +25,8 @@
  *    somebody registered a better version of a skill, every graph in flight
  *    pinned to the older one started refusing its own dispatch on the hash
  *    check below — a decision nobody took, taken by whoever happened to publish
- *    a skill. D22 says the opposite twice: a node "nunca resolve 'a mais
- *    recente'", and improving a skill never breaks a map that is pinned to it.
+ *    a skill. D22 says the opposite twice: a node "never resolves 'the latest
+ *    one'", and improving a skill never breaks a map that is pinned to it.
  *    Moving a pin is a proposal, and it happens in the graph, not here.
  * 2. **The pin is checked, and a mismatch refuses the dispatch.** That is the
  *    entire value of pinning by hash (D4): an imported skill is a prompt-

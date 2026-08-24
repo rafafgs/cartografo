@@ -60,7 +60,7 @@ import { evaluatePolicies } from './policy.ts';
  * t230 left the subcommand and the two `--tier-*` options behind, on the grounds
  * that the glossary had no row for them. t255 wrote the rows (§5.2) and finished
  * the move: `avaliar` → `evaluate`, `--tier-fator` → `--tier-factor`,
- * `--tier-minimo-nos` → `--tier-min-nodes`. D20's text says "flags de CLI" with
+ * `--tier-minimo-nos` → `--tier-min-nodes`. D20's text says "the CLI flags" with
  * no exception, and a subcommand is as typed as a flag.
  */
 export const USAGE = `usage: topografo-custo evaluate --url <url> --execution <id> [options]

@@ -486,9 +486,9 @@ test('AT12 — a check with no id, type or description is refused, naming all th
 /* t215 — the registry is a lineage: versions of one skill coexist (D22).      */
 /*                                                                            */
 /* The registry was one row per id until here, and D22 says it is one row per  */
-/* (id, version): "skill tem id estável e versões (semver + hash de           */
-/* conteúdo)... o nó continua pinado por hash (D4) e nunca resolve 'a mais     */
-/* recente'". So the cases below are about the two reads that tell those apart */
+/* (id, version): "a skill has a stable id and versions (semver plus a content */
+/* hash)... a node stays pinned by hash (D4) and never resolves 'the latest    */
+/* one'". So the cases below are about the two reads that tell those apart     */
 /* — the one that follows the lineage forward, and the one that pins an exact  */
 /* row — plus the three writes: a version that is new, a version whose content */
 /* moved underneath it, and a version taken out of the lineage's future.       */

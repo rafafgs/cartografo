@@ -4,7 +4,7 @@
  *
  * Deliberately a command a person types, not a node of the graph and not a step
  * of the controller's dispatch loop. That is the safety ladder of README
- * principle 5 and D10's "copiloto no MVP" posture: the evaluator only
+ * principle 5 and D10's "a copilot in the MVP" posture: the evaluator only
  * *suggests* at first, and even the suggestion is something a human asked for.
  * Wiring it to run automatically is a later ficha, and it will be a decision,
  * not a refactor.

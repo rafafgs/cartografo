@@ -1041,12 +1041,12 @@ test('t162 — the packaged runner, against a real control plane', async (parent
    * t215 AC1 — a newer version of a skill does not reach a node pinned to the
    * older one.
    *
-   * This is the invariant D22 is built around — a node "nunca resolve 'a mais
-   * recente'", and improving a skill never breaks a map pinned to it — and this
-   * is the only place in the repository where it can be measured end to end: the
-   * real control plane serving a lineage with two versions, a real graph frozen
-   * with the older pin, and the fake engine's own record of the text it was
-   * handed.
+   * This is the invariant D22 is built around — a node "never resolves 'the
+   * latest one'", and improving a skill never breaks a map pinned to it — and
+   * this is the only place in the repository where it can be measured end to
+   * end: the real control plane serving a lineage with two versions, a real
+   * graph frozen with the older pin, and the fake engine's own record of the
+   * text it was handed.
    *
    * Two dispatches, and the SECOND one is the assertion. Before t215 the runner
    * asked `GET /v1/skills/:id` with no query — which resolves the latest — so

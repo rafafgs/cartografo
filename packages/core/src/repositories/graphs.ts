@@ -23,14 +23,22 @@
  * the log knew nothing about graph mutation, which is half of what D15 wants the
  * surveyor to be able to join telemetry against.
  *
- * The COLUMNS are English since D20's fourth child (t229); the row interfaces'
- * field names are not, because `routes/graphs.ts` and `routes/proposals.ts` read
- * them, so every `SELECT` aliases the renamed column back onto the field (t229,
- * FR4). Since t226 the rows no longer leave the package that way either:
- * `toGraph`/`toGraphVersion`/`toClass` at the bottom are the boundary D20 puts
- * between the database and the wire, and the routes return their output and
- * never a row. Since t235 that boundary renames KEYS only — the stored values
- * are the wire's own words.
+ * The COLUMNS are English since D20's fourth child (t229), the stored values
+ * since its fifth (t235), and since t289 so is everything above them. There used
+ * to be a boundary at the bottom of this file — `toGraph`, `toGraphVersion`,
+ * `toGraphVersionWithSnapshot`, `toClass` — with a Portuguese-spelled row
+ * interface on one side of it and `/v1`'s own names on the other, and a `SELECT`
+ * that aliased every column back onto the first so the second could rename it
+ * forward again. All of it is gone: {@link Graph}, {@link GraphVersion} and
+ * {@link ClassEntry} below are what the reads return AND what the routes publish,
+ * and no query here carries an alias.
+ *
+ * Two things the deleted layer did were not renames, and they stayed. The
+ * version read still NESTS `contracts_state`/`contracts_report` into
+ * `contracts: {state, problems}` — a shape, not a spelling — and the class
+ * catalogue still maps `graph.id` onto `graph_id`, because the catalogue's row IS
+ * a lineage and its id is the lineage's, which is a real difference between the
+ * column and the published field rather than a translation of one.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -46,58 +54,89 @@ import {
 import { hashSnapshot, canonicalSerialize } from '../domain/hash.ts';
 import { API_ACTOR, DEFAULT_PROJECT, now } from './common.ts';
 
-/** Lineage of a graph: the class and the pointer to the version that holds today. */
-export interface GraphRow {
+/**
+ * Lineage of a graph: the class and the pointer to the version that holds today.
+ *
+ * The row AND the wire, in one shape (t226 FR1, t289): every field is the
+ * column's own name, and `/v1` publishes exactly this object.
+ *
+ * `lineage_type` carries the schema's own word, `base` or `variant` — the
+ * `CHECK` D20's fifth child (t235) rewrote. The DOCUMENT's `lineage.type` is a
+ * different vocabulary and is NOT this one: `schema/grafo.schema.json` says
+ * `variante`, because a format key and a format value are outside D20 (D18's
+ * carve-out), and `routes/graphs.ts` keeps writing that word into the snapshot
+ * it forks.
+ */
+export interface Graph {
   id: string;
-  classe: string;
-  linhagem_tipo: string;
-  base_classe: string | null;
-  origem_proposta_id: number | null;
-  versao_corrente_id: string | null;
-  criado_em: string;
+  class: string;
+  lineage_type: string;
+  base_class: string | null;
+  origin_proposal_id: number | null;
+  current_version_id: string | null;
+  created_at: string;
 }
 
 /** A version, without the snapshot — the big body only comes out when asked for. */
-export interface GraphVersionRow {
+export interface GraphVersion {
   id: string;
-  grafo_id: string;
-  versao_pai: string | null;
-  origem: string;
-  proposta_id: number | null;
-  criado_em: string;
+  graph_id: string;
+  parent_version: string | null;
+  source: string;
+  proposal_id: number | null;
+  created_at: string;
   /**
    * Where this version stands with respect to its contracts (t283).
    *
-   * Unaliased, unlike everything above it: the concept is new, so there is no
-   * Portuguese name to alias the column back onto (t229, FR4).
+   * Deliberately NOT the `{valid, problems}` of the `422`'s own `contracts`
+   * key: `valid` is the verdict of one call, `state` is a position in a
+   * lifecycle, and reading one as the other is exactly the confusion this
+   * ficha exists to end.
+   *
+   * The one field of this interface that is not a column read straight off the
+   * row: `graph_version` stores the two halves flat, as `contracts_state` and
+   * `contracts_report`, and {@link mapVersionRow} is what nests them.
    */
-  contracts_state: ContractsState;
-  /** The problems the check produced; `[]` when it found none, or ran clean. */
-  contracts_report: ContractProblem[];
+  contracts: { state: ContractsState; problems: ContractProblem[] };
 }
 
 /** A version with the whole document, already parsed. */
-export interface GraphVersionRowWithSnapshot extends GraphVersionRow {
+export interface GraphVersionWithSnapshot extends GraphVersion {
   snapshot: GraphDocument;
 }
 
 /** A registered class, in the catalogue view. */
-export interface ClassRow {
-  classe: string;
-  grafo_id: string;
-  versao_corrente_id: string | null;
-  criado_em: string;
+export interface ClassEntry {
+  class: string;
+  graph_id: string;
+  current_version_id: string | null;
+  created_at: string;
 }
 
-const GRAPH_COLUMNS = `id, class AS classe, lineage_type AS linhagem_tipo,
-   base_class AS base_classe, origin_proposal_id AS origem_proposta_id,
-   current_version_id AS versao_corrente_id, created_at AS criado_em`;
-const VERSION_COLUMNS = `id, graph_id AS grafo_id, parent_version AS versao_pai,
-   source AS origem, proposal_id AS proposta_id, created_at AS criado_em,
+const GRAPH_COLUMNS = `id, class, lineage_type, base_class, origin_proposal_id,
+   current_version_id, created_at`;
+const VERSION_COLUMNS = `id, graph_id, parent_version, source, proposal_id, created_at,
    contracts_state, contracts_report`;
 
-/** A version row as SQLite hands it over: the report is still TEXT. */
-type RawVersionRow = Omit<GraphVersionRow, 'contracts_report'> & { contracts_report: string };
+/** A base lineage as the catalogue query hands it over: `id` is not yet `graph_id`. */
+interface RawClassRow {
+  class: string;
+  id: string;
+  current_version_id: string | null;
+  created_at: string;
+}
+
+/** A version row as SQLite hands it over: the report is TEXT and nothing nests. */
+interface RawVersionRow {
+  id: string;
+  graph_id: string;
+  parent_version: string | null;
+  source: string;
+  proposal_id: number | null;
+  created_at: string;
+  contracts_state: ContractsState;
+  contracts_report: string;
+}
 
 /**
  * The one parse between `graph_version` and the rest of the package (t283).
@@ -107,11 +146,24 @@ type RawVersionRow = Omit<GraphVersionRow, 'contracts_report'> & { contracts_rep
  * string to a caller whose type says list — the same trap `getVersion` already
  * avoids for `snapshot`.
  *
+ * It also NESTS the two contract columns, which is the one piece of the deleted
+ * `toGraphVersion` that was doing real work rather than renaming (t289). The two
+ * flat keys are destructured OUT before the spread: a spread copies what the
+ * driver returned, so leaving them in would publish `contracts_state` beside
+ * `contracts` on every version the API serves.
+ *
  * @param raw Row as the driver returned it.
- * @returns The row with the report parsed.
+ * @returns The version, contracts nested and the report parsed.
  */
-function mapVersionRow(raw: RawVersionRow): GraphVersionRow {
-  return { ...raw, contracts_report: JSON.parse(raw.contracts_report) as ContractProblem[] };
+function mapVersionRow(raw: RawVersionRow): GraphVersion {
+  const { contracts_state, contracts_report, ...rest } = raw;
+  return {
+    ...rest,
+    contracts: {
+      state: contracts_state,
+      problems: JSON.parse(contracts_report) as ContractProblem[],
+    },
+  };
 }
 
 /**
@@ -119,9 +171,9 @@ function mapVersionRow(raw: RawVersionRow): GraphVersionRow {
  * @param id Lineage id (= class, for a base graph).
  * @returns The lineage, or `undefined` if it does not exist.
  */
-export function getGraph(db: Database, id: string): GraphRow | undefined {
+export function getGraph(db: Database, id: string): Graph | undefined {
   return db.prepare(`SELECT ${GRAPH_COLUMNS} FROM graph WHERE id = ?`).get(id) as
-    | GraphRow
+    | Graph
     | undefined;
 }
 
@@ -129,10 +181,10 @@ export function getGraph(db: Database, id: string): GraphRow | undefined {
  * @param db Open database.
  * @returns Every lineage, in creation order.
  */
-export function listGraphs(db: Database): GraphRow[] {
+export function listGraphs(db: Database): Graph[] {
   return db
     .prepare(`SELECT ${GRAPH_COLUMNS} FROM graph ORDER BY created_at, id`)
-    .all() as GraphRow[];
+    .all() as Graph[];
 }
 
 /**
@@ -143,16 +195,27 @@ export function listGraphs(db: Database): GraphRow[] {
  * @param db Open database.
  * @returns One entry per registered class.
  */
-export function listClasses(db: Database): ClassRow[] {
-  return db
+export function listClasses(db: Database): ClassEntry[] {
+  // The one mapping left in this file that is not a parse: the catalogue's
+  // `graph_id` IS the lineage's `id`, and those are two different words for one
+  // value rather than one word translated. Aliasing the column onto `graph_id`
+  // in the query would hide that behind the same mechanism t289 exists to
+  // delete.
+  const rows = db
     .prepare(
-      `SELECT class AS classe, id AS grafo_id,
-              current_version_id AS versao_corrente_id, created_at AS criado_em
+      `SELECT class, id, current_version_id, created_at
          FROM graph
         WHERE lineage_type = 'base'
         ORDER BY class`,
     )
-    .all() as ClassRow[];
+    .all() as RawClassRow[];
+
+  return rows.map((row) => ({
+    class: row.class,
+    graph_id: row.id,
+    current_version_id: row.current_version_id,
+    created_at: row.created_at,
+  }));
 }
 
 /**
@@ -162,7 +225,7 @@ export function listClasses(db: Database): ClassRow[] {
  * @param graphId Lineage id.
  * @returns Versions in creation order.
  */
-export function listVersions(db: Database, graphId: string): GraphVersionRow[] {
+export function listVersions(db: Database, graphId: string): GraphVersion[] {
   return (
     db
       .prepare(
@@ -180,7 +243,7 @@ export function listVersions(db: Database, graphId: string): GraphVersionRow[] {
 export function getVersion(
   db: Database,
   id: string,
-): GraphVersionRowWithSnapshot | undefined {
+): GraphVersionWithSnapshot | undefined {
   const row = db
     .prepare(`SELECT ${VERSION_COLUMNS}, snapshot FROM graph_version WHERE id = ?`)
     .get(id) as (RawVersionRow & { snapshot: string }) | undefined;
@@ -195,7 +258,7 @@ export function getVersion(
  * @param id Version hash.
  * @returns The version metadata, or `undefined`.
  */
-export function getVersionSummary(db: Database, id: string): GraphVersionRow | undefined {
+export function getVersionSummary(db: Database, id: string): GraphVersion | undefined {
   const row = db.prepare(`SELECT ${VERSION_COLUMNS} FROM graph_version WHERE id = ?`).get(id) as
     | RawVersionRow
     | undefined;
@@ -207,10 +270,10 @@ export function getVersionSummary(db: Database, id: string): GraphVersionRow | u
  * @param className Class looked for.
  * @returns The base lineage of the class, if it already exists.
  */
-export function getClassBase(db: Database, className: string): GraphRow | undefined {
+export function getClassBase(db: Database, className: string): Graph | undefined {
   return db
     .prepare(`SELECT ${GRAPH_COLUMNS} FROM graph WHERE class = ? AND lineage_type = 'base'`)
-    .get(className) as GraphRow | undefined;
+    .get(className) as Graph | undefined;
 }
 
 /**
@@ -243,12 +306,12 @@ export function insertVersion(
   db: Database,
   data: {
     id: string;
-    grafo_id: string;
-    versao_pai: string | null;
+    graph_id: string;
+    parent_version: string | null;
     snapshot: GraphDocument;
-    origem: 'manual' | 'synthesizer' | 'proposal';
-    proposta_id: number | null;
-    criado_em: string;
+    source: 'manual' | 'synthesizer' | 'proposal';
+    proposal_id: number | null;
+    created_at: string;
     contracts: StoredContracts;
   },
 ): void {
@@ -258,12 +321,12 @@ export function insertVersion(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     data.id,
-    data.grafo_id,
-    data.versao_pai,
+    data.graph_id,
+    data.parent_version,
     canonicalSerialize(data.snapshot),
-    data.origem,
-    data.proposta_id,
-    data.criado_em,
+    data.source,
+    data.proposal_id,
+    data.created_at,
     data.contracts.state,
     JSON.stringify(data.contracts.problems),
   );
@@ -371,7 +434,7 @@ export function registerBaseGraph(
   db: Database,
   document: GraphDocument,
   contracts: StoredContracts,
-): { graph: GraphRow; version: GraphVersionRow } {
+): { graph: Graph; version: GraphVersion } {
   const className = document.problem_class;
   const versionId = hashSnapshot(document);
   const createdAt = now();
@@ -384,12 +447,12 @@ export function registerBaseGraph(
 
     insertVersion(db, {
       id: versionId,
-      grafo_id: className,
-      versao_pai: null,
+      graph_id: className,
+      parent_version: null,
       snapshot: document,
-      origem: 'manual',
-      proposta_id: null,
-      criado_em: createdAt,
+      source: 'manual',
+      proposal_id: null,
+      created_at: createdAt,
       contracts,
     });
 
@@ -417,7 +480,7 @@ export function registerBaseGraph(
 /** Arguments of `forkVariant`, already validated by the route. */
 export interface VariantFork {
   /** The base lineage being forked; it carries the class and the current pointer. */
-  base: GraphRow;
+  base: Graph;
   /** Id of the lineage being born — the request says it, it is not derived. */
   id: string;
   /** Proposal that originated the fork, or `null` when there is none (D13). */
@@ -442,8 +505,8 @@ export interface VariantFork {
  * Bootstrap of a variant lineage out of a base one, in one transaction (D13).
  *
  * Branch semantics: the first version of the variant IS the base's current
- * snapshot, with no diff, and `versao_pai` points at the version it was forked
- * from — a parenthood that crosses lineages, which the schema allows because
+ * snapshot, with no diff, and `parent_version` points at the version it was
+ * forked from — a parenthood that crosses lineages, which the schema allows because
  * `graph_version.parent_version` only references `graph_version(id)`, with no
  * demand that both sides share a `graph_id`.
  *
@@ -457,7 +520,7 @@ export interface VariantFork {
 export function forkVariant(
   db: Database,
   data: VariantFork,
-): { graph: GraphRow; version: GraphVersionRow } {
+): { graph: Graph; version: GraphVersion } {
   const { base, id, originProposalId, document, versionId, contracts } = data;
   const createdAt = now();
 
@@ -465,7 +528,7 @@ export function forkVariant(
     db.prepare(
       `INSERT INTO graph (id, class, lineage_type, base_class, origin_proposal_id, current_version_id, created_at)
        VALUES (?, ?, 'variant', ?, ?, NULL, ?)`,
-    ).run(id, base.classe, base.classe, originProposalId, createdAt);
+    ).run(id, base.class, base.class, originProposalId, createdAt);
 
     // Same treatment `registerBaseGraph` gives a bootstrap version with no
     // proposal behind it: with an origin proposal the version comes from it, and
@@ -474,12 +537,12 @@ export function forkVariant(
 
     insertVersion(db, {
       id: versionId,
-      grafo_id: id,
-      versao_pai: base.versao_corrente_id,
+      graph_id: id,
+      parent_version: base.current_version_id,
       snapshot: document,
-      origem: source,
-      proposta_id: originProposalId,
-      criado_em: createdAt,
+      source,
+      proposal_id: originProposalId,
+      created_at: createdAt,
       contracts,
     });
 
@@ -491,7 +554,7 @@ export function forkVariant(
     recordVersionBirth(db, {
       graphId: id,
       versionId,
-      parentVersion: base.versao_corrente_id,
+      parentVersion: base.current_version_id,
       source,
       proposalId: originProposalId,
       moment: createdAt,
@@ -607,116 +670,4 @@ export function recheckContracts(
       data: { state, problem_count: report.problems.length },
     });
   }
-}
-
-/* -------------------------------------------------------------------------- */
-/* The row → wire boundary (t226, FR1).                                        */
-/*                                                                             */
-/* D20 fixed the order: the wire went English BEFORE the database did, so for   */
-/* three tickets there was an explicit translation here — `lineage_type` and    */
-/* `graph_version.source` are both `CHECK`-constrained, which made their values */
-/* schema rather than format. The fourth child (t229) renamed the columns and   */
-/* the fifth (t235) rewrote the `CHECK`s to `('base','variant')` and            */
-/* `('manual','synthesizer','proposal')`, and the two maps went with them.      */
-/* What crosses this line now is the KEY and nothing else: everything above     */
-/* still says `linhagem_tipo`, everything the routes hand to Fastify says       */
-/* `lineage_type`, and the value is the same word on both sides.               */
-/*                                                                             */
-/* The document's own `lineage.type` is a different vocabulary and is NOT this  */
-/* one: `schema/grafo.schema.json` says `variante`, because a format key and a  */
-/* format value are outside D20 (D18's carve-out), and `routes/graphs.ts` keeps */
-/* writing that word into the snapshot it forks.                               */
-/* -------------------------------------------------------------------------- */
-
-/** A lineage, as `/v1` publishes it. */
-export interface Graph {
-  id: string;
-  class: string;
-  lineage_type: string;
-  base_class: string | null;
-  origin_proposal_id: number | null;
-  current_version_id: string | null;
-  created_at: string;
-}
-
-/** A version, as `/v1` publishes it — the snapshot only when it was asked for. */
-export interface GraphVersion {
-  id: string;
-  graph_id: string;
-  parent_version: string | null;
-  source: string;
-  proposal_id: number | null;
-  created_at: string;
-  /**
-   * Where the version stands with respect to its contracts (t283).
-   *
-   * Deliberately NOT the `{valid, problems}` of the `422`'s own `contracts`
-   * key: `valid` is the verdict of one call, `state` is a position in a
-   * lifecycle, and reading one as the other is exactly the confusion this
-   * ficha exists to end.
-   */
-  contracts: { state: ContractsState; problems: ContractProblem[] };
-}
-
-/** A version with the whole document. */
-export interface GraphVersionWithSnapshot extends GraphVersion {
-  snapshot: GraphDocument;
-}
-
-/** A registered class, in the catalogue view. */
-export interface ClassEntry {
-  class: string;
-  graph_id: string;
-  current_version_id: string | null;
-  created_at: string;
-}
-
-/** Row to wire: the one place the lineage's column names meet the API's. */
-export function toGraph(row: GraphRow): Graph {
-  return {
-    id: row.id,
-    class: row.classe,
-    lineage_type: row.linhagem_tipo,
-    base_class: row.base_classe,
-    origin_proposal_id: row.origem_proposta_id,
-    current_version_id: row.versao_corrente_id,
-    created_at: row.criado_em,
-  };
-}
-
-/** Row to wire, for a version. */
-export function toGraphVersion(row: GraphVersionRow): GraphVersion {
-  return {
-    id: row.id,
-    graph_id: row.grafo_id,
-    parent_version: row.versao_pai,
-    source: row.origem,
-    proposal_id: row.proposta_id,
-    created_at: row.criado_em,
-    contracts: { state: row.contracts_state, problems: row.contracts_report },
-  };
-}
-
-/**
- * Row to wire, snapshot included.
- *
- * The snapshot passes through byte for byte: it is the graph DOCUMENT
- * (`schema/grafo.schema.json`), a format of its own that no child of D20
- * renames — and rewriting it here would change the hash that IS the version's
- * identity.
- */
-export function toGraphVersionWithSnapshot(
-  row: GraphVersionRowWithSnapshot,
-): GraphVersionWithSnapshot {
-  return { ...toGraphVersion(row), snapshot: row.snapshot };
-}
-
-/** Row to wire, for the class catalogue. */
-export function toClass(row: ClassRow): ClassEntry {
-  return {
-    class: row.classe,
-    graph_id: row.grafo_id,
-    current_version_id: row.versao_corrente_id,
-    created_at: row.criado_em,
-  };
 }

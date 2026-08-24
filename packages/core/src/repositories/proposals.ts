@@ -22,10 +22,17 @@
  *
  * Like `repositories/graphs.ts`, it receives the already-open database and never
  * touches the driver (D1). The COLUMNS are English since D20's fourth child
- * (t229) and the stored VALUES since its fifth (t235); {@link ProposalRow}'s
- * field names are not, because `routes/proposals.ts` and `cli/` read them, so
- * every `SELECT` aliases the renamed column back onto the field (t229, FR4;
- * t235, FR5).
+ * (t229), the stored VALUES since its fifth (t235), and since t289 so is
+ * {@link Proposal}: the reads return the object `/v1` publishes, where there used
+ * to be a Portuguese-spelled `ProposalRow`, eleven aliases putting the columns
+ * back onto it, and a `toProposal` renaming them forward again.
+ *
+ * What crosses this file untranslated, and stays that way, is the hypothesis
+ * vocabulary — {@link HypothesisOutcome}, {@link ProposalFilter.veredito} and the
+ * `veredito`/`antes`/`depois`/`execucao_id` keys inside `result`. That is
+ * `domain/hypothesis.ts`'s frozen data format, which D18 carved out of the
+ * English rule and D20 does not unfreeze; it looks exactly like the fields
+ * renamed around it and it is not one of them.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -39,7 +46,7 @@ import {
   insertVersion,
   movePointer,
   recordVersionBirth,
-  type GraphVersionRow,
+  type GraphVersion,
   type StoredContracts,
 } from './graphs.ts';
 
@@ -53,75 +60,88 @@ import {
  */
 export type ProposalStatus = 'pending' | 'approved' | 'applied' | 'reverted' | 'rejected';
 
-/** A proposal, with the JSON columns already parsed. */
-export interface ProposalRow {
+/**
+ * A proposal, as `/v1` publishes it — and as the reads below return it.
+ *
+ * Every field is the column's own name (t289): there is no second spelling
+ * between this and `proposal`, and {@link hydrate} is the whole of the distance
+ * between the row and this object — four `JSON.parse`s and one column dropped.
+ *
+ * `evidence`, `expected_metric` and `result` are `unknown` and stay that way:
+ * what is inside them does not move by one byte. Those blobs are
+ * `domain/hypothesis.ts`'s `ExpectedMetric` and `Verdict` shapes — `{nome,
+ * direcao, de, para}`, `{veredito, antes, depois, execucao_id, avaliado_em}` —
+ * which that file documents as a frozen data format D18 left out of the English
+ * rule, which no row of the glossary maps, and which D20 does not unfreeze
+ * either. Renaming them is a decision somebody has to take on purpose; t226
+ * deliberately did not take it, and neither does t289.
+ *
+ * `operations` is the same story for a different reason: the operation
+ * vocabulary is D20's THIRD child, and it travels through here untouched.
+ */
+export interface Proposal {
   id: number;
-  grafo_id: string;
-  versao_alvo: string;
-  operacoes: Operation[];
-  evidencia: unknown;
-  metrica_esperada: unknown;
+  graph_id: string;
+  target_version: string;
+  operations: Operation[];
+  evidence: unknown;
+  expected_metric: unknown;
   status: ProposalStatus;
-  versao_aplicada_id: string | null;
-  motivo_reversao: string | null;
+  applied_version_id: string | null;
+  revert_reason: string | null;
   /** Why a PERSON refused the hypothesis; the soundness gate writes `result` instead. */
-  motivo_rejeicao: string | null;
-  resultado: unknown;
-  /**
-   * Deduplication key of the `(lens, target version, operations)` triple (t246).
-   *
-   * The one field of this interface whose name is NOT translated back to
-   * Portuguese by `COLUMNS`, because it never was Portuguese: it is internal
-   * bookkeeping born English with `migrations/0021_proposta_dedupe_key.sql`, and
-   * {@link toProposal} does not publish it. `null` on any row written before that
-   * migration, and on any proposal whose evidence named no lens.
-   */
-  dedupe_key: string | null;
-  criado_em: string;
-  atualizado_em: string;
+  rejection_reason: string | null;
+  result: unknown;
+  created_at: string;
+  updated_at: string;
 }
 
-/** The same row as SQLite returns it: JSON in TEXT. */
+/** The row as SQLite returns it: the column names, with the JSON still in TEXT. */
 interface RawRow {
   id: number;
-  grafo_id: string;
-  versao_alvo: string;
-  operacoes: string;
-  evidencia: string;
-  metrica_esperada: string;
+  graph_id: string;
+  target_version: string;
+  operations: string;
+  evidence: string;
+  expected_metric: string;
   status: ProposalStatus;
-  versao_aplicada_id: string | null;
-  motivo_reversao: string | null;
-  motivo_rejeicao: string | null;
-  resultado: string | null;
-  dedupe_key: string | null;
-  criado_em: string;
-  atualizado_em: string;
+  applied_version_id: string | null;
+  revert_reason: string | null;
+  rejection_reason: string | null;
+  result: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-/** The row, read back into {@link ProposalRow}'s spelling (t229, FR4). */
-const COLUMNS = `id, graph_id AS grafo_id, target_version AS versao_alvo,
-                 operations AS operacoes, evidence AS evidencia,
-                 expected_metric AS metrica_esperada, status,
-                 applied_version_id AS versao_aplicada_id,
-                 revert_reason AS motivo_reversao,
-                 rejection_reason AS motivo_rejeicao, result AS resultado,
-                 dedupe_key,
-                 created_at AS criado_em, updated_at AS atualizado_em`;
+/**
+ * Every column of a proposal that anybody reads, each under its own name (t289).
+ *
+ * `dedupe_key` is deliberately NOT here. It is internal bookkeeping, born
+ * English with `migrations/0021_proposta_dedupe_key.sql`, and no caller has ever
+ * read its value — `findPendingProposalByDedupeKey` matches on it in a `WHERE`
+ * and nothing else. Selecting it would put it on {@link RawRow}, and one spread
+ * later the server's own key would be riding out to `/v1` on every proposal
+ * (`test/proposal-routes.test.ts` pins that it does not).
+ */
+const COLUMNS = `id, graph_id, target_version, operations, evidence, expected_metric,
+                 status, applied_version_id, revert_reason, rejection_reason, result,
+                 created_at, updated_at`;
 
-function hydrate(row: RawRow): ProposalRow {
+/**
+ * The four JSON columns, parsed; every other field passes through by name.
+ *
+ * @param row Row as the driver returned it.
+ * @returns The proposal, as the API publishes it.
+ */
+function hydrate(row: RawRow): Proposal {
   return {
     ...row,
-    operacoes: JSON.parse(row.operacoes) as Operation[],
-    evidencia: JSON.parse(row.evidencia),
-    metrica_esperada: JSON.parse(row.metrica_esperada),
-    resultado: row.resultado === null ? null : JSON.parse(row.resultado),
+    operations: JSON.parse(row.operations) as Operation[],
+    evidence: JSON.parse(row.evidence),
+    expected_metric: JSON.parse(row.expected_metric),
+    result: row.result === null ? null : JSON.parse(row.result),
   };
 }
-
-/* -------------------------------------------------------------------------- */
-/* The row → wire boundary (t226, FR1).                                        */
-/* -------------------------------------------------------------------------- */
 
 /**
  * The five statuses a `?status=` filter may name (`glossario-wire.md` §1.6).
@@ -151,61 +171,11 @@ export function proposalStatusColumn(value: string): ProposalStatus | undefined 
 }
 
 /**
- * A proposal, as `/v1` publishes it.
- *
- * `evidence`, `expected_metric` and `result` are `unknown` and stay that way:
- * the KEYS translate (`glossario-wire.md` §4.2), and what is inside them does
- * not move by one byte. Those blobs are `domain/hypothesis.ts`'s `ExpectedMetric`
- * and `Verdict` shapes — `{nome, direcao, de, para}`, `{veredito, antes, depois,
- * execucao_id, avaliado_em}` — which that file documents as a frozen data format
- * D18 left out of the English rule, which no row of the glossary maps, and which
- * D20 does not unfreeze either. Renaming them is a decision somebody has to take
- * on purpose; t226 deliberately does not take it (FR5).
- *
- * `operations` is the same story for a different reason: the operation
- * vocabulary is D20's THIRD child, and it travels through here untouched.
- */
-export interface Proposal {
-  id: number;
-  graph_id: string;
-  target_version: string;
-  operations: Operation[];
-  evidence: unknown;
-  expected_metric: unknown;
-  status: string;
-  applied_version_id: string | null;
-  revert_reason: string | null;
-  rejection_reason: string | null;
-  result: unknown;
-  created_at: string;
-  updated_at: string;
-}
-
-/** Row to wire: the one place the proposal's column names meet the API's. */
-export function toProposal(row: ProposalRow): Proposal {
-  return {
-    id: row.id,
-    graph_id: row.grafo_id,
-    target_version: row.versao_alvo,
-    operations: row.operacoes,
-    evidence: row.evidencia,
-    expected_metric: row.metrica_esperada,
-    status: row.status,
-    applied_version_id: row.versao_aplicada_id,
-    revert_reason: row.motivo_reversao,
-    rejection_reason: row.motivo_rejeicao,
-    result: row.resultado,
-    created_at: row.criado_em,
-    updated_at: row.atualizado_em,
-  };
-}
-
-/**
  * @param db Open database.
  * @param id Proposal id.
  * @returns The hydrated proposal, or `undefined`.
  */
-export function getProposal(db: Database, id: number): ProposalRow | undefined {
+export function getProposal(db: Database, id: number): Proposal | undefined {
   const row = db.prepare(`SELECT ${COLUMNS} FROM proposal WHERE id = ?`).get(id) as
     | RawRow
     | undefined;
@@ -227,14 +197,14 @@ export function getProposal(db: Database, id: number): ProposalRow | undefined {
 export function createProposal(
   db: Database,
   data: {
-    grafo_id: string;
-    versao_alvo: string;
-    operacoes: Operation[];
-    evidencia: unknown;
-    metrica_esperada: unknown;
+    graph_id: string;
+    target_version: string;
+    operations: Operation[];
+    evidence: unknown;
+    expected_metric: unknown;
     dedupeKey?: string | null;
   },
-): ProposalRow {
+): Proposal {
   const createdAt = now();
   const result = db
     .prepare(
@@ -243,11 +213,11 @@ export function createProposal(
        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
     )
     .run(
-      data.grafo_id,
-      data.versao_alvo,
-      JSON.stringify(data.operacoes),
-      JSON.stringify(data.evidencia),
-      JSON.stringify(data.metrica_esperada),
+      data.graph_id,
+      data.target_version,
+      JSON.stringify(data.operations),
+      JSON.stringify(data.evidence),
+      JSON.stringify(data.expected_metric),
       data.dedupeKey ?? null,
       createdAt,
       createdAt,
@@ -282,7 +252,7 @@ export function createProposal(
 export function findPendingProposalByDedupeKey(
   db: Database,
   dedupeKey: string,
-): ProposalRow | undefined {
+): Proposal | undefined {
   const row = db
     .prepare(`SELECT ${COLUMNS} FROM proposal WHERE dedupe_key = ? AND status = 'pending'`)
     .get(dedupeKey) as RawRow | undefined;
@@ -315,7 +285,7 @@ export function findPendingProposalByDedupeKey(
  *   {@link approveProposal} uses, for the same reason: strengthening a proposal
  *   somebody just decided on would be writing over their decision.
  */
-export function appendProposalEvidence(db: Database, id: number, evidence: unknown): ProposalRow {
+export function appendProposalEvidence(db: Database, id: number, evidence: unknown): Proposal {
   db.transaction(() => {
     const current = db
       .prepare(`SELECT evidence FROM proposal WHERE id = ? AND status = 'pending'`)
@@ -361,7 +331,7 @@ export function appendProposalEvidence(db: Database, id: number, evidence: unkno
  * @param report Validation report, written into `result`.
  * @returns The updated proposal.
  */
-export function rejectProposal(db: Database, id: number, report: unknown): ProposalRow {
+export function rejectProposal(db: Database, id: number, report: unknown): Proposal {
   db.prepare(
     `UPDATE proposal SET status = 'rejected', result = ?, updated_at = ?
       WHERE id = ? AND status = 'approved'`,
@@ -385,7 +355,7 @@ export function rejectProposal(db: Database, id: number, report: unknown): Propo
  * @throws {Error} When the row stopped being pending mid-flight — two people
  *   deciding at once is a 409, never a silent overwrite.
  */
-export function approveProposal(db: Database, id: number): ProposalRow {
+export function approveProposal(db: Database, id: number): Proposal {
   const effect = db
     .prepare(
       `UPDATE proposal SET status = 'approved', updated_at = ?
@@ -415,7 +385,7 @@ export function approveProposal(db: Database, id: number): ProposalRow {
  * @returns The updated proposal.
  * @throws {Error} When the row stopped being pending mid-flight.
  */
-export function rejectProposalByHuman(db: Database, id: number, reason: string): ProposalRow {
+export function rejectProposalByHuman(db: Database, id: number, reason: string): Proposal {
   const effect = db
     .prepare(
       `UPDATE proposal SET status = 'rejected', rejection_reason = ?, updated_at = ?
@@ -443,36 +413,36 @@ export function rejectProposalByHuman(db: Database, id: number, reason: string):
 export function applyProposal(
   db: Database,
   data: {
-    proposal: ProposalRow;
+    proposal: Proposal;
     versionId: string;
     document: GraphDocument;
     contracts: StoredContracts;
   },
-): { proposal: ProposalRow; version: GraphVersionRow } {
+): { proposal: Proposal; version: GraphVersion } {
   const { proposal, versionId, document, contracts } = data;
   const moment = now();
 
   db.transaction(() => {
     insertVersion(db, {
       id: versionId,
-      grafo_id: proposal.grafo_id,
-      versao_pai: proposal.versao_alvo,
+      graph_id: proposal.graph_id,
+      parent_version: proposal.target_version,
       snapshot: document,
-      origem: 'proposal',
-      proposta_id: proposal.id,
-      criado_em: moment,
+      source: 'proposal',
+      proposal_id: proposal.id,
+      created_at: moment,
       contracts,
     });
 
-    movePointer(db, proposal.grafo_id, versionId);
+    movePointer(db, proposal.graph_id, versionId);
 
     // The same pair the two bootstrap paths record, this time with the proposal
     // that produced the snapshot: a version born of a hypothesis is exactly what
     // the surveyor will later cross with the telemetry of the round that ran it.
     recordVersionBirth(db, {
-      graphId: proposal.grafo_id,
+      graphId: proposal.graph_id,
       versionId,
-      parentVersion: proposal.versao_alvo,
+      parentVersion: proposal.target_version,
       source: 'proposal',
       proposalId: proposal.id,
       moment,
@@ -516,8 +486,8 @@ export function applyProposal(
  */
 export function revertProposal(
   db: Database,
-  data: { proposal: ProposalRow; reason: string },
-): ProposalRow {
+  data: { proposal: Proposal; reason: string },
+): Proposal {
   const { proposal, reason } = data;
   const moment = now();
 
@@ -525,13 +495,13 @@ export function revertProposal(
   // applied proposal always names it — `applyProposal` writes the column in the
   // same transaction that sets the status. Reading it before opening this one
   // means a row that somehow lost it fails without having moved a pointer.
-  const abandoned = proposal.versao_aplicada_id;
+  const abandoned = proposal.applied_version_id;
   if (abandoned === null) {
     throw new Error(`proposal ${proposal.id} is applied without an applied version`);
   }
 
   db.transaction(() => {
-    movePointer(db, proposal.grafo_id, proposal.versao_alvo);
+    movePointer(db, proposal.graph_id, proposal.target_version);
 
     const effect = db
       .prepare(
@@ -554,8 +524,8 @@ export function revertProposal(
       actor: API_ACTOR,
       occurred_at: moment,
       data: {
-        graph_id: proposal.grafo_id,
-        target_version: proposal.versao_alvo,
+        graph_id: proposal.graph_id,
+        target_version: proposal.target_version,
         reason,
       },
     });
@@ -583,7 +553,7 @@ export interface HypothesisOutcome {
 
 /** Arguments of `recordVerdict`, already judged and checked against telemetry. */
 export interface VerdictRecord {
-  proposal: ProposalRow;
+  proposal: Proposal;
   executionId: number;
   after: number;
   verdict: Verdict;
@@ -608,7 +578,7 @@ export interface VerdictRecord {
  * @returns The proposal as it was written.
  * @throws {Error} When the row stopped matching the guard mid-flight.
  */
-export function recordVerdict(db: Database, data: VerdictRecord): ProposalRow {
+export function recordVerdict(db: Database, data: VerdictRecord): Proposal {
   const { proposal } = data;
   const outcome: HypothesisOutcome = {
     veredito: data.verdict,
@@ -652,7 +622,7 @@ export interface ProposalFilter {
  * @param filter Optional cuts; absent keys mean "no filter".
  * @returns Proposals with the JSON columns already parsed, in id order.
  */
-export function listProposals(db: Database, filter: ProposalFilter = {}): ProposalRow[] {
+export function listProposals(db: Database, filter: ProposalFilter = {}): Proposal[] {
   const conditions: string[] = [];
   const values: unknown[] = [];
 

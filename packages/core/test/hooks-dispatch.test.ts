@@ -133,7 +133,7 @@ interface DeclaredHook {
 
 /** The slice of `src/repositories/hook-secrets.ts` this suite writes through. */
 interface HookSecretsModule {
-  setHookSecret: (db: Database, data: { nome: string; valor: string }) => unknown;
+  setHookSecret: (db: Database, data: { name: string; value: string }) => unknown;
 }
 
 /** One row of `hook_delivery`, read straight from the table. */
@@ -223,7 +223,7 @@ async function startDispatcher(
 
   // The deployment's half of the contract (t194): the document names the key,
   // this registers it. Without it every hook below would resolve to nothing.
-  setHookSecret(db, { nome: SECRET_REF, valor: SECRET });
+  setHookSecret(db, { name: SECRET_REF, value: SECRET });
 
   const calls: DeliveryCall[] = [];
   const clock = { value: START };

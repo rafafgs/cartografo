@@ -93,7 +93,7 @@ export function registerHookSecrets(app: FastifyInstance, db: Database): void {
       const name = readName(request.params);
       const value = readValue(request.body);
 
-      const { secret, rotated } = setHookSecret(db, { nome: name, valor: value });
+      const { secret, rotated } = setHookSecret(db, { name, value });
       reply.code(rotated ? 200 : 201);
       return { name: secret.name, created_at: secret.created_at };
     }),

@@ -35,10 +35,11 @@
  * `now` is injectable (default: the real clock), like `repositories/webhooks.ts`:
  * "the backoff step has passed" has to be testable without a two-hour `sleep`.
  *
- * The COLUMNS are English since D20's fourth child (t229); {@link HookOccurrence}
- * and {@link HookDeliveryTask} are not, because `job.ts` builds the first one and
- * `src/hooks/dispatcher.ts` reads the second — so the `SELECT` aliases the
- * renamed column back onto the field (t229, FR4).
+ * The COLUMNS are English since D20's fourth child (t229), and since t289 so is
+ * every shape above them: {@link HookOccurrence}, {@link HookDeliveryTask} and
+ * the exhaustion row all spell each field the way its column does, so `job.ts`
+ * builds the first one and `src/hooks/dispatcher.ts` reads the second in the
+ * schema's own words, and no `SELECT` here carries an alias.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -70,25 +71,25 @@ const WEBHOOK_DESTINATION = 'webhook';
 export interface HookOccurrence {
   trigger: HookTrigger;
   /** The node the job entered, or the one it blocked on. */
-  no_id: string;
-  trabalho_id: number;
-  projeto_id: number;
-  execucao_id: number | null;
+  node_id: string;
+  job_id: number;
+  project_id: number;
+  execution_id: number | null;
   /** The job's graph version; `null` means there is nothing to look hooks up in. */
-  grafo_versao_id: string | null;
+  graph_version_id: string | null;
   /** The event that triggered it — the body every delivery of this row carries. */
-  evento_id: number;
+  event_id: number;
 }
 
 /** A delivery that is due, already carrying what an attempt needs. */
 export interface HookDeliveryTask {
   id: number;
-  evento_id: number;
+  event_id: number;
   /** Attempts already made — the index into the backoff schedule. */
-  tentativas: number;
+  attempts: number;
   url: string;
   /** The HMAC key. It exists in memory for the length of one attempt. */
-  segredo: string;
+  secret: string;
 }
 
 /** What a failed attempt reports back. */
@@ -102,11 +103,11 @@ export interface FailedHookAttempt {
 
 /** The columns the exhaustion event is built out of. */
 interface ExhaustedRow {
-  projeto_id: number;
-  execucao_id: number | null;
-  trabalho_id: number;
-  gancho_id: string;
-  no_id: string;
+  project_id: number;
+  execution_id: number | null;
+  job_id: number;
+  hook_id: string;
+  node_id: string;
   url: string;
 }
 
@@ -129,7 +130,7 @@ const isFilledText = (value: unknown): value is string =>
 function matches(hook: unknown, occurrence: HookOccurrence): hook is GraphHook {
   if (!isObject(hook)) return false;
   if (hook.trigger !== occurrence.trigger) return false;
-  if (hook.node_id !== occurrence.no_id) return false;
+  if (hook.node_id !== occurrence.node_id) return false;
   if (!isFilledText(hook.id)) return false;
 
   const destination = hook.destination;
@@ -169,9 +170,9 @@ export function enqueueHookDeliveries(
   occurrence: HookOccurrence,
   options: ClockOptions = {},
 ): number {
-  if (occurrence.grafo_versao_id === null) return 0;
+  if (occurrence.graph_version_id === null) return 0;
 
-  const version = getVersion(db, occurrence.grafo_versao_id);
+  const version = getVersion(db, occurrence.graph_version_id);
   if (version === undefined) return 0;
 
   const declared: unknown = version.snapshot.hooks;
@@ -196,19 +197,19 @@ export function enqueueHookDeliveries(
     // here, next to the `url` the row copies, because the two answer the same
     // question — "what did this hook mean when it fired?" — and a delivery in
     // flight has to finish against that answer and not against today's.
-    const segredo = resolveHookSecret(db, hook.destination.secret_ref);
-    if (segredo === undefined) continue;
+    const secret = resolveHookSecret(db, hook.destination.secret_ref);
+    if (secret === undefined) continue;
 
     created += statement.run(
-      occurrence.projeto_id,
-      occurrence.execucao_id,
-      occurrence.trabalho_id,
+      occurrence.project_id,
+      occurrence.execution_id,
+      occurrence.job_id,
       hook.id,
-      occurrence.no_id,
-      occurrence.grafo_versao_id,
-      occurrence.evento_id,
+      occurrence.node_id,
+      occurrence.graph_version_id,
+      occurrence.event_id,
       hook.destination.url,
-      segredo,
+      secret,
       // Born due, so the same tick that enqueues it can also attempt it.
       moment,
       moment,
@@ -237,8 +238,7 @@ export function dueHookDeliveries(
 ): HookDeliveryTask[] {
   return db
     .prepare(
-      `SELECT id, event_id AS evento_id, attempts AS tentativas, url,
-              secret AS segredo
+      `SELECT id, event_id, attempts, url, secret
          FROM hook_delivery
         WHERE status = 'pending' AND next_attempt_at <= ?
         ORDER BY id
@@ -295,13 +295,11 @@ export function recordHookDeliveryFailure(
 
   db.transaction(() => {
     const current = db
-      .prepare(
-        "SELECT attempts AS tentativas FROM hook_delivery WHERE id = ? AND status = 'pending'",
-      )
-      .get(attempt.id) as { tentativas: number } | undefined;
+      .prepare("SELECT attempts FROM hook_delivery WHERE id = ? AND status = 'pending'")
+      .get(attempt.id) as { attempts: number } | undefined;
     if (current === undefined) return;
 
-    const made = current.tentativas + 1;
+    const made = current.attempts + 1;
     const step = attempt.backoff[made - 1];
 
     if (step !== undefined) {
@@ -319,22 +317,21 @@ export function recordHookDeliveryFailure(
 
     const row = db
       .prepare(
-        `SELECT project_id AS projeto_id, execution_id AS execucao_id,
-                job_id AS trabalho_id, hook_id AS gancho_id, node_id AS no_id, url
+        `SELECT project_id, execution_id, job_id, hook_id, node_id, url
            FROM hook_delivery WHERE id = ?`,
       )
       .get(attempt.id) as ExhaustedRow;
 
     recordEvent(db, {
       type: 'job.hook_failed',
-      project_id: row.projeto_id,
-      execution_id: row.execucao_id,
-      entity: { type: 'job', id: row.trabalho_id },
+      project_id: row.project_id,
+      execution_id: row.execution_id,
+      entity: { type: 'job', id: row.job_id },
       actor: API_ACTOR,
       occurred_at: clock(),
       data: {
-        hook_id: row.gancho_id,
-        node_id: row.no_id,
+        hook_id: row.hook_id,
+        node_id: row.node_id,
         url: row.url,
         last_error: attempt.message,
       },

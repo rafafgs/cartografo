@@ -20,10 +20,12 @@
  * `db` as their first parameter instead of closing over it — that is the whole
  * of what the split cost, and no behaviour moved with it.
  *
- * What the routes return is the output of `repositories/proposals.ts`'s
- * `toProposal`, never a row (t226, FR1); the comparisons inside the handlers keep
- * reading the ROW (`proposal.status !== 'pending'`), which since D20's fifth
- * child (t235) is the same word the wire publishes.
+ * What the routes return is what `repositories/proposals.ts` returns, handed
+ * back untouched (t226 FR1, t289). There used to be a `toProposal` wrapper
+ * around every one of them, and a `wireStatus` helper that ran a whole proposal
+ * through it to read one field; both are gone, because the row spells every
+ * field the way `/v1` publishes it and `proposal.status` since D20's fifth child
+ * (t235) is already the word the wire carries.
  *
  * ONE flow here stays Portuguese on the way in, and it is deliberate:
  * `POST /proposals/:id/outcome` takes `{execucao_id, depois}` and
@@ -61,7 +63,7 @@ import {
   ApplicationError,
   type Operation,
 } from '../domain/operations.ts';
-import { getGraph, getVersion, toGraph, toGraphVersion } from '../repositories/graphs.ts';
+import { getGraph, getVersion } from '../repositories/graphs.ts';
 import { metricsByVersion } from '../repositories/job.ts';
 import {
   appendProposalEvidence,
@@ -76,8 +78,7 @@ import {
   rejectProposal,
   rejectProposalByHuman,
   revertProposal,
-  toProposal,
-  type ProposalRow,
+  type Proposal,
 } from '../repositories/proposals.ts';
 import { getSkill } from '../repositories/skill.ts';
 import { isObject } from '../util/is-object.ts';
@@ -299,7 +300,7 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
 
   const targetVersion = body.target_version;
   const version = typeof targetVersion === 'string' ? getVersion(db, targetVersion) : undefined;
-  if (version === undefined || version.grafo_id !== graphId) {
+  if (version === undefined || version.graph_id !== graphId) {
     return refusal(
       reply,
       400,
@@ -355,20 +356,20 @@ async function create(db: Database, request: FastifyRequest, reply: FastifyReply
     // already exists grows by one occurrence and everything else about it —
     // `expected_metric` above all — stays the hypothesis it was.
     reply.code(200);
-    return { proposal: toProposal(appendProposalEvidence(db, pending.id, body.evidence)) };
+    return { proposal: appendProposalEvidence(db, pending.id, body.evidence) };
   }
 
   const proposal = createProposal(db, {
-    grafo_id: graphId,
-    versao_alvo: targetVersion as string,
-    operacoes: rawOperations as Operation[],
-    evidencia: body.evidence,
-    metrica_esperada: body.expected_metric,
+    graph_id: graphId,
+    target_version: targetVersion as string,
+    operations: rawOperations as Operation[],
+    evidence: body.evidence,
+    expected_metric: body.expected_metric,
     dedupeKey,
   });
 
   reply.code(201);
-  return { proposal: toProposal(proposal) };
+  return { proposal };
 }
 
 /**
@@ -392,7 +393,7 @@ async function approve(
     return notPending(reply, proposal, 'approved');
   }
 
-  return { proposal: toProposal(approveProposal(db, proposal.id)) };
+  return { proposal: approveProposal(db, proposal.id) };
 }
 
 /** `POST /proposals/:id/reject` — the human gate says no, and says why. */
@@ -424,7 +425,7 @@ async function reject(
     return notPending(reply, proposal, 'rejected');
   }
 
-  return { proposal: toProposal(rejectProposalByHuman(db, proposal.id, reason.trim())) };
+  return { proposal: rejectProposalByHuman(db, proposal.id, reason.trim()) };
 }
 
 /** The pin of one node, as the graph document carries it (`{id, version, hash}`). */
@@ -551,38 +552,38 @@ async function apply(
       reply,
       409,
       'proposal_not_approved',
-      `only an approved proposal can be applied; this one is "${wireStatus(proposal)}"`,
-      { status: wireStatus(proposal) },
+      `only an approved proposal can be applied; this one is "${proposal.status}"`,
+      { status: proposal.status },
     );
   }
 
-  const graph = getGraph(db, proposal.grafo_id);
+  const graph = getGraph(db, proposal.graph_id);
   if (graph === undefined) {
-    return refusal(reply, 404, 'unknown_graph', undefined, { graph_id: proposal.grafo_id });
+    return refusal(reply, 404, 'unknown_graph', undefined, { graph_id: proposal.graph_id });
   }
 
-  if (graph.versao_corrente_id !== proposal.versao_alvo) {
+  if (graph.current_version_id !== proposal.target_version) {
     return refusal(
       reply,
       409,
       'stale_proposal',
       'the base moved since the proposal was written; redoing the diff is up to the surveyor',
-      { target_version: proposal.versao_alvo, current_version: graph.versao_corrente_id },
+      { target_version: proposal.target_version, current_version: graph.current_version_id },
     );
   }
 
-  const target = getVersion(db, proposal.versao_alvo);
+  const target = getVersion(db, proposal.target_version);
   if (target === undefined) {
-    return refusal(reply, 404, 'unknown_graph_version', undefined, { id: proposal.versao_alvo });
+    return refusal(reply, 404, 'unknown_graph_version', undefined, { id: proposal.target_version });
   }
 
   let document;
   try {
-    document = applyOperations(target.snapshot, proposal.operacoes);
+    document = applyOperations(target.snapshot, proposal.operations);
   } catch (error) {
     if (!(error instanceof ApplicationError)) throw error;
     // `code`/`target` come off `ApplicationError`, which already spells them in
-    // English; what is stored in `resultado` is this same object, because the
+    // English; what is stored in `result` is this same object, because the
     // column holds an opaque JSON blob and D20 gives its NAME — not its
     // content — to the database child.
     const report = {
@@ -592,7 +593,7 @@ async function apply(
       target: error.target,
     };
     reply.code(422);
-    return { ...report, proposal: toProposal(rejectProposal(db, proposal.id, report)) };
+    return { ...report, proposal: rejectProposal(db, proposal.id, report) };
   }
 
   // The gate: soundness runs BEFORE any write, over the document that would
@@ -604,7 +605,7 @@ async function apply(
     return {
       error: 'invalid_graph',
       ...report,
-      proposal: toProposal(rejectProposal(db, proposal.id, report)),
+      proposal: rejectProposal(db, proposal.id, report),
     };
   }
 
@@ -617,7 +618,7 @@ async function apply(
     reply.code(422);
     return {
       ...unregistered,
-      proposal: toProposal(rejectProposal(db, proposal.id, unregistered)),
+      proposal: rejectProposal(db, proposal.id, unregistered),
     };
   }
 
@@ -631,7 +632,7 @@ async function apply(
       existing_version: versionId,
     };
     reply.code(422);
-    return { ...noEffect, proposal: toProposal(rejectProposal(db, proposal.id, noEffect)) };
+    return { ...noEffect, proposal: rejectProposal(db, proposal.id, noEffect) };
   }
 
   // The third gate's answer, recomputed over the document the operations
@@ -656,11 +657,11 @@ async function apply(
     document,
     contracts: { state: classifyContracts(contracts), problems: contracts.problems },
   });
-  const graphAfter = getGraph(db, proposal.grafo_id);
+  const graphAfter = getGraph(db, proposal.graph_id);
   return {
-    proposal: toProposal(written.proposal),
-    graph: graphAfter === undefined ? undefined : toGraph(graphAfter),
-    graph_version: toGraphVersion(written.version),
+    proposal: written.proposal,
+    graph: graphAfter,
+    graph_version: written.version,
   };
 }
 
@@ -695,37 +696,37 @@ async function revert(
       reply,
       409,
       'proposal_not_applied',
-      `only an applied proposal can be reverted; this one is "${wireStatus(proposal)}"`,
-      { status: wireStatus(proposal) },
+      `only an applied proposal can be reverted; this one is "${proposal.status}"`,
+      { status: proposal.status },
     );
   }
 
-  const graph = getGraph(db, proposal.grafo_id);
+  const graph = getGraph(db, proposal.graph_id);
   if (graph === undefined) {
-    return refusal(reply, 404, 'unknown_graph', undefined, { graph_id: proposal.grafo_id });
+    return refusal(reply, 404, 'unknown_graph', undefined, { graph_id: proposal.graph_id });
   }
 
   // Reverting is the exact counterpart of this proposal. If another version
   // came on top, the pointer would skip intermediate versions — free history
   // navigation is another thing, and it is out of this ticket.
-  if (graph.versao_corrente_id !== proposal.versao_aplicada_id) {
+  if (graph.current_version_id !== proposal.applied_version_id) {
     return refusal(
       reply,
       409,
       'stale_proposal',
       'the version this proposal applied is no longer the current one',
       {
-        applied_version_id: proposal.versao_aplicada_id,
-        current_version: graph.versao_corrente_id,
+        applied_version_id: proposal.applied_version_id,
+        current_version: graph.current_version_id,
       },
     );
   }
 
   const reverted = revertProposal(db, { proposal, reason });
-  const graphAfter = getGraph(db, proposal.grafo_id);
+  const graphAfter = getGraph(db, proposal.graph_id);
   return {
-    proposal: toProposal(reverted),
-    graph: graphAfter === undefined ? undefined : toGraph(graphAfter),
+    proposal: reverted,
+    graph: graphAfter,
   };
 }
 
@@ -762,24 +763,24 @@ async function outcome(
       reply,
       409,
       'proposal_not_applied',
-      `only an applied proposal has an experiment to close; this one is "${wireStatus(proposal)}"`,
-      { status: wireStatus(proposal) },
+      `only an applied proposal has an experiment to close; this one is "${proposal.status}"`,
+      { status: proposal.status },
     );
   }
 
   // Only the first call counts. Re-evaluating would be rewriting a hypothesis'
   // past, and the column holds ONE result, the one of the first next round.
-  if (proposal.resultado !== null) {
+  if (proposal.result !== null) {
     return refusal(
       reply,
       409,
       'proposal_already_reviewed',
       'the outcome of this hypothesis was already recorded by the first next execution',
-      { result: proposal.resultado },
+      { result: proposal.result },
     );
   }
 
-  const metric = proposal.metrica_esperada;
+  const metric = proposal.expected_metric;
   if (!isExpectedMetric(metric)) {
     // Creation never validated this shape (out of scope here): an applied
     // proposal may perfectly well carry a metric nobody can read. Computing a
@@ -796,7 +797,7 @@ async function outcome(
   // "The next execution" has to be demonstrable from telemetry (t102's FR17),
   // not claimed in the body: with no job recorded under the version this
   // proposal applied, there is no next round to speak of.
-  const appliedVersion = proposal.versao_aplicada_id;
+  const appliedVersion = proposal.applied_version_id;
   const evidence =
     appliedVersion === null
       ? undefined
@@ -825,7 +826,7 @@ async function outcome(
 
   // The status stays `applied` on purpose: "piorou" is data, not an action.
   // Reverting is a human decision, through the revert route (README, princípio 5).
-  return { proposal: toProposal(written) };
+  return { proposal: written };
 }
 
 /** `GET /proposals` — the listing, with its two optional filters. */
@@ -840,7 +841,7 @@ async function list(db: Database, request: FastifyRequest): Promise<unknown> {
     status: status === undefined ? undefined : (proposalStatusColumn(status) ?? status),
     veredito: optionalFilter(filter.veredito),
   });
-  return { proposals: proposals.map(toProposal) };
+  return { proposals };
 }
 
 /**
@@ -849,8 +850,8 @@ async function list(db: Database, request: FastifyRequest): Promise<unknown> {
  * The one the tela has assumed since t111
  * (`docs/spec/tela-inbox-propostas.md` §2) and that closing the gate finally
  * needed: whoever is about to approve reads ONE proposal, and the script that
- * closes the experiment reads the `metrica_esperada` of ONE proposal (t165,
- * FR5/FR9). Same row the listing returns, `motivo_rejeicao` included.
+ * closes the experiment reads the `expected_metric` of ONE proposal (t165,
+ * FR5/FR9). Same row the listing returns, `rejection_reason` included.
  */
 async function read(
   db: Database,
@@ -861,12 +862,7 @@ async function read(
   if (proposal === undefined) {
     return refusal(reply, 404, 'unknown_proposal', undefined, { id: request.params.id });
   }
-  return { proposal: toProposal(proposal) };
-}
-
-/** The proposal's status as the wire spells it — never the column's value. */
-function wireStatus(proposal: ProposalRow): string {
-  return toProposal(proposal).status;
+  return { proposal };
 }
 
 /**
@@ -879,15 +875,15 @@ function wireStatus(proposal: ProposalRow): string {
  */
 function notPending(
   reply: FastifyReply,
-  proposal: ProposalRow,
+  proposal: Proposal,
   verb: string,
 ): Record<string, unknown> {
   return refusal(
     reply,
     409,
     'proposal_not_pending',
-    `only a pending proposal can be ${verb}; this one is "${wireStatus(proposal)}"`,
-    { status: wireStatus(proposal) },
+    `only a pending proposal can be ${verb}; this one is "${proposal.status}"`,
+    { status: proposal.status },
   );
 }
 
@@ -897,7 +893,7 @@ function optionalFilter(value: string | undefined): string | undefined {
 }
 
 /** Resolves a route's `:id` into a proposal; a non-numeric id is a 404, not a 500. */
-function load(db: Database, id: string): ProposalRow | undefined {
+function load(db: Database, id: string): Proposal | undefined {
   const parsed = Number(id);
   if (!Number.isInteger(parsed)) return undefined;
   return getProposal(db, parsed);

@@ -35,10 +35,9 @@
  * `now` is injectable (default: the real clock), like every other repository
  * here.
  *
- * The COLUMNS are English since D20's fourth child (t229); {@link HookSecretRow}
- * and {@link NewHookSecret} are not, because `routes/hook-secrets.ts` builds the
- * second one — so the `SELECT` aliases the renamed column back onto the field
- * (t229, FR4).
+ * The COLUMNS are English since D20's fourth child (t229), and since t289 so is
+ * everything above them: {@link HookSecret} IS the row, {@link NewHookSecret}
+ * takes the column's own two words, and no `SELECT` here carries an alias.
  */
 
 import type { Database } from '../db/connection.ts';
@@ -52,10 +51,13 @@ export interface ClockOptions {
 /**
  * A registration as the API shows it — deliberately without the value.
  *
- * This type IS the wire (t226, FR1): nothing inside the package reads it, so
- * there is no second, Portuguese projection to keep beside it. The COLUMNS it
- * comes from are `name`/`created_at`/`revoked_at` since t229, and
- * `toHookSecret` is where the two meet.
+ * This type IS the wire (t226, FR1) AND the row (t289): its three fields are
+ * `name`, `created_at` and `revoked_at`, which is what the columns have been
+ * called since t229, so {@link COLUMNS} selects them and the reads cast straight
+ * onto this. There used to be a `HookSecretRow` beside it spelling the same three
+ * fields in Portuguese, and a `toHookSecret` translating between them; both are
+ * gone, because a projection whose only job was to rename a column back is a step
+ * nobody outside this file could see.
  */
 export interface HookSecret {
   /** The name a hook's `destination.secret_ref` points at. */
@@ -65,24 +67,12 @@ export interface HookSecret {
   revoked_at: string | null;
 }
 
-/** The row as `COLUMNS` aliases it back, for {@link toHookSecret} to read. */
-interface HookSecretRow {
-  nome: string;
-  criada_em: string;
-  revogada_em: string | null;
-}
-
-/** Row to wire: the one place the column names meet the API's. */
-export function toHookSecret(row: HookSecretRow): HookSecret {
-  return { name: row.nome, created_at: row.criada_em, revoked_at: row.revogada_em };
-}
-
 /** What the caller declares when registering or rotating a secret. */
 export interface NewHookSecret {
   /** The name, as the route read it off the path (already validated). */
-  nome: string;
+  name: string;
   /** The raw HMAC key. Supplied by the caller; the server never generates one. */
-  valor: string;
+  value: string;
 }
 
 /** The registration that was just written, and whether the name is new. */
@@ -101,7 +91,7 @@ export interface RegisteredHookSecret {
 }
 
 /** Every column of the registration EXCEPT the value. */
-const COLUMNS = 'name AS nome, created_at AS criada_em, revoked_at AS revogada_em';
+const COLUMNS = 'name, created_at, revoked_at';
 
 /**
  * Registers a secret under `name`, revoking whatever was live there.
@@ -124,17 +114,20 @@ export function setHookSecret(
   const clock = options.now ?? now;
 
   return db.transaction((): RegisteredHookSecret => {
-    const existing = db
-      .prepare('SELECT 1 AS one FROM hook_secret WHERE name = ? LIMIT 1')
-      .get(data.nome) as { one: number } | undefined;
+    // The column is unnamed on purpose: the only question here is whether a row
+    // came back at all, and naming a constant nobody reads would be the one
+    // alias this file still wrote.
+    const existing: unknown = db
+      .prepare('SELECT 1 FROM hook_secret WHERE name = ? LIMIT 1')
+      .get(data.name);
 
     const moment = clock();
     db.prepare(
       'UPDATE hook_secret SET revoked_at = ? WHERE name = ? AND revoked_at IS NULL',
-    ).run(moment, data.nome);
+    ).run(moment, data.name);
     db.prepare('INSERT INTO hook_secret (name, value, created_at) VALUES (?, ?, ?)').run(
-      data.nome,
-      data.valor,
+      data.name,
+      data.value,
       moment,
     );
 
@@ -143,10 +136,10 @@ export function setHookSecret(
         `SELECT ${COLUMNS} FROM hook_secret
           WHERE name = ? AND revoked_at IS NULL`,
       )
-      .get(data.nome) as HookSecretRow | undefined;
+      .get(data.name) as HookSecret | undefined;
     if (written === undefined) throw new Error('the hook secret was not written');
 
-    return { secret: toHookSecret(written), rotated: existing !== undefined };
+    return { secret: written, rotated: existing !== undefined };
   })();
 }
 
@@ -167,9 +160,9 @@ export function setHookSecret(
  */
 export function resolveHookSecret(db: Database, name: string): string | undefined {
   const row = db
-    .prepare('SELECT value AS valor FROM hook_secret WHERE name = ? AND revoked_at IS NULL')
-    .get(name) as { valor: string } | undefined;
-  return row?.valor;
+    .prepare('SELECT value FROM hook_secret WHERE name = ? AND revoked_at IS NULL')
+    .get(name) as { value: string } | undefined;
+  return row?.value;
 }
 
 /**
@@ -184,10 +177,7 @@ export function resolveHookSecret(db: Database, name: string): string | undefine
  * @returns The registrations, without their values.
  */
 export function listHookSecretNames(db: Database): HookSecret[] {
-  const rows = db
-    .prepare(`SELECT ${COLUMNS} FROM hook_secret ORDER BY id`)
-    .all() as HookSecretRow[];
-  return rows.map(toHookSecret);
+  return db.prepare(`SELECT ${COLUMNS} FROM hook_secret ORDER BY id`).all() as HookSecret[];
 }
 
 /**
@@ -217,15 +207,15 @@ export function revokeHookSecret(
   return db.transaction((): HookSecret | undefined => {
     const latest = db
       .prepare(`SELECT ${COLUMNS} FROM hook_secret WHERE name = ? ORDER BY id DESC LIMIT 1`)
-      .get(name) as HookSecretRow | undefined;
+      .get(name) as HookSecret | undefined;
     if (latest === undefined) return undefined;
-    if (latest.revogada_em !== null) return toHookSecret(latest);
+    if (latest.revoked_at !== null) return latest;
 
     const moment = clock();
     db.prepare(
       'UPDATE hook_secret SET revoked_at = ? WHERE name = ? AND revoked_at IS NULL',
     ).run(moment, name);
 
-    return toHookSecret({ ...latest, revogada_em: moment });
+    return { ...latest, revoked_at: moment };
   })();
 }

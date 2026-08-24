@@ -916,12 +916,12 @@ test('t262 AT-5 — a final node with no skill_ref at all is concluído on arriv
   const versionId = 'sha256:' + 'e'.repeat(64);
   insertVersion(ctx.db, {
     id: versionId,
-    grafo_id: graphId,
-    versao_pai: null,
+    graph_id: graphId,
+    parent_version: null,
     snapshot,
-    origem: 'manual',
-    proposta_id: null,
-    criado_em: new Date().toISOString(),
+    source: 'manual',
+    proposal_id: null,
+    created_at: new Date().toISOString(),
     // `checked`, because this case is about a node with no pin and not about
     // the contract gate: an `unchecked` version would be refused by `createJob`
     // (t283) and the traversal below would never happen.
@@ -1855,12 +1855,12 @@ test('t283 — a job named on a failed version is refused with its own code', as
   const versionId = `sha256:${'d'.repeat(64)}`;
   insertVersion(ctx.db, {
     id: versionId,
-    grafo_id: graphId,
-    versao_pai: null,
+    graph_id: graphId,
+    parent_version: null,
     snapshot,
-    origem: 'manual',
-    proposta_id: null,
-    criado_em: new Date().toISOString(),
+    source: 'manual',
+    proposal_id: null,
+    created_at: new Date().toISOString(),
     contracts: {
       state: 'failed',
       problems: [

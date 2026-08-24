@@ -127,13 +127,13 @@ export function registerHookDispatcher(
 
   /** One attempt, which can only ever end as a recorded success or failure. */
   const attempt = async (task: HookDeliveryTask): Promise<void> => {
-    const event = eventById(db, task.evento_id);
+    const event = eventById(db, task.event_id);
     if (event === undefined) {
       // Cannot happen while the foreign key holds; recorded as a failure anyway,
       // because a delivery with no event to carry must not stay due forever.
       recordHookDeliveryFailure(
         db,
-        { id: task.id, message: `event ${task.evento_id} is not in the log`, backoff },
+        { id: task.id, message: `event ${task.event_id} is not in the log`, backoff },
         clock,
       );
       return;
@@ -145,7 +145,7 @@ export function registerHookDispatcher(
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          [SIGNATURE_HEADER]: signPayload(task.segredo, rawBody),
+          [SIGNATURE_HEADER]: signPayload(task.secret, rawBody),
         },
         body: rawBody,
         // `AbortSignal.timeout` arms an `unref`ed timer, so a delivery in flight

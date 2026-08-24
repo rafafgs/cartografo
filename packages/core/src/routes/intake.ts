@@ -207,9 +207,9 @@ export function registerIntake(app: FastifyInstance, db: Database): void {
       // gained a version, and the travellers belong to the one that holds now.
       const graph = getClassBase(db, draft.class);
       const version =
-        graph?.versao_corrente_id === null || graph?.versao_corrente_id === undefined
+        graph?.current_version_id === null || graph?.current_version_id === undefined
           ? undefined
-          : getVersion(db, graph.versao_corrente_id);
+          : getVersion(db, graph.current_version_id);
       if (graph === undefined || version === undefined) {
         return refusal(
           reply,

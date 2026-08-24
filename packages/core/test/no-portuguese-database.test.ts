@@ -23,13 +23,14 @@
  * position and nowhere else, and the masks below are that line:
  *
  * Which files still hold two vocabularies is shrinking. t286 collapsed them into
- * one for `job.ts`, `intake.ts`, `input-request.ts` and `session.ts`: those four
- * spell every field the way the column does, and their `SELECT`s carry no alias
- * at all — `test/no-repository-alias-roundtrip.test.ts` is the gate that keeps
- * it so. What still reads the old way is `graphs.ts`, `skill.ts`, `webhooks.ts`,
- * `proposals.ts`, `runners.ts`, `leases.ts`, `hooks.ts`, `hook-secrets.ts`,
- * `engine-models.ts`, `credentials.ts` and `db/events.ts`, which two follow-up
- * tickets own. Everything below is written for those eleven; it stays exactly as
+ * one for `job.ts`, `intake.ts`, `input-request.ts` and `session.ts`, and t289
+ * did the same for `graphs.ts`, `skill.ts`, `proposals.ts`, `hooks.ts` and
+ * `hook-secrets.ts`: those nine spell every field the way the column does, and
+ * their `SELECT`s carry no alias at all —
+ * `test/no-repository-alias-roundtrip.test.ts` is the gate that keeps it so.
+ * What still reads the old way is `webhooks.ts`, `runners.ts`, `leases.ts`,
+ * `engine-models.ts`, `credentials.ts` and `db/events.ts`, which one follow-up
+ * ticket owns. Everything below is written for those six; it stays exactly as
  * correct when the last of them lands and the two vocabularies become one.
  *
  * - **Comments.** Prose about `trabalho` is documentation, not a query.

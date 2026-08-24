@@ -737,11 +737,8 @@ export function createJob(db: Database, input: CreateJobInput): Job {
     // and the whole-version read would parse a graph document — tens of
     // kilobytes for the factory bundles — on every job created.
     const version = getVersionSummary(db, graphVersionId);
-    if (version !== undefined && version.contracts_state !== 'checked') {
-      throw new GraphVersionNotReadyError(graphVersionId, {
-        state: version.contracts_state,
-        problems: version.contracts_report,
-      });
+    if (version !== undefined && version.contracts.state !== 'checked') {
+      throw new GraphVersionNotReadyError(graphVersionId, version.contracts);
     }
   }
 
@@ -965,12 +962,12 @@ export function transitionJob(
         db,
         {
           trigger: 'node_entered',
-          no_id: data.to_node_id as string,
-          trabalho_id: id,
-          projeto_id: row.project_id,
-          execucao_id: row.execution_id,
-          grafo_versao_id: row.graph_version_id,
-          evento_id: event.id,
+          node_id: data.to_node_id as string,
+          job_id: id,
+          project_id: row.project_id,
+          execution_id: row.execution_id,
+          graph_version_id: row.graph_version_id,
+          event_id: event.id,
         },
         options,
       );
@@ -1026,12 +1023,12 @@ export function blockJob(
         db,
         {
           trigger: 'node_blocked',
-          no_id: row.current_node_id,
-          trabalho_id: id,
-          projeto_id: row.project_id,
-          execucao_id: row.execution_id,
-          grafo_versao_id: row.graph_version_id,
-          evento_id: event.id,
+          node_id: row.current_node_id,
+          job_id: id,
+          project_id: row.project_id,
+          execution_id: row.execution_id,
+          graph_version_id: row.graph_version_id,
+          event_id: event.id,
         },
         options,
       );
@@ -1184,12 +1181,12 @@ export function blockOnRepeatedFailure(
   // on: a block is a flag fact, not a movement fact (t169).
   enqueueHookDeliveries(db, {
     trigger: 'node_blocked',
-    no_id: row.current_node_id,
-    trabalho_id: jobId,
-    projeto_id: row.project_id,
-    execucao_id: row.execution_id,
-    grafo_versao_id: row.graph_version_id,
-    evento_id: event.id,
+    node_id: row.current_node_id,
+    job_id: jobId,
+    project_id: row.project_id,
+    execution_id: row.execution_id,
+    graph_version_id: row.graph_version_id,
+    event_id: event.id,
   });
 }
 

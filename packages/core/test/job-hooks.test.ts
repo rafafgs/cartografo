@@ -112,7 +112,7 @@ interface HookDispatcherModule {
 
 /** The slice of `src/repositories/hook-secrets.ts` this suite writes through. */
 interface HookSecretsModule {
-  setHookSecret: (db: Database, data: { nome: string; valor: string }) => unknown;
+  setHookSecret: (db: Database, data: { name: string; value: string }) => unknown;
 }
 
 /** Reads a graph fixture from `schema/exemplos/`. */
@@ -139,7 +139,7 @@ async function registerDeclaredSecrets(db: Database, document: GraphDocument): P
 
   for (const hook of document.hooks ?? []) {
     const reference = hook.destination.secret_ref;
-    setHookSecret(db, { nome: reference, valor: secretFor(reference) });
+    setHookSecret(db, { name: reference, value: secretFor(reference) });
   }
 }
 

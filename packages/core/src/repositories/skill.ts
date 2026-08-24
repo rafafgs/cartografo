@@ -51,10 +51,12 @@
  *
  * This module is the translation boundary the t178 rename leans on. `Skill` —
  * what the API returns — and every manifest-shaped rule below speak the format's
- * new English vocabulary. The COLUMNS followed with D20's fourth child (t229);
- * `SkillRow` did not, because it is the shape `toSkill` was written against, and
- * `COLUMNS` aliases each renamed column back onto it (t229, FR4). `toSkill` is
- * where the two meet, and it is the only place that has to know both.
+ * new English vocabulary. The COLUMNS followed with D20's fourth child (t229),
+ * and `SkillRow` followed them with t289: it is the row as the driver hands it
+ * over, spelled the way the columns are, and `hydrate` is what turns it into a
+ * `Skill` — five `JSON.parse`s and one field whose column really is called
+ * something else, where there used to be eleven aliases and a `toSkill` renaming
+ * every field back.
  *
  * ## One row per `(id, version)` since t215 (D22)
  *
@@ -112,9 +114,10 @@ export interface Skill {
   /**
    * When the manifest entered the registry.
    *
-   * English since t226: this was the ONE field `toSkill` still let through with
-   * the column's own name, and the wire gate of D20's API child is what found
-   * it. The COLUMN is `registered_at` since D20's fourth child (t229).
+   * English since t226: this was the ONE field the old `toSkill` still let
+   * through with the column's own name, and the wire gate of D20's API child is
+   * what found it. The COLUMN is `registered_at` since D20's fourth child
+   * (t229), and since t289 every field around it reads that way too.
    */
   registered_at: string;
   /**
@@ -129,22 +132,32 @@ export interface Skill {
   deprecated_at: string | null;
 }
 
-/** The shape `toSkill` reads, which `COLUMNS` aliases the row onto. */
+/**
+ * The row as SQLite returns it: the column names, with the JSON still in TEXT.
+ *
+ * Every field is the column's own name, so {@link COLUMNS} needs no alias — with
+ * one exception the schema itself imposes. The column behind `origin` is called
+ * `source` (`migrations/0005_skill.sql`), and the manifest field it carries is
+ * called `origin` (`manifesto-skill.schema.json`), so those two names are
+ * genuinely different words for one thing. {@link hydrate} is where they meet,
+ * because aliasing the column onto `origin` in the query would hide a real
+ * difference behind the same mechanism t289 exists to delete.
+ */
 interface SkillRow {
   id: string;
-  versao: string;
+  version: string;
   hash: string;
-  papel: string;
-  descricao: string;
-  entrada: string;
-  saida: string;
-  pre_condicoes: string;
+  role: string;
+  description: string;
+  input: string;
+  output: string;
+  preconditions: string;
   checks: string;
-  permissoes: string;
-  instrucoes: string;
-  origem: string;
-  registrado_em: string;
-  desativada_em: string | null;
+  permissions: string;
+  instructions: string;
+  source: string;
+  registered_at: string;
+  deprecated_at: string | null;
 }
 
 /**
@@ -187,34 +200,39 @@ const CHECK_TYPES = ['deterministic', 'agentic'];
  */
 
 const COLUMNS = `
-  id, version AS versao, hash, role AS papel, description AS descricao,
-  input AS entrada, output AS saida, preconditions AS pre_condicoes,
-  checks, permissions AS permissoes, instructions AS instrucoes,
-  source AS origem, registered_at AS registrado_em,
-  deprecated_at AS desativada_em
+  id, version, hash, role, description, input, output, preconditions,
+  checks, permissions, instructions, source, registered_at, deprecated_at
 `;
 
 function isText(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
-/** Row to manifest: the one place the column names meet the format's names. */
-function toSkill(row: SkillRow): Skill {
+/**
+ * The one parse between `skill` and the rest of the package.
+ *
+ * Five of the columns are JSON in TEXT, and a bare cast would hand a string to a
+ * caller whose type says object — the same trap `repositories/graphs.ts` avoids
+ * for `snapshot` and `contracts_report`. The sixth line that does anything is
+ * `origin`, which reads the `source` column; see {@link SkillRow} for why that
+ * one difference is real and not a leftover translation.
+ *
+ * @param row Row as the driver returned it.
+ * @returns The manifest, with every JSON column parsed.
+ */
+function hydrate(row: SkillRow): Skill {
+  // `source` is destructured OUT before the spread, and it has to be: a spread
+  // copies what the driver returned, so leaving it in would publish the column's
+  // name beside `origin` on every skill the API serves.
+  const { source, ...rest } = row;
   return {
-    id: row.id,
-    version: row.versao,
-    hash: row.hash,
-    role: row.papel,
-    description: row.descricao,
-    input: JSON.parse(row.entrada) as Record<string, unknown>,
-    output: JSON.parse(row.saida) as Record<string, unknown>,
-    preconditions: JSON.parse(row.pre_condicoes) as string[],
+    ...rest,
+    input: JSON.parse(row.input) as Record<string, unknown>,
+    output: JSON.parse(row.output) as Record<string, unknown>,
+    preconditions: JSON.parse(row.preconditions) as string[],
     checks: JSON.parse(row.checks) as Record<string, unknown>[],
-    permissions: JSON.parse(row.permissoes) as Record<string, unknown>,
-    instructions: row.instrucoes,
-    origin: JSON.parse(row.origem) as Record<string, unknown>,
-    registered_at: row.registrado_em,
-    deprecated_at: row.desativada_em,
+    permissions: JSON.parse(row.permissions) as Record<string, unknown>,
+    origin: JSON.parse(source) as Record<string, unknown>,
   };
 }
 
@@ -619,7 +637,7 @@ export function getSkill(db: Database, id: string, selector: SkillSelector = {})
     const row = db
       .prepare(`SELECT ${COLUMNS} FROM skill WHERE id = ? AND version = ?`)
       .get(id, selector.version) as SkillRow | undefined;
-    return row === undefined ? null : toSkill(row);
+    return row === undefined ? null : hydrate(row);
   }
 
   // Ordered in JS and not in SQL, and it has to be: `version` is TEXT, and
@@ -640,7 +658,7 @@ export function getSkill(db: Database, id: string, selector: SkillSelector = {})
 /** Every version of one lineage, oldest first. */
 function lineage(db: Database, id: string): Skill[] {
   const rows = db.prepare(`SELECT ${COLUMNS} FROM skill WHERE id = ?`).all(id) as SkillRow[];
-  return rows.map(toSkill).sort((a, b) => compareVersions(a.version, b.version));
+  return rows.map(hydrate).sort((a, b) => compareVersions(a.version, b.version));
 }
 
 /**
@@ -686,6 +704,6 @@ export function listSkills(db: Database, filter: { id?: string } = {}): Skill[] 
 
   const rows = db.prepare(`SELECT ${COLUMNS} FROM skill ORDER BY id`).all() as SkillRow[];
   return rows
-    .map(toSkill)
+    .map(hydrate)
     .sort((a, b) => (a.id === b.id ? compareVersions(a.version, b.version) : a.id < b.id ? -1 : 1));
 }

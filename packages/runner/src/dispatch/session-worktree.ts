@@ -45,9 +45,9 @@ export interface SessionWorktree {
    * The branch checked out in it.
    *
    * Returned for the consumer that does not exist yet: the skill-rendering
-   * pipeline (t109) has to tell a session which branch it is committing on
-   * (`workspace.caminho` of `desenvolver-ticket`, and the reconciliation
-   * `integrar-branch` does). Nothing in this ficha reads it.
+   * pipeline (t109) has to tell a session which branch it is committing on —
+   * the branch `develop-ticket` commits on, and the reconciliation
+   * `integrate-branch` does. Nothing in this ficha reads it.
    */
   branch: string;
 }

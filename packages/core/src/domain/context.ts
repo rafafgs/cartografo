@@ -106,7 +106,7 @@ export interface ProjectedOutput {
  * One answered escalation, in the shape the manifests declare.
  *
  * `id` is a STRING because that is what `bets-assimetricas` requires of it
- * (`triar-tese`, `coletar-fundamentos`, `escalar-decisao` all pin
+ * (`triage-thesis`, `collect-fundamentals`, `escalate-decision` all pin
  * `{"type": "string", "minLength": 1}`), and the software bundle asks for no
  * `id` at all — so one shape serves both.
  */

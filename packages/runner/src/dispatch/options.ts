@@ -219,7 +219,7 @@ export interface ClaudeCodeDispatchOptions {
    * so nothing could assemble the object the next node's `input` schema
    * declares, and every skill with a placeholder failed closed. What that
    * replaced is still worse than either — the same skill used to open a session
-   * with `{{input.tese_triada.titulo}}` in the prompt and nobody the wiser.
+   * with `{{input.triaged_thesis.title}}` in the prompt and nobody the wiser.
    *
    * Asynchronous since that wiring, and it is what forced the signature: the
    * projection is an HTTP call. It stays a seam rather than a hardcoded call

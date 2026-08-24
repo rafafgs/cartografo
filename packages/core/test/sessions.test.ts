@@ -1715,20 +1715,23 @@ test('t253 FR1 — an output that is not an object is refused before anything is
 /* The fenced-block protocol (t161, t259) puts the label the session routes by  */
 /* INSIDE the very object `/finish` holds against the pinned skill's `output`.  */
 /* A skill that closes its schema — `additionalProperties: false` and no        */
-/* `resultado` property, which is what `derrubar-tese@1.0.0` declares — refused  */
-/* every conforming report of the second real bets run, and since t268 a refusal */
-/* blocks the node. So the key is excluded from what is checked and from what is */
-/* stored, and only when it is a usable label.                                   */
+/* `resultado` property, which is what the bets red-team gate declared at 1.0.0 */
+/* — refused every conforming report of the second real bets run, and since     */
+/* t268 a refusal blocks the node. So the key is excluded from what is checked  */
+/* and from what is stored, and only when it is a usable label.                 */
 /* -------------------------------------------------------------------------- */
 
 /**
- * The `output` schema of `derrubar-tese@1.0.0`, in the shape the bundle declares:
+ * The `output` schema of the bets red-team gate at `1.0.0` — `derrubar-tese`
+ * then, `red-team-thesis` since the D24 translation — in the shape it declared:
  * four required fields, closed, and NO `resultado`.
  *
- * `objecoes` and `contra_evidencia_pesquisada` are lists of strings here where
- * the bundle nests objects inside them — the nesting is the bets graph's
- * business and adds nothing to what this case pins, which is a CLOSED schema
- * that never heard of the routing key.
+ * The property names below are that version's too, and they stay: what this case
+ * pins is a CLOSED schema that never heard of the routing key, and the bundle's
+ * own vocabulary moving to English (`objections`,
+ * `researched_counter_evidence`) changes nothing about it. The two lists are
+ * lists of strings here where the bundle nests objects inside them — the nesting
+ * is the bets graph's business and adds nothing to what is pinned.
  */
 const THESIS_OUTPUT_SCHEMA = {
   type: 'object',

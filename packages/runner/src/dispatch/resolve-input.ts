@@ -7,7 +7,7 @@
  * structured output, so nothing could assemble the object the next node's
  * `input` schema declares. Every skill with a placeholder blocked, which was the
  * loud version of a bug that used to be silent: the same skill once opened a
- * session with `{{input.tese_triada.titulo}}` in the prompt and nobody the
+ * session with `{{input.triaged_thesis.title}}` in the prompt and nobody the
  * wiser.
  *
  * t253 built the assembly and published it at `GET /v1/jobs/:id/context`: the

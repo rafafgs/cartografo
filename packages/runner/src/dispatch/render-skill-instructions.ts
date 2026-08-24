@@ -45,7 +45,7 @@
  * 3. **The placeholders of the manifest body are resolved against the node's
  *    input, or nothing is rendered at all** (t204). Until then `instructions`
  *    went into the session VERBATIM, which meant a manifest that wrote
- *    `{{input.tese_triada.titulo}}` reached the model with those characters in
+ *    `{{input.triaged_thesis.title}}` reached the model with those characters in
  *    it — silently, as if a thesis had been named. Now a path that does not
  *    resolve throws {@link UnresolvedPlaceholderError}, in the same window as
  *    the two refusals above and for the same reason: it is the format's own
@@ -211,7 +211,7 @@ export class SkillPinMismatchError extends Error {
  * The third refusal of this module, and the one that closes the gap the other
  * two left open: a pin can be perfect and the instructions still arrive
  * half-written, because the sentence that was supposed to name the thesis names
- * `{{input.tese_triada.titulo}}` instead. A session opened on that text is a
+ * `{{input.triaged_thesis.title}}` instead. A session opened on that text is a
  * session working on the wrong thing while every log line says it went fine —
  * the exact failure mode the format's `falha fechada` rule was decided against
  * (`especificacoes/formatos/manifesto-skill.md`).

@@ -12,11 +12,15 @@
  * implementation it checks, a bug in the canonicalizer would go unnoticed on
  * both sides.
  *
- * The schema keys are English since t178: the 2026-08-15 D18 amendment lifted
- * the carve-out that used to keep the graph-document and skill-manifest keys in
- * Portuguese. What is still Portuguese below is data the amendment did not
- * reopen — the bundle's directory, the node ids, the domain roles and the edge
- * labels — and the reference validator's pinned exports (t133, exception 5).
+ * The schema keys are English since t178, and since t280 (D24) so is everything
+ * inside them: the node ids, the domain roles, the edge labels, the skill ids
+ * and file names, every check id and the whole of each `instructions`. What is
+ * still Portuguese below is not this bundle's to spell — the directory and the
+ * class name (t282), the reserved routing key `resultado`
+ * (`packages/runner/src/dispatch/parse-node-result.ts`), the projection roots
+ * `banco_de_testes`/`referencia`/`perguntas_respondidas` that core and the
+ * runner publish, and the reference validator's pinned exports (t133,
+ * exception 5).
  *
  * Run with: `node --test tests/`
  */
@@ -45,11 +49,11 @@ const MANIFEST_SCHEMA_PATH = path.join(
 
 /** The bundle's five manifests: file -> { id, role, node }. */
 const SKILLS = {
-  'refinar-ticket.json': { id: 'refinar-ticket', role: 'work', node: 'refinar' },
-  'desenvolver-ticket.json': { id: 'desenvolver-ticket', role: 'work', node: 'desenvolver' },
-  'integrar-branch.json': { id: 'integrar-branch', role: 'work', node: 'integrar' },
-  'testar-alpha.json': { id: 'testar-alpha', role: 'gate', node: 'testar' },
-  'implantar-release.json': { id: 'implantar-release', role: 'work', node: 'implantar' },
+  'refine-ticket.json': { id: 'refine-ticket', role: 'work', node: 'refine' },
+  'develop-ticket.json': { id: 'develop-ticket', role: 'work', node: 'develop' },
+  'integrate-branch.json': { id: 'integrate-branch', role: 'work', node: 'integrate' },
+  'alpha-test.json': { id: 'alpha-test', role: 'gate', node: 'test' },
+  'verify-release.json': { id: 'verify-release', role: 'work', node: 'deploy' },
 };
 
 /**
@@ -57,20 +61,20 @@ const SKILLS = {
  * purpose: this bundle is new content, and its test cannot depend on t96's
  * fixture continuing to exist under the same name.
  */
-const EXPECTED_NODES = ['desenvolver', 'implantar', 'integrar', 'refinar', 'testar'];
+const EXPECTED_NODES = ['deploy', 'develop', 'integrate', 'refine', 'test'];
 const ROLE_BY_NODE = {
-  refinar: 'arquiteto',
-  desenvolver: 'desenvolvedor',
-  integrar: 'integrador',
-  testar: 'tester',
-  implantar: 'deployer',
+  refine: 'architect',
+  develop: 'developer',
+  integrate: 'integrator',
+  test: 'tester',
+  deploy: 'deployer',
 };
 const EXPECTED_EDGES = [
-  { from: 'refinar', to: 'desenvolver', condition: 'sempre' },
-  { from: 'desenvolver', to: 'integrar', condition: 'sempre' },
-  { from: 'integrar', to: 'testar', condition: 'sempre' },
-  { from: 'testar', to: 'implantar', condition: 'aprovado' },
-  { from: 'testar', to: 'desenvolver', condition: 'retrabalho' },
+  { from: 'refine', to: 'develop', condition: 'always' },
+  { from: 'develop', to: 'integrate', condition: 'always' },
+  { from: 'integrate', to: 'test', condition: 'always' },
+  { from: 'test', to: 'deploy', condition: 'approved' },
+  { from: 'test', to: 'develop', condition: 'rework' },
 ];
 
 /** Reads a JSON file from the repo, failing with its relative path if missing. */
@@ -170,8 +174,8 @@ test('AT2 — ids, roles and edges match the topology pinned by t96', () => {
     assert.equal(edge.condition, expected.condition, `expected condition of edge ${key(expected)}`);
   }
 
-  assert.equal(doc.initial_node, 'refinar');
-  assert.deepEqual(doc.final_nodes, ['implantar']);
+  assert.equal(doc.initial_node, 'refine');
+  assert.deepEqual(doc.final_nodes, ['deploy']);
   assert.equal(doc.problem_class, 'desenvolvimento-de-software');
 });
 
@@ -220,8 +224,8 @@ test('AT4 — the five manifests exist with the expected id and role', () => {
   }
 });
 
-test('AT5 — testar-alpha declares output.outcome with the gate\'s three values', () => {
-  const manifest = readManifest('testar-alpha.json');
+test('AT5 — alpha-test declares output.outcome with the gate\'s three values', () => {
+  const manifest = readManifest('alpha-test.json');
   assert.deepEqual(manifest.output.properties.outcome.enum, ['pass', 'fail', 'escalate_human']);
   assert.ok(
     manifest.output.required.includes('outcome'),
@@ -256,17 +260,17 @@ test('AT6 — the recomputed hash of each manifest matches the node\'s skill_ref
   }
 });
 
-test('AT7 — testar-alpha does not rerun the quality gate; integrar and desenvolver do', () => {
-  const gate = readManifest('testar-alpha.json');
+test('AT7 — alpha-test does not rerun the quality gate; integrate and develop do', () => {
+  const gate = readManifest('alpha-test.json');
   const deterministic = gate.checks.filter((check) => check.type === 'deterministic');
   assert.deepEqual(
     deterministic,
     [],
-    'testar-alpha cannot have a deterministic check: rerunning integration gates is a redundant station',
+    'alpha-test cannot have a deterministic check: rerunning integration gates is a redundant station',
   );
   assert.ok(
     gate.checks.some((check) => check.type === 'agentic'),
-    'testar-alpha needs the agentic semantic-walkthrough check',
+    'alpha-test needs the agentic semantic-walkthrough check',
   );
 
   const runsProjectCommand = (manifest) =>
@@ -276,10 +280,11 @@ test('AT7 — testar-alpha does not rerun the quality gate; integrar and desenvo
         // `project` and not `projeto` since t259: the projection publishes the
         // class's static config at `input.project`
         // (`especificacoes/formatos/manifesto-skill.md`), and the bundle's
-        // templates were the last thing still spelling it the old way.
-        /\{\{input\.project\.(comando_testes|comandos_qualidade)\}\}/.test(check.command ?? ''),
+        // templates were the last thing still spelling it the old way. The two
+        // keys inside it are English since t280.
+        /\{\{input\.project\.(test_command|quality_commands)\}\}/.test(check.command ?? ''),
     );
-  for (const file of ['integrar-branch.json', 'desenvolver-ticket.json']) {
+  for (const file of ['integrate-branch.json', 'develop-ticket.json']) {
     assert.ok(
       runsProjectCommand(readManifest(file)),
       `${file} needs a deterministic check that runs the project's commands`,
@@ -302,7 +307,7 @@ test('AT8 — every instructions carries the escalation contract (input-request 
  * reads as the tighter policy and is in fact the unrunnable one: no shipped
  * adapter can scope the network by domain — that would take an egress proxy —
  * so `startSession` refused the gate before opening anything, and the first
- * real crossing of this bundle stopped on `testar` (t271, t109's hole 1).
+ * real crossing of this bundle stopped on the gate node (t271, t109's hole 1).
  *
  * `allowed: true` with NO `domains` is what the manifest format itself calls
  * unrestricted network and declares legal for a native skill
@@ -311,8 +316,8 @@ test('AT8 — every instructions carries the escalation contract (input-request 
  * enforced. Where the network may point is instructions now, not policy — which
  * is why this test also refuses the old sentence.
  */
-test('AT9 — testar-alpha opens the network, and it is open — not domain-scoped', () => {
-  const gate = readManifest('testar-alpha.json');
+test('AT9 — alpha-test opens the network, and it is open — not domain-scoped', () => {
+  const gate = readManifest('alpha-test.json');
   assert.equal(gate.permissions.network.allowed, true);
 
   const { domains } = gate.permissions.network;
@@ -322,12 +327,15 @@ test('AT9 — testar-alpha opens the network, and it is open — not domain-scop
       'declaring a session that never opens',
   );
 
-  for (const file of Object.keys(SKILLS).filter((name) => name !== 'testar-alpha.json')) {
+  for (const file of Object.keys(SKILLS).filter((name) => name !== 'alpha-test.json')) {
     assert.equal(readManifest(file).permissions.network.allowed, false, `${file}: network closed`);
   }
 
+  // The sentence this refuses was Portuguese until t280 ("aberta só para o
+  // endereço de loopback"); what it guards is the claim, not the language, so
+  // the translation carried the guard over instead of dropping it.
   assert.ok(
-    !gate.instructions.replace(/\s+/g, ' ').includes('aberta só para o endereço de loopback'),
+    !gate.instructions.replace(/\s+/g, ' ').includes('open only for the loopback address'),
     'the instructions cannot keep claiming a restriction the manifest no longer declares: a ' +
       'model told its network is scoped will not report the calls it thinks it cannot make',
   );
@@ -344,15 +352,18 @@ test('AT10 — the validator CLI approves the bundle and rejects a tampered hash
 
   const copy = path.join(mkdtempSync(path.join(tmpdir(), 'cartografo-bundle-')), 'bundle');
   cpSync(BUNDLE_DIR, copy, { recursive: true });
-  const target = path.join(copy, 'skills', 'testar-alpha.json');
+  const target = path.join(copy, 'skills', 'alpha-test.json');
   const manifest = JSON.parse(readFileSync(target, 'utf8'));
   manifest.hash = `sha256:${'0'.repeat(64)}`;
   writeFileSync(target, `${JSON.stringify(manifest, null, 2)}\n`);
 
   const bad = runCli(copy);
   assert.notEqual(bad.status, 0, 'a tampered hash has to exit with a non-zero code');
+  // The node id is quoted, not searched bare: since t280 it is `test`, and a
+  // bare `includes('test')` would be satisfied by the word "test" anywhere in
+  // the report — including the file name of the manifest that was tampered with.
   assert.ok(
-    `${bad.stdout}${bad.stderr}`.includes('testar'),
+    `${bad.stdout}${bad.stderr}`.includes('node "test"'),
     `the report has to name the diverging node:\n${bad.stdout}${bad.stderr}`,
   );
 });
@@ -378,108 +389,110 @@ function nodeById(id) {
   return found;
 }
 
-test('AT11 — ordem-tdd demands a red that failed for the right reason', () => {
-  const check = checkById('desenvolver-ticket.json', 'ordem-tdd');
+test('AT11 — tdd-order demands a red that failed for the right reason', () => {
+  const check = checkById('develop-ticket.json', 'tdd-order');
   const instruction = oneLine(check.instruction);
 
-  assert.match(instruction, /motivo certo/, 'the check has to ask WHY the red run failed');
+  assert.match(instruction, /right reason/, 'the check has to ask WHY the red run failed');
   assert.match(
     instruction,
-    /implementação ausente/,
+    /missing implementation/,
     'a valid red is missing implementation — not a broken import, a typo or a broken fixture',
   );
   assert.match(
     instruction,
-    /não prova a ordem/,
+    /does not prove the order/,
     'one commit carrying tests and implementation together still cannot pass',
   );
 
   const evidence = check.required_evidence;
   assert.ok(
-    evidence.some((item) => /saida_do_comando_de_testes/.test(item) && /commit/.test(item)),
-    'ordem-tdd needs the test-command output taken at the tests-only commit',
+    evidence.some((item) => /output_of_the_test_command/.test(item) && /commit/.test(item)),
+    'tdd-order needs the test-command output taken at the tests-only commit',
   );
   assert.ok(
-    evidence.some((item) => /implementacao_ausente/.test(item)),
-    'ordem-tdd needs evidence that the red failed for missing implementation',
+    evidence.some((item) => /missing_implementation/.test(item)),
+    'tdd-order needs evidence that the red failed for missing implementation',
   );
 });
 
-test('AT12 — portao-de-especificacao demands the DoD anchor, TDD exceptions and INVEST', () => {
-  const check = checkById('refinar-ticket.json', 'portao-de-especificacao');
+test('AT12 — specification-gate demands the DoD anchor, TDD exceptions and INVEST', () => {
+  const check = checkById('refine-ticket.json', 'specification-gate');
   const instruction = oneLine(check.instruction);
 
   assert.match(
     instruction,
-    /primeiro item da Definição de pronto/i,
+    /first item of the Definition of done/i,
     'the gate has to read the first item of the definition of done',
   );
   assert.match(
     instruction,
-    /Exceções ao TDD/,
+    /TDD exceptions/,
     'anything not driveable by a test has to be listed, with its reason',
   );
   assert.match(instruction, /INVEST/, 'the gate has to check INVEST was really applied');
   assert.doesNotMatch(
     instruction,
-    /responda três coisas/,
+    /answer three things/,
     'the gate now asks five questions, not three',
   );
   assert.doesNotMatch(
     instruction,
-    /das três respostas/,
+    /of the three answers/,
     'the closing count has to follow the new questions',
   );
 
   const evidence = check.required_evidence;
   for (const [what, wanted] of [
-    ['the first item of the definition of done', /definicao_de_pronto/],
-    ['the justification of each TDD exception', /excecoes_ao_tdd/],
+    ['the first item of the definition of done', /definition_of_done/],
+    ['the justification of each TDD exception', /tdd_exception/],
     ['what supports each INVEST property', /invest/],
   ]) {
     assert.ok(evidence.some((item) => wanted.test(item)), `evidence missing: ${what}`);
   }
 });
 
-test('AT13 — integrar-branch says the session never performs the final merge', () => {
-  const instructions = oneLine(readManifest('integrar-branch.json').instructions);
+test('AT13 — integrate-branch says the session never performs the final merge', () => {
+  const instructions = oneLine(readManifest('integrate-branch.json').instructions);
 
   assert.match(
     instructions,
-    /você nunca executa o merge final/i,
+    /you never perform the final merge/i,
     'session proposes, flow disposes: the absolute rule has to be stated',
   );
   assert.doesNotMatch(
     instructions,
-    /conclua a integração com a linha principal apontando para o resultado/i,
+    /finish the integration with the main line pointing at the result/i,
     'the reconciliation step cannot tell the session to move the main line',
   );
 });
 
-test('AT14 — the refinar node requires nota in its output contract', () => {
-  const shape = nodeById('refinar').contract.output_schema;
+test('AT14 — the refine node requires note in its output contract', () => {
+  const shape = nodeById('refine').contract.output_schema;
 
   assert.ok(
-    shape.required.includes('nota'),
-    "the refinar node has to mirror the manifest and require the session's note",
+    shape.required.includes('note'),
+    "the refine node has to mirror the manifest and require the session's note",
   );
 });
 
-test('AT15 — the testar node mirrors the manifest: per-criterion verdicts and typed bugs', () => {
-  const shape = nodeById('testar').contract.output_schema;
+test('AT15 — the test node mirrors the manifest: per-criterion verdicts and typed bugs', () => {
+  const shape = nodeById('test').contract.output_schema;
 
-  assert.ok(shape.properties.vereditos, 'the testar node has to declare vereditos');
-  assert.ok(shape.properties.bugs, 'the testar node has to declare bugs');
-  assert.ok(shape.required.includes('vereditos'), 'a verdict per criterion is not optional');
-  assert.deepEqual(shape.properties.vereditos.items.required, ['ref', 'veredito', 'evidencia']);
+  assert.ok(shape.properties.verdicts, 'the test node has to declare verdicts');
+  assert.ok(shape.properties.bugs, 'the test node has to declare bugs');
+  assert.ok(shape.required.includes('verdicts'), 'a verdict per criterion is not optional');
+  assert.deepEqual(shape.properties.verdicts.items.required, ['ref', 'verdict', 'evidence']);
   assert.ok(
-    shape.properties.bugs.items.required.includes('severidade'),
+    shape.properties.bugs.items.required.includes('severity'),
     'a bug without severity cannot be scheduled by the executor',
   );
   assert.deepEqual(
     shape.properties.outcome.enum,
-    ['aprovado', 'retrabalho', 'escala'],
-    'the edge vocabulary stays as it is — that is divergence 2, out of scope here',
+    ['approved', 'rework', 'escalate'],
+    'the node still spells the gate outcome in EDGE vocabulary while the manifest spells it ' +
+      'pass/fail/escalate_human — that mismatch is divergence 2, still open. t280 translated ' +
+      'the words without closing it',
   );
 });
 
@@ -515,8 +528,8 @@ test('t176 AT4 — the bundle validator CLI exits 0 for this bundle', () => {
   assert.equal(run.status, 0, `the bundle has to validate clean:\n${run.stdout}${run.stderr}`);
 });
 
-test('t176 AT5 — "testar" verifies with the semantic walkthrough alone', () => {
-  const { declared, checks } = bothSidesOf('testar', 'testar-alpha.json');
+test('t176 AT5 — "test" verifies with the semantic walkthrough alone', () => {
+  const { declared, checks } = bothSidesOf('test', 'alpha-test.json');
 
   assert.equal(declared.length, 1, 'the gate rerunning the quality commands is a redundant station');
   assert.equal(declared[0].type, 'agentic');
@@ -526,8 +539,8 @@ test('t176 AT5 — "testar" verifies with the semantic walkthrough alone', () =>
   );
 });
 
-test('t176 AT6 — "implantar" declares the two git checks of implantar-release', () => {
-  const { declared, checks } = bothSidesOf('implantar', 'implantar-release.json');
+test('t176 AT6 — "deploy" declares the two git checks of verify-release', () => {
+  const { declared, checks } = bothSidesOf('deploy', 'verify-release.json');
 
   assert.equal(declared.length, 2);
   assert.deepEqual(
@@ -537,8 +550,8 @@ test('t176 AT6 — "implantar" declares the two git checks of implantar-release'
   assert.deepEqual(commandsOf(declared), commandsOf(checks));
 });
 
-test('t176 AT7 — "desenvolver" declares the four checks of desenvolver-ticket', () => {
-  const { declared, checks } = bothSidesOf('desenvolver', 'desenvolver-ticket.json');
+test('t176 AT7 — "develop" declares the four checks of develop-ticket', () => {
+  const { declared, checks } = bothSidesOf('develop', 'develop-ticket.json');
 
   assert.equal(declared.length, 4);
   assert.deepEqual(
@@ -548,8 +561,8 @@ test('t176 AT7 — "desenvolver" declares the four checks of desenvolver-ticket'
   assert.deepEqual(commandsOf(declared), commandsOf(checks));
 });
 
-test('t176 AT8 — "integrar" declares the three checks of integrar-branch', () => {
-  const { declared, checks } = bothSidesOf('integrar', 'integrar-branch.json');
+test('t176 AT8 — "integrate" declares the three checks of integrate-branch', () => {
+  const { declared, checks } = bothSidesOf('integrate', 'integrate-branch.json');
 
   assert.equal(declared.length, 3);
   assert.deepEqual(
@@ -576,16 +589,16 @@ test('t176 AT10 — the five manifests record flowpilot as a behavioural referen
     const { origin } = readManifest(file);
     assert.equal(origin.type, 'native', `${file}: no code was imported (D4 would demand its gate)`);
     assert.equal(
-      origin.referencia_comportamental,
+      origin.behavioral_reference,
       'flowpilot',
       `${file}: the port has to name the behaviour it came from (D17)`,
     );
   }
 
-  const gate = readManifest('testar-alpha.json');
+  const gate = readManifest('alpha-test.json');
   assert.ok(
-    (gate.origin.nota ?? '').includes('testing.py:77'),
-    "testar-alpha has to cite the source rule that settles the contradiction",
+    (gate.origin.note ?? '').includes('testing.py:77'),
+    'alpha-test has to cite the source rule that settles the contradiction',
   );
 });
 
@@ -656,13 +669,16 @@ test('t176 AT12 — every path the README points at exists', () => {
   assert.deepEqual(dead, [], `the README points at files that do not exist:\n${dead.join('\n')}`);
 });
 
-test('t176 AT12 — the command the README documents under "Como validar" runs green', () => {
+test('t176 AT12 — the command the README documents under "How to validate" runs green', () => {
   const text = readFileSync(README_PATH, 'utf8');
-  const documented = fencedBlockUnder(text, '## Como validar')
+  const documented = fencedBlockUnder(text, '## How to validate')
     .map((line) => line.trim())
     .filter((line) => line.startsWith('node '));
 
-  assert.ok(documented.length > 0, 'the "Como validar" block no longer documents a node command');
+  assert.ok(
+    documented.length > 0,
+    'the "How to validate" block no longer documents a node command',
+  );
 
   for (const command of documented) {
     const [, ...argv] = command.split(/\s+/);
@@ -681,7 +697,7 @@ test('t176 AT13 — the README no longer claims the contradiction is open', () =
   const text = readFileSync(README_PATH, 'utf8').replace(/\s+/g, ' ');
 
   assert.ok(
-    !text.includes('porque esta ticket não reabre o conteúdo do exemplo-mestre'),
+    !text.includes('because this ticket does not reopen the content of the master example'),
     'the divergence was reconciled in favour of the manifest; the README has to say so',
   );
 });
@@ -690,7 +706,7 @@ test('t176 AT13 — the README no longer claims the contradiction is open', () =
  * t278 — contract matching, over the bundle's REAL manifests.
  *
  * The graph document's own `contract.input_schema` is documentation and has
- * already drifted (`refinar` declares `ticket_id`/`pedido`; the pinned skill
+ * already drifted (`refine` declares `ticket_id`/`request`; the pinned skill
  * really requires `job`/`project`). What a session is held to is the manifest,
  * so that is what this case walks — with the control plane's own function, not
  * a reimplementation, because a second copy of a dataflow computation is a
@@ -837,7 +853,7 @@ test('t277 AT1 — no manifest names an input path its own schema does not decla
 // never is.
 //
 // What this bundle did was neither: nothing declared the label anywhere, and
-// `testar-alpha`'s instructions spent the reserved key on the gate VERDICT —
+// `alpha-test`'s instructions spent the reserved key on the gate VERDICT —
 // `resultado: "passou"`, which is not a value any edge of this graph carries.
 // A session that obeyed those instructions named an edge that does not exist
 // and left out the `outcome` the manifest requires: no route, and a report the
@@ -846,9 +862,9 @@ test('t277 AT1 — no manifest names an input path its own schema does not decla
 // prose.
 // --------------------------------------------------------------------------
 
-test('t275 AT1 — the testar node declares the routing key its two edges need, and the skill does not', () => {
-  const shape = nodeById('testar').contract.output_schema;
-  const conditions = EXPECTED_EDGES.filter((edge) => edge.from === 'testar').map(
+test('t275 AT1 — the test node declares the routing key its two edges need, and the skill does not', () => {
+  const shape = nodeById('test').contract.output_schema;
+  const conditions = EXPECTED_EDGES.filter((edge) => edge.from === 'test').map(
     (edge) => edge.condition,
   );
 
@@ -866,17 +882,27 @@ test('t275 AT1 — the testar node declares the routing key its two edges need, 
   );
 
   assert.equal(
-    readManifest('testar-alpha.json').output.properties.resultado,
+    readManifest('alpha-test.json').output.properties.resultado,
     undefined,
     'and the skill never declares it: the key is taken out before the report is checked (t269)',
   );
 });
 
-test('t275 AT2 — testar-alpha names the verdict key and the routing key, and never conflates them', () => {
-  const manifest = readManifest('testar-alpha.json');
+test('t275 AT2 — alpha-test names the verdict key and the routing key, and never conflates them', () => {
+  const manifest = readManifest('alpha-test.json');
   const text = oneLine(manifest.instructions);
 
-  for (const spent of ['`resultado: "passou"`', '`resultado: "falhou"`', '`resultado: "escalar_humano"`']) {
+  // The pre-t275 spellings AND their t280 translations: a key spent on the
+  // verdict names no edge of this graph in either language.
+  const spentOnTheVerdict = [
+    '`resultado: "passou"`',
+    '`resultado: "falhou"`',
+    '`resultado: "escalar_humano"`',
+    '`resultado: "passed"`',
+    '`resultado: "failed"`',
+    '`resultado: "escalate_human"`',
+  ];
+  for (const spent of spentOnTheVerdict) {
     assert.ok(
       !text.includes(spent),
       `the reserved routing key cannot carry the gate verdict: ${spent} names no edge of this graph`,
@@ -884,8 +910,8 @@ test('t275 AT2 — testar-alpha names the verdict key and the routing key, and n
   }
 
   for (const [outcome, edge] of [
-    ['pass', 'aprovado'],
-    ['fail', 'retrabalho'],
+    ['pass', 'approved'],
+    ['fail', 'rework'],
   ]) {
     assert.ok(
       text.includes(`\`outcome: "${outcome}"\``),

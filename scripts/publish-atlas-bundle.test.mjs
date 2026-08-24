@@ -11,8 +11,9 @@
  * `node:fs`, `node:os` and `node:path` — the same constraint the reference
  * validator carries.
  *
- * The Portuguese names below are data: the bundle directories, the class names
- * they are named after and the schema keys are frozen by D18's own carve-out.
+ * The Portuguese names below are data: the bundle directories and the class
+ * names they are named after are folder scope (t282), not content. The skill
+ * FILE names inside them are English since t280 (D24).
  *
  * Run with: `npm test` at the root.
  */
@@ -93,7 +94,7 @@ test('AT1 — a tampered pin is refused and nothing is written to the atlas', ()
   const bundle = path.join(area, 'bundle-adulterado');
   cpSync(BUNDLE_ONE, bundle, { recursive: true });
 
-  const target = path.join(bundle, 'skills', 'testar-alpha.json');
+  const target = path.join(bundle, 'skills', 'alpha-test.json');
   const manifest = JSON.parse(readFileSync(target, 'utf8'));
   manifest.hash = `sha256:${'0'.repeat(64)}`;
   writeFileSync(target, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -107,7 +108,12 @@ test('AT1 — a tampered pin is refused and nothing is written to the atlas', ()
 
   assert.notEqual(result.status, 0, 'a bundle that does not validate cannot exit 0');
   const output = `${result.stdout}${result.stderr}`;
-  assert.ok(output.includes('testar'), `the report has to name the diverging pin:\n${output}`);
+  // Quoted, not bare: since t280 the node id is `test`, and a bare
+  // `includes('test')` would be satisfied by any path in the report.
+  assert.ok(
+    output.includes('node "test"'),
+    `the report has to name the diverging pin:\n${output}`,
+  );
   assert.deepEqual(
     existsSync(atlas) ? readdirSync(atlas) : [],
     [],

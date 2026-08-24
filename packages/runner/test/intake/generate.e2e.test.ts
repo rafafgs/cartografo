@@ -305,7 +305,7 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
   const dependent = confirmed.jobs.find((job) => job.id === created.rotas);
   assert.ok(dependent !== undefined);
   assert.equal(dependent.title, 'Rotas do intake');
-  assert.equal(dependent.current_node_id, 'refinar', 'the traveller is born on the entry node of the version');
+  assert.equal(dependent.current_node_id, 'refine', 'the traveller is born on the entry node of the version');
 
   const { events: events } = await api<{ events: LogEvent[] }>(
     plane,

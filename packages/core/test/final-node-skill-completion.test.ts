@@ -5,7 +5,7 @@
  * where a rule belongs. This file proves it against the documents that actually
  * ship: `grafos-de-fabrica/bets-assimetricas` ends at `registro-monitoramento`
  * pinning `registrar-travessia`, and `grafos-de-fabrica/desenvolvimento-de-software`
- * ends at `implantar` pinning `implantar-release` — the identical shape, and the
+ * ends at `deploy` pinning `verify-release` — the identical shape, and the
  * one t198's first real crossing found broken
  * (`notas/2026-08-17-primeira-execucao-bets.md`, gap 2): the job was declared
  * `completed` the instant it LANDED there, so D14's own "registro e
@@ -105,12 +105,12 @@ const CASES: readonly FinalNodeCase[] = Object.freeze([
   },
   {
     bundle: 'desenvolvimento-de-software',
-    finalNode: 'implantar',
-    manifest: 'implantar-release.json',
+    finalNode: 'deploy',
+    manifest: 'verify-release.json',
     report: {
-      veredito: 'publicado',
-      referencia_conferida: { commit: 'f03f0d4', modo: 'ponta_do_principal' },
-      nota: 'o merge commit está contido na ponta do principal',
+      verdict: 'published',
+      checked_reference: { commit: 'f03f0d4', mode: 'ponta_do_principal' },
+      note: 'the merge commit is contained in the tip of the main line',
     },
   },
 ]);

@@ -21,7 +21,8 @@
  *
  * The keys read below (`nodes`, `contract`, `checks`, `type`, `command`,
  * `skill_ref`) are the graph-bundle and skill-manifest JSON Schema, English
- * since t178: these tests read that format, they do not own it.
+ * since t178, and the node ids are English since t280: these tests read that
+ * bundle, they do not own it.
  *
  * Run with: `node --test scripts/`
  */
@@ -78,14 +79,14 @@ test('AT1 — a bundle whose verifications line up with the pinned checks is val
 });
 
 test('AT2 — a deterministic command that diverges from the check fails the bundle', () => {
-  const bundle = editGraph(bundleCopy(), 'integrar', (list) => {
+  const bundle = editGraph(bundleCopy(), 'integrate', (list) => {
     list[0].command = 'make check';
   });
 
   const report = validateBundle(bundle);
 
   assert.equal(report.valid, false, 'a diverging command has to fail the bundle');
-  const pin = report.pins.find((candidate) => candidate.node === 'integrar');
+  const pin = report.pins.find((candidate) => candidate.node === 'integrate');
   assert.equal(pin.ok, false, 'the pin of the affected node has to carry the problem');
   assert.ok(
     pin.problems.some((problem) => problem.includes('make check')),
@@ -95,30 +96,30 @@ test('AT2 — a deterministic command that diverges from the check fails the bun
 
 test('AT3 — one item too few or one too many fails the bundle', () => {
   const short = validateBundle(
-    editGraph(bundleCopy(), 'desenvolver', (list) => {
+    editGraph(bundleCopy(), 'develop', (list) => {
       list.pop();
     }),
   );
   assert.equal(short.valid, false, 'one verification short has to fail the bundle');
   assert.ok(
-    short.pins.find((candidate) => candidate.node === 'desenvolver')?.ok === false,
+    short.pins.find((candidate) => candidate.node === 'develop')?.ok === false,
     `the pin of the affected node has to carry the problem:\n${explain(short)}`,
   );
 
   const long = validateBundle(
-    editGraph(bundleCopy(), 'desenvolver', (list) => {
+    editGraph(bundleCopy(), 'develop', (list) => {
       list.push(structuredClone(list[0]));
     }),
   );
   assert.equal(long.valid, false, 'one verification too many has to fail the bundle');
   assert.ok(
-    long.pins.find((candidate) => candidate.node === 'desenvolver')?.ok === false,
+    long.pins.find((candidate) => candidate.node === 'develop')?.ok === false,
     `the pin of the affected node has to carry the problem:\n${explain(long)}`,
   );
 });
 
 test('AT3b — the same items in another order fail the bundle', () => {
-  const bundle = editGraph(bundleCopy(), 'desenvolver', (list) => {
+  const bundle = editGraph(bundleCopy(), 'develop', (list) => {
     list.reverse();
   });
 
@@ -126,13 +127,13 @@ test('AT3b — the same items in another order fail the bundle', () => {
 
   assert.equal(report.valid, false, 'the sequence is compared position by position');
   assert.ok(
-    report.pins.find((candidate) => candidate.node === 'desenvolver')?.ok === false,
+    report.pins.find((candidate) => candidate.node === 'develop')?.ok === false,
     `the pin of the affected node has to carry the problem:\n${explain(report)}`,
   );
 });
 
 test('AT3c — the prose of an agentic item is free to differ from the check', () => {
-  const bundle = editGraph(bundleCopy(), 'refinar', (list) => {
+  const bundle = editGraph(bundleCopy(), 'refine', (list) => {
     list[0].instruction = 'Pergunta reescrita neste formato, com outras palavras.';
     list[0].description = 'Outra redação da mesma prova.';
   });

@@ -12,32 +12,36 @@
  * `UnresolvedPlaceholderError`, including the entry node.
  *
  * What this test asserts is the repair, end to end and with nothing faked but
- * the engine: `refinar` → `desenvolver` → `integrar` crosses on its own, each
+ * the engine: `refine` → `develop` → `integrate` crosses on its own, each
  * node's structured report reaches `PATCH /sessions/:id/finish`, and the NEXT
  * node's prompt carries the value where the placeholder used to be — the
- * specification `refinar` wrote, then the branch `desenvolver` left behind.
+ * specification `refine` wrote, then the branch `develop` left behind.
  *
- * And since t270 it crosses ALL FIVE. `testar` used to read
+ * And since t270 it crosses ALL FIVE. `test` used to read
  * `{{input.aplicacao.*}}` and `{{input.banco_de_testes.*}}` with no source for
  * either, and this file's last case pinned the honest limit: the node blocked
  * gracefully and the bundle stopped there. The two halves of that gap turned
  * out to be different kinds of fact, and they are answered from different
- * places — `aplicacao` is static and moved into the graph's own `project`,
+ * places — the application is static and moved into the graph's own `project`,
  * while `banco_de_testes.caminho` and `referencia.commit` are facts about the
  * MACHINE running the session and come from the runner's executor environment
  * (`resolve-executor-environment.ts`), which the control plane's database
  * could not hold without lying (D1).
  *
  * And since t273 the crossing needs no operator BETWEEN the nodes either. The
- * `integrar` session's `merge_commit` used to be a literal nobody could act on,
- * and this file said so where it was faked: `implantar` was handed the bench's
+ * `integrate` session's `merge_commit` used to be a literal nobody could act on,
+ * and this file said so where it was faked: `deploy` was handed the bench's
  * untouched head, because nothing advanced the bench. Now the executor
  * fast-forwards the bench onto the reported commit — and prepares it — before
  * the work is allowed off the node, so what the last two nodes observe is the
- * integrated commit, and `implantar` closes the traversal with `publicado`.
+ * integrated commit, and `deploy` closes the traversal with `published`.
  *
- * English per D18; route segments, node ids and the bundle's own keys stay in
- * Portuguese.
+ * English per D18, and since t280 (D24) so is the bundle this crosses: node ids,
+ * bucket names and report keys alike. Three things stay Portuguese here because
+ * they are NOT the bundle's to spell — the reserved routing key `resultado` and
+ * its fence (`parse-node-result.ts`), and the executor-environment roots
+ * `banco_de_testes`/`referencia` the runner itself publishes
+ * (`resolve-executor-environment.ts`).
  */
 
 import assert from 'node:assert/strict';
@@ -70,11 +74,11 @@ const EXECUTION_ID = 2596;
 
 /** The five manifests the graph's nodes pin, in document order. */
 const MANIFESTS = Object.freeze([
-  'refinar-ticket.json',
-  'desenvolver-ticket.json',
-  'integrar-branch.json',
-  'testar-alpha.json',
-  'implantar-release.json',
+  'refine-ticket.json',
+  'develop-ticket.json',
+  'integrate-branch.json',
+  'alpha-test.json',
+  'verify-release.json',
 ]);
 
 interface Work {
@@ -169,26 +173,26 @@ function reports(payload: Record<string, unknown>): string {
  */
 const PROJECT = bundleFile('grafo.json').project as Record<string, unknown>;
 
-/** What the fake `refinar` session hands back — `refinar-ticket`'s `output`. */
-const ESPECIFICACAO = '## Objetivo\n\nFazer a travessia real acontecer, ponta a ponta.';
+/** What the fake `refine` session hands back — `refine-ticket`'s `output`. */
+const ESPECIFICACAO = '## Goal\n\nMake the real traversal happen, end to end.';
 const REFINADO = {
-  especificacao: ESPECIFICACAO,
-  criterios_de_aceite: ['AT1: o nó seguinte lê a especificação deste'],
-  arquivos_tocados: ['packages/runner/src/dispatch/dispatch.ts'],
-  nota: 'refinei sem tomar default nenhum',
+  specification: ESPECIFICACAO,
+  acceptance_criteria: ['AT1: the next node reads the specification of this one'],
+  touched_files: ['packages/runner/src/dispatch/dispatch.ts'],
+  note: 'refined without taking a single default',
 };
 
-/** ...and the fake `desenvolver` session — `desenvolver-ticket`'s `output`. */
+/** ...and the fake `develop` session — `develop-ticket`'s `output`. */
 const BRANCH = 'ticket-259-travessia-real';
 const DESENVOLVIDO = {
   branch: BRANCH,
   commits: ['a1b2c3d'],
-  gates: { testes: 'passou' },
-  nota: 'implementei contra a especificação que chegou no prompt',
+  gates: { tests: 'passed' },
+  note: 'implemented against the specification that arrived in the prompt',
 };
 
 /**
- * ...and the fake `integrar` session — `integrar-branch`'s `output`.
+ * ...and the fake `integrate` session — `integrate-branch`'s `output`.
  *
  * A REAL commit since t273, and no longer the literal `feedfacecafe123` this
  * file used to carry with a comment calling it fictional: the executor now
@@ -197,54 +201,59 @@ const DESENVOLVIDO = {
  */
 const INTEGRADO = (mergeCommit: string): Record<string, unknown> => ({
   merge_commit: mergeCommit,
-  conflitos_resolvidos: [],
-  gates: { testes: 'passou' },
-  nota: 'reconciliei sem conflito',
+  resolved_conflicts: [],
+  gates: { tests: 'passed' },
+  note: 'reconciled with no conflict',
 });
 
-/** ...and what the fake `testar` session REPORTS — `testar-alpha`'s `output`. */
+/** ...and what the fake `test` session REPORTS — `alpha-test`'s `output`. */
 const TESTADO_REPORT = {
   outcome: 'pass',
-  vereditos: [
+  verdicts: [
     {
       ref: 'AT1',
-      veredito: 'nao_exercitado',
-      evidencia: 'Não há aplicação de pé nesta rodada; o motivo veio em project.aplicacao.',
+      verdict: 'not_exercised',
+      evidence: 'No application is standing this round; the reason came in project.application.',
     },
   ],
-  nota: 'Validei o que o banco de testes permitiu.',
+  note: 'Validated what the test bench allowed.',
 };
 
 /**
  * ...and the block it prints: that report with the edge label inside it.
  *
  * `resultado` rides inside the one block a session prints, which is how a gate
- * with two ways out names the one it took (`parse-node-result.ts`). It is the
- * GRAPH's vocabulary — `aprovado` is the `condition` of the edge to
- * `implantar` — and the control plane takes it out of the object before holding
- * the rest against the pinned skill's `output`, which is why that schema does
- * not declare it (t269, `docs/spec/grafo.md`). Since t275 the bundle says the
- * same thing on both sides: the `testar` node declares the label in its own
+ * with two ways out names the one it took (`parse-node-result.ts`). The KEY is
+ * the protocol's, which is why t280 left it spelled this way; the VALUE is the
+ * GRAPH's vocabulary — `approved` is the `condition` of the edge to `deploy` —
+ * and the control plane takes it out of the object before holding the rest
+ * against the pinned skill's `output`, which is why that schema does not
+ * declare it (t269, `docs/spec/grafo.md`). Since t275 the bundle says the same
+ * thing on both sides: the `test` node declares the label in its own
  * `output_schema`, and the manifest's instructions ask for `outcome` and
  * `resultado` as the two different things they are.
  */
-const TESTADO = { resultado: 'aprovado', ...TESTADO_REPORT };
+const TESTADO = { resultado: 'approved', ...TESTADO_REPORT };
 
 /**
- * ...and the fake `implantar` session — `implantar-release`'s `output`.
+ * ...and the fake `deploy` session — `verify-release`'s `output`.
  *
- * `publicado` since t273, and that word IS the ficha's own bar: the commit
- * `integrar` reported is really in the bench's main line by the time this node
+ * `published` since t273, and that word IS the ticket's own bar: the commit
+ * `integrate` reported is really in the bench's main line by the time this node
  * opens, because the executor put it there between the two ticks. While nothing
- * advanced the bench this fixture answered `ainda_nao` and was fed the bench's
+ * advanced the bench this fixture answered `not_yet` and was fed the bench's
  * untouched head — the honest reading of a checkout nobody had moved.
+ *
+ * `mode` is the key this bundle owns and translated; its VALUE stays
+ * `ponta_do_principal` because that is what the runner publishes at
+ * `input.referencia.modo` and what `--reference-mode` takes.
  */
 const IMPLANTADO = (commit: string): Record<string, unknown> => ({
-  veredito: 'publicado',
-  referencia_conferida: { commit, modo: 'ponta_do_principal' },
+  verdict: 'published',
+  checked_reference: { commit, mode: 'ponta_do_principal' },
   release: commit,
-  implantado_em: new Date().toISOString(),
-  nota: 'The merge commit is contained in the reference: the executor advanced the bench.',
+  deployed_at: new Date().toISOString(),
+  note: 'The merge commit is contained in the reference: the executor advanced the bench.',
 });
 
 /** One git command in one checkout, run to completion, with its output trimmed. */
@@ -268,7 +277,7 @@ const INTEGRATED_TEXT = 'what the integration reconciled\n';
  * — `--working-dir` and `--test-bench-path` — and because the commit an
  * integration reports is born in the first one and has to REACH the second.
  * `main` in the main repository is deliberately left behind on the base commit:
- * `integrar-branch`'s own manifest says `merge_commit` is NOT a claim that the
+ * `integrate-branch`'s own manifest says `merge_commit` is NOT a claim that the
  * main line already points there, and a fixture whose main had already moved
  * would prove nothing about who advances it.
  */
@@ -279,7 +288,7 @@ function benchRepository(root: string): {
   repoRoot: string;
   /** Where the bench's `main` starts, before anything advances it. */
   head: string;
-  /** The commit the fake `integrar` session reports, on a branch of `repoRoot`. */
+  /** The commit the fake `integrate` session reports, on a branch of `repoRoot`. */
   integrated: string;
 } {
   const repoRoot = path.join(root, 'principal');
@@ -320,7 +329,7 @@ function benchRepository(root: string): {
  */
 const BENCH_INSTALL_COMMAND = `cat ${INTEGRATED_FILE} > .bench-prepared`;
 
-test('t259 AT6 — refinar → desenvolver → integrar crosses the real software bundle', async (t) => {
+test('t259 AT6 — refine → develop → integrate crosses the real software bundle', async (t) => {
   const { url: baseUrl, token } = await bootCore(t);
 
   const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t259-fabrica-'));
@@ -349,7 +358,7 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
     {
       title: 'atravessar o grafo de fábrica de software de verdade',
       body: 'O runner tem que despachar este grafo sem nenhum placeholder sobrando.',
-      entry_node_id: 'refinar',
+      entry_node_id: 'refine',
       execution_id: EXECUTION_ID,
       graph_version_id: version.id,
     },
@@ -381,7 +390,7 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
   // the session's `prompt` column — `buildCommand` puts them there, and what
   // the control plane stores as `prompt` is `buildPrompt`'s envelope
   // (`session-spec.ts`). What the model was TOLD is the argv.
-  let currentRecord = path.join(root, 'refinar.json');
+  let currentRecord = path.join(root, 'refine.json');
   const controller = new Controller({
     client,
     runnerId: 'runner-t259-fabrica',
@@ -406,7 +415,7 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
         // ...and the half t273 added: the bench is not only READ on every
         // dispatch, it is MOVED — onto the commit an accepted report named,
         // before the work is allowed off the node that named it. Until this
-        // ficha the two nodes after `integrar` observed a checkout that had
+        // ficha the two nodes after `integrate` observed a checkout that had
         // stayed exactly where it was.
         advanceMainLine: createMainLineAdvancer({
           testBenchPath: bench.path,
@@ -453,47 +462,47 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
    */
   const bodyOf = (nodeId: string): string => toldTo(nodeId).split('## O contrato do nó')[0];
 
-  // --- 1. `refinar` dispatches at all, which is the whole of the repair -----
+  // --- 1. `refine` dispatches at all, which is the whole of the repair ------
   assert.ok(await controller.tick(), 'the entry node was picked up');
   const afterRefino = await jobNow();
   assert.equal(afterRefino.blocked, false, afterRefino.block_reason ?? '');
-  assert.equal(afterRefino.current_node_id, 'desenvolver');
+  assert.equal(afterRefino.current_node_id, 'develop');
 
-  const refino = bodyOf('refinar');
+  const refino = bodyOf('refine');
   assert.ok(refino.includes(job.title), 'the job identity comes from `input.job`');
   assert.ok(
-    refino.includes(String(PROJECT.convencoes)),
+    refino.includes(String(PROJECT.conventions)),
     'and the class config from `input.project`',
   );
   assert.ok(!refino.includes('{{input.'), 'not one placeholder may survive into a prompt');
 
-  // --- 2. what `refinar` produced is what `desenvolver` reads ---------------
+  // --- 2. what `refine` produced is what `develop` reads --------------------
   currentLines = reports(DESENVOLVIDO);
-  currentRecord = path.join(root, 'desenvolver.json');
+  currentRecord = path.join(root, 'develop.json');
   assert.ok(await controller.tick());
   const afterDev = await jobNow();
   assert.equal(afterDev.blocked, false, afterDev.block_reason ?? '');
-  assert.equal(afterDev.current_node_id, 'integrar');
+  assert.equal(afterDev.current_node_id, 'integrate');
 
-  const dev = bodyOf('desenvolver');
+  const dev = bodyOf('develop');
   assert.ok(
     dev.includes(ESPECIFICACAO),
-    'the specification the previous node reported is what `{{input.ticket.especificacao}}` resolves to',
+    'the specification the previous node reported is what `{{input.ticket.specification}}` resolves to',
   );
   assert.ok(!dev.includes('{{input.'));
 
-  // --- 3. ...and what `desenvolver` produced is what `integrar` reads -------
+  // --- 3. ...and what `develop` produced is what `integrate` reads ----------
   currentLines = reports(INTEGRADO(bench.integrated));
-  currentRecord = path.join(root, 'integrar.json');
+  currentRecord = path.join(root, 'integrate.json');
   assert.ok(await controller.tick());
   const afterIntegra = await jobNow();
   assert.equal(afterIntegra.blocked, false, afterIntegra.block_reason ?? '');
-  assert.equal(afterIntegra.current_node_id, 'testar');
+  assert.equal(afterIntegra.current_node_id, 'test');
 
-  const integra = bodyOf('integrar');
+  const integra = bodyOf('integrate');
   assert.ok(
     integra.includes(BRANCH),
-    'the branch the previous node reported is what `{{input.artefato.branch}}` resolves to',
+    'the branch the previous node reported is what `{{input.artifact.branch}}` resolves to',
   );
   assert.ok(!integra.includes('{{input.'));
 
@@ -509,9 +518,9 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
     'and prepared it afterwards, on the ALREADY advanced tree',
   );
   assert.equal(
-    typeof PROJECT.comando_instalacao,
+    typeof PROJECT.install_command,
     'string',
-    'the class declares the command that prepares its bench, beside `comando_testes`',
+    'the class declares the command that prepares its bench, beside `test_command`',
   );
 
   // --- 4. the projection carries both buckets, side by side ----------------
@@ -521,26 +530,26 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
     'GET',
     `/v1/jobs/${job.id}/context`,
   );
-  assert.equal((input.ticket as Record<string, unknown>).especificacao, ESPECIFICACAO);
+  assert.equal((input.ticket as Record<string, unknown>).specification, ESPECIFICACAO);
   assert.deepEqual(
-    input.artefato,
+    input.artifact,
     { ...DESENVOLVIDO, ...INTEGRADO(bench.integrated) },
-    '`desenvolver` and `integrar` declare the SAME bucket, so `merge_commit` lands beside `branch`',
+    '`develop` and `integrate` declare the SAME bucket, so `merge_commit` lands beside `branch`',
   );
 
-  // --- 5. `testar` opens, which used to be this bundle's declared limit ----
+  // --- 5. `test` opens, which used to be this bundle's declared limit ------
   currentLines = reports(TESTADO);
-  currentRecord = path.join(root, 'testar.json');
+  currentRecord = path.join(root, 'test.json');
   assert.ok(await controller.tick(), 'the gate that used to block was picked up');
   const afterGate = await jobNow();
   assert.equal(afterGate.blocked, false, afterGate.block_reason ?? '');
-  assert.equal(afterGate.current_node_id, 'implantar');
+  assert.equal(afterGate.current_node_id, 'deploy');
 
-  const gate = bodyOf('testar');
-  const aplicacao = PROJECT.aplicacao as Record<string, unknown>;
+  const gate = bodyOf('test');
+  const application = PROJECT.application as Record<string, unknown>;
   assert.ok(
-    gate.includes(String(aplicacao.motivo_ausencia)),
-    'the app is STATIC and comes from the graph\'s own `project`, at `input.project.aplicacao`',
+    gate.includes(String(application.absence_reason)),
+    'the app is STATIC and comes from the graph\'s own `project`, at `input.project.application`',
   );
   assert.ok(
     gate.includes(bench.path),
@@ -555,21 +564,21 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
     `/v1/sessions?job_id=${String(job.id)}`,
   );
   assert.deepEqual(
-    sessions.find((session) => session.node_id === 'testar')?.output,
+    sessions.find((session) => session.node_id === 'test')?.output,
     TESTADO_REPORT,
     "the gate's report was taken whole, and only the routing key was taken out of it",
   );
 
-  // --- 6. ...and `implantar` reads the commit the runner really looked up ---
+  // --- 6. ...and `deploy` reads the commit the runner really looked up -----
   currentLines = reports(IMPLANTADO(bench.integrated));
-  currentRecord = path.join(root, 'implantar.json');
+  currentRecord = path.join(root, 'deploy.json');
   assert.ok(await controller.tick(), 'the final node was picked up too');
 
   const arrived = await jobNow();
   assert.equal(arrived.blocked, false, arrived.block_reason ?? '');
   assert.equal(arrived.completed, true, 'the traversal is over: the final node reported');
 
-  const implanta = bodyOf('implantar');
+  const implanta = bodyOf('deploy');
   assert.notEqual(bench.integrated, bench.head, 'the bench really had somewhere to move');
   assert.ok(
     implanta.includes(bench.integrated),
@@ -585,9 +594,9 @@ test('t259 AT6 — refinar → desenvolver → integrar crosses the real softwar
     `/v1/sessions?job_id=${String(job.id)}`,
   );
   assert.equal(
-    closed.find((session) => session.node_id === 'implantar')?.output?.veredito,
-    'publicado',
-    "the five-node traversal closes CONTAINED, which is this ficha's own bar",
+    closed.find((session) => session.node_id === 'deploy')?.output?.verdict,
+    'published',
+    "the five-node traversal closes CONTAINED, which is this ticket's own bar",
   );
 
   // --- 7. and nobody had to touch it by hand -------------------------------

@@ -143,7 +143,7 @@ test('a skills directory that cannot be listed stops the check where it is', (t)
 
 test('a manifest that is not readable JSON is one problem, and the rest is still checked', (t) => {
   const directory = bundleCopy(t, (copy) => {
-    writeFileSync(path.join(copy, 'skills', 'refinar-ticket.json'), '{ nem JSON', 'utf8');
+    writeFileSync(path.join(copy, 'skills', 'refine-ticket.json'), '{ nem JSON', 'utf8');
   });
   const problems = verifyBundle(directory, graphOf(directory));
 
@@ -159,7 +159,7 @@ test('each rule a manifest has to keep is reported on its own', (t) => {
   const directory = path.join(area, 'bundle');
   mkdirSync(path.join(directory, 'skills'), { recursive: true });
 
-  const sound = manifestOf(FACTORY_BUNDLE, 'refinar-ticket.json');
+  const sound = manifestOf(FACTORY_BUNDLE, 'refine-ticket.json');
   const withHash = (manifest: Record<string, unknown>): Record<string, unknown> => ({
     ...manifest,
     hash: manifestHash(manifest),
@@ -168,7 +168,7 @@ test('each rule a manifest has to keep is reported on its own', (t) => {
   writeManifest(directory, 'nem-objeto.json', ['not an object']);
   writeManifest(directory, 'sem-campos.json', { id: 'sem-campos' });
   writeManifest(directory, 'ID_ERRADO.json', withHash({ ...sound, id: 'ID_ERRADO' }));
-  writeManifest(directory, 'outro-nome.json', withHash({ ...sound, id: 'refinar-ticket' }));
+  writeManifest(directory, 'outro-nome.json', withHash({ ...sound, id: 'refine-ticket' }));
   writeManifest(directory, 'versao-errada.json', withHash({ ...sound, id: 'versao-errada', version: '1.0' }));
   writeManifest(directory, 'papel-errado.json', withHash({ ...sound, id: 'papel-errado', role: 'juiz' }));
   writeManifest(directory, 'hash-torto.json', { ...sound, id: 'hash-torto', hash: 'sha256:xyz' });
@@ -196,15 +196,15 @@ test('each rule a manifest has to keep is reported on its own', (t) => {
 
 test('two manifests with the same id are a problem of the bundle, not of either file', (t) => {
   const directory = bundleCopy(t, (copy) => {
-    writeManifest(copy, 'copia.json', manifestOf(copy, 'refinar-ticket.json'));
+    writeManifest(copy, 'copia.json', manifestOf(copy, 'refine-ticket.json'));
   });
   const problems = messagesOf(verifyBundle(directory, graphOf(directory)), 'manifest');
 
-  assert.ok(problems.some((message) => message.includes('repeated id in the bundle: "refinar-ticket"')));
+  assert.ok(problems.some((message) => message.includes('repeated id in the bundle: "refine-ticket"')));
 });
 
 test('a pin is checked in each of the three ways it can be wrong', (t) => {
-  const missing = bundleCopy(t, (copy) => rmSync(path.join(copy, 'skills', 'refinar-ticket.json')));
+  const missing = bundleCopy(t, (copy) => rmSync(path.join(copy, 'skills', 'refine-ticket.json')));
   assert.ok(
     messagesOf(verifyBundle(missing, graphOf(missing)), 'pin').some((message) =>
       message.includes('no manifest in skills/ with that id'),
@@ -214,14 +214,14 @@ test('a pin is checked in each of the three ways it can be wrong', (t) => {
   // `version` is outside the content hash on purpose (renaming a skill must not
   // invalidate a pin), so bumping it alone is a clean version-only mismatch.
   const bumped = bundleCopy(t, (copy) => {
-    writeManifest(copy, 'refinar-ticket.json', {
-      ...manifestOf(copy, 'refinar-ticket.json'),
+    writeManifest(copy, 'refine-ticket.json', {
+      ...manifestOf(copy, 'refine-ticket.json'),
       version: '9.9.9',
     });
   });
   assert.ok(
     messagesOf(verifyBundle(bumped, graphOf(bumped)), 'pin').some((message) =>
-      message.includes('pinned version 1.0.0, manifest 9.9.9'),
+      message.includes('pinned version 1.0.1, manifest 9.9.9'),
     ),
   );
 
@@ -229,8 +229,8 @@ test('a pin is checked in each of the three ways it can be wrong', (t) => {
   // recomputed hash leaves the manifest valid and the PIN stale — which is the
   // case the pin exists for (D4).
   const rewritten = bundleCopy(t, (copy) => {
-    const manifest = { ...manifestOf(copy, 'refinar-ticket.json'), instructions: 'faça outra coisa' };
-    writeManifest(copy, 'refinar-ticket.json', { ...manifest, hash: manifestHash(manifest) });
+    const manifest = { ...manifestOf(copy, 'refine-ticket.json'), instructions: 'faça outra coisa' };
+    writeManifest(copy, 'refine-ticket.json', { ...manifest, hash: manifestHash(manifest) });
   });
   const problems = verifyBundle(rewritten, graphOf(rewritten));
   assert.deepEqual(messagesOf(problems, 'manifest'), [], 'the manifest itself is beyond reproach');
@@ -380,16 +380,16 @@ test('a bundle where one skill bumped its version registers exactly that version
     return { status: manifest?.version === '1.1.0' ? 201 : 200, body: request.body };
   });
   const directory = bundleCopy(t, (copy) => {
-    const manifest = manifestOf(copy, 'refinar-ticket.json');
+    const manifest = manifestOf(copy, 'refine-ticket.json');
     manifest.version = '1.1.0';
-    writeManifest(copy, 'refinar-ticket.json', manifest);
+    writeManifest(copy, 'refine-ticket.json', manifest);
 
     // The bundle's own pin has to follow, or `verifyBundle` refuses before any
     // request happens — which is a different rule, already covered below.
     const document = graphOf(copy);
     for (const node of document.nodes as Record<string, unknown>[]) {
       const pin = node.skill_ref as Record<string, unknown>;
-      if (pin.id === 'refinar-ticket') pin.version = '1.1.0';
+      if (pin.id === 'refine-ticket') pin.version = '1.1.0';
     }
     writeGraph(copy, document);
   });
@@ -406,12 +406,12 @@ test('a skill whose content moved under an unchanged version stops the import', 
   const plane = await startFakeControlPlane(t, (request) => {
     if (request.path !== '/v1/skills') return accepting()(request);
     const manifest = request.body as { id?: string } | undefined;
-    return manifest?.id === 'integrar-branch'
+    return manifest?.id === 'integrate-branch'
       ? {
           status: 409,
           body: {
             error: 'skill_version_conflict',
-            details: ['integrar-branch 1.0.0 already names different content; bump the version'],
+            details: ['integrate-branch 1.0.1 already names different content; bump the version'],
           },
         }
       : { status: 200, body: request.body };
@@ -422,7 +422,7 @@ test('a skill whose content moved under an unchanged version stops the import', 
 
   assert.equal(run.code, 1, 'a version naming two different bodies is a bundle to fix, not a reimport');
   assert.match(run.stderr, /the registry refused a skill \(HTTP 409\)/);
-  assert.match(run.stderr, /integrar-branch/, 'the message names the skill, which is also its file');
+  assert.match(run.stderr, /integrate-branch/, 'the message names the skill, which is also its file');
   assert.match(run.stderr, /skill_version_conflict/);
   assert.match(run.stderr, /the graph was not sent to the control plane/);
   assert.deepEqual(
@@ -469,8 +469,8 @@ test('a refusal with nothing in the body is still a refusal', async (t) => {
 test('an invalid bundle never becomes a request at all', async (t) => {
   const plane = await startFakeControlPlane(t, accepting());
   const directory = bundleCopy(t, (copy) => {
-    writeManifest(copy, 'refinar-ticket.json', {
-      ...manifestOf(copy, 'refinar-ticket.json'),
+    writeManifest(copy, 'refine-ticket.json', {
+      ...manifestOf(copy, 'refine-ticket.json'),
       version: '9.9.9',
     });
   });
@@ -479,7 +479,7 @@ test('an invalid bundle never becomes a request at all', async (t) => {
 
   assert.equal(run.code, 1);
   assert.match(run.stderr, /invalid bundle/);
-  assert.match(run.stderr, /pin\s+node "refinar"/);
+  assert.match(run.stderr, /pin\s+node "refine"/);
   assert.match(run.stderr, /nothing was sent to the control plane/);
   assert.deepEqual(plane.requests, [], 'a broken pin never becomes a request (D4)');
 });
@@ -561,18 +561,18 @@ test('any other refusal of the graph is printed with what came with it', async (
  */
 test('an input nobody produces is a contract problem, read off the local manifests', (t) => {
   const directory = bundleCopy(t, (area) => {
-    const manifest = manifestOf(area, 'desenvolver-ticket.json');
+    const manifest = manifestOf(area, 'develop-ticket.json');
     const input = manifest.input as Record<string, unknown>;
     // `carteira` is not projected, not provided by the executor and produced by
-    // no ancestor of `desenvolver`: it is the shape of every gap the three real
+    // no ancestor of `develop`: it is the shape of every gap the three real
     // crossings hit.
     input.required = [...(input.required as string[]), 'carteira'];
     manifest.hash = manifestHash(manifest);
-    writeManifest(area, 'desenvolver-ticket.json', manifest);
+    writeManifest(area, 'develop-ticket.json', manifest);
 
     const document = graphOf(area);
     const nodes = document.nodes as Array<Record<string, unknown>>;
-    const node = nodes.find((candidate) => candidate.id === 'desenvolver');
+    const node = nodes.find((candidate) => candidate.id === 'develop');
     (node as { skill_ref: Record<string, unknown> }).skill_ref.hash = manifest.hash as string;
     writeGraph(area, document);
   });
@@ -580,7 +580,7 @@ test('an input nobody produces is a contract problem, read off the local manifes
   const problems = messagesOf(verifyBundle(directory, graphOf(directory)), 'contract');
   assert.equal(problems.length, 1, problems.join('\n'));
   assert.ok(problems[0].includes('unproduced_input'), problems[0]);
-  assert.ok(problems[0].includes('desenvolver'), problems[0]);
+  assert.ok(problems[0].includes('develop'), problems[0]);
   assert.ok(problems[0].includes('carteira'), problems[0]);
 });
 

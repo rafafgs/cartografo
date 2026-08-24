@@ -47,11 +47,11 @@ const HOOKS_CLASS = 'nota-curta-com-ganchos';
  * agree with an import that registered nothing but a coincidence.
  */
 const FACTORY_SKILL_IDS = [
-  'desenvolver-ticket',
-  'implantar-release',
-  'integrar-branch',
-  'refinar-ticket',
-  'testar-alpha',
+  'alpha-test',
+  'develop-ticket',
+  'integrate-branch',
+  'refine-ticket',
+  'verify-release',
 ];
 
 /** A registered skill, in the part these tests read. */
@@ -243,11 +243,11 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
   const bundle = path.join(base, 'bundle-sem-evidencia');
   cpSync(FACTORY_BUNDLE, bundle, { recursive: true });
 
-  const manifestPath = path.join(bundle, 'skills', 'refinar-ticket.json');
+  const manifestPath = path.join(bundle, 'skills', 'refine-ticket.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
   const checks = manifest.checks as Record<string, unknown>[];
   const broken = checks.find((check) => check.type === 'agentic');
-  assert.ok(broken !== undefined, 'the fixture assumes refinar-ticket has an agentic check');
+  assert.ok(broken !== undefined, 'the fixture assumes refine-ticket has an agentic check');
   delete broken.required_evidence;
   manifest.hash = contentHash(manifest);
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -257,17 +257,17 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
   let repinned = 0;
   for (const node of document.nodes as Record<string, unknown>[]) {
     const ref = node.skill_ref as Record<string, unknown> | undefined;
-    if (ref?.id !== 'refinar-ticket') continue;
+    if (ref?.id !== 'refine-ticket') continue;
     ref.hash = manifest.hash;
     repinned += 1;
   }
-  assert.ok(repinned > 0, 'the fixture assumes some node pins refinar-ticket');
+  assert.ok(repinned > 0, 'the fixture assumes some node pins refine-ticket');
   writeFileSync(graphPath, `${JSON.stringify(document, null, 2)}\n`);
 
   const result = await runCli(['import', bundle, '--url', controlPlane.url], { token: controlPlane.token });
 
   assert.notEqual(result.code, 0, 'a manifest the registry refuses cannot exit 0');
-  assert.match(result.stderr, /refinar-ticket/, 'the output names the manifest that was refused');
+  assert.match(result.stderr, /refine-ticket/, 'the output names the manifest that was refused');
   assert.match(result.stderr, /required_evidence/, "the registry's own reason comes out");
   assert.equal(looksLikeStackTrace(result.stderr), false, `a stack trace leaked:\n${result.stderr}`);
 
@@ -278,7 +278,7 @@ test('AT8 — a manifest the registry refuses stops the import before the graph 
     'the graph is never sent once a manifest is refused',
   );
 
-  const refused = await fetch(`${controlPlane.url}/v1/skills/refinar-ticket`);
+  const refused = await fetch(`${controlPlane.url}/v1/skills/refine-ticket`);
   assert.equal(refused.status, 404, 'the refused manifest cannot have been registered');
 });
 

@@ -119,7 +119,7 @@ test('AT22 — the proof registers the committed factory graph and its committed
     'the graph the proof crosses has to have at least one node that really routes',
   );
   assert.ok(
-    graph.edges.some((edge) => edge.condition === 'retrabalho'),
+    graph.edges.some((edge) => edge.condition === 'rework'),
     'and a rework edge, or the "one forced cycle" the proof claims is unreachable',
   );
 });

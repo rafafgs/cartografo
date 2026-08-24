@@ -4,7 +4,7 @@
  *
  * The first real crossing of `desenvolvimento-de-software` against a live
  * repository (t109, `notas/2026-08-17-t109-feature-do-jogo.md`) died on the
- * `testar` node without spending a single token: `testar-alpha` declared
+ * `test` node without spending a single token: `alpha-test` declared
  * `network: {allowed: true, domains: [...]}`, and a per-domain allowlist is a
  * policy neither shipped adapter can express, so `startSession` refused it up
  * front with `permission policy unsupported: …`. That refusal is correct and is
@@ -24,7 +24,7 @@
  * can honour that content is a runner question, and it belongs next to the
  * runner.
  *
- * English per D18; the manifest's own free text stays Portuguese.
+ * English per D18, and since t280 (D24) so is the manifest's own free text.
  */
 
 import assert from 'node:assert/strict';
@@ -56,9 +56,9 @@ function factoryManifest(skillId: string): Record<string, unknown> {
   return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
 }
 
-test('AT1 — the claude-code adapter opens a session under what testar-alpha declares', () => {
-  const permissions = resolveSkillPermissions(factoryManifest('testar-alpha').permissions);
-  assert.ok(permissions, 'testar-alpha has to declare both permission axes');
+test('AT1 — the claude-code adapter opens a session under what alpha-test declares', () => {
+  const permissions = resolveSkillPermissions(factoryManifest('alpha-test').permissions);
+  assert.ok(permissions, 'alpha-test has to declare both permission axes');
 
   const { refusals } = resolvePermissions(permissions);
 
@@ -71,9 +71,9 @@ test('AT1 — the claude-code adapter opens a session under what testar-alpha de
   );
 });
 
-test('AT2 — no adapter refuses testar-alpha for a domain-scoped network any more', () => {
-  const permissions = resolveSkillPermissions(factoryManifest('testar-alpha').permissions);
-  assert.ok(permissions, 'testar-alpha has to declare both permission axes');
+test('AT2 — no adapter refuses alpha-test for a domain-scoped network any more', () => {
+  const permissions = resolveSkillPermissions(factoryManifest('alpha-test').permissions);
+  assert.ok(permissions, 'alpha-test has to declare both permission axes');
 
   assert.equal(
     permissions.network.allowed,
@@ -100,7 +100,7 @@ test('AT2 — no adapter refuses testar-alpha for a domain-scoped network any mo
  * than at what the ficha assumed.
  *
  * The ficha asked for "no refusal on either adapter" reading only the network
- * axis. There is a second one: `testar-alpha` declares `filesystem.write: []`
+ * axis. There is a second one: `alpha-test` declares `filesystem.write: []`
  * (it judges a shared test bench and must leave it exactly as it found it), and
  * codex measured that NO sandbox tier combines closed writes with an open
  * network — `network_access` only exists inside `workspace-write`
@@ -118,9 +118,9 @@ test('AT2 — no adapter refuses testar-alpha for a domain-scoped network any mo
  * writes or teaches codex the combination — which is the day the gap closes and
  * this comment stops being true.
  */
-test('AT3 — codex still refuses testar-alpha, and only for the closed-write gap', () => {
-  const permissions = resolveSkillPermissions(factoryManifest('testar-alpha').permissions);
-  assert.ok(permissions, 'testar-alpha has to declare both permission axes');
+test('AT3 — codex still refuses alpha-test, and only for the closed-write gap', () => {
+  const permissions = resolveSkillPermissions(factoryManifest('alpha-test').permissions);
+  assert.ok(permissions, 'alpha-test has to declare both permission axes');
 
   assert.deepEqual(
     resolveCodexPermissions(permissions).refusals,
@@ -132,10 +132,10 @@ test('AT3 — codex still refuses testar-alpha, and only for the closed-write ga
 
 test('AT4 — the other four manifests of the bundle open on both adapters', () => {
   for (const skillId of [
-    'refinar-ticket',
-    'desenvolver-ticket',
-    'integrar-branch',
-    'implantar-release',
+    'refine-ticket',
+    'develop-ticket',
+    'integrate-branch',
+    'verify-release',
   ]) {
     const permissions = resolveSkillPermissions(factoryManifest(skillId).permissions);
     assert.ok(permissions, `${skillId}: has to declare both permission axes`);

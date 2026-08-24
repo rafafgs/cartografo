@@ -1,0 +1,210 @@
+{
+  "id": "refine-ticket",
+  "version": "1.0.1",
+  "hash": "sha256:79667013229d5e5095c0eef985ef6759e154d444fcb247c9c25aa0181c37d735",
+  "role": "work",
+  "description": "Turns a raw request into an executable specification: required sections, verifiable acceptance criteria and an explicit negative scope.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job",
+      "project"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "object",
+        "description": "the work's own identity, published by the input projection at `input.job` (t253)",
+        "required": [
+          "id",
+          "title",
+          "body"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "the raw request, as it was recorded on the board; `null` when there was none"
+          }
+        }
+      },
+      "project": {
+        "type": "object",
+        "required": [
+          "repo",
+          "conventions",
+          "quality_commands"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "conventions": {
+            "type": "string",
+            "description": "the project's architectural conventions, in prose"
+          },
+          "quality_commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "they go into the Definition of done of the specification that gets written"
+          },
+          "canonical_docs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "in_flight_jobs": {
+        "type": "array",
+        "description": "file surfaces already declared by active work; it is what makes it possible to write a declaration that does not serialize the whole board",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "surface"
+          ],
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "surface": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "perguntas_respondidas": {
+        "type": "array",
+        "description": "questions already answered on this work, so the new session does not reopen what was decided. The key and the two inside it are the CONTROL PLANE's projection vocabulary, not this bundle's — `packages/core/src/domain/context.ts` publishes them under these names for every registered manifest, and renaming them here would declare an input the projection never delivers",
+        "items": {
+          "type": "object",
+          "required": [
+            "pergunta",
+            "resposta"
+          ],
+          "properties": {
+            "pergunta": {
+              "type": "string"
+            },
+            "resposta": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "specification",
+      "acceptance_criteria",
+      "touched_files",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "specification": {
+        "type": "string",
+        "minLength": 1,
+        "description": "the whole specification in Markdown, with the eleven required sections in the declared order; it comes back through the contract, never as a file written into the repository"
+      },
+      "acceptance_criteria": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "the same criteria as the acceptance-tests section, pulled out into a list so the test gate can consume them without reparsing Markdown"
+      },
+      "touched_files": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "the declared conflict surface: what this work opens, and nothing beyond it"
+      },
+      "out_of_scope": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "model_tier": {
+        "type": "string",
+        "enum": [
+          "standard",
+          "strong"
+        ],
+        "description": "the model strength the work asks for; never a model and never a named vendor"
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gotchas": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "preconditions": [
+    "request recorded on the board, with a non-empty title and body",
+    "project profile resolved: conventions and quality commands known",
+    "project repository readable at the declared path",
+    "declared surfaces of the in-flight work available, when there is any"
+  ],
+  "checks": [
+    {
+      "id": "specification-gate",
+      "type": "agentic",
+      "description": "The most expensive defect of refinement is the acceptance criterion nobody can verify: it contaminates every step after it, and no command detects it. It is this skill's only check because it is the only judgement the skill produces.",
+      "instruction": "Read the specification that was produced and answer five things, one by one, quoting the exact excerpt that supports each answer.\n\n1. Is every acceptance criterion verifiable by a concrete test that somebody could write straight from the sentence, without asking anything? \"Works properly\" is not a criterion; \"GET /x returns 404 for an unknown id\" is. Point out by number the ones that are not.\n2. Do the eleven required sections exist, in order, and is the conflict-surface declaration the first line of the body, on ONE line? Quote the beginning of each section you found.\n3. Does every file cited in the declared surface and in the code-changes table exist in the repository, or is it explicitly declared as new? Open each path and attach what you found — an invented path is the cheapest way for refinement to break development.\n4. Is the first item of the Definition of done exactly \"acceptance tests written first and confirmed failing before the implementation\" — or an equivalent sentence, with the same force — and is every part of the work that genuinely does not let itself be driven by a test in the \"TDD exceptions\" subsection, with the reason? Quote the first item as it is written and each exception together with the justification that accompanies it. A non-testable part that does not appear in that subsection is TDD waived in silence, and that is what this item exists to catch.\n5. Was the INVEST validation really applied? For each of the six properties — independent, negotiable, valuable, estimable, small, testable — quote the excerpt of the specification or the refinement-log entry that supports it. A checklist ticked with no excerpt behind it does not count: what counts is the recorded decision, not the ticked box.\n\nJudge by the text of the specification, never by the report of the session that wrote it. If any one of the five answers is no, the check failed.",
+      "required_evidence": [
+        "quoted_excerpt_of_each_required_section",
+        "verified_path_of_each_file_cited_in_the_declared_surface",
+        "for_each_acceptance_criterion_the_concrete_test_that_would_prove_it",
+        "first_definition_of_done_item_quoted_as_written",
+        "each_tdd_exception_with_its_accompanying_justification",
+        "for_each_of_the_six_invest_properties_the_excerpt_that_supports_it"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Refine a request into a specification\n\nYour job is to turn ONE raw request into a complete specification that a person\nor an agent can execute without having to ask you anything.\n\n**Work:** {{input.job.title}} (#{{input.job.id}})\n\n{{input.job.body}}\n\n## Where you are\n\nYou may READ anything in the repository at `{{input.project.repo}}`. You may\nNOT modify, create or delete any file, and you may not run anything that\nchanges the working tree: a refinement session produces a specification, never\ncode. That is why it is the cheapest parallelism in the system — two refinement\nsessions never contend over a file.\n\nThe specification comes back **through the output contract**, not as a file\nwritten into the repository. What records the refined body and transitions the\nwork is the control plane; your session only returns the result.\n\n## The specification gate\n\nA work item is NOT refined while its acceptance criteria are not concrete and\nverifiable. \"Works properly\" is not a criterion; \"GET /x returns 404 for an\nunknown id\" is. Refuse to advance a work item whose criteria you cannot state —\nask instead.\n\n## Required sections\n\nThe specification has to contain all of these, in this order:\n\n1. **Declared conflict surface** — the declaration, and the first line of the\n   body. Write it on ONE line: the label in bold, a colon, and then either\n   every path or glob relative to the repository that this work expects to\n   touch — each one in backticks, separated by commas — or the word `none`\n   when the work genuinely opens no existing file. These two forms, and no\n   other:\n\n   **Declared conflict surface:** `app/services/queue.ext`, `tests/test_queue.ext`\n\n   **Declared conflict surface:** none\n\n   Never a heading with the paths underneath, never a list on the following\n   lines, never a sentence. The declaration ends at the first blank line, so\n   the isolated case written under a heading is read as *no declaration at all*\n   — and work that declared nothing is scheduled alone, the exact opposite of\n   what the author meant.\n\n   Declare what the work really opens and nothing beyond it. A reflex `app/**`\n   satisfies the checklist and is worse than useless: it overlaps every other\n   work item, the executor serializes exactly what the declaration existed to\n   parallelize, and the later comparison between declared and touched has\n   nothing left to check. The files you had to read in order to write the\n   specification are usually the list.\n2. **Context** — the problem and why it matters now. Cite real paths of this\n   repository (`path/to/file.ext:line`) where the work touches existing code.\n   Context with no citation is a sign that you did not read enough.\n3. **Goal** — one or two sentences.\n4. **Functional requirements** — numbered, each one checkable on its own.\n5. **Schema / data changes** — the concrete change, or an explicit \"N/A\".\n6. **Code changes** — a file-by-file table of what will be created or edited.\n7. **Out of scope** — an explicit list. What you leave out is as much a\n   decision as what you put in.\n8. **Acceptance tests** — a concrete list of tests that do not exist yet, each\n   one as a file path plus the behavior it pins. They are written and confirmed\n   failing BEFORE any implementation, so they have to be precise enough to be\n   written straight from this list. If some part of the work genuinely cannot\n   be driven by a test (pure data migration, pure wiring, documentation), list\n   it in a \"TDD exceptions\" subsection, with the reason.\n9. **Definition of done** — a concrete checklist. The first item is always\n   \"acceptance tests written first and confirmed failing before the\n   implementation\". Include the project's own quality commands\n   ({{input.project.quality_commands}}) and any extra criterion the profile\n   declares.\n10. **Gotchas to capture** — a placeholder section, filled in during\n    development.\n11. **Refinement log** — a dated entry with what you decided and every default\n    you took. It is what makes a default reviewable.\n\n## INVEST validation\n\nCheck the specification against the six, and fix what you can:\n\n- **Independent** — minimize dependency on other work, and minimize overlap\n  with the files the in-flight work already touches. Independence is what makes\n  parallel execution safe.\n- **Negotiable** — the out-of-scope section is explicit.\n- **Valuable** — the context says why it is worth doing now.\n- **Estimable** — there is a rough estimate.\n- **Small** — something between one and three days of work. If it is bigger,\n  do not accept it in silence: propose a split, describe each part and ask.\n- **Testable** — the acceptance-tests section is the proof.\n\n## Architectural conformance\n\nValidate the specification against the project's conventions:\n\n{{input.project.conventions}}\n\nA requirement that would violate one of them is a requirement to question, not\nto write.\n\n## Model tier\n\nMark the model strength the work asks for: `standard` for building by pattern\nbehind a reference that already exists, `strong` for dense domain logic\n(schedulers, adapters, state machines, prompt assembly, cross-cutting\nrefactors). Never name a model or a vendor — the tier is mapped onto the\ninstalled engine.\n\n## When to decide and when to ask\n\nPrefer a sensible default plus an entry in the refinement log that the founder\ncan veto. Reserve the question for decisions that really shape the product and\nthat you cannot responsibly guess: a wrong default there costs more than the\nwait.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else — \"Run the\n  migration, then integrate\", not \"I think that, since the schema already has\n  the column, it would probably be safe to…\". It is the text of a one-click\n  accept button, so whatever you put there becomes the founder's answer,\n  verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReturn the result in the format this skill's output schema declares — the\nrunner validates against it and refuses anything that does not match:\n\n- `specification`: the whole refined body, in Markdown, with the eleven\n  sections.\n- `acceptance_criteria`: the same criteria from section 8, as a list.\n- `touched_files`: the same declared surface as the first line.\n- `out_of_scope`, `model_tier`, `gotchas`: when there are any.\n- `note`: one line with what you decided and every default you took.\n\nIf the work cannot be refined at all, say why in the `note` and do not invent a\nspecification to fill the contract.",
+  "origin": {
+    "type": "native",
+    "behavioral_reference": "flowpilot"
+  }
+}

@@ -1,0 +1,185 @@
+{
+  "id": "verify-release",
+  "version": "1.0.1",
+  "hash": "sha256:4ba085f8f429356305c3b0ed5e76f010493deeefd587b095418aca5569a4efe4",
+  "role": "work",
+  "description": "Verifies whether the work's merge commit is already contained in the commit the running install carries, and closes the traversal when it is.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job",
+      "artifact",
+      "referencia",
+      "project"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "object",
+        "description": "the work's own identity, published by the input projection at `input.job` (t253)",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "artifact": {
+        "type": "object",
+        "required": [
+          "merge_commit"
+        ],
+        "properties": {
+          "merge_commit": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the commit the integration node left on the main line"
+          }
+        }
+      },
+      "referencia": {
+        "type": "object",
+        "required": [
+          "commit",
+          "modo"
+        ],
+        "description": "the commit containment is verified against — the only real variable of this step. The key and the three inside it are the RUNNER's executor-environment vocabulary, not this bundle's: `packages/runner/src/dispatch/resolve-executor-environment.ts` publishes them under these names and `--reference-mode` takes the two mode values verbatim, so renaming them here would declare an input no dispatch delivers",
+        "properties": {
+          "commit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "modo": {
+            "type": "string",
+            "enum": [
+              "instalacao_em_uso",
+              "ponta_do_principal"
+            ],
+            "description": "instalacao_em_uso: the commit the running process was started from, read once at startup and never again — it is an assertion about THIS process, and re-reading it later would assert something about a process that no longer exists. ponta_do_principal: the live tip of the main line, read at every verification, because it is a fact about the repository and it advances with every integration."
+          },
+          "lido_em": {
+            "type": "string",
+            "description": "when the reference was read (ISO 8601)"
+          }
+        }
+      },
+      "project": {
+        "type": "object",
+        "required": [
+          "repo"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "verdict",
+      "checked_reference",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "verdict": {
+        "type": "string",
+        "enum": [
+          "published",
+          "not_yet",
+          "undetermined"
+        ],
+        "description": "the answer to a single question, with three possible answers. published: the merge commit is contained in the reference. not_yet: it is not, and that resolves itself once the install advances. undetermined: the command could not answer (commit rewritten out of the history, repository unreachable) — never collapse this case into not_yet, because it does not resolve itself."
+      },
+      "checked_reference": {
+        "type": "object",
+        "required": [
+          "commit",
+          "mode"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "instalacao_em_uso",
+              "ponta_do_principal"
+            ],
+            "description": "the mode this session actually checked under, echoed back from `input.referencia.modo`; the two values are the runner's own vocabulary, so reporting anything else would name a mode nothing reads"
+          }
+        }
+      },
+      "release": {
+        "type": "string",
+        "description": "identifier of what ended up published (commit or tag); filled in when verdict = published"
+      },
+      "deployed_at": {
+        "type": "string",
+        "description": "when containment was observed (ISO 8601); filled in when verdict = published"
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gotchas": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "preconditions": [
+    "the work's merge commit known, recorded by the integration node",
+    "reference commit resolved, with the mode the project declares",
+    "project repository reachable locally, with the history that holds both commits"
+  ],
+  "checks": [
+    {
+      "id": "reference-resolves",
+      "type": "deterministic",
+      "description": "The reference exists as a commit in this repository. Without it, a \"does not contain\" would be indistinguishable from \"I do not know\", and those two answers have different destinations.",
+      "command": "git -C {{input.project.repo}} rev-parse --verify --quiet {{input.referencia.commit}}^{commit}",
+      "timeout_s": 60
+    },
+    {
+      "id": "merge-commit-contained-in-reference",
+      "type": "deterministic",
+      "description": "The whole question of this step: is the work's merge commit an ancestor of the reference? Exit 0 = published; 1 = not yet; anything else = undetermined. It is a command with a right and unambiguous answer — paying for judgement here would be paying for the wrong thing.",
+      "command": "git -C {{input.project.repo}} merge-base --is-ancestor {{input.artifact.merge_commit}} {{input.referencia.commit}}",
+      "timeout_s": 120
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": []
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Confirm that the work is published\n\nThis step publishes nothing: it **verifies** a publication that already\nhappened. The whole question is a single one, and it has an objective answer:\n\n> is the merge commit `{{input.artifact.merge_commit}}` contained in the commit\n> the running install carries (`{{input.referencia.commit}}`, mode\n> `{{input.referencia.modo}}`)?\n\n**Work:** {{input.job.title}} (#{{input.job.id}})\n\n## An honest note about this node\n\nIn the reference system this graph ports, this step **never opens an agent\nsession**: it is a 100% deterministic sweep, because paying a model to run a\nsequence of commands with an unambiguous answer is paying for the wrong thing.\nThis project's graph format does not yet have a \"sessionless\" node type — and\ncreating one now, with a single case pressing on the schema, would violate the\nrule of two consumers. So the port leaves this node agentic, with 100%\ndeterministic checks and trivial instructions, and records the divergence\ninstead of hiding it. When a second real case exists, the new node type arrives\nwith two consumers to prove the format.\n\nIn practice, for you: **do not improvise**. Run this skill's two deterministic\nchecks, read the exit code and report. There is no judgement to make here, and\nanything you \"conclude\" beyond what the command said is opinion entering a\nplace where only a fact fitted.\n\n## Where you are\n\nYou have read access to the repository (`{{input.project.repo}}`) and no write\naccess. Do not commit, do not push, do not switch branches, do not touch\nanother checkout, and do not talk to the network — the verification is local\nand historical.\n\n## The procedure\n\n1. **Check that the reference resolves** as a commit in this repository. If it\n   does not resolve, the verdict is `undetermined` — it is not \"not yet\".\n2. **Ask the containment question**: is the merge commit an ancestor of the\n   reference? Exit 0 is `published`; exit 1 is `not_yet`; any other exit is\n   `undetermined`, and you attach the command's output to the note.\n3. **Do not force any of the three answers.** `not_yet` is the normal state and\n   it resolves itself: the install has not advanced yet, and it will.\n   `undetermined` does not resolve itself — the merge commit was rewritten out\n   of the history, or the repository is not where it should be — and somebody\n   needs to know that. Collapsing the two into one is erasing the only\n   difference that matters between them.\n\nThis step's trigger is external: nothing here restarts, publishes or promotes\nanything. This session observes and reports.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else — \"Run the\n  migration, then integrate\", not \"I think that, since the schema already has\n  the column, it would probably be safe to…\". It is the text of a one-click\n  accept button, so whatever you put there becomes the founder's answer,\n  verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\nEscalate only on the `undetermined` case you cannot explain — `not_yet` is a\nnormal answer, and a question fired in the normal case is a question the\nfounder learns to ignore.\n\n## What to return\n\nReturn the result in the format this skill's output schema declares: `verdict`,\n`checked_reference` (the commit and the mode you actually checked), `note` and,\nwhen the verdict is `published`, also `release` and `deployed_at`.",
+  "origin": {
+    "type": "native",
+    "behavioral_reference": "flowpilot"
+  }
+}

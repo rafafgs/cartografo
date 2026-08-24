@@ -1,0 +1,284 @@
+{
+  "id": "alpha-test",
+  "version": "1.0.5",
+  "hash": "sha256:18be65c9f7c13ff831fb01bf53d29233a38268dc304f89ea56f1b9eb37cc5ba6",
+  "role": "gate",
+  "description": "Semantically validates each acceptance criterion against the running integrated application, with evidence of its own, and routes the work: approved moves on, rejected goes back to development.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job",
+      "ticket",
+      "artifact",
+      "project",
+      "banco_de_testes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "object",
+        "description": "the work's own identity, published by the input projection at `input.job` (t253)",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "ticket": {
+        "type": "object",
+        "required": [
+          "acceptance_criteria"
+        ],
+        "properties": {
+          "acceptance_criteria": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "ref",
+                "text"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "description": "a stable reference, e.g. AT1"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "description": "the bucket the `refine` node declares in `contract.produces`: what that node produced for this one"
+      },
+      "artifact": {
+        "type": "object",
+        "required": [
+          "merge_commit"
+        ],
+        "description": "what the integration left on the main line; what the previous sessions declared is context, never evidence",
+        "properties": {
+          "merge_commit": {
+            "type": "string",
+            "minLength": 1
+          },
+          "declared_gates": {
+            "type": "object",
+            "description": "SELF-REPORTING by the previous sessions. It is there so you know where to look; it supports no verdict, and rerunning those commands is NOT your job.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "project": {
+        "type": "object",
+        "description": "the class's static configuration, published by the input projection at `input.project` (t253); it belongs to the graph document and travels frozen in the snapshot",
+        "required": [
+          "application"
+        ],
+        "properties": {
+          "application": {
+            "type": "object",
+            "required": [
+              "running"
+            ],
+            "properties": {
+              "running": {
+                "type": "boolean"
+              },
+              "address": {
+                "type": "string",
+                "description": "loopback address of the integrated application, when it is running"
+              },
+              "absence_reason": {
+                "type": "string",
+                "description": "why there is no application standing, when running = false"
+              }
+            },
+            "description": "the integrated application this gate exercises. It is STATIC configuration of the class (t270): no orchestration in this v0 brings an application up, takes it down or watches it, so what declares it is the graph's `project` — and a project variant overrides it with a live address (D13)."
+          }
+        }
+      },
+      "banco_de_testes": {
+        "type": "object",
+        "required": [
+          "caminho"
+        ],
+        "description": "checkout of the integrated line prepared by the executor; a point of observation, not a work area. The key and the two inside it are the RUNNER's executor-environment vocabulary, not this bundle's — `packages/runner/src/dispatch/resolve-executor-environment.ts` publishes them under these names, and renaming them here would declare an input no dispatch delivers",
+        "properties": {
+          "caminho": {
+            "type": "string",
+            "minLength": 1
+          },
+          "comandos_de_dados": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the project's own commands for preparing the test data"
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "outcome",
+      "verdicts",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "outcome": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "fail",
+          "escalate_human"
+        ],
+        "description": "Required in every gate skill: the verdict THIS gate reached, and the field `PATCH /v1/sessions/:id/finish` refuses a report without. It is NOT the routing key — what the executor reads to pick an edge is `resultado`, the graph's own vocabulary, which rides inside the same fenced block and is taken out of the report before it is held against this schema (`docs/spec/grafo.md`, t269). That is why `resultado` is not declared here and the `test` node declares it instead. In this graph `pass` takes the `approved` edge and `fail` the `rework` edge, and the instructions spell out both keys. `escalate_human` exists because the gate format demands the three values, but a session that needs the founder PAUSES with an input-request block instead of settling it here."
+      },
+      "verdicts": {
+        "type": "array",
+        "minItems": 1,
+        "description": "one per acceptance criterion; a criterion that was not exercised gets an honest entry, never a skipped one",
+        "items": {
+          "type": "object",
+          "required": [
+            "ref",
+            "verdict",
+            "evidence"
+          ],
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "verdict": {
+              "type": "string",
+              "enum": [
+                "passed",
+                "failed",
+                "not_exercised"
+              ]
+            },
+            "evidence": {
+              "type": "string",
+              "minLength": 1,
+              "description": "what THIS gate observed on its own; self-reporting by the previous sessions does not count"
+            }
+          }
+        }
+      },
+      "ux": {
+        "type": "string",
+        "description": "result of the UX/design consistency check on the criteria that touch an interface: \"passed\", or the problems found"
+      },
+      "bugs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "severity",
+            "title",
+            "criterion",
+            "repro"
+          ],
+          "properties": {
+            "severity": {
+              "type": "string",
+              "enum": [
+                "simple",
+                "complex"
+              ],
+              "description": "simple = a contained fix one development round picks up directly; complex = uncertain cause, architectural implication or a founder's decision"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "criterion": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repro": {
+              "type": "string",
+              "minLength": 1,
+              "description": "steps, expected vs. observed"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "suspect files; it is by file overlap that the executor safely schedules the fix in parallel"
+            }
+          }
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gotchas": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "preconditions": [
+    "artifact integrated on the main line, with a known merge commit",
+    "test bench checked out at that merge commit",
+    "acceptance criteria available as a list, with a stable reference per criterion",
+    "application standing at the given address, or the reason for its absence recorded",
+    "quality commands already run by the integration node against the merged tree"
+  ],
+  "checks": [
+    {
+      "id": "semantic-walkthrough",
+      "type": "agentic",
+      "description": "A criterion-by-criterion walkthrough against the running application, plus the UX check. It is this skill's ONLY check on purpose: rerunning here the quality commands the integration already ran against this very tree is a redundant station — it proves nothing new and consumes the round's budget.",
+      "instruction": "Walk criterion by criterion through the list of acceptance criteria and issue a verdict for each one, exercising the integrated application running at {{input.project.application.address}}.\n\nEvery verdict cites evidence produced by you, at this gate: the request you fired yourself and the response that came back, the output of the command you ran yourself, the page you rendered yourself. What the previous sessions reported (input.artifact.declared_gates, their note) comes in as context so you know where to look and counts as proof of nothing: a gate that accepts self-reporting as evidence is not a gate. If the only thing supporting a criterion is the claim of whoever implemented it, the verdict is not \"passed\".\n\nOn the criteria that touch an interface, also run the UX/design consistency check: does the surface follow the project's own design system, does it behave on a small and a large viewport, and is it accessible (labels, keyboard reach, contrast)?\n\nA criterion you could not exercise gets the verdict \"not_exercised\", with the evidence of what prevented it — never a silent \"passed\". A criterion that demands manual proof or aesthetic judgement goes to the founder: pause with an input-request carrying all the evidence you gathered.",
+      "required_evidence": [
+        "request_fired_by_the_gate_and_response_received",
+        "output_of_the_command_run_by_the_gate",
+        "reference_of_the_acceptance_criterion_evaluated"
+      ]
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": []
+    },
+    "network": {
+      "allowed": true
+    }
+  },
+  "instructions": "# Validate what was delivered, criterion by criterion\n\nYour job is to semantically validate EACH acceptance criterion of the work\nbelow against the running integrated application, and to record one verdict per\ncriterion. The code has already been integrated and every quality command has\nalready been rerun green against this very tree — what nobody has checked yet\nis whether the application actually DOES what each criterion says, and that is\nyour entire task.\n\n**Work:** {{input.job.title}} (#{{input.job.id}})\n**Artifact:** merge commit `{{input.artifact.merge_commit}}`\n**Application:** {{input.project.application.address}}\n\n## The rule that defines this node\n\nYou verify with **evidence of your own**. What the previous sessions declared —\nthe gates they say they ran, the notes they wrote — reaches you as context, so\nyou know where to look. It is proof of nothing, and no verdict of yours may\nrest on it. Whoever checks runs the result; whoever checks does not read the\nmaker's report and countersign it.\n\n## Where you are\n\nYou are on a shared test bench (`{{input.banco_de_testes.caminho}}`): a\ncheckout of the integrated main line, prepared by the executor. It is a point\nof observation, not a work area.\n\n- **No commit, no push, no branch switching.** Leave the checkout exactly as\n  you found it — you have no write permission on it.\n- **Never touch another checkout of this repository**, even if you can see it.\n- **NEVER rerun the project's quality commands as validation.** The integration\n  node already ran all of them, mechanically, against this exact tree.\n  Repeating them here is a redundant station: it proves nothing new and costs\n  the round the budget the semantic walkthrough needs. That is why this skill\n  has no deterministic check at all.\n- **Your network is open, and that is not this skill's choice.** No engine\n  shipping today knows how to scope the network by domain, and declaring a\n  scope nobody enforces is declaring a session that never opens — so this skill\n  declares `network.allowed: true` with no domain list, which is what the\n  manifest format calls unrestricted network and permits for a native skill.\n  Use the network only to exercise the integrated application at\n  `{{input.project.application.address}}`: no other network call belongs to\n  this gate.\n\n## Walking the criteria\n\n1. **Read the list of acceptance criteria first.** Every criterion gets a\n   verdict; a criterion you could not exercise still gets an entry, marked\n   honestly, never skipped in silence.\n2. **Exercise the application for real** — a direct request against the given\n   address, plus any tool available in the checkout. Prepare whatever data you\n   need with the project's own commands\n   ({{input.banco_de_testes.comandos_de_dados}}). If there is no application\n   running, the reason arrives in\n   `{{input.project.application.absence_reason}}`: validate what the checkout\n   and the project's commands allow, and say clearly in the verdicts what could\n   not be exercised and why.\n3. **Judge each criterion by the evidence you observed** — a response, an\n   output, a rendered page — never by what the code suggests would happen.\n4. **Run the UX/design check on the criteria that touch an interface**: does\n   the surface follow the project's design system, does it behave on a small\n   and a large viewport, is it accessible (labels, keyboard reach, contrast)?\n   Record it in `ux`.\n5. **A criterion that demands manual proof or aesthetic judgement goes to the\n   founder.** Never mark one of those as approved on your own judgement.\n\n## Reporting problems\n\nWhen a criterion fails, open a bug with a severity:\n\n- `simple` — a contained fix that one development round picks up directly: you\n  can name the criterion, the reproduction and the files probably involved.\n- `complex` — anything bigger: uncertain cause, architectural implication, or\n  work that depends on the founder deciding whether it is worth it.\n\nList the suspect files of every bug — the executor schedules the fix by file\noverlap, and a good list is what makes it safe to run the fix in parallel.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else — \"Run the\n  migration, then integrate\", not \"I think that, since the schema already has\n  the column, it would probably be safe to…\". It is the text of a one-click\n  accept button, so whatever you put there becomes the founder's answer,\n  verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to report, and what \"escalate_human\" means here\n\nClose your turn with exactly ONE fenced block, carrying the object this skill's\noutput schema declares — `outcome`, `verdicts` (one per criterion, each with\nthe evidence YOU produced), `ux`, `bugs`, `note` and `gotchas` — plus the key\n`resultado`, naming the edge this gate takes. Two keys, two vocabularies, and\nneither one replaces the other:\n\n- `outcome` is THIS SKILL's, and the manifest format demands the same three\n  values of every gate. It is what `PATCH /v1/sessions/:id/finish` checks your\n  report against, and a report missing it is refused whole — the node blocks\n  and nobody downstream reads anything.\n- `resultado` is the GRAPH's: the label of one of the two edges leaving this\n  node, and the only thing that routes the work. The control plane takes it out\n  of the object before checking the rest, which is why this skill's output\n  schema does not declare it and the node's own contract does. The key itself\n  stays spelled the way the result protocol reserves it\n  (`packages/runner/src/dispatch/parse-node-result.ts`); its VALUES are this\n  graph's edge labels, and those are English.\n\nThe three cases, both keys in each:\n\n- `outcome: \"pass\"` with `resultado: \"approved\"` is reserved for a complete\n  pass: every criterion with verdict `passed` and the UX check clean. The work\n  follows the **approved** edge, on to deployment.\n- `outcome: \"fail\"` with `resultado: \"rework\"` is the round that found a\n  problem, with the bug list. That is a verification round that succeeded and\n  found work, not a session that failed: the work follows the **rework**\n  edge, back to development.\n- `outcome: \"escalate_human\"` exists because the manifest format demands the\n  three values of every gate skill — and in this graph **a session that\n  escalates never gets to emit it**. Needing the founder means closing the turn\n  with the `input-request` block above: the session pauses, the work is\n  recorded as blocked, and when the answer arrives the session resumes where it\n  stopped and only then settles into `pass` or `fail`. Escalating pauses a\n  node; it does not open a third edge, because the only in-flight decisions are\n  gate outcomes over edges already declared.\n\nYou never report the specification: it belongs to the refinement node, and\nnothing after it rewrites it.",
+  "origin": {
+    "type": "native",
+    "behavioral_reference": "flowpilot",
+    "note": "flowpilot testing.py:77 — NEVER re-run the quality gates as the validation"
+  }
+}

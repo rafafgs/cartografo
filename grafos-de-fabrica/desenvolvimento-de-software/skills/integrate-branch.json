@@ -1,0 +1,197 @@
+{
+  "id": "integrate-branch",
+  "version": "1.0.1",
+  "hash": "sha256:e5d9a64ccfc7c278dc2ed3fd7a457774c0636af14d76795cafd8d23f29315910",
+  "role": "work",
+  "description": "Brings a work item's branch onto the main line by reconciling both sides of every conflict, and reverifies the quality commands against the merged tree.",
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "job",
+      "artifact",
+      "project"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "job": {
+        "type": "object",
+        "description": "the work's own identity, published by the input projection at `input.job` (t253)",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "artifact": {
+        "type": "object",
+        "required": [
+          "branch",
+          "commits"
+        ],
+        "description": "what the development session delivered; the fields it declared are context, not evidence",
+        "properties": {
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "declared_gates": {
+            "type": "object",
+            "description": "SELF-REPORTING by the session that produced the artifact. It says where to look; it does not replace this node's rerun against the merged tree.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "touched_files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "project": {
+        "type": "object",
+        "required": [
+          "repo",
+          "main_branch",
+          "test_command",
+          "quality_commands"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "main_branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "test_command": {
+            "type": "string"
+          },
+          "quality_commands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "the runner renders the list as a single line, joined by \" && \""
+          },
+          "ledger_files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "files both sides usually only append to (ledgers, catalogues, translations, migrations); it is where the conflict lives that the merge resolves clean and breaks anyway"
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "required": [
+      "merge_commit",
+      "gates",
+      "note"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "merge_commit": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[0-9a-f]{7,40}$",
+        "description": "the commit at the tip of the reconciled branch — what the executor will advance the main line onto, after reverifying everything on its own. It is not a claim that the main line already points there; it is what the test gate and the deployment node receive"
+      },
+      "resolved_conflicts": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "one item per file: how both intents were preserved"
+      },
+      "gates": {
+        "type": "object",
+        "description": "what was run against the MERGED tree, not against the isolated branch",
+        "additionalProperties": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        }
+      },
+      "note": {
+        "type": "string",
+        "minLength": 1
+      },
+      "gotchas": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "preconditions": [
+    "the work's branch exists and has at least one commit",
+    "the project's main branch available locally and up to date",
+    "the work's worktree checked out on the work's branch",
+    "project profile resolved: test command and quality commands known"
+  ],
+  "checks": [
+    {
+      "id": "green-suite-on-merged-tree",
+      "type": "deterministic",
+      "description": "The suite passes on the MERGED tree, not only on the isolated branch. This is where the development session's self-reporting stops mattering.",
+      "command": "{{input.project.test_command}}",
+      "timeout_s": 1800
+    },
+    {
+      "id": "green-quality-on-merged-tree",
+      "type": "deterministic",
+      "description": "Every quality command of the profile against the merged tree. This node is the last deterministic station of the flow: the test gate reruns none of it.",
+      "command": "{{input.project.quality_commands}}",
+      "timeout_s": 1800
+    },
+    {
+      "id": "clean-tree-after-reconciliation",
+      "type": "deterministic",
+      "description": "No leftovers of a half-finished merge: what was reconciled is committed, and what was not is not hidden in the tree.",
+      "command": "git diff --quiet && git diff --cached --quiet",
+      "timeout_s": 60
+    }
+  ],
+  "permissions": {
+    "filesystem": {
+      "read": [
+        "**"
+      ],
+      "write": [
+        "**"
+      ]
+    },
+    "network": {
+      "allowed": false
+    }
+  },
+  "instructions": "# Integrate a work item's branch\n\nYour job is to bring ONE branch onto the project's main line\n(`{{input.project.main_branch}}`) without losing anything from either side, and\nto leave the merged tree green.\n\n**Work:** {{input.job.title}} (#{{input.job.id}})\n**Artifact:** branch `{{input.artifact.branch}}`\n\n## Where you are\n\nYou are in the worktree that belongs to this work — the current directory is\nits root —, with its branch checked out. The checkout of the project's main\nline is somewhere else, and it is not yours.\n\nBecause of that, five things are absolute:\n\n- **Never push anything, and do not touch the remote** beyond fetching. The\n  push is the founder's act.\n- **You never perform the final merge.** When you are done, the executor reruns\n  every quality command and every deterministic check against what you left,\n  and it is IT that advances the main line onto the result — never you. The\n  session proposes, the flow disposes: your work ends in a reconciled, green\n  branch, not in a moved pointer.\n- **Reconcile on your branch, never on the main branch.** Bring the main line\n  in, fix it here, verify it here — the main line stays valid from beginning to\n  end. Never switch branches and never touch another checkout of this\n  repository, even if you can see it.\n- **What you report is a claim, not a conclusion.** This node's deterministic\n  checks run against what you left, and it is their result that decides whether\n  the integration moved — not your report.\n- **When in doubt, undo and report.** Undoing a half-finished merge and leaving\n  the branch as it was is far cheaper than a wrong reconciliation, which nobody\n  notices until the feature disappears.\n\n## Reconciling\n\n1. **Look at the real state of the tree before deciding anything.** The report\n   that reached you says what was expected; the repository says what is true\n   now.\n2. **Reconcile both intents — never pick one side.** For each conflict, work\n   out what EACH side was trying to achieve and produce a result that preserves\n   both. Discarding one side's change because it is in the way is how a feature\n   silently disappears one merge after it was written. Pay particular attention\n   to the files both sides only ever append to\n   ({{input.project.ledger_files}}) — ledgers, catalogues, route tables.\n3. **The dangerous conflicts are the ones that merged clean.** Two branches can\n   each add a migration, a translation key or a route without touching a single\n   line in common — and the merged result is broken while the merge reports\n   success. Two recurring shapes:\n   - **More than one migration head.** Do not create a merge revision:\n     reparent your branch's migration onto the main line's head, renumber it to\n     the next free number in the project's sequence, and check again that\n     exactly one head is left.\n   - **Paired files out of sync** (translations and the like). Every key added\n     on one side has to exist on the other: add what is missing instead of\n     removing what is there.\n4. **Never weaken a check to make it pass.** Deleting a failing test, loosening\n   a lint rule or skipping a gate turns a merge problem into a permanent one.\n   If a check is genuinely wrong, say so in your note — do not quietly change\n   it.\n5. **Run every quality command of the project**\n   ({{input.project.quality_commands}}) against the merged tree, until all of\n   them are green, and then commit the reconciliation on the work's branch.\n   That is where your job ends: the executor reverifies everything and advances\n   the main line onto the commit you left.\n\nThis node is the **last deterministic station** of the flow. The test gate that\ncomes after it is forbidden to rerun these commands: if something broken gets\nthrough here, nobody downstream will run into it by accident.\n\n## When something is genuinely stuck\n\nIf you cannot reconcile a conflict without guessing what somebody intended,\nstop and ask. The same holds if the same check fails three times in a row for\nthe same reason: a repeated identical failure means some assumption is wrong.\nLeave the branch in a state you can describe before escalating.\n\n## When to escalate to the human\n\nIf you need the founder in order to finish, end your turn with exactly ONE\nfenced block, and nothing after it:\n\n```input-request\n{\"question\": \"<one or two sentences: what happened and why a decision is needed>\",\n \"context\": \"<the supporting detail — evidence, what you tried, the alternatives you weighed>\",\n \"options\": [\"<short action label>\", \"<short action label>\"],\n \"recommendation\": \"<the ONE action you would take, in the imperative>\",\n \"default\": \"<the option to apply if the founder simply accepts>\"}\n```\n\nWhat belongs in each field:\n\n- `question` is read first and has to stay short. State the decision, not the\n  investigation that led to it.\n- `context` is where ALL of your reasoning goes: the evidence, what you already\n  tried, the alternatives you weighed and why you rejected each one. It may run\n  long — the founder reads it in full in this session's own record.\n- `recommendation` is an imperative action and nothing else — \"Run the\n  migration, then integrate\", not \"I think that, since the schema already has\n  the column, it would probably be safe to…\". It is the text of a one-click\n  accept button, so whatever you put there becomes the founder's answer,\n  verbatim.\n- `options` are short labels, each one a decision the founder could pick.\n- `default` is what applies if the founder simply accepts.\n\nOnly `question` is required; omit any field that has nothing in it. Ask ONE\nquestion, and do not repeat any of this as prose before or after the block —\nthe block is the whole message.\n\nEmitting an `input-request` ends your work for now: whatever you have already\ndone is kept exactly as it is, the session pauses, and the answer reaches you\nwhen it arrives. Do not wait, do not poll, and do not emit two blocks — a\nrequest for a decision always supersedes a report of a result.\n\n## What to return\n\nReturn the result in the format this skill's output schema declares:\n\n- `merge_commit`: the commit at the tip of the reconciled branch — what the\n  executor will advance the main line onto, after reverifying everything. Do\n  not say the main line already points at it; it does not yet. It is that\n  commit that the test gate will exercise and that the deployment node will\n  look for.\n- `resolved_conflicts`: one item per file, saying how both intents were\n  preserved.\n- `gates`: what you ran against the merged tree, and how it went.\n- `note`: one line with what you reconciled and how.\n- `gotchas`: what you learned that was not obvious.\n\nYou never return the specification: it belongs to the refinement node, and\nnothing after it rewrites it. If the branch cannot be integrated at all, undo\nthe merge, leave the branch intact and say why in the `note`.",
+  "origin": {
+    "type": "native",
+    "behavioral_reference": "flowpilot"
+  }
+}

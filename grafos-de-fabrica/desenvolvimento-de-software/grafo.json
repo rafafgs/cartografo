@@ -4,40 +4,40 @@
     "type": "base"
   },
   "metadata": {
-    "name": "Entrega de software — fluxo do flowpilot portado",
-    "description": "Grafo de fábrica 1 (D14): o fluxo do flowpilot expresso neste formato. Um nó por estado de atividade; os estados de fila do flowpilot (to_refine, to_develop, to_integrate, to_test, to_deploy) não viram nó — são plumbing de escalonamento do controller, não topologia do trabalho. As arestas seguem ALLOWED_TRANSITIONS colapsando essas filas, incluindo o ciclo de retrabalho testar → desenvolver.",
+    "name": "Software delivery — the flowpilot flow, ported",
+    "description": "Factory graph 1 (D14): the flowpilot flow expressed in this format. One node per activity state; flowpilot's queue states (to_refine, to_develop, to_integrate, to_test, to_deploy) do not become nodes — they are the controller's scheduling plumbing, not the topology of the work. The edges follow ALLOWED_TRANSITIONS with those queues collapsed, including the test → develop rework cycle.",
     "schema_version": "1.0.0",
     "created_at": "2026-08-14",
-    "source": "porte manual do flowpilot (D17: referência de comportamento, sem dependência de código)"
+    "source": "manual port of flowpilot (D17: behavioural reference, with no code dependency)"
   },
   "nodes": [
     {
-      "id": "refinar",
-      "role": "arquiteto",
+      "id": "refine",
+      "role": "architect",
       "node_type": "work",
-      "description": "Transforma o pedido em especificação: requisitos funcionais, arquivos tocados, critérios de aceite e escopo negativo.",
+      "description": "Turns the request into a specification: functional requirements, touched files, acceptance criteria and negative scope.",
       "skill_ref": {
-        "id": "refinar-ticket",
-        "version": "1.0.0",
-        "hash": "sha256:92e6b2ad13c2ab9c6c0c8ea5addee5e2aced0336bbe3c5d906b702f5f85e8562"
+        "id": "refine-ticket",
+        "version": "1.0.1",
+        "hash": "sha256:79667013229d5e5095c0eef985ef6759e154d444fcb247c9c25aa0181c37d735"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
             "ticket_id",
-            "pedido"
+            "request"
           ],
           "properties": {
             "ticket_id": {
               "type": "string",
               "minLength": 1
             },
-            "pedido": {
+            "request": {
               "type": "string",
               "minLength": 1
             },
-            "perfil_do_projeto": {
+            "project_profile": {
               "type": "string"
             }
           }
@@ -45,17 +45,17 @@
         "output_schema": {
           "type": "object",
           "required": [
-            "especificacao",
-            "criterios_de_aceite",
-            "arquivos_tocados",
-            "nota"
+            "specification",
+            "acceptance_criteria",
+            "touched_files",
+            "note"
           ],
           "properties": {
-            "especificacao": {
+            "specification": {
               "type": "string",
               "minLength": 1
             },
-            "criterios_de_aceite": {
+            "acceptance_criteria": {
               "type": "array",
               "minItems": 1,
               "items": {
@@ -63,30 +63,30 @@
                 "minLength": 1
               }
             },
-            "arquivos_tocados": {
+            "touched_files": {
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
-            "fora_de_escopo": {
+            "out_of_scope": {
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
-            "tier_modelo": {
+            "model_tier": {
               "type": "string",
               "enum": [
-                "padrao",
-                "forte"
+                "standard",
+                "strong"
               ],
-              "description": "força de modelo que o trabalho pede; nunca um modelo nem um fornecedor nomeado"
+              "description": "the model strength the work asks for; never a model and never a named vendor"
             },
-            "nota": {
+            "note": {
               "type": "string",
               "minLength": 1,
-              "description": "uma linha com o que a sessão decidiu e todo default que tomou; é o que torna um default revisável"
+              "description": "one line with what the session decided and every default it took; it is what makes a default reviewable"
             },
             "gotchas": {
               "type": "array",
@@ -100,41 +100,41 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "Cada critério de aceite é verificável por um teste concreto, e a lista de arquivos tocados existe no repositório? Anexe o caminho conferido de cada arquivo citado.",
+            "instruction": "Is every acceptance criterion verifiable by a concrete test, and does the list of touched files exist in the repository? Attach the verified path of each file cited.",
             "required_evidence": true,
-            "description": "Critério de aceite não verificável é o defeito mais caro do refino: contamina todas as etapas seguintes."
+            "description": "An unverifiable acceptance criterion is refinement's most expensive defect: it contaminates every step that follows."
           }
         ]
       }
     },
     {
-      "id": "desenvolver",
-      "role": "desenvolvedor",
+      "id": "develop",
+      "role": "developer",
       "node_type": "work",
-      "description": "Implementa a especificação em checkout isolado, com os testes de aceite escritos antes da implementação.",
+      "description": "Implements the specification in an isolated checkout, with the acceptance tests written before the implementation.",
       "skill_ref": {
-        "id": "desenvolver-ticket",
-        "version": "1.0.0",
-        "hash": "sha256:b2504dbfd708a13ae72350c32b80232e0836aba7c76922c704f8dd1127fa0581"
+        "id": "develop-ticket",
+        "version": "1.0.1",
+        "hash": "sha256:646ea312c75ceb326ab0a153abcec7d8bf8b0d7a7ddc8ed3bd6975468d215410"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
             "ticket_id",
-            "especificacao",
-            "criterios_de_aceite"
+            "specification",
+            "acceptance_criteria"
           ],
           "properties": {
             "ticket_id": {
               "type": "string",
               "minLength": 1
             },
-            "especificacao": {
+            "specification": {
               "type": "string",
               "minLength": 1
             },
-            "criterios_de_aceite": {
+            "acceptance_criteria": {
               "type": "array",
               "items": {
                 "type": "string"
@@ -160,7 +160,7 @@
                 "type": "string"
               }
             },
-            "arquivos_inesperados": {
+            "unexpected_files": {
               "type": "array",
               "items": {
                 "type": "string"
@@ -168,41 +168,41 @@
             }
           }
         },
-        "produces": "artefato",
+        "produces": "artifact",
         "checks": [
           {
             "type": "deterministic",
-            "command": "{{input.project.comando_testes}}",
-            "description": "A suíte do projeto passa no checkout isolado do trabalho."
+            "command": "{{input.project.test_command}}",
+            "description": "The project's suite passes in the work's isolated checkout."
           },
           {
             "type": "deterministic",
-            "command": "{{input.project.comandos_qualidade}}",
-            "description": "Todo comando de qualidade que o perfil declara, e não só o que a sessão acha que tocou."
+            "command": "{{input.project.quality_commands}}",
+            "description": "Every quality command the profile declares, and not only the ones the session thinks it touched."
           },
           {
             "type": "deterministic",
             "command": "git diff --quiet && git diff --cached --quiet",
-            "description": "Nada ficou fora do commit: o nó seguinte só enxerga o branch."
+            "description": "Nothing was left out of the commit: the next node only sees the branch."
           },
           {
             "type": "agentic",
-            "instruction": "Os testes de aceite foram commitados antes da implementação e cobrem os critérios da especificação? Anexe os hashes dos dois commits e o diff do commit de testes.",
+            "instruction": "Were the acceptance tests committed before the implementation, and do they cover the criteria of the specification? Attach the hashes of both commits and the diff of the tests commit.",
             "required_evidence": true,
-            "description": "Verifica a ordem do TDD pelo histórico, não pelo relato de quem desenvolveu."
+            "description": "Verifies the TDD order by the history, not by the report of whoever developed it."
           }
         ]
       }
     },
     {
-      "id": "integrar",
-      "role": "integrador",
+      "id": "integrate",
+      "role": "integrator",
       "node_type": "work",
-      "description": "Traz o branch para a linha principal e reverifica a suíte contra a árvore já integrada.",
+      "description": "Brings the branch onto the main line and reverifies the suite against the already integrated tree.",
       "skill_ref": {
-        "id": "integrar-branch",
-        "version": "1.0.0",
-        "hash": "sha256:7e0d21744b205bb0509d642840812c34e1f9264f1c8c4ad7a43504a8810c87d0"
+        "id": "integrate-branch",
+        "version": "1.0.1",
+        "hash": "sha256:e5d9a64ccfc7c278dc2ed3fd7a457774c0636af14d76795cafd8d23f29315910"
       },
       "contract": {
         "input_schema": {
@@ -232,7 +232,7 @@
               "type": "string",
               "minLength": 1
             },
-            "conflitos_resolvidos": {
+            "resolved_conflicts": {
               "type": "array",
               "items": {
                 "type": "string"
@@ -240,42 +240,42 @@
             }
           }
         },
-        "produces": "artefato",
+        "produces": "artifact",
         "checks": [
           {
             "type": "deterministic",
-            "command": "{{input.project.comando_testes}}",
-            "description": "A suíte passa na árvore mesclada, não só no branch isolado."
+            "command": "{{input.project.test_command}}",
+            "description": "The suite passes on the merged tree, not only on the isolated branch."
           },
           {
             "type": "deterministic",
-            "command": "{{input.project.comandos_qualidade}}",
-            "description": "Última estação determinística do fluxo: o portão de teste não reroda nada disto."
+            "command": "{{input.project.quality_commands}}",
+            "description": "The flow's last deterministic station: the test gate reruns none of it."
           },
           {
             "type": "deterministic",
             "command": "git diff --quiet && git diff --cached --quiet",
-            "description": "Nenhuma sobra de merge pela metade escondida na árvore."
+            "description": "No leftovers of a half-finished merge hidden in the tree."
           }
         ]
       }
     },
     {
-      "id": "testar",
+      "id": "test",
       "role": "tester",
       "node_type": "gate",
-      "description": "Exercita o comportamento entregue contra os critérios de aceite e roteia: aprovado segue para implantação, retrabalho volta para desenvolvimento.",
+      "description": "Exercises the delivered behaviour against the acceptance criteria and routes: approved moves on to deployment, rework goes back to development.",
       "skill_ref": {
-        "id": "testar-alpha",
-        "version": "1.0.4",
-        "hash": "sha256:c23cc23679b9b9bc36cdd9ed30c925a8a7ef6a3bd976072cdff6ca12422c06df"
+        "id": "alpha-test",
+        "version": "1.0.5",
+        "hash": "sha256:18be65c9f7c13ff831fb01bf53d29233a38268dc304f89ea56f1b9eb37cc5ba6"
       },
       "contract": {
         "input_schema": {
           "type": "object",
           "required": [
             "ticket_id",
-            "criterios_de_aceite",
+            "acceptance_criteria",
             "merge_commit"
           ],
           "properties": {
@@ -283,7 +283,7 @@
               "type": "string",
               "minLength": 1
             },
-            "criterios_de_aceite": {
+            "acceptance_criteria": {
               "type": "array",
               "items": {
                 "type": "string"
@@ -300,47 +300,47 @@
           "required": [
             "resultado",
             "outcome",
-            "vereditos"
+            "verdicts"
           ],
           "properties": {
             "resultado": {
               "type": "string",
               "enum": [
-                "aprovado",
-                "retrabalho"
+                "approved",
+                "rework"
               ],
-              "description": "The edge this gate takes, and the reserved key of the report protocol: one fenced block carries the report and the label together, and this is the label (`packages/runner/src/dispatch/parse-node-result.ts`). The vocabulary is THIS graph's — the `condition` of an edge leaving `testar` — which is why it is declared here and never in the pinned skill's `output`: the control plane takes it out of the report before holding the rest against that schema (t269, `docs/spec/grafo.md`), and the same skill under another graph would carry other labels. Escalation is not among them: it pauses the node with an input-request instead of opening a third edge."
+              "description": "The edge this gate takes, and the reserved key of the report protocol: one fenced block carries the report and the label together, and this is the label (`packages/runner/src/dispatch/parse-node-result.ts`). The KEY is the protocol's and is spelled the way the runner and the control plane reserve it; the VALUES are THIS graph's — the `condition` of an edge leaving `test` — which is why the label is declared here and never in the pinned skill's `output`: the control plane takes it out of the report before holding the rest against that schema (t269, `docs/spec/grafo.md`), and the same skill under another graph would carry other labels. Escalation is not among them: it pauses the node with an input-request instead of opening a third edge."
             },
             "outcome": {
               "enum": [
-                "aprovado",
-                "retrabalho",
-                "escala"
+                "approved",
+                "rework",
+                "escalate"
               ]
             },
-            "vereditos": {
+            "verdicts": {
               "type": "array",
               "minItems": 1,
-              "description": "um por critério de aceite, com a evidência que ESTE portão produziu; critério não exercitado tem entrada honesta, nunca é pulado",
+              "description": "one per acceptance criterion, with the evidence THIS gate produced; a criterion that was not exercised gets an honest entry, never a skipped one",
               "items": {
                 "type": "object",
                 "required": [
                   "ref",
-                  "veredito",
-                  "evidencia"
+                  "verdict",
+                  "evidence"
                 ],
                 "properties": {
                   "ref": {
                     "type": "string"
                   },
-                  "veredito": {
+                  "verdict": {
                     "enum": [
-                      "passou",
-                      "falhou",
-                      "nao_exercitado"
+                      "passed",
+                      "failed",
+                      "not_exercised"
                     ]
                   },
-                  "evidencia": {
+                  "evidence": {
                     "type": "string",
                     "minLength": 1
                   }
@@ -349,27 +349,27 @@
             },
             "bugs": {
               "type": "array",
-              "description": "o que a caminhada encontrou; a severidade é o que deixa o executor agendar o conserto",
+              "description": "what the walkthrough found; the severity is what lets the executor schedule the fix",
               "items": {
                 "type": "object",
                 "required": [
-                  "severidade",
-                  "titulo",
-                  "criterio",
+                  "severity",
+                  "title",
+                  "criterion",
                   "repro"
                 ],
                 "properties": {
-                  "severidade": {
+                  "severity": {
                     "enum": [
-                      "simples",
-                      "complexo"
+                      "simple",
+                      "complex"
                     ]
                   },
-                  "titulo": {
+                  "title": {
                     "type": "string",
                     "minLength": 1
                   },
-                  "criterio": {
+                  "criterion": {
                     "type": "string",
                     "minLength": 1
                   },
@@ -377,7 +377,7 @@
                     "type": "string",
                     "minLength": 1
                   },
-                  "arquivos": {
+                  "files": {
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -391,22 +391,22 @@
         "checks": [
           {
             "type": "agentic",
-            "instruction": "Rode o comportamento entregue e confira cada critério de aceite na aplicação real. Anexe a saída de cada execução; relato do desenvolvedor não conta como evidência.",
+            "instruction": "Run the delivered behaviour and check each acceptance criterion against the real application. Attach the output of every run; the developer's report does not count as evidence.",
             "required_evidence": true,
-            "description": "Portão agêntico verifica com evidência própria (nota de aprendizado, 2026-08-14)."
+            "description": "An agentic gate verifies with evidence of its own (learning note, 2026-08-14)."
           }
         ]
       }
     },
     {
-      "id": "implantar",
+      "id": "deploy",
       "role": "deployer",
       "node_type": "work",
-      "description": "Publica o que foi aprovado e encerra a travessia.",
+      "description": "Publishes what was approved and closes the traversal.",
       "skill_ref": {
-        "id": "implantar-release",
-        "version": "1.0.0",
-        "hash": "sha256:aec5b3230e4317f0369540952af25a0f29a011316513a79162a1a70fad7afde8"
+        "id": "verify-release",
+        "version": "1.0.1",
+        "hash": "sha256:4ba085f8f429356305c3b0ed5e76f010493deeefd587b095418aca5569a4efe4"
       },
       "contract": {
         "input_schema": {
@@ -430,14 +430,14 @@
           "type": "object",
           "required": [
             "release",
-            "implantado_em"
+            "deployed_at"
           ],
           "properties": {
             "release": {
               "type": "string",
               "minLength": 1
             },
-            "implantado_em": {
+            "deployed_at": {
               "type": "string"
             }
           }
@@ -446,12 +446,12 @@
           {
             "type": "deterministic",
             "command": "git -C {{input.project.repo}} rev-parse --verify --quiet {{input.referencia.commit}}^{commit}",
-            "description": "A referência existe como commit: sem isso, \"não contém\" seria indistinguível de \"não sei\"."
+            "description": "The reference exists as a commit: without it, \"does not contain\" would be indistinguishable from \"I do not know\"."
           },
           {
             "type": "deterministic",
-            "command": "git -C {{input.project.repo}} merge-base --is-ancestor {{input.artefato.merge_commit}} {{input.referencia.commit}}",
-            "description": "A pergunta inteira da etapa: o merge commit do trabalho é ancestral da referência publicada."
+            "command": "git -C {{input.project.repo}} merge-base --is-ancestor {{input.artifact.merge_commit}} {{input.referencia.commit}}",
+            "description": "The whole question of the step: the work's merge commit is an ancestor of the published reference."
           }
         ]
       }
@@ -459,62 +459,62 @@
   ],
   "edges": [
     {
-      "from": "refinar",
-      "to": "desenvolver",
-      "condition": "sempre",
+      "from": "refine",
+      "to": "develop",
+      "condition": "always",
       "description": "flowpilot: refining -> to_develop -> developing."
     },
     {
-      "from": "desenvolver",
-      "to": "integrar",
-      "condition": "sempre",
+      "from": "develop",
+      "to": "integrate",
+      "condition": "always",
       "description": "flowpilot: developing -> to_integrate -> integrating."
     },
     {
-      "from": "integrar",
-      "to": "testar",
-      "condition": "sempre",
+      "from": "integrate",
+      "to": "test",
+      "condition": "always",
       "description": "flowpilot: integrating -> to_test -> testing."
     },
     {
-      "from": "testar",
-      "to": "implantar",
-      "condition": "aprovado",
+      "from": "test",
+      "to": "deploy",
+      "condition": "approved",
       "description": "flowpilot: testing -> to_deploy -> deploying."
     },
     {
-      "from": "testar",
-      "to": "desenvolver",
-      "condition": "retrabalho",
-      "description": "flowpilot: testing -> to_develop, o ciclo de retrabalho do teste alfa."
+      "from": "test",
+      "to": "develop",
+      "condition": "rework",
+      "description": "flowpilot: testing -> to_develop, the alpha test's rework cycle."
     }
   ],
-  "initial_node": "refinar",
+  "initial_node": "refine",
   "final_nodes": [
-    "implantar"
+    "deploy"
   ],
   "custom_fields": [],
   "project": {
     "repo": ".",
-    "branch_principal": "main",
-    "comando_testes": "npm test",
-    "comando_instalacao": "npm ci",
-    "comandos_qualidade": [
+    "main_branch": "main",
+    "test_command": "npm test",
+    "install_command": "npm ci",
+    "quality_commands": [
       "npm test",
       "npm run lint",
       "npm run typecheck"
     ],
-    "convencoes": "Contract-first: toda capacidade — skill, portão, nó — declara entrada e saída em JSON Schema mais uma lista de verificações tipadas (D9). Escritor único: só o control plane escreve no banco, e o runner é cliente da API pública como qualquer outro (D1, D11). Persistência append-only com versionamento tipo git dentro do banco; rollback move ponteiro e nada é apagado (D2, D15). Código, identificadores e chaves de formato em inglês; conteúdo que chega a uma pessoa ou a um modelo em português (D18).",
-    "arquivos_de_registro": [
+    "conventions": "Contract-first: every capability — skill, gate, node — declares its input and output in JSON Schema plus a list of typed verifications (D9). Single writer: only the control plane writes to the database, and the runner is a client of the public API like any other (D1, D11). Append-only persistence with git-like versioning inside the database; rollback moves a pointer and nothing is ever deleted (D2, D15). Everything is written in English — code, identifiers, format keys, and the content that reaches a person or a model alike (D18, as amended on 2026-08-18).",
+    "ledger_files": [
       "DECISOES.md",
       "packages/core/migrations",
       "schema",
       "especificacoes"
     ],
-    "aplicacao": {
-      "rodando": false,
-      "endereco": "nenhum; ver motivo_ausencia",
-      "motivo_ausencia": "nenhuma orquestracao de subida de aplicacao existe neste v0; valide o que o checkout permitir"
+    "application": {
+      "running": false,
+      "address": "none; see absence_reason",
+      "absence_reason": "no orchestration for bringing an application up exists in this v0; validate whatever the checkout allows"
     }
   }
 }

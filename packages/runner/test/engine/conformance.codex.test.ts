@@ -9,7 +9,7 @@
  * would not compile.
  *
  * With this adapter certified, the two-consumers rule
- * (`notas/2026-08-14-extension-and-quality.md:57-63`) is satisfied and the
+ * (`notas/2026-08-14-extension-and-quality.md:58-64`) is satisfied and the
  * specification freezes.
  */
 

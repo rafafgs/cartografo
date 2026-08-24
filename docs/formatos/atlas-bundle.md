@@ -2,7 +2,7 @@
 
 > **Status:** v0 exercised end to end against both factory graphs, **not
 > frozen**. The rule of two consumers
-> (`notas/2026-08-14-extension-and-quality.md:57-63`) demands two real consumers
+> (`notas/2026-08-14-extension-and-quality.md:58-64`) demands two real consumers
 > before a format is locked, and today there is **one** atlas: the mirror of this
 > very repository. Until the second one exists, what is written here is a
 > convention with an automated gate, not a frozen contract.
@@ -27,7 +27,7 @@ one.
 
 That packaging has a name in the project: D14 calls the factory library the "seed
 of the shareable atlas", and the extension note
-(`notas/2026-08-14-extension-and-quality.md:50-56`) treats the atlas as the
+(`notas/2026-08-14-extension-and-quality.md:51-56`) treats the atlas as the
 product's network effect — the community contributes **maps**, not only code. The
 atlas is the file form of that sharing.
 

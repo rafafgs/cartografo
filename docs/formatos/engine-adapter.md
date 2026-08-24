@@ -1,7 +1,7 @@
 # EngineAdapter — v1 specification
 
 > **Status:** v1, **frozen**. The rule of two consumers
-> (`notas/2026-08-14-extension-and-quality.md:57-63`) demands two *implemented*
+> (`notas/2026-08-14-extension-and-quality.md:58-64`) demands two *implemented*
 > adapters before a format is locked, and both exist:
 > `packages/runner/src/engine/claude-code-adapter.ts` (t104) and
 > `packages/runner/src/engine/codex-adapter.ts` (t119), each certified by the
@@ -377,7 +377,7 @@ the network and to writing that no list of names closes completely: `python -c`,
 a script from the repository itself or a utility the patterns above do not name
 reach the network with the network policy "applied". This is *best-effort within
 what the engine allows* — the ruler
-`notas/2026-08-14-extension-and-quality.md:43-44` already fixed ("a sandbox where
+`notas/2026-08-14-extension-and-quality.md:44-45` already fixed ("a sandbox where
 the engine allows one") — and it is **not** process isolation. Really closing the
 gap demands an OS sandbox per platform (`sandbox-exec`, a network namespace, a
 container), which is a change of mechanism and a ticket of its own. Every denied

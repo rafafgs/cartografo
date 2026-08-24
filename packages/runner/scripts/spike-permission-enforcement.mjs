@@ -22,7 +22,7 @@
  * And what it reports as a WARNING, because it is the documented limit and not
  * a defect: `Bash` reaching the network or the disk by a path no denied pattern
  * names. Gating by tool name is best-effort in what the engine offers ("sandbox
- * where the engine allows", `notas/2026-08-14-extension-and-quality.md:43-44`),
+ * where the engine allows", `notas/2026-08-14-extension-and-quality.md:44-45`),
  * never process isolation — a spike that failed here would be demanding a
  * guarantee the specification explicitly does not make, and one that hid it
  * would be selling that guarantee.

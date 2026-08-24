@@ -3,7 +3,7 @@
  * a subprocess.
  *
  * It exists to satisfy the two-consumers rule
- * (`notas/2026-08-14-extension-and-quality.md:57-63`): "no extension point is
+ * (`notas/2026-08-14-extension-and-quality.md:58-64`): "no extension point is
  * frozen before two real consumers exist". The feasibility review of t99 chose
  * this CLI "for the structural likeness to Claude Code's `stream-json`"
  * (`docs/formatos/engine-adapter.md:378-395`) and measured it method by method

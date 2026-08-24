@@ -6,7 +6,7 @@
  * and got four refused sessions in a row before a fifth one worked:
  * `stop_reason: "refusal"`, `stop_details.category: "reasoning_extraction"`,
  * exit 1, zero output tokens
- * (`notas/2026-08-17-first-bets-run.md:33`). To the adapter every one of
+ * (`notas/2026-08-17-first-bets-run.md:34`). To the adapter every one of
  * them looked exactly like a crash — a non-zero exit becomes `failed`, and the
  * two keys that say WHY were never read.
  *

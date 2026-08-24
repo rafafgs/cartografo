@@ -1,29 +1,30 @@
-# Especificação: runner, lease e controller de despacho
+# Specification: the runner, the lease and the dispatch controller
 
-**Versão da API:** `v1` · **Migração:** [`packages/core/migrations/0004_runner_lease.sql`](../../packages/core/migrations/0004_runner_lease.sql)
-**Decisão de origem:** [D5](../../DECISIONS.md) — "trabalho despachado carrega lease; runner morto expira e o trabalho volta à fila. Registros idempotentes na API"
+**API version:** `v1` · **Migration:** [`packages/core/migrations/0004_runner_lease.sql`](../../packages/core/migrations/0004_runner_lease.sql)
+**Founding decision:** [D5](../../DECISIONS.md) — "dispatched work carries a lease; a dead runner's lease expires and the work goes back to the queue. Writes to the API are idempotent"
 
-Um trabalho só pode ter um dono por vez, e o dono pode morrer sem avisar. Essas
-duas frases são o problema inteiro desta camada, e a lease é a resposta: um
-direito **temporário** sobre um trabalho, que precisa ser renovado para
-continuar valendo. Quem para de renovar perde — não por decisão de ninguém, mas
-por vencimento de prazo.
+A job can only have one owner at a time, and the owner can die without warning.
+Those two sentences are this layer's whole problem, and the lease is the answer:
+a **temporary** right over a job, which has to be renewed in order to keep
+holding. Whoever stops renewing loses it — not by anybody's decision, but by a
+deadline running out.
 
-O corolário importante é onde o estado mora. O teto de sessões simultâneas e o
-prazo das leases vivem no control plane, nunca no runner: só o servidor escreve
-no banco ([D1](../../DECISIONS.md)), e é isso que faz "no máximo N sessões neste
-projeto" valer para o projeto — somando todos os runners — e não para cada
-processo isoladamente. O runner é cliente HTTP puro, exatamente como a tela
-(D11): ele declara os limites, e obedece à resposta.
+The important corollary is where the state lives. The cap on simultaneous
+sessions and the leases' deadline live in the control plane, never in the runner:
+only the server writes to the database ([D1](../../DECISIONS.md)), and that is
+what makes "at most N sessions in this project" hold for the project — summing
+every runner — and not for each process in isolation. The runner is a pure HTTP
+client, exactly like the screen (D11): it declares the limits, and obeys the
+answer.
 
 ---
 
-## 1. As duas entidades
+## 1. The two entities
 
-| Entidade | O que é | Muda? |
+| Entity | What it is | Does it change? |
 |---|---|---|
-| `runner` | A **identidade** de um processo que executa trabalho. | Só o nome. |
-| `lease` | O **direito temporário** de um runner sobre um trabalho, com prazo próprio. | Status, prazo e carimbos de heartbeat/fim. |
+| `runner` | The **identity** of a process that executes work. | Only the name. |
+| `lease` | A runner's **temporary right** over a job, with a deadline of its own. | The status, the deadline and the heartbeat/end stamps. |
 
 ```sql
 CREATE TABLE runner (
@@ -35,7 +36,7 @@ CREATE TABLE runner (
 CREATE TABLE lease (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   runner_id         TEXT NOT NULL REFERENCES runner(id),
-  job_id            INTEGER NOT NULL, -- solto de propósito (§6)
+  job_id            INTEGER NOT NULL, -- loose on purpose (§6)
   project_id        INTEGER NOT NULL,
   status            TEXT NOT NULL DEFAULT 'active'
                       CHECK (status IN ('active', 'released', 'expired')),
@@ -52,384 +53,388 @@ CREATE INDEX idx_lease_project_status ON lease (project_id, status);
 CREATE INDEX idx_lease_job_status     ON lease (job_id, status);
 ```
 
-Os três índices são os três caminhos de leitura do despacho, na ordem em que
-ele os percorre: o trabalho já tem dono? o runner ainda tem vaga? o projeto
-ainda tem vaga?
+The three indexes are the dispatch's three read paths, in the order it walks
+them: does the job already have an owner? does the runner still have room? does
+the project still have room?
 
-**O runner não é escopado a um projeto.** O pareamento é só identidade;
-`projeto_id` é declarado a cada pedido de lease. Um runner físico pode servir
-projetos diferentes ao longo do tempo, e nada nos critérios de aceite pede o
-contrário.
+**The runner is not scoped to a project.** Pairing is identity alone;
+`projeto_id` is declared on every lease request. One physical runner can serve
+different projects over time, and nothing in the acceptance criteria asks for the
+opposite.
 
-Nada é apagado, nem lease morta: ela vira `expirada` com o motivo gravado e
-continua na tabela. É o mesmo append-only da [D15](../../DECISIONS.md) — e é o
-que permite cruzar "runner × leases perdidas" sem ter que reconstruir nada,
-agora que a telemetria do `t102` está no lugar (tabela `event`, migração
-`0003`) e que a `t196` ligou a emissão: a morte de cada lease está na tabela
-**e** no log.
+Nothing is deleted, not even a dead lease: it becomes `expirada` with the reason
+recorded and stays in the table. It is the same append-only as
+[D15](../../DECISIONS.md) — and it is what makes it possible to cross "runner ×
+lost leases" without reconstructing anything, now that `t102`'s telemetry is in
+place (the `event` table, migration `0003`) and `t196` switched the emission on:
+every lease's death is in the table **and** in the log.
 
 ---
 
-## 2. Ciclo de vida da lease
+## 2. The lease's life cycle
 
 ```
-                      liberar (o dono terminou, bem ou mal)
+                      release (the owner finished, well or badly)
    ativa ──────────────────────────────────────────────────▶ liberada
      │
-     │ expires_at vence sem heartbeat, e alguém pede trabalho
+     │ expires_at runs out with no heartbeat, and somebody asks for work
      ▼
   expirada  (expiration_reason: ttl_elapsed | heartbeat_lost)
 ```
 
-Uma lease nasce `ativa`, com `heartbeat_at = granted_at` e
-`expires_at = granted_at + ttl_seconds`. Cada heartbeat empurra `expires_at`
-para frente e carimba `heartbeat_at`.
+A lease is born `ativa`, with `heartbeat_at = granted_at` and
+`expires_at = granted_at + ttl_seconds`. Every heartbeat pushes `expires_at`
+forward and stamps `heartbeat_at`.
 
-Só há duas saídas, e nenhuma delas volta:
+There are only two exits, and neither of them comes back:
 
-- **`liberada`** — o dono avisou que terminou. A capacidade volta na hora: o
-  próximo pedido do mesmo runner/projeto já não conta esta lease no teto.
-- **`expirada`** — o prazo venceu e ninguém renovou.
+- **`liberada`** — the owner said it had finished. The capacity returns
+  immediately: the next request from the same runner/project no longer counts
+  this lease against the cap.
+- **`expirada`** — the deadline ran out and nobody renewed.
 
-### O vocabulário de `expiration_reason`
+### The vocabulary of `expiration_reason`
 
-Os dois motivos descrevem óbitos diferentes, e a diferença é operacionalmente
-útil — um aponta para trabalho que não começou, o outro para trabalho
-interrompido no meio:
+The two reasons describe different deaths, and the difference is operationally
+useful — one points at work that never started, the other at work interrupted
+half way:
 
-| Motivo | Quando | O que significa |
+| Reason | When | What it means |
 |---|---|---|
-| `ttl_elapsed` | `heartbeat_at == granted_at` | A lease **nunca** foi renovada. O runner pode nem ter começado. |
-| `heartbeat_lost` | `heartbeat_at > granted_at` | Foi renovada ao menos uma vez e então calou. Runner morreu no meio do trabalho. |
+| `ttl_elapsed` | `heartbeat_at == granted_at` | The lease was **never** renewed. The runner may not even have started. |
+| `heartbeat_lost` | `heartbeat_at > granted_at` | It was renewed at least once and then went quiet. The runner died in the middle of the work. |
 
-Os dois nomes são exatamente os de `data.reason` em
+The two names are exactly those of `data.reason` in
 [`lease.expired.schema.json`](../../especificacoes/eventos/schemas/lease.expired.schema.json):
-desde a `t196` cada lease que morre grava o evento com o mesmo motivo que a
-coluna guarda, sem tradução — um evento por lease, mesmo quando a varredura
-mata várias de uma vez.
+since `t196` every lease that dies records the event with the same reason the
+column keeps, with no translation — one event per lease, even when the sweep
+kills several at once.
 
-### `reason` de recusa ≠ `expiration_reason`
+### A refusal's `reason` ≠ `expiration_reason`
 
-São dois vocabulários distintos e vale não confundi-los. `expiration_reason` é
-o nome de fio **e**, desde o quarto filho da D20 (`t229`, que renomeou
-`motivo_expiracao`), o da coluna: por que uma lease morreu. `reason` é campo de
-resposta de
-`POST /v1/leases`: por que um pedido **não virou** lease
+They are two distinct vocabularies and it is worth not confusing them.
+`expiration_reason` is a wire name **and**, since D20's fourth child (`t229`,
+which renamed `motivo_expiracao`), the column's: why a lease died. `reason` is a
+response field of `POST /v1/leases`: why a request **did not become** a lease
 (`job_already_leased`, `runner_cap`, `project_cap`).
 
 ---
 
-## 3. Conceder é um passo só
+## 3. Granting is a single step
 
-`POST /v1/leases` faz cinco coisas, e faz todas dentro de **uma** transação
-síncrona, sem nenhum `await` no meio:
+`POST /v1/leases` does five things, and does all of them inside **one**
+synchronous transaction, with no `await` in the middle:
 
 ```
-reivindicar toda lease ativa cujo prazo venceu   ← trabalho de runner morto volta à fila
+claim every active lease whose deadline ran out   ← a dead runner's work returns to the queue
         ↓
-o trabalho já tem dono ativo?     → 200 {lease: null, reason: "job_already_leased"}
+does the job already have an active owner?  → 200 {lease: null, reason: "job_already_leased"}
         ↓
-o runner já bateu runner_cap?     → 200 {lease: null, reason: "runner_cap"}
+has the runner already hit runner_cap?      → 200 {lease: null, reason: "runner_cap"}
         ↓
-o projeto já bateu project_cap?   → 200 {lease: null, reason: "project_cap"}
+has the project already hit project_cap?    → 200 {lease: null, reason: "project_cap"}
         ↓
-gravar a lease                    → 201 {lease}
+write the lease                             → 201 {lease}
 ```
 
-**Por que uma transação só.** Entre contar as leases ativas e gravar a nova há
-uma janela; se ela existir, N pedidos simultâneos contam todos o mesmo número,
-todos se acham dentro do teto, e todos gravam. O teto de concorrência viraria
-uma sugestão. A garantia é a mesma — e no mesmo formato, `db.transaction()`
-síncrona — que `aplicarProposta` usa no `t101`.
+**Why a single transaction.** Between counting the active leases and writing the
+new one there is a window; if it exists, N simultaneous requests all count the
+same number, all consider themselves inside the cap, and all write. The
+concurrency cap would become a suggestion. The guarantee is the same — and in the
+same form, a synchronous `db.transaction()` — that `aplicarProposta` uses in
+`t101`.
 
-**Provado com dois runners de verdade.** Até a `t164` todo teste de teto
-chamava o repositório ou a rota **em processo**, um chamador de cada vez: a
-garantia acima era propriedade do código que ninguém tinha visto acontecer.
+**Proved with two real runners.** Until `t164` every cap test called the
+repository or the route **in process**, one caller at a time: the guarantee above
+was a property of code nobody had seen happen.
 [`multi-runner-fleet.e2e.test.ts`](../../packages/runner/test/controller/multi-runner-fleet.e2e.test.ts)
-põe dois `Controller` independentes, com credencial cada um, disputando a mesma
-fila pelo endereço IPv4 real da máquina — e cobra as três consequências: nenhum
-trabalho despachado duas vezes, nenhum dos dois runners deixado de fora, e o
-teto de projeto sem nunca somar acima do configurado, mesmo sob pedidos
-concorrentes de clientes distintos. O teto é do **projeto**, não do runner: a
-contagem de `teto_projeto` não filtra por `runner_id`, e é por isso que ela
-segura a frota inteira e não cada máquina em separado.
+puts two independent `Controller`s, each with a credential of its own, competing
+for the same queue over the machine's real IPv4 address — and demands all three
+consequences: no job dispatched twice, neither of the two runners left out, and
+the project cap never summing above what was configured, even under concurrent
+requests from distinct clients. The cap is the **project's**, not the runner's:
+`teto_projeto`'s count does not filter by `runner_id`, and that is why it holds
+the whole fleet and not each machine separately.
 
-**Por que reivindicar é o primeiro passo, e não uma rotina à parte.** Quem pede
-trabalho é exatamente quem tem interesse em descobrir que uma lease morreu. Na
-mesma transação, o pedido que encontra a lease vencida é o pedido que a
-substitui — não existe instante em que o trabalho está livre e ninguém
-percebeu. É por isso que não há rota de varredura: um gatilho que rode sem
-ninguém pedir trabalho só é útil quando houver consumidor concreto (a tela do
-`t107`, ou um projeto com todos os runners ociosos), e aí é aditivo.
+**Why claiming is the first step, and not a routine of its own.** Whoever asks
+for work is exactly who has an interest in discovering that a lease died. In the
+same transaction, the request that finds the expired lease is the request that
+replaces it — there is no instant in which the job is free and nobody noticed.
+That is why there is no sweep route: a trigger that ran with nobody asking for
+work is only useful once there is a concrete consumer (`t107`'s screen, or a
+project with every runner idle), and then it is additive.
 
-**Recusa não é erro.** Teto batido e trabalho com dono devolvem `200` com
-`{lease: null, motivo}`, não `409`. Do ponto de vista do runner isso é "agora
-não, tenta o próximo candidato" — o caso comum de um pool saudável, não a
-exceção.
+**A refusal is not an error.** A cap that was hit and a job that has an owner
+return `200` with `{lease: null, motivo}`, not `409`. From the runner's point of
+view that is "not now, try the next candidate" — the common case of a healthy
+pool, not the exception.
 
 ---
 
-## 4. O controller, do lado do runner
+## 4. The controller, on the runner's side
 
-Um `tick()` é uma passada completa do loop de despacho:
+A `tick()` is one complete pass of the dispatch loop:
 
 ```
-GET /v1/jobs → filtra bloqueado === false
+GET /v1/jobs → filters bloqueado === false
         ↓
-para cada candidato, em ordem: POST /v1/leases
-        ↓ (recusa por trabalho_ja_leased: tenta o próximo)
-        ↓ (recusa por teto_runner ou teto_projeto: encerra o tick)
-lease concedida
+for each candidate, in order: POST /v1/leases
+        ↓ (refused with trabalho_ja_leased: try the next one)
+        ↓ (refused with teto_runner or teto_projeto: end the tick)
+lease granted
         ↓
-arma o heartbeat periódico  ─────────────┐
-        ↓                                │ POST /v1/leases/:id/heartbeats
-   despachar(trabalhoId)                 │ a cada ttl/3
-        ↓ (resolve OU rejeita)  ◀────────┘
-para o heartbeat + POST /v1/leases/:id/liberacoes
-        ↓ (resolveu bloqueado: tenta o próximo candidato, na MESMA passada)
+arms the periodic heartbeat  ─────────────┐
+        ↓                                 │ POST /v1/leases/:id/heartbeats
+   despachar(trabalhoId)                  │ every ttl/3
+        ↓ (resolves OR rejects)  ◀────────┘
+stop the heartbeat + POST /v1/leases/:id/liberacoes
+        ↓ (resolved blocked: try the next candidate, in the SAME pass)
 ```
 
-Quatro decisões de projeto sustentam esse desenho:
+Four design decisions hold that up:
 
-**Nem toda recusa quer dizer a mesma coisa (`t208`).** O `motivo` da recusa é
-que decide se o loop continua. `trabalho_ja_leased` é sobre a posse **daquele**
-trabalho — outro runner chegou antes —, não diz nada sobre o próximo candidato,
-e é a resposta comum de um pool saudável: tenta o seguinte. `teto_runner` e
-`teto_projeto` são sobre **capacidade**, e a capacidade é deste runner ou deste
-projeto, não deste trabalho: todo candidato restante da mesma passada voltaria
-com a resposta idêntica. O tick termina ali. Antes da `t208` ele seguia
-perguntando, e um projeto cheio custava um `POST /v1/leases` por candidato para
-ouvir de novo o que o primeiro já tinha dito. Encerrar cedo não é desistir — o
-loop pergunta de novo no próximo intervalo, e até lá alguma lease pode ter sido
-liberada ou vencido.
+**Not every refusal means the same thing (`t208`).** The refusal's `motivo` is
+what decides whether the loop carries on. `trabalho_ja_leased` is about the
+ownership of **that** job — another runner got there first —, it says nothing
+about the next candidate, and it is the common answer of a healthy pool: try the
+next. `teto_runner` and `teto_projeto` are about **capacity**, and the capacity
+belongs to this runner or this project, not to this job: every remaining
+candidate of the same pass would come back with an identical answer. The tick
+ends there. Before `t208` it went on asking, and a full project cost one
+`POST /v1/leases` per candidate to hear again what the first had already said.
+Ending early is not giving up — the loop asks again at the next interval, and by
+then some lease may have been released or expired.
 
-**A lease é sempre devolvida.** A liberação está em `finally`, não no caminho
-feliz: um despacho que estoura devolve a lease exatamente como um que termina
-bem, e só então o erro sobe para quem chamou. Lease presa por trabalho que
-falhou é capacidade ocupada por ninguém até o TTL vencer — pior que os dois
-casos que ela pretendia cobrir.
+**The lease is always given back.** The release is in a `finally`, not on the
+happy path: a dispatch that blows up gives the lease back exactly like one that
+ends well, and only then does the error go up to the caller. A lease stuck on a
+job that failed is capacity occupied by nobody until the TTL runs out — worse
+than both of the cases it meant to cover.
 
-**Heartbeat que falha não derruba o despacho.** Uma falha isolada de rede é
-passageira; a consequência de várias seguidas já é a correta e automática — a
-lease expira no server e o trabalho volta à fila. Abortar a sessão na primeira
-falha trocaria um soluço de rede por trabalho perdido. O erro fica visível em
-`ultimoErroDeHeartbeat`.
+**A heartbeat that fails does not bring the dispatch down.** An isolated network
+failure is transient; the consequence of several in a row is already the right
+one and automatic — the lease expires on the server and the job goes back to the
+queue. Aborting the session on the first failure would trade a network hiccup for
+lost work. The error stays visible in `ultimoErroDeHeartbeat`.
 
-**O intervalo default é `ttl/3`**, ou seja, folga para duas batidas perdidas
-antes de o servidor dar o runner por morto. Quem passa `intervaloHeartbeatMs`
-explícito assume a conta: um intervalo maior que o TTL deixa a própria lease
-expirar debaixo do despacho.
+**The default interval is `ttl/3`**, that is, room for two missed beats before
+the server gives the runner up for dead. Whoever passes an explicit
+`intervaloHeartbeatMs` takes on the arithmetic: an interval longer than the TTL
+lets the lease itself expire underneath the dispatch.
 
-`despachar` é um **callback injetado** e é a única costura com o
-[`EngineAdapter`](../formatos/engine-adapter.md) (`t104`): esta camada não abre
-sessão nenhuma. Quem fechar o ciclo com sessão de verdade (`t106`/`t109`) passa
-o adapter por aqui sem tocar no controller.
+`despachar` is an **injected callback** and is the only seam with the
+[`EngineAdapter`](../formatos/engine-adapter.md) (`t104`): this layer opens no
+session at all. Whoever closes the cycle with a real session (`t106`/`t109`)
+passes the adapter through here without touching the controller.
 
-**Um processo, uma sessão por vez — e a flag diz isso (`t208`).** O `tick()`
-pede **uma** lease por passada e espera o despacho inteiro antes de a passada
-seguinte existir: um processo de runner nunca segura mais de uma lease ativa.
-`--declared-runner-cap` (`teto_runner` no pedido, `runnerCap` nas opções) é o
-teto que este runner **declara** ao control plane para o próprio `runner_id`, e
-não a concorrência dentro do processo — o server tira o MENOR entre ele e o teto
-configurado (`CARTOGRAFO_LEASE_CAP_RUNNER`) e é quem impõe o resultado (D1). Até
-a `t208` a flag se chamava `--runner-cap` e o `--help` prometia "simultaneous
-sessions of this runner", o que nunca foi verdade. Escalar continua sendo
-**horizontal**: mais processos de runner sob o mesmo projeto, disputando o teto
-de projeto pela transação do server — o caminho que
+**One process, one session at a time — and the flag says so (`t208`).** The
+`tick()` asks for **one** lease per pass and waits for the whole dispatch before
+the next pass exists: a runner process never holds more than one active lease.
+`--declared-runner-cap` (`teto_runner` in the request, `runnerCap` in the
+options) is the cap this runner **declares** to the control plane for its own
+`runner_id`, and not the concurrency inside the process — the server takes the
+SMALLER of it and the configured cap (`CARTOGRAFO_LEASE_CAP_RUNNER`) and is the
+one that imposes the result (D1). Until `t208` the flag was called `--runner-cap`
+and the `--help` promised "simultaneous sessions of this runner", which was never
+true. Scaling is still **horizontal**: more runner processes under the same
+project, competing for the project cap through the server's transaction — the
+path
 [`multi-runner-fleet.e2e.test.ts`](../../packages/runner/test/controller/multi-runner-fleet.e2e.test.ts)
-já prova (§3). Rodar N sessões dentro de um processo foi recusado pelo founder
-na `t208`, e continua reversível por outra decisão se a necessidade aparecer
-concreta.
+already proves (§3). Running N sessions inside one process was refused by the
+founder in `t208`, and it is still reversible by another decision if the need
+turns up concrete.
 
-### Falha antes da sessão bloqueia, não retenta para sempre (`t252`, `t270`, `t272`)
+### A failure before the session blocks, it does not retry forever (`t252`, `t270`, `t272`)
 
-Um despacho faz cinco leituras **antes** de pegar worktree e abrir sessão: o
-trabalho, a versão de grafo, a rota do engine, o ambiente de executor e a skill
-fixada pelo nó. **Sete** falhas do caminho até a sessão se reproduzem
-**idênticas** em toda retentativa:
+A dispatch makes five reads **before** taking a worktree and opening a session:
+the job, the graph version, the engine's route, the executor environment and the
+skill the node pinned. **Seven** failures on the path to the session reproduce
+**identically** on every retry:
 
-| Causa | De onde vem |
+| Cause | Where it comes from |
 |---|---|
-| `graph_version_id` pendurado | `GET /v1/graph-versions/:id` responde 404 |
-| engine sem rota neste runner | tabela `engines` do despacho não tem o nome |
-| skill fora do registro | `GET /v1/skills/:id?version=` responde 404 |
-| pin que parou de casar | hash registrado ≠ hash declarado pelo nó (D4) |
-| placeholder que não resolve | `{{input.<caminho>}}` sem valor na entrada do nó |
-| banco de testes ilegível (`t270`) | `git` recusou no caminho configurado |
-| política de permissão que o engine não sabe aplicar (`t272`) | `startSession` estoura `SessionStartError` com o prefixo `permission policy unsupported: `, antes do spawn |
+| a dangling `graph_version_id` | `GET /v1/graph-versions/:id` answers 404 |
+| an engine with no route on this runner | the dispatch's `engines` table does not have the name |
+| a skill outside the registry | `GET /v1/skills/:id?version=` answers 404 |
+| a pin that stopped matching | the registered hash ≠ the hash the node declares (D4) |
+| a placeholder that does not resolve | `{{input.<path>}}` with no value in the node's input |
+| an unreadable test bench (`t270`) | `git` refused at the configured path |
+| a permission policy the engine cannot apply (`t272`) | `startSession` throws `SessionStartError` with the prefix `permission policy unsupported: `, before the spawn |
 
-A sexta chegou com a `t270`, junto com a leitura que a produz — o ambiente de
-executor da seção logo abaixo.
+The sixth arrived with `t270`, along with the read that produces it — the
+executor environment of the section just below.
 
-A sétima é a única que acontece **depois** do worktree, dentro do
-`startSession` — e é a que a corrida do `t109` colheu ao vivo: o nó
-`testar-alpha` declarava `rede` por domínio, o adapter `claude-code` não tem como
-expressar isso, e o despacho estourou **38 leases em dois minutos** sem abrir uma
-única sessão ([nota](../../notas/2026-08-17-t109-feature-do-jogo.md), buraco 2).
-Determinística no sentido forte: a mesma skill, no mesmo hash, pede a mesma
-política e recebe a mesma recusa em todo tick. O motivo do bloqueio cita a
-mensagem do adapter **literalmente**, porque o campo a corrigir é o que
-`engine/permission-policy.ts` nomeia.
+The seventh is the only one that happens **after** the worktree, inside
+`startSession` — and it is the one the `t109` run caught live: the
+`testar-alpha` node declared `rede` by domain, the `claude-code` adapter has no
+way of expressing that, and the dispatch blew through **38 leases in two
+minutes** without opening a single session
+([note](../../notas/2026-08-17-t109-feature-do-jogo.md), gap 2). Deterministic in
+the strong sense: the same skill, at the same hash, asks for the same policy and
+gets the same refusal on every tick. The blocking reason cites the adapter's
+message **literally**, because the field to fix is the one
+`engine/permission-policy.ts` names.
 
-As outras três causas de `SessionStartError` **não** entram nessa lista: as duas
-formas de falha de spawn não carregam nada que distinga um binário que não existe
-de um `EMFILE` momentâneo, e a recusa de resume do codex é inalcançável hoje.
-Elas caem no teto da subseção abaixo, que é uma afirmação estritamente mais
-fraca — e mais segura.
+The other three causes of `SessionStartError` are **not** on that list: the two
+shapes of spawn failure carry nothing that tells a binary that does not exist
+from a momentary `EMFILE`, and codex's resume refusal is unreachable today. They
+fall under the ceiling of the subsection below, which is a strictly weaker
+statement — and a safer one.
 
-Até a `t252` as cinco primeiras **estouravam**; a sétima, até a `t272`. O erro
-subia do despacho, subia do `tick()`, e o loop do `cartografo-runner run` fazia a
-única coisa que sabe fazer com um tick que falhou: escrevia uma linha no stderr e
-perguntava de novo no intervalo seguinte (`--interval-ms`, dois segundos por
-padrão). Como nada tinha marcado o trabalho, `GET /v1/jobs` devolvia o
-**mesmo** trabalho na cabeça da fila, a lease era concedida de novo, e o
-despacho caía no mesmo erro — para sempre, sem linha em `pergunta`, sem
-`bloqueado`, sem nada na caixa de entrada. E, como o `tick()` termina na
-primeira lease da passada, nenhum outro trabalho do projeto era tentado
-enquanto esse estivesse na frente.
+Until `t252` the first five **blew up**; the seventh, until `t272`. The error
+went up from the dispatch, up from the `tick()`, and the `cartografo-runner run`
+loop did the only thing it knows how to do with a failed tick: it wrote a line to
+stderr and asked again at the next interval (`--interval-ms`, two seconds by
+default). Since nothing had marked the job, `GET /v1/jobs` returned the **same**
+job at the head of the queue, the lease was granted again, and the dispatch fell
+into the same error — forever, with no row in `pergunta`, no `bloqueado`, and
+nothing in anybody's inbox. And, because the `tick()` ends at the pass's first
+lease, no other job of the project was attempted while that one was in front.
 
-Agora essas sete **bloqueiam o trabalho** com um motivo que nomeia a causa —
-`POST /v1/jobs/:id/blocks`, ator `sistema/runner`, o mesmo mecanismo que os dois
-bloqueios que o despacho já fazia por conta própria. Nada de novo é inventado:
-como `GET /v1/jobs` filtra `bloqueado === false`, um trabalho bloqueado
-simplesmente deixa de ser candidato, e é esse filtro — nenhuma escrita a mais —
-que transforma "para sempre" em "uma vez". Quem desbloqueia é uma pessoa, pelo
-`POST /v1/jobs/:id/unblocks` de sempre, depois de corrigir o que o motivo aponta.
+Now those seven **block the job** with a reason that names the cause —
+`POST /v1/jobs/:id/blocks`, actor `sistema/runner`, the same mechanism as the two
+blocks the dispatch already did on its own account. Nothing new is invented:
+since `GET /v1/jobs` filters `bloqueado === false`, a blocked job simply stops
+being a candidate, and it is that filter — with no extra write — that turns
+"forever" into "once". Whoever unblocks it is a person, through the usual
+`POST /v1/jobs/:id/unblocks`, after fixing what the reason points at.
 
-Três limites que fazem parte da decisão:
+Three limits that are part of the decision:
 
-**Só essas sete.** Qualquer outro erro da mesma janela — 500, 502, 503, timeout
-de rede, o 404 da leitura do **próprio trabalho** — continua estourando, e
-continua sendo retentado no intervalo seguinte (com teto, desde a `t272`: ver a
-subseção abaixo). Um control plane fora do ar passa sozinho; bloquear um trabalho
-por causa dele na primeira vez seria pedir a uma pessoa que desfaça um soluço na
-mão. É por isso que a classificação é um módulo puro e fechado
-(`packages/runner/src/dispatch/pre-session-failure.ts`): a fronteira é o conteúdo
-do arquivo, e uma causa nova é decisão de outra ficha — foi exatamente assim que
-a sexta entrou (`t270`): uma leitura pré-sessão nova apareceu, a recusa dela se
-reproduz em toda retentativa, e causa que ninguém classifica é laço que ninguém
-vê.
+**Only those seven.** Any other error of the same window — a 500, a 502, a 503, a
+network timeout, the 404 of reading the **job itself** — still blows up, and is
+still retried at the next interval (with a ceiling, since `t272`: see the
+subsection below). A control plane that is down passes on its own; blocking a job
+over it the first time would be asking a person to undo a hiccup by hand. That is
+why the classification is a pure, closed module
+(`packages/runner/src/dispatch/pre-session-failure.ts`): the boundary is the
+file's contents, and a new cause is another ticket's decision — which is exactly
+how the sixth came in (`t270`): a new pre-session read appeared, its refusal
+reproduces on every retry, and a cause nobody classifies is a loop nobody sees.
 
-**O `tick()` segue na mesma passada.** Um bloqueio não é capacidade recusada nem
-trabalho feito: a lease já voltou pelo `finally` de sempre, e o candidato
-seguinte é tentado imediatamente, sem esperar o próximo intervalo. Se todos os
-candidatos bloquearem, a passada devolve `null`, exatamente como a passada que
-não ganhou lease nenhuma.
+**The `tick()` carries on in the same pass.** A block is neither refused capacity
+nor work done: the lease has already come back through the usual `finally`, and
+the next candidate is attempted immediately, without waiting for the next
+interval. If every candidate blocks, the pass returns `null`, exactly like a pass
+that won no lease at all.
 
-**Nada abre.** O bloqueio das seis primeiras acontece antes de
-`worktrees.acquire`, então não há árvore para devolver, não há
-`POST /v1/sessions`, não há processo de engine e não há token gasto. A sétima
-acontece com a árvore já na mão: ela é devolvida (retida, como em toda saída de
-erro) antes de o bloqueio ser postado, e mesmo assim nenhuma sessão existe para
-o control plane. Falha **depois** que a sessão subiu é outro assunto — o da seção
-seguinte, que a `t265` fechou.
+**Nothing opens.** The block of the first six happens before
+`worktrees.acquire`, so there is no tree to give back, no `POST /v1/sessions`, no
+engine process and no token spent. The seventh happens with the tree already in
+hand: it is given back (retained, as on every error exit) before the block is
+posted, and even so no session exists for the control plane. A failure **after**
+the session came up is another matter — the next section's, which `t265` closed.
 
-#### E o que ninguém sabe classificar tem teto (`t272`)
+#### And what nobody knows how to classify has a ceiling (`t272`)
 
-O limite acima é honesto e, sozinho, insuficiente: tudo que o classificador
-responde `null` continuava retentando **para sempre**. Um 5xx teimoso, um
-`git worktree add` que falha porque o disco encheu, um `SessionStartError` de
-spawn — nenhum deles se prova permanente, e nenhum deles tinha fim.
+The limit above is honest and, on its own, insufficient: everything the
+classifier answers `null` for went on retrying **forever**. A stubborn 5xx, a
+`git worktree add` that fails because the disk filled up, a `SessionStartError`
+from a spawn — none of them proves itself permanent, and none of them had an end.
 
-Agora as três janelas que podem falhar antes de existir sessão passam por uma
-decisão só (`packages/runner/src/dispatch/pre-session-retry.ts`): a leitura
-pré-worktree, o `worktrees.acquire` — que até esta ficha não estava sob `catch`
-nenhum — e o `SessionStartError` do `startSession`. A regra é a mesma nas três:
+Now the three windows that can fail before a session exists go through a single
+decision (`packages/runner/src/dispatch/pre-session-retry.ts`): the pre-worktree
+read, the `worktrees.acquire` — which until this ticket was under no `catch` at
+all — and `startSession`'s `SessionStartError`. The rule is the same in all
+three:
 
-1. classificou (as sete acima)? bloqueia na **primeira**, como sempre;
-2. não classificou e a sequência está **abaixo** do teto? estoura, e o tick
-   seguinte tenta de novo — comportamento idêntico ao de antes;
-3. não classificou e **alcançou** o teto? bloqueia com um motivo que nomeia o nó,
-   a contagem e a mensagem do erro, que é a única evidência que existe.
+1. classified (the seven above)? block on the **first**, as ever;
+2. not classified and the sequence is **below** the ceiling? throw, and the next
+   tick tries again — behaviour identical to before;
+3. not classified and it **reached** the ceiling? block with a reason that names
+   the node, the count and the error's message, which is the only evidence there
+   is.
 
-O teto é `maxConsecutivePreSessionFailures` nas opções do despacho, **5** por
-padrão; valor que não seja inteiro positivo cai no padrão, mesma postura dos
-orçamentos de tempo. Uma sessão aberta (`POST /v1/sessions` respondido) zera a
-contagem do trabalho: chegar a uma sessão é o sinal de que ele destravou.
+The ceiling is `maxConsecutivePreSessionFailures` in the dispatch's options,
+**5** by default; a value that is not a positive integer falls back to the
+default, the same posture as the time budgets. A session that opened
+(`POST /v1/sessions` answered) zeroes the job's count: reaching a session is the
+signal that it came unstuck.
 
-**A contagem é do processo do runner, e isso é uma decisão com custo.** Ela vive
-num `Map` em memória, dentro do closure que `createClaudeCodeDispatch` devolve, e
-**não** é o mesmo fato que `consecutive_failures` do `job.blocked`: aquele conta
-**sessões** `failed` do par `(trabalho, nó)` e mora no control plane justamente
-porque atravessa leases e processos (`t265`, seção acima). Uma falha pré-sessão
-não cria linha em `sessao` nenhuma — não há o que aquela consulta veja —, e
-inventar uma faria a tabela mentir sobre o que rodou. Construir um contador
-paralelo no core custaria coluna, evento e rota novos para um fato que o
-incidente relatado não precisa: o laço medido aconteceu dentro de **um** processo
-de runner, em dois minutos.
+**The count belongs to the runner's process, and that is a decision with a
+cost.** It lives in an in-memory `Map`, inside the closure
+`createClaudeCodeDispatch` returns, and it is **not** the same fact as
+`job.blocked`'s `consecutive_failures`: that one counts `failed` **sessions** of
+the `(job, node)` pair and lives in the control plane precisely because it
+crosses leases and processes (`t265`, the section above). A pre-session failure
+creates no row in `sessao` at all — there is nothing for that query to see —, and
+inventing one would make the table lie about what ran. Building a parallel
+counter in the core would cost a new column, a new event and a new route for a
+fact the reported incident does not need: the measured loop happened inside
+**one** runner process, in two minutes.
 
-O que se abre mão está escrito, não varrido para baixo do tapete: a sequência
-**não sobrevive a um restart** do runner, e dois runners contam cada um a sua.
-Os dois erram para o mesmo lado — o trabalho retenta *mais* que o teto, nunca
-menos —, que é a direção segura de errar.
+What is given up is written down, not swept under the carpet: the sequence
+**does not survive a restart** of the runner, and two runners each count their
+own. Both err on the same side — the job retries *more* than the ceiling, never
+less —, which is the safe direction to err in.
 
-### O ambiente de executor: o que só a máquina sabe (`t270`)
+### The executor environment: what only the machine knows (`t270`)
 
-Um despacho monta a entrada do nó a partir de **duas** fontes, e a divisão entre
-elas é o assunto inteiro desta seção: quem responde por cada chave.
+A dispatch assembles the node's input from **two** sources, and the split between
+them is this section's whole subject: who answers for each key.
 
-| Chave | Quem fornece | Por quê |
+| Key | Who supplies it | Why |
 |---|---|---|
-| `input.job`, `input.project`, os baldes de `produces`, `input.perguntas_respondidas`, `input.traversal` | **control plane**, por `GET /v1/jobs/:id/context` | Tudo isso é projeção de tabelas que só o escritor único escreve (D1). |
-| `input.project.aplicacao`, `input.project.arquivos_de_registro` | **`project` do grafo** | Configuração **estática** da classe: versionada com o documento, proponível e reversível como qualquer outra parte dele ([graph.md](graph.md)). |
-| `input.banco_de_testes.*`, `input.referencia.*` | **runner**, por [`resolve-executor-environment.ts`](../../packages/runner/src/dispatch/resolve-executor-environment.ts) | Um caminho de sistema de arquivos e um commit vivo. Nenhum dos dois é dado de grafo, e nenhum dos dois sobrevive a ser armazenado. |
+| `input.job`, `input.project`, the `produces` buckets, `input.perguntas_respondidas`, `input.traversal` | the **control plane**, through `GET /v1/jobs/:id/context` | All of it is a projection of tables only the single writer writes (D1). |
+| `input.project.aplicacao`, `input.project.arquivos_de_registro` | the graph's **`project`** | The class's **static** configuration: versioned with the document, proposable and reversible like any other part of it ([graph.md](graph.md)). |
+| `input.banco_de_testes.*`, `input.referencia.*` | the **runner**, through [`resolve-executor-environment.ts`](../../packages/runner/src/dispatch/resolve-executor-environment.ts) | A file-system path and a live commit. Neither of the two is graph data, and neither survives being stored. |
 
-A terceira linha é a que a `t270` abriu. `banco_de_testes.caminho` nomeia um
-diretório de **uma** máquina — gravado numa versão de grafo, estaria errado para
-todo runner menos um — e `referencia.commit` é ponteiro vivo, velho no instante
-em que qualquer coisa o guarda. Então os dois vêm do processo que está prestes a
-abrir a sessão, por uma costura ao lado da `resolveInput`
-(`ClaudeCodeDispatchOptions.executorEnvironment`), e são fundidos na entrada
-resolvida logo antes de o manifesto renderizar:
+The third row is the one `t270` opened. `banco_de_testes.caminho` names a
+directory on **one** machine — written into a graph version, it would be wrong
+for every runner but one — and `referencia.commit` is a live pointer, stale the
+instant anything keeps it. So both come from the process that is about to open
+the session, through a seam beside `resolveInput`
+(`ClaudeCodeDispatchOptions.executorEnvironment`), and they are merged into the
+resolved input just before the manifest renders:
 
 ```
 input = { ...projetado_pelo_control_plane, ...ambiente_do_executor }
 ```
 
-**O executor ganha na colisão**, e isso não é desempate por conveniência: ele é
-verdade local sobre um sistema de arquivos e um `HEAD` que a projeção não tem, e
-uma projeção que carregasse a mesma chave estaria carregando cópia velha dela.
-Ausente contribui `{}` e não muda nada — que é o caso comum: um runner de bets
-não tem banco de testes, nem tem qualquer implantação que ainda não montou um.
+**The executor wins the collision**, and that is not a tie-break of convenience:
+it is local truth about a file system and a `HEAD` the projection does not have,
+and a projection carrying the same key would be carrying a stale copy of it.
+Absent, it contributes `{}` and changes nothing — which is the common case: a
+bets runner has no test bench, and neither has any deployment that has not built
+one yet.
 
-Os dois modos de `referencia.modo` são vocabulário do manifesto
-(`implantar-release.json`), não invenção do runner, e cada um é lido de um jeito:
+The two modes of `referencia.modo` are the manifest's vocabulary
+(`implantar-release.json`), not the runner's invention, and each is read
+differently:
 
-- **`instalacao_em_uso`** — `git rev-parse HEAD`, **uma vez**, memoizado pela
-  vida do processo. É afirmação sobre ESTE processo, e reler depois afirmaria
-  algo sobre um processo que já não existe. O `lido_em` é memoizado junto: o
-  campo diz quando a referência foi lida, e recarimbá-lo reclamaria um frescor
-  que o valor não tem.
-- **`ponta_do_principal`** (padrão) — `git rev-parse <--main-branch>`, **a cada
-  chamada**. É fato sobre o repositório, e ele anda a cada integração.
+- **`instalacao_em_uso`** — `git rev-parse HEAD`, **once**, memoized for the
+  life of the process. It is a statement about THIS process, and rereading later
+  would state something about a process that no longer exists. `lido_em` is
+  memoized with it: the field says when the reference was read, and re-stamping
+  it would claim a freshness the value does not have.
+- **`ponta_do_principal`** (the default) — `git rev-parse <--main-branch>`, **on
+  every call**. It is a fact about the repository, and it moves with every
+  integration.
 
-Quatro flags configuram tudo isso, nenhuma obrigatória: `--test-bench-path`
-(padrão: o mesmo `--working-dir`), `--reference-mode` (padrão
-`ponta_do_principal`), `--reference-repo` (padrão: o banco) e `--main-branch`
-(padrão `main`).
+Four flags configure all of that, none of them mandatory: `--test-bench-path`
+(default: the same `--working-dir`), `--reference-mode` (default
+`ponta_do_principal`), `--reference-repo` (default: the bench) and
+`--main-branch` (default `main`).
 
-**Leitura, e só leitura — desta camada.** Nada em
-`resolve-executor-environment.ts` escreve no banco de testes, avança branch nem
-prepara checkout: `git rev-parse` e mais nada. Ela assume um caminho e um commit
-que já existem e apenas os lê. Um `git` que recusa aqui bloqueia o trabalho com
-motivo (a sexta causa da tabela acima) em vez de resolver um valor plausível: uma
-sessão que verificasse contenção contra um commit que ninguém escolheu é pior que
-uma que não abriu. Quem mantém esse banco **verdadeiro** — quem avança a linha
-principal para dentro dele e quem o prepara — é a `t273`, na seção logo abaixo:
-até ela, essa leitura observava um diretório que ninguém nunca movia.
+**Reading, and only reading — from this layer.** Nothing in
+`resolve-executor-environment.ts` writes to the test bench, advances a branch or
+prepares a checkout: `git rev-parse` and nothing else. It assumes a path and a
+commit that already exist and merely reads them. A `git` that refuses here blocks
+the job with a reason (the sixth cause of the table above) instead of resolving a
+plausible value: a session that checked containment against a commit nobody chose
+is worse than one that did not open. Whoever keeps that bench **true** — whoever
+advances the main line into it and whoever prepares it — is `t273`, in the
+section just below: until it, that read watched a directory nobody ever moved.
 
 ### Advancing the main line into the bench (`t273`)
 
-*(This subsection is in English per the 2026-08-18 language rule; the sections
-around it are the pre-existing Portuguese of this document.)*
-
-`integrar-branch`'s manifest has always promised this — "você nunca executa o
-merge final; ... é o executor quem avança a linha principal" — and until `t273`
-nobody kept the promise. The t109 game run is the evidence: the session reported
+`integrate-branch`'s manifest has always promised this — "you never perform the
+final merge; ... it is IT that advances the main line onto the result" — and
+until `t273` nobody kept the promise. The t109 game run is the evidence: the session reported
 `merge_commit ae41796` with every gate green, the bench's `main` stayed on the
 commit before it, and a person typed `git merge --ff-only ticket-1` by hand
 before `testar` could open
-([nota](../../notas/2026-08-17-t109-feature-do-jogo.md), gap 3).
+([note](../../notas/2026-08-17-t109-feature-do-jogo.md), gap 3).
 
 **What triggers it is the shape of the report, never a node id.** Any node whose
 ACCEPTED report carries a non-empty `merge_commit` advances the bench — the field
@@ -473,252 +478,262 @@ what it printed (`blockForMainLineAdvanceFailure`, the sixth block of
 [`blocks.ts`](../../packages/runner/src/dispatch/blocks.ts)), the job stays on
 its node, and the dispatch resolves `{blocked: true, reason}`.
 
-### Falha depois que a sessão subiu também para (`t265`)
+### A failure after the session came up also stops (`t265`)
 
-A `t198` levou uma tese real ao nó `triagem` do grafo de bets e colheu **quatro
-sessões recusadas em sequência** antes de a quinta funcionar: `stop_reason:
-"refusal"`, `stop_details.category: "reasoning_extraction"`, saída 1, zero
-tokens de saída e ~23k tokens de cache queimados em cada uma
-([nota](../../notas/2026-08-17-primeira-execucao-bets.md)). Nada no sistema
-contava nada: o trabalho voltava para a fila, ganhava lease de novo e abria a
-sessão seguinte. Quem parou o laço foi o operador olhando o log.
+`t198` took a real thesis to the bets graph's `triagem` node and collected **four
+refused sessions in a row** before the fifth worked: `stop_reason: "refusal"`,
+`stop_details.category: "reasoning_extraction"`, exit 1, zero output tokens and
+~23k cache tokens burned on each one
+([note](../../notas/2026-08-17-primeira-execucao-bets.md)). Nothing in the system
+counted anything: the job went back to the queue, got a lease again and opened
+the next session. What stopped the loop was the operator watching the log.
 
-São **dois** buracos, e eles se fecham de lados diferentes da API.
+There are **two** holes, and they close from different sides of the API.
 
-**A recusa é reconhecida, e para na primeira.** O adapter passou a ler
-`stop_reason`/`stop_details.category` do frame `result` terminal e a reportar
-`failureKind: 'engine_refusal'` + `refusalCategory` no `SessionFinishDetail` —
-campos ao lado do status, e não um sétimo `SessionStatus`: a interface está
-congelada em v1 e a forma já existia (`timed_out` + `timeout_reason`). O
-despacho, ao ver esse `failureKind`, chama `blockForEngineRefusal`
-(`packages/runner/src/dispatch/blocks.ts`) e devolve `{blocked: true, reason}` em
-vez de estourar `DispatchError`. É decisão **do runner**, tomada sem leitura
-nenhuma, porque o `onFinished` já entregou o fato — mesma postura das cinco
-falhas pré-sessão acima. Recusa é determinística: retentar compra a mesma
-resposta de novo.
+**The refusal is recognized, and it stops on the first.** The adapter started
+reading `stop_reason`/`stop_details.category` from the terminal `result` frame
+and reporting `failureKind: 'engine_refusal'` + `refusalCategory` in the
+`SessionFinishDetail` — fields beside the status, and not a seventh
+`SessionStatus`: the interface is frozen at v1 and the shape already existed
+(`timed_out` + `timeout_reason`). The dispatch, seeing that `failureKind`, calls
+`blockForEngineRefusal` (`packages/runner/src/dispatch/blocks.ts`) and returns
+`{blocked: true, reason}` instead of throwing a `DispatchError`. It is the
+**runner's** decision, taken with no read at all, because `onFinished` already
+delivered the fact — the same posture as the five pre-session failures above. A
+refusal is deterministic: retrying buys the same answer again.
 
-**A falha comum tem teto, e quem conta é o control plane.** Uma sessão que
-morreu não tem sinal nenhum que a distinga de uma que morreria de novo, então
-ela continua estourando e continua sendo retentada — o que mudou é que a
-**sequência** agora tem fim. Ao fechar uma sessão `failed`,
-`PATCH /v1/sessions/:id/finish` conta, dentro da sua própria transação, as
-sessões finais do par `(trabalho, nó)` da mais recente para trás, parando na
-primeira que não falhou; alcançado o teto, o trabalho é bloqueado com o motivo
-nomeando o nó e a contagem, e o evento `job.blocked` carrega
-`consecutive_failures`. Isso mora no control plane (`repositories/job.ts`) e não
-no runner porque a sequência **atravessa leases e processos** — o runner que
-despacha a quarta tentativa pode nunca ter visto as três primeiras (D1).
+**The ordinary failure has a ceiling, and the one that counts is the control
+plane.** A session that died carries no signal telling it apart from one that
+would die again, so it still throws and is still retried — what changed is that
+the **sequence** now has an end. On closing a `failed` session,
+`PATCH /v1/sessions/:id/finish` counts, inside its own transaction, the final
+sessions of the `(job, node)` pair from the most recent backwards, stopping at
+the first that did not fail; once the ceiling is reached, the job is blocked with
+a reason naming the node and the count, and the `job.blocked` event carries
+`consecutive_failures`. That lives in the control plane (`repositories/job.ts`)
+and not in the runner because the sequence **crosses leases and processes** — the
+runner dispatching the fourth attempt may never have seen the first three (D1).
 
-O teto é do documento de grafo: `max_consecutive_failures` na raiz, ausente
-significando **3** (`docs/spec/graph.md` §1). Três detalhes que fazem parte da
-decisão:
+The ceiling belongs to the graph document: `max_consecutive_failures` at the
+root, absent meaning **3** (`docs/spec/graph.md` §1). Three details that are part
+of the decision:
 
-- **Uma sessão que funcionou zera a sequência.** A contagem é de cauda: falhou,
-  falhou, funcionou, falhou é *uma* falha atrás de si, não três.
-- **Recusa não entra na conta.** Ela já foi bloqueada pelo runner na primeira
-  ocorrência, e contá-la aqui também colocaria dois donos na mesma bandeira —
-  que é como um trabalho acaba bloqueado sem nada pendente.
-- **Trabalho já bloqueado não é bloqueado de novo.** O motivo que a pessoa está
-  lendo é o primeiro; sobrescrevê-lo esconderia a causa atrás de um sintoma.
+- **A session that worked zeroes the sequence.** The count is a tail count:
+  failed, failed, worked, failed is *one* failure behind it, not three.
+- **A refusal does not enter the count.** It has already been blocked by the
+  runner on its first occurrence, and counting it here too would put two owners
+  on the same flag — which is how a job ends up blocked with nothing pending.
+- **A job already blocked is not blocked again.** The reason the person is
+  reading is the first one; overwriting it would hide the cause behind a
+  symptom.
 
-O que continua em aberto, e está registrado como fora de escopo: se o runner
-morrer entre o `PATCH /finish` e o `POST /blocks` da recusa, o trabalho fica
-arrendável por mais uma sessão — que, sendo recusada também, bloqueia pela
-**própria** primeira ocorrência. O custo é uma sessão a mais, não o laço
-infinito.
+What is still open, and is recorded as out of scope: if the runner dies between
+the `PATCH /finish` and the refusal's `POST /blocks`, the job stays leasable for
+one more session — which, being refused too, blocks on **its own** first
+occurrence. The cost is one extra session, not the infinite loop.
 
-### Relato recusado pelo control plane segura o trabalho no nó (`t268`)
+### A report the control plane refused holds the job at the node (`t268`)
 
-A terceira forma de um despacho parar um trabalho por conta própria, e a
-primeira cujo fato **vem de uma leitura**: as outras duas o runner decide
-sozinho, com o que já tem na mão.
+The third way a dispatch stops a job on its own account, and the first whose fact
+**comes from a read**: the other two the runner decides alone, with what it
+already has in hand.
 
-Desde a `t253` o `PATCH /v1/sessions/:id/finish` confere o `output` relatado
-contra o schema `output` da skill que o nó pina — resolvendo `no_id` + o
-`graph_version_id` do trabalho até a linha `(id, version)` do registro — e,
-quando recusa, grava `null` na coluna e a lista de motivos em
-`output_schema_error` no evento. Fechar a sessão nunca é impedido por isso: o
-auto-relato de um nó de trabalho nunca foi evidência, e perder o **fim** da
-sessão por causa dele deixaria a sessão aberta para sempre.
+Since `t253` the `PATCH /v1/sessions/:id/finish` checks the reported `output`
+against the `output` schema of the skill the node pins — resolving `no_id` plus
+the job's `graph_version_id` down to the registry's `(id, version)` row — and,
+when it refuses, writes `null` into the column and the list of reasons into
+`output_schema_error` in the event. Closing the session is never prevented by
+that: the self-report of a work node was never evidence, and losing the session's
+**end** over it would leave the session open forever.
 
-O que ninguém fazia era **ler esse veredito**. O runner descartava a resposta do
-`/finish` — só a falha de escrita sobrevivia — e decidia a rota reparseando, por
-conta própria, o mesmo bloco `` ```resultado `` que o control plane acabara de
-julgar. Duas leituras do mesmo relato, nunca comparadas: um relato recusado
-movia o trabalho pela aresta assim mesmo, e o nó seguinte recebia uma projeção
-de `input` sem nada dentro — o buraco 2 da
-[segunda travessia de bets](../../notas/2026-08-17-segunda-execucao-bets.md).
+What nobody did was **read that verdict**. The runner discarded the `/finish`
+response — only a write failure survived — and decided the route by reparsing, on
+its own account, the same `` ```resultado `` block the control plane had just
+judged. Two readings of the same report, never compared: a refused report moved
+the job down the edge all the same, and the next node received an `input`
+projection with nothing inside — gap 2 of the
+[second bets crossing](../../notas/2026-08-17-segunda-execucao-bets.md).
 
-**O veredito passou a viajar na resposta.** `PATCH /finish` responde a projeção
-da sessão mais `output_accepted` (sempre) e `output_schema_error` (só na
-recusa). Só essa resposta: `GET`/`POST /v1/sessions*` continuam devolvendo o que
-`toWireSession` monta, porque *por que* um relato foi recusado é telemetria do
-log e não parte da sessão — o que mudou é a única pergunta que alguém precisa
-responder **de forma síncrona**, no instante em que decide se o trabalho anda.
-Não há coluna nova e não há migração: o veredito é calculado onde a conferência
-já acontecia e entregue a quem precisa dele.
+**The verdict started travelling in the answer.** `PATCH /finish` answers with
+the session's projection plus `output_accepted` (always) and
+`output_schema_error` (only on a refusal). Only that answer:
+`GET`/`POST /v1/sessions*` still return what `toWireSession` assembles, because
+*why* a report was refused is telemetry of the log and not part of the session —
+what changed is the one question somebody needs answered **synchronously**, at
+the instant they decide whether the job moves. There is no new column and no
+migration: the verdict is computed where the check already happened and delivered
+to whoever needs it.
 
-**E o despacho obedece.** Com `output_accepted: false`, ele chama
-`blockForOutputSchemaRefusal` (`packages/runner/src/dispatch/blocks.ts`) e não
-chama `advance` — vale igual para nó de saída única e para portão, porque o que
-é barrado é a chamada inteira e não a escolha de aresta dentro dela. O motivo do
-bloqueio nomeia o nó, a sessão e **todos** os problemas do schema, pela mesma
-razão que `output_schema_error` carrega a lista inteira: quem desbloqueia tem de
-arrumar o relato, e uma lista cortada é uma segunda rodada da mesma conversa.
+**And the dispatch obeys.** With `output_accepted: false`, it calls
+`blockForOutputSchemaRefusal` (`packages/runner/src/dispatch/blocks.ts`) and does
+not call `advance` — it holds just the same for a single-exit node and for a
+gate, because what is barred is the whole call and not the choice of an edge
+inside it. The blocking reason names the node, the session and **all** the
+schema's problems, for the same reason `output_schema_error` carries the whole
+list: whoever unblocks has to fix the report, and a truncated list is a second
+round of the same conversation.
 
-**Para na primeira recusa**, como a recusa de engine acima. O que foi recusado é
-a **forma** do relato, e uma segunda sessão recebendo exatamente o mesmo prompt
-está sendo convidada a produzir a mesma forma de novo. Retentar com os problemas
-anexados ao prompt é alternativa real e é ficha de outro dono: pede contagem de
-tentativas atravessando despachos e uma segunda decisão sobre quantas bastam.
+**It stops on the first refusal**, like the engine refusal above. What was
+refused is the report's **shape**, and a second session receiving exactly the
+same prompt is being invited to produce the same shape again. Retrying with the
+problems attached to the prompt is a real alternative and is another owner's
+ticket: it asks for an attempt count crossing dispatches and a second decision
+about how many are enough.
 
-**Um dono por bandeira, e uma ordem entre os dois bloqueios.** Nenhum dos dois
-dispara sobre um trabalho que uma pergunta já parou — escalação ordinária já é
-bloqueio, posto pelo control plane na mesma transação de `input_request.created`.
-E
-entre eles a recusa vem primeiro: relato recusado é o fato mais fundamental que
-árvore suja — não há resultado sobre o qual commitar coisa alguma —, e a mesma
-regra que proíbe um segundo dono proíbe postar os dois.
+**One owner per flag, and an order between the two blocks.** Neither of the two
+fires on a job a question has already stopped — ordinary escalation is already a
+block, posted by the control plane in the same transaction as
+`input_request.created`. And between them the refusal comes first: a refused
+report is a more fundamental fact than a dirty tree — there is no result to
+commit anything about —, and the same rule that forbids a second owner forbids
+posting both.
 
-O que fica em aberto, e está registrado como fora de escopo: o rótulo de rota
-(`resultado`) e o vocabulário do schema `output` da skill (`outcome`,
-`evidencia`) continuam sendo duas palavras para um conceito só — é a `t269`; e
-`announceFinishedExecution` (`t262`) segue anunciando uma rodada terminada só
-por `current_node_id` contra `final_nodes`, sem olhar o veredito.
+What is left open, and is recorded as out of scope: the routing label
+(`resultado`) and the vocabulary of the skill's `output` schema (`outcome`,
+`evidencia`) are still two words for one concept — that is `t269`; and
+`announceFinishedExecution` (`t262`) still announces a finished round from
+`current_node_id` against `final_nodes` alone, without looking at the verdict.
 
-### Toda chamada tem prazo (`t193`)
+### Every call has a deadline (`t193`)
 
-O control plane fora do ar responde, e cada método do cliente já sabe o que
-fazer com a resposta. O caso que faltava é outro: um control plane que **aceita
-a conexão e não escreve nada** — um processo travado, um proxy que segurou a
-requisição. Sem prazo, a chamada espera para sempre, e com ela o `tick()` que a
-fez, o loop que espera o tick e o desligamento que espera o loop.
+A control plane that is down answers, and every method of the client already
+knows what to do with the answer. The case that was missing is another: a control
+plane that **accepts the connection and writes nothing** — a stuck process, a
+proxy that held the request. With no deadline the call waits forever, and with it
+the `tick()` that made it, the loop that waits for the tick and the shutdown that
+waits for the loop.
 
-Desde a `t193` existe um único mecanismo HTTP para todo cliente do runner
-([`http-client.ts`](../../packages/runner/src/controller/http-client.ts)), e ele
-faz três coisas: põe um prazo em toda requisição, lê o **status antes** de
-decodificar o corpo (a disciplina da `t156`, agora num dono só — quem responde
-um erro nem sempre é o control plane, e um 502 em HTML não pode virar
-`SyntaxError` cru) e devolve o erro que **quem chamou** construiu.
+Since `t193` there is a single HTTP mechanism for every client of the runner
+([`http-client.ts`](../../packages/runner/src/controller/http-client.ts)), and it
+does three things: it puts a deadline on every request, it reads the **status
+before** decoding the body (`t156`'s discipline, now with a single owner —
+whoever answers an error is not always the control plane, and a 502 in HTML
+cannot become a raw `SyntaxError`) and it returns the error **the caller**
+built.
 
-| Prazo | Default | Quem configura |
+| Deadline | Default | Who configures it |
 |---|---|---|
-| Qualquer chamada ao control plane | 30 s | `--request-timeout-ms` |
-| Batida de heartbeat | o próprio intervalo do heartbeat (`ttl/3`) | derivado, não configurável |
+| Any call to the control plane | 30 s | `--request-timeout-ms` |
+| A heartbeat beat | the heartbeat's own interval (`ttl/3`) | derived, not configurable |
 
-O heartbeat tem prazo mais curto porque tem uma janela natural: quem o arma sabe
-de quanto em quanto tempo a próxima batida vence, e uma batida ainda no ar
-quando a seguinte vence já não renova nada. Pela mesma razão, **uma batida que
-não voltou é pulada, nunca sobreposta** — senão um control plane travado
-acumularia uma requisição aberta por intervalo, a sessão inteira. Pular custa
-uma batida, e o TTL já tolera duas.
+The heartbeat has a shorter deadline because it has a natural window: whoever
+arms it knows how often the next beat falls due, and a beat still in the air when
+the next one falls due renews nothing any more. For the same reason, **a beat
+that did not come back is skipped, never overlapped** — otherwise a stuck control
+plane would pile up one open request per interval, for the whole session.
+Skipping costs one beat, and the TTL already tolerates two.
 
-Chamada que estoura o prazo rejeita com o `TimeoutError` do
-`AbortSignal.timeout`, sem tipo novo para ninguém capturar. Nada é retentado
-aqui: o tick falho é registrado e o loop pergunta de novo no próximo intervalo,
-que é o mecanismo de retentativa que já existia.
+A call that runs past its deadline rejects with `AbortSignal.timeout`'s
+`TimeoutError`, with no new type for anybody to catch. Nothing is retried here:
+the failed tick is recorded and the loop asks again at the next interval, which
+is the retry mechanism that already existed.
 
-### Parar sempre termina, e não deixa sessão órfã (`t193`)
+### Stopping always ends, and leaves no orphan session (`t193`)
 
-Parar um runner é um pedido, e ele tem três estágios:
+Stopping a runner is a request, and it has three stages:
 
-1. **Primeiro SIGINT/SIGTERM.** O loop para de **agendar**: nenhum tick novo
-   nasce. O despacho em voo continua — matar uma sessão viva de fora deixaria um
-   processo escrevendo na worktree sem ninguém para relatar o que ele fez.
-2. **A carência.** `--shutdown-grace-seconds` (default **120 s**) é quanto esse
-   despacho tem para terminar sozinho. Esgotada, a sessão viva é cancelada.
-3. **Segundo SIGINT/SIGTERM.** Não espera nada: cancela na hora.
+1. **The first SIGINT/SIGTERM.** The loop stops **scheduling**: no new tick is
+   born. The dispatch in flight carries on — killing a live session from outside
+   would leave a process writing into the worktree with nobody to report what it
+   did.
+2. **The grace period.** `--shutdown-grace-seconds` (default **120 s**) is how
+   long that dispatch has to finish on its own. Once it is spent, the live
+   session is cancelled.
+3. **The second SIGINT/SIGTERM.** It waits for nothing: it cancels right there.
 
-Cancelar reusa o caminho que o despacho já tinha para um fim conduzido pelo
-adapter — `cancelled` vira `travada` na taxonomia, a **worktree é preservada**
-(sessão cancelada não concluiu), a lease volta pelo `finally` do controller e o
-erro final é o `DispatchError` que o loop já registra. Nada novo é escrito sobre
-"como uma sessão cancelada é encerrada": só passou a existir mais um chamador do
-que já existia.
+Cancelling reuses the path the dispatch already had for an end conducted by the
+adapter — `cancelled` becomes `travada` in the taxonomy, the **worktree is
+preserved** (a cancelled session did not conclude), the lease comes back through
+the controller's `finally` and the final error is the `DispatchError` the loop
+already records. Nothing new is written about "how a cancelled session is
+closed": there is simply one more caller of what already existed.
 
-Abaixo disso, cada adapter registra um `process.on('exit')` enquanto tem sessão
-viva e sinaliza SIGTERM ao grupo do processo na saída. É a rede de segurança
-para as saídas que os três estágios acima não cobrem — uma exceção não capturada
-em outro lugar, um `process.exit()` seco. É SIGTERM e só: `'exit'` é o último
-turno síncrono do processo, não sobra event loop para escalar para SIGKILL cinco
-segundos depois.
+Below that, every adapter registers a `process.on('exit')` while it has a live
+session and signals SIGTERM to the process group on the way out. It is the safety
+net for the exits the three stages above do not cover — an uncaught exception
+somewhere else, a bare `process.exit()`. It is SIGTERM and nothing else:
+`'exit'` is the process's last synchronous turn, and there is no event loop left
+to escalate to SIGKILL five seconds later.
 
-**O limite honesto continua limite:** um `SIGKILL` no próprio runner não roda
-JavaScript nenhum, o `'exit'` não dispara, e nada dentro deste processo impede
-esse órfão. O que existe contra ele é a lease vencendo no server e o trabalho
-voltando para a fila (D5).
+**The honest limit is still a limit:** a `SIGKILL` on the runner itself runs no
+JavaScript at all, `'exit'` does not fire, and nothing inside this process
+prevents that orphan. What stands against it is the lease expiring on the server
+and the job going back to the queue (D5).
 
-### Zero acesso ao banco
+### Zero database access
 
-Nada em `packages/runner` importa driver de SQLite ou qualquer módulo de
-`packages/core/src/db`. A regra é verificada estaticamente por
-[`scripts/check-single-writer.mjs`](../../scripts/check-single-writer.mjs), que
-roda no lint sobre o repositório inteiro, e é exercida no teste fim a fim: o
-control plane sobe como **processo separado**, e a única superfície entre os
-dois é a porta HTTP.
+Nothing in `packages/runner` imports a SQLite driver or any module of
+`packages/core/src/db`. The rule is checked statically by
+[`scripts/check-single-writer.mjs`](../../scripts/check-single-writer.mjs), which
+runs in the lint over the whole repository, and it is exercised in the end-to-end
+test: the control plane comes up as a **separate process**, and the only surface
+between the two is the HTTP port.
 
-E, desde a `t143`, em outra **máquina**: [`cross-machine-dispatch.e2e.test.ts`](../../packages/runner/test/controller/cross-machine-dispatch.e2e.test.ts)
-sobe o binário com `CARTOGRAFO_HOST=0.0.0.0`, alcança-o pelo endereço IPv4 real
-da interface (não `127.0.0.1`) e roda o ciclo inteiro — concessão, heartbeat,
-liberação — apresentando **só** a credencial que o pareamento emitiu. É o que
-transforma o `CARTOGRAFO_HOST` configurável da `t124` em caminho provado, e não
-em opção que ninguém nunca exercitou. Onde a máquina não tem interface IPv4
-externa, o teste pula em vez de falhar: o que ele reportaria ali é a ausência de
-rede, não uma regressão.
+And, since `t143`, on another **machine**:
+[`cross-machine-dispatch.e2e.test.ts`](../../packages/runner/test/controller/cross-machine-dispatch.e2e.test.ts)
+brings the binary up with `CARTOGRAFO_HOST=0.0.0.0`, reaches it over the
+interface's real IPv4 address (not `127.0.0.1`) and runs the whole cycle —
+granting, heartbeat, release — presenting **only** the credential pairing issued.
+It is what turns `t124`'s configurable `CARTOGRAFO_HOST` into a proven path, and
+not an option nobody ever exercised. Where the machine has no external IPv4
+interface, the test skips instead of failing: what it would report there is the
+absence of a network, not a regression.
 
 ---
 
 ## 5. Endpoints
 
-Todos sob `/v1` e, desde a `t124`, todos exigem `Authorization: Bearer <token>`
-— o runner apresenta uma credencial em toda chamada, como qualquer outro cliente
-da API. Desde a `t196`, conceder grava `lease.granted` e cada lease que a
-varredura mata grava um `lease.expired`, ambos na transação que escreve a linha.
-O que continua sem rastro é a **liberação** normal, e por falta de tipo na
-taxonomia — o item que sobrou na §7.
+All under `/v1` and, since `t124`, all demanding
+`Authorization: Bearer <token>` — the runner presents a credential on every call,
+like any other client of the API. Since `t196`, granting records `lease.granted`
+and every lease the sweep kills records a `lease.expired`, both in the
+transaction that writes the row. What is still without a trace is the ordinary
+**release**, and for want of a type in the taxonomy — the item left over in §7.
 
-Desde a `t143` a credencial do runner é **dele**, emitida no pareamento, e a
-coluna "quem chama" abaixo é contrato, não convenção: quem pareia, revoga e
-enxerga a frota inteira é o operador (credencial `usuario`), e o runner só
-alcança as quatro rotas do próprio despacho mais `GET /v1/jobs`. A lista de
-rotas do runner é literal ([`auth.ts`](../../packages/core/src/auth.ts)): rota
-nova nasce fora dela, e é assim que `GET /v1/runners` é do operador sem que
-nada tenha sido escrito para recusá-la — pela mesma porta por onde
-`GET /v1/executions` e `GET /v1/sessions` já ficam de fora.
+Since `t143` the runner's credential is **its own**, issued at pairing, and the
+"who calls" column below is contract, not convention: whoever pairs, revokes and
+sees the whole fleet is the operator (a `usuario` credential), and the runner
+only reaches the four routes of its own dispatch plus `GET /v1/jobs`. The
+runner's route list is literal
+([`auth.ts`](../../packages/core/src/auth.ts)): a new route is born outside it,
+and that is how `GET /v1/runners` is the operator's without anything having been
+written to refuse it — through the same door `GET /v1/executions` and
+`GET /v1/sessions` already stay outside.
 
-| Método | Rota | Quem chama | O que faz |
+| Method | Route | Who calls | What it does |
 |---|---|---|---|
-| `POST` | `/v1/runners` | operador | Pareia um runner. `201` na primeira vez — com `token`, a credencial do runner, devolvida uma única vez —, `200` (idempotente) com `token: null` se o `id` já existe. |
-| `GET` | `/v1/runners` | operador | Lista a frota com a saúde de cada runner: `active_leases`, `last_heartbeat` (o maior `heartbeat_at` de **qualquer** lease que ele já teve) e `last_expiration` (`{job_id, expires_at, expiration_reason}` da última que venceu, ou `null`). Tudo derivado da tabela `lease`; não existe ping de runner. |
-| `POST` | `/v1/runners/:id/revocations` | operador | Revoga toda credencial viva daquele runner. `200 {revoked: <quantas>}`, inclusive `0`: chamar de novo não é erro. |
-| `POST` | `/v1/leases` | runner ou operador | Reivindica expiradas e tenta conceder. `201` com a lease, ou `200` com `{lease: null, reason}`. |
-| `POST` | `/v1/leases/:id/heartbeats` | runner ou operador | Renova o prazo. Corpo opcional `{ttl_seconds}`; sem ele, mantém o TTL da lease. |
-| `POST` | `/v1/leases/:id/releases` | runner ou operador | Encerra a lease e devolve a vaga na hora. |
-| `GET` | `/v1/leases` | runner ou operador | Lista, com filtros `project_id`, `runner_id` e `status`. Sem paginação nesta fase. |
+| `POST` | `/v1/runners` | operator | Pairs a runner. `201` the first time — with `token`, the runner's credential, returned exactly once —, `200` (idempotent) with `token: null` if the `id` already exists. |
+| `GET` | `/v1/runners` | operator | Lists the fleet with each runner's health: `active_leases`, `last_heartbeat` (the largest `heartbeat_at` of **any** lease it ever had) and `last_expiration` (`{job_id, expires_at, expiration_reason}` of the last one that ran out, or `null`). All derived from the `lease` table; there is no runner ping. |
+| `POST` | `/v1/runners/:id/revocations` | operator | Revokes every live credential of that runner. `200 {revoked: <how many>}`, including `0`: calling again is not an error. |
+| `POST` | `/v1/leases` | runner or operator | Claims the expired ones and tries to grant. `201` with the lease, or `200` with `{lease: null, reason}`. |
+| `POST` | `/v1/leases/:id/heartbeats` | runner or operator | Renews the deadline. Optional body `{ttl_seconds}`; without it, the lease's TTL is kept. |
+| `POST` | `/v1/leases/:id/releases` | runner or operator | Closes the lease and gives the slot back immediately. |
+| `GET` | `/v1/leases` | runner or operator | Lists, with `project_id`, `runner_id` and `status` filters. No pagination at this stage. |
 
-### O escopo da credencial de runner
+### The scope of the runner credential
 
-A credencial nasce em `POST /v1/runners` (`201`), no formato do token de
-bootstrap: 32 bytes aleatórios em hex, devolvidos uma vez, guardados só como
-digest SHA-256. Ela é recusada com `403 out_of_scope_credential` em duas
-situações, e a diferença entre elas importa:
+The credential is born at `POST /v1/runners` (`201`), in the bootstrap token's
+format: 32 random bytes in hex, returned once, kept only as a SHA-256 digest. It
+is refused with `403 out_of_scope_credential` in two situations, and the
+difference between them matters:
 
-- **Fora da lista de rotas** — a lista é literal, em
-  [`auth.ts`](../../packages/core/src/auth.ts), e vale para todo o resto da
-  `/v1`: propostas, importação de skill, mutação de grafo, o stream de eventos.
-  Rota nova não entra por prefixo; entra porque alguém a escreveu ali.
-- **Fora da própria identidade** — dentro daquelas rotas, a credencial vale por
-  **um** `runner_id`. Pedir lease para outro runner, bater heartbeat ou liberar
-  a lease de outro, ou listar as leases de outro, são `403`. `GET /v1/leases`
-  sem filtro é preenchido em silêncio com o runner da credencial; com o filtro
-  apontando para outro, é recusado.
+- **Outside the route list** — the list is literal, in
+  [`auth.ts`](../../packages/core/src/auth.ts), and it holds for all the rest of
+  `/v1`: proposals, skill import, graph mutation, the event stream. A new route
+  does not come in by prefix; it comes in because somebody wrote it there.
+- **Outside its own identity** — inside those routes, the credential holds for
+  **one** `runner_id`. Asking for a lease for another runner, beating a heartbeat
+  or releasing another's lease, or listing another's leases, are all `403`.
+  `GET /v1/leases` with no filter is filled in silently with the credential's
+  runner; with the filter pointing at another, it is refused.
 
-Revogar (`POST /v1/runners/:id/revocations`) carimba `revogada_em` e nada mais:
-o token morto cai no `401 invalid_credential` já na requisição seguinte, junto
-com os tokens que nunca existiram. Não há reemissão sob o mesmo `id` — recuperar
-o acesso de um runner revogado é pareá-lo com um `id` novo.
+Revoking (`POST /v1/runners/:id/revocations`) stamps `revogada_em` and nothing
+else: the dead token falls into `401 invalid_credential` on the very next
+request, along with the tokens that never existed. There is no reissue under the
+same `id` — recovering a revoked runner's access means pairing it with a new
+`id`.
 
-Corpo de `POST /v1/leases`:
+The body of `POST /v1/leases`:
 
 ```json
 {
@@ -731,175 +746,179 @@ Corpo de `POST /v1/leases`:
 }
 ```
 
-Os dois tetos chegam **como parâmetro em cada pedido**, não como configuração
-persistida: nenhuma ficha do board cria ainda uma tabela de configuração de
-projeto, e inventar uma aqui seria escopo não pedido. O dia em que existir, o
-default passa a vir dela e o parâmetro vira sobreposição.
+Both caps arrive **as a parameter on every request**, not as persisted
+configuration: no ticket on the board creates a project configuration table yet,
+and inventing one here would be scope nobody asked for. The day one exists, the
+default starts coming from it and the parameter becomes an override.
 
-Códigos de erro:
+Error codes:
 
-| Situação | Código | `error` |
+| Situation | Code | `error` |
 |---|---|---|
-| `id` de runner ausente ou vazio | `400` | `id_required` |
-| Campo de pedido ausente ou de tipo errado | `400` | `invalid_body` (com `field`) |
-| Filtro de listagem inválido | `400` | `invalid_filter` (com `field`) |
-| `runner_id` não pareado (pedido de lease ou revogação) | `404` | `unknown_runner` |
-| Lease inexistente | `404` | `unknown_lease` |
-| Credencial de runner fora das rotas dela, ou agindo por outro runner | `403` | `out_of_scope_credential` |
-| Heartbeat ou liberação sobre lease não `ativa` | `409` | `lease_not_active` (com `status`) |
+| A runner `id` that is absent or empty | `400` | `id_required` |
+| A request field absent or of the wrong type | `400` | `invalid_body` (with `field`) |
+| An invalid listing filter | `400` | `invalid_filter` (with `field`) |
+| A `runner_id` that is not paired (a lease request or a revocation) | `404` | `unknown_runner` |
+| A lease that does not exist | `404` | `unknown_lease` |
+| A runner credential outside its routes, or acting for another runner | `403` | `out_of_scope_credential` |
+| A heartbeat or a release over a lease that is not `ativa` | `409` | `lease_not_active` (with `status`) |
 
-Recusa por teto ou por trabalho já leased **não** aparece nesta tabela: é `200`
-com `motivo`, pelas razões do §3.
+A refusal by a cap or by a job already leased does **not** appear in this table:
+it is a `200` with a `motivo`, for §3's reasons.
 
-Implementação: [`routes/runners.ts`](../../packages/core/src/routes/runners.ts),
+Implementation: [`routes/runners.ts`](../../packages/core/src/routes/runners.ts),
 [`routes/leases.ts`](../../packages/core/src/routes/leases.ts),
 [`auth.ts`](../../packages/core/src/auth.ts),
 [`repositories/runners.ts`](../../packages/core/src/repositories/runners.ts),
 [`repositories/leases.ts`](../../packages/core/src/repositories/leases.ts),
 [`repositories/credentials.ts`](../../packages/core/src/repositories/credentials.ts),
-[`controller/`](../../packages/runner/src/controller). Só `src/db/` toca o driver
-do SQLite (D1); repositórios e rotas recebem o banco já aberto.
+[`controller/`](../../packages/runner/src/controller). Only `src/db/` touches the
+SQLite driver (D1); repositories and routes are handed the database already open.
 
 ---
 
-## 6. `job_id` é um inteiro opaco
+## 6. `job_id` is an opaque integer
 
-`POST /v1/leases` **não lê a tabela `job`** e não tem FK para ela. A razão
-original foi ordem de build (a tabela era entrega do `t102`, que já aterrissou
-na migração `0003`), mas o corte permanece pelo motivo de desenho — a mesma
-escolha que o `t102` fez para `graph_version_id`. Apertar a FK depois é aditivo, e
-cabe à ficha que ligar os dois lados.
+`POST /v1/leases` **does not read the `job` table** and has no FK to it. The
+original reason was build order (the table was `t102`'s delivery, which has since
+landed in migration `0003`), but the cut stays for the design reason — the same
+choice `t102` made for `graph_version_id`. Tightening the FK later is additive,
+and it belongs to the ticket that wires the two sides together.
 
-A divisão de responsabilidade que isso produz é, aliás, a correta:
+The division of responsibility that produces is, in fact, the correct one:
 
-- **elegibilidade** (o trabalho está bloqueado? em que nó está?) é decidida por
-  `GET /v1/jobs`, consultada pelo controller **antes** de pedir a lease;
-- **exclusividade e capacidade** são decididas por `POST /v1/leases`.
+- **eligibility** (is the job blocked? which node is it on?) is decided by
+  `GET /v1/jobs`, consulted by the controller **before** asking for the lease;
+- **exclusivity and capacity** are decided by `POST /v1/leases`.
 
 ---
 
-## 7. O que esta camada ainda não faz
+## 7. What this layer does not do yet
 
-Cada item aqui é escopo declarado de outra ticket, não esquecimento:
+Every item here is another ticket's declared scope, not an oversight:
 
-- **Nenhum evento para a liberação.** A emissão de
+- **No event for the release.** The emission of
   [`lease.granted`](../../especificacoes/eventos/schemas/lease.granted.schema.json)
-  e [`lease.expired`](../../especificacoes/eventos/schemas/lease.expired.schema.json)
-  está ligada desde a `t196` — as colunas já carregavam tudo que os dois eventos
-  pedem (`runner_id`, `job_id`, `expires_at`, `expiration_reason`), e foi
-  mapeamento direto. **O que sobrou é o gap maior:** a taxonomia do `t98` não
-  declara `lease.released`, e o reducer de referência
+  and [`lease.expired`](../../especificacoes/eventos/schemas/lease.expired.schema.json)
+  has been switched on since `t196` — the columns already carried everything the
+  two events ask for (`runner_id`, `job_id`, `expires_at`,
+  `expiration_reason`), and it was a direct mapping. **What is left over is the
+  bigger gap:** `t98`'s taxonomy does not declare `lease.released`, and the
+  reference reducer
   ([`reconstruir-estado.mjs`](../../especificacoes/eventos/reducers/reconstruir-estado.mjs))
-  projeta `leases` só com `active`/`expired`. A tabela tem três estados, então
-  ou a taxonomia ganha um `lease.released`, ou a projeção por eventos fica
-  cega para o encerramento normal — que é o caso mais comum de todos. Crescer a
-  taxonomia é decisão de outra ficha; a `t196` ligou os dois tipos que já tinham
-  contrato e não mexeu nela.
-- **Abrir sessão de verdade** pelo `EngineAdapter` — `despachar` é callback
-  injetado (`t106`/`t109`). **Construído pela `t106`:**
-  [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch.ts)
-  é uma implementação desse callback — abre a sessão, grava `session.opened` e
-  `session.finished`, e transforma um pedido de escalação em pergunta pela
-  API ([human-escalation.md](human-escalation.md)). O controller continua sem
-  saber que engine existe: nada neste arquivo mudou para isso acontecer, que
-  era o ponto da costura. **Fechado pela `t161`:** a instrução do nó vem do
-  grafo registrado, não mais de um literal —
-  [`resolve-node.ts`](../../packages/runner/src/dispatch/resolve-node.ts) lê o
-  snapshot uma vez por despacho e
+  projects `leases` with `active`/`expired` alone. The table has three states, so
+  either the taxonomy gains a `lease.released`, or the event projection stays
+  blind to the ordinary close — which is the most common case of all. Growing the
+  taxonomy is another ticket's decision; `t196` switched on the two types that
+  already had a contract and did not touch it.
+- **Really opening a session** through the `EngineAdapter` — `despachar` is an
+  injected callback (`t106`/`t109`). **Built by `t106`:**
+  [`createClaudeCodeDispatch`](../../packages/runner/src/dispatch/dispatch.ts) is
+  an implementation of that callback — it opens the session, records
+  `session.opened` and `session.finished`, and turns an escalation request into a
+  question through the API ([human-escalation.md](human-escalation.md)). The
+  controller still does not know an engine exists: nothing in this file changed
+  for that to happen, which was the point of the seam. **Closed by `t161`:** the
+  node's instruction comes from the registered graph, no longer from a literal —
+  [`resolve-node.ts`](../../packages/runner/src/dispatch/resolve-node.ts) reads
+  the snapshot once per dispatch and
   [`render-skill-instructions.ts`](../../packages/runner/src/dispatch/render-skill-instructions.ts)
-  busca a skill pinada, confere o hash (pin que não bate não despacha, D4) e
-  renderiza instruções, contrato do nó, checks e permissões para dentro da
-  sessão. As **permissões** declaradas pelo manifesto passaram a valer no
-  mesmo movimento. **Fechado pela `t259`:** os dois buracos que sobravam nessa
-  mesma costura — a `resolveInput`, que resolvia `{}` e fazia todo placeholder
-  falhar fechado, agora lê a projeção de verdade
-  ([`GET /v1/jobs/:id/context`](../../packages/core/src/domain/context.ts), pela
-  [`resolve-input.ts`](../../packages/runner/src/dispatch/resolve-input.ts)), e
-  o nó de trabalho, que recebia um `output_schema` no prompt e nunca era
-  ensinado a devolver nada nele, agora fecha o turno com um bloco
-  `resultado` ([`result-protocol.ts`](../../packages/runner/src/dispatch/result-protocol.ts))
-  que o despacho manda no `/finish` como `output` — que é justamente o que a
-  projeção do nó seguinte lê. **Corrigido pela `t267`:** o que uma sessão recebe
-  hoje são quatro coisas, e cada uma com o seu rótulo — o corpo do manifesto já
-  interpolado, os **valores** que o `input` da skill nomeia (bloco
-  `### Valores de entrada`, cortado em 16 KB com marcador e ponteiro para
+  fetches the pinned skill, checks the hash (a pin that does not match does not
+  dispatch, D4) and renders the instructions, the node's contract, the checks and
+  the permissions into the session. The **permissions** the manifest declares
+  started holding in the same movement. **Closed by `t259`:** the two holes left
+  in that same seam — `resolveInput`, which resolved `{}` and made every
+  placeholder fail closed, now reads the real projection
+  ([`GET /v1/jobs/:id/context`](../../packages/core/src/domain/context.ts),
+  through
+  [`resolve-input.ts`](../../packages/runner/src/dispatch/resolve-input.ts)), and
+  the work node, which received an `output_schema` in the prompt and was never
+  taught to return anything in it, now closes the turn with a `resultado` block
+  ([`result-protocol.ts`](../../packages/runner/src/dispatch/result-protocol.ts))
+  that the dispatch sends to `/finish` as `output` — which is exactly what the
+  next node's projection reads. **Corrected by `t267`:** what a session receives
+  today is four things, each with its own label — the manifest's body already
+  interpolated, the **values** the skill's `input` names (the
+  `### Valores de entrada` block, cut at 16 KB with a marker and a pointer to
   `GET /v1/jobs/:id/context`,
   [`render-input-values.ts`](../../packages/runner/src/dispatch/render-input-values.ts)),
-  o `contrato` do nó rotulado como documentação, e o `output` da skill pinada
-  rotulado como o que o `/finish` confere (D9). Antes disso a sessão via só os
-  placeholders que o manifesto tinha lembrado de citar, e era apresentada ao
-  `saida_schema` do nó como se fosse o validador — que não é
-  ([graph.md](graph.md)). O que segue pendente pelo mesmo buraco é o **orçamento
-  declarado pela skill**: a `t163` deu à sessão dois cães de guarda (relógio de
-  parede e silêncio), com o manifesto declarando `orcamentos` e o runner
-  resolvendo pelo menor dos dois
-  ([`resolveBudget`](../../packages/runner/src/engine/resolve-budget.ts)), mas
-  quem despacha ainda usa o teto do runner — o campo existe no manifesto e
-  ninguém o lê para dentro do despacho. É uma linha na mesma costura que a
-  `t161` abriu, e cabe à ficha que sentir a dor.
-- **Avanço de nó e fim de travessia** — também fechados pela `t161`, e citados
-  aqui porque os dois eram lacunas desta camada. Uma sessão que termina limpa e
-  não escala faz o próprio POST de transição pela aresta que o grafo manda:
-  saída única segue direto, portão com duas ou mais saídas lê o bloco cercado
-  `resultado` que a sessão emitiu, e um resultado que não casa com aresta
-  nenhuma vira pergunta para gente (`ator.tipo: "sistema"`) em vez de falha. E `listarTrabalhosLiberados` passou a filtrar por `concluido` além de
-  `bloqueado`: o campo sai de `GET /v1/jobs` desde a `t152`, derivado do
-  `current_node_id` contra os `nos_finais` da versão, e sem lê-lo um trabalho que
-  pousava no nó final continuava candidato para sempre — o controller o
-  redespachava para o mesmo nó a cada tick.
-- **Higiene de ciclo de vida do runner** — **fechada pela `t207`**, e citada
-  aqui porque as três metades eram lacunas desta camada. (1) Cada
-  `EngineAdapter` solta o estado pesado da sessão assim que ela termina —
-  `ChildProcess`, listener do chamador, buffers e timers — guardando só o
-  `SessionStatus` terminal por id, que é o que o invariante 3 do contrato
-  congelado (`getStatus` responde depois do `onFinished`) exige de fato; um
-  runner de vida longa parou de crescer com cada trabalho despachado. (2)
-  `GitWorktreeManager.release()` roda `git status --porcelain` antes de
-  remover: sessão que termina **concluída mas com árvore suja** tem a árvore
-  **retida** e o trabalho **bloqueado** por
+  the node's `contrato` labelled as documentation, and the pinned skill's
+  `output` labelled as what `/finish` checks (D9). Before that the session saw
+  only the placeholders the manifest had remembered to cite, and was introduced
+  to the node's `saida_schema` as though it were the validator — which it is not
+  ([graph.md](graph.md)). What is still pending through the same hole is the
+  **budget the skill declares**: `t163` gave the session two watchdogs (a wall
+  clock and silence), with the manifest declaring `orcamentos` and the runner
+  resolving by the smaller of the two
+  ([`resolveBudget`](../../packages/runner/src/engine/resolve-budget.ts)), but
+  whoever dispatches still uses the runner's ceiling — the field exists in the
+  manifest and nobody reads it into the dispatch. It is one line in the same seam
+  `t161` opened, and it belongs to the ticket that feels the pain.
+- **Advancing a node and the end of a traversal** — also closed by `t161`, and
+  cited here because both were gaps of this layer. A session that ends clean and
+  does not escalate makes the transition POST itself, down the edge the graph
+  dictates: a single exit goes straight through, a gate with two or more exits
+  reads the fenced `resultado` block the session emitted, and a result that
+  matches no edge becomes a question for a person (`ator.tipo: "sistema"`)
+  instead of a failure. And `listarTrabalhosLiberados` started filtering by
+  `concluido` as well as `bloqueado`: the field comes out of `GET /v1/jobs` since
+  `t152`, derived from `current_node_id` against the version's `nos_finais`, and
+  without reading it a job that landed on the final node stayed a candidate
+  forever — the controller redispatched it to the same node on every tick.
+- **The runner's life-cycle hygiene** — **closed by `t207`**, and cited here
+  because all three halves were gaps of this layer. (1) Every `EngineAdapter`
+  drops the session's heavy state as soon as it ends — the `ChildProcess`, the
+  caller's listener, the buffers and the timers — keeping only the terminal
+  `SessionStatus` per id, which is what invariant 3 of the frozen contract
+  (`getStatus` answers after `onFinished`) actually demands; a long-lived runner
+  stopped growing with every dispatched job. (2) `GitWorktreeManager.release()`
+  runs `git status --porcelain` before removing: a session that ends **finished
+  but with a dirty tree** has its tree **retained** and the job **blocked** by
   [`POST /v1/jobs/:id/blocks`](../../packages/runner/src/dispatch/dispatch.ts)
-  com o caminho da árvore no motivo, e não avança — a premissa antiga ("o que
-  foi commitado já vive no histórico do branch") só valia enquanto a sessão
-  commitasse, e nada obriga que ela commite. Nenhum campo novo no `/finish`: o
-  vocabulário daquela rota é da `t213` (D20). (3)
-  [`cartografo-runner prune`](../../packages/runner/src/cli/prune.ts) recolhe o
-  que sobra — diretórios `ticket-<id>-<hex>` que o `git worktree list`
-  reconhece e branches `ticket-<id>` —, perguntando por trabalho ao control
-  plane se ele está `concluido` (D1: o runner pergunta, nunca adivinha).
-  `bloqueado` **não** é sinal de fim: trabalho desbloqueado continua do mesmo
-  nó, com árvore nova. Branch sai com `git branch -d` e nunca `-D` —
-  `concluido` diz que a travessia chegou a um nó final, e não diz nada sobre os
-  commits terem sido mergeados —, e uma recusa por "não mergeado" é resultado
-  ordinário, reportado e sem efeito no código de saída. **O que continua fora:**
-  TTL/expiração para o mapa de status terminais dos adapters, reconciliar
-  sozinho uma sessão suja (commitar ou descartar em nome de alguém), saída
-  `--json` do `prune` e agendamento embutido dele — quem opera arma o cron por
-  fora, mesma postura do resto deste CLI. E `git worktree prune`, do próprio
-  git, continua sendo outro comando: ele reconcilia registro órfão de
-  diretório apagado à mão, que este aqui não faz.
-- **Modo local** (avaliar um diretório sem control plane): não tem schema nem
-  critério de aceite escrito em lugar nenhum do repo. Revisitar quando houver
-  caso de uso concreto.
-- **Tabela de configuração de teto** por runner ou por projeto (§5).
-- **Varredura de expiradas dissociada do despacho** (§3). O que a `t164` fechou
-  aqui não é o gatilho e sim a **visibilidade**: `GET /v1/runners` (§5) e a
-  página `/runners` da tela mostram, por runner, quantas leases ele segura,
-  quando foi ouvido pela última vez e qual trabalho perdeu para o TTL — e
+  with the tree's path in the reason, and does not advance — the old premise
+  ("what was committed already lives in the branch's history") only held while
+  the session committed, and nothing obliges it to commit. No new field in
+  `/finish`: that route's vocabulary is `t213`'s (D20). (3)
+  [`cartografo-runner prune`](../../packages/runner/src/cli/prune.ts) collects
+  what is left over — `ticket-<id>-<hex>` directories that `git worktree list`
+  recognizes and `ticket-<id>` branches —, asking the control plane, job by job,
+  whether it is `concluido` (D1: the runner asks, it never guesses). `bloqueado`
+  is **not** a signal of an ending: an unblocked job carries on from the same
+  node, with a fresh tree. A branch goes with `git branch -d` and never `-D` —
+  `concluido` says the traversal reached a final node, and says nothing about the
+  commits having been merged —, and a refusal for "not merged" is an ordinary
+  result, reported and with no effect on the exit code. **What is still out:** a
+  TTL/expiry for the adapters' map of terminal statuses, reconciling a dirty
+  session on its own (committing or discarding on somebody's behalf), a `--json`
+  output for `prune` and scheduling built into it — whoever operates arms the
+  cron outside, the same posture as the rest of this CLI. And `git worktree
+  prune`, git's own, is still another command: it reconciles an orphaned record
+  of a directory deleted by hand, which this one does not do.
+- **Local mode** (evaluating a directory with no control plane): it has no schema
+  and no acceptance criterion written anywhere in the repository. Revisit when
+  there is a concrete use case.
+- **A cap configuration table** per runner or per project (§5).
+- **A sweep of the expired ones decoupled from the dispatch** (§3). What `t164`
+  closed here is not the trigger but the **visibility**: `GET /v1/runners` (§5)
+  and the screen's `/runners` page show, per runner, how many leases it holds,
+  when it was last heard from and which job it lost to the TTL — and
   [`multi-runner-fleet.e2e.test.ts`](../../packages/runner/test/controller/multi-runner-fleet.e2e.test.ts)
-  cobra o ciclo inteiro com um runner que para de bater. Uma rotina que varra
-  sem ninguém pedir trabalho continua sendo escopo de outra ficha.
-- **Sinal de vida independente da lease.** `ultimo_heartbeat` e
-  `ultima_expiracao` saem só da tabela `lease`: um runner pareado que nunca
-  pegou trabalho é, para este control plane, indistinguível de um que está
-  fora do ar. Um ping de runner é aditivo, e cabe à ficha que sentir a dor.
-- **WIP limit por estágio do grafo** — aqui só existe o teto bruto de sessões
-  concorrentes.
-- **Reemissão de credencial para um `id` já pareado.** A `t143` fechou a
-  emissão no pareamento e a revogação (§5), mas só o caminho do `201` emite:
-  runner revogado ou que perdeu o token volta pareando um `id` novo. Uma rota de
-  rotação é aditiva, e cabe à ficha que sentir a dor na prática.
-- **Escopo por projeto ou por nó do grafo.** O escopo da credencial de runner
-  para em "esta família de rotas, como este runner". Um runner pareado continua
-  podendo disputar trabalho de qualquer `projeto_id` que ele declare.
-- **Limite de tentativas** (rate limiting, bloqueio depois de N credenciais
-  inválidas ou fora de escopo). Nada nesta camada conta tentativas.
+  demands the whole cycle with a runner that stops beating. A routine that sweeps
+  with nobody asking for work is still another ticket's scope.
+- **A liveness signal independent of the lease.** `ultimo_heartbeat` and
+  `ultima_expiracao` come out of the `lease` table alone: a paired runner that
+  never picked up work is, to this control plane, indistinguishable from one that
+  is down. A runner ping is additive, and it belongs to the ticket that feels the
+  pain.
+- **A WIP limit per stage of the graph** — here there is only the blunt cap on
+  concurrent sessions.
+- **Reissuing a credential for an already paired `id`.** `t143` closed the
+  issuing at pairing and the revocation (§5), but only the `201` path issues: a
+  runner that was revoked or lost its token comes back by pairing a new `id`. A
+  rotation route is additive, and it belongs to the ticket that feels the pain in
+  practice.
+- **A scope per project or per graph node.** The runner credential's scope stops
+  at "this family of routes, as this runner". A paired runner can still compete
+  for work of any `projeto_id` it declares.
+- **A limit on attempts** (rate limiting, blocking after N invalid or
+  out-of-scope credentials). Nothing in this layer counts attempts.

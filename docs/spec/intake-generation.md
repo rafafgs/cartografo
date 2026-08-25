@@ -126,11 +126,11 @@ born `pendente`, is freely editable by `PATCH`, discardable by `/discards`,
 somebody to submit by hand would not add a second gate — it would duplicate the
 first.
 
-The consequence in the HTTP client is literal: it gained `criarIntake` and
-nothing else. There is no `confirmarIntake`, `emendarIntake` or `descartarIntake`
+The consequence in the HTTP client is literal: it gained `createIntake` and
+nothing else. There is no `confirmIntake`, `amendIntake` or `discardIntake`
 in
 [`control-plane-client.ts`](../../packages/runner/src/controller/control-plane-client.ts),
-for the same reason `aplicar` never went in: **a client that does not have the
+for the same reason `apply` never went in: **a client that does not have the
 method does not take the decision by mistake.**
 
 ---

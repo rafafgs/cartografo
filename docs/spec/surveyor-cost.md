@@ -59,7 +59,7 @@ evidence of every proposal.
 A session with no job (discovery, a conversation turn) or a job with no declared
 version produces a pair with `null` at one end. Those rows are not discarded:
 they sit in a group of their own, ordered last — the same choice as
-`metricasPorVersao`. A report that hides what it cannot classify lies about the
+`metricsByVersion`. A report that hides what it cannot classify lies about the
 total.
 
 Only the **identified** rows (version and node filled in) reach the policies:

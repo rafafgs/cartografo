@@ -121,6 +121,17 @@ so these five were corrected. `packages/cost-surveyor/src/client.ts` names
 Out of Scope list does not enumerate — left stale with the six, on the same
 reasoning.
 
+## The three spec documents, and what FR7 undercounted
+
+FR7 asks for "the one markdown link each". Each of the three also names a symbol
+this ticket renamed, in the prose immediately around that link — `ClienteControle`
+in `surveyor-flow.md`, `metricasPorVersao` in `surveyor-cost.md`, and
+`criarIntake` plus the three absent methods (`confirmarIntake`, `emendarIntake`,
+`descartarIntake`) and `aplicar` in `intake-generation.md`. Repointing the href
+and leaving the sentence above it naming a symbol that no longer exists is the
+exact failure `tests/citation-link-text.test.mjs` was opened on, one level down
+from a filename. All of them moved with their links.
+
 ## The counts, before and after
 
 | Group | Before | After |

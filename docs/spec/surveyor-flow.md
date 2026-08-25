@@ -230,7 +230,7 @@ redoing the diff over the new base is another round's work
 | `GET` | `/v1/graph-versions/:id` | The snapshot: the nodes the measurement reports and the edges that go into the prompt. |
 | `POST` | `/v1/proposals` | The only write. Returns `201` with the `pendente` proposal. |
 
-On the runner's side, all of that goes through `ClienteControle`
+On the runner's side, all of that goes through `ControlPlaneClient`
 ([`control-plane-client.ts`](../../packages/runner/src/controller/control-plane-client.ts)),
 which is still the process's only HTTP door.
 

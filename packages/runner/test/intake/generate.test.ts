@@ -178,7 +178,7 @@ test('AT3a — a class that is not registered is refused, with no session and no
 
   const adapter = new CountingAdapter(fakeAdapter());
   const client = new RecordingClient();
-  const workingDir = scratch(t, 'classe-desconhecida');
+  const workingDir = scratch(t, 'unknown-class');
 
   await assert.rejects(
     async () =>
@@ -336,19 +336,19 @@ test('AT3d — a missing, unreadable or empty answer posts nothing', async (t) =
     );
 
   const cases: ReadonlyArray<{ label: string; env: Record<string, string>; code: string }> = [
-    { label: 'sem-arquivo', env: {}, code: 'missing_output' },
+    { label: 'no-file', env: {}, code: 'missing_output' },
     {
-      label: 'json-torto',
+      label: 'crooked-json',
       env: engineWriting(OUTPUT_FILE, '{"items": [ this is not json'),
       code: 'invalid_output',
     },
     {
-      label: 'sem-items',
+      label: 'no-items',
       env: engineWriting(OUTPUT_FILE, JSON.stringify({ observacao: 'esqueci a lista' })),
       code: 'missing_items',
     },
     {
-      label: 'items-vazios',
+      label: 'empty-items',
       env: engineWriting(OUTPUT_FILE, JSON.stringify({ items: [] })),
       code: 'missing_items',
     },
@@ -357,7 +357,7 @@ test('AT3d — a missing, unreadable or empty answer posts nothing', async (t) =
     // batch: `document.itens` is not read any more, and a silent `[]` here would
     // land a draft with no ticket in it.
     {
-      label: 'envelope-antigo',
+      label: 'old-envelope',
       env: engineWriting(OUTPUT_FILE, JSON.stringify({ itens: ITEMS })),
       code: 'missing_items',
     },

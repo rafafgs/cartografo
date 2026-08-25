@@ -171,7 +171,7 @@ test('t270 AT — ponta_do_principal is read live, on every call', async (t) => 
 test('t270 AT — a path that is not a repository blocks, naming the command', async (t) => {
   const { createExecutorEnvironmentResolver, ExecutorEnvironmentError } = await loadModule();
 
-  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t270-nao-repo-'));
+  const base = mkdtempSync(path.join(tmpdir(), 'cartografo-t270-not-a-repo-'));
   t.after(() => {
     execFileSync('rm', ['-rf', base], { stdio: 'ignore' });
   });

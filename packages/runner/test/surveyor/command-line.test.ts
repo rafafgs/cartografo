@@ -145,7 +145,7 @@ test('AT4 — the positional contract of the spec is unchanged', async () => {
   assert.equal(bare.workingDir, undefined);
 
   assert.match(refusal(parseArguments([], EMPTY_ENV)), /execution_id/);
-  assert.match(refusal(parseArguments(['nao-e-numero'], EMPTY_ENV)), /execution_id/);
+  assert.match(refusal(parseArguments(['not-a-number'], EMPTY_ENV)), /execution_id/);
   assert.match(refusal(parseArguments(['7', 'url', 'dir', 'extra'], EMPTY_ENV)), /extra/);
 });
 

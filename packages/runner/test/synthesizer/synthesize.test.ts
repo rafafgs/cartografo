@@ -212,7 +212,7 @@ test('AT4a — a class that already has a base graph is refused without opening 
     { class: 'nota-curta', current_version_id: EXISTING_VERSION.id },
   ]);
   const adapter = new CountingAdapter(fakeAdapter(['should never run']));
-  const dir = scratch(t, 'ja-registrada');
+  const dir = scratch(t, 'already-registered');
 
   const out: string[] = [];
   const err: string[] = [];
@@ -249,7 +249,7 @@ test('AT4b — a session that returns no valid block exits 1 and writes nothing'
       '```',
     ]),
   );
-  const dir = scratch(t, 'sem-bloco');
+  const dir = scratch(t, 'no-block');
 
   const out: string[] = [];
   const err: string[] = [];
@@ -377,7 +377,7 @@ test('t148 — a frame with no block prints the decoded prose, not the raw frame
       resultFrame('I read the catalogue and could not compose a topology out of what exists.'),
     ]),
   );
-  const dir = scratch(t, 'quadro-sem-bloco');
+  const dir = scratch(t, 'frame-without-block');
 
   const err: string[] = [];
   const code = await runSynthesis({
@@ -408,7 +408,7 @@ test('t180 — the run refuses and reports in English, quoting the API vocabular
   const { runSynthesis } = await loadSynthesis();
 
   const client = fakeClient([{ class: 'nota-curta', current_version_id: EXISTING_VERSION.id }]);
-  const dir = scratch(t, 'classe-ja-registrada');
+  const dir = scratch(t, 'class-already-registered');
 
   const err: string[] = [];
   const code = await runSynthesis({

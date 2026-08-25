@@ -552,7 +552,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't162-at9');
-    const record = path.join(scratch, 'despacho.json');
+    const record = path.join(scratch, 'dispatch.json');
     t.after(async () => {
       await blockEveryJob(plane);
     });
@@ -609,7 +609,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't162-at10');
-    const record = path.join(scratch, 'despacho-codex.json');
+    const record = path.join(scratch, 'dispatch-codex.json');
     t.after(async () => {
       await blockEveryJob(plane);
     });
@@ -963,7 +963,7 @@ test('t162 — the packaged runner, against a real control plane', async (parent
     const { runRunner } = await loadModule<typeof RunModule>(RUN_MODULE);
 
     const { repoRoot, worktreesRoot, scratch } = initRepo(t, 't179-at1');
-    const record = path.join(scratch, 'despacho.json');
+    const record = path.join(scratch, 'dispatch.json');
     t.after(async () => {
       await blockEveryJob(plane);
     });

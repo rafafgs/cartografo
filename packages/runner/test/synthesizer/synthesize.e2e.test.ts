@@ -148,7 +148,7 @@ test('AT9 — with a token and real frames, the synthesis completes and the draf
   const { runSynthesis } = await loadModule<typeof SynthesisModule>(SYNTHESIS_MODULE);
 
   const { baseUrl, token } = await bootControlPlane(t);
-  const dir = scratch(t, 'com-credencial');
+  const dir = scratch(t, 'with-credential');
   const document = proposedGraph();
 
   const printed: string[] = [];
@@ -182,7 +182,7 @@ test('AT10 — with no token, the very first read is refused 401 by the real gat
   const { runSynthesis } = await loadModule<typeof SynthesisModule>(SYNTHESIS_MODULE);
 
   const { baseUrl } = await bootControlPlane(t);
-  const dir = scratch(t, 'sem-credencial');
+  const dir = scratch(t, 'without-credential');
 
   await assert.rejects(
     async () =>

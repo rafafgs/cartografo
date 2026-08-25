@@ -184,7 +184,7 @@ test('t273 AT2 — `blockForMainLineAdvanceFailure` names the job and the reason
   const returned = await blockForMainLineAdvanceFailure(
     call,
     JOB,
-    'the test bench is checked out on `experimento`, not on the main line `main`',
+    'the test bench is checked out on `experiment`, not on the main line `main`',
   );
 
   assert.equal(sent.length, 1);
@@ -193,7 +193,7 @@ test('t273 AT2 — `blockForMainLineAdvanceFailure` names the job and the reason
   assert.deepEqual(body(sent[0]).actor, { type: 'system', ref: 'runner' });
 
   const reason = String(body(sent[0]).reason);
-  assert.ok(reason.includes('experimento'), `the detail it was given is quoted: ${reason}`);
+  assert.ok(reason.includes('experiment'), `the detail it was given is quoted: ${reason}`);
   assert.ok(reason.includes(JOB.current_node_id), `and the node it stopped on: ${reason}`);
   assert.equal(
     returned,

@@ -291,7 +291,7 @@ function benchRepository(root: string): {
   /** The commit the fake `integrate` session reports, on a branch of `repoRoot`. */
   integrated: string;
 } {
-  const repoRoot = path.join(root, 'principal');
+  const repoRoot = path.join(root, 'main-repo');
   mkdirSync(repoRoot, { recursive: true });
 
   git(repoRoot, 'init', '--quiet', '--initial-branch', 'main');
@@ -302,7 +302,7 @@ function benchRepository(root: string): {
   git(repoRoot, 'commit', '--quiet', '-m', 'integrado');
   const head = git(repoRoot, 'rev-parse', 'main');
 
-  const benchPath = path.join(root, 'banco-de-testes');
+  const benchPath = path.join(root, 'test-bench');
   git(root, 'clone', '--quiet', repoRoot, benchPath);
 
   git(repoRoot, 'checkout', '--quiet', '-b', 'ticket-259');
@@ -332,7 +332,7 @@ const BENCH_INSTALL_COMMAND = `cat ${INTEGRATED_FILE} > .bench-prepared`;
 test('t259 AT6 — refine → develop → integrate crosses the real software bundle', async (t) => {
   const { url: baseUrl, token } = await bootCore(t);
 
-  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t259-fabrica-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'cartografo-t259-factory-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
   });

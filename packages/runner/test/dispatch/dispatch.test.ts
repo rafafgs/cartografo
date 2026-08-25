@@ -351,8 +351,8 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
   const baseUrl = await bootAuthorized(t);
 
   const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t106-workdir-"));
-  const firstRecord = path.join(workDir, "primeiro-despacho.json");
-  const secondRecord = path.join(workDir, "segundo-despacho.json");
+  const firstRecord = path.join(workDir, "first-dispatch.json");
+  const secondRecord = path.join(workDir, "second-dispatch.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });
   });
@@ -610,7 +610,7 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
   const baseUrl = await bootAuthorized(t);
 
   const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t125-workdir-"));
-  const record = path.join(workDir, "despacho-com-negacao.json");
+  const record = path.join(workDir, "dispatch-with-denial.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });
   });
@@ -925,7 +925,7 @@ test("t147 — with no token, the dispatch is refused 401 on its very first call
   const workDir = mkdtempSync(
     path.join(tmpdir(), "cartografo-t147-anonymous-workdir-"),
   );
-  const record = path.join(workDir, "despacho-sem-token.json");
+  const record = path.join(workDir, "dispatch-without-token.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });
   });
@@ -998,7 +998,7 @@ test("t147 — with a token, the dispatch crosses every route it uses", async (t
   const workDir = mkdtempSync(
     path.join(tmpdir(), "cartografo-t147-authorized-workdir-"),
   );
-  const record = path.join(workDir, "despacho-com-token.json");
+  const record = path.join(workDir, "dispatch-with-token.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });
   });
@@ -1360,7 +1360,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         path.join(tmpdir(), "cartografo-t141-codex-workdir-"),
       );
       const claudeRecord = path.join(workDir, "never-dispatched.json");
-      const codexRecord = path.join(workDir, "despacho-codex.json");
+      const codexRecord = path.join(workDir, "dispatch-codex.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -1368,7 +1368,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
       const versionId = await registerGraph(
         baseUrl,
         token,
-        twoEngineGraph("roteamento-por-no-at3", "codex"),
+        twoEngineGraph("routing-by-node-at3", "codex"),
       );
 
       // The work is created ON the node that declares the engine: the dispatch
@@ -1503,7 +1503,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
       const versionId = await registerGraph(
         baseUrl,
         token,
-        twoEngineGraph("roteamento-por-no-at4", undefined),
+        twoEngineGraph("routing-by-node-at4", undefined),
       );
       const onGraph = await api<Work>(
         baseUrl,
@@ -1526,7 +1526,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
         worktrees: fakeWorktrees(workDir),
         timeoutSeconds: 60,
         envOverrides: {
-          FAKE_ENGINE_RECORD: path.join(workDir, "no-sem-engine.json"),
+          FAKE_ENGINE_RECORD: path.join(workDir, "node-without-engine.json"),
           FAKE_ENGINE_LINES: linesWithoutBlock(),
         },
       })(onGraph.id);
@@ -1572,7 +1572,7 @@ test("t141 — the engine is resolved from the node the work is standing on", as
       const versionId = await registerGraph(
         baseUrl,
         token,
-        twoEngineGraph("roteamento-por-no-at5", "gemini"),
+        twoEngineGraph("routing-by-node-at5", "gemini"),
       );
       const work = await api<Work>(
         baseUrl,
@@ -1781,7 +1781,7 @@ test("t148 — POST /v1/sessions fails after the engine started: the session is 
   const { baseUrl, token } = await bootUnpatched(t);
 
   const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t148-leak-"));
-  const recordPath = path.join(workDir, "despacho-que-vazou.json");
+  const recordPath = path.join(workDir, "dispatch-that-leaked.json");
   let enginePid: number | null = null;
   t.after(() => {
     if (enginePid !== null) killIfAlive(enginePid);
@@ -1892,7 +1892,7 @@ test("t148 — the finish PATCH fails after the session ended: the escalation qu
   const { baseUrl, token } = await bootUnpatched(t);
 
   const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t148-finish-"));
-  const recordPath = path.join(workDir, "despacho-sem-fechamento.json");
+  const recordPath = path.join(workDir, "dispatch-without-close.json");
   t.after(() => {
     if (existsSync(recordPath)) {
       const { pid } = JSON.parse(
@@ -2014,7 +2014,7 @@ test("t160 AT8 — the session runs in the directory the worktree manager handed
   // own: with the static option gone, the only way the engine can end up here
   // is through `acquire` (FR6, FR7).
   const worktreePath = path.join(workDir, "worktree-of-the-session");
-  const record = path.join(workDir, "despacho-em-worktree.json");
+  const record = path.join(workDir, "dispatch-in-worktree.json");
   t.after(() => {
     rmSync(workDir, { recursive: true, force: true });
   });
@@ -2799,7 +2799,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         token,
       );
 
-      const record = path.join(workDir, "com-grafo.json");
+      const record = path.join(workDir, "with-graph.json");
       const bareRecord = path.join(workDir, "no-graph.json");
       const base = {
         urlBase: baseUrl,
@@ -2979,7 +2979,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
       const workDir = mkdtempSync(
-        path.join(tmpdir(), "cartografo-t252-sem-registro-"),
+        path.join(tmpdir(), "cartografo-t252-unregistered-"),
       );
       const record = path.join(workDir, "never-dispatched.json");
       t.after(() => {
@@ -2990,8 +2990,8 @@ test("t161 — the node's skill drives the session, and the session advances the
       // the skill and the content had moved, here the registry never heard of
       // the id at all — a deployment missing a piece, which reproduces on every
       // single retry until somebody registers the manifest.
-      const missing = "skill-que-ninguem-registrou";
-      const document = traversalGraph("travessia-t252-sem-registro");
+      const missing = "skill-nobody-registered";
+      const document = traversalGraph("travessia-t252-unregistered");
       const nodes = document.nodes as Array<Record<string, unknown>>;
       const job = await jobBeforeVersion(
         baseUrl,
@@ -3068,7 +3068,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
       const workDir = mkdtempSync(
-        path.join(tmpdir(), "cartografo-t252-pendurada-"),
+        path.join(tmpdir(), "cartografo-t252-dangling-"),
       );
       const record = path.join(workDir, "never-dispatched.json");
       t.after(() => {
@@ -3146,7 +3146,7 @@ test("t161 — the node's skill drives the session, and the session advances the
       );
 
       const workDir = mkdtempSync(
-        path.join(tmpdir(), "cartografo-t252-transitorio-"),
+        path.join(tmpdir(), "cartografo-t252-transient-"),
       );
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
@@ -3155,7 +3155,7 @@ test("t161 — the node's skill drives the session, and the session advances the
       const versionId = await registerGraph(
         baseUrl,
         token,
-        traversalGraph("travessia-t252-transitorio"),
+        traversalGraph("travessia-t252-transient"),
       );
       const job = await api<Work>(
         baseUrl,
@@ -3307,7 +3307,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
       const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t161-gate-"));
-      const record = path.join(workDir, "portao.json");
+      const record = path.join(workDir, "gate.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -3376,7 +3376,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
       const workDir = mkdtempSync(
-        path.join(tmpdir(), "cartografo-t161-escala-"),
+        path.join(tmpdir(), "cartografo-t161-escalation-"),
       );
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
@@ -3608,7 +3608,7 @@ test("t161 — the node's skill drives the session, and the session advances the
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
       const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t161-perms-"));
-      const record = path.join(workDir, "portao.json");
+      const record = path.join(workDir, "gate.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -3869,7 +3869,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t167-rota-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t167-route-"));
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -4077,7 +4077,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       worktrees: fakeWorktrees(workDir),
       timeoutSeconds: 60,
       envOverrides: {
-        FAKE_ENGINE_RECORD: path.join(workDir, "despacho.json"),
+        FAKE_ENGINE_RECORD: path.join(workDir, "dispatch.json"),
         FAKE_ENGINE_LINES: linesWithoutBlock(),
       },
     })(work.id);
@@ -4092,7 +4092,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const { versionId } = await registerLineage(
         baseUrl,
         token,
-        modelGraph("selecao-de-modelo-declarado", { model: "claude-haiku-4-5" }),
+        modelGraph("model-choice-declared", { model: "claude-haiku-4-5" }),
       );
 
       const spec = await dispatchOn(t, {
@@ -4111,7 +4111,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const { versionId } = await registerLineage(
         baseUrl,
         token,
-        modelGraph("selecao-de-modelo-ausente", {}),
+        modelGraph("model-choice-absent", {}),
       );
 
       const spec = await dispatchOn(t, {
@@ -4137,7 +4137,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const { versionId } = await registerLineage(
         baseUrl,
         token,
-        modelGraph("selecao-de-modelo-vazio", { model: "   " }),
+        modelGraph("model-choice-empty", { model: "   " }),
       );
 
       const spec = await dispatchOn(t, {
@@ -4160,7 +4160,7 @@ test("t166 — the model is resolved from the node the work is standing on", asy
       const { graphId, versionId } = await registerLineage(
         baseUrl,
         token,
-        modelGraph("selecao-de-modelo-proposta", {}),
+        modelGraph("model-choice-proposed", {}),
       );
 
       // The whole point of the ticket, end to end: `model` is graph DATA, so
@@ -4433,7 +4433,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
       worktrees: fakeWorktrees(workDir),
       timeoutSeconds: 60,
       envOverrides: {
-        FAKE_ENGINE_RECORD: path.join(workDir, "despacho.json"),
+        FAKE_ENGINE_RECORD: path.join(workDir, "dispatch.json"),
         FAKE_ENGINE_LINES: linesWithoutBlock(),
       },
     })(work.id);
@@ -4482,7 +4482,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
       const { versionId } = await registerLineage(
         baseUrl,
         token,
-        modelGraph("tier-ausente", {}),
+        modelGraph("tier-absent", {}),
       );
 
       const spec = await dispatchWithTier(t, {
@@ -4509,7 +4509,7 @@ test("t175 — the tier of the work item becomes the SessionSpec's modelTier", a
       const { versionId } = await registerLineage(
         baseUrl,
         token,
-        modelGraph("tier-com-modelo", { model: "claude-opus-5" }),
+        modelGraph("tier-with-model", { model: "claude-opus-5" }),
       );
 
       const spec = await dispatchWithTier(t, {
@@ -4621,9 +4621,9 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
       const workDir = mkdtempSync(
-        path.join(tmpdir(), "cartografo-t204-resolvido-"),
+        path.join(tmpdir(), "cartografo-t204-resolved-"),
       );
-      const record = path.join(workDir, "despacho-com-entrada.json");
+      const record = path.join(workDir, "dispatch-with-input.json");
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -4697,7 +4697,7 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
       );
 
       const workDir = mkdtempSync(
-        path.join(tmpdir(), "cartografo-t204-fecha-"),
+        path.join(tmpdir(), "cartografo-t204-closes-"),
       );
       const record = path.join(workDir, "never-dispatched.json");
       t.after(() => {
@@ -4939,7 +4939,7 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t259-contexto-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t259-context-"));
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -4987,7 +4987,7 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t259-contexto-500-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t259-context-500-"));
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -5030,12 +5030,12 @@ test("t259 — the production resolveInput reads GET /v1/jobs/:id/context", asyn
     const { createClaudeCodeDispatch } =
       await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-    const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t259-injetado-"));
+    const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t259-injected-"));
     t.after(() => {
       rmSync(workDir, { recursive: true, force: true });
     });
 
-    const job = await jobOnGate("travessia-t259-at2-injetado", 2593);
+    const job = await jobOnGate("travessia-t259-at2-injected", 2593);
     const record = path.join(workDir, "conferir.json");
     const { doFetch, routes } = contextStub();
 
@@ -5156,7 +5156,7 @@ test("t270 — the executor environment merges into the input, and wins on a col
     // The projection carries nothing at all, which is what a bench-only value
     // looks like: `banco_de_testes.caminho` has no projection source and never
     // will (D1).
-    const argv = await toldTo(t, "so-executor", 2702, {}, {
+    const argv = await toldTo(t, "executor-only", 2702, {}, {
       producao: { nota: FROM_EXECUTOR },
     });
 
@@ -5165,7 +5165,7 @@ test("t270 — the executor environment merges into the input, and wins on a col
   });
 
   await parent.test("t270 AT — a projected key survives the merge untouched", async (t) => {
-    const argv = await toldTo(t, "so-projecao", 2703, {
+    const argv = await toldTo(t, "projection-only", 2703, {
       producao: { nota: FROM_PROJECTION },
     }, {
       banco_de_testes: { caminho: "/srv/benches/cartografo" },
@@ -5179,7 +5179,7 @@ test("t270 — the executor environment merges into the input, and wins on a col
   });
 
   await parent.test("t270 AT — on a collision the executor wins", async (t) => {
-    const argv = await toldTo(t, "colisao", 2704, {
+    const argv = await toldTo(t, "collision", 2704, {
       producao: { nota: FROM_PROJECTION },
     }, {
       producao: { nota: FROM_EXECUTOR },
@@ -5536,7 +5536,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
   const versionId = await registerGraph(
     baseUrl,
     token,
-    twoEngineGraph("no-final-com-skill-t262", undefined),
+    twoEngineGraph("final-node-with-skill-t262", undefined),
   );
 
   const work = await api<FinishedWork>(
@@ -5765,12 +5765,12 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t268-unica-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t268-single-"));
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
 
-      const job = await jobOn("implementar", "travessia-t268-unica", 2681);
+      const job = await jobOn("implementar", "travessia-t268-single", 2681);
       const { doFetch, calls } = spyOn();
 
       // `do-crossing` requires `{nota: string}`, and this session reports a
@@ -5825,12 +5825,12 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t268-portao-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t268-gate-"));
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
 
-      const job = await jobOn("conferir", "travessia-t268-portao", 2682);
+      const job = await jobOn("conferir", "travessia-t268-gate", 2682);
       const { doFetch, calls } = spyOn();
 
       // `retrabalho` IS an edge of this gate, and `outcome: fail` is in the
@@ -6130,7 +6130,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
       const versionId = await registerGraph(
         baseUrl,
         token,
-        traversalGraph("travessia-t272-transitorio"),
+        traversalGraph("travessia-t272-transient"),
       );
       const work = await api<Work>(
         baseUrl,
@@ -6216,7 +6216,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t272-teto-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t272-cap-"));
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
@@ -6224,7 +6224,7 @@ test("t272 — a pre-session failure nobody can classify is retried, then bounde
       const versionId = await registerGraph(
         baseUrl,
         token,
-        traversalGraph("travessia-t272-teto"),
+        traversalGraph("travessia-t272-cap"),
       );
       const work = await api<Work>(
         baseUrl,
@@ -6383,12 +6383,12 @@ test("t273 — the bench is advanced before the transition, and a bench that ref
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t273-avanca-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t273-advances-"));
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
 
-      const job = await jobOn("travessia-t273-avanca", 2731);
+      const job = await jobOn("travessia-t273-advances", 2731);
 
       // One list for both facts, because the ORDER is the claim: a bench
       // advanced after the transition would let `testar` open against a stale
@@ -6434,12 +6434,12 @@ test("t273 — the bench is advanced before the transition, and a bench that ref
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t273-recusa-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t273-refuses-"));
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
 
-      const job = await jobOn("travessia-t273-recusa", 2732);
+      const job = await jobOn("travessia-t273-refuses", 2732);
 
       const posted: string[] = [];
       const transitions: string[] = [];
@@ -6495,12 +6495,12 @@ test("t273 — the bench is advanced before the transition, and a bench that ref
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
 
-      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t273-sem-merge-"));
+      const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t273-no-merge-"));
       t.after(() => {
         rmSync(workDir, { recursive: true, force: true });
       });
 
-      const job = await jobOn("travessia-t273-sem-merge", 2733);
+      const job = await jobOn("travessia-t273-no-merge", 2733);
 
       const asked: string[] = [];
       const outcome = await createClaudeCodeDispatch({

@@ -130,18 +130,55 @@ reasoning.
 | `@cartografo/runner` | 668 | 668 |
 | `@cartografo/screen` | 126 | 126 |
 | `@cartografo/surveyor` | 29 | 29 |
-| root | 351 | 351 |
+| root | 351 | 352 |
 
-No group lost a test. `npm run lint` and `npm run typecheck` are green.
+No group lost a test. The root group gains one: the fixture that pins AT6's
+narrowed rule, below. `npm run lint` and `npm run typecheck` are green.
 
-## What is left open
+## The gate this ticket had to clear on the way (t307's AT6)
 
-`tests/notes-redaction.test.mjs`'s AT6 is red, and nothing in this ticket's
-surface can honestly turn it green. It reads
-`git diff --name-only $(git merge-base main HEAD)` and asserts every path is in
-t307's `TOUCHABLE` list. t307 is merged, so on `main` that diff is empty and the
-assertion is vacuous; on ANY branch it is the current ticket's whole diff
-against a list of another ticket's files. This ticket is the first to hit it,
-and every ticket after it will. AT1–AT5 — the founder's actual guarantee, that
-no identity and no machine path survives and that the unflattering record does —
-are untouched and green.
+`tests/notes-redaction.test.mjs` is outside t304's declared surface. The founder
+authorised the change after the question was put to him, and the reason belongs
+here: AT6 was red for every branch and vacuously green on `main`, so it blocked
+the queue, and the ticket that trips such a gate first is the one that has to
+clear it. Leaving it for a follow-up would have meant t304 could not land.
+
+**What it asserted before.** Every path in
+`git diff --name-only $(git merge-base main HEAD)` — plus every untracked file —
+had to be in `TOUCHABLE`, t307's list of the sixteen files t307 declared.
+
+**Why that could not hold.** It is a claim about one ticket's diff: *t307 touched
+only what t307 declared*. That is a fact about a commit that is now history, and
+history does not need a standing test. Where it ran it proved nothing — t307 is
+merged, so on `main` the diff is empty — and where it fired it was wrong, because
+on any later branch it compared that branch's work against another ticket's file
+list. t305, t306 and t307 never ran against it; t304 is simply the first ticket
+behind it. The scope check it stood for had already been done, by the review
+t307 came out of.
+
+**What it asserts now.** A path is an undeclared edit when it is BOTH governed
+and undeclared: governed means it already existed under `notes/` when the
+redaction ran, or is one of the five `NON_NOTE_FILES`; undeclared means it is
+absent from `TOUCHABLE`. Untracked paths are no longer read at all — an untracked
+file cannot be an EDIT of a file that existed, which is the only thing the gate
+now judges.
+
+**Why this is a gate and not a weakened tripwire.** The standing property worth
+protecting is *nobody edits a redacted note without saying so*, not *nobody adds
+a note* — adding one is routine, t305 and t307 each did, and this note is a
+third. Both halves are pinned by a fixture test beside it
+(`AT6 — the rule reads governance, not the size of the branch`), and the teeth
+were confirmed by hand: appending one blank line to
+`notes/2026-08-18-action-plan.md` — a note that existed at the redaction and
+that `TOUCHABLE` does not name — turns AT6 red, and reverting it turns it green.
+AT1-AT5 are untouched, and they are the guarantee the founder actually asked
+for: no security identity, no machine path, and the n=1 / no-A/B / cost record
+still literally present. AT6 was never carrying that; it was carrying a scope
+claim.
+
+Three things deliberately not done, because they would each have been worse than
+asking: `TOUCHABLE` was not widened with t304's 53 paths — that list is t307's
+declaration of what t307 touched, and adding to it would make the sentence it
+asserts false and put the same obligation on every ticket afterwards; the test
+was not quietly deleted or rewritten before the founder ruled; and AT1-AT5 were
+not renumbered or moved.

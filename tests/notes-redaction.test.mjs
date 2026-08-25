@@ -23,6 +23,29 @@
  *   So the mechanical record is pinned as literal substrings: the node names,
  *   the verdict, the cost figures, the n=1 admission.
  *
+ * ## What AT6 asserts, and what it used to (t304)
+ *
+ * As t307 wrote it, AT6 read `git diff --name-only $(git merge-base main HEAD)`
+ * whole and required every path in it to be in {@link TOUCHABLE}. That is a
+ * claim about ONE ticket's diff — that t307 touched only what t307 declared —
+ * and a claim about a diff does not survive as a standing test. Once t307
+ * merged, the diff on `main` was empty and the assertion proved nothing; on
+ * every branch cut afterwards it compared THAT branch's work against t307's
+ * file list and failed. t304 was the first ticket to land behind it and the one
+ * that had to clear it; the scope check the assertion stood for had already
+ * been performed, by the review t307 came from.
+ *
+ * So AT6 now judges governance instead of branch size. It is an undeclared edit
+ * when a path is BOTH something the redaction has standing over — a file that
+ * already existed under `notes/` when the redaction ran, or one of
+ * {@link NON_NOTE_FILES} — AND absent from {@link TOUCHABLE}. Nothing was
+ * weakened to make a build pass: what AT1-AT5 guarantee is untouched, and the
+ * standing property AT6 is worth having for is the one it keeps. A ticket that
+ * edits a redacted note without declaring it still fails, which the fixture
+ * beside it pins and a manual edit of `notes/2026-08-18-action-plan.md`
+ * confirmed. What no longer fails is writing a NEW note, which every closing
+ * ticket does, or touching a file this redaction never governed.
+ *
  * ## Why the sweep reads RAW text
  *
  * The sibling Portuguese gates blank fenced blocks and backtick spans before
@@ -147,7 +170,8 @@ export const NON_NOTE_FILES = Object.freeze([
 export const MACHINE_PREFIXES = Object.freeze(['~/flowpilot', '~/bootstrap-core']);
 
 /**
- * Every file this ticket is allowed to have touched (AT6).
+ * Every file the redaction declared, and so the only governed paths AT6 lets
+ * through (see this file's header for what "governed" narrowed to in t304).
  *
  * Nine notes carried a thesis identity, an outside path or both; five non-note
  * files quoted one machine path each. The last two are this gate itself and the
@@ -324,7 +348,26 @@ test('AT5 — the five non-note files lost the machine path and kept the referen
   }
 });
 
-test('AT6 — the redaction touched nothing outside the files the ticket declared', () => {
+/**
+ * The changed paths that are an undeclared edit of a governed file, sorted.
+ *
+ * Two filters, and the order of them is the rule: a path counts only if the
+ * redaction has standing over it, and then only if {@link TOUCHABLE} does not
+ * declare it. Anything else on the branch — a new note, a new module, another
+ * ticket's whole diff — is not this gate's business and never was.
+ *
+ * @param {readonly string[]} governed Paths this gate has standing over.
+ * @param {readonly string[]} changed Paths the working branch changed.
+ * @returns {string[]} One entry per undeclared edit of a governed file.
+ */
+export function undeclaredEdits(governed, changed) {
+  const standing = new Set(governed);
+  return [...new Set(changed)]
+    .filter((entry) => standing.has(entry) && !TOUCHABLE.includes(entry))
+    .sort();
+}
+
+test('AT6 — no file the redaction governs changes without being declared', () => {
   let base;
   try {
     base = execFileSync('git', ['merge-base', 'main', 'HEAD'], {
@@ -335,27 +378,57 @@ test('AT6 — the redaction touched nothing outside the files the ticket declare
     return; // No `main` to compare against: nothing this gate can honestly claim.
   }
 
-  const changed = execFileSync('git', ['diff', '--name-only', '-z', base], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  })
-    .split('\0')
-    .filter((entry) => entry !== '');
+  const paths = (args) =>
+    execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' })
+      .split('\0')
+      .filter((entry) => entry !== '');
 
-  const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  })
-    .split('\0')
-    .filter((entry) => entry !== '');
-
-  const strays = [...new Set([...changed, ...untracked])].filter(
-    (entry) => !TOUCHABLE.includes(entry),
+  // What the redaction has standing over: the files that were already there
+  // when it ran. An untracked path is not read at all — it cannot be an EDIT of
+  // a file that existed, which is the only thing this gate judges.
+  const governed = paths(['ls-tree', '-r', '--name-only', '-z', base]).filter(
+    (entry) => entry.startsWith(TREE) || NON_NOTE_FILES.includes(entry),
   );
+
+  const strays = undeclaredEdits(governed, paths(['diff', '--name-only', '-z', base]));
 
   assert.deepEqual(
     strays,
     [],
-    `this ticket changed a file it never declared:\n${strays.join('\n')}`,
+    `a file the redaction governs changed without being declared:\n${strays.join('\n')}`,
+  );
+});
+
+test('AT6 — the rule reads governance, not the size of the branch', () => {
+  const REDACTED = 'notes/2026-08-18-third-bets-run.md';
+  const UNDECLARED = 'notes/2026-08-18-action-plan.md';
+  // What the tree held when the redaction ran: two notes it declared, one it
+  // read and left alone, and the five non-note files.
+  const governed = [
+    REDACTED,
+    'notes/execution-monitoring-prompt.md',
+    UNDECLARED,
+    ...NON_NOTE_FILES,
+  ];
+
+  assert.deepEqual(
+    undeclaredEdits(governed, [REDACTED]),
+    [],
+    'a redacted note that IS declared is the whole point of the list',
+  );
+  assert.deepEqual(
+    undeclaredEdits(governed, [UNDECLARED]),
+    [UNDECLARED],
+    'a note that existed at the merge and is not declared is exactly what this gate is for',
+  );
+  assert.deepEqual(
+    undeclaredEdits(governed, ['notes/2026-08-25-t304-closing-note.md']),
+    [],
+    'a note that did not exist at the merge is a new note, and writing one is routine',
+  );
+  assert.deepEqual(
+    undeclaredEdits(governed, ['packages/runner/src/controller/control-plane-client.ts']),
+    [],
+    'a file this redaction never governed is not this gate\u2019s business',
   );
 });

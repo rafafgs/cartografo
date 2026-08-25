@@ -8,8 +8,8 @@
  *
  * - **AT11** — the crossing by contract: each node's output feeds the next
  *   node's input, and the `decide` node produces no output at all without a
- *   recorded human answer. It is the proof, at contract level, of "a real thesis
- *   crosses all the way to the human decision" — not a live execution, which
+ *   recorded human answer. It is the proof, at contract level, that a thesis
+ *   crosses all the way to the human decision — not a live execution, which
  *   depends on t109 (see the bundle's README).
  * - **FR7** — the metrics recorded are process metrics, never a financial
  *   outcome (D14: "P&L is slow validation, never a round's metric").
@@ -30,9 +30,17 @@
  * Portuguese below is what no bundle edit could have changed — the projection
  * roots another package publishes (`perguntas_respondidas`, `pergunta`,
  * `resposta`), the reserved routing key `resultado`, the `problem_class` and the
- * directory (t282's), the crossing fixture's own frame keys and its Portuguese
- * thesis prose — plus the reference validator's pinned exports (t133,
+ * directory (t282's) — plus the reference validator's pinned exports (t133,
  * exception 5).
+ *
+ * The crossing fixture used to be on that list, and t308 took it off. It used to
+ * be an invented investment thesis written in Portuguese prose, under frame keys
+ * (`travessia`, `no`, `entrada`, `saida`) the fixture had invented for itself —
+ * which is exactly why no bundle edit had ever reached them, and why this one
+ * could. It is now `tests/fixtures/asymmetric-bets-crossing.fixture.json`:
+ * English frame keys (`crossing`, `node`, `input`, `output`), English strings,
+ * and the smallest payload set that still validates against both contracts of
+ * every node. What AT11 proves did not move; only the data it proves it with.
  *
  * Run with: `node --test tests/`
  */
@@ -66,11 +74,11 @@ const MANIFEST_SCHEMA_PATH = path.join(
   'formats',
   'skill-manifest.schema.json',
 );
-const THESIS_FIXTURE_PATH = path.join(
+const CROSSING_FIXTURE_PATH = path.join(
   ROOT,
   'tests',
   'fixtures',
-  'bets-asymmetric-thesis-example.json',
+  'asymmetric-bets-crossing.fixture.json',
 );
 
 /** D14's seven nodes: node -> { role, node_type, skill }. */
@@ -493,14 +501,14 @@ test('AT10 — every instructions carries the escalation block; only collect-fun
   }
 });
 
-test('AT11 — the thesis fixture crosses contract by contract up to the human decision', async () => {
+test('AT11 — the crossing fixture crosses contract by contract up to the human decision', async () => {
   const { validateAgainstSchema } = await bundleValidator();
   const doc = readJson(GRAPH_PATH);
-  const fixture = readJson(THESIS_FIXTURE_PATH);
+  const fixture = readJson(CROSSING_FIXTURE_PATH);
 
-  const steps = fixture.travessia;
+  const steps = fixture.crossing;
   assert.deepEqual(
-    steps.map((step) => step.no),
+    steps.map((step) => step.node),
     CHAIN,
     "the fixture's crossing follows triage → … → decide",
   );
@@ -509,27 +517,27 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
   //    document's (what the executor reads) and the manifest's (what the runner
   //    validates).
   for (const step of steps) {
-    const node = findNode(doc, step.no);
-    const manifest = readManifestOfSkill(NODES[step.no].skill);
+    const node = findNode(doc, step.node);
+    const manifest = readManifestOfSkill(NODES[step.node].skill);
     assert.deepEqual(
-      validateAgainstSchema(step.entrada, node.contract.input_schema),
+      validateAgainstSchema(step.input, node.contract.input_schema),
       [],
-      `node "${step.no}": input against the graph's input_schema`,
+      `node "${step.node}": input against the graph's input_schema`,
     );
     assert.deepEqual(
-      validateAgainstSchema(step.entrada, manifest.input),
+      validateAgainstSchema(step.input, manifest.input),
       [],
-      `node "${step.no}": input against the manifest's input`,
+      `node "${step.node}": input against the manifest's input`,
     );
     assert.deepEqual(
-      validateAgainstSchema(step.saida, node.contract.output_schema),
+      validateAgainstSchema(step.output, node.contract.output_schema),
       [],
-      `node "${step.no}": output against the graph's output_schema`,
+      `node "${step.node}": output against the graph's output_schema`,
     );
     assert.deepEqual(
-      validateAgainstSchema(step.saida, manifest.output),
+      validateAgainstSchema(step.output, manifest.output),
       [],
-      `node "${step.no}": output against the manifest's output`,
+      `node "${step.node}": output against the manifest's output`,
     );
   }
 
@@ -538,17 +546,17 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
   for (let i = 0; i < steps.length - 1; i += 1) {
     const previous = steps[i];
     const next = steps[i + 1];
-    const declared = Object.keys(readManifestOfSkill(NODES[next.no].skill).input.properties);
-    const carried = Object.keys(previous.saida).filter((key) => declared.includes(key));
+    const declared = Object.keys(readManifestOfSkill(NODES[next.node].skill).input.properties);
+    const carried = Object.keys(previous.output).filter((key) => declared.includes(key));
     assert.ok(
       carried.length >= 1,
-      `nothing from "${previous.no}" feeds "${next.no}": the chain is broken`,
+      `nothing from "${previous.node}" feeds "${next.node}": the chain is broken`,
     );
     for (const key of carried) {
       assert.deepEqual(
-        next.entrada[key],
-        previous.saida[key],
-        `"${key}" arrives from "${previous.no}" at "${next.no}" unchanged`,
+        next.input[key],
+        previous.output[key],
+        `"${key}" arrives from "${previous.node}" at "${next.node}" unchanged`,
       );
     }
   }
@@ -556,46 +564,46 @@ test('AT11 — the thesis fixture crosses contract by contract up to the human d
   // 3. Each gate's routing is a declared edge, never a free choice.
   const edgeFrom = (from, condition) =>
     doc.edges.find((edge) => edge.from === from && edge.condition === condition);
-  const redTeam = steps.find((step) => step.no === 'red-team');
-  assert.equal(redTeam.saida.outcome, 'pass', 'in the fixture the thesis survives the red team');
+  const redTeam = steps.find((step) => step.node === 'red-team');
+  assert.equal(redTeam.output.outcome, 'pass', 'in the fixture the thesis survives the red team');
   assert.ok(edgeFrom('red-team', 'survives'), 'passing the red team follows the "survives" edge');
 
   // 4. No edge out of `decide` is followed without a human answer.
   const decisionStep = steps.at(-1);
   const decisionManifest = readManifestOfSkill('escalate-decision');
-  const question = fixture.pergunta_de_alocacao;
+  const question = fixture.allocation_question;
 
-  const withoutAnswer = fixture.decisao_sem_resposta_humana;
+  const withoutAnswer = fixture.decision_without_human_answer;
   assert.deepEqual(
-    withoutAnswer.entrada.perguntas_respondidas,
+    withoutAnswer.input.perguntas_respondidas,
     [],
     'the no-human-answer variant reaches the node with an empty question queue',
   );
   assert.deepEqual(
-    validateAgainstSchema(withoutAnswer.entrada, decisionManifest.input),
+    validateAgainstSchema(withoutAnswer.input, decisionManifest.input),
     [],
     'entering `decide` without a human answer is legal — the session pauses, it does not fail',
   );
-  const errors = validateAgainstSchema(withoutAnswer.saida_tentada, decisionManifest.output);
+  const errors = validateAgainstSchema(withoutAnswer.attempted_output, decisionManifest.output);
   assert.ok(
     errors.length > 0 && errors.some((error) => /human_decision/.test(error.message)),
     `a result without the recorded human decision has to be refused by the contract: ${JSON.stringify(errors)}`,
   );
 
   // 5. With the answer recorded, the result is a literal transcription of it.
-  const recorded = decisionStep.entrada.perguntas_respondidas.find(
+  const recorded = decisionStep.input.perguntas_respondidas.find(
     (answered) => answered.id === question.id,
   );
-  assert.ok(recorded, 'the allocation answer arrives in entrada.perguntas_respondidas');
-  assert.equal(decisionStep.saida.human_decision.question_id, question.id);
+  assert.ok(recorded, 'the allocation answer arrives in input.perguntas_respondidas');
+  assert.equal(decisionStep.output.human_decision.question_id, question.id);
   assert.equal(
-    decisionStep.saida.human_decision.literal_answer,
+    decisionStep.output.human_decision.literal_answer,
     recorded.resposta,
     'the result quotes the human answer literally, without interpreting it',
   );
   assert.ok(
-    edgeFrom('decide', fixture.aresta_esperada),
-    `the "${fixture.aresta_esperada}" edge has to exist out of "decide"`,
+    edgeFrom('decide', fixture.expected_edge),
+    `the "${fixture.expected_edge}" edge has to exist out of "decide"`,
   );
 });
 
@@ -783,7 +791,7 @@ test('t263 — the README documents the two new inputs of the triage', () => {
 test('t276 — every gate declares `resultado`, the edge label its own report carries', async () => {
   const { validateAgainstSchema } = await bundleValidator();
   const doc = readJson(GRAPH_PATH);
-  const fixture = readJson(THESIS_FIXTURE_PATH);
+  const fixture = readJson(CROSSING_FIXTURE_PATH);
 
   const gates = doc.nodes.filter((node) => node.node_type === 'gate');
   assert.deepEqual(
@@ -817,7 +825,7 @@ test('t276 — every gate declares `resultado`, the edge label its own report ca
     const conditions = doc.edges.filter((edge) => edge.from === node.id).map((edge) => edge.condition);
     assert.equal(conditions.length, 2, `${node.id}: a gate of this graph has two ways out`);
 
-    const reported = fixture.travessia.find((step) => step.no === node.id).saida;
+    const reported = fixture.crossing.find((step) => step.node === node.id).output;
     for (const condition of conditions) {
       assert.deepEqual(
         validateAgainstSchema({ ...reported, resultado: condition }, manifest.output),

@@ -43,7 +43,7 @@ versions with the header and status rows filtered out, not by inspection.
 ### What this means for the sibling tickets
 
 The reader-facing sibling (`README.md`, `DECISIONS.md`,
-`docs/o-que-e-o-cartografo.md`, `docs/formatos/**`, the rest of `docs/spec/**`)
+`docs/what-cartografo-is.md`, `docs/formatos/**`, the rest of `docs/spec/**`)
 is **20 files, 8,432 lines, of which 6,304 are prose** and only 629 are table.
 
 The two ratios this ticket measured do not carry over, and the second one is the

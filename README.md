@@ -33,6 +33,14 @@ Origin: a conversation of 2026-08-14 about graph engineering, during the
 production of article O001 of the newsletter (repository `substack-agentes`).
 Rafael's idea; refined in the discussion.
 
+**And the patterns here are meant to be copied.** The licence grants the right;
+this sentence is the invitation, which is a different thing. What is worth
+taking is the design rather than the binary — a graph frozen during execution
+and versioned between rounds, a contract per capability instead of a prompt, a
+gate that verifies with its own evidence, a mutation that is a proposal until a
+human decides — and copying any of it into a tool of your own, under any
+architecture, is the use this repository was written for.
+
 ## The idea in one paragraph
 
 A person declares the problem they want to solve. The system queries a registry
@@ -45,6 +53,12 @@ circles) and proposes changes to the graph for the next round. The system
 improves itself between executions, with the human working on the exceptions.
 
 ## How to run it
+
+Below is the fast path: three commands to a registered graph, and a fourth that
+puts a runner behind them. For the slower way round — the same commands, plus
+putting a real piece of work on the graph and reading the system when that work
+stops moving — [`docs/getting-started.md`](docs/getting-started.md) walks it one
+step at a time.
 
 From a clean checkout to the first registered graph, in three commands:
 

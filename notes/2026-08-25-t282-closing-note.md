@@ -209,8 +209,9 @@ signal, which is why it needed a hand-written carve-out in the first place.
    kept in the comment because the test's own title still uses it. **That title
    is t280-era identifier debt and is still there** — one of several, alongside
    `validarGrafo` and `cliente-controle.ts`.
-6. **`docs/o-que-e-o-cartografo.md` is still Portuguese-named** and no gate reads
-   it as such: it trips neither general signal (`o` and `e` are not in the
+6. **`docs/o-que-e-o-cartografo.md` is still Portuguese-named** — t121 closed it,
+   and the file is `docs/what-cartografo-is.md` — **and no gate read it as such**:
+   it trips neither general signal (`o` and `e` are not in the
    stopword list) and none of the five stems. Out of scope here — it was never in
    any declared rename list — but it is the one Portuguese document name left in
    the tree, and whoever writes that ticket should add a stem for it.

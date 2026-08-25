@@ -170,12 +170,12 @@ subcommands, entity names in the API) also converge on English; tickets and
 specifications produced on the board, likewise. Changing a format key is a change
 of specification: the dedicated ticket amends t96–t99 and regularizes the
 bundles. These stay in Portuguese: the brand name cartografo, the repository's
-internal documents (DECISIONS.md, notes/) and docs/o-que-e-o-cartografo.md (the
+internal documents (DECISIONS.md, notes/) and docs/what-cartografo-is.md (the
 EN version is born during the open-source preparation, t121).
 
 ## D19 (2026-08-15) — Living functional documentation
 
-`docs/o-que-e-o-cartografo.md` explains the product in plain language and is a
+`docs/what-cartografo-is.md` explains the product in plain language and is a
 living document: every delivery that changes visible product behaviour updates
 the file in the same delivery (it counts as an implicit acceptance criterion of
 those tickets). The *(under construction)* markers come off as the features

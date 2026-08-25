@@ -928,17 +928,22 @@ test('FR10 — the command the README documents under "How to validate" runs gre
 });
 
 /**
- * The README as paragraphs: runs of lines separated by a blank line.
+ * The README as paragraphs: runs of lines separated by a blank line, each joined
+ * into one string.
  *
  * The unit is the paragraph because AT8's claim is about POSITION — the
  * disclaimer sits between the blockquote and the state line — and a claim about
- * position needs blocks rather than lines: this repository wraps at eighty
- * columns and every one of the three blocks below spans several lines.
+ * position needs blocks rather than lines.
+ *
+ * Joined, and that is not cosmetic: this repository wraps at eighty columns, so
+ * the sentence "is not investment advice" arrives split across a line break and
+ * no expression looking for it in the raw block would ever match. Same reading,
+ * for the same reason, as `tests/readme-status-claims.test.mjs`.
  */
 function paragraphsOf(markdown) {
   return markdown
     .split(/\n\s*\n/)
-    .map((block) => block.trim())
+    .map((block) => block.split('\n').join(' ').trim())
     .filter((block) => block !== '');
 }
 

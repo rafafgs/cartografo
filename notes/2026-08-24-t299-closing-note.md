@@ -1,7 +1,7 @@
 # t299 closing note — the documents a stranger reads, in English
 
 **Subject:** `README.md`, the decision ledger (renamed to `DECISIONS.md`),
-`docs/o-que-e-o-cartografo.md`, `docs/formatos/**` and every `docs/spec/**`
+`docs/what-cartografo-is.md`, `docs/formatos/**` and every `docs/spec/**`
 outside the wire glossary. The second of the three tickets t281 was split into
 on 2026-08-24.
 **Commits:** `58631f3` (tests, red at 5), `e6f6cdf` (the renames and every

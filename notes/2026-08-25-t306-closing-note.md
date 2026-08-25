@@ -105,9 +105,11 @@ the assumption.
 ### 1. `tests/no-portuguese-path-segments.test.mjs` would have gone red on a note
 
 Anticipated by the refinement, and it happened exactly as written: adding the
-stems `assimetric` and `desenvolvimento` makes the whole-tree gate bite
-`notas/2026-08-24-bets-assimetricas-closing-note.md`, whose filename spells the
-retired name and which no ticket of this series renames. `notas/` joins
+stems `assimetric` and `desenvolvimento` makes the whole-tree gate bite the bets
+closing note — `2026-08-24-bets-assimetricas-closing-note.md`, as it was named
+then, under `notas/` — whose filename spells the retired name and which no ticket
+of this series renames. (t305 moved the folder and t121 renamed the file, by
+founder instruction, to `notes/2026-08-24-t293-closing-note.md`.) `notas/` joins
 `packages/core/migrations/` in `FROZEN_TREES`, with the reason written down and
 mirroring the sibling gate's standing `notas` carve-out
 (`tests/no-portuguese-document-tree.test.mjs`'s `ALLOWED_SEGMENTS`). A new case

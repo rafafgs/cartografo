@@ -4,6 +4,10 @@
 > triage → collect fundamentals → analyze asymmetry → red team → size risk →
 > decide (mandatory human gate, always) → record and monitoring.
 
+**This bundle models an investment-analysis workflow as an example of graph
+structure — seven nodes, nine edges, a contract per step — and is not investment
+advice.**
+
 **State: content, not format.** This ticket (`t116`) designs no new format: it
 applies the two already settled — the graph document
 ([`docs/spec/graph.md`](../../docs/spec/graph.md), `t96`) and the skill manifest

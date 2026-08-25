@@ -36,7 +36,7 @@ everything unflattering stays in.
 
 Two notes the ticket named as candidates and left out were re-checked against
 the tree and are genuinely untouched: `notes/2026-08-18-action-plan.md` and
-`notes/2026-08-24-bets-assimetricas-closing-note.md` carry neither a position
+`notes/2026-08-24-t293-closing-note.md` carry neither a position
 nor a path.
 
 ## The five non-note files: real paths, not illustrations

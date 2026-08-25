@@ -261,7 +261,7 @@ also still spell them, necessarily. A gate against a name has to write it down.
   `surveyor-flow.md`, which still use "topografo" as a concept 9–16 times each
   outside the renamed titles, and `README.md:317`'s naming-rationale paragraph.
   Explicitly Out of Scope here — judgement-heavy translation, the same class
-  this series has repeatedly split off (t282's `docs/o-que-e-o-cartografo.md`
+  this series has repeatedly split off (t282's `docs/what-cartografo-is.md`
   follow-up is the precedent).
 - **`CARTOGRAFO_WEBHOOK_SEGREDO`** — a Portuguese word in an unrelated env var,
   flagged by the ticket's own refinement and untouched here.

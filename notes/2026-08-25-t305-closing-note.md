@@ -22,7 +22,7 @@ runtime constants — `packages/core/src/cli/import.ts:351`'s bundle convention 
 
 `git log --follow` crosses every rename: the bets `graph.json` reads back 12
 commits to `0d1ac3a` (t116), the software `graph.json` 17 commits to `057c8df`
-(t96), and `notes/2026-08-24-bets-assimetricas-closing-note.md` back through
+(t96), and `notes/2026-08-24-t293-closing-note.md` back through
 t300, t299 and t293.
 
 ## The `grafo.json` decision, and its reason
@@ -89,9 +89,12 @@ keeps its `standing exception` assertion for whoever adds the next entry.
 `FROZEN_TREES` is kept and moved with the folder, to `['packages/core/migrations/',
 'notes/']`. It is a different concern from the carve-out and always was: the
 carve-out was about the DIRECTORY's name, and this is about the historical
-FILENAMES under it — `notes/2026-08-24-bets-assimetricas-closing-note.md` spells
+FILENAMES under it — `2026-08-24-bets-assimetricas-closing-note.md` spelled
 a retired name because that is what was true the day it was written. Separating
-the two concerns is what let one move while the other stayed frozen.
+the two concerns is what let one move while the other stayed frozen. (t121 read
+that one differently and renamed it to `notes/2026-08-24-t293-closing-note.md`:
+the bundle it was named after no longer existed anywhere, which makes the name a
+dangling reference rather than a record. The entry stays, prospectively.)
 
 **`OWNER_TICKET` was already gone**, removed by t282 along with the assertion
 that used it. Nobody needs to go looking for it.
@@ -160,7 +163,7 @@ The ticket's FR5 recorded a verification: "`grafo` does not match `graph`,
 `paragraph`, or any tracked path". Two of those three hold. The third does not —
 `grafo` is a substring of the brand name, and
 `packages/core/bin/cartografo.mjs`, `packages/runner/bin/cartografo-runner.mjs`
-and `docs/o-que-e-o-cartografo.md` are three real tracked paths. `AT1` of the
+and `docs/what-cartografo-is.md` are three real tracked paths. `AT1` of the
 path gate went red on all three the first time the new stem ran.
 
 The fix is not an exclusion list. The brand name is the FIRST of the three
@@ -229,6 +232,7 @@ reading just did not implement the claim.
   retired spelling.
 - **`docs/o-que-e-o-cartografo.md`'s Portuguese filename** — out of scope since
   t282. Its `grafo.json` citation was repointed; the filename was not touched.
+  (t121 closed it: the file is `docs/what-cartografo-is.md`.)
 - **Recording D24 as a numbered `DECISIONS.md` entry.** Still unrecorded, still
   Rafael's or needing his explicit authorization. Every ticket in this series
   cites "D24" informally and `DECISIONS.md` still stops at D23.
@@ -269,7 +273,7 @@ refusal.
 
 `git ls-files | grep -E "(^|/)[^/]*(notas|grafo)[^/]*(/|$)"` returns four paths,
 and all four are out of the sweep by name: `packages/core/migrations/0002_grafo_versao_proposta.sql`
-(frozen), and `docs/o-que-e-o-cartografo.md`, `packages/core/bin/cartografo.mjs`,
+(frozen), and `docs/what-cartografo-is.md`, `packages/core/bin/cartografo.mjs`,
 `packages/runner/bin/cartografo-runner.mjs` (the brand name — which is why that
 grep, like the gate, has to know about `cartografo`).
 

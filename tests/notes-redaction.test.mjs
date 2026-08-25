@@ -178,6 +178,30 @@ export const MACHINE_PREFIXES = Object.freeze(['~/flowpilot', '~/bootstrap-core'
  * closing note the Definition of Done requires — the Code Changes table names
  * neither, because a ticket's file table lists the work and not the record of
  * it, and a gate that failed on its own existence would be a strange gate.
+ *
+ * ## Why a later ticket adds to this list, and what that costs (t121)
+ *
+ * Declaring is the mechanism. AT6 asks whether a governed path is on this list,
+ * and the header says in as many words that a ticket which edits a governed
+ * note WITHOUT declaring it still fails — so a ticket that edits one and DOES
+ * declare it is this gate working, not this gate being loosened. t121 is the
+ * first to need that, and it is worth being exact about what it cost.
+ *
+ * What AT6 governs is "every file that existed under `notes/` when the
+ * redaction ran", which is deliberately wider than "every file the redaction
+ * CHANGED": the wider set is what makes an undeclared edit visible at all. The
+ * five notes below sit in the gap between the two. t307 read every one of them
+ * and left every one of them alone — none carried a position, a filing or a
+ * machine path — so what this addition removes AT6's cover from is five files
+ * that never held redacted content. AT1-AT5 are untouched and still sweep the
+ * whole tree, including these five, on every run: nothing here can put a ticker
+ * or a home-directory path back.
+ *
+ * What t121 did to them was mechanical and is the reason they are here: it
+ * renamed `docs/o-que-e-o-cartografo.md` and the bets closing note, and these
+ * five cited one or the other. A citation left pointing at a path that no
+ * longer exists is the exact failure `tests/notes-rename-integrity.test.mjs`
+ * was written for, so leaving them alone was not an option either.
  */
 export const TOUCHABLE = Object.freeze([
   'notes/2026-08-15-first-execution.md',
@@ -192,6 +216,13 @@ export const TOUCHABLE = Object.freeze([
   ...NON_NOTE_FILES,
   'notes/2026-08-25-t307-closing-note.md',
   'tests/notes-redaction.test.mjs',
+  // t121: the five notes whose citation of a renamed file had to move with it.
+  // None of them was redacted by t307; see the note above this list.
+  'notes/2026-08-24-t281-closing-note.md',
+  'notes/2026-08-25-t282-closing-note.md',
+  'notes/2026-08-25-t303-closing-note.md',
+  'notes/2026-08-25-t305-closing-note.md',
+  'notes/2026-08-25-t306-closing-note.md',
 ]);
 
 /** Every `.md` under `notes/`, repo-relative, in directory order. */

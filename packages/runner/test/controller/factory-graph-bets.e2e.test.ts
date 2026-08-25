@@ -44,7 +44,7 @@ import { fileURLToPath } from 'node:url';
 
 import { bootCore } from '@cartografo/test-support';
 
-import { ClienteControle } from '../../src/controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../../src/controller/control-plane-client.ts';
 import { Controller } from '../../src/controller/controller.ts';
 import { createClaudeCodeDispatch } from '../../src/dispatch/dispatch.ts';
 import { decodeClaudeCodeSessionText } from '../../src/dispatch/session-text.ts';
@@ -271,8 +271,8 @@ test('t260 — triage → collect-fundamentals crosses the real bets bundle', as
     201,
   );
 
-  const client = new ClienteControle({ urlBase: baseUrl, token });
-  await client.registrarRunner('runner-t260-fabrica', 'the one that crosses the bets bundle');
+  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
+  await client.registerRunner('runner-t260-fabrica', 'the one that crosses the bets bundle');
 
   const worktrees = directoryWorktrees(root);
   let currentLines = reports(TRIAGED);
@@ -470,8 +470,8 @@ test('t270 — triage → record-monitoring closes the bets traversal on its own
     201,
   );
 
-  const client = new ClienteControle({ urlBase: baseUrl, token });
-  await client.registrarRunner('runner-t270-fabrica', 'the one that closes the short bets crossing');
+  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
+  await client.registerRunner('runner-t270-fabrica', 'the one that closes the short bets crossing');
 
   /**
    * Every call the dispatch made, so the claim "no operator touched this" is
@@ -794,8 +794,8 @@ async function startCrossing(
     201,
   );
 
-  const client = new ClienteControle({ urlBase: baseUrl, token });
-  await client.registrarRunner(runnerId, 'the one that crosses the whole bets bundle');
+  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
+  await client.registerRunner(runnerId, 'the one that crosses the whole bets bundle');
 
   const calls: string[] = [];
   const doFetch: typeof fetch = async (target, init) => {

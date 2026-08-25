@@ -22,7 +22,7 @@
  * Address precedence, also the core's: `--url` > `CARTOGRAFO_URL` >
  * `http://127.0.0.1:4317`. The default is REDECLARED here and not imported from
  * `@cartografo/core`: the runner imports nothing from the control plane's
- * package (D1), which is the boundary `cliente-controle.ts`'s own header states
+ * package (D1), which is the boundary `control-plane-client.ts`'s own header states
  * and `packages/screen/src/router.ts:83-92` already set the precedent for. The
  * price is a constant in two places; the alternative is a package boundary that
  * only holds while nobody looks.
@@ -33,7 +33,7 @@
 import { hostname } from 'node:os';
 import path from 'node:path';
 
-import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
+import { ControlPlaneClientError } from '../controller/control-plane-client.ts';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from '../controller/http-client.ts';
 // TYPE-only, and the subcommand itself is loaded with a dynamic `import()`
 // below. `prune.ts` imports the resolvers and the two environment-variable
@@ -523,7 +523,7 @@ function describeError(error: unknown): string {
  * @returns One line for stderr.
  */
 export function failureMessage(error: unknown, url: string): string {
-  if (error instanceof ErroDoControlPlane) {
+  if (error instanceof ControlPlaneClientError) {
     return error.status === 401 || error.status === 403
       ? `the control plane at ${url} refused the credential (${error.status}) — set ${TOKEN_ENV} or pass --token with the token printed when the control plane started`
       : `the control plane at ${url} refused the pairing — ${error.message}`;

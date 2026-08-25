@@ -18,9 +18,9 @@
  *
  * **Read-only, and structurally so.** It calls three `GET`s
  * (`/v1/executions/:id/metrics-by-version`, `/v1/graph-versions/:id`,
- * `/v1/executions/:id/events`) and nothing else. `ClienteControle` has no
+ * `/v1/executions/:id/events`) and nothing else. `ControlPlaneClient` has no
  * method to apply, approve or reject anything, on purpose, and the one write it
- * does have (`fecharResultadoDeProposta`) is not imported here. Measuring must
+ * does have (`closeProposalOutcome`) is not imported here. Measuring must
  * never be able to change what it measures.
  *
  * **It refuses rather than fabricating.** Every execution is measured, so one
@@ -46,7 +46,7 @@
  *     <metric> <execution_id> [execution_id ...] [--url <url>] [--token <token>]
  */
 
-import { ClienteControle } from '../src/controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../src/controller/control-plane-client.ts';
 import { isDenied, deniedMessage } from '../src/surveyor/command-line.ts';
 import { calculateFlowMetrics } from '../src/surveyor/metrics.ts';
 import { measureForExpectedMetric } from '../src/surveyor/outcome.ts';
@@ -66,7 +66,7 @@ if (parsed.kind === 'usage') {
 }
 
 const { metric, executionIds, url, token } = parsed.options;
-const client = new ClienteControle({
+const client = new ControlPlaneClient({
   urlBase: url,
   ...(token === undefined ? {} : { token }),
 });
@@ -76,7 +76,7 @@ const nodeIdsByVersion = new Map();
 
 async function nodeIdsOf(versionId) {
   if (!nodeIdsByVersion.has(versionId)) {
-    const version = await client.buscarVersaoDeGrafo(versionId);
+    const version = await client.getGraphVersion(versionId);
     nodeIdsByVersion.set(versionId, (version.snapshot.nodes ?? []).map((no) => no.id));
   }
   return nodeIdsByVersion.get(versionId);
@@ -89,7 +89,7 @@ async function nodeIdsOf(versionId) {
  * @returns {Promise<{executionId: number, versions: string[], value: number | null, why?: string}>}
  */
 async function measure(executionId) {
-  const byVersion = await client.metricasPorVersao(executionId);
+  const byVersion = await client.metricsByVersion(executionId);
   const versions = byVersion
     .map((row) => row.graph_version_id)
     .filter((id) => typeof id === 'string' && id !== '');
@@ -101,7 +101,7 @@ async function measure(executionId) {
     return { executionId, versions, value: null, why: 'no job of it declared a graph version' };
   }
 
-  const events = await client.listarEventosDaExecucao(executionId);
+  const events = await client.listExecutionEvents(executionId);
   if (events.length === 0) return { executionId, versions, value: null, why: 'it has no events' };
 
   // The union across versions, and not the first one: a round whose jobs
@@ -170,5 +170,5 @@ try {
   log('read-only: nothing was written to the control plane');
 } catch (error) {
   if (isDenied(error)) die(deniedMessage(url));
-  die(error instanceof Error ? `${error.message} ${JSON.stringify(error.corpo ?? '')}` : String(error));
+  die(error instanceof Error ? `${error.message} ${JSON.stringify(error.body ?? '')}` : String(error));
 }

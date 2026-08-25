@@ -6,7 +6,7 @@
  * can make it: `POST /v1/jobs` plus a running controller is enough to cross a
  * graph. Everything is real except the engine — a real control plane as a child
  * process (the pattern of `dispatch-and-lease.e2e.test.ts`), a real
- * `ClienteControle`, a real `Controller` taking real leases, the real dispatch,
+ * `ControlPlaneClient`, a real `Controller` taking real leases, the real dispatch,
  * the real skill registry and the real graph version. The engine is the fake one
  * for the reason the conformance kit already records: CI must be deterministic
  * and must not depend on an installed, authenticated CLI
@@ -35,7 +35,7 @@ import { bootCore } from '@cartografo/test-support';
 
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 import { buildCommand } from '../../src/engine/command.ts';
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
 import type * as DispatchModule from '../../src/dispatch/dispatch.ts';
 import type * as WorktreeModule from '../../src/dispatch/session-worktree.ts';
@@ -227,8 +227,8 @@ const ASKS = JSON.stringify([
 ]);
 
 test('t161 — one job crosses a whole graph with zero manual transitions', async (t) => {
-  const { ClienteControle } = await loadModule<typeof ClientModule>(
-    'src/controller/cliente-controle.ts',
+  const { ControlPlaneClient } = await loadModule<typeof ClientModule>(
+    'src/controller/control-plane-client.ts',
   );
   const { Controller } = await loadModule<typeof ControllerModule>('src/controller/controller.ts');
   const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(
@@ -269,8 +269,8 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
     201,
   );
 
-  const client = new ClienteControle({ urlBase: baseUrl, token });
-  await client.registrarRunner('runner-t161', 'o que atravessa sozinho');
+  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
+  await client.registerRunner('runner-t161', 'o que atravessa sozinho');
 
   // The fake engine is configured per DISPATCH (`envOverrides` is fixed on the
   // spec), so what a session says is decided by swapping the dispatch between
@@ -390,7 +390,7 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
   );
 
   // --- 6. a finished work stops being a candidate ---------------------------
-  const released = await client.listarTrabalhosLiberados();
+  const released = await client.listReleasedJobs();
   assert.deepEqual(
     released.map((candidate) => candidate.id),
     [],
@@ -447,8 +447,8 @@ test('t161 — one job crosses a whole graph with zero manual transitions', asyn
  * says WHICH one broke.
  */
 test('t259 — what a node produced reaches the next node through the real projection', async (t) => {
-  const { ClienteControle } = await loadModule<typeof ClientModule>(
-    'src/controller/cliente-controle.ts',
+  const { ControlPlaneClient } = await loadModule<typeof ClientModule>(
+    'src/controller/control-plane-client.ts',
   );
   const { Controller } = await loadModule<typeof ControllerModule>('src/controller/controller.ts');
   const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(
@@ -488,8 +488,8 @@ test('t259 — what a node produced reaches the next node through the real proje
     201,
   );
 
-  const client = new ClienteControle({ urlBase: baseUrl, token });
-  await client.registrarRunner('runner-t259', 'o que atravessa lendo o que ficou para trás');
+  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
+  await client.registerRunner('runner-t259', 'o que atravessa lendo o que ficou para trás');
 
   const worktrees = directoryWorktrees(root);
   let currentLines = QUIET;

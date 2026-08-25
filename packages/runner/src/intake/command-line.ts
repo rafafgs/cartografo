@@ -24,13 +24,13 @@
  *
  * Nothing anywhere sends NO header, and that is deliberate: an empty
  * `Authorization` would read as a credential in the server's log instead of as
- * the absence of one (`controller/cliente-controle.ts`).
+ * the absence of one (`controller/control-plane-client.ts`).
  *
  * English per D18; the flags a person types (`--class`, `--dir`) and the payload
  * keys stay as they are published.
  */
 
-import { ClienteControle } from '../controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../controller/control-plane-client.ts';
 import {
   createControlPlaneReader,
   type ControlPlaneReader,
@@ -219,11 +219,11 @@ export function createReader(
  * @param doFetch `fetch` implementation. Default: the global one. Test seam.
  * @returns The client, already carrying the credential when there is one.
  */
-export function createClient(options: IntakeRunOptions, doFetch?: typeof fetch): ClienteControle {
-  return new ClienteControle({
+export function createClient(options: IntakeRunOptions, doFetch?: typeof fetch): ControlPlaneClient {
+  return new ControlPlaneClient({
     urlBase: options.url,
     ...(options.token === undefined ? {} : { token: options.token }),
-    ...(doFetch === undefined ? {} : { buscar: doFetch }),
+    ...(doFetch === undefined ? {} : { fetchImpl: doFetch }),
   });
 }
 

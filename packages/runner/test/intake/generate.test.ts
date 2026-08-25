@@ -42,7 +42,7 @@ import type {
   SessionSpec,
   SessionStatus,
 } from '../../src/engine/types.ts';
-import type { EntradaDeIntake, Rascunho } from '../../src/controller/cliente-controle.ts';
+import type { IntakeInput, Draft } from '../../src/controller/control-plane-client.ts';
 import type * as GenerateModule from '../../src/intake/generate.ts';
 import type * as PromptModule from '../../src/intake/prompt.ts';
 
@@ -148,9 +148,9 @@ function readerWith(...names: readonly string[]): { fetchClasses: () => Promise<
 
 /** The write side: records every call and never makes one of its own. */
 class RecordingClient {
-  readonly calls: EntradaDeIntake[] = [];
+  readonly calls: IntakeInput[] = [];
 
-  async criarIntake(input: EntradaDeIntake): Promise<Rascunho> {
+  async createIntake(input: IntakeInput): Promise<Draft> {
     this.calls.push(input);
     return {
       id: 7,

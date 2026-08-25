@@ -58,7 +58,7 @@ import type {
   SessionStatus,
 } from "../../src/engine/types.ts";
 import { decodeClaudeCodeSessionText } from "../../src/dispatch/session-text.ts";
-import type * as ClientModule from "../../src/controller/cliente-controle.ts";
+import type * as ClientModule from "../../src/controller/control-plane-client.ts";
 import type * as ControllerModule from "../../src/controller/controller.ts";
 import type * as BudgetModule from "../../src/engine/resolve-budget.ts";
 import type * as DispatchModule from "../../src/dispatch/dispatch.ts";
@@ -339,8 +339,8 @@ function linesWithDenialAndBlock(): string {
 }
 
 test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP", async (t) => {
-  const { ClienteControle } = await loadModule<typeof ClientModule>(
-    "src/controller/cliente-controle.ts",
+  const { ControlPlaneClient } = await loadModule<typeof ClientModule>(
+    "src/controller/control-plane-client.ts",
   );
   const { Controller } = await loadModule<typeof ControllerModule>(
     "src/controller/controller.ts",
@@ -357,8 +357,8 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
     rmSync(workDir, { recursive: true, force: true });
   });
 
-  const client = new ClienteControle({ urlBase: baseUrl });
-  await client.registrarRunner("runner-t106", "o que despacha de verdade");
+  const client = new ControlPlaneClient({ urlBase: baseUrl });
+  await client.registerRunner("runner-t106", "o que despacha de verdade");
 
   const work = await api<Work>(
     baseUrl,
@@ -601,8 +601,8 @@ test("t106 — question, block, answer, unblock and re-dispatch, over real HTTP"
 });
 
 test("t125 — a denied tool becomes one permission-denial call, and does not fail the dispatch", async (t) => {
-  const { ClienteControle } = await loadModule<typeof ClientModule>(
-    "src/controller/cliente-controle.ts",
+  const { ControlPlaneClient } = await loadModule<typeof ClientModule>(
+    "src/controller/control-plane-client.ts",
   );
   const { createClaudeCodeDispatch } =
     await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
@@ -615,8 +615,8 @@ test("t125 — a denied tool becomes one permission-denial call, and does not fa
     rmSync(workDir, { recursive: true, force: true });
   });
 
-  const client = new ClienteControle({ urlBase: baseUrl });
-  await client.registrarRunner(
+  const client = new ControlPlaneClient({ urlBase: baseUrl });
+  await client.registerRunner(
     "runner-t125",
     "o que despacha com política de permissão",
   );
@@ -914,8 +914,8 @@ async function bootUnpatched(
 }
 
 test("t147 — with no token, the dispatch is refused 401 on its very first call", async (t) => {
-  const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
-    "src/controller/cliente-controle.ts",
+  const { ControlPlaneClientError } = await loadModule<typeof ClientModule>(
+    "src/controller/control-plane-client.ts",
   );
   const { createClaudeCodeDispatch } =
     await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
@@ -959,7 +959,7 @@ test("t147 — with no token, the dispatch is refused 401 on its very first call
     async () => dispatch(work.id),
     (error: unknown) => {
       assert.ok(
-        error instanceof ErroDoControlPlane,
+        error instanceof ControlPlaneClientError,
         `expected the control plane's own refusal, got: ${String(error)}`,
       );
       assert.equal(error.status, 401);
@@ -1772,8 +1772,8 @@ function serverError(): Response {
 }
 
 test("t148 — POST /v1/sessions fails after the engine started: the session is cancelled, not leaked", async (t) => {
-  const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
-    "src/controller/cliente-controle.ts",
+  const { ControlPlaneClientError } = await loadModule<typeof ClientModule>(
+    "src/controller/control-plane-client.ts",
   );
   const { createClaudeCodeDispatch } =
     await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
@@ -1838,7 +1838,7 @@ test("t148 — POST /v1/sessions fails after the engine started: the session is 
     async () => dispatch(work.id),
     (error: unknown) => {
       assert.ok(
-        error instanceof ErroDoControlPlane,
+        error instanceof ControlPlaneClientError,
         `the original failure must be what propagates, got: ${String(error)}`,
       );
       assert.equal(error.status, 500);
@@ -3141,8 +3141,8 @@ test("t161 — the node's skill drives the session, and the session advances the
     async (t) => {
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
-      const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
-        "src/controller/cliente-controle.ts",
+      const { ControlPlaneClientError } = await loadModule<typeof ClientModule>(
+        "src/controller/control-plane-client.ts",
       );
 
       const workDir = mkdtempSync(
@@ -3200,8 +3200,8 @@ test("t161 — the node's skill drives the session, and the session advances the
         async () => dispatch(job.id),
         (error: unknown) => {
           assert.ok(
-            error instanceof ErroDoControlPlane,
-            `expected ErroDoControlPlane, got: ${String(error)}`,
+            error instanceof ControlPlaneClientError,
+            `expected ControlPlaneClientError, got: ${String(error)}`,
           );
           assert.equal(error.status, 503);
           return true;
@@ -3517,8 +3517,8 @@ test("t161 — the node's skill drives the session, and the session advances the
     async (t) => {
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
-      const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
-        "src/controller/cliente-controle.ts",
+      const { ControlPlaneClientError } = await loadModule<typeof ClientModule>(
+        "src/controller/control-plane-client.ts",
       );
 
       const workDir = mkdtempSync(
@@ -3568,7 +3568,7 @@ test("t161 — the node's skill drives the session, and the session advances the
           })(job.id),
         (error: unknown) => {
           assert.ok(
-            error instanceof ErroDoControlPlane,
+            error instanceof ControlPlaneClientError,
             `expected the control plane's own refusal, got: ${String(error)}`,
           );
           assert.equal(error.status, 500);
@@ -4793,11 +4793,11 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
 /**
  * The t156 discipline, at the one place left that could regress it (t193).
  *
- * `cliente-controle.ts` reads the status before it decodes the body since
+ * `control-plane-client.ts` reads the status before it decodes the body since
  * t156, and its own test pins that. This module used to have a second,
  * hand-rolled `call()` that decoded FIRST and checked the status three lines
  * later — so the same 502 from the same proxy came out of the other client as
- * an `ErroDoControlPlane` and out of this one as a raw `SyntaxError`, which
+ * an `ControlPlaneClientError` and out of this one as a raw `SyntaxError`, which
  * carries neither the status nor the text.
  *
  * The first call of a dispatch is the one under test because it is the one a
@@ -4806,12 +4806,12 @@ test("t204 — a skill's placeholders resolve into the session, or nothing opens
  */
 const HTML_502 = "<html>502 Bad Gateway</html>";
 
-test("t193 — a non-JSON error body is an ErroDoControlPlane, never a raw SyntaxError", async (t) => {
+test("t193 — a non-JSON error body is an ControlPlaneClientError, never a raw SyntaxError", async (t) => {
   const { createClaudeCodeDispatch } = await loadModule<typeof DispatchModule>(
     DISPATCH_MODULE,
   );
-  const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(
-    "src/controller/cliente-controle.ts",
+  const { ControlPlaneClientError } = await loadModule<typeof ClientModule>(
+    "src/controller/control-plane-client.ts",
   );
 
   const workDir = mkdtempSync(path.join(tmpdir(), "cartografo-t193-502-"));
@@ -4840,12 +4840,12 @@ test("t193 — a non-JSON error body is an ErroDoControlPlane, never a raw Synta
     async () => dispatch(193),
     (error: unknown) => {
       assert.ok(
-        error instanceof ErroDoControlPlane,
-        `expected ErroDoControlPlane, got ${error instanceof Error ? error.name : String(error)}`,
+        error instanceof ControlPlaneClientError,
+        `expected ControlPlaneClientError, got ${error instanceof Error ? error.name : String(error)}`,
       );
       assert.equal(error.status, 502);
       assert.equal(
-        error.corpo,
+        error.body,
         HTML_502,
         "the raw text is what is left for whoever logs it: whoever answered was not the control plane",
       );
@@ -5509,8 +5509,8 @@ test("t296 — a quota refusal blocks nothing and is not retried while it cools 
 });
 
 test("t262 — the controller dispatches a final node that pins a skill, and only its report ends the traversal", async (t) => {
-  const { ClienteControle } = await loadModule<typeof ClientModule>(
-    "src/controller/cliente-controle.ts",
+  const { ControlPlaneClient } = await loadModule<typeof ClientModule>(
+    "src/controller/control-plane-client.ts",
   );
   const { Controller } = await loadModule<typeof ControllerModule>(
     "src/controller/controller.ts",
@@ -5549,8 +5549,8 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
     token,
   );
 
-  const client = new ClienteControle({ urlBase: baseUrl, token });
-  await client.registrarRunner("runner-t262", "o que roda o nó final");
+  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
+  await client.registerRunner("runner-t262", "o que roda o nó final");
 
   let currentRecord = path.join(workDir, "implementar.json");
   const controller = new Controller({
@@ -5602,7 +5602,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
   // a `completed` job before the runner ever sees it, so the last node's skill
   // used to get no session at all.
   assert.deepEqual(
-    (await client.listarTrabalhosLiberados()).map((candidate) => candidate.id),
+    (await client.listReleasedJobs()).map((candidate) => candidate.id),
     [work.id],
     "a job that arrived with work left to do is still a candidate",
   );
@@ -5649,7 +5649,7 @@ test("t262 — the controller dispatches a final node that pins a skill, and onl
   );
 
   assert.deepEqual(
-    (await client.listarTrabalhosLiberados()).map((candidate) => candidate.id),
+    (await client.listReleasedJobs()).map((candidate) => candidate.id),
     [],
     "and a finished job stops being anybody's candidate",
   );

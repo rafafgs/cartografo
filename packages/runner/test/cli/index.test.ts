@@ -25,12 +25,12 @@ import test from 'node:test';
 
 import type * as CliModule from '../../src/cli/index.ts';
 import type * as RunModule from '../../src/cli/run.ts';
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
 
 const CLI_MODULE = 'src/cli/index.ts';
-const CLIENT_MODULE = 'src/controller/cliente-controle.ts';
+const CLIENT_MODULE = 'src/controller/control-plane-client.ts';
 
 /** The address the runner falls back to when nobody says otherwise. */
 const DEFAULT_URL = 'http://127.0.0.1:4317';
@@ -154,7 +154,7 @@ test('AT2 — with no --url and no CARTOGRAFO_URL, the address is the local defa
 
 test('AT3 — --token beats CARTOGRAFO_TOKEN, and with neither there is no credential', async () => {
   const { parseRunnerOptions } = await loadModule<typeof CliModule>(CLI_MODULE);
-  const { ClienteControle } = await loadModule<typeof ClientModule>(CLIENT_MODULE);
+  const { ControlPlaneClient } = await loadModule<typeof ClientModule>(CLIENT_MODULE);
 
   assert.equal(
     parseRunnerOptions(['--token', 'from-the-flag', ...ELSEWHERE], {
@@ -182,8 +182,8 @@ test('AT3 — --token beats CARTOGRAFO_TOKEN, and with neither there is no crede
     });
   };
 
-  const client = new ClienteControle({ urlBase: options.url, token: options.token, buscar: doFetch });
-  await client.registrarRunner('runner-at3');
+  const client = new ControlPlaneClient({ urlBase: options.url, token: options.token, fetchImpl: doFetch });
+  await client.registerRunner('runner-at3');
 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].authorization, undefined, 'an empty header would look like a credential');
@@ -257,7 +257,7 @@ test('AT6 — an unrecognized flag and an extra positional argument both exit 2'
 
 test('a runner that could not run exits 1, saying which control plane and what to do', async () => {
   const { runRunnerCli } = await loadModule<typeof CliModule>(CLI_MODULE);
-  const { ErroDoControlPlane } = await loadModule<typeof ClientModule>(CLIENT_MODULE);
+  const { ControlPlaneClientError } = await loadModule<typeof ClientModule>(CLIENT_MODULE);
 
   // Not an AT of its own: it is the `1` of the exit-code table, and the line it
   // writes is the difference between "the port is somebody else's" and
@@ -265,7 +265,7 @@ test('a runner that could not run exits 1, saying which control plane and what t
   const failures: Array<{ thrown: unknown; expected: RegExp }> = [
     { thrown: new TypeError('fetch failed'), expected: /npx cartografo/ },
     {
-      thrown: new ErroDoControlPlane('POST /v1/runners respondeu 401', 401, undefined),
+      thrown: new ControlPlaneClientError('POST /v1/runners respondeu 401', 401, undefined),
       expected: /--token/,
     },
   ];

@@ -28,7 +28,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { bootCore } from '@cartografo/test-support';
 
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -53,11 +53,11 @@ let controllerCache: typeof ControllerModule | null = null;
 
 async function loadClient(): Promise<typeof ClientModule> {
   assert.ok(
-    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'cliente-controle.ts')),
-    'artifact does not exist yet: packages/runner/src/controller/cliente-controle.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'control-plane-client.ts')),
+    'artifact does not exist yet: packages/runner/src/controller/control-plane-client.ts',
   );
   clientCache ??= (await import(
-    new URL('../../src/controller/cliente-controle.ts', import.meta.url).href
+    new URL('../../src/controller/control-plane-client.ts', import.meta.url).href
   )) as typeof ClientModule;
   return clientCache;
 }
@@ -112,7 +112,7 @@ function fetchWithSeededQueue(): typeof fetch {
 }
 
 test('AT17 — a runner dies, the lease expires and the other runner takes the same work', async (t) => {
-  const { ClienteControle } = await loadClient();
+  const { ControlPlaneClient } = await loadClient();
   const { Controller } = await loadController();
 
   const { url: urlBase, token } = await bootCore(t);
@@ -124,10 +124,10 @@ test('AT17 — a runner dies, the lease expires and the other runner takes the s
   // about a lease outliving its owner — not about who authenticated. The
   // runner credential that t143 mints at pairing is exercised end to end in
   // `cross-machine-dispatch.e2e.test.ts`.
-  const clientA = new ClienteControle({ urlBase, buscar: doFetch, token });
-  const clientB = new ClienteControle({ urlBase, buscar: doFetch, token });
-  await clientA.registrarRunner('runner-a', 'the one that dies');
-  await clientB.registrarRunner('runner-b', 'the one that inherits');
+  const clientA = new ControlPlaneClient({ urlBase, fetchImpl: doFetch, token });
+  const clientB = new ControlPlaneClient({ urlBase, fetchImpl: doFetch, token });
+  await clientA.registerRunner('runner-a', 'the one that dies');
+  await clientB.registerRunner('runner-b', 'the one that inherits');
 
   let announceDispatched: () => void = () => undefined;
   const dispatchedA = new Promise<void>((resolve) => {

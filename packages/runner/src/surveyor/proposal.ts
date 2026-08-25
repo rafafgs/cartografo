@@ -47,10 +47,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type {
-  ClienteControle,
-  Proposta,
-  VersaoDeGrafo,
-} from '../controller/cliente-controle.ts';
+  ControlPlaneClient,
+  Proposal,
+  GraphVersion,
+} from '../controller/control-plane-client.ts';
 
 /**
  * The one client this lens runs on, re-exported (t247).
@@ -62,7 +62,7 @@ import type {
  * a client, so the lens is where it is offered — and the exported surface stays
  * the three subpaths that ticket named.
  */
-export { ClienteControle } from '../controller/cliente-controle.ts';
+export { ControlPlaneClient } from '../controller/control-plane-client.ts';
 import type { EngineAdapter, SessionSpec, SessionStatus } from '../engine/types.ts';
 import {
   calculateFlowMetrics,
@@ -168,7 +168,7 @@ export interface SurveyorResult {
   evidencia: FlowEvidence | null;
   metrica_esperada: ExpectedMetric | null;
   /** The proposal, always `pendente`; `null` when there was nothing to propose. */
-  proposta: Proposta | null;
+  proposta: Proposal | null;
   /**
    * Whether THIS run is what put {@link SurveyorResult.proposta} in the book.
    *
@@ -190,7 +190,7 @@ export interface SurveyorResult {
 /** Configuration of one surveyor run. */
 export interface SurveyorOptions {
   /** The runner's one HTTP door to the control plane. */
-  client: ClienteControle;
+  client: ControlPlaneClient;
   /** The engine. Production passes `ClaudeCodeAdapter`; tests pass the fake. */
   adapter: EngineAdapter;
   /** The execution to read. */
@@ -476,7 +476,7 @@ export const INSTRUCTIONS = [
  * Portuguese for the same reason {@link INSTRUCTIONS} is: it is content handed
  * to a session, not code.
  */
-export function buildPrompt(version: VersaoDeGrafo, evidence: FlowEvidence): string {
+export function buildPrompt(version: GraphVersion, evidence: FlowEvidence): string {
   const nodes = version.snapshot.nodes ?? [];
   const edges = version.snapshot.edges ?? [];
 
@@ -535,7 +535,7 @@ interface Outcome {
  */
 async function chooseOperations(
   options: SurveyorOptions,
-  version: VersaoDeGrafo,
+  version: GraphVersion,
   evidence: FlowEvidence,
   log: (message: string) => void,
 ): Promise<unknown[]> {
@@ -629,7 +629,7 @@ async function chooseOperations(
  * the one the evidence is mostly about.
  */
 async function resolveVersion(options: SurveyorOptions): Promise<string> {
-  const rows = await options.client.metricasPorVersao(options.executionId);
+  const rows = await options.client.metricsByVersion(options.executionId);
   const declared = rows.filter(
     (row): row is { graph_version_id: string; jobs: number; events: number } =>
       row.graph_version_id !== null,
@@ -657,7 +657,7 @@ async function resolveVersion(options: SurveyorOptions): Promise<string> {
  * @throws {SurveyorError} When the execution declares no version, or the
  *   session failed to produce a well-formed diff. Nothing is posted in either
  *   case.
- * @throws {ErroDoControlPlane} When the API refuses a call.
+ * @throws {ControlPlaneClientError} When the API refuses a call.
  */
 export async function proposeFlowImprovement(
   options: SurveyorOptions,
@@ -665,8 +665,8 @@ export async function proposeFlowImprovement(
   const log = options.log ?? ((): void => undefined);
 
   const versionId = await resolveVersion(options);
-  const version = await options.client.buscarVersaoDeGrafo(versionId);
-  const events = await options.client.listarEventosDaExecucao(options.executionId);
+  const version = await options.client.getGraphVersion(versionId);
+  const events = await options.client.listExecutionEvents(options.executionId);
   log(`execution ${options.executionId}: ${events.length} events under version ${versionId}`);
 
   const nodeIds = (version.snapshot.nodes ?? []).map((node) => node.id);
@@ -698,7 +698,7 @@ export async function proposeFlowImprovement(
   // The outer keys went English with t226 and what is inside `operations` with
   // t228 (D20's third child). What `evidence` and `expected_metric` carry is the
   // frozen hypothesis shape (FR5), which is nobody's surface in D20.
-  const { proposal, created } = await options.client.criarProposta({
+  const { proposal, created } = await options.client.createProposal({
     graph_id: version.graph_id,
     target_version: version.id,
     operations,

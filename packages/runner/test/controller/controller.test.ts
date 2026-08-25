@@ -18,7 +18,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -35,11 +35,11 @@ let controllerCache: typeof ControllerModule | null = null;
 
 async function loadClient(): Promise<typeof ClientModule> {
   assert.ok(
-    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'cliente-controle.ts')),
-    'artifact does not exist yet: packages/runner/src/controller/cliente-controle.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'control-plane-client.ts')),
+    'artifact does not exist yet: packages/runner/src/controller/control-plane-client.ts',
   );
   clientCache ??= (await import(
-    new URL('../../src/controller/cliente-controle.ts', import.meta.url).href
+    new URL('../../src/controller/control-plane-client.ts', import.meta.url).href
   )) as typeof ClientModule;
   return clientCache;
 }
@@ -80,7 +80,7 @@ interface EnvironmentOptions {
   /**
    * Status of `POST /v1/leases/:id/releases`. Default: 200.
    *
-   * Anything outside 2xx makes `client.liberar` throw `ErroDoControlPlane` —
+   * Anything outside 2xx makes `client.release` throw `ControlPlaneClientError` —
    * the transient failure of the control plane while the lease is being given
    * back (t158).
    */
@@ -92,12 +92,12 @@ interface EnvironmentOptions {
  * contract and keeps everything it received.
  */
 async function environment(options: EnvironmentOptions = {}): Promise<{
-  client: ClientModule.ClienteControle;
+  client: ClientModule.ControlPlaneClient;
   calls: HttpCall[];
   heartbeats: () => number;
   releases: () => number;
 }> {
-  const { ClienteControle } = await loadClient();
+  const { ControlPlaneClient } = await loadClient();
   const releaseStatus = options.releaseStatus ?? 200;
   const calls: HttpCall[] = [];
 
@@ -147,7 +147,7 @@ async function environment(options: EnvironmentOptions = {}): Promise<{
   };
 
   return {
-    client: new ClienteControle({ urlBase: BASE_URL, buscar: doFetch }),
+    client: new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl: doFetch }),
     calls,
     heartbeats: () => calls.filter((call) => call.url.endsWith('/heartbeats')).length,
     releases: () => calls.filter((call) => call.url.endsWith('/releases')).length,
@@ -281,7 +281,7 @@ test('AT16 — a dispatch that blows up STILL releases the lease', async (t) => 
 });
 
 test('AT16 — with no released work, the tick asks for no lease at all', async () => {
-  const { ClienteControle } = await loadClient();
+  const { ControlPlaneClient } = await loadClient();
   const { Controller } = await loadController();
 
   const calls: string[] = [];
@@ -295,7 +295,7 @@ test('AT16 — with no released work, the tick asks for no lease at all', async 
 
   const controller = new Controller({
     ...BASE_OPTIONS,
-    client: new ClienteControle({ urlBase: BASE_URL, buscar: doFetch }),
+    client: new ControlPlaneClient({ urlBase: BASE_URL, fetchImpl: doFetch }),
     dispatch: async () => {
       throw new Error('it should not dispatch without released work');
     },
@@ -308,7 +308,7 @@ test('AT16 — with no released work, the tick asks for no lease at all', async 
 test('t158 — a release that also fails does not take the place of the dispatch error', async (t) => {
   t.mock.timers.enable({ apis: ['setInterval'] });
 
-  const { ErroDoControlPlane } = await loadClient();
+  const { ControlPlaneClientError } = await loadClient();
   const { Controller } = await loadController();
 
   const broken = await environment({ releaseStatus: 503 });
@@ -330,7 +330,7 @@ test('t158 — a release that also fails does not take the place of the dispatch
 
   const releaseError: unknown = controller.lastReleaseError;
   assert.ok(
-    releaseError instanceof ErroDoControlPlane,
+    releaseError instanceof ControlPlaneClientError,
     'the release failure does not disappear: it stays observable on the controller',
   );
   assert.equal(releaseError.status, 503);
@@ -349,7 +349,7 @@ test('t158 — a release that also fails does not take the place of the dispatch
     { jobId: 1, leaseId: LEASE.id },
     'work that ended well ended well, whatever the control plane answered afterwards',
   );
-  assert.ok(happy.lastReleaseError instanceof ErroDoControlPlane);
+  assert.ok(happy.lastReleaseError instanceof ControlPlaneClientError);
 });
 
 /* -------------------------------------------------------------------------- */
@@ -363,7 +363,7 @@ const NEVER_ANSWERS: typeof fetch = () => new Promise<Response>(() => undefined)
 const NEVER_MS = 5_000;
 
 test('t193 — a tick against a control plane that never answers rejects instead of hanging', async () => {
-  const { ClienteControle } = await loadClient();
+  const { ControlPlaneClient } = await loadClient();
   const { Controller } = await loadController();
 
   // The contract pinned here is the CONTROLLER'S, and it is deliberately taken
@@ -372,9 +372,9 @@ test('t193 — a tick against a control plane that never answers rejects instead
   // settles is a runner that stops working and cannot even be asked to stop.
   const controller = new Controller({
     ...BASE_OPTIONS,
-    client: new ClienteControle({
+    client: new ControlPlaneClient({
       urlBase: BASE_URL,
-      buscar: NEVER_ANSWERS,
+      fetchImpl: NEVER_ANSWERS,
       requestTimeoutMs: 150,
     }),
     dispatch: async () => {
@@ -421,16 +421,16 @@ test('t193 — a heartbeat still in flight is skipped, never overlapped', async 
   // is a beat that has not come back yet, and a `fetch` fake answers too
   // quickly to ever describe one.
   const client = {
-    listarTrabalhosLiberados: async () => [
+    listReleasedJobs: async () => [
       { id: 1, title: 'implementar t193', current_node_id: 'implementar', blocked: false, completed: false, execution_id: 9, graph_version_id: null },
     ],
-    pedirLease: async () => ({ lease: LEASE }),
+    requestLease: async () => ({ lease: LEASE }),
     heartbeat: async () =>
       await new Promise((resolve) => {
         beats.push(resolve);
       }),
-    liberar: async () => LEASE,
-  } as unknown as ClientModule.ClienteControle;
+    release: async () => LEASE,
+  } as unknown as ClientModule.ControlPlaneClient;
 
   const controller = new Controller({
     ...BASE_OPTIONS,
@@ -479,7 +479,7 @@ test('t193 — a heartbeat still in flight is skipped, never overlapped', async 
 /* -------------------------------------------------------------------------- */
 
 /** A candidate as `GET /v1/jobs` describes one, for the fakes below. */
-const candidate = (id: number): ClientModule.Trabalho => ({
+const candidate = (id: number): ClientModule.Job => ({
   id,
   title: `implementar t208 #${id}`,
   current_node_id: 'implementar',
@@ -498,19 +498,19 @@ const candidate = (id: number): ClientModule.Trabalho => ({
  */
 function refusingClient(
   candidates: number[],
-  answers: Array<{ lease: typeof LEASE | null; reason?: ClientModule.MotivoDeRecusa }>,
-): { client: ClientModule.ClienteControle; asked: () => number[] } {
+  answers: Array<{ lease: typeof LEASE | null; reason?: ClientModule.DenialReason }>,
+): { client: ClientModule.ControlPlaneClient; asked: () => number[] } {
   const asked: number[] = [];
 
   const client = {
-    listarTrabalhosLiberados: async () => candidates.map(candidate),
-    pedirLease: async (request: ClientModule.PedidoDeLease) => {
+    listReleasedJobs: async () => candidates.map(candidate),
+    requestLease: async (request: ClientModule.LeaseRequest) => {
       asked.push(request.job_id);
       return answers[asked.length - 1] ?? { lease: null };
     },
     heartbeat: async () => LEASE,
-    liberar: async () => LEASE,
-  } as unknown as ClientModule.ClienteControle;
+    release: async () => LEASE,
+  } as unknown as ClientModule.ControlPlaneClient;
 
   return { client, asked: () => asked };
 }

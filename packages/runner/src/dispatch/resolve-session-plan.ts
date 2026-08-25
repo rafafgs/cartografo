@@ -59,7 +59,7 @@ export interface SessionPlan {
  *
  * Every throw is deliberate and every one of them is somebody else's to
  * classify: a dangling `graph_version_id` comes back as the read's own
- * `ErroDoControlPlane`, an engine with no route as {@link UnknownEngineError},
+ * `ControlPlaneClientError`, an engine with no route as {@link UnknownEngineError},
  * and the three skill refusals as `render-skill-instructions.ts`'s own classes.
  * This function adds no error type of its own — inventing one here would put a
  * layer between the cause and the module that names it.

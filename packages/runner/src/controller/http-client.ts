@@ -2,7 +2,7 @@
  * The one HTTP mechanic every runner-initiated request uses (t193, FR1).
  *
  * Three clients in this package had hand-rolled the same six lines —
- * `ClienteControle`'s `#get`/`#post`, `createClaudeCodeDispatch`'s own `call()`
+ * `ControlPlaneClient`'s `#get`/`#post`, `createClaudeCodeDispatch`'s own `call()`
  * and `synthesizer/control-plane-client.ts`'s `getJson()` — and the copies had
  * already drifted in the way copies do: t156 fixed the decode order in one of
  * them and left the other two decoding the body BEFORE looking at the status.

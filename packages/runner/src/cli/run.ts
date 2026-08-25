@@ -3,7 +3,7 @@
  * objects and becomes a process (t162, FR5–FR7).
  *
  * Everything below already existed and is already tested on its own —
- * `ClienteControle` (t103) speaks HTTP, `Controller` (t103) turns a tick into a
+ * `ControlPlaneClient` (t103) speaks HTTP, `Controller` (t103) turns a tick into a
  * lease, `createClaudeCodeDispatch` (t106/t141) opens the session and reports
  * back, and the two `EngineAdapter`s (t104/t119) run the CLIs. What did NOT
  * exist was the wiring that puts them together, which until this ficha lived
@@ -57,7 +57,7 @@
 
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { ClienteControle } from '../controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../controller/control-plane-client.ts';
 import { Controller } from '../controller/controller.ts';
 import { createMainLineAdvancer } from '../dispatch/advance-main-line.ts';
 import { createClaudeCodeDispatch, type EngineRoute } from '../dispatch/dispatch.ts';
@@ -193,7 +193,7 @@ export interface RunnerOptions {
   /**
    * Deadline of every control-plane call, in milliseconds (t193).
    *
-   * Threaded to both clients this function builds — `ClienteControle` and the
+   * Threaded to both clients this function builds — `ControlPlaneClient` and the
    * dispatch's own — because a runner has exactly one control plane and no
    * reason to give up on it at two different moments. Default:
    * `DEFAULT_REQUEST_TIMEOUT_MS`.
@@ -340,7 +340,7 @@ async function verifyEngineCli(engine: string, adapter: EngineAdapter): Promise<
  * @param adapter The adapter to ask.
  */
 async function reportModels(
-  client: ClienteControle,
+  client: ControlPlaneClient,
   engine: string,
   adapter: EngineAdapter,
 ): Promise<void> {
@@ -376,7 +376,7 @@ async function reportModels(
  *   dispatched is still in flight.
  */
 export async function runRunner(options: RunnerOptions): Promise<void> {
-  const client = new ClienteControle({
+  const client = new ControlPlaneClient({
     urlBase: options.url,
     token: options.token,
     requestTimeoutMs: options.requestTimeoutMs,
@@ -384,7 +384,7 @@ export async function runRunner(options: RunnerOptions): Promise<void> {
 
   // First call of the process, and it is not negotiable: everything below
   // answers 404 for a runner the control plane has never heard of.
-  await client.registrarRunner(options.runnerId);
+  await client.registerRunner(options.runnerId);
 
   // Exactly one route, and the key is the engine's own name: the dispatch
   // resolves the engine from the NODE the work is standing on, so a node that

@@ -30,7 +30,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 import type * as InputValuesModule from '../../src/dispatch/render-input-values.ts';
 import type * as RenderModule from '../../src/dispatch/render-skill-instructions.ts';
 import type * as ResolveModule from '../../src/dispatch/resolve-node.ts';
@@ -54,7 +54,7 @@ async function loadModule(): Promise<typeof RenderModule> {
 
 async function loadClient(): Promise<typeof ClientModule> {
   return (await import(
-    new URL('../../src/controller/cliente-controle.ts', import.meta.url).href
+    new URL('../../src/controller/control-plane-client.ts', import.meta.url).href
   )) as typeof ClientModule;
 }
 
@@ -130,12 +130,12 @@ const TWO_EDGES: ResolveModule.GraphEdge[] = [
 async function makeReader(
   body: Record<string, unknown> | null,
 ): Promise<{ read: RenderModule.ReadSkill; routes: string[] }> {
-  const { ErroDoControlPlane } = await loadClient();
+  const { ControlPlaneClientError } = await loadClient();
   const routes: string[] = [];
   const read: RenderModule.ReadSkill = async (route) => {
     routes.push(route);
     if (body === null) {
-      throw new ErroDoControlPlane(`GET ${route} answered 404`, 404, { error: 'skill_nao_encontrada' });
+      throw new ControlPlaneClientError(`GET ${route} answered 404`, 404, { error: 'skill_nao_encontrada' });
     }
     return body as unknown as RenderModule.RegisteredSkill;
   };

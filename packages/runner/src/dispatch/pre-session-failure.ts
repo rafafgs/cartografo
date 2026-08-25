@@ -50,7 +50,7 @@
  * codex's half — which is the reason the duplication is written down here as
  * well as there.
  *
- * **Why an `ErroDoControlPlane` with `status === 404` can only be the graph
+ * **Why an `ControlPlaneClientError` with `status === 404` can only be the graph
  * version.** The skill registry's 404 is translated into
  * {@link SkillNotRegisteredError} inside `renderSkillInstructions` before it can
  * reach this function, and the work's own read happens outside the window this
@@ -68,7 +68,7 @@
  * the English `Error.message` these classes carry for a log.
  */
 
-import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
+import { ControlPlaneClientError } from '../controller/control-plane-client.ts';
 import { PERMISSION_REFUSAL_PREFIX } from '../engine/claude-code-adapter.ts';
 import { SessionStartError } from '../engine/types.ts';
 import {
@@ -173,7 +173,7 @@ export function classifyPreSessionFailure(error: unknown, job: PreSessionJob): s
 
   // The status is what decides, and only this one: every other refusal is the
   // control plane having a bad day, and a bad day passes.
-  if (error instanceof ErroDoControlPlane && error.status === 404) {
+  if (error instanceof ControlPlaneClientError && error.status === 404) {
     return (
       `O trabalho aponta para a versão de grafo ${versionOf(job)}, e o control plane ` +
       'respondeu 404: a referência está pendurada. Nenhuma sessão foi aberta — sem o ' +

@@ -79,7 +79,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { ClienteControle } from '../src/controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../src/controller/control-plane-client.ts';
 import { Controller } from '../src/controller/controller.ts';
 import { createClaudeCodeDispatch, DEFAULT_ENGINE } from '../src/dispatch/dispatch.ts';
 import { resolveSkillPermissions } from '../src/dispatch/render-skill-instructions.ts';
@@ -288,8 +288,8 @@ async function main() {
     const { grafo: graph, grafo_versao: version } = await api(url, 'POST', '/v1/graphs', document, 201);
     log(`graph "${graph.id}" registered at version ${version.id}`);
 
-    const client = new ClienteControle({ urlBase: url, token: operatorToken });
-    await client.registrarRunner(RUNNER_ID, 'a prova manual da travessia automática');
+    const client = new ControlPlaneClient({ urlBase: url, token: operatorToken });
+    await client.registerRunner(RUNNER_ID, 'a prova manual da travessia automática');
 
     const engines = {
       [DEFAULT_ENGINE]: { adapter, decodeSessionText: decodeClaudeCodeSessionText },

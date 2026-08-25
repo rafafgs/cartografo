@@ -38,7 +38,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { bootCore, type TestHook } from '@cartografo/test-support';
 
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -66,11 +66,11 @@ let controllerCache: typeof ControllerModule | null = null;
 
 async function loadClient(): Promise<typeof ClientModule> {
   assert.ok(
-    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'cliente-controle.ts')),
-    'artifact does not exist yet: packages/runner/src/controller/cliente-controle.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'control-plane-client.ts')),
+    'artifact does not exist yet: packages/runner/src/controller/control-plane-client.ts',
   );
   clientCache ??= (await import(
-    new URL('../../src/controller/cliente-controle.ts', import.meta.url).href
+    new URL('../../src/controller/control-plane-client.ts', import.meta.url).href
   )) as typeof ClientModule;
   return clientCache;
 }
@@ -166,7 +166,7 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
     return;
   }
 
-  const { ClienteControle } = await loadClient();
+  const { ControlPlaneClient } = await loadClient();
   const { Controller } = await loadController();
 
   const { port, bootstrapToken } = await bootControlPlane(t);
@@ -198,7 +198,7 @@ test('t143 AT — a runner reaches the control plane off loopback and runs a who
   assert.equal(refused.status, 403);
   assert.equal(refused.body.error, 'out_of_scope_credential');
 
-  const client = new ClienteControle({ urlBase, token });
+  const client = new ControlPlaneClient({ urlBase, token });
 
   // The dispatch holds the lease open until a heartbeat has really landed:
   // "grant, heartbeat, release" is only proven if the middle one is observed,

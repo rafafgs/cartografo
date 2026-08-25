@@ -37,7 +37,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ClienteControle } from '../src/controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../src/controller/control-plane-client.ts';
 import { Controller } from '../src/controller/controller.ts';
 import {
   createClaudeCodeDispatch,
@@ -208,8 +208,8 @@ async function main() {
   };
 
   try {
-    const client = new ClienteControle({ urlBase: plane.url });
-    await client.registrarRunner('spike-t106', 'the manual proof of human escalation');
+    const client = new ControlPlaneClient({ urlBase: plane.url });
+    await client.registerRunner('spike-t106', 'the manual proof of human escalation');
 
     const work = await api('POST', '/v1/jobs', {
       title: 'Criar o arquivo de prova da t106, com o nome que a pessoa escolher',

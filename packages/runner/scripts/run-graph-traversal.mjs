@@ -87,7 +87,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { ClienteControle } from '../src/controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../src/controller/control-plane-client.ts';
 import { Controller } from '../src/controller/controller.ts';
 import { createClaudeCodeDispatch, DEFAULT_ENGINE } from '../src/dispatch/dispatch.ts';
 import {
@@ -276,8 +276,8 @@ async function main() {
   const worktrees = sharedWorktree(repo);
   log(`workingDir of the crossing: ${repo}`);
 
-  const client = new ClienteControle({ urlBase: url, token });
-  await client.registrarRunner(RUNNER_ID, 'o motor de travessia manual da t165');
+  const client = new ControlPlaneClient({ urlBase: url, token });
+  await client.registerRunner(RUNNER_ID, 'o motor de travessia manual da t165');
 
   // `Controller.tick()` dispatches the first RELEASED job it can lease, not
   // "the job this script just created" — and on a database that survives the
@@ -293,7 +293,7 @@ async function main() {
   //
   // So the driver refuses to start rather than guessing. Loud, and the operator
   // keeps the decision — blocking someone else's work is not this script's call.
-  const released = await client.listarTrabalhosLiberados();
+  const released = await client.listReleasedJobs();
   if (released.length > 0) {
     die(
       `the control plane has ${released.length} released job(s) — ` +

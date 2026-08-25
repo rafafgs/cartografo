@@ -45,7 +45,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { EntradaDeIntake, Rascunho } from '../controller/cliente-controle.ts';
+import type { IntakeInput, Draft } from '../controller/control-plane-client.ts';
 import type { EngineAdapter, SessionSpec, SessionStatus } from '../engine/types.ts';
 import { INTAKE_INSTRUCTIONS, OUTPUT_FILE, buildIntakePrompt } from './prompt.ts';
 
@@ -70,10 +70,10 @@ export interface ClassReader {
  * Narrow for the same reason, and narrow ON PURPOSE in a second sense: this is
  * the entire power the module has over the control plane. There is no confirm,
  * no amend and no discard here because a caller that does not have the method
- * cannot take the decision by accident (`controller/cliente-controle.ts`).
+ * cannot take the decision by accident (`controller/control-plane-client.ts`).
  */
 export interface IntakeWriter {
-  criarIntake(input: EntradaDeIntake): Promise<Rascunho>;
+  createIntake(input: IntakeInput): Promise<Draft>;
 }
 
 /** Configuration of one intake generation run. */
@@ -216,9 +216,9 @@ async function decompose(
  * @returns The draft as the control plane recorded it, always `pendente`.
  * @throws {IntakeError} When the class is not registered, the session failed, or
  *   what it wrote is unusable. Nothing is posted in any of those cases.
- * @throws {ErroDoControlPlane} When the API refuses the write.
+ * @throws {ControlPlaneClientError} When the API refuses the write.
  */
-export async function generateIntakeDraft(options: IntakeGenerationOptions): Promise<Rascunho> {
+export async function generateIntakeDraft(options: IntakeGenerationOptions): Promise<Draft> {
   const log = options.log ?? ((): void => undefined);
 
   // FR3a — the refusal comes BEFORE the session, not after it has been paid for.
@@ -238,7 +238,7 @@ export async function generateIntakeDraft(options: IntakeGenerationOptions): Pro
   const items = await decompose(options, log);
   log(`the session proposed ${items.length} item(s)`);
 
-  const draft = await options.client.criarIntake({
+  const draft = await options.client.createIntake({
     class: options.className,
     request: options.request,
     items: items,

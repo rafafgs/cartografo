@@ -1,7 +1,7 @@
 /**
  * Acceptance tests of the packaged composition (t162, AT8–AT13; t179 AT1).
  *
- * `runRunner` is the spike written down: `ClienteControle` + `Controller` +
+ * `runRunner` is the spike written down: `ControlPlaneClient` + `Controller` +
  * `createClaudeCodeDispatch` + one `EngineAdapter`, plus the loop and the clean
  * shutdown that turn those four objects into a process. Every piece is already
  * tested on its own; what is under test here is the WIRING — that the runner

@@ -24,7 +24,7 @@
  * Portuguese.
  */
 
-import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
+import { ControlPlaneClientError } from '../controller/control-plane-client.ts';
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   decodeErrorBody,
@@ -86,11 +86,11 @@ export function createDispatchControlPlaneClient(
   /**
    * The one door out of this dispatch, and since t193 it is the SHARED mechanic.
    *
-   * What it used to be was a second copy of `ClienteControle`'s, and the copy
+   * What it used to be was a second copy of `ControlPlaneClient`'s, and the copy
    * had drifted: it decoded the body before it looked at the status, so a 502
    * with an HTML page from a proxy came out of here as a raw `SyntaxError` —
    * carrying neither the status nor the text — while the very same answer came
-   * out of the other client as an `ErroDoControlPlane`. That is exactly the
+   * out of the other client as an `ControlPlaneClientError`. That is exactly the
    * regression t156 had already fixed once, in the other file.
    */
   return async <T>(route: string, method: string, body?: unknown): Promise<T> =>
@@ -102,7 +102,7 @@ export function createDispatchControlPlaneClient(
       timeoutMs: requestTimeoutMs,
       fetchImpl: doFetch,
       buildError: ({ status, body: text }) =>
-        new ErroDoControlPlane(
+        new ControlPlaneClientError(
           `${method} ${route} answered ${status}`,
           status,
           decodeErrorBody(text),

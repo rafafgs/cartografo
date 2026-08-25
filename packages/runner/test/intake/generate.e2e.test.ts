@@ -48,7 +48,7 @@ import { bootCore, resolvePins } from '@cartografo/test-support';
 import { ClaudeCodeAdapter } from '../../src/engine/claude-code-adapter.ts';
 import { buildCommand } from '../../src/engine/command.ts';
 import type { SessionSpec } from '../../src/engine/types.ts';
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 import type * as ReaderModule from '../../src/synthesizer/control-plane-client.ts';
 import type * as GenerateModule from '../../src/intake/generate.ts';
 import type * as PromptModule from '../../src/intake/prompt.ts';
@@ -239,8 +239,8 @@ interface LogEvent {
 }
 
 test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms it unchanged', async (t) => {
-  const { ClienteControle } = await loadModule<typeof ClientModule>(
-    'src/controller/cliente-controle.ts',
+  const { ControlPlaneClient } = await loadModule<typeof ClientModule>(
+    'src/controller/control-plane-client.ts',
   );
   const { createControlPlaneReader } = await loadModule<typeof ReaderModule>(
     'src/synthesizer/control-plane-client.ts',
@@ -253,7 +253,7 @@ test('AT5a/AT5b — the generated draft is a real pending one, and t122 confirms
 
   const draft = await generateIntakeDraft({
     reader: createControlPlaneReader(plane.baseUrl, { token: plane.token }),
-    client: new ClienteControle({ urlBase: plane.baseUrl, token: plane.token }),
+    client: new ControlPlaneClient({ urlBase: plane.baseUrl, token: plane.token }),
     adapter: engineWriting(OUTPUT_FILE, JSON.stringify({ items: ITEMS }, null, 2)),
     request: REQUEST,
     className: CLASS_NAME,
@@ -327,7 +327,7 @@ test('t254 — a spawned intake prints the draft it posted, over the real class,
   // a refusal, a usage error, a denied credential — so the last three lines of
   // `cli.mjs`, the ones that run only after the write succeeded, had never been
   // executed by any test. They read `draft.itens`/`draft.classe` off a
-  // `Rascunho` that carries `items`/`class`, which is a TypeError thrown after
+  // `Draft` that carries `items`/`class`, which is a TypeError thrown after
   // the row is already in the book: `npm run intake` exited 1 on a run that had
   // worked, and there was nothing in the report to say the draft existed.
   const result = runCli(

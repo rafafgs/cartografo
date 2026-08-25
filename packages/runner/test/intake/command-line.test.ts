@@ -225,7 +225,7 @@ test('AT2 — the token reaches the wire as a bearer, and its absence sends no h
   assert.equal(seen[0].url, 'http://127.0.0.1:9999/v1/classes');
   assert.equal(seen[0].authorization, 'Bearer abc');
 
-  await createClient(options, recordingFetch(seen, 201, { draft: { id: 1 } })).criarIntake({
+  await createClient(options, recordingFetch(seen, 201, { draft: { id: 1 } })).createIntake({
     class: 'nota-curta',
     request: REQUEST,
     items: [{ ref: 'a', title: 'Uma' }],

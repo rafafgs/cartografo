@@ -32,7 +32,7 @@
  * this file.
  */
 
-import type { ClienteControle, Lease } from './cliente-controle.ts';
+import type { ControlPlaneClient, Lease } from './control-plane-client.ts';
 
 /**
  * What one dispatch reports back about the work it was handed (t252).
@@ -58,7 +58,7 @@ export interface DispatchAttempt {
 /** Configuration of the controller. */
 export interface ControllerOptions {
   /** Client already pointed at the control plane. */
-  client: ClienteControle;
+  client: ControlPlaneClient;
   /** Identity of this runner, already paired through `POST /v1/runners`. */
   runnerId: string;
   projectId: number;
@@ -178,10 +178,10 @@ export class Controller {
    *   did blocked itself.
    */
   async tick(): Promise<DispatchResult | null> {
-    const candidates = await this.#options.client.listarTrabalhosLiberados();
+    const candidates = await this.#options.client.listReleasedJobs();
 
     for (const job of candidates) {
-      const { lease, reason: motivo } = await this.#options.client.pedirLease({
+      const { lease, reason: motivo } = await this.#options.client.requestLease({
         runner_id: this.#options.runnerId,
         project_id: this.#options.projectId,
         job_id: job.id,
@@ -223,7 +223,7 @@ export class Controller {
       // with it.
       stopHeartbeat();
       try {
-        await this.#options.client.liberar(lease.id);
+        await this.#options.client.release(lease.id);
       } catch (error: unknown) {
         // Caught HERE and nowhere else: a rejection escaping a `finally`
         // REPLACES whatever was already unwinding through it, so this one would

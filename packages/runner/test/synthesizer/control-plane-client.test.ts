@@ -8,7 +8,7 @@
  * The second half is not a formality. Since t124 there is no open mode, so the
  * absence of a header means a 401 — and the alternative, sending `Authorization:
  * Bearer ` with nothing after it, would read as a credential in the server's log
- * instead of as the absence of one. `controller/cliente-controle.ts` documents
+ * instead of as the absence of one. `controller/control-plane-client.ts` documents
  * exactly that rule, and this reader now follows it.
  *
  * `fetch` is captured rather than served: what is under test is which headers go

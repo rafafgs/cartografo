@@ -42,7 +42,7 @@ import type {
   SessionSpec,
   SessionStatus,
 } from '../../src/engine/types.ts';
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 import type * as ProposalModule from '../../src/surveyor/proposal.ts';
 
 import { bootCore, resolvePins } from '@cartografo/test-support';
@@ -112,7 +112,7 @@ let proposalCache: typeof ProposalModule | null = null;
 
 async function loadClient(): Promise<typeof ClientModule> {
   clientCache ??= (await import(
-    new URL('../../src/controller/cliente-controle.ts', import.meta.url).href
+    new URL('../../src/controller/control-plane-client.ts', import.meta.url).href
   )) as typeof ClientModule;
   return clientCache;
 }
@@ -170,7 +170,7 @@ interface Scenario {
   workingDir: string;
   eventIds: number[];
   calls: string[];
-  client: ClientModule.ClienteControle;
+  client: ClientModule.ControlPlaneClient;
 }
 
 /**
@@ -241,7 +241,7 @@ async function seedBottleneck(baseUrl: string, versionId: string): Promise<void>
 }
 
 async function buildScenario(t: TestHook): Promise<Scenario> {
-  const { ClienteControle } = await loadClient();
+  const { ControlPlaneClient } = await loadClient();
   const { baseUrl, token } = await bootControlPlane(t);
 
   // A resolvable capability per node, or the version is stored `unchecked` and
@@ -300,7 +300,7 @@ async function buildScenario(t: TestHook): Promise<Scenario> {
     workingDir,
     eventIds: events.map((event) => event.id),
     calls,
-    client: new ClienteControle({ urlBase: baseUrl, buscar: doFetch }),
+    client: new ControlPlaneClient({ urlBase: baseUrl, fetchImpl: doFetch }),
   };
 }
 

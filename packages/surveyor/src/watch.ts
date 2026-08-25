@@ -37,11 +37,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { ClaudeCodeAdapter } from '@cartografo/runner/engine/claude-code-adapter';
-// `ClienteControle` rides on the lens's own module rather than on a fourth
+// `ControlPlaneClient` rides on the lens's own module rather than on a fourth
 // entry of the runner's `exports`: the flow lens is what needs a client, and
 // publishing the whole controller to buy one constructor would widen a surface
 // this ticket deliberately keeps to three named subpaths.
-import { ClienteControle, proposeFlowImprovement } from '@cartografo/runner/surveyor/proposal';
+import { ControlPlaneClient, proposeFlowImprovement } from '@cartografo/runner/surveyor/proposal';
 import { evaluateExecution, withCredential } from '@cartografo/cost-surveyor/cli';
 
 import { watchFinishedExecutions, type StreamMessage } from './stream.ts';
@@ -130,10 +130,10 @@ function reasonOf(failure: unknown): string {
  * make a long-running watcher a slow leak in the temporary directory.
  */
 function defaultFlowLens(options: WatchOptions): (executionId: number) => Promise<FlowRun> {
-  const client = new ClienteControle({
+  const client = new ControlPlaneClient({
     urlBase: options.url,
     token: options.token,
-    ...(options.doFetch === undefined ? {} : { buscar: options.doFetch }),
+    ...(options.doFetch === undefined ? {} : { fetchImpl: options.doFetch }),
   });
 
   return async (executionId) => {

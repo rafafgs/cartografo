@@ -27,7 +27,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { ErroDoControlPlane } from '../../src/controller/cliente-controle.ts';
+import { ControlPlaneClientError } from '../../src/controller/control-plane-client.ts';
 import { PERMISSION_REFUSAL_PREFIX } from '../../src/engine/claude-code-adapter.ts';
 import { DOMAIN_SCOPED_NETWORK_REASON } from '../../src/engine/permission-policy.ts';
 import { SessionStartError } from '../../src/engine/types.ts';
@@ -140,7 +140,7 @@ test('AT5 — a dangling graph version names the version the work points at', as
   // inside `renderSkillInstructions`, so a raw 404 surviving to here can only be
   // the graph-version read.
   const reason = classifyPreSessionFailure(
-    new ErroDoControlPlane('unknown_graph_version', 404, { erro: 'unknown_graph_version' }),
+    new ControlPlaneClientError('unknown_graph_version', 404, { erro: 'unknown_graph_version' }),
     JOB,
   );
 
@@ -152,7 +152,7 @@ test('AT6 — a control plane having a bad day does not classify, whatever the s
 
   for (const status of [500, 502, 503]) {
     assert.equal(
-      classifyPreSessionFailure(new ErroDoControlPlane('fora do ar', status, null), JOB),
+      classifyPreSessionFailure(new ControlPlaneClientError('fora do ar', status, null), JOB),
       null,
       `${String(status)} is transient: blocking the job on it would need a human to undo a hiccup`,
     );

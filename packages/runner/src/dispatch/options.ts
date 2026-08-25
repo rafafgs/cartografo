@@ -149,7 +149,7 @@ export interface Job {
 /** Configuration of a dispatch. */
 export interface ClaudeCodeDispatchOptions {
   /**
-   * Base URL of the control plane. Named as in `ClienteControle`, on purpose:
+   * Base URL of the control plane. Named as in `ControlPlaneClient`, on purpose:
    * whoever wires both passes the same value to both.
    */
   urlBase: string;

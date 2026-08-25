@@ -77,7 +77,7 @@ test('AT21 — no call in the manual proof reaches the control plane anonymously
   // dispatch that writes the telemetry of every crossing session.
   assert.match(
     source,
-    /new ClienteControle\(\{[^}]*token/s,
+    /new ControlPlaneClient\(\{[^}]*token/s,
     'the controller client is still built with no token',
   );
   assert.match(

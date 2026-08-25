@@ -85,7 +85,7 @@
  * written in Portuguese (`specs/formats/examples/`).
  */
 
-import { ErroDoControlPlane } from '../controller/cliente-controle.ts';
+import { ControlPlaneClientError } from '../controller/control-plane-client.ts';
 import type { SessionPermissions } from '../engine/types.ts';
 import {
   ALWAYS_ESCALATION_PROTOCOL,
@@ -568,7 +568,7 @@ export async function renderSkillInstructions(
     // specific about the GRAPH, and it deserves a message naming the node. Any
     // other status is the control plane having a bad day, and rewriting it as a
     // registry problem would send whoever is debugging to the wrong place.
-    if (error instanceof ErroDoControlPlane && error.status === 404) {
+    if (error instanceof ControlPlaneClientError && error.status === 404) {
       throw new SkillNotRegisteredError(resolved.node.id, pin.id);
     }
     throw error;

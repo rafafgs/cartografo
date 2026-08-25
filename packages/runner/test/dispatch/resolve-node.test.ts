@@ -22,7 +22,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 import type * as ResolveModule from '../../src/dispatch/resolve-node.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -103,13 +103,13 @@ function fakeFetch(status = 200): { doFetch: typeof fetch; calls: Call[] } {
 }
 
 /** The reader the dispatch hands in: one `GET`, decoded, throwing on a refusal. */
-function reader(doFetch: typeof fetch, ErroDoControlPlane: typeof ClientModule.ErroDoControlPlane) {
+function reader(doFetch: typeof fetch, ControlPlaneClientError: typeof ClientModule.ControlPlaneClientError) {
   return async (route: string): Promise<ResolveModule.GraphVersionBody> => {
     const response = await doFetch(`${URL_BASE}${route}`, { method: 'GET' });
     const text = await response.text();
     const decoded: unknown = text === '' ? undefined : JSON.parse(text);
     if (!response.ok) {
-      throw new ErroDoControlPlane(`GET ${route} answered ${response.status}`, response.status, decoded);
+      throw new ControlPlaneClientError(`GET ${route} answered ${response.status}`, response.status, decoded);
     }
     return decoded as ResolveModule.GraphVersionBody;
   };
@@ -117,18 +117,18 @@ function reader(doFetch: typeof fetch, ErroDoControlPlane: typeof ClientModule.E
 
 async function loadClient(): Promise<typeof ClientModule> {
   return (await import(
-    new URL('../../src/controller/cliente-controle.ts', import.meta.url).href
+    new URL('../../src/controller/control-plane-client.ts', import.meta.url).href
   )) as typeof ClientModule;
 }
 
 test('AT1 — a resolvable version yields the current node and the edges leaving it', async () => {
   const { resolveNode } = await loadModule();
-  const { ErroDoControlPlane } = await loadClient();
+  const { ControlPlaneClientError } = await loadClient();
   const { doFetch, calls } = fakeFetch();
 
   const resolved = await resolveNode(
     { current_node_id: 'conferir', graph_version_id: VERSION_ID },
-    reader(doFetch, ErroDoControlPlane),
+    reader(doFetch, ControlPlaneClientError),
   );
 
   assert.ok(resolved !== null, 'the node is in the snapshot, so it resolves');
@@ -153,13 +153,13 @@ test('AT1 — a resolvable version yields the current node and the edges leaving
 
 test('AT2 — a work with no graph version resolves to null, with no call at all', async () => {
   const { resolveNode } = await loadModule();
-  const { ErroDoControlPlane } = await loadClient();
+  const { ControlPlaneClientError } = await loadClient();
 
   for (const versionId of [null, undefined, '']) {
     const { doFetch, calls } = fakeFetch();
     const resolved = await resolveNode(
       { current_node_id: 'implementar', graph_version_id: versionId },
-      reader(doFetch, ErroDoControlPlane),
+      reader(doFetch, ControlPlaneClientError),
     );
     assert.equal(resolved, null, `graph_version_id ${JSON.stringify(versionId)} is "no graph"`);
     assert.equal(calls.length, 0, 'there is nothing to ask the control plane about');
@@ -168,12 +168,12 @@ test('AT2 — a work with no graph version resolves to null, with no call at all
 
 test('AT3 — a node the snapshot does not carry resolves to null', async () => {
   const { resolveNode } = await loadModule();
-  const { ErroDoControlPlane } = await loadClient();
+  const { ControlPlaneClientError } = await loadClient();
   const { doFetch, calls } = fakeFetch();
 
   const resolved = await resolveNode(
     { current_node_id: 'um-no-que-ninguem-declarou', graph_version_id: VERSION_ID },
-    reader(doFetch, ErroDoControlPlane),
+    reader(doFetch, ControlPlaneClientError),
   );
 
   assert.equal(resolved, null, 'the version resolved; the node in it did not');
@@ -182,18 +182,18 @@ test('AT3 — a node the snapshot does not carry resolves to null', async () => 
 
 test('AT4 — a version id that does not resolve propagates, never defaults', async () => {
   const { resolveNode } = await loadModule();
-  const { ErroDoControlPlane } = await loadClient();
+  const { ControlPlaneClientError } = await loadClient();
   const { doFetch } = fakeFetch(404);
 
   await assert.rejects(
     async () =>
       resolveNode(
         { current_node_id: 'implementar', graph_version_id: VERSION_ID },
-        reader(doFetch, ErroDoControlPlane),
+        reader(doFetch, ControlPlaneClientError),
       ),
     (error: unknown) => {
       assert.ok(
-        error instanceof ErroDoControlPlane,
+        error instanceof ControlPlaneClientError,
         `expected the control plane's own refusal, got: ${String(error)}`,
       );
       assert.equal(error.status, 404);
@@ -204,12 +204,12 @@ test('AT4 — a version id that does not resolve propagates, never defaults', as
 
 test('t167 — the declared escalation policy travels with the node', async () => {
   const { resolveNode, resolveEscalationPolicy } = await loadModule();
-  const { ErroDoControlPlane } = await loadClient();
+  const { ControlPlaneClientError } = await loadClient();
   const { doFetch } = fakeFetch();
 
   const resolved = await resolveNode(
     { current_node_id: 'publicar', graph_version_id: VERSION_ID },
-    reader(doFetch, ErroDoControlPlane),
+    reader(doFetch, ControlPlaneClientError),
   );
 
   assert.ok(resolved !== null);
@@ -223,14 +223,14 @@ test('t167 — the declared escalation policy travels with the node', async () =
 
 test('t167 — absence and an unrecognized value are both today\'s behaviour', async () => {
   const { resolveNode, resolveEscalationPolicy } = await loadModule();
-  const { ErroDoControlPlane } = await loadClient();
+  const { ControlPlaneClientError } = await loadClient();
   const { doFetch } = fakeFetch();
 
   // A node that declares nothing: every graph written before this field existed
   // keeps behaving exactly as it did.
   const declaringNothing = await resolveNode(
     { current_node_id: 'implementar', graph_version_id: VERSION_ID },
-    reader(doFetch, ErroDoControlPlane),
+    reader(doFetch, ControlPlaneClientError),
   );
   assert.ok(declaringNothing !== null);
   assert.equal(declaringNothing.node.escalation_policy, undefined);
@@ -253,12 +253,12 @@ test('t167 — absence and an unrecognized value are both today\'s behaviour', a
 
 test('AT5 — a node with no outgoing edge resolves with an empty edge list', async () => {
   const { resolveNode } = await loadModule();
-  const { ErroDoControlPlane } = await loadClient();
+  const { ControlPlaneClientError } = await loadClient();
   const { doFetch } = fakeFetch();
 
   const resolved = await resolveNode(
     { current_node_id: 'publicar', graph_version_id: VERSION_ID },
-    reader(doFetch, ErroDoControlPlane),
+    reader(doFetch, ControlPlaneClientError),
   );
 
   assert.ok(resolved !== null);

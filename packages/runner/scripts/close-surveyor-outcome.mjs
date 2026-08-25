@@ -23,11 +23,11 @@
  * 4. resolves `depois` with `measureForExpectedMetric`, and REFUSES to close
  *    the experiment when that comes back `null`. A zero there would read as the
  *    best possible verdict when what happened is that nobody measured;
- * 5. calls `fecharResultadoDeProposta`. The verdict itself is computed by the
+ * 5. calls `closeProposalOutcome`. The verdict itself is computed by the
  *    control plane (`domain/hypothesis.ts`), never by this script.
  *
  * It never applies, reverts, approves or rejects anything: the client has no
- * method for any of those, deliberately (`cliente-controle.ts`).
+ * method for any of those, deliberately (`control-plane-client.ts`).
  *
  * NOT a CI test — it talks to a running control plane, like everything else in
  * this directory. The pure half is `src/surveyor/outcome.ts`, which the suite
@@ -39,7 +39,7 @@
  *     <proposal_id> <execution_id> [url] [--token <token>]
  */
 
-import { ClienteControle } from '../src/controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../src/controller/control-plane-client.ts';
 import { calculateFlowMetrics } from '../src/surveyor/metrics.ts';
 import { isDenied, deniedMessage } from '../src/surveyor/command-line.ts';
 import {
@@ -63,13 +63,13 @@ if (parsed.kind === 'usage') {
 }
 
 const { proposalId, executionId, url, token } = parsed.options;
-const client = new ClienteControle({
+const client = new ControlPlaneClient({
   urlBase: url,
   ...(token === undefined ? {} : { token }),
 });
 
 try {
-  const proposal = await client.buscarProposta(proposalId);
+  const proposal = await client.getProposal(proposalId);
   log(`proposal ${proposal.id} of graph "${proposal.graph_id}" is "${proposal.status}"`);
 
   // `applied`, the word the wire really answers (`ProposalStatus`,
@@ -102,15 +102,15 @@ try {
   if (typeof appliedVersionId !== 'string') {
     die(`proposal ${proposalId} has no applied_version_id`);
   }
-  const version = await client.buscarVersaoDeGrafo(appliedVersionId);
+  const version = await client.getGraphVersion(appliedVersionId);
   const nodeIds = (version.snapshot.nodes ?? []).map((no) => no.id);
 
-  const events = await client.listarEventosDaExecucao(executionId);
+  const events = await client.listExecutionEvents(executionId);
   if (events.length === 0) die(`execution ${executionId} has no events`);
 
   // The join that proves this round is the NEXT one, checked here so the
   // failure names the problem instead of arriving as a 422 from the route.
-  const byVersion = await client.metricasPorVersao(executionId);
+  const byVersion = await client.metricsByVersion(executionId);
   const underApplied = byVersion.find((row) => row.graph_version_id === appliedVersionId);
   if (underApplied === undefined || underApplied.jobs < 1) {
     die(
@@ -132,7 +132,7 @@ try {
   }
   log(`measured ${name} = ${after} (declared de=${metric.de}, para=${metric.para})`);
 
-  const written = await client.fecharResultadoDeProposta(proposalId, {
+  const written = await client.closeProposalOutcome(proposalId, {
     execucao_id: executionId,
     depois: after,
   });
@@ -145,5 +145,5 @@ try {
   log('the hypothesis is closed — verdict computed by the control plane, from real numbers');
 } catch (error) {
   if (isDenied(error)) die(deniedMessage(url));
-  die(error instanceof Error ? `${error.message} ${JSON.stringify(error.corpo ?? '')}` : String(error));
+  die(error instanceof Error ? `${error.message} ${JSON.stringify(error.body ?? '')}` : String(error));
 }

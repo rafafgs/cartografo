@@ -86,8 +86,8 @@ test('AT9 — no call in the manual proof reaches the control plane anonymously'
 
   // The two other doors out of this script: the HTTP client the surveyor gets,
   // and the dispatch that writes the telemetry of the two crossing sessions.
-  const construction = objectArgument(source, 'new ClienteControle');
-  assert.ok(construction !== null, 'the proof no longer builds a ClienteControle at all');
+  const construction = objectArgument(source, 'new ControlPlaneClient');
+  assert.ok(construction !== null, 'the proof no longer builds a ControlPlaneClient at all');
   assert.match(construction, /token/, 'the surveyor client is still built with no token');
 
   const dispatch = objectArgument(source, 'createClaudeCodeDispatch');

@@ -55,7 +55,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { ClienteControle } from '../src/controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../src/controller/control-plane-client.ts';
 import { createClaudeCodeDispatch, DEFAULT_ENGINE } from '../src/dispatch/dispatch.ts';
 import { decodeClaudeCodeSessionText } from '../src/dispatch/session-text.ts';
 import { ClaudeCodeAdapter } from '../src/engine/claude-code-adapter.ts';
@@ -99,7 +99,7 @@ let operatorToken = null;
 /**
  * The only `fetch` of this script, and the one that arms the request.
  *
- * It serves this script's own `api()` calls and nothing else: `ClienteControle`
+ * It serves this script's own `api()` calls and nothing else: `ControlPlaneClient`
  * carries its own token, and since t147 so does the dispatch. Threading this
  * closure in through the dispatch's `doFetch` seam is how this proof worked
  * around a dispatcher that had no notion of a credential — the seam was never
@@ -311,7 +311,7 @@ async function main() {
     log('real session #3 — the surveyor chooses the operations...');
 
     const result = await proposeFlowImprovement({
-      client: new ClienteControle({ urlBase: url, token: operatorToken }),
+      client: new ControlPlaneClient({ urlBase: url, token: operatorToken }),
       adapter,
       executionId: EXECUTION_ID,
       workingDir: surveyorRepo,

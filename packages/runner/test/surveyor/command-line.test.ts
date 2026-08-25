@@ -178,7 +178,7 @@ test('AT6 — the token reaches the wire as a bearer, and its absence sends no h
     runnable(parseArguments(['7', 'http://127.0.0.1:9999', '--token', 'abc'], EMPTY_ENV)),
     recordingFetch(seen),
   );
-  await withToken.metricasPorVersao(7);
+  await withToken.metricsByVersion(7);
 
   assert.equal(seen.length, 1);
   assert.equal(seen[0].url, 'http://127.0.0.1:9999/v1/executions/7/metrics-by-version');
@@ -188,7 +188,7 @@ test('AT6 — the token reaches the wire as a bearer, and its absence sends no h
     runnable(parseArguments(['7', 'http://127.0.0.1:9999'], EMPTY_ENV)),
     recordingFetch(seen),
   );
-  await anonymous.metricasPorVersao(7);
+  await anonymous.metricsByVersion(7);
 
   assert.equal(seen.length, 2);
   assert.equal(seen[1].authorization, null);
@@ -203,7 +203,7 @@ test('AT7 — a refused request becomes one actionable line, not the status code
     recordingFetch(seen, 401, { erro: 'credencial_ausente' }),
   );
 
-  const denial = await client.metricasPorVersao(7).then(
+  const denial = await client.metricsByVersion(7).then(
     () => null,
     (error: unknown) => error,
   );
@@ -221,7 +221,7 @@ test('AT7 — a refused request becomes one actionable line, not the status code
     runnable(parseArguments(['7', 'http://127.0.0.1:9999'], EMPTY_ENV)),
     recordingFetch(seen, 404, { erro: 'nao_encontrado' }),
   );
-  const other = await missing.metricasPorVersao(7).then(
+  const other = await missing.metricsByVersion(7).then(
     () => null,
     (error: unknown) => error,
   );

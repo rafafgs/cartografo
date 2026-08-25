@@ -54,7 +54,7 @@ import { fileURLToPath } from 'node:url';
 
 import { bootCore } from '@cartografo/test-support';
 
-import { ClienteControle } from '../../src/controller/cliente-controle.ts';
+import { ControlPlaneClient } from '../../src/controller/control-plane-client.ts';
 import { Controller } from '../../src/controller/controller.ts';
 import { createMainLineAdvancer } from '../../src/dispatch/advance-main-line.ts';
 import { createClaudeCodeDispatch } from '../../src/dispatch/dispatch.ts';
@@ -365,8 +365,8 @@ test('t259 AT6 — refine → develop → integrate crosses the real software bu
     201,
   );
 
-  const client = new ClienteControle({ urlBase: baseUrl, token });
-  await client.registrarRunner('runner-t259-fabrica', 'o que atravessa o bundle de software');
+  const client = new ControlPlaneClient({ urlBase: baseUrl, token });
+  await client.registerRunner('runner-t259-fabrica', 'o que atravessa o bundle de software');
 
   const bench = benchRepository(root);
 

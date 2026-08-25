@@ -13,7 +13,7 @@
  * established: the real binary as a child process, bound to `0.0.0.0`, reached
  * at this machine's real IPv4 — never `127.0.0.1` — with two runners that each
  * hold a credential of their own, minted at pairing. Two independent
- * `Controller`s, two `ClienteControle`s, two tokens; the only thing they share
+ * `Controller`s, two `ControlPlaneClient`s, two tokens; the only thing they share
  * is the test process they run in, and the only thing that crosses between them
  * is HTTP. Where the machine has no external interface the file skips instead
  * of failing: what it would be reporting is the absence of a network.
@@ -47,7 +47,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { bootCore, type TestHook } from '@cartografo/test-support';
 
-import type * as ClientModule from '../../src/controller/cliente-controle.ts';
+import type * as ClientModule from '../../src/controller/control-plane-client.ts';
 import type * as ControllerModule from '../../src/controller/controller.ts';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -116,11 +116,11 @@ let controllerCache: typeof ControllerModule | null = null;
 
 async function loadClient(): Promise<typeof ClientModule> {
   assert.ok(
-    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'cliente-controle.ts')),
-    'artifact does not exist yet: packages/runner/src/controller/cliente-controle.ts',
+    existsSync(path.join(PACKAGE_ROOT, 'src', 'controller', 'control-plane-client.ts')),
+    'artifact does not exist yet: packages/runner/src/controller/control-plane-client.ts',
   );
   clientCache ??= (await import(
-    new URL('../../src/controller/cliente-controle.ts', import.meta.url).href
+    new URL('../../src/controller/control-plane-client.ts', import.meta.url).href
   )) as typeof ClientModule;
   return clientCache;
 }
@@ -282,7 +282,7 @@ test('t164 AT — two runners racing over the LAN take every job exactly once, a
     return;
   }
 
-  const { ClienteControle } = await loadClient();
+  const { ControlPlaneClient } = await loadClient();
   const { Controller } = await loadController();
 
   const cp = await bootControlPlane(t, address);
@@ -319,7 +319,7 @@ test('t164 AT — two runners racing over the LAN take every job exactly once, a
 
   const fleet = [
     new Controller({
-      client: new ClienteControle({ urlBase: cp.urlBase, token: tokenA }),
+      client: new ControlPlaneClient({ urlBase: cp.urlBase, token: tokenA }),
       runnerId: RUNNER_A,
       projectId: PROJECT_ID,
       // Both ceilings at the size of the whole queue: the harness bounds
@@ -330,7 +330,7 @@ test('t164 AT — two runners racing over the LAN take every job exactly once, a
       dispatch: dispatchOf(RUNNER_A),
     }),
     new Controller({
-      client: new ClienteControle({ urlBase: cp.urlBase, token: tokenB }),
+      client: new ControlPlaneClient({ urlBase: cp.urlBase, token: tokenB }),
       runnerId: RUNNER_B,
       projectId: PROJECT_ID,
       runnerCap: JOB_COUNT,
@@ -414,7 +414,7 @@ test('t164 AT — the per-project ceiling holds across two runners racing withou
     return;
   }
 
-  const { ClienteControle } = await loadClient();
+  const { ControlPlaneClient } = await loadClient();
   const { Controller } = await loadController();
 
   /** The ceiling this control plane enforces, whatever the runners declare (t157). */
@@ -438,7 +438,7 @@ test('t164 AT — the per-project ceiling holds across two runners racing withou
 
   const controllerOf = (runnerId: string, token: string): ControllerModule.Controller =>
     new Controller({
-      client: new ClienteControle({ urlBase: cp.urlBase, token }),
+      client: new ControlPlaneClient({ urlBase: cp.urlBase, token }),
       runnerId,
       projectId: PROJECT_ID,
       runnerCap: DECLARED,
@@ -514,7 +514,7 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
     return;
   }
 
-  const { ClienteControle } = await loadClient();
+  const { ControlPlaneClient } = await loadClient();
   const { Controller } = await loadController();
 
   const cp = await bootControlPlane(t, address);
@@ -526,10 +526,10 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
   // observe: from `alive = false` on, nothing this runner tries reaches the
   // network — no heartbeat, and no release either.
   let alive = true;
-  const clientA = new ClienteControle({
+  const clientA = new ControlPlaneClient({
     urlBase: cp.urlBase,
     token: tokenA,
-    buscar: async (input, init) => {
+    fetchImpl: async (input, init) => {
       if (!alive) throw new Error(`${RUNNER_A} is dead: nothing leaves this process anymore`);
       return await fetch(input, init);
     },
@@ -563,7 +563,7 @@ test('t164 AT — a runner that stops beating loses the work, and the fleet heal
     holdingReclaimed = false;
   });
   const controllerB = new Controller({
-    client: new ClienteControle({ urlBase: cp.urlBase, token: tokenB }),
+    client: new ControlPlaneClient({ urlBase: cp.urlBase, token: tokenB }),
     runnerId: RUNNER_B,
     projectId: PROJECT_ID,
     runnerCap: 1,

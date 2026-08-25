@@ -1,7 +1,7 @@
 /**
  * The three reads the synthesizer consults before it composes (t115, FR2–FR4).
  *
- * Hand-rolled, same posture as `controller/cliente-controle.ts`: the runner is
+ * Hand-rolled, same posture as `controller/control-plane-client.ts`: the runner is
  * an unprivileged API client (D1/D11), it does not open the database and it does
  * not import anything from `packages/core`. Every interface below declares ONLY
  * the subset of the contract this ficha consumes — the routes return more, and
@@ -126,7 +126,7 @@ function normalizeBase(baseUrl: string): string {
  * `ControlPlaneError` keeps the shape it has always had — a message and a
  * status, no body — because nothing here has ever needed the body as a value:
  * the text goes into the message, where whoever reads the command's stderr
- * finds it. Unifying it with `ErroDoControlPlane` is a separate ticket; what is
+ * finds it. Unifying it with `ControlPlaneClientError` is a separate ticket; what is
  * unified here is the request, not the error.
  *
  * The `did not answer JSON` case stays, and stays HERE rather than in the
@@ -240,7 +240,7 @@ export interface ControlPlaneReaderOptions {
    * With no token no header goes out, and that is the honest outcome rather
    * than an oversight: an empty `Authorization` would read as a credential in
    * the server's log instead of as the absence of one
-   * (`controller/cliente-controle.ts`).
+   * (`controller/control-plane-client.ts`).
    */
   token?: string;
   /** `fetch` implementation. Default: the global one. Test seam only. */

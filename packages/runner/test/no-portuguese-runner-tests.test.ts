@@ -137,6 +137,12 @@ const OUT_OF_SCOPE: ReadonlyArray<{ file: string; line: number; reason: string }
     line: 38,
     reason: 'an English sentence that LISTS the frozen wire keys, `depois` among them, and names the decision freezing each',
   },
+  {
+    file: 'dispatch/dispatch.test.ts',
+    line: 446,
+    reason:
+      '`packages/core/src/repositories/input-request.ts:265` WRITES this block reason; the assertion reads it back off a live control plane and has to spell it the way the wire does',
+  },
 ]);
 
 /** Any of these means the line around it is Portuguese. */
@@ -145,14 +151,16 @@ const DIACRITICS = /[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/;
 /**
  * Plain-ASCII Portuguese, closed and short.
  *
- * Three groups. The first is the package guard's own list: function words a
+ * Four groups. The first is the package guard's own list: function words a
  * Portuguese sentence cannot avoid. The second is the content words this
  * package's tests actually used — every one measured in a file t312
  * translated, not imagined. The third is t318's: the prose a test INVENTS for
  * illustration, which is neither a function word nor a term of the domain, and
- * so belonged to no earlier list. A closed list only catches what somebody has
- * seen before, which is exactly why AT1 runs beside it rather than instead of
- * it.
+ * so belonged to no earlier list. The fourth is t319's: the text a fixture
+ * writes about ITSELF — the reason it hands the block route, the message it
+ * commits with, the ticket it says it came from. A closed list only catches
+ * what somebody has seen before, which is exactly why AT1 runs beside it
+ * rather than instead of it.
  */
 const STOPWORDS: readonly string[] = Object.freeze([
   // function words
@@ -289,6 +297,27 @@ const STOPWORDS: readonly string[] = Object.freeze([
   'segunda',
   'parte',
   'partes',
+  // t319: the text a fixture writes about itself
+  //
+  // Two block reasons a test hands the block route, the README and the commit
+  // message every git fixture is built from, the `source` a graph fixture
+  // signs its metadata with, and one job title. None is read back by anything
+  // — the only line of this shape that IS read back is pinned above — and
+  // none carries an accent, so all three earlier groups walked past them.
+  //
+  // `da` earns its place the way `nao` does, as a function word: it is the
+  // whole of what is Portuguese in `Repo de fixture da t160`, and `de` cannot
+  // join it because `de` is a frozen key of `metrica_esperada`. `entrega` and
+  // its family stay OUT for the reason {@link ILLUSTRATIVE_IDS} records: they
+  // are node ids of a repo-wide convention, not prose.
+  'da',
+  'fim',
+  'caso',
+  'teste',
+  'aguardando',
+  'resposta',
+  'pergunta',
+  'inicial',
 ]);
 
 /**
@@ -653,4 +682,78 @@ test('t318 — an escalation fixture reads in ONE language, field by field', () 
     }
   }
   assert.deepEqual(offendersIn(fixture), [], 'the escalation fixture still carries Portuguese');
+});
+
+test('t319 — AT2 bites on the text a fixture writes about itself', () => {
+  // The sixteen lines the reproduction measured, verbatim. Two block reasons a
+  // test hands the block route, five commit messages, three fixture READMEs,
+  // two `source` attributions, one job title and two case names that still say
+  // `pergunta` for a row this file otherwise calls a question.
+  //
+  // Each asserts the premise first: neither AT1 nor AT3 sees any of them, so
+  // AT2 is the only sweep that can, and it can only because of the fourth
+  // group.
+  for (const text of [
+    "  git('commit', '--quiet', '-m', 'inicial');",
+    "          reason: 'fim do caso de teste',",
+    "  writeFileSync(path.join(repoRoot, TRACKED_FILE), '# Repo de fixture da t207-C\\n');",
+    "  git(repoRoot, 'commit', '--quiet', '-m', 'inicial');",
+    "  writeFileSync(path.join(space.repoRoot, 'README.md'), '# Repo de fixture da t179\\n');",
+    "  git(space.repoRoot, 'commit', '--quiet', '-m', 'inicial');",
+    "    await api(plane, 'POST', `/v1/jobs/${job.id}/blocks`, { reason: 'fim do caso de teste' });",
+    '      source: "fixture da t141",',
+    '    "AT1 — a session that asks at a never node is blocked, and no pergunta exists",',
+    '        "no pergunta row is ever created for an escalation at a never node",',
+    '      source: "fixture da t166",',
+    '        title: `ticket cujo relato o schema da skill recusa (${nodeId})`,',
+    "  commit(repoRoot, 'inicial');",
+    "const TRACKED_CONTENT = '# Repo de fixture da t160\\n';",
+    "  git(repoRoot, 'commit', '--quiet', '-m', 'inicial');",
+    "    event(7, 'job.blocked', work(1), 40, { reason: 'aguardando resposta da pergunta 20' }),",
+  ]) {
+    assert.ok(!DIACRITICS.test(text), `AT1 would have caught this one: ${text}`);
+    assert.ok(!MASKED_TOKENS.test(text), `AT3 would have caught this one: ${text}`);
+    assert.ok(offendersIn(text).length > 0, `AT2 missed a fixture's own text: ${text}`);
+  }
+});
+
+test('t319 — AT2 stays quiet on the English those sixteen lines became', () => {
+  for (const text of [
+    "  git('commit', '--quiet', '-m', 'initial');",
+    "          reason: 'end of the test case',",
+    "  writeFileSync(path.join(repoRoot, TRACKED_FILE), '# Fixture repo of t207-C\\n');",
+    "  git(repoRoot, 'commit', '--quiet', '-m', 'initial');",
+    "  writeFileSync(path.join(space.repoRoot, 'README.md'), '# Fixture repo of t179\\n');",
+    "  git(space.repoRoot, 'commit', '--quiet', '-m', 'initial');",
+    "    await api(plane, 'POST', `/v1/jobs/${job.id}/blocks`, { reason: 'end of the test case' });",
+    '      source: "fixture of t141",',
+    '    "AT1 — a session that asks at a never node is blocked, and no question exists",',
+    '        "no question row is ever created for an escalation at a never node",',
+    '      source: "fixture of t166",',
+    '        title: `ticket whose report the skill schema refuses (${nodeId})`,',
+    "  commit(repoRoot, 'initial');",
+    "const TRACKED_CONTENT = '# Fixture repo of t160\\n';",
+    "  git(repoRoot, 'commit', '--quiet', '-m', 'initial');",
+    "    event(7, 'job.blocked', work(1), 40, { reason: 'awaiting the answer to question 20' }),",
+  ]) {
+    assert.deepEqual(offendersIn(text), [], `AT2 fires on English: ${text}`);
+  }
+});
+
+test('t319 — the one block reason that stays is the one the control plane writes', () => {
+  // The pin above claims a wire dependency, and a claim a reader cannot check
+  // is how an exception outlives its reason. So it is checked: the literal the
+  // assertion reads back has to be the literal core blocks the job with.
+  //
+  // The day core is translated this fails, and whoever translates it finds the
+  // runner assertion from here instead of from a red e2e run.
+  const source = readFileSync(
+    path.join(TEST_ROOT, '..', '..', 'core', 'src', 'repositories', 'input-request.ts'),
+    'utf8',
+  );
+  assert.match(
+    source,
+    /reason: `aguardando resposta da pergunta \$\{id\}`/,
+    'core no longer writes this block reason; translate dispatch.test.ts:446 and drop the pin',
+  );
 });

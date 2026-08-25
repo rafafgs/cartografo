@@ -83,7 +83,7 @@
  *
  * A node whose collected input outgrows 64 KB — a research class reading more
  * documents than bets does, or a bundle that hands a node a whole corpus rather
- * than a summary of one. The symptom is the one this ficha fixed: a session
+ * than a summary of one. The symptom is the one this ticket fixed: a session
  * escalating over its own truncated `required` keys. Measure that traversal's
  * real block and raise the number again; do NOT lower it, which is what
  * t298's regression guard in `test/dispatch/render-input-values.test.ts` is for.

@@ -21,7 +21,7 @@ and it cleared the old one too.
 
 FR3's recommended default therefore stands unchanged. It was not raised further,
 because raising it further would be headroom over a number nobody measured — the
-exact defect this ficha existed to remove.
+exact defect this ticket existed to remove.
 
 ### How the software bundle's 2.070 bytes were obtained
 
@@ -86,12 +86,12 @@ change itself created.
 The comment says it and the ratchet enforces it: a node whose collected input
 outgrows 64 KB — a research class reading more than bets does, or a bundle that
 hands a node a whole corpus instead of a summary. The symptom is the one this
-ficha fixed, a session escalating over its own truncated `required` keys. The
+ticket fixed, a session escalating over its own truncated `required` keys. The
 answer is to measure that traversal's real block and raise the number again.
 Lowering it is what `t298 — the cap never regresses under the bets bundle's
 confirmed real maximum` exists to stop.
 
-## What this ficha did NOT fix
+## What this ticket did NOT fix
 
 The cap still cuts, and a block over 64 KB still loses its tail. Hole 1 of
 `notas/2026-08-18-third-bets-run.md` listed three fix candidates and this is only

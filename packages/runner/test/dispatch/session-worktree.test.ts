@@ -35,7 +35,7 @@ const WORKTREE_MODULE = 'src/dispatch/session-worktree.ts';
 
 /** The tracked file every fixture repository carries, content and all. */
 const TRACKED_FILE = 'README.md';
-const TRACKED_CONTENT = '# Repo de fixture da t160\n';
+const TRACKED_CONTENT = '# Fixture repo of t160\n';
 
 interface TestHook {
   after: (fn: () => void | Promise<void>) => void;
@@ -111,7 +111,7 @@ function fixture(t: TestHook, label: string): Fixture {
   git(repoRoot, 'config', 'user.name', 'Fixture t160');
   writeFileSync(path.join(repoRoot, TRACKED_FILE), TRACKED_CONTENT);
   git(repoRoot, 'add', '.');
-  git(repoRoot, 'commit', '--quiet', '-m', 'inicial');
+  git(repoRoot, 'commit', '--quiet', '-m', 'initial');
 
   return { repoRoot, worktreesRoot: path.join(base, 'worktrees') };
 }

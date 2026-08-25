@@ -105,9 +105,9 @@ function fixture(t: TestHook, label: string): Fixture {
   git(repoRoot, 'init', '--quiet');
   git(repoRoot, 'config', 'user.email', 'fixture@cartografo.local');
   git(repoRoot, 'config', 'user.name', 'Fixture t207');
-  writeFileSync(path.join(repoRoot, TRACKED_FILE), '# Repo de fixture da t207-C\n');
+  writeFileSync(path.join(repoRoot, TRACKED_FILE), '# Fixture repo of t207-C\n');
   git(repoRoot, 'add', '.');
-  git(repoRoot, 'commit', '--quiet', '-m', 'inicial');
+  git(repoRoot, 'commit', '--quiet', '-m', 'initial');
 
   let serial = 0;
   return {

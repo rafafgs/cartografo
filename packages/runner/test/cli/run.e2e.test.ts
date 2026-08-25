@@ -235,9 +235,9 @@ function initRepo(t: TestHook, label: string): Workspace {
   git(space.repoRoot, 'init', '--quiet');
   git(space.repoRoot, 'config', 'user.email', 'fixture@cartografo.local');
   git(space.repoRoot, 'config', 'user.name', 'Fixture t179');
-  writeFileSync(path.join(space.repoRoot, 'README.md'), '# Repo de fixture da t179\n');
+  writeFileSync(path.join(space.repoRoot, 'README.md'), '# Fixture repo of t179\n');
   git(space.repoRoot, 'add', '.');
-  git(space.repoRoot, 'commit', '--quiet', '-m', 'inicial');
+  git(space.repoRoot, 'commit', '--quiet', '-m', 'initial');
 
   return space;
 }
@@ -312,7 +312,7 @@ async function blockEveryJob(plane: RunningControlPlane): Promise<void> {
   const { jobs: jobs } = await api<{ jobs: Job[] }>(plane, 'GET', '/v1/jobs');
   for (const job of jobs) {
     if (job.blocked) continue;
-    await api(plane, 'POST', `/v1/jobs/${job.id}/blocks`, { reason: 'fim do caso de teste' });
+    await api(plane, 'POST', `/v1/jobs/${job.id}/blocks`, { reason: 'end of the test case' });
   }
 }
 

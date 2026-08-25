@@ -1146,7 +1146,7 @@ function twoEngineGraph(
         "Two work nodes on one edge, one of them declaring an engine.",
       schema_version: "1.0.0",
       created_at: "2026-08-15",
-      source: "fixture da t141",
+      source: "fixture of t141",
     },
     nodes: [node("implementar"), node("revisar", engine)],
     edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
@@ -3728,7 +3728,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
   }
 
   await parent.test(
-    "AT1 — a session that asks at a never node is blocked, and no pergunta exists",
+    "AT1 — a session that asks at a never node is blocked, and no question exists",
     async (t) => {
       const { createClaudeCodeDispatch } =
         await loadModule<typeof DispatchModule>(DISPATCH_MODULE);
@@ -3788,7 +3788,7 @@ test("t167 — a node with nobody to ask blocks the work instead of raising a qu
       assert.deepEqual(
         await questionsOf(job.id),
         [],
-        "no pergunta row is ever created for an escalation at a never node",
+        "no question row is ever created for an escalation at a never node",
       );
 
       const after = await api<Work>(
@@ -3976,7 +3976,7 @@ function modelGraph(
       description: "Two work nodes on one edge, one of them declaring a model.",
       schema_version: "1.0.0",
       created_at: "2026-08-16",
-      source: "fixture da t166",
+      source: "fixture of t166",
     },
     nodes: [modelNode("implementar"), modelNode("revisar", declared)],
     edges: [{ from: "implementar", to: "revisar", condition: "sempre" }],
@@ -5722,7 +5722,7 @@ test("t268 — a report the pinned skill's schema refused blocks instead of rout
       "POST",
       "/v1/jobs",
       {
-        title: `ticket cujo relato o schema da skill recusa (${nodeId})`,
+        title: `ticket whose report the skill schema refuses (${nodeId})`,
         entry_node_id: nodeId,
         execution_id: executionId,
         graph_version_id: versionId,

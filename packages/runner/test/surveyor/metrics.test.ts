@@ -113,7 +113,7 @@ function unbalancedLog(): Event[] {
       question: 'sigo?',
       auto_approvable: true,
     }),
-    event(7, 'job.blocked', work(1), 40, { reason: 'aguardando resposta da pergunta 20' }),
+    event(7, 'job.blocked', work(1), 40, { reason: 'awaiting the answer to question 20' }),
     event(8, 'session.finished', session(11), 45, { status: 'completed', exit_code: 0, usage: null }),
     // The answer is not what ends the wait — the unblock is.
     event(9, 'input_request.answered', question(20), 160, { answer: 'siga', answered_by: 'rafael' }),

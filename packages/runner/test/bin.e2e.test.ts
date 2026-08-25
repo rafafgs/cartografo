@@ -104,7 +104,7 @@ function initRepo(base: string): string {
   git('config', 'user.name', 'Fixture t193');
   writeFileSync(path.join(repoRoot, 'README.md'), '# t193 fixture repository\n');
   git('add', '.');
-  git('commit', '--quiet', '-m', 'inicial');
+  git('commit', '--quiet', '-m', 'initial');
 
   return repoRoot;
 }
@@ -266,7 +266,7 @@ test('t162 — the runner is an installable command, started by plain node', asy
       );
       t.after(async () => {
         await api(baseUrl, token, 'POST', `/v1/jobs/${job.id}/blocks`, {
-          reason: 'fim do caso de teste',
+          reason: 'end of the test case',
         });
       });
 

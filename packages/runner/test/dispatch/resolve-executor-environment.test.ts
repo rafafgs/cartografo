@@ -85,7 +85,7 @@ function fixture(t: TestHook, label: string): string {
   git(repoRoot, 'init', '--quiet', '--initial-branch', 'main');
   git(repoRoot, 'config', 'user.email', 'fixture@cartografo.local');
   git(repoRoot, 'config', 'user.name', 'Fixture t270');
-  commit(repoRoot, 'inicial');
+  commit(repoRoot, 'initial');
   return repoRoot;
 }
 
